@@ -193,7 +193,7 @@ class StateManagerGL final : angle::NonCopyable
                                             const gl::Framebuffer &drawFramebuffer);
     void applyViewportOffsetsAndSetViewports(const gl::Rectangle &viewport,
                                              const gl::Framebuffer &drawFramebuffer);
-    void propagateNumViewsToVAO(const gl::Program *program, VertexArrayGL *vao);
+    void propagateProgramToVAO(const gl::Program *program, VertexArrayGL *vao);
 
     void updateProgramTextureAndSamplerBindings(const gl::Context *context);
     void updateProgramStorageBufferBindings(const gl::Context *context);
@@ -230,8 +230,8 @@ class StateManagerGL final : angle::NonCopyable
     angle::PackedEnumMap<gl::BufferBinding, std::vector<IndexedBufferBinding>> mIndexedBuffers;
 
     size_t mTextureUnitIndex;
-    angle::PackedEnumMap<gl::TextureType, std::vector<GLuint>> mTextures;
-    std::vector<GLuint> mSamplers;
+    angle::PackedEnumMap<gl::TextureType, gl::ActiveTextureArray<GLuint>> mTextures;
+    gl::ActiveTextureArray<GLuint> mSamplers;
 
     struct ImageUnitBinding
     {

@@ -44,7 +44,6 @@
 #define COMPLEXITY_STATS_OUTPUT 0
 
 #define FIRST_PASS_Q 10.0
-#define INTRA_MODE_PENALTY 1024
 #define MIN_ARF_GF_BOOST 240
 #define MIN_DECAY_FACTOR 0.01
 #define NEW_MV_MODE_PENALTY 32
@@ -812,6 +811,8 @@ static void accumulate_fp_mb_row_stat(TileDataEnc *this_tile,
                    fp_acc_data->image_data_start_row);
 }
 
+#define NZ_MOTION_PENALTY 128
+#define INTRA_MODE_PENALTY 1024
 void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
                                        FIRSTPASS_DATA *fp_acc_data,
                                        TileDataEnc *tile_data, MV *best_ref_mv,
@@ -1059,7 +1060,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
 
       // Compute the motion error of the 0,0 motion using the last source
       // frame as the reference. Skip the further motion search on
-      // reconstructed frame if this error is small.
+      // reconstructed frame if this error is very small.
       unscaled_last_source_buf_2d.buf =
           cpi->unscaled_last_source->y_buffer + recon_yoffset;
       unscaled_last_source_buf_2d.stride = cpi->unscaled_last_source->y_stride;
@@ -1076,8 +1077,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
                                               &unscaled_last_source_buf_2d);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
-      // TODO(pengchong): Replace the hard-coded threshold
-      if (raw_motion_error > 25) {
+      if (raw_motion_error > NZ_MOTION_PENALTY) {
         // Test last reference frame using the previous best mv as the
         // starting point (best reference) for the search.
         first_pass_motion_search(cpi, x, best_ref_mv, &mv, &motion_error);
@@ -2397,7 +2397,8 @@ static void define_gf_group_structure(VP9_COMP *cpi) {
   // Define middle frame
   mid_frame_idx = frame_index + (rc->baseline_gf_interval >> 1) - 1;
 
-  normal_frames = (rc->baseline_gf_interval - rc->source_alt_ref_pending);
+  normal_frames =
+      rc->baseline_gf_interval - (key_frame || rc->source_alt_ref_pending);
   for (i = 0; i < normal_frames; ++i) {
     int arf_idx = 0;
     if (twopass->stats_in >= twopass->stats_in_end) break;
@@ -2713,6 +2714,7 @@ static void adjust_group_arnr_filter(VP9_COMP *cpi, double section_noise,
 #define ARF_DECAY_BREAKOUT 0.10
 #define ARF_ABS_ZOOM_THRESH 4.0
 
+#define MAX_GF_BOOST 5400
 static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
@@ -2859,8 +2861,10 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
       loop_decay_rate = get_prediction_decay_rate(cpi, &next_frame);
 
       // Monitor for static sections.
-      zero_motion_accumulator = VPXMIN(
-          zero_motion_accumulator, get_zero_motion_factor(cpi, &next_frame));
+      if ((rc->frames_since_key + i - 1) > 1) {
+        zero_motion_accumulator = VPXMIN(
+            zero_motion_accumulator, get_zero_motion_factor(cpi, &next_frame));
+      }
 
       // Break clause to detect very still sections after motion. For example,
       // a static image after a fade or other transition.
@@ -2881,9 +2885,18 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     }
 
     // Break out conditions.
-    if (
-        // Break at active_max_gf_interval unless almost totally static.
-        ((i >= active_max_gf_interval) && (zero_motion_accumulator < 0.995)) ||
+    // Break at maximum of active_max_gf_interval unless almost totally static.
+    //
+    // Note that the addition of a test of rc->source_alt_ref_active is
+    // deliberate. The effect of this is that after a normal altref group even
+    // if the material is static there will be one normal length GF group
+    // before allowing longer GF groups. The reason for this is that in cases
+    // such as slide shows where slides are separated by a complex transition
+    // such as a fade, the arf group spanning the transition may not be coded
+    // at a very high quality and hence this frame (with its overlay) is a
+    // poor golden frame to use for an extended group.
+    if (((i >= active_max_gf_interval) &&
+         ((zero_motion_accumulator < 0.995) || (rc->source_alt_ref_active))) ||
         (
             // Don't break out with a very short interval.
             (i >= active_min_gf_interval) &&
@@ -2903,8 +2916,9 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   rc->constrained_gf_group = (i >= rc->frames_to_key) ? 1 : 0;
 
   // Should we use the alternate reference frame.
-  if (allow_alt_ref && (i < cpi->oxcf.lag_in_frames) &&
-      (i >= rc->min_gf_interval)) {
+  if ((zero_motion_accumulator < 0.995) && allow_alt_ref &&
+      (twopass->kf_zeromotion_pct < STATIC_KF_GROUP_THRESH) &&
+      (i < cpi->oxcf.lag_in_frames) && (i >= rc->min_gf_interval)) {
     const int forward_frames = (rc->frames_to_key - i >= i - 1)
                                    ? i - 1
                                    : VPXMAX(0, rc->frames_to_key - i);
@@ -2920,7 +2934,7 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
             ? 1
             : 0;
   } else {
-    rc->gfu_boost = calc_arf_boost(cpi, 0, (i - 1));
+    rc->gfu_boost = VPXMIN(MAX_GF_BOOST, calc_arf_boost(cpi, 0, (i - 1)));
     rc->source_alt_ref_pending = 0;
   }
 
@@ -2931,10 +2945,11 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   rc->gfu_boost = VPXMIN((int)rc->gfu_boost, i * 200);
 #endif
 
-  // Set the interval until the next gf.
-  rc->baseline_gf_interval = i - (is_key_frame || rc->source_alt_ref_pending);
-
-  rc->frames_till_gf_update_due = rc->baseline_gf_interval;
+  rc->baseline_gf_interval =
+      ((twopass->kf_zeromotion_pct >= STATIC_KF_GROUP_THRESH) &&
+       (i >= rc->frames_to_key))
+          ? i
+          : (i - (is_key_frame || rc->source_alt_ref_pending));
 
   // TODO(zoeliu): Turn on the option to disable extra ALTREFs for still GF
   //               groups.
@@ -3216,6 +3231,7 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   vp9_zero(next_frame);
 
   cpi->common.frame_type = KEY_FRAME;
+  rc->frames_since_key = 0;
 
   // Reset the GF group data structures.
   vp9_zero(*gf_group);
@@ -3360,13 +3376,22 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   for (i = 0; i < (rc->frames_to_key - 1); ++i) {
     if (EOF == input_stats(twopass, &next_frame)) break;
 
-    if (i <= KF_BOOST_SCAN_MAX_FRAMES) {
+    // The zero motion test here insures that if we mark a kf group as static
+    // it is static throughout not just the first KF_BOOST_SCAN_MAX_FRAMES.
+    // It also allows for a larger boost on long static groups.
+    if ((i <= KF_BOOST_SCAN_MAX_FRAMES) || (zero_motion_accumulator >= 0.99)) {
       double frame_boost;
       double zm_factor;
 
       // Monitor for static sections.
-      zero_motion_accumulator = VPXMIN(
-          zero_motion_accumulator, get_zero_motion_factor(cpi, &next_frame));
+      // First frame in kf group the second ref indicator is invalid.
+      if (i > 0) {
+        zero_motion_accumulator = VPXMIN(
+            zero_motion_accumulator, get_zero_motion_factor(cpi, &next_frame));
+      } else {
+        zero_motion_accumulator =
+            next_frame.pcnt_inter - next_frame.pcnt_motion;
+      }
 
       // Factor 0.75-1.25 based on how much of frame is static.
       zm_factor = (0.75 + (zero_motion_accumulator / 2.0));
@@ -3403,10 +3428,16 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   twopass->section_intra_rating = calculate_section_intra_ratio(
       start_position, twopass->stats_in_end, rc->frames_to_key);
 
-  // Apply various clamps for min and max boost
-  rc->kf_boost = VPXMAX((int)boost_score, (rc->frames_to_key * 3));
-  rc->kf_boost = VPXMAX(rc->kf_boost, MIN_KF_TOT_BOOST);
-  rc->kf_boost = VPXMIN(rc->kf_boost, MAX_KF_TOT_BOOST);
+  // Special case for static / slide show content but dont apply
+  // if the kf group is very short.
+  if ((zero_motion_accumulator > 0.99) && (rc->frames_to_key > 8)) {
+    rc->kf_boost = MAX_KF_TOT_BOOST;
+  } else {
+    // Apply various clamps for min and max boost
+    rc->kf_boost = VPXMAX((int)boost_score, (rc->frames_to_key * 3));
+    rc->kf_boost = VPXMAX(rc->kf_boost, MIN_KF_TOT_BOOST);
+    rc->kf_boost = VPXMIN(rc->kf_boost, MAX_KF_TOT_BOOST);
+  }
 
   // Work out how many bits to allocate for the key frame itself.
   kf_bits = calculate_boost_bits((rc->frames_to_key - 1), rc->kf_boost,

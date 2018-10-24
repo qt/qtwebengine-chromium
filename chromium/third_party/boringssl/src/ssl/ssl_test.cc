@@ -48,6 +48,10 @@ OPENSSL_MSVC_PRAGMA(warning(pop))
 #include <sys/time.h>
 #endif
 
+#if !defined(OPENSSL_NO_THREADS)
+#include <thread>
+#endif
+
 
 namespace bssl {
 
@@ -493,7 +497,7 @@ TEST(SSLTest, CurveRules) {
     ASSERT_TRUE(ctx);
 
     ASSERT_TRUE(SSL_CTX_set1_curves_list(ctx.get(), t.rule));
-    ASSERT_EQ(t.expected.size(), ctx->supported_group_list_len);
+    ASSERT_EQ(t.expected.size(), ctx->supported_group_list.size());
     for (size_t i = 0; i < t.expected.size(); i++) {
       EXPECT_EQ(t.expected[i], ctx->supported_group_list[i]);
     }
@@ -2418,7 +2422,6 @@ TEST_P(SSLVersionTest, DefaultTicketKeyInitialization) {
 TEST_P(SSLVersionTest, DefaultTicketKeyRotation) {
   static const time_t kStartTime = 1001;
   g_current_time.tv_sec = kStartTime;
-  uint8_t ticket_key[kTicketKeyLen];
 
   // We use session reuse as a proxy for ticket decryption success, hence
   // disable session timeouts.
@@ -2432,7 +2435,9 @@ TEST_P(SSLVersionTest, DefaultTicketKeyRotation) {
   SSL_CTX_set_session_cache_mode(client_ctx_.get(), SSL_SESS_CACHE_BOTH);
   SSL_CTX_set_session_cache_mode(server_ctx_.get(), SSL_SESS_CACHE_OFF);
 
-  // Initialize ticket_key with the current key.
+  // Initialize ticket_key with the current key and check that it was
+  // initialized to something, not all zeros.
+  uint8_t ticket_key[kTicketKeyLen] = {0};
   TRACED_CALL(ExpectTicketKeyChanged(server_ctx_.get(), ticket_key,
                                      true /* changed */));
 
@@ -4113,6 +4118,294 @@ TEST(SSLTest, HandoffDeclined) {
   EXPECT_EQ(SSL_read(client.get(), &byte, 1), 1);
   EXPECT_EQ(43, byte);
 }
+
+static std::string SigAlgsToString(Span<const uint16_t> sigalgs) {
+  std::string ret = "{";
+
+  for (uint16_t v : sigalgs) {
+    if (ret.size() > 1) {
+      ret += ", ";
+    }
+
+    char buf[8];
+    snprintf(buf, sizeof(buf) - 1, "0x%02x", v);
+    buf[sizeof(buf)-1] = 0;
+    ret += std::string(buf);
+  }
+
+  ret += "}";
+  return ret;
+}
+
+void ExpectSigAlgsEqual(Span<const uint16_t> expected,
+                        Span<const uint16_t> actual) {
+  bool matches = false;
+  if (expected.size() == actual.size()) {
+    matches = true;
+
+    for (size_t i = 0; i < expected.size(); i++) {
+      if (expected[i] != actual[i]) {
+        matches = false;
+        break;
+      }
+    }
+  }
+
+  if (!matches) {
+    ADD_FAILURE() << "expected: " << SigAlgsToString(expected)
+                  << " got: " << SigAlgsToString(actual);
+  }
+}
+
+TEST(SSLTest, SigAlgs) {
+  static const struct {
+    std::vector<int> input;
+    bool ok;
+    std::vector<uint16_t> expected;
+  } kTests[] = {
+      {{}, true, {}},
+      {{1}, false, {}},
+      {{1, 2, 3}, false, {}},
+      {{NID_sha256, EVP_PKEY_ED25519}, false, {}},
+      {{NID_sha256, EVP_PKEY_RSA, NID_sha256, EVP_PKEY_RSA}, false, {}},
+
+      {{NID_sha256, EVP_PKEY_RSA}, true, {SSL_SIGN_RSA_PKCS1_SHA256}},
+      {{NID_sha512, EVP_PKEY_RSA}, true, {SSL_SIGN_RSA_PKCS1_SHA512}},
+      {{NID_sha256, EVP_PKEY_RSA_PSS}, true, {SSL_SIGN_RSA_PSS_RSAE_SHA256}},
+      {{NID_undef, EVP_PKEY_ED25519}, true, {SSL_SIGN_ED25519}},
+      {{NID_undef, EVP_PKEY_ED25519, NID_sha384, EVP_PKEY_EC},
+       true,
+       {SSL_SIGN_ED25519, SSL_SIGN_ECDSA_SECP384R1_SHA384}},
+  };
+
+  UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+
+  unsigned n = 1;
+  for (const auto &test : kTests) {
+    SCOPED_TRACE(n++);
+
+    const bool ok =
+        SSL_CTX_set1_sigalgs(ctx.get(), test.input.data(), test.input.size());
+    EXPECT_EQ(ok, test.ok);
+
+    if (!ok) {
+      ERR_clear_error();
+    }
+
+    if (!test.ok) {
+      continue;
+    }
+
+    ExpectSigAlgsEqual(test.expected, ctx->cert->sigalgs);
+  }
+}
+
+TEST(SSLTest, SigAlgsList) {
+  static const struct {
+    const char *input;
+    bool ok;
+    std::vector<uint16_t> expected;
+  } kTests[] = {
+      {"", false, {}},
+      {":", false, {}},
+      {"+", false, {}},
+      {"RSA", false, {}},
+      {"RSA+", false, {}},
+      {"RSA+SHA256:", false, {}},
+      {":RSA+SHA256:", false, {}},
+      {":RSA+SHA256+:", false, {}},
+      {"!", false, {}},
+      {"\x01", false, {}},
+      {"RSA+SHA256:RSA+SHA384:RSA+SHA256", false, {}},
+      {"RSA-PSS+SHA256:rsa_pss_rsae_sha256", false, {}},
+
+      {"RSA+SHA256", true, {SSL_SIGN_RSA_PKCS1_SHA256}},
+      {"RSA+SHA256:ed25519",
+       true,
+       {SSL_SIGN_RSA_PKCS1_SHA256, SSL_SIGN_ED25519}},
+      {"ECDSA+SHA256:RSA+SHA512",
+       true,
+       {SSL_SIGN_ECDSA_SECP256R1_SHA256, SSL_SIGN_RSA_PKCS1_SHA512}},
+      {"ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256",
+       true,
+       {SSL_SIGN_ECDSA_SECP256R1_SHA256, SSL_SIGN_RSA_PSS_RSAE_SHA256}},
+      {"RSA-PSS+SHA256", true, {SSL_SIGN_RSA_PSS_RSAE_SHA256}},
+      {"PSS+SHA256", true, {SSL_SIGN_RSA_PSS_RSAE_SHA256}},
+  };
+
+  UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+
+  unsigned n = 1;
+  for (const auto &test : kTests) {
+    SCOPED_TRACE(n++);
+
+    const bool ok = SSL_CTX_set1_sigalgs_list(ctx.get(), test.input);
+    EXPECT_EQ(ok, test.ok);
+
+    if (!ok) {
+      if (test.ok) {
+        ERR_print_errors_fp(stderr);
+      }
+      ERR_clear_error();
+    }
+
+    if (!test.ok) {
+      continue;
+    }
+
+    ExpectSigAlgsEqual(test.expected, ctx->cert->sigalgs);
+  }
+}
+
+TEST_P(SSLVersionTest, VerifyBeforeCertRequest) {
+  // Configure the server to request client certificates.
+  SSL_CTX_set_custom_verify(
+      server_ctx_.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) { return ssl_verify_ok; });
+
+  // Configure the client to reject the server certificate.
+  SSL_CTX_set_custom_verify(
+      client_ctx_.get(), SSL_VERIFY_PEER,
+      [](SSL *ssl, uint8_t *out_alert) { return ssl_verify_invalid; });
+
+  // cert_cb should not be called. Verification should fail first.
+  SSL_CTX_set_cert_cb(client_ctx_.get(),
+                      [](SSL *ssl, void *arg) {
+                        ADD_FAILURE() << "cert_cb unexpectedly called";
+                        return 0;
+                      },
+                      nullptr);
+
+  bssl::UniquePtr<SSL> client, server;
+  EXPECT_FALSE(ConnectClientAndServer(&client, &server, client_ctx_.get(),
+                                      server_ctx_.get()));
+}
+
+// These tests test multi-threaded behavior. They are intended to run with
+// ThreadSanitizer.
+#if !defined(OPENSSL_NO_THREADS)
+TEST_P(SSLVersionTest, SessionCacheThreads) {
+  SSL_CTX_set_options(server_ctx_.get(), SSL_OP_NO_TICKET);
+  SSL_CTX_set_session_cache_mode(client_ctx_.get(), SSL_SESS_CACHE_BOTH);
+  SSL_CTX_set_session_cache_mode(server_ctx_.get(), SSL_SESS_CACHE_BOTH);
+
+  if (version() == TLS1_3_VERSION) {
+    // Our TLS 1.3 implementation does not support stateful resumption.
+    ASSERT_FALSE(CreateClientSession(client_ctx_.get(), server_ctx_.get()));
+    return;
+  }
+
+  // Establish two client sessions to test with.
+  bssl::UniquePtr<SSL_SESSION> session1 =
+      CreateClientSession(client_ctx_.get(), server_ctx_.get());
+  ASSERT_TRUE(session1);
+  bssl::UniquePtr<SSL_SESSION> session2 =
+      CreateClientSession(client_ctx_.get(), server_ctx_.get());
+  ASSERT_TRUE(session2);
+
+  auto connect_with_session = [&](SSL_SESSION *session) {
+    ClientConfig config;
+    config.session = session;
+    UniquePtr<SSL> client, server;
+    EXPECT_TRUE(ConnectClientAndServer(&client, &server, client_ctx_.get(),
+                                       server_ctx_.get(), config));
+  };
+
+  // Resume sessions in parallel with establishing new ones.
+  {
+    std::vector<std::thread> threads;
+    threads.emplace_back([&] { connect_with_session(nullptr); });
+    threads.emplace_back([&] { connect_with_session(nullptr); });
+    threads.emplace_back([&] { connect_with_session(session1.get()); });
+    threads.emplace_back([&] { connect_with_session(session1.get()); });
+    threads.emplace_back([&] { connect_with_session(session2.get()); });
+    threads.emplace_back([&] { connect_with_session(session2.get()); });
+    for (auto &thread : threads) {
+      thread.join();
+    }
+  }
+
+  // Hit the maximum session cache size across multiple threads
+  size_t limit = SSL_CTX_sess_number(server_ctx_.get()) + 2;
+  SSL_CTX_sess_set_cache_size(server_ctx_.get(), limit);
+  {
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 4; i++) {
+      threads.emplace_back([&]() {
+        connect_with_session(nullptr);
+        EXPECT_LE(SSL_CTX_sess_number(server_ctx_.get()), limit);
+      });
+    }
+    for (auto &thread : threads) {
+      thread.join();
+    }
+    EXPECT_EQ(SSL_CTX_sess_number(server_ctx_.get()), limit);
+  }
+}
+
+TEST_P(SSLVersionTest, SessionTicketThreads) {
+  for (bool renew_ticket : {false, true}) {
+    SCOPED_TRACE(renew_ticket);
+    ResetContexts();
+    SSL_CTX_set_session_cache_mode(client_ctx_.get(), SSL_SESS_CACHE_BOTH);
+    SSL_CTX_set_session_cache_mode(server_ctx_.get(), SSL_SESS_CACHE_BOTH);
+    if (renew_ticket) {
+      SSL_CTX_set_tlsext_ticket_key_cb(server_ctx_.get(), RenewTicketCallback);
+    }
+
+    // Establish two client sessions to test with.
+    bssl::UniquePtr<SSL_SESSION> session1 =
+        CreateClientSession(client_ctx_.get(), server_ctx_.get());
+    ASSERT_TRUE(session1);
+    bssl::UniquePtr<SSL_SESSION> session2 =
+        CreateClientSession(client_ctx_.get(), server_ctx_.get());
+    ASSERT_TRUE(session2);
+
+    auto connect_with_session = [&](SSL_SESSION *session) {
+      ClientConfig config;
+      config.session = session;
+      UniquePtr<SSL> client, server;
+      EXPECT_TRUE(ConnectClientAndServer(&client, &server, client_ctx_.get(),
+                                         server_ctx_.get(), config));
+    };
+
+    // Resume sessions in parallel with establishing new ones.
+    {
+      std::vector<std::thread> threads;
+      threads.emplace_back([&] { connect_with_session(nullptr); });
+      threads.emplace_back([&] { connect_with_session(nullptr); });
+      threads.emplace_back([&] { connect_with_session(session1.get()); });
+      threads.emplace_back([&] { connect_with_session(session1.get()); });
+      threads.emplace_back([&] { connect_with_session(session2.get()); });
+      threads.emplace_back([&] { connect_with_session(session2.get()); });
+      for (auto &thread : threads) {
+        thread.join();
+      }
+    }
+  }
+}
+
+// SSL_CTX_get0_certificate needs to lock internally. Test this works.
+TEST(SSLTest, GetCertificateThreads) {
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(ctx);
+  bssl::UniquePtr<X509> cert = GetTestCertificate();
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(SSL_CTX_use_certificate(ctx.get(), cert.get()));
+
+  // Existing code expects |SSL_CTX_get0_certificate| to be callable from two
+  // threads concurrently. It originally was an immutable operation. Now we
+  // implement it with a thread-safe cache, so it is worth testing.
+  X509 *cert2_thread;
+  std::thread thread(
+      [&] { cert2_thread = SSL_CTX_get0_certificate(ctx.get()); });
+  X509 *cert2 = SSL_CTX_get0_certificate(ctx.get());
+  thread.join();
+
+  EXPECT_EQ(cert2, cert2_thread);
+  EXPECT_EQ(0, X509_cmp(cert.get(), cert2));
+}
+#endif
 
 // TODO(davidben): Convert this file to GTest properly.
 TEST(SSLTest, AllTests) {

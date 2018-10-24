@@ -215,8 +215,7 @@ void InputRouterImpl::SetForceEnableZoom(bool enabled) {
 }
 
 base::Optional<cc::TouchAction> InputRouterImpl::AllowedTouchAction() {
-  return touch_action_filter_.allowed_touch_action().value_or(
-      cc::kTouchActionAuto);
+  return touch_action_filter_.allowed_touch_action();
 }
 
 void InputRouterImpl::BindHost(mojom::WidgetInputHandlerHostRequest request,
@@ -255,15 +254,6 @@ void InputRouterImpl::DidOverscroll(const ui::DidOverscrollParams& params) {
   fling_updated_params.current_fling_velocity =
       gesture_event_queue_.CurrentFlingVelocity();
   client_->DidOverscroll(fling_updated_params);
-}
-
-void InputRouterImpl::DidStopFlinging() {
-  DCHECK_GT(active_renderer_fling_count_, 0);
-  // Note that we're only guaranteed to get a fling end notification from the
-  // renderer, not from any other consumers. Consequently, the GestureEventQueue
-  // cannot use this bookkeeping for logic like tap suppression.
-  --active_renderer_fling_count_;
-  client_->DidStopFlinging();
 }
 
 void InputRouterImpl::DidStartScrollingViewport() {
@@ -349,14 +339,17 @@ void InputRouterImpl::OnTouchEventAck(const TouchEventWithLatencyInfo& event,
   // in some cases we may filter out sending the touchstart - catch those here.
   if (WebTouchEventTraits::IsTouchSequenceStart(event.event) &&
       ack_result == INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS) {
+    touch_action_filter_.AppendToGestureSequenceForDebugging("T");
     // Touch action must be auto when there is no consumer
     touch_action_filter_.OnSetTouchAction(cc::kTouchActionAuto);
+    touch_action_filter_.SetActiveTouchInProgress(true);
     UpdateTouchAckTimeoutEnabled();
   }
   disposition_handler_->OnTouchEventAck(event, ack_source, ack_result);
 
   if (WebTouchEventTraits::IsTouchSequenceEnd(event.event)) {
     touch_action_filter_.ReportAndResetTouchAction();
+    touch_action_filter_.SetActiveTouchInProgress(false);
     UpdateTouchAckTimeoutEnabled();
   }
 }
@@ -370,10 +363,6 @@ void InputRouterImpl::OnFilteringTouchEvent(const WebTouchEvent& touch_event) {
   // additional validator for the events which are actually sent to the
   // renderer.
   output_stream_validator_.Validate(touch_event);
-}
-
-bool InputRouterImpl::TouchscreenFlingInProgress() {
-  return gesture_event_queue_.TouchscreenFlingInProgress();
 }
 
 void InputRouterImpl::SendGestureEventImmediately(
@@ -561,11 +550,6 @@ void InputRouterImpl::GestureEventHandled(
                InputEventAckStateToString(state));
   if (source != InputEventAckSource::BROWSER)
     client_->DecrementInFlightEventCount(source);
-  if (gesture_event.event.GetType() ==
-          blink::WebInputEvent::kGestureFlingStart &&
-      state == INPUT_EVENT_ACK_STATE_CONSUMED) {
-    ++active_renderer_fling_count_;
-  }
 
   if (overscroll) {
     DCHECK_EQ(WebInputEvent::kGestureScrollUpdate,
@@ -610,7 +594,13 @@ void InputRouterImpl::OnHasTouchEventHandlers(bool has_handlers) {
 }
 
 void InputRouterImpl::ForceSetTouchActionAuto() {
+  touch_action_filter_.AppendToGestureSequenceForDebugging("F");
   touch_action_filter_.OnSetTouchAction(cc::kTouchActionAuto);
+  touch_action_filter_.SetActiveTouchInProgress(true);
+}
+
+void InputRouterImpl::OnHasTouchEventHandlersForTest(bool has_handlers) {
+  touch_action_filter_.OnHasTouchEventHandlers(has_handlers);
 }
 
 void InputRouterImpl::OnSetTouchAction(cc::TouchAction touch_action) {
@@ -622,7 +612,11 @@ void InputRouterImpl::OnSetTouchAction(cc::TouchAction touch_action) {
   if (!touch_event_queue_.IsPendingAckTouchStart())
     return;
 
+  touch_action_filter_.AppendToGestureSequenceForDebugging("S");
+  touch_action_filter_.AppendToGestureSequenceForDebugging(
+      std::to_string(touch_action).c_str());
   touch_action_filter_.OnSetTouchAction(touch_action);
+  touch_action_filter_.SetActiveTouchInProgress(true);
 
   // kTouchActionNone should disable the touch ack timeout.
   UpdateTouchAckTimeoutEnabled();

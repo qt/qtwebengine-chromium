@@ -11,10 +11,11 @@
 #include "modules/audio_device/mac/audio_device_mac.h"
 #include "absl/memory/memory.h"
 #include "modules/audio_device/audio_device_config.h"
-#include "modules/audio_device/mac/portaudio/pa_ringbuffer.h"
+#include "modules/third_party/portaudio/pa_ringbuffer.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/platform_thread.h"
+#include "rtc_base/system/arch.h"
 #include "system_wrappers/include/event_wrapper.h"
 
 #include <ApplicationServices/ApplicationServices.h>

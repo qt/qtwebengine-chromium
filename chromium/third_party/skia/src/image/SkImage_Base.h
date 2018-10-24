@@ -8,9 +8,9 @@
 #ifndef SkImage_Base_DEFINED
 #define SkImage_Base_DEFINED
 
-#include "SkAtomics.h"
 #include "SkImage.h"
 #include "SkSurface.h"
+#include <atomic>
 
 #if SK_SUPPORT_GPU
     #include "GrTextureProxy.h"
@@ -81,13 +81,10 @@ public:
     // True for picture-backed and codec-backed
     virtual bool onIsLazyGenerated() const { return false; }
 
-    // True only for generators that operate directly on gpu (e.g. picture-generators)
-    virtual bool onCanLazyGenerateOnGPU() const { return false; }
-
     // Call when this image is part of the key to a resourcecache entry. This allows the cache
     // to know automatically those entries can be purged when this SkImage deleted.
-    void notifyAddedToCache() const {
-        fAddedToCache.store(true);
+    void notifyAddedToRasterCache() const {
+        fAddedToRasterCache.store(true);
     }
 
     virtual bool onIsValid(GrContext*) const = 0;
@@ -101,7 +98,7 @@ protected:
 
 private:
     // Set true by caches when they cache content that's derived from the current pixels.
-    mutable SkAtomic<bool> fAddedToCache;
+    mutable std::atomic<bool> fAddedToRasterCache;
 
     typedef SkImage INHERITED;
 };

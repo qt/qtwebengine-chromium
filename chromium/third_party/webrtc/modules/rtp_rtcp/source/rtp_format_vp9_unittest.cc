@@ -15,7 +15,6 @@
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 namespace {
@@ -83,7 +82,9 @@ void ParseAndCheckPacket(const uint8_t* packet,
   RtpDepacketizer::ParsedPayload parsed;
   ASSERT_TRUE(depacketizer->Parse(&parsed, packet, expected_length));
   EXPECT_EQ(kVideoCodecVP9, parsed.video_header().codec);
-  VerifyHeader(expected, parsed.video_header().vp9());
+  auto& vp9_header =
+      absl::get<RTPVideoHeaderVP9>(parsed.video_header().video_type_header);
+  VerifyHeader(expected, vp9_header);
   const size_t kExpectedPayloadLength = expected_length - expected_hdr_length;
   VerifyPayload(parsed, packet + expected_hdr_length, kExpectedPayloadLength);
 }

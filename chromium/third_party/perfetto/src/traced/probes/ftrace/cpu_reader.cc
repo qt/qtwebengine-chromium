@@ -28,10 +28,12 @@
 #include "perfetto/base/logging.h"
 #include "perfetto/base/metatrace.h"
 #include "perfetto/base/utils.h"
+#include "src/traced/probes/ftrace/ftrace_data_source.h"
 #include "src/traced/probes/ftrace/proto_translation_table.h"
 
 #include "perfetto/trace/ftrace/ftrace_event.pbzero.h"
 #include "perfetto/trace/ftrace/ftrace_event_bundle.pbzero.h"
+#include "perfetto/trace/trace_packet.pbzero.h"
 
 namespace perfetto {
 
@@ -77,9 +79,6 @@ bool ReadDataLoc(const uint8_t* start,
   ReadIntoString(string_start, string_end, field.proto_field_id, message);
   return true;
 }
-
-using BundleHandle =
-    protozero::MessageHandle<protos::pbzero::FtraceEventBundle>;
 
 const std::vector<bool> BuildEnabledVector(const ProtoTranslationTable& table,
                                            const std::set<std::string>& names) {
@@ -173,7 +172,7 @@ CpuReader::CpuReader(const ProtoTranslationTable* table,
 
   worker_thread_ =
       std::thread(std::bind(&RunWorkerThread, cpu_, *trace_fd_,
-                            *staging_write_fd_, on_data_available, &exiting_));
+                            *staging_write_fd_, on_data_available, &cmd_));
 }
 
 CpuReader::~CpuReader() {
@@ -183,7 +182,7 @@ CpuReader::~CpuReader() {
   // trace fd (which prevents another splice from starting), raise SIGPIPE and
   // wait for the worker to exit (i.e., to guarantee no splice is in progress)
   // and only then close the staging pipe.
-  exiting_ = true;
+  cmd_ = ThreadCtl::kExit;
   trace_fd_.reset();
   pthread_kill(worker_thread_.native_handle(), SIGPIPE);
   worker_thread_.join();
@@ -194,7 +193,7 @@ void CpuReader::RunWorkerThread(size_t cpu,
                                 int trace_fd,
                                 int staging_write_fd,
                                 const std::function<void()>& on_data_available,
-                                std::atomic<bool>* exiting) {
+                                std::atomic<ThreadCtl>* cmd_atomic) {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
   // This thread is responsible for moving data from the trace pipe into the
@@ -213,7 +212,7 @@ void CpuReader::RunWorkerThread(size_t cpu,
     // pipe.
     ssize_t splice_res;
     {
-      PERFETTO_METATRACE("name", "splice_blocking", "pid", cpu);
+      PERFETTO_METATRACE("splice_blocking", cpu);
       splice_res = splice(trace_fd, nullptr, staging_write_fd, nullptr,
                           base::kPageSize, SPLICE_F_MOVE);
     }
@@ -221,14 +220,19 @@ void CpuReader::RunWorkerThread(size_t cpu,
       // The kernel ftrace code has its own splice() implementation that can
       // occasionally fail with transient errors not reported in man 2 splice.
       // Just try again if we see these.
-      if (errno == ENOMEM || errno == EBUSY || (errno == EINTR && !*exiting)) {
+      ThreadCtl cmd = *cmd_atomic;
+      if (errno == ENOMEM || errno == EBUSY ||
+          (errno == EINTR && cmd == ThreadCtl::kRun)) {
         PERFETTO_DPLOG("Transient splice failure -- retrying");
         usleep(100 * 1000);
         continue;
       }
-      PERFETTO_DPLOG("Stopping CPUReader loop for CPU %zd.", cpu);
-      PERFETTO_DCHECK(errno == EPIPE || errno == EINTR || errno == EBADF);
-      break;  // ~CpuReader is waiting to join this thread.
+      if (cmd == ThreadCtl::kExit) {
+        PERFETTO_DPLOG("Stopping CPUReader loop for CPU %zd.", cpu);
+        PERFETTO_DCHECK(errno == EPIPE || errno == EINTR || errno == EBADF);
+        break;  // ~CpuReader is waiting to join this thread.
+      }
+      PERFETTO_FATAL("Unexpected ThreadCtl value: %d", int(cmd));
     }
 
     // Then do as many non-blocking splices as we can. This moves any full
@@ -236,7 +240,7 @@ void CpuReader::RunWorkerThread(size_t cpu,
     // data in the former and space in the latter.
     while (true) {
       {
-        PERFETTO_METATRACE("name", "splice_nonblocking", "pid", cpu);
+        PERFETTO_METATRACE("splice_nonblocking", cpu);
         splice_res = splice(trace_fd, nullptr, staging_write_fd, nullptr,
                             base::kPageSize, SPLICE_F_MOVE | SPLICE_F_NONBLOCK);
       }
@@ -247,7 +251,7 @@ void CpuReader::RunWorkerThread(size_t cpu,
       }
     }
     {
-      PERFETTO_METATRACE("name", "splice_waitcallback", "pid", cpu);
+      PERFETTO_METATRACE("splice_waitcallback", cpu);
       // This callback will block until we are allowed to read more data.
       on_data_available();
     }
@@ -257,14 +261,12 @@ void CpuReader::RunWorkerThread(size_t cpu,
   base::ignore_result(trace_fd);
   base::ignore_result(staging_write_fd);
   base::ignore_result(on_data_available);
-  base::ignore_result(exiting);
+  base::ignore_result(cmd_atomic);
   PERFETTO_ELOG("Supported only on Linux/Android");
 #endif
 }
 
-bool CpuReader::Drain(const std::array<const EventFilter*, kMaxSinks>& filters,
-                      const std::array<BundleHandle, kMaxSinks>& bundles,
-                      const std::array<FtraceMetadata*, kMaxSinks>& metadatas) {
+bool CpuReader::Drain(const std::set<FtraceDataSource*>& data_sources) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   while (true) {
     uint8_t* buffer = GetBuffer();
@@ -274,21 +276,22 @@ bool CpuReader::Drain(const std::array<const EventFilter*, kMaxSinks>& filters,
       break;
     PERFETTO_CHECK(static_cast<size_t>(bytes) == base::kPageSize);
 
-    size_t evt_size = 0;
-    for (size_t i = 0; i < kMaxSinks; i++) {
-      if (!filters[i])
-        break;
-      evt_size =
-          ParsePage(buffer, filters[i], &*bundles[i], table_, metadatas[i]);
-      PERFETTO_DCHECK(evt_size);
-    }
-  }
+    for (FtraceDataSource* data_source : data_sources) {
+      auto packet = data_source->trace_writer()->NewTracePacket();
+      auto* bundle = packet->set_ftrace_events();
+      auto* metadata = data_source->mutable_metadata();
+      auto* filter = data_source->event_filter();
 
-  for (size_t i = 0; i < kMaxSinks; i++) {
-    if (!filters[i])
-      break;
-    bundles[i]->set_cpu(static_cast<uint32_t>(cpu_));
-    bundles[i]->set_overwrite_count(metadatas[i]->overwrite_count);
+      // Note: The fastpath in proto_trace_parser.cc speculates on the fact that
+      // the cpu field is the first field of the proto message.
+      // If this changes, change proto_trace_parser.cc accordingly.
+      bundle->set_cpu(static_cast<uint32_t>(cpu_));
+
+      size_t evt_size = ParsePage(buffer, filter, bundle, table_, metadata);
+      PERFETTO_DCHECK(evt_size);
+
+      bundle->set_overwrite_count(metadata->overwrite_count);
+    }
   }
 
   return true;
@@ -311,7 +314,7 @@ uint8_t* CpuReader::GetBuffer() {
 // This method is deliberately static so it can be tested independently.
 size_t CpuReader::ParsePage(const uint8_t* ptr,
                             const EventFilter* filter,
-                            protos::pbzero::FtraceEventBundle* bundle,
+                            FtraceEventBundle* bundle,
                             const ProtoTranslationTable* table,
                             FtraceMetadata* metadata) {
   const uint8_t* const start_of_page = ptr;

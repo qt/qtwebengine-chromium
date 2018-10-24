@@ -99,7 +99,7 @@ void bicubic_get_pos_weight(int pos_pixel[],
   v_w[3] = SDP_Table[512 - res_y];
 }
 
-FXDIB_Format GetTransformedFormat(const RetainPtr<CFX_DIBSource>& pDrc) {
+FXDIB_Format GetTransformedFormat(const RetainPtr<CFX_DIBBase>& pDrc) {
   if (pDrc->IsAlphaMask())
     return FXDIB_8bppMask;
 
@@ -180,7 +180,7 @@ class CPDF_FixedMatrix {
   const int f;
 };
 
-class CFX_BilinearMatrix : public CPDF_FixedMatrix {
+class CFX_BilinearMatrix final : public CPDF_FixedMatrix {
  public:
   explicit CFX_BilinearMatrix(const CFX_Matrix& src) : CPDF_FixedMatrix(src) {}
 
@@ -200,7 +200,7 @@ class CFX_BilinearMatrix : public CPDF_FixedMatrix {
 
 }  // namespace
 
-CFX_ImageTransformer::CFX_ImageTransformer(const RetainPtr<CFX_DIBSource>& pSrc,
+CFX_ImageTransformer::CFX_ImageTransformer(const RetainPtr<CFX_DIBBase>& pSrc,
                                            const CFX_Matrix* pMatrix,
                                            int flags,
                                            const FX_RECT* pClip)
@@ -480,7 +480,7 @@ void CFX_ImageTransformer::DoBilinearLoop(
     std::function<void(const BilinearData&, uint8_t*)> func) {
   CFX_BilinearMatrix matrix_fix(cdata.matrix);
   for (int row = 0; row < m_result.Height(); row++) {
-    uint8_t* dest = const_cast<uint8_t*>(cdata.bitmap->GetScanline(row));
+    uint8_t* dest = cdata.bitmap->GetWritableScanline(row);
     for (int col = 0; col < m_result.Width(); col++) {
       BilinearData d;
       d.res_x = 0;
@@ -509,7 +509,7 @@ void CFX_ImageTransformer::DoBicubicLoop(
     std::function<void(const BicubicData&, uint8_t*)> func) {
   CFX_BilinearMatrix matrix_fix(cdata.matrix);
   for (int row = 0; row < m_result.Height(); row++) {
-    uint8_t* dest = const_cast<uint8_t*>(cdata.bitmap->GetScanline(row));
+    uint8_t* dest = cdata.bitmap->GetWritableScanline(row);
     for (int col = 0; col < m_result.Width(); col++) {
       BicubicData d;
       d.res_x = 0;
@@ -536,7 +536,7 @@ void CFX_ImageTransformer::DoDownSampleLoop(
     std::function<void(const DownSampleData&, uint8_t*)> func) {
   CPDF_FixedMatrix matrix_fix(cdata.matrix);
   for (int row = 0; row < m_result.Height(); row++) {
-    uint8_t* dest = const_cast<uint8_t*>(cdata.bitmap->GetScanline(row));
+    uint8_t* dest = cdata.bitmap->GetWritableScanline(row);
     for (int col = 0; col < m_result.Width(); col++) {
       DownSampleData d;
       d.src_col = 0;

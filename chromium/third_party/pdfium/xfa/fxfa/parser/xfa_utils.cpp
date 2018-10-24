@@ -215,7 +215,7 @@ void RegenerateFormFile_Changed(CXFA_Node* pNode,
         if (!pRichTextXML)
           break;
 
-        auto pMemStream = pdfium::MakeRetain<CFX_MemoryStream>(true);
+        auto pMemStream = pdfium::MakeRetain<CFX_MemoryStream>();
         pRichTextXML->Save(pMemStream);
         wsChildren += WideString::FromUTF8(
             ByteStringView(pMemStream->GetBuffer(), pMemStream->GetSize()));
@@ -450,7 +450,7 @@ CXFA_LocaleValue XFA_GetLocaleValue(CXFA_Node* pNode) {
       break;
   }
   return CXFA_LocaleValue(iVTType, pNode->GetRawValue(),
-                          pNode->GetDocument()->GetLocalMgr());
+                          pNode->GetDocument()->GetLocaleMgr());
 }
 
 bool XFA_FDEExtension_ResolveNamespaceQualifier(CFX_XMLElement* pNode,
@@ -470,11 +470,8 @@ bool XFA_FDEExtension_ResolveNamespaceQualifier(CFX_XMLElement* pNode,
   }
   for (CFX_XMLNode* pParent = pNode; pParent != pFakeRoot;
        pParent = pParent->GetParent()) {
-    if (pParent->GetType() != FX_XMLNODE_Element)
-      continue;
-
-    auto* pElement = static_cast<CFX_XMLElement*>(pParent);
-    if (pElement->HasAttribute(wsNSAttribute)) {
+    CFX_XMLElement* pElement = ToXMLElement(pParent);
+    if (pElement && pElement->HasAttribute(wsNSAttribute)) {
       *wsNamespaceURI = pElement->GetAttribute(wsNSAttribute);
       return true;
     }
@@ -497,20 +494,13 @@ void XFA_DataExporter_DealWithDataGroupNode(CXFA_Node* pDataNode) {
   if (pDataNode->GetElementType() != XFA_Element::DataGroup)
     return;
 
+  CFX_XMLElement* pElement = ToXMLElement(pDataNode->GetXMLMappingNode());
   if (iChildNum > 0) {
-    CFX_XMLNode* pXMLNode = pDataNode->GetXMLMappingNode();
-    ASSERT(pXMLNode->GetType() == FX_XMLNODE_Element);
-    CFX_XMLElement* pXMLElement = static_cast<CFX_XMLElement*>(pXMLNode);
-    if (pXMLElement->HasAttribute(L"xfa:dataNode"))
-      pXMLElement->RemoveAttribute(L"xfa:dataNode");
-
+    if (pElement->HasAttribute(L"xfa:dataNode"))
+      pElement->RemoveAttribute(L"xfa:dataNode");
     return;
   }
-
-  CFX_XMLNode* pXMLNode = pDataNode->GetXMLMappingNode();
-  ASSERT(pXMLNode->GetType() == FX_XMLNODE_Element);
-  static_cast<CFX_XMLElement*>(pXMLNode)->SetAttribute(L"xfa:dataNode",
-                                                       L"dataGroup");
+  pElement->SetAttribute(L"xfa:dataNode", L"dataGroup");
 }
 
 void XFA_DataExporter_RegenerateFormFile(

@@ -127,7 +127,7 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc,
             return nullptr;
         }
         SkAssertResult(sContext->writePixels(srcInfo, mipLevel.fPixels, mipLevel.fRowBytes, 0, 0));
-        return sk_ref_sp(sContext->asTextureProxy()->priv().peekTexture());
+        return sk_ref_sp(sContext->asTextureProxy()->peekTexture());
     } else {
         return fGpu->createTexture(desc, budgeted, &mipLevel, 1);
     }
@@ -402,10 +402,11 @@ bool GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt) {
         if (!stencil) {
             // Need to try and create a new stencil
             stencil.reset(this->gpu()->createStencilAttachmentForRenderTarget(rt, width, height));
-            if (stencil) {
-                this->assignUniqueKeyToResource(sbKey, stencil.get());
-                SkDEBUGCODE(newStencil = true;)
+            if (!stencil) {
+                return false;
             }
+            this->assignUniqueKeyToResource(sbKey, stencil.get());
+            SkDEBUGCODE(newStencil = true;)
         }
         if (rt->renderTargetPriv().attachStencilAttachment(std::move(stencil))) {
 #ifdef SK_DEBUG

@@ -20,7 +20,6 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/favicon/core/favicon_service.h"
-#include "components/history/core/browser/history_service.h"
 #include "components/sync/driver/sync_client.h"
 #include "components/sync/syncable/change_record.h"
 #include "components/sync/syncable/entry.h"  // TODO(tim): Investigating bug 121587.
@@ -777,7 +776,7 @@ void BookmarkChangeProcessor::UpdateBookmarkWithSyncData(
         node,
         base::Time::FromInternalValue(specifics.creation_time_us()));
   }
-  SetBookmarkFavicon(&sync_node, node, model, sync_client);
+  SetBookmarkFavicon(&sync_node, node, sync_client);
   model->SetNodeMetaInfoMap(node, *GetBookmarkMetaInfo(&sync_node));
 }
 
@@ -836,7 +835,7 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
         parent, index, title, url, create_time,
         GetBookmarkMetaInfo(sync_node).get());
     if (node)
-      SetBookmarkFavicon(sync_node, node, model, sync_client);
+      SetBookmarkFavicon(sync_node, node, sync_client);
   }
 
   return node;
@@ -847,7 +846,6 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
 void BookmarkChangeProcessor::SetBookmarkFavicon(
     const syncer::BaseNode* sync_node,
     const BookmarkNode* bookmark_node,
-    BookmarkModel* bookmark_model,
     syncer::SyncClient* sync_client) {
   const sync_pb::BookmarkSpecifics& specifics =
       sync_node->GetBookmarkSpecifics();
@@ -929,16 +927,14 @@ void BookmarkChangeProcessor::ApplyBookmarkFavicon(
     syncer::SyncClient* sync_client,
     const GURL& icon_url,
     const scoped_refptr<base::RefCountedMemory>& bitmap_data) {
-  history::HistoryService* history = sync_client->GetHistoryService();
   favicon::FaviconService* favicon_service = sync_client->GetFaviconService();
 
   // Some tests (that use FakeSyncClient) use no services.
-  if (history == nullptr)
+  if (favicon_service == nullptr)
     return;
 
-  DCHECK(favicon_service);
-  history->AddPageNoVisitForBookmark(bookmark_node->url(),
-                                     bookmark_node->GetTitle());
+  favicon_service->AddPageNoVisitForBookmark(bookmark_node->url(),
+                                             bookmark_node->GetTitle());
 
   GURL icon_url_to_use = icon_url;
 

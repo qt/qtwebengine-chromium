@@ -11,7 +11,7 @@
 
 #include "fxjs/js_define.h"
 
-class CJS_Report : public CJS_Object {
+class CJS_Report final : public CJS_Object {
  public:
   static int GetObjDefnID();
   static void DefineJSObjects(CFXJS_Engine* pEngine, FXJSOBJTYPE eObjType);
@@ -27,9 +27,9 @@ class CJS_Report : public CJS_Object {
   static const char kName[];
   static const JSMethodSpec MethodSpecs[];
 
-  CJS_Return save(CJS_Runtime* pRuntime,
+  CJS_Result save(CJS_Runtime* pRuntime,
                   const std::vector<v8::Local<v8::Value>>& params);
-  CJS_Return writeText(CJS_Runtime* pRuntime,
+  CJS_Result writeText(CJS_Runtime* pRuntime,
                        const std::vector<v8::Local<v8::Value>>& params);
 };
 

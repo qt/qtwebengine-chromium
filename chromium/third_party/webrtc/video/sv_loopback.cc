@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 #include "rtc_base/flags.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/stringencode.h"
 #include "system_wrappers/include/field_trial_default.h"
 #include "test/field_trial.h"
@@ -472,7 +473,7 @@ void Loopback() {
     screenshare_idx = 0;
   }
 
-  FakeNetworkPipe::Config pipe_config;
+  DefaultNetworkSimulationConfig pipe_config;
   pipe_config.loss_percent = flags::LossPercent();
   pipe_config.avg_burst_loss_length = flags::AvgBurstLossLength();
   pipe_config.link_capacity_kbps = flags::LinkCapacityKbps();
@@ -529,15 +530,15 @@ void Loopback() {
                               flags::GetCaptureDevice()};
   params.audio = {flags::FLAG_audio, flags::FLAG_audio_video_sync,
                   flags::FLAG_audio_dtx};
-  params.logging = {flags::FLAG_logs, flags::FLAG_rtc_event_log_name,
-                    flags::FLAG_rtp_dump_name, flags::FLAG_encoded_frame_path};
+  params.logging = {flags::FLAG_rtc_event_log_name, flags::FLAG_rtp_dump_name,
+                    flags::FLAG_encoded_frame_path};
   params.analyzer = {"dual_streams",
                      0.0,
                      0.0,
                      flags::DurationSecs(),
                      flags::OutputFilename(),
                      flags::GraphTitle()};
-  params.pipe = pipe_config;
+  params.config = pipe_config;
 
   params.screenshare[camera_idx].enabled = false;
   params.screenshare[screenshare_idx] = {
@@ -597,6 +598,8 @@ int main(int argc, char* argv[]) {
     rtc::FlagList::Print(nullptr, false);
     return 0;
   }
+
+  rtc::LogMessage::SetLogToStderr(webrtc::flags::FLAG_logs);
 
   webrtc::test::ValidateFieldTrialsStringOrDie(
       webrtc::flags::FLAG_force_fieldtrials);

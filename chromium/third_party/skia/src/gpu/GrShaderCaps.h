@@ -124,6 +124,19 @@ public:
     // required by the spec. SKSL will always emit full ints.
     bool incompleteShortIntPrecision() const { return fIncompleteShortIntPrecision; }
 
+    // If true, then conditions in for loops need "&& true" to work around driver bugs.
+    bool addAndTrueToLoopCondition() const { return fAddAndTrueToLoopCondition; }
+
+    // If true, then expressions such as "x && y" or "x || y" are rewritten as
+    // ternary to work around driver bugs.
+    bool unfoldShortCircuitAsTernary() const { return fUnfoldShortCircuitAsTernary; }
+
+    bool emulateAbsIntFunction() const { return fEmulateAbsIntFunction; }
+
+    bool rewriteDoWhileLoops() const { return fRewriteDoWhileLoops; }
+
+    bool removePowWithConstantExponent() const { return fRemovePowWithConstantExponent; }
+
     bool requiresLocalOutputColorForFBFetch() const { return fRequiresLocalOutputColorForFBFetch; }
 
     bool mustObfuscateUniformColor() const { return fMustObfuscateUniformColor; }
@@ -205,15 +218,6 @@ public:
     int maxCombinedSamplers() const { return fMaxCombinedSamplers; }
 
     /**
-     * In general using multiple texture units for image rendering seems to be a win at smaller
-     * sizes of dst rects and a loss at larger sizes. Dst rects above this pixel area threshold will
-     * not use multitexturing.
-     */
-    size_t disableImageMultitexturingDstRectAreaThreshold() const {
-        return fDisableImageMultitexturingDstRectAreaThreshold;
-    }
-
-    /**
      * Given a texture's config, this determines what swizzle must be appended to accesses to the
      * texture in generated shader code. Swizzling may be implemented in texture parameters or a
      * sampler rather than in the shader. In this case the returned swizzle will always be "rgba".
@@ -268,6 +272,11 @@ private:
     bool fMustGuardDivisionEvenAfterExplicitZeroCheck : 1;
     bool fCanUseFragCoord                             : 1;
     bool fIncompleteShortIntPrecision                 : 1;
+    bool fAddAndTrueToLoopCondition                   : 1;
+    bool fUnfoldShortCircuitAsTernary                 : 1;
+    bool fEmulateAbsIntFunction                       : 1;
+    bool fRewriteDoWhileLoops                         : 1;
+    bool fRemovePowWithConstantExponent               : 1;
 
     const char* fVersionDeclString;
 

@@ -28,10 +28,10 @@ CFWL_DateTimePicker* CXFA_FFDateTimeEdit::GetPickerWidget() {
   return static_cast<CFWL_DateTimePicker*>(m_pNormalWidget.get());
 }
 
-CFX_RectF CXFA_FFDateTimeEdit::GetBBox(uint32_t dwStatus, bool bDrawFocus) {
-  if (bDrawFocus)
+CFX_RectF CXFA_FFDateTimeEdit::GetBBox(uint32_t dwStatus, FocusOption focus) {
+  if (focus == kDrawFocus)
     return CFX_RectF();
-  return CXFA_FFWidget::GetBBox(dwStatus);
+  return CXFA_FFWidget::GetBBox(dwStatus, kDoNotDrawFocus);
 }
 
 bool CXFA_FFDateTimeEdit::PtInActiveRect(const CFX_PointF& point) {
@@ -184,7 +184,7 @@ void CXFA_FFDateTimeEdit::OnSelectChanged(CFWL_Widget* pWidget,
                                           int32_t iDay) {
   WideString wsPicture = m_pNode->GetPictureContent(XFA_VALUEPICTURE_Edit);
 
-  CXFA_LocaleValue date(XFA_VT_DATE, GetDoc()->GetXFADoc()->GetLocalMgr());
+  CXFA_LocaleValue date(XFA_VT_DATE, GetDoc()->GetXFADoc()->GetLocaleMgr());
   date.SetDate(CFX_DateTime(iYear, iMonth, iDay, 0, 0, 0, 0));
 
   WideString wsDate;

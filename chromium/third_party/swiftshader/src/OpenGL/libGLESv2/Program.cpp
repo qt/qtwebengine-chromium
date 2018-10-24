@@ -51,14 +51,6 @@ namespace es2
 			matrixStride = uniform.blockInfo.matrixStride;
 			isRowMajorMatrix = uniform.blockInfo.isRowMajorMatrix;
 		}
-		else
-		{
-			index = -1;
-			offset = -1;
-			arrayStride = -1;
-			matrixStride = -1;
-			isRowMajorMatrix = false;
-		}
 	}
 
 	Uniform::Uniform(const glsl::Uniform &uniform, const BlockInfo &blockInfo)
@@ -71,14 +63,6 @@ namespace es2
 			data = new unsigned char[bytes];
 			memset(data, 0, bytes);
 		}
-		else
-		{
-			data = nullptr;
-		}
-		dirty = true;
-
-		psRegisterIndex = -1;
-		vsRegisterIndex = -1;
 	}
 
 	Uniform::~Uniform()
@@ -368,24 +352,20 @@ namespace es2
 		return TEXTURE_2D;
 	}
 
-	bool Program::isUniformDefined(const std::string &name) const
+	Uniform *Program::getUniform(const std::string &name) const
 	{
 		unsigned int subscript = GL_INVALID_INDEX;
 		std::string baseName = es2::ParseUniformName(name, &subscript);
 
-		size_t numUniforms = uniformIndex.size();
-		for(size_t location = 0; location < numUniforms; location++)
+		for(size_t index = 0; index < uniforms.size(); index++)
 		{
-			const unsigned int index = uniformIndex[location].index;
-			if((uniformIndex[location].name == baseName) && ((index == GL_INVALID_INDEX) ||
-			   ((uniforms[index]->isArray() && uniformIndex[location].element == subscript) ||
-			    (subscript == GL_INVALID_INDEX))))
+			if(uniforms[index]->name == baseName)
 			{
-				return true;
+				return uniforms[index];
 			}
 		}
 
-		return false;
+		return nullptr;
 	}
 
 	GLint Program::getUniformLocation(const std::string &name) const
@@ -393,15 +373,26 @@ namespace es2
 		unsigned int subscript = GL_INVALID_INDEX;
 		std::string baseName = es2::ParseUniformName(name, &subscript);
 
-		size_t numUniforms = uniformIndex.size();
-		for(size_t location = 0; location < numUniforms; location++)
+		for(size_t location = 0; location < uniformIndex.size(); location++)
 		{
-			const unsigned int index = uniformIndex[location].index;
-			if((index != GL_INVALID_INDEX) && (uniformIndex[location].name == baseName) &&
-			   ((uniforms[index]->isArray() && uniformIndex[location].element == subscript) ||
-			    (subscript == GL_INVALID_INDEX)))
+			if(uniformIndex[location].name == baseName)
 			{
-				return (GLint)location;
+				const unsigned int index = uniformIndex[location].index;
+
+				if(index != GL_INVALID_INDEX)
+				{
+					if(subscript == GL_INVALID_INDEX)
+					{
+						return (GLint)location;
+					}
+					else if(uniforms[index]->isArray())
+					{
+						if(uniformIndex[location].element == subscript)
+						{
+							return (GLint)location;
+						}
+					}
+				}
 			}
 		}
 
@@ -493,20 +484,15 @@ namespace es2
 
 	void Program::bindUniformBlock(GLuint uniformBlockIndex, GLuint uniformBlockBinding)
 	{
-		if(uniformBlockIndex >= getActiveUniformBlockCount())
-		{
-			return error(GL_INVALID_VALUE);
-		}
+		ASSERT(uniformBlockIndex < getActiveUniformBlockCount());
 
 		uniformBlockBindings[uniformBlockIndex] = uniformBlockBinding;
 	}
 
 	GLuint Program::getUniformBlockBinding(GLuint uniformBlockIndex) const
 	{
-		if(uniformBlockIndex >= getActiveUniformBlockCount())
-		{
-			return error(GL_INVALID_VALUE, GL_INVALID_INDEX);
-		}
+		ASSERT(uniformBlockIndex < getActiveUniformBlockCount());
+
 		return uniformBlockBindings[uniformBlockIndex];
 	}
 
@@ -1714,9 +1700,26 @@ namespace es2
 			{
 				const glsl::ActiveUniformBlocks &activeUniformBlocks = shader->activeUniformBlocks;
 				ASSERT(static_cast<size_t>(uniform.blockId) < activeUniformBlocks.size());
-				blockIndex = getUniformBlockIndex(activeUniformBlocks[uniform.blockId].name);
+				const std::string &uniformBlockName = activeUniformBlocks[uniform.blockId].name;
+				blockIndex = getUniformBlockIndex(uniformBlockName);
 				ASSERT(blockIndex != GL_INVALID_INDEX);
+
+				if(activeUniformBlocks[uniform.blockId].dataSize > MAX_UNIFORM_BLOCK_SIZE)
+				{
+					if(shader->getType() == GL_VERTEX_SHADER)
+					{
+						appendToInfoLog("Vertex shader active uniform block (%s) exceeds GL_MAX_UNIFORM_BLOCK_SIZE (%d)", uniformBlockName.c_str(), MAX_UNIFORM_BLOCK_SIZE);
+						return false;
+					}
+					else if(shader->getType() == GL_FRAGMENT_SHADER)
+					{
+						appendToInfoLog("Fragment shader active uniform block (%s) exceeds GL_MAX_UNIFORM_BLOCK_SIZE (%d)", uniformBlockName.c_str(), MAX_UNIFORM_BLOCK_SIZE);
+						return false;
+					}
+					else UNREACHABLE(shader->getType());
+				}
 			}
+
 			if(!defineUniform(shader->getType(), uniform, Uniform::BlockInfo(uniform, blockIndex)))
 			{
 				return false;
@@ -1737,7 +1740,7 @@ namespace es2
 	bool Program::defineUniform(GLenum shader, const glsl::Uniform &glslUniform, const Uniform::BlockInfo& blockInfo)
 	{
 		if(IsSamplerUniform(glslUniform.type))
-	    {
+		{
 			int index = glslUniform.registerIndex;
 
 			do
@@ -1819,15 +1822,24 @@ namespace es2
 				index++;
 			}
 			while(index < glslUniform.registerIndex + static_cast<int>(glslUniform.arraySize));
-	    }
+		}
 
-		Uniform *uniform = 0;
-		GLint location = getUniformLocation(glslUniform.name);
+		Uniform *uniform = getUniform(glslUniform.name);
 
-		if(location >= 0)   // Previously defined, types must match
+		if(!uniform)
 		{
-			uniform = uniforms[uniformIndex[location].index];
+			uniform = new Uniform(glslUniform, blockInfo);
+			uniforms.push_back(uniform);
 
+			unsigned int index = (blockInfo.index == -1) ? static_cast<unsigned int>(uniforms.size() - 1) : GL_INVALID_INDEX;
+
+			for(int i = 0; i < uniform->size(); i++)
+			{
+				uniformIndex.push_back(UniformLocation(glslUniform.name, i, index));
+			}
+		}
+		else   // Previously defined, types must match
+		{
 			if(uniform->type != glslUniform.type)
 			{
 				appendToInfoLog("Types for uniform %s do not match between the vertex and fragment shader", uniform->name.c_str());
@@ -1845,15 +1857,6 @@ namespace es2
 				return false;
 			}
 		}
-		else
-		{
-			uniform = new Uniform(glslUniform, blockInfo);
-		}
-
-		if(!uniform)
-		{
-			return false;
-		}
 
 		if(shader == GL_VERTEX_SHADER)
 		{
@@ -1865,34 +1868,26 @@ namespace es2
 		}
 		else UNREACHABLE(shader);
 
-		if(!isUniformDefined(glslUniform.name))
+		if(uniform->blockInfo.index < 0)
 		{
-			uniforms.push_back(uniform);
-			unsigned int index = (blockInfo.index == -1) ? static_cast<unsigned int>(uniforms.size() - 1) : GL_INVALID_INDEX;
-
-			for(int i = 0; i < uniform->size(); i++)
+			if(shader == GL_VERTEX_SHADER)
 			{
-				uniformIndex.push_back(UniformLocation(glslUniform.name, i, index));
+				if(glslUniform.registerIndex + uniform->registerCount() > MAX_VERTEX_UNIFORM_VECTORS)
+				{
+					appendToInfoLog("Vertex shader active uniforms exceed GL_MAX_VERTEX_UNIFORM_VECTORS (%d)", MAX_VERTEX_UNIFORM_VECTORS);
+					return false;
+				}
 			}
-		}
-
-		if(shader == GL_VERTEX_SHADER)
-		{
-			if(glslUniform.registerIndex + uniform->registerCount() > MAX_VERTEX_UNIFORM_VECTORS)
+			else if(shader == GL_FRAGMENT_SHADER)
 			{
-				appendToInfoLog("Vertex shader active uniforms exceed GL_MAX_VERTEX_UNIFORM_VECTORS (%d)", MAX_VERTEX_UNIFORM_VECTORS);
-				return false;
+				if(glslUniform.registerIndex + uniform->registerCount() > MAX_FRAGMENT_UNIFORM_VECTORS)
+				{
+					appendToInfoLog("Fragment shader active uniforms exceed GL_MAX_FRAGMENT_UNIFORM_VECTORS (%d)", MAX_FRAGMENT_UNIFORM_VECTORS);
+					return false;
+				}
 			}
+			else UNREACHABLE(shader);
 		}
-		else if(shader == GL_FRAGMENT_SHADER)
-		{
-			if(glslUniform.registerIndex + uniform->registerCount() > MAX_FRAGMENT_UNIFORM_VECTORS)
-			{
-				appendToInfoLog("Fragment shader active uniforms exceed GL_MAX_FRAGMENT_UNIFORM_VECTORS (%d)", MAX_FRAGMENT_UNIFORM_VECTORS);
-				return false;
-			}
-		}
-		else UNREACHABLE(shader);
 
 		return true;
 	}
@@ -2870,10 +2865,7 @@ namespace es2
 
 	void Program::getActiveUniformBlockName(GLuint index, GLsizei bufSize, GLsizei *length, GLchar *name) const
 	{
-		if(index >= getActiveUniformBlockCount())
-		{
-			return error(GL_INVALID_VALUE);
-		}
+		ASSERT(index < getActiveUniformBlockCount());
 
 		const UniformBlock &uniformBlock = *uniformBlocks[index];
 

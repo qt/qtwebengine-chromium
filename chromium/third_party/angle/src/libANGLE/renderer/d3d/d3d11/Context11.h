@@ -12,11 +12,13 @@
 
 #include "libANGLE/renderer/ContextImpl.h"
 
+#include "libANGLE/renderer/d3d/ContextD3D.h"
+
 namespace rx
 {
 class Renderer11;
 
-class Context11 : public ContextImpl, public MultisampleTextureInitializer
+class Context11 : public ContextD3D, public MultisampleTextureInitializer
 {
   public:
     Context11(const gl::ContextState &state, Renderer11 *renderer);
@@ -147,24 +149,32 @@ class Context11 : public ContextImpl, public MultisampleTextureInitializer
     gl::Error memoryBarrier(const gl::Context *context, GLbitfield barriers) override;
     gl::Error memoryBarrierByRegion(const gl::Context *context, GLbitfield barriers) override;
 
-    gl::Error triggerDrawCallProgramRecompilation(const gl::Context *context,
-                                                  gl::PrimitiveMode drawMode);
+    angle::Result triggerDrawCallProgramRecompilation(const gl::Context *context,
+                                                      gl::PrimitiveMode drawMode);
 
-    gl::Error getIncompleteTexture(const gl::Context *context,
-                                   gl::TextureType type,
-                                   gl::Texture **textureOut);
+    angle::Result getIncompleteTexture(const gl::Context *context,
+                                       gl::TextureType type,
+                                       gl::Texture **textureOut);
 
     gl::Error initializeMultisampleTextureToBlack(const gl::Context *context,
                                                   gl::Texture *glTexture) override;
 
+    void handleError(HRESULT hr,
+                     const char *message,
+                     const char *file,
+                     const char *function,
+                     unsigned int line) override;
+
+    // TODO(jmadill): Remove this once refactor is complete. http://anglebug.com/2738
+    void handleError(const gl::Error &error);
+
   private:
-    gl::Error prepareForDrawCall(const gl::Context *context,
-                                 const gl::DrawCallParams &drawCallParams);
+    angle::Result prepareForDrawCall(const gl::Context *context,
+                                     const gl::DrawCallParams &drawCallParams);
 
     Renderer11 *mRenderer;
     IncompleteTextureSet mIncompleteTextures;
 };
-
 }  // namespace rx
 
 #endif  // LIBANGLE_RENDERER_D3D_D3D11_CONTEXT11_H_

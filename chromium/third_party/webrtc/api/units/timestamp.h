@@ -11,6 +11,10 @@
 #ifndef API_UNITS_TIMESTAMP_H_
 #define API_UNITS_TIMESTAMP_H_
 
+#ifdef UNIT_TEST
+#include <ostream>  // no-presubmit-check TODO(webrtc:8982)
+#endif              // UNIT_TEST
+
 #include <stdint.h>
 #include <limits>
 #include <string>
@@ -32,8 +36,26 @@ constexpr int64_t kMinusInfinityVal = std::numeric_limits<int64_t>::min();
 class Timestamp {
  public:
   Timestamp() = delete;
-  static Timestamp Infinity() {
+  static constexpr Timestamp Infinity() {
     return Timestamp(timestamp_impl::kPlusInfinityVal);
+  }
+  template <int64_t seconds>
+  static constexpr Timestamp Seconds() {
+    static_assert(seconds >= 0, "");
+    static_assert(seconds < timestamp_impl::kPlusInfinityVal / 1000000, "");
+    return Timestamp(seconds * 1000000);
+  }
+  template <int64_t ms>
+  static constexpr Timestamp Millis() {
+    static_assert(ms >= 0, "");
+    static_assert(ms < timestamp_impl::kPlusInfinityVal / 1000, "");
+    return Timestamp(ms * 1000);
+  }
+  template <int64_t us>
+  static constexpr Timestamp Micros() {
+    static_assert(us >= 0, "");
+    static_assert(us < timestamp_impl::kPlusInfinityVal, "");
+    return Timestamp(us);
   }
 
   template <
@@ -92,11 +114,13 @@ class Timestamp {
 
   template <typename T = int64_t>
   typename std::enable_if<std::is_integral<T>::value, T>::type seconds() const {
-    return rtc::dchecked_cast<T>((us() + 500000) / 1000000);
+    RTC_DCHECK(IsFinite());
+    return rtc::dchecked_cast<T>(UnsafeSeconds());
   }
   template <typename T = int64_t>
   typename std::enable_if<std::is_integral<T>::value, T>::type ms() const {
-    return rtc::dchecked_cast<T>((us() + 500) / 1000);
+    RTC_DCHECK(IsFinite());
+    return rtc::dchecked_cast<T>(UnsafeMillis());
   }
   template <typename T = int64_t>
   typename std::enable_if<std::is_integral<T>::value, T>::type us() const {
@@ -105,29 +129,35 @@ class Timestamp {
   }
 
   template <typename T>
-  typename std::enable_if<std::is_floating_point<T>::value, T>::type seconds()
-      const {
+  constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
+  seconds() const {
     return us<T>() * 1e-6;
   }
   template <typename T>
-  typename std::enable_if<std::is_floating_point<T>::value, T>::type ms()
-      const {
+  constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
+  ms() const {
     return us<T>() * 1e-3;
   }
   template <typename T>
-  typename std::enable_if<std::is_floating_point<T>::value, T>::type us()
-      const {
-    if (IsInfinite()) {
-      return std::numeric_limits<T>::infinity();
-    } else {
-      return microseconds_;
-    }
+  constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
+  us() const {
+    return IsInfinite() ? std::numeric_limits<T>::infinity() : microseconds_;
   }
 
-  bool IsInfinite() const {
+  constexpr int64_t seconds_or(int64_t fallback_value) const {
+    return IsFinite() ? UnsafeSeconds() : fallback_value;
+  }
+  constexpr int64_t ms_or(int64_t fallback_value) const {
+    return IsFinite() ? UnsafeMillis() : fallback_value;
+  }
+  constexpr int64_t us_or(int64_t fallback_value) const {
+    return IsFinite() ? microseconds_ : fallback_value;
+  }
+
+  constexpr bool IsInfinite() const {
     return microseconds_ == timestamp_impl::kPlusInfinityVal;
   }
-  bool IsFinite() const { return !IsInfinite(); }
+  constexpr bool IsFinite() const { return !IsInfinite(); }
   TimeDelta operator-(const Timestamp& other) const {
     return TimeDelta::us(us() - other.us());
   }
@@ -145,31 +175,45 @@ class Timestamp {
     microseconds_ += other.us();
     return *this;
   }
-  bool operator==(const Timestamp& other) const {
+  constexpr bool operator==(const Timestamp& other) const {
     return microseconds_ == other.microseconds_;
   }
-  bool operator!=(const Timestamp& other) const {
+  constexpr bool operator!=(const Timestamp& other) const {
     return microseconds_ != other.microseconds_;
   }
-  bool operator<=(const Timestamp& other) const {
+  constexpr bool operator<=(const Timestamp& other) const {
     return microseconds_ <= other.microseconds_;
   }
-  bool operator>=(const Timestamp& other) const {
+  constexpr bool operator>=(const Timestamp& other) const {
     return microseconds_ >= other.microseconds_;
   }
-  bool operator>(const Timestamp& other) const {
+  constexpr bool operator>(const Timestamp& other) const {
     return microseconds_ > other.microseconds_;
   }
-  bool operator<(const Timestamp& other) const {
+  constexpr bool operator<(const Timestamp& other) const {
     return microseconds_ < other.microseconds_;
   }
 
  private:
-  explicit Timestamp(int64_t us) : microseconds_(us) {}
+  explicit constexpr Timestamp(int64_t us) : microseconds_(us) {}
+  constexpr int64_t UnsafeSeconds() const {
+    return (microseconds_ + 500000) / 1000000;
+  }
+  constexpr int64_t UnsafeMillis() const {
+    return (microseconds_ + 500) / 1000;
+  }
   int64_t microseconds_;
 };
 
 std::string ToString(const Timestamp& value);
+
+#ifdef UNIT_TEST
+inline std::ostream& operator<<(  // no-presubmit-check TODO(webrtc:8982)
+    std::ostream& stream,         // no-presubmit-check TODO(webrtc:8982)
+    Timestamp value) {
+  return stream << ToString(value);
+}
+#endif  // UNIT_TEST
 
 }  // namespace webrtc
 

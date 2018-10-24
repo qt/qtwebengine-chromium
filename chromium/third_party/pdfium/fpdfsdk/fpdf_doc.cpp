@@ -121,14 +121,14 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDFBookmark_GetDest(FPDF_DOCUMENT document,
     return nullptr;
   CPDF_Bookmark bookmark(CPDFDictionaryFromFPDFBookmark(pDict));
   CPDF_Dest dest = bookmark.GetDest(pDoc);
-  if (dest.GetObject())
-    return FPDFDestFromCPDFArray(dest.GetObject());
+  if (dest.GetArray())
+    return FPDFDestFromCPDFArray(dest.GetArray());
   // If this bookmark is not directly associated with a dest, we try to get
   // action
   CPDF_Action action = bookmark.GetAction();
   if (!action.GetDict())
     return nullptr;
-  return FPDFDestFromCPDFArray(action.GetDest(pDoc).GetObject());
+  return FPDFDestFromCPDFArray(action.GetDest(pDoc).GetArray());
 }
 
 FPDF_EXPORT FPDF_ACTION FPDF_CALLCONV
@@ -167,7 +167,7 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDFAction_GetDest(FPDF_DOCUMENT document,
   if (!pDoc)
     return nullptr;
   CPDF_Action action(CPDFDictionaryFromFPDFAction(pDict));
-  return FPDFDestFromCPDFArray(action.GetDest(pDoc).GetObject());
+  return FPDFDestFromCPDFArray(action.GetDest(pDoc).GetArray());
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV
@@ -200,19 +200,6 @@ FPDFAction_GetURIPath(FPDF_DOCUMENT document,
   if (buffer && len <= buflen)
     memcpy(buffer, path.c_str(), len);
   return len;
-}
-
-FPDF_EXPORT unsigned long FPDF_CALLCONV
-FPDFDest_GetPageIndex(FPDF_DOCUMENT document, FPDF_DEST dest) {
-  if (!dest)
-    return 0;
-
-  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc)
-    return 0;
-
-  CPDF_Dest destination(CPDFArrayFromFPDFDest(dest));
-  return destination.GetPageIndexDeprecated(pDoc);
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFDest_GetDestPageIndex(FPDF_DOCUMENT document,
@@ -315,14 +302,14 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDFLink_GetDest(FPDF_DOCUMENT document,
   if (!pDoc)
     return nullptr;
   CPDF_Link link(CPDFDictionaryFromFPDFLink(pDict));
-  FPDF_DEST dest = FPDFDestFromCPDFArray(link.GetDest(pDoc).GetObject());
+  FPDF_DEST dest = FPDFDestFromCPDFArray(link.GetDest(pDoc).GetArray());
   if (dest)
     return dest;
   // If this link is not directly associated with a dest, we try to get action
   CPDF_Action action = link.GetAction();
   if (!action.GetDict())
     return nullptr;
-  return FPDFDestFromCPDFArray(action.GetDest(pDoc).GetObject());
+  return FPDFDestFromCPDFArray(action.GetDest(pDoc).GetArray());
 }
 
 FPDF_EXPORT FPDF_ACTION FPDF_CALLCONV FPDFLink_GetAction(FPDF_LINK pDict) {

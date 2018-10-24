@@ -22,6 +22,7 @@ String String::printf(const char* fmt, ...) {
     va_start(args, fmt);
     String result;
     result.vappendf(fmt, args);
+    va_end(args);
     return result;
 }
 
@@ -30,6 +31,17 @@ void String::appendf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     this->vappendf(fmt, args);
+    va_end(args);
+}
+
+void String::reset() {
+    this->clear();
+}
+
+int String::findLastOf(const char c) const {
+    // Rely on find_last_of and remap the output
+    size_t index = this->find_last_of(c);
+    return (index == std::string::npos ? -1 : index);
 }
 #endif
 
@@ -51,6 +63,7 @@ void String::vappendf(const char* fmt, va_list args) {
         VSNPRINTF(newBuffer.get(), size + 1, fmt, reuse);
         this->append(newBuffer.get(), size);
     }
+    va_end(reuse);
 }
 
 
@@ -210,10 +223,22 @@ String to_string(double value) {
 #endif
 #define MAX_DOUBLE_CHARS 25
     char buffer[MAX_DOUBLE_CHARS];
-    SkDEBUGCODE(int len = )SNPRINTF(buffer, sizeof(buffer), "%.17g", value);
+    int len = SNPRINTF(buffer, sizeof(buffer), "%.17g", value);
     SkASSERT(len < MAX_DOUBLE_CHARS);
+    bool needsDotZero = true;
+    for (int i = 0; i < len; ++i) {
+        char c = buffer[i];
+        if (c == ',') {
+            buffer[i] = '.';
+            needsDotZero = false;
+            break;
+        } else if (c == '.' || c == 'e') {
+            needsDotZero = false;
+            break;
+        }
+    }
     String result(buffer);
-    if (!strchr(buffer, '.') && !strchr(buffer, 'e')) {
+    if (needsDotZero) {
         result += ".0";
     }
     return result;

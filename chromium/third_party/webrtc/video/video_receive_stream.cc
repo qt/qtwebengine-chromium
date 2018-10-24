@@ -24,7 +24,6 @@
 #include "common_video/h264/profile_level_id.h"
 #include "common_video/include/incoming_video_stream.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
-#include "modules/rtp_rtcp/include/rtp_receiver.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/utility/include/process_thread.h"
 #include "modules/video_coding/frame_object.h"
@@ -203,8 +202,7 @@ void VideoReceiveStream::Start() {
     video_receiver_.RegisterExternalDecoder(decoder.decoder,
                                             decoder.payload_type);
     VideoCodec codec = CreateDecoderVideoCodec(decoder);
-    RTC_CHECK(rtp_video_stream_receiver_.AddReceiveCodec(codec,
-                                                         decoder.codec_params));
+    rtp_video_stream_receiver_.AddReceiveCodec(codec, decoder.codec_params);
     RTC_CHECK_EQ(VCM_OK, video_receiver_.RegisterReceiveCodec(
                              &codec, num_cpu_cores_, false));
   }
@@ -334,7 +332,7 @@ EncodedImageCallback::Result VideoReceiveStream::OnEncodedImage(
     }
   }
 
-  return Result(Result::OK, encoded_image._timeStamp);
+  return Result(Result::OK, encoded_image.Timestamp());
 }
 
 void VideoReceiveStream::SendNack(
@@ -371,24 +369,13 @@ int VideoReceiveStream::id() const {
 
 absl::optional<Syncable::Info> VideoReceiveStream::GetInfo() const {
   RTC_DCHECK_CALLED_SEQUENTIALLY(&module_process_sequence_checker_);
-  Syncable::Info info;
+  absl::optional<Syncable::Info> info =
+      rtp_video_stream_receiver_.GetSyncInfo();
 
-  RtpReceiver* rtp_receiver = rtp_video_stream_receiver_.GetRtpReceiver();
-  RTC_DCHECK(rtp_receiver);
-  if (!rtp_receiver->GetLatestTimestamps(
-          &info.latest_received_capture_timestamp,
-          &info.latest_receive_time_ms))
+  if (!info)
     return absl::nullopt;
 
-  RtpRtcp* rtp_rtcp = rtp_video_stream_receiver_.rtp_rtcp();
-  RTC_DCHECK(rtp_rtcp);
-  if (rtp_rtcp->RemoteNTP(&info.capture_time_ntp_secs,
-                          &info.capture_time_ntp_frac, nullptr, nullptr,
-                          &info.capture_time_source_clock) != 0) {
-    return absl::nullopt;
-  }
-
-  info.current_delay_ms = video_receiver_.Delay();
+  info->current_delay_ms = video_receiver_.Delay();
   return info;
 }
 

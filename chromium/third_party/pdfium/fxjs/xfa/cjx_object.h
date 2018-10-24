@@ -15,10 +15,11 @@
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
-#include "fxjs/cjx_define.h"
+#include "fxjs/jse_define.h"
 #include "third_party/base/optional.h"
 #include "third_party/base/span.h"
 #include "xfa/fxfa/fxfa_basic.h"
+#include "xfa/fxfa/parser/cxfa_measurement.h"
 
 class CFXJSE_Value;
 class CFX_V8;
@@ -30,7 +31,7 @@ class CXFA_Node;
 class CXFA_Object;
 struct XFA_MAPMODULEDATA;
 
-typedef CJS_Return (*CJX_MethodCall)(
+typedef CJS_Result (*CJX_MethodCall)(
     CJX_Object* obj,
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params);
@@ -58,7 +59,7 @@ class CJX_Object {
   explicit CJX_Object(CXFA_Object* obj);
   virtual ~CJX_Object();
 
-  JS_PROP(className);
+  JSE_PROP(className);
 
   CXFA_Document* GetDocument() const;
   CXFA_Object* GetXFAObject() const { return object_.Get(); }
@@ -70,7 +71,7 @@ class CJX_Object {
   CXFA_LayoutItem* GetLayoutItem() const { return layout_item_; }
 
   bool HasMethod(const WideString& func) const;
-  CJS_Return RunMethod(const WideString& func,
+  CJS_Result RunMethod(const WideString& func,
                        const std::vector<v8::Local<v8::Value>>& params);
 
   bool HasAttribute(XFA_Attribute eAttr);
@@ -221,7 +222,7 @@ class CJX_Object {
   void DefineMethods(pdfium::span<const CJX_MethodSpec> methods);
   void MoveBufferMapData(CXFA_Object* pSrcModule, CXFA_Object* pDstModule);
   void SetMapModuleString(void* pKey, const WideStringView& wsValue);
-  void ThrowException(const wchar_t* str, ...) const;
+  void ThrowException(const WideString& str) const;
 
  private:
   void Script_Boolean_DefaultValue(CFXJSE_Value* pValue,

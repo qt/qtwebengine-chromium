@@ -12,8 +12,8 @@
 
 #include "api/array_view.h"
 #include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_bitrate_allocator.h"
 #include "common_types.h"  // NOLINT(build/include)
-#include "common_video/include/video_bitrate_allocator.h"
 #include "modules/rtp_rtcp/mocks/mock_rtcp_bandwidth_observer.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
@@ -441,7 +441,7 @@ TEST_F(RtcpReceiverTest, InjectRrPacketWithTwoReportBlocks) {
 TEST_F(RtcpReceiverTest, InjectRrPacketsFromTwoRemoteSsrcs) {
   const uint32_t kSenderSsrc2 = 0x20304;
   const uint16_t kSequenceNumbers[] = {10, 12423};
-  const uint32_t kCumLost[] = {13, 555};
+  const int32_t kCumLost[] = {13, 555};
   const uint8_t kFracLost[] = {20, 11};
 
   rtcp::ReportBlock rb1;

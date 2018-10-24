@@ -180,7 +180,7 @@ private:
                 fragBuilder->codeAppendf("for (int i = 0; i < %d; i++) {",
                                          lightingFP.fDirectionalLights.count());
                 // TODO: modulate the contribution from each light based on the shadow map
-                fragBuilder->codeAppendf("    float NdotL = clamp(dot(normal, %s[i]), 0.0, 1.0);",
+                fragBuilder->codeAppendf("    float NdotL = saturate(dot(normal, %s[i]));",
                                          lightDirsUniName);
                 fragBuilder->codeAppendf("    result += %s[i]*diffuseColor.rgb*NdotL;",
                                          lightColorsUniName);
@@ -420,7 +420,9 @@ sk_sp<SkFlattenable> SkLightingShaderImpl::CreateProc(SkReadBuffer& buf) {
 
     // Discarding SkShader flattenable params
     bool hasLocalMatrix = buf.readBool();
-    SkAssertResult(!hasLocalMatrix);
+    if (hasLocalMatrix) {
+        return nullptr;
+    }
 
     sk_sp<SkLights> lights = SkLights::MakeFromBuffer(buf);
 

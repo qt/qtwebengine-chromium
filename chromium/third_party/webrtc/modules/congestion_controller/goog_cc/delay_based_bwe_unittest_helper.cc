@@ -88,6 +88,8 @@ bool RtpStream::Compare(const std::unique_ptr<RtpStream>& lhs,
 StreamGenerator::StreamGenerator(int capacity, int64_t time_now)
     : capacity_(capacity), prev_arrival_time_us_(time_now) {}
 
+StreamGenerator::~StreamGenerator() = default;
+
 // Add a new stream.
 void StreamGenerator::AddStream(RtpStream* stream) {
   streams_.push_back(std::unique_ptr<RtpStream>(stream));
@@ -148,7 +150,20 @@ int64_t StreamGenerator::GenerateFrame(std::vector<PacketFeedback>* packets,
 }  // namespace test
 
 DelayBasedBweTest::DelayBasedBweTest()
-    : clock_(100000000),
+    : field_trial(),
+      clock_(100000000),
+      acknowledged_bitrate_estimator_(
+          absl::make_unique<AcknowledgedBitrateEstimator>()),
+      bitrate_estimator_(new DelayBasedBwe(nullptr)),
+      stream_generator_(new test::StreamGenerator(1e6,  // Capacity.
+                                                  clock_.TimeInMicroseconds())),
+      arrival_time_offset_ms_(0),
+      first_update_(true) {}
+
+DelayBasedBweTest::DelayBasedBweTest(const std::string& field_trial_string)
+    : field_trial(
+          absl::make_unique<test::ScopedFieldTrials>(field_trial_string)),
+      clock_(100000000),
       acknowledged_bitrate_estimator_(
           absl::make_unique<AcknowledgedBitrateEstimator>()),
       bitrate_estimator_(new DelayBasedBwe(nullptr)),

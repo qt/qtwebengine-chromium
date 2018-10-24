@@ -51,8 +51,6 @@ public:
     void onDrawText      (const void*, size_t, SkScalar x, SkScalar y, const SkPaint&) override;
     void onDrawPosText   (const void*, size_t, const SkPoint[], const SkPaint&) override;
     void onDrawPosTextH  (const void*, size_t, const SkScalar[], SkScalar, const SkPaint&) override;
-    void onDrawTextOnPath(const void*, size_t,
-                          const SkPath&, const SkMatrix*, const SkPaint&) override;
     void onDrawTextRSXform(const void*, size_t,
                            const SkRSXform[], const SkRect*, const SkPaint&) override;
     void onDrawTextBlob(const SkTextBlob*, SkScalar, SkScalar, const SkPaint&) override;
@@ -73,8 +71,8 @@ public:
     void onDrawPatch(const SkPoint[12], const SkColor[4],
                      const SkPoint[4], SkBlendMode, const SkPaint&) override;
     void onDrawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) override;
-    void onDrawVerticesObject(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
-                              const SkPaint&) override;
+    void onDrawVerticesObject(const SkVertices*, const SkVertices::Bone bones[], int boneCount,
+                              SkBlendMode, const SkPaint&) override;
     void onDrawAtlas(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[],
                      int, SkBlendMode, const SkRect*, const SkPaint*) override;
     void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&) override;

@@ -78,7 +78,7 @@ class CPDF_Parser {
   const CPDF_Array* GetIDArray() const;
   CPDF_Dictionary* GetRoot() const;
 
-  CPDF_Dictionary* GetEncryptDict() const { return m_pEncryptDict.get(); }
+  const CPDF_Dictionary* GetEncryptDict() const;
 
   std::unique_ptr<CPDF_Object> ParseIndirectObject(uint32_t objnum);
 
@@ -90,7 +90,6 @@ class CPDF_Parser {
   CPDF_SecurityHandler* GetSecurityHandler() const {
     return m_pSecurityHandler.get();
   }
-  RetainPtr<IFX_SeekableReadStream> GetFileAccess() const;
   bool IsObjectFree(uint32_t objnum) const;
 
   int GetFileVersion() const { return m_FileVersion; }
@@ -109,36 +108,24 @@ class CPDF_Parser {
     return m_CrossRefTable.get();
   }
 
+  CPDF_SyntaxParser* GetSyntax() const { return m_pSyntax.get(); }
+
   void SetLinearizedHeader(std::unique_ptr<CPDF_LinearizedHeader> pLinearized);
 
  protected:
   using ObjectType = CPDF_CrossRefTable::ObjectType;
   using ObjectInfo = CPDF_CrossRefTable::ObjectInfo;
 
-  std::unique_ptr<CPDF_SyntaxParser> m_pSyntax;
-
   bool LoadCrossRefV4(FX_FILESIZE pos, bool bSkip);
   bool RebuildCrossRef();
 
- private:
-  friend class CPDF_DataAvail;
+  std::unique_ptr<CPDF_SyntaxParser> m_pSyntax;
 
-  enum class ParserState {
-    kDefault,
-    kComment,
-    kWhitespace,
-    kString,
-    kHexString,
-    kEscapedString,
-    kXref,
-    kObjNum,
-    kPostObjNum,
-    kGenNum,
-    kPostGenNum,
-    kTrailer,
-    kBeginObj,
-    kEndObj
-  };
+ private:
+  friend class cpdf_parser_ParseStartXRefWithHeaderOffset_Test;
+  friend class cpdf_parser_ParseStartXRef_Test;
+  friend class cpdf_parser_ParseLinearizedWithHeaderOffset_Test;
+  friend class CPDF_DataAvail;
 
   struct CrossRefObjData {
     uint32_t obj_num = 0;
@@ -158,7 +145,6 @@ class CPDF_Parser {
   Error LoadLinearizedMainXRefTable();
   const CPDF_ObjectStream* GetObjectStream(uint32_t object_number);
   std::unique_ptr<CPDF_LinearizedHeader> ParseLinearizedHeader();
-  void SetEncryptDictionary(const CPDF_Dictionary* pDict);
   void ShrinkObjectMap(uint32_t size);
   // A simple check whether the cross reference table matches with
   // the objects.
@@ -178,18 +164,17 @@ class CPDF_Parser {
 
   ObjectType GetObjectType(uint32_t objnum) const;
   ObjectType GetObjectTypeFromCrossRefStreamType(
-      int cross_ref_stream_type) const;
+      uint32_t cross_ref_stream_type) const;
 
   std::unique_ptr<ParsedObjectsHolder> m_pOwnedObjectsHolder;
   UnownedPtr<ParsedObjectsHolder> m_pObjectsHolder;
 
-  bool m_bHasParsed;
-  bool m_bXRefStream;
-  int m_FileVersion;
+  bool m_bHasParsed = false;
+  bool m_bXRefStream = false;
+  int m_FileVersion = 0;
   // m_CrossRefTable must be destroyed after m_pSecurityHandler due to the
   // ownership of the ID array data.
   std::unique_ptr<CPDF_CrossRefTable> m_CrossRefTable;
-  std::unique_ptr<CPDF_Dictionary> m_pEncryptDict;
   FX_FILESIZE m_LastXRefOffset;
   std::unique_ptr<CPDF_SecurityHandler> m_pSecurityHandler;
   ByteString m_Password;

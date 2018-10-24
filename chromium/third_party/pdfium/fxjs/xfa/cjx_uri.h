@@ -7,17 +7,18 @@
 #ifndef FXJS_XFA_CJX_URI_H_
 #define FXJS_XFA_CJX_URI_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_textnode.h"
 
 class CXFA_Uri;
 
-class CJX_Uri : public CJX_TextNode {
+class CJX_Uri final : public CJX_TextNode {
  public:
   explicit CJX_Uri(CXFA_Uri* node);
   ~CJX_Uri() override;
 
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_URI_H_

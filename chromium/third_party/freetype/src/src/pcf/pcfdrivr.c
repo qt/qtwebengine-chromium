@@ -63,6 +63,10 @@ THE SOFTWARE.
 #define FT_COMPONENT  trace_pcfdriver
 
 
+  /*
+   * This file uses X11 terminology for PCF data; an `encoding' in X11 speak
+   * is the same as a `character code' in FreeType speak.
+   */
   typedef struct  PCF_CMapRec_
   {
     FT_CMapRec    root;
@@ -119,11 +123,11 @@ THE SOFTWARE.
 
 
       mid  = ( min + max ) >> 1;
-      code = (FT_ULong)encodings[mid].enc;
+      code = encodings[mid].enc;
 
       if ( charcode == code )
       {
-        result = encodings[mid].glyph + 1;
+        result = encodings[mid].glyph;
         break;
       }
 
@@ -157,11 +161,11 @@ THE SOFTWARE.
 
 
       mid  = ( min + max ) >> 1;
-      code = (FT_ULong)encodings[mid].enc;
+      code = encodings[mid].enc;
 
       if ( charcode == code )
       {
-        result = encodings[mid].glyph + 1;
+        result = encodings[mid].glyph;
         goto Exit;
       }
 
@@ -174,8 +178,8 @@ THE SOFTWARE.
     charcode = 0;
     if ( min < cmap->num_encodings )
     {
-      charcode = (FT_ULong)encodings[min].enc;
-      result   = encodings[min].glyph + 1;
+      charcode = encodings[min].enc;
+      result   = encodings[min].glyph;
     }
 
   Exit:
@@ -187,6 +191,7 @@ THE SOFTWARE.
     }
     else
       *acharcode = (FT_UInt32)charcode;
+
     return result;
   }
 
@@ -511,9 +516,6 @@ THE SOFTWARE.
     }
 
     stream = face->root.stream;
-
-    if ( glyph_index > 0 )
-      glyph_index--;
 
     metric = face->metrics + glyph_index;
 

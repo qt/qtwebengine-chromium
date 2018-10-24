@@ -7,8 +7,6 @@
 
 #include "SlideDir.h"
 
-#ifdef SK_HAS_SKSG
-
 #include "SkAnimTimer.h"
 #include "SkCanvas.h"
 #include "SkCubicMap.h"
@@ -74,9 +72,11 @@ protected:
         return SkRect::MakeIWH(isize.width(), isize.height());
     }
 
-    void onRender(SkCanvas* canvas) const override {
+    void onRender(SkCanvas* canvas, const RenderContext* ctx) const override {
         SkAutoCanvasRestore acr(canvas, true);
         canvas->clipRect(SkRect::Make(fSlide->getDimensions()), true);
+
+        // TODO: commit the context?
         fSlide->draw(canvas);
     }
 
@@ -422,5 +422,3 @@ const SlideDir::Rec* SlideDir::findCell(float x, float y) const {
 
     return idx < fRecs.count() ? &fRecs[idx] : nullptr;
 }
-
-#endif // SK_HAS_SKSG

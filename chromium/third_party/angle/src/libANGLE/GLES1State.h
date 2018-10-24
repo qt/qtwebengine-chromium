@@ -148,6 +148,8 @@ class GLES1State final : angle::NonCopyable
     void setMatrixMode(MatrixType mode);
     MatrixType getMatrixMode() const;
 
+    GLint getCurrentMatrixStackDepth(GLenum param) const;
+
     void pushMatrix();
     void popMatrix();
 
@@ -160,7 +162,10 @@ class GLES1State final : angle::NonCopyable
     void loadMatrix(const angle::Mat4 &m);
     void multMatrix(const angle::Mat4 &m);
 
+    void setLogicOp(LogicalOperation opcodePacked);
+
     void setClientStateEnabled(ClientVertexArrayType clientState, bool enable);
+    void setTexCoordArrayEnabled(unsigned int unit, bool enable);
     bool isClientStateEnabled(ClientVertexArrayType clientState) const;
     bool isTexCoordArrayEnabled(unsigned int unit) const;
     bool isTextureTargetEnabled(unsigned int unit, const TextureType type) const;
@@ -188,6 +193,11 @@ class GLES1State final : angle::NonCopyable
 
     PointParameters &pointParameters();
     const PointParameters &pointParameters() const;
+
+    AttributesMask getVertexArraysAttributeMask() const;
+
+    void setHint(GLenum target, GLenum mode);
+    GLenum getHint(GLenum target);
 
   private:
     friend class State;

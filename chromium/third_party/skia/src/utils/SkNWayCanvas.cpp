@@ -281,14 +281,6 @@ void SkNWayCanvas::onDrawPosTextH(const void* text, size_t byteLength, const SkS
     }
 }
 
-void SkNWayCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
-                                    const SkMatrix* matrix, const SkPaint& paint) {
-    Iter iter(fList);
-    while (iter.next()) {
-        iter->drawTextOnPath(text, byteLength, path, matrix, paint);
-    }
-}
-
 void SkNWayCanvas::onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
                                      const SkRect* cull, const SkPaint& paint) {
     Iter iter(fList);
@@ -320,7 +312,7 @@ void SkNWayCanvas::onDrawDrawable(SkDrawable* drawable, const SkMatrix* matrix) 
     }
 }
 
-void SkNWayCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones,
+void SkNWayCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkVertices::Bone bones[],
                                         int boneCount, SkBlendMode bmode, const SkPaint& paint) {
     Iter iter(fList);
     while (iter.next()) {

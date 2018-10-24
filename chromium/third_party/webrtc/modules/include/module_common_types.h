@@ -29,12 +29,8 @@
 #include "rtc_base/deprecation.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/timeutils.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
-
-// TODO(nisse): Deprecated, use webrtc::VideoCodecType instead.
-using RtpVideoCodecTypes = VideoCodecType;
 
 struct WebRtcRTPHeader {
   RTPVideoHeader& video_header() { return video; }

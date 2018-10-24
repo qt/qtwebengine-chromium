@@ -13,10 +13,8 @@
 #include <vector>
 
 #include "core/fxcrt/fx_string.h"
-#include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "core/fxge/fx_dib.h"
-#include "fxbarcode/BC_Library.h"
 #include "third_party/base/optional.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/parser/cxfa_object.h"
@@ -450,8 +448,8 @@ class CXFA_Node : public CXFA_Object {
   bool CalculateImageAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
   float CalculateWidgetAutoHeight(float fHeightCalc);
   float CalculateWidgetAutoWidth(float fWidthCalc);
-  float GetWidthWithoutMargin(float fWidthCalc);
-  float GetHeightWithoutMargin(float fHeightCalc);
+  float GetWidthWithoutMargin(float fWidthCalc) const;
+  float GetHeightWithoutMargin(float fHeightCalc) const;
   void CalculateTextContentSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
   CFX_SizeF CalculateAccWidthAndHeight(CXFA_FFDoc* doc, float fWidth);
   void InitLayoutData();
@@ -460,8 +458,7 @@ class CXFA_Node : public CXFA_Object {
   void InsertListTextItem(CXFA_Node* pItems,
                           const WideString& wsText,
                           int32_t nIndex);
-  WideString FormatNumStr(const WideString& wsValue, LocaleIface* pLocale);
-  void GetItemLabel(const WideStringView& wsValue, WideString& wsLabel);
+  WideString GetItemLabel(const WideStringView& wsValue) const;
 
   std::pair<XFA_FFWidgetType, CXFA_Ui*> CreateChildUIAndValueNodesIfNeeded();
   void CreateValueNodeIfNeeded(CXFA_Value* value, CXFA_Node* pUIChild);

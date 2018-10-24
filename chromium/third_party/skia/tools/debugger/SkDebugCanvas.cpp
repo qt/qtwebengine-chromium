@@ -84,7 +84,7 @@ SkDebugCanvas::~SkDebugCanvas() {
 }
 
 void SkDebugCanvas::addDrawCommand(SkDrawCommand* command) {
-    fCommandVector.push(command);
+    fCommandVector.push_back(command);
 }
 
 void SkDebugCanvas::draw(SkCanvas* canvas) {
@@ -422,12 +422,6 @@ void SkDebugCanvas::onDrawText(const void* text, size_t byteLength, SkScalar x, 
     this->addDrawCommand(new SkDrawTextCommand(text, byteLength, x, y, paint));
 }
 
-void SkDebugCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
-                                     const SkMatrix* matrix, const SkPaint& paint) {
-    this->addDrawCommand(
-        new SkDrawTextOnPathCommand(text, byteLength, path, matrix, paint));
-}
-
 void SkDebugCanvas::onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
                                       const SkRect* cull, const SkPaint& paint) {
     this->addDrawCommand(new SkDrawTextRSXformCommand(text, byteLength, xform, cull, paint));
@@ -445,7 +439,7 @@ void SkDebugCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4
     this->addDrawCommand(new SkDrawPatchCommand(cubics, colors, texCoords, bmode, paint));
 }
 
-void SkDebugCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones,
+void SkDebugCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkVertices::Bone bones[],
                                          int boneCount, SkBlendMode bmode, const SkPaint& paint) {
     // TODO: ANIMATION NOT LOGGED
     this->addDrawCommand(new SkDrawVerticesCommand(sk_ref_sp(const_cast<SkVertices*>(vertices)),

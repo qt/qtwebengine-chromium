@@ -46,7 +46,7 @@ class CFXJSE_ResolveProcessor {
                         int32_t iCount);
   void SetCurStart(int32_t start) { m_iCurStart = start; }
 
-  CXFA_NodeHelper* GetNodeHelper() const { return m_pNodeHelper.get(); }
+  CXFA_NodeHelper* GetNodeHelper() { return m_pNodeHelper.get(); }
 
  private:
   bool ResolveForAttributeRs(CXFA_Object* curNode,
@@ -70,8 +70,8 @@ class CFXJSE_ResolveProcessor {
                          CFXJSE_ResolveNodeData& rnd);
   void FilterCondition(CFXJSE_ResolveNodeData& rnd, WideString wsCondition);
 
-  int32_t m_iCurStart;
-  std::unique_ptr<CXFA_NodeHelper> m_pNodeHelper;
+  int32_t m_iCurStart = 0;
+  const std::unique_ptr<CXFA_NodeHelper> m_pNodeHelper;
 };
 
 #endif  // FXJS_CFXJSE_RESOLVEPROCESSOR_H_

@@ -895,7 +895,7 @@ public:
 protected:
     unsigned generateGlyphCount(void) override;
     uint16_t generateCharToGlyph(SkUnichar uni) override;
-    void generateAdvance(SkGlyph* glyph) override;
+    bool generateAdvance(SkGlyph* glyph) override;
     void generateMetrics(SkGlyph* glyph) override;
     void generateImage(const SkGlyph& glyph) override;
     bool generatePath(SkGlyphID glyph, SkPath* path) override;
@@ -1146,7 +1146,7 @@ uint16_t SkScalerContext_Mac::generateCharToGlyph(SkUnichar uni) {
     UniChar theChar[2]; // UniChar is a UTF-16 16-bit code unit.
 
     // Get the glyph
-    size_t numUniChar = SkUTF16_FromUnichar(uni, theChar);
+    size_t numUniChar = SkUTF::ToUTF16(uni, theChar);
     SkASSERT(sizeof(CGGlyph) <= sizeof(uint16_t));
 
     // Undocumented behavior of CTFontGetGlyphsForCharacters with non-bmp code points:
@@ -1156,12 +1156,14 @@ uint16_t SkScalerContext_Mac::generateCharToGlyph(SkUnichar uni) {
     return cgGlyph[0];
 }
 
-void SkScalerContext_Mac::generateAdvance(SkGlyph* glyph) {
-    this->generateMetrics(glyph);
+bool SkScalerContext_Mac::generateAdvance(SkGlyph* glyph) {
+    return false;
 }
 
 void SkScalerContext_Mac::generateMetrics(SkGlyph* glyph) {
     AUTO_CG_LOCK();
+
+    glyph->fMaskFormat = fRec.fMaskFormat;
 
     const CGGlyph cgGlyph = (CGGlyph) glyph->getGlyphID();
     glyph->zeroMetrics();
@@ -2164,9 +2166,9 @@ int SkTypeface_Mac::onGetUPEM() const {
 }
 
 SkTypeface::LocalizedStrings* SkTypeface_Mac::onCreateFamilyNameIterator() const {
-    SkTypeface::LocalizedStrings* nameIter =
-            SkOTUtils::LocalizedStrings_NameTable::CreateForFamilyNames(*this);
-    if (nullptr == nameIter) {
+    sk_sp<SkTypeface::LocalizedStrings> nameIter =
+            SkOTUtils::LocalizedStrings_NameTable::MakeForFamilyNames(*this);
+    if (!nameIter) {
         CFStringRef cfLanguageRaw;
         UniqueCFRef<CFStringRef> cfFamilyName(
                 CTFontCopyLocalizedName(fFontRef.get(), kCTFontFamilyNameKey, &cfLanguageRaw));
@@ -2183,9 +2185,9 @@ SkTypeface::LocalizedStrings* SkTypeface_Mac::onCreateFamilyNameIterator() const
             CFStringToSkString(cfFamilyName.get(), &skFamilyName);
         }
 
-        nameIter = new SkOTUtils::LocalizedStrings_SingleName(skFamilyName, skLanguage);
+        nameIter = sk_make_sp<SkOTUtils::LocalizedStrings_SingleName>(skFamilyName, skLanguage);
     }
-    return nameIter;
+    return nameIter.release();
 }
 
 int SkTypeface_Mac::onGetTableTags(SkFontTableTag tags[]) const {
@@ -2366,7 +2368,7 @@ int SkTypeface_Mac::onCharsToGlyphs(const void* chars, Encoding encoding,
             src = utf16;
             for (int i = 0; i < glyphCount; ++i) {
                 SkUnichar uni = SkUTF8_NextUnichar(&utf8);
-                utf16 += SkUTF16_FromUnichar(uni, utf16);
+                utf16 += SkUTF::ToUTF16(uni, utf16);
             }
             srcCount = SkToInt(utf16 - src);
             break;
@@ -2375,7 +2377,7 @@ int SkTypeface_Mac::onCharsToGlyphs(const void* chars, Encoding encoding,
             src = reinterpret_cast<const UniChar*>(chars);
             int extra = 0;
             for (int i = 0; i < glyphCount; ++i) {
-                if (SkUTF16_IsHighSurrogate(src[i + extra])) {
+                if (SkUTF16_IsLeadingSurrogate(src[i + extra])) {
                     ++extra;
                 }
             }
@@ -2387,7 +2389,7 @@ int SkTypeface_Mac::onCharsToGlyphs(const void* chars, Encoding encoding,
             UniChar* utf16 = charStorage.reset(2 * glyphCount);
             src = utf16;
             for (int i = 0; i < glyphCount; ++i) {
-                utf16 += SkUTF16_FromUnichar(utf32[i], utf16);
+                utf16 += SkUTF::ToUTF16(utf32[i], utf16);
             }
             srcCount = SkToInt(utf16 - src);
             break;
@@ -2416,7 +2418,7 @@ int SkTypeface_Mac::onCharsToGlyphs(const void* chars, Encoding encoding,
         int extra = 0;
         for (int i = 0; i < glyphCount; ++i) {
             compactedGlyphs[i] = macGlyphs[i + extra];
-            if (SkUTF16_IsHighSurrogate(src[i + extra])) {
+            if (SkUTF16_IsLeadingSurrogate(src[i + extra])) {
                 ++extra;
             }
         }

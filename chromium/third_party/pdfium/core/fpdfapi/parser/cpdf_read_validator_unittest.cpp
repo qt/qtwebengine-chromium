@@ -8,8 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "core/fxcrt/cfx_memorystream.h"
-#include "core/fxcrt/fx_stream.h"
+#include "core/fxcrt/cfx_readonlymemorystream.h"
 #include "testing/fx_string_testhelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -21,7 +20,7 @@ std::pair<FX_FILESIZE, FX_FILESIZE> MakeRange(uint32_t start, uint32_t end) {
   return std::pair<FX_FILESIZE, FX_FILESIZE>(start, end);
 }
 
-class MockFileAvail : public CPDF_DataAvail::FileAvail {
+class MockFileAvail final : public CPDF_DataAvail::FileAvail {
  public:
   MockFileAvail() : available_range_(0, 0) {}
   ~MockFileAvail() override {}
@@ -43,7 +42,7 @@ class MockFileAvail : public CPDF_DataAvail::FileAvail {
   std::pair<FX_FILESIZE, FX_FILESIZE> available_range_;
 };
 
-class MockDownloadHints : public CPDF_DataAvail::DownloadHints {
+class MockDownloadHints final : public CPDF_DataAvail::DownloadHints {
  public:
   MockDownloadHints() : last_requested_range_(0, 0) {}
   ~MockDownloadHints() override {}
@@ -67,8 +66,7 @@ class MockDownloadHints : public CPDF_DataAvail::DownloadHints {
 
 TEST(CPDF_ReadValidatorTest, UnavailableData) {
   std::vector<uint8_t> test_data(kTestDataSize);
-  auto file = pdfium::MakeRetain<CFX_MemoryStream>(test_data.data(),
-                                                   test_data.size(), false);
+  auto file = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(test_data);
   MockFileAvail file_avail;
   auto validator = pdfium::MakeRetain<CPDF_ReadValidator>(file, &file_avail);
 
@@ -91,8 +89,7 @@ TEST(CPDF_ReadValidatorTest, UnavailableData) {
 
 TEST(CPDF_ReadValidatorTest, UnavailableDataWithHints) {
   std::vector<uint8_t> test_data(kTestDataSize);
-  auto file = pdfium::MakeRetain<CFX_MemoryStream>(test_data.data(),
-                                                   test_data.size(), false);
+  auto file = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(test_data);
   MockFileAvail file_avail;
   auto validator = pdfium::MakeRetain<CPDF_ReadValidator>(file, &file_avail);
 
@@ -147,8 +144,7 @@ TEST(CPDF_ReadValidatorTest, ReadError) {
 
 TEST(CPDF_ReadValidatorTest, IntOverflow) {
   std::vector<uint8_t> test_data(kTestDataSize);
-  auto file = pdfium::MakeRetain<CFX_MemoryStream>(test_data.data(),
-                                                   test_data.size(), false);
+  auto file = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(test_data);
   MockFileAvail file_avail;
   auto validator = pdfium::MakeRetain<CPDF_ReadValidator>(file, &file_avail);
 
@@ -246,8 +242,7 @@ TEST(CPDF_ReadValidatorTest, SessionReset) {
 
 TEST(CPDF_ReadValidatorTest, CheckDataRangeAndRequestIfUnavailable) {
   std::vector<uint8_t> test_data(kTestDataSize);
-  auto file = pdfium::MakeRetain<CFX_MemoryStream>(test_data.data(),
-                                                   test_data.size(), false);
+  auto file = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(test_data);
   MockFileAvail file_avail;
   auto validator = pdfium::MakeRetain<CPDF_ReadValidator>(file, &file_avail);
 

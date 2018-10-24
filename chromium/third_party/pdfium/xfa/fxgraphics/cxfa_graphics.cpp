@@ -135,23 +135,19 @@ void CXFA_Graphics::SetLineCap(CFX_GraphStateData::LineCap lineCap) {
 }
 
 void CXFA_Graphics::SetLineDash(float dashPhase,
-                                float* dashArray,
-                                int32_t dashCount) {
-  if (dashCount > 0 && !dashArray)
+                                const float* dashArray,
+                                size_t dashCount) {
+  ASSERT(dashArray);
+  ASSERT(dashCount);
+
+  if (m_type != FX_CONTEXT_Device || !m_renderDevice)
     return;
 
-  dashCount = dashCount < 0 ? 0 : dashCount;
-  if (m_type == FX_CONTEXT_Device && m_renderDevice) {
-    float scale = 1.0;
-    if (m_info.isActOnDash) {
-      scale = m_info.graphState.m_LineWidth;
-    }
-    m_info.graphState.m_DashPhase = dashPhase;
-    m_info.graphState.SetDashCount(dashCount);
-    for (int32_t i = 0; i < dashCount; i++) {
-      m_info.graphState.m_DashArray[i] = dashArray[i] * scale;
-    }
-  }
+  float scale = m_info.isActOnDash ? m_info.graphState.m_LineWidth : 1.0;
+  m_info.graphState.m_DashPhase = dashPhase;
+  m_info.graphState.SetDashCount(dashCount);
+  for (size_t i = 0; i < dashCount; i++)
+    m_info.graphState.m_DashArray[i] = dashArray[i] * scale;
 }
 
 void CXFA_Graphics::SetSolidLineDash() {
@@ -416,7 +412,7 @@ void CXFA_Graphics::FillPathWithShading(const CXFA_GEPath* path,
   }
 }
 
-void CXFA_Graphics::SetDIBitsWithMatrix(const RetainPtr<CFX_DIBSource>& source,
+void CXFA_Graphics::SetDIBitsWithMatrix(const RetainPtr<CFX_DIBBase>& source,
                                         const CFX_Matrix& matrix) {
   if (matrix.IsIdentity()) {
     m_renderDevice->SetDIBits(source, 0, 0);

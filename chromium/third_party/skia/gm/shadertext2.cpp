@@ -9,6 +9,7 @@
 #include "SkCanvas.h"
 #include "SkGradientShader.h"
 #include "SkPath.h"
+#include "SkTextOnPath.h"
 
 static void makebm(SkBitmap* bm, int w, int h) {
     bm->allocN32Pixels(w, h);
@@ -40,8 +41,7 @@ struct LabeledMatrix {
     const char* fLabel;
 };
 
-DEF_SIMPLE_GM_BG(shadertext2, canvas, 1800, 900,
-                 sk_tool_utils::color_to_565(0xFFDDDDDD)) {
+DEF_SIMPLE_GM_BG(shadertext2, canvas, 1800, 900, 0xFFDDDDDD) {
         constexpr char kText[] = "SKIA";
         constexpr int kTextLen = SK_ARRAY_COUNT(kText) - 1;
         constexpr int kPointSize = 55;
@@ -159,8 +159,8 @@ DEF_SIMPLE_GM_BG(shadertext2, canvas, 1800, 900,
 
                     canvas->save();
                         canvas->concat(matrices[m].fMatrix);
-                        canvas->drawTextOnPath(kText, kTextLen, path, nullptr, paint);
-                        canvas->drawTextOnPath(kText, kTextLen, path, nullptr, outlinePaint);
+                        SkDrawTextOnPath(kText, kTextLen, paint, path, nullptr, canvas);
+                        SkDrawTextOnPath(kText, kTextLen, outlinePaint, path, nullptr, canvas);
                     canvas->restore();
                     SkPaint stroke;
                     stroke.setStyle(SkPaint::kStroke_Style);

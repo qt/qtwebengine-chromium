@@ -128,7 +128,7 @@ angle::Result PixelBuffer::stageSubresourceUpdate(ContextVk *contextVk,
 
     uint8_t *stagingPointer = nullptr;
     bool newBufferAllocated = false;
-    uint32_t stagingOffset  = 0;
+    VkDeviceSize stagingOffset = 0;
     size_t allocationSize   = outputDepthPitch * extents.depth;
     ANGLE_TRY(mStagingBuffer.allocate(contextVk, allocationSize, &stagingPointer, &bufferHandle,
                                       &stagingOffset, &newBufferAllocated));
@@ -142,7 +142,7 @@ angle::Result PixelBuffer::stageSubresourceUpdate(ContextVk *contextVk,
 
     VkBufferImageCopy copy;
 
-    copy.bufferOffset                    = static_cast<VkDeviceSize>(stagingOffset);
+    copy.bufferOffset                    = stagingOffset;
     copy.bufferRowLength                 = extents.width;
     copy.bufferImageHeight               = extents.height;
     copy.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -199,7 +199,7 @@ angle::Result PixelBuffer::stageSubresourceUpdateFromFramebuffer(
 
     uint8_t *stagingPointer = nullptr;
     bool newBufferAllocated = false;
-    uint32_t stagingOffset  = 0;
+    VkDeviceSize stagingOffset = 0;
 
     // The destination is only one layer deep.
     size_t allocationSize = outputDepthPitch;
@@ -215,13 +215,10 @@ angle::Result PixelBuffer::stageSubresourceUpdateFromFramebuffer(
         pixelPackState.reverseRowOrder = !pixelPackState.reverseRowOrder;
     }
 
-    PackPixelsParams params;
-    params.area        = clippedRectangle;
-    params.format      = formatInfo.format;
-    params.type        = formatInfo.type;
-    params.outputPitch = static_cast<GLuint>(outputRowPitch);
-    params.packBuffer  = nullptr;
-    params.pack        = pixelPackState;
+    const angle::Format &copyFormat =
+        GetFormatFromFormatType(formatInfo.internalFormat, formatInfo.type);
+    PackPixelsParams params(clippedRectangle, copyFormat, static_cast<GLuint>(outputRowPitch),
+                            pixelPackState, nullptr, 0);
 
     // 2- copy the source image region to the pixel buffer using a cpu readback
     if (loadFunction.requiresConversion)
@@ -272,7 +269,7 @@ angle::Result PixelBuffer::allocate(ContextVk *contextVk,
                                     size_t sizeInBytes,
                                     uint8_t **ptrOut,
                                     VkBuffer *handleOut,
-                                    uint32_t *offsetOut,
+                                    VkDeviceSize *offsetOut,
                                     bool *newBufferAllocatedOut)
 {
     return mStagingBuffer.allocate(contextVk, sizeInBytes, ptrOut, handleOut, offsetOut,
@@ -348,13 +345,13 @@ angle::Result PixelBuffer::stageSubresourceUpdateAndGetData(ContextVk *contextVk
                                                             uint8_t **destData)
 {
     VkBuffer bufferHandle;
-    uint32_t stagingOffset  = 0;
+    VkDeviceSize stagingOffset = 0;
     bool newBufferAllocated = false;
     ANGLE_TRY(mStagingBuffer.allocate(contextVk, allocationSize, destData, &bufferHandle,
                                       &stagingOffset, &newBufferAllocated));
 
     VkBufferImageCopy copy;
-    copy.bufferOffset                    = static_cast<VkDeviceSize>(stagingOffset);
+    copy.bufferOffset                    = stagingOffset;
     copy.bufferRowLength                 = extents.width;
     copy.bufferImageHeight               = extents.height;
     copy.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -494,6 +491,7 @@ gl::Error TextureVk::setSubImage(const gl::Context *context,
                                  GLenum format,
                                  GLenum type,
                                  const gl::PixelUnpackState &unpack,
+                                 gl::Buffer *unpackBuffer,
                                  const uint8_t *pixels)
 {
     ContextVk *contextVk                 = vk::GetImpl(context);
@@ -672,8 +670,8 @@ gl::Error TextureVk::copySubTextureImpl(ContextVk *contextVk,
     GLuint destDataRowPitch   = sourceArea.width * destAngleFormat.pixelBytes;
 
     CopyImageCHROMIUM(sourceData, sourceDataRowPitch, sourceAngleFormat.pixelBytes,
-                      sourceAngleFormat.colorReadFunction, destData, destDataRowPitch,
-                      destAngleFormat.pixelBytes, destAngleFormat.colorWriteFunction,
+                      sourceAngleFormat.pixelReadFunction, destData, destDataRowPitch,
+                      destAngleFormat.pixelBytes, destAngleFormat.pixelWriteFunction,
                       destFormat.format, destFormat.componentType, sourceArea.width,
                       sourceArea.height, unpackFlipY, unpackPremultiplyAlpha,
                       unpackUnmultiplyAlpha);
@@ -782,12 +780,12 @@ angle::Result TextureVk::copyImageDataToBuffer(ContextVk *contextVk,
     // Allocate enough memory to copy the sourceArea region of the source texture into its pixel
     // buffer.
     VkBuffer copyBufferHandle;
-    uint32_t sourceCopyOffset = 0;
+    VkDeviceSize sourceCopyOffset = 0;
     ANGLE_TRY(mPixelBuffer.allocate(contextVk, sourceCopyAllocationSize, outDataPtr,
                                     &copyBufferHandle, &sourceCopyOffset, &newBufferAllocated));
 
     VkBufferImageCopy region;
-    region.bufferOffset                    = static_cast<VkDeviceSize>(sourceCopyOffset);
+    region.bufferOffset                    = sourceCopyOffset;
     region.bufferRowLength                 = imageSize.width;
     region.bufferImageHeight               = imageSize.height;
     region.imageExtent.width               = sourceArea.width;
@@ -910,7 +908,7 @@ angle::Result TextureVk::generateMipmapWithCPU(const gl::Context *context)
 
     VkBuffer copyBufferHandle;
     uint8_t *baseLevelBuffers;
-    uint32_t copyBaseOffset;
+    VkDeviceSize copyBaseOffset;
 
     // Allocate enough memory to copy every level 0 image (one for each layer of the texture).
     ANGLE_TRY(mPixelBuffer.allocate(contextVk, totalAllocationSize, &baseLevelBuffers,
@@ -919,7 +917,7 @@ angle::Result TextureVk::generateMipmapWithCPU(const gl::Context *context)
     // Do only one copy for all layers at once.
     VkBufferImageCopy region;
     region.bufferImageHeight               = baseLevelExtents.height;
-    region.bufferOffset                    = static_cast<VkDeviceSize>(copyBaseOffset);
+    region.bufferOffset                    = copyBaseOffset;
     region.bufferRowLength                 = baseLevelExtents.width;
     region.imageExtent.width               = baseLevelExtents.width;
     region.imageExtent.height              = baseLevelExtents.height;

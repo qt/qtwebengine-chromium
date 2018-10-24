@@ -9,6 +9,7 @@
 #include "SkBitmapController.h"
 #include "SkBitmapProcShader.h"
 #include "SkBitmapProvider.h"
+#include "SkColorSpacePriv.h"
 #include "SkColorSpaceXformSteps.h"
 #include "SkEmptyShader.h"
 #include "SkImage_Base.h"
@@ -241,6 +242,7 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
         inner = GrSimpleTextureEffect::Make(std::move(proxy), lmInverse, samplerState);
     }
     inner = GrColorSpaceXformEffect::Make(std::move(inner), texColorSpace.get(),
+                                          fImage->alphaType(),
                                           args.fDstColorSpaceInfo->colorSpace());
     if (isAlphaOnly) {
         return inner;
@@ -275,8 +277,7 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
     auto quality = rec.fPaint.getFilterQuality();
 
     SkBitmapProvider provider(fImage.get());
-    SkDefaultBitmapController controller;
-    SkBitmapController::State* state = controller.requestBitmap(provider, matrix, quality, alloc);
+    const auto* state = SkBitmapController::RequestBitmap(provider, matrix, quality, alloc);
     if (!state) {
         return false;
     }
@@ -403,9 +404,10 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
             if (!srcCS || info.colorType() == kAlpha_8_SkColorType) {
                 // We treat untagged images as sRGB.
                 // A8 images get their r,g,b from the paint color, so they're also sRGB.
-                srcCS = SkColorSpace::MakeSRGB().get();
+                srcCS = sk_srgb_singleton();
             }
-            alloc->make<SkColorSpaceXformSteps>(srcCS, kPremul_SkAlphaType, rec.fDstCS)
+            alloc->make<SkColorSpaceXformSteps>(srcCS     , kPremul_SkAlphaType,
+                                                rec.fDstCS, kPremul_SkAlphaType)
                 ->apply(p);
         }
 

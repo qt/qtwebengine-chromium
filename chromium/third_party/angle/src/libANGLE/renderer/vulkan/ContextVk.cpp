@@ -134,6 +134,10 @@ gl::Error ContextVk::initialize()
     ANGLE_TRY(mDynamicDescriptorPools[kDriverUniformsDescriptorSetIndex].init(
         this, driverUniformsPoolSize));
 
+    size_t minAlignment = static_cast<size_t>(
+        mRenderer->getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment);
+    mDriverUniformsBuffer.init(minAlignment, mRenderer);
+
     mPipelineDesc.reset(new vk::PipelineDesc());
     mPipelineDesc->initDefaults();
 
@@ -247,7 +251,7 @@ gl::Error ContextVk::setupDraw(const gl::Context *context,
         mTexturesDirty = false;
 
         // TODO(jmadill): Should probably merge this for loop with programVk's descriptor update.
-        for (size_t textureIndex : state.getActiveTexturesMask())
+        for (size_t textureIndex : programGL->getActiveSamplersMask())
         {
             TextureVk *textureVk = mActiveTextures[textureIndex];
             ANGLE_TRY(textureVk->ensureImageInitialized(this));
@@ -549,8 +553,10 @@ gl::Error ContextVk::syncState(const gl::Context *context, const gl::State::Dirt
                                                isViewportFlipEnabledForDrawFBO());
                 break;
             case gl::State::DIRTY_BIT_POLYGON_OFFSET_FILL_ENABLED:
+                mPipelineDesc->updatePolygonOffsetFillEnabled(glState.isPolygonOffsetFillEnabled());
                 break;
             case gl::State::DIRTY_BIT_POLYGON_OFFSET:
+                mPipelineDesc->updatePolygonOffset(glState.getRasterizerState());
                 break;
             case gl::State::DIRTY_BIT_RASTERIZER_DISCARD_ENABLED:
                 break;
@@ -888,13 +894,6 @@ const FeaturesVk &ContextVk::getFeatures() const
 
 angle::Result ContextVk::updateDriverUniforms(const gl::State &glState)
 {
-    if (!mDriverUniformsBuffer.valid())
-    {
-        size_t minAlignment = static_cast<size_t>(
-            mRenderer->getPhysicalDeviceProperties().limits.minUniformBufferOffsetAlignment);
-        mDriverUniformsBuffer.init(minAlignment, mRenderer);
-    }
-
     // Release any previously retained buffers.
     mDriverUniformsBuffer.releaseRetainedBuffers(mRenderer);
 
@@ -903,7 +902,7 @@ angle::Result ContextVk::updateDriverUniforms(const gl::State &glState)
     // Allocate a new region in the dynamic buffer.
     uint8_t *ptr            = nullptr;
     VkBuffer buffer         = VK_NULL_HANDLE;
-    uint32_t offset         = 0;
+    VkDeviceSize offset     = 0;
     bool newBufferAllocated = false;
     ANGLE_TRY(mDriverUniformsBuffer.allocate(this, sizeof(DriverUniforms), &ptr, &buffer, &offset,
                                              &newBufferAllocated));
@@ -972,27 +971,27 @@ void ContextVk::handleError(VkResult errorCode, const char *file, unsigned int l
 
 gl::Error ContextVk::updateActiveTextures(const gl::Context *context)
 {
-    const auto &completeTextures = mState.getState().getCompleteTextureCache();
-    const gl::Program *program   = mState.getState().getProgram();
+    const gl::State &glState   = mState.getState();
+    const gl::Program *program = glState.getProgram();
 
     mActiveTextures.fill(nullptr);
 
-    for (const gl::SamplerBinding &samplerBinding : program->getSamplerBindings())
+    const gl::ActiveTexturePointerArray &textures  = glState.getActiveTexturesCache();
+    const gl::ActiveTextureMask &activeTextures    = program->getActiveSamplersMask();
+    const gl::ActiveTextureTypeArray &textureTypes = program->getActiveSamplerTypes();
+
+    for (size_t textureUnit : activeTextures)
     {
-        ASSERT(!samplerBinding.unreferenced);
+        gl::Texture *texture        = textures[textureUnit];
+        gl::TextureType textureType = textureTypes[textureUnit];
 
-        for (GLuint textureUnit : samplerBinding.boundTextureUnits)
+        // Null textures represent incomplete textures.
+        if (texture == nullptr)
         {
-            gl::Texture *texture = completeTextures[textureUnit];
-
-            // Null textures represent incomplete textures.
-            if (texture == nullptr)
-            {
-                ANGLE_TRY(getIncompleteTexture(context, samplerBinding.textureType, &texture));
-            }
-
-            mActiveTextures[textureUnit] = vk::GetImpl(texture);
+            ANGLE_TRY(getIncompleteTexture(context, textureType, &texture));
         }
+
+        mActiveTextures[textureUnit] = vk::GetImpl(texture);
     }
 
     return gl::NoError();
@@ -1035,7 +1034,7 @@ angle::Result ContextVk::updateDefaultAttribute(size_t attribIndex)
 
     uint8_t *ptr;
     VkBuffer bufferHandle = VK_NULL_HANDLE;
-    uint32_t offset       = 0;
+    VkDeviceSize offset   = 0;
     ANGLE_TRY(
         defaultBuffer.allocate(this, kDefaultValueSize, &ptr, &bufferHandle, &offset, nullptr));
 
@@ -1050,7 +1049,8 @@ angle::Result ContextVk::updateDefaultAttribute(size_t attribIndex)
     ANGLE_TRY(defaultBuffer.flush(this));
 
     VertexArrayVk *vertexArrayVk = vk::GetImpl(glState.getVertexArray());
-    vertexArrayVk->updateDefaultAttrib(mRenderer, attribIndex, bufferHandle, offset);
+    vertexArrayVk->updateDefaultAttrib(mRenderer, attribIndex, bufferHandle,
+                                       static_cast<uint32_t>(offset));
     return angle::Result::Continue();
 }
 }  // namespace rx

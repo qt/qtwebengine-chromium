@@ -16,9 +16,9 @@
 #include "SkAnimTimer.h"
 #include "SkExecutor.h"
 #include "SkScan.h"
-#include "SkTouchGesture.h"
 #include "Slide.h"
 #include "StatsLayer.h"
+#include "TouchGesture.h"
 
 class SkCanvas;
 
@@ -31,6 +31,7 @@ public:
 
     void onBackendCreated() override;
     void onPaint(SkCanvas* canvas) override;
+    void onResize(int width, int height) override;
     bool onTouch(intptr_t owner, sk_app::Window::InputState state, float x, float y) override;
     bool onMouse(int x, int y, sk_app::Window::InputState state, uint32_t modifiers) override;
     void onUIStateChanged(const SkString& stateName, const SkString& stateValue) override;
@@ -106,10 +107,6 @@ private:
     SkMatrix computeMatrix();
     SkPoint mapEvent(float x, float y);
 
-    void resetExecutor() {
-        fExecutor = SkExecutor::MakeFIFOThreadPool(fThreadCnt == 0 ? fTileCnt : fThreadCnt);
-    }
-
     sk_app::Window*        fWindow;
 
     StatsLayer             fStatsLayer;
@@ -135,6 +132,7 @@ private:
     bool                   fZoomWindowFixed;
     SkPoint                fZoomWindowLocation;
     sk_sp<SkImage>         fLastImage;
+    bool                   fZoomUI;
 
     sk_app::Window::BackendType fBackendType;
 
@@ -156,7 +154,7 @@ private:
         kMouse,
     };
 
-    SkTouchGesture         fGesture;
+    TouchGesture           fGesture;
     GestureDevice          fGestureDevice;
 
     // identity unless the window initially scales the content to fit the screen.
@@ -171,10 +169,6 @@ private:
     SkPoint                fPerspectivePoints[4];
 
     SkTArray<std::function<void(void)>> fDeferredActions;
-
-    int fTileCnt;
-    int fThreadCnt;
-    std::unique_ptr<SkExecutor> fExecutor;
 
     SkPaint fPaint;
     SkPaintFields fPaintOverrides;

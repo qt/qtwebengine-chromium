@@ -18,12 +18,15 @@
 class CFX_WideTextBuf;
 class CXFA_Document;
 
-class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
+class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
  public:
   CFXJSE_FormCalcContext(v8::Isolate* pScriptIsolate,
                          CFXJSE_Context* pScriptContext,
                          CXFA_Document* pDoc);
   ~CFXJSE_FormCalcContext() override;
+
+  // CFXJSE_HostObject:
+  CFXJSE_FormCalcContext* AsFormCalcContext() override;
 
   static void Abs(CFXJSE_Value* pThis,
                   const ByteStringView& szFuncName,
@@ -95,31 +98,6 @@ class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
                       const ByteStringView& szFuncName,
                       CFXJSE_Arguments& args);
 
-  static bool IsIsoDateFormat(const char* pData,
-                              int32_t iLength,
-                              int32_t& iStyle,
-                              int32_t& iYear,
-                              int32_t& iMonth,
-                              int32_t& iDay);
-  static bool IsIsoTimeFormat(const char* pData,
-                              int32_t iLength,
-                              int32_t& iHour,
-                              int32_t& iMinute,
-                              int32_t& iSecond,
-                              int32_t& iMilliSecond,
-                              int32_t& iZoneHour,
-                              int32_t& iZoneMinute);
-  static bool IsIsoDateTimeFormat(const char* pData,
-                                  int32_t iLength,
-                                  int32_t& iYear,
-                                  int32_t& iMonth,
-                                  int32_t& iDay,
-                                  int32_t& iHour,
-                                  int32_t& iMinute,
-                                  int32_t& iSecond,
-                                  int32_t& iMillionSecond,
-                                  int32_t& iZoneHour,
-                                  int32_t& iZoneMinute);
   static ByteString Local2IsoDate(CFXJSE_Value* pThis,
                                   const ByteStringView& szDate,
                                   const ByteStringView& szFormat,
@@ -132,7 +110,6 @@ class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
                                   const ByteStringView& szTime,
                                   const ByteStringView& szFormat,
                                   const ByteStringView& szLocale);
-  static int32_t DateString2Num(const ByteStringView& szDateString);
   static ByteString GetLocalDateFormat(CFXJSE_Value* pThis,
                                        int32_t iStyle,
                                        const ByteStringView& szLocalStr,
@@ -152,7 +129,6 @@ class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
                                 const ByteStringView& szFormat,
                                 const ByteStringView& szLocale,
                                 bool bGM);
-  static void GetLocalTimeZone(int32_t& iHour, int32_t& iMin, int32_t& iSec);
 
   static void Apr(CFXJSE_Value* pThis,
                   const ByteStringView& szFuncName,
@@ -224,17 +200,9 @@ class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
   static void Decode(CFXJSE_Value* pThis,
                      const ByteStringView& szFuncName,
                      CFXJSE_Arguments& args);
-  static WideString DecodeURL(const WideString& wsURLString);
-  static WideString DecodeHTML(const WideString& wsHTMLString);
-  static WideString DecodeXML(const WideString& wsXMLString);
   static void Encode(CFXJSE_Value* pThis,
                      const ByteStringView& szFuncName,
                      CFXJSE_Arguments& args);
-  static WideString EncodeURL(const ByteString& szURLString);
-  static WideString EncodeHTML(const ByteString& szHTMLString);
-  static WideString EncodeXML(const ByteString& szXMLString);
-  static bool HTMLSTR2Code(const WideStringView& pData, uint32_t* iCode);
-  static bool HTMLCode2STR(uint32_t iCode, WideString* wsHTMLReserve);
   static void Format(CFXJSE_Value* pThis,
                      const ByteStringView& szFuncName,
                      CFXJSE_Arguments& args);
@@ -283,8 +251,6 @@ class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
   static void WordNum(CFXJSE_Value* pThis,
                       const ByteStringView& szFuncName,
                       CFXJSE_Arguments& args);
-  static ByteString TrillionUS(const ByteStringView& szData);
-  static ByteString WordUS(const ByteString& szData, int32_t iStyle);
 
   static void Get(CFXJSE_Value* pThis,
                   const ByteStringView& szFuncName,
@@ -377,11 +343,9 @@ class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
   static bool simpleValueCompare(CFXJSE_Value* pThis,
                                  CFXJSE_Value* firstValue,
                                  CFXJSE_Value* secondValue);
-  static void unfoldArgs(
+  static std::vector<std::unique_ptr<CFXJSE_Value>> unfoldArgs(
       CFXJSE_Value* pThis,
-      CFXJSE_Arguments& args,
-      std::vector<std::unique_ptr<CFXJSE_Value>>* resultValues,
-      int32_t iStart = 0);
+      CFXJSE_Arguments& args);
   static void GetObjectDefaultValue(CFXJSE_Value* pObjectValue,
                                     CFXJSE_Value* pDefaultValue);
   static bool SetObjectDefaultValue(CFXJSE_Value* pObjectValue,
@@ -435,7 +399,7 @@ class CFXJSE_FormCalcContext : public CFXJSE_HostObject {
                                          const WideString& exp) const;
   void ThrowArgumentMismatchException() const;
   void ThrowParamCountMismatchException(const WideString& method) const;
-  void ThrowException(const wchar_t* str, ...) const;
+  void ThrowException(const WideString& str) const;
 
   UnownedPtr<v8::Isolate> m_pIsolate;
   CFXJSE_Class* m_pFMClass;

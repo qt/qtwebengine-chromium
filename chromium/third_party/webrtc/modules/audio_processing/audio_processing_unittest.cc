@@ -28,6 +28,7 @@
 #include "modules/audio_processing/test/test_utils.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/fakeclock.h"
 #include "rtc_base/gtest_prod_util.h"
 #include "rtc_base/ignore_wundef.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -35,6 +36,7 @@
 #include "rtc_base/protobuf_utils.h"
 #include "rtc_base/refcountedobject.h"
 #include "rtc_base/swap_queue.h"
+#include "rtc_base/system/arch.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/event_wrapper.h"
@@ -176,23 +178,26 @@ bool FrameDataAreEqual(const AudioFrame& frame1, const AudioFrame& frame2) {
 }
 
 void EnableAllAPComponents(AudioProcessing* ap) {
+  AudioProcessing::Config apm_config = ap->GetConfig();
+  apm_config.echo_canceller.enabled = true;
 #if defined(WEBRTC_AUDIOPROC_FIXED_PROFILE)
-  EXPECT_NOERR(ap->echo_control_mobile()->Enable(true));
+  apm_config.echo_canceller.mobile_mode = true;
 
   EXPECT_NOERR(ap->gain_control()->set_mode(GainControl::kAdaptiveDigital));
   EXPECT_NOERR(ap->gain_control()->Enable(true));
 #elif defined(WEBRTC_AUDIOPROC_FLOAT_PROFILE)
+  apm_config.echo_canceller.mobile_mode = false;
   EXPECT_NOERR(ap->echo_cancellation()->enable_drift_compensation(true));
   EXPECT_NOERR(ap->echo_cancellation()->enable_metrics(true));
   EXPECT_NOERR(ap->echo_cancellation()->enable_delay_logging(true));
-  EXPECT_NOERR(ap->echo_cancellation()->Enable(true));
+  EXPECT_NOERR(ap->echo_cancellation()->set_suppression_level(
+      EchoCancellation::SuppressionLevel::kModerateSuppression));
 
   EXPECT_NOERR(ap->gain_control()->set_mode(GainControl::kAdaptiveAnalog));
   EXPECT_NOERR(ap->gain_control()->set_analog_level_limits(0, 255));
   EXPECT_NOERR(ap->gain_control()->Enable(true));
 #endif
 
-  AudioProcessing::Config apm_config;
   apm_config.high_pass_filter.enabled = true;
   ap->ApplyConfig(apm_config);
 
@@ -1729,6 +1734,7 @@ void ApmTest::ProcessDebugDump(const std::string& in_filename,
 }
 
 void ApmTest::VerifyDebugDumpTest(Format format) {
+  rtc::ScopedFakeClock fake_clock;
   const std::string in_filename = test::ResourcePath("ref03", "aecdump");
   std::string format_string;
   switch (format) {
@@ -2182,9 +2188,9 @@ TEST_F(ApmTest, Process) {
       // or generate a separate android reference.
 #if defined(WEBRTC_ANDROID)
       const int kHasVoiceCountOffset = 3;
-      const int kHasVoiceCountNear = 4;
+      const int kHasVoiceCountNear = 8;
       const int kMaxOutputAverageOffset = 9;
-      const int kMaxOutputAverageNear = 9;
+      const int kMaxOutputAverageNear = 26;
 #else
       const int kHasVoiceCountOffset = 0;
       const int kHasVoiceCountNear = kIntNear;

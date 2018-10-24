@@ -74,7 +74,6 @@ namespace SkRecords {
     M(DrawPosText)                                                  \
     M(DrawPosTextH)                                                 \
     M(DrawText)                                                     \
-    M(DrawTextOnPath)                                               \
     M(DrawTextRSXform)                                              \
     M(DrawRRect)                                                    \
     M(DrawRect)                                                     \
@@ -314,12 +313,6 @@ RECORD(DrawTextBlob, kDraw_Tag|kHasText_Tag|kHasPaint_Tag,
         sk_sp<const SkTextBlob> blob;
         SkScalar x;
         SkScalar y);
-RECORD(DrawTextOnPath, kDraw_Tag|kHasText_Tag|kHasPaint_Tag,
-        SkPaint paint;
-        PODArray<char> text;
-        size_t byteLength;
-        PreCachedPath path;
-        TypedMatrix matrix);
 RECORD(DrawTextRSXform, kDraw_Tag|kHasText_Tag|kHasPaint_Tag,
         SkPaint paint;
         PODArray<char> text;
@@ -344,7 +337,7 @@ RECORD(DrawAtlas, kDraw_Tag|kHasImage_Tag|kHasPaint_Tag,
 RECORD(DrawVertices, kDraw_Tag|kHasPaint_Tag,
         SkPaint paint;
         sk_sp<SkVertices> vertices;
-        PODArray<SkMatrix> bones;
+        PODArray<SkVertices::Bone> bones;
         int boneCount;
         SkBlendMode bmode);
 RECORD(DrawShadowRec, kDraw_Tag,

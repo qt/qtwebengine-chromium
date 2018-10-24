@@ -26,6 +26,7 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_annotlist.h"
+#include "core/fxcrt/fx_extension.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/fpdf_formfill.h"
 #include "third_party/base/logging.h"
@@ -35,12 +36,6 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #endif  // PDF_ENABLE_XFA
-
-#if _FX_OS_ == _FX_OS_ANDROID_
-#include <time.h>
-#else
-#include <ctime>
-#endif
 
 namespace {
 
@@ -166,7 +161,7 @@ FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV FPDF_CreateNewDocument() {
   time_t currentTime;
   ByteString DateStr;
   if (FSDK_IsSandBoxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS)) {
-    if (time(&currentTime) != -1) {
+    if (FXSYS_time(&currentTime) != -1) {
       tm* pTM = localtime(&currentTime);
       if (pTM) {
         DateStr = ByteString::Format(
@@ -846,4 +841,31 @@ FPDFFormObj_GetObject(FPDF_PAGEOBJECT form_object, unsigned long index) {
 
   return FPDFPageObjectFromCPDFPageObject(
       pObjectList->GetPageObjectByIndex(index));
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFFormObj_GetMatrix(FPDF_PAGEOBJECT form_object,
+                      double* a,
+                      double* b,
+                      double* c,
+                      double* d,
+                      double* e,
+                      double* f) {
+  if (!form_object || !a || !b || !c || !d || !e || !f)
+    return false;
+
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(form_object);
+  CPDF_FormObject* pFormObj = pPageObj->AsForm();
+  if (!pFormObj)
+    return false;
+
+  const CFX_Matrix& matrix = pFormObj->form_matrix();
+  *a = matrix.a;
+  *b = matrix.b;
+  *c = matrix.c;
+  *d = matrix.d;
+  *e = matrix.e;
+  *f = matrix.f;
+
+  return true;
 }

@@ -10,6 +10,7 @@
 #include "SkCanvas.h"
 #include "SkGradientShader.h"
 #include "SkPath.h"
+#include "SkTextOnPath.h"
 
 namespace skiagm {
 
@@ -89,7 +90,7 @@ constexpr GradMaker gGradMakers[] = {
 class ShaderTextGM : public GM {
 public:
     ShaderTextGM() {
-        this->setBGColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
+        this->setBGColor(0xFFDDDDDD);
     }
 
 protected:
@@ -175,7 +176,7 @@ protected:
             ++i;
             canvas->translate(SkIntToScalar((i / testsPerCol) * colWidth),
                               SkIntToScalar((i % testsPerCol) * rowHeight));
-            canvas->drawTextOnPath(text, textLen, path, nullptr, paint);
+            SkDrawTextOnPath(text, textLen, paint, path, nullptr, canvas);
             canvas->restore();
         }
         canvas->restore();

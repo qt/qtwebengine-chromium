@@ -22,6 +22,7 @@
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fpdftext/cpdf_textpage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/fx_font.h"
@@ -93,7 +94,7 @@ CPDF_Dictionary* LoadFontDesc(CPDF_Document* pDoc,
   pFontDesc->SetNewFor<CPDF_Number>("StemV", pFont->IsBold() ? 120 : 70);
 
   CPDF_Stream* pStream = pDoc->NewIndirect<CPDF_Stream>();
-  pStream->SetData(data, size);
+  pStream->SetData({data, size});
   // TODO(npm): Lengths for Type1 fonts.
   if (font_type == FPDF_FONT_TRUETYPE) {
     pStream->GetDict()->SetNewFor<CPDF_Number>("Length1",
@@ -255,7 +256,7 @@ CPDF_Stream* LoadUnicode(CPDF_Document* pDoc,
   buffer << ToUnicodeEnd;
   // TODO(npm): Encrypt / Compress?
   CPDF_Stream* stream = pDoc->NewIndirect<CPDF_Stream>();
-  stream->SetData(&buffer);
+  stream->SetDataFromStringstream(&buffer);
   return stream;
 }
 
@@ -485,7 +486,7 @@ FPDF_EXPORT FPDF_FONT FPDF_CALLCONV FPDFText_LoadFont(FPDF_DOCUMENT document,
   // TODO(npm): Maybe use FT_Get_X11_Font_Format to check format? Otherwise, we
   // are allowing giving any font that can be loaded on freetype and setting it
   // as any font type.
-  if (!pFont->LoadEmbedded(data, size))
+  if (!pFont->LoadEmbedded({data, size}))
     return nullptr;
 
   return FPDFFontFromCPDFFont(
@@ -540,6 +541,45 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFText_GetMatrix(FPDF_PAGEOBJECT text,
 FPDF_EXPORT double FPDF_CALLCONV FPDFTextObj_GetFontSize(FPDF_PAGEOBJECT text) {
   CPDF_TextObject* pTextObj = CPDFTextObjectFromFPDFPageObject(text);
   return pTextObj ? pTextObj->GetFontSize() : 0;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFTextObj_GetFontName(FPDF_PAGEOBJECT text,
+                        void* buffer,
+                        unsigned long length) {
+  CPDF_TextObject* pTextObj = CPDFTextObjectFromFPDFPageObject(text);
+  if (!pTextObj)
+    return 0;
+
+  CPDF_Font* pPdfFont = pTextObj->GetFont();
+  if (!pPdfFont)
+    return 0;
+
+  CFX_Font* pFont = pPdfFont->GetFont();
+  ASSERT(pFont);
+
+  ByteString name = pFont->GetFamilyName();
+  unsigned long dwStringLen = name.GetLength() + 1;
+  if (buffer && length >= dwStringLen)
+    memcpy(buffer, name.c_str(), dwStringLen);
+  return dwStringLen;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFTextObj_GetText(FPDF_PAGEOBJECT text_object,
+                    FPDF_TEXTPAGE text_page,
+                    void* buffer,
+                    unsigned long length) {
+  CPDF_TextObject* pTextObj = CPDFTextObjectFromFPDFPageObject(text_object);
+  if (!pTextObj)
+    return 0;
+
+  CPDF_TextPage* pTextPage = CPDFTextPageFromFPDFTextPage(text_page);
+  if (!pTextPage)
+    return 0;
+
+  WideString text = pTextPage->GetTextByObject(pTextObj);
+  return Utf16EncodeMaybeCopyAndReturnLength(text, buffer, length);
 }
 
 FPDF_EXPORT void FPDF_CALLCONV FPDFFont_Close(FPDF_FONT font) {

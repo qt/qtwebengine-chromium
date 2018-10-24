@@ -1532,9 +1532,9 @@ static int tile_worker_hook(void *arg1, void *arg2) {
 
 // sorts in descending order
 static int compare_tile_buffers(const void *a, const void *b) {
-  const TileBuffer *const buf1 = (const TileBuffer *)a;
-  const TileBuffer *const buf2 = (const TileBuffer *)b;
-  return (int)((int64_t)buf2->size - buf1->size);
+  const TileBuffer *const buf_a = (const TileBuffer *)a;
+  const TileBuffer *const buf_b = (const TileBuffer *)b;
+  return (buf_a->size < buf_b->size) - (buf_a->size > buf_b->size);
 }
 
 static const uint8_t *decode_tiles_mt(VP9Decoder *pbi, const uint8_t *data,
@@ -1730,6 +1730,22 @@ static void read_bitdepth_colorspace_sampling(VP9_COMMON *cm,
   }
 }
 
+static INLINE void flush_all_fb_on_key(VP9_COMMON *cm) {
+  if (cm->frame_type == KEY_FRAME && cm->current_video_frame > 0) {
+    RefCntBuffer *const frame_bufs = cm->buffer_pool->frame_bufs;
+    BufferPool *const pool = cm->buffer_pool;
+    int i;
+    for (i = 0; i < FRAME_BUFFERS; ++i) {
+      if (i == cm->new_fb_idx) continue;
+      frame_bufs[i].ref_count = 0;
+      if (!frame_bufs[i].released) {
+        pool->release_fb_cb(pool->cb_priv, &frame_bufs[i].raw_frame_buffer);
+        frame_bufs[i].released = 1;
+      }
+    }
+  }
+}
+
 static size_t read_uncompressed_header(VP9Decoder *pbi,
                                        struct vpx_read_bit_buffer *rb) {
   VP9_COMMON *const cm = &pbi->common;
@@ -1794,6 +1810,7 @@ static size_t read_uncompressed_header(VP9Decoder *pbi,
     setup_frame_size(cm, rb);
     if (pbi->need_resync) {
       memset(&cm->ref_frame_map, -1, sizeof(cm->ref_frame_map));
+      flush_all_fb_on_key(cm);
       pbi->need_resync = 0;
     }
   } else {

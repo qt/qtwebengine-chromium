@@ -35,7 +35,7 @@ class CXFA_FFWidget;
 class CXFA_FFWidgetHandler;
 #endif  // PDF_ENABLE_XFA
 
-class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
+class CPDFSDK_Widget final : public CPDFSDK_BAAnnot {
  public:
 #ifdef PDF_ENABLE_XFA
   CXFA_FFWidget* GetMixXFAWidget() const;
@@ -81,10 +81,10 @@ class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
   int GetMaxLen() const;
   WideString GetAlternateName() const;
 
-  void SetCheck(bool bChecked, bool bNotify);
-  void SetValue(const WideString& sValue, bool bNotify);
-  void SetOptionSelection(int index, bool bSelected, bool bNotify);
-  void ClearSelection(bool bNotify);
+  void SetCheck(bool bChecked, NotificationOption notify);
+  void SetValue(const WideString& sValue, NotificationOption notify);
+  void SetOptionSelection(int index, bool bSelected, NotificationOption notify);
+  void ClearSelection(NotificationOption notify);
   void SetTopVisibleIndex(int index);
 
 #ifdef PDF_ENABLE_XFA
@@ -143,5 +143,11 @@ class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
   mutable UnownedPtr<CXFA_FFWidgetHandler> m_pWidgetHandler;
 #endif  // PDF_ENABLE_XFA
 };
+
+inline CPDFSDK_Widget* ToCPDFSDKWidget(CPDFSDK_Annot* pAnnot) {
+  return pAnnot && pAnnot->GetAnnotSubtype() == CPDF_Annot::Subtype::WIDGET
+             ? static_cast<CPDFSDK_Widget*>(pAnnot)
+             : nullptr;
+}
 
 #endif  // FPDFSDK_CPDFSDK_WIDGET_H_

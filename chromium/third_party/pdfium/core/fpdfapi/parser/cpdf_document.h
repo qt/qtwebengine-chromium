@@ -90,7 +90,7 @@ class CPDF_Document : public Observable<CPDF_Document>,
   // |pFontDict| must not be null.
   CPDF_Font* LoadFont(CPDF_Dictionary* pFontDict);
   CPDF_ColorSpace* LoadColorSpace(const CPDF_Object* pCSObj,
-                                  const CPDF_Dictionary* pResources = nullptr);
+                                  const CPDF_Dictionary* pResources);
 
   CPDF_Pattern* LoadPattern(CPDF_Object* pObj,
                             bool bShading,
@@ -111,7 +111,6 @@ class CPDF_Document : public Observable<CPDF_Document>,
       const char* password);
 
   void LoadPages();
-
   void CreateNewDoc();
   CPDF_Dictionary* CreateNewPage(int iPage);
 
@@ -119,14 +118,10 @@ class CPDF_Document : public Observable<CPDF_Document>,
   uint32_t GetParsedPageCountForTesting() { return m_ParsedPageCount; }
 
   CPDF_Font* AddStandardFont(const char* font, CPDF_FontEncoding* pEncoding);
-  CPDF_Font* AddFont(CFX_Font* pFont, int charset, bool bVert);
+  CPDF_Font* AddFont(CFX_Font* pFont, int charset);
+
 #if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  CPDF_Font* AddWindowsFont(LOGFONTA* pLogFont,
-                            bool bVert,
-                            bool bTranslateName = false);
-  CPDF_Font* AddWindowsFont(LOGFONTW* pLogFont,
-                            bool bVert,
-                            bool bTranslateName = false);
+  CPDF_Font* AddWindowsFont(LOGFONTA* pLogFont);
 #endif
 
  protected:
@@ -138,16 +133,14 @@ class CPDF_Document : public Observable<CPDF_Document>,
                     uint32_t* skip_count,
                     uint32_t objnum,
                     int* index,
-                    int level = 0) const;
+                    int level) const;
   std::unique_ptr<CPDF_Object> ParseIndirectObject(uint32_t objnum) override;
-  void LoadDocInternal();
   size_t CalculateEncodingDict(int charset, CPDF_Dictionary* pBaseDict);
   const CPDF_Dictionary* GetPagesDict() const;
   CPDF_Dictionary* GetPagesDict();
   CPDF_Dictionary* ProcessbCJK(
       CPDF_Dictionary* pBaseDict,
       int charset,
-      bool bVert,
       ByteString basefont,
       std::function<void(wchar_t, wchar_t, CPDF_Array*)> Insert);
   bool InsertDeletePDFPage(CPDF_Dictionary* pPages,

@@ -23,7 +23,7 @@ class CPDF_ImageLoader {
   CPDF_ImageLoader();
   ~CPDF_ImageLoader();
 
-  bool Start(const CPDF_ImageObject* pImage,
+  bool Start(CPDF_ImageObject* pImage,
              CPDF_PageRenderCache* pCache,
              bool bStdCS,
              uint32_t GroupFamily,
@@ -31,8 +31,8 @@ class CPDF_ImageLoader {
              CPDF_RenderStatus* pRenderStatus);
   bool Continue(PauseIndicatorIface* pPause, CPDF_RenderStatus* pRenderStatus);
 
-  RetainPtr<CFX_DIBSource> m_pBitmap;
-  RetainPtr<CFX_DIBSource> m_pMask;
+  RetainPtr<CFX_DIBBase> m_pBitmap;
+  RetainPtr<CFX_DIBBase> m_pMask;
   uint32_t m_MatteColor;
   bool m_bCached;
 

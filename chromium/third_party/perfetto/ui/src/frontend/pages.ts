@@ -14,26 +14,51 @@
 
 import * as m from 'mithril';
 
-const Nav = {
+import {globals} from './globals';
+import {Sidebar} from './sidebar';
+import {Topbar} from './topbar';
+
+function renderPermalink(): m.Children {
+  if (!globals.state.permalink.requestId) return null;
+  const hash = globals.state.permalink.hash;
+  const url = `${self.location.origin}#!/?s=${hash}`;
+  return m(
+      '.alert-permalink',
+      hash ? ['Permalink: ', m(`a[href=${url}]`, url)] : 'Uploading...');
+}
+
+const Alerts: m.Component = {
   view() {
-    return m(
-        'nav',
-        m('ul',
-          m('li', m('a[href=/]', {oncreate: m.route.link}, 'Home')),
-          m('li', m('a[href=/viewer]', {oncreate: m.route.link}, 'Viewer'))));
-  }
-} as m.Component;
+    return m('.alerts', renderPermalink());
+  },
+};
 
 /**
  * Wrap component with common UI elements (nav bar etc).
  */
 export function createPage(component: m.Component): m.Component {
-  return {
+  const pageComponent = {
+    oncreate() {
+      // Mithril 1.1.6 does not have a synchronous redraw method, so we use
+      // m.render for a sync redraw.
+      globals.rafScheduler.domRedraw = (() => {
+        m.render(document.body, m(pageComponent));
+      });
+    },
+
+    onremove() {
+      globals.rafScheduler.domRedraw = null;
+    },
+
     view() {
       return [
-        m(Nav),
+        m(Sidebar),
+        m(Topbar),
         m(component),
+        m(Alerts),
       ];
     },
   };
+
+  return pageComponent;
 }

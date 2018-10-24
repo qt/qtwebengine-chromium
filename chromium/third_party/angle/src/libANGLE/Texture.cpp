@@ -561,9 +561,9 @@ void TextureState::setImageDescChainMultisample(Extents baseSize,
                                                 bool fixedSampleLocations,
                                                 InitState initState)
 {
-    ASSERT(mType == TextureType::_2DMultisample);
+    ASSERT(mType == TextureType::_2DMultisample || mType == TextureType::_2DMultisampleArray);
     ImageDesc levelInfo(baseSize, format, samples, fixedSampleLocations, initState);
-    setImageDesc(TextureTarget::_2DMultisample, 0, levelInfo);
+    setImageDesc(NonCubeTextureTypeToTarget(mType), 0, levelInfo);
 }
 
 void TextureState::clearImageDesc(TextureTarget target, size_t level)
@@ -580,7 +580,7 @@ void TextureState::clearImageDescs()
 }
 
 Texture::Texture(rx::GLImplFactory *factory, GLuint id, TextureType type)
-    : egl::ImageSibling(id),
+    : RefCountObject(id),
       mState(type),
       mTexture(factory->createTexture(mState)),
       mLabel(),
@@ -970,6 +970,7 @@ Error Texture::setImage(const Context *context,
 
 Error Texture::setSubImage(const Context *context,
                            const PixelUnpackState &unpackState,
+                           Buffer *unpackBuffer,
                            TextureTarget target,
                            GLint level,
                            const Box &area,
@@ -983,7 +984,8 @@ Error Texture::setSubImage(const Context *context,
 
     ImageIndex index = ImageIndex::MakeFromTarget(target, level);
 
-    ANGLE_TRY(mTexture->setSubImage(context, index, area, format, type, unpackState, pixels));
+    ANGLE_TRY(mTexture->setSubImage(context, index, area, format, type, unpackState, unpackBuffer,
+                                    pixels));
 
     ANGLE_TRY(handleMipmapGenerationHint(context, level));
 

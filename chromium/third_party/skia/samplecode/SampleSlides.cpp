@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "SampleCode.h"
+#include "Sample.h"
 #include "SkBlurMask.h"
 #include "SkBlurMaskFilter.h"
 #include "SkCanvas.h"
@@ -12,8 +12,8 @@
 #include "SkWriteBuffer.h"
 #include "SkGradientShader.h"
 #include "SkPaint.h"
+#include "SkTextOnPath.h"
 #include "SkVertices.h"
-#include "SkView.h"
 
 #include "sk_tool_utils.h"
 
@@ -262,14 +262,11 @@ static void textonpath_slide(SkCanvas* canvas) {
 
     SkScalar x = 50;
     paint.setColor(0xFF008800);
-    canvas->drawTextOnPathHV(text, len, path,
-                             x, paint.getTextSize()*2/3, paint);
+    SkDrawTextOnPathHV(text, len, paint, path, x, paint.getTextSize()*2/3, canvas);
     paint.setColor(SK_ColorRED);
-    canvas->drawTextOnPathHV(text, len, path,
-                             x + 60, 0, paint);
+    SkDrawTextOnPathHV(text, len, paint, path, x + 60, 0, canvas);
     paint.setColor(SK_ColorBLUE);
-    canvas->drawTextOnPathHV(text, len, path,
-                             x + 120, -paint.getTextSize()*2/3, paint);
+    SkDrawTextOnPathHV(text, len, paint, path, x + 120, -paint.getTextSize()*2/3, canvas);
 
     path.offset(0, 200);
     paint.setTextAlign(SkPaint::kRight_Align);
@@ -285,21 +282,21 @@ static void textonpath_slide(SkCanvas* canvas) {
     paint.setStyle(SkPaint::kFill_Style);
 
     paint.setTextSize(50);
-    canvas->drawTextOnPath(text, len, path, nullptr, paint);
+    SkDrawTextOnPath(text, len, paint, path, nullptr, canvas);
 
     paint.setColor(SK_ColorRED);
     matrix.setScale(-SK_Scalar1, SK_Scalar1);
     matrix.postTranslate(pathLen, 0);
-    canvas->drawTextOnPath(text, len, path, &matrix, paint);
+    SkDrawTextOnPath(text, len, paint, path, &matrix, canvas);
 
     paint.setColor(SK_ColorBLUE);
     matrix.setScale(SK_Scalar1, -SK_Scalar1);
-    canvas->drawTextOnPath(text, len, path, &matrix, paint);
+    SkDrawTextOnPath(text, len, paint, path, &matrix, canvas);
 
     paint.setColor(0xFF008800);
     matrix.setScale(-SK_Scalar1, -SK_Scalar1);
     matrix.postTranslate(pathLen, 0);
-    canvas->drawTextOnPath(text, len, path, &matrix, paint);
+    SkDrawTextOnPath(text, len, paint, path, &matrix, canvas);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -470,7 +467,7 @@ static const SlideProc gProc[] = {
     mesh_slide,
 };
 
-class SlideView : public SampleView {
+class SlideView : public Sample {
     int fIndex;
     bool fOnce;
 public:
@@ -504,10 +501,9 @@ public:
     }
 
 protected:
-    // overrides from SkEventSink
-    bool onQuery(SkEvent* evt) override {
-        if (SampleCode::TitleQ(*evt)) {
-            SampleCode::TitleR(evt, "Slides");
+    bool onQuery(Sample::Event* evt) override {
+        if (Sample::TitleQ(*evt)) {
+            Sample::TitleR(evt, "Slides");
             return true;
         }
         return this->INHERITED::onQuery(evt);
@@ -518,17 +514,16 @@ protected:
         gProc[fIndex](canvas);
     }
 
-    SkView::Click* onFindClickHandler(SkScalar x, SkScalar y, unsigned) override {
+    Sample::Click* onFindClickHandler(SkScalar x, SkScalar y, unsigned) override {
         this->init();
         fIndex = (fIndex + 1) % SK_ARRAY_COUNT(gProc);
         return nullptr;
     }
 
 private:
-    typedef SampleView INHERITED;
+    typedef Sample INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-static SkView* MyFactory() { return new SlideView; }
-static SkViewRegister reg(MyFactory);
+DEF_SAMPLE( return new SlideView(); )

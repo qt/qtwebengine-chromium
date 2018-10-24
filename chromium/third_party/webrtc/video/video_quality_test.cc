@@ -17,10 +17,14 @@
 #include <string>
 #include <vector>
 
+#include "call/fake_network_pipe.h"
+#include "call/simulated_network.h"
 #include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
+#include "media/engine/adm_helpers.h"
 #include "media/engine/internalencoderfactory.h"
 #include "media/engine/vp8_encoder_simulcast_proxy.h"
 #include "media/engine/webrtcvideoengine.h"
+#include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/video_coding/codecs/h264/include/h264.h"
 #include "modules/video_coding/codecs/multiplex/include/multiplex_encoder_adapter.h"
@@ -30,6 +34,9 @@
 #include "test/testsupport/fileutils.h"
 #include "test/video_renderer.h"
 #include "video/video_analyzer.h"
+#ifdef WEBRTC_WIN
+#include "modules/audio_device/include/audio_device_factory.h"
+#endif
 
 namespace {
 constexpr char kSyncGroup[] = "av_sync";
@@ -107,15 +114,16 @@ VideoQualityTest::Params::Params()
              false, false, ""},
             {false, 640, 480, 30, 50, 800, 800, false, "VP8", 1, -1, 0, false,
              false, false, ""}},
-      audio({false, false, false}),
+      audio({false, false, false, false}),
       screenshare{{false, false, 10, 0}, {false, false, 10, 0}},
       analyzer({"", 0.0, 0.0, 0, "", ""}),
       pipe(),
+      config(absl::nullopt),
       ss{{std::vector<VideoStream>(), 0, 0, -1, InterLayerPredMode::kOn,
           std::vector<SpatialLayer>()},
          {std::vector<VideoStream>(), 0, 0, -1, InterLayerPredMode::kOn,
           std::vector<SpatialLayer>()}},
-      logging({false, "", "", ""}) {}
+      logging({"", "", ""}) {}
 
 VideoQualityTest::Params::~Params() = default;
 
@@ -137,6 +145,11 @@ std::string VideoQualityTest::GenerateGraphTitle() const {
 }
 
 void VideoQualityTest::CheckParams() {
+  if (!params_.config) {
+    // TODO(titovartem) replace with default config creation when removing
+    // pipe.
+    params_.config = params_.pipe;
+  }
   for (size_t video_idx = 0; video_idx < num_video_streams_; ++video_idx) {
     // Iterate over primary and secondary video streams.
     if (!params_.video[video_idx].enabled)
@@ -148,8 +161,8 @@ void VideoQualityTest::CheckParams() {
     if (params_.ss[video_idx].num_spatial_layers == 0)
       params_.ss[video_idx].num_spatial_layers = 1;
 
-    if (params_.pipe.loss_percent != 0 ||
-        params_.pipe.queue_length_packets != 0) {
+    if (params_.config->loss_percent != 0 ||
+        params_.config->queue_length_packets != 0) {
       // Since LayerFilteringTransport changes the sequence numbers, we can't
       // use that feature with pack loss, since the NACK request would end up
       // retransmitting the wrong packets.
@@ -633,7 +646,7 @@ void VideoQualityTest::DestroyThumbnailStreams() {
   }
   thumbnail_send_streams_.clear();
   thumbnail_receive_streams_.clear();
-  for (std::unique_ptr<test::VideoCapturer>& video_caputurer :
+  for (std::unique_ptr<test::TestVideoCapturer>& video_caputurer :
        thumbnail_capturers_) {
     video_caputurer.reset();
   }
@@ -757,11 +770,47 @@ void VideoQualityTest::CreateCapturers() {
   }
 }
 
+void VideoQualityTest::StartAudioStreams() {
+  audio_send_stream_->Start();
+  for (AudioReceiveStream* audio_recv_stream : audio_receive_streams_)
+    audio_recv_stream->Start();
+}
+
+void VideoQualityTest::StartThumbnailCapture() {
+  for (std::unique_ptr<test::TestVideoCapturer>& capturer :
+       thumbnail_capturers_)
+    capturer->Start();
+}
+
+void VideoQualityTest::StopThumbnailCapture() {
+  for (std::unique_ptr<test::TestVideoCapturer>& capturer :
+       thumbnail_capturers_)
+    capturer->Stop();
+}
+
+void VideoQualityTest::StartThumbnails() {
+  for (VideoSendStream* send_stream : thumbnail_send_streams_)
+    send_stream->Start();
+  for (VideoReceiveStream* receive_stream : thumbnail_receive_streams_)
+    receive_stream->Start();
+}
+
+void VideoQualityTest::StopThumbnails() {
+  for (VideoReceiveStream* receive_stream : thumbnail_receive_streams_)
+    receive_stream->Stop();
+  for (VideoSendStream* send_stream : thumbnail_send_streams_)
+    send_stream->Stop();
+}
+
 std::unique_ptr<test::LayerFilteringTransport>
 VideoQualityTest::CreateSendTransport() {
   return absl::make_unique<test::LayerFilteringTransport>(
-      &task_queue_, params_.pipe, sender_call_.get(), kPayloadTypeVP8,
-      kPayloadTypeVP9, params_.video[0].selected_tl, params_.ss[0].selected_sl,
+      &task_queue_,
+      absl::make_unique<FakeNetworkPipe>(
+          Clock::GetRealTimeClock(),
+          absl::make_unique<SimulatedNetwork>(*params_.config)),
+      sender_call_.get(), kPayloadTypeVP8, kPayloadTypeVP9,
+      params_.video[0].selected_tl, params_.ss[0].selected_sl,
       payload_type_map_, kVideoSendSsrcs[0],
       static_cast<uint32_t>(kVideoSendSsrcs[0] + params_.ss[0].streams.size() -
                             1));
@@ -770,11 +819,14 @@ VideoQualityTest::CreateSendTransport() {
 std::unique_ptr<test::DirectTransport>
 VideoQualityTest::CreateReceiveTransport() {
   return absl::make_unique<test::DirectTransport>(
-      &task_queue_, params_.pipe, receiver_call_.get(), payload_type_map_);
+      &task_queue_,
+      absl::make_unique<FakeNetworkPipe>(
+          Clock::GetRealTimeClock(),
+          absl::make_unique<SimulatedNetwork>(*params_.config)),
+      receiver_call_.get(), payload_type_map_);
 }
 
 void VideoQualityTest::RunWithAnalyzer(const Params& params) {
-  rtc::LogMessage::SetLogToStderr(params.logging.logs);
   num_video_streams_ = params.call.dual_video ? 2 : 1;
   std::unique_ptr<test::LayerFilteringTransport> send_transport;
   std::unique_ptr<test::DirectTransport> recv_transport;
@@ -782,8 +834,6 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
   std::unique_ptr<VideoAnalyzer> analyzer;
 
   params_ = params;
-
-  RTC_CHECK(!params_.audio.enabled);
   // TODO(ivica): Merge with RunWithRenderer and use a flag / argument to
   // differentiate between the analyzer and the renderer case.
   CheckParams();
@@ -825,6 +875,10 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
 
   task_queue_.SendTask([this, &send_call_config, &recv_call_config,
                         &send_transport, &recv_transport]() {
+    if (params_.audio.enabled)
+      InitializeAudioDevice(
+          &send_call_config, &recv_call_config, params_.audio.use_real_adm);
+
     CreateCalls(send_call_config, recv_call_config);
     send_transport = CreateSendTransport();
     recv_transport = CreateReceiveTransport();
@@ -887,39 +941,25 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     StartEncodedFrameLogs(GetVideoSendStream());
     StartEncodedFrameLogs(
         video_receive_streams_[params_.ss[0].selected_stream]);
-    StartVideoStreams();
-    for (VideoSendStream* thumbnail_send_stream : thumbnail_send_streams_)
-      thumbnail_send_stream->Start();
-    for (VideoReceiveStream* thumbnail_receive_stream :
-         thumbnail_receive_streams_)
-      thumbnail_receive_stream->Start();
 
+    if (params_.audio.enabled) {
+      SetupAudio(send_transport.get());
+      StartAudioStreams();
+      analyzer->SetAudioReceiveStream(audio_receive_streams_[0]);
+    }
+    StartVideoStreams();
+    StartThumbnails();
     analyzer->StartMeasuringCpuProcessTime();
     StartVideoCapture();
-    for (std::unique_ptr<test::VideoCapturer>& video_caputurer :
-         thumbnail_capturers_) {
-      video_caputurer->Start();
-    }
+    StartThumbnailCapture();
   });
 
   analyzer->Wait();
 
   task_queue_.SendTask([&]() {
-    for (std::unique_ptr<test::VideoCapturer>& video_caputurer :
-         thumbnail_capturers_)
-      video_caputurer->Stop();
-    for (size_t video_idx = 0; video_idx < num_video_streams_; ++video_idx) {
-      video_capturers_[video_idx]->Stop();
-    }
-    for (VideoReceiveStream* thumbnail_receive_stream :
-         thumbnail_receive_streams_)
-      thumbnail_receive_stream->Stop();
-    for (VideoReceiveStream* receive_stream : video_receive_streams_)
-      receive_stream->Stop();
-    for (VideoSendStream* thumbnail_send_stream : thumbnail_send_streams_)
-      thumbnail_send_stream->Stop();
-    for (VideoSendStream* video_send_stream : video_send_streams_)
-      video_send_stream->Stop();
+    StopThumbnailCapture();
+    StopThumbnails();
+    Stop();
 
     DestroyStreams();
     DestroyThumbnailStreams();
@@ -933,6 +973,61 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
 
     DestroyCalls();
   });
+}
+
+rtc::scoped_refptr<AudioDeviceModule> VideoQualityTest::CreateAudioDevice() {
+#ifdef WEBRTC_WIN
+    RTC_LOG(INFO) << "Using latest version of ADM on Windows";
+    // We must initialize the COM library on a thread before we calling any of
+    // the library functions. All COM functions in the ADM will return
+    // CO_E_NOTINITIALIZED otherwise. The legacy ADM for Windows used internal
+    // COM initialization but the new ADM requires COM to be initialized
+    // externally.
+    com_initializer_ = absl::make_unique<webrtc_win::ScopedCOMInitializer>(
+        webrtc_win::ScopedCOMInitializer::kMTA);
+    RTC_CHECK(com_initializer_->Succeeded());
+    RTC_CHECK(webrtc_win::core_audio_utility::IsSupported());
+    RTC_CHECK(webrtc_win::core_audio_utility::IsMMCSSSupported());
+    return CreateWindowsCoreAudioAudioDeviceModule();
+#else
+    // Use legacy factory method on all platforms except Windows.
+    return AudioDeviceModule::Create(AudioDeviceModule::kPlatformDefaultAudio);
+#endif
+}
+
+void VideoQualityTest::InitializeAudioDevice(Call::Config* send_call_config,
+                                             Call::Config* recv_call_config,
+                                             bool use_real_adm) {
+  rtc::scoped_refptr<AudioDeviceModule> audio_device;
+  if (use_real_adm) {
+    // Run test with real ADM (using default audio devices) if user has
+    // explicitly set the --audio and --use_real_adm command-line flags.
+    audio_device = CreateAudioDevice();
+  } else {
+    // By default, create a test ADM which fakes audio.
+    audio_device = TestAudioDeviceModule::CreateTestAudioDeviceModule(
+        TestAudioDeviceModule::CreatePulsedNoiseCapturer(32000, 48000),
+        TestAudioDeviceModule::CreateDiscardRenderer(48000), 1.f);
+  }
+  RTC_CHECK(audio_device);
+
+  AudioState::Config audio_state_config;
+  audio_state_config.audio_mixer = AudioMixerImpl::Create();
+  audio_state_config.audio_processing = AudioProcessingBuilder().Create();
+  audio_state_config.audio_device_module = audio_device;
+  send_call_config->audio_state = AudioState::Create(audio_state_config);
+  recv_call_config->audio_state = AudioState::Create(audio_state_config);
+  if (use_real_adm) {
+    // The real ADM requires extra initialization: setting default devices,
+    // setting up number of channels etc. Helper class also calls
+    // AudioDeviceModule::Init().
+    webrtc::adm_helpers::Init(audio_device.get());
+  } else {
+    audio_device->Init();
+  }
+  // Always initialize the ADM before injecting a valid audio transport.
+  RTC_CHECK(audio_device->RegisterAudioCallback(
+            send_call_config->audio_state->audio_transport()) == 0);
 }
 
 void VideoQualityTest::SetupAudio(Transport* transport) {
@@ -960,7 +1055,7 @@ void VideoQualityTest::SetupAudio(Transport* transport) {
   audio_send_config.encoder_factory = audio_encoder_factory_;
   SetAudioConfig(audio_send_config);
 
-  const char* sync_group = nullptr;
+  std::string sync_group;
   if (params_.video[0].enabled && params_.audio.sync_video)
     sync_group = kSyncGroup;
 
@@ -969,7 +1064,7 @@ void VideoQualityTest::SetupAudio(Transport* transport) {
 }
 
 void VideoQualityTest::RunWithRenderers(const Params& params) {
-  rtc::LogMessage::SetLogToStderr(params.logging.logs);
+  RTC_LOG(INFO) << __FUNCTION__;
   num_video_streams_ = params.call.dual_video ? 2 : 1;
   std::unique_ptr<test::LayerFilteringTransport> send_transport;
   std::unique_ptr<test::DirectTransport> recv_transport;
@@ -983,25 +1078,15 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
 
     // TODO(ivica): Remove bitrate_config and use the default Call::Config(), to
     // match the full stack tests.
-    Call::Config call_config(&null_event_log);
-    call_config.bitrate_config = params_.call.call_bitrate_config;
+    Call::Config send_call_config(&null_event_log);
+    send_call_config.bitrate_config = params_.call.call_bitrate_config;
+    Call::Config recv_call_config(&null_event_log);
 
-    rtc::scoped_refptr<TestAudioDeviceModule> fake_audio_device =
-        TestAudioDeviceModule::CreateTestAudioDeviceModule(
-            TestAudioDeviceModule::CreatePulsedNoiseCapturer(32000, 48000),
-            TestAudioDeviceModule::CreateDiscardRenderer(48000), 1.f);
+    if (params_.audio.enabled)
+      InitializeAudioDevice(
+          &send_call_config, &recv_call_config, params_.audio.use_real_adm);
 
-    if (params_.audio.enabled) {
-      AudioState::Config audio_state_config;
-      audio_state_config.audio_mixer = AudioMixerImpl::Create();
-      audio_state_config.audio_processing = AudioProcessingBuilder().Create();
-      audio_state_config.audio_device_module = fake_audio_device;
-      call_config.audio_state = AudioState::Create(audio_state_config);
-      fake_audio_device->RegisterAudioCallback(
-          call_config.audio_state->audio_transport());
-    }
-
-    CreateCalls(call_config, call_config);
+    CreateCalls(send_call_config, recv_call_config);
 
     // TODO(minyue): consider if this is a good transport even for audio only
     // calls.

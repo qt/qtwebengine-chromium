@@ -10,8 +10,8 @@
 #include <utility>
 
 #include "core/fxcrt/pauseindicator_iface.h"
+#include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "core/fxge/dib/cfx_dibsource.h"
 #include "core/fxge/dib/scanlinecomposer_iface.h"
 #include "core/fxge/fx_dib.h"
 
@@ -206,10 +206,11 @@ bool CStretchEngine::CWeightTable::Calc(int dest_len,
   return true;
 }
 
-PixelWeight* CStretchEngine::CWeightTable::GetPixelWeight(int pixel) const {
+const PixelWeight* CStretchEngine::CWeightTable::GetPixelWeight(
+    int pixel) const {
   ASSERT(pixel >= m_DestMin);
-  return reinterpret_cast<PixelWeight*>(const_cast<uint8_t*>(
-      m_WeightTables.data() + (pixel - m_DestMin) * m_ItemSize));
+  return reinterpret_cast<const PixelWeight*>(
+      &m_WeightTables[(pixel - m_DestMin) * m_ItemSize]);
 }
 
 int* CStretchEngine::CWeightTable::GetValueFromPixelWeight(PixelWeight* pWeight,
@@ -226,7 +227,7 @@ CStretchEngine::CStretchEngine(ScanlineComposerIface* pDestBitmap,
                                int dest_width,
                                int dest_height,
                                const FX_RECT& clip_rect,
-                               const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                               const RetainPtr<CFX_DIBBase>& pSrcBitmap,
                                int flags)
     : m_DestFormat(dest_format),
       m_DestBpp(GetBppFromFormat(dest_format)),

@@ -21,7 +21,7 @@
 
 class CPDF_IndirectObjectHolder;
 
-class CPDF_Dictionary : public CPDF_Object {
+class CPDF_Dictionary final : public CPDF_Object {
  public:
   using const_iterator =
       std::map<ByteString, std::unique_ptr<CPDF_Object>>::const_iterator;
@@ -38,7 +38,8 @@ class CPDF_Dictionary : public CPDF_Object {
   bool IsDictionary() const override;
   CPDF_Dictionary* AsDictionary() override;
   const CPDF_Dictionary* AsDictionary() const override;
-  bool WriteTo(IFX_ArchiveStream* archive) const override;
+  bool WriteTo(IFX_ArchiveStream* archive,
+               const CPDF_Encryptor* encryptor) const override;
 
   size_t GetCount() const { return m_Map.size(); }
   const CPDF_Object* GetObjectFor(const ByteString& key) const;

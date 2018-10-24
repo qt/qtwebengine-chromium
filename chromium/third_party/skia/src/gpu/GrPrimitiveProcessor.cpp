@@ -17,7 +17,12 @@ enum MatrixType {
     kGeneral_MatrixType  = 1,
 };
 
-GrPrimitiveProcessor::GrPrimitiveProcessor(ClassID classID) : GrResourceIOProcessor(classID) {}
+GrPrimitiveProcessor::GrPrimitiveProcessor(ClassID classID) : GrProcessor(classID) {}
+
+const GrPrimitiveProcessor::TextureSampler& GrPrimitiveProcessor::textureSampler(int i) const {
+    SkASSERT(i >= 0 && i < this->numTextureSamplers());
+    return this->onTextureSampler(i);
+}
 
 const GrPrimitiveProcessor::Attribute& GrPrimitiveProcessor::vertexAttribute(int i) const {
     SkASSERT(i >= 0 && i < this->numVertexAttributes());
@@ -86,4 +91,54 @@ GrPrimitiveProcessor::getTransformKey(const SkTArray<const GrCoordTransform*, tr
         totalKey |= key;
     }
     return totalKey;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static inline GrSamplerState::Filter clamp_filter(GrTextureType type,
+                                                  GrSamplerState::Filter requestedFilter) {
+    if (GrTextureTypeHasRestrictedSampling(type)) {
+        return SkTMin(requestedFilter, GrSamplerState::Filter::kBilerp);
+    }
+    return requestedFilter;
+}
+
+GrPrimitiveProcessor::TextureSampler::TextureSampler(GrTextureType textureType,
+                                                     GrPixelConfig config,
+                                                     const GrSamplerState& samplerState,
+                                                     GrShaderFlags visibility) {
+    this->reset(textureType, config, samplerState, visibility);
+}
+
+GrPrimitiveProcessor::TextureSampler::TextureSampler(GrTextureType textureType,
+                                                     GrPixelConfig config,
+                                                     GrSamplerState::Filter filterMode,
+                                                     GrSamplerState::WrapMode wrapXAndY,
+                                                     GrShaderFlags visibility) {
+    this->reset(textureType, config, filterMode, wrapXAndY, visibility);
+}
+
+void GrPrimitiveProcessor::TextureSampler::reset(GrTextureType textureType,
+                                                 GrPixelConfig config,
+                                                 const GrSamplerState& samplerState,
+                                                 GrShaderFlags visibility) {
+    SkASSERT(kUnknown_GrPixelConfig != config);
+    fSamplerState = samplerState;
+    fSamplerState.setFilterMode(clamp_filter(textureType, samplerState.filter()));
+    fTextureType = textureType;
+    fConfig = config;
+    fVisibility = visibility;
+}
+
+void GrPrimitiveProcessor::TextureSampler::reset(GrTextureType textureType,
+                                                 GrPixelConfig config,
+                                                 GrSamplerState::Filter filterMode,
+                                                 GrSamplerState::WrapMode wrapXAndY,
+                                                 GrShaderFlags visibility) {
+    SkASSERT(kUnknown_GrPixelConfig != config);
+    filterMode = clamp_filter(textureType, filterMode);
+    fSamplerState = GrSamplerState(wrapXAndY, filterMode);
+    fTextureType = textureType;
+    fConfig = config;
+    fVisibility = visibility;
 }

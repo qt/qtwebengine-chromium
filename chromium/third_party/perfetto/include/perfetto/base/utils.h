@@ -44,10 +44,25 @@ using ssize_t = long;
 #endif
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define PERFETTO_WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+#define PERFETTO_WARN_UNUSED_RESULT
+#endif
+
+#if defined(__clang__)
+#define PERFETTO_ALWAYS_INLINE __attribute__((__always_inline__))
+#else
+// GCC is too pedantic and often fails with the error:
+// "always_inline function might not be inlinable"
+#define PERFETTO_ALWAYS_INLINE
+#endif
+
 namespace perfetto {
 namespace base {
 
 constexpr size_t kPageSize = 4096;
+constexpr size_t kMaxCpus = 128;
 
 template <typename T>
 constexpr size_t ArraySize(const T& array) {

@@ -42,6 +42,7 @@ enum class KeyWord {
     kNone,
     kSK_API,
     kSK_BEGIN_REQUIRE_DENSE,
+    kAlignAs,
     kBool,
     kChar,
     kClass,
@@ -1149,7 +1150,9 @@ public:
         fParent = def;
     }
 
-    char* FindDateTime(char* buffer, int size);
+    static void CopyToFile(string oldFile, string newFile);
+
+    static char* FindDateTime(char* buffer, int size);
 
     void indentIn(IndentKind kind) {
         fIndent += 4;
@@ -1219,7 +1222,7 @@ public:
         fParent = fParent->fParent;
     }
 
-    char* ReadToBuffer(string filename, int* size);
+    static char* ReadToBuffer(string filename, int* size);
 
     virtual void reset() = 0;
 
@@ -1297,7 +1300,7 @@ public:
         this->writeString(str.c_str());
     }
 
-    bool writtenFileDiffers(string filename, string readname);
+    static bool WrittenFileDiffers(string filename, string readname);
 
     unordered_map<string, sk_sp<SkData>> fRawData;
     unordered_map<string, vector<char>> fLFOnly;
@@ -1568,6 +1571,7 @@ public:
         fIncludeWord = nullptr;
     }
 
+    bool inAlignAs() const;
     void checkForMissingParams(const vector<string>& methodParams,
                                const vector<string>& foundParams);
     bool checkForWord();
@@ -1580,11 +1584,13 @@ public:
     void dumpConst(const Definition& , string className);
     void dumpDefine(const Definition& );
     void dumpEnum(const Definition& , string name);
-    bool dumpGlobals();
+    bool dumpGlobals(string* globalFileName, long int* globalTell);
     void dumpMethod(const Definition& , string className);
     void dumpMember(const Definition& );
     bool dumpTokens();
-    bool dumpTokens(string skClassName);
+    bool dumpTokens(string skClassName, string globalFileName, long int* globalTell);
+    void dumpTypedef(const Definition& , string className);
+
     bool findComments(const Definition& includeDef, Definition* markupDef);
     Definition* findIncludeObject(const Definition& includeDef, MarkType markType,
                                   string typeName);
@@ -1593,6 +1599,7 @@ public:
     bool isClone(const Definition& token);
     bool isConstructor(const Definition& token, string className);
     bool isInternalName(const Definition& token);
+    bool isMember(const Definition& token) const;
     bool isOperator(const Definition& token);
     Definition* parentBracket(Definition* parent) const;
     bool parseChar();
@@ -2159,9 +2166,9 @@ public:
     Catalog(BmhParser* bmh) : FiddleBase(bmh) {}
 
     bool appendFile(string path);
-    bool closeCatalog();
-    bool openCatalog(const char* inDir, const char* outDir);
-    bool openStatus(const char* inDir, const char* outDir);
+    bool closeCatalog(const char* outDir);
+    bool openCatalog(const char* inDir);
+    bool openStatus(const char* inDir);
 
     bool parseFromFile(const char* path) override ;
 private:

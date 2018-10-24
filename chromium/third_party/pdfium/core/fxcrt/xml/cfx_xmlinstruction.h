@@ -15,7 +15,7 @@
 
 class CFX_XMLDocument;
 
-class CFX_XMLInstruction : public CFX_XMLNode {
+class CFX_XMLInstruction final : public CFX_XMLNode {
  public:
   explicit CFX_XMLInstruction(const WideString& wsTarget);
   ~CFX_XMLInstruction() override;
@@ -35,5 +35,11 @@ class CFX_XMLInstruction : public CFX_XMLNode {
   WideString name_;
   std::vector<WideString> m_TargetData;
 };
+
+inline CFX_XMLInstruction* ToXMLInstruction(CFX_XMLNode* pNode) {
+  return pNode && pNode->GetType() == FX_XMLNODE_Instruction
+             ? static_cast<CFX_XMLInstruction*>(pNode)
+             : nullptr;
+}
 
 #endif  // CORE_FXCRT_XML_CFX_XMLINSTRUCTION_H_

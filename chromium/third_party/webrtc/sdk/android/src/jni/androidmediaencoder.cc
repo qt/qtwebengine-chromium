@@ -30,7 +30,6 @@
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/sequenced_task_checker.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread.h"
@@ -341,6 +340,13 @@ int32_t MediaCodecVideoEncoder::InitEncode(const VideoCodec* codec_settings,
 
   ALOGD << "InitEncode request: " << init_width << " x " << init_height;
   ALOGD << "Encoder automatic resize " << (scale_ ? "enabled" : "disabled");
+
+  if (codec_settings->numberOfSimulcastStreams > 1) {
+    ALOGD << "Number of simulcast layers requested: "
+          << codec_settings->numberOfSimulcastStreams
+          << ". Requesting software fallback.";
+    return WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE;
+  }
 
   // Check allowed H.264 profile
   profile_ = H264::Profile::kProfileBaseline;
@@ -988,7 +994,7 @@ bool MediaCodecVideoEncoder::DeliverPendingOutputs(JNIEnv* jni) {
           new EncodedImage(payload, payload_size, payload_size));
       image->_encodedWidth = width_;
       image->_encodedHeight = height_;
-      image->_timeStamp = output_timestamp_;
+      image->SetTimestamp(output_timestamp_);
       image->capture_time_ms_ = output_render_time_ms_;
       image->rotation_ = output_rotation_;
       image->content_type_ = (codec_mode_ == VideoCodecMode::kScreensharing)

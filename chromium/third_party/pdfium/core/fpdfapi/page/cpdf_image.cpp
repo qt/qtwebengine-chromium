@@ -23,7 +23,7 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fpdfapi/render/cpdf_dibsource.h"
+#include "core/fpdfapi/render/cpdf_dibbase.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fxcodec/codec/ccodec_jpegmodule.h"
 #include "core/fxcrt/fx_stream.h"
@@ -71,15 +71,15 @@ CPDF_Dictionary* CPDF_Image::GetDict() const {
   return m_pStream ? m_pStream->GetDict() : nullptr;
 }
 
-std::unique_ptr<CPDF_Dictionary> CPDF_Image::InitJPEG(uint8_t* pData,
-                                                      uint32_t size) {
+std::unique_ptr<CPDF_Dictionary> CPDF_Image::InitJPEG(
+    pdfium::span<uint8_t> src_span) {
   int32_t width;
   int32_t height;
   int32_t num_comps;
   int32_t bits;
   bool color_trans;
   if (!CPDF_ModuleMgr::Get()->GetJpegModule()->LoadInfo(
-          pData, size, &width, &height, &num_comps, &bits, &color_trans)) {
+          src_span, &width, &height, &num_comps, &bits, &color_trans)) {
     return nullptr;
   }
 
@@ -128,12 +128,11 @@ void CPDF_Image::SetJpegImage(const RetainPtr<IFX_SeekableReadStream>& pFile) {
   if (!pFile->ReadBlock(data.data(), 0, dwEstimateSize))
     return;
 
-  std::unique_ptr<CPDF_Dictionary> pDict =
-      InitJPEG(data.data(), dwEstimateSize);
+  std::unique_ptr<CPDF_Dictionary> pDict = InitJPEG(data);
   if (!pDict && size > dwEstimateSize) {
     data.resize(size);
     pFile->ReadBlock(data.data(), 0, size);
-    pDict = InitJPEG(data.data(), size);
+    pDict = InitJPEG(data);
   }
   if (!pDict)
     return;
@@ -151,11 +150,11 @@ void CPDF_Image::SetJpegImageInline(
   if (!pFile->ReadBlock(data.data(), 0, size))
     return;
 
-  std::unique_ptr<CPDF_Dictionary> pDict = InitJPEG(data.data(), size);
+  std::unique_ptr<CPDF_Dictionary> pDict = InitJPEG(data);
   if (!pDict)
     return;
 
-  m_pStream->InitStream(&(data[0]), size, std::move(pDict));
+  m_pStream->InitStream(data, std::move(pDict));
 }
 
 void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
@@ -316,7 +315,7 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
   if (!m_pStream)
     m_pStream = pdfium::MakeUnique<CPDF_Stream>();
 
-  m_pStream->InitStream(dest_buf, dest_size, std::move(pDict));
+  m_pStream->InitStream({dest_buf, dest_size}, std::move(pDict));
   m_bIsMask = pBitmap->IsAlphaMask();
   m_Width = BitmapWidth;
   m_Height = BitmapHeight;
@@ -329,43 +328,43 @@ void CPDF_Image::ResetCache(CPDF_Page* pPage,
   pPage->GetRenderCache()->ResetBitmap(pHolder, pBitmap);
 }
 
-RetainPtr<CFX_DIBSource> CPDF_Image::LoadDIBSource() const {
-  auto source = pdfium::MakeRetain<CPDF_DIBSource>();
+RetainPtr<CFX_DIBBase> CPDF_Image::LoadDIBBase() const {
+  auto source = pdfium::MakeRetain<CPDF_DIBBase>();
   if (!source->Load(m_pDocument.Get(), m_pStream.Get()))
     return nullptr;
 
   if (!source->IsJBigImage())
     return source;
 
-  CPDF_DIBSource::LoadState ret = CPDF_DIBSource::LoadState::kContinue;
-  while (ret == CPDF_DIBSource::LoadState::kContinue)
-    ret = source->ContinueLoadDIBSource(nullptr);
-  return ret == CPDF_DIBSource::LoadState::kSuccess ? source : nullptr;
+  CPDF_DIBBase::LoadState ret = CPDF_DIBBase::LoadState::kContinue;
+  while (ret == CPDF_DIBBase::LoadState::kContinue)
+    ret = source->ContinueLoadDIBBase(nullptr);
+  return ret == CPDF_DIBBase::LoadState::kSuccess ? source : nullptr;
 }
 
-RetainPtr<CFX_DIBSource> CPDF_Image::DetachBitmap() {
-  return std::move(m_pDIBSource);
+RetainPtr<CFX_DIBBase> CPDF_Image::DetachBitmap() {
+  return std::move(m_pDIBBase);
 }
 
-RetainPtr<CFX_DIBSource> CPDF_Image::DetachMask() {
+RetainPtr<CFX_DIBBase> CPDF_Image::DetachMask() {
   return std::move(m_pMask);
 }
 
-bool CPDF_Image::StartLoadDIBSource(const CPDF_Dictionary* pFormResource,
-                                    CPDF_Dictionary* pPageResource,
-                                    bool bStdCS,
-                                    uint32_t GroupFamily,
-                                    bool bLoadMask) {
-  auto source = pdfium::MakeRetain<CPDF_DIBSource>();
-  CPDF_DIBSource::LoadState ret = source->StartLoadDIBSource(
+bool CPDF_Image::StartLoadDIBBase(const CPDF_Dictionary* pFormResource,
+                                  CPDF_Dictionary* pPageResource,
+                                  bool bStdCS,
+                                  uint32_t GroupFamily,
+                                  bool bLoadMask) {
+  auto source = pdfium::MakeRetain<CPDF_DIBBase>();
+  CPDF_DIBBase::LoadState ret = source->StartLoadDIBBase(
       m_pDocument.Get(), m_pStream.Get(), true, pFormResource, pPageResource,
       bStdCS, GroupFamily, bLoadMask);
-  if (ret == CPDF_DIBSource::LoadState::kFail) {
-    m_pDIBSource.Reset();
+  if (ret == CPDF_DIBBase::LoadState::kFail) {
+    m_pDIBBase.Reset();
     return false;
   }
-  m_pDIBSource = source;
-  if (ret == CPDF_DIBSource::LoadState::kContinue)
+  m_pDIBBase = source;
+  if (ret == CPDF_DIBBase::LoadState::kContinue)
     return true;
 
   m_pMask = source->DetachMask();
@@ -374,16 +373,16 @@ bool CPDF_Image::StartLoadDIBSource(const CPDF_Dictionary* pFormResource,
 }
 
 bool CPDF_Image::Continue(PauseIndicatorIface* pPause) {
-  RetainPtr<CPDF_DIBSource> pSource = m_pDIBSource.As<CPDF_DIBSource>();
-  CPDF_DIBSource::LoadState ret = pSource->ContinueLoadDIBSource(pPause);
-  if (ret == CPDF_DIBSource::LoadState::kContinue)
+  RetainPtr<CPDF_DIBBase> pSource = m_pDIBBase.As<CPDF_DIBBase>();
+  CPDF_DIBBase::LoadState ret = pSource->ContinueLoadDIBBase(pPause);
+  if (ret == CPDF_DIBBase::LoadState::kContinue)
     return true;
 
-  if (ret == CPDF_DIBSource::LoadState::kSuccess) {
+  if (ret == CPDF_DIBBase::LoadState::kSuccess) {
     m_pMask = pSource->DetachMask();
     m_MatteColor = pSource->GetMatteColor();
   } else {
-    m_pDIBSource.Reset();
+    m_pDIBBase.Reset();
   }
   return false;
 }

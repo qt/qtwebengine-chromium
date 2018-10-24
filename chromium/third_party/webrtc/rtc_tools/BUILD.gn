@@ -81,7 +81,6 @@ rtc_executable("frame_analyzer") {
     ":command_line_parser",
     ":video_quality_analysis",
     "../test:perf_test",
-    "//build/win:default_exe_manifest",
   ]
 }
 
@@ -96,7 +95,6 @@ if (!build_with_chromium) {
     deps = [
       ":command_line_parser",
       ":video_quality_analysis",
-      "//build/win:default_exe_manifest",
     ]
   }
 
@@ -119,7 +117,6 @@ if (!build_with_chromium) {
     deps = [
       ":command_line_parser",
       ":reference_less_video_analysis_lib",
-      "//build/win:default_exe_manifest",
     ]
   }
 
@@ -134,7 +131,6 @@ if (!build_with_chromium) {
     deps = [
       ":command_line_parser",
       "../common_video",
-      "//build/win:default_exe_manifest",
       "//third_party/libyuv",
     ]
   }
@@ -145,14 +141,8 @@ if (!build_with_chromium) {
       "frame_editing/frame_editing_lib.h",
     ]
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     deps = [
       "..:webrtc_common",
-      "../:typedefs",
       "../common_video",
     ]
   }
@@ -165,7 +155,6 @@ if (!build_with_chromium) {
     deps = [
       ":command_line_parser",
       ":frame_editing_lib",
-      "//build/win:default_exe_manifest",
     ]
   }
 
@@ -176,16 +165,10 @@ if (!build_with_chromium) {
         "force_mic_volume_max/force_mic_volume_max.cc",
       ]
 
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
-
       deps = [
         "../modules/audio_device",
         "../modules/audio_device:audio_device_impl",
         "../system_wrappers:system_wrappers_default",
-        "//build/win:default_exe_manifest",
       ]
     }
   }
@@ -283,11 +266,6 @@ if (rtc_include_tests) {
       "agc/activity_metric.cc",
     ]
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     deps = [
       "../api/audio:audio_frame_api",
       "../modules/audio_processing/agc:level_estimation",
@@ -296,7 +274,6 @@ if (rtc_include_tests) {
       "../rtc_base:safe_minmax",
       "../system_wrappers:metrics_default",
       "../test:test_support",
-      "//build/win:default_exe_manifest",
       "//testing/gtest",
     ]
   }
@@ -386,7 +363,6 @@ if (rtc_include_tests) {
 
       deps = [
         "..:webrtc_common",
-        "../:typedefs",
         "../common_audio",
         "../modules/audio_processing",
         "../modules/audio_processing:audioproc_debug_proto",

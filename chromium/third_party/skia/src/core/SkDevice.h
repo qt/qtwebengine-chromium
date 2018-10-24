@@ -180,15 +180,9 @@ protected:
      *  non-const pointer and modify it in place (as an optimization). Canvas
      *  may do this to implement helpers such as drawOval, by placing a temp
      *  path on the stack to hold the representation of the oval.
-     *
-     *  If prePathMatrix is not null, it should logically be applied before any
-     *  stroking or other effects. If there are no effects on the paint that
-     *  affect the geometry/rasterization, then the pre matrix can just be
-     *  pre-concated with the current matrix.
      */
     virtual void drawPath(const SkPath& path,
                           const SkPaint& paint,
-                          const SkMatrix* prePathMatrix = nullptr,
                           bool pathIsMutable = false) = 0;
     virtual void drawBitmap(const SkBitmap& bitmap,
                             SkScalar x,
@@ -219,11 +213,11 @@ protected:
                                   const SkRect& dst, const SkPaint&);
 
 
-    virtual void drawVertices(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
-                              const SkPaint&) = 0;
+    virtual void drawVertices(const SkVertices*, const SkVertices::Bone bones[], int boneCount,
+                              SkBlendMode, const SkPaint&) = 0;
     virtual void drawShadow(const SkPath&, const SkDrawShadowRec&);
 
-    virtual void drawGlyphRunList(SkGlyphRunList* glyphRunList);
+    virtual void drawGlyphRunList(const SkGlyphRunList& glyphRunList);
     // default implementation calls drawVertices
     virtual void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
                            const SkPoint texCoords[4], SkBlendMode, const SkPaint& paint);
@@ -237,11 +231,8 @@ protected:
     /** The SkDevice passed will be an SkDevice which was returned by a call to
         onCreateDevice on this device with kNeverTile_TileExpectation.
      */
-    virtual void drawDevice(SkBaseDevice*, int x, int y,
-                            const SkPaint&) = 0;
+    virtual void drawDevice(SkBaseDevice*, int x, int y, const SkPaint&) = 0;
 
-    virtual void drawTextOnPath(const void* text, size_t len, const SkPath&,
-                                const SkMatrix*, const SkPaint&);
     void drawGlyphRunRSXform(SkGlyphRun* run, const SkRSXform* xform);
 
     virtual void drawSpecial(SkSpecialImage*, int x, int y, const SkPaint&,
@@ -345,11 +336,6 @@ private:
                              const SkScalar pos[], int scalarsPerPos,
                              const SkPoint& offset, const SkPaint& paint) = 0;
 
-    // Does not handle text decoration.
-    // Decorations (underline and stike-thru) will be handled by SkCanvas.
-    // default implementation unrolls the blob runs.
-    virtual void drawTextBlob(const SkTextBlob*, SkScalar x, SkScalar y, const SkPaint& paint);
-
     // used to change the backend's pixels (and possibly config/rowbytes)
     // but cannot change the width/height, so there should be no change to
     // any clip information.
@@ -423,7 +409,7 @@ protected:
     void drawRect(const SkRect&, const SkPaint&) override {}
     void drawOval(const SkRect&, const SkPaint&) override {}
     void drawRRect(const SkRRect&, const SkPaint&) override {}
-    void drawPath(const SkPath&, const SkPaint&, const SkMatrix*, bool) override {}
+    void drawPath(const SkPath&, const SkPaint&, bool) override {}
     void drawBitmap(const SkBitmap&, SkScalar x, SkScalar y, const SkPaint&) override {}
     void drawSprite(const SkBitmap&, int, int, const SkPaint&) override {}
     void drawBitmapRect(const SkBitmap&, const SkRect*, const SkRect&, const SkPaint&,
@@ -431,7 +417,7 @@ protected:
     void drawPosText(const void*, size_t, const SkScalar[], int, const SkPoint&,
                      const SkPaint&) override {}
     void drawDevice(SkBaseDevice*, int, int, const SkPaint&) override {}
-    void drawVertices(const SkVertices*, const SkMatrix*, int, SkBlendMode,
+    void drawVertices(const SkVertices*, const SkVertices::Bone[], int, SkBlendMode,
                       const SkPaint&) override {}
 
 private:

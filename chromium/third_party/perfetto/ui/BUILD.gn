@@ -26,11 +26,12 @@ nodejs_bin = rebase_path("$nodejs_root/bin", root_build_dir)
 # +----------------------------------------------------------------------------+
 group("ui") {
   deps = [
+    ":assets_dist",
     ":controller_bundle_dist",
-    ":css_dist",
     ":engine_bundle_dist",
     ":frontend_bundle_dist",
     ":index_dist",
+    ":scss",
     ":test_scripts",
     ":wasm_dist",
   ]
@@ -246,6 +247,33 @@ node_bin("transpile_all_ts") {
 }
 
 # +----------------------------------------------------------------------------+
+# | Build css.                                                                 |
+# +----------------------------------------------------------------------------+
+
+# Build css.
+node_bin("scss") {
+  deps = [
+    ":dist_symlink",
+  ]
+  main_css = "src/assets/perfetto.scss"
+  inputs = [
+    main_css,
+    "src/assets/sidebar.scss",
+    "src/assets/topbar.scss",
+  ]
+  outputs = [
+    "$ui_dir/perfetto.css",
+  ]
+
+  node_cmd = "node-sass"
+  args = [
+    "--quiet",
+    rebase_path(main_css, root_build_dir),
+    rebase_path(outputs[0], root_build_dir),
+  ]
+}
+
+# +----------------------------------------------------------------------------+
 # | Copy rules: create the final output directory.                             |
 # +----------------------------------------------------------------------------+
 copy("index_dist") {
@@ -257,12 +285,17 @@ copy("index_dist") {
   ]
 }
 
-copy("css_dist") {
+copy("assets_dist") {
   sources = [
-    "perfetto.css",
+    "src/assets/flamegraph.svg",
+    "src/assets/logo-3d.png",
+    "src/assets/logo.png",
+    "src/assets/perfetto.scss",
+    "src/assets/sidebar.scss",
+    "src/assets/topbar.scss",
   ]
   outputs = [
-    "$ui_dir/perfetto.css",
+    "$ui_dir/assets/{{source_file_part}}",
   ]
 }
 
@@ -292,10 +325,10 @@ sorcery("engine_bundle_dist") {
 
 copy("wasm_dist") {
   deps = [
-    "//src/trace_processor:trace_processor.wasm($wasm_toolchain)",
+    "//src/trace_processor:trace_processor_wasm.wasm($wasm_toolchain)",
   ]
   sources = [
-    "$root_build_dir/wasm/trace_processor.wasm",
+    "$root_build_dir/wasm/trace_processor_wasm.wasm",
   ]
   outputs = [
     "$ui_dir/{{source_file_part}}",
@@ -305,14 +338,14 @@ copy("wasm_dist") {
 copy("wasm_gen") {
   deps = [
     ":dist_symlink",
-    "//src/trace_processor:trace_processor.d.ts($wasm_toolchain)",
-    "//src/trace_processor:trace_processor.js($wasm_toolchain)",
-    "//src/trace_processor:trace_processor.wasm($wasm_toolchain)",
+    "//src/trace_processor:trace_processor_wasm.d.ts($wasm_toolchain)",
+    "//src/trace_processor:trace_processor_wasm.js($wasm_toolchain)",
+    "//src/trace_processor:trace_processor_wasm.wasm($wasm_toolchain)",
   ]
   sources = [
-    "$root_build_dir/wasm/trace_processor.d.ts",
-    "$root_build_dir/wasm/trace_processor.js",
-    "$root_build_dir/wasm/trace_processor.wasm",
+    "$root_build_dir/wasm/trace_processor_wasm.d.ts",
+    "$root_build_dir/wasm/trace_processor_wasm.js",
+    "$root_build_dir/wasm/trace_processor_wasm.wasm",
   ]
   outputs = [
     "$ui_gen_dir/{{source_file_part}}",

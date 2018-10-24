@@ -79,6 +79,18 @@
 #pragma warning( pop )
 #endif
 
+  static const char* const  pixel_modes[] =
+  {
+    "none",
+    "monochrome bitmap",
+    "gray 8-bit bitmap",
+    "gray 2-bit bitmap",
+    "gray 4-bit bitmap",
+    "LCD 8-bit bitmap",
+    "vertical LCD 8-bit bitmap",
+    "BGRA 32-bit color image bitmap"
+  };
+
 #endif /* FT_DEBUG_LEVEL_TRACE */
 
 
@@ -1012,34 +1024,19 @@
     }
 
 #ifdef FT_DEBUG_LEVEL_TRACE
-    {
-      static const char* const  pixel_modes[] =
-      {
-        "none",
-        "monochrome bitmap",
-        "gray 8-bit bitmap",
-        "gray 2-bit bitmap",
-        "gray 4-bit bitmap",
-        "LCD 8-bit bitmap",
-        "vertical LCD 8-bit bitmap",
-        "BGRA 32-bit color image bitmap"
-      };
-
-
-      FT_TRACE5(( "FT_Load_Glyph: index %d, flags 0x%x\n",
-                  glyph_index, load_flags ));
-      FT_TRACE5(( "  x advance: %f\n", slot->advance.x / 64.0 ));
-      FT_TRACE5(( "  y advance: %f\n", slot->advance.y / 64.0 ));
-      FT_TRACE5(( "  linear x advance: %f\n",
-                  slot->linearHoriAdvance / 65536.0 ));
-      FT_TRACE5(( "  linear y advance: %f\n",
-                  slot->linearVertAdvance / 65536.0 ));
-      FT_TRACE5(( "  bitmap %dx%d, %s (mode %d)\n",
-                  slot->bitmap.width,
-                  slot->bitmap.rows,
-                  pixel_modes[slot->bitmap.pixel_mode],
-                  slot->bitmap.pixel_mode ));
-    }
+    FT_TRACE5(( "FT_Load_Glyph: index %d, flags 0x%x\n",
+                glyph_index, load_flags ));
+    FT_TRACE5(( "  x advance: %f\n", slot->advance.x / 64.0 ));
+    FT_TRACE5(( "  y advance: %f\n", slot->advance.y / 64.0 ));
+    FT_TRACE5(( "  linear x advance: %f\n",
+                slot->linearHoriAdvance / 65536.0 ));
+    FT_TRACE5(( "  linear y advance: %f\n",
+                slot->linearVertAdvance / 65536.0 ));
+    FT_TRACE5(( "  bitmap %dx%d, %s (mode %d)\n",
+                slot->bitmap.width,
+                slot->bitmap.rows,
+                pixel_modes[slot->bitmap.pixel_mode],
+                slot->bitmap.pixel_mode ));
 #endif
 
   Exit:
@@ -3480,7 +3477,8 @@
     if ( !face )
       return FT_THROW( Invalid_Face_Handle );
 
-    if ( encoding == FT_ENCODING_NONE )
+    /* FT_ENCODING_NONE is a valid encoding for BDF, PCF, and Windows FNT */
+    if ( encoding == FT_ENCODING_NONE && !face->num_charmaps )
       return FT_THROW( Invalid_Argument );
 
     /* FT_ENCODING_UNICODE is special.  We try to find the `best' Unicode */
@@ -3501,7 +3499,7 @@
       if ( cur[0]->encoding == encoding )
       {
         face->charmap = cur[0];
-        return 0;
+        return FT_Err_Ok;
       }
     }
 
@@ -4652,8 +4650,11 @@
         int            pitch = bitmap.pitch;
 
 
-        FT_TRACE3(( "FT_Render_Glyph: bitmap %dx%d, mode %d\n",
-                    rows, pitch, slot->bitmap.pixel_mode ));
+        FT_TRACE3(( "FT_Render_Glyph: bitmap %dx%d, %s (mode %d)\n",
+                    pitch,
+                    rows,
+                    pixel_modes[slot->bitmap.pixel_mode],
+                    slot->bitmap.pixel_mode ));
 
         for ( i = 0; i < rows; i++ )
           for ( j = 0; j < pitch; j++ )
@@ -4682,44 +4683,51 @@
 
     /* we use FT_TRACE7 in this block */
     if ( !error                               &&
-         ft_trace_levels[trace_checksum] >= 7 &&
-         slot->bitmap.rows  < 128U            &&
-         slot->bitmap.width < 128U            &&
-         slot->bitmap.buffer                  )
+         ft_trace_levels[trace_checksum] >= 7 )
     {
-      int  rows  = (int)slot->bitmap.rows;
-      int  width = (int)slot->bitmap.width;
-      int  pitch =      slot->bitmap.pitch;
-      int  i, j, m;
-      unsigned char*  topleft = slot->bitmap.buffer;
-
-      if ( pitch < 0 )
-        topleft -= pitch * ( rows - 1 );
-
-      FT_TRACE7(( "Netpbm image: start\n" ));
-      switch ( slot->bitmap.pixel_mode )
+      if ( slot->bitmap.rows  < 128U &&
+           slot->bitmap.width < 128U &&
+           slot->bitmap.buffer       )
       {
-      case FT_PIXEL_MODE_MONO:
-        FT_TRACE7(( "P1 %d %d\n", width, rows ));
-        for ( i = 0; i < rows; i++ )
-        {
-          for ( j = 0; j < width; )
-            for ( m = 128; m > 0 && j < width; m >>= 1, j++ )
-              FT_TRACE7(( " %d", ( topleft[i * pitch + j / 8] & m ) != 0 ));
-          FT_TRACE7(( "\n" ));
-        }
-        break;
+        int  rows  = (int)slot->bitmap.rows;
+        int  width = (int)slot->bitmap.width;
+        int  pitch =      slot->bitmap.pitch;
+        int  i, j, m;
 
-      default:
-        FT_TRACE7(( "P2 %d %d 255\n", width, rows ));
-        for ( i = 0; i < rows; i++ )
+        unsigned char*  topleft = slot->bitmap.buffer;
+
+
+        if ( pitch < 0 )
+          topleft -= pitch * ( rows - 1 );
+
+        FT_TRACE7(( "Netpbm image: start\n" ));
+        switch ( slot->bitmap.pixel_mode )
         {
-          for ( j = 0; j < width; j += 1 )
-            FT_TRACE7(( " %3u", topleft[i * pitch + j] ));
-          FT_TRACE7(( "\n" ));
+        case FT_PIXEL_MODE_MONO:
+          FT_TRACE7(( "P1 %d %d\n", width, rows ));
+          for ( i = 0; i < rows; i++ )
+          {
+            for ( j = 0; j < width; )
+              for ( m = 128; m > 0 && j < width; m >>= 1, j++ )
+                FT_TRACE7(( " %d",
+                            ( topleft[i * pitch + j / 8] & m ) != 0 ));
+            FT_TRACE7(( "\n" ));
+          }
+          break;
+
+        default:
+          FT_TRACE7(( "P2 %d %d 255\n", width, rows ));
+          for ( i = 0; i < rows; i++ )
+          {
+            for ( j = 0; j < width; j += 1 )
+              FT_TRACE7(( " %3u", topleft[i * pitch + j] ));
+            FT_TRACE7(( "\n" ));
+          }
         }
+        FT_TRACE7(( "Netpbm image: end\n" ));
       }
-      FT_TRACE7(( "Netpbm image: end\n" ));
+      else
+        FT_TRACE7(( "Netpbm image: too large, omitted\n" ));
     }
 
 #undef  FT_COMPONENT

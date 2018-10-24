@@ -554,7 +554,7 @@ public:
 protected:
     unsigned generateGlyphCount() override;
     uint16_t generateCharToGlyph(SkUnichar uni) override;
-    void generateAdvance(SkGlyph* glyph) override;
+    bool generateAdvance(SkGlyph* glyph) override;
     void generateMetrics(SkGlyph* glyph) override;
     void generateImage(const SkGlyph& glyph) override;
     bool generatePath(SkGlyphID glyph, SkPath* path) override;
@@ -795,7 +795,7 @@ uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar utf32) {
     uint16_t index = 0;
     WCHAR utf16[2];
     // TODO(ctguil): Support characters that generate more than one glyph.
-    if (SkUTF16_FromUnichar(utf32, (uint16_t*)utf16) == 1) {
+    if (SkUTF::ToUTF16(utf32, (uint16_t*)utf16) == 1) {
         // Type1 fonts fail with uniscribe API. Use GetGlyphIndices for plane 0.
 
         /** Real documentation for GetGlyphIndiciesW:
@@ -859,12 +859,14 @@ uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar utf32) {
     return index;
 }
 
-void SkScalerContext_GDI::generateAdvance(SkGlyph* glyph) {
-    this->generateMetrics(glyph);
+bool SkScalerContext_GDI::generateAdvance(SkGlyph* glyph) {
+    return false;
 }
 
 void SkScalerContext_GDI::generateMetrics(SkGlyph* glyph) {
     SkASSERT(fDDC);
+
+    glyph->fMaskFormat = fRec.fMaskFormat;
 
     if (fType == SkScalerContext_GDI::kBitmap_Type || fType == SkScalerContext_GDI::kLine_Type) {
         SIZE size;
@@ -2103,7 +2105,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
 
             // Try a run of non-bmp.
             while (glyphIndex < glyphCount && currentChar > 0xFFFF) {
-                SkUTF16_FromUnichar(currentChar, reinterpret_cast<uint16_t*>(scratch));
+                SkUTF::ToUTF16(currentChar, reinterpret_cast<uint16_t*>(scratch));
                 glyphs[glyphIndex] = nonBmpCharToGlyph(hdc, &sc, scratch);
                 ++glyphIndex;
                 if (glyphIndex < glyphCount) {
@@ -2120,7 +2122,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
             // Try a run of bmp.
             int glyphsLeft = glyphCount - glyphIndex;
             int runLength = 0;
-            while (runLength < glyphsLeft && !SkUTF16_IsHighSurrogate(currentUtf16[runLength])) {
+            while (runLength < glyphsLeft && !SkUTF16_IsLeadingSurrogate(currentUtf16[runLength])) {
                 ++runLength;
             }
             if (runLength) {
@@ -2130,7 +2132,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
             }
 
             // Try a run of non-bmp.
-            while (glyphIndex < glyphCount && SkUTF16_IsHighSurrogate(*currentUtf16)) {
+            while (glyphIndex < glyphCount && SkUTF16_IsLeadingSurrogate(*currentUtf16)) {
                 glyphs[glyphIndex] = nonBmpCharToGlyph(hdc, &sc, currentUtf16);
                 ++glyphIndex;
                 currentUtf16 += 2;
@@ -2158,7 +2160,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
 
             // Try a run of non-bmp.
             while (glyphIndex < glyphCount && utf32[glyphIndex] > 0xFFFF) {
-                SkUTF16_FromUnichar(utf32[glyphIndex], reinterpret_cast<uint16_t*>(scratch));
+                SkUTF::ToUTF16(utf32[glyphIndex], reinterpret_cast<uint16_t*>(scratch));
                 glyphs[glyphIndex] = nonBmpCharToGlyph(hdc, &sc, scratch);
                 ++glyphIndex;
             }
@@ -2210,15 +2212,15 @@ int LogFontTypeface::onGetUPEM() const {
 }
 
 SkTypeface::LocalizedStrings* LogFontTypeface::onCreateFamilyNameIterator() const {
-    SkTypeface::LocalizedStrings* nameIter =
-        SkOTUtils::LocalizedStrings_NameTable::CreateForFamilyNames(*this);
-    if (nullptr == nameIter) {
+    sk_sp<SkTypeface::LocalizedStrings> nameIter =
+        SkOTUtils::LocalizedStrings_NameTable::MakeForFamilyNames(*this);
+    if (!nameIter) {
         SkString familyName;
         this->getFamilyName(&familyName);
         SkString language("und"); //undetermined
-        nameIter = new SkOTUtils::LocalizedStrings_SingleName(familyName, language);
+        nameIter = sk_make_sp<SkOTUtils::LocalizedStrings_SingleName>(familyName, language);
     }
-    return nameIter;
+    return nameIter.release();
 }
 
 int LogFontTypeface::onGetTableTags(SkFontTableTag tags[]) const {

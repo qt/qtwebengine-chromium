@@ -15,7 +15,8 @@
 #include FT_OUTLINE_H
 #include FT_TRUETYPE_TABLES_H
 
-using FXFT_Face = struct FT_FaceRec_*;
+using FXFT_FaceRec = struct FT_FaceRec_;
+using FXFT_Face = FXFT_FaceRec*;
 using FXFT_Library = void*;
 
 using FXFT_MM_Var = FT_MM_Var*;
@@ -90,7 +91,7 @@ using FXFT_Outline_Funcs = FT_Outline_Funcs;
 #define FXFT_Get_Glyph_Name(face, index, buffer, size) \
   FT_Get_Glyph_Name(static_cast<FT_Face>(face), index, buffer, size)
 #define FXFT_Get_Name_Index(face, name) \
-  FT_Get_Name_Index(static_cast<FT_Face>(face), name)
+  FT_Get_Name_Index(static_cast<FT_Face>(face), const_cast<char*>(name))
 #define FXFT_Has_Glyph_Names(face) \
   (static_cast<FT_Face>(face)->face_flags & FT_FACE_FLAG_GLYPH_NAMES)
 #define FXFT_Get_Postscript_Name(face) \

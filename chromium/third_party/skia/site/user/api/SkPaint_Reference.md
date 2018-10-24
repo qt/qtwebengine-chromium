@@ -648,7 +648,7 @@ SkPaint member functions read and modify the structure properties.
   </tr>
   <tr>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#SkPaint_getTextBlobIntercepts'>getTextBlobIntercepts</a></td>
-    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>returns where lines intersect <a href='undocumented#Text_Blob'>Text Blob</a>; underlines</td>
+    <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>returns where lines intersect <a href='SkTextBlob_Reference#Text_Blob'>Text Blob</a>; underlines</td>
   </tr>
   <tr style='background-color: #f0f0f0; '>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a href='#SkPaint_getTextEncoding'>getTextEncoding</a></td>
@@ -2802,8 +2802,8 @@ a fill draw.
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a name='SkPaint_kFill_Style'><code>SkPaint::kFill_Style</code></a></td>
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>0</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
-Applies to <a href='SkRect_Reference#Rect'>Rect</a>, <a href='undocumented#Region'>Region</a>, <a href='SkRRect_Reference#RRect'>Round Rect</a>, <a href='undocumented#Circle'>Circles</a>, <a href='undocumented#Oval'>Ovals</a>, <a href='SkPath_Reference#Path'>Path</a>, and <a href='undocumented#Text'>Text</a>.
-<a href='SkBitmap_Reference#Bitmap'>Bitmap</a>, <a href='SkImage_Reference#Image'>Image</a>, <a href='undocumented#Patch'>Patches</a>, <a href='undocumented#Region'>Region</a>, <a href='undocumented#Sprite'>Sprites</a>, and <a href='undocumented#Vertices'>Vertices</a> are painted as if
+Applies to <a href='SkRect_Reference#Rect'>Rect</a>, <a href='SkRegion_Reference#Region'>Region</a>, <a href='SkRRect_Reference#RRect'>Round Rect</a>, <a href='undocumented#Circle'>Circles</a>, <a href='undocumented#Oval'>Ovals</a>, <a href='SkPath_Reference#Path'>Path</a>, and <a href='undocumented#Text'>Text</a>.
+<a href='SkBitmap_Reference#Bitmap'>Bitmap</a>, <a href='SkImage_Reference#Image'>Image</a>, <a href='undocumented#Patch'>Patches</a>, <a href='SkRegion_Reference#Region'>Region</a>, <a href='undocumented#Sprite'>Sprites</a>, and <a href='undocumented#Vertices'>Vertices</a> are painted as if
 <a href='#SkPaint_kFill_Style'>kFill Style</a> is set, and ignore the set <a href='#SkPaint_Style'>Style</a>.
 The <a href='SkPath_Reference#Fill_Type'>Path Fill Type</a> specifies additional rules to fill the area outside the path edge,
 and to create an unfilled hole inside the shape.
@@ -2814,7 +2814,7 @@ and to create an unfilled hole inside the shape.
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a name='SkPaint_kStroke_Style'><code>SkPaint::kStroke_Style</code></a></td>
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>1</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
-Applies to <a href='SkRect_Reference#Rect'>Rect</a>, <a href='undocumented#Region'>Region</a>, <a href='SkRRect_Reference#RRect'>Round Rect</a>, <a href='undocumented#Arc'>Arcs</a>, <a href='undocumented#Circle'>Circles</a>, <a href='undocumented#Oval'>Ovals</a>, <a href='SkPath_Reference#Path'>Path</a>, and <a href='undocumented#Text'>Text</a>.
+Applies to <a href='SkRect_Reference#Rect'>Rect</a>, <a href='SkRegion_Reference#Region'>Region</a>, <a href='SkRRect_Reference#RRect'>Round Rect</a>, <a href='undocumented#Arc'>Arcs</a>, <a href='undocumented#Circle'>Circles</a>, <a href='undocumented#Oval'>Ovals</a>, <a href='SkPath_Reference#Path'>Path</a>, and <a href='undocumented#Text'>Text</a>.
 <a href='undocumented#Arc'>Arcs</a>, <a href='undocumented#Line'>Lines</a>, and points, are always drawn as if <a href='#SkPaint_kStroke_Style'>kStroke Style</a> is set,
 and ignore the set <a href='#SkPaint_Style'>Style</a>.
 The stroke construction is unaffected by the <a href='SkPath_Reference#Fill_Type'>Path Fill Type</a>.
@@ -2824,7 +2824,7 @@ The stroke construction is unaffected by the <a href='SkPath_Reference#Fill_Type
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '><a name='SkPaint_kStrokeAndFill_Style'><code>SkPaint::kStrokeAndFill_Style</code></a></td>
     <td style='text-align: center; border: 2px solid #dddddd; padding: 8px; '>2</td>
     <td style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>
-Applies to <a href='SkRect_Reference#Rect'>Rect</a>, <a href='undocumented#Region'>Region</a>, <a href='SkRRect_Reference#RRect'>Round Rect</a>, <a href='undocumented#Circle'>Circles</a>, <a href='undocumented#Oval'>Ovals</a>, <a href='SkPath_Reference#Path'>Path</a>, and <a href='undocumented#Text'>Text</a>.
+Applies to <a href='SkRect_Reference#Rect'>Rect</a>, <a href='SkRegion_Reference#Region'>Region</a>, <a href='SkRRect_Reference#RRect'>Round Rect</a>, <a href='undocumented#Circle'>Circles</a>, <a href='undocumented#Oval'>Ovals</a>, <a href='SkPath_Reference#Path'>Path</a>, and <a href='undocumented#Text'>Text</a>.
 <a href='SkPath_Reference#Path'>Path</a> is treated as if it is set to <a href='SkPath_Reference#SkPath_kWinding_FillType'>SkPath::kWinding FillType</a>,
 and the set <a href='SkPath_Reference#Fill_Type'>Path Fill Type</a> is ignored.
 </td>
@@ -3361,7 +3361,7 @@ one of: <a href='#SkPaint_kMiter_Join'>kMiter Join</a>, <a href='#SkPaint_kRound
 
 ### Example
 
-<div><fiddle-embed name="af6dec8ef974aa67bf102f29915bcd6a">
+<div><fiddle-embed name="31bf751d0a8ddf176b871810820d8199">
 
 #### Example Output
 
@@ -4336,8 +4336,7 @@ Deprecated.
 
 <a href='#SkPaint_Align'>Align</a> adjusts the text relative to the text position.
 <a href='#SkPaint_Align'>Align</a> affects <a href='undocumented#Glyph'>Glyphs</a> drawn with: <a href='SkCanvas_Reference#SkCanvas_drawText'>SkCanvas::drawText</a>, <a href='SkCanvas_Reference#SkCanvas_drawPosText'>SkCanvas::drawPosText</a>,
-<a href='SkCanvas_Reference#SkCanvas_drawPosTextH'>SkCanvas::drawPosTextH</a>, <a href='SkCanvas_Reference#SkCanvas_drawTextOnPath'>SkCanvas::drawTextOnPath</a>,
-<a href='SkCanvas_Reference#SkCanvas_drawTextOnPathHV'>SkCanvas::drawTextOnPathHV</a>, <a href='SkCanvas_Reference#SkCanvas_drawTextRSXform'>SkCanvas::drawTextRSXform</a>, <a href='SkCanvas_Reference#SkCanvas_drawTextBlob'>SkCanvas::drawTextBlob</a>,
+<a href='SkCanvas_Reference#SkCanvas_drawPosTextH'>SkCanvas::drawPosTextH</a>, <a href='SkCanvas_Reference#SkCanvas_drawTextRSXform'>SkCanvas::drawTextRSXform</a>, <a href='SkCanvas_Reference#SkCanvas_drawTextBlob'>SkCanvas::drawTextBlob</a>,
 and <a href='SkCanvas_Reference#SkCanvas_drawString'>SkCanvas::drawString</a>;
 as well as calls that place text <a href='undocumented#Glyph'>Glyphs</a> like <a href='#SkPaint_getTextWidths'>getTextWidths</a> and <a href='#SkPaint_getTextPath'>getTextPath</a>.
 
@@ -4588,7 +4587,7 @@ additional shear in x-axis relative to y-axis
 
 ### Example
 
-<div><fiddle-embed name="c79a196278c58b34cd5f551b0124ecc9"></fiddle-embed></div>
+<div><fiddle-embed name="11c10f466dae0d1639dbb9f6a0040218"></fiddle-embed></div>
 
 ---
 
@@ -4771,7 +4770,7 @@ Y-axis values above the baseline are negative, and below the baseline are positi
 ## <a name='Font_Metrics_Constant'>Constant</a>
 
 
-SkPaint related constants are defined by <code>enum</code>, <code>enum class</code>,  <code>#define</code>, <code>const</code>, and <code>constexpr</code>.
+SkPaint::FontMetrics related constants are defined by <code>enum</code>, <code>enum class</code>,  <code>#define</code>, <code>const</code>, and <code>constexpr</code>.
 <table style='border-collapse: collapse; width: 62.5em'>
   <tr><th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Topic</th>
 <th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Description</th></tr>
@@ -4800,7 +4799,7 @@ SkPaint related constants are defined by <code>enum</code>, <code>enum class</co
 ## <a name='Font_Metrics_Member_Function'>Member_Function</a>
 
 
-SkPaint member functions read and modify the structure properties.
+SkPaint::FontMetrics member functions read and modify the structure properties.
 <table style='border-collapse: collapse; width: 62.5em'>
   <tr><th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Topic</th>
 <th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Description</th></tr>
@@ -4825,7 +4824,7 @@ SkPaint member functions read and modify the structure properties.
 ## <a name='Font_Metrics_Member'>Member</a>
 
 
-SkPaint members may be read and written directly without using a member function.
+SkPaint::FontMetrics members may be read and written directly without using a member function.
 <table style='border-collapse: collapse; width: 62.5em'>
   <tr><th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Topic</th>
 <th style='text-align: left; border: 2px solid #dddddd; padding: 8px; '>Description</th></tr>
@@ -5935,7 +5934,7 @@ number of intersections; may be zero
 ## getTextBlobIntercepts
 
 <pre style="padding: 1em 1em 1em 1em; width: 62.5em;background-color: #f0f0f0">
-int <a href='#SkPaint_getTextBlobIntercepts'>getTextBlobIntercepts</a>(const <a href='undocumented#SkTextBlob'>SkTextBlob</a>* blob, const <a href='undocumented#SkScalar'>SkScalar</a> bounds[2], <a href='undocumented#SkScalar'>SkScalar</a>* intervals) const
+int <a href='#SkPaint_getTextBlobIntercepts'>getTextBlobIntercepts</a>(const <a href='SkTextBlob_Reference#SkTextBlob'>SkTextBlob</a>* blob, const <a href='undocumented#SkScalar'>SkScalar</a> bounds[2], <a href='undocumented#SkScalar'>SkScalar</a>* intervals) const
 </pre>
 
 Returns the number of <a href='#SkPaint_getTextBlobIntercepts_intervals'>intervals</a> that intersect <a href='#SkPaint_getTextBlobIntercepts_bounds'>bounds</a>.

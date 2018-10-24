@@ -14,7 +14,7 @@
 
 class CBC_PDF417Writer;
 
-class CBC_PDF417I : public CBC_CodeBase {
+class CBC_PDF417I final : public CBC_CodeBase {
  public:
   CBC_PDF417I();
   ~CBC_PDF417I() override;
@@ -26,7 +26,6 @@ class CBC_PDF417I : public CBC_CodeBase {
   BC_TYPE GetType() override;
 
   bool SetErrorCorrectionLevel(int32_t level);
-  void SetTruncated(bool truncated);
 
  private:
   CBC_PDF417Writer* GetPDF417Writer();

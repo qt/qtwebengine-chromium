@@ -276,14 +276,6 @@ void SkLuaCanvas::onDrawPosTextH(const void* text, size_t byteLength, const SkSc
     lua.pushPaint(paint, "paint");
 }
 
-void SkLuaCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
-                                   const SkMatrix* matrix, const SkPaint& paint) {
-    AUTO_LUA("drawTextOnPath");
-    lua.pushPath(path, "path");
-    lua.pushEncodedText(paint.getTextEncoding(), text, byteLength);
-    lua.pushPaint(paint, "paint");
-}
-
 void SkLuaCanvas::onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
                                     const SkRect* cull, const SkPaint& paint) {
     AUTO_LUA("drawTextRSXform");
@@ -314,8 +306,8 @@ void SkLuaCanvas::onDrawDrawable(SkDrawable* drawable, const SkMatrix* matrix) {
     this->INHERITED::onDrawDrawable(drawable, matrix);
 }
 
-void SkLuaCanvas::onDrawVerticesObject(const SkVertices*, const SkMatrix*, int, SkBlendMode,
-                                       const SkPaint& paint) {
+void SkLuaCanvas::onDrawVerticesObject(const SkVertices*, const SkVertices::Bone[], int,
+                                       SkBlendMode, const SkPaint& paint) {
     AUTO_LUA("drawVertices");
     lua.pushPaint(paint, "paint");
 }

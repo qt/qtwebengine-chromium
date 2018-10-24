@@ -125,9 +125,17 @@ void ProgramGL::setSeparable(bool separable)
     mFunctions->programParameteri(mProgramID, GL_PROGRAM_SEPARABLE, separable ? GL_TRUE : GL_FALSE);
 }
 
-gl::LinkResult ProgramGL::link(const gl::Context *context,
-                               const gl::ProgramLinkedResources &resources,
-                               gl::InfoLog &infoLog)
+std::unique_ptr<LinkEvent> ProgramGL::link(const gl::Context *context,
+                                           const gl::ProgramLinkedResources &resources,
+                                           gl::InfoLog &infoLog)
+{
+    // TODO(jie.a.chen@intel.com): Parallelize linking.
+    return std::make_unique<LinkEventDone>(linkImpl(context, resources, infoLog));
+}
+
+gl::LinkResult ProgramGL::linkImpl(const gl::Context *context,
+                                   const gl::ProgramLinkedResources &resources,
+                                   gl::InfoLog &infoLog)
 {
     preLink();
 
@@ -152,7 +160,7 @@ gl::LinkResult ProgramGL::link(const gl::Context *context,
         {
             std::string tfVaryingMappedName =
                 mState.getAttachedShader(gl::ShaderType::Vertex)
-                    ->getTransformFeedbackVaryingMappedName(tfVarying, context);
+                    ->getTransformFeedbackVaryingMappedName(tfVarying);
             transformFeedbackVaryingMappedNames.push_back(tfVaryingMappedName);
         }
 
@@ -710,7 +718,7 @@ bool ProgramGL::checkLinkStatus(gl::InfoLog &infoLog)
     mFunctions->getProgramiv(mProgramID, GL_LINK_STATUS, &linkStatus);
     if (linkStatus == GL_FALSE)
     {
-        // Linking failed, put the error into the info log
+        // Linking or program binary loading failed, put the error into the info log.
         GLint infoLogLength = 0;
         mFunctions->getProgramiv(mProgramID, GL_INFO_LOG_LENGTH, &infoLogLength);
 
@@ -721,19 +729,18 @@ bool ProgramGL::checkLinkStatus(gl::InfoLog &infoLog)
             std::vector<char> buf(infoLogLength);
             mFunctions->getProgramInfoLog(mProgramID, infoLogLength, nullptr, &buf[0]);
 
-            mFunctions->deleteProgram(mProgramID);
-            mProgramID = 0;
-
             infoLog << buf.data();
 
-            WARN() << "Program link failed unexpectedly: " << buf.data();
+            WARN() << "Program link or binary loading failed: " << buf.data();
         }
         else
         {
-            WARN() << "Program link failed unexpectedly with no info log.";
+            WARN() << "Program link or binary loading failed with no info log.";
         }
 
-        // TODO, return GL_OUT_OF_MEMORY or just fail the link? This is an unexpected case
+        // This may happen under normal circumstances if we're loading program binaries and the
+        // driver or hardware has changed.
+        ASSERT(mProgramID != 0);
         return false;
     }
 
@@ -883,7 +890,8 @@ void ProgramGL::getUniformuiv(const gl::Context *context, GLint location, GLuint
 }
 
 void ProgramGL::markUnusedUniformLocations(std::vector<gl::VariableLocation> *uniformLocations,
-                                           std::vector<gl::SamplerBinding> *samplerBindings)
+                                           std::vector<gl::SamplerBinding> *samplerBindings,
+                                           std::vector<gl::ImageBinding> *imageBindings)
 {
     GLint maxLocation = static_cast<GLint>(uniformLocations->size());
     for (GLint location = 0; location < maxLocation; ++location)
@@ -895,6 +903,11 @@ void ProgramGL::markUnusedUniformLocations(std::vector<gl::VariableLocation> *un
             {
                 GLuint samplerIndex = mState.getSamplerIndexFromUniformIndex(locationRef.index);
                 (*samplerBindings)[samplerIndex].unreferenced = true;
+            }
+            else if (mState.isImageUniformIndex(locationRef.index))
+            {
+                GLuint imageIndex = mState.getImageIndexFromUniformIndex(locationRef.index);
+                (*imageBindings)[imageIndex].unreferenced = true;
             }
             locationRef.markUnused();
         }
@@ -935,4 +948,14 @@ void ProgramGL::linkResources(const gl::ProgramLinkedResources &resources)
     resources.atomicCounterBufferLinker.link(sizeMap);
 }
 
+gl::Error ProgramGL::syncState(const gl::Context *context, const gl::Program::DirtyBits &dirtyBits)
+{
+    for (size_t dirtyBit : dirtyBits)
+    {
+        ASSERT(dirtyBit <= gl::Program::DIRTY_BIT_UNIFORM_BLOCK_BINDING_MAX);
+        GLuint binding = static_cast<GLuint>(dirtyBit);
+        setUniformBlockBinding(binding, mState.getUniformBlockBinding(binding));
+    }
+    return gl::NoError();
+}
 }  // namespace rx

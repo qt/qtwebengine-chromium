@@ -11,17 +11,20 @@
 #include "SkPoint.h"
 #include "SkRefCnt.h"
 #include "SkSize.h"
-
-#include <vector>
+#include "SkottieValue.h"
 
 namespace sksg {
 
+class Color;
+class Draw;
 class Gradient;
+class Group;
 class LinearGradient;
 class Matrix;
 class Path;
 class RadialGradient;
 class RRect;
+class Text;
 class TrimEffect;
 
 };
@@ -100,9 +103,9 @@ private:
 
 class GradientAdapter : public SkRefCnt {
 public:
-    ADAPTER_PROPERTY(StartPoint, SkPoint              , SkPoint::Make(0, 0)    )
-    ADAPTER_PROPERTY(EndPoint  , SkPoint              , SkPoint::Make(0, 0)    )
-    ADAPTER_PROPERTY(ColorStops, std::vector<SkScalar>, std::vector<SkScalar>())
+    ADAPTER_PROPERTY(StartPoint, SkPoint        , SkPoint::Make(0, 0)   )
+    ADAPTER_PROPERTY(EndPoint  , SkPoint        , SkPoint::Make(0, 0)   )
+    ADAPTER_PROPERTY(ColorStops, VectorValue    , VectorValue()         )
 
 protected:
     GradientAdapter(sk_sp<sksg::Gradient>, size_t stopCount);
@@ -153,6 +156,30 @@ private:
     void apply();
 
     sk_sp<sksg::TrimEffect> fTrimEffect;
+
+    using INHERITED = SkRefCnt;
+};
+
+class TextAdapter final : public SkRefCnt {
+public:
+    explicit TextAdapter(sk_sp<sksg::Group> root);
+
+    ADAPTER_PROPERTY(Text, TextValue, TextValue())
+
+    const sk_sp<sksg::Group>& root() const { return fRoot; }
+
+private:
+    void apply();
+
+    sk_sp<sksg::Group> fRoot;
+    sk_sp<sksg::Text>  fTextNode;
+    sk_sp<sksg::Color> fFillColor,
+                       fStrokeColor;
+    sk_sp<sksg::Draw>  fFillNode,
+                       fStrokeNode;
+
+    bool               fHadFill   : 1, //  - state cached from the prev apply()
+                       fHadStroke : 1; //  /
 
     using INHERITED = SkRefCnt;
 };

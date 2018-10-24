@@ -11,20 +11,15 @@
 #include "../private/SkAtomics.h"
 #include "GrBuffer.h"
 #include "GrColor.h"
-#include "GrGpuResourceRef.h"
 #include "GrProcessorUnitTest.h"
-#include "GrProgramElement.h"
 #include "GrSamplerState.h"
 #include "GrShaderVar.h"
 #include "GrSurfaceProxyPriv.h"
-#include "GrSurfaceProxyRef.h"
 #include "GrTextureProxy.h"
 #include "SkMath.h"
 #include "SkString.h"
 
 class GrContext;
-class GrCoordTransform;
-class GrInvariantOutput;
 class GrResourceProvider;
 
 /**
@@ -71,6 +66,7 @@ public:
         kButtCapStrokedCircleGeometryProcessor_ClassID,
         kCircleGeometryProcessor_ClassID,
         kCircularRRectEffect_ClassID,
+        kClockwiseTestProcessor_ClassID,
         kColorMatrixEffect_ClassID,
         kColorTableEffect_ClassID,
         kComposeOneFragmentProcessor_ClassID,
@@ -86,6 +82,7 @@ public:
         kEllipseGeometryProcessor_ClassID,
         kEllipticalRRectEffect_ClassID,
         kGP_ClassID,
+        kVertexColorSpaceBenchGP_ClassID,
         kGrAARectEffect_ClassID,
         kGrAlphaThresholdFragmentProcessor_ClassID,
         kGrArithmeticFP_ClassID,
@@ -131,6 +128,7 @@ public:
         kGrRRectBlurEffect_ClassID,
         kGrRRectShadowGeoProc_ClassID,
         kGrSimpleTextureEffect_ClassID,
+        kGrSkSLFP_ClassID,
         kGrSpecularLightingEffect_ClassID,
         kGrSRGBEffect_ClassID,
         kGrSweepGradient_ClassID,
@@ -194,114 +192,6 @@ private:
     GrProcessor& operator=(const GrProcessor&) = delete;
 
     ClassID fClassID;
-};
-
-/** A GrProcessor with the ability to access textures, buffers, and image storages. */
-class GrResourceIOProcessor : public GrProcessor {
-public:
-    class TextureSampler;
-
-    int numTextureSamplers() const { return fTextureSamplers.count(); }
-
-    /** Returns the access pattern for the texture at index. index must be valid according to
-        numTextureSamplers(). */
-    const TextureSampler& textureSampler(int index) const { return *fTextureSamplers[index]; }
-
-    bool instantiate(GrResourceProvider* resourceProvider) const;
-
-protected:
-    GrResourceIOProcessor(ClassID classID) : INHERITED(classID) {}
-
-    /**
-     * Subclasses call these from their constructor to register sampler sources. The processor
-     * subclass manages the lifetime of the objects (these functions only store pointers). The
-     * TextureSampler instances are typically member fields of the GrProcessor subclass. These must
-     * only be called from the constructor because GrProcessors are immutable.
-     */
-    void addTextureSampler(const TextureSampler*);
-
-    bool hasSameSamplers(const GrResourceIOProcessor&) const;
-
-    // These methods can be used by derived classes that also derive from GrProgramElement.
-    void addPendingIOs() const;
-    void removeRefs() const;
-    void pendingIOComplete() const;
-
-private:
-    SkSTArray<4, const TextureSampler*, true> fTextureSamplers;
-
-    typedef GrProcessor INHERITED;
-};
-
-/**
- * Used to represent a texture that is required by a GrResourceIOProcessor. It holds a GrTexture
- * along with an associated GrSamplerState. TextureSamplers don't perform any coord manipulation to
- * account for texture origin.
- */
-class GrResourceIOProcessor::TextureSampler {
-public:
-    /**
-     * Must be initialized before adding to a GrProcessor's texture access list.
-     */
-    TextureSampler();
-    /**
-     * This copy constructor is used by GrFragmentProcessor::clone() implementations. The copy
-     * always takes a new ref on the texture proxy as the new fragment processor will not yet be
-     * in pending execution state.
-     */
-    explicit TextureSampler(const TextureSampler& that)
-            : fProxyRef(sk_ref_sp(that.fProxyRef.get()), that.fProxyRef.ioType())
-            , fSamplerState(that.fSamplerState)
-            , fVisibility(that.fVisibility) {}
-
-    TextureSampler(sk_sp<GrTextureProxy>, const GrSamplerState&);
-
-    explicit TextureSampler(sk_sp<GrTextureProxy>,
-                            GrSamplerState::Filter = GrSamplerState::Filter::kNearest,
-                            GrSamplerState::WrapMode wrapXAndY = GrSamplerState::WrapMode::kClamp,
-                            GrShaderFlags visibility = kFragment_GrShaderFlag);
-
-    TextureSampler& operator=(const TextureSampler&) = delete;
-
-    void reset(sk_sp<GrTextureProxy>, const GrSamplerState&,
-               GrShaderFlags visibility = kFragment_GrShaderFlag);
-    void reset(sk_sp<GrTextureProxy>,
-               GrSamplerState::Filter = GrSamplerState::Filter::kNearest,
-               GrSamplerState::WrapMode wrapXAndY = GrSamplerState::WrapMode::kClamp,
-               GrShaderFlags visibility = kFragment_GrShaderFlag);
-
-    bool operator==(const TextureSampler& that) const {
-        return this->proxy()->underlyingUniqueID() == that.proxy()->underlyingUniqueID() &&
-               fSamplerState == that.fSamplerState && fVisibility == that.fVisibility;
-    }
-
-    bool operator!=(const TextureSampler& other) const { return !(*this == other); }
-
-    // 'instantiate' should only ever be called at flush time.
-    bool instantiate(GrResourceProvider* resourceProvider) const {
-        return SkToBool(fProxyRef.get()->instantiate(resourceProvider));
-    }
-
-    // 'peekTexture' should only ever be called after a successful 'instantiate' call
-    GrTexture* peekTexture() const {
-        SkASSERT(fProxyRef.get()->priv().peekTexture());
-        return fProxyRef.get()->priv().peekTexture();
-    }
-
-    GrTextureProxy* proxy() const { return fProxyRef.get()->asTextureProxy(); }
-    GrShaderFlags visibility() const { return fVisibility; }
-    const GrSamplerState& samplerState() const { return fSamplerState; }
-
-    bool isInitialized() const { return SkToBool(fProxyRef.get()); }
-    /**
-     * For internal use by GrProcessor.
-     */
-    const GrSurfaceProxyRef* programProxy() const { return &fProxyRef; }
-
-private:
-    GrSurfaceProxyRef fProxyRef;
-    GrSamplerState fSamplerState;
-    GrShaderFlags fVisibility;
 };
 
 #endif

@@ -7,21 +7,22 @@
 #ifndef FXJS_XFA_CJX_CHECKBUTTON_H_
 #define FXJS_XFA_CJX_CHECKBUTTON_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
 
 class CXFA_CheckButton;
 
-class CJX_CheckButton : public CJX_Node {
+class CJX_CheckButton final : public CJX_Node {
  public:
   explicit CJX_CheckButton(CXFA_CheckButton* node);
   ~CJX_CheckButton() override;
 
-  JS_PROP(allowNeutral);
-  JS_PROP(mark);
-  JS_PROP(shape);
-  JS_PROP(size);
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(allowNeutral);
+  JSE_PROP(mark);
+  JSE_PROP(shape);
+  JSE_PROP(size);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_CHECKBUTTON_H_

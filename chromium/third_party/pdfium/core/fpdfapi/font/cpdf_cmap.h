@@ -27,7 +27,7 @@ enum CIDCoding : uint8_t {
   CIDCODING_UTF16,
 };
 
-class CPDF_CMap : public Retainable {
+class CPDF_CMap final : public Retainable {
  public:
   enum CodingScheme : uint8_t {
     OneByte,
@@ -51,9 +51,7 @@ class CPDF_CMap : public Retainable {
   template <typename T, typename... Args>
   friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
 
-  void LoadPredefined(CPDF_CMapManager* pMgr,
-                      const ByteString& name,
-                      bool bPromptCJK);
+  void LoadPredefined(CPDF_CMapManager* pMgr, const ByteString& name);
   void LoadEmbedded(pdfium::span<const uint8_t> data);
 
   bool IsLoaded() const { return m_bLoaded; }
@@ -62,7 +60,7 @@ class CPDF_CMap : public Retainable {
   uint16_t CIDFromCharCode(uint32_t charcode) const;
 
   int GetCharSize(uint32_t charcode) const;
-  uint32_t GetNextChar(const ByteStringView& pString, size_t& offset) const;
+  uint32_t GetNextChar(const ByteStringView& pString, size_t* pOffset) const;
   size_t CountChar(const ByteStringView& pString) const;
   int AppendChar(char* str, uint32_t charcode) const;
 

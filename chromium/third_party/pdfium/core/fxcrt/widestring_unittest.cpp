@@ -395,6 +395,13 @@ TEST(WideString, OperatorNE) {
   EXPECT_TRUE(c_string3 != wide_string);
 }
 
+TEST(WideString, OperatorPlus) {
+  EXPECT_EQ(L"I like dogs", L"I like " + WideString(L"dogs"));
+  EXPECT_EQ(L"Dogs like me", WideString(L"Dogs") + L" like me");
+  EXPECT_EQ(L"Oh no, error number 42",
+            L"Oh no, error number " + WideString::Format(L"%d", 42));
+}
+
 TEST(WideString, ConcatInPlace) {
   WideString fred;
   fred.Concat(L"FRED", 4);
@@ -992,6 +999,53 @@ TEST(WideString, UTF16LE_Encode) {
   }
 }
 
+TEST(WideString, ToDefANSI) {
+  EXPECT_EQ("", WideString().ToDefANSI());
+#if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+  const char* kResult =
+      "x"
+      "?"
+      "\xff"
+      "A"
+      "?"
+      "y";
+#else
+  const char* kResult =
+      "x"
+      "\x80"
+      "\xff"
+      "y";
+#endif
+  EXPECT_EQ(kResult, WideString(L"x"
+                                L"\u0080"
+                                L"\u00ff"
+                                L"\u0100"
+                                L"\u208c"
+                                L"y")
+                         .ToDefANSI());
+}
+
+TEST(WideString, FromLocal) {
+  EXPECT_EQ(L"", WideString::FromLocal(ByteStringView()));
+#if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+  const wchar_t* kResult =
+      L"x"
+      L"\u20ac"
+      L"\u00ff"
+      L"y";
+#else
+  const wchar_t* kResult =
+      L"x"
+      L"\u0080"
+      L"\u00ff"
+      L"y";
+#endif
+  EXPECT_EQ(kResult, WideString::FromLocal("x"
+                                           "\x80"
+                                           "\xff"
+                                           "y"));
+}
+
 TEST(WideStringView, FromVector) {
   std::vector<WideStringView::UnsignedType> null_vec;
   WideStringView null_string(null_vec);
@@ -1379,6 +1433,22 @@ TEST(WideString, FormatPrecision) {
 
 TEST(WideString, FormatOutOfRangeChar) {
   EXPECT_NE(L"", WideString::Format(L"unsupported char '%c'", 0x00FF00FF));
+}
+
+TEST(WideString, FormatString) {
+  // %ls and wide characters are the reliable combination across platforms.
+  EXPECT_EQ(L"", WideString::Format(L"%ls", L""));
+  EXPECT_EQ(L"", WideString::Format(L"%ls", WideString().c_str()));
+  EXPECT_EQ(L"clams", WideString::Format(L"%ls", L"clams"));
+  EXPECT_EQ(L"cla", WideString::Format(L"%.3ls", L"clams"));
+  EXPECT_EQ(L"\u043e\u043f", WideString(L"\u043e\u043f"));
+
+#if _FX_OS_ != _FX_OS_MACOSX_
+  // See https://bugs.chromium.org/p/pdfium/issues/detail?id=1132
+  EXPECT_EQ(L"\u043e\u043f", WideString::Format(L"\u043e\u043f"));
+  EXPECT_EQ(L"\u043e\u043f", WideString::Format(L"%ls", L"\u043e\u043f"));
+  EXPECT_EQ(L"\u043e", WideString::Format(L"%.1ls", L"\u043e\u043f"));
+#endif
 }
 
 TEST(WideString, Empty) {

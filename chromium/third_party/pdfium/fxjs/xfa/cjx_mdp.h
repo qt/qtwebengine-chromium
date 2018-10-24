@@ -7,19 +7,20 @@
 #ifndef FXJS_XFA_CJX_MDP_H_
 #define FXJS_XFA_CJX_MDP_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
 
 class CXFA_Mdp;
 
-class CJX_Mdp : public CJX_Node {
+class CJX_Mdp final : public CJX_Node {
  public:
   explicit CJX_Mdp(CXFA_Mdp* node);
   ~CJX_Mdp() override;
 
-  JS_PROP(permissions);
-  JS_PROP(signatureType);
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(permissions);
+  JSE_PROP(signatureType);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_MDP_H_

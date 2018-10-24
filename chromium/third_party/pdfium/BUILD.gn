@@ -72,6 +72,9 @@ config("pdfium_core_config") {
   cflags = []
   configs = [ ":pdfium_common_config" ]
   defines = [ "V8_DEPRECATION_WARNINGS" ]
+  if (is_clang) {
+    cflags += [ "-Wshadow" ]
+  }
   if (is_linux) {
     if (current_cpu == "x64") {
       defines += [ "_FX_CPU_=_FX_X64_" ]
@@ -82,11 +85,11 @@ config("pdfium_core_config") {
   }
   if (is_win) {
     cflags += [
-      "/wd4267",
       "/wd4324",
       "/wd4577",
     ]
   }
+  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 }
 
 config("xfa_warnings") {
@@ -131,8 +134,6 @@ jumbo_static_library("pdfium") {
     "fpdfsdk/cpdfsdk_helpers.h",
     "fpdfsdk/cpdfsdk_interform.cpp",
     "fpdfsdk/cpdfsdk_interform.h",
-    "fpdfsdk/cpdfsdk_memoryaccess.cpp",
-    "fpdfsdk/cpdfsdk_memoryaccess.h",
     "fpdfsdk/cpdfsdk_pageview.cpp",
     "fpdfsdk/cpdfsdk_pageview.h",
     "fpdfsdk/cpdfsdk_widget.cpp",
@@ -250,6 +251,8 @@ jumbo_static_library("test_support") {
     "testing/string_write_stream.h",
     "testing/test_support.cpp",
     "testing/test_support.h",
+    "testing/utils/bitmap_saver.cpp",
+    "testing/utils/bitmap_saver.h",
     "testing/utils/path_service.cpp",
     "testing/utils/path_service.h",
   ]
@@ -257,6 +260,7 @@ jumbo_static_library("test_support") {
     "testing/resources/",
   ]
   deps = [
+    ":image_diff",
     ":pdfium",
     "//testing/gmock",
     "//testing/gtest",
@@ -656,8 +660,8 @@ jumbo_static_library("fpdfapi") {
     "core/fpdfapi/render/cpdf_charposlist.h",
     "core/fpdfapi/render/cpdf_devicebuffer.cpp",
     "core/fpdfapi/render/cpdf_devicebuffer.h",
-    "core/fpdfapi/render/cpdf_dibsource.cpp",
-    "core/fpdfapi/render/cpdf_dibsource.h",
+    "core/fpdfapi/render/cpdf_dibbase.cpp",
+    "core/fpdfapi/render/cpdf_dibbase.h",
     "core/fpdfapi/render/cpdf_dibtransferfunc.cpp",
     "core/fpdfapi/render/cpdf_dibtransferfunc.h",
     "core/fpdfapi/render/cpdf_docrenderdata.cpp",
@@ -719,23 +723,23 @@ jumbo_static_library("fxcodec") {
   sources = [
     "core/fxcodec/JBig2_DocumentContext.h",
     "core/fxcodec/codec/ccodec_basicmodule.h",
+    "core/fxcodec/codec/ccodec_faxmodule.cpp",
     "core/fxcodec/codec/ccodec_faxmodule.h",
+    "core/fxcodec/codec/ccodec_flatemodule.cpp",
     "core/fxcodec/codec/ccodec_flatemodule.h",
+    "core/fxcodec/codec/ccodec_iccmodule.cpp",
     "core/fxcodec/codec/ccodec_iccmodule.h",
+    "core/fxcodec/codec/ccodec_jbig2module.cpp",
     "core/fxcodec/codec/ccodec_jbig2module.h",
+    "core/fxcodec/codec/ccodec_jpegmodule.cpp",
     "core/fxcodec/codec/ccodec_jpegmodule.h",
+    "core/fxcodec/codec/ccodec_jpxmodule.cpp",
     "core/fxcodec/codec/ccodec_jpxmodule.h",
     "core/fxcodec/codec/ccodec_scanlinedecoder.cpp",
     "core/fxcodec/codec/ccodec_scanlinedecoder.h",
     "core/fxcodec/codec/cjpx_decoder.h",
     "core/fxcodec/codec/codec_int.h",
     "core/fxcodec/codec/fx_codec.cpp",
-    "core/fxcodec/codec/fx_codec_fax.cpp",
-    "core/fxcodec/codec/fx_codec_flate.cpp",
-    "core/fxcodec/codec/fx_codec_icc.cpp",
-    "core/fxcodec/codec/fx_codec_jbig.cpp",
-    "core/fxcodec/codec/fx_codec_jpeg.cpp",
-    "core/fxcodec/codec/fx_codec_jpx_opj.cpp",
     "core/fxcodec/fx_codec.h",
     "core/fxcodec/fx_codec_def.h",
     "core/fxcodec/jbig2/JBig2_ArithDecoder.cpp",
@@ -785,8 +789,8 @@ jumbo_static_library("fxcodec") {
 
   if (pdf_enable_xfa) {
     sources += [
+      "core/fxcodec/codec/ccodec_progressivedecoder.cpp",
       "core/fxcodec/codec/ccodec_progressivedecoder.h",
-      "core/fxcodec/codec/fx_codec_progress.cpp",
     ]
     if (pdf_enable_xfa_bmp) {
       sources += [
@@ -826,11 +830,12 @@ jumbo_static_library("fxcodec") {
       ]
       deps += [ "third_party:fx_tiff" ]
     }
-  }
-  if (is_posix || is_fuchsia) {
-    # core/fxcodec/fx_libopenjpeg/src/fx_mct.c does an pointer-to-int
-    # conversion to check that an address is 16-bit aligned (benign).
-    cflags_c = [ "-Wno-pointer-to-int-cast" ]
+    if (pdf_enable_xfa_bmp || pdf_enable_xfa_gif) {
+      sources += [
+        "core/fxcodec/codec/cfx_codec_memory.cpp",
+        "core/fxcodec/codec/cfx_codec_memory.h",
+      ]
+    }
   }
 }
 
@@ -854,17 +859,19 @@ jumbo_static_library("fxcrt") {
     "core/fxcrt/cfx_bitstream.h",
     "core/fxcrt/cfx_datetime.cpp",
     "core/fxcrt/cfx_datetime.h",
-    "core/fxcrt/cfx_fileaccess_windows.cpp",
-    "core/fxcrt/cfx_fileaccess_windows.h",
     "core/fxcrt/cfx_fixedbufgrow.h",
     "core/fxcrt/cfx_memorystream.cpp",
     "core/fxcrt/cfx_memorystream.h",
+    "core/fxcrt/cfx_readonlymemorystream.cpp",
+    "core/fxcrt/cfx_readonlymemorystream.h",
     "core/fxcrt/cfx_seekablemultistream.cpp",
     "core/fxcrt/cfx_seekablemultistream.h",
     "core/fxcrt/cfx_seekablestreamproxy.cpp",
     "core/fxcrt/cfx_seekablestreamproxy.h",
     "core/fxcrt/cfx_utf8decoder.cpp",
     "core/fxcrt/cfx_utf8decoder.h",
+    "core/fxcrt/cfx_utf8encoder.cpp",
+    "core/fxcrt/cfx_utf8encoder.h",
     "core/fxcrt/cfx_widetextbuf.cpp",
     "core/fxcrt/cfx_widetextbuf.h",
     "core/fxcrt/fileaccess_iface.h",
@@ -934,6 +941,12 @@ jumbo_static_library("fxcrt") {
       "core/fxcrt/cfx_fileaccess_posix.h",
     ]
   }
+  if (is_win) {
+    sources += [
+      "core/fxcrt/cfx_fileaccess_windows.cpp",
+      "core/fxcrt/cfx_fileaccess_windows.h",
+    ]
+  }
   if (pdf_enable_xfa) {
     sources += [
       "core/fxcrt/cfx_char.cpp",
@@ -990,16 +1003,10 @@ jumbo_static_library("fxcrt") {
 
 jumbo_static_library("fxge") {
   sources = [
-    "core/fxge/android/cfpf_skiabufferfont.cpp",
-    "core/fxge/android/cfpf_skiabufferfont.h",
     "core/fxge/android/cfpf_skiadevicemodule.cpp",
     "core/fxge/android/cfpf_skiadevicemodule.h",
-    "core/fxge/android/cfpf_skiafilefont.cpp",
-    "core/fxge/android/cfpf_skiafilefont.h",
     "core/fxge/android/cfpf_skiafont.cpp",
     "core/fxge/android/cfpf_skiafont.h",
-    "core/fxge/android/cfpf_skiafontdescriptor.cpp",
-    "core/fxge/android/cfpf_skiafontdescriptor.h",
     "core/fxge/android/cfpf_skiafontmgr.cpp",
     "core/fxge/android/cfpf_skiafontmgr.h",
     "core/fxge/android/cfpf_skiapathfont.cpp",
@@ -1037,19 +1044,18 @@ jumbo_static_library("fxge") {
     "core/fxge/cfx_substfont.h",
     "core/fxge/cfx_unicodeencoding.cpp",
     "core/fxge/cfx_unicodeencoding.h",
-    "core/fxge/cfx_windowsrenderdevice.h",
     "core/fxge/cttfontdesc.cpp",
     "core/fxge/cttfontdesc.h",
     "core/fxge/dib/cfx_bitmapcomposer.cpp",
     "core/fxge/dib/cfx_bitmapcomposer.h",
     "core/fxge/dib/cfx_bitmapstorer.cpp",
     "core/fxge/dib/cfx_bitmapstorer.h",
+    "core/fxge/dib/cfx_dibbase.cpp",
+    "core/fxge/dib/cfx_dibbase.h",
     "core/fxge/dib/cfx_dibextractor.cpp",
     "core/fxge/dib/cfx_dibextractor.h",
     "core/fxge/dib/cfx_dibitmap.cpp",
     "core/fxge/dib/cfx_dibitmap.h",
-    "core/fxge/dib/cfx_dibsource.cpp",
-    "core/fxge/dib/cfx_dibsource.h",
     "core/fxge/dib/cfx_filtereddib.cpp",
     "core/fxge/dib/cfx_filtereddib.h",
     "core/fxge/dib/cfx_imagerenderer.cpp",
@@ -1133,6 +1139,7 @@ jumbo_static_library("fxge") {
 
   if (is_win) {
     sources += [
+      "core/fxge/cfx_windowsrenderdevice.h",
       "core/fxge/win32/cfx_psrenderer.cpp",
       "core/fxge/win32/cfx_psrenderer.h",
       "core/fxge/win32/cpsoutput.cpp",
@@ -1269,8 +1276,8 @@ jumbo_static_library("fxjs") {
       "fxjs/cjs_publicmethods.h",
       "fxjs/cjs_report.cpp",
       "fxjs/cjs_report.h",
-      "fxjs/cjs_return.cpp",
-      "fxjs/cjs_return.h",
+      "fxjs/cjs_result.cpp",
+      "fxjs/cjs_result.h",
       "fxjs/cjs_runtime.cpp",
       "fxjs/cjs_runtime.h",
       "fxjs/cjs_scalehow.cpp",
@@ -1285,13 +1292,13 @@ jumbo_static_library("fxjs") {
       "fxjs/cjs_util.h",
       "fxjs/cjs_zoomtype.cpp",
       "fxjs/cjs_zoomtype.h",
-      "fxjs/cjx_define.h",
       "fxjs/global_timer.cpp",
       "fxjs/global_timer.h",
       "fxjs/js_define.cpp",
       "fxjs/js_define.h",
       "fxjs/js_resources.cpp",
       "fxjs/js_resources.h",
+      "fxjs/jse_define.h",
     ]
     deps += [
       ":fxcrt",
@@ -1323,6 +1330,7 @@ jumbo_static_library("fxjs") {
         "fxjs/cfxjse_runtimedata.h",
         "fxjs/cfxjse_value.cpp",
         "fxjs/cfxjse_value.h",
+        "fxjs/fxjse.cpp",
         "fxjs/fxjse.h",
         "fxjs/xfa/cjx_arc.cpp",
         "fxjs/xfa/cjx_arc.h",
@@ -2754,7 +2762,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_traverse.cpp",
       "xfa/fxfa/parser/cxfa_traverse.h",
       "xfa/fxfa/parser/cxfa_traversestrategy_contentareacontainerlayoutitem.h",
-      "xfa/fxfa/parser/cxfa_traversestrategy_contentlayoutitem.h",
       "xfa/fxfa/parser/cxfa_traversestrategy_layoutitem.h",
       "xfa/fxfa/parser/cxfa_traversestrategy_xfacontainernode.h",
       "xfa/fxfa/parser/cxfa_traversestrategy_xfanode.h",

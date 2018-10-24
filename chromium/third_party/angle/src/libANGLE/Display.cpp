@@ -387,8 +387,7 @@ Display::Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDe
       mPlatform(platform),
       mTextureManager(nullptr),
       mMemoryProgramCache(gl::kDefaultMaxProgramCacheMemoryBytes),
-      mGlobalTextureShareGroupUsers(0),
-      mProxyContext(this)
+      mGlobalTextureShareGroupUsers(0)
 {
 }
 
@@ -419,8 +418,6 @@ Display::~Display()
     {
         UNREACHABLE();
     }
-
-    mProxyContext.reset(nullptr);
 
     SafeDelete(mDevice);
     SafeDelete(mImplementation);
@@ -532,12 +529,6 @@ Error Display::initialize()
         ASSERT(mDevice != nullptr);
     }
 
-    mProxyContext.reset(nullptr);
-    gl::Context *proxyContext =
-        new gl::Context(mImplementation, nullptr, nullptr, nullptr, nullptr, egl::AttributeMap(),
-                        mDisplayExtensions, GetClientExtensions());
-    mProxyContext.reset(proxyContext);
-
     mInitialized = true;
 
     return NoError();
@@ -576,9 +567,6 @@ Error Display::terminate(const Thread *thread)
     {
         ANGLE_TRY(destroySurface(*mState.surfaceSet.begin()));
     }
-
-    // Allow the EGL objects that are being deleted to use the proxy context.
-    mProxyContext.reset(nullptr);
 
     mConfigSet.clear();
 
@@ -729,9 +717,9 @@ Error Display::createImage(const gl::Context *context,
     }
     ASSERT(sibling != nullptr);
 
-    angle::UniqueObjectPointer<Image, gl::Context> imagePtr(
-        new Image(mImplementation, target, sibling, attribs), context);
-    ANGLE_TRY(imagePtr->initialize());
+    angle::UniqueObjectPointer<Image, Display> imagePtr(
+        new Image(mImplementation, context, target, sibling, attribs), this);
+    ANGLE_TRY(imagePtr->initialize(this));
 
     Image *image = imagePtr.release();
 
@@ -876,7 +864,7 @@ void Display::destroyImage(egl::Image *image)
 {
     auto iter = mImageSet.find(image);
     ASSERT(iter != mImageSet.end());
-    (*iter)->release(mProxyContext.get());
+    (*iter)->release(this);
     mImageSet.erase(iter);
 }
 

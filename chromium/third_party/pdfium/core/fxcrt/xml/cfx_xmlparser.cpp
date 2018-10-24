@@ -92,7 +92,8 @@ bool CFX_XMLParser::DoSyntaxParse(CFX_XMLDocument* doc) {
 
   FX_SAFE_SIZE_T alloc_size_safe = m_iXMLPlaneSize;
   alloc_size_safe += 1;  // For NUL.
-  if (!alloc_size_safe.IsValid() || alloc_size_safe.ValueOrDie() <= 0)
+  if (!alloc_size_safe.IsValid() || alloc_size_safe.ValueOrDie() <= 0 ||
+      m_iXMLPlaneSize <= 0)
     return false;
 
   std::vector<wchar_t> buffer;
@@ -133,6 +134,10 @@ bool CFX_XMLParser::DoSyntaxParse(CFX_XMLDocument* doc) {
               current_parser_state = FDE_XmlSyntaxState::Node;
             }
           } else {
+            // Fail if there is text outside of the root element, ignore
+            // whitespace/null.
+            if (node_type_stack.empty() && ch && !FXSYS_iswspace(ch))
+              return false;
             ProcessTextChar(ch);
             current_buffer_idx++;
           }
@@ -262,11 +267,10 @@ bool CFX_XMLParser::DoSyntaxParse(CFX_XMLDocument* doc) {
             current_buffer_idx++;
             current_parser_state = FDE_XmlSyntaxState::AttriName;
 
-            if (current_node_ &&
-                current_node_->GetType() == FX_XMLNODE_Element) {
-              static_cast<CFX_XMLElement*>(current_node_)
-                  ->SetAttribute(current_attribute_name, GetTextData());
-            }
+            CFX_XMLElement* elem = ToXMLElement(current_node_);
+            if (elem)
+              elem->SetAttribute(current_attribute_name, GetTextData());
+
             current_attribute_name.clear();
           } else {
             ProcessTextChar(ch);
@@ -311,13 +315,13 @@ bool CFX_XMLParser::DoSyntaxParse(CFX_XMLDocument* doc) {
               node_type_stack.pop();
               current_parser_state = FDE_XmlSyntaxState::Text;
 
-              if (current_node_->GetType() != FX_XMLNODE_Element)
+              CFX_XMLElement* element = ToXMLElement(current_node_);
+              if (!element)
                 return false;
 
               WideString element_name = GetTextData();
               if (element_name.GetLength() > 0 &&
-                  element_name !=
-                      static_cast<CFX_XMLElement*>(current_node_)->GetName()) {
+                  element_name != element->GetName()) {
                 return false;
               }
 
@@ -519,12 +523,10 @@ void CFX_XMLParser::ProcessTargetData() {
   WideString target_data = GetTextData();
   if (target_data.IsEmpty())
     return;
-  if (!current_node_)
-    return;
-  if (current_node_->GetType() != FX_XMLNODE_Instruction)
-    return;
 
-  static_cast<CFX_XMLInstruction*>(current_node_)->AppendData(target_data);
+  CFX_XMLInstruction* instruction = ToXMLInstruction(current_node_);
+  if (instruction)
+    instruction->AppendData(target_data);
 }
 
 WideString CFX_XMLParser::GetTextData() {

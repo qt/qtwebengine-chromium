@@ -5,27 +5,43 @@
  * found in the LICENSE file.
  */
 
+#include "SkFontArguments.h"
+#include "SkFontMgr.h"
+#include "SkLoadICU.h"
+#include "SkMalloc.h"
+#include "SkOnce.h"
+#include "SkPaint.h"
+#include "SkPoint.h"
+#include "SkRefCnt.h"
+#include "SkScalar.h"
+#include "SkShaper.h"
+#include "SkStream.h"
+#include "SkString.h"
+#include "SkTArray.h"
+#include "SkTDPQueue.h"
+#include "SkTFitsIn.h"
+#include "SkTLazy.h"
+#include "SkTemplates.h"
+#include "SkTextBlobPriv.h"
+#include "SkTo.h"
+#include "SkTypeface.h"
+#include "SkTypes.h"
+#include "SkUTF.h"
+
+#include <hb.h>
 #include <hb-ot.h>
 #include <unicode/brkiter.h>
 #include <unicode/locid.h>
 #include <unicode/stringpiece.h>
 #include <unicode/ubidi.h>
-#include <unicode/uchriter.h>
 #include <unicode/unistr.h>
-#include <unicode/uscript.h>
+#include <unicode/urename.h>
+#include <unicode/utext.h>
+#include <unicode/utypes.h>
 
-#include "SkFontMgr.h"
-#include "SkLoadICU.h"
-#include "SkOnce.h"
-#include "SkShaper.h"
-#include "SkStream.h"
-#include "SkTDPQueue.h"
-#include "SkTLazy.h"
-#include "SkTemplates.h"
-#include "SkTextBlob.h"
-#include "SkTo.h"
-#include "SkTypeface.h"
-#include "SkUtils.h"
+#include <memory>
+#include <utility>
+#include <cstring>
 
 namespace {
 template <class T, void(*P)(T*)> using resource = std::unique_ptr<T, SkFunctionWrapper<void, T, P>>;
@@ -83,6 +99,15 @@ HBFont create_hb_font(SkTypeface* tf) {
     return font;
 }
 
+/** this version replaces invalid utf-8 sequences with code point U+FFFD. */
+static inline SkUnichar utf8_next(const char** ptr, const char* end) {
+    SkUnichar val = SkUTF::NextUTF8(ptr, end);
+    if (val < 0) {
+        return 0xFFFD;  // REPLACEMENT CHARACTER
+    }
+    return val;
+}
+
 class RunIterator {
 public:
     virtual ~RunIterator() {}
@@ -124,12 +149,13 @@ public:
             return ret;
         }
 
-        ret.init(utf8, std::move(bidi));
+        ret.init(utf8, utf8 + utf8Bytes, std::move(bidi));
         return ret;
     }
-    BiDiRunIterator(const char* utf8, ICUBiDi bidi)
+    BiDiRunIterator(const char* utf8, const char* end, ICUBiDi bidi)
         : fBidi(std::move(bidi))
         , fEndOfCurrentRun(utf8)
+        , fEndOfAllRuns(end)
         , fUTF16LogicalPosition(0)
         , fLevel(UBIDI_DEFAULT_LTR)
     {}
@@ -137,16 +163,16 @@ public:
         SkASSERT(fUTF16LogicalPosition < ubidi_getLength(fBidi.get()));
         int32_t endPosition = ubidi_getLength(fBidi.get());
         fLevel = ubidi_getLevelAt(fBidi.get(), fUTF16LogicalPosition);
-        SkUnichar u = SkUTF8_NextUnichar(&fEndOfCurrentRun);
-        fUTF16LogicalPosition += SkUTF16_FromUnichar(u);
+        SkUnichar u = utf8_next(&fEndOfCurrentRun, fEndOfAllRuns);
+        fUTF16LogicalPosition += SkUTF::ToUTF16(u);
         UBiDiLevel level;
         while (fUTF16LogicalPosition < endPosition) {
             level = ubidi_getLevelAt(fBidi.get(), fUTF16LogicalPosition);
             if (level != fLevel) {
                 break;
             }
-            u = SkUTF8_NextUnichar(&fEndOfCurrentRun);
-            fUTF16LogicalPosition += SkUTF16_FromUnichar(u);
+            u = utf8_next(&fEndOfCurrentRun, fEndOfAllRuns);
+            fUTF16LogicalPosition += SkUTF::ToUTF16(u);
         }
     }
     const char* endOfCurrentRun() const override {
@@ -162,6 +188,7 @@ public:
 private:
     ICUBiDi fBidi;
     const char* fEndOfCurrentRun;
+    const char* fEndOfAllRuns;
     int32_t fUTF16LogicalPosition;
     UBiDiLevel fLevel;
 };
@@ -182,11 +209,11 @@ public:
     {}
     void consume() override {
         SkASSERT(fCurrent < fEnd);
-        SkUnichar u = SkUTF8_NextUnichar(&fCurrent);
+        SkUnichar u = utf8_next(&fCurrent, fEnd);
         fCurrentScript = hb_unicode_script(fHBUnicode, u);
         while (fCurrent < fEnd) {
             const char* prev = fCurrent;
-            u = SkUTF8_NextUnichar(&fCurrent);
+            u = utf8_next(&fCurrent, fEnd);
             const hb_script_t script = hb_unicode_script(fHBUnicode, u);
             if (script != fCurrentScript) {
                 if (fCurrentScript == HB_SCRIPT_INHERITED || fCurrentScript == HB_SCRIPT_COMMON) {
@@ -241,7 +268,7 @@ public:
     {}
     void consume() override {
         SkASSERT(fCurrent < fEnd);
-        SkUnichar u = SkUTF8_NextUnichar(&fCurrent);
+        SkUnichar u = utf8_next(&fCurrent, fEnd);
         // If the starting typeface can handle this character, use it.
         if (fTypeface->charsToGlyphs(&u, SkTypeface::kUTF32_Encoding, nullptr, 1)) {
             fFallbackTypeface.reset();
@@ -263,7 +290,7 @@ public:
 
         while (fCurrent < fEnd) {
             const char* prev = fCurrent;
-            u = SkUTF8_NextUnichar(&fCurrent);
+            u = utf8_next(&fCurrent, fEnd);
 
             // If using a fallback and the initial typeface has this character, stop fallback.
             if (fFallbackTypeface &&
@@ -379,7 +406,8 @@ static constexpr bool is_LTR(UBiDiLevel level) {
 
 static void append(SkTextBlobBuilder* b, const ShapedRun& run, int start, int end, SkPoint* p) {
     unsigned len = end - start;
-    auto runBuffer = b->allocRunTextPos(run.fPaint, len, run.fUtf8End - run.fUtf8Start, SkString());
+    auto runBuffer = SkTextBlobBuilderPriv::AllocRunTextPos(b, run.fPaint, len,
+            run.fUtf8End - run.fUtf8Start, SkString());
     memcpy(runBuffer.utf8text, run.fUtf8Start, run.fUtf8End - run.fUtf8Start);
 
     for (unsigned i = 0; i < len; i++) {
@@ -548,13 +576,19 @@ SkPoint SkShaper::shape(SkTextBlobBuilder* builder,
         hb_buffer_set_content_type(buffer, HB_BUFFER_CONTENT_TYPE_UNICODE);
         hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS);
 
+        // Add precontext.
+        hb_buffer_add_utf8(buffer, utf8, utf8Start - utf8, utf8Start - utf8, 0);
+
         // Populate the hb_buffer directly with utf8 cluster indexes.
         const char* utf8Current = utf8Start;
         while (utf8Current < utf8End) {
             unsigned int cluster = utf8Current - utf8Start;
-            hb_codepoint_t u = SkUTF8_NextUnichar(&utf8Current);
+            hb_codepoint_t u = utf8_next(&utf8Current, utf8End);
             hb_buffer_add(buffer, u, cluster);
         }
+
+        // Add postcontext.
+        hb_buffer_add_utf8(buffer, utf8Current, utf8 + utf8Bytes - utf8Current, 0, 0);
 
         size_t utf8runLength = utf8End - utf8Start;
         if (!SkTFitsIn<int>(utf8runLength)) {

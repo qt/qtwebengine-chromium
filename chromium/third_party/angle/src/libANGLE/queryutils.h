@@ -47,7 +47,7 @@ void QueryRenderbufferiv(const Context *context,
                          const Renderbuffer *renderbuffer,
                          GLenum pname,
                          GLint *params);
-void QueryShaderiv(const Context *context, Shader *shader, GLenum pname, GLint *params);
+void QueryShaderiv(Shader *shader, GLenum pname, GLint *params);
 void QueryTexLevelParameterfv(const Texture *texture,
                               TextureTarget target,
                               GLint level,
@@ -100,7 +100,12 @@ void QueryInternalFormativ(const TextureCaps &format, GLenum pname, GLsizei bufS
 
 void QueryFramebufferParameteriv(const Framebuffer *framebuffer, GLenum pname, GLint *params);
 
-Error QuerySynciv(const Sync *sync, GLenum pname, GLsizei bufSize, GLsizei *length, GLint *values);
+Error QuerySynciv(const Context *context,
+                  const Sync *sync,
+                  GLenum pname,
+                  GLsizei bufSize,
+                  GLsizei *length,
+                  GLint *values);
 
 void SetTexParameterf(Context *context, Texture *texture, GLenum pname, GLfloat param);
 void SetTexParameterfv(Context *context, Texture *texture, GLenum pname, const GLfloat *params);
@@ -112,7 +117,10 @@ void SetSamplerParameterfv(Sampler *sampler, GLenum pname, const GLfloat *params
 void SetSamplerParameteri(Sampler *sampler, GLenum pname, GLint param);
 void SetSamplerParameteriv(Sampler *sampler, GLenum pname, const GLint *params);
 
-void SetFramebufferParameteri(Framebuffer *framebuffer, GLenum pname, GLint param);
+void SetFramebufferParameteri(const Context *context,
+                              Framebuffer *framebuffer,
+                              GLenum pname,
+                              GLint param);
 
 void SetProgramParameteri(Program *program, GLenum pname, GLint value);
 

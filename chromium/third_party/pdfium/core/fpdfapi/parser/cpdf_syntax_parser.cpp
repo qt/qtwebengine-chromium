@@ -34,7 +34,7 @@ namespace {
 
 enum class ReadStatus { Normal, Backslash, Octal, FinishOctal, CarriageReturn };
 
-class ReadableSubStream : public IFX_SeekableReadStream {
+class ReadableSubStream final : public IFX_SeekableReadStream {
  public:
   ReadableSubStream(const RetainPtr<IFX_SeekableReadStream>& pFileRead,
                     FX_FILESIZE part_offset,
@@ -70,7 +70,29 @@ class ReadableSubStream : public IFX_SeekableReadStream {
 // static
 int CPDF_SyntaxParser::s_CurrentRecursionDepth = 0;
 
-CPDF_SyntaxParser::CPDF_SyntaxParser() = default;
+// static
+std::unique_ptr<CPDF_SyntaxParser> CPDF_SyntaxParser::CreateForTesting(
+    const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
+    FX_FILESIZE HeaderOffset) {
+  return pdfium::MakeUnique<CPDF_SyntaxParser>(
+      pdfium::MakeRetain<CPDF_ReadValidator>(pFileAccess, nullptr),
+      HeaderOffset);
+}
+
+CPDF_SyntaxParser::CPDF_SyntaxParser(
+    const RetainPtr<IFX_SeekableReadStream>& pFileAccess)
+    : CPDF_SyntaxParser(
+          pdfium::MakeRetain<CPDF_ReadValidator>(pFileAccess, nullptr),
+          0) {}
+
+CPDF_SyntaxParser::CPDF_SyntaxParser(
+    const RetainPtr<CPDF_ReadValidator>& validator,
+    FX_FILESIZE HeaderOffset)
+    : m_pFileAccess(validator),
+      m_HeaderOffset(HeaderOffset),
+      m_FileLen(m_pFileAccess->GetSize()) {
+  ASSERT(m_HeaderOffset <= m_FileLen);
+}
 
 CPDF_SyntaxParser::~CPDF_SyntaxParser() = default;
 
@@ -110,6 +132,10 @@ bool CPDF_SyntaxParser::GetNextChar(uint8_t& ch) {
   ch = m_pFileBuf[pos - m_BufOffset];
   m_Pos++;
   return true;
+}
+
+FX_FILESIZE CPDF_SyntaxParser::GetDocumentSize() const {
+  return m_FileLen - m_HeaderOffset;
 }
 
 bool CPDF_SyntaxParser::GetCharAtBackward(FX_FILESIZE pos, uint8_t* ch) {
@@ -451,22 +477,22 @@ std::unique_ptr<CPDF_Object> CPDF_SyntaxParser::GetObjectBodyInternal(
     std::unique_ptr<CPDF_Dictionary> pDict =
         pdfium::MakeUnique<CPDF_Dictionary>(m_pPool);
     while (1) {
-      ByteString word = GetNextWord(nullptr);
-      if (word.IsEmpty())
+      ByteString inner_word = GetNextWord(nullptr);
+      if (inner_word.IsEmpty())
         return nullptr;
 
-      FX_FILESIZE SavedPos = m_Pos - word.GetLength();
-      if (word == ">>")
+      FX_FILESIZE SavedPos = m_Pos - inner_word.GetLength();
+      if (inner_word == ">>")
         break;
 
-      if (word == "endobj") {
+      if (inner_word == "endobj") {
         m_Pos = SavedPos;
         break;
       }
-      if (word[0] != '/')
+      if (inner_word[0] != '/')
         continue;
 
-      ByteString key = PDF_NameDecode(word.AsStringView());
+      ByteString key = PDF_NameDecode(inner_word.AsStringView());
       if (key.IsEmpty() && parse_type == ParseType::kLoose)
         continue;
 
@@ -682,8 +708,7 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
     pStream->InitStreamFromFile(data, std::move(pDict));
   } else {
     DCHECK(!len);
-    // Empty stream
-    pStream->InitStream(nullptr, 0, std::move(pDict));
+    pStream->InitStream({}, std::move(pDict));  // Empty stream
   }
   const FX_FILESIZE end_stream_offset = GetPos();
   memset(m_WordBuffer, 0, kEndObjStr.GetLength() + 1);
@@ -696,27 +721,6 @@ std::unique_ptr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
     SetPos(end_stream_offset);
   }
   return pStream;
-}
-
-void CPDF_SyntaxParser::InitParser(
-    const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
-    uint32_t HeaderOffset) {
-  ASSERT(pFileAccess);
-  return InitParserWithValidator(
-      pdfium::MakeRetain<CPDF_ReadValidator>(pFileAccess, nullptr),
-      HeaderOffset);
-}
-
-void CPDF_SyntaxParser::InitParserWithValidator(
-    const RetainPtr<CPDF_ReadValidator>& validator,
-    uint32_t HeaderOffset) {
-  ASSERT(validator);
-  m_pFileBuf.clear();
-  m_HeaderOffset = HeaderOffset;
-  m_FileLen = validator->GetSize();
-  m_Pos = 0;
-  m_pFileAccess = validator;
-  m_BufOffset = 0;
 }
 
 uint32_t CPDF_SyntaxParser::GetDirectNum() {
@@ -811,10 +815,6 @@ FX_FILESIZE CPDF_SyntaxParser::FindTag(const ByteStringView& tag) {
     }
   }
   return -1;
-}
-
-RetainPtr<IFX_SeekableReadStream> CPDF_SyntaxParser::GetFileAccess() const {
-  return m_pFileAccess;
 }
 
 bool CPDF_SyntaxParser::IsPositionRead(FX_FILESIZE pos) const {

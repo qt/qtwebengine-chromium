@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
+#include "core/fpdfapi/page/cpdf_formobject.h"
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/page/cpdf_pageobject.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -38,8 +39,7 @@ class FPDFEditEmbeddertest : public EmbedderTest {
                            int font_type,
                            bool bold,
                            bool italic,
-                           uint32_t size,
-                           const uint8_t* data) {
+                           pdfium::span<const uint8_t> span) {
     const CPDF_Dictionary* font_desc = font_dict->GetDictFor("FontDescriptor");
     ASSERT_TRUE(font_desc);
     EXPECT_EQ("FontDescriptor", font_desc->GetStringFor("Type"));
@@ -58,7 +58,7 @@ class FPDFEditEmbeddertest : public EmbedderTest {
 
     const CPDF_Array* fontBBox = font_desc->GetArrayFor("FontBBox");
     ASSERT_TRUE(fontBBox);
-    EXPECT_EQ(4U, fontBBox->GetCount());
+    EXPECT_EQ(4u, fontBBox->GetCount());
     // Check that the coordinates are in the preferred order according to spec
     // 1.7 Section 3.8.4
     EXPECT_TRUE(fontBBox->GetIntegerAt(0) < fontBBox->GetIntegerAt(2));
@@ -81,15 +81,15 @@ class FPDFEditEmbeddertest : public EmbedderTest {
     streamAcc->LoadAllDataRaw();
 
     // Check that the font stream is the one that was provided
-    ASSERT_EQ(size, streamAcc->GetSize());
+    ASSERT_EQ(span.size(), streamAcc->GetSize());
     if (font_type == FPDF_FONT_TRUETYPE) {
-      ASSERT_EQ(static_cast<int>(size),
+      ASSERT_EQ(static_cast<int>(span.size()),
                 streamAcc->GetDict()->GetIntegerFor("Length1"));
     }
 
     const uint8_t* stream_data = streamAcc->GetData();
-    for (size_t j = 0; j < size; j++)
-      EXPECT_EQ(data[j], stream_data[j]) << " at byte " << j;
+    for (size_t j = 0; j < span.size(); j++)
+      EXPECT_EQ(span[j], stream_data[j]) << " at byte " << j;
   }
 
   void CheckCompositeFontWidths(const CPDF_Array* widths_array,
@@ -97,7 +97,7 @@ class FPDFEditEmbeddertest : public EmbedderTest {
     // Check that W array is in a format that conforms to PDF spec 1.7 section
     // "Glyph Metrics in CIDFonts" (these checks are not
     // implementation-specific).
-    EXPECT_GT(widths_array->GetCount(), 1U);
+    EXPECT_GT(widths_array->GetCount(), 1u);
     int num_cids_checked = 0;
     int cur_cid = 0;
     for (size_t idx = 0; idx < widths_array->GetCount(); idx++) {
@@ -228,7 +228,7 @@ TEST_F(FPDFEditEmbeddertest, RasterizePDF) {
 
   // Get the generated content. Make sure it is at least as big as the original
   // PDF.
-  EXPECT_GT(GetString().size(), 923U);
+  EXPECT_GT(GetString().size(), 923u);
   VerifySavedDocument(612, 792, kAllBlackMd5sum);
 }
 
@@ -312,10 +312,10 @@ TEST_F(FPDFEditEmbeddertest, AddPaths) {
   unsigned int B;
   unsigned int A;
   EXPECT_TRUE(FPDFPath_GetFillColor(green_rect, &R, &G, &B, &A));
-  EXPECT_EQ(0U, R);
-  EXPECT_EQ(255U, G);
-  EXPECT_EQ(0U, B);
-  EXPECT_EQ(128U, A);
+  EXPECT_EQ(0u, R);
+  EXPECT_EQ(255u, G);
+  EXPECT_EQ(0u, B);
+  EXPECT_EQ(128u, A);
 
   // Make sure the path has 5 points (1 FXPT_TYPE::MoveTo and 4
   // FXPT_TYPE::LineTo).
@@ -448,7 +448,7 @@ TEST_F(FPDFEditEmbeddertest, SetText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char kChangedMD5[] = "94c1e7a5af7dd9d77dc2223b1091acb7";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char kChangedMD5[] = "9d31703c1d1a3e1e9a778b1e297c9cd2";
+  const char kChangedMD5[] = "3137fdb27962671f5c3963a5e965eff5";
 #else
   const char kChangedMD5[] = "a0c4ea6620772991f66bf7130379b08a";
 #endif
@@ -464,7 +464,7 @@ TEST_F(FPDFEditEmbeddertest, SetText) {
   UnloadPage(page);
 
   // Re-open the file and check the changes were kept in the saved .pdf.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
   {
@@ -487,7 +487,7 @@ TEST_F(FPDFEditEmbeddertest, RemovePageObject) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char kOriginalMD5[] = "b90475ca64d1348c3bf5e2b77ad9187a";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-    const char kOriginalMD5[] = "e5a6fa28298db07484cd922f3e210c88";
+    const char kOriginalMD5[] = "795b7ce1626931aa06af0fa23b7d80bb";
 #else
     const char kOriginalMD5[] = "2baa4c0e1758deba1b9c908e1fbd04ed";
 #endif
@@ -506,7 +506,7 @@ TEST_F(FPDFEditEmbeddertest, RemovePageObject) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char kRemovedMD5[] = "af760c4702467cb1492a57fb8215efaa";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-    const char kRemovedMD5[] = "72be917349bf7004a5c39661fe1fc433";
+    const char kRemovedMD5[] = "aae6c5334721f90ec30d3d59f4ef7deb";
 #else
     const char kRemovedMD5[] = "b76df015fe88009c3c342395df96abf1";
 #endif
@@ -732,7 +732,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveMarks) {
   UnloadPage(page);
 
   // Re-open the file and check the prime marks are not there anymore.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 1, kExpectedObjectCount, 0, 4, 9, 1);
@@ -784,7 +784,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveMarkParam) {
   UnloadPage(page);
 
   // Re-open the file and check the "Factor" parameters are still gone.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   size_t square_count = 0;
@@ -839,7 +839,7 @@ TEST_F(FPDFEditEmbeddertest, MaintainMarkedObjects) {
 
   UnloadPage(page);
 
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 2, 18, 8, 3, 9, 1);
@@ -870,7 +870,7 @@ TEST_F(FPDFEditEmbeddertest, MaintainIndirectMarkedObjects) {
 
   UnloadPage(page);
 
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 2, 18, 8, 3, 9, 1);
@@ -901,7 +901,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveExistingPageObject) {
   FPDFPageObj_Destroy(page_object);
 
   // Re-open the file and check the page object count is still 1.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(1, FPDFPage_CountObjects(saved_page));
   CloseSavedPage(saved_page);
@@ -926,7 +926,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveExistingPageObjectSplitStreamsNotLonely) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char kHelloRemovedMD5[] = "e07a62d412728fc4d6e3ff42f2dd0e11";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char kHelloRemovedMD5[] = "de37b0bb7ff903c1068bae361844be50";
+  const char kHelloRemovedMD5[] = "a97d4c72c969ba373c2dce675d277e65";
 #else
   const char kHelloRemovedMD5[] = "95b92950647a2190e1230911e7a1a0e9";
 #endif
@@ -942,7 +942,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveExistingPageObjectSplitStreamsNotLonely) {
   FPDFPageObj_Destroy(page_object);
 
   // Re-open the file and check the page object count is still 2.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
@@ -973,7 +973,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveExistingPageObjectSplitStreamsLonely) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char kGreetingsRemovedMD5[] = "b90475ca64d1348c3bf5e2b77ad9187a";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char kGreetingsRemovedMD5[] = "e5a6fa28298db07484cd922f3e210c88";
+  const char kGreetingsRemovedMD5[] = "795b7ce1626931aa06af0fa23b7d80bb";
 #else
   const char kGreetingsRemovedMD5[] = "2baa4c0e1758deba1b9c908e1fbd04ed";
 #endif
@@ -989,7 +989,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveExistingPageObjectSplitStreamsLonely) {
   FPDFPageObj_Destroy(page_object);
 
   // Re-open the file and check the page object count is still 2.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
@@ -1104,7 +1104,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveAllFromStream) {
 
   // Re-open the file and check the page object count is still 16, and that
   // content stream 1 was removed.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   // Content stream 0: page objects 0-14.
@@ -1171,7 +1171,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveAllFromSingleStream) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(0, FPDFPage_CountObjects(saved_page));
@@ -1221,7 +1221,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveFirstFromSingleStream) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char kFirstRemovedMD5[] = "af760c4702467cb1492a57fb8215efaa";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char kFirstRemovedMD5[] = "72be917349bf7004a5c39661fe1fc433";
+  const char kFirstRemovedMD5[] = "aae6c5334721f90ec30d3d59f4ef7deb";
 #else
   const char kFirstRemovedMD5[] = "b76df015fe88009c3c342395df96abf1";
 #endif
@@ -1235,7 +1235,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveFirstFromSingleStream) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   ASSERT_EQ(1, FPDFPage_CountObjects(saved_page));
@@ -1288,6 +1288,8 @@ TEST_F(FPDFEditEmbeddertest, RemoveLastFromSingleStream) {
 
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char kLastRemovedMD5[] = "f8fbd14a048b9e2ea8e5f059f22a910e";
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+  const char kLastRemovedMD5[] = "93db13099042bafefb3c22a165bad684";
 #else
   const char kLastRemovedMD5[] = "93dcc09055f87a2792c8e3065af99a1b";
 #endif
@@ -1301,7 +1303,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveLastFromSingleStream) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   ASSERT_EQ(1, FPDFPage_CountObjects(saved_page));
@@ -1357,7 +1359,7 @@ TEST_F(FPDFEditEmbeddertest, RemoveAllFromMultipleStreams) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(0, FPDFPage_CountObjects(saved_page));
@@ -1392,7 +1394,7 @@ TEST_F(FPDFEditEmbeddertest, InsertPageObjectAndSave) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 3.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(3, FPDFPage_CountObjects(saved_page));
   CloseSavedPage(saved_page);
@@ -1425,7 +1427,7 @@ TEST_F(FPDFEditEmbeddertest, InsertPageObjectEditAndSave) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 3.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(3, FPDFPage_CountObjects(saved_page));
   CloseSavedPage(saved_page);
@@ -1526,6 +1528,8 @@ TEST_F(FPDFEditEmbeddertest, PathOnTopOfText) {
   ScopedFPDFBitmap bitmap = RenderLoadedPage(page);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "f9e6fa74230f234286bfcada9f7606d8";
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+  const char md5[] = "74dd9c393b8b2578d2b7feb032b7daad";
 #else
   const char md5[] = "aa71b09b93b55f467f1290e5111babee";
 #endif
@@ -1559,7 +1563,7 @@ TEST_F(FPDFEditEmbeddertest, EditOverExistingContent) {
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   UnloadPage(page);
 
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
   VerifySavedRendering(saved_page, 612, 792,
                        "ad04e5bd0f471a9a564fb034bd0fb073");
@@ -1668,6 +1672,8 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
     ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5[] = "a4dddc1a3930fa694bbff9789dab4161";
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+    const char md5[] = "08d1ff3e5a42801bee6077fd366bef00";
 #else
     const char md5[] = "eacaa24573b8ce997b3882595f096f00";
 #endif
@@ -1688,7 +1694,7 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5_2[] = "a5c4ace4c6f27644094813fe1441a21c";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-    const char md5_2[] = "2587eac9a787e97a37636d54d11bd28d";
+    const char md5_2[] = "3755dd35abd4c605755369401ee85b2d";
 #else
     const char md5_2[] = "76fcc7d08aa15445efd2e2ceb7c6cc3b";
 #endif
@@ -1709,7 +1715,7 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5_3[] = "40b3ef04f915ff4c4208948001763544";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-    const char md5_3[] = "7cb61ec112cf400b489360d443ffc9d2";
+    const char md5_3[] = "aba523a8110d01ed9bd7b7781ff74045";
 #else
     const char md5_3[] = "b8a21668f1dab625af7c072e07fcefc4";
 #endif
@@ -1758,6 +1764,34 @@ TEST_F(FPDFEditEmbeddertest, TestGetTextRenderMode) {
   UnloadPage(page);
 }
 
+TEST_F(FPDFEditEmbeddertest, TestGetTextFontName) {
+  EXPECT_TRUE(OpenDocument("text_font.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+  ASSERT_EQ(1, FPDFPage_CountObjects(page));
+
+  // FPDFTextObj_GetFontName() positive testing.
+  FPDF_PAGEOBJECT text = FPDFPage_GetObject(page, 0);
+  unsigned long size = FPDFTextObj_GetFontName(text, nullptr, 0);
+  const char kExpectedFontName[] = "Liberation Serif";
+  ASSERT_EQ(sizeof(kExpectedFontName), size);
+  std::vector<char> font_name(size);
+  ASSERT_EQ(size, FPDFTextObj_GetFontName(text, font_name.data(), size));
+  ASSERT_STREQ(kExpectedFontName, font_name.data());
+
+  // FPDFTextObj_GetFontName() negative testing.
+  ASSERT_EQ(0U, FPDFTextObj_GetFontName(nullptr, nullptr, 0));
+
+  font_name.resize(2);
+  font_name[0] = 'x';
+  font_name[1] = '\0';
+  size = FPDFTextObj_GetFontName(text, font_name.data(), font_name.size());
+  ASSERT_EQ(sizeof(kExpectedFontName), size);
+  ASSERT_EQ(std::string("x"), std::string(font_name.data()));
+
+  UnloadPage(page);
+}
+
 TEST_F(FPDFEditEmbeddertest, TestFormGetObjects) {
   EXPECT_TRUE(OpenDocument("form_object.pdf"));
   FPDF_PAGE page = LoadPage(0);
@@ -1789,6 +1823,39 @@ TEST_F(FPDFEditEmbeddertest, TestFormGetObjects) {
   ASSERT_EQ(nullptr, FPDFFormObj_GetObject(form, -1));
   ASSERT_EQ(nullptr, FPDFFormObj_GetObject(form, 2));
 
+  // Reset the form object matrix to identity.
+  auto* pPageObj = CPDFPageObjectFromFPDFPageObject(form);
+  CPDF_FormObject* pFormObj = pPageObj->AsForm();
+  pFormObj->Transform(pFormObj->form_matrix().GetInverse());
+
+  // FPDFFormObj_GetMatrix() positive testing.
+  static constexpr float kFloats[6] = {1.0, 1.5, 2.0, 2.5, 100.0, 200.0};
+  CFX_Matrix matrix(kFloats);
+  pFormObj->Transform(matrix);
+
+  double matrix_a = 0;
+  double matrix_b = 0;
+  double matrix_c = 0;
+  double matrix_d = 0;
+  double matrix_e = 0;
+  double matrix_f = 0;
+  EXPECT_TRUE(FPDFFormObj_GetMatrix(form, &matrix_a, &matrix_b, &matrix_c,
+                                    &matrix_d, &matrix_e, &matrix_f));
+  EXPECT_DOUBLE_EQ(kFloats[0], matrix_a);
+  EXPECT_DOUBLE_EQ(kFloats[1], matrix_b);
+  EXPECT_DOUBLE_EQ(kFloats[2], matrix_c);
+  EXPECT_DOUBLE_EQ(kFloats[3], matrix_d);
+  EXPECT_DOUBLE_EQ(kFloats[4], matrix_e);
+  EXPECT_DOUBLE_EQ(kFloats[5], matrix_f);
+
+  // FPDFFormObj_GetMatrix() negative testing.
+  EXPECT_FALSE(FPDFFormObj_GetMatrix(nullptr, &matrix_a, &matrix_b, &matrix_c,
+                                     &matrix_d, &matrix_e, &matrix_f));
+  EXPECT_FALSE(FPDFFormObj_GetMatrix(form, nullptr, nullptr, nullptr, nullptr,
+                                     nullptr, nullptr));
+  EXPECT_FALSE(FPDFFormObj_GetMatrix(nullptr, nullptr, nullptr, nullptr,
+                                     nullptr, nullptr, nullptr));
+
   UnloadPage(page);
 }
 
@@ -1813,6 +1880,8 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText2) {
   ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page.get(), nullptr, 0);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "a4dddc1a3930fa694bbff9789dab4161";
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+  const char md5[] = "08d1ff3e5a42801bee6077fd366bef00";
 #else
   const char md5[] = "eacaa24573b8ce997b3882595f096f00";
 #endif
@@ -1821,38 +1890,39 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText2) {
 
 TEST_F(FPDFEditEmbeddertest, LoadStandardFonts) {
   CreateNewDocument();
-  const char* standard_font_names[] = {"Arial",
-                                       "Arial-Bold",
-                                       "Arial-BoldItalic",
-                                       "Arial-Italic",
-                                       "Courier",
-                                       "Courier-BoldOblique",
-                                       "Courier-Oblique",
-                                       "Courier-Bold",
-                                       "CourierNew",
-                                       "CourierNew-Bold",
-                                       "CourierNew-BoldItalic",
-                                       "CourierNew-Italic",
-                                       "Helvetica",
-                                       "Helvetica-Bold",
-                                       "Helvetica-BoldOblique",
-                                       "Helvetica-Oblique",
-                                       "Symbol",
-                                       "TimesNewRoman",
-                                       "TimesNewRoman-Bold",
-                                       "TimesNewRoman-BoldItalic",
-                                       "TimesNewRoman-Italic",
-                                       "ZapfDingbats"};
-  for (auto* const font_name : standard_font_names) {
+  static constexpr const char* standard_font_names[] = {
+      "Arial",
+      "Arial-Bold",
+      "Arial-BoldItalic",
+      "Arial-Italic",
+      "Courier",
+      "Courier-BoldOblique",
+      "Courier-Oblique",
+      "Courier-Bold",
+      "CourierNew",
+      "CourierNew-Bold",
+      "CourierNew-BoldItalic",
+      "CourierNew-Italic",
+      "Helvetica",
+      "Helvetica-Bold",
+      "Helvetica-BoldOblique",
+      "Helvetica-Oblique",
+      "Symbol",
+      "TimesNewRoman",
+      "TimesNewRoman-Bold",
+      "TimesNewRoman-BoldItalic",
+      "TimesNewRoman-Italic",
+      "ZapfDingbats"};
+  for (const char* font_name : standard_font_names) {
     FPDF_FONT font = FPDFText_LoadStandardFont(document(), font_name);
     EXPECT_TRUE(font) << font_name << " should be considered a standard font.";
   }
-  const char* not_standard_font_names[] = {
+  static constexpr const char* not_standard_font_names[] = {
       "Abcdefg",      "ArialB",    "Arial-Style",
       "Font Name",    "FontArial", "NotAStandardFontName",
       "TestFontName", "Quack",     "Symbol-Italic",
       "Zapf"};
-  for (auto* const font_name : not_standard_font_names) {
+  for (const char* font_name : not_standard_font_names) {
     FPDF_FONT font = FPDFText_LoadStandardFont(document(), font_name);
     EXPECT_FALSE(font) << font_name
                        << " should not be considered a standard font.";
@@ -1873,7 +1943,7 @@ TEST_F(FPDFEditEmbeddertest, GraphicsData) {
   CPDF_Page* cpage = CPDFPageFromFPDFPage(page.get());
   CPDF_Dictionary* graphics_dict = cpage->m_pResources->GetDictFor("ExtGState");
   ASSERT_TRUE(graphics_dict);
-  EXPECT_EQ(2, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(2u, graphics_dict->GetCount());
 
   // Add a text object causing no change to the graphics dictionary
   FPDF_PAGEOBJECT text1 = FPDFPageObj_NewTextObj(document(), "Arial", 12.0f);
@@ -1882,7 +1952,7 @@ TEST_F(FPDFEditEmbeddertest, GraphicsData) {
   EXPECT_TRUE(FPDFText_SetFillColor(text1, 100, 100, 100, 255));
   FPDFPage_InsertObject(page.get(), text1);
   EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
-  EXPECT_EQ(2, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(2u, graphics_dict->GetCount());
 
   // Add a text object increasing the size of the graphics dictionary
   FPDF_PAGEOBJECT text2 =
@@ -1891,7 +1961,7 @@ TEST_F(FPDFEditEmbeddertest, GraphicsData) {
   FPDFPageObj_SetBlendMode(text2, "Darken");
   EXPECT_TRUE(FPDFText_SetFillColor(text2, 0, 0, 255, 150));
   EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
-  EXPECT_EQ(3, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(3u, graphics_dict->GetCount());
 
   // Add a path that should reuse graphics
   FPDF_PAGEOBJECT path = FPDFPageObj_CreateNewPath(400, 100);
@@ -1899,7 +1969,7 @@ TEST_F(FPDFEditEmbeddertest, GraphicsData) {
   EXPECT_TRUE(FPDFPath_SetFillColor(path, 200, 200, 100, 150));
   FPDFPage_InsertObject(page.get(), path);
   EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
-  EXPECT_EQ(3, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(3u, graphics_dict->GetCount());
 
   // Add a rect increasing the size of the graphics dictionary
   FPDF_PAGEOBJECT rect2 = FPDFPageObj_CreateNewRect(10, 10, 100, 100);
@@ -1908,7 +1978,7 @@ TEST_F(FPDFEditEmbeddertest, GraphicsData) {
   EXPECT_TRUE(FPDFPath_SetStrokeColor(rect2, 0, 0, 0, 200));
   FPDFPage_InsertObject(page.get(), rect2);
   EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
-  EXPECT_EQ(4, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(4u, graphics_dict->GetCount());
 }
 
 TEST_F(FPDFEditEmbeddertest, DoubleGenerating) {
@@ -1926,7 +1996,7 @@ TEST_F(FPDFEditEmbeddertest, DoubleGenerating) {
   CPDF_Page* cpage = CPDFPageFromFPDFPage(page);
   CPDF_Dictionary* graphics_dict = cpage->m_pResources->GetDictFor("ExtGState");
   ASSERT_TRUE(graphics_dict);
-  EXPECT_EQ(2, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(2u, graphics_dict->GetCount());
 
   // Check the bitmap
   {
@@ -1938,7 +2008,7 @@ TEST_F(FPDFEditEmbeddertest, DoubleGenerating) {
   // Never mind, my new favorite color is blue, increase alpha
   EXPECT_TRUE(FPDFPath_SetFillColor(rect, 0, 0, 255, 180));
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
-  EXPECT_EQ(3, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(3u, graphics_dict->GetCount());
 
   // Check that bitmap displays changed content
   {
@@ -1949,7 +2019,7 @@ TEST_F(FPDFEditEmbeddertest, DoubleGenerating) {
 
   // And now generate, without changes
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
-  EXPECT_EQ(3, static_cast<int>(graphics_dict->GetCount()));
+  EXPECT_EQ(3u, graphics_dict->GetCount());
   {
     ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
     CompareBitmap(page_bitmap.get(), 612, 792,
@@ -1967,12 +2037,12 @@ TEST_F(FPDFEditEmbeddertest, DoubleGenerating) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
   CPDF_Dictionary* font_dict = cpage->m_pResources->GetDictFor("Font");
   ASSERT_TRUE(font_dict);
-  EXPECT_EQ(1, static_cast<int>(font_dict->GetCount()));
+  EXPECT_EQ(1u, font_dict->GetCount());
 
   // Generate yet again, check dicts are reasonably sized
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
-  EXPECT_EQ(3, static_cast<int>(graphics_dict->GetCount()));
-  EXPECT_EQ(1, static_cast<int>(font_dict->GetCount()));
+  EXPECT_EQ(3u, graphics_dict->GetCount());
+  EXPECT_EQ(1u, font_dict->GetCount());
   FPDF_ClosePage(page);
 }
 
@@ -1981,10 +2051,9 @@ TEST_F(FPDFEditEmbeddertest, LoadSimpleType1Font) {
   // TODO(npm): use other fonts after disallowing loading any font as any type
   const CPDF_Font* stock_font =
       CPDF_Font::GetStockFont(cpdf_doc(), "Times-Bold");
-  const uint8_t* data = stock_font->GetFont()->GetFontData();
-  const uint32_t size = stock_font->GetFont()->GetSize();
-  ScopedFPDFFont font(
-      FPDFText_LoadFont(document(), data, size, FPDF_FONT_TYPE1, false));
+  pdfium::span<const uint8_t> span = stock_font->GetFont()->GetFontSpan();
+  ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                        FPDF_FONT_TYPE1, false));
   ASSERT_TRUE(font.get());
   CPDF_Font* typed_font = CPDFFontFromFPDFFont(font.get());
   EXPECT_TRUE(typed_font->IsType1Font());
@@ -2000,20 +2069,19 @@ TEST_F(FPDFEditEmbeddertest, LoadSimpleType1Font) {
 
   const CPDF_Array* widths_array = font_dict->GetArrayFor("Widths");
   ASSERT_TRUE(widths_array);
-  ASSERT_EQ(224U, widths_array->GetCount());
+  ASSERT_EQ(224u, widths_array->GetCount());
   EXPECT_EQ(250, widths_array->GetNumberAt(0));
   EXPECT_EQ(569, widths_array->GetNumberAt(11));
   EXPECT_EQ(500, widths_array->GetNumberAt(223));
-  CheckFontDescriptor(font_dict, FPDF_FONT_TYPE1, true, false, size, data);
+  CheckFontDescriptor(font_dict, FPDF_FONT_TYPE1, true, false, span);
 }
 
 TEST_F(FPDFEditEmbeddertest, LoadSimpleTrueTypeFont) {
   CreateNewDocument();
   const CPDF_Font* stock_font = CPDF_Font::GetStockFont(cpdf_doc(), "Courier");
-  const uint8_t* data = stock_font->GetFont()->GetFontData();
-  const uint32_t size = stock_font->GetFont()->GetSize();
-  ScopedFPDFFont font(
-      FPDFText_LoadFont(document(), data, size, FPDF_FONT_TRUETYPE, false));
+  pdfium::span<const uint8_t> span = stock_font->GetFont()->GetFontSpan();
+  ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                        FPDF_FONT_TRUETYPE, false));
   ASSERT_TRUE(font.get());
   CPDF_Font* typed_font = CPDFFontFromFPDFFont(font.get());
   EXPECT_TRUE(typed_font->IsTrueTypeFont());
@@ -2029,21 +2097,20 @@ TEST_F(FPDFEditEmbeddertest, LoadSimpleTrueTypeFont) {
 
   const CPDF_Array* widths_array = font_dict->GetArrayFor("Widths");
   ASSERT_TRUE(widths_array);
-  ASSERT_EQ(224U, widths_array->GetCount());
+  ASSERT_EQ(224u, widths_array->GetCount());
   EXPECT_EQ(600, widths_array->GetNumberAt(33));
   EXPECT_EQ(600, widths_array->GetNumberAt(74));
   EXPECT_EQ(600, widths_array->GetNumberAt(223));
-  CheckFontDescriptor(font_dict, FPDF_FONT_TRUETYPE, false, false, size, data);
+  CheckFontDescriptor(font_dict, FPDF_FONT_TRUETYPE, false, false, span);
 }
 
 TEST_F(FPDFEditEmbeddertest, LoadCIDType0Font) {
   CreateNewDocument();
   const CPDF_Font* stock_font =
       CPDF_Font::GetStockFont(cpdf_doc(), "Times-Roman");
-  const uint8_t* data = stock_font->GetFont()->GetFontData();
-  const uint32_t size = stock_font->GetFont()->GetSize();
-  ScopedFPDFFont font(
-      FPDFText_LoadFont(document(), data, size, FPDF_FONT_TYPE1, 1));
+  pdfium::span<const uint8_t> span = stock_font->GetFont()->GetFontSpan();
+  ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                        FPDF_FONT_TYPE1, 1));
   ASSERT_TRUE(font.get());
   CPDF_Font* typed_font = CPDFFontFromFPDFFont(font.get());
   EXPECT_TRUE(typed_font->IsCIDFont());
@@ -2057,7 +2124,7 @@ TEST_F(FPDFEditEmbeddertest, LoadCIDType0Font) {
   const CPDF_Array* descendant_array =
       font_dict->GetArrayFor("DescendantFonts");
   ASSERT_TRUE(descendant_array);
-  EXPECT_EQ(1U, descendant_array->GetCount());
+  EXPECT_EQ(1u, descendant_array->GetCount());
 
   // Check the CIDFontDict
   const CPDF_Dictionary* cidfont_dict = descendant_array->GetDictAt(0);
@@ -2070,12 +2137,12 @@ TEST_F(FPDFEditEmbeddertest, LoadCIDType0Font) {
   EXPECT_EQ("Adobe", cidinfo_dict->GetStringFor("Registry"));
   EXPECT_EQ("Identity", cidinfo_dict->GetStringFor("Ordering"));
   EXPECT_EQ(0, cidinfo_dict->GetNumberFor("Supplement"));
-  CheckFontDescriptor(cidfont_dict, FPDF_FONT_TYPE1, false, false, size, data);
+  CheckFontDescriptor(cidfont_dict, FPDF_FONT_TYPE1, false, false, span);
 
   // Check widths
   const CPDF_Array* widths_array = cidfont_dict->GetArrayFor("W");
   ASSERT_TRUE(widths_array);
-  EXPECT_GT(widths_array->GetCount(), 1U);
+  EXPECT_GT(widths_array->GetCount(), 1u);
   CheckCompositeFontWidths(widths_array, typed_font);
 }
 
@@ -2083,11 +2150,9 @@ TEST_F(FPDFEditEmbeddertest, LoadCIDType2Font) {
   CreateNewDocument();
   const CPDF_Font* stock_font =
       CPDF_Font::GetStockFont(cpdf_doc(), "Helvetica-Oblique");
-  const uint8_t* data = stock_font->GetFont()->GetFontData();
-  const uint32_t size = stock_font->GetFont()->GetSize();
-
-  ScopedFPDFFont font(
-      FPDFText_LoadFont(document(), data, size, FPDF_FONT_TRUETYPE, 1));
+  pdfium::span<const uint8_t> span = stock_font->GetFont()->GetFontSpan();
+  ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                        FPDF_FONT_TRUETYPE, 1));
   ASSERT_TRUE(font.get());
   CPDF_Font* typed_font = CPDFFontFromFPDFFont(font.get());
   EXPECT_TRUE(typed_font->IsCIDFont());
@@ -2101,7 +2166,7 @@ TEST_F(FPDFEditEmbeddertest, LoadCIDType2Font) {
   const CPDF_Array* descendant_array =
       font_dict->GetArrayFor("DescendantFonts");
   ASSERT_TRUE(descendant_array);
-  EXPECT_EQ(1U, descendant_array->GetCount());
+  EXPECT_EQ(1u, descendant_array->GetCount());
 
   // Check the CIDFontDict
   const CPDF_Dictionary* cidfont_dict = descendant_array->GetDictAt(0);
@@ -2114,8 +2179,7 @@ TEST_F(FPDFEditEmbeddertest, LoadCIDType2Font) {
   EXPECT_EQ("Adobe", cidinfo_dict->GetStringFor("Registry"));
   EXPECT_EQ("Identity", cidinfo_dict->GetStringFor("Ordering"));
   EXPECT_EQ(0, cidinfo_dict->GetNumberFor("Supplement"));
-  CheckFontDescriptor(cidfont_dict, FPDF_FONT_TRUETYPE, false, true, size,
-                      data);
+  CheckFontDescriptor(cidfont_dict, FPDF_FONT_TRUETYPE, false, true, span);
 
   // Check widths
   const CPDF_Array* widths_array = cidfont_dict->GetArrayFor("W");
@@ -2138,10 +2202,9 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
   FPDF_PAGE page = FPDFPage_New(CreateNewDocument(), 0, 612, 792);
   {
     const CPDF_Font* stock_font = CPDF_Font::GetStockFont(cpdf_doc(), "Arial");
-    const uint8_t* data = stock_font->GetFont()->GetFontData();
-    const uint32_t size = stock_font->GetFont()->GetSize();
-    ScopedFPDFFont font(
-        FPDFText_LoadFont(document(), data, size, FPDF_FONT_TRUETYPE, 0));
+    pdfium::span<const uint8_t> span = stock_font->GetFont()->GetFontSpan();
+    ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                          FPDF_FONT_TRUETYPE, 0));
     ASSERT_TRUE(font.get());
 
     // Add some text to the page
@@ -2156,6 +2219,8 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
     ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5[] = "17d2b6cd574cf66170b09c8927529a94";
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+    const char md5[] = "d60ba39f9698e32360d99e727dd93165";
 #else
     const char md5[] = "70592859010ffbf532a2237b8118bcc4";
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
@@ -2173,6 +2238,8 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
   ScopedFPDFBitmap page_bitmap2 = RenderPageWithFlags(page, nullptr, 0);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_2[] = "8eded4193ff1f0f77b8b600a825e97ea";
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+  const char md5_2[] = "2199b579c49ab5f80c246a586a80ee90";
 #else
   const char md5_2[] = "c1d10cce1761c4a998a16b2562030568";
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
@@ -2214,12 +2281,11 @@ TEST_F(FPDFEditEmbeddertest, AddCIDFontText) {
     // First, get the data from the font
     CIDfont.LoadSubst("IPAGothic", 1, 0, 400, 0, 932, 0);
     EXPECT_EQ("IPAGothic", CIDfont.GetFaceName());
-    const uint8_t* data = CIDfont.GetFontData();
-    const uint32_t size = CIDfont.GetSize();
+    pdfium::span<const uint8_t> span = CIDfont.GetFontSpan();
 
     // Load the data into a FPDF_Font.
-    ScopedFPDFFont font(
-        FPDFText_LoadFont(document(), data, size, FPDF_FONT_TRUETYPE, 1));
+    ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                          FPDF_FONT_TRUETYPE, 1));
     ASSERT_TRUE(font.get());
 
     // Add some text to the page
@@ -2318,7 +2384,7 @@ TEST_F(FPDFEditEmbeddertest, AddMark) {
   UnloadPage(page);
 
   // Re-open the file and check the new mark is present.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 1, kExpectedObjectCount, 8, 4, 9, 2);
@@ -2374,7 +2440,7 @@ TEST_F(FPDFEditEmbeddertest, SetMarkParam) {
   UnloadPage(page);
 
   // Re-open the file and cerify "Position" still maps to "End".
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 1, kExpectedObjectCount, 8, 4, 9, 1);
@@ -2394,10 +2460,9 @@ TEST_F(FPDFEditEmbeddertest, AddMarkedText) {
   FPDF_PAGE page = FPDFPage_New(CreateNewDocument(), 0, 612, 792);
 
   const CPDF_Font* stock_font = CPDF_Font::GetStockFont(cpdf_doc(), "Arial");
-  const uint8_t* data = stock_font->GetFont()->GetFontData();
-  const uint32_t size = stock_font->GetFont()->GetSize();
-  ScopedFPDFFont font(
-      FPDFText_LoadFont(document(), data, size, FPDF_FONT_TRUETYPE, 0));
+  pdfium::span<const uint8_t> span = stock_font->GetFont()->GetFontSpan();
+  ScopedFPDFFont font(FPDFText_LoadFont(document(), span.data(), span.size(),
+                                        FPDF_FONT_TRUETYPE, 0));
   ASSERT_TRUE(font.get());
 
   // Add some text to the page.
@@ -2466,6 +2531,8 @@ TEST_F(FPDFEditEmbeddertest, AddMarkedText) {
 // Render and check the bitmap is the expected one.
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "17d2b6cd574cf66170b09c8927529a94";
+#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
+    const char md5[] = "d60ba39f9698e32360d99e727dd93165";
 #else
   const char md5[] = "70592859010ffbf532a2237b8118bcc4";
 #endif
@@ -2482,7 +2549,7 @@ TEST_F(FPDFEditEmbeddertest, AddMarkedText) {
   FPDF_ClosePage(page);
 
   // Re-open the file and check the changes were kept in the saved .pdf.
-  OpenSavedDocument();
+  OpenSavedDocument(nullptr);
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(1, FPDFPage_CountObjects(saved_page));
 

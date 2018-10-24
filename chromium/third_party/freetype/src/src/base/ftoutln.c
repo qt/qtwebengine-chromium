@@ -619,6 +619,7 @@
     FT_Error     error;
     FT_Renderer  renderer;
     FT_ListNode  node;
+    FT_BBox      cbox;
 
 
     if ( !library )
@@ -629,6 +630,11 @@
 
     if ( !params )
       return FT_THROW( Invalid_Argument );
+
+    FT_Outline_Get_CBox( outline, &cbox );
+    if ( cbox.xMin < -0x1000000L || cbox.yMin < -0x1000000L ||
+         cbox.xMax >  0x1000000L || cbox.yMax >  0x1000000L )
+      return FT_THROW( Invalid_Outline );
 
     renderer = library->cur_renderer;
     node     = library->renderers.head;
@@ -911,9 +917,9 @@
                          FT_Pos       xstrength,
                          FT_Pos       ystrength )
   {
-    FT_Vector*  points;
-    FT_Int      c, first, last;
-    FT_Int      orientation;
+    FT_Vector*      points;
+    FT_Int          c, first, last;
+    FT_Orientation  orientation;
 
 
     if ( !outline )
@@ -1044,7 +1050,7 @@
   FT_EXPORT_DEF( FT_Orientation )
   FT_Outline_Get_Orientation( FT_Outline*  outline )
   {
-    FT_BBox     cbox;
+    FT_BBox     cbox = { 0, 0, 0, 0 };
     FT_Int      xshift, yshift;
     FT_Vector*  points;
     FT_Vector   v_prev, v_cur;

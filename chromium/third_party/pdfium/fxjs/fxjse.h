@@ -11,27 +11,35 @@
 #include "core/fxcrt/fx_system.h"
 #include "v8/include/v8.h"
 
+namespace pdfium {
+namespace fxjse {
+
+extern const char kFuncTag[];
+extern const char kClassTag[];
+
+}  // namespace fxjse
+}  // namespace pdfium
+
 class CFXJSE_Arguments;
+class CFXJSE_FormCalcContext;
 class CFXJSE_Value;
-class CJS_Return;
+class CJS_Result;
+class CXFA_Object;
 
 // C++ object which is retrieved from v8 object's slot.
 class CFXJSE_HostObject {
  public:
-  virtual ~CFXJSE_HostObject() {}
+  virtual ~CFXJSE_HostObject();
 
-  // Small layering violation here, but we need to distinguish between the
-  // two kinds of subclasses.
-  enum Type { kXFA, kFM2JS };
-  Type type() const { return type_; }
+  // Two subclasses.
+  virtual CFXJSE_FormCalcContext* AsFormCalcContext();
+  virtual CXFA_Object* AsCXFAObject();
 
  protected:
-  explicit CFXJSE_HostObject(Type type) { type_ = type; }
-
-  Type type_;
+  CFXJSE_HostObject();
 };
 
-typedef CJS_Return (*FXJSE_MethodCallback)(
+typedef CJS_Result (*FXJSE_MethodCallback)(
     const v8::FunctionCallbackInfo<v8::Value>& info,
     const WideString& functionName);
 typedef void (*FXJSE_FuncCallback)(CFXJSE_Value* pThis,
@@ -51,11 +59,13 @@ enum FXJSE_ClassPropTypes {
 };
 
 struct FXJSE_FUNCTION_DESCRIPTOR {
+  const char* tag;  // pdfium::kFuncTag always.
   const char* name;
   FXJSE_FuncCallback callbackProc;
 };
 
 struct FXJSE_CLASS_DESCRIPTOR {
+  const char* tag;  // pdfium::kClassTag always.
   const char* name;
   const FXJSE_FUNCTION_DESCRIPTOR* methods;
   int32_t methNum;

@@ -152,15 +152,15 @@ arm disassembly:
 
 Running tests:
 
-    build/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=*
+    out/Release/bin/run_libyuv_unittest -vv --gtest_filter=*
 
 Running test as benchmark:
 
-    build/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=* -a "--libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=-1  --libyuv_cpu_info=-1"
+    out/Release/bin/run_libyuv_unittest -vv --gtest_filter=* --libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=-1  --libyuv_cpu_info=-1
 
 Running test with C code:
 
-    build/android/test_runner.py gtest -s libyuv_unittest -t 7200 --verbose --release --gtest_filter=* -a "--libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=1 --libyuv_cpu_info=1"
+    out/Release/bin/run_libyuv_unittest -vv --gtest_filter=* --libyuv_width=1280 --libyuv_height=720 --libyuv_repeat=999 --libyuv_flags=1 --libyuv_cpu_info=1
 
 ### Build targets
 
@@ -177,6 +177,15 @@ Running test with C code:
     gn gen out/Debug "--args=is_debug=true target_cpu=\"arm64\""
     ninja -v -C out/Debug libyuv_unittest
     ninja -v -C out/Release libyuv_unittest
+
+### MIPS Linux
+
+mips
+
+   gn gen out/Release "--args=is_debug=false target_os=\"linux\" target_cpu=\"mips64el\" mips_arch_variant=\"loongson3\" mips_use_mmi=true is_component_build=false is_clang=false use_sysroot=false use_gold=false"
+   gn gen out/Debug "--args=is_debug=true target_os=\"linux\" target_cpu=\"mips64el\" mips_arch_variant=\"loongson3\" mips_use_mmi=true is_component_build=false is_clang=false use_sysroot=false use_gold=false"
+   ninja -v -C out/Debug libyuv_unittest
+   ninja -v -C out/Release libyuv_unittest
 
 ## Building the Library with make
 

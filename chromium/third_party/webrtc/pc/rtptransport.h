@@ -16,13 +16,12 @@
 #include "call/rtp_demuxer.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "pc/rtptransportinternal.h"
-#include "rtc_base/sigslot.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
 
 namespace rtc {
 
 class CopyOnWriteBuffer;
 struct PacketOptions;
-struct PacketTime;
 class PacketTransportInternal;
 
 }  // namespace rtc
@@ -82,9 +81,6 @@ class RtpTransport : public RtpTransportInternal {
                               RtpPacketSinkInterface* sink) override;
 
   bool UnregisterRtpDemuxerSink(RtpPacketSinkInterface* sink) override;
-
-  void SetMetricsObserver(
-      rtc::scoped_refptr<MetricsObserverInterface> metrics_observer) override {}
 
  protected:
   // TODO(zstein): Remove this when we remove RtpTransportAdapter.

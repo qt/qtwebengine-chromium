@@ -25,8 +25,8 @@ group("examples") {
   if (is_android) {
     deps += [
       ":AppRTCMobile",
-      ":AppRTCMobileTest",
-      ":AppRTCMobileTestStubbedVideoIO",
+      ":AppRTCMobile_stubbed_video_io_test_apk",
+      ":AppRTCMobile_test_apk",
       ":libwebrtc_unity",
     ]
 
@@ -70,7 +70,6 @@ if (is_android) {
       ":AppRTCMobile_javalib",
       ":AppRTCMobile_resources",
       "../rtc_base:base_java",
-      "//base:base_java",
     ]
 
     shared_libraries = [ "../sdk/android:libjingle_peerconnection_so" ]
@@ -124,6 +123,7 @@ if (is_android) {
       "../sdk/android:surfaceviewrenderer_java",
       "../sdk/android:swcodecs_java",
       "../sdk/android:video_api_java",
+      "../sdk/android:video_java",
       "androidapp/third_party/autobanh:autobanh_java",
       "//third_party/jsr-305:jsr_305_javalib",
     ]
@@ -135,7 +135,7 @@ if (is_android) {
     custom_package = "org.appspot.apprtc"
   }
 
-  rtc_instrumentation_test_apk("AppRTCMobileTest") {
+  rtc_instrumentation_test_apk("AppRTCMobile_test_apk") {
     apk_name = "AppRTCMobileTest"
     android_manifest = "androidtests/AndroidManifest.xml"
 
@@ -148,12 +148,13 @@ if (is_android) {
     deps = [
       ":AppRTCMobile_javalib",
       "../sdk/android:libjingle_peerconnection_java",
+      "../sdk/android:video_java",
       "//third_party/android_support_test_runner:runner_java",
       "//third_party/junit",
     ]
   }
 
-  rtc_instrumentation_test_apk("AppRTCMobileTestStubbedVideoIO") {
+  rtc_instrumentation_test_apk("AppRTCMobile_stubbed_video_io_test_apk") {
     apk_name = "AppRTCMobileTestStubbedVideoIO"
     android_manifest = "androidtests/AndroidManifest.xml"
 
@@ -690,6 +691,7 @@ if (is_linux || is_win) {
       "../api/video:video_frame_i420",
       "../rtc_base:checks",
       "../rtc_base:stringutils",
+      "../rtc_base/third_party/sigslot",
     ]
     if (is_win) {
       sources += [
@@ -719,7 +721,6 @@ if (is_linux || is_win) {
 
     deps += [
       "../api:libjingle_peerconnection_api",
-      "../api:libjingle_peerconnection_test_api",
       "../api/audio_codecs:builtin_audio_decoder_factory",
       "../api/audio_codecs:builtin_audio_encoder_factory",
       "../api/video:video_frame",
@@ -851,7 +852,6 @@ if (is_win || is_android) {
     }
     deps = [
       "../api:libjingle_peerconnection_api",
-      "../api:libjingle_peerconnection_test_api",
       "../api/audio_codecs:builtin_audio_decoder_factory",
       "../api/audio_codecs:builtin_audio_encoder_factory",
       "../api/video:video_frame",

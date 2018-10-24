@@ -6,23 +6,32 @@
  */
 
 #include "SkColorSpaceXformSteps.h"
+#include "SkColorSpacePriv.h"
 #include "SkRasterPipeline.h"
 
 // TODO: explain
 
 SkColorSpaceXformSteps::SkColorSpaceXformSteps(SkColorSpace* src, SkAlphaType srcAT,
-                                               SkColorSpace* dst) {
+                                               SkColorSpace* dst, SkAlphaType dstAT) {
+    // Opaque outputs are treated as the same alpha type as the source input.
+    // TODO: we'd really like to have a good way of explaining why we think this is useful.
+    if (dstAT == kOpaque_SkAlphaType) {
+        dstAT =  srcAT;
+    }
+
     // Set all bools to false, all floats to 0.0f.
     memset(this, 0, sizeof(*this));
 
     // We have some options about what to do with null src or dst here.
-    SkASSERT(src && dst);
+    // This pair seems to be the most consistent with legacy expectations.
+    if (!src) { src = sk_srgb_singleton(); }
+    if (!dst) { dst = src; }
 
     this->flags.unpremul        = srcAT == kPremul_SkAlphaType;
     this->flags.linearize       = !src->gammaIsLinear();
     this->flags.gamut_transform = src->toXYZD50Hash() != dst->toXYZD50Hash();
     this->flags.encode          = !dst->gammaIsLinear();
-    this->flags.premul          = srcAT != kOpaque_SkAlphaType;
+    this->flags.premul          = srcAT != kOpaque_SkAlphaType && dstAT == kPremul_SkAlphaType;
 
     if (this->flags.gamut_transform && src->toXYZD50() && dst->fromXYZD50()) {
         auto xform = SkMatrix44(*dst->fromXYZD50(), *src->toXYZD50());

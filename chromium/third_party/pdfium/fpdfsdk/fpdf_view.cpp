@@ -26,6 +26,7 @@
 #include "core/fpdfdoc/cpdf_nametree.h"
 #include "core/fpdfdoc/cpdf_occontext.h"
 #include "core/fpdfdoc/cpdf_viewerpreferences.h"
+#include "core/fxcrt/cfx_readonlymemorystream.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/unowned_ptr.h"
@@ -35,12 +36,12 @@
 #include "fpdfsdk/cpdfsdk_customaccess.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
-#include "fpdfsdk/cpdfsdk_memoryaccess.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/ipdfsdk_pauseadapter.h"
 #include "fxjs/ijs_runtime.h"
 #include "public/fpdf_formfill.h"
 #include "third_party/base/ptr_util.h"
+#include "third_party/base/span.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
@@ -269,9 +270,10 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_LoadXFA(FPDF_DOCUMENT document) {
 
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDF_LoadMemDocument(const void* data_buf, int size, FPDF_BYTESTRING password) {
-  return LoadDocumentImpl(pdfium::MakeRetain<CPDFSDK_MemoryAccess>(
-                              static_cast<const uint8_t*>(data_buf), size),
-                          password);
+  return LoadDocumentImpl(
+      pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(
+          pdfium::make_span(static_cast<const uint8_t*>(data_buf), size)),
+      password);
 }
 
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
@@ -313,7 +315,7 @@ FPDF_GetSecurityHandlerRevision(FPDF_DOCUMENT document) {
   if (!pDoc || !pDoc->GetParser())
     return -1;
 
-  CPDF_Dictionary* pDict = pDoc->GetParser()->GetEncryptDict();
+  const CPDF_Dictionary* pDict = pDoc->GetParser()->GetEncryptDict();
   return pDict ? pDict->GetIntegerFor("R") : -1;
 }
 

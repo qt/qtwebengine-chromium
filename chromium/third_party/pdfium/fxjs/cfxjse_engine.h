@@ -20,16 +20,14 @@
 #include "xfa/fxfa/parser/cxfa_script.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 
-#define XFA_RESOLVENODE_TagName 0x0002
-
 class CFXJSE_ResolveProcessor;
 class CJS_Runtime;
 class CXFA_List;
 
-class CFXJSE_Engine : public CFX_V8 {
+class CFXJSE_Engine final : public CFX_V8 {
  public:
   static CXFA_Object* ToObject(const v8::FunctionCallbackInfo<v8::Value>& info);
-  static CXFA_Object* ToObject(CFXJSE_Value* pValue, CFXJSE_Class* pClass);
+  static CXFA_Object* ToObject(CFXJSE_Value* pValue);
   static void GlobalPropertyGetter(CFXJSE_Value* pObject,
                                    const ByteStringView& szPropName,
                                    CFXJSE_Value* pValue);
@@ -42,7 +40,7 @@ class CFXJSE_Engine : public CFX_V8 {
   static void NormalPropertySetter(CFXJSE_Value* pObject,
                                    const ByteStringView& szPropName,
                                    CFXJSE_Value* pValue);
-  static CJS_Return NormalMethodCall(
+  static CJS_Result NormalMethodCall(
       const v8::FunctionCallbackInfo<v8::Value>& info,
       const WideString& functionName);
   static int32_t NormalPropTypeGetter(CFXJSE_Value* pObject,
@@ -100,7 +98,7 @@ class CFXJSE_Engine : public CFX_V8 {
                        uint32_t dwFlag,
                        bool bSetting);
   bool IsStrictScopeInJavaScript();
-  CXFA_Object* GetVariablesThis(CXFA_Object* pObject, bool bScriptNode = false);
+  CXFA_Object* GetVariablesThis(CXFA_Object* pObject, bool bScriptNode);
   bool QueryVariableValue(CXFA_Node* pScriptNode,
                           const ByteStringView& szPropName,
                           CFXJSE_Value* pValue,
@@ -110,8 +108,8 @@ class CFXJSE_Engine : public CFX_V8 {
   UnownedPtr<CJS_Runtime> const m_pSubordinateRuntime;
   UnownedPtr<CXFA_Document> const m_pDocument;
   std::unique_ptr<CFXJSE_Context> m_JsContext;
-  CFXJSE_Class* m_pJsClass;
-  CXFA_Script::Type m_eScriptType;
+  CFXJSE_Class* m_pJsClass = nullptr;
+  CXFA_Script::Type m_eScriptType = CXFA_Script::Type::Unknown;
   std::map<CXFA_Object*, std::unique_ptr<CFXJSE_Value>> m_mapObjectToValue;
   std::map<CXFA_Object*, std::unique_ptr<CFXJSE_Context>>
       m_mapVariableToContext;
@@ -119,11 +117,11 @@ class CFXJSE_Engine : public CFX_V8 {
   std::vector<CXFA_Node*> m_upObjectArray;
   // CacheList holds the List items so we can clean them up when we're done.
   std::vector<std::unique_ptr<CXFA_List>> m_CacheList;
-  std::vector<CXFA_Node*>* m_pScriptNodeArray;
-  std::unique_ptr<CFXJSE_ResolveProcessor> m_ResolveProcessor;
+  std::vector<CXFA_Node*>* m_pScriptNodeArray = nullptr;
+  const std::unique_ptr<CFXJSE_ResolveProcessor> m_ResolveProcessor;
   std::unique_ptr<CFXJSE_FormCalcContext> m_FM2JSContext;
-  CXFA_Object* m_pThisObject;
-  XFA_AttributeEnum m_eRunAtType;
+  CXFA_Object* m_pThisObject = nullptr;
+  XFA_AttributeEnum m_eRunAtType = XFA_AttributeEnum::Client;
 };
 
 #endif  //  FXJS_CFXJSE_ENGINE_H_

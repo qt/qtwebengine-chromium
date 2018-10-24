@@ -11,8 +11,8 @@
 #include "SkBlitter.h"
 #include "SkColor.h"
 #include "SkColorFilter.h"
+#include "SkColorSpacePriv.h"
 #include "SkColorSpaceXformer.h"
-#include "SkColorSpaceXformSteps.h"
 #include "SkOpts.h"
 #include "SkPM4f.h"
 #include "SkPM4fPriv.h"
@@ -94,7 +94,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
     // we need to sometimes still need to distinguish null dstCS from sRGB.
 #if 0
     SkColorSpace* dstCS = dst.colorSpace() ? dst.colorSpace()
-                                           : SkColorSpace::MakeSRGB().get();
+                                           : sk_srgb_singleton();
 #else
     SkColorSpace* dstCS = dst.colorSpace();
 #endif
@@ -118,8 +118,7 @@ SkBlitter* SkCreateRasterPipelineBlitter(const SkPixmap& dst,
 
     // Check whether the shader prefers to run in burst mode.
     if (auto* burstCtx = shader->makeBurstPipelineContext(
-        SkShaderBase::ContextRec(paint, ctm, nullptr, SkShaderBase::ContextRec::kPM4f_DstType,
-                                 dstCS), alloc)) {
+        SkShaderBase::ContextRec(paint, ctm, nullptr, dstCS), alloc)) {
         return SkRasterPipelineBlitter::Create(dst, paint, alloc,
                                                shaderPipeline, burstCtx,
                                                is_opaque, is_constant);

@@ -13,6 +13,7 @@
 #include "core/fxcodec/gif/cfx_gif.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
+#include "third_party/base/span.h"
 
 class CFX_DIBAttribute;
 
@@ -42,8 +43,8 @@ class CCodec_GifModule {
   ~CCodec_GifModule();
 
   std::unique_ptr<Context> Start(Delegate* pDelegate);
-  uint32_t GetAvailInput(Context* context, uint8_t** avail_buf_ptr = nullptr);
-  void Input(Context* context, const uint8_t* src_buf, uint32_t src_size);
+  uint32_t GetAvailInput(Context* context, uint8_t** avail_buf_ptr);
+  void Input(Context* context, pdfium::span<uint8_t> src_buf);
   CFX_GifDecodeStatus ReadHeader(Context* context,
                                  int* width,
                                  int* height,

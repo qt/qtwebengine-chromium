@@ -204,7 +204,7 @@ void GuestViewBase::Init(const base::DictionaryValue& create_params,
   CreateWebContents(create_params,
                     base::BindOnce(&GuestViewBase::CompleteInit,
                                    weak_ptr_factory_.GetWeakPtr(),
-                                   base::Passed(&params), std::move(callback)));
+                                   std::move(params), std::move(callback)));
 }
 
 void GuestViewBase::InitWithWebContents(
@@ -516,16 +516,16 @@ void GuestViewBase::SetGuestHost(content::GuestHost* guest_host) {
 void GuestViewBase::WillAttach(WebContents* embedder_web_contents,
                                int element_instance_id,
                                bool is_full_page_plugin,
-                               const base::Closure& completion_callback) {
+                               base::OnceClosure completion_callback) {
   WillAttach(embedder_web_contents, element_instance_id, is_full_page_plugin,
-             base::OnceClosure(), completion_callback);
+             base::OnceClosure(), std::move(completion_callback));
 }
 
 void GuestViewBase::WillAttach(WebContents* embedder_web_contents,
                                int element_instance_id,
                                bool is_full_page_plugin,
                                base::OnceClosure perform_attach,
-                               const base::Closure& completion_callback) {
+                               base::OnceClosure completion_callback) {
   // Stop tracking the old embedder's zoom level.
   if (owner_web_contents())
     StopTrackingEmbedderZoomLevel();
@@ -551,13 +551,13 @@ void GuestViewBase::WillAttach(WebContents* embedder_web_contents,
 
   // Completing attachment will resume suspended resource loads and then send
   // queued events.
-  SignalWhenReady(completion_callback);
+  SignalWhenReady(std::move(completion_callback));
 }
 
-void GuestViewBase::SignalWhenReady(const base::Closure& callback) {
+void GuestViewBase::SignalWhenReady(base::OnceClosure callback) {
   // The default behavior is to call the |callback| immediately. Derived classes
   // can implement an alternative signal for readiness.
-  callback.Run();
+  std::move(callback).Run();
 }
 
 int GuestViewBase::LogicalPixelsToPhysicalPixels(double logical_pixels) const {
@@ -626,9 +626,9 @@ void GuestViewBase::ContentsMouseEvent(WebContents* source,
 }
 
 void GuestViewBase::ContentsZoomChange(bool zoom_in) {
-  zoom::PageZoom::Zoom(embedder_web_contents(), zoom_in
-                                                    ? content::PAGE_ZOOM_IN
-                                                    : content::PAGE_ZOOM_OUT);
+  if (!attached() || !embedder_web_contents()->GetDelegate())
+    return;
+  embedder_web_contents()->GetDelegate()->ContentsZoomChange(zoom_in);
 }
 
 void GuestViewBase::HandleKeyboardEvent(
@@ -683,7 +683,11 @@ bool GuestViewBase::ShouldFocusPageAfterCrash() {
 
 bool GuestViewBase::PreHandleGestureEvent(WebContents* source,
                                           const blink::WebGestureEvent& event) {
-  return blink::WebInputEvent::IsPinchGestureEventType(event.GetType());
+  // Pinch events which cause a scale change should not be routed to a guest.
+  // We still allow synthetic wheel events for touchpad pinch to go to the page.
+  DCHECK(!blink::WebInputEvent::IsPinchGestureEventType(event.GetType()) ||
+         event.NeedsWheelEvent());
+  return false;
 }
 
 void GuestViewBase::UpdatePreferredSize(WebContents* target_web_contents,

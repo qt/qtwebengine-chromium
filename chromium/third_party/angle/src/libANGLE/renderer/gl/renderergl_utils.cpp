@@ -381,7 +381,7 @@ void GenerateCaps(const FunctionsGL *functions,
     if (functions->isAtLeastGL(gl::Version(4, 1)) ||
         functions->hasGLExtension("GL_ARB_get_program_binary") ||
         functions->isAtLeastGLES(gl::Version(3, 0)) ||
-        functions->hasGLExtension("GL_OES_get_program_binary"))
+        functions->hasGLESExtension("GL_OES_get_program_binary"))
     {
         // Able to support the GL_PROGRAM_BINARY_ANGLE format as long as another program binary
         // format is available.
@@ -941,6 +941,12 @@ void GenerateCaps(const FunctionsGL *functions,
                               functions->isAtLeastGLES(gl::Version(3, 2)) ||
                               functions->hasGLESExtension("GL_KHR_debug") ||
                               functions->hasGLESExtension("GL_EXT_debug_marker");
+    extensions->eglImage = functions->hasGLESExtension("GL_OES_EGL_image");
+    // TODO(geofflang): Support external texture targets in TextureGL. http://anglebug.com/2507
+    // extensions->eglImageExternal = functions->hasGLESExtension("GL_OES_EGL_image_external");
+    // extensions->eglImageExternalEssl3 =
+    //    functions->hasGLESExtension("GL_OES_EGL_image_external_essl3");
+
     if (functions->isAtLeastGL(gl::Version(3, 3)) ||
         functions->hasGLExtension("GL_ARB_timer_query") ||
         functions->hasGLESExtension("GL_EXT_disjoint_timer_query"))
@@ -976,6 +982,11 @@ void GenerateCaps(const FunctionsGL *functions,
 
     extensions->copyTexture = true;
     extensions->syncQuery   = SyncQueryGL::IsSupported(functions);
+
+    // Note that ANGLE_texture_multisample_array support could be extended down to GL 3.2 if we
+    // emulated texStorage* API on top of texImage*.
+    extensions->textureMultisampleArray =
+        functions->isAtLeastGL(gl::Version(4, 2)) || functions->isAtLeastGLES(gl::Version(3, 2));
 
     // NV_path_rendering
     // We also need interface query which is available in
@@ -1258,12 +1269,14 @@ bool SupportsNativeRendering(const FunctionsGL *functions,
 bool UseTexImage2D(gl::TextureType textureType)
 {
     return textureType == gl::TextureType::_2D || textureType == gl::TextureType::CubeMap ||
-           textureType == gl::TextureType::Rectangle;
+           textureType == gl::TextureType::Rectangle ||
+           textureType == gl::TextureType::_2DMultisample;
 }
 
 bool UseTexImage3D(gl::TextureType textureType)
 {
-    return textureType == gl::TextureType::_2DArray || textureType == gl::TextureType::_3D;
+    return textureType == gl::TextureType::_2DArray || textureType == gl::TextureType::_3D ||
+           textureType == gl::TextureType::_2DMultisampleArray;
 }
 }
 

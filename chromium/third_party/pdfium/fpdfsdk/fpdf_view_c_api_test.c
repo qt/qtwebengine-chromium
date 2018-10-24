@@ -111,7 +111,6 @@ int CheckPDFiumCApi() {
     CHK(FPDFBookmark_GetTitle);
     CHK(FPDFDest_GetDestPageIndex);
     CHK(FPDFDest_GetLocationInPage);
-    CHK(FPDFDest_GetPageIndex);
     CHK(FPDFDest_GetView);
     CHK(FPDFLink_CountQuadPoints);
     CHK(FPDFLink_Enumerate);
@@ -127,6 +126,7 @@ int CheckPDFiumCApi() {
     // fpdf_edit.h
     CHK(FPDFFont_Close);
     CHK(FPDFFormObj_CountObjects);
+    CHK(FPDFFormObj_GetMatrix);
     CHK(FPDFFormObj_GetObject);
     CHK(FPDFImageObj_GetBitmap);
     CHK(FPDFImageObj_GetImageDataDecoded);
@@ -204,7 +204,9 @@ int CheckPDFiumCApi() {
     CHK(FPDFPath_SetMatrix);
     CHK(FPDFPath_SetStrokeColor);
     CHK(FPDFPath_SetStrokeWidth);
+    CHK(FPDFTextObj_GetFontName);
     CHK(FPDFTextObj_GetFontSize);
+    CHK(FPDFTextObj_GetText);
     CHK(FPDFText_GetMatrix);
     CHK(FPDFText_GetTextRenderMode);
     CHK(FPDFText_LoadFont);
@@ -215,6 +217,7 @@ int CheckPDFiumCApi() {
 
     // fpdf_ext.h
     CHK(FPDFDoc_GetPageMode);
+    CHK(FSDK_SetTimeFunction);
     CHK(FSDK_SetUnSpObjProcessHandler);
 
     // fpdf_flatten.h
@@ -320,6 +323,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFText_GetCharBox);
     CHK(FPDFText_GetCharIndexAtPos);
     CHK(FPDFText_GetCharOrigin);
+    CHK(FPDFText_GetFontInfo);
     CHK(FPDFText_GetFontSize);
     CHK(FPDFText_GetRect);
     CHK(FPDFText_GetSchCount);

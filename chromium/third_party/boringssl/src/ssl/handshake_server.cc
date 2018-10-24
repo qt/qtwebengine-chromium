@@ -172,8 +172,8 @@
 
 namespace bssl {
 
-int ssl_client_cipher_list_contains_cipher(const SSL_CLIENT_HELLO *client_hello,
-                                           uint16_t id) {
+bool ssl_client_cipher_list_contains_cipher(
+    const SSL_CLIENT_HELLO *client_hello, uint16_t id) {
   CBS cipher_suites;
   CBS_init(&cipher_suites, client_hello->cipher_suites,
            client_hello->cipher_suites_len);
@@ -181,19 +181,19 @@ int ssl_client_cipher_list_contains_cipher(const SSL_CLIENT_HELLO *client_hello,
   while (CBS_len(&cipher_suites) > 0) {
     uint16_t got_id;
     if (!CBS_get_u16(&cipher_suites, &got_id)) {
-      return 0;
+      return false;
     }
 
     if (got_id == id) {
-      return 1;
+      return true;
     }
   }
 
-  return 0;
+  return false;
 }
 
-static int negotiate_version(SSL_HANDSHAKE *hs, uint8_t *out_alert,
-                             const SSL_CLIENT_HELLO *client_hello) {
+static bool negotiate_version(SSL_HANDSHAKE *hs, uint8_t *out_alert,
+                              const SSL_CLIENT_HELLO *client_hello) {
   SSL *const ssl = hs->ssl;
   assert(!ssl->s3->have_version);
   CBS supported_versions, versions;
@@ -204,7 +204,7 @@ static int negotiate_version(SSL_HANDSHAKE *hs, uint8_t *out_alert,
         CBS_len(&versions) == 0) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
       *out_alert = SSL_AD_DECODE_ERROR;
-      return 0;
+      return false;
     }
   } else {
     // Convert the ClientHello version to an equivalent supported_versions
@@ -243,7 +243,7 @@ static int negotiate_version(SSL_HANDSHAKE *hs, uint8_t *out_alert,
   }
 
   if (!ssl_negotiate_version(hs, out_alert, &ssl->version, &versions)) {
-    return 0;
+    return false;
   }
 
   // At this point, the connection's version is known and |ssl->version| is
@@ -257,10 +257,10 @@ static int negotiate_version(SSL_HANDSHAKE *hs, uint8_t *out_alert,
       ssl_protocol_version(ssl) < hs->max_version) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_INAPPROPRIATE_FALLBACK);
     *out_alert = SSL3_AD_INAPPROPRIATE_FALLBACK;
-    return 0;
+    return false;
   }
 
-  return 1;
+  return true;
 }
 
 static UniquePtr<STACK_OF(SSL_CIPHER)> ssl_parse_client_cipher_list(
@@ -535,8 +535,9 @@ static enum ssl_hs_wait_t do_select_certificate(SSL_HANDSHAKE *hs) {
 
   // Negotiate the cipher suite. This must be done after |cert_cb| so the
   // certificate is finalized.
-  SSLCipherPreferenceList *prefs =
-      hs->config->cipher_list ? hs->config->cipher_list : ssl->ctx->cipher_list;
+  SSLCipherPreferenceList *prefs = hs->config->cipher_list
+                                       ? hs->config->cipher_list.get()
+                                       : ssl->ctx->cipher_list.get();
   hs->new_cipher = ssl3_choose_cipher(hs, &client_hello, prefs);
   if (hs->new_cipher == NULL) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_NO_SHARED_CIPHER);
@@ -600,7 +601,7 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
   if (session) {
     // Use the old session.
     hs->ticket_expected = renew_ticket;
-    ssl->session = session.release();
+    ssl->session = std::move(session);
     ssl->s3->session_reused = true;
   } else {
     hs->ticket_expected = tickets_supported;
@@ -630,7 +631,7 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
     hs->cert_request = !!(hs->config->verify_mode & SSL_VERIFY_PEER);
     // Only request a certificate if Channel ID isn't negotiated.
     if ((hs->config->verify_mode & SSL_VERIFY_PEER_IF_NO_OBC) &&
-        ssl->s3->tlsext_channel_id_valid) {
+        ssl->s3->channel_id_valid) {
       hs->cert_request = false;
     }
     // CertificateRequest may only be sent in certificate-based ciphers.
@@ -678,9 +679,9 @@ static enum ssl_hs_wait_t do_send_server_hello(SSL_HANDSHAKE *hs) {
 
   // We only accept ChannelIDs on connections with ECDHE in order to avoid a
   // known attack while we fix ChannelID itself.
-  if (ssl->s3->tlsext_channel_id_valid &&
+  if (ssl->s3->channel_id_valid &&
       (hs->new_cipher->algorithm_mkey & SSL_kECDHE) == 0) {
-    ssl->s3->tlsext_channel_id_valid = false;
+    ssl->s3->channel_id_valid = false;
   }
 
   // If this is a resumption and the original handshake didn't support
@@ -688,7 +689,7 @@ static enum ssl_hs_wait_t do_send_server_hello(SSL_HANDSHAKE *hs) {
   // session and so cannot resume with ChannelIDs.
   if (ssl->session != NULL &&
       ssl->session->original_handshake_hash_len == 0) {
-    ssl->s3->tlsext_channel_id_valid = false;
+    ssl->s3->channel_id_valid = false;
   }
 
   struct OPENSSL_timeval now;
@@ -701,20 +702,22 @@ static enum ssl_hs_wait_t do_send_server_hello(SSL_HANDSHAKE *hs) {
     return ssl_hs_error;
   }
 
-  // Implement the TLS 1.3 anti-downgrade feature, but with a different value.
-  //
-  // For draft TLS 1.3 versions, it is not safe to deploy this feature. However,
-  // some TLS terminators are non-compliant and copy the origin server's value,
-  // so we wish to measure eventual compatibility impact.
-  if (hs->max_version >= TLS1_3_VERSION) {
-    OPENSSL_memcpy(ssl->s3->server_random + SSL3_RANDOM_SIZE -
-                       sizeof(kDraftDowngradeRandom),
-                   kDraftDowngradeRandom, sizeof(kDraftDowngradeRandom));
+  // Implement the TLS 1.3 anti-downgrade feature.
+  if (ssl_supports_version(hs, TLS1_3_VERSION)) {
+    if (ssl_protocol_version(ssl) == TLS1_2_VERSION) {
+      OPENSSL_memcpy(ssl->s3->server_random + SSL3_RANDOM_SIZE -
+                         sizeof(kTLS13DowngradeRandom),
+                     kTLS13DowngradeRandom, sizeof(kTLS13DowngradeRandom));
+    } else {
+      OPENSSL_memcpy(ssl->s3->server_random + SSL3_RANDOM_SIZE -
+                         sizeof(kTLS12DowngradeRandom),
+                     kTLS12DowngradeRandom, sizeof(kTLS12DowngradeRandom));
+    }
   }
 
   const SSL_SESSION *session = hs->new_session.get();
-  if (ssl->session != NULL) {
-    session = ssl->session;
+  if (ssl->session != nullptr) {
+    session = ssl->session.get();
   }
 
   ScopedCBB cbb;
@@ -788,11 +791,12 @@ static enum ssl_hs_wait_t do_send_server_certificate(SSL_HANDSHAKE *hs) {
 
     // PSK ciphers begin with an identity hint.
     if (alg_a & SSL_aPSK) {
-      size_t len = (hs->config->psk_identity_hint == NULL)
+      size_t len = hs->config->psk_identity_hint == nullptr
                        ? 0
-                       : strlen(hs->config->psk_identity_hint);
+                       : strlen(hs->config->psk_identity_hint.get());
       if (!CBB_add_u16_length_prefixed(cbb.get(), &child) ||
-          !CBB_add_bytes(&child, (const uint8_t *)hs->config->psk_identity_hint,
+          !CBB_add_bytes(&child,
+                         (const uint8_t *)hs->config->psk_identity_hint.get(),
                          len)) {
         return ssl_hs_error;
       }
@@ -859,6 +863,7 @@ static enum ssl_hs_wait_t do_send_server_key_exchange(SSL_HANDSHAKE *hs) {
     // Determine the signature algorithm.
     uint16_t signature_algorithm;
     if (!tls1_choose_signature_algorithm(hs, &signature_algorithm)) {
+      ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
       return ssl_hs_error;
     }
     if (ssl_protocol_version(ssl) >= TLS1_2_VERSION) {
@@ -1361,7 +1366,7 @@ static enum ssl_hs_wait_t do_read_next_proto(SSL_HANDSHAKE *hs) {
 static enum ssl_hs_wait_t do_read_channel_id(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
 
-  if (!ssl->s3->tlsext_channel_id_valid) {
+  if (!ssl->s3->channel_id_valid) {
     hs->state = state12_read_client_finished;
     return ssl_hs_ok;
   }
@@ -1398,7 +1403,7 @@ static enum ssl_hs_wait_t do_read_client_finished(SSL_HANDSHAKE *hs) {
   // If this is a full handshake with ChannelID then record the handshake
   // hashes in |hs->new_session| in case we need them to verify a
   // ChannelID signature on a resumption of this session in the future.
-  if (ssl->session == NULL && ssl->s3->tlsext_channel_id_valid &&
+  if (ssl->session == NULL && ssl->s3->channel_id_valid &&
       !tls1_record_handshake_hashes_for_channel_id(hs)) {
     return ssl_hs_error;
   }
@@ -1419,7 +1424,8 @@ static enum ssl_hs_wait_t do_send_server_finished(SSL_HANDSHAKE *hs) {
     } else {
       // We are renewing an existing session. Duplicate the session to adjust
       // the timeout.
-      session_copy = SSL_SESSION_dup(ssl->session, SSL_SESSION_INCLUDE_NONAUTH);
+      session_copy =
+          SSL_SESSION_dup(ssl->session.get(), SSL_SESSION_INCLUDE_NONAUTH);
       if (!session_copy) {
         return ssl_hs_error;
       }

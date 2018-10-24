@@ -25,6 +25,8 @@
 #include "SkTypes.h"
 
 class GrGLBuffer;
+class GrGLGpuRTCommandBuffer;
+class GrGLGpuTextureCommandBuffer;
 class GrPipeline;
 class GrSwizzle;
 
@@ -118,12 +120,12 @@ public:
 
     void clearStencil(GrRenderTarget*, int clearValue) override;
 
-    GrGpuRTCommandBuffer* createCommandBuffer(
+    GrGpuRTCommandBuffer* getCommandBuffer(
             GrRenderTarget*, GrSurfaceOrigin,
             const GrGpuRTCommandBuffer::LoadAndStoreInfo&,
             const GrGpuRTCommandBuffer::StencilLoadAndStoreInfo&) override;
 
-    GrGpuTextureCommandBuffer* createCommandBuffer(GrTexture*, GrSurfaceOrigin) override;
+    GrGpuTextureCommandBuffer* getCommandBuffer(GrTexture*, GrSurfaceOrigin) override;
 
     void invalidateBoundRenderTarget() {
         fHWBoundRenderTargetUniqueID.makeInvalid();
@@ -139,8 +141,7 @@ public:
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
     void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
 
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType,
-                                                               GrSRGBEncoded) override;
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
 
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
@@ -150,6 +151,8 @@ public:
 
     void testingOnly_flushGpuAndSync() override;
 #endif
+
+    void submit(GrGpuCommandBuffer* buffer) override;
 
     GrFence SK_WARN_UNUSED_RESULT insertFence() override;
     bool waitFence(GrFence, uint64_t timeout) override;
@@ -197,6 +200,7 @@ private:
     // compatible stencil format, or negative if there is no compatible stencil format.
     int getCompatibleStencilIndex(GrPixelConfig config);
 
+    void onFBOChanged();
 
     // Returns whether the texture is successfully created. On success, the
     // result is stored in |info|.
@@ -246,6 +250,10 @@ private:
     void setTextureUnit(int unitIdx);
 
     void setTextureSwizzle(int unitIdx, GrGLenum target, const GrGLenum swizzle[]);
+
+    void generateMipmapsForProcessorTextures(
+            const GrPrimitiveProcessor&, const GrPipeline&,
+            const GrTextureProxy* const primitiveProcessorTextures[]);
 
     // Flushes state from GrPipeline to GL. Returns false if the state couldn't be set.
     // willDrawPoints must be true if point primitives will be rendered after setting the GL state.
@@ -555,7 +563,7 @@ private:
         }
     }                                       fHWBlendState;
 
-    TriState fMSAAEnabled;
+    TriState                                fMSAAEnabled;
 
     GrStencilSettings                       fHWStencilSettings;
     TriState                                fHWStencilTestEnabled;
@@ -612,8 +620,12 @@ private:
     GrPrimitiveType fLastPrimitiveType;
     bool fRequiresFlushBeforeNextInstancedDraw = false;
 
-    typedef GrGpu INHERITED;
+    std::unique_ptr<GrGLGpuRTCommandBuffer>      fCachedRTCommandBuffer;
+    std::unique_ptr<GrGLGpuTextureCommandBuffer> fCachedTexCommandBuffer;
+
     friend class GrGLPathRendering; // For accessing setTextureUnit.
+
+    typedef GrGpu INHERITED;
 };
 
 #endif

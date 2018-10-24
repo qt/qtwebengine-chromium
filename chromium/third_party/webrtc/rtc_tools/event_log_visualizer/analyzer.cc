@@ -1458,6 +1458,61 @@ void EventLogAnalyzer::CreateTimestampGraph(PacketDirection direction,
   plot->SetTitle(GetDirectionAsString(direction) + " timestamps");
 }
 
+void EventLogAnalyzer::CreateSenderAndReceiverReportPlot(
+    PacketDirection direction,
+    rtc::FunctionView<float(const rtcp::ReportBlock&)> fy,
+    std::string title,
+    std::string yaxis_label,
+    Plot* plot) {
+  std::map<uint32_t, TimeSeries> sr_reports_by_ssrc;
+  const auto& sender_reports = parsed_log_.sender_reports(direction);
+  for (const auto& rtcp : sender_reports) {
+    float x = ToCallTimeSec(rtcp.log_time_us());
+    uint32_t ssrc = rtcp.sr.sender_ssrc();
+    for (const auto& block : rtcp.sr.report_blocks()) {
+      float y = fy(block);
+      auto sr_report_it = sr_reports_by_ssrc.find(ssrc);
+      bool inserted;
+      if (sr_report_it == sr_reports_by_ssrc.end()) {
+        std::tie(sr_report_it, inserted) = sr_reports_by_ssrc.emplace(
+            ssrc, TimeSeries(GetStreamName(direction, ssrc) + " Sender Reports",
+                             LineStyle::kLine, PointStyle::kHighlight));
+      }
+      sr_report_it->second.points.emplace_back(x, y);
+    }
+  }
+  for (auto& kv : sr_reports_by_ssrc) {
+    plot->AppendTimeSeries(std::move(kv.second));
+  }
+
+  std::map<uint32_t, TimeSeries> rr_reports_by_ssrc;
+  const auto& receiver_reports = parsed_log_.receiver_reports(direction);
+  for (const auto& rtcp : receiver_reports) {
+    float x = ToCallTimeSec(rtcp.log_time_us());
+    uint32_t ssrc = rtcp.rr.sender_ssrc();
+    for (const auto& block : rtcp.rr.report_blocks()) {
+      float y = fy(block);
+      auto rr_report_it = rr_reports_by_ssrc.find(ssrc);
+      bool inserted;
+      if (rr_report_it == rr_reports_by_ssrc.end()) {
+        std::tie(rr_report_it, inserted) = rr_reports_by_ssrc.emplace(
+            ssrc,
+            TimeSeries(GetStreamName(direction, ssrc) + " Receiver Reports",
+                       LineStyle::kLine, PointStyle::kHighlight));
+      }
+      rr_report_it->second.points.emplace_back(x, y);
+    }
+  }
+  for (auto& kv : rr_reports_by_ssrc) {
+    plot->AppendTimeSeries(std::move(kv.second));
+  }
+
+  plot->SetXAxis(ToCallTimeSec(begin_time_), call_duration_s_, "Time (s)",
+                 kLeftMargin, kRightMargin);
+  plot->SetSuggestedYAxis(0, 1, yaxis_label, kBottomMargin, kTopMargin);
+  plot->SetTitle(title);
+}
+
 void EventLogAnalyzer::CreateAudioEncoderTargetBitrateGraph(Plot* plot) {
   TimeSeries time_series("Audio encoder target bitrate", LineStyle::kLine,
                          PointStyle::kHighlight);
@@ -1771,9 +1826,8 @@ EventLogAnalyzer::NetEqStatsGetterMap EventLogAnalyzer::SimulateNetEq(
   return neteq_stats;
 }
 
-// Plots the jitter buffer delay profile. This will plot only for the first
-// incoming audio SSRC. If the stream contains more than one incoming audio
-// SSRC, all but the first will be ignored.
+// Given a NetEqStatsGetter and the SSRC that the NetEqStatsGetter was created
+// for, this method generates a plot for the jitter buffer delay profile.
 void EventLogAnalyzer::CreateAudioJitterBufferGraph(
     uint32_t ssrc,
     const test::NetEqStatsGetter* stats_getter,
@@ -1787,55 +1841,40 @@ void EventLogAnalyzer::CreateAudioJitterBufferGraph(
       &arrival_delay_ms, &corrected_arrival_delay_ms, &playout_delay_ms,
       &target_delay_ms);
 
-  std::map<uint32_t, TimeSeries> time_series_packet_arrival;
-  std::map<uint32_t, TimeSeries> time_series_relative_packet_arrival;
-  std::map<uint32_t, TimeSeries> time_series_play_time;
-  std::map<uint32_t, TimeSeries> time_series_target_time;
+  TimeSeries time_series_packet_arrival("packet arrival delay",
+                                        LineStyle::kLine);
+  TimeSeries time_series_relative_packet_arrival(
+      "Relative packet arrival delay", LineStyle::kLine);
+  TimeSeries time_series_play_time("Playout delay", LineStyle::kLine);
+  TimeSeries time_series_target_time("Target delay", LineStyle::kLine,
+                                     PointStyle::kHighlight);
 
   for (const auto& data : arrival_delay_ms) {
     const float x = ToCallTimeSec(data.first * 1000);  // ms to us.
     const float y = data.second;
-    time_series_packet_arrival[ssrc].points.emplace_back(TimeSeriesPoint(x, y));
+    time_series_packet_arrival.points.emplace_back(TimeSeriesPoint(x, y));
   }
   for (const auto& data : corrected_arrival_delay_ms) {
     const float x = ToCallTimeSec(data.first * 1000);  // ms to us.
     const float y = data.second;
-    time_series_relative_packet_arrival[ssrc].points.emplace_back(
+    time_series_relative_packet_arrival.points.emplace_back(
         TimeSeriesPoint(x, y));
   }
   for (const auto& data : playout_delay_ms) {
     const float x = ToCallTimeSec(data.first * 1000);  // ms to us.
     const float y = data.second;
-    time_series_play_time[ssrc].points.emplace_back(TimeSeriesPoint(x, y));
+    time_series_play_time.points.emplace_back(TimeSeriesPoint(x, y));
   }
   for (const auto& data : target_delay_ms) {
     const float x = ToCallTimeSec(data.first * 1000);  // ms to us.
     const float y = data.second;
-    time_series_target_time[ssrc].points.emplace_back(TimeSeriesPoint(x, y));
+    time_series_target_time.points.emplace_back(TimeSeriesPoint(x, y));
   }
 
-  // This code is adapted for a single stream. The creation of the streams above
-  // guarantee that no more than one steam is included. If multiple streams are
-  // to be plotted, they should likely be given distinct labels below.
-  RTC_DCHECK_EQ(time_series_relative_packet_arrival.size(), 1);
-  for (auto& series : time_series_relative_packet_arrival) {
-    series.second.label = "Relative packet arrival delay";
-    series.second.line_style = LineStyle::kLine;
-    plot->AppendTimeSeries(std::move(series.second));
-  }
-  RTC_DCHECK_EQ(time_series_play_time.size(), 1);
-  for (auto& series : time_series_play_time) {
-    series.second.label = "Playout delay";
-    series.second.line_style = LineStyle::kLine;
-    plot->AppendTimeSeries(std::move(series.second));
-  }
-  RTC_DCHECK_EQ(time_series_target_time.size(), 1);
-  for (auto& series : time_series_target_time) {
-    series.second.label = "Target delay";
-    series.second.line_style = LineStyle::kLine;
-    series.second.point_style = PointStyle::kHighlight;
-    plot->AppendTimeSeries(std::move(series.second));
-  }
+  plot->AppendTimeSeries(std::move(time_series_packet_arrival));
+  plot->AppendTimeSeries(std::move(time_series_relative_packet_arrival));
+  plot->AppendTimeSeries(std::move(time_series_play_time));
+  plot->AppendTimeSeries(std::move(time_series_target_time));
 
   plot->SetXAxis(ToCallTimeSec(begin_time_), call_duration_s_, "Time (s)",
                  kLeftMargin, kRightMargin);

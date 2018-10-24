@@ -239,14 +239,6 @@ bool ValidateMaterialCommon(Context *context,
                             MaterialParameter pname,
                             const GLfloat *params)
 {
-    ANGLE_VALIDATE_IS_GLES1(context);
-
-    if (face != GL_FRONT_AND_BACK)
-    {
-        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidMaterialFace);
-        return false;
-    }
-
     switch (pname)
     {
         case MaterialParameter::Ambient:
@@ -267,12 +259,43 @@ bool ValidateMaterialCommon(Context *context,
     }
 }
 
+bool ValidateMaterialSetting(Context *context,
+                             GLenum face,
+                             MaterialParameter pname,
+                             const GLfloat *params)
+{
+    ANGLE_VALIDATE_IS_GLES1(context);
+
+    if (face != GL_FRONT_AND_BACK)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidMaterialFace);
+        return false;
+    }
+
+    return ValidateMaterialCommon(context, face, pname, params);
+}
+
+bool ValidateMaterialQuery(Context *context, GLenum face, MaterialParameter pname)
+{
+    ANGLE_VALIDATE_IS_GLES1(context);
+
+    if (face != GL_FRONT && face != GL_BACK)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidMaterialFace);
+        return false;
+    }
+
+    GLfloat dummyParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    return ValidateMaterialCommon(context, face, pname, dummyParams);
+}
+
 bool ValidateMaterialSingleComponent(Context *context,
                                      GLenum face,
                                      MaterialParameter pname,
                                      GLfloat param)
 {
-    if (!ValidateMaterialCommon(context, face, pname, &param))
+    if (!ValidateMaterialSetting(context, face, pname, &param))
     {
         return false;
     }
@@ -595,6 +618,19 @@ bool ValidatePointSizeCommon(Context *context, GLfloat size)
     return true;
 }
 
+bool ValidateDrawTexCommon(Context *context, float width, float height)
+{
+    ANGLE_VALIDATE_IS_GLES1(context);
+
+    if (width <= 0.0f || height <= 0.0f)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), NonPositiveDrawTextureDimension);
+        return false;
+    }
+
+    return true;
+}
+
 }  // namespace gl
 
 namespace gl
@@ -787,14 +823,12 @@ bool ValidateGetLightxv(Context *context, GLenum light, LightParameter pname, GL
 
 bool ValidateGetMaterialfv(Context *context, GLenum face, MaterialParameter pname, GLfloat *params)
 {
-    GLfloat dummyParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    return ValidateMaterialCommon(context, face, pname, dummyParams);
+    return ValidateMaterialQuery(context, face, pname);
 }
 
 bool ValidateGetMaterialxv(Context *context, GLenum face, MaterialParameter pname, GLfixed *params)
 {
-    GLfloat dummyParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    return ValidateMaterialCommon(context, face, pname, dummyParams);
+    return ValidateMaterialQuery(context, face, pname);
 }
 
 bool ValidateGetPointerv(Context *context, GLenum pname, void **params)
@@ -920,10 +954,32 @@ bool ValidateLoadMatrixx(Context *context, const GLfixed *m)
     return true;
 }
 
-bool ValidateLogicOp(Context *context, GLenum opcode)
+bool ValidateLogicOp(Context *context, LogicalOperation opcode)
 {
-    UNIMPLEMENTED();
-    return true;
+    ANGLE_VALIDATE_IS_GLES1(context);
+    switch (opcode)
+    {
+        case LogicalOperation::And:
+        case LogicalOperation::AndInverted:
+        case LogicalOperation::AndReverse:
+        case LogicalOperation::Clear:
+        case LogicalOperation::Copy:
+        case LogicalOperation::CopyInverted:
+        case LogicalOperation::Equiv:
+        case LogicalOperation::Invert:
+        case LogicalOperation::Nand:
+        case LogicalOperation::Noop:
+        case LogicalOperation::Nor:
+        case LogicalOperation::Or:
+        case LogicalOperation::OrInverted:
+        case LogicalOperation::OrReverse:
+        case LogicalOperation::Set:
+        case LogicalOperation::Xor:
+            return true;
+        default:
+            ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidLogicOp);
+            return false;
+    }
 }
 
 bool ValidateMaterialf(Context *context, GLenum face, MaterialParameter pname, GLfloat param)
@@ -936,7 +992,7 @@ bool ValidateMaterialfv(Context *context,
                         MaterialParameter pname,
                         const GLfloat *params)
 {
-    return ValidateMaterialCommon(context, face, pname, params);
+    return ValidateMaterialSetting(context, face, pname, params);
 }
 
 bool ValidateMaterialx(Context *context, GLenum face, MaterialParameter pname, GLfixed param)
@@ -956,7 +1012,7 @@ bool ValidateMaterialxv(Context *context,
         paramsf[i] = FixedToFloat(params[i]);
     }
 
-    return ValidateMaterialCommon(context, face, pname, paramsf);
+    return ValidateMaterialSetting(context, face, pname, paramsf);
 }
 
 bool ValidateMatrixMode(Context *context, MatrixType mode)
@@ -1302,26 +1358,24 @@ bool ValidateDrawTexfOES(Context *context,
                          GLfloat width,
                          GLfloat height)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, width, height);
 }
 
 bool ValidateDrawTexfvOES(Context *context, const GLfloat *coords)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, coords[3], coords[4]);
 }
 
 bool ValidateDrawTexiOES(Context *context, GLint x, GLint y, GLint z, GLint width, GLint height)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, static_cast<GLfloat>(width),
+                                 static_cast<GLfloat>(height));
 }
 
 bool ValidateDrawTexivOES(Context *context, const GLint *coords)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, static_cast<GLfloat>(coords[3]),
+                                 static_cast<GLfloat>(coords[4]));
 }
 
 bool ValidateDrawTexsOES(Context *context,
@@ -1331,14 +1385,14 @@ bool ValidateDrawTexsOES(Context *context,
                          GLshort width,
                          GLshort height)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, static_cast<GLfloat>(width),
+                                 static_cast<GLfloat>(height));
 }
 
 bool ValidateDrawTexsvOES(Context *context, const GLshort *coords)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, static_cast<GLfloat>(coords[3]),
+                                 static_cast<GLfloat>(coords[4]));
 }
 
 bool ValidateDrawTexxOES(Context *context,
@@ -1348,14 +1402,12 @@ bool ValidateDrawTexxOES(Context *context,
                          GLfixed width,
                          GLfixed height)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, FixedToFloat(width), FixedToFloat(height));
 }
 
 bool ValidateDrawTexxvOES(Context *context, const GLfixed *coords)
 {
-    UNIMPLEMENTED();
-    return true;
+    return ValidateDrawTexCommon(context, FixedToFloat(coords[3]), FixedToFloat(coords[4]));
 }
 
 bool ValidateCurrentPaletteMatrixOES(Context *context, GLuint matrixpaletteindex)

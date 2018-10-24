@@ -44,7 +44,7 @@ FPDF_WIDESTRING AsFPDFWideString(ByteString* bsUTF16LE);
 // hierarcy back to the form fill environment itself, so as to flag any
 // lingering lifetime issues via the memory tools.
 
-class CPDFSDK_FormFillEnvironment
+class CPDFSDK_FormFillEnvironment final
     : public Observable<CPDFSDK_FormFillEnvironment> {
  public:
   CPDFSDK_FormFillEnvironment(CPDF_Document* pDoc, FPDF_FORMFILLINFO* pFFinfo);
@@ -115,7 +115,7 @@ class CPDFSDK_FormFillEnvironment
 
 #ifdef PDF_ENABLE_XFA
   CPDFXFA_Context* GetXFAContext() const;
-  int GetPageViewCount() const { return m_PageMap.size(); }
+  int GetPageViewCount() const;
 
   void DisplayCaret(CPDFXFA_Page* page,
                     FPDF_BOOL bVisible,
@@ -224,9 +224,9 @@ class CPDFSDK_FormFillEnvironment
   UnownedPtr<CPDF_Document> const m_pCPDFDoc;
   std::unique_ptr<CFFL_InteractiveFormFiller> m_pFormFiller;
   std::unique_ptr<CFX_SystemHandler> m_pSysHandler;
-  bool m_bChangeMask;
-  bool m_bBeingDestroyed;
-  FORM_SAVECALLED m_SaveCalled;
+  bool m_bChangeMask = false;
+  bool m_bBeingDestroyed = false;
+  FORM_SAVECALLED m_SaveCalled = nullptr;
 };
 
 #endif  // FPDFSDK_CPDFSDK_FORMFILLENVIRONMENT_H_

@@ -11,7 +11,7 @@
 
 #include "xfa/fwl/theme/cfwl_widgettp.h"
 
-class CFWL_ScrollBarTP : public CFWL_WidgetTP {
+class CFWL_ScrollBarTP final : public CFWL_WidgetTP {
  public:
   CFWL_ScrollBarTP();
   ~CFWL_ScrollBarTP() override;
@@ -33,24 +33,24 @@ class CFWL_ScrollBarTP : public CFWL_WidgetTP {
                     const CFX_RectF* pRect,
                     bool bVert,
                     FWLTHEME_STATE eState,
-                    bool bPawButton = true,
-                    CFX_Matrix* pMatrix = nullptr);
+                    bool bPawButton,
+                    CFX_Matrix* pMatrix);
   void DrawTrack(CXFA_Graphics* pGraphics,
                  const CFX_RectF* pRect,
                  bool bVert,
                  FWLTHEME_STATE eState,
                  bool bLowerTrack,
-                 CFX_Matrix* pMatrix = nullptr);
+                 CFX_Matrix* pMatrix);
   void DrawMaxMinBtn(CXFA_Graphics* pGraphics,
                      const CFX_RectF* pRect,
                      FWLTHEME_DIRECTION eDict,
                      FWLTHEME_STATE eState,
-                     CFX_Matrix* pMatrix = nullptr);
+                     CFX_Matrix* pMatrix);
   void DrawPaw(CXFA_Graphics* pGraphics,
                const CFX_RectF* pRect,
                bool bVert,
                FWLTHEME_STATE eState,
-               CFX_Matrix* pMatrix = nullptr);
+               CFX_Matrix* pMatrix);
 
   std::unique_ptr<SBThemeData> m_pThemeData;
 

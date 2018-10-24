@@ -23,24 +23,27 @@ RtpPacketizer* RtpPacketizer::Create(VideoCodecType type,
                                      size_t last_packet_reduction_len,
                                      const RTPVideoHeader* rtp_video_header,
                                      FrameType frame_type) {
+  RTC_CHECK(rtp_video_header);
   switch (type) {
-    case kVideoCodecH264:
-      RTC_CHECK(rtp_video_header);
+    case kVideoCodecH264: {
+      const auto& h264 =
+          absl::get<RTPVideoHeaderH264>(rtp_video_header->video_type_header);
       return new RtpPacketizerH264(max_payload_len, last_packet_reduction_len,
-                                   rtp_video_header->h264().packetization_mode);
+                                   h264.packetization_mode);
+    }
     case kVideoCodecVP8:
-      RTC_CHECK(rtp_video_header);
       return new RtpPacketizerVp8(rtp_video_header->vp8(), max_payload_len,
                                   last_packet_reduction_len);
-    case kVideoCodecVP9:
-      RTC_CHECK(rtp_video_header);
-      return new RtpPacketizerVp9(rtp_video_header->vp9(), max_payload_len,
+    case kVideoCodecVP9: {
+      const auto& vp9 =
+          absl::get<RTPVideoHeaderVP9>(rtp_video_header->video_type_header);
+      return new RtpPacketizerVp9(vp9, max_payload_len,
                                   last_packet_reduction_len);
-    case kVideoCodecGeneric:
-      return new RtpPacketizerGeneric(frame_type, max_payload_len,
-                                      last_packet_reduction_len);
+    }
     default:
-      RTC_NOTREACHED();
+      return new RtpPacketizerGeneric(*rtp_video_header, frame_type,
+                                      max_payload_len,
+                                      last_packet_reduction_len);
   }
   return nullptr;
 }
@@ -53,11 +56,8 @@ RtpDepacketizer* RtpDepacketizer::Create(VideoCodecType type) {
       return new RtpDepacketizerVp8();
     case kVideoCodecVP9:
       return new RtpDepacketizerVp9();
-    case kVideoCodecGeneric:
-      return new RtpDepacketizerGeneric();
     default:
-      RTC_NOTREACHED();
+      return new RtpDepacketizerGeneric();
   }
-  return nullptr;
 }
 }  // namespace webrtc

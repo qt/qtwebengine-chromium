@@ -8,7 +8,7 @@
 
 #include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/page/cpdf_imageobject.h"
-#include "core/fpdfapi/render/cpdf_dibsource.h"
+#include "core/fpdfapi/render/cpdf_dibbase.h"
 #include "core/fpdfapi/render/cpdf_imagecacheentry.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
@@ -21,20 +21,20 @@ CPDF_ImageLoader::CPDF_ImageLoader()
 
 CPDF_ImageLoader::~CPDF_ImageLoader() {}
 
-bool CPDF_ImageLoader::Start(const CPDF_ImageObject* pImage,
+bool CPDF_ImageLoader::Start(CPDF_ImageObject* pImage,
                              CPDF_PageRenderCache* pCache,
                              bool bStdCS,
                              uint32_t GroupFamily,
                              bool bLoadMask,
                              CPDF_RenderStatus* pRenderStatus) {
   m_pCache = pCache;
-  m_pImageObject = const_cast<CPDF_ImageObject*>(pImage);
+  m_pImageObject = pImage;
   bool ret;
   if (pCache) {
     ret = pCache->StartGetCachedBitmap(m_pImageObject->GetImage(), bStdCS,
                                        GroupFamily, bLoadMask, pRenderStatus);
   } else {
-    ret = m_pImageObject->GetImage()->StartLoadDIBSource(
+    ret = m_pImageObject->GetImage()->StartLoadDIBBase(
         pRenderStatus->GetFormResource(), pRenderStatus->GetPageResource(),
         bStdCS, GroupFamily, bLoadMask);
   }

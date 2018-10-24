@@ -88,6 +88,8 @@ class PeerConnection : public PeerConnectionInternal,
       rtc::scoped_refptr<MediaStreamTrackInterface> track,
       const std::vector<std::string>& stream_ids) override;
   bool RemoveTrack(RtpSenderInterface* sender) override;
+  RTCError RemoveTrackNew(
+      rtc::scoped_refptr<RtpSenderInterface> sender) override;
 
   RTCErrorOr<rtc::scoped_refptr<RtpTransceiverInterface>> AddTransceiver(
       rtc::scoped_refptr<MediaStreamTrackInterface> track) override;
@@ -155,14 +157,8 @@ class PeerConnection : public PeerConnectionInternal,
       const override;
 
   // JSEP01
-  // Deprecated, use version without constraints.
-  void CreateOffer(CreateSessionDescriptionObserver* observer,
-                   const MediaConstraintsInterface* constraints) override;
   void CreateOffer(CreateSessionDescriptionObserver* observer,
                    const RTCOfferAnswerOptions& options) override;
-  // Deprecated, use version without constraints.
-  void CreateAnswer(CreateSessionDescriptionObserver* observer,
-                    const MediaConstraintsInterface* constraints) override;
   void CreateAnswer(CreateSessionDescriptionObserver* observer,
                     const RTCOfferAnswerOptions& options) override;
   void SetLocalDescription(SetSessionDescriptionObserver* observer,
@@ -184,8 +180,6 @@ class PeerConnection : public PeerConnectionInternal,
   bool AddIceCandidate(const IceCandidateInterface* candidate) override;
   bool RemoveIceCandidates(
       const std::vector<cricket::Candidate>& candidates) override;
-
-  void RegisterUMAObserver(UMAObserver* observer) override;
 
   RTCError SetBitrate(const BitrateSettings& bitrate) override;
 
@@ -267,6 +261,7 @@ class PeerConnection : public PeerConnectionInternal,
   void ReturnHistogramVeryQuicklyForTesting() {
     return_histogram_very_quickly_ = true;
   }
+  void RequestUsagePatternReportForTesting();
 
  protected:
   ~PeerConnection() override;
@@ -346,9 +341,6 @@ class PeerConnection : public PeerConnectionInternal,
   rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
   FindFirstTransceiverForAddedTrack(
       rtc::scoped_refptr<MediaStreamTrackInterface> track);
-
-  // RemoveTrack that returns an RTCError.
-  RTCError RemoveTrackInternal(rtc::scoped_refptr<RtpSenderInterface> sender);
 
   rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
   FindTransceiverBySender(rtc::scoped_refptr<RtpSenderInterface> sender);
@@ -685,8 +677,6 @@ class PeerConnection : public PeerConnectionInternal,
       webrtc::TurnCustomizer* turn_customizer,
       absl::optional<int> stun_candidate_keepalive_interval);
 
-  void SetMetricObserver_n(UMAObserver* observer);
-
   // Starts output of an RTC event log to the given output object.
   // This function should only be called from the worker thread.
   bool StartRtcEventLog_w(std::unique_ptr<RtcEventLogOutput> output,
@@ -703,7 +693,6 @@ class PeerConnection : public PeerConnectionInternal,
   RTCError ValidateConfiguration(const RTCConfiguration& config) const;
 
   cricket::ChannelManager* channel_manager() const;
-  MetricsObserverInterface* metrics_observer() const;
 
   enum class SessionError {
     kNone,       // No error.
@@ -921,6 +910,9 @@ class PeerConnection : public PeerConnectionInternal,
       RtpTransportInternal* rtp_transport,
       cricket::DtlsTransportInternal* dtls_transport) override;
 
+  // Returns the observer. Will crash on CHECK if the observer is removed.
+  PeerConnectionObserver* Observer() const;
+
   sigslot::signal1<DataChannel*> SignalDataChannelCreated_;
 
   // Storing the factory as a scoped reference pointer ensures that the memory
@@ -931,7 +923,6 @@ class PeerConnection : public PeerConnectionInternal,
   // will refer to the same reference count.
   rtc::scoped_refptr<PeerConnectionFactory> factory_;
   PeerConnectionObserver* observer_ = nullptr;
-  rtc::scoped_refptr<UMAObserver> uma_observer_ = nullptr;
 
   // The EventLog needs to outlive |call_| (and any other object that uses it).
   std::unique_ptr<RtcEventLog> event_log_;
@@ -941,6 +932,9 @@ class PeerConnection : public PeerConnectionInternal,
   IceGatheringState ice_gathering_state_ = kIceGatheringNew;
   PeerConnectionInterface::RTCConfiguration configuration_;
 
+  // TODO(zstein): |async_resolver_factory_| can currently be nullptr if it
+  // is not injected. It should be required once chromium supplies it.
+  std::unique_ptr<AsyncResolverFactory> async_resolver_factory_;
   std::unique_ptr<cricket::PortAllocator> port_allocator_;
   std::unique_ptr<rtc::SSLCertificateVerifier> tls_cert_verifier_;
   int port_allocator_flags_ = 0;

@@ -82,6 +82,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   base::string16 GetSelectedText() override;
   base::string16 GetSurroundingText() override;
   gfx::Range GetSelectedRange() override;
+  size_t GetOffsetForSurroundingText() override;
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
@@ -95,6 +96,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
       const gfx::PointF& point) override;
 
   // RenderWidgetHostViewBase implementation.
+  RenderWidgetHostViewBase* GetRootView() override;
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
                    const gfx::Rect& bounds) override;
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
@@ -117,10 +119,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
                         const gfx::Range& range) override;
   void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) override;
-#if defined(USE_AURA)
-  void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
-                              InputEventAckState ack_result) override;
-#endif
   void PreProcessMouseEvent(const blink::WebMouseEvent& event) override;
   void PreProcessTouchEvent(const blink::WebTouchEvent& event) override;
 
@@ -161,6 +159,10 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   viz::ScopedSurfaceIdAllocator DidUpdateVisualProperties(
       const cc::RenderFrameMetadata& metadata) override;
 
+  void MaybeSendSyntheticTapGestureForTest(
+      const blink::WebFloatPoint& position,
+      const blink::WebFloatPoint& screen_position) const;
+
  private:
   friend class RenderWidgetHostView;
 
@@ -182,7 +184,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   // http://crbug.com/533069
   void MaybeSendSyntheticTapGesture(
       const blink::WebFloatPoint& position,
-      const blink::WebFloatPoint& screenPosition) const;
+      const blink::WebFloatPoint& screen_position) const;
 
   void OnHandleInputEvent(RenderWidgetHostImpl* embedder,
                           int browser_plugin_instance_id,

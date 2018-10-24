@@ -23,7 +23,7 @@ namespace webrtc {
 class PeerConnectionDelegateAdapter : public PeerConnectionObserver {
  public:
   PeerConnectionDelegateAdapter(RTCPeerConnection *peerConnection);
-  virtual ~PeerConnectionDelegateAdapter();
+  ~PeerConnectionDelegateAdapter() override;
 
   void OnSignalingChange(PeerConnectionInterface::SignalingState new_state) override;
 
@@ -47,6 +47,8 @@ class PeerConnectionDelegateAdapter : public PeerConnectionObserver {
 
   void OnAddTrack(rtc::scoped_refptr<RtpReceiverInterface> receiver,
                   const std::vector<rtc::scoped_refptr<MediaStreamInterface>> &streams) override;
+
+  void OnRemoveTrack(rtc::scoped_refptr<RtpReceiverInterface> receiver) override;
 
  private:
   __weak RTCPeerConnection *peer_connection_;

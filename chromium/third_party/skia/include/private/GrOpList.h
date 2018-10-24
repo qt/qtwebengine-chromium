@@ -9,7 +9,7 @@
 #define GrOpList_DEFINED
 
 #include "GrColor.h"
-#include "GrSurfaceProxyRef.h"
+#include "GrProxyRef.h"
 #include "GrTextureProxy.h"
 #include "SkRefCnt.h"
 #include "SkTDArray.h"
@@ -95,6 +95,10 @@ public:
 protected:
     bool isInstantiated() const;
 
+    // In addition to just the GrSurface being allocated, has the stencil buffer been allocated (if
+    // it is required)?
+    bool isFullyInstantiated() const;
+
     // This is a backpointer to the GrOpMemoryPool that holds the memory for this opLists' ops.
     // In the DDL case, these back pointers keep the DDL's GrOpMemoryPool alive as long as its
     // constituent opLists survive.
@@ -113,6 +117,9 @@ private:
     friend class GrDrawingManager; // for resetFlag, TopoSortTraits & gatherProxyIntervals
 
     void addDependency(GrOpList* dependedOn);
+    void addDependent(GrOpList* dependent);
+    SkDEBUGCODE(bool isDependedent(const GrOpList* dependent) const);
+    SkDEBUGCODE(void validate() const);
 
     // Remove all Ops which reference proxies that have not been instantiated.
     virtual void purgeOpsWithUninstantiatedProxies() = 0;
@@ -173,6 +180,8 @@ private:
 
     // 'this' GrOpList relies on the output of the GrOpLists in 'fDependencies'
     SkSTArray<1, GrOpList*, true> fDependencies;
+    // 'this' GrOpList's output is relied on by the GrOpLists in 'fDependents'
+    SkSTArray<1, GrOpList*, true> fDependents;
 
     typedef SkRefCnt INHERITED;
 };

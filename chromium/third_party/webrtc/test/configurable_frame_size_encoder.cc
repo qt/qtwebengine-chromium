@@ -15,7 +15,6 @@
 #include "common_video/include/video_frame.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "rtc_base/checks.h"
-#include "test/gtest.h"
 
 namespace webrtc {
 namespace test {
@@ -48,7 +47,7 @@ int32_t ConfigurableFrameSizeEncoder::Encode(
   encodedImage._encodedHeight = inputImage.height();
   encodedImage._encodedWidth = inputImage.width();
   encodedImage._frameType = kVideoFrameKey;
-  encodedImage._timeStamp = inputImage.timestamp();
+  encodedImage.SetTimestamp(inputImage.timestamp());
   encodedImage.capture_time_ms_ = inputImage.render_time_ms();
   RTPFragmentationHeader* fragmentation = NULL;
   CodecSpecificInfo specific;

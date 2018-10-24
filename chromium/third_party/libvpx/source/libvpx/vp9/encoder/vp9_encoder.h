@@ -248,6 +248,8 @@ typedef struct VP9EncoderConfig {
   int tile_columns;
   int tile_rows;
 
+  int enable_tpl_model;
+
   int max_threads;
 
   unsigned int target_level;
@@ -501,6 +503,7 @@ typedef struct VP9_COMP {
   YV12_BUFFER_CONFIG *raw_source_frame;
 
   TplDepFrame tpl_stats[MAX_LAG_BUFFERS];
+  YV12_BUFFER_CONFIG *tpl_recon_frames[REFS_PER_FRAME + 1];
 
   TileDataEnc *tile_data;
   int allocated_tiles;  // Keep track of memory allocated for tiles.
@@ -533,7 +536,6 @@ typedef struct VP9_COMP {
   YV12_BUFFER_CONFIG last_frame_uf;
 
   TOKENEXTRA *tile_tok[4][1 << 6];
-  uint32_t tok_count[4][1 << 6];
   TOKENLIST *tplist[4][1 << 6];
 
   // Ambient reconstruction err target for force key frames
@@ -767,6 +769,7 @@ typedef struct VP9_COMP {
   int arf_pos_for_ovrly[MAX_EXT_ARFS + 1];
   int extra_arf_allowed;
 
+  int multi_layer_arf;
   vpx_roi_map_t roi;
 } VP9_COMP;
 

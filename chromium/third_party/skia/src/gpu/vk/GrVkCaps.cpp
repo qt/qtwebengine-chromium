@@ -10,19 +10,15 @@
 #include "GrRenderTargetProxy.h"
 #include "GrRenderTarget.h"
 #include "GrShaderCaps.h"
+#include "GrVkInterface.h"
 #include "GrVkUtil.h"
 #include "vk/GrVkBackendContext.h"
-#include "vk/GrVkInterface.h"
+#include "vk/GrVkExtensions.h"
 
 GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
-                   VkPhysicalDevice physDev, uint32_t featureFlags, uint32_t extensionFlags)
+                   VkPhysicalDevice physDev, const VkPhysicalDeviceFeatures2& features,
+                   uint32_t instanceVersion, const GrVkExtensions& extensions)
     : INHERITED(contextOptions) {
-    fCanUseGLSLForShaderModule = false;
-    fMustDoCopiesFromOrigin = false;
-    fMustSubmitCommandsBeforeCopyOp = false;
-    fMustSleepOnTearDown  = false;
-    fNewCBOnPipelineChange = false;
-    fShouldAlwaysUseDedicatedImageMemory = false;
 
     /**************************************************************************
     * GrDrawTargetCaps fields
@@ -48,7 +44,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
 
     fShaderCaps.reset(new GrShaderCaps(contextOptions));
 
-    this->init(contextOptions, vkInterface, physDev, featureFlags, extensionFlags);
+    this->init(contextOptions, vkInterface, physDev, features, extensions);
 }
 
 bool GrVkCaps::initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
@@ -196,7 +192,8 @@ bool GrVkCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* s
 }
 
 void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
-                    VkPhysicalDevice physDev, uint32_t featureFlags, uint32_t extensionFlags) {
+                    VkPhysicalDevice physDev, const VkPhysicalDeviceFeatures2& features,
+                    const GrVkExtensions& extensions) {
 
     VkPhysicalDeviceProperties properties;
     GR_VK_CALL(vkInterface, GetPhysicalDeviceProperties(physDev, &properties));
@@ -204,8 +201,58 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
     VkPhysicalDeviceMemoryProperties memoryProperties;
     GR_VK_CALL(vkInterface, GetPhysicalDeviceMemoryProperties(physDev, &memoryProperties));
 
-    this->initGrCaps(properties, memoryProperties, featureFlags);
-    this->initShaderCaps(properties, featureFlags);
+    uint32_t physicalDeviceVersion = properties.apiVersion;
+
+    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+        extensions.hasExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, 1)) {
+        fSupportsPhysicalDeviceProperties2 = true;
+    }
+
+    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+        extensions.hasExtension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME, 1)) {
+        fSupportsMemoryRequirements2 = true;
+    }
+
+    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+        extensions.hasExtension(VK_KHR_MAINTENANCE1_EXTENSION_NAME, 1)) {
+        fSupportsMaintenance1 = true;
+    }
+
+    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+        extensions.hasExtension(VK_KHR_MAINTENANCE2_EXTENSION_NAME, 1)) {
+        fSupportsMaintenance2 = true;
+    }
+
+    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+        extensions.hasExtension(VK_KHR_MAINTENANCE3_EXTENSION_NAME, 1)) {
+        fSupportsMaintenance3 = true;
+    }
+
+    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+        (extensions.hasExtension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, 3) &&
+         this->supportsMemoryRequirements2())) {
+        fSupportsDedicatedAllocation = true;
+    }
+
+    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+        (extensions.hasExtension(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME, 1) &&
+         this->supportsPhysicalDeviceProperties2() &&
+         extensions.hasExtension(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, 1) &&
+         this->supportsDedicatedAllocation())) {
+        fSupportsExternalMemory = true;
+    }
+
+#ifdef SK_BUILD_FOR_ANDROID
+    if (extensions.hasExtension(
+            VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME, 3) &&
+        extensions.hasExtension(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME, 1) &&
+        this->supportsExternalMemory()) {
+        fSupportsAndroidHWBExternalMemory = true;
+    }
+#endif
+
+    this->initGrCaps(vkInterface, physDev, properties, memoryProperties, features, extensions);
+    this->initShaderCaps(properties, features);
 
     if (!contextOptions.fDisableDriverCorrectnessWorkarounds) {
 #if defined(SK_CPU_X86)
@@ -243,7 +290,7 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     }
 
 #if defined(SK_BUILD_FOR_WIN)
-    if (kNvidia_VkVendor == properties.vendorID) {
+    if (kNvidia_VkVendor == properties.vendorID || kIntel_VkVendor == properties.vendorID) {
         fMustSleepOnTearDown = true;
     }
 #elif defined(SK_BUILD_FOR_ANDROID)
@@ -309,9 +356,33 @@ int get_max_sample_count(VkSampleCountFlags flags) {
     return 64;
 }
 
-void GrVkCaps::initGrCaps(const VkPhysicalDeviceProperties& properties,
+template<typename T> T* get_extension_feature_struct(const VkPhysicalDeviceFeatures2& features,
+                                                     VkStructureType type) {
+    // All Vulkan structs that could be part of the features chain will start with the
+    // structure type followed by the pNext pointer. We cast to the CommonVulkanHeader
+    // so we can get access to the pNext for the next struct.
+    struct CommonVulkanHeader {
+        VkStructureType sType;
+        void*           pNext;
+    };
+
+    void* pNext = features.pNext;
+    while (pNext) {
+        CommonVulkanHeader* header = static_cast<CommonVulkanHeader*>(pNext);
+        if (header->sType == type) {
+            return static_cast<T*>(pNext);
+        }
+        pNext = header->pNext;
+    }
+    return nullptr;
+}
+
+void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
+                          VkPhysicalDevice physDev,
+                          const VkPhysicalDeviceProperties& properties,
                           const VkPhysicalDeviceMemoryProperties& memoryProperties,
-                          uint32_t featureFlags) {
+                          const VkPhysicalDeviceFeatures2& features,
+                          const GrVkExtensions& extensions) {
     // So GPUs, like AMD, are reporting MAX_INT support vertex attributes. In general, there is no
     // need for us ever to support that amount, and it makes tests which tests all the vertex
     // attribs timeout looping over that many. For now, we'll cap this at 64 max and can raise it if
@@ -340,12 +411,42 @@ void GrVkCaps::initGrCaps(const VkPhysicalDeviceProperties& properties,
     fMapBufferFlags = kCanMap_MapFlag | kSubset_MapFlag;
 
     fOversizedStencilSupport = true;
-    fSampleShadingSupport = SkToBool(featureFlags & kSampleRateShading_GrVkFeatureFlag);
+    fSampleShadingSupport = features.features.sampleRateShading;
 
+    if (extensions.hasExtension(VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, 2) &&
+        this->supportsPhysicalDeviceProperties2()) {
 
+        VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT blendProps;
+        blendProps.sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_PROPERTIES_EXT;
+        blendProps.pNext = nullptr;
+
+        VkPhysicalDeviceProperties2 props;
+        props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props.pNext = &blendProps;
+
+        GR_VK_CALL(vkInterface, GetPhysicalDeviceProperties2(physDev, &props));
+
+        if (blendProps.advancedBlendAllOperations == VK_TRUE) {
+            fShaderCaps->fAdvBlendEqInteraction = GrShaderCaps::kAutomatic_AdvBlendEqInteraction;
+
+            auto blendFeatures =
+                get_extension_feature_struct<VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT>(
+                    features,
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT);
+            if (blendFeatures && blendFeatures->advancedBlendCoherentOperations == VK_TRUE) {
+                fBlendEquationSupport = kAdvancedCoherent_BlendEquationSupport;
+            } else {
+                // TODO: Currently non coherent blends are not supported in our vulkan backend. They
+                // require us to support self dependencies in our render passes.
+                // fBlendEquationSupport = kAdvanced_BlendEquationSupport;
+            }
+        }
+    }
 }
 
-void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties, uint32_t featureFlags) {
+void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
+                              const VkPhysicalDeviceFeatures2& features) {
     GrShaderCaps* shaderCaps = fShaderCaps.get();
     shaderCaps->fVersionDeclString = "#version 330\n";
 
@@ -386,10 +487,10 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties, uint
 
     shaderCaps->fShaderDerivativeSupport = true;
 
-    shaderCaps->fGeometryShaderSupport = SkToBool(featureFlags & kGeometryShader_GrVkFeatureFlag);
+    shaderCaps->fGeometryShaderSupport = features.features.geometryShader;
     shaderCaps->fGSInvocationsSupport = shaderCaps->fGeometryShaderSupport;
 
-    shaderCaps->fDualSourceBlendingSupport = SkToBool(featureFlags & kDualSrcBlend_GrVkFeatureFlag);
+    shaderCaps->fDualSourceBlendingSupport = features.features.dualSrcBlend;
 
     shaderCaps->fIntegerSupport = true;
     shaderCaps->fVertexIDSupport = true;
@@ -494,29 +595,29 @@ void GrVkCaps::ConfigInfo::initSampleCounts(const GrVkInterface* interface,
                                                                  &properties));
     VkSampleCountFlags flags = properties.sampleCounts;
     if (flags & VK_SAMPLE_COUNT_1_BIT) {
-        fColorSampleCounts.push(1);
+        fColorSampleCounts.push_back(1);
     }
     if (kImagination_VkVendor == physProps.vendorID) {
         // MSAA does not work on imagination
         return;
     }
     if (flags & VK_SAMPLE_COUNT_2_BIT) {
-        fColorSampleCounts.push(2);
+        fColorSampleCounts.push_back(2);
     }
     if (flags & VK_SAMPLE_COUNT_4_BIT) {
-        fColorSampleCounts.push(4);
+        fColorSampleCounts.push_back(4);
     }
     if (flags & VK_SAMPLE_COUNT_8_BIT) {
-        fColorSampleCounts.push(8);
+        fColorSampleCounts.push_back(8);
     }
     if (flags & VK_SAMPLE_COUNT_16_BIT) {
-        fColorSampleCounts.push(16);
+        fColorSampleCounts.push_back(16);
     }
     if (flags & VK_SAMPLE_COUNT_32_BIT) {
-        fColorSampleCounts.push(32);
+        fColorSampleCounts.push_back(32);
     }
     if (flags & VK_SAMPLE_COUNT_64_BIT) {
-        fColorSampleCounts.push(64);
+        fColorSampleCounts.push_back(64);
     }
 }
 

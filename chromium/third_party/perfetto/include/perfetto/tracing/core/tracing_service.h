@@ -41,7 +41,7 @@ class Producer;
 class TraceConfig;
 class TraceWriter;
 
-// TODO: for the moment this assumes that all the calls hapen on the same
+// TODO: for the moment this assumes that all the calls happen on the same
 // thread/sequence. Not sure this will be the case long term in Chrome.
 
 // The public API of the tracing Service business logic.
@@ -100,6 +100,11 @@ class PERFETTO_EXPORT TracingService {
     // Called in response to a Producer::Flush(request_id) call after all data
     // for the flush request has been committed.
     virtual void NotifyFlushComplete(FlushRequestID) = 0;
+
+    // Called in response to one or more Producer::TearDownDataSourceInstance(),
+    // if the data source registered setting the flag
+    // DataSourceDescriptor.will_notify_on_stop.
+    virtual void NotifyDataSourceStopped(DataSourceInstanceID) = 0;
   };  // class ProducerEndpoint.
 
   // The API for the Consumer port of the Service.

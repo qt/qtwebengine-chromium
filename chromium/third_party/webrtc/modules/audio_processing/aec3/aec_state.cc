@@ -40,11 +40,6 @@ bool EnableEnforcingDelayAfterRealignment() {
       "WebRTC-Aec3EnforceDelayAfterRealignmentKillSwitch");
 }
 
-bool EnableLinearModeWithDivergedFilter() {
-  return !field_trial::IsEnabled(
-      "WebRTC-Aec3LinearModeWithDivergedFilterKillSwitch");
-}
-
 bool EnableEarlyFilterUsage() {
   return !field_trial::IsEnabled("WebRTC-Aec3EarlyLinearFilterUsageKillSwitch");
 }
@@ -53,23 +48,9 @@ bool EnableShortInitialState() {
   return !field_trial::IsEnabled("WebRTC-Aec3ShortInitialStateKillSwitch");
 }
 
-bool EnableNoWaitForAlignment() {
-  return !field_trial::IsEnabled("WebRTC-Aec3NoAlignmentWaitKillSwitch");
-}
-
-bool EnableConvergenceTriggeredLinearMode() {
-  return !field_trial::IsEnabled(
-      "WebRTC-Aec3ConvergenceTriggingLinearKillSwitch");
-}
-
 bool EnableUncertaintyUntilSufficientAdapted() {
   return !field_trial::IsEnabled(
       "WebRTC-Aec3ErleUncertaintyUntilSufficientlyAdaptedKillSwitch");
-}
-
-bool TreatTransparentModeAsNonlinear() {
-  return !field_trial::IsEnabled(
-      "WebRTC-Aec3TreatTransparentModeAsNonlinearKillSwitch");
 }
 
 bool LowUncertaintyBeforeConvergence() {
@@ -85,11 +66,6 @@ bool MediumUncertaintyBeforeConvergence() {
 bool EarlyEntryToConvergedMode() {
   return !field_trial::IsEnabled(
       "WebRTC-Aec3EarlyEntryToConvergedModeKillSwitch");
-}
-
-bool ConservativeFilterDivergence() {
-  return !field_trial::IsEnabled(
-      "WebRTC-Aec3ConservativeFilterDivergenceKillSwitch");
 }
 
 bool UseEarlyLimiterDeactivation() {
@@ -128,19 +104,18 @@ AecState::AecState(const EchoCanceller3Config& config)
           EnableStationaryRenderImprovements() &&
           config_.echo_audibility.use_stationary_properties),
       enforce_delay_after_realignment_(EnableEnforcingDelayAfterRealignment()),
-      allow_linear_mode_with_diverged_filter_(
-          EnableLinearModeWithDivergedFilter()),
-      early_filter_usage_activated_(EnableEarlyFilterUsage()),
-      use_short_initial_state_(EnableShortInitialState()),
-      convergence_trigger_linear_mode_(EnableConvergenceTriggeredLinearMode()),
-      no_alignment_required_for_linear_mode_(EnableNoWaitForAlignment()),
+      early_filter_usage_activated_(EnableEarlyFilterUsage() &&
+                                    !config.filter.conservative_initial_phase),
+      use_short_initial_state_(EnableShortInitialState() &&
+                               !config.filter.conservative_initial_phase),
+      convergence_trigger_linear_mode_(
+          !config.filter.conservative_initial_phase),
+      no_alignment_required_for_linear_mode_(
+          !config.filter.conservative_initial_phase),
       use_uncertainty_until_sufficiently_adapted_(
           EnableUncertaintyUntilSufficientAdapted()),
-      transparent_mode_enforces_nonlinear_mode_(
-          TreatTransparentModeAsNonlinear()),
       uncertainty_before_convergence_(UncertaintyBeforeConvergence()),
       early_entry_to_converged_mode_(EarlyEntryToConvergedMode()),
-      conservative_filter_divergence_(ConservativeFilterDivergence()),
       early_limiter_deactivation_(UseEarlyLimiterDeactivation()),
       erle_estimator_(config.erle.min, config.erle.max_l, config.erle.max_h),
       max_render_(config_.filter.main.length_blocks, 0.f),
@@ -160,7 +135,6 @@ void AecState::HandleEchoPathChange(
     filter_analyzer_.Reset();
     blocks_since_last_saturation_ = 0;
     usable_linear_estimate_ = false;
-    diverged_linear_filter_ = false;
     capture_signal_saturation_ = false;
     echo_saturation_ = false;
     std::fill(max_render_.begin(), max_render_.end(), 0.f);
@@ -254,7 +228,8 @@ void AecState::Update(
   // Update the ERL and ERLE measures.
   if (blocks_since_reset_ >= 2 * kNumBlocksPerSecond) {
     const auto& X2 = render_buffer.Spectrum(filter_delay_blocks_);
-    erle_estimator_.Update(X2, Y2, E2_main, converged_filter);
+    erle_estimator_.Update(X2, Y2, E2_main, converged_filter,
+                           config_.erle.onset_detection);
     if (converged_filter) {
       erl_estimator_.Update(X2, Y2);
     }
@@ -284,8 +259,8 @@ void AecState::Update(
 
   // Flag whether the initial state is still active.
   if (use_short_initial_state_) {
-    initial_state_ =
-        blocks_with_proper_filter_adaptation_ < 2.5f * kNumBlocksPerSecond;
+    initial_state_ = blocks_with_proper_filter_adaptation_ <
+                     config_.filter.initial_state_seconds * kNumBlocksPerSecond;
   } else {
     initial_state_ =
         blocks_with_proper_filter_adaptation_ < 5 * kNumBlocksPerSecond;
@@ -372,32 +347,21 @@ void AecState::Update(
   if (!config_.echo_removal_control.linear_and_stable_echo_path) {
     usable_linear_estimate_ =
         usable_linear_estimate_ && recently_converged_filter;
-    if (!allow_linear_mode_with_diverged_filter_) {
-      usable_linear_estimate_ = usable_linear_estimate_ && !diverged_filter;
-    }
   }
-  if (transparent_mode_enforces_nonlinear_mode_) {
-    usable_linear_estimate_ = usable_linear_estimate_ && !TransparentMode();
-  }
+  usable_linear_estimate_ = usable_linear_estimate_ && !TransparentMode();
 
   use_linear_filter_output_ = usable_linear_estimate_ && !TransparentMode();
 
-  if (conservative_filter_divergence_) {
-    diverged_linear_filter_ =
-        subtractor_output_analyzer_.SeverelyDivergedFilter() &&
-        active_render_block;
-  } else {
-    diverged_linear_filter_ = diverged_filter;
-  }
+  const bool stationary_block =
+      use_stationary_properties_ && echo_audibility_.IsBlockStationary();
 
   reverb_model_estimator_.Update(
-      adaptive_filter_impulse_response, adaptive_filter_frequency_response,
+      filter_analyzer_.GetAdjustedFilter(), adaptive_filter_frequency_response,
       erle_estimator_.GetInstLinearQualityEstimate(), filter_delay_blocks_,
-      usable_linear_estimate_, config_.ep_strength.default_len,
-      IsBlockStationary());
+      usable_linear_estimate_, stationary_block);
 
   erle_estimator_.Dump(data_dumper_);
-  reverb_model_estimator_.Dump(data_dumper_);
+  reverb_model_estimator_.Dump(data_dumper_.get());
   data_dumper_->DumpRaw("aec3_erl", Erl());
   data_dumper_->DumpRaw("aec3_erl_time_domain", ErlTimeDomain());
   data_dumper_->DumpRaw("aec3_usable_linear_estimate", UsableLinearEstimate());
@@ -427,8 +391,8 @@ void AecState::Update(
                         recently_converged_filter);
   data_dumper_->DumpRaw("aec3_suppresion_gain_limiter_running",
                         IsSuppressionGainLimitActive());
-  data_dumper_->DumpRaw("aec3_filter_tail_freq_resp_est", GetFreqRespTail());
-
+  data_dumper_->DumpRaw("aec3_filter_tail_freq_resp_est",
+                        GetReverbFrequencyResponse());
 }
 
 bool AecState::DetectActiveRender(rtc::ArrayView<const float> x) const {

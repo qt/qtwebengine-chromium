@@ -21,6 +21,7 @@
 #include "GrVkGpuCommandBuffer.h"
 #include "GrVkImage.h"
 #include "GrVkIndexBuffer.h"
+#include "GrVkInterface.h"
 #include "GrVkMemory.h"
 #include "GrVkPipeline.h"
 #include "GrVkPipelineState.h"
@@ -35,7 +36,8 @@
 #include "SkMipMap.h"
 #include "SkSLCompiler.h"
 #include "SkTo.h"
-#include "vk/GrVkInterface.h"
+
+#include "vk/GrVkExtensions.h"
 #include "vk/GrVkTypes.h"
 
 #include <utility>
@@ -43,6 +45,10 @@
 #if !defined(SK_BUILD_FOR_WIN)
 #include <unistd.h>
 #endif // !defined(SK_BUILD_FOR_WIN)
+
+#if defined(SK_BUILD_FOR_WIN) && defined(SK_DEBUG)
+#include "SkLeanWindows.h"
+#endif
 
 #define VK_CALL(X) GR_VK_CALL(this->vkInterface(), X)
 #define VK_CALL_RET(RET, X) GR_VK_CALL_RET(this->vkInterface(), RET, X)
@@ -56,21 +62,49 @@ sk_sp<GrGpu> GrVkGpu::Make(const GrVkBackendContext& backendContext,
         backendContext.fQueue == VK_NULL_HANDLE) {
         return nullptr;
     }
+    if (!backendContext.fGetProc) {
+        return nullptr;
+    }
+
+    PFN_vkGetPhysicalDeviceProperties localGetPhysicalDeviceProperties =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+                    backendContext.fGetProc("vkGetPhysicalDeviceProperties",
+                                            backendContext.fInstance,
+                                            VK_NULL_HANDLE));
+
+    if (!localGetPhysicalDeviceProperties) {
+        return nullptr;
+    }
+    VkPhysicalDeviceProperties physDeviceProperties;
+    localGetPhysicalDeviceProperties(backendContext.fPhysicalDevice, &physDeviceProperties);
+    uint32_t physDevVersion = physDeviceProperties.apiVersion;
+
     sk_sp<const GrVkInterface> interface;
-    if (backendContext.fGetProc) {
+
+    if (backendContext.fVkExtensions) {
         interface.reset(new GrVkInterface(backendContext.fGetProc,
                                           backendContext.fInstance,
                                           backendContext.fDevice,
-                                          backendContext.fExtensions));
-    } else {
-        if (!backendContext.fInterface) {
+                                          backendContext.fInstanceVersion,
+                                          physDevVersion,
+                                          backendContext.fVkExtensions));
+        if (!interface->validate(backendContext.fInstanceVersion, physDevVersion,
+                                 backendContext.fVkExtensions)) {
             return nullptr;
         }
-        interface = backendContext.fInterface;
-    }
-    SkASSERT(interface);
-    if (!interface->validate(backendContext.fExtensions)) {
-        return nullptr;
+    } else {
+        // None of our current GrVkExtension flags actually affect the vulkan backend so we just
+        // make an empty GrVkExtensions and pass that to the GrVkInterface.
+        GrVkExtensions extensions;
+        interface.reset(new GrVkInterface(backendContext.fGetProc,
+                                          backendContext.fInstance,
+                                          backendContext.fDevice,
+                                          backendContext.fInstanceVersion,
+                                          physDevVersion,
+                                          &extensions));
+        if (!interface->validate(backendContext.fInstanceVersion, physDevVersion, &extensions)) {
+            return nullptr;
+        }
     }
 
     return sk_sp<GrGpu>(new GrVkGpu(context, options, backendContext, interface));
@@ -98,8 +132,35 @@ GrVkGpu::GrVkGpu(GrContext* context, const GrContextOptions& options,
 
     fCompiler = new SkSL::Compiler();
 
-    fVkCaps.reset(new GrVkCaps(options, this->vkInterface(), backendContext.fPhysicalDevice,
-                               backendContext.fFeatures, backendContext.fExtensions));
+    uint32_t instanceVersion = backendContext.fInstanceVersion ? backendContext.fInstanceVersion
+                                                               : backendContext.fMinAPIVersion;
+
+    if (backendContext.fDeviceFeatures2) {
+        fVkCaps.reset(new GrVkCaps(options, this->vkInterface(), backendContext.fPhysicalDevice,
+                                   *backendContext.fDeviceFeatures2, instanceVersion,
+                                   *backendContext.fVkExtensions));
+    } else if (backendContext.fDeviceFeatures) {
+        VkPhysicalDeviceFeatures2 features2;
+        features2.pNext = nullptr;
+        features2.features = *backendContext.fDeviceFeatures;
+        fVkCaps.reset(new GrVkCaps(options, this->vkInterface(), backendContext.fPhysicalDevice,
+                                   features2, instanceVersion, *backendContext.fVkExtensions));
+    } else {
+        VkPhysicalDeviceFeatures2 features;
+        memset(&features, 0, sizeof(VkPhysicalDeviceFeatures2));
+        features.pNext = nullptr;
+        if (backendContext.fFeatures & kGeometryShader_GrVkFeatureFlag) {
+            features.features.geometryShader = true;
+        }
+        if (backendContext.fFeatures & kDualSrcBlend_GrVkFeatureFlag) {
+            features.features.dualSrcBlend = true;
+        }
+        if (backendContext.fFeatures & kSampleRateShading_GrVkFeatureFlag) {
+            features.features.sampleRateShading = true;
+        }
+        fVkCaps.reset(new GrVkCaps(options, this->vkInterface(), backendContext.fPhysicalDevice,
+                                   features, instanceVersion, GrVkExtensions()));
+    }
     fCaps.reset(SkRef(fVkCaps.get()));
 
     VK_CALL(GetPhysicalDeviceProperties(backendContext.fPhysicalDevice, &fPhysDevProps));
@@ -191,7 +252,9 @@ void GrVkGpu::disconnect(DisconnectType type) {
         if (DisconnectType::kCleanup == type) {
             this->destroyResources();
         } else {
-            fCurrentCmdBuffer->unrefAndAbandon();
+            if (fCurrentCmdBuffer) {
+                fCurrentCmdBuffer->unrefAndAbandon();
+            }
             for (int i = 0; i < fSemaphoresToWaitOn.count(); ++i) {
                 fSemaphoresToWaitOn[i]->unrefAndAbandon();
             }
@@ -202,6 +265,8 @@ void GrVkGpu::disconnect(DisconnectType type) {
 
             // must call this just before we destroy the command pool and VkDevice
             fResourceProvider.abandonResources();
+
+            fMemoryAllocator.reset();
         }
         fSemaphoresToWaitOn.reset();
         fSemaphoresToSignal.reset();
@@ -213,16 +278,25 @@ void GrVkGpu::disconnect(DisconnectType type) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrGpuRTCommandBuffer* GrVkGpu::createCommandBuffer(
+GrGpuRTCommandBuffer* GrVkGpu::getCommandBuffer(
             GrRenderTarget* rt, GrSurfaceOrigin origin,
             const GrGpuRTCommandBuffer::LoadAndStoreInfo& colorInfo,
             const GrGpuRTCommandBuffer::StencilLoadAndStoreInfo& stencilInfo) {
-    return new GrVkGpuRTCommandBuffer(this, rt, origin, colorInfo, stencilInfo);
+    if (!fCachedRTCommandBuffer) {
+        fCachedRTCommandBuffer.reset(new GrVkGpuRTCommandBuffer(this));
+    }
+
+    fCachedRTCommandBuffer->set(rt, origin, colorInfo, stencilInfo);
+    return fCachedRTCommandBuffer.get();
 }
 
-GrGpuTextureCommandBuffer* GrVkGpu::createCommandBuffer(GrTexture* texture,
-                                                        GrSurfaceOrigin origin) {
-    return new GrVkGpuTextureCommandBuffer(this, texture, origin);
+GrGpuTextureCommandBuffer* GrVkGpu::getCommandBuffer(GrTexture* texture, GrSurfaceOrigin origin) {
+    if (!fCachedTexCommandBuffer) {
+        fCachedTexCommandBuffer.reset(new GrVkGpuTextureCommandBuffer(this));
+    }
+
+    fCachedTexCommandBuffer->set(texture, origin);
+    return fCachedTexCommandBuffer.get();
 }
 
 void GrVkGpu::submitCommandBuffer(SyncQueue sync) {
@@ -1359,15 +1433,14 @@ void GrVkGpu::deleteTestingOnlyBackendTexture(const GrBackendTexture& tex) {
     }
 }
 
-GrBackendRenderTarget GrVkGpu::createTestingOnlyBackendRenderTarget(int w, int h, GrColorType ct,
-                                                                    GrSRGBEncoded srgbEncoded) {
+GrBackendRenderTarget GrVkGpu::createTestingOnlyBackendRenderTarget(int w, int h, GrColorType ct) {
     if (w > this->caps()->maxRenderTargetSize() || h > this->caps()->maxRenderTargetSize()) {
         return GrBackendRenderTarget();
     }
 
     this->handleDirtyContext();
     GrVkImageInfo info;
-    auto config = GrColorTypeToPixelConfig(ct, srgbEncoded);
+    auto config = GrColorTypeToPixelConfig(ct, GrSRGBEncoded::kNo);
     if (kUnknown_GrPixelConfig == config) {
         return {};
     }
@@ -1892,6 +1965,20 @@ void GrVkGpu::submitSecondaryCommandBuffer(const SkTArray<GrVkSecondaryCommandBu
     fCurrentCmdBuffer->endRenderPass(this);
 
     this->didWriteToSurface(target, origin, &bounds);
+}
+
+void GrVkGpu::submit(GrGpuCommandBuffer* buffer) {
+    if (buffer->asRTCommandBuffer()) {
+        SkASSERT(fCachedRTCommandBuffer.get() == buffer);
+
+        fCachedRTCommandBuffer->submit();
+        fCachedRTCommandBuffer->reset();
+    } else {
+        SkASSERT(fCachedTexCommandBuffer.get() == buffer);
+
+        fCachedTexCommandBuffer->submit();
+        fCachedTexCommandBuffer->reset();
+    }
 }
 
 GrFence SK_WARN_UNUSED_RESULT GrVkGpu::insertFence() {

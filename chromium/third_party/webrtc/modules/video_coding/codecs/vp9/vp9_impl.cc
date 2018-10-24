@@ -37,7 +37,6 @@ namespace webrtc {
 
 namespace {
 const float kMaxScreenSharingFramerateFps = 5.0f;
-}
 
 // Only positive speeds, range for real-time coding currently is: 5 - 8.
 // Lower means slower/better quality, higher means fastest/lower quality.
@@ -53,6 +52,68 @@ int GetCpuSpeed(int width, int height) {
     return 7;
 #endif
 }
+// Helper class for extracting VP9 colorspace.
+ColorSpace ExtractVP9ColorSpace(vpx_color_space_t space_t,
+                                vpx_color_range_t range_t,
+                                unsigned int bit_depth) {
+  ColorSpace::PrimaryID primaries = ColorSpace::PrimaryID::kInvalid;
+  ColorSpace::TransferID transfer = ColorSpace::TransferID::kInvalid;
+  ColorSpace::MatrixID matrix = ColorSpace::MatrixID::kInvalid;
+  switch (space_t) {
+    case VPX_CS_BT_601:
+    case VPX_CS_SMPTE_170:
+      primaries = ColorSpace::PrimaryID::kSMPTE170M;
+      transfer = ColorSpace::TransferID::kSMPTE170M;
+      matrix = ColorSpace::MatrixID::kSMPTE170M;
+      break;
+    case VPX_CS_SMPTE_240:
+      primaries = ColorSpace::PrimaryID::kSMPTE240M;
+      transfer = ColorSpace::TransferID::kSMPTE240M;
+      matrix = ColorSpace::MatrixID::kSMPTE240M;
+      break;
+    case VPX_CS_BT_709:
+      primaries = ColorSpace::PrimaryID::kBT709;
+      transfer = ColorSpace::TransferID::kBT709;
+      matrix = ColorSpace::MatrixID::kBT709;
+      break;
+    case VPX_CS_BT_2020:
+      primaries = ColorSpace::PrimaryID::kBT2020;
+      switch (bit_depth) {
+        case 8:
+          transfer = ColorSpace::TransferID::kBT709;
+          break;
+        case 10:
+          transfer = ColorSpace::TransferID::kBT2020_10;
+          break;
+        default:
+          RTC_NOTREACHED();
+          break;
+      }
+      matrix = ColorSpace::MatrixID::kBT2020_NCL;
+      break;
+    case VPX_CS_SRGB:
+      primaries = ColorSpace::PrimaryID::kBT709;
+      transfer = ColorSpace::TransferID::kIEC61966_2_1;
+      matrix = ColorSpace::MatrixID::kBT709;
+      break;
+    default:
+      break;
+  }
+
+  ColorSpace::RangeID range = ColorSpace::RangeID::kInvalid;
+  switch (range_t) {
+    case VPX_CR_STUDIO_RANGE:
+      range = ColorSpace::RangeID::kLimited;
+      break;
+    case VPX_CR_FULL_RANGE:
+      range = ColorSpace::RangeID::kFull;
+      break;
+    default:
+      break;
+  }
+  return ColorSpace(primaries, transfer, matrix, range);
+}
+}  // namespace
 
 std::vector<SdpVideoFormat> SupportedVP9Codecs() {
   // TODO(emircan): Add Profile 2 support after fixing browser_tests.
@@ -143,15 +204,7 @@ bool VP9EncoderImpl::ExplicitlyConfiguredSpatialLayers() const {
 
 bool VP9EncoderImpl::SetSvcRates(
     const VideoBitrateAllocation& bitrate_allocation) {
-  uint8_t i = 0;
-
   config_->rc_target_bitrate = bitrate_allocation.get_sum_kbps();
-
-  num_active_spatial_layers_ = 0;
-  for (i = 0; i < num_spatial_layers_; ++i)
-    num_active_spatial_layers_ += bitrate_allocation.IsSpatialLayerUsed(i);
-  RTC_DCHECK_GT(num_active_spatial_layers_, 0);
-  RTC_DCHECK_LE(num_active_spatial_layers_, num_spatial_layers_);
 
   if (ExplicitlyConfiguredSpatialLayers()) {
     for (size_t sl_idx = 0; sl_idx < num_spatial_layers_; ++sl_idx) {
@@ -176,7 +229,7 @@ bool VP9EncoderImpl::SetSvcRates(
   } else {
     float rate_ratio[VPX_MAX_LAYERS] = {0};
     float total = 0;
-    for (i = 0; i < num_spatial_layers_; ++i) {
+    for (int i = 0; i < num_spatial_layers_; ++i) {
       if (svc_params_.scaling_factor_num[i] <= 0 ||
           svc_params_.scaling_factor_den[i] <= 0) {
         RTC_LOG(LS_ERROR) << "Scaling factors not specified!";
@@ -187,7 +240,7 @@ bool VP9EncoderImpl::SetSvcRates(
       total += rate_ratio[i];
     }
 
-    for (i = 0; i < num_spatial_layers_; ++i) {
+    for (int i = 0; i < num_spatial_layers_; ++i) {
       RTC_CHECK_GT(total, 0);
       config_->ss_target_bitrate[i] = static_cast<unsigned int>(
           config_->rc_target_bitrate * rate_ratio[i] / total);
@@ -213,6 +266,15 @@ bool VP9EncoderImpl::SetSvcRates(
       }
     }
   }
+
+  num_active_spatial_layers_ = 0;
+  for (int i = 0; i < num_spatial_layers_; ++i) {
+    if (config_->ss_target_bitrate[i] > 0) {
+      ++num_active_spatial_layers_;
+    }
+  }
+  RTC_DCHECK_GT(num_active_spatial_layers_, 0);
+
   return true;
 }
 
@@ -304,9 +366,6 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
   }
 
   is_svc_ = (num_spatial_layers_ > 1 || num_temporal_layers_ > 1);
-  // Flexible mode requires SVC to be enabled since libvpx API only allows
-  // to get reference list in SVC mode.
-  RTC_DCHECK(!inst->VP9().flexibleMode || is_svc_);
 
   // Allocate memory for encoded image
   if (encoded_image_._buffer != nullptr) {
@@ -385,12 +444,7 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
 
   cpu_speed_ = GetCpuSpeed(config_->g_w, config_->g_h);
 
-  // TODO(asapersson): Check configuration of temporal switch up and increase
-  // pattern length.
   is_flexible_mode_ = inst->VP9().flexibleMode;
-
-  // TODO(ssilkin): Only non-flexible mode is supported for now.
-  RTC_DCHECK(!is_flexible_mode_);
 
   if (num_temporal_layers_ == 1) {
     gof_.SetGofInfoVP9(kTemporalStructureMode1);
@@ -709,11 +763,9 @@ void VP9EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
   CodecSpecificInfoVP9* vp9_info = &(codec_specific->codecSpecific.VP9);
 
   vp9_info->first_frame_in_picture = first_frame_in_picture;
-  vp9_info->flexible_mode = codec_.VP9()->flexibleMode;
+  vp9_info->flexible_mode = is_flexible_mode_;
   vp9_info->ss_data_available =
-      ((pkt.data.frame.flags & VPX_FRAME_IS_KEY) && !codec_.VP9()->flexibleMode)
-          ? true
-          : false;
+      (pkt.data.frame.flags & VPX_FRAME_IS_KEY) ? true : false;
 
   vpx_svc_layer_id_t layer_id = {0};
   vpx_codec_control(encoder_, VP9E_GET_SVC_LAYER_ID, &layer_id);
@@ -768,8 +820,6 @@ void VP9EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
   // bit.
   vp9_info->num_spatial_layers = num_active_spatial_layers_;
 
-  RTC_DCHECK(!vp9_info->flexible_mode);
-
   vp9_info->num_ref_pics = 0;
   if (vp9_info->flexible_mode) {
     vp9_info->gof_idx = kNoGofIdx;
@@ -792,7 +842,9 @@ void VP9EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
       vp9_info->height[i] = codec_.height * svc_params_.scaling_factor_num[i] /
                             svc_params_.scaling_factor_den[i];
     }
-    if (!vp9_info->flexible_mode) {
+    if (vp9_info->flexible_mode) {
+      vp9_info->gof.num_frames_in_gof = 0;
+    } else {
       vp9_info->gof.CopyGofInfoVP9(gof_);
     }
   }
@@ -805,26 +857,50 @@ void VP9EncoderImpl::FillReferenceIndices(const vpx_codec_cx_pkt& pkt,
   vpx_svc_layer_id_t layer_id = {0};
   vpx_codec_control(encoder_, VP9E_GET_SVC_LAYER_ID, &layer_id);
 
-  vpx_svc_ref_frame_config_t enc_layer_conf = {{0}};
-  vpx_codec_control(encoder_, VP9E_GET_SVC_REF_FRAME_CONFIG, &enc_layer_conf);
+  const bool is_key_frame =
+      (pkt.data.frame.flags & VPX_FRAME_IS_KEY) ? true : false;
 
   std::vector<RefFrameBuffer> ref_buf_list;
-  if (enc_layer_conf.reference_last[layer_id.spatial_layer_id]) {
-    const size_t fb_idx = enc_layer_conf.lst_fb_idx[layer_id.spatial_layer_id];
-    RTC_DCHECK(ref_buf_.find(fb_idx) != ref_buf_.end());
-    ref_buf_list.push_back(ref_buf_.at(fb_idx));
-  }
 
-  if (enc_layer_conf.reference_alt_ref[layer_id.spatial_layer_id]) {
-    const size_t fb_idx = enc_layer_conf.alt_fb_idx[layer_id.spatial_layer_id];
-    RTC_DCHECK(ref_buf_.find(fb_idx) != ref_buf_.end());
-    ref_buf_list.push_back(ref_buf_.at(fb_idx));
-  }
+  if (is_svc_) {
+    vpx_svc_ref_frame_config_t enc_layer_conf = {{0}};
+    vpx_codec_control(encoder_, VP9E_GET_SVC_REF_FRAME_CONFIG, &enc_layer_conf);
 
-  if (enc_layer_conf.reference_golden[layer_id.spatial_layer_id]) {
-    const size_t fb_idx = enc_layer_conf.gld_fb_idx[layer_id.spatial_layer_id];
-    RTC_DCHECK(ref_buf_.find(fb_idx) != ref_buf_.end());
-    ref_buf_list.push_back(ref_buf_.at(fb_idx));
+    if (enc_layer_conf.reference_last[layer_id.spatial_layer_id]) {
+      const size_t fb_idx =
+          enc_layer_conf.lst_fb_idx[layer_id.spatial_layer_id];
+      RTC_DCHECK(ref_buf_.find(fb_idx) != ref_buf_.end());
+      if (std::find(ref_buf_list.begin(), ref_buf_list.end(),
+                    ref_buf_.at(fb_idx)) == ref_buf_list.end()) {
+        ref_buf_list.push_back(ref_buf_.at(fb_idx));
+      }
+    }
+
+    if (enc_layer_conf.reference_alt_ref[layer_id.spatial_layer_id]) {
+      const size_t fb_idx =
+          enc_layer_conf.alt_fb_idx[layer_id.spatial_layer_id];
+      RTC_DCHECK(ref_buf_.find(fb_idx) != ref_buf_.end());
+      if (std::find(ref_buf_list.begin(), ref_buf_list.end(),
+                    ref_buf_.at(fb_idx)) == ref_buf_list.end()) {
+        ref_buf_list.push_back(ref_buf_.at(fb_idx));
+      }
+    }
+
+    if (enc_layer_conf.reference_golden[layer_id.spatial_layer_id]) {
+      const size_t fb_idx =
+          enc_layer_conf.gld_fb_idx[layer_id.spatial_layer_id];
+      RTC_DCHECK(ref_buf_.find(fb_idx) != ref_buf_.end());
+      if (std::find(ref_buf_list.begin(), ref_buf_list.end(),
+                    ref_buf_.at(fb_idx)) == ref_buf_list.end()) {
+        ref_buf_list.push_back(ref_buf_.at(fb_idx));
+      }
+    }
+  } else if (!is_key_frame) {
+    RTC_DCHECK_EQ(num_spatial_layers_, 1);
+    RTC_DCHECK_EQ(num_temporal_layers_, 1);
+    // In non-SVC mode encoder doesn't provide reference list. Assume each frame
+    // refers previous one, which is stored in buffer 0.
+    ref_buf_list.push_back(ref_buf_.at(0));
   }
 
   size_t max_ref_temporal_layer_id = 0;
@@ -867,9 +943,6 @@ void VP9EncoderImpl::UpdateReferenceBuffers(const vpx_codec_cx_pkt& pkt,
   vpx_svc_layer_id_t layer_id = {0};
   vpx_codec_control(encoder_, VP9E_GET_SVC_LAYER_ID, &layer_id);
 
-  vpx_svc_ref_frame_config_t enc_layer_conf = {{0}};
-  vpx_codec_control(encoder_, VP9E_GET_SVC_REF_FRAME_CONFIG, &enc_layer_conf);
-
   const bool is_key_frame =
       (pkt.data.frame.flags & VPX_FRAME_IS_KEY) ? true : false;
 
@@ -881,7 +954,10 @@ void VP9EncoderImpl::UpdateReferenceBuffers(const vpx_codec_cx_pkt& pkt,
     for (size_t i = 0; i < kNumVp9Buffers; ++i) {
       ref_buf_[i] = frame_buf;
     }
-  } else {
+  } else if (is_svc_) {
+    vpx_svc_ref_frame_config_t enc_layer_conf = {{0}};
+    vpx_codec_control(encoder_, VP9E_GET_SVC_REF_FRAME_CONFIG, &enc_layer_conf);
+
     if (enc_layer_conf.update_last[layer_id.spatial_layer_id]) {
       ref_buf_[enc_layer_conf.lst_fb_idx[layer_id.spatial_layer_id]] =
           frame_buf;
@@ -896,6 +972,12 @@ void VP9EncoderImpl::UpdateReferenceBuffers(const vpx_codec_cx_pkt& pkt,
       ref_buf_[enc_layer_conf.gld_fb_idx[layer_id.spatial_layer_id]] =
           frame_buf;
     }
+  } else {
+    RTC_DCHECK_EQ(num_spatial_layers_, 1);
+    RTC_DCHECK_EQ(num_temporal_layers_, 1);
+    // In non-svc mode encoder doesn't provide reference list. Assume each frame
+    // is reference and stored in buffer 0.
+    ref_buf_[0] = frame_buf;
   }
 }
 
@@ -947,7 +1029,7 @@ int VP9EncoderImpl::GetEncodedLayerFrame(const vpx_codec_cx_pkt* pkt) {
   }
 
   TRACE_COUNTER1("webrtc", "EncodedFrameSize", encoded_image_._length);
-  encoded_image_._timeStamp = input_image_->timestamp();
+  encoded_image_.SetTimestamp(input_image_->timestamp());
   encoded_image_.capture_time_ms_ = input_image_->render_time_ms();
   encoded_image_.rotation_ = input_image_->rotation();
   encoded_image_.content_type_ = (codec_.mode == VideoCodecMode::kScreensharing)
@@ -984,9 +1066,9 @@ void VP9EncoderImpl::DeliverBufferedFrame(bool end_of_picture) {
 
     if (end_of_picture) {
       const uint32_t timestamp_ms =
-          1000 * encoded_image_._timeStamp / kVideoPayloadTypeFrequency;
+          1000 * encoded_image_.Timestamp() / kVideoPayloadTypeFrequency;
       output_framerate_.Update(1, timestamp_ms);
-      last_encoded_frame_rtp_timestamp_ = encoded_image_._timeStamp;
+      last_encoded_frame_rtp_timestamp_ = encoded_image_.Timestamp();
     }
   }
 }
@@ -1128,7 +1210,7 @@ int VP9DecoderImpl::Decode(const EncodedImage& input_image,
       vpx_codec_control(decoder_, VPXD_GET_LAST_QUANTIZER, &qp);
   RTC_DCHECK_EQ(vpx_ret, VPX_CODEC_OK);
   int ret =
-      ReturnFrame(img, input_image._timeStamp, input_image.ntp_time_ms_, qp);
+      ReturnFrame(img, input_image.Timestamp(), input_image.ntp_time_ms_, qp);
   if (ret != 0) {
     return ret;
   }
@@ -1180,71 +1262,15 @@ int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img,
       return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
   }
 
-  ColorSpace::PrimaryID primaries = ColorSpace::PrimaryID::kInvalid;
-  ColorSpace::TransferID transfer = ColorSpace::TransferID::kInvalid;
-  ColorSpace::MatrixID matrix = ColorSpace::MatrixID::kInvalid;
-  switch (img->cs) {
-    case VPX_CS_BT_601:
-    case VPX_CS_SMPTE_170:
-      primaries = ColorSpace::PrimaryID::kSMPTE170M;
-      transfer = ColorSpace::TransferID::kSMPTE170M;
-      matrix = ColorSpace::MatrixID::kSMPTE170M;
-      break;
-    case VPX_CS_SMPTE_240:
-      primaries = ColorSpace::PrimaryID::kSMPTE240M;
-      transfer = ColorSpace::TransferID::kSMPTE240M;
-      matrix = ColorSpace::MatrixID::kSMPTE240M;
-      break;
-    case VPX_CS_BT_709:
-      primaries = ColorSpace::PrimaryID::kBT709;
-      transfer = ColorSpace::TransferID::kBT709;
-      matrix = ColorSpace::MatrixID::kBT709;
-      break;
-    case VPX_CS_BT_2020:
-      primaries = ColorSpace::PrimaryID::kBT2020;
-      switch (img->bit_depth) {
-        case 8:
-          transfer = ColorSpace::TransferID::kBT709;
-          break;
-        case 10:
-          transfer = ColorSpace::TransferID::kBT2020_10;
-          break;
-        default:
-          RTC_NOTREACHED();
-          break;
-      }
-      matrix = ColorSpace::MatrixID::kBT2020_NCL;
-      break;
-    case VPX_CS_SRGB:
-      primaries = ColorSpace::PrimaryID::kBT709;
-      transfer = ColorSpace::TransferID::kIEC61966_2_1;
-      matrix = ColorSpace::MatrixID::kBT709;
-      break;
-    default:
-      break;
-  }
-
-  ColorSpace::RangeID range = ColorSpace::RangeID::kInvalid;
-  switch (img->range) {
-    case VPX_CR_STUDIO_RANGE:
-      range = ColorSpace::RangeID::kLimited;
-      break;
-    case VPX_CR_FULL_RANGE:
-      range = ColorSpace::RangeID::kFull;
-      break;
-    default:
-      break;
-  }
-
-  VideoFrame decoded_image =
-      VideoFrame::Builder()
-          .set_video_frame_buffer(img_wrapped_buffer)
-          .set_timestamp_ms(0)
-          .set_timestamp_rtp(timestamp)
-          .set_ntp_time_ms(ntp_time_ms)
-          .set_rotation(webrtc::kVideoRotation_0)
-          .set_color_space(ColorSpace(primaries, transfer, matrix, range))
-          .build();
+  VideoFrame decoded_image = VideoFrame::Builder()
+                                 .set_video_frame_buffer(img_wrapped_buffer)
+                                 .set_timestamp_ms(0)
+                                 .set_timestamp_rtp(timestamp)
+                                 .set_ntp_time_ms(ntp_time_ms)
+                                 .set_rotation(webrtc::kVideoRotation_0)
+                                 .set_color_space(ExtractVP9ColorSpace(
+                                     img->cs, img->range, img->bit_depth))
+                                 .build();
   decode_complete_callback_->Decoded(decoded_image, absl::nullopt, qp);
   return WEBRTC_VIDEO_CODEC_OK;
 }

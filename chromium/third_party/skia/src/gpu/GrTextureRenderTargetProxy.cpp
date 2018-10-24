@@ -22,12 +22,13 @@ GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(const GrCaps& caps,
                                                        const GrSurfaceDesc& desc,
                                                        GrSurfaceOrigin origin,
                                                        GrMipMapped mipMapped,
+                                                       GrTextureType textureType,
                                                        SkBackingFit fit,
                                                        SkBudgeted budgeted,
                                                        GrInternalSurfaceFlags surfaceFlags)
         : GrSurfaceProxy(desc, origin, fit, budgeted, surfaceFlags)
         // for now textures w/ data are always wrapped
-        , GrTextureProxy(desc, origin, mipMapped, fit, budgeted, surfaceFlags)
+        , GrTextureProxy(desc, origin, mipMapped, textureType, fit, budgeted, surfaceFlags)
         , GrRenderTargetProxy(caps, desc, origin, fit, budgeted, surfaceFlags) {}
 
 // Lazy-callback version
@@ -36,14 +37,15 @@ GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(LazyInstantiateCallback&&
                                                        const GrSurfaceDesc& desc,
                                                        GrSurfaceOrigin origin,
                                                        GrMipMapped mipMapped,
+                                                       GrTextureType textureType,
                                                        SkBackingFit fit,
                                                        SkBudgeted budgeted,
                                                        GrInternalSurfaceFlags surfaceFlags)
         : GrSurfaceProxy(std::move(callback), lazyType, desc, origin, fit, budgeted, surfaceFlags)
         // Since we have virtual inheritance, we initialize GrSurfaceProxy directly. Send null
         // callbacks to the texture and RT proxies simply to route to the appropriate constructors.
-        , GrTextureProxy(LazyInstantiateCallback(), lazyType, desc, origin, mipMapped, fit,
-                         budgeted, surfaceFlags)
+        , GrTextureProxy(LazyInstantiateCallback(), lazyType, desc, origin, mipMapped, textureType,
+                         fit, budgeted, surfaceFlags)
         , GrRenderTargetProxy(LazyInstantiateCallback(), lazyType, desc, origin, fit, budgeted,
                               surfaceFlags) {}
 
@@ -68,7 +70,7 @@ size_t GrTextureRenderTargetProxy::onUninstantiatedGpuMemorySize() const {
 
     // TODO: do we have enough information to improve this worst case estimate?
     return GrSurface::ComputeSize(this->config(), this->width(), this->height(),
-                                  colorSamplesPerPixel, this->texPriv().proxyMipMapped(),
+                                  colorSamplesPerPixel, this->proxyMipMapped(),
                                   !this->priv().isExact());
 }
 
@@ -114,7 +116,7 @@ sk_sp<GrSurface> GrTextureRenderTargetProxy::createSurface(
 void GrTextureRenderTargetProxy::onValidateSurface(const GrSurface* surface) {
     // Anything checked here should also be checking the GrTextureProxy version
     SkASSERT(surface->asTexture());
-    SkASSERT(GrMipMapped::kNo == this->texPriv().proxyMipMapped() ||
+    SkASSERT(GrMipMapped::kNo == this->proxyMipMapped() ||
              GrMipMapped::kYes == surface->asTexture()->texturePriv().mipMapped());
 
     // Anything checked here should also be checking the GrRenderTargetProxy version
@@ -123,10 +125,9 @@ void GrTextureRenderTargetProxy::onValidateSurface(const GrSurface* surface) {
 
     GrInternalSurfaceFlags proxyFlags = fSurfaceFlags;
     GrInternalSurfaceFlags surfaceFlags = surface->surfacePriv().flags();
-    SkASSERT((proxyFlags & GrInternalSurfaceFlags::kTextureMask) ==
-             (surfaceFlags & GrInternalSurfaceFlags::kTextureMask));
     SkASSERT((proxyFlags & GrInternalSurfaceFlags::kRenderTargetMask) ==
              (surfaceFlags & GrInternalSurfaceFlags::kRenderTargetMask));
+    SkASSERT(surface->asTexture()->texturePriv().textureType() == this->textureType());
 }
 #endif
 

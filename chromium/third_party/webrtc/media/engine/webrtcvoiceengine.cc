@@ -33,7 +33,6 @@
 #include "modules/audio_processing/aec_dump/aec_dump_factory.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "rtc_base/arraysize.h"
-#include "rtc_base/base64.h"
 #include "rtc_base/byteorder.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/helpers.h"
@@ -42,6 +41,7 @@
 #include "rtc_base/stringencode.h"
 #include "rtc_base/strings/audio_format_to_string.h"
 #include "rtc_base/stringutils.h"
+#include "rtc_base/third_party/base64/base64.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
@@ -2008,11 +2008,9 @@ void WebRtcVoiceMediaChannel::OnPacketReceived(
     const rtc::PacketTime& packet_time) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
 
-  const webrtc::PacketTime webrtc_packet_time(packet_time.timestamp,
-                                              packet_time.not_before);
   webrtc::PacketReceiver::DeliveryStatus delivery_result =
       call_->Receiver()->DeliverPacket(webrtc::MediaType::AUDIO, *packet,
-                                       webrtc_packet_time);
+                                       packet_time.timestamp);
   if (delivery_result != webrtc::PacketReceiver::DELIVERY_UNKNOWN_SSRC) {
     return;
   }
@@ -2065,7 +2063,7 @@ void WebRtcVoiceMediaChannel::OnPacketReceived(
   }
 
   delivery_result = call_->Receiver()->DeliverPacket(
-      webrtc::MediaType::AUDIO, *packet, webrtc_packet_time);
+      webrtc::MediaType::AUDIO, *packet, packet_time.timestamp);
   RTC_DCHECK_NE(webrtc::PacketReceiver::DELIVERY_UNKNOWN_SSRC, delivery_result);
 }
 
@@ -2075,10 +2073,8 @@ void WebRtcVoiceMediaChannel::OnRtcpReceived(
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
 
   // Forward packet to Call as well.
-  const webrtc::PacketTime webrtc_packet_time(packet_time.timestamp,
-                                              packet_time.not_before);
   call_->Receiver()->DeliverPacket(webrtc::MediaType::AUDIO, *packet,
-                                   webrtc_packet_time);
+                                   packet_time.timestamp);
 }
 
 void WebRtcVoiceMediaChannel::OnNetworkRouteChanged(

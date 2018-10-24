@@ -152,7 +152,7 @@ public:
             // doing gamma-correct rendering (to an sRGB or F16 buffer), then we actually want
             // distance mapped linearly to coverage, so use a linear step:
             fragBuilder->codeAppend(
-                "half val = clamp((distance + afwidth) / (2.0 * afwidth), 0.0, 1.0);");
+                "half val = saturate((distance + afwidth) / (2.0 * afwidth));");
         } else {
             fragBuilder->codeAppend("half val = smoothstep(-afwidth, afwidth, distance);");
         }
@@ -172,15 +172,13 @@ public:
         }
 #endif
 
-        SkASSERT(dfa8gp.numTextureSamplers() >= 1);
-        GrTexture* atlas = dfa8gp.textureSampler(0).peekTexture();
-        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
+        const SkISize& atlasSize = dfa8gp.atlasSize();
+        SkASSERT(SkIsPow2(atlasSize.fWidth) && SkIsPow2(atlasSize.fHeight));
 
-        if (fAtlasSize.fWidth != atlas->width() || fAtlasSize.fHeight != atlas->height()) {
-            fAtlasSize.set(atlas->width(), atlas->height());
-            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlas->width(), 1.0f / atlas->height());
+        if (fAtlasSize != atlasSize) {
+            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlasSize.fWidth, 1.0f / atlasSize.fHeight);
+            fAtlasSize = atlasSize;
         }
-
         this->setTransformDataHelper(dfa8gp.localMatrix(), pdman, &transformIter);
     }
 
@@ -234,12 +232,15 @@ GrDistanceFieldA8TextGeoProc::GrDistanceFieldA8TextGeoProc(const sk_sp<GrTexture
     }
     this->setVertexAttributeCnt(3);
 
+    if (numProxies) {
+        fAtlasSize = proxies[0]->isize();
+    }
     for (int i = 0; i < numProxies; ++i) {
         SkASSERT(proxies[i]);
-
-        fTextureSamplers[i].reset(std::move(proxies[i]), params);
-        this->addTextureSampler(&fTextureSamplers[i]);
+        SkASSERT(proxies[i]->isize() == fAtlasSize);
+        fTextureSamplers[i].reset(proxies[i]->textureType(), proxies[i]->config(), params);
     }
+    this->setTextureSamplerCnt(numProxies);
 }
 
 void GrDistanceFieldA8TextGeoProc::addNewProxies(const sk_sp<GrTextureProxy>* proxies,
@@ -247,14 +248,18 @@ void GrDistanceFieldA8TextGeoProc::addNewProxies(const sk_sp<GrTextureProxy>* pr
                                                  const GrSamplerState& params) {
     SkASSERT(numProxies <= kMaxTextures);
 
+    if (!fTextureSamplers[0].isInitialized()) {
+        fAtlasSize = proxies[0]->isize();
+    }
+
     for (int i = 0; i < numProxies; ++i) {
         SkASSERT(proxies[i]);
-
+        SkASSERT(proxies[i]->isize() == fAtlasSize);
         if (!fTextureSamplers[i].isInitialized()) {
-            fTextureSamplers[i].reset(std::move(proxies[i]), params);
-            this->addTextureSampler(&fTextureSamplers[i]);
+            fTextureSamplers[i].reset(proxies[i]->textureType(), proxies[i]->config(), params);
         }
     }
+    this->setTextureSamplerCnt(numProxies);
 }
 
 void GrDistanceFieldA8TextGeoProc::getGLSLProcessorKey(const GrShaderCaps& caps,
@@ -442,7 +447,7 @@ public:
         // mapped linearly to coverage, so use a linear step:
         if (isGammaCorrect) {
             fragBuilder->codeAppend(
-                "half val = clamp((distance + afwidth) / (2.0 * afwidth), 0.0, 1.0);");
+                "half val = saturate((distance + afwidth) / (2.0 * afwidth));");
         } else {
             fragBuilder->codeAppend("half val = smoothstep(-afwidth, afwidth, distance);");
         }
@@ -462,13 +467,11 @@ public:
             pdman.setMatrix3f(fMatrixUniform, matrix);
         }
 
-        SkASSERT(dfpgp.numTextureSamplers() >= 1);
-        GrTexture* atlas = dfpgp.textureSampler(0).peekTexture();
-        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
-
-        if (fAtlasSize.fWidth != atlas->width() || fAtlasSize.fHeight != atlas->height()) {
-            fAtlasSize.set(atlas->width(), atlas->height());
-            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlas->width(), 1.0f / atlas->height());
+        const SkISize& atlasSize = dfpgp.atlasSize();
+        SkASSERT(SkIsPow2(atlasSize.fWidth) && SkIsPow2(atlasSize.fHeight));
+        if (fAtlasSize != atlasSize) {
+            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlasSize.fWidth, 1.0f / atlasSize.fHeight);
+            fAtlasSize = atlasSize;
         }
 
         if (dfpgp.matrix().hasPerspective()) {
@@ -517,12 +520,17 @@ GrDistanceFieldPathGeoProc::GrDistanceFieldPathGeoProc(const SkMatrix& matrix,
     SkASSERT(!(flags & ~kNonLCD_DistanceFieldEffectMask));
 
     this->setVertexAttributeCnt(3);
+
+    if (numProxies) {
+        fAtlasSize = proxies[0]->isize();
+    }
+
     for (int i = 0; i < numProxies; ++i) {
         SkASSERT(proxies[i]);
-
-        fTextureSamplers[i].reset(std::move(proxies[i]), params);
-        this->addTextureSampler(&fTextureSamplers[i]);
+        SkASSERT(proxies[i]->isize() == fAtlasSize);
+        fTextureSamplers[i].reset(proxies[i]->textureType(), proxies[i]->config(), params);
     }
+    this->setTextureSamplerCnt(numProxies);
 }
 
 void GrDistanceFieldPathGeoProc::addNewProxies(const sk_sp<GrTextureProxy>* proxies,
@@ -530,14 +538,19 @@ void GrDistanceFieldPathGeoProc::addNewProxies(const sk_sp<GrTextureProxy>* prox
                                                const GrSamplerState& params) {
     SkASSERT(numProxies <= kMaxTextures);
 
+    if (!fTextureSamplers[0].isInitialized()) {
+        fAtlasSize = proxies[0]->isize();
+    }
+
     for (int i = 0; i < numProxies; ++i) {
         SkASSERT(proxies[i]);
+        SkASSERT(proxies[i]->isize() == fAtlasSize);
 
         if (!fTextureSamplers[i].isInitialized()) {
-            fTextureSamplers[i].reset(std::move(proxies[i]), params);
-            this->addTextureSampler(&fTextureSamplers[i]);
+            fTextureSamplers[i].reset(proxies[i]->textureType(), proxies[i]->config(), params);
         }
     }
+    this->setTextureSamplerCnt(numProxies);
 }
 
 void GrDistanceFieldPathGeoProc::getGLSLProcessorKey(const GrShaderCaps& caps,
@@ -753,7 +766,7 @@ public:
         // mapped linearly to coverage, so use a linear step:
         if (isGammaCorrect) {
             fragBuilder->codeAppendf("%s = "
-                "half4(clamp((distance + half3(afwidth)) / half3(2.0 * afwidth), 0.0, 1.0), 1.0);",
+                "half4(saturate((distance + half3(afwidth)) / half3(2.0 * afwidth)), 1.0);",
                 args.fOutputCoverage);
         } else {
             fragBuilder->codeAppendf(
@@ -776,13 +789,11 @@ public:
             fDistanceAdjust = wa;
         }
 
-        SkASSERT(dflcd.numTextureSamplers() >= 1);
-        GrTexture* atlas = dflcd.textureSampler(0).peekTexture();
-        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
-
-        if (fAtlasSize.fWidth != atlas->width() || fAtlasSize.fHeight != atlas->height()) {
-            fAtlasSize.set(atlas->width(), atlas->height());
-            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlas->width(), 1.0f / atlas->height());
+        const SkISize& atlasSize = dflcd.atlasSize();
+        SkASSERT(SkIsPow2(atlasSize.fWidth) && SkIsPow2(atlasSize.fHeight));
+        if (fAtlasSize != atlasSize) {
+            pdman.set2f(fAtlasSizeInvUniform, 1.0f / atlasSize.fWidth, 1.0f / atlasSize.fHeight);
+            fAtlasSize = atlasSize;
         }
         this->setTransformDataHelper(dflcd.localMatrix(), pdman, &transformIter);
     }
@@ -832,12 +843,16 @@ GrDistanceFieldLCDTextGeoProc::GrDistanceFieldLCDTextGeoProc(const sk_sp<GrTextu
     }
     this->setVertexAttributeCnt(3);
 
+    if (numProxies) {
+        fAtlasSize = proxies[0]->isize();
+    }
+
     for (int i = 0; i < numProxies; ++i) {
         SkASSERT(proxies[i]);
-
-        fTextureSamplers[i].reset(std::move(proxies[i]), params);
-        this->addTextureSampler(&fTextureSamplers[i]);
+        SkASSERT(proxies[i]->isize() == fAtlasSize);
+        fTextureSamplers[i].reset(proxies[i]->textureType(), proxies[i]->config(), params);
     }
+    this->setTextureSamplerCnt(numProxies);
 }
 
 void GrDistanceFieldLCDTextGeoProc::addNewProxies(const sk_sp<GrTextureProxy>* proxies,
@@ -845,14 +860,19 @@ void GrDistanceFieldLCDTextGeoProc::addNewProxies(const sk_sp<GrTextureProxy>* p
                                                   const GrSamplerState& params) {
     SkASSERT(numProxies <= kMaxTextures);
 
+    if (!fTextureSamplers[0].isInitialized()) {
+        fAtlasSize = proxies[0]->isize();
+    }
+
     for (int i = 0; i < numProxies; ++i) {
         SkASSERT(proxies[i]);
+        SkASSERT(proxies[i]->isize() == fAtlasSize);
 
         if (!fTextureSamplers[i].isInitialized()) {
-            fTextureSamplers[i].reset(std::move(proxies[i]), params);
-            this->addTextureSampler(&fTextureSamplers[i]);
+            fTextureSamplers[i].reset(proxies[i]->textureType(), proxies[i]->config(), params);
         }
     }
+    this->setTextureSamplerCnt(numProxies);
 }
 
 void GrDistanceFieldLCDTextGeoProc::getGLSLProcessorKey(const GrShaderCaps& caps,

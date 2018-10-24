@@ -42,32 +42,39 @@ struct PacketDeliveryInfo {
   uint64_t packet_id;
 };
 
+// DefaultNetworkSimulationConfig is a default network simulation configuration
+// for default network simulation that will be used by WebRTC if no custom
+// NetworkSimulationInterface is provided.
+struct DefaultNetworkSimulationConfig {
+  DefaultNetworkSimulationConfig() {}
+  // Queue length in number of packets.
+  size_t queue_length_packets = 0;
+  // Delay in addition to capacity induced delay.
+  int queue_delay_ms = 0;
+  // Standard deviation of the extra delay.
+  int delay_standard_deviation_ms = 0;
+  // Link capacity in kbps.
+  int link_capacity_kbps = 0;
+  // Random packet loss.
+  int loss_percent = 0;
+  // If packets are allowed to be reordered.
+  bool allow_reordering = false;
+  // The average length of a burst of lost packets.
+  int avg_burst_loss_length = -1;
+};
+
 class NetworkSimulationInterface {
  public:
-  // TODO(phoglund): this one shouldn't really be here; make fake network pipes
-  // injectable instead in the video quality test fixture.
-  struct SimulatedNetworkConfig {
-    SimulatedNetworkConfig() {}
-    // Queue length in number of packets.
-    size_t queue_length_packets = 0;
-    // Delay in addition to capacity induced delay.
-    int queue_delay_ms = 0;
-    // Standard deviation of the extra delay.
-    int delay_standard_deviation_ms = 0;
-    // Link capacity in kbps.
-    int link_capacity_kbps = 0;
-    // Random packet loss.
-    int loss_percent = 0;
-    // If packets are allowed to be reordered.
-    bool allow_reordering = false;
-    // The average length of a burst of lost packets.
-    int avg_burst_loss_length = -1;
-  };
+  // DO NOT USE. Use DefaultNetworkSimulationConfig directly. This reference
+  // should be removed when all users will be switched on direct usage.
+  using SimulatedNetworkConfig = DefaultNetworkSimulationConfig;
 
   virtual bool EnqueuePacket(PacketInFlightInfo packet_info) = 0;
   // Retrieves all packets that should be delivered by the given receive time.
   virtual std::vector<PacketDeliveryInfo> DequeueDeliverablePackets(
       int64_t receive_time_us) = 0;
+  // Returns time in microseconds when caller should call
+  // DequeueDeliverablePackets to get next set of packets to deliver.
   virtual absl::optional<int64_t> NextDeliveryTimeUs() const = 0;
   virtual ~NetworkSimulationInterface() = default;
 };

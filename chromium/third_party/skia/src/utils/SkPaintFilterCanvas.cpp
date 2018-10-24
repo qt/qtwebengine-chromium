@@ -173,9 +173,9 @@ void SkPaintFilterCanvas::onDrawImageLattice(const SkImage* image, const Lattice
     }
 }
 
-void SkPaintFilterCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones,
-                                               int boneCount, SkBlendMode bmode,
-                                               const SkPaint& paint) {
+void SkPaintFilterCanvas::onDrawVerticesObject(const SkVertices* vertices,
+                                               const SkVertices::Bone bones[], int boneCount,
+                                               SkBlendMode bmode, const SkPaint& paint) {
     AutoPaintFilter apf(this, kVertices_Type, paint);
     if (apf.shouldDraw()) {
         this->SkNWayCanvas::onDrawVerticesObject(vertices, bones, boneCount, bmode, *apf.paint());
@@ -230,14 +230,6 @@ void SkPaintFilterCanvas::onDrawPosTextH(const void* text, size_t byteLength, co
     AutoPaintFilter apf(this, kText_Type, paint);
     if (apf.shouldDraw()) {
         this->SkNWayCanvas::onDrawPosTextH(text, byteLength, xpos, constY, *apf.paint());
-    }
-}
-
-void SkPaintFilterCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
-                                           const SkMatrix* matrix, const SkPaint& paint) {
-    AutoPaintFilter apf(this, kText_Type, paint);
-    if (apf.shouldDraw()) {
-        this->SkNWayCanvas::onDrawTextOnPath(text, byteLength, path, matrix, *apf.paint());
     }
 }
 

@@ -43,12 +43,11 @@ const uint8_t kHelloRetryRequest[SSL3_RANDOM_SIZE] = {
     0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c,
 };
 
-// This value was selected by truncating the SHA-256 hash of "Draft TLS 1.3
-// Downgrade" to 8 bytes:
-//
-//   echo -n 'Draft TLS 1.3 Downgrade' | sha256sum | head -c 16
-const uint8_t kDraftDowngradeRandom[8] = {0x95, 0xb9, 0x9f, 0x87,
-                                          0x22, 0xfe, 0x9b, 0x64};
+const uint8_t kTLS12DowngradeRandom[8] = {0x44, 0x4f, 0x57, 0x4e,
+                                          0x47, 0x52, 0x44, 0x00};
+
+const uint8_t kTLS13DowngradeRandom[8] = {0x44, 0x4f, 0x57, 0x4e,
+                                          0x47, 0x52, 0x44, 0x01};
 
 
 bool tls13_get_cert_verify_signature_input(
@@ -131,7 +130,7 @@ int tls13_process_certificate(SSL_HANDSHAKE *hs, const SSLMessage &msg,
     }
 
     ssl_cert_decompression_func_t decompress = nullptr;
-    for (const auto& alg : ssl->ctx->cert_compression_algs) {
+    for (const auto* alg : ssl->ctx->cert_compression_algs.get()) {
       if (alg->alg_id == alg_id) {
         decompress = alg->decompress;
         break;
@@ -415,7 +414,7 @@ int tls13_process_finished(SSL_HANDSHAKE *hs, const SSLMessage &msg,
 
 int tls13_add_certificate(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
-  CERT *const cert = hs->config->cert;
+  CERT *const cert = hs->config->cert.get();
 
   ScopedCBB cbb;
   CBB *body, body_storage, certificate_list;
@@ -505,7 +504,7 @@ int tls13_add_certificate(SSL_HANDSHAKE *hs) {
   }
 
   const CertCompressionAlg *alg = nullptr;
-  for (CertCompressionAlg *candidate : ssl->ctx->cert_compression_algs) {
+  for (const auto *candidate : ssl->ctx->cert_compression_algs.get()) {
     if (candidate->alg_id == hs->cert_compression_alg_id) {
       alg = candidate;
       break;
@@ -537,6 +536,7 @@ enum ssl_private_key_result_t tls13_add_certificate_verify(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
   uint16_t signature_algorithm;
   if (!tls1_choose_signature_algorithm(hs, &signature_algorithm)) {
+    ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
     return ssl_private_key_failure;
   }
 
@@ -635,8 +635,7 @@ static int tls13_receive_key_update(SSL *ssl, const SSLMessage &msg) {
 
     // Suppress KeyUpdate acknowledgments until this change is written to the
     // wire. This prevents us from accumulating write obligations when read and
-    // write progress at different rates. See draft-ietf-tls-tls13-18, section
-    // 4.5.3.
+    // write progress at different rates. See RFC 8446, section 4.6.3.
     ssl->s3->key_update_pending = true;
   }
 

@@ -60,7 +60,7 @@ int tls13_init_key_schedule(SSL_HANDSHAKE *hs, const uint8_t *psk,
 int tls13_init_early_key_schedule(SSL_HANDSHAKE *hs, const uint8_t *psk,
                                   size_t psk_len) {
   SSL *const ssl = hs->ssl;
-  return init_key_schedule(hs, ssl_session_protocol_version(ssl->session),
+  return init_key_schedule(hs, ssl_session_protocol_version(ssl->session.get()),
                            ssl->session->cipher) &&
          HKDF_extract(hs->secret, &hs->hash_len, hs->transcript.Digest(), psk,
                       psk_len, hs->secret, hs->hash_len);
@@ -74,8 +74,7 @@ static int hkdf_expand_label(uint8_t *out, const EVP_MD *digest,
 
   ScopedCBB cbb;
   CBB child;
-  uint8_t *hkdf_label;
-  size_t hkdf_label_len;
+  Array<uint8_t> hkdf_label;
   if (!CBB_init(cbb.get(), 2 + 1 + strlen(kTLS13LabelVersion) + label_len + 1 +
                                hash_len) ||
       !CBB_add_u16(cbb.get(), len) ||
@@ -85,14 +84,12 @@ static int hkdf_expand_label(uint8_t *out, const EVP_MD *digest,
       !CBB_add_bytes(&child, (const uint8_t *)label, label_len) ||
       !CBB_add_u8_length_prefixed(cbb.get(), &child) ||
       !CBB_add_bytes(&child, hash, hash_len) ||
-      !CBB_finish(cbb.get(), &hkdf_label, &hkdf_label_len)) {
+      !CBBFinishArray(cbb.get(), &hkdf_label)) {
     return 0;
   }
 
-  int ret = HKDF_expand(out, len, digest, secret, secret_len, hkdf_label,
-                        hkdf_label_len);
-  OPENSSL_free(hkdf_label);
-  return ret;
+  return HKDF_expand(out, len, digest, secret, secret_len, hkdf_label.data(),
+                     hkdf_label.size());
 }
 
 static const char kTLS13LabelDerived[] = "derived";
@@ -413,7 +410,7 @@ static int tls13_psk_binder(uint8_t *out, uint16_t version,
 
 int tls13_write_psk_binder(SSL_HANDSHAKE *hs, uint8_t *msg, size_t len) {
   SSL *const ssl = hs->ssl;
-  const EVP_MD *digest = ssl_session_get_digest(ssl->session);
+  const EVP_MD *digest = ssl_session_get_digest(ssl->session.get());
   size_t hash_len = EVP_MD_size(digest);
 
   if (len < hash_len + 3) {

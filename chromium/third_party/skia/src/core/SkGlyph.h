@@ -116,6 +116,7 @@ private:
 struct SkPackedGlyphID : public SkPackedID {
     SkPackedGlyphID(SkGlyphID code) : SkPackedID(code) { }
     SkPackedGlyphID(SkGlyphID code, SkFixed x, SkFixed y) : SkPackedID(code, x, y) { }
+    SkPackedGlyphID(SkGlyphID code, SkIPoint pt) : SkPackedID(code, pt.x(), pt.y()) { }
     SkPackedGlyphID() : SkPackedID() { }
     SkGlyphID code() const {
         return SkTo<SkGlyphID>(SkPackedID::code());
@@ -161,6 +162,10 @@ public:
     uint8_t     fMaskFormat;
 
     void initWithGlyphID(SkPackedGlyphID glyph_id);
+
+    bool isEmpty() const {
+        return fWidth == 0 || fHeight == 0;
+    }
 
     size_t formatAlignment() const;
     size_t allocImage(SkArenaAlloc* alloc);

@@ -19,6 +19,7 @@
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
 #include "fxjs/ijs_runtime.h"
 #include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
@@ -37,10 +38,7 @@ CPDFSDK_FormFillEnvironment::CPDFSDK_FormFillEnvironment(
     FPDF_FORMFILLINFO* pFFinfo)
     : m_pInfo(pFFinfo),
       m_pCPDFDoc(pDoc),
-      m_pSysHandler(pdfium::MakeUnique<CFX_SystemHandler>(this)),
-      m_bChangeMask(false),
-      m_bBeingDestroyed(false),
-      m_SaveCalled(nullptr) {}
+      m_pSysHandler(pdfium::MakeUnique<CFX_SystemHandler>(this)) {}
 
 CPDFSDK_FormFillEnvironment::~CPDFSDK_FormFillEnvironment() {
   m_bBeingDestroyed = true;
@@ -699,7 +697,7 @@ bool CPDFSDK_FormFillEnvironment::KillFocusAnnot(uint32_t nFlag) {
   }
 
   if (pFocusAnnot->GetAnnotSubtype() == CPDF_Annot::Subtype::WIDGET) {
-    CPDFSDK_Widget* pWidget = static_cast<CPDFSDK_Widget*>(pFocusAnnot.Get());
+    CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pFocusAnnot.Get());
     FormFieldType fieldType = pWidget->GetFieldType();
     if (fieldType == FormFieldType::kTextField ||
         fieldType == FormFieldType::kComboBox) {
@@ -713,6 +711,10 @@ CPDFXFA_Context* CPDFSDK_FormFillEnvironment::GetXFAContext() const {
   if (!m_pCPDFDoc)
     return nullptr;
   return static_cast<CPDFXFA_Context*>(m_pCPDFDoc->GetExtension());
+}
+
+int CPDFSDK_FormFillEnvironment::GetPageViewCount() const {
+  return pdfium::CollectionSize<int>(m_PageMap);
 }
 #endif  // PDF_ENABLE_XFA
 

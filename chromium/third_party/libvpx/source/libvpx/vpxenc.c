@@ -351,7 +351,8 @@ static const arg_def_t arnr_maxframes =
     ARG_DEF(NULL, "arnr-maxframes", 1, "AltRef max frames (0..15)");
 static const arg_def_t arnr_strength =
     ARG_DEF(NULL, "arnr-strength", 1, "AltRef filter strength (0..6)");
-static const arg_def_t arnr_type = ARG_DEF(NULL, "arnr-type", 1, "AltRef type");
+static const arg_def_t arnr_type =
+    ARG_DEF(NULL, "arnr-type", 1, "AltRef filter type (1..3)");
 static const struct arg_enum_list tuning_enum[] = {
   { "psnr", VP8_TUNE_PSNR }, { "ssim", VP8_TUNE_SSIM }, { NULL, 0 }
 };
@@ -411,6 +412,10 @@ static const arg_def_t tile_cols =
 static const arg_def_t tile_rows =
     ARG_DEF(NULL, "tile-rows", 1,
             "Number of tile rows to use, log2 (set to 0 while threads > 1)");
+
+static const arg_def_t enable_tpl_model =
+    ARG_DEF(NULL, "enable-tpl", 1, "Enable temporal dependency model");
+
 static const arg_def_t lossless =
     ARG_DEF(NULL, "lossless", 1, "Lossless mode (0: false (default), 1: true)");
 static const arg_def_t frame_parallel_decoding = ARG_DEF(
@@ -496,6 +501,7 @@ static const arg_def_t *vp9_args[] = { &cpu_used_vp9,
                                        &static_thresh,
                                        &tile_cols,
                                        &tile_rows,
+                                       &enable_tpl_model,
                                        &arnr_maxframes,
                                        &arnr_strength,
                                        &arnr_type,
@@ -527,6 +533,7 @@ static const int vp9_arg_ctrl_map[] = { VP8E_SET_CPUUSED,
                                         VP8E_SET_STATIC_THRESHOLD,
                                         VP9E_SET_TILE_COLUMNS,
                                         VP9E_SET_TILE_ROWS,
+                                        VP9E_SET_TPL,
                                         VP8E_SET_ARNR_MAXFRAMES,
                                         VP8E_SET_ARNR_STRENGTH,
                                         VP8E_SET_ARNR_TYPE,
@@ -1614,14 +1621,14 @@ static void encode_frame(struct stream_state *stream,
             vpx_img_alloc(NULL, VPX_IMG_FMT_I42016, cfg->g_w, cfg->g_h, 16);
       }
       I420Scale_16(
-          (uint16 *)img->planes[VPX_PLANE_Y], img->stride[VPX_PLANE_Y] / 2,
-          (uint16 *)img->planes[VPX_PLANE_U], img->stride[VPX_PLANE_U] / 2,
-          (uint16 *)img->planes[VPX_PLANE_V], img->stride[VPX_PLANE_V] / 2,
-          img->d_w, img->d_h, (uint16 *)stream->img->planes[VPX_PLANE_Y],
+          (uint16_t *)img->planes[VPX_PLANE_Y], img->stride[VPX_PLANE_Y] / 2,
+          (uint16_t *)img->planes[VPX_PLANE_U], img->stride[VPX_PLANE_U] / 2,
+          (uint16_t *)img->planes[VPX_PLANE_V], img->stride[VPX_PLANE_V] / 2,
+          img->d_w, img->d_h, (uint16_t *)stream->img->planes[VPX_PLANE_Y],
           stream->img->stride[VPX_PLANE_Y] / 2,
-          (uint16 *)stream->img->planes[VPX_PLANE_U],
+          (uint16_t *)stream->img->planes[VPX_PLANE_U],
           stream->img->stride[VPX_PLANE_U] / 2,
-          (uint16 *)stream->img->planes[VPX_PLANE_V],
+          (uint16_t *)stream->img->planes[VPX_PLANE_V],
           stream->img->stride[VPX_PLANE_V] / 2, stream->img->d_w,
           stream->img->d_h, kFilterBox);
       img = stream->img;

@@ -12,8 +12,9 @@
 
 #include <map>
 
+#include "api/test/simulated_network.h"
 #include "call/call.h"
-#include "call/fake_network_pipe.h"
+#include "call/simulated_packet_receiver.h"
 #include "test/direct_transport.h"
 #include "test/single_threaded_task_queue.h"
 
@@ -23,8 +24,12 @@ namespace test {
 
 class LayerFilteringTransport : public test::DirectTransport {
  public:
+  // Deprecated. DO NOT USE. Use the constructor that takes an
+  // explicit pipe instead.Because there can be different ways to simulated
+  // underlying network passing implementation specific config to the transport
+  // constructor makes no sense.
   LayerFilteringTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                          const FakeNetworkPipe::Config& config,
+                          const DefaultNetworkSimulationConfig& config,
                           Call* send_call,
                           uint8_t vp8_video_payload_type,
                           uint8_t vp9_video_payload_type,
@@ -33,32 +38,38 @@ class LayerFilteringTransport : public test::DirectTransport {
                           const std::map<uint8_t, MediaType>& payload_type_map,
                           uint32_t ssrc_to_filter_min,
                           uint32_t ssrc_to_filter_max);
+  // Deprecated. DO NOT USE. Use the constructor that takes an
+  // explicit pipe instead.Because there can be different ways to simulated
+  // underlying network passing implementation specific config to the transport
+  // constructor makes no sense.
   LayerFilteringTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                          const FakeNetworkPipe::Config& config,
+                          const DefaultNetworkSimulationConfig& config,
                           Call* send_call,
                           uint8_t vp8_video_payload_type,
                           uint8_t vp9_video_payload_type,
                           int selected_tl,
                           int selected_sl,
                           const std::map<uint8_t, MediaType>& payload_type_map);
-  LayerFilteringTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                          std::unique_ptr<FakeNetworkPipe> pipe,
-                          Call* send_call,
-                          uint8_t vp8_video_payload_type,
-                          uint8_t vp9_video_payload_type,
-                          int selected_tl,
-                          int selected_sl,
-                          const std::map<uint8_t, MediaType>& payload_type_map,
-                          uint32_t ssrc_to_filter_min,
-                          uint32_t ssrc_to_filter_max);
-  LayerFilteringTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                          std::unique_ptr<FakeNetworkPipe> pipe,
-                          Call* send_call,
-                          uint8_t vp8_video_payload_type,
-                          uint8_t vp9_video_payload_type,
-                          int selected_tl,
-                          int selected_sl,
-                          const std::map<uint8_t, MediaType>& payload_type_map);
+  LayerFilteringTransport(
+      SingleThreadedTaskQueueForTesting* task_queue,
+      std::unique_ptr<SimulatedPacketReceiverInterface> pipe,
+      Call* send_call,
+      uint8_t vp8_video_payload_type,
+      uint8_t vp9_video_payload_type,
+      int selected_tl,
+      int selected_sl,
+      const std::map<uint8_t, MediaType>& payload_type_map,
+      uint32_t ssrc_to_filter_min,
+      uint32_t ssrc_to_filter_max);
+  LayerFilteringTransport(
+      SingleThreadedTaskQueueForTesting* task_queue,
+      std::unique_ptr<SimulatedPacketReceiverInterface> pipe,
+      Call* send_call,
+      uint8_t vp8_video_payload_type,
+      uint8_t vp9_video_payload_type,
+      int selected_tl,
+      int selected_sl,
+      const std::map<uint8_t, MediaType>& payload_type_map);
   bool DiscardedLastPacket() const;
   bool SendRtp(const uint8_t* data,
                size_t length,

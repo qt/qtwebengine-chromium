@@ -7,6 +7,7 @@
 
 #include "SkBitmapDevice.h"
 #include "SkDraw.h"
+#include "SkGlyphRun.h"
 #include "SkImageFilter.h"
 #include "SkImageFilterCache.h"
 #include "SkMallocPixelRef.h"
@@ -228,10 +229,23 @@ static bool valid_for_bitmap_device(const SkImageInfo& info,
     return true;
 }
 
+// TODO: unify this with the same functionality on SkDraw.
+static SkScalerContextFlags scaler_context_flags(const SkBitmap& bitmap)  {
+    // If we're doing linear blending, then we can disable the gamma hacks.
+    // Otherwise, leave them on. In either case, we still want the contrast boost:
+    // TODO: Can we be even smarter about mask gamma based on the dst transfer function?
+    if (bitmap.colorSpace() && bitmap.colorSpace()->gammaIsLinear()) {
+        return SkScalerContextFlags::kBoostContrast;
+    } else {
+        return SkScalerContextFlags::kFakeGammaAndBoostContrast;
+    }
+}
+
 SkBitmapDevice::SkBitmapDevice(const SkBitmap& bitmap)
     : INHERITED(bitmap.info(), SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType))
     , fBitmap(bitmap)
     , fRCStack(bitmap.width(), bitmap.height())
+    , fGlyphPainter(this->surfaceProps(), bitmap.colorType(), scaler_context_flags(bitmap))
 {
     SkASSERT(valid_for_bitmap_device(bitmap.info(), nullptr));
 }
@@ -246,6 +260,7 @@ SkBitmapDevice::SkBitmapDevice(const SkBitmap& bitmap, const SkSurfaceProps& sur
     , fBitmap(bitmap)
     , fRasterHandle(hndl)
     , fRCStack(bitmap.width(), bitmap.height())
+    , fGlyphPainter(this->surfaceProps(), bitmap.colorType(), scaler_context_flags(bitmap))
 {
     SkASSERT(valid_for_bitmap_device(bitmap.info(), nullptr));
 
@@ -371,7 +386,7 @@ void SkBitmapDevice::drawOval(const SkRect& oval, const SkPaint& paint) {
     path.addOval(oval);
     // call the VIRTUAL version, so any subclasses who do handle drawPath aren't
     // required to override drawOval.
-    this->drawPath(path, paint, nullptr, true);
+    this->drawPath(path, paint, true);
 }
 
 void SkBitmapDevice::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
@@ -381,33 +396,25 @@ void SkBitmapDevice::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
     path.addRRect(rrect);
     // call the VIRTUAL version, so any subclasses who do handle drawPath aren't
     // required to override drawRRect.
-    this->drawPath(path, paint, nullptr, true);
+    this->drawPath(path, paint, true);
 #else
     LOOP_TILER( drawRRect(rrect, paint), Bounder(rrect.getBounds(), paint))
 #endif
 }
 
 void SkBitmapDevice::drawPath(const SkPath& path,
-                              const SkPaint& paint, const SkMatrix* prePathMatrix,
+                              const SkPaint& paint,
                               bool pathIsMutable) {
     const SkRect* bounds = nullptr;
-    SkRect storage;
-    if (SkDrawTiler::NeedsTiling(this)) {
-        if (!path.isInverseFillType()) {
-            if (prePathMatrix) {
-                prePathMatrix->mapRect(&storage, path.getBounds());
-                bounds = &storage;
-            } else {
-                bounds = &path.getBounds();
-            }
-        }
+    if (SkDrawTiler::NeedsTiling(this) && !path.isInverseFillType()) {
+        bounds = &path.getBounds();
     }
     SkDrawTiler tiler(this, bounds ? Bounder(*bounds, paint).bounds() : nullptr);
     if (tiler.needsTiling()) {
         pathIsMutable = false;
     }
     while (const SkDraw* draw = tiler.next()) {
-        draw->drawPath(path, paint, prePathMatrix, pathIsMutable);
+        draw->drawPath(path, paint, nullptr, pathIsMutable);
     }
 }
 
@@ -570,8 +577,24 @@ void SkBitmapDevice::drawPosText(const void* text, size_t len, const SkScalar xp
                 nullptr)
 }
 
-void SkBitmapDevice::drawVertices(const SkVertices* vertices, const SkMatrix* bones, int boneCount,
-                                  SkBlendMode bmode, const SkPaint& paint) {
+void SkBitmapDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
+#if defined(SK_SUPPORT_LEGACY_TEXT_BLOB)
+    auto blob = glyphRunList.blob();
+
+    if (blob == nullptr) {
+        glyphRunList.temporaryShuntToDrawPosText(this, SkPoint::Make(0, 0));
+    } else {
+        auto origin = glyphRunList.origin();
+        auto paint = glyphRunList.paint();
+        this->drawTextBlob(blob, origin.x(), origin.y(), paint);
+    }
+#else
+    LOOP_TILER( drawGlyphRunList(glyphRunList, &fGlyphPainter), nullptr )
+#endif
+}
+
+void SkBitmapDevice::drawVertices(const SkVertices* vertices, const SkVertices::Bone bones[],
+                                  int boneCount, SkBlendMode bmode, const SkPaint& paint) {
     BDDraw(this).drawVertices(vertices->mode(), vertices->vertexCount(), vertices->positions(),
                               vertices->texCoords(), vertices->colors(), vertices->boneIndices(),
                               vertices->boneWeights(), bmode, vertices->indices(),

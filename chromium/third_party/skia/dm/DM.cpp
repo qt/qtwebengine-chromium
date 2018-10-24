@@ -43,7 +43,6 @@
 #include "Test.h"
 #include "Timer.h"
 #include "ios_utils.h"
-#include "picture_utils.h"
 #include "sk_tool_utils.h"
 
 #include <vector>
@@ -762,29 +761,35 @@ static void push_codec_srcs(Path path) {
 }
 
 template <typename T>
-void gather_file_srcs(const SkCommandLineFlags::StringArray& flags, const char* ext) {
+void gather_file_srcs(const SkCommandLineFlags::StringArray& flags, const char* ext,
+                      const char* src_name = nullptr) {
+    if (!src_name) {
+        // With the exception of Lottie files, the source name is the extension.
+        src_name = ext;
+    }
+
     for (int i = 0; i < flags.count(); i++) {
         const char* path = flags[i];
         if (sk_isdir(path)) {
             SkOSFile::Iter it(path, ext);
             for (SkString file; it.next(&file); ) {
-                push_src(ext, "", new T(SkOSPath::Join(path, file.c_str())));
+                push_src(src_name, "", new T(SkOSPath::Join(path, file.c_str())));
             }
         } else {
-            push_src(ext, "", new T(path));
+            push_src(src_name, "", new T(path));
         }
     }
 }
 
 static bool gather_srcs() {
-    for (const skiagm::GMRegistry* r = skiagm::GMRegistry::Head(); r; r = r->next()) {
-        push_src("gm", "", new GMSrc(r->factory()));
+    for (skiagm::GMFactory f : skiagm::GMRegistry::Range()) {
+        push_src("gm", "", new GMSrc(f));
     }
 
     gather_file_srcs<SKPSrc>(FLAGS_skps, "skp");
     gather_file_srcs<MSKPSrc>(FLAGS_mskps, "mskp");
 #if defined(SK_ENABLE_SKOTTIE)
-    gather_file_srcs<SkottieSrc>(FLAGS_jsons, "json");
+    gather_file_srcs<SkottieSrc>(FLAGS_lotties, "json", "lottie");
 #endif
 #if defined(SK_XML)
     gather_file_srcs<SVGSrc>(FLAGS_svgs, "svg");
@@ -900,7 +905,6 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
         SINK("rgbx",    RasterSink, kRGB_888x_SkColorType);
         SINK("1010102", RasterSink, kRGBA_1010102_SkColorType);
         SINK("101010x", RasterSink, kRGB_101010x_SkColorType);
-        SINK("t8888",   ThreadedSink, kN32_SkColorType);
         SINK("pdf",     PDFSink, false, SK_ScalarDefaultRasterDPI);
         SINK("skp",     SKPSink);
         SINK("pipe",    PipeSink);
@@ -917,15 +921,36 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
         SkMatrix44 narrow_gamut(SkMatrix44::kUninitialized_Constructor);
         narrow_gamut.set3x3RowMajorf(gNarrow_toXYZD50);
 
+        // See https://en.wikipedia.org/wiki/Rec._2020
+        float alpha = 1.09929682680944f,
+              beta  = 0.018053968510807f,
+              gamma = 0.45f;
+        SkColorSpaceTransferFn rec2020_TF = SkColorSpaceTransferFn{
+            gamma,
+            powf(alpha, 1/gamma),
+            0.0f,
+            4.5f,
+            beta,
+            1 - alpha,
+            0.0f,
+        }.invert();
+
         auto narrow = SkColorSpace::MakeRGB(k2Dot2Curve_SkGammaNamed, narrow_gamut),
                srgb = SkColorSpace::MakeSRGB(),
-         srgbLinear = SkColorSpace::MakeSRGBLinear();
+         srgbLinear = SkColorSpace::MakeSRGBLinear(),
+                 p3 = SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
+                                            SkColorSpace::kDCIP3_D65_Gamut),
+            rec2020 = SkColorSpace::MakeRGB(rec2020_TF, SkColorSpace::kRec2020_Gamut);
 
-        SINK(    "f16",  RasterSink,  kRGBA_F16_SkColorType, srgbLinear);
-        SINK(   "srgb",  RasterSink, kRGBA_8888_SkColorType, srgb      );
-        SINK(  "esrgb",  RasterSink,  kRGBA_F16_SkColorType, srgb      );
-        SINK( "narrow",  RasterSink, kRGBA_8888_SkColorType, narrow    );
-        SINK("enarrow",  RasterSink,  kRGBA_F16_SkColorType, narrow    );
+        SINK(     "f16",  RasterSink,  kRGBA_F16_SkColorType, srgbLinear);
+        SINK(    "srgb",  RasterSink, kRGBA_8888_SkColorType, srgb      );
+        SINK(   "esrgb",  RasterSink,  kRGBA_F16_SkColorType, srgb      );
+        SINK(  "narrow",  RasterSink, kRGBA_8888_SkColorType, narrow    );
+        SINK( "enarrow",  RasterSink,  kRGBA_F16_SkColorType, narrow    );
+        SINK(      "p3",  RasterSink, kRGBA_8888_SkColorType, p3        );
+        SINK(     "ep3",  RasterSink,  kRGBA_F16_SkColorType, p3        );
+        SINK( "rec2020",  RasterSink, kRGBA_8888_SkColorType, rec2020   );
+        SINK("erec2020",  RasterSink,  kRGBA_F16_SkColorType, rec2020   );
 
         SINK(    "f32",  RasterSink,  kRGBA_F32_SkColorType, srgbLinear);
     }
@@ -940,6 +965,9 @@ static sk_sp<SkColorSpace> rgb_to_gbr() {
 static Sink* create_via(const SkString& tag, Sink* wrapped) {
 #define VIA(t, via, ...) if (tag.equals(t)) { return new via(__VA_ARGS__); }
     VIA("gbr",       ViaCSXform,           wrapped, rgb_to_gbr(), true);
+    VIA("p3",        ViaCSXform,           wrapped,
+                     SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
+                                           SkColorSpace::kDCIP3_D65_Gamut), false);
     VIA("lite",      ViaLite,              wrapped);
     VIA("pipe",      ViaPipe,              wrapped);
 #ifdef TEST_VIA_SVG
@@ -1176,10 +1204,9 @@ struct Task {
                             const char* ext,
                             SkStream* data, size_t len,
                             const SkBitmap* bitmap) {
-        bool gammaCorrect = false;
-        if (bitmap) {
-            gammaCorrect = SkToBool(bitmap->info().colorSpace());
-        }
+        bool gammaCorrect = bitmap &&
+                            bitmap->info().colorSpace() &&
+                            bitmap->info().colorSpace()->gammaIsLinear();
 
         JsonWriter::BitmapResult result;
         result.name          = task.src->name();
@@ -1254,20 +1281,17 @@ static void gather_tests() {
     if (!FLAGS_src.contains("tests")) {
         return;
     }
-    for (const skiatest::TestRegistry* r = skiatest::TestRegistry::Head(); r; r = r->next()) {
+    for (const skiatest::Test& test : skiatest::TestRegistry::Range()) {
         if (!in_shard()) {
             continue;
         }
-        // Despite its name, factory() is returning a reference to
-        // link-time static const POD data.
-        const skiatest::Test& test = r->factory();
         if (SkCommandLineFlags::ShouldSkip(FLAGS_match, test.name)) {
             continue;
         }
         if (test.needsGpu && FLAGS_gpu) {
-            (FLAGS_gpu_threading ? gParallelTests : gSerialTests).push(test);
+            (FLAGS_gpu_threading ? gParallelTests : gSerialTests).push_back(test);
         } else if (!test.needsGpu && FLAGS_cpu) {
-            gParallelTests.push(test);
+            gParallelTests.push_back(test);
         }
     }
 }

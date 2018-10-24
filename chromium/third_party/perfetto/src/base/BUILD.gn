@@ -96,6 +96,8 @@ source_set("test_support") {
     "../../gn:gtest_deps",
   ]
   sources = [
+    "test/utils.cc",
+    "test/utils.h",
     "test/vm_test_utils.cc",
     "test/vm_test_utils.h",
   ]
@@ -126,6 +128,7 @@ source_set("unittests") {
     "scoped_file_unittest.cc",
     "string_splitter_unittest.cc",
     "string_utils_unittest.cc",
+    "string_view_unittest.cc",
     "time_unittest.cc",
     "weak_ptr_unittest.cc",
   ]

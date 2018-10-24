@@ -437,29 +437,16 @@ bool CPDF_DataAvail::CheckFirstPage() {
 }
 
 bool CPDF_DataAvail::CheckHintTables() {
-  if (m_pLinearized->GetPageCount() <= 1) {
-    m_docStatus = PDF_DATAAVAIL_DONE;
+  const CPDF_ReadValidator::Session read_session(GetValidator().Get());
+  m_pHintTables =
+      CPDF_HintTables::Parse(GetSyntaxParser(), m_pLinearized.get());
+
+  if (GetValidator()->read_error()) {
+    m_docStatus = PDF_DATAAVAIL_ERROR;
     return true;
   }
-  if (!m_pLinearized->HasHintTable()) {
-    m_docStatus = PDF_DATAAVAIL_ERROR;
+  if (GetValidator()->has_unavailable_data())
     return false;
-  }
-
-  const FX_FILESIZE szHintStart = m_pLinearized->GetHintStart();
-  const uint32_t szHintLength = m_pLinearized->GetHintLength();
-
-  if (!GetValidator()->CheckDataRangeAndRequestIfUnavailable(szHintStart,
-                                                             szHintLength))
-    return false;
-
-  auto pHintTables = pdfium::MakeUnique<CPDF_HintTables>(GetValidator().Get(),
-                                                         m_pLinearized.get());
-  std::unique_ptr<CPDF_Object> pHintStream =
-      ParseIndirectObjectAt(szHintStart, 0);
-  CPDF_Stream* pStream = ToStream(pHintStream.get());
-  if (pStream && pHintTables->LoadHintStream(pStream))
-    m_pHintTables = std::move(pHintTables);
 
   m_docStatus = PDF_DATAAVAIL_DONE;
   return true;
@@ -499,14 +486,15 @@ CPDF_DataAvail::DocAvailStatus CPDF_DataAvail::CheckHeaderAndLinearized() {
     return DocAvailStatus::DataAvailable;
 
   const CPDF_ReadValidator::Session read_session(GetValidator().Get());
-  const int32_t header_offset = GetHeaderOffset(GetValidator());
+  const Optional<FX_FILESIZE> header_offset = GetHeaderOffset(GetValidator());
   if (GetValidator()->has_read_problems())
     return DocAvailStatus::DataNotAvailable;
 
-  if (header_offset == kInvalidHeaderOffset)
+  if (!header_offset)
     return DocAvailStatus::DataError;
 
-  m_parser.m_pSyntax->InitParserWithValidator(GetValidator(), header_offset);
+  m_parser.m_pSyntax =
+      pdfium::MakeUnique<CPDF_SyntaxParser>(GetValidator(), *header_offset);
   m_pLinearized = m_parser.ParseLinearizedHeader();
   if (GetValidator()->has_read_problems())
     return DocAvailStatus::DataNotAvailable;

@@ -20,7 +20,7 @@
 #include <limits>
 #include <memory>
 
-#include "sqlite3.h"
+#include "src/trace_processor/table.h"
 #include "src/trace_processor/trace_storage.h"
 
 namespace perfetto {
@@ -28,48 +28,34 @@ namespace trace_processor {
 
 // The implementation of the SQLite table containing each unique process with
 // the metadata for those processes.
-class ThreadTable {
+class ThreadTable : public Table {
  public:
-  enum Column { kUtid = 0, kUpid = 1, kName = 2 };
-  struct OrderBy {
-    Column column = kUpid;
-    bool desc = false;
-  };
+  enum Column { kUtid = 0, kUpid = 1, kName = 2, kTid = 3 };
+
+  static void RegisterTable(sqlite3* db, const TraceStorage* storage);
 
   ThreadTable(const TraceStorage*);
-  static sqlite3_module CreateModule();
 
-  // Implementation for sqlite3_vtab.
-  int BestIndex(sqlite3_index_info*);
-  int Open(sqlite3_vtab_cursor**);
+  // Table implementation.
+  std::unique_ptr<Table::Cursor> CreateCursor() override;
+  int BestIndex(const QueryConstraints&, BestIndexInfo*) override;
 
  private:
-  using Constraint = sqlite3_index_info::sqlite3_index_constraint;
-
-  struct IndexInfo {
-    std::vector<OrderBy> order_by;
-    std::vector<Constraint> constraints;
-  };
-
-  class Cursor {
+  class Cursor : public Table::Cursor {
    public:
     Cursor(const TraceStorage*);
 
-    // Implementation of sqlite3_vtab_cursor.
-    int Filter(int idxNum, const char* idxStr, int argc, sqlite3_value** argv);
-    int Next();
-    int Eof();
-
-    int Column(sqlite3_context* context, int N);
-    int RowId(sqlite_int64* rowId);
+    // Implementation of Table::Cursor.
+    int Filter(const QueryConstraints&, sqlite3_value**) override;
+    int Next() override;
+    int Eof() override;
+    int Column(sqlite3_context*, int N) override;
 
    private:
-    sqlite3_vtab_cursor base_;  // Must be first.
-
     struct UtidFilter {
-      TraceStorage::UniqueTid min;
-      TraceStorage::UniqueTid max;
-      TraceStorage::UniqueTid current;
+      UniqueTid min;
+      UniqueTid max;
+      UniqueTid current;
       bool desc;
     };
 
@@ -77,11 +63,6 @@ class ThreadTable {
     UtidFilter utid_filter_;
   };
 
-  static inline Cursor* AsCursor(sqlite3_vtab_cursor* cursor) {
-    return reinterpret_cast<Cursor*>(cursor);
-  }
-
-  sqlite3_vtab base_;  // Must be first.
   const TraceStorage* const storage_;
 };
 }  // namespace trace_processor

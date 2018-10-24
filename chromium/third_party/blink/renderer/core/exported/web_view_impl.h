@@ -77,11 +77,9 @@ class CompositorAnimationHost;
 class DevToolsEmulator;
 class Frame;
 class FullscreenController;
-class PageOverlay;
 class PageScaleConstraintsSet;
 class PaintLayerCompositor;
 class UserGestureToken;
-class ValidationMessageClient;
 class WebDevToolsAgentImpl;
 class WebElement;
 class WebInputMethodController;
@@ -187,8 +185,9 @@ class CORE_EXPORT WebViewImpl final : public WebView,
                          double maximum_zoom_level) override;
   float TextZoomFactor() override;
   float SetTextZoomFactor(float) override;
-  bool ZoomToMultipleTargetsRect(const WebRect&) override;
   float PageScaleFactor() const override;
+  float MinimumPageScaleFactor() const override;
+  float MaximumPageScaleFactor() const override;
   void SetDefaultPageScaleLimits(float min_scale, float max_scale) override;
   void SetInitialPageScaleOverride(float) override;
   void SetMaximumLegibleScale(float) override;
@@ -239,8 +238,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   float DefaultMinimumPageScaleFactor() const;
   float DefaultMaximumPageScaleFactor() const;
-  float MinimumPageScaleFactor() const;
-  float MaximumPageScaleFactor() const;
   float ClampPageScaleFactorToLimits(float) const;
   void ResetScaleStateImmediately();
 
@@ -277,8 +274,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // the page is shutting down, but will be valid at all other times.
   Page* GetPage() const { return page_.Get(); }
 
-  // Returns a ValidationMessageClient associated to the Page. This is nullable.
-  ValidationMessageClient* GetValidationMessageClient() const;
   WebDevToolsAgentImpl* MainFrameDevToolsAgentImpl();
 
   DevToolsEmulator* GetDevToolsEmulator() const {
@@ -316,10 +311,10 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   // Indicates two things:
   //   1) This view may have a new layout now.
-  //   2) Calling updateAllLifecyclePhases() is a no-op.
+  //   2) Layout is up-to-date.
   // After calling WebWidget::updateAllLifecyclePhases(), expect to get this
   // notification unless the view did not need a layout.
-  void LayoutUpdated();
+  void MainFrameLayoutUpdated();
   void ResizeAfterLayout();
 
   void DidChangeContentsSize();
@@ -367,10 +362,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
       const GestureEventWithHitTestResults& targeted_tap_event);
   void EnableTapHighlights(HeapVector<Member<Node>>&);
   void AnimateDoubleTapZoom(const IntPoint&);
-
-  void ResolveTapDisambiguation(base::TimeTicks timestamp,
-                                WebPoint tap_viewport_offset,
-                                bool is_long_press) override;
 
   void EnableFakePageScaleAnimationForTesting(bool);
   bool FakeDoubleTapAnimationPendingForTesting() const {
@@ -469,7 +460,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void PropagateZoomFactorToLocalFrameRoots(Frame*, float);
 
   float MaximumLegiblePageScale() const;
-  void RefreshPageScaleFactorAfterLayout();
+  void RefreshPageScaleFactor();
   IntSize ContentsSize() const;
 
   void UpdateICBAndResizeViewport();
@@ -531,7 +522,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void DisablePopupMouseWheelEventListener();
 
   void CancelPagePopup();
-  void UpdatePageOverlays();
 
   float DeviceScaleFactor() const;
 
@@ -631,7 +621,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   scoped_refptr<WebPagePopupImpl> last_hidden_page_popup_;
 
   Persistent<DevToolsEmulator> dev_tools_emulator_;
-  std::unique_ptr<PageOverlay> page_color_overlay_;
 
   // Whether the user can press tab to focus links.
   bool tabs_to_links_;
@@ -649,8 +638,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   bool matches_heuristics_for_gpu_rasterization_;
 
   std::unique_ptr<FullscreenController> fullscreen_controller_;
-
-  WebPoint last_tap_disambiguation_best_candidate_position_;
 
   SkColor base_background_color_;
   bool base_background_color_override_enabled_;

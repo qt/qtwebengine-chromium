@@ -17,13 +17,11 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/keep_ref_until_done.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/memory/aligned_malloc.h"
 #include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/timeutils.h"
 #include "sdk/android/generated_video_jni/jni/VideoFrame_jni.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 #include "sdk/android/src/jni/wrapped_native_i420_buffer.h"
-#include "third_party/libyuv/include/libyuv/scale.h"
 
 namespace webrtc {
 namespace jni {
@@ -122,120 +120,6 @@ int64_t GetJavaVideoFrameTimestampNs(JNIEnv* jni,
                                      const JavaRef<jobject>& j_video_frame) {
   return Java_VideoFrame_getTimestampNs(jni, j_video_frame);
 }
-
-Matrix::Matrix(JNIEnv* jni, const JavaRef<jfloatArray>& a) {
-  RTC_CHECK_EQ(16, jni->GetArrayLength(a.obj()));
-  jni->GetFloatArrayRegion(a.obj(), 0, 16, elem_);
-}
-
-ScopedJavaLocalRef<jfloatArray> Matrix::ToJava(JNIEnv* jni) const {
-  ScopedJavaLocalRef<jfloatArray> matrix(jni, jni->NewFloatArray(16));
-  jni->SetFloatArrayRegion(matrix.obj(), 0, 16, elem_);
-  return matrix;
-}
-
-void Matrix::Rotate(VideoRotation rotation) {
-  // Texture coordinates are in the range 0 to 1. The transformation of the last
-  // row in each rotation matrix is needed for proper translation, e.g, to
-  // mirror x, we don't replace x by -x, but by 1-x.
-  switch (rotation) {
-    case kVideoRotation_0:
-      break;
-    case kVideoRotation_90: {
-      const float ROTATE_90[16] = {elem_[4],
-                                   elem_[5],
-                                   elem_[6],
-                                   elem_[7],
-                                   -elem_[0],
-                                   -elem_[1],
-                                   -elem_[2],
-                                   -elem_[3],
-                                   elem_[8],
-                                   elem_[9],
-                                   elem_[10],
-                                   elem_[11],
-                                   elem_[0] + elem_[12],
-                                   elem_[1] + elem_[13],
-                                   elem_[2] + elem_[14],
-                                   elem_[3] + elem_[15]};
-      memcpy(elem_, ROTATE_90, sizeof(elem_));
-    } break;
-    case kVideoRotation_180: {
-      const float ROTATE_180[16] = {-elem_[0],
-                                    -elem_[1],
-                                    -elem_[2],
-                                    -elem_[3],
-                                    -elem_[4],
-                                    -elem_[5],
-                                    -elem_[6],
-                                    -elem_[7],
-                                    elem_[8],
-                                    elem_[9],
-                                    elem_[10],
-                                    elem_[11],
-                                    elem_[0] + elem_[4] + elem_[12],
-                                    elem_[1] + elem_[5] + elem_[13],
-                                    elem_[2] + elem_[6] + elem_[14],
-                                    elem_[3] + elem_[11] + elem_[15]};
-      memcpy(elem_, ROTATE_180, sizeof(elem_));
-    } break;
-    case kVideoRotation_270: {
-      const float ROTATE_270[16] = {-elem_[4],
-                                    -elem_[5],
-                                    -elem_[6],
-                                    -elem_[7],
-                                    elem_[0],
-                                    elem_[1],
-                                    elem_[2],
-                                    elem_[3],
-                                    elem_[8],
-                                    elem_[9],
-                                    elem_[10],
-                                    elem_[11],
-                                    elem_[4] + elem_[12],
-                                    elem_[5] + elem_[13],
-                                    elem_[6] + elem_[14],
-                                    elem_[7] + elem_[15]};
-      memcpy(elem_, ROTATE_270, sizeof(elem_));
-    } break;
-  }
-}
-
-// Calculates result = a * b, in column-major order.
-void Matrix::Multiply(const float a[16], const float b[16], float result[16]) {
-  for (int i = 0; i < 4; ++i) {
-    for (int j = 0; j < 4; ++j) {
-      float sum = 0;
-      for (int k = 0; k < 4; ++k) {
-        sum += a[k * 4 + j] * b[i * 4 + k];
-      }
-      result[i * 4 + j] = sum;
-    }
-  }
-}
-
-// Center crop by keeping xFraction of the width and yFraction of the height,
-// so e.g. cropping from 640x480 to 640x360 would use
-// xFraction=1, yFraction=360/480.
-void Matrix::Crop(float xFraction,
-                  float yFraction,
-                  float xOffset,
-                  float yOffset) {
-  const float crop_matrix[16] = {xFraction, 0, 0, 0, 0,       yFraction, 0, 0,
-                                 0,         0, 1, 0, xOffset, yOffset,   0, 1};
-  const Matrix old = *this;
-  Multiply(crop_matrix, old.elem_, this->elem_);
-}
-
-NativeHandleImpl::NativeHandleImpl(int id, const Matrix& matrix)
-    : oes_texture_id(id), sampling_matrix(matrix) {}
-
-NativeHandleImpl::NativeHandleImpl(
-    JNIEnv* jni,
-    jint j_oes_texture_id,
-    const JavaRef<jfloatArray>& j_transform_matrix)
-    : oes_texture_id(j_oes_texture_id),
-      sampling_matrix(jni, j_transform_matrix) {}
 
 rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::Adopt(
     JNIEnv* jni,
@@ -342,52 +226,6 @@ ScopedJavaLocalRef<jobject> NativeToJavaVideoFrame(JNIEnv* jni,
 
 void ReleaseJavaVideoFrame(JNIEnv* jni, const JavaRef<jobject>& j_video_frame) {
   Java_VideoFrame_release(jni, j_video_frame);
-}
-
-static void JNI_VideoFrame_CropAndScaleI420(
-    JNIEnv* jni,
-    const JavaParamRef<jclass>&,
-    const JavaParamRef<jobject>& j_src_y,
-    jint src_stride_y,
-    const JavaParamRef<jobject>& j_src_u,
-    jint src_stride_u,
-    const JavaParamRef<jobject>& j_src_v,
-    jint src_stride_v,
-    jint crop_x,
-    jint crop_y,
-    jint crop_width,
-    jint crop_height,
-    const JavaParamRef<jobject>& j_dst_y,
-    jint dst_stride_y,
-    const JavaParamRef<jobject>& j_dst_u,
-    jint dst_stride_u,
-    const JavaParamRef<jobject>& j_dst_v,
-    jint dst_stride_v,
-    jint scale_width,
-    jint scale_height) {
-  uint8_t const* src_y =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_y.obj()));
-  uint8_t const* src_u =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_u.obj()));
-  uint8_t const* src_v =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_v.obj()));
-  uint8_t* dst_y =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_y.obj()));
-  uint8_t* dst_u =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_u.obj()));
-  uint8_t* dst_v =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_v.obj()));
-
-  // Perform cropping using pointer arithmetic.
-  src_y += crop_x + crop_y * src_stride_y;
-  src_u += crop_x / 2 + crop_y / 2 * src_stride_u;
-  src_v += crop_x / 2 + crop_y / 2 * src_stride_v;
-
-  bool ret = libyuv::I420Scale(
-      src_y, src_stride_y, src_u, src_stride_u, src_v, src_stride_v, crop_width,
-      crop_height, dst_y, dst_stride_y, dst_u, dst_stride_u, dst_v,
-      dst_stride_v, scale_width, scale_height, libyuv::kFilterBox);
-  RTC_DCHECK_EQ(ret, 0) << "I420Scale failed";
 }
 
 }  // namespace jni

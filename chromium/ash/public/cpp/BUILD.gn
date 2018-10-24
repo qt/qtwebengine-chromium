@@ -48,6 +48,8 @@ component("cpp") {
     "config.h",
     "default_scale_factor_retriever.cc",
     "default_scale_factor_retriever.h",
+    "frame_utils.cc",
+    "frame_utils.h",
     "immersive/immersive_context.cc",
     "immersive/immersive_context.h",
     "immersive/immersive_focus_watcher.h",
@@ -104,7 +106,7 @@ component("cpp") {
   deps = [
     "//chromeos:power_manager_proto",
     "//components/prefs",
-    "//services/ui/public/interfaces",
+    "//services/ws/public/mojom",
     "//skia/public/interfaces",
     "//ui/aura",
     "//ui/chromeos/strings",

@@ -32,10 +32,9 @@
 
 #include "src/perfetto_cmd/perfetto_cmd_state.pb.h"
 
-#if defined(PERFETTO_OS_ANDROID)
+#if PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD)
 #include "perfetto/base/android_task_runner.h"
-#endif  // defined(PERFETTO_OS_ANDROID)
-
+#endif  // PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD)
 
 namespace perfetto {
 
@@ -43,7 +42,7 @@ namespace perfetto {
 // created by the system by setting setprop persist.traced.enable=1.
 extern const char* kTempDropBoxTraceDir;
 
-#if defined(PERFETTO_OS_ANDROID)
+#if PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD)
 using PlatformTaskRunner = base::AndroidTaskRunner;
 #else
 using PlatformTaskRunner = base::UnixTaskRunner;
@@ -78,7 +77,7 @@ class PerfettoCmd : public Consumer {
   base::ScopedFile ctrl_c_pipe_rd_;
   std::string dropbox_tag_;
   bool did_process_full_trace_ = false;
-  size_t bytes_uploaded_to_dropbox_ = 0;
+  uint64_t bytes_written_ = 0;
 };
 
 }  // namespace perfetto

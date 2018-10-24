@@ -49,6 +49,8 @@ private:
 
     void writeIfStatement(const IfStatement& s) override;
 
+    void writeReturnStatement(const ReturnStatement& s) override;
+
     void writeSwitchStatement(const SwitchStatement& s) override;
 
     void writeFunctionCall(const FunctionCall& c) override;
@@ -66,6 +68,8 @@ private:
 
     void writeVarInitializer(const Variable& var, const Expression& value) override;
 
+    void writeInputVars() override;
+
     void writePrivateVars();
 
     void writePrivateVarValues();
@@ -77,6 +81,8 @@ private:
     void writeSetData(std::vector<const Variable*>& uniforms);
 
     void writeGetKey();
+
+    void writeOnTextureSampler();
 
     void writeClone();
 
@@ -90,6 +96,7 @@ private:
     std::set<int> fWrittenTransformedCoords;
     // if true, we are writing a C++ expression instead of a GLSL expression
     bool fCPPMode = false;
+    bool fInMain = false;
 
     typedef GLSLCodeGenerator INHERITED;
 };

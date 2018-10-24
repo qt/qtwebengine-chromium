@@ -7,17 +7,18 @@
 #ifndef FXJS_XFA_CJX_CERTIFICATE_H_
 #define FXJS_XFA_CJX_CERTIFICATE_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_textnode.h"
 
 class CXFA_Certificate;
 
-class CJX_Certificate : public CJX_TextNode {
+class CJX_Certificate final : public CJX_TextNode {
  public:
   explicit CJX_Certificate(CXFA_Certificate* node);
   ~CJX_Certificate() override;
 
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_CERTIFICATE_H_

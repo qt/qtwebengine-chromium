@@ -46,9 +46,7 @@ class CreateSessionDescriptionObserverAdapter
     completion_handler_ = completionHandler;
   }
 
-  ~CreateSessionDescriptionObserverAdapter() {
-    completion_handler_ = nil;
-  }
+  ~CreateSessionDescriptionObserverAdapter() override { completion_handler_ = nil; }
 
   void OnSuccess(SessionDescriptionInterface *desc) override {
     RTC_DCHECK(completion_handler_);
@@ -86,9 +84,7 @@ class SetSessionDescriptionObserverAdapter :
     completion_handler_ = completionHandler;
   }
 
-  ~SetSessionDescriptionObserverAdapter() {
-    completion_handler_ = nil;
-  }
+  ~SetSessionDescriptionObserverAdapter() override { completion_handler_ = nil; }
 
   void OnSuccess() override {
     RTC_DCHECK(completion_handler_);
@@ -237,6 +233,16 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
     [peer_connection.delegate peerConnection:peer_connection
                               didAddReceiver:rtpReceiver
                                      streams:mediaStreams];
+  }
+}
+
+void PeerConnectionDelegateAdapter::OnRemoveTrack(
+    rtc::scoped_refptr<RtpReceiverInterface> receiver) {
+  RTCPeerConnection *peer_connection = peer_connection_;
+  if ([peer_connection.delegate respondsToSelector:@selector(peerConnection:didRemoveReceiver:)]) {
+    RTCRtpReceiver *rtpReceiver =
+        [[RTCRtpReceiver alloc] initWithFactory:peer_connection.factory nativeRtpReceiver:receiver];
+    [peer_connection.delegate peerConnection:peer_connection didRemoveReceiver:rtpReceiver];
   }
 }
 
@@ -442,7 +448,10 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
   rtc::scoped_refptr<webrtc::CreateSessionDescriptionObserverAdapter>
       observer(new rtc::RefCountedObject
           <webrtc::CreateSessionDescriptionObserverAdapter>(completionHandler));
-  _peerConnection->CreateOffer(observer, constraints.nativeConstraints.get());
+  webrtc::PeerConnectionInterface::RTCOfferAnswerOptions options;
+  CopyConstraintsIntoOfferAnswerOptions(constraints.nativeConstraints.get(), &options);
+
+  _peerConnection->CreateOffer(observer, options);
 }
 
 - (void)answerForConstraints:(RTCMediaConstraints *)constraints
@@ -452,7 +461,10 @@ void PeerConnectionDelegateAdapter::OnAddTrack(
   rtc::scoped_refptr<webrtc::CreateSessionDescriptionObserverAdapter>
       observer(new rtc::RefCountedObject
           <webrtc::CreateSessionDescriptionObserverAdapter>(completionHandler));
-  _peerConnection->CreateAnswer(observer, constraints.nativeConstraints.get());
+  webrtc::PeerConnectionInterface::RTCOfferAnswerOptions options;
+  CopyConstraintsIntoOfferAnswerOptions(constraints.nativeConstraints.get(), &options);
+
+  _peerConnection->CreateAnswer(observer, options);
 }
 
 - (void)setLocalDescription:(RTCSessionDescription *)sdp

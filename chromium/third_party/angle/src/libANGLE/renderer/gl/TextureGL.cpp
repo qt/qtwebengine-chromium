@@ -20,6 +20,7 @@
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
 #include "libANGLE/renderer/gl/FunctionsGL.h"
+#include "libANGLE/renderer/gl/ImageGL.h"
 #include "libANGLE/renderer/gl/StateManagerGL.h"
 #include "libANGLE/renderer/gl/WorkaroundsGL.h"
 #include "libANGLE/renderer/gl/formatutilsgl.h"
@@ -256,6 +257,7 @@ gl::Error TextureGL::setSubImage(const gl::Context *context,
                                  GLenum format,
                                  GLenum type,
                                  const gl::PixelUnpackState &unpack,
+                                 gl::Buffer *unpackBuffer,
                                  const uint8_t *pixels)
 {
     ASSERT(TextureTargetToType(index.getTarget()) == getType());
@@ -263,9 +265,6 @@ gl::Error TextureGL::setSubImage(const gl::Context *context,
     const FunctionsGL *functions     = GetFunctionsGL(context);
     StateManagerGL *stateManager     = GetStateManagerGL(context);
     const WorkaroundsGL &workarounds = GetWorkaroundsGL(context);
-
-    const gl::Buffer *unpackBuffer =
-        context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
 
     nativegl::TexSubImageFormat texSubImageFormat =
         nativegl::GetTexSubImageFormat(functions, workarounds, format, type);
@@ -1030,11 +1029,23 @@ gl::Error TextureGL::setStorageMultisample(const gl::Context *context,
 
     stateManager->bindTexture(getType(), mTextureID);
 
-    ASSERT(size.depth == 1);
-
-    functions->texStorage2DMultisample(ToGLenum(type), samples, texStorageFormat.internalFormat,
-                                       size.width, size.height,
-                                       gl::ConvertToGLBoolean(fixedSampleLocations));
+    if (nativegl::UseTexImage2D(getType()))
+    {
+        ASSERT(size.depth == 1);
+        functions->texStorage2DMultisample(ToGLenum(type), samples, texStorageFormat.internalFormat,
+                                           size.width, size.height,
+                                           gl::ConvertToGLBoolean(fixedSampleLocations));
+    }
+    else if (nativegl::UseTexImage3D(getType()))
+    {
+        functions->texStorage3DMultisample(ToGLenum(type), samples, texStorageFormat.internalFormat,
+                                           size.width, size.height, size.depth,
+                                           gl::ConvertToGLBoolean(fixedSampleLocations));
+    }
+    else
+    {
+        UNREACHABLE();
+    }
 
     setLevelInfo(type, 0, 1, GetLevelInfo(internalFormat, texStorageFormat.internalFormat));
 
@@ -1104,8 +1115,15 @@ gl::Error TextureGL::setEGLImageTarget(const gl::Context *context,
                                        gl::TextureType type,
                                        egl::Image *image)
 {
-    UNIMPLEMENTED();
-    return gl::InternalError();
+    ImageGL *imageGL = GetImplAs<ImageGL>(image);
+
+    GLenum imageNativeInternalFormat = GL_NONE;
+    ANGLE_TRY(imageGL->setTexture2D(context, type, this, &imageNativeInternalFormat));
+
+    setLevelInfo(type, 0, 1,
+                 GetLevelInfo(image->getFormat().info->internalFormat, imageNativeInternalFormat));
+
+    return gl::NoError();
 }
 
 gl::Error TextureGL::syncState(const gl::Context *context, const gl::Texture::DirtyBits &dirtyBits)
@@ -1310,6 +1328,11 @@ void TextureGL::setSwizzle(const gl::Context *context, GLint swizzle[4])
     }
 }
 
+GLenum TextureGL::getNativeInternalFormat(const gl::ImageIndex &index) const
+{
+    return getLevelInfo(index.getTarget(), index.getLevelIndex()).nativeInternalFormat;
+}
+
 void TextureGL::syncTextureStateSwizzle(const FunctionsGL *functions,
                                         GLenum name,
                                         GLenum value,
@@ -1482,11 +1505,6 @@ const LevelInfoGL &TextureGL::getBaseLevelInfo() const
                                    ? gl::kCubeMapTextureTargetMin
                                    : gl::NonCubeTextureTypeToTarget(getType());
     return getLevelInfo(target, effectiveBaseLevel);
-}
-
-GLuint TextureGL::getTextureID() const
-{
-    return mTextureID;
 }
 
 gl::TextureType TextureGL::getType() const

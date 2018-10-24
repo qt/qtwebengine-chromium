@@ -90,7 +90,8 @@ public:
                       const SkPaint& paint) override {
         fTarget->drawPoints(mode, count, pts, fXformer->apply(paint));
     }
-    void onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones, int boneCount,
+
+    void onDrawVerticesObject(const SkVertices* vertices, const SkVertices::Bone bones[], int boneCount,
                               SkBlendMode mode, const SkPaint& paint) override {
         sk_sp<SkVertices> copy;
         if (vertices->hasColors()) {
@@ -121,11 +122,6 @@ public:
                         const SkScalar* xs, SkScalar y,
                         const SkPaint& paint) override {
         fTarget->drawPosTextH(ptr, len, xs, y, fXformer->apply(paint));
-    }
-    void onDrawTextOnPath(const void* ptr, size_t len,
-                          const SkPath& path, const SkMatrix* matrix,
-                          const SkPaint& paint) override {
-        fTarget->drawTextOnPath(ptr, len, path, matrix, fXformer->apply(paint));
     }
     void onDrawTextRSXform(const void* ptr, size_t len,
                            const SkRSXform* xforms, const SkRect* cull,

@@ -8,7 +8,7 @@
 
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
-#include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/cfx_readonlymemorystream.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/xml/cfx_xmldocument.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
@@ -49,11 +49,9 @@ void CheckForSharedFormInternal(CFX_XMLElement* element,
 
   for (auto* child = element->GetFirstChild(); child;
        child = child->GetNextSibling()) {
-    if (child->GetType() != FX_XMLNODE_Element)
-      continue;
-
-    CheckForSharedFormInternal(static_cast<CFX_XMLElement*>(child),
-                               unsupported);
+    CFX_XMLElement* pElement = ToXMLElement(child);
+    if (pElement)
+      CheckForSharedFormInternal(pElement, unsupported);
   }
 }
 
@@ -69,8 +67,7 @@ std::vector<UnsupportedFeature> CPDF_Metadata::CheckForSharedForm() const {
   auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(stream_.Get());
   pAcc->LoadAllDataFiltered();
 
-  auto stream = pdfium::MakeRetain<CFX_MemoryStream>(pAcc->GetData(),
-                                                     pAcc->GetSize(), false);
+  auto stream = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(pAcc->GetSpan());
   CFX_XMLParser parser(stream);
   std::unique_ptr<CFX_XMLDocument> doc = parser.Parse();
   if (!doc)

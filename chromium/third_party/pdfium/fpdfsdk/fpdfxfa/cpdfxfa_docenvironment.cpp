@@ -471,8 +471,7 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
     if (!pArray)
       return;
 
-    int size = pArray->GetCount();
-    for (int i = 1; i < size; i += 2) {
+    for (size_t i = 1; i < pArray->GetCount(); i += 2) {
       const CPDF_Object* pPDFObj = pArray->GetObjectAt(i);
       const CPDF_Object* pPrePDFObj = pArray->GetObjectAt(i - 1);
       if (!pPrePDFObj->IsString())
@@ -497,14 +496,14 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
             fileWrite);
         continue;
       }
-      if (i == size - 1) {
+      if (i == pArray->GetCount() - 1) {
         WideString wPath = WideString::FromUTF16LE(
             reinterpret_cast<const unsigned short*>(bs.c_str()),
             bs.GetLength() / sizeof(unsigned short));
         ByteString bPath = wPath.UTF8Encode();
-        const char* szFormat =
+        static const char kFormat[] =
             "\n<pdf href=\"%s\" xmlns=\"http://ns.adobe.com/xdp/pdf/\"/>";
-        ByteString content = ByteString::Format(szFormat, bPath.c_str());
+        ByteString content = ByteString::Format(kFormat, bPath.c_str());
         fileWrite->WriteBlock(content.c_str(), fileWrite->GetSize(),
                               content.GetLength());
       }
@@ -535,22 +534,19 @@ void CPDFXFA_DocEnvironment::GotoURL(CXFA_FFDoc* hDoc,
 bool CPDFXFA_DocEnvironment::IsValidationsEnabled(CXFA_FFDoc* hDoc) {
   if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetFormFillEnv())
     return false;
-  if (m_pContext->GetFormFillEnv()->GetInterForm()) {
-    return m_pContext->GetFormFillEnv()
-        ->GetInterForm()
-        ->IsXfaValidationsEnabled();
-  }
-  return true;
+
+  auto* interform = m_pContext->GetFormFillEnv()->GetInterForm();
+  return !interform || interform->IsXfaValidationsEnabled();
 }
 
 void CPDFXFA_DocEnvironment::SetValidationsEnabled(CXFA_FFDoc* hDoc,
                                                    bool bEnabled) {
   if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetFormFillEnv())
     return;
-  if (m_pContext->GetFormFillEnv()->GetInterForm()) {
-    m_pContext->GetFormFillEnv()->GetInterForm()->XfaSetValidationsEnabled(
-        bEnabled);
-  }
+
+  auto* interform = m_pContext->GetFormFillEnv()->GetInterForm();
+  if (interform)
+    interform->XfaSetValidationsEnabled(bEnabled);
 }
 
 void CPDFXFA_DocEnvironment::SetFocusWidget(CXFA_FFDoc* hDoc,
@@ -613,6 +609,7 @@ FX_ARGB CPDFXFA_DocEnvironment::GetHighlightColor(CXFA_FFDoc* hDoc) {
       pInterForm->GetHighlightColor(FormFieldType::kXFA));
 }
 
+#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
 bool CPDFXFA_DocEnvironment::NotifySubmit(bool bPrevOrPost) {
   if (bPrevOrPost)
     return OnBeforeNotifySubmit();
@@ -702,6 +699,7 @@ bool CPDFXFA_DocEnvironment::Submit(CXFA_FFDoc* hDoc, CXFA_Submit* submit) {
   NotifySubmit(false);
   return ret;
 }
+#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED
 
 RetainPtr<IFX_SeekableReadStream> CPDFXFA_DocEnvironment::OpenLinkedFile(
     CXFA_FFDoc* hDoc,
@@ -773,8 +771,7 @@ bool CPDFXFA_DocEnvironment::ExportSubmitFile(FPDF_FILEHANDLER* pFileHandler,
     return false;
   }
 
-  int size = pArray->GetCount();
-  for (int i = 1; i < size; i += 2) {
+  for (size_t i = 1; i < pArray->GetCount(); i += 2) {
     const CPDF_Object* pPDFObj = pArray->GetObjectAt(i);
     const CPDF_Object* pPrePDFObj = pArray->GetObjectAt(i - 1);
     if (!pPrePDFObj->IsString())
@@ -901,6 +898,7 @@ bool CPDFXFA_DocEnvironment::MailToInfo(WideString& csURL,
   return true;
 }
 
+#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
 bool CPDFXFA_DocEnvironment::SubmitInternal(CXFA_FFDoc* hDoc,
                                             CXFA_Submit* submit) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
@@ -978,6 +976,7 @@ bool CPDFXFA_DocEnvironment::SubmitInternal(CXFA_FFDoc* hDoc,
   pFormFillEnv->UploadTo(pFileHandler, fileFlag, AsFPDFWideString(&bs));
   return true;
 }
+#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED
 
 bool CPDFXFA_DocEnvironment::SetPropertyInNonXFAGlobalObject(
     CXFA_FFDoc* hDoc,

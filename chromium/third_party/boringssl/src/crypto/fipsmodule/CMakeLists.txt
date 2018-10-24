@@ -1,6 +1,6 @@
 include_directories(../../include)
 
-if (${ARCH} STREQUAL "x86_64")
+if(${ARCH} STREQUAL "x86_64")
   set(
     BCM_ASM_SOURCES
 
@@ -22,7 +22,7 @@ if (${ARCH} STREQUAL "x86_64")
   )
 endif()
 
-if (${ARCH} STREQUAL "x86")
+if(${ARCH} STREQUAL "x86")
   set(
     BCM_ASM_SOURCES
 
@@ -40,7 +40,7 @@ if (${ARCH} STREQUAL "x86")
   )
 endif()
 
-if (${ARCH} STREQUAL "arm")
+if(${ARCH} STREQUAL "arm")
   set(
     BCM_ASM_SOURCES
 
@@ -56,7 +56,7 @@ if (${ARCH} STREQUAL "arm")
   )
 endif()
 
-if (${ARCH} STREQUAL "aarch64")
+if(${ARCH} STREQUAL "aarch64")
   set(
     BCM_ASM_SOURCES
 
@@ -69,7 +69,7 @@ if (${ARCH} STREQUAL "aarch64")
   )
 endif()
 
-if (${ARCH} STREQUAL "ppc64le")
+if(${ARCH} STREQUAL "ppc64le")
   set(
     BCM_ASM_SOURCES
 
@@ -121,6 +121,13 @@ perlasm(x86_64-mont.${ASM_EXT} bn/asm/x86_64-mont.pl)
 perlasm(x86-mont.${ASM_EXT} bn/asm/x86-mont.pl)
 
 if(FIPS_DELOCATE)
+  if(OPENSSL_NO_ASM)
+    # If OPENSSL_NO_ASM was defined then ASM will not have been enabled, but in
+    # FIPS mode we have to have it because the module build requires going via
+    # textual assembly.
+    enable_language(ASM)
+  endif()
+
   add_library(
     bcm_c_generated_asm
 

@@ -166,27 +166,27 @@ private:
 
             fragBuilder->codeAppend("float d = length(circleEdge.xy);");
             fragBuilder->codeAppend("half distanceToOuterEdge = circleEdge.z * (1.0 - d);");
-            fragBuilder->codeAppend("half edgeAlpha = clamp(distanceToOuterEdge, 0.0, 1.0);");
+            fragBuilder->codeAppend("half edgeAlpha = saturate(distanceToOuterEdge);");
             if (cgp.fStroke) {
                 fragBuilder->codeAppend(
                         "half distanceToInnerEdge = circleEdge.z * (d - circleEdge.w);");
-                fragBuilder->codeAppend("half innerAlpha = clamp(distanceToInnerEdge, 0.0, 1.0);");
+                fragBuilder->codeAppend("half innerAlpha = saturate(distanceToInnerEdge);");
                 fragBuilder->codeAppend("edgeAlpha *= innerAlpha;");
             }
 
             if (cgp.fInClipPlane.isInitialized()) {
                 fragBuilder->codeAppend(
-                        "half clip = clamp(circleEdge.z * dot(circleEdge.xy, clipPlane.xy) + "
-                        "clipPlane.z, 0.0, 1.0);");
+                        "half clip = saturate(circleEdge.z * dot(circleEdge.xy, clipPlane.xy) + "
+                        "clipPlane.z);");
                 if (cgp.fInIsectPlane.isInitialized()) {
                     fragBuilder->codeAppend(
-                            "clip *= clamp(circleEdge.z * dot(circleEdge.xy, isectPlane.xy) + "
-                            "isectPlane.z, 0.0, 1.0);");
+                            "clip *= saturate(circleEdge.z * dot(circleEdge.xy, isectPlane.xy) + "
+                            "isectPlane.z);");
                 }
                 if (cgp.fInUnionPlane.isInitialized()) {
                     fragBuilder->codeAppend(
-                            "clip += (1.0 - clip)*clamp(circleEdge.z * dot(circleEdge.xy, "
-                            "unionPlane.xy) + unionPlane.z, 0.0, 1.0);");
+                            "clip = saturate(clip + saturate(circleEdge.z * dot(circleEdge.xy, "
+                            "unionPlane.xy) + unionPlane.z));");
                 }
                 fragBuilder->codeAppend("edgeAlpha *= clip;");
                 if (cgp.fInRoundCapCenters.isInitialized()) {
@@ -403,7 +403,7 @@ private:
                     float linearDist;
                     angleToEdge = clamp(angleToEdge, -3.1415, 3.1415);
                     linearDist = diameter * sin(angleToEdge / 2);
-                    return clamp(linearDist + 0.5, 0, 1);
+                    return saturate(linearDist + 0.5);
             )",
                                       &fnName);
             fragBuilder->codeAppend(R"(
@@ -411,9 +411,9 @@ private:
 
                     // Compute coverage from outer/inner edges of the stroke.
                     half distanceToOuterEdge = circleEdge.z - d;
-                    half edgeAlpha = clamp(distanceToOuterEdge, 0.0, 1.0);
+                    half edgeAlpha = saturate(distanceToOuterEdge);
                     half distanceToInnerEdge = d - circleEdge.z * circleEdge.w;
-                    half innerAlpha = clamp(distanceToInnerEdge, 0.0, 1.0);
+                    half innerAlpha = saturate(distanceToInnerEdge);
                     edgeAlpha *= innerAlpha;
 
                     half angleFromStart = atan(circleEdge.y, circleEdge.x) - dashParams.z;
@@ -597,7 +597,7 @@ private:
             // avoid calling inversesqrt on zero.
             fragBuilder->codeAppend("grad_dot = max(grad_dot, 1.0e-4);");
             fragBuilder->codeAppend("half invlen = inversesqrt(grad_dot);");
-            fragBuilder->codeAppend("half edgeAlpha = clamp(0.5-test*invlen, 0.0, 1.0);");
+            fragBuilder->codeAppend("half edgeAlpha = saturate(0.5-test*invlen);");
 
             // for inner curve
             if (egp.fStroke) {
@@ -606,7 +606,7 @@ private:
                 fragBuilder->codeAppend("test = dot(offset, offset) - 1.0;");
                 fragBuilder->codeAppendf("grad = 2.0*offset*%s.zw;", ellipseRadii.fsIn());
                 fragBuilder->codeAppend("invlen = inversesqrt(dot(grad, grad));");
-                fragBuilder->codeAppend("edgeAlpha *= clamp(0.5+test*invlen, 0.0, 1.0);");
+                fragBuilder->codeAppend("edgeAlpha *= saturate(0.5+test*invlen);");
             }
 
             fragBuilder->codeAppendf("%s = half4(edgeAlpha);", args.fOutputCoverage);
@@ -751,10 +751,10 @@ private:
             fragBuilder->codeAppend("half invlen = inversesqrt(grad_dot);");
             if (DIEllipseStyle::kHairline == diegp.fStyle) {
                 // can probably do this with one step
-                fragBuilder->codeAppend("half edgeAlpha = clamp(1.0-test*invlen, 0.0, 1.0);");
-                fragBuilder->codeAppend("edgeAlpha *= clamp(1.0+test*invlen, 0.0, 1.0);");
+                fragBuilder->codeAppend("half edgeAlpha = saturate(1.0-test*invlen);");
+                fragBuilder->codeAppend("edgeAlpha *= saturate(1.0+test*invlen);");
             } else {
-                fragBuilder->codeAppend("half edgeAlpha = clamp(0.5-test*invlen, 0.0, 1.0);");
+                fragBuilder->codeAppend("half edgeAlpha = saturate(0.5-test*invlen);");
             }
 
             // for inner curve
@@ -768,7 +768,7 @@ private:
                         "             2.0*%s.x*duvdy.x + 2.0*%s.y*duvdy.y);",
                         offsets1.fsIn(), offsets1.fsIn(), offsets1.fsIn(), offsets1.fsIn());
                 fragBuilder->codeAppend("invlen = inversesqrt(dot(grad, grad));");
-                fragBuilder->codeAppend("edgeAlpha *= clamp(0.5+test*invlen, 0.0, 1.0);");
+                fragBuilder->codeAppend("edgeAlpha *= saturate(0.5+test*invlen);");
             }
 
             fragBuilder->codeAppendf("%s = half4(edgeAlpha);", args.fOutputCoverage);
@@ -1035,11 +1035,11 @@ public:
             if (useCenter) {
                 SkVector norm0 = {startPoint.fY, -startPoint.fX};
                 SkVector norm1 = {stopPoint.fY, -stopPoint.fX};
-                if (arcParams->fSweepAngleRadians > 0) {
-                    norm0.negate();
-                } else {
-                    norm1.negate();
+                // This ensures that norm0 is always the clockwise plane, and norm1 is CCW.
+                if (arcParams->fSweepAngleRadians < 0) {
+                    std::swap(norm0, norm1);
                 }
+                norm0.negate();
                 fClipPlane = true;
                 if (absSweep > SK_ScalarPI) {
                     fCircles.emplace_back(Circle{
@@ -1219,51 +1219,73 @@ private:
             SkScalar halfWidth = 0.5f * bounds.width();
             SkScalar octOffset = 0.41421356237f;  // sqrt(2) - 1
 
-            v0->fPos = center + SkPoint::Make(-octOffset * halfWidth, -halfWidth);
+            SkVector geoClipPlane = { 0, 0 };
+            SkScalar offsetClipDist = SK_Scalar1;
+            if (!circle.fStroked && fClipPlane && fClipPlaneIsect &&
+                    (circle.fClipPlane[0] * circle.fIsectPlane[0] +
+                     circle.fClipPlane[1] * circle.fIsectPlane[1]) < 0.0f) {
+                // Acute arc. Clip the vertices to the perpendicular half-plane. We've constructed
+                // fClipPlane to be clockwise, and fISectPlane to be CCW, so we can can rotate them
+                // each 90 degrees to point "out", then average them. We back off by 1/2 pixel so
+                // the AA can extend just past the center of the circle.
+                geoClipPlane.set(circle.fClipPlane[1] - circle.fIsectPlane[1],
+                                 circle.fIsectPlane[0] - circle.fClipPlane[0]);
+                SkAssertResult(geoClipPlane.normalize());
+                offsetClipDist = 0.5f / halfWidth;
+            }
+
+            auto clipOffset = [geoClipPlane, offsetClipDist](const SkPoint& p) {
+                // This clips the normalized offset to the half-plane we computed above. Then we
+                // compute the vertex position from this.
+                SkScalar dist = SkTMin(p.dot(geoClipPlane) + offsetClipDist, 0.0f);
+                return p - geoClipPlane * dist;
+            };
+
+            v0->fOffset = clipOffset(SkPoint::Make(-octOffset, -1));
+            v0->fPos = center + v0->fOffset * halfWidth;
             v0->fColor = color;
-            v0->fOffset = SkPoint::Make(-octOffset, -1);
             v0->fOuterRadius = outerRadius;
             v0->fInnerRadius = innerRadius;
 
-            v1->fPos = center + SkPoint::Make(octOffset * halfWidth, -halfWidth);
+            v1->fOffset = clipOffset(SkPoint::Make(octOffset, -1));
+            v1->fPos = center + v1->fOffset * halfWidth;
             v1->fColor = color;
-            v1->fOffset = SkPoint::Make(octOffset, -1);
             v1->fOuterRadius = outerRadius;
             v1->fInnerRadius = innerRadius;
 
-            v2->fPos = center + SkPoint::Make(halfWidth, -octOffset * halfWidth);
+            v2->fOffset = clipOffset(SkPoint::Make(1, -octOffset));
+            v2->fPos = center + v2->fOffset * halfWidth;
             v2->fColor = color;
-            v2->fOffset = SkPoint::Make(1, -octOffset);
             v2->fOuterRadius = outerRadius;
             v2->fInnerRadius = innerRadius;
 
-            v3->fPos = center + SkPoint::Make(halfWidth, octOffset * halfWidth);
+            v3->fOffset = clipOffset(SkPoint::Make(1, octOffset));
+            v3->fPos = center + v3->fOffset * halfWidth;
             v3->fColor = color;
-            v3->fOffset = SkPoint::Make(1, octOffset);
             v3->fOuterRadius = outerRadius;
             v3->fInnerRadius = innerRadius;
 
-            v4->fPos = center + SkPoint::Make(octOffset * halfWidth, halfWidth);
+            v4->fOffset = clipOffset(SkPoint::Make(octOffset, 1));
+            v4->fPos = center + v4->fOffset * halfWidth;
             v4->fColor = color;
-            v4->fOffset = SkPoint::Make(octOffset, 1);
             v4->fOuterRadius = outerRadius;
             v4->fInnerRadius = innerRadius;
 
-            v5->fPos = center + SkPoint::Make(-octOffset * halfWidth, halfWidth);
+            v5->fOffset = clipOffset(SkPoint::Make(-octOffset, 1));
+            v5->fPos = center + v5->fOffset * halfWidth;
             v5->fColor = color;
-            v5->fOffset = SkPoint::Make(-octOffset, 1);
             v5->fOuterRadius = outerRadius;
             v5->fInnerRadius = innerRadius;
 
-            v6->fPos = center + SkPoint::Make(-halfWidth, octOffset * halfWidth);
+            v6->fOffset = clipOffset(SkPoint::Make(-1, octOffset));
+            v6->fPos = center + v6->fOffset * halfWidth;
             v6->fColor = color;
-            v6->fOffset = SkPoint::Make(-1, octOffset);
             v6->fOuterRadius = outerRadius;
             v6->fInnerRadius = innerRadius;
 
-            v7->fPos = center + SkPoint::Make(-halfWidth, -octOffset * halfWidth);
+            v7->fOffset = clipOffset(SkPoint::Make(-1, -octOffset));
+            v7->fPos = center + v7->fOffset * halfWidth;
             v7->fColor = color;
-            v7->fOffset = SkPoint::Make(-1, -octOffset);
             v7->fOuterRadius = outerRadius;
             v7->fInnerRadius = innerRadius;
 
@@ -1448,29 +1470,29 @@ private:
             vertices += circle_type_to_vert_count(circle.fStroked) * vertexStride;
         }
 
-        GrMesh mesh(GrPrimitiveType::kTriangles);
-        mesh.setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
-                        GrPrimitiveRestart::kNo);
-        mesh.setVertexData(vertexBuffer, firstVertex);
+        GrMesh* mesh = target->allocMesh(GrPrimitiveType::kTriangles);
+        mesh->setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
+                         GrPrimitiveRestart::kNo);
+        mesh->setVertexData(vertexBuffer, firstVertex);
         auto pipe = fHelper.makePipeline(target);
-        target->draw(gp.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
+        target->draw(std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
     }
 
-    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         CircleOp* that = t->cast<CircleOp>();
 
         // can only represent 65535 unique vertices with 16-bit indices
         if (fVertCount + that->fVertCount > 65536) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (fHelper.usesLocalCoords() &&
             !fViewMatrixIfUsingLocalCoords.cheapEqualTo(that->fViewMatrixIfUsingLocalCoords)) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         // Because we've set up the ops that don't use the planes with noop values
@@ -1485,7 +1507,7 @@ private:
         fVertCount += that->fVertCount;
         fIndexCount += that->fIndexCount;
         fAllFill = fAllFill && that->fAllFill;
-        return true;
+        return CombineResult::kMerged;
     }
 
     struct Circle {
@@ -1764,36 +1786,36 @@ private:
             vertices += circle_type_to_vert_count(true) * kVertexStride;
         }
 
-        GrMesh mesh(GrPrimitiveType::kTriangles);
-        mesh.setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
-                        GrPrimitiveRestart::kNo);
-        mesh.setVertexData(vertexBuffer, firstVertex);
+        GrMesh* mesh = target->allocMesh(GrPrimitiveType::kTriangles);
+        mesh->setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
+                         GrPrimitiveRestart::kNo);
+        mesh->setVertexData(vertexBuffer, firstVertex);
         auto pipe = fHelper.makePipeline(target);
-        target->draw(gp.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
+        target->draw(std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
     }
 
-    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         ButtCapDashedCircleOp* that = t->cast<ButtCapDashedCircleOp>();
 
         // can only represent 65535 unique vertices with 16-bit indices
         if (fVertCount + that->fVertCount > 65536) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (fHelper.usesLocalCoords() &&
             !fViewMatrixIfUsingLocalCoords.cheapEqualTo(that->fViewMatrixIfUsingLocalCoords)) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         fCircles.push_back_n(that->fCircles.count(), that->fCircles.begin());
         this->joinBounds(*that);
         fVertCount += that->fVertCount;
         fIndexCount += that->fIndexCount;
-        return true;
+        return CombineResult::kMerged;
     }
 
     struct Circle {
@@ -1962,10 +1984,9 @@ private:
         // Setup geometry processor
         sk_sp<GrGeometryProcessor> gp(new EllipseGeometryProcessor(fStroked, localMatrix));
 
-        QuadHelper helper;
         SkASSERT(sizeof(EllipseVertex) == gp->debugOnly_vertexStride());
-        EllipseVertex* verts = reinterpret_cast<EllipseVertex*>(
-                helper.init(target, sizeof(EllipseVertex), fEllipses.count()));
+        QuadHelper helper(target, sizeof(EllipseVertex), fEllipses.count());
+        EllipseVertex* verts = reinterpret_cast<EllipseVertex*>(helper.vertices());
         if (!verts) {
             return;
         }
@@ -2018,28 +2039,28 @@ private:
             verts += kVerticesPerQuad;
         }
         auto pipe = fHelper.makePipeline(target);
-        helper.recordDraw(target, gp.get(), pipe.fPipeline, pipe.fFixedDynamicState);
+        helper.recordDraw(target, std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState);
     }
 
-    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         EllipseOp* that = t->cast<EllipseOp>();
 
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (fStroked != that->fStroked) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (fHelper.usesLocalCoords() &&
             !fViewMatrixIfUsingLocalCoords.cheapEqualTo(that->fViewMatrixIfUsingLocalCoords)) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         fEllipses.push_back_n(that->fEllipses.count(), that->fEllipses.begin());
         this->joinBounds(*that);
-        return true;
+        return CombineResult::kMerged;
     }
 
     struct Ellipse {
@@ -2197,9 +2218,8 @@ private:
                 new DIEllipseGeometryProcessor(this->viewMatrix(), this->style()));
 
         SkASSERT(sizeof(DIEllipseVertex) == gp->debugOnly_vertexStride());
-        QuadHelper helper;
-        DIEllipseVertex* verts = reinterpret_cast<DIEllipseVertex*>(
-                helper.init(target, sizeof(DIEllipseVertex), fEllipses.count()));
+        QuadHelper helper(target, sizeof(DIEllipseVertex), fEllipses.count());
+        DIEllipseVertex* verts = reinterpret_cast<DIEllipseVertex*>(helper.vertices());
         if (!verts) {
             return;
         }
@@ -2252,27 +2272,27 @@ private:
             verts += kVerticesPerQuad;
         }
         auto pipe = fHelper.makePipeline(target);
-        helper.recordDraw(target, gp.get(), pipe.fPipeline, pipe.fFixedDynamicState);
+        helper.recordDraw(target, std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState);
     }
 
-    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         DIEllipseOp* that = t->cast<DIEllipseOp>();
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (this->style() != that->style()) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         // TODO rewrite to allow positioning on CPU
         if (!this->viewMatrix().cheapEqualTo(that->viewMatrix())) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         fEllipses.push_back_n(that->fEllipses.count(), that->fEllipses.begin());
         this->joinBounds(*that);
-        return true;
+        return CombineResult::kMerged;
     }
 
     const SkMatrix& viewMatrix() const { return fEllipses[0].fViewMatrix; }
@@ -2703,29 +2723,29 @@ private:
             currStartVertex += rrect_type_to_vert_count(rrect.fType);
         }
 
-        GrMesh mesh(GrPrimitiveType::kTriangles);
-        mesh.setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
-                        GrPrimitiveRestart::kNo);
-        mesh.setVertexData(vertexBuffer, firstVertex);
+        GrMesh* mesh = target->allocMesh(GrPrimitiveType::kTriangles);
+        mesh->setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
+                         GrPrimitiveRestart::kNo);
+        mesh->setVertexData(vertexBuffer, firstVertex);
         auto pipe = fHelper.makePipeline(target);
-        target->draw(gp.get(), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
+        target->draw(std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
     }
 
-    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         CircularRRectOp* that = t->cast<CircularRRectOp>();
 
         // can only represent 65535 unique vertices with 16-bit indices
         if (fVertCount + that->fVertCount > 65536) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (fHelper.usesLocalCoords() &&
             !fViewMatrixIfUsingLocalCoords.cheapEqualTo(that->fViewMatrixIfUsingLocalCoords)) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         fRRects.push_back_n(that->fRRects.count(), that->fRRects.begin());
@@ -2733,7 +2753,7 @@ private:
         fVertCount += that->fVertCount;
         fIndexCount += that->fIndexCount;
         fAllFill = fAllFill && that->fAllFill;
-        return true;
+        return CombineResult::kMerged;
     }
 
     struct RRect {
@@ -2905,10 +2925,10 @@ private:
         sk_sp<const GrBuffer> indexBuffer = get_rrect_index_buffer(
                 fStroked ? kStroke_RRectType : kFill_RRectType, target->resourceProvider());
 
-        PatternHelper helper(GrPrimitiveType::kTriangles);
-        EllipseVertex* verts = reinterpret_cast<EllipseVertex*>(
-                helper.init(target, sizeof(EllipseVertex), indexBuffer.get(),
-                            kVertsPerStandardRRect, indicesPerInstance, fRRects.count()));
+        PatternHelper helper(target, GrPrimitiveType::kTriangles, sizeof(EllipseVertex),
+                             indexBuffer.get(), kVertsPerStandardRRect, indicesPerInstance,
+                             fRRects.count());
+        EllipseVertex* verts = reinterpret_cast<EllipseVertex*>(helper.vertices());
         if (!verts || !indexBuffer) {
             SkDebugf("Could not allocate vertices\n");
             return;
@@ -2975,28 +2995,28 @@ private:
             }
         }
         auto pipe = fHelper.makePipeline(target);
-        helper.recordDraw(target, gp.get(), pipe.fPipeline, pipe.fFixedDynamicState);
+        helper.recordDraw(target, std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState);
     }
 
-    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         EllipticalRRectOp* that = t->cast<EllipticalRRectOp>();
 
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (fStroked != that->fStroked) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         if (fHelper.usesLocalCoords() &&
             !fViewMatrixIfUsingLocalCoords.cheapEqualTo(that->fViewMatrixIfUsingLocalCoords)) {
-            return false;
+            return CombineResult::kCannotCombine;
         }
 
         fRRects.push_back_n(that->fRRects.count(), that->fRRects.begin());
         this->joinBounds(*that);
-        return true;
+        return CombineResult::kMerged;
     }
 
     struct RRect {

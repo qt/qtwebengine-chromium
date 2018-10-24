@@ -144,7 +144,7 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
                                 int dest_top,
                                 int width,
                                 int height,
-                                const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                                const RetainPtr<CFX_DIBBase>& pSrcBitmap,
                                 int src_left,
                                 int src_top) {
   if (!pBitmap)
@@ -164,9 +164,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
   if (dest_format == src_format) {
     for (int row = 0; row < height; row++) {
       uint8_t* dest_scan = buffer + (dest_top + row) * pitch + dest_left * Bpp;
-      uint8_t* src_scan =
-          const_cast<uint8_t*>(pSrcBitmap->GetScanline(src_top + row)) +
-          src_left * Bpp;
+      const uint8_t* src_scan =
+          pSrcBitmap->GetScanline(src_top + row) + src_left * Bpp;
       if (Bpp == 4) {
         for (int col = 0; col < width; col++) {
           FXARGB_SETDIB(dest_scan, ArgbEncode(src_scan[3], src_scan[0],
@@ -191,9 +190,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
     ASSERT(src_format == FXDIB_Rgb32);
     for (int row = 0; row < height; row++) {
       uint8_t* dest_scan = dest_buf + row * pitch;
-      uint8_t* src_scan =
-          const_cast<uint8_t*>(pSrcBitmap->GetScanline(src_top + row)) +
-          src_left * 4;
+      const uint8_t* src_scan =
+          pSrcBitmap->GetScanline(src_top + row) + src_left * 4;
       for (int col = 0; col < width; col++) {
         *dest_scan++ = src_scan[2];
         *dest_scan++ = src_scan[1];
@@ -208,9 +206,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
   if (src_format == FXDIB_Rgb) {
     for (int row = 0; row < height; row++) {
       uint8_t* dest_scan = dest_buf + row * pitch;
-      uint8_t* src_scan =
-          const_cast<uint8_t*>(pSrcBitmap->GetScanline(src_top + row)) +
-          src_left * 3;
+      const uint8_t* src_scan =
+          pSrcBitmap->GetScanline(src_top + row) + src_left * 3;
       for (int col = 0; col < width; col++) {
         FXARGB_SETDIB(dest_scan,
                       ArgbEncode(0xff, src_scan[0], src_scan[1], src_scan[2]));
@@ -225,9 +222,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
   ASSERT(dest_format == FXDIB_Argb);
   for (int row = 0; row < height; row++) {
     uint8_t* dest_scan = dest_buf + row * pitch;
-    uint8_t* src_scan =
-        const_cast<uint8_t*>(pSrcBitmap->GetScanline(src_top + row)) +
-        src_left * 4;
+    const uint8_t* src_scan =
+        pSrcBitmap->GetScanline(src_top + row) + src_left * 4;
     for (int col = 0; col < width; col++) {
       FXARGB_SETDIB(dest_scan,
                     ArgbEncode(0xff, src_scan[0], src_scan[1], src_scan[2]));
@@ -1473,7 +1469,7 @@ bool CFX_AggDeviceDriver::GetDIBits(const RetainPtr<CFX_DIBitmap>& pBitmap,
       return true;
 
     pBack->CompositeBitmap(0, 0, pBack->GetWidth(), pBack->GetHeight(),
-                           m_pBitmap, 0, 0);
+                           m_pBitmap, 0, 0, FXDIB_BLEND_NORMAL, nullptr, false);
   } else {
     pBack = m_pBitmap->Clone(&rect);
     if (!pBack)
@@ -1495,7 +1491,7 @@ RetainPtr<CFX_DIBitmap> CFX_AggDeviceDriver::GetBackDrop() {
   return m_pBackdropBitmap;
 }
 
-bool CFX_AggDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBSource>& pBitmap,
+bool CFX_AggDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
                                     uint32_t argb,
                                     const FX_RECT* pSrcRect,
                                     int left,
@@ -1515,7 +1511,7 @@ bool CFX_AggDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBSource>& pBitmap,
       pSrcRect->top, blend_type, m_pClipRgn.get(), m_bRgbByteOrder);
 }
 
-bool CFX_AggDeviceDriver::StretchDIBits(const RetainPtr<CFX_DIBSource>& pSource,
+bool CFX_AggDeviceDriver::StretchDIBits(const RetainPtr<CFX_DIBBase>& pSource,
                                         uint32_t argb,
                                         int dest_left,
                                         int dest_top,
@@ -1549,7 +1545,7 @@ bool CFX_AggDeviceDriver::StretchDIBits(const RetainPtr<CFX_DIBSource>& pSource,
 }
 
 bool CFX_AggDeviceDriver::StartDIBits(
-    const RetainPtr<CFX_DIBSource>& pSource,
+    const RetainPtr<CFX_DIBBase>& pSource,
     int bitmap_alpha,
     uint32_t argb,
     const CFX_Matrix* pMatrix,

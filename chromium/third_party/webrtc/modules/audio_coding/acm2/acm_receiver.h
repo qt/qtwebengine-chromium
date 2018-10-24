@@ -26,7 +26,6 @@
 #include "modules/audio_coding/neteq/include/neteq.h"
 #include "rtc_base/criticalsection.h"
 #include "rtc_base/thread_annotations.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -142,13 +141,6 @@ class AcmReceiver {
   //                           <0 if NetEq returned an error.
   //
   int SetMaximumDelay(int delay_ms);
-
-  //
-  // Get least required delay computed based on channel conditions. Note that
-  // this is before applying any user-defined limits (specified by calling
-  // (SetMinimumDelay() and/or SetMaximumDelay()).
-  //
-  int LeastRequiredDelayMs() const;
 
   //
   // Resets the initial delay to zero.

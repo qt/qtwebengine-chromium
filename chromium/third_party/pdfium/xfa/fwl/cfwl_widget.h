@@ -16,6 +16,7 @@
 #include "xfa/fwl/cfwl_event.h"
 #include "xfa/fwl/cfwl_themepart.h"
 #include "xfa/fwl/cfwl_widgetmgr.h"
+#include "xfa/fwl/cfwl_widgetproperties.h"
 #include "xfa/fwl/fwl_widgethit.h"
 #include "xfa/fwl/ifwl_widgetdelegate.h"
 
@@ -44,7 +45,6 @@ class CFWL_AppImp;
 class CFWL_MessageKey;
 class CFWL_Widget;
 class CFWL_WidgetMgr;
-class CFWL_WidgetProperties;
 class CXFA_FFWidget;
 class IFWL_ThemeProvider;
 
@@ -93,8 +93,10 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   }
 
   CFX_PointF TransformTo(CFWL_Widget* pWidget, const CFX_PointF& point);
-  CFX_Matrix GetMatrix();
-  IFWL_ThemeProvider* GetThemeProvider() const;
+  CFX_Matrix GetMatrix() const;
+  IFWL_ThemeProvider* GetThemeProvider() const {
+    return m_pProperties->m_pThemeProvider.Get();
+  }
 
   void SetDelegate(IFWL_WidgetDelegate* delegate) { m_pDelegate = delegate; }
   IFWL_WidgetDelegate* GetDelegate() {
@@ -122,10 +124,11 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   bool IsEnabled() const;
   bool IsLocked() const { return m_iLock > 0; }
   bool HasBorder() const;
-  CFX_RectF GetEdgeRect();
-  float GetBorderSize(bool bCX);
-  CFX_RectF GetRelativeRect();
-  IFWL_ThemeProvider* GetAvailableTheme();
+  CFX_RectF GetEdgeRect() const;
+  float GetCXBorderSize() const;
+  float GetCYBorderSize() const;
+  CFX_RectF GetRelativeRect() const;
+  IFWL_ThemeProvider* GetAvailableTheme() const;
   CFX_SizeF CalcTextSize(const WideString& wsText,
                          IFWL_ThemeProvider* pTheme,
                          bool bMultiLine);
@@ -150,7 +153,7 @@ class CFWL_Widget : public IFWL_WidgetDelegate {
   int32_t m_iLock;
 
  private:
-  CFWL_Widget* GetParent() { return m_pWidgetMgr->GetParentWidget(this); }
+  CFWL_Widget* GetParent() const { return m_pWidgetMgr->GetParentWidget(this); }
   CFX_SizeF GetOffsetFromParent(CFWL_Widget* pParent);
 
   bool IsVisible() const;

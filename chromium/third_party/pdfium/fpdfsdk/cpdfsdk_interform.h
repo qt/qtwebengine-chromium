@@ -29,7 +29,7 @@ class CPDFSDK_XFAWidget;
 class CXFA_FFWidget;
 #endif  // PDF_ENABLE_XFA
 
-class CPDFSDK_InterForm : public IPDF_FormNotify {
+class CPDFSDK_InterForm final : public IPDF_FormNotify {
  public:
   explicit CPDFSDK_InterForm(CPDFSDK_FormFillEnvironment* pFormFillEnv);
   ~CPDFSDK_InterForm() override;
@@ -67,7 +67,7 @@ class CPDFSDK_InterForm : public IPDF_FormNotify {
 
   bool OnKeyStrokeCommit(CPDF_FormField* pFormField, const WideString& csValue);
   bool OnValidate(CPDF_FormField* pFormField, const WideString& csValue);
-  void OnCalculate(CPDF_FormField* pFormField = nullptr);
+  void OnCalculate(CPDF_FormField* pFormField);
   WideString OnFormat(CPDF_FormField* pFormField, bool& bFormatted);
 
   void ResetFieldAppearance(CPDF_FormField* pFormField,
@@ -111,7 +111,6 @@ class CPDFSDK_InterForm : public IPDF_FormNotify {
   void AfterCheckedStatusChange(CPDF_FormField* pField) override;
   void AfterFormReset(CPDF_InterForm* pForm) override;
 
-  bool FDFToURLEncodedData(uint8_t*& pBuf, size_t& nBufSize);
   int GetPageIndexByAnnotDict(CPDF_Document* pDocument,
                               CPDF_Dictionary* pAnnotDict) const;
 

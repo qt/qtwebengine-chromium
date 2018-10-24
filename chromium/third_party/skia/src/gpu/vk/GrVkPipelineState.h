@@ -25,6 +25,7 @@ class GrVkImageView;
 class GrVkPipeline;
 class GrVkPipelineLayout;
 class GrVkSampler;
+class GrVkTexture;
 class GrVkUniformBuffer;
 
 /**
@@ -55,7 +56,8 @@ public:
 
     ~GrVkPipelineState();
 
-    void setData(GrVkGpu*, const GrPrimitiveProcessor&, const GrPipeline&);
+    void setData(GrVkGpu*, const GrPrimitiveProcessor&, const GrPipeline&,
+                 const GrTextureProxy* const primitiveProcessorTextures[]);
 
     void bind(const GrVkGpu* gpu, GrVkCommandBuffer* commandBuffer);
 
@@ -72,9 +74,11 @@ public:
 private:
     void writeUniformBuffers(const GrVkGpu* gpu);
 
-    void writeSamplers(
-            GrVkGpu* gpu,
-            const SkTArray<const GrResourceIOProcessor::TextureSampler*>& textureBindings);
+    struct SamplerBindings {
+        GrSamplerState fState;
+        GrVkTexture* fTexture;
+    };
+    void writeSamplers(GrVkGpu* gpu, const SamplerBindings[]);
 
     /**
     * We use the RT's size and origin to adjust from Skia device space to vulkan normalized device

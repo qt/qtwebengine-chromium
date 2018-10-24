@@ -113,6 +113,12 @@ bool SkDeferredDisplayListRecorder::init() {
     if (usesGLFBO0) {
         surfaceFlags |= GrInternalSurfaceFlags::kGLRTFBOIDIs0;
     }
+    static constexpr GrProxyProvider::TextureInfo kTextureInfo{GrMipMapped::kNo,
+                                                               GrTextureType::k2D};
+    const GrProxyProvider::TextureInfo* optionalTextureInfo = nullptr;
+    if (fCharacterization.isTextureable()) {
+        optionalTextureInfo = &kTextureInfo;
+    }
 
     sk_sp<GrRenderTargetProxy> proxy = proxyProvider->createLazyRenderTargetProxy(
             [lazyProxyData](GrResourceProvider* resourceProvider) {
@@ -122,14 +128,13 @@ bool SkDeferredDisplayListRecorder::init() {
 
                 // The proxy backing the destination surface had better have been instantiated
                 // prior to the proxy backing the DLL's surface. Steal its GrRenderTarget.
-                SkASSERT(lazyProxyData->fReplayDest->priv().peekSurface());
-                return sk_ref_sp<GrSurface>(lazyProxyData->fReplayDest->priv().peekSurface());
+                SkASSERT(lazyProxyData->fReplayDest->peekSurface());
+                return sk_ref_sp<GrSurface>(lazyProxyData->fReplayDest->peekSurface());
             },
             desc,
             fCharacterization.origin(),
             surfaceFlags,
-            GrProxyProvider::Textureable(fCharacterization.isTextureable()),
-            GrMipMapped::kNo,
+            optionalTextureInfo,
             SkBackingFit::kExact,
             SkBudgeted::kYes);
 

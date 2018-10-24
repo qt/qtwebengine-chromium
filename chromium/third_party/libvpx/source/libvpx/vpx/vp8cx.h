@@ -652,6 +652,14 @@ enum vp8e_enc_control_id {
    * Supported in codecs: VP9
    */
   VP9E_SET_SVC_SPATIAL_LAYER_SYNC,
+
+  /*!\brief Codec control function to enable temporal dependency model.
+   *
+   * Vp9 allows the encoder to run temporal dependency model and use it to
+   * improve the compression performance. To enable, set this parameter to be
+   * 1. The default value is set to be 1.
+   */
+  VP9E_SET_TPL,
 };
 
 /*!\brief vpx 1-D scaling mode
@@ -776,8 +784,10 @@ typedef enum { VP8_TUNE_PSNR, VP8_TUNE_SSIM } vp8e_tuning;
  *
  */
 typedef struct vpx_svc_layer_id {
-  int spatial_layer_id;  /**< Spatial layer id number. */
+  int spatial_layer_id; /**< First spatial layer to start encoding. */
+  // TODO(jianj): Deprecated, to be removed.
   int temporal_layer_id; /**< Temporal layer id number. */
+  int temporal_layer_id_per_spatial[VPX_SS_MAX_LAYERS]; /**< Temp layer id. */
 } vpx_svc_layer_id_t;
 
 /*!\brief vp9 svc frame flag parameters.
@@ -789,12 +799,11 @@ typedef struct vpx_svc_layer_id {
  *
  */
 typedef struct vpx_svc_ref_frame_config {
-  // TODO(jianj/marpan): Remove the usage of frame_flags, instead use the
-  // update and reference flags.
-  int frame_flags[VPX_SS_MAX_LAYERS];       /**< Frame flags. */
-  int lst_fb_idx[VPX_SS_MAX_LAYERS];        /**< Last buffer index. */
-  int gld_fb_idx[VPX_SS_MAX_LAYERS];        /**< Golden buffer index. */
-  int alt_fb_idx[VPX_SS_MAX_LAYERS];        /**< Altref buffer index. */
+  int lst_fb_idx[VPX_SS_MAX_LAYERS];         /**< Last buffer index. */
+  int gld_fb_idx[VPX_SS_MAX_LAYERS];         /**< Golden buffer index. */
+  int alt_fb_idx[VPX_SS_MAX_LAYERS];         /**< Altref buffer index. */
+  int update_buffer_slot[VPX_SS_MAX_LAYERS]; /**< Update reference frames. */
+  // TODO(jianj): Remove update_last/golden/alt_ref, these are deprecated.
   int update_last[VPX_SS_MAX_LAYERS];       /**< Update last. */
   int update_golden[VPX_SS_MAX_LAYERS];     /**< Update golden. */
   int update_alt_ref[VPX_SS_MAX_LAYERS];    /**< Update altref. */
@@ -897,6 +906,9 @@ VPX_CTRL_USE_TYPE(VP9E_SET_TILE_COLUMNS, int)
 #define VPX_CTRL_VP9E_SET_TILE_COLUMNS
 VPX_CTRL_USE_TYPE(VP9E_SET_TILE_ROWS, int)
 #define VPX_CTRL_VP9E_SET_TILE_ROWS
+
+VPX_CTRL_USE_TYPE(VP9E_SET_TPL, int)
+#define VPX_CTRL_VP9E_SET_TPL
 
 VPX_CTRL_USE_TYPE(VP8E_GET_LAST_QUANTIZER, int *)
 #define VPX_CTRL_VP8E_GET_LAST_QUANTIZER

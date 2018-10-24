@@ -10,7 +10,7 @@
 
 #include "DisplayParams.h"
 #include "SkRect.h"
-#include "SkTouchGesture.h"
+#include "SkTDArray.h"
 #include "SkTypes.h"
 
 class GrContext;
@@ -150,6 +150,7 @@ public:
         virtual void onUIStateChanged(const SkString& stateName, const SkString& stateValue) {}
         virtual void onPrePaint() {}
         virtual void onPaint(SkCanvas*) {}
+        virtual void onResize(int width, int height) {}
 
     private:
         friend class Window;
@@ -158,7 +159,7 @@ public:
 
     void pushLayer(Layer* layer) {
         layer->onAttach(this);
-        fLayers.push(layer);
+        fLayers.push_back(layer);
     }
 
     void onBackendCreated();

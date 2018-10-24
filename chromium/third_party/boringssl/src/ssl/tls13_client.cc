@@ -40,6 +40,7 @@ enum client_hs_state_t {
   state_read_certificate_request,
   state_read_server_certificate,
   state_read_server_certificate_verify,
+  state_server_certificate_reverify,
   state_read_server_finished,
   state_send_end_of_early_data,
   state_send_client_certificate,
@@ -328,7 +329,7 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
       return ssl_hs_error;
     }
 
-    if (!ssl_session_is_context_valid(hs, ssl->session)) {
+    if (!ssl_session_is_context_valid(hs, ssl->session.get())) {
       // This is actually a client application bug.
       OPENSSL_PUT_ERROR(SSL,
                         SSL_R_ATTEMPT_TO_REUSE_SESSION_IN_DIFFERENT_CONTEXT);
@@ -338,7 +339,8 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
 
     ssl->s3->session_reused = true;
     // Only authentication information carries over in TLS 1.3.
-    hs->new_session = SSL_SESSION_dup(ssl->session, SSL_SESSION_DUP_AUTH_ONLY);
+    hs->new_session =
+        SSL_SESSION_dup(ssl->session.get(), SSL_SESSION_DUP_AUTH_ONLY);
     if (!hs->new_session) {
       ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
       return ssl_hs_error;
@@ -441,8 +443,7 @@ static enum ssl_hs_wait_t do_read_encrypted_extensions(SSL_HANDSHAKE *hs) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_ALPN_MISMATCH_ON_EARLY_DATA);
       return ssl_hs_error;
     }
-    if (ssl->s3->tlsext_channel_id_valid || hs->received_custom_extension ||
-        ssl->s3->token_binding_negotiated) {
+    if (ssl->s3->channel_id_valid || ssl->s3->token_binding_negotiated) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION_ON_EARLY_DATA);
       return ssl_hs_error;
     }
@@ -464,6 +465,10 @@ static enum ssl_hs_wait_t do_read_certificate_request(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
   // CertificateRequest may only be sent in non-resumption handshakes.
   if (ssl->s3->session_reused) {
+    if (ssl->ctx->reverify_on_resume) {
+      hs->tls13_state = state_server_certificate_reverify;
+      return ssl_hs_ok;
+    }
     hs->tls13_state = state_read_server_finished;
     return ssl_hs_ok;
   }
@@ -585,6 +590,21 @@ static enum ssl_hs_wait_t do_read_server_certificate_verify(
   return ssl_hs_ok;
 }
 
+static enum ssl_hs_wait_t do_server_certificate_reverify(
+    SSL_HANDSHAKE *hs) {
+  switch (ssl_reverify_peer_cert(hs)) {
+    case ssl_verify_ok:
+      break;
+    case ssl_verify_invalid:
+      return ssl_hs_error;
+    case ssl_verify_retry:
+      hs->tls13_state = state_server_certificate_reverify;
+      return ssl_hs_certificate_verify;
+  }
+  hs->tls13_state = state_read_server_finished;
+  return ssl_hs_ok;
+}
+
 static enum ssl_hs_wait_t do_read_server_finished(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
   SSLMessage msg;
@@ -690,13 +710,13 @@ static enum ssl_hs_wait_t do_complete_second_flight(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
 
   // Send a Channel ID assertion if necessary.
-  if (ssl->s3->tlsext_channel_id_valid) {
+  if (ssl->s3->channel_id_valid) {
     if (!ssl_do_channel_id_callback(hs)) {
       hs->tls13_state = state_complete_second_flight;
       return ssl_hs_error;
     }
 
-    if (hs->config->tlsext_channel_id_private == NULL) {
+    if (hs->config->channel_id_private == NULL) {
       return ssl_hs_channel_id_lookup;
     }
 
@@ -754,6 +774,9 @@ enum ssl_hs_wait_t tls13_client_handshake(SSL_HANDSHAKE *hs) {
       case state_read_server_certificate_verify:
         ret = do_read_server_certificate_verify(hs);
         break;
+      case state_server_certificate_reverify:
+        ret = do_server_certificate_reverify(hs);
+        break;
       case state_read_server_finished:
         ret = do_read_server_finished(hs);
         break;
@@ -804,6 +827,8 @@ const char *tls13_client_handshake_state(SSL_HANDSHAKE *hs) {
       return "TLS 1.3 client read_server_certificate";
     case state_read_server_certificate_verify:
       return "TLS 1.3 client read_server_certificate_verify";
+    case state_server_certificate_reverify:
+      return "TLS 1.3 client server_certificate_reverify";
     case state_read_server_finished:
       return "TLS 1.3 client read_server_finished";
     case state_send_end_of_early_data:

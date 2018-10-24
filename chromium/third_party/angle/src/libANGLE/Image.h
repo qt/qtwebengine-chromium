@@ -28,14 +28,15 @@ class ImageImpl;
 namespace egl
 {
 class Image;
+class Display;
 
 // Only currently Renderbuffers and Textures can be bound with images. This makes the relationship
 // explicit, and also ensures that an image sibling can determine if it's been initialized or not,
 // which is important for the robust resource init extension with Textures and EGLImages.
-class ImageSibling : public gl::RefCountObject, public gl::FramebufferAttachmentObject
+class ImageSibling : public gl::FramebufferAttachmentObject
 {
   public:
-    ImageSibling(GLuint id);
+    ImageSibling();
     ~ImageSibling() override;
 
     bool isEGLImageTarget() const;
@@ -59,7 +60,7 @@ class ImageSibling : public gl::RefCountObject, public gl::FramebufferAttachment
     void removeImageSource(egl::Image *imageSource);
 
     std::set<Image *> mSourcesOf;
-    gl::BindingPointer<Image> mTargetOf;
+    BindingPointer<Image> mTargetOf;
 };
 
 struct ImageState : private angle::NonCopyable
@@ -69,30 +70,35 @@ struct ImageState : private angle::NonCopyable
 
     EGLLabelKHR label;
     gl::ImageIndex imageIndex;
-    gl::BindingPointer<ImageSibling> source;
+    ImageSibling *source;
     std::set<ImageSibling *> targets;
+
+    gl::Format format;
+    gl::Extents size;
+    size_t samples;
 };
 
-class Image final : public gl::RefCountObject, public LabeledObject
+class Image final : public RefCountObject, public LabeledObject
 {
   public:
     Image(rx::EGLImplFactory *factory,
+          const gl::Context *context,
           EGLenum target,
           ImageSibling *buffer,
           const AttributeMap &attribs);
 
-    gl::Error onDestroy(const gl::Context *context) override;
+    Error onDestroy(const Display *display) override;
     ~Image() override;
 
     void setLabel(EGLLabelKHR label) override;
     EGLLabelKHR getLabel() const override;
 
-    gl::Format getFormat() const;
+    const gl::Format &getFormat() const;
     size_t getWidth() const;
     size_t getHeight() const;
     size_t getSamples() const;
 
-    Error initialize();
+    Error initialize(const Display *display);
 
     rx::ImageImpl *getImplementation() const;
 

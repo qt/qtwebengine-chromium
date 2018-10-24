@@ -34,7 +34,6 @@
 #include "SkSurface.h"
 #include "SkTaskGroup.h"
 #include "SkTestFontMgr.h"
-#include "SkThreadedBMPDevice.h"
 #include "SkTo.h"
 #include "SvgSlide.h"
 #include "Viewer.h"
@@ -44,9 +43,7 @@
 #include <stdlib.h>
 #include <map>
 
-#if defined(SK_HAS_SKSG)
-    #include "SlideDir.h"
-#endif
+#include "SlideDir.h"
 
 #if defined(SK_ENABLE_SKOTTIE)
     #include "SkottieSlide.h"
@@ -184,6 +181,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     , fZoomWindowFixed(false)
     , fZoomWindowLocation{0.0f, 0.0f}
     , fLastImage(nullptr)
+    , fZoomUI(false)
     , fBackendType(sk_app::Window::kNativeGL_BackendType)
     , fColorMode(ColorMode::kLegacy)
     , fColorSpacePrimaries(gSrgbPrimaries)
@@ -191,11 +189,9 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     , fColorSpaceTransferFn(g2Dot2_TransferFn)
     , fZoomLevel(0.0f)
     , fRotation(0.0f)
-    , fOffset{0.0f, 0.0f}
+    , fOffset{0.5f, 0.5f}
     , fGestureDevice(GestureDevice::kNone)
     , fPerspectiveMode(kPerspective_Off)
-    , fTileCnt(0)
-    , fThreadCnt(0)
 {
     SkGraphics::Init();
 
@@ -325,40 +321,6 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
         }
 #endif
         this->setBackend(newBackend);
-    });
-    fCommands.addCommand('+', "Threaded Backend", "Increase tile count", [this]() {
-        fTileCnt++;
-        if (fThreadCnt == 0) {
-            this->resetExecutor();
-        }
-        this->updateTitle();
-        fWindow->inval();
-    });
-    fCommands.addCommand('-', "Threaded Backend", "Decrease tile count", [this]() {
-        fTileCnt = SkTMax(0, fTileCnt - 1);
-        if (fThreadCnt == 0) {
-            this->resetExecutor();
-        }
-        this->updateTitle();
-        fWindow->inval();
-    });
-    fCommands.addCommand('>', "Threaded Backend", "Increase thread count", [this]() {
-        if (fTileCnt == 0) {
-            return;
-        }
-        fThreadCnt = (fThreadCnt + 1) % fTileCnt;
-        this->resetExecutor();
-        this->updateTitle();
-        fWindow->inval();
-    });
-    fCommands.addCommand('<', "Threaded Backend", "Decrease thread count", [this]() {
-        if (fTileCnt == 0) {
-            return;
-        }
-        fThreadCnt = (fThreadCnt + fTileCnt - 1) % fTileCnt;
-        this->resetExecutor();
-        this->updateTitle();
-        fWindow->inval();
     });
     fCommands.addCommand('K', "IO", "Save slide to SKP", [this]() {
         fSaveToSKP = true;
@@ -517,6 +479,11 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
         this->updateTitle();
         fWindow->inval();
     });
+    fCommands.addCommand('u', "GUI", "Zoom UI", [this]() {
+        fZoomUI = !fZoomUI;
+        fStatsLayer.setDisplayScale(fZoomUI ? 2.0f : 1.0f);
+        fWindow->inval();
+    });
 
     // set up slides
     this->initSlides();
@@ -558,15 +525,17 @@ void Viewer::initSlides() {
                 return sk_make_sp<ImageSlide>(name, path);}
         },
 #if defined(SK_ENABLE_SKOTTIE)
-        { ".json", "skottie-dir", FLAGS_jsons,
+        { ".json", "skottie-dir", FLAGS_lotties,
             [](const SkString& name, const SkString& path) -> sk_sp<Slide> {
                 return sk_make_sp<SkottieSlide>(name, path);}
         },
 #endif
+#if defined(SK_XML)
         { ".svg", "svg-dir", FLAGS_svgs,
             [](const SkString& name, const SkString& path) -> sk_sp<Slide> {
                 return sk_make_sp<SvgSlide>(name, path);}
         },
+#endif
 #if !(defined(SK_BUILD_FOR_WIN) && defined(__clang__))
         { ".nima", "nima-dir", FLAGS_nimas,
             [](const SkString& name, const SkString& path) -> sk_sp<Slide> {
@@ -625,16 +594,12 @@ void Viewer::initSlides() {
 
     // GMs
     int firstGM = fSlides.count();
-    const skiagm::GMRegistry* gms(skiagm::GMRegistry::Head());
-    while (gms) {
-        std::unique_ptr<skiagm::GM> gm(gms->factory()(nullptr));
-
+    for (skiagm::GMFactory gmFactory : skiagm::GMRegistry::Range()) {
+        std::unique_ptr<skiagm::GM> gm(gmFactory(nullptr));
         if (!SkCommandLineFlags::ShouldSkip(FLAGS_match, gm->getName())) {
             sk_sp<Slide> slide(new GMSlide(gm.release()));
             fSlides.push_back(std::move(slide));
         }
-
-        gms = gms->next();
     }
     // reverse gms
     int numGMs = fSlides.count() - firstGM;
@@ -643,13 +608,11 @@ void Viewer::initSlides() {
     }
 
     // samples
-    const SkViewRegister* reg = SkViewRegister::Head();
-    while (reg) {
-        sk_sp<Slide> slide(new SampleSlide(reg->factory()));
+    for (const SampleFactory factory : SampleRegistry::Range()) {
+        sk_sp<Slide> slide(new SampleSlide(factory));
         if (!SkCommandLineFlags::ShouldSkip(FLAGS_match, slide->getName().c_str())) {
             fSlides.push_back(slide);
         }
-        reg = reg->next();
     }
 
     for (const auto& info : gExternalSlidesInfo) {
@@ -665,14 +628,12 @@ void Viewer::initSlides() {
                     addSlide(name, SkOSPath::Join(flag.c_str(), name.c_str()), info.fFactory);
                 }
             }
-#if defined(SK_HAS_SKSG)
             if (!dirSlides.empty()) {
                 fSlides.push_back(
                     sk_make_sp<SlideDir>(SkStringPrintf("%s[%s]", info.fDirName, flag.c_str()),
                                          std::move(dirSlides)));
                 dirSlides.reset();
             }
-#endif
         }
     }
 }
@@ -767,13 +728,6 @@ void Viewer::updateTitle() {
         }
     }
     paintTitle.done();
-
-    if (fTileCnt > 0) {
-        title.appendf(" T%d", fTileCnt);
-        if (fThreadCnt > 0) {
-            title.appendf("/%d", fThreadCnt);
-        }
-    }
 
     switch (fColorMode) {
         case ColorMode::kLegacy:
@@ -957,7 +911,7 @@ SkMatrix Viewer::computePreTouchMatrix() {
     SkMatrix m = fDefaultMatrix;
     SkScalar zoomScale = (fZoomLevel < 0) ? SK_Scalar1 / (SK_Scalar1 - fZoomLevel)
                                           : SK_Scalar1 + fZoomLevel;
-    m.preTranslate(fOffset.x(), fOffset.y());
+    m.preTranslate((fOffset.x() - 0.5f) * 2.0f, (fOffset.y() - 0.5f) * 2.0f);
     m.preScale(zoomScale, zoomScale);
 
     const SkISize slideSize = fSlides[fCurrentSlide]->getDimensions();
@@ -1140,17 +1094,7 @@ void Viewer::drawSlide(SkCanvas* canvas) {
                          ? SkSurface::MakeRaster(info, &props)
                          : canvas->makeSurface(info);
         SkPixmap offscreenPixmap;
-        if (fTileCnt > 0 && offscreenSurface->peekPixels(&offscreenPixmap)) {
-            SkBitmap offscreenBitmap;
-            offscreenBitmap.installPixels(offscreenPixmap);
-            threadedCanvas =
-                skstd::make_unique<SkCanvas>(
-                    sk_make_sp<SkThreadedBMPDevice>(
-                         offscreenBitmap, fTileCnt, fThreadCnt, fExecutor.get()));
-            slideCanvas = threadedCanvas.get();
-        } else {
-            slideCanvas = offscreenSurface->getCanvas();
-        }
+        slideCanvas = offscreenSurface->getCanvas();
     }
 
     std::unique_ptr<SkCanvas> xformCanvas = nullptr;
@@ -1211,6 +1155,12 @@ void Viewer::onPaint(SkCanvas* canvas) {
     this->drawImGui();
 }
 
+void Viewer::onResize(int width, int height) {
+    if (fCurrentSlide >= 0) {
+        fSlides[fCurrentSlide]->resize(width, height);
+    }
+}
+
 SkPoint Viewer::mapEvent(float x, float y) {
     const auto m = this->computeMatrix();
     SkMatrix inv;
@@ -1235,6 +1185,23 @@ bool Viewer::onTouch(intptr_t owner, Window::InputState state, float x, float y)
     switch (state) {
         case Window::kUp_InputState: {
             fGesture.touchEnd(castedOwner);
+#if defined(SK_BUILD_FOR_IOS)
+            // TODO: move IOS swipe detection higher up into the platform code
+            SkPoint dir;
+            if (fGesture.isFling(&dir)) {
+                // swiping left or right
+                if (SkTAbs(dir.fX) > SkTAbs(dir.fY)) {
+                    if (dir.fX < 0) {
+                        this->setCurrentSlide(fCurrentSlide < fSlides.count() - 1 ?
+                                              fCurrentSlide + 1 : 0);
+                    } else {
+                        this->setCurrentSlide(fCurrentSlide > 0 ?
+                                              fCurrentSlide - 1 : fSlides.count() - 1);
+                    }
+                }
+                fGesture.reset();
+            }
+#endif
             break;
         }
         case Window::kDown_InputState: {
@@ -1560,6 +1527,10 @@ void Viewer::drawImGui() {
                         this->preTouchMatrixChanged();
                         paramsChanged = true;
                     }
+                } else if (fOffset != SkVector{0.5f, 0.5f}) {
+                    this->preTouchMatrixChanged();
+                    paramsChanged = true;
+                    fOffset = {0.5f, 0.5f};
                 }
                 int perspectiveMode = static_cast<int>(fPerspectiveMode);
                 if (ImGui::Combo("Perspective", &perspectiveMode, "Off\0Real\0Fake\0\0")) {
@@ -1724,19 +1695,17 @@ void Viewer::drawImGui() {
                         const char* name;
                         SkMetaData::Type type;
                         int count;
-                        bool found = false;
-                        while ((name = iter.next(&type, &count)) != nullptr && found == false) {
+                        while ((name = iter.next(&type, &count)) != nullptr) {
                             if (type == SkMetaData::kScalar_Type) {
                                 float val[3];
                                 SkASSERT(count == 3);
                                 controls.findScalars(name, &count, val);
                                 if (ImGui::SliderFloat(name, &val[0], val[1], val[2])) {
                                     controls.setScalars(name, 3, val);
-                                    fSlides[fCurrentSlide]->onSetControls(controls);
-                                    found = paramsChanged = true;
                                 }
                             }
                         }
+                        fSlides[fCurrentSlide]->onSetControls(controls);
                     }
                 }
             }
@@ -1894,7 +1863,12 @@ void Viewer::onIdle() {
     fStatsLayer.endTiming(fAnimateTimer);
 
     ImGuiIO& io = ImGui::GetIO();
-    if (animateWantsInval || fStatsLayer.getActive() || fRefresh || io.MetricsActiveWindows) {
+    // ImGui always has at least one "active" window, which is the default "Debug" window. It may
+    // not be visible, though. So we need to redraw if there is at least one visible window, or
+    // more than one active window. Newly created windows are active but not visible for one frame
+    // while they determine their layout and sizing.
+    if (animateWantsInval || fStatsLayer.getActive() || fRefresh ||
+        io.MetricsActiveWindows > 1 || io.MetricsRenderWindows > 0) {
         fWindow->inval();
     }
 }

@@ -10,6 +10,7 @@
 #include "GrContext.h"
 #include "GrDeferredProxyUploader.h"
 #include "GrMemoryPool.h"
+#include "GrRenderTargetPriv.h"
 #include "GrSurfaceProxy.h"
 #include "GrTextureProxyPriv.h"
 
@@ -72,7 +73,7 @@ void GrOpList::endFlush() {
 void GrOpList::instantiateDeferredProxies(GrResourceProvider* resourceProvider) {
     for (int i = 0; i < fDeferredProxies.count(); ++i) {
         if (resourceProvider->explicitlyAllocateGPUResources()) {
-            SkASSERT(fDeferredProxies[i]->priv().isInstantiated());
+            SkASSERT(fDeferredProxies[i]->isInstantiated());
         } else {
             fDeferredProxies[i]->instantiate(resourceProvider);
         }
@@ -96,6 +97,9 @@ void GrOpList::addDependency(GrOpList* dependedOn) {
     }
 
     fDependencies.push_back(dependedOn);
+    dependedOn->addDependent(this);
+
+    SkDEBUGCODE(this->validate());
 }
 
 // Convert from a GrSurface-based dependency to a GrOpList one
@@ -134,8 +138,57 @@ bool GrOpList::dependsOn(const GrOpList* dependedOn) const {
     return false;
 }
 
-bool GrOpList::isInstantiated() const {
-    return fTarget.get()->priv().isInstantiated();
+
+void GrOpList::addDependent(GrOpList* dependent) {
+    fDependents.push_back(dependent);
+}
+
+#ifdef SK_DEBUG
+bool GrOpList::isDependedent(const GrOpList* dependent) const {
+    for (int i = 0; i < fDependents.count(); ++i) {
+        if (fDependents[i] == dependent) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void GrOpList::validate() const {
+    // TODO: check for loops and duplicates
+
+    for (int i = 0; i < fDependencies.count(); ++i) {
+        SkASSERT(fDependencies[i]->isDependedent(this));
+    }
+}
+#endif
+
+bool GrOpList::isInstantiated() const { return fTarget.get()->isInstantiated(); }
+
+bool GrOpList::isFullyInstantiated() const {
+    if (!this->isInstantiated()) {
+        return false;
+    }
+
+    GrSurfaceProxy* proxy = fTarget.get();
+    bool needsStencil = proxy->asRenderTargetProxy()
+                                        ? proxy->asRenderTargetProxy()->needsStencil()
+                                        : false;
+
+    if (needsStencil) {
+        GrRenderTarget* rt = proxy->peekRenderTarget();
+
+        if (!rt->renderTargetPriv().getStencilAttachment()) {
+            return false;
+        }
+    }
+
+    GrSurface* surface = proxy->peekSurface();
+    if (surface->wasDestroyed()) {
+        return false;
+    }
+
+    return true;
 }
 
 #ifdef SK_DEBUG
@@ -145,8 +198,11 @@ static const char* op_to_name(GrLoadOp op) {
 
 void GrOpList::dump(bool printDependencies) const {
     SkDebugf("--------------------------------------------------------------\n");
-    SkDebugf("opListID: %d -> proxyID: %d\n", fUniqueID,
-             fTarget.get() ? fTarget.get()->uniqueID().asUInt() : -1);
+    SkDebugf("opListID: %d - proxyID: %d - surfaceID: %d\n", fUniqueID,
+             fTarget.get() ? fTarget.get()->uniqueID().asUInt() : -1,
+             fTarget.get() && fTarget.get()->peekSurface()
+                     ? fTarget.get()->peekSurface()->uniqueID().asUInt()
+                     : -1);
     SkDebugf("ColorLoadOp: %s %x StencilLoadOp: %s\n",
              op_to_name(fColorLoadOp),
              GrLoadOp::kClear == fColorLoadOp ? fLoadClearColor : 0x0,
@@ -156,6 +212,12 @@ void GrOpList::dump(bool printDependencies) const {
         SkDebugf("I rely On (%d): ", fDependencies.count());
         for (int i = 0; i < fDependencies.count(); ++i) {
             SkDebugf("%d, ", fDependencies[i]->fUniqueID);
+        }
+        SkDebugf("\n");
+
+        SkDebugf("(%d) Rely On Me: ", fDependents.count());
+        for (int i = 0; i < fDependents.count(); ++i) {
+            SkDebugf("%d, ", fDependents[i]->fUniqueID);
         }
         SkDebugf("\n");
     }

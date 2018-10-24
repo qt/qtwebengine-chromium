@@ -20,6 +20,8 @@ rtc_static_library("aec3") {
     "aec3_fft.h",
     "aec_state.cc",
     "aec_state.h",
+    "block_delay_buffer.cc",
+    "block_delay_buffer.h",
     "block_framer.cc",
     "block_framer.h",
     "block_processor.cc",
@@ -28,8 +30,6 @@ rtc_static_library("aec3") {
     "block_processor_metrics.h",
     "cascaded_biquad_filter.cc",
     "cascaded_biquad_filter.h",
-    "coherence_gain.cc",
-    "coherence_gain.h",
     "comfort_noise_generator.cc",
     "comfort_noise_generator.h",
     "decimator.cc",
@@ -82,6 +82,10 @@ rtc_static_library("aec3") {
     "render_signal_analyzer.h",
     "residual_echo_estimator.cc",
     "residual_echo_estimator.h",
+    "reverb_decay_estimator.cc",
+    "reverb_decay_estimator.h",
+    "reverb_frequency_response.cc",
+    "reverb_frequency_response.h",
     "reverb_model.cc",
     "reverb_model.h",
     "reverb_model_estimator.cc",
@@ -112,10 +116,14 @@ rtc_static_library("aec3") {
   ]
 
   defines = []
+  if (rtc_build_with_neon && current_cpu != "arm64") {
+    suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
+    cflags = [ "-mfpu=neon" ]
+  }
+
   deps = [
     "..:apm_logging",
     "..:audio_processing",
-    "../../..:typedefs",
     "../../../api:array_view",
     "../../../api/audio:aec3_config",
     "../../../api/audio:echo_control",
@@ -123,6 +131,7 @@ rtc_static_library("aec3") {
     "../../../rtc_base:checks",
     "../../../rtc_base:rtc_base_approved",
     "../../../rtc_base:safe_minmax",
+    "../../../rtc_base/system:arch",
     "../../../system_wrappers:cpu_features_api",
     "../../../system_wrappers:field_trial_api",
     "../../../system_wrappers:metrics_api",
@@ -152,12 +161,12 @@ if (rtc_include_tests) {
       "..:apm_logging",
       "..:audio_processing",
       "..:audio_processing_unittests",
-      "../../..:typedefs",
       "../../../api:array_view",
       "../../../api/audio:aec3_config",
       "../../../rtc_base:checks",
       "../../../rtc_base:rtc_base_approved",
       "../../../rtc_base:safe_minmax",
+      "../../../rtc_base/system:arch",
       "../../../system_wrappers:cpu_features_api",
       "../../../test:test_support",
       "//third_party/abseil-cpp/absl/types:optional",
@@ -170,6 +179,7 @@ if (rtc_include_tests) {
         "adaptive_fir_filter_unittest.cc",
         "aec3_fft_unittest.cc",
         "aec_state_unittest.cc",
+        "block_delay_buffer_unittest.cc",
         "block_framer_unittest.cc",
         "block_processor_metrics_unittest.cc",
         "block_processor_unittest.cc",

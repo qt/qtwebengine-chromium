@@ -152,7 +152,7 @@ inline bool supportsSSE2()
         return supports;
     }
 
-#if defined(ANGLE_PLATFORM_WINDOWS) && !defined(_M_ARM)
+#if defined(ANGLE_PLATFORM_WINDOWS) && !defined(_M_ARM) && !defined(_M_ARM64)
     {
         int info[4];
         __cpuid(info, 0);
@@ -164,7 +164,7 @@ inline bool supportsSSE2()
             supports = (info[3] >> 26) & 1;
         }
     }
-#endif  // defined(ANGLE_PLATFORM_WINDOWS) && !defined(_M_ARM)
+#endif  // defined(ANGLE_PLATFORM_WINDOWS) && !defined(_M_ARM) && !defined(_M_ARM64)
     checked = true;
     return supports;
 #else  // defined(ANGLE_USE_SSE)
@@ -1151,6 +1151,17 @@ inline int32_t WrappingMul(int32_t lhs, int32_t rhs)
     // Casting to a narrower signed type is fine since the casted value is representable in the
     // narrower type.
     return static_cast<int32_t>(resultWide);
+}
+
+inline float scaleScreenDimensionToNdc(float dimensionScreen, float viewportDimension)
+{
+    return 2.0f * dimensionScreen / viewportDimension;
+}
+
+inline float scaleScreenCoordinateToNdc(float coordinateScreen, float viewportDimension)
+{
+    float halfShifted = coordinateScreen / viewportDimension;
+    return 2.0f * (halfShifted - 0.5f);
 }
 
 }  // namespace gl

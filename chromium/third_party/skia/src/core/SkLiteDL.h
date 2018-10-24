@@ -58,7 +58,6 @@ public:
     void drawText       (const void*, size_t, SkScalar, SkScalar, const SkPaint&);
     void drawPosText    (const void*, size_t, const SkPoint[], const SkPaint&);
     void drawPosTextH   (const void*, size_t, const SkScalar[], SkScalar, const SkPaint&);
-    void drawTextOnPath (const void*, size_t, const SkPath&, const SkMatrix*, const SkPaint&);
     void drawTextRSXform(const void*, size_t, const SkRSXform[], const SkRect*, const SkPaint&);
     void drawTextBlob   (const SkTextBlob*, SkScalar,SkScalar, const SkPaint&);
 
@@ -72,7 +71,7 @@ public:
     void drawPatch(const SkPoint[12], const SkColor[4], const SkPoint[4],
                    SkBlendMode, const SkPaint&);
     void drawPoints(SkCanvas::PointMode, size_t, const SkPoint[], const SkPaint&);
-    void drawVertices(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
+    void drawVertices(const SkVertices*, const SkVertices::Bone bones[], int boneCount, SkBlendMode,
                       const SkPaint&);
     void drawAtlas(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[], int,
                    SkBlendMode, const SkRect*, const SkPaint*);

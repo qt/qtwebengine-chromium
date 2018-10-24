@@ -17,17 +17,14 @@
 #define WINDIB_OPEN_MEMORY 0x1
 #define WINDIB_OPEN_PATHNAME 0x2
 
-typedef struct WINDIB_Open_Args_ {
+struct WINDIB_Open_Args_ {
   int flags;
-
   const uint8_t* memory_base;
-
   size_t memory_size;
-
   const wchar_t* path_name;
-} WINDIB_Open_Args_;
+};
 
-class CFX_WindowsDIB : public CFX_DIBitmap {
+class CFX_WindowsDIB final : public CFX_DIBitmap {
  public:
   template <typename T, typename... Args>
   friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);

@@ -42,7 +42,6 @@ ScreenshareLayers::ScreenshareLayers(int num_temporal_layers,
     : clock_(clock),
       number_of_temporal_layers_(
           std::min(kMaxNumTemporalLayers, num_temporal_layers)),
-      last_base_layer_sync_(false),
       active_layer_(-1),
       last_timestamp_(-1),
       last_sync_timestamp_(-1),
@@ -59,6 +58,11 @@ ScreenshareLayers::ScreenshareLayers(int num_temporal_layers,
 
 ScreenshareLayers::~ScreenshareLayers() {
   UpdateHistograms();
+}
+
+bool ScreenshareLayers::SupportsEncoderFrameDropping() const {
+  // Frame dropping is handled internally by this class.
+  return false;
 }
 
 TemporalLayers::FrameConfig ScreenshareLayers::UpdateLayerConfig(
@@ -147,7 +151,8 @@ TemporalLayers::FrameConfig ScreenshareLayers::UpdateLayerConfig(
       break;
     case 1:
       if (layers_[1].state != TemporalLayer::State::kDropped) {
-        if (TimeToSync(unwrapped_timestamp)) {
+        if (TimeToSync(unwrapped_timestamp) ||
+            layers_[1].state == TemporalLayer::State::kKeyFrame) {
           last_sync_timestamp_ = unwrapped_timestamp;
           layer_state = TemporalLayerState::kTl1Sync;
         } else {
@@ -239,7 +244,7 @@ void ScreenshareLayers::OnRatesUpdated(
   layers_[1].target_rate_kbps_ = tl1_kbps;
 }
 
-void ScreenshareLayers::FrameEncoded(unsigned int size, int qp) {
+void ScreenshareLayers::FrameEncoded(uint32_t timestamp, size_t size, int qp) {
   if (size > 0)
     encode_framerate_.Update(1, clock_->TimeInMilliseconds());
 
@@ -290,14 +295,10 @@ void ScreenshareLayers::PopulateCodecSpecific(
       vp8_info->temporalIdx = 0;
       last_sync_timestamp_ = unwrapped_timestamp;
       vp8_info->layerSync = true;
-      active_layer_ = 0;
-    } else if (last_base_layer_sync_ && vp8_info->temporalIdx != 0) {
-      // Regardless of pattern the frame after a base layer sync will always
-      // be a layer sync.
-      last_sync_timestamp_ = unwrapped_timestamp;
-      vp8_info->layerSync = true;
+      layers_[0].state = TemporalLayer::State::kKeyFrame;
+      layers_[1].state = TemporalLayer::State::kKeyFrame;
+      active_layer_ = 1;
     }
-    last_base_layer_sync_ = frame_is_keyframe;
   }
 }
 
@@ -343,6 +344,13 @@ uint32_t ScreenshareLayers::GetCodecTargetBitrateKbps() const {
 }
 
 bool ScreenshareLayers::UpdateConfiguration(Vp8EncoderConfig* cfg) {
+  if (min_qp_ == -1 || max_qp_ == -1) {
+    // Store the valid qp range. This must not change during the lifetime of
+    // this class.
+    min_qp_ = cfg->rc_min_quantizer;
+    max_qp_ = cfg->rc_max_quantizer;
+  }
+
   bool cfg_updated = false;
   uint32_t target_bitrate_kbps = GetCodecTargetBitrateKbps();
 
@@ -363,8 +371,6 @@ bool ScreenshareLayers::UpdateConfiguration(Vp8EncoderConfig* cfg) {
     // Don't reconfigure qp limits during quality boost frames.
     if (active_layer_ == -1 ||
         layers_[active_layer_].state != TemporalLayer::State::kQualityBoost) {
-      min_qp_ = cfg->rc_min_quantizer;
-      max_qp_ = cfg->rc_max_quantizer;
       // After a dropped frame, a frame with max qp will be encoded and the
       // quality will then ramp up from there. To boost the speed of recovery,
       // encode the next frame with lower max qp, if there is sufficient
@@ -407,13 +413,14 @@ bool ScreenshareLayers::UpdateConfiguration(Vp8EncoderConfig* cfg) {
   // If layer is in the quality boost state (following a dropped frame), update
   // the configuration with the adjusted (lower) qp and set the state back to
   // normal.
-  unsigned int adjusted_max_qp;
-  if (layers_[active_layer_].state == TemporalLayer::State::kQualityBoost &&
-      layers_[active_layer_].enhanced_max_qp != -1) {
-    adjusted_max_qp = layers_[active_layer_].enhanced_max_qp;
+  unsigned int adjusted_max_qp = max_qp_;  // Set the normal max qp.
+  if (layers_[active_layer_].state == TemporalLayer::State::kQualityBoost) {
+    if (layers_[active_layer_].enhanced_max_qp != -1) {
+      // Bitrate is high enough for quality boost, update max qp.
+      adjusted_max_qp = layers_[active_layer_].enhanced_max_qp;
+    }
+    // Regardless of qp, reset the boost state for the next frame.
     layers_[active_layer_].state = TemporalLayer::State::kNormal;
-  } else {
-    adjusted_max_qp = max_qp_;  // Set the normal max qp.
   }
 
   if (adjusted_max_qp == cfg->rc_max_quantizer)

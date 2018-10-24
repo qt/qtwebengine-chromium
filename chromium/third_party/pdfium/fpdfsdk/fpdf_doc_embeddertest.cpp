@@ -43,31 +43,26 @@ TEST_F(FPDFDocEmbeddertest, DestGetPageIndex) {
   EXPECT_TRUE(OpenDocument("named_dests.pdf"));
 
   // NULL FPDF_DEST case.
-  EXPECT_EQ(0U, FPDFDest_GetPageIndex(document(), nullptr));
   EXPECT_EQ(-1, FPDFDest_GetDestPageIndex(document(), nullptr));
 
   // Page number directly in item from Dests NameTree.
   FPDF_DEST dest = FPDF_GetNamedDestByName(document(), "First");
   EXPECT_TRUE(dest);
-  EXPECT_EQ(1U, FPDFDest_GetPageIndex(document(), dest));
   EXPECT_EQ(1, FPDFDest_GetDestPageIndex(document(), dest));
 
   // Page number via object reference in item from Dests NameTree.
   dest = FPDF_GetNamedDestByName(document(), "Next");
   EXPECT_TRUE(dest);
-  EXPECT_EQ(1U, FPDFDest_GetPageIndex(document(), dest));
   EXPECT_EQ(1, FPDFDest_GetDestPageIndex(document(), dest));
 
   // Page number directly in item from Dests dictionary.
   dest = FPDF_GetNamedDestByName(document(), "FirstAlternate");
   EXPECT_TRUE(dest);
-  EXPECT_EQ(11U, FPDFDest_GetPageIndex(document(), dest));
   EXPECT_EQ(11, FPDFDest_GetDestPageIndex(document(), dest));
 
   // Invalid object reference in item from Dests NameTree.
   dest = FPDF_GetNamedDestByName(document(), "LastAlternate");
   EXPECT_TRUE(dest);
-  EXPECT_EQ(0U, FPDFDest_GetPageIndex(document(), dest));
   EXPECT_EQ(-1, FPDFDest_GetDestPageIndex(document(), dest));
 }
 
@@ -134,7 +129,6 @@ TEST_F(FPDFDocEmbeddertest, DestGetLocationInPage) {
   EXPECT_TRUE(OpenDocument("named_dests.pdf"));
 
   // NULL FPDF_DEST case.
-  EXPECT_EQ(0U, FPDFDest_GetPageIndex(document(), nullptr));
   EXPECT_EQ(-1, FPDFDest_GetDestPageIndex(document(), nullptr));
 
   FPDF_DEST dest = FPDF_GetNamedDestByName(document(), "First");
@@ -162,8 +156,6 @@ TEST_F(FPDFDocEmbeddertest, BUG_680376) {
   // Page number directly in item from Dests NameTree.
   FPDF_DEST dest = FPDF_GetNamedDestByName(document(), "First");
   EXPECT_TRUE(dest);
-  EXPECT_EQ(static_cast<unsigned long>(-1),
-            FPDFDest_GetPageIndex(document(), dest));
   EXPECT_EQ(-1, FPDFDest_GetDestPageIndex(document(), dest));
 }
 
@@ -356,6 +348,17 @@ TEST_F(FPDFDocEmbeddertest, GetMetaText) {
   ASSERT_EQ(48u, FPDF_GetMetaText(document(), "ModDate", buf, sizeof(buf)));
   EXPECT_EQ(WideString(kExpectedModDate),
             WideString::FromUTF16LE(buf, FXSYS_len(kExpectedModDate)));
+}
+
+TEST_F(FPDFDocEmbeddertest, Bug_182) {
+  ASSERT_TRUE(OpenDocument("bug_182.pdf"));
+
+  unsigned short buf[128];
+  constexpr wchar_t kExpectedTitle[] = L"Super Visual Formade 印刷";
+
+  ASSERT_EQ(48u, FPDF_GetMetaText(document(), "Title", buf, sizeof(buf)));
+  EXPECT_EQ(WideString(kExpectedTitle),
+            WideString::FromUTF16LE(buf, FXSYS_len(kExpectedTitle)));
 }
 
 TEST_F(FPDFDocEmbeddertest, GetMetaTextSameObjectNumber) {

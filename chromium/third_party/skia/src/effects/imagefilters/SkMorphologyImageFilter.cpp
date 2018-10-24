@@ -167,6 +167,8 @@ private:
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
+    const TextureSampler& onTextureSampler(int i) const override { return fTextureSampler; }
+
     GrMorphologyEffect(sk_sp<GrTextureProxy>, Direction, int radius, Type, const float range[2]);
     explicit GrMorphologyEffect(const GrMorphologyEffect&);
 
@@ -276,7 +278,7 @@ void GrGLMorphologyEffect::onSetData(const GrGLSLProgramDataManager& pdman,
                                      const GrFragmentProcessor& proc) {
     const GrMorphologyEffect& m = proc.cast<GrMorphologyEffect>();
     GrSurfaceProxy* proxy = m.textureSampler(0).proxy();
-    GrTexture& texture = *proxy->priv().peekTexture();
+    GrTexture& texture = *proxy->peekTexture();
 
     float pixelSize = 0.0f;
     switch (m.direction()) {
@@ -317,7 +319,7 @@ GrMorphologyEffect::GrMorphologyEffect(sk_sp<GrTextureProxy> proxy,
         , fType(type)
         , fUseRange(SkToBool(range)) {
     this->addCoordTransform(&fCoordTransform);
-    this->addTextureSampler(&fTextureSampler);
+    this->setTextureSamplerCnt(1);
     if (fUseRange) {
         fRange[0] = range[0];
         fRange[1] = range[1];
@@ -333,7 +335,7 @@ GrMorphologyEffect::GrMorphologyEffect(const GrMorphologyEffect& that)
         , fType(that.fType)
         , fUseRange(that.fUseRange) {
     this->addCoordTransform(&fCoordTransform);
-    this->addTextureSampler(&fTextureSampler);
+    this->setTextureSamplerCnt(1);
     if (that.fUseRange) {
         fRange[0] = that.fRange[0];
         fRange[1] = that.fRange[1];

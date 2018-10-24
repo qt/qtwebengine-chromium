@@ -14,6 +14,7 @@
 #include "core/fxge/cfx_renderdevice.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/test_support.h"
+#include "testing/utils/bitmap_saver.h"
 #include "third_party/base/ptr_util.h"
 
 class BarcodeTest : public testing::Test {
@@ -44,8 +45,6 @@ class BarcodeTest : public testing::Test {
     if (!barcode_)
       return false;
 
-    barcode_->SetModuleHeight(300);
-    barcode_->SetModuleWidth(420);
     barcode_->SetHeight(298);
     barcode_->SetWidth(418);
     return true;
@@ -58,6 +57,11 @@ class BarcodeTest : public testing::Test {
   std::string BitmapChecksum() {
     return GenerateMD5Base16(bitmap_->GetBuffer(),
                              bitmap_->GetPitch() * bitmap_->GetHeight());
+  }
+
+  // Manually insert calls to this as needed for debugging.
+  void SaveBitmap(const std::string& filename) {
+    BitmapSaver::WriteBitmapToPng(bitmap_.Get(), filename);
   }
 
  protected:
@@ -127,7 +131,7 @@ TEST_F(BarcodeTest, Pdf417) {
   EXPECT_TRUE(Create(BC_PDF417));
   EXPECT_TRUE(barcode()->Encode(L"clams"));
   RenderDevice();
-  EXPECT_EQ("2bdb9b39f20c5763da6a0d7c7b1f6933", BitmapChecksum());
+  EXPECT_EQ("191e35d11613901b7d5d51033689aa89", BitmapChecksum());
 }
 
 TEST_F(BarcodeTest, DataMatrix) {

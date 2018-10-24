@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8.11)
+cmake_minimum_required(VERSION 2.8.11)
 
 # Report AppleClang separately from Clang. Their version numbers are different.
 # https://cmake.org/cmake/help/v3.0/policy/CMP0025.html
@@ -7,7 +7,7 @@ if(POLICY CMP0025)
 endif()
 
 # Defer enabling C and CXX languages.
-project (BoringSSL NONE)
+project(BoringSSL NONE)
 
 if(WIN32)
   # On Windows, prefer cl over gcc if both are available. By default most of
@@ -34,11 +34,14 @@ else()
   find_program(GO_EXECUTABLE go)
 endif()
 
-if (NOT GO_EXECUTABLE)
+if(NOT GO_EXECUTABLE)
   message(FATAL_ERROR "Could not find Go")
 endif()
 
-if (BORINGSSL_ALLOW_CXX_RUNTIME)
+if(USE_CUSTOM_LIBCXX)
+  set(BORINGSSL_ALLOW_CXX_RUNTIME 1)
+endif()
+if(BORINGSSL_ALLOW_CXX_RUNTIME)
   add_definitions(-DBORINGSSL_ALLOW_CXX_RUNTIME)
 endif()
 
@@ -174,9 +177,8 @@ if(WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
   # VS 2017 and higher supports STL-only warning suppressions. Manually add to
   # C++ only to work around a CMake quoting bug when using NASM with the Visual
-  # Studio generator.
-  #
-  # TODO(davidben): Send a patch to CMake and link to it here.
+  # Studio generator. This will be fixed in CMake 3.13.0. See
+  # https://gitlab.kitware.com/cmake/cmake/merge_requests/2179
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-D_STL_EXTRA_DISABLED_WARNINGS=4774\ 4987>)
 endif()
 
@@ -187,7 +189,7 @@ if((CMAKE_COMPILER_IS_GNUCXX AND CMAKE_C_COMPILER_VERSION VERSION_GREATER "4.7.9
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX)
-  if ((CMAKE_C_COMPILER_VERSION VERSION_GREATER "4.8.99") OR CLANG)
+  if((CMAKE_C_COMPILER_VERSION VERSION_GREATER "4.8.99") OR CLANG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11")
   else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
@@ -220,19 +222,19 @@ endif()
 
 add_definitions(-DBORINGSSL_IMPLEMENTATION)
 
-if (BUILD_SHARED_LIBS)
+if(BUILD_SHARED_LIBS)
   add_definitions(-DBORINGSSL_SHARED_LIBRARY)
   # Enable position-independent code globally. This is needed because
   # some library targets are OBJECT libraries.
   set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 endif()
 
-if (MSAN)
+if(MSAN)
   if(NOT CLANG)
     message(FATAL_ERROR "Cannot enable MSAN unless using Clang")
   endif()
 
-  if (ASAN)
+  if(ASAN)
     message(FATAL_ERROR "ASAN and MSAN are mutually exclusive")
   endif()
 
@@ -241,7 +243,7 @@ if (MSAN)
   set(OPENSSL_NO_ASM "1")
 endif()
 
-if (ASAN)
+if(ASAN)
   if(NOT CLANG)
     message(FATAL_ERROR "Cannot enable ASAN unless using Clang")
   endif()
@@ -257,8 +259,8 @@ if(CFI)
   endif()
 
   # TODO(crbug.com/785442): Remove -fsanitize-cfi-icall-generalize-pointers.
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=cfi -fno-sanitize-trap=cfi -fsanitize-cfi-icall-generalize-pointers -flto")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=cfi -fno-sanitize-trap=cfi -fsanitize-cfi-icall-generalize-pointers -flto")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=cfi -fno-sanitize-trap=cfi -fsanitize-cfi-icall-generalize-pointers -flto=thin")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=cfi -fno-sanitize-trap=cfi -fsanitize-cfi-icall-generalize-pointers -flto=thin")
   # We use Chromium's copy of clang, which requires -fuse-ld=lld if building
   # with -flto. That, in turn, can't handle -ggdb.
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
@@ -269,7 +271,17 @@ if(CFI)
   set(OPENSSL_NO_ASM "1")
 endif()
 
-if (GCOV)
+if(TSAN)
+  if(NOT CLANG)
+    message(FATAL_ERROR "Cannot enable TSAN unless using Clang")
+  endif()
+
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
+endif()
+
+if(GCOV)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
 endif()
@@ -295,61 +307,116 @@ endif()
 # the source files rather than the build. This does not work for our assembly
 # files, so we fix CMAKE_SYSTEM_PROCESSOR and only support single-architecture
 # builds.
-if (NOT OPENSSL_NO_ASM AND CMAKE_OSX_ARCHITECTURES)
+if(NOT OPENSSL_NO_ASM AND CMAKE_OSX_ARCHITECTURES)
   list(LENGTH CMAKE_OSX_ARCHITECTURES NUM_ARCHES)
-  if (NOT ${NUM_ARCHES} EQUAL 1)
+  if(NOT ${NUM_ARCHES} EQUAL 1)
     message(FATAL_ERROR "Universal binaries not supported.")
   endif()
   list(GET CMAKE_OSX_ARCHITECTURES 0 CMAKE_SYSTEM_PROCESSOR)
 endif()
 
-if (OPENSSL_NO_ASM)
+if(OPENSSL_NO_ASM)
   add_definitions(-DOPENSSL_NO_ASM)
   set(ARCH "generic")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
   set(ARCH "x86_64")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "amd64")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "amd64")
   set(ARCH "x86_64")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64")
   # cmake reports AMD64 on Windows, but we might be building for 32-bit.
-  if (CMAKE_CL_64)
+  if(CMAKE_CL_64)
     set(ARCH "x86_64")
   else()
     set(ARCH "x86")
   endif()
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86")
   set(ARCH "x86")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i386")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i386")
   set(ARCH "x86")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i686")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i686")
   set(ARCH "x86")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
   set(ARCH "aarch64")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
   set(ARCH "aarch64")
-elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "^arm*")
+elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "^arm*")
   set(ARCH "arm")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips")
   # Just to avoid the “unknown processor” error.
   set(ARCH "generic")
-elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ppc64le")
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ppc64le")
   set(ARCH "ppc64le")
 else()
   message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
 endif()
 
-if (ANDROID AND NOT ANDROID_NDK_REVISION AND ${ARCH} STREQUAL "arm")
+if(ANDROID AND NOT ANDROID_NDK_REVISION AND ${ARCH} STREQUAL "arm")
   # The third-party Android-NDK CMake files somehow fail to set the -march flag
   # for assembly files. Without this flag, the compiler believes that it's
   # building for ARMv5.
   set(CMAKE_ASM_FLAGS "-march=${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_ASM_FLAGS}")
 endif()
 
-if (${ARCH} STREQUAL "x86" AND APPLE AND ${CMAKE_VERSION} VERSION_LESS "3.0")
+if(${ARCH} STREQUAL "x86" AND APPLE AND ${CMAKE_VERSION} VERSION_LESS "3.0")
   # With CMake 2.8.x, ${CMAKE_SYSTEM_PROCESSOR} evalutes to i386 on OS X,
   # but clang defaults to 64-bit builds on OS X unless otherwise told.
   # Set ARCH to x86_64 so clang and CMake agree. This is fixed in CMake 3.
   set(ARCH "x86_64")
+endif()
+
+if(USE_CUSTOM_LIBCXX)
+  if(NOT CLANG)
+    message(FATAL_ERROR "USE_CUSTOM_LIBCXX only supported with Clang")
+  endif()
+
+  # CMAKE_CXX_FLAGS ends up in the linker flags as well, so use
+  # add_compile_options. There does not appear to be a way to set
+  # language-specific compile-only flags.
+  add_compile_options("-nostdinc++")
+  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -nostdlib++")
+  include_directories(
+    SYSTEM
+    util/bot/libcxx/include
+    util/bot/libcxxabi/include
+  )
+
+  # This is patterned after buildtools/third_party/libc++/BUILD.gn and
+  # buildtools/third_party/libc++abi/BUILD.gn in Chromium.
+
+  file(GLOB LIBCXX_SOURCES "util/bot/libcxx/src/*.cpp")
+  file(GLOB LIBCXXABI_SOURCES "util/bot/libcxxabi/src/*.cpp")
+
+  # This file is meant for exception-less builds.
+  list(REMOVE_ITEM LIBCXXABI_SOURCES "trunk/src/cxa_noexception.cpp")
+  # libc++ also defines new and delete.
+  list(REMOVE_ITEM LIBCXXABI_SOURCES "trunk/src/stdlib_new_delete.cpp")
+  if(TSAN)
+    # ThreadSanitizer tries to intercept these symbols. Skip them to avoid
+    # symbol conflicts.
+    list(REMOVE_ITEM LIBCXXABI_SOURCES "trunk/src/cxa_guard.cpp")
+  endif()
+
+  add_library(libcxxabi ${LIBCXXABI_SOURCES})
+  target_compile_definitions(
+    libcxxabi PRIVATE
+    -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS
+  )
+  set_target_properties(libcxxabi PROPERTIES COMPILE_FLAGS "-Wno-missing-prototypes -Wno-implicit-fallthrough")
+
+  add_library(libcxx ${LIBCXX_SOURCES})
+  if(ASAN OR MSAN OR TSAN)
+    # Sanitizers try to intercept new and delete.
+    target_compile_definitions(
+      libcxx PRIVATE
+      -D_LIBCPP_DISABLE_NEW_DELETE_DEFINITIONS
+    )
+  endif()
+  target_compile_definitions(
+    libcxx PRIVATE
+    -D_LIBCPP_BUILDING_LIBRARY
+    -DLIBCXX_BUILDING_LIBCXXABI
+  )
+  target_link_libraries(libcxx libcxxabi)
 endif()
 
 # Add minimal googletest targets. The provided one has many side-effects, and
@@ -392,9 +459,13 @@ if(FUZZ)
   add_subdirectory(fuzz)
 endif()
 
-if (NOT ${CMAKE_VERSION} VERSION_LESS "3.2")
+if(NOT ${CMAKE_VERSION} VERSION_LESS "3.2")
   # USES_TERMINAL is only available in CMake 3.2 or later.
   set(MAYBE_USES_TERMINAL USES_TERMINAL)
+endif()
+
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+  set(HANDSHAKER_ARGS "-handshaker-path" $<TARGET_FILE:handshaker>)
 endif()
 
 add_custom_target(
@@ -403,7 +474,7 @@ add_custom_target(
             ${CMAKE_BINARY_DIR}
     COMMAND cd ssl/test/runner &&
             ${GO_EXECUTABLE} test -shim-path $<TARGET_FILE:bssl_shim>
-              ${RUNNER_ARGS}
+              ${HANDSHAKER_ARGS} ${RUNNER_ARGS}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    DEPENDS all_tests bssl_shim
+    DEPENDS all_tests bssl_shim handshaker
     ${MAYBE_USES_TERMINAL})

@@ -7,17 +7,18 @@
 #ifndef FXJS_XFA_CJX_SETPROPERTY_H_
 #define FXJS_XFA_CJX_SETPROPERTY_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
 
 class CXFA_SetProperty;
 
-class CJX_SetProperty : public CJX_Node {
+class CJX_SetProperty final : public CJX_Node {
  public:
   explicit CJX_SetProperty(CXFA_SetProperty* node);
   ~CJX_SetProperty() override;
 
-  JS_PROP(connection);
-  JS_PROP(target);
+  JSE_PROP(connection);
+  JSE_PROP(target);
 };
 
 #endif  // FXJS_XFA_CJX_SETPROPERTY_H_

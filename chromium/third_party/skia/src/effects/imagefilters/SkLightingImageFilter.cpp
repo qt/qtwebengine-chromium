@@ -613,6 +613,8 @@ protected:
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
 private:
+    const TextureSampler& onTextureSampler(int) const override { return fTextureSampler; }
+
     GrCoordTransform fCoordTransform;
     GrTextureDomain fDomain;
     TextureSampler fTextureSampler;
@@ -1696,7 +1698,7 @@ GrLightingEffect::GrLightingEffect(ClassID classID,
         , fFilterMatrix(matrix)
         , fBoundaryMode(boundaryMode) {
     this->addCoordTransform(&fCoordTransform);
-    this->addTextureSampler(&fTextureSampler);
+    this->setTextureSamplerCnt(1);
 }
 
 GrLightingEffect::GrLightingEffect(const GrLightingEffect& that)
@@ -1709,7 +1711,7 @@ GrLightingEffect::GrLightingEffect(const GrLightingEffect& that)
         , fFilterMatrix(that.fFilterMatrix)
         , fBoundaryMode(that.fBoundaryMode) {
     this->addCoordTransform(&fCoordTransform);
-    this->addTextureSampler(&fTextureSampler);
+    this->setTextureSamplerCnt(1);
 }
 
 bool GrLightingEffect::onIsEqual(const GrFragmentProcessor& sBase) const {
@@ -1915,7 +1917,7 @@ void GrGLLightingEffect::onSetData(const GrGLSLProgramDataManager& pdman,
     }
 
     GrTextureProxy* proxy = lighting.textureSampler(0).proxy();
-    GrTexture* texture = proxy->priv().peekTexture();
+    GrTexture* texture = proxy->peekTexture();
 
     float ySign = proxy->origin() == kTopLeft_GrSurfaceOrigin ? -1.0f : 1.0f;
     pdman.set2f(fImageIncrementUni, 1.0f / texture->width(), ySign / texture->height());
@@ -1943,7 +1945,7 @@ void GrGLDiffuseLightingEffect::emitLightFunc(GrGLSLUniformHandler* uniformHandl
     };
     SkString lightBody;
     lightBody.appendf("\thalf colorScale = %s * dot(normal, surfaceToLight);\n", kd);
-    lightBody.appendf("\treturn half4(lightColor * clamp(colorScale, 0.0, 1.0), 1.0);\n");
+    lightBody.appendf("\treturn half4(lightColor * saturate(colorScale), 1.0);\n");
     fragBuilder->emitFunction(kHalf4_GrSLType,
                               "light",
                               SK_ARRAY_COUNT(gLightArgs),
@@ -2041,7 +2043,7 @@ void GrGLSpecularLightingEffect::emitLightFunc(GrGLSLUniformHandler* uniformHand
     lightBody.appendf("\thalf3 halfDir = half3(normalize(surfaceToLight + half3(0, 0, 1)));\n");
     lightBody.appendf("\tfloat colorScale = %s * pow(dot(normal, halfDir), %s);\n",
                       ks, shininess);
-    lightBody.appendf("\thalf3 color = lightColor * clamp(colorScale, 0.0, 1.0);\n");
+    lightBody.appendf("\thalf3 color = lightColor * saturate(colorScale);\n");
     lightBody.appendf("\treturn half4(color, max(max(color.r, color.g), color.b));\n");
     fragBuilder->emitFunction(kHalf4_GrSLType,
                               "light",

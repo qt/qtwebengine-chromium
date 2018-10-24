@@ -13,7 +13,7 @@
 #include "core/fxcrt/xml/cfx_xmltext.h"
 #include "fxjs/cfxjse_engine.h"
 #include "fxjs/cfxjse_value.h"
-#include "fxjs/cjs_return.h"
+#include "fxjs/cjs_result.h"
 #include "fxjs/xfa/cjx_boolean.h"
 #include "fxjs/xfa/cjx_draw.h"
 #include "fxjs/xfa/cjx_field.h"
@@ -166,21 +166,20 @@ bool CJX_Object::HasMethod(const WideString& func) const {
   return pdfium::ContainsKey(method_specs_, func.UTF8Encode());
 }
 
-CJS_Return CJX_Object::RunMethod(
+CJS_Result CJX_Object::RunMethod(
     const WideString& func,
     const std::vector<v8::Local<v8::Value>>& params) {
   auto it = method_specs_.find(func.UTF8Encode());
   if (it == method_specs_.end())
-    return CJS_Return(JSMessage::kUnknownMethod);
+    return CJS_Result::Failure(JSMessage::kUnknownMethod);
 
   return it->second(this, GetXFAObject()->GetDocument()->GetScriptContext(),
                     params);
 }
 
 void CJX_Object::ThrowTooManyOccurancesException(const WideString& obj) const {
-  ThrowException(
-      L"The element [%ls] has violated its allowable number of occurrences.",
-      obj.c_str());
+  ThrowException(L"The element [" + obj +
+                 L"] has violated its allowable number of occurrences.");
 }
 
 void CJX_Object::ThrowInvalidPropertyException() const {
@@ -193,22 +192,17 @@ void CJX_Object::ThrowIndexOutOfBoundsException() const {
 
 void CJX_Object::ThrowParamCountMismatchException(
     const WideString& method) const {
-  ThrowException(L"Incorrect number of parameters calling method '%.16s'.",
-                 method.c_str());
+  ThrowException(L"Incorrect number of parameters calling method '" + method +
+                 L"'.");
 }
 
 void CJX_Object::ThrowArgumentMismatchException() const {
   ThrowException(L"Argument mismatch in property or function argument.");
 }
 
-void CJX_Object::ThrowException(const wchar_t* str, ...) const {
-  va_list arg_ptr;
-  va_start(arg_ptr, str);
-  WideString wsMessage = WideString::FormatV(str, arg_ptr);
-  va_end(arg_ptr);
-
-  ASSERT(!wsMessage.IsEmpty());
-  FXJSE_ThrowMessage(wsMessage.UTF8Encode().AsStringView());
+void CJX_Object::ThrowException(const WideString& str) const {
+  ASSERT(!str.IsEmpty());
+  FXJSE_ThrowMessage(str.UTF8Encode().AsStringView());
 }
 
 bool CJX_Object::HasAttribute(XFA_Attribute eAttr) {
@@ -480,13 +474,11 @@ void CJX_Object::SetCData(XFA_Attribute eAttr,
     return;
   }
 
-  auto* elem = static_cast<CFX_XMLElement*>(xfaObj->GetXMLMappingNode());
-  ASSERT(elem->GetType() == FX_XMLNODE_Element);
-
   WideString wsAttrName = CXFA_Node::AttributeToName(eAttr);
   if (eAttr == XFA_Attribute::ContentType)
     wsAttrName = L"xfa:" + wsAttrName;
 
+  CFX_XMLElement* elem = ToXMLElement(xfaObj->GetXMLMappingNode());
   elem->SetAttribute(wsAttrName, wsValue);
   return;
 }
@@ -544,14 +536,10 @@ CFX_XMLElement* CJX_Object::SetValue(XFA_Attribute eAttr,
   OnChanging(eAttr, bNotify);
   SetMapModuleValue(pKey, pValue);
   OnChanged(eAttr, bNotify, false);
-  if (!ToNode(GetXFAObject())->IsNeedSavingXMLNode())
-    return nullptr;
 
-  auto* elem =
-      static_cast<CFX_XMLElement*>(ToNode(GetXFAObject())->GetXMLMappingNode());
-  ASSERT(elem->GetType() == FX_XMLNODE_Element);
-
-  return elem;
+  CXFA_Node* pNode = ToNode(GetXFAObject());
+  return pNode->IsNeedSavingXMLNode() ? ToXMLElement(pNode->GetXMLMappingNode())
+                                      : nullptr;
 }
 
 void CJX_Object::SetContent(const WideString& wsContent,
@@ -812,30 +800,31 @@ Optional<WideString> CJX_Object::TryNamespace() {
   if (ToNode(GetXFAObject())->IsModelNode() ||
       ToNode(GetXFAObject())->GetElementType() == XFA_Element::Packet) {
     CFX_XMLNode* pXMLNode = ToNode(GetXFAObject())->GetXMLMappingNode();
-    if (!pXMLNode || pXMLNode->GetType() != FX_XMLNODE_Element)
+    CFX_XMLElement* element = ToXMLElement(pXMLNode);
+    if (!element)
       return {};
 
-    return {static_cast<CFX_XMLElement*>(pXMLNode)->GetNamespaceURI()};
+    return {element->GetNamespaceURI()};
   }
 
   if (ToNode(GetXFAObject())->GetPacketType() != XFA_PacketType::Datasets)
     return ToNode(GetXFAObject())->GetModelNode()->JSObject()->TryNamespace();
 
   CFX_XMLNode* pXMLNode = ToNode(GetXFAObject())->GetXMLMappingNode();
-  if (!pXMLNode || pXMLNode->GetType() != FX_XMLNODE_Element)
+  CFX_XMLElement* element = ToXMLElement(pXMLNode);
+  if (!element)
     return {};
 
   if (ToNode(GetXFAObject())->GetElementType() == XFA_Element::DataValue &&
       GetEnum(XFA_Attribute::Contains) == XFA_AttributeEnum::MetaData) {
     WideString wsNamespace;
-    bool ret = XFA_FDEExtension_ResolveNamespaceQualifier(
-        static_cast<CFX_XMLElement*>(pXMLNode),
-        GetCData(XFA_Attribute::QualifiedName), &wsNamespace);
-    if (!ret)
+    if (!XFA_FDEExtension_ResolveNamespaceQualifier(
+            element, GetCData(XFA_Attribute::QualifiedName), &wsNamespace)) {
       return {};
+    }
     return {wsNamespace};
   }
-  return {static_cast<CFX_XMLElement*>(pXMLNode)->GetNamespaceURI()};
+  return {element->GetNamespaceURI()};
 }
 
 std::pair<CXFA_Node*, int32_t> CJX_Object::GetPropertyInternal(

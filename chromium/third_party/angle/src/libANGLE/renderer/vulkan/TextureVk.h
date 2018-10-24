@@ -58,7 +58,7 @@ class PixelBuffer final : angle::NonCopyable
                            size_t sizeInBytes,
                            uint8_t **ptrOut,
                            VkBuffer *handleOut,
-                           uint32_t *offsetOut,
+                           VkDeviceSize *offsetOut,
                            bool *newBufferAllocatedOut);
 
     angle::Result flushUpdatesToImage(ContextVk *contextVk,
@@ -104,6 +104,7 @@ class TextureVk : public TextureImpl, public vk::CommandGraphResource
                           GLenum format,
                           GLenum type,
                           const gl::PixelUnpackState &unpack,
+                          gl::Buffer *unpackBuffer,
                           const uint8_t *pixels) override;
 
     gl::Error setCompressedImage(const gl::Context *context,

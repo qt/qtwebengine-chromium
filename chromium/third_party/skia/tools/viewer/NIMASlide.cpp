@@ -18,20 +18,6 @@
 using namespace sk_app;
 using namespace nima;
 
-// NIMA stores its matrices as 6 floats to represent translation and scale. This function takes
-// that format and converts it into a 3x3 matrix representation.
-static void nima_to_skmatrix(const float* nimaData, SkMatrix& matrix) {
-    matrix[0] = nimaData[0];
-    matrix[1] = nimaData[2];
-    matrix[2] = nimaData[4];
-    matrix[3] = nimaData[1];
-    matrix[4] = nimaData[3];
-    matrix[5] = nimaData[5];
-    matrix[6] = 0.0f;
-    matrix[7] = 0.0f;
-    matrix[8] = 1.0f;
-}
-
 // ImGui expects an array of const char* when displaying a ListBox. This function is for an
 // overload of ImGui::ListBox that takes a getter so that ListBox works with
 // std::vector<std::string>.
@@ -56,61 +42,69 @@ public:
             , fIndices()
             , fBones()
             , fVertices(nullptr)
-            , fRenderMode(kBackend_RenderMode) {
+            , fRenderFlags(0) {
         // Update the vertices and bones.
-        this->updateVertices();
+        this->updateVertices(true);
         this->updateBones();
-
-        // Update the vertices object.
-        this->updateVerticesObject(false, false);
     }
 
-    void renderBackend(SkCanvas* canvas) {
-        // Reset vertices if the render mode has changed.
-        if (fRenderMode != kBackend_RenderMode) {
-            fRenderMode = kBackend_RenderMode;
-            this->updateVertices();
-            this->updateVerticesObject(false, false);
-        }
+    void render(SkCanvas* canvas, uint32_t renderFlags) {
+        bool dirty = renderFlags != fRenderFlags;
+        fRenderFlags = renderFlags;
 
-        // Update the vertex data.
-        if (fActorImage->doesAnimationVertexDeform()) {
-            this->updateVertices();
-            this->updateVerticesObject(false, true);
+        bool useImmediate = renderFlags & kImmediate_RenderFlag;
+        bool useCache = renderFlags & kCache_RenderFlag;
+        bool drawBounds = renderFlags & kBounds_RenderFlag;
+
+        // Don't use the cache if drawing in immediate mode.
+        useCache &= !useImmediate;
+
+        if (fActorImage->doesAnimationVertexDeform() || dirty) {
+            // These are vertices that transform beyond just bone transforms, so they must be
+            // updated every frame.
+            // If the render flags are dirty, reset the vertices object.
+            this->updateVertices(!useCache);
         }
 
         // Update the bones.
         this->updateBones();
 
-        // Draw the vertices object.
-        this->drawVerticesObject(canvas, true);
-    }
-
-    void renderImmediate(SkCanvas* canvas) {
-        // Reset vertices if the render mode has changed.
-        if (fRenderMode != kImmediate_RenderMode) {
-            fRenderMode = kImmediate_RenderMode;
-            this->updateVertices();
-            this->updateVerticesObject(true, true);
+        // Deform the bones in immediate mode.
+        sk_sp<SkVertices> vertices = fVertices;
+        if (useImmediate) {
+            vertices = fVertices->applyBones(fBones.data(), fBones.size());
         }
 
-        // Update the vertex data.
-        if (fActorImage->doesAnimationVertexDeform() && fActorImage->isVertexDeformDirty()) {
-            this->updateVertices();
-            fActorImage->isVertexDeformDirty(false);
-        }
-
-        // Update the vertices object.
-        this->updateVerticesObject(true, true);
-
         // Draw the vertices object.
-        this->drawVerticesObject(canvas, false);
+        this->drawVerticesObject(vertices.get(), canvas, !useImmediate);
+
+        // Draw the bounds.
+        if (drawBounds && fActorImage->renderOpacity() > 0.0f) {
+            // Get the bounds.
+            SkRect bounds = vertices->bounds();
+
+            // Approximate bounds if not using immediate transforms.
+            if (!useImmediate) {
+                const SkRect originalBounds = fBones[0].mapRect(vertices->bounds());
+                bounds = originalBounds;
+                for (size_t i = 1; i < fBones.size(); i++) {
+                    const SkVertices::Bone& matrix = fBones[i];
+                    bounds.join(matrix.mapRect(originalBounds));
+                }
+            }
+
+            // Draw the bounds.
+            SkPaint paint;
+            paint.setStyle(SkPaint::kStroke_Style);
+            paint.setColor(0xFFFF0000);
+            canvas->drawRect(bounds, paint);
+        }
     }
 
     int drawOrder() const { return fActorImage->drawOrder(); }
 
 private:
-    void updateVertices() {
+    void updateVertices(bool isVolatile) {
         // Update whether the image is skinned.
         fSkinned = fActorImage->connectedBoneCount() > 0;
 
@@ -158,12 +152,24 @@ private:
             fTexs[i].set(attrTex[0] * fTexture->width(), attrTex[1] * fTexture->height());
             if (fSkinned) {
                 for (uint32_t k = 0; k < 4; k ++) {
-                    fBoneIdx[i].indices[k] = static_cast<uint32_t>(attrBoneIdx[k]);
-                    fBoneWgt[i].weights[k] = attrBoneWgt[k];
+                    fBoneIdx[i][k] = static_cast<uint32_t>(attrBoneIdx[k]);
+                    fBoneWgt[i][k] = attrBoneWgt[k];
                 }
             }
         }
         memcpy(fIndices.data(), indexData, indexCount * sizeof(uint16_t));
+
+        // Update the vertices object.
+        fVertices = SkVertices::MakeCopy(SkVertices::kTriangles_VertexMode,
+                                         vertexCount,
+                                         fPositions.data(),
+                                         fTexs.data(),
+                                         nullptr,
+                                         fBoneIdx.data(),
+                                         fBoneWgt.data(),
+                                         fIndices.size(),
+                                         fIndices.data(),
+                                         isVolatile);
     }
 
     void updateBones() {
@@ -176,59 +182,24 @@ private:
             if (fSkinned) {
                 numMatrices = fActorImage->boneInfluenceMatricesLength() / kNIMAMatrixSize;
             }
-            fBones.assign(numMatrices, SkMatrix());
+
+            // Initialize all matrices to the identity matrix.
+            fBones.assign(numMatrices, {{ 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f }});
         }
 
         if (fSkinned) {
             // Update the matrices.
             float* matrixData = fActorImage->boneInfluenceMatrices();
-            for (uint32_t i = 1; i < fBones.size(); i ++) {
-                SkMatrix& matrix = fBones[i];
-                float* data = matrixData + i * kNIMAMatrixSize;
-                nima_to_skmatrix(data, matrix);
-            }
+            memcpy(fBones.data(), matrixData, fBones.size() * kNIMAMatrixSize * sizeof(float));
         }
 
         // Set the zero matrix to be the world transform.
-        nima_to_skmatrix(fActorImage->worldTransform().values(), fBones[0]);
+        memcpy(fBones.data(),
+               fActorImage->worldTransform().values(),
+               kNIMAMatrixSize * sizeof(float));
     }
 
-    void updateVerticesObject(bool applyDeforms, bool isVolatile) {
-        std::vector<SkPoint>* positions = &fPositions;
-
-        // Apply deforms if requested.
-        uint32_t vertexCount = fPositions.size();
-        std::vector<SkPoint> deformedPositions;
-        if (applyDeforms) {
-            positions = &deformedPositions;
-            deformedPositions.reserve(vertexCount);
-            for (uint32_t i = 0; i < vertexCount; i ++) {
-                Vec2D nimaPoint(fPositions[i].x(), fPositions[i].y());
-                uint32_t* boneIdx = nullptr;
-                float* boneWgt = nullptr;
-                if (fSkinned) {
-                    boneIdx = fBoneIdx[i].indices;
-                    boneWgt = fBoneWgt[i].weights;
-                }
-                nimaPoint = this->deform(nimaPoint, boneIdx, boneWgt);
-                deformedPositions.push_back(SkPoint::Make(nimaPoint[0], nimaPoint[1]));
-            }
-        }
-
-        // Update the vertices object.
-        fVertices = SkVertices::MakeCopy(SkVertices::kTriangles_VertexMode,
-                                         vertexCount,
-                                         positions->data(),
-                                         fTexs.data(),
-                                         nullptr,
-                                         fBoneIdx.data(),
-                                         fBoneWgt.data(),
-                                         fIndices.size(),
-                                         fIndices.data(),
-                                         isVolatile);
-    }
-
-    void drawVerticesObject(SkCanvas* canvas, bool useBones) const {
+    void drawVerticesObject(SkVertices* vertices, SkCanvas* canvas, bool useBones) const {
         // Determine the blend mode.
         SkBlendMode blendMode;
         switch (fActorImage->blendMode()) {
@@ -259,46 +230,13 @@ private:
 
         // Draw the vertices.
         if (useBones) {
-            canvas->drawVertices(fVertices, fBones.data(), fBones.size(), blendMode, *fPaint);
+            canvas->drawVertices(vertices, fBones.data(), fBones.size(), blendMode, *fPaint);
         } else {
-            canvas->drawVertices(fVertices, blendMode, *fPaint);
+            canvas->drawVertices(vertices, blendMode, *fPaint);
         }
 
         // Reset the opacity.
         fPaint->setAlpha(255);
-    }
-
-    Vec2D deform(const Vec2D& position, uint32_t* boneIdx, float* boneWgt) const {
-        float px = position[0], py = position[1];
-        float px2 = px, py2 = py;
-        float influence[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-
-        // Apply the world transform.
-        Mat2D worldTransform = fActorImage->worldTransform();
-        px2 = worldTransform[0] * px + worldTransform[2] * py + worldTransform[4];
-        py2 = worldTransform[1] * px + worldTransform[3] * py + worldTransform[5];
-
-        // Apply deformations based on bone offsets.
-        if (boneIdx && boneWgt) {
-            float* matrices = fActorImage->boneInfluenceMatrices();
-
-            for (uint32_t i = 0; i < 4; i ++) {
-                uint32_t index = boneIdx[i];
-                float weight = boneWgt[i];
-                for (int j = 0; j < 6; j ++) {
-                    influence[j] += matrices[index * 6 + j] * weight;
-                }
-            }
-
-            px = influence[0] * px2 + influence[2] * py2 + influence[4];
-            py = influence[1] * px2 + influence[3] * py2 + influence[5];
-        } else {
-            px = px2;
-            py = py2;
-        }
-
-        // Return the transformed position.
-        return Vec2D(px, py);
     }
 
 private:
@@ -313,10 +251,10 @@ private:
     std::vector<SkVertices::BoneWeights> fBoneWgt;
     std::vector<uint16_t>                fIndices;
 
-    std::vector<SkMatrix> fBones;
-    sk_sp<SkVertices>     fVertices;
+    std::vector<SkVertices::Bone> fBones;
+    sk_sp<SkVertices>             fVertices;
 
-    RenderMode fRenderMode;
+    uint32_t fRenderFlags;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -359,21 +297,10 @@ public:
         }
     }
 
-    void render(SkCanvas* canvas, RenderMode renderMode) {
+    void render(SkCanvas* canvas, uint32_t renderFlags) {
         // Render the image nodes.
         for (auto& image : fActorImages) {
-            switch (renderMode) {
-            case kBackend_RenderMode: {
-                // Render with Skia backend.
-                image.renderBackend(canvas);
-                break;
-            }
-            case kImmediate_RenderMode: {
-                // Render with immediate backend.
-                image.renderImmediate(canvas);
-                break;
-            }
-            }
+            image.render(canvas, renderFlags);
         }
     }
 
@@ -397,7 +324,7 @@ NIMASlide::NIMASlide(const SkString& name, const SkString& path)
         , fActor(nullptr)
         , fPlaying(true)
         , fTime(0.0f)
-        , fRenderMode(kBackend_RenderMode)
+        , fRenderFlags(0)
         , fAnimation(nullptr)
         , fAnimationIndex(0) {
     fName = name;
@@ -425,7 +352,7 @@ void NIMASlide::draw(SkCanvas* canvas) {
             canvas->scale(0.5, -0.5);
 
             // Render the actor.
-            fActor->render(canvas, fRenderMode);
+            fActor->render(canvas, fRenderFlags);
 
             canvas->restore();
         }
@@ -476,7 +403,7 @@ void NIMASlide::resetActor() {
 }
 
 void NIMASlide::renderGUI() {
-    ImGui::SetNextWindowSize(ImVec2(300, 220));
+    ImGui::SetNextWindowSize(ImVec2(300, 0));
     ImGui::Begin("NIMA");
 
     // List of animations.
@@ -506,14 +433,34 @@ void NIMASlide::renderGUI() {
     ImGui::SliderFloat("Time", &fTime, 0.0f, fAnimation->max(), "Time: %.3f");
 
     // Backend control.
-    int renderMode = fRenderMode;
+    int useImmediate = SkToBool(fRenderFlags & kImmediate_RenderFlag);
     ImGui::Spacing();
-    ImGui::RadioButton("Skia Backend", &renderMode, 0);
-    ImGui::RadioButton("Immediate Backend", &renderMode, 1);
-    if (renderMode == 0) {
-        fRenderMode = kBackend_RenderMode;
+    ImGui::RadioButton("Skia Backend", &useImmediate, 0);
+    ImGui::RadioButton("Immediate Backend", &useImmediate, 1);
+    if (useImmediate) {
+        fRenderFlags |= kImmediate_RenderFlag;
     } else {
-        fRenderMode = kImmediate_RenderMode;
+        fRenderFlags &= ~kImmediate_RenderFlag;
+    }
+
+    // Cache control.
+    bool useCache = SkToBool(fRenderFlags & kCache_RenderFlag);
+    ImGui::Spacing();
+    ImGui::Checkbox("Cache Vertices", &useCache);
+    if (useCache) {
+        fRenderFlags |= kCache_RenderFlag;
+    } else {
+        fRenderFlags &= ~kCache_RenderFlag;
+    }
+
+    // Bounding box toggle.
+    bool drawBounds = SkToBool(fRenderFlags & kBounds_RenderFlag);
+    ImGui::Spacing();
+    ImGui::Checkbox("Draw Bounds", &drawBounds);
+    if (drawBounds) {
+        fRenderFlags |= kBounds_RenderFlag;
+    } else {
+        fRenderFlags &= ~kBounds_RenderFlag;
     }
 
     ImGui::End();

@@ -41,6 +41,18 @@ enum class TabStopStatus {
   Location,
 };
 
+WideString GetLowerCaseElementAttributeOrDefault(
+    const CFX_XMLElement* pElement,
+    const WideString& wsName,
+    const WideString& wsDefaultValue) {
+  WideString ws = pElement->GetAttribute(wsName);
+  if (ws.IsEmpty())
+    ws = wsDefaultValue;
+  else
+    ws.MakeLower();
+  return ws;
+}
+
 }  // namespace
 
 CXFA_TextParser::CXFA_TextParser()
@@ -180,7 +192,7 @@ RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::CreateStyle(
 }
 
 RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::ComputeStyle(
-    CFX_XMLNode* pXMLNode,
+    const CFX_XMLNode* pXMLNode,
     CFX_CSSComputedStyle* pParentStyle) {
   auto it = m_mapXMLNodeToParseContext.find(pXMLNode);
   if (it == m_mapXMLNodeToParseContext.end())
@@ -203,7 +215,7 @@ RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::ComputeStyle(
   return pStyle;
 }
 
-void CXFA_TextParser::DoParse(CFX_XMLNode* pXMLContainer,
+void CXFA_TextParser::DoParse(const CFX_XMLNode* pXMLContainer,
                               CXFA_TextProvider* pTextProvider) {
   if (!pXMLContainer || !pTextProvider || m_bParsed)
     return;
@@ -214,7 +226,7 @@ void CXFA_TextParser::DoParse(CFX_XMLNode* pXMLContainer,
   ParseRichText(pXMLContainer, pRootStyle.Get());
 }
 
-void CXFA_TextParser::ParseRichText(CFX_XMLNode* pXMLNode,
+void CXFA_TextParser::ParseRichText(const CFX_XMLNode* pXMLNode,
                                     CFX_CSSComputedStyle* pParentStyle) {
   if (!pXMLNode)
     return;
@@ -273,21 +285,22 @@ bool CXFA_TextParser::TagValidate(const WideString& wsName) const {
                             FX_HashCode_GetW(wsName.AsStringView(), true));
 }
 
+// static
 std::unique_ptr<CXFA_TextParser::TagProvider> CXFA_TextParser::ParseTagInfo(
-    CFX_XMLNode* pXMLNode) {
+    const CFX_XMLNode* pXMLNode) {
   auto tagProvider = pdfium::MakeUnique<TagProvider>();
-
-  WideString wsName;
-  if (pXMLNode->GetType() == FX_XMLNODE_Element) {
-    CFX_XMLElement* pXMLElement = static_cast<CFX_XMLElement*>(pXMLNode);
-    wsName = pXMLElement->GetLocalTagName();
+  const CFX_XMLElement* pXMLElement = ToXMLElement(pXMLNode);
+  if (pXMLElement) {
+    WideString wsName = pXMLElement->GetLocalTagName();
     tagProvider->SetTagName(wsName);
     tagProvider->m_bTagAvailable = TagValidate(wsName);
-
     WideString wsValue = pXMLElement->GetAttribute(L"style");
     if (!wsValue.IsEmpty())
       tagProvider->SetAttribute(L"style", wsValue);
-  } else if (pXMLNode->GetType() == FX_XMLNODE_Text) {
+
+    return tagProvider;
+  }
+  if (pXMLNode->GetType() == FX_XMLNODE_Text) {
     tagProvider->m_bTagAvailable = true;
     tagProvider->m_bContent = true;
   }
@@ -365,7 +378,7 @@ float CXFA_TextParser::GetFontSize(CXFA_TextProvider* pTextProvider,
 
 int32_t CXFA_TextParser::GetHorScale(CXFA_TextProvider* pTextProvider,
                                      CFX_CSSComputedStyle* pStyle,
-                                     CFX_XMLNode* pXMLNode) const {
+                                     const CFX_XMLNode* pXMLNode) const {
   if (pStyle) {
     WideString wsValue;
     if (pStyle->GetCustomStyle(L"xfa-font-horizontal-scale", wsValue))
@@ -495,49 +508,38 @@ float CXFA_TextParser::GetLineHeight(CXFA_TextProvider* pTextProvider,
   return fLineHeight;
 }
 
-bool CXFA_TextParser::GetEmbbedObj(CXFA_TextProvider* pTextProvider,
-                                   CFX_XMLNode* pXMLNode,
-                                   WideString& wsValue) {
-  wsValue.clear();
+Optional<WideString> CXFA_TextParser::GetEmbeddedObj(
+    const CXFA_TextProvider* pTextProvider,
+    const CFX_XMLNode* pXMLNode) {
   if (!pXMLNode)
-    return false;
+    return {};
 
-  bool bRet = false;
-  if (pXMLNode->GetType() == FX_XMLNODE_Element) {
-    CFX_XMLElement* pElement = static_cast<CFX_XMLElement*>(pXMLNode);
-    WideString wsAttr = pElement->GetAttribute(L"xfa:embed");
-    if (wsAttr.IsEmpty())
-      return false;
-    if (wsAttr[0] == L'#')
-      wsAttr.Delete(0);
+  const CFX_XMLElement* pElement = ToXMLElement(pXMLNode);
+  if (!pElement)
+    return {};
 
-    WideString ws = pElement->GetAttribute(L"xfa:embedType");
-    if (ws.IsEmpty())
-      ws = L"som";
-    else
-      ws.MakeLower();
+  WideString wsAttr = pElement->GetAttribute(L"xfa:embed");
+  if (wsAttr.IsEmpty())
+    return {};
 
-    bool bURI = (ws == L"uri");
-    if (!bURI && ws != L"som")
-      return false;
+  if (wsAttr[0] == L'#')
+    wsAttr.Delete(0);
 
-    ws = pElement->GetAttribute(L"xfa:embedMode");
-    if (ws.IsEmpty())
-      ws = L"formatted";
-    else
-      ws.MakeLower();
+  WideString ws =
+      GetLowerCaseElementAttributeOrDefault(pElement, L"xfa:embedType", L"som");
+  if (ws != L"uri")
+    return {};
 
-    bool bRaw = (ws == L"raw");
-    if (!bRaw && ws != L"formatted")
-      return false;
+  ws = GetLowerCaseElementAttributeOrDefault(pElement, L"xfa:embedMode",
+                                             L"formatted");
+  if (ws != L"raw" && ws != L"formatted")
+    return {};
 
-    bRet = pTextProvider->GetEmbbedObj(bURI, bRaw, wsAttr, wsValue);
-  }
-  return bRet;
+  return pTextProvider->GetEmbeddedObj(wsAttr);
 }
 
 CXFA_TextParseContext* CXFA_TextParser::GetParseContextFromMap(
-    CFX_XMLNode* pXMLNode) {
+    const CFX_XMLNode* pXMLNode) {
   auto it = m_mapXMLNodeToParseContext.find(pXMLNode);
   return it != m_mapXMLNodeToParseContext.end() ? it->second.get() : nullptr;
 }

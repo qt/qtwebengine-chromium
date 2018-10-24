@@ -156,6 +156,11 @@ class UnixSocket {
             size_t len,
             int send_fd = -1,
             BlockingMode blocking = BlockingMode::kNonBlocking);
+  bool Send(const void* msg,
+            size_t len,
+            const int* send_fds,
+            size_t num_fds,
+            BlockingMode blocking = BlockingMode::kNonBlocking);
   bool Send(const std::string& msg);
 
   // Returns the number of bytes (<= |len|) written in |msg| or 0 if there
@@ -164,7 +169,11 @@ class UnixSocket {
   // If the ScopedFile pointer is not null and a FD is received, it moves the
   // received FD into that. If a FD is received but the ScopedFile pointer is
   // null, the FD will be automatically closed.
-  size_t Receive(void* msg, size_t len, base::ScopedFile* = nullptr);
+  size_t Receive(void* msg, size_t len);
+  size_t Receive(void* msg,
+                 size_t len,
+                 base::ScopedFile*,
+                 size_t max_files = 1);
 
   // Only for tests. This is slower than Receive() as it requires a heap
   // allocation and a copy for the std::string. Guarantees that the returned
@@ -185,6 +194,19 @@ class UnixSocket {
     return peer_uid_;
   }
 
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
+    PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+  // Process ID of the peer, as returned by the kernel. If the client
+  // disconnects and the socket goes into the kDisconnected state, it
+  // retains the pid of the last peer.
+  //
+  // This is only available on Linux / Android.
+  pid_t peer_pid() const {
+    PERFETTO_DCHECK(!is_listening() && peer_pid_ != kInvalidPid);
+    return peer_pid_;
+  }
+#endif
+
  private:
   UnixSocket(EventListener*, base::TaskRunner*);
   UnixSocket(EventListener*, base::TaskRunner*, base::ScopedFile, State);
@@ -203,6 +225,10 @@ class UnixSocket {
   State state_ = State::kDisconnected;
   int last_error_ = 0;
   uid_t peer_uid_ = kInvalidUid;
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) || \
+    PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+  pid_t peer_pid_ = kInvalidPid;
+#endif
   EventListener* event_listener_;
   base::TaskRunner* task_runner_;
   base::WeakPtrFactory<UnixSocket> weak_ptr_factory_;

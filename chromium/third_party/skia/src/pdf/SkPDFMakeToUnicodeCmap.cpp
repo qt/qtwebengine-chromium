@@ -9,7 +9,7 @@
 
 #include "SkPDFUtils.h"
 #include "SkTo.h"
-#include "SkUtils.h"
+#include "SkUTF.h"
 
 static void append_tounicode_header(SkDynamicMemoryWStream* cmap,
                                     bool multibyte) {
@@ -182,7 +182,7 @@ void SkPDFAppendCmapSections(const SkUnichar* glyphToUnicode,
                     currentRangeEntry.fUnicode + i - currentRangeEntry.fStart;
             if (!inSubset || !inRange) {
                 if (currentRangeEntry.fEnd > currentRangeEntry.fStart) {
-                    bfrangeEntries.push(currentRangeEntry);
+                    bfrangeEntries.push_back(currentRangeEntry);
                 } else {
                     BFChar* entry = bfcharEntries.append();
                     entry->fGlyphId = currentRangeEntry.fStart;

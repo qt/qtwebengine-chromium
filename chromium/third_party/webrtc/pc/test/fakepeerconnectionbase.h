@@ -140,16 +140,10 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
   }
 
   void CreateOffer(CreateSessionDescriptionObserver* observer,
-                   const MediaConstraintsInterface* constraints) override {}
-
-  void CreateOffer(CreateSessionDescriptionObserver* observer,
                    const RTCOfferAnswerOptions& options) override {}
 
   void CreateAnswer(CreateSessionDescriptionObserver* observer,
                     const RTCOfferAnswerOptions& options) override {}
-
-  void CreateAnswer(CreateSessionDescriptionObserver* observer,
-                    const MediaConstraintsInterface* constraints) override {}
 
   void SetLocalDescription(SetSessionDescriptionObserver* observer,
                            SessionDescriptionInterface* desc) override {}
@@ -182,8 +176,6 @@ class FakePeerConnectionBase : public PeerConnectionInternal {
       const std::vector<cricket::Candidate>& candidates) override {
     return false;
   }
-
-  void RegisterUMAObserver(UMAObserver* observer) override {}
 
   RTCError SetBitrate(const BitrateSettings& bitrate) override {
     return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");

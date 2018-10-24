@@ -153,10 +153,7 @@ void RenderWidgetTargeter::FindTargetAndDispatch(
   RenderWidgetHostViewBase* target = result.view;
   auto* event_ptr = &event;
   async_depth_ = 0;
-  // TODO(kenrb, wjmaclean): Asynchronous hit tests don't work properly with
-  // GuestViews, so rely on the synchronous result.
-  // See https://crbug.com/802378.
-  if (result.should_query_view && !target->IsRenderWidgetHostViewGuest()) {
+  if (result.should_query_view) {
     // TODO(kenrb, sadrul): When all event types support asynchronous hit
     // testing, we should be able to have FindTargetSynchronously return the
     // view and location to use for the renderer hit test query.
@@ -215,6 +212,7 @@ void RenderWidgetTargeter::QueryClient(
 }
 
 void RenderWidgetTargeter::FlushEventQueue() {
+  bool events_being_flushed = false;
   while (!request_in_flight_ && !requests_.empty()) {
     auto request = std::move(requests_.front());
     requests_.pop();
@@ -224,9 +222,16 @@ void RenderWidgetTargeter::FlushEventQueue() {
       continue;
     }
     request.tracker->Stop();
+    // Only notify the delegate once that the current event queue is being
+    // flushed. Once all the events are flushed, notify the delegate again.
+    if (!events_being_flushed) {
+      delegate_->SetEventsBeingFlushed(true);
+      events_being_flushed = true;
+    }
     FindTargetAndDispatch(request.root_view.get(), *request.event,
                           request.latency);
   }
+  delegate_->SetEventsBeingFlushed(false);
 }
 
 void RenderWidgetTargeter::FoundFrameSinkId(
@@ -237,7 +242,8 @@ void RenderWidgetTargeter::FoundFrameSinkId(
     uint32_t request_id,
     const gfx::PointF& target_location,
     TracingUmaTracker tracker,
-    const viz::FrameSinkId& frame_sink_id) {
+    const viz::FrameSinkId& frame_sink_id,
+    const gfx::PointF& transformed_location) {
   tracker.Stop();
   if (request_id != last_request_id_ || !request_in_flight_) {
     // This is a response to a request that already timed out, so the event
@@ -259,10 +265,8 @@ void RenderWidgetTargeter::FoundFrameSinkId(
       unresponsive_views_.find(view) != unresponsive_views_.end()) {
     FoundTarget(root_view.get(), view, *event, latency, target_location, false);
   } else {
-    gfx::PointF location = target_location;
-    target->TransformPointToCoordSpaceForView(location, view, &location);
-    QueryClient(root_view.get(), view, *event, latency, location, target.get(),
-                target_location);
+    QueryClient(root_view.get(), view, *event, latency, transformed_location,
+                target.get(), target_location);
   }
 }
 

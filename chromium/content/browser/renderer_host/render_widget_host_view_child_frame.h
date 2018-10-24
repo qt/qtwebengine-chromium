@@ -114,6 +114,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void TakeFallbackContentFrom(RenderWidgetHostView* view) override;
 
   // RenderWidgetHostViewBase implementation.
+  RenderWidgetHostViewBase* GetRootView() override;
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
                    const gfx::Rect& bounds) override;
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
@@ -136,10 +137,10 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // Since the URL of content rendered by this class is not displayed in
   // the URL bar, this method does not need an implementation.
   void ClearCompositorFrame() override {}
+  void ResetFallbackToFirstNavigationSurface() override{};
+
   void TransformPointToRootSurface(gfx::PointF* point) override;
   gfx::Rect GetBoundsInRootWindow() override;
-  void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
-                              InputEventAckState ack_result) override;
   void DidStopFlinging() override;
   bool LockMouse() override;
   void UnlockMouse() override;
@@ -225,7 +226,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void UnregisterFrameSinkId();
 
   void UpdateViewportIntersection(const gfx::Rect& viewport_intersection,
-                                  const gfx::Rect& compositor_visible_rect);
+                                  const gfx::Rect& compositor_visible_rect,
+                                  bool occluded_or_obscured);
 
   // TODO(sunxd): Rename SetIsInert to UpdateIsInert.
   void SetIsInert();

@@ -1,3 +1,416 @@
+2018-08-10  Ben Wagner  <bungeman@google.com>
+
+	* src/sfnt/sfobjs.c (sfnt_done_face): Fix memory leak (#54435).
+
+2018-08-10  Werner Lemberg  <wl@gnu.org>
+
+	* src/base/ftobjs.c (FT_Render_Glyph_Internal): Improve tracing.
+
+2018-08-10  Werner Lemberg  <wl@gnu.org>
+
+	Fix clang warnings.
+
+	* src/base/ftdebug.c (ft_trace_level_enabled,
+	ft_trace_level_disabled): Add `static' keyword.
+
+2018-08-09  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[raster, smooth] Reinstate bitmap size limits.
+
+	This again moves outline and bitmap size checks one level up.
+
+	* src/base/ftoutln.c (FT_Outline_Render): Explicitly reject enormous
+	outlines.
+	* src/raster/ftrend1.c (ft_raster1_render): Reject enormous bitmaps
+	and, therefore, outlines that require them.
+	* src/smooth/ftsmooth.c (ft_smooth_render_generic): Ditto.
+
+	* src/raster/ftraster.c (ft_black_render): Remove outline size checks.
+	* src/smooth/ftgrays.c (gray_raster_render): Ditto.
+	[STANDALONE]: Remove `FT_Outline_Get_CBox' copy.
+
+2018-08-08  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[pcf] Revert massive unsigning.
+
+2018-08-08  Werner Lemberg  <wl@gnu.org>
+
+	[smooth] Improve tracing.
+
+	* src/smooth/ftgrays.c (gray_convert_glyph_inner): Only use tracing
+	if called the first time.
+	(gray_convert_glyph): Updated.
+
+2018-08-08  Werner Lemberg  <wl@gnu.org>
+
+	Add internal functions `FT_Trace_Disable' and `FT_Trace_Enable'.
+
+	It sometimes makes sense to suppress tracing informations, for
+	example, if it outputs identical messages again and again.
+
+	* include/freetype/internal/ftdebug.h: Make `ft_trace_levels' a
+	pointer.
+	(FT_Trace_Disable, FT_Trace_Enable): New declarations.
+
+	* src/base/ftdebug.c (ft_trace_levels): Rename to...
+	(ft_trace_levels_enabled): ... this.
+	(ft_trace_levels_disabled): New array.
+	(ft_trace_levels): New pointer.
+	(FT_Trace_Disable, FT_Trace_Enable): Implement.
+	(ft_debug_init): Updated.
+
+2018-08-08  Werner Lemberg  <wl@gnu.org>
+
+	Debugging improvements.
+
+	* src/base/ftobjs.c (pixel_modes): Move this array to top level
+	from ...
+	(FT_Load_Glyph): ... here.
+	(FT_Render_Glyph_Internal): Use `width' x `height' in trace message.
+	Use `pixel_modes'.
+
+2018-08-08  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[pcf] Massive unsigning (part 2).
+
+	Treat all size related properties as unsigned values.
+
+	* src/pcf/pcf.h (PCF_ParsePropertyRec): Use unsigned `name' and
+	`value'.
+	* src/pcf/pcfread.c (pcf_get_propeerties, pcf_load_font): Updated
+	parsing code and handling of AVERAGE_WIDTH, POINT_SIZE, PIXEL_SIZE,
+	RESOLUTION_X and RESOLUTION_Y.
+
+2018-08-08  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[pcf] Massive unsigning (part 1).
+
+	Unofficial specifications hesitate to use unsigned 32-bit integers.
+	Negative values caused a lot of trouble in the past and it is safer
+	and easier to treat some properties as unsigned.
+
+	* src/pcf/pcf.h (PCF_AccelRec): Use unsigned values for `fontAscent',
+	`fontDescent', and `maxOverlap'.
+	* src/pcf/pcfread.c (pcf_load_font, pcf_get_accel): Updated.
+	* src/pcf/pcfdrivr.c (PCF_Glyph_Load, PCF_Size_Select,
+	PCF_Size_Request): Updated.
+
+2018-08-07  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* src/pcf/pcfread.c (pcf_get_bitmaps): Unsign `offsets' and
+	`bitmapSizes'.
+
+2018-08-06  Werner Lemberg  <wl@gnu.org>
+
+	* devel/ftoption.h: Synchronize with main `ftoption.h'.
+
+2018-08-06  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[pcf] Use unsigned types.
+
+	* src/pcf/pcf.h (PCF_Encoding): Use unsigned `enc'.
+	* src/pcf/pcfdrivr.c (pcf_cmap_char_{index,next}): Ditto.
+	* src/pcf/pcfread.c (pcf_get_encodings): Use unsigned types.
+
+2018-08-05  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgload.c (compute_glyph_metrics): Fix overflow.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/chromium/issues/detail?id=777151
+
+2018-08-04  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttinterp.c (opcode_name): Fix typos.
+
+2018-08-04  Werner Lemberg  <wl@gnu.org>
+
+	Fix clang warnings.
+
+	* src/base/ftoutln.c (FT_Outline_EmboldenXY): Fix type of
+	`orientation'.
+
+	* src/gxvalid/gxvcommn.c (gx_lookup_value_read): Fix signature.
+
+	* src/pcf/pcfread.c (pcf_get_encodings): Fix type of some variables.
+	Add cast.
+
+	* src/type1/t1load.c (parse_weight_vector): Fix cast.
+
+2018-07-31  Werner Lemberg  <wl@gnu.org>
+
+	* src/cid/cidtoken.h: Handle `XUID' keyword.
+
+2018-07-31  Werner Lemberg  <wl@gnu.org>
+
+	[cid] Trace PostScript dictionaries.
+
+	* src/cid/cidload.c: Include FT_INTERNAL_POSTSCRIPT_AUX_H
+	(cid_load_keyword, cid_parse_font_matrix, parse_fd_array,
+	parse_expansion_factor, cid_parse_dict): Add tracing calls.
+	(parse_font_name): New function to trace `/FontName' keywords in
+	/FDArray dict.
+	(cid_field_records): Register `parse_font_name'.
+
+2018-07-30  Werner Lemberg  <wl@gnu.org>
+
+	[cff] Fix typo.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9409
+
+	* src/cff/cffdrivr.c (cff_get_cid_from_glyph_index): Fix boundary
+	check.
+
+2018-07-29  Werner Lemberg  <wl@gnu.org>
+
+	* src/pcf/pcfread.c (pcf_get_encodings): Another thinko.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9608
+
+2018-07-28  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[smooth] Fix Harmony memory management.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9501
+
+	* src/smooth/ftgrays.c (ft_smooth_render_generic): Restore buffer
+	after each rendering in case of failure. 
+
+2018-07-28  Werner Lemberg  <wl@gnu.org>
+
+	[type1] Avoid segfaults with `FT_Get_PS_Font_Value'.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9610
+
+	* src/type1/t1driver.c (t1_ps_get_font_value): Protect against NULL.
+
+2018-07-27  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Make `TT_Set_MM_Blend' idempotent (#54388).
+
+	* src/truetype/ttgxvar.c (tt_set_mm_blend): Correctly set
+	`face->doblend' if the current call to the function yields the same
+	blend coordinates as the previous call.
+
+2018-07-27  Werner Lemberg  <wl@gnu.org>
+
+	[psaux, type1]: More tracing improvements.
+
+	* src/psaux/psintrp.c (cf2_interpT2CharString): Trace skipped
+	outline commands.
+
+	* src/psaux/t1decode.c (t1_decoder_parse_charstring): Fix
+	missing case.
+	(t1_decoder_parse_metrics): Make tracing output more compact.
+
+	* src/type1/t1gload.c (T1_Compute_Max_Advance): Be less verbose.
+	(T1_Get_Advances): Add tracing.
+
+2018-07-25  Werner Lemberg  <wl@gnu.org>
+
+	[psaux, type1] Trace PostScript dictionaries and other things.
+
+	The tracing of /Encoding, /Subrs, and /Charstrings is rudimentary
+	right now.
+
+	* src/psaux/psobjs.c (ps_parser_load_field,
+	ps_parser_load_field_table): Add tracing calls.
+
+	* src/psaux/t1decode.c (t1_decoder_parse_charstrings): Make tracing
+	output more compact.
+
+	* src/type1/t1gload.c (T1_Compute_Max_Advance, T1_Get_Advances): Add
+	tracing messages.
+
+	* src/type1/t1load.c (parse_blend_axis_types,
+	parse_blend_design_positions, parse_blend_design_map,
+	parse_weight_vector, t1_load_keyword, t1_parse_font_matrix,
+	parse_encoding, parse_subrs, parse_charstrings, T1_Open_Face): Add
+	tracing calls.
+
+	* src/type1/t1objs.c (T1_Face_Init): Add tracing call.
+
+	* src/sfnt/sfobjs.c (sfnt_init_face): Make tracing message more
+	verbose.
+
+2018-07-25  Werner Lemberg  <wl@gnu.org>
+
+	Fix minor ASAN run-time warnings.
+
+	* src/base/ftutil.c (ft_mem_alloc, ft_mem_realloc): Only call
+	`FT_MEM_ZERO' if we actually have a buffer.
+	(ft_mem_dup): Only call `ft_memcpy' if we actually have a buffer.
+
+2018-07-24  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[build] Fortify dllexport/dllimport attributes (#53969,#54330).
+
+	We no longer use predefined _DLL, which can be defined for static
+	builds too with /MD. We use DLL_EXPORT and DLL_IMPORT instead,
+	following libtool convention.
+
+	* CMakeLists.txt [WIN32], builds/windows/vc2010/freetype.vcxproj:
+	Define DLL_EXPORT manually.
+
+	* include/freetype/config/ftconfig.h, builds/unix/ftconfig.in,
+	builds/vms/ftconfig.h, builds/windows/vc2010/index.html,
+	src/base/ftver.rc: /_DLL/d, s/FT2_DLLIMPORT/DLL_IMPORT/.
+
+2018-07-24  Werner Lemberg  <wl@gnu.org>
+
+	[type1] Check relationship between number of axes and designs.
+
+	For Multiple Masters fonts We don't support intermediate designs;
+	this implies that
+
+	  number_of_designs == 2 ^^ number_of_axes
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9557
+
+	* src/type1/t1load.c (T1_Open_Face): Ensure above constraint.
+	(T1_Get_MM_Var): Remove now redundant test.
+
+2018-07-24  Hin-Tak Leung  <htl10@users.sourceforge.net>
+
+	[truetype] Match ttdebug's naming of instruction mnemonics.
+
+	* src/truetype/ttinterp.c: The form used in ttdebug,
+	"MDRP[G,B,W,?]", etc., is slightly more readable than
+	"MDRP[00,01,02,03]".
+
+2018-07-24  Werner Lemberg  <wl@gnu.org>
+
+	* src/pcf/pcfread.c (pcf_get_encodings): Thinko.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9561
+
+2018-07-22  Werner Lemberg  <wl@gnu.org>
+
+	* src/pcf/pcfread.c (pcf_get_encodings): Check index of defaultChar.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9527
+
+2018-07-22  Werner Lemberg  <wl@gnu.org>
+
+	* src/pcf/pcfread.c (pcf_load_font): Fix number of glyphs.
+
+	This is an oversight of the module change 2018-07-21.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9524
+
+2018-07-22  Werner Lemberg  <wl@gnu.org>
+
+	[cid] Sanitize `BlueShift' and `BlueFuzz'.
+
+	This code is taken from the type1 module.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9510
+
+	* src/cid/cidload.c (parse_fd_array): Set some private dict default
+	values.
+	(cid_face_open): Do the sanitizing.
+	Fix some tracing messages.
+
+2018-07-21  Werner Lemberg  <wl@gnu.org>
+
+	[pcf] Fix handling of the undefined glyph.
+
+	This change makes the driver use the `defaultChar' property of PCF
+	files.
+
+	* src/pcf/pcf.h (PCF_FaceRec): Change type of `defaultChar' to
+	unsigned.
+
+	* src/pcf/pcfread.c (pcf_get_encodings): Read `defaultChar' as
+	unsigned.
+	Validate `defaultChar'.
+	If `defaultChar' doesn't point to glyph index zero, swap glyphs with
+	index zero and index `defaultChar' and adjust the encodings
+	accordingly.
+
+	* src/pcf/pcfdrivr.c (pcf_cmap_char_index, pcf_cmap_char_next,
+	PCF_Glyph_Load): Undo change from 2002-06-16 which always enforced
+	the first character in the font to be the default character.
+
+2018-07-20  Armin Hasitzka  <prince.cherusker@gmail.com>
+
+	Move the legacy fuzz target to the `freetype-testing' repository.
+
+	It can now be found at
+
+	  https://github.com/freetype/freetype2-testing/tree/master/fuzzing/src/legacy
+
+	* src/tools/ftfuzzer: Remove this folder and its contents from the
+	repository.
+
+2018-07-20  Werner Lemberg  <wl@gnu.org>
+
+	[cff] Avoid left-shift of negative numbers (#54322).
+
+	* src/cff/cffgload.c (cff_slot_load): Use multiplication.
+
+2018-07-17  Werner Lemberg  <wl@gnu.org>
+
+	Allow FT_ENCODING_NONE for `FT_Select_Charmap'.
+
+	This is a valid encoding tag for BDF, PCF, and Windows FNT, and
+	there is no reason to disallow it for these formats.
+
+	* src/base/ftobjs.c (FT_Select_Charmap): Implement it.
+
+2018-07-17  Werner Lemberg  <wl@gnu.org>
+
+	* src/pcf/pcfread.c (pcf_get_encodings): Trace `defaultChar'.
+
+2018-07-16  Armin Hasitzka  <prince.cherusker@gmail.com>
+
+	* include/freetype/internal/ftcalc.h: Add macros for handling
+	harmless over-/underflowing `FT_Int' values.
+
+	* src/sfnt/sfdriver.c (fixed2float): Fix negation of
+	`(int)(-2147483648)'.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9423
+
+2018-07-16  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgxvar.c (tt_set_mm_blend): Fix off-by-one error.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=9412
+
+2018-07-12  Werner Lemberg  <wl@gnu.org>
+
+	* src/base/ftoutln.c (FT_Outline_Get_Orientation): Init `cbox'.
+
+	Taken from patch #9667, written by Steve Langasek
+	<vorlon@debian.org>.
+
+	This fixes a build failure (most probably a bug in gcc) on ppc64el
+	when building with -O3.
+
 2018-07-05  Werner Lemberg  <wl@gnu.org>
 
 	Fix typo (#54238).

@@ -13,38 +13,9 @@
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 
-sk_sp<GrColorSpaceXform> GrColorSpaceXform::Make(SkColorSpace* src, SkColorSpace* dst) {
-    // No transformation is performed in legacy mode, until SkColorSpaceXformCanvas is gone
-    if (!dst) {
-        return nullptr;
-    }
-
-    // Treat null sources as sRGB (safe because sRGB is a global singleton)
-    if (!src) {
-        src = SkColorSpace::MakeSRGB().get();
-    }
-
-    // TODO: Plumb source alpha type
-    SkColorSpaceXformSteps steps(src, kPremul_SkAlphaType, dst);
-
-    return steps.flags.mask() == 0 ? nullptr  /* Noop transform */
-                                   : sk_make_sp<GrColorSpaceXform>(steps);
-}
-
-sk_sp<GrColorSpaceXform> GrColorSpaceXform::MakeUnpremulToUnpremul(SkColorSpace* src,
-                                                                   SkColorSpace* dst) {
-    // No transformation is performed in legacy mode, until SkColorSpaceXformCanvas is gone
-    if (!dst) {
-        return nullptr;
-    }
-
-    // Treat null sources as sRGB (safe because sRGB is a global singleton)
-    if (!src) {
-        src = SkColorSpace::MakeSRGB().get();
-    }
-
-    SkColorSpaceXformSteps steps = SkColorSpaceXformSteps::UnpremulToUnpremul(src, dst);
-
+sk_sp<GrColorSpaceXform> GrColorSpaceXform::Make(SkColorSpace* src, SkAlphaType srcAT,
+                                                 SkColorSpace* dst, SkAlphaType dstAT) {
+    SkColorSpaceXformSteps steps(src, srcAT, dst, dstAT);
     return steps.flags.mask() == 0 ? nullptr  /* Noop transform */
                                    : sk_make_sp<GrColorSpaceXform>(steps);
 }
@@ -175,8 +146,10 @@ GrFragmentProcessor::OptimizationFlags GrColorSpaceXformEffect::OptFlags(
 }
 
 std::unique_ptr<GrFragmentProcessor> GrColorSpaceXformEffect::Make(SkColorSpace* src,
+                                                                   SkAlphaType srcAT,
                                                                    SkColorSpace* dst) {
-    auto xform = GrColorSpaceXform::Make(src, dst);
+    auto xform = GrColorSpaceXform::Make(src, srcAT,
+                                         dst, kPremul_SkAlphaType);
     if (!xform) {
         return nullptr;
     }
@@ -187,12 +160,13 @@ std::unique_ptr<GrFragmentProcessor> GrColorSpaceXformEffect::Make(SkColorSpace*
 
 std::unique_ptr<GrFragmentProcessor> GrColorSpaceXformEffect::Make(
         std::unique_ptr<GrFragmentProcessor> child,
-        SkColorSpace* src, SkColorSpace* dst) {
+        SkColorSpace* src, SkAlphaType srcAT, SkColorSpace* dst) {
     if (!child) {
         return nullptr;
     }
 
-    auto xform = GrColorSpaceXform::Make(src, dst);
+    auto xform = GrColorSpaceXform::Make(src, srcAT,
+                                         dst, kPremul_SkAlphaType);
     if (!xform) {
         return child;
     }

@@ -16,10 +16,14 @@
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/video_codecs/video_encoder_config.h"
+#include "call/fake_network_pipe.h"
 #include "call/rtp_transport_controller_send.h"
+#include "call/simulated_network.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/congestion_controller/bbr/bbr_factory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
+#include "rtc_base/experiments/congestion_controller_experiment.h"
 #include "test/fake_encoder.h"
 #include "test/testsupport/fileutils.h"
 
@@ -37,10 +41,16 @@ CallTest::CallTest()
       sender_call_transport_controller_(nullptr),
       audio_send_config_(nullptr),
       audio_send_stream_(nullptr),
+      bbr_network_controller_factory_(new BbrNetworkControllerFactory()),
       fake_encoder_factory_([this]() {
-        auto encoder = absl::make_unique<test::FakeEncoder>(clock_);
-        encoder->SetMaxBitrate(fake_encoder_max_bitrate_);
-        return encoder;
+        std::unique_ptr<FakeEncoder> fake_encoder;
+        if (video_encoder_configs_[0].codec_type == kVideoCodecVP8) {
+          fake_encoder = absl::make_unique<FakeVP8Encoder>(clock_);
+        } else {
+          fake_encoder = absl::make_unique<FakeEncoder>(clock_);
+        }
+        fake_encoder->SetMaxBitrate(fake_encoder_max_bitrate_);
+        return fake_encoder;
       }),
       num_video_streams_(1),
       num_audio_streams_(0),
@@ -187,10 +197,20 @@ void CallTest::CreateSenderCall() {
 }
 
 void CallTest::CreateSenderCall(const Call::Config& config) {
+  NetworkControllerFactoryInterface* injected_factory =
+      config.network_controller_factory;
+  if (!injected_factory) {
+    if (CongestionControllerExperiment::BbrControllerEnabled()) {
+      RTC_LOG(LS_INFO) << "Using BBR network controller factory";
+      injected_factory = bbr_network_controller_factory_.get();
+    } else {
+      RTC_LOG(LS_INFO) << "Using default network controller factory";
+    }
+  }
   std::unique_ptr<RtpTransportControllerSend> controller_send =
       absl::make_unique<RtpTransportControllerSend>(
-          Clock::GetRealTimeClock(), config.event_log,
-          config.network_controller_factory, config.bitrate_config);
+          Clock::GetRealTimeClock(), config.event_log, injected_factory,
+          config.bitrate_config);
   sender_call_transport_controller_ = controller_send.get();
   sender_call_.reset(Call::Create(config, std::move(controller_send)));
 }
@@ -717,14 +737,20 @@ test::PacketTransport* BaseTest::CreateSendTransport(
     Call* sender_call) {
   return new PacketTransport(
       task_queue, sender_call, this, test::PacketTransport::kSender,
-      CallTest::payload_type_map_, FakeNetworkPipe::Config());
+      CallTest::payload_type_map_,
+      absl::make_unique<FakeNetworkPipe>(
+          Clock::GetRealTimeClock(), absl::make_unique<SimulatedNetwork>(
+                                         DefaultNetworkSimulationConfig())));
 }
 
 test::PacketTransport* BaseTest::CreateReceiveTransport(
     SingleThreadedTaskQueueForTesting* task_queue) {
   return new PacketTransport(
       task_queue, nullptr, this, test::PacketTransport::kReceiver,
-      CallTest::payload_type_map_, FakeNetworkPipe::Config());
+      CallTest::payload_type_map_,
+      absl::make_unique<FakeNetworkPipe>(
+          Clock::GetRealTimeClock(), absl::make_unique<SimulatedNetwork>(
+                                         DefaultNetworkSimulationConfig())));
 }
 
 size_t BaseTest::GetNumVideoStreams() const {

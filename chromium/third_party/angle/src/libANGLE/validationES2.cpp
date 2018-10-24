@@ -819,6 +819,8 @@ bool ValidCap(const Context *context, GLenum cap, bool queryOnly)
         case GL_CLIP_PLANE5:
         case GL_FOG:
         case GL_POINT_SMOOTH:
+        case GL_LINE_SMOOTH:
+        case GL_COLOR_LOGIC_OP:
             return context->getClientVersion() < Version(2, 0);
         case GL_POINT_SIZE_ARRAY_OES:
             return context->getClientVersion() < Version(2, 0) &&
@@ -2440,22 +2442,20 @@ bool ValidateBlitFramebufferANGLE(Context *context,
 {
     if (!context->getExtensions().framebufferBlit)
     {
-        context->handleError(InvalidOperation() << "Blit extension not available.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), BlitExtensionNotAvailable);
         return false;
     }
 
     if (srcX1 - srcX0 != dstX1 - dstX0 || srcY1 - srcY0 != dstY1 - dstY0)
     {
         // TODO(jmadill): Determine if this should be available on other implementations.
-        context->handleError(InvalidOperation() << "Scaling and flipping in "
-                                                   "BlitFramebufferANGLE not supported by this "
-                                                   "implementation.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), BlitExtensionScaleOrFlip);
         return false;
     }
 
     if (filter == GL_LINEAR)
     {
-        context->handleError(InvalidEnum() << "Linear blit not supported in this extension");
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), BlitExtensionLinear);
         return false;
     }
 
@@ -2474,7 +2474,8 @@ bool ValidateBlitFramebufferANGLE(Context *context,
                 readColorAttachment->type() != GL_RENDERBUFFER &&
                 readColorAttachment->type() != GL_FRAMEBUFFER_DEFAULT)
             {
-                context->handleError(InvalidOperation());
+                ANGLE_VALIDATION_ERR(context, InvalidOperation(),
+                                     BlitExtensionFromInvalidAttachmentType);
                 return false;
             }
 
@@ -2490,7 +2491,8 @@ bool ValidateBlitFramebufferANGLE(Context *context,
                         attachment->type() != GL_RENDERBUFFER &&
                         attachment->type() != GL_FRAMEBUFFER_DEFAULT)
                     {
-                        context->handleError(InvalidOperation());
+                        ANGLE_VALIDATION_ERR(context, InvalidOperation(),
+                                             BlitExtensionToInvalidAttachmentType);
                         return false;
                     }
 
@@ -2498,7 +2500,8 @@ bool ValidateBlitFramebufferANGLE(Context *context,
                     if (!Format::EquivalentForBlit(attachment->getFormat(),
                                                    readColorAttachment->getFormat()))
                     {
-                        context->handleError(InvalidOperation());
+                        ANGLE_VALIDATION_ERR(context, InvalidOperation(),
+                                             BlitExtensionFormatMismatch);
                         return false;
                     }
                 }
@@ -2509,7 +2512,8 @@ bool ValidateBlitFramebufferANGLE(Context *context,
                 IsPartialBlit(context, readColorAttachment, drawColorAttachment, srcX0, srcY0,
                               srcX1, srcY1, dstX0, dstY0, dstX1, dstY1))
             {
-                context->handleError(InvalidOperation());
+                ANGLE_VALIDATION_ERR(context, InvalidOperation(),
+                                     BlitExtensionMultisampledWholeBufferBlit);
                 return false;
             }
         }
@@ -2532,15 +2536,15 @@ bool ValidateBlitFramebufferANGLE(Context *context,
                                   dstX0, dstY0, dstX1, dstY1))
                 {
                     // only whole-buffer copies are permitted
-                    context->handleError(InvalidOperation() << "Only whole-buffer depth and "
-                                                               "stencil blits are supported by "
-                                                               "this extension.");
+                    ANGLE_VALIDATION_ERR(context, InvalidOperation(),
+                                         BlitExtensionDepthStencilWholeBufferBlit);
                     return false;
                 }
 
                 if (readBuffer->getSamples() != 0 || drawBuffer->getSamples() != 0)
                 {
-                    context->handleError(InvalidOperation());
+                    ANGLE_VALIDATION_ERR(context, InvalidOperation(),
+                                         BlitExtensionMultisampledDepthOrStencil);
                     return false;
                 }
             }
@@ -2553,7 +2557,8 @@ bool ValidateBlitFramebufferANGLE(Context *context,
 
 bool ValidateClear(Context *context, GLbitfield mask)
 {
-    Framebuffer *fbo = context->getGLState().getDrawFramebuffer();
+    Framebuffer *fbo             = context->getGLState().getDrawFramebuffer();
+    const Extensions &extensions = context->getExtensions();
 
     if (!ValidateFramebufferComplete(context, fbo))
     {
@@ -2566,7 +2571,7 @@ bool ValidateClear(Context *context, GLbitfield mask)
         return false;
     }
 
-    if (context->getExtensions().webglCompatibility && (mask & GL_COLOR_BUFFER_BIT) != 0)
+    if (extensions.webglCompatibility && (mask & GL_COLOR_BUFFER_BIT) != 0)
     {
         constexpr GLenum validComponentTypes[] = {GL_FLOAT, GL_UNSIGNED_NORMALIZED,
                                                   GL_SIGNED_NORMALIZED};
@@ -2579,6 +2584,20 @@ bool ValidateClear(Context *context, GLbitfield mask)
             {
                 return false;
             }
+        }
+    }
+
+    if (extensions.multiview && extensions.disjointTimerQuery)
+    {
+        const State &state       = context->getGLState();
+        Framebuffer *framebuffer = state.getDrawFramebuffer();
+        if (framebuffer->getNumViews() > 1 && state.isQueryActive(QueryType::TimeElapsed))
+        {
+            context->handleError(InvalidOperation() << "There is an active query for target "
+                                                       "GL_TIME_ELAPSED_EXT when the number of "
+                                                       "views in the active draw framebuffer is "
+                                                       "greater than 1.");
+            return false;
         }
     }
 
@@ -3007,7 +3026,13 @@ bool ValidateBindTexture(Context *context, TextureType target, GLuint texture)
                 return false;
             }
             break;
-
+        case TextureType::_2DMultisampleArray:
+            if (!context->getExtensions().textureMultisampleArray)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), MultisampleArrayExtensionRequired);
+                return false;
+            }
+            break;
         case TextureType::External:
             if (!context->getExtensions().eglImageExternal &&
                 !context->getExtensions().eglStreamConsumerExternal)
@@ -3834,7 +3859,7 @@ bool ValidateProgramPathFragmentInputGenCHROMIUM(Context *context,
     if (location == -1)
         return true;
 
-    const auto &binding = programObject->getFragmentInputBindingInfo(context, location);
+    const auto &binding = programObject->getFragmentInputBindingInfo(location);
 
     if (!binding.valid)
     {
@@ -5331,6 +5356,17 @@ bool ValidateHint(Context *context, GLenum target, GLenum mode)
             }
             break;
 
+        case GL_PERSPECTIVE_CORRECTION_HINT:
+        case GL_POINT_SMOOTH_HINT:
+        case GL_LINE_SMOOTH_HINT:
+        case GL_FOG_HINT:
+            if (context->getClientMajorVersion() >= 2)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
+                return false;
+            }
+            break;
+
         default:
             ANGLE_VALIDATION_ERR(context, InvalidEnum(), EnumNotSupported);
             return false;
@@ -6040,13 +6076,6 @@ bool ValidateFramebufferTexture2D(Context *context,
             default:
                 ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidTextureTarget);
                 return false;
-        }
-
-        const Format &format = tex->getFormat(textarget, level);
-        if (format.info->compressed)
-        {
-            context->handleError(InvalidOperation());
-            return false;
         }
     }
 

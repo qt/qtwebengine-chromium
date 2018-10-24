@@ -17,6 +17,7 @@
 #include "SkRSXform.h"
 #include "SkSafeMath.h"
 #include "SkTextBlob.h"
+#include "SkTextOnPath.h"
 #include "SkTDArray.h"
 #include "SkTypes.h"
 
@@ -583,7 +584,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 canvas->drawText(text.text(), text.length(), ptr[0], ptr[1], *paint);
             }
         } break;
-        case DRAW_TEXT_ON_PATH: {
+        case DRAW_TEXT_ON_PATH_RETIRED_08_2018: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             TextContainer text(reader, paint);
             const SkPath& path = fPictureData->getPath(reader);
@@ -592,7 +593,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             BREAK_ON_READ_ERROR(reader);
 
             if (paint && text.text()) {
-                canvas->drawTextOnPath(text.text(), text.length(), path, &matrix, *paint);
+                SkDrawTextOnPath(text.text(), text.length(), *paint, path, &matrix, canvas);
             }
         } break;
         case DRAW_TEXT_RSXFORM: {
@@ -616,9 +617,9 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkVertices* vertices = fPictureData->getVertices(reader);
             const int boneCount = reader->readInt();
-            const SkMatrix* bones = boneCount ?
-                                    (const SkMatrix*) reader->skip(boneCount, sizeof(SkMatrix)) :
-                                    nullptr;
+            const SkVertices::Bone* bones = boneCount ?
+                    (const SkVertices::Bone*) reader->skip(boneCount, sizeof(SkVertices::Bone)) :
+                    nullptr;
             SkBlendMode bmode = reader->read32LE(SkBlendMode::kLastMode);
             BREAK_ON_READ_ERROR(reader);
 

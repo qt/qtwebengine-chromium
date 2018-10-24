@@ -7,21 +7,22 @@
 #ifndef FXJS_XFA_CJX_BIND_H_
 #define FXJS_XFA_CJX_BIND_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
 
 class CXFA_Bind;
 
-class CJX_Bind : public CJX_Node {
+class CJX_Bind final : public CJX_Node {
  public:
   explicit CJX_Bind(CXFA_Bind* node);
   ~CJX_Bind() override;
 
-  JS_PROP(contentType);
-  JS_PROP(match);
-  JS_PROP(ref);
-  JS_PROP(transferEncoding);
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(contentType);
+  JSE_PROP(match);
+  JSE_PROP(ref);
+  JSE_PROP(transferEncoding);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_BIND_H_

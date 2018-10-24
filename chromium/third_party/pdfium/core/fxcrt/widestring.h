@@ -61,9 +61,6 @@ class WideString {
   ~WideString();
 
   static WideString FromLocal(const ByteStringView& str) WARN_UNUSED_RESULT;
-  static WideString FromCodePage(const ByteStringView& str,
-                                 uint16_t codepage) WARN_UNUSED_RESULT;
-
   static WideString FromUTF8(const ByteStringView& str) WARN_UNUSED_RESULT;
   static WideString FromUTF16LE(const unsigned short* str,
                                 size_t len) WARN_UNUSED_RESULT;
@@ -195,6 +192,7 @@ class WideString {
   size_t Replace(const WideStringView& pOld, const WideStringView& pNew);
   size_t Remove(wchar_t ch);
 
+  ByteString ToDefANSI() const;
   ByteString UTF8Encode() const;
 
   // This method will add \0\0 to the end of the string to represent the

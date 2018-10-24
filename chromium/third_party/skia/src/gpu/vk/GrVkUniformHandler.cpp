@@ -79,9 +79,6 @@ uint32_t grsltype_to_alignment_mask(GrSLType type) {
         case kTexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
-        case kBufferSampler_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
             break;
     }
     SK_ABORT("Unexpected type");
@@ -164,9 +161,6 @@ static inline uint32_t grsltype_to_vk_size(GrSLType type) {
         case kTexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
-        case kBufferSampler_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
             break;
     }
     SK_ABORT("Unexpected type");
@@ -262,7 +256,7 @@ GrGLSLUniformHandler::UniformHandle GrVkUniformHandler::internalAddUniformArray(
 
 GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addSampler(uint32_t visibility,
                                                                    GrSwizzle swizzle,
-                                                                   GrSLType type,
+                                                                   GrTextureType type,
                                                                    GrSLPrecision precision,
                                                                    const char* name) {
     SkASSERT(name && strlen(name));
@@ -275,8 +269,7 @@ GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addSampler(uint32_t visi
     fProgramBuilder->nameVariable(&mangleName, prefix, name, true);
 
     UniformInfo& info = fSamplers.push_back();
-    SkASSERT(GrSLTypeIsCombinedSamplerType(type));
-    info.fVariable.setType(type);
+    info.fVariable.setType(GrSLCombinedSamplerTypeForTextureType(type));
     info.fVariable.setTypeModifier(GrShaderVar::kUniform_TypeModifier);
     info.fVariable.setPrecision(precision);
     info.fVariable.setName(mangleName);

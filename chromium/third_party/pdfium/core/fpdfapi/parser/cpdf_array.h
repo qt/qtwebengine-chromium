@@ -18,7 +18,7 @@
 #include "core/fxcrt/fx_coordinates.h"
 #include "third_party/base/ptr_util.h"
 
-class CPDF_Array : public CPDF_Object {
+class CPDF_Array final : public CPDF_Object {
  public:
   using const_iterator =
       std::vector<std::unique_ptr<CPDF_Object>>::const_iterator;
@@ -33,7 +33,8 @@ class CPDF_Array : public CPDF_Object {
   bool IsArray() const override;
   CPDF_Array* AsArray() override;
   const CPDF_Array* AsArray() const override;
-  bool WriteTo(IFX_ArchiveStream* archive) const override;
+  bool WriteTo(IFX_ArchiveStream* archive,
+               const CPDF_Encryptor* encryptor) const override;
 
   bool IsEmpty() const { return m_Objects.empty(); }
   size_t GetCount() const { return m_Objects.size(); }

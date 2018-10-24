@@ -18,6 +18,7 @@
 #include "Resources.h"
 #include "SkAndroidCodec.h"
 #include "SkAutoMalloc.h"
+#include "SkAutoPixmapStorage.h"
 #include "SkBase64.h"
 #include "SkCodec.h"
 #include "SkCodecImageGenerator.h"
@@ -55,11 +56,11 @@
 #include "SkRecordDraw.h"
 #include "SkRecorder.h"
 #include "SkStream.h"
+#include "SkSurface.h"
 #include "SkSurfaceCharacterization.h"
 #include "SkSwizzler.h"
 #include "SkTLogic.h"
 #include "SkTaskGroup.h"
-#include "SkThreadedBMPDevice.h"
 #if defined(SK_BUILD_FOR_WIN)
     #include "SkAutoCoInitialize.h"
     #include "SkHRESULT.h"
@@ -87,7 +88,7 @@ using sk_gpu_test::GrContextFactory;
 
 namespace DM {
 
-GMSrc::GMSrc(skiagm::GMRegistry::Factory factory) : fFactory(factory) {}
+GMSrc::GMSrc(skiagm::GMFactory factory) : fFactory(factory) {}
 
 Error GMSrc::draw(SkCanvas* canvas) const {
     std::unique_ptr<skiagm::GM> gm(fFactory(nullptr));
@@ -144,14 +145,6 @@ static inline void alpha8_to_gray8(SkBitmap* bitmap) {
 }
 
 Error BRDSrc::draw(SkCanvas* canvas) const {
-    if (canvas->imageInfo().colorSpace() &&
-            kRGBA_F16_SkColorType != canvas->imageInfo().colorType()) {
-        // SkAndroidCodec uses legacy premultiplication and blending.  Therefore, we only
-        // run these tests on legacy canvases.
-        // We allow an exception for F16, since Android uses F16.
-        return Error::Nonfatal("Skip testing to color correct canvas.");
-    }
-
     SkColorType colorType = canvas->imageInfo().colorType();
     if (kRGB_565_SkColorType == colorType &&
             CodecSrc::kGetFromCanvas_DstColorType != fDstColorType) {
@@ -400,11 +393,6 @@ static bool get_decode_info(SkImageInfo* decodeInfo, SkColorType canvasColorType
                 return false;
             }
 
-            if (kRGBA_F16_SkColorType == canvasColorType) {
-                sk_sp<SkColorSpace> linearSpace = decodeInfo->colorSpace()->makeLinearGamma();
-                *decodeInfo = decodeInfo->makeColorSpace(std::move(linearSpace));
-            }
-
             *decodeInfo = decodeInfo->makeColorType(canvasColorType);
             break;
     }
@@ -430,11 +418,7 @@ static void draw_to_canvas(SkCanvas* canvas, const SkImageInfo& info, void* pixe
 // "pretend" that the color space is standard sRGB to avoid triggering color conversion
 // at draw time.
 static void set_bitmap_color_space(SkImageInfo* info) {
-    if (kRGBA_F16_SkColorType == info->colorType()) {
-        *info = info->makeColorSpace(SkColorSpace::MakeSRGBLinear());
-    } else {
-        *info = info->makeColorSpace(SkColorSpace::MakeSRGB());
-    }
+    *info = info->makeColorSpace(SkColorSpace::MakeSRGB());
 }
 
 Error CodecSrc::draw(SkCanvas* canvas) const {
@@ -500,18 +484,18 @@ Error CodecSrc::draw(SkCanvas* canvas) const {
 
             // Used to cache a frame that future frames will depend on.
             SkAutoMalloc priorFramePixels;
-            int cachedFrame = SkCodec::kNone;
+            int cachedFrame = SkCodec::kNoFrame;
             for (int i = 0; static_cast<size_t>(i) < frameInfos.size(); i++) {
                 options.fFrameIndex = i;
                 // Check for a prior frame
                 const int reqFrame = frameInfos[i].fRequiredFrame;
-                if (reqFrame != SkCodec::kNone && reqFrame == cachedFrame
+                if (reqFrame != SkCodec::kNoFrame && reqFrame == cachedFrame
                         && priorFramePixels.get()) {
                     // Copy into pixels
                     memcpy(pixels.get(), priorFramePixels.get(), safeSize);
                     options.fPriorFrame = reqFrame;
                 } else {
-                    options.fPriorFrame = SkCodec::kNone;
+                    options.fPriorFrame = SkCodec::kNoFrame;
                 }
                 SkCodec::Result result = codec->getPixels(decodeInfo, pixels.get(),
                                                           rowBytes, &options);
@@ -823,14 +807,6 @@ bool AndroidCodecSrc::veto(SinkFlags flags) const {
 }
 
 Error AndroidCodecSrc::draw(SkCanvas* canvas) const {
-    if (canvas->imageInfo().colorSpace() &&
-            kRGBA_F16_SkColorType != canvas->imageInfo().colorType()) {
-        // SkAndroidCodec uses legacy premultiplication and blending.  Therefore, we only
-        // run these tests on legacy canvases.
-        // We allow an exception for F16, since Android uses F16.
-        return Error::Nonfatal("Skip testing to color correct canvas.");
-    }
-
     sk_sp<SkData> encoded(SkData::MakeFromFileName(fPath.c_str()));
     if (!encoded) {
         return SkStringPrintf("Couldn't read %s.", fPath.c_str());
@@ -1089,9 +1065,6 @@ Error ColorCodecSrc::draw(SkCanvas* canvas) const {
     if (kUnpremul_SkAlphaType == decodeInfo.alphaType()) {
         decodeInfo = decodeInfo.makeAlphaType(kPremul_SkAlphaType);
     }
-    if (kRGBA_F16_SkColorType == fColorType) {
-        decodeInfo = decodeInfo.makeColorSpace(decodeInfo.colorSpace()->makeLinearGamma());
-    }
 
     SkImageInfo bitmapInfo = decodeInfo;
     set_bitmap_color_space(&bitmapInfo);
@@ -1201,49 +1174,40 @@ Name SKPSrc::name() const { return SkOSPath::Basename(fPath.c_str()); }
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 #if defined(SK_ENABLE_SKOTTIE)
-SkottieSrc::SkottieSrc(Path path)
-    : fName(SkOSPath::Basename(path.c_str())) {
-
-    fAnimation  = skottie::Animation::MakeFromFile(path.c_str());
-    if (!fAnimation) {
-        return;
-    }
-
-    // Fit kTileCount x kTileCount frames to a 1000x1000 film strip.
-    static constexpr SkScalar kTargetSize = 1000;
-    fTileSize = SkSize::Make(kTargetSize / kTileCount, kTargetSize / kTileCount).toCeil();
-}
+SkottieSrc::SkottieSrc(Path path) : fPath(std::move(path)) {}
 
 Error SkottieSrc::draw(SkCanvas* canvas) const {
-    if (!fAnimation) {
-        return SkStringPrintf("Unable to parse file: %s", fName.c_str());
+    auto animation = skottie::Animation::MakeFromFile(fPath.c_str());
+    if (!animation) {
+        return SkStringPrintf("Unable to parse file: %s", fPath.c_str());
     }
 
     canvas->drawColor(SK_ColorWHITE);
 
     const auto t_rate = 1.0f / (kTileCount * kTileCount - 1);
 
-    // Shuffled order to exercise non-linear frame progression.
-    static constexpr int frames[] = { 4, 0, 3, 1, 2 };
-    static_assert(SK_ARRAY_COUNT(frames) == kTileCount, "");
+    // Draw the frames in a shuffled order to exercise non-linear
+    // frame progression. The film strip will still be in order left-to-right,
+    // top-down, just not drawn in that order.
+    static constexpr int frameOrder[] = { 4, 0, 3, 1, 2 };
+    static_assert(SK_ARRAY_COUNT(frameOrder) == kTileCount, "");
 
     for (int i = 0; i < kTileCount; ++i) {
-        const SkScalar y = frames[i] * fTileSize.height();
+        const SkScalar y = frameOrder[i] * kTileSize;
 
         for (int j = 0; j < kTileCount; ++j) {
-            const SkScalar x = frames[j] * fTileSize.width();
-            SkRect dest = SkRect::MakeXYWH(x, y, fTileSize.width(), fTileSize.height());
+            const SkScalar x = frameOrder[j] * kTileSize;
+            SkRect dest = SkRect::MakeXYWH(x, y, kTileSize, kTileSize);
 
-            const auto t = t_rate * (frames[i] * kTileCount + frames[j]);
+            const auto t = t_rate * (frameOrder[i] * kTileCount + frameOrder[j]);
             {
                 SkAutoCanvasRestore acr(canvas, true);
                 canvas->clipRect(dest, true);
-                canvas->concat(SkMatrix::MakeRectToRect(SkRect::MakeSize(fAnimation->size()),
+                canvas->concat(SkMatrix::MakeRectToRect(SkRect::MakeSize(animation->size()),
                                                         dest,
                                                         SkMatrix::kCenter_ScaleToFit));
-
-                fAnimation->seek(t);
-                fAnimation->render(canvas);
+                animation->seek(t);
+                animation->render(canvas);
             }
         }
     }
@@ -1252,11 +1216,10 @@ Error SkottieSrc::draw(SkCanvas* canvas) const {
 }
 
 SkISize SkottieSrc::size() const {
-    return SkISize::Make(kTileCount * fTileSize.width(),
-                         kTileCount * fTileSize.height());
+    return SkISize::Make(kTargetSize, kTargetSize);
 }
 
-Name SkottieSrc::name() const { return fName; }
+Name SkottieSrc::name() const { return SkOSPath::Basename(fPath.c_str()); }
 
 bool SkottieSrc::veto(SinkFlags flags) const {
     // No need to test to non-(raster||gpu||vector) or indirect backends.
@@ -1517,12 +1480,9 @@ Error GPUSink::onDraw(const Src& src, SkBitmap* dst, SkWStream*, SkString* log,
             break;
         case SkCommandLineConfigGpu::SurfType::kBackendRenderTarget:
             if (1 == fSampleCount) {
-                auto srgbEncoded = info.colorSpace() && info.colorSpace()->gammaCloseToSRGB()
-                                           ? GrSRGBEncoded::kYes
-                                           : GrSRGBEncoded::kNo;
                 auto colorType = SkColorTypeToGrColorType(info.colorType());
                 backendRT = context->contextPriv().getGpu()->createTestingOnlyBackendRenderTarget(
-                        info.width(), info.height(), colorType, srgbEncoded);
+                        info.width(), info.height(), colorType);
                 surface = SkSurface::MakeFromBackendRenderTarget(
                         context, backendRT, kBottomLeft_GrSurfaceOrigin, info.colorType(),
                         info.refColorSpace(), &props);
@@ -1803,7 +1763,7 @@ RasterSink::RasterSink(SkColorType colorType, sk_sp<SkColorSpace> colorSpace)
     : fColorType(colorType)
     , fColorSpace(std::move(colorSpace)) {}
 
-void RasterSink::allocPixels(const Src& src, SkBitmap* dst) const {
+Error RasterSink::draw(const Src& src, SkBitmap* dst, SkWStream*, SkString*) const {
     const SkISize size = src.size();
     // If there's an appropriate alpha type for this color type, use it, otherwise use premul.
     SkAlphaType alphaType = kPremul_SkAlphaType;
@@ -1812,38 +1772,9 @@ void RasterSink::allocPixels(const Src& src, SkBitmap* dst) const {
     dst->allocPixelsFlags(SkImageInfo::Make(size.width(), size.height(),
                                             fColorType, alphaType, fColorSpace),
                           SkBitmap::kZeroPixels_AllocFlag);
-}
 
-Error RasterSink::draw(const Src& src, SkBitmap* dst, SkWStream*, SkString*) const {
-    this->allocPixels(src, dst);
     SkCanvas canvas(*dst);
     return src.draw(&canvas);
-}
-
-/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-
-ThreadedSink::ThreadedSink(SkColorType colorType, sk_sp<SkColorSpace> colorSpace)
-        : RasterSink(colorType, colorSpace) {}
-
-Error ThreadedSink::draw(const Src& src, SkBitmap* dst, SkWStream* stream, SkString* str) const {
-    this->allocPixels(src, dst);
-
-    auto canvas = skstd::make_unique<SkCanvas>(
-            sk_make_sp<SkThreadedBMPDevice>(
-                    *dst, FLAGS_backendTiles, FLAGS_backendThreads));
-    Error result = src.draw(canvas.get());
-    canvas->flush();
-    return result;
-
-    // ??? yuqian:  why does the following give me segmentation fault while the above one works?
-    //              The seg fault occurs right in the beginning of ThreadedSink::draw with invalid
-    //              memory address (it would crash without even calling this->allocPixels).
-
-    // SkThreadedBMPDevice device(*dst, tileCnt, FLAGS_cpuThreads, fExecutor.get());
-    // SkCanvas canvas(&device);
-    // Error result = src.draw(&canvas);
-    // canvas.flush();
-    // return result;
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -2192,8 +2123,7 @@ ViaCSXform::ViaCSXform(Sink* sink, sk_sp<SkColorSpace> cs, bool colorSpin)
     , fColorSpin(colorSpin) {}
 
 Error ViaCSXform::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkString* log) const {
-    return draw_to_canvas(fSink.get(), bitmap, stream, log, src.size(),
-                          [&](SkCanvas* canvas) -> Error {
+    Error err = draw_to_canvas(fSink.get(), bitmap, stream, log, src.size(), [&](SkCanvas* canvas) {
         {
             SkAutoCanvasRestore acr(canvas, true);
             auto proxy = SkCreateColorSpaceXformCanvas(canvas, fCS);
@@ -2219,8 +2149,25 @@ Error ViaCSXform::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkSt
             canvas->drawBitmap(pixels, 0, 0, &rotateColors);
         }
 
-        return "";
+        return Error("");
     });
+
+    if (!err.isEmpty()) {
+        return err;
+    }
+
+    if (bitmap && !fColorSpin) {
+        // It should be possible to do this without all the copies, but that (I think) requires
+        // adding API to SkBitmap.
+        SkAutoPixmapStorage pmap;
+        pmap.alloc(bitmap->info());
+        bitmap->readPixels(pmap);
+        pmap.setColorSpace(fCS);
+        bitmap->allocPixels(pmap.info());
+        bitmap->writePixels(pmap);
+    }
+
+    return "";
 }
 
 }  // namespace DM

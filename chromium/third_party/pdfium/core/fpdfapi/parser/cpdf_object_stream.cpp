@@ -97,13 +97,10 @@ void CPDF_ObjectStream::Init(const CPDF_Stream* stream) {
     stream_acc->LoadAllDataFiltered();
     const uint32_t data_size = stream_acc->GetSize();
     data_stream_ = pdfium::MakeRetain<CFX_MemoryStream>(
-        stream_acc->DetachData().release(), static_cast<size_t>(data_size),
-        true);
+        stream_acc->DetachData(), data_size);
   }
 
-  CPDF_SyntaxParser syntax;
-  syntax.InitParser(data_stream_, 0);
-
+  CPDF_SyntaxParser syntax(data_stream_);
   const int object_count = stream->GetDict()->GetIntegerFor("N");
   for (int32_t i = object_count; i > 0; --i) {
     if (syntax.GetPos() >= data_stream_->GetSize())
@@ -130,8 +127,7 @@ std::unique_ptr<CPDF_Object> CPDF_ObjectStream::ParseObjectAtOffset(
   if (offset_in_stream.ValueOrDie() >= data_stream_->GetSize())
     return nullptr;
 
-  CPDF_SyntaxParser syntax;
-  syntax.InitParser(data_stream_, 0);
+  CPDF_SyntaxParser syntax(data_stream_);
   syntax.SetPos(offset_in_stream.ValueOrDie());
   return syntax.GetObjectBody(pObjList);
 }

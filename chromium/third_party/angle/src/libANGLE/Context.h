@@ -25,6 +25,7 @@
 #include "libANGLE/HandleAllocator.h"
 #include "libANGLE/RefCountObject.h"
 #include "libANGLE/ResourceMap.h"
+#include "libANGLE/ResourceManager.h"
 #include "libANGLE/VertexAttribute.h"
 #include "libANGLE/Workarounds.h"
 #include "libANGLE/angletypes.h"
@@ -69,16 +70,65 @@ class ErrorSet : angle::NonCopyable
     explicit ErrorSet(Context *context);
     ~ErrorSet();
 
-    void handleError(const Error &error);
+    // TODO(jmadill): Remove const. http://anglebug.com/2378
+    void handleError(const Error &error) const;
     bool empty() const;
     GLenum popError();
 
   private:
     Context *mContext;
-    std::set<GLenum> mErrors;
+
+    // TODO(jmadill): Remove mutable. http://anglebug.com/2378
+    mutable std::set<GLenum> mErrors;
 };
 
-class Context final : public egl::LabeledObject, angle::NonCopyable
+// Helper class for managing cache variables and state changes.
+class StateCache final : angle::NonCopyable
+{
+  public:
+    StateCache();
+    ~StateCache();
+
+    // Places that can trigger updateActiveAttribsMask:
+    // 1. onVertexArrayBindingChange.
+    // 2. onProgramExecutableChange.
+    // 3. onVertexArrayStateChange.
+    // 4. onGLES1ClientStateChange.
+    AttributesMask getActiveBufferedAttribsMask() const { return mCachedActiveBufferedAttribsMask; }
+    AttributesMask getActiveClientAttribsMask() const { return mCachedActiveClientAttribsMask; }
+    bool hasAnyEnabledClientAttrib() const { return mCachedHasAnyEnabledClientAttrib; }
+
+    // Places that can trigger updateVertexElementLimits:
+    // 1. onVertexArrayBindingChange.
+    // 2. onProgramExecutableChange.
+    // 3. onVertexArraySizeChange.
+    // 4. onVertexArrayStateChange.
+    GLint64 getNonInstancedVertexElementLimit() const
+    {
+        return mCachedNonInstancedVertexElementLimit;
+    }
+    GLint64 getInstancedVertexElementLimit() const { return mCachedInstancedVertexElementLimit; }
+
+    // State change notifications.
+    void onVertexArrayBindingChange(Context *context);
+    void onProgramExecutableChange(Context *context);
+    void onVertexArraySizeChange(Context *context);
+    void onVertexArrayStateChange(Context *context);
+    void onGLES1ClientStateChange(Context *context);
+
+  private:
+    // Cache update functions.
+    void updateActiveAttribsMask(Context *context);
+    void updateVertexElementLimits(Context *context);
+
+    AttributesMask mCachedActiveBufferedAttribsMask;
+    AttributesMask mCachedActiveClientAttribsMask;
+    bool mCachedHasAnyEnabledClientAttrib;
+    GLint64 mCachedNonInstancedVertexElementLimit;
+    GLint64 mCachedInstancedVertexElementLimit;
+};
+
+class Context final : public egl::LabeledObject, angle::NonCopyable, public angle::ObserverInterface
 {
   public:
     Context(rx::EGLImplFactory *implFactory,
@@ -992,6 +1042,14 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
                                  GLsizei height,
                                  GLboolean fixedsamplelocations);
 
+    void texStorage3DMultisample(TextureType target,
+                                 GLsizei samples,
+                                 GLenum internalformat,
+                                 GLsizei width,
+                                 GLsizei height,
+                                 GLsizei depth,
+                                 GLboolean fixedsamplelocations);
+
     void getMultisamplefv(GLenum pname, GLuint index, GLfloat *val);
     void getMultisamplefvRobust(GLenum pname,
                                 GLuint index,
@@ -1395,7 +1453,8 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
     void framebufferTexture(GLenum target, GLenum attachment, GLuint texture, GLint level);
 
     // Consumes the error.
-    void handleError(const Error &error);
+    // TODO(jmadill): Remove const. http://anglebug.com/2378
+    void handleError(const Error &error) const;
 
     GLenum getError();
     void markContextLost();
@@ -1442,7 +1501,11 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
     bool isRobustResourceInitEnabled() const { return mGLState.isRobustResourceInitEnabled(); }
 
     bool isCurrentTransformFeedback(const TransformFeedback *tf) const;
-    bool isCurrentVertexArray(const VertexArray *va) const;
+
+    bool isCurrentVertexArray(const VertexArray *va) const
+    {
+        return mGLState.isCurrentVertexArray(va);
+    }
 
     const ContextState &getContextState() const { return mState; }
     GLint getClientMajorVersion() const { return mState.getClientMajorVersion(); }
@@ -1454,6 +1517,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
     const Extensions &getExtensions() const { return mState.getExtensions(); }
     const Limitations &getLimitations() const { return mState.getLimitations(); }
     bool skipValidation() const { return mSkipValidation; }
+    bool isGLES1() const;
 
     // Specific methods needed for validation.
     bool getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *numParams);
@@ -1463,7 +1527,11 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
     Shader *getShader(GLuint handle) const;
 
     bool isTextureGenerated(GLuint texture) const;
-    bool isBufferGenerated(GLuint buffer) const;
+    bool isBufferGenerated(GLuint buffer) const
+    {
+        return mState.mBuffers->isHandleGenerated(buffer);
+    }
+
     bool isRenderbufferGenerated(GLuint renderbuffer) const;
     bool isFramebufferGenerated(GLuint framebuffer) const;
     bool isProgramPipelineGenerated(GLuint pipeline) const;
@@ -1484,10 +1552,16 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
     // GLES1 emulation: Renderer level (for validation)
     int vertexArrayIndex(ClientVertexArrayType type) const;
     static int TexCoordArrayIndex(unsigned int unit);
-    AttributesMask getVertexArraysAttributeMask() const;
 
     // GL_KHR_parallel_shader_compile
     void maxShaderCompilerThreads(GLuint count);
+    std::shared_ptr<angle::WorkerThreadPool> getWorkerThreadPool() const { return mThreadPool; }
+
+    const StateCache &getStateCache() const { return mStateCache; }
+
+    void onSubjectStateChange(const Context *context,
+                              angle::SubjectIndex index,
+                              angle::SubjectMessage message) override;
 
   private:
     void initialize();
@@ -1498,15 +1572,14 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
     Error prepareForDraw(PrimitiveMode mode);
     Error prepareForClear(GLbitfield mask);
     Error prepareForClearBuffer(GLenum buffer, GLint drawbuffer);
-    Error syncState();
     Error syncState(const State::DirtyBits &bitMask, const State::DirtyObjects &objectMask);
     Error syncDirtyBits();
     Error syncDirtyBits(const State::DirtyBits &bitMask);
-    Error syncDirtyObjects();
     Error syncDirtyObjects(const State::DirtyObjects &objectMask);
     Error syncStateForReadPixels();
     Error syncStateForTexImage();
     Error syncStateForBlit();
+    Error syncStateForPathOperation();
 
     VertexArray *checkVertexArrayAllocation(GLuint vertexArrayHandle);
     TransformFeedback *checkTransformFeedbackAllocation(GLuint transformFeedback);
@@ -1531,6 +1604,8 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
 
     gl::LabeledObject *getLabeledObject(GLenum identifier, GLuint name) const;
     gl::LabeledObject *getLabeledObjectFromPtr(const void *ptr) const;
+
+    void setUniform1iImpl(Program *program, GLint location, GLsizei count, const GLint *v);
 
     ContextState mState;
     bool mSkipValidation;
@@ -1609,6 +1684,11 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
     const bool mExtensionsEnabled;
     MemoryProgramCache *mMemoryProgramCache;
 
+    State::DirtyObjects mDrawDirtyObjects;
+    State::DirtyObjects mPathOperationDirtyObjects;
+
+    StateCache mStateCache;
+
     State::DirtyBits mTexImageDirtyBits;
     State::DirtyObjects mTexImageDirtyObjects;
     State::DirtyBits mReadPixelsDirtyBits;
@@ -1622,9 +1702,17 @@ class Context final : public egl::LabeledObject, angle::NonCopyable
 
     Workarounds mWorkarounds;
 
+    // Binding to container objects that use dependent state updates.
+    angle::ObserverBinding mVertexArrayObserverBinding;
+    angle::ObserverBinding mDrawFramebufferObserverBinding;
+    angle::ObserverBinding mReadFramebufferObserverBinding;
+    std::vector<angle::ObserverBinding> mUniformBufferObserverBindings;
+
     // Not really a property of context state. The size and contexts change per-api-call.
     mutable angle::ScratchBuffer mScratchBuffer;
     mutable angle::ScratchBuffer mZeroFilledBuffer;
+
+    std::shared_ptr<angle::WorkerThreadPool> mThreadPool;
 };
 
 template <typename T>

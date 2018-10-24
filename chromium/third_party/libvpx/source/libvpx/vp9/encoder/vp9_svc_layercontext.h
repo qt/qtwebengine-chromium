@@ -60,10 +60,14 @@ typedef struct {
   size_t layer_size;
   struct vpx_psnr_pkt psnr_pkt;
   // Cyclic refresh parameters (aq-mode=3), that need to be updated per-frame.
+  // TODO(jianj/marpan): Is it better to use the full cyclic refresh struct.
   int sb_index;
   signed char *map;
   uint8_t *last_coded_q_map;
   uint8_t *consec_zero_mv;
+  int actual_num_seg1_blocks;
+  int actual_num_seg2_blocks;
+  int counter_encode_maxq_scene_change;
   uint8_t speed;
 } LAYER_CONTEXT;
 
@@ -143,12 +147,14 @@ typedef struct SVC {
   int high_source_sad_superframe;
 
   // Flags used to get SVC pattern info.
-  uint8_t update_last[VPX_SS_MAX_LAYERS];
-  uint8_t update_golden[VPX_SS_MAX_LAYERS];
-  uint8_t update_altref[VPX_SS_MAX_LAYERS];
+  int update_buffer_slot[VPX_SS_MAX_LAYERS];
   uint8_t reference_last[VPX_SS_MAX_LAYERS];
   uint8_t reference_golden[VPX_SS_MAX_LAYERS];
   uint8_t reference_altref[VPX_SS_MAX_LAYERS];
+  // TODO(jianj): Remove these last 3, deprecated.
+  uint8_t update_last[VPX_SS_MAX_LAYERS];
+  uint8_t update_golden[VPX_SS_MAX_LAYERS];
+  uint8_t update_altref[VPX_SS_MAX_LAYERS];
 
   // Keep track of the frame buffer index updated/refreshed on the base
   // temporal superframe.
@@ -165,6 +171,10 @@ typedef struct SVC {
   uint8_t superframe_has_layer_sync;
 
   uint8_t fb_idx_base[REF_FRAMES];
+
+  int use_set_ref_frame_config;
+
+  int temporal_layer_id_per_spatial[VPX_SS_MAX_LAYERS];
 } SVC;
 
 struct VP9_COMP;
@@ -229,6 +239,8 @@ void vp9_svc_assert_constraints_pattern(struct VP9_COMP *const cpi);
 void vp9_svc_check_spatial_layer_sync(struct VP9_COMP *const cpi);
 
 void vp9_svc_update_ref_frame_buffer_idx(struct VP9_COMP *const cpi);
+
+void vp9_svc_update_ref_frame(struct VP9_COMP *const cpi);
 
 #ifdef __cplusplus
 }  // extern "C"

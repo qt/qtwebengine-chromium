@@ -7,6 +7,7 @@
 // validationEGL.cpp: Validation functions for generic EGL entry point parameters
 
 #include "libANGLE/validationEGL.h"
+#include "libGLESv2/global_state.h"
 
 #include "common/utilities.h"
 #include "libANGLE/Config.h"
@@ -609,9 +610,8 @@ Error ValidateLabeledObject(Thread *thread,
     return NoError();
 }
 
-}  // namespace
-
-Error ValidateDisplay(const Display *display)
+// This is a common sub-check of Display status that's shared by multiple functions
+Error ValidateDisplayPointer(const Display *display)
 {
     if (display == EGL_NO_DISPLAY)
     {
@@ -622,6 +622,15 @@ Error ValidateDisplay(const Display *display)
     {
         return EglBadDisplay() << "display is not a valid display.";
     }
+
+    return NoError();
+}
+
+}  // namespace
+
+Error ValidateDisplay(const Display *display)
+{
+    ANGLE_TRY(ValidateDisplayPointer(display));
 
     if (!display->isInitialized())
     {
@@ -777,6 +786,16 @@ LabeledObject *GetLabeledObjectIfValid(Thread *thread,
     }
 
     return labeledObject;
+}
+
+Error ValidateInitialize(const Display *display)
+{
+    return ValidateDisplayPointer(display);
+}
+
+Error ValidateTerminate(const Display *display)
+{
+    return ValidateDisplayPointer(display);
 }
 
 Error ValidateCreateContext(Display *display,
@@ -1869,6 +1888,12 @@ Error ValidateCreateImageKHR(const Display *display,
                    << "invalid target: 0x" << std::hex << std::uppercase << target;
     }
 
+    if (attributes.contains(EGL_GL_TEXTURE_ZOFFSET_KHR) && target != EGL_GL_TEXTURE_3D_KHR)
+    {
+        return EglBadParameter()
+               << "EGL_GL_TEXTURE_ZOFFSET_KHR must be used with a 3D texture target.";
+    }
+
     return NoError();
 }
 
@@ -2465,6 +2490,52 @@ Error ValidateGetSyncValuesCHROMIUM(const Display *display,
     return NoError();
 }
 
+Error ValidateDestroySurface(const Display *display,
+                             const Surface *surface,
+                             const EGLSurface eglSurface)
+{
+    ANGLE_TRY(ValidateSurface(display, surface));
+
+    if (eglSurface == EGL_NO_SURFACE)
+    {
+        return EglBadSurface();
+    }
+
+    return NoError();
+}
+
+Error ValidateDestroyContext(const Display *display,
+                             const gl::Context *glCtx,
+                             const EGLContext eglCtx)
+{
+    ANGLE_TRY(ValidateContext(display, glCtx));
+
+    if (eglCtx == EGL_NO_CONTEXT)
+    {
+        return EglBadContext();
+    }
+
+    return NoError();
+}
+
+Error ValidateSwapBuffers(Thread *thread, const Display *display, const Surface *eglSurface)
+{
+    ANGLE_TRY(ValidateSurface(display, eglSurface));
+
+    if (display->isDeviceLost())
+    {
+        return EglContextLost();
+    }
+
+    if (eglSurface == EGL_NO_SURFACE || !thread->getContext() ||
+        thread->getCurrentDrawSurface() != eglSurface)
+    {
+        return EglBadSurface();
+    }
+
+    return NoError();
+}
+
 Error ValidateSwapBuffersWithDamageKHR(const Display *display,
                                        const Surface *surface,
                                        EGLint *rects,
@@ -2499,6 +2570,129 @@ Error ValidateSwapBuffersWithDamageKHR(const Display *display,
     }
 
     // TODO(jmadill): Validate Surface is bound to the thread.
+
+    return NoError();
+}
+
+Error ValidateWaitNative(const Display *display, const EGLint engine)
+{
+    ANGLE_TRY(ValidateDisplay(display));
+
+    if (engine != EGL_CORE_NATIVE_ENGINE)
+    {
+        return EglBadParameter() << "the 'engine' parameter has an unrecognized value";
+    }
+
+    return NoError();
+}
+
+Error ValidateCopyBuffers(Display *display, const Surface *surface)
+{
+    ANGLE_TRY(ValidateSurface(display, surface));
+
+    if (display->testDeviceLost())
+    {
+        return EglContextLost();
+    }
+
+    return NoError();
+}
+
+// Validate state for eglBindTexImage. If context is non-null then textureObject will be set to
+// surface's texture that will have an image bound to it
+Error ValidateBindTexImage(const Display *display,
+                           const Surface *surface,
+                           const EGLSurface eglSurface,
+                           const EGLint buffer,
+                           const gl::Context *context,
+                           gl::Texture **textureObject)
+{
+    ANGLE_TRY(ValidateSurface(display, surface));
+
+    if (buffer != EGL_BACK_BUFFER)
+    {
+        return EglBadParameter();
+    }
+
+    if (eglSurface == EGL_NO_SURFACE || surface->getType() == EGL_WINDOW_BIT)
+    {
+        return EglBadSurface();
+    }
+
+    if (surface->getBoundTexture())
+    {
+        return EglBadAccess();
+    }
+
+    if (surface->getTextureFormat() == TextureFormat::NoTexture)
+    {
+        return EglBadMatch();
+    }
+
+    if (context)
+    {
+        gl::TextureType type = egl_gl::EGLTextureTargetToTextureType(surface->getTextureTarget());
+        *textureObject       = context->getTargetTexture(type);
+        ASSERT(*textureObject != nullptr);
+
+        if ((*textureObject)->getImmutableFormat())
+        {
+            return EglBadMatch();
+        }
+    }
+
+    return NoError();
+}
+
+Error ValidateReleaseTexImage(const Display *display,
+                              const Surface *surface,
+                              const EGLSurface eglSurface,
+                              const EGLint buffer)
+{
+    ANGLE_TRY(ValidateSurface(display, surface));
+
+    if (buffer != EGL_BACK_BUFFER)
+    {
+        return EglBadParameter();
+    }
+
+    if (eglSurface == EGL_NO_SURFACE || surface->getType() == EGL_WINDOW_BIT)
+    {
+        return EglBadSurface();
+    }
+
+    if (surface->getTextureFormat() == TextureFormat::NoTexture)
+    {
+        return EglBadMatch();
+    }
+
+    return NoError();
+}
+
+Error ValidateSwapInterval(const Display *display, const Surface *draw_surface)
+{
+    ANGLE_TRY(ValidateDisplay(display));
+
+    if (draw_surface == nullptr)
+    {
+        return EglBadSurface();
+    }
+
+    return NoError();
+}
+
+Error ValidateBindAPI(const EGLenum api)
+{
+    switch (api)
+    {
+        case EGL_OPENGL_API:
+        case EGL_OPENVG_API:
+            return EglBadParameter();  // Not supported by this implementation
+        case EGL_OPENGL_ES_API:
+            break;
+        default:
+            return EglBadParameter();
+    }
 
     return NoError();
 }
@@ -2773,6 +2967,20 @@ Error ValidateSurfaceAttrib(const Display *display,
 
                 default:
                     return EglBadAttribute() << "Invalid swap behaviour.";
+            }
+            break;
+
+        case EGL_WIDTH:
+        case EGL_HEIGHT:
+            if (!display->getExtensions().windowFixedSize)
+            {
+                return EglBadAttribute() << "EGL_WIDTH or EGL_HEIGHT cannot be set without "
+                                            "EGL_ANGLE_window_fixed_size support.";
+            }
+            if (!surface->isFixedSize())
+            {
+                return EglBadMatch() << "EGL_WIDTH or EGL_HEIGHT cannot be set without "
+                                        "EGL_FIXED_SIZE_ANGLE being enabled on the surface.";
             }
             break;
 

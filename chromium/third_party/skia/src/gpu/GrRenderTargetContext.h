@@ -19,7 +19,7 @@
 #include "SkCanvas.h"
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
-#include "text/GrTextUtils.h"
+#include "text/GrTextTarget.h"
 
 class GrBackendSemaphore;
 class GrCCPRAtlas;
@@ -37,6 +37,7 @@ class GrStyle;
 class GrTextureProxy;
 struct GrUserStencilSettings;
 struct SkDrawShadowRec;
+class SkGlyphRunList;
 struct SkIPoint;
 struct SkIRect;
 class SkLatticeIter;
@@ -58,18 +59,7 @@ class SK_API GrRenderTargetContext : public GrSurfaceContext {
 public:
     ~GrRenderTargetContext() override;
 
-    // We use SkPaint rather than GrPaint here for two reasons:
-    //    * The SkPaint carries extra text settings. If these were extracted to a lighter object
-    //      we could use GrPaint except that
-    //    * SkPaint->GrPaint conversion depends upon whether the glyphs are color or grayscale and
-    //      this can vary within a text run.
-    virtual void drawPosText(const GrClip&, const SkPaint&, const SkMatrix& viewMatrix,
-                             const char text[], size_t byteLength, const SkScalar pos[],
-                             int scalarsPerPosition, const SkPoint& offset,
-                             const SkIRect& clipBounds);
-    virtual void drawTextBlob(const GrClip&, const SkPaint&,
-                              const SkMatrix& viewMatrix, const SkTextBlob*,
-                              SkScalar x, SkScalar y, const SkIRect& clipBounds);
+    virtual void drawGlyphRunList(const GrClip&, const SkMatrix& viewMatrix, const SkGlyphRunList&);
 
     /**
      * Provides a perfomance hint that the render target's contents are allowed
@@ -147,7 +137,7 @@ public:
     void drawTexture(const GrClip& clip, sk_sp<GrTextureProxy>, GrSamplerState::Filter, GrColor,
                      const SkRect& srcRect, const SkRect& dstRect, GrAA aa,
                      SkCanvas::SrcRectConstraint, const SkMatrix& viewMatrix,
-                     sk_sp<GrColorSpaceXform>);
+                     sk_sp<GrColorSpaceXform> texXform, sk_sp<GrColorSpaceXform> colorXform);
 
     /**
      * Draw a roundrect using a paint.
@@ -209,7 +199,22 @@ public:
                   GrAA,
                   const SkMatrix& viewMatrix,
                   const SkPath&,
-                  const GrStyle& style);
+                  const GrStyle&);
+
+    /**
+     * Draws a shape.
+     *
+     * @param paint         describes how to color pixels.
+     * @param GrAA          Controls whether the path is antialiased.
+     * @param viewMatrix    transformation matrix
+     * @param shape         the shape to draw
+     */
+    void drawShape(const GrClip&,
+                   GrPaint&&,
+                   GrAA,
+                   const SkMatrix& viewMatrix,
+                   const GrShape&);
+
 
     /**
      * Draws vertices with a paint.
@@ -225,7 +230,7 @@ public:
                       GrPaint&& paint,
                       const SkMatrix& viewMatrix,
                       sk_sp<SkVertices> vertices,
-                      const SkMatrix bones[],
+                      const SkVertices::Bone bones[],
                       int boneCount,
                       GrPrimitiveType* overridePrimType = nullptr);
 
@@ -353,7 +358,7 @@ public:
         if (!fRenderTargetProxy->instantiate(fContext->contextPriv().resourceProvider())) {
             return nullptr;
         }
-        return fRenderTargetProxy->priv().peekRenderTarget();
+        return fRenderTargetProxy->peekRenderTarget();
     }
 
     GrSurfaceProxy* asSurfaceProxy() override { return fRenderTargetProxy.get(); }
@@ -373,7 +378,7 @@ public:
     GrRenderTargetContextPriv priv();
     const GrRenderTargetContextPriv priv() const;
 
-    GrTextUtils::Target* textTarget() { return fTextTarget.get(); }
+    GrTextTarget* textTarget() { return fTextTarget.get(); }
 
     bool isWrapped_ForTesting() const;
 
@@ -452,7 +457,7 @@ private:
     GrRenderTargetOpList* getRTOpList();
     GrOpList* getOpList() override;
 
-    std::unique_ptr<GrTextUtils::Target> fTextTarget;
+    std::unique_ptr<GrTextTarget> fTextTarget;
     sk_sp<GrRenderTargetProxy> fRenderTargetProxy;
 
     // In MDB-mode the GrOpList can be closed by some other renderTargetContext that has picked

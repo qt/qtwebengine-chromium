@@ -6,6 +6,7 @@
 
 #include "fpdfsdk/formfiller/cba_fontmap.h"
 
+#include <memory>
 #include <utility>
 
 #include "core/fpdfapi/font/cpdf_font.h"
@@ -22,14 +23,8 @@
 CBA_FontMap::CBA_FontMap(CPDFSDK_Annot* pAnnot,
                          CFX_SystemHandler* pSystemHandler)
     : CPWL_FontMap(pSystemHandler),
-      m_pDocument(nullptr),
-      m_pAnnotDict(nullptr),
-      m_pDefaultFont(nullptr),
-      m_sAPType("N") {
-  CPDF_Page* pPage = pAnnot->GetPDFPage();
-
-  m_pDocument = pPage->GetDocument();
-  m_pAnnotDict = pAnnot->GetPDFAnnot()->GetAnnotDict();
+      m_pDocument(pAnnot->GetPDFPage()->GetDocument()),
+      m_pAnnotDict(pAnnot->GetPDFAnnot()->GetAnnotDict()) {
   Initialize();
 }
 
@@ -159,8 +154,7 @@ void CBA_FontMap::AddFontToAnnotDict(CPDF_Font* pFont,
     pAPDict = m_pAnnotDict->SetNewFor<CPDF_Dictionary>("AP");
 
   // to avoid checkbox and radiobutton
-  CPDF_Object* pObject = pAPDict->GetObjectFor(m_sAPType);
-  if (ToDictionary(pObject))
+  if (ToDictionary(pAPDict->GetObjectFor(m_sAPType)))
     return;
 
   CPDF_Stream* pStream = pAPDict->GetStreamFor(m_sAPType);
@@ -174,7 +168,7 @@ void CBA_FontMap::AddFontToAnnotDict(CPDF_Font* pFont,
     auto pOwnedDict =
         pdfium::MakeUnique<CPDF_Dictionary>(m_pDocument->GetByteStringPool());
     pStreamDict = pOwnedDict.get();
-    pStream->InitStream(nullptr, 0, std::move(pOwnedDict));
+    pStream->InitStream({}, std::move(pOwnedDict));
   }
 
   CPDF_Dictionary* pStreamResList = pStreamDict->GetDictFor("Resources");
@@ -187,8 +181,11 @@ void CBA_FontMap::AddFontToAnnotDict(CPDF_Font* pFont,
         "Font", pStreamResFontList->MakeReference(m_pDocument.Get()));
   }
   if (!pStreamResFontList->KeyExist(sAlias)) {
-    pStreamResFontList->SetFor(
-        sAlias, pFont->GetFontDict()->MakeReference(m_pDocument.Get()));
+    CPDF_Dictionary* pFontDict = pFont->GetFontDict();
+    std::unique_ptr<CPDF_Object> pObject =
+        pFontDict->IsInline() ? pFontDict->Clone()
+                              : pFontDict->MakeReference(m_pDocument.Get());
+    pStreamResFontList->SetFor(sAlias, std::move(pObject));
   }
 }
 

@@ -7,8 +7,6 @@
 
 #include "SkDrawCommand.h"
 
-#include "png.h"
-
 #include "SkAutoMalloc.h"
 #include "SkColorFilter.h"
 #include "SkDashPathEffect.h"
@@ -19,14 +17,13 @@
 #include "SkPaintDefaults.h"
 #include "SkPathEffect.h"
 #include "SkPicture.h"
+#include "SkPngEncoder.h"
 #include "SkReadBuffer.h"
 #include "SkRectPriv.h"
-#include "SkTextBlob.h"
-#include "SkTextBlobRunIterator.h"
+#include "SkTextBlobPriv.h"
 #include "SkTHash.h"
 #include "SkTypeface.h"
 #include "SkWriteBuffer.h"
-#include "picture_utils.h"
 #include "SkClipOpPriv.h"
 #include <SkLatticeIter.h>
 #include <SkShadowFlags.h>
@@ -244,7 +241,6 @@ const char* SkDrawCommand::GetCommandString(OpType type) {
         case kDrawShadow_OpType: return "DrawShadow";
         case kDrawText_OpType: return "DrawText";
         case kDrawTextBlob_OpType: return "DrawTextBlob";
-        case kDrawTextOnPath_OpType: return "DrawTextOnPath";
         case kDrawTextRSXform_OpType: return "DrawTextRSXform";
         case kDrawVertices_OpType: return "DrawVertices";
         case kDrawAtlas_OpType: return "DrawAtlas";
@@ -722,46 +718,14 @@ void SkDrawCommand::flatten(const SkFlattenable* flattenable, Json::Value* targe
     sk_free(data);
 }
 
-static void write_png_callback(png_structp png_ptr, png_bytep data, png_size_t length) {
-    SkWStream* out = (SkWStream*) png_get_io_ptr(png_ptr);
-    out->write(data, length);
-}
+void SkDrawCommand::WritePNG(SkBitmap bitmap, SkWStream& out) {
+    SkPixmap pm;
+    SkAssertResult(bitmap.peekPixels(&pm));
 
-void SkDrawCommand::WritePNG(const uint8_t* rgba, unsigned width, unsigned height,
-                             SkWStream& out, bool isOpaque) {
-    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-    SkASSERT(png != nullptr);
-    png_infop info_ptr = png_create_info_struct(png);
-    SkASSERT(info_ptr != nullptr);
-    if (setjmp(png_jmpbuf(png))) {
-        SK_ABORT("png encode error");
-    }
-    png_set_write_fn(png, &out, write_png_callback, nullptr);
-    int colorType = isOpaque ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGBA;
-    png_set_IHDR(png, info_ptr, width, height, 8, colorType, PNG_INTERLACE_NONE,
-                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-    png_set_compression_level(png, 1);
-    png_bytepp rows = (png_bytepp) sk_malloc_throw(height * sizeof(png_byte*));
-    png_bytep pixels = (png_bytep) sk_malloc_throw(width * height * 4);
-    for (png_size_t y = 0; y < height; ++y) {
-        const uint8_t* src = rgba + y * width * 4;
-        rows[y] = pixels + y * width * 4;
-        for (png_size_t x = 0; x < width; ++x) {
-            rows[y][x * 4] = src[x * 4];
-            rows[y][x * 4 + 1] = src[x * 4 + 1];
-            rows[y][x * 4 + 2] = src[x * 4 + 2];
-            rows[y][x * 4 + 3] = src[x * 4 + 3];
-        }
-    }
-    png_write_info(png, info_ptr);
-    if (isOpaque) {
-        png_set_filler(png, 0xFF, PNG_FILLER_AFTER);
-    }
-    png_set_filter(png, 0, PNG_NO_FILTERS);
-    png_write_image(png, &rows[0]);
-    png_destroy_write_struct(&png, nullptr);
-    sk_free(rows);
-    sk_free(pixels);
+    SkPngEncoder::Options options;
+    options.fZLibLevel = 1;
+    options.fFilterFlags = SkPngEncoder::FilterFlag::kNone;
+    SkPngEncoder::Encode(&out, pm, options);
 }
 
 bool SkDrawCommand::flatten(const SkImage& image, Json::Value* target,
@@ -777,11 +741,9 @@ bool SkDrawCommand::flatten(const SkImage& image, Json::Value* target,
 
     SkBitmap bm;
     bm.installPixels(dstInfo, buffer.get(), rowBytes);
-    sk_sp<SkData> encodedBitmap = sk_tools::encode_bitmap_for_png(bm);
 
     SkDynamicMemoryWStream out;
-    SkDrawCommand::WritePNG(encodedBitmap->bytes(), image.width(), image.height(),
-                            out, false);
+    SkDrawCommand::WritePNG(bm, out);
     sk_sp<SkData> encoded = out.detachAsData();
     Json::Value jsonData;
     encode_data(encoded->data(), encoded->size(), "image/png", urlDataManager, &jsonData);
@@ -1950,19 +1912,19 @@ Json::Value SkDrawTextBlobCommand::toJSON(UrlDataManager& urlDataManager) const 
         const uint16_t* iterGlyphs = iter.glyphs();
         for (uint32_t i = 0; i < iter.glyphCount(); i++) {
             switch (iter.positioning()) {
-                case SkTextBlob::kFull_Positioning:
+                case SkTextBlobRunIterator::kFull_Positioning:
                     jsonPositions.append(MakeJsonPoint(iterPositions[i * 2],
                                                        iterPositions[i * 2 + 1]));
                     break;
-                case SkTextBlob::kHorizontal_Positioning:
+                case SkTextBlobRunIterator::kHorizontal_Positioning:
                     jsonPositions.append(Json::Value(iterPositions[i]));
                     break;
-                case SkTextBlob::kDefault_Positioning:
+                case SkTextBlobRunIterator::kDefault_Positioning:
                     break;
             }
             jsonGlyphs.append(Json::Value(iterGlyphs[i]));
         }
-        if (iter.positioning() != SkTextBlob::kDefault_Positioning) {
+        if (iter.positioning() != SkTextBlobRunIterator::kDefault_Positioning) {
             run[SKDEBUGCANVAS_ATTRIBUTE_POSITIONS] = jsonPositions;
         }
         run[SKDEBUGCANVAS_ATTRIBUTE_GLYPHS] = jsonGlyphs;
@@ -2172,33 +2134,6 @@ Json::Value SkDrawTextCommand::toJSON(UrlDataManager& urlDataManager) const {
     result[SKDEBUGCANVAS_ATTRIBUTE_TEXT] = make_json_text(fText);
     Json::Value coords(Json::arrayValue);
     result[SKDEBUGCANVAS_ATTRIBUTE_COORDS] = MakeJsonPoint(fX, fY);
-    result[SKDEBUGCANVAS_ATTRIBUTE_PAINT] = MakeJsonPaint(fPaint, urlDataManager);
-    return result;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-SkDrawTextOnPathCommand::SkDrawTextOnPathCommand(const void* text, size_t byteLength,
-                                                 const SkPath& path, const SkMatrix* matrix,
-                                                 const SkPaint& paint)
-    : INHERITED(kDrawTextOnPath_OpType)
-    , fText(SkData::MakeWithCopy(text, byteLength))
-    , fPath(path)
-    , fMatrix(matrix)
-    , fPaint(paint) {}
-
-void SkDrawTextOnPathCommand::execute(SkCanvas* canvas) const {
-    canvas->drawTextOnPath(fText->data(), fText->size(), fPath, fMatrix.getMaybeNull(), fPaint);
-}
-
-Json::Value SkDrawTextOnPathCommand::toJSON(UrlDataManager& urlDataManager) const {
-    Json::Value result = INHERITED::toJSON(urlDataManager);
-    result[SKDEBUGCANVAS_ATTRIBUTE_TEXT] = make_json_text(fText);
-    Json::Value coords(Json::arrayValue);
-    result[SKDEBUGCANVAS_ATTRIBUTE_PATH] = MakeJsonPath(fPath);
-    if (fMatrix.isValid()) {
-        result[SKDEBUGCANVAS_ATTRIBUTE_MATRIX] = MakeJsonMatrix(*fMatrix.get());
-    }
     result[SKDEBUGCANVAS_ATTRIBUTE_PAINT] = MakeJsonPaint(fPaint, urlDataManager);
     return result;
 }

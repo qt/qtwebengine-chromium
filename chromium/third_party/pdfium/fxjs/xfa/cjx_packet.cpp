@@ -28,74 +28,70 @@ CJX_Packet::CJX_Packet(CXFA_Packet* packet) : CJX_Node(packet) {
 
 CJX_Packet::~CJX_Packet() {}
 
-CJS_Return CJX_Packet::getAttribute(
+CJS_Result CJX_Packet::getAttribute(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
-    return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
+    return CJS_Result::Failure(JSMessage::kParamError);
 
   WideString attributeValue;
-  CFX_XMLNode* pXMLNode = GetXFANode()->GetXMLMappingNode();
-  if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
-    attributeValue = static_cast<CFX_XMLElement*>(pXMLNode)->GetAttribute(
-        runtime->ToWideString(params[0]));
-  }
-  return CJS_Return(
+  CFX_XMLElement* element = ToXMLElement(GetXFANode()->GetXMLMappingNode());
+  if (element)
+    attributeValue = element->GetAttribute(runtime->ToWideString(params[0]));
+
+  return CJS_Result::Success(
       runtime->NewString(attributeValue.UTF8Encode().AsStringView()));
 }
 
-CJS_Return CJX_Packet::setAttribute(
+CJS_Result CJX_Packet::setAttribute(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 2)
-    return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
+    return CJS_Result::Failure(JSMessage::kParamError);
 
-  CFX_XMLNode* pXMLNode = GetXFANode()->GetXMLMappingNode();
-  if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
-    static_cast<CFX_XMLElement*>(pXMLNode)->SetAttribute(
-        runtime->ToWideString(params[1]), runtime->ToWideString(params[0]));
+  CFX_XMLElement* element = ToXMLElement(GetXFANode()->GetXMLMappingNode());
+  if (element) {
+    element->SetAttribute(runtime->ToWideString(params[1]),
+                          runtime->ToWideString(params[0]));
   }
-  return CJS_Return(runtime->NewNull());
+  return CJS_Result::Success(runtime->NewNull());
 }
 
-CJS_Return CJX_Packet::removeAttribute(
+CJS_Result CJX_Packet::removeAttribute(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
-    return CJS_Return(JSGetStringFromID(JSMessage::kParamError));
+    return CJS_Result::Failure(JSMessage::kParamError);
 
-  CFX_XMLNode* pXMLNode = GetXFANode()->GetXMLMappingNode();
-  if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
+  CFX_XMLElement* pElement = ToXMLElement(GetXFANode()->GetXMLMappingNode());
+  if (pElement) {
     WideString name = runtime->ToWideString(params[0]);
-    CFX_XMLElement* pXMLElement = static_cast<CFX_XMLElement*>(pXMLNode);
-    if (pXMLElement->HasAttribute(name))
-      pXMLElement->RemoveAttribute(name);
+    if (pElement->HasAttribute(name))
+      pElement->RemoveAttribute(name);
   }
-  return CJS_Return(runtime->NewNull());
+  return CJS_Result::Success(runtime->NewNull());
 }
 
 void CJX_Packet::content(CFXJSE_Value* pValue,
                          bool bSetting,
                          XFA_Attribute eAttribute) {
-  CFX_XMLNode* pXMLNode = GetXFANode()->GetXMLMappingNode();
+  CFX_XMLElement* element = ToXMLElement(GetXFANode()->GetXMLMappingNode());
   if (bSetting) {
-    if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
-      auto* text = GetXFANode()
-                       ->GetDocument()
-                       ->GetNotify()
-                       ->GetHDOC()
-                       ->GetXMLDocument()
-                       ->CreateNode<CFX_XMLText>(pValue->ToWideString());
-      pXMLNode->AppendChild(text);
+    if (element) {
+      element->AppendChild(
+          GetXFANode()
+              ->GetDocument()
+              ->GetNotify()
+              ->GetHDOC()
+              ->GetXMLDocument()
+              ->CreateNode<CFX_XMLText>(pValue->ToWideString()));
     }
     return;
   }
 
   WideString wsTextData;
-  if (pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element) {
-    CFX_XMLElement* pXMLElement = static_cast<CFX_XMLElement*>(pXMLNode);
-    wsTextData = pXMLElement->GetTextData();
-  }
+  if (element)
+    wsTextData = element->GetTextData();
 
   pValue->SetString(wsTextData.UTF8Encode().AsStringView());
 }

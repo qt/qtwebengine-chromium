@@ -156,7 +156,7 @@ class ProgramD3D : public ProgramImpl
                             unsigned int samplerIndex,
                             const gl::Caps &caps) const;
     gl::TextureType getSamplerTextureType(gl::ShaderType type, unsigned int samplerIndex) const;
-    GLuint getUsedSamplerRange(gl::ShaderType type) const;
+    gl::RangeUI getUsedSamplerRange(gl::ShaderType type) const;
 
     enum SamplerMapping
     {
@@ -170,8 +170,7 @@ class ProgramD3D : public ProgramImpl
                           unsigned int imageIndex,
                           bool readonly,
                           const gl::Caps &caps) const;
-    GLuint getUsedImageRange(gl::ShaderType type, bool readonly) const;
-    GLenum getImageTextureType(gl::ShaderType type, unsigned int imageIndex, bool readonly) const;
+    gl::RangeUI getUsedImageRange(gl::ShaderType type, bool readonly) const;
 
     bool usesPointSize() const { return mUsesPointSize; }
     bool usesPointSpriteEmulation() const;
@@ -186,18 +185,20 @@ class ProgramD3D : public ProgramImpl
     void setBinaryRetrievableHint(bool retrievable) override;
     void setSeparable(bool separable) override;
 
-    gl::Error getVertexExecutableForCachedInputLayout(ShaderExecutableD3D **outExectuable,
-                                                      gl::InfoLog *infoLog);
-    gl::Error getGeometryExecutableForPrimitiveType(const gl::Context *context,
-                                                    gl::PrimitiveMode drawMode,
-                                                    ShaderExecutableD3D **outExecutable,
-                                                    gl::InfoLog *infoLog);
-    gl::Error getPixelExecutableForCachedOutputLayout(ShaderExecutableD3D **outExectuable,
-                                                      gl::InfoLog *infoLog);
-    gl::Error getComputeExecutable(ShaderExecutableD3D **outExecutable);
-    gl::LinkResult link(const gl::Context *context,
-                        const gl::ProgramLinkedResources &resources,
-                        gl::InfoLog &infoLog) override;
+    angle::Result getVertexExecutableForCachedInputLayout(const gl::Context *context,
+                                                          ShaderExecutableD3D **outExectuable,
+                                                          gl::InfoLog *infoLog);
+    angle::Result getGeometryExecutableForPrimitiveType(const gl::Context *context,
+                                                        gl::PrimitiveMode drawMode,
+                                                        ShaderExecutableD3D **outExecutable,
+                                                        gl::InfoLog *infoLog);
+    angle::Result getPixelExecutableForCachedOutputLayout(const gl::Context *context,
+                                                          ShaderExecutableD3D **outExectuable,
+                                                          gl::InfoLog *infoLog);
+    angle::Result getComputeExecutable(ShaderExecutableD3D **outExecutable);
+    std::unique_ptr<LinkEvent> link(const gl::Context *context,
+                                    const gl::ProgramLinkedResources &resources,
+                                    gl::InfoLog &infoLog) override;
     GLboolean validate(const gl::Caps &caps, gl::InfoLog *infoLog) override;
 
     void setPathFragmentInputGen(const std::string &inputName,
@@ -264,8 +265,6 @@ class ProgramD3D : public ProgramImpl
     void getUniformiv(const gl::Context *context, GLint location, GLint *params) const override;
     void getUniformuiv(const gl::Context *context, GLint location, GLuint *params) const override;
 
-    void setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) override;
-
     UniformStorageD3D *getShaderUniformStorage(gl::ShaderType shaderType) const
     {
         return mShaderUniformStorages[shaderType].get();
@@ -310,6 +309,7 @@ class ProgramD3D : public ProgramImpl
     class GetVertexExecutableTask;
     class GetPixelExecutableTask;
     class GetGeometryExecutableTask;
+    class GraphicsProgramLinkEvent;
 
     class VertexExecutable
     {
@@ -385,7 +385,7 @@ class ProgramD3D : public ProgramImpl
 
     void initializeUniformStorage(const gl::ShaderBitSet &availableShaderStages);
 
-    void defineUniformsAndAssignRegisters(const gl::Context *context);
+    void defineUniformsAndAssignRegisters();
     void defineUniformBase(const gl::Shader *shader,
                            const sh::Uniform &uniform,
                            D3DUniformMap *uniformMap);
@@ -421,7 +421,7 @@ class ProgramD3D : public ProgramImpl
                                const gl::UniformTypeInfo &typeInfo,
                                unsigned int samplerCount,
                                std::vector<Sampler> &outSamplers,
-                               GLuint *outUsedRange);
+                               gl::RangeUI *outUsedRange);
 
     void assignAllImageRegisters();
     void assignImageRegisters(size_t uniformIndex);
@@ -429,7 +429,7 @@ class ProgramD3D : public ProgramImpl
                              int startLogicalImageUnit,
                              unsigned int imageCount,
                              std::vector<Image> &outImages,
-                             GLuint *outUsedRange);
+                             gl::RangeUI *outUsedRange);
 
     template <typename DestT>
     void getUniformInternal(GLint location, DestT *dataOut) const;
@@ -450,7 +450,8 @@ class ProgramD3D : public ProgramImpl
                                     GLboolean transpose,
                                     const GLfloat *value);
 
-    gl::LinkResult compileProgramExecutables(const gl::Context *context, gl::InfoLog &infoLog);
+    std::unique_ptr<LinkEvent> compileProgramExecutables(const gl::Context *context,
+                                                         gl::InfoLog &infoLog);
     gl::LinkResult compileComputeExecutable(const gl::Context *context, gl::InfoLog &infoLog);
 
     void gatherTransformFeedbackVaryings(const gl::VaryingPacking &varyings,
@@ -459,17 +460,17 @@ class ProgramD3D : public ProgramImpl
     D3DUniform *getD3DUniformFromLocation(GLint location);
     const D3DUniform *getD3DUniformFromLocation(GLint location) const;
 
-    void initAttribLocationsToD3DSemantic(const gl::Context *context);
+    void initAttribLocationsToD3DSemantic();
 
     void reset();
     void initializeUniformBlocks();
 
-    void updateCachedInputLayoutFromShader(const gl::Context *context);
+    void updateCachedInputLayoutFromShader();
     void updateCachedOutputLayoutFromShader();
     void updateCachedVertexExecutableIndex();
     void updateCachedPixelExecutableIndex();
 
-    void linkResources(const gl::Context *context, const gl::ProgramLinkedResources &resources);
+    void linkResources(const gl::ProgramLinkedResources &resources);
 
     RendererD3D *mRenderer;
     DynamicHLSL *mDynamicHLSL;
@@ -499,13 +500,13 @@ class ProgramD3D : public ProgramImpl
     gl::ShaderMap<std::unique_ptr<UniformStorageD3D>> mShaderUniformStorages;
 
     gl::ShaderMap<std::vector<Sampler>> mShaderSamplers;
-    gl::ShaderMap<GLuint> mUsedShaderSamplerRanges;
+    gl::ShaderMap<gl::RangeUI> mUsedShaderSamplerRanges;
     bool mDirtySamplerMapping;
 
     std::vector<Image> mImagesCS;
     std::vector<Image> mReadonlyImagesCS;
-    GLuint mUsedComputeImageRange;
-    GLuint mUsedComputeReadonlyImageRange;
+    gl::RangeUI mUsedComputeImageRange;
+    gl::RangeUI mUsedComputeReadonlyImageRange;
 
     // Cache for pixel shader output layout to save reallocations.
     std::vector<GLenum> mPixelShaderOutputLayoutCache;

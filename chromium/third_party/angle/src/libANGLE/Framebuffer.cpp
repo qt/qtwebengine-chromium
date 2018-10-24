@@ -994,7 +994,7 @@ bool Framebuffer::usingExtendedDrawBuffers() const
     return false;
 }
 
-void Framebuffer::invalidateCompletenessCache()
+void Framebuffer::invalidateCompletenessCache(const Context *context)
 {
     if (mState.mId != 0)
     {
@@ -1002,36 +1002,25 @@ void Framebuffer::invalidateCompletenessCache()
     }
 }
 
-GLenum Framebuffer::checkStatus(const Context *context)
+GLenum Framebuffer::checkStatusImpl(const Context *context)
 {
-    // The default framebuffer is always complete except when it is surfaceless in which
-    // case it is always unsupported. We return early because the default framebuffer may
-    // not be subject to the same rules as application FBOs. ie, it could have 0x0 size.
-    if (mState.mId == 0)
-    {
-        ASSERT(mCachedStatus.valid());
-        ASSERT(mCachedStatus.value() == GL_FRAMEBUFFER_COMPLETE ||
-               mCachedStatus.value() == GL_FRAMEBUFFER_UNDEFINED_OES);
-        return mCachedStatus.value();
-    }
+    ASSERT(!isDefault());
+    ASSERT(hasAnyDirtyBit() || !mCachedStatus.valid());
 
-    if (hasAnyDirtyBit() || !mCachedStatus.valid())
-    {
-        mCachedStatus = checkStatusWithGLFrontEnd(context);
+    mCachedStatus = checkStatusWithGLFrontEnd(context);
 
-        if (mCachedStatus.value() == GL_FRAMEBUFFER_COMPLETE)
+    if (mCachedStatus.value() == GL_FRAMEBUFFER_COMPLETE)
+    {
+        Error err = syncState(context);
+        if (err.isError())
         {
-            Error err = syncState(context);
-            if (err.isError())
-            {
-                // TODO(jmadill): Remove when refactor complete. http://anglebug.com/2491
-                const_cast<Context *>(context)->handleError(err);
-                return GetDefaultReturnValue<EntryPoint::CheckFramebufferStatus, GLenum>();
-            }
-            if (!mImpl->checkStatus(context))
-            {
-                mCachedStatus = GL_FRAMEBUFFER_UNSUPPORTED;
-            }
+            // TODO(jmadill): Remove when refactor complete. http://anglebug.com/2491
+            const_cast<Context *>(context)->handleError(err);
+            return GetDefaultReturnValue<EntryPoint::CheckFramebufferStatus, GLenum>();
+        }
+        if (!mImpl->checkStatus(context))
+        {
+            mCachedStatus = GL_FRAMEBUFFER_UNSUPPORTED;
         }
     }
 
@@ -1353,8 +1342,8 @@ bool Framebuffer::partialClearNeedsInit(const Context *context,
     }
 
     const auto &depthStencil = glState.getDepthStencilState();
-    ASSERT(depthStencil.stencilBackMask == depthStencil.stencilMask);
-    if (stencil && depthStencil.stencilMask != depthStencil.stencilWritemask)
+    if (stencil && (depthStencil.stencilMask != depthStencil.stencilWritemask ||
+                    depthStencil.stencilBackMask != depthStencil.stencilBackWritemask))
     {
         return true;
     }
@@ -1823,7 +1812,7 @@ void Framebuffer::updateAttachment(const Context *context,
     mState.mResourceNeedsInit.set(dirtyBit, attachment->initState() == InitState::MayNeedInit);
     onDirtyBinding->bind(resource ? resource->getSubject() : nullptr);
 
-    invalidateCompletenessCache();
+    invalidateCompletenessCache(context);
 }
 
 void Framebuffer::resetAttachment(const Context *context, GLenum binding)
@@ -1851,17 +1840,11 @@ void Framebuffer::onSubjectStateChange(const Context *context,
     {
         ASSERT(!mDirtyBitsGuard.valid() || mDirtyBitsGuard.value().test(index));
         mDirtyBits.set(index);
-        context->getGLState().setFramebufferDirty(this);
+        onStateChange(context, angle::SubjectMessage::CONTENTS_CHANGED);
         return;
     }
 
-    // Only reset the cached status if this is not the default framebuffer.  The default framebuffer
-    // will still use this channel to mark itself dirty.
-    if (mState.mId != 0)
-    {
-        // TOOD(jmadill): Make this only update individual attachments to do less work.
-        mCachedStatus.reset();
-    }
+    invalidateCompletenessCache(context);
 
     FramebufferAttachment *attachment = getAttachmentFromSubjectIndex(index);
 
@@ -1882,11 +1865,6 @@ FramebufferAttachment *Framebuffer::getAttachmentFromSubjectIndex(angle::Subject
             ASSERT(colorIndex < mState.mColorAttachments.size());
             return &mState.mColorAttachments[colorIndex];
     }
-}
-
-bool Framebuffer::isComplete(const Context *context)
-{
-    return (checkStatus(context) == GL_FRAMEBUFFER_COMPLETE);
 }
 
 bool Framebuffer::formsRenderingFeedbackLoopWith(const State &state) const
@@ -2003,32 +1981,33 @@ GLint Framebuffer::getDefaultLayers() const
     return mState.getDefaultLayers();
 }
 
-void Framebuffer::setDefaultWidth(GLint defaultWidth)
+void Framebuffer::setDefaultWidth(const Context *context, GLint defaultWidth)
 {
     mState.mDefaultWidth = defaultWidth;
     mDirtyBits.set(DIRTY_BIT_DEFAULT_WIDTH);
-    invalidateCompletenessCache();
+    invalidateCompletenessCache(context);
 }
 
-void Framebuffer::setDefaultHeight(GLint defaultHeight)
+void Framebuffer::setDefaultHeight(const Context *context, GLint defaultHeight)
 {
     mState.mDefaultHeight = defaultHeight;
     mDirtyBits.set(DIRTY_BIT_DEFAULT_HEIGHT);
-    invalidateCompletenessCache();
+    invalidateCompletenessCache(context);
 }
 
-void Framebuffer::setDefaultSamples(GLint defaultSamples)
+void Framebuffer::setDefaultSamples(const Context *context, GLint defaultSamples)
 {
     mState.mDefaultSamples = defaultSamples;
     mDirtyBits.set(DIRTY_BIT_DEFAULT_SAMPLES);
-    invalidateCompletenessCache();
+    invalidateCompletenessCache(context);
 }
 
-void Framebuffer::setDefaultFixedSampleLocations(bool defaultFixedSampleLocations)
+void Framebuffer::setDefaultFixedSampleLocations(const Context *context,
+                                                 bool defaultFixedSampleLocations)
 {
     mState.mDefaultFixedSampleLocations = defaultFixedSampleLocations;
     mDirtyBits.set(DIRTY_BIT_DEFAULT_FIXED_SAMPLE_LOCATIONS);
-    invalidateCompletenessCache();
+    invalidateCompletenessCache(context);
 }
 
 void Framebuffer::setDefaultLayers(GLint defaultLayers)
@@ -2055,6 +2034,12 @@ const std::vector<Offset> *Framebuffer::getViewportOffsets() const
 GLenum Framebuffer::getMultiviewLayout() const
 {
     return mState.getMultiviewLayout();
+}
+
+bool Framebuffer::readDisallowedByMultiview() const
+{
+    return (mState.getMultiviewLayout() != GL_NONE && mState.getNumViews() > 1) ||
+           mState.getMultiviewLayout() == GL_FRAMEBUFFER_MULTIVIEW_SIDE_BY_SIDE_ANGLE;
 }
 
 Error Framebuffer::ensureClearAttachmentsInitialized(const Context *context, GLbitfield mask)
@@ -2354,31 +2339,32 @@ bool Framebuffer::hasTextureAttachment(const Texture *texture) const
 {
     if (!mAttachedTextures.valid())
     {
-        std::set<const FramebufferAttachmentObject *> attachedTextures;
+        FramebufferTextureAttachmentVector attachedTextures;
 
         for (const auto &colorAttachment : mState.mColorAttachments)
         {
             if (colorAttachment.isAttached() && colorAttachment.type() == GL_TEXTURE)
             {
-                attachedTextures.insert(colorAttachment.getResource());
+                attachedTextures.push_back(colorAttachment.getResource());
             }
         }
 
         if (mState.mDepthAttachment.isAttached() && mState.mDepthAttachment.type() == GL_TEXTURE)
         {
-            attachedTextures.insert(mState.mDepthAttachment.getResource());
+            attachedTextures.push_back(mState.mDepthAttachment.getResource());
         }
 
         if (mState.mStencilAttachment.isAttached() &&
             mState.mStencilAttachment.type() == GL_TEXTURE)
         {
-            attachedTextures.insert(mState.mStencilAttachment.getResource());
+            attachedTextures.push_back(mState.mStencilAttachment.getResource());
         }
 
         mAttachedTextures = std::move(attachedTextures);
     }
 
-    return (mAttachedTextures.value().count(texture) > 0);
+    return std::find(mAttachedTextures.value().begin(), mAttachedTextures.value().end(), texture) !=
+           mAttachedTextures.value().end();
 }
 
 }  // namespace gl

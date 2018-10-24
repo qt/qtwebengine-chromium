@@ -626,30 +626,6 @@ void SkPipeCanvas::onDrawPosTextH(const void* text, size_t byteLength, const SkS
     write_paint(writer, paint, kText_PaintUsage);
 }
 
-void SkPipeCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
-                                    const SkMatrix* matrix, const SkPaint& paint) {
-    SkASSERT(byteLength > 0);
-
-    unsigned extra = 0;
-    if (byteLength <= kTextLength_DrawTextOnPathMask) {
-        extra |= byteLength;
-    } // else we will write the length after the packedverb
-    SkMatrix::TypeMask tm = matrix ? matrix->getType() : SkMatrix::kIdentity_Mask;
-    extra |= (unsigned)tm << kMatrixType_DrawTextOnPathShift;
-
-    SkPipeWriter writer(this);
-    writer.write32(pack_verb(SkPipeVerb::kDrawTextOnPath, extra));
-    if (byteLength > kTextLength_DrawTextOnPathMask) {
-        writer.write32(byteLength);
-    }
-    write_pad(&writer, text, byteLength);
-    writer.writePath(path);
-    if (matrix) {
-        write_sparse_matrix(&writer, *matrix);
-    }
-    write_paint(writer, paint, kText_PaintUsage);
-}
-
 void SkPipeCanvas::onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
                                      const SkRect* cull, const SkPaint& paint) {
     SkASSERT(byteLength);
@@ -728,7 +704,7 @@ void SkPipeCanvas::onDrawRegion(const SkRegion& region, const SkPaint& paint) {
     write_paint(writer, paint, kGeometry_PaintUsage);
 }
 
-void SkPipeCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatrix* bones,
+void SkPipeCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkVertices::Bone bones[],
                                         int boneCount, SkBlendMode bmode, const SkPaint& paint) {
     unsigned extra = static_cast<unsigned>(bmode);
 
@@ -737,7 +713,7 @@ void SkPipeCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatr
     // TODO: dedup vertices?
     writer.writeDataAsByteArray(vertices->encode().get());
     writer.write32(boneCount);
-    writer.write(bones, sizeof(SkMatrix) * boneCount);
+    writer.write(bones, sizeof(SkVertices::Bone) * boneCount);
     write_paint(writer, paint, kVertices_PaintUsage);
 }
 

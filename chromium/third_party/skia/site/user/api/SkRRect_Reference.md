@@ -707,7 +707,7 @@ true if not empty, <a href='SkRect_Reference#Rect'>Rect</a>, <a href='undocument
 
 ### Example
 
-<div><fiddle-embed name="2df932f526e810f74c89d30ec3f4c947"></fiddle-embed></div>
+<div><fiddle-embed name="e4ba9346ee5c2d37d5e504f8cc678544"></fiddle-embed></div>
 
 ### See Also
 
@@ -790,7 +790,7 @@ large height: inf
 <a href='SkPoint_Reference#SkVector'>SkVector</a> <a href='#SkRRect_getSimpleRadii'>getSimpleRadii</a>() const
 </pre>
 
-Returns top-left corner x-radii. If <a href='#SkRRect_type'>type</a> returns <a href='#SkRRect_kEmpty_Type'>kEmpty Type</a>, <a href='#SkRRect_kRect_Type'>kRect Type</a>,
+Returns top-left corner radii. If <a href='#SkRRect_type'>type</a> returns <a href='#SkRRect_kEmpty_Type'>kEmpty Type</a>, <a href='#SkRRect_kRect_Type'>kRect Type</a>,
 <a href='#SkRRect_kOval_Type'>kOval Type</a>, or <a href='#SkRRect_kSimple_Type'>kSimple Type</a>, returns a value representative of all corner radii.
 If <a href='#SkRRect_type'>type</a> returns <a href='#SkRRect_kNinePatch_Type'>kNinePatch Type</a> or <a href='#SkRRect_kComplex_Type'>kComplex Type</a>, at least one of the
 remaining three corners has a different value.
@@ -1614,7 +1614,7 @@ true if <a href='#RRect'>Round Rect</a> contains rect
 
 ### Example
 
-<div><fiddle-embed name="46d9bacf593deaaeabd74ff42f2571a0"></fiddle-embed></div>
+<div><fiddle-embed name="884447c809921cfaebc87aeb63dedd48"></fiddle-embed></div>
 
 ### See Also
 

@@ -25,6 +25,7 @@
 #include "GrTexturePriv.h"
 #include "GrTextureProxy.h"
 #include "GrTextureProxyPriv.h"
+#include "GrTextureStripAtlas.h"
 #include "GrTracing.h"
 #include "SkDeferredDisplayList.h"
 #include "SkSurface_Gpu.h"
@@ -101,6 +102,13 @@ void GrDrawingManager::freeGpuResources() {
     // a path renderer may be holding onto resources
     fPathRendererChain = nullptr;
     fSoftwarePathRenderer = nullptr;
+}
+
+static void end_oplist_flush_if_not_unique(const sk_sp<GrOpList>& opList) {
+    if (!opList->unique()) {
+        // TODO: Eventually this should be guaranteed unique: http://skbug.com/7111
+        opList->endFlush();
+    }
 }
 
 // MDB TODO: make use of the 'proxy' parameter.
@@ -210,6 +218,11 @@ GrSemaphoresSubmitted GrDrawingManager::internalFlush(GrSurfaceProxy*,
                             &error)) {
             if (GrResourceAllocator::AssignError::kFailedProxyInstantiation == error) {
                 for (int i = startIndex; i < stopIndex; ++i) {
+                    if (fOpLists[i] && !fOpLists[i]->isFullyInstantiated()) {
+                        // If the backing surface wasn't allocated drop the entire opList.
+                        end_oplist_flush_if_not_unique(fOpLists[i]); // http://skbug.com/7111
+                        fOpLists[i] = nullptr;
+                    }
                     if (fOpLists[i]) {
                         fOpLists[i]->purgeOpsWithUninstantiatedProxies();
                     }
@@ -259,13 +272,6 @@ GrSemaphoresSubmitted GrDrawingManager::internalFlush(GrSurfaceProxy*,
     return result;
 }
 
-static void end_oplist_flush_if_not_unique(const sk_sp<GrOpList>& opList) {
-    if (!opList->unique()) {
-        // TODO: Eventually this should be guaranteed unique: http://skbug.com/7111
-        opList->endFlush();
-    }
-}
-
 bool GrDrawingManager::executeOpLists(int startIndex, int stopIndex, GrOpFlushState* flushState) {
     SkASSERT(startIndex <= stopIndex && stopIndex <= fOpLists.count());
 
@@ -273,7 +279,9 @@ bool GrDrawingManager::executeOpLists(int startIndex, int stopIndex, GrOpFlushSt
     SkDebugf("Flushing opLists: %d to %d out of [%d, %d]\n",
                             startIndex, stopIndex, 0, fOpLists.count());
     for (int i = startIndex; i < stopIndex; ++i) {
-        fOpLists[i]->dump(true);
+        if (fOpLists[i]) {
+            fOpLists[i]->dump(true);
+        }
     }
 #endif
 
@@ -286,7 +294,7 @@ bool GrDrawingManager::executeOpLists(int startIndex, int stopIndex, GrOpFlushSt
         }
 
         if (resourceProvider->explicitlyAllocateGPUResources()) {
-            if (!fOpLists[i]->isInstantiated()) {
+            if (!fOpLists[i]->isFullyInstantiated()) {
                 // If the backing surface wasn't allocated drop the draw of the entire opList.
                 end_oplist_flush_if_not_unique(fOpLists[i]); // http://skbug.com/7111
                 fOpLists[i] = nullptr;
@@ -371,20 +379,16 @@ GrSemaphoresSubmitted GrDrawingManager::prepareSurfaceForExternalIO(
         return result;
     }
 
-    GrSurface* surface = proxy->priv().peekSurface();
+    GrSurface* surface = proxy->peekSurface();
     if (auto* rt = surface->asRenderTarget()) {
         gpu->resolveRenderTarget(rt);
     }
-#if 0
-    // This is temporarily is disabled. See comment in SkImage_Gpu.cpp,
-    // new_wrapped_texture_common().
     if (auto* tex = surface->asTexture()) {
         if (tex->texturePriv().mipMapped() == GrMipMapped::kYes &&
             tex->texturePriv().mipMapsAreDirty()) {
             gpu->regenerateMipMapLevels(tex);
         }
     }
-#endif
     return result;
 }
 
@@ -393,6 +397,9 @@ void GrDrawingManager::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlush
 }
 
 void GrDrawingManager::moveOpListsToDDL(SkDeferredDisplayList* ddl) {
+    fContext->contextPriv().textureStripAtlasManager()->finish(
+                                                          fContext->contextPriv().proxyProvider());
+
     for (int i = 0; i < fOpLists.count(); ++i) {
         // no opList should receive a new command after this
         fOpLists[i]->makeClosed(*fContext->contextPriv().caps());

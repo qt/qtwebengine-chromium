@@ -23,7 +23,7 @@
 #include "SkStream.h"
 #include "SkTo.h"
 #include "SkTypes.h"
-#include "SkUtils.h"
+#include "SkUTF.h"
 
 #ifdef SK_PDF_USE_SFNTLY
     #include "sample/chromium/font_subsetter.h"
@@ -351,7 +351,7 @@ static sk_sp<SkPDFStream> get_subset_font_stream(
     // TODO(halcanary): sfntly should take a more compact format.
     SkTDArray<unsigned> subset;
     if (!glyphUsage.has(0)) {
-        subset.push(0);  // Always include glyph 0.
+        subset.push_back(0);  // Always include glyph 0.
     }
     glyphUsage.exportTo(&subset);
 

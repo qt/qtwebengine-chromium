@@ -764,8 +764,7 @@ private:
             , fPermutationsSampler(std::move(permutationsProxy))
             , fNoiseSampler(std::move(noiseProxy))
             , fPaintingData(std::move(paintingData)) {
-        this->addTextureSampler(&fPermutationsSampler);
-        this->addTextureSampler(&fNoiseSampler);
+        this->setTextureSamplerCnt(2);
         fCoordTransform.reset(matrix);
         this->addCoordTransform(&fCoordTransform);
     }
@@ -779,9 +778,12 @@ private:
             , fPermutationsSampler(that.fPermutationsSampler)
             , fNoiseSampler(that.fNoiseSampler)
             , fPaintingData(new SkPerlinNoiseShaderImpl::PaintingData(*that.fPaintingData)) {
-        this->addTextureSampler(&fPermutationsSampler);
-        this->addTextureSampler(&fNoiseSampler);
+        this->setTextureSamplerCnt(2);
         this->addCoordTransform(&fCoordTransform);
+    }
+
+    const TextureSampler& onTextureSampler(int i) const override {
+        return IthTextureSampler(i, fPermutationsSampler, fNoiseSampler);
     }
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
@@ -1065,7 +1067,7 @@ void GrGLPerlinNoise::emitCode(EmitArgs& args) {
     }
 
     // Clamp values
-    fragBuilder->codeAppendf("\n\t\t%s = clamp(%s, 0.0, 1.0);", args.fOutputColor, args.fOutputColor);
+    fragBuilder->codeAppendf("\n\t\t%s = saturate(%s);", args.fOutputColor, args.fOutputColor);
 
     // Pre-multiply the result
     fragBuilder->codeAppendf("\n\t\t%s = half4(%s.rgb * %s.aaa, %s.a);\n",
@@ -1185,8 +1187,7 @@ private:
             , fPermutationsSampler(std::move(permutationsProxy))
             , fGradientSampler(std::move(gradientProxy))
             , fPaintingData(std::move(paintingData)) {
-        this->addTextureSampler(&fPermutationsSampler);
-        this->addTextureSampler(&fGradientSampler);
+        this->setTextureSamplerCnt(2);
         fCoordTransform.reset(matrix);
         this->addCoordTransform(&fCoordTransform);
     }
@@ -1199,9 +1200,12 @@ private:
             , fPermutationsSampler(that.fPermutationsSampler)
             , fGradientSampler(that.fGradientSampler)
             , fPaintingData(new SkPerlinNoiseShaderImpl::PaintingData(*that.fPaintingData)) {
-        this->addTextureSampler(&fPermutationsSampler);
-        this->addTextureSampler(&fGradientSampler);
+        this->setTextureSamplerCnt(2);
         this->addCoordTransform(&fCoordTransform);
+    }
+
+    const TextureSampler& onTextureSampler(int i) const override {
+        return IthTextureSampler(i, fPermutationsSampler, fGradientSampler);
     }
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
@@ -1365,7 +1369,7 @@ void GrGLImprovedPerlinNoise::emitCode(EmitArgs& args) {
     fragBuilder->codeAppendf("%s = half4(r, g, b, a);", args.fOutputColor);
 
     // Clamp values
-    fragBuilder->codeAppendf("%s = clamp(%s, 0.0, 1.0);", args.fOutputColor, args.fOutputColor);
+    fragBuilder->codeAppendf("%s = saturate(%s);", args.fOutputColor, args.fOutputColor);
 
     // Pre-multiply the result
     fragBuilder->codeAppendf("\n\t\t%s = half4(%s.rgb * %s.aaa, %s.a);\n",

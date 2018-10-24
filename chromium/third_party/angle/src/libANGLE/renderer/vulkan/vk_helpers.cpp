@@ -100,23 +100,15 @@ void DynamicBuffer::init(size_t alignment, RendererVk *renderer)
 
 DynamicBuffer::~DynamicBuffer()
 {
-    ASSERT(mAlignment == 0);
-}
-
-bool DynamicBuffer::valid()
-{
-    return mAlignment > 0;
 }
 
 angle::Result DynamicBuffer::allocate(Context *context,
                                       size_t sizeInBytes,
                                       uint8_t **ptrOut,
                                       VkBuffer *handleOut,
-                                      uint32_t *offsetOut,
+                                      VkDeviceSize *offsetOut,
                                       bool *newBufferAllocatedOut)
 {
-    ASSERT(valid());
-
     size_t sizeToAllocate = roundUp(sizeInBytes, mAlignment);
 
     angle::base::CheckedNumeric<size_t> checkedNextWriteOffset = mNextAllocationOffset;
@@ -127,8 +119,7 @@ angle::Result DynamicBuffer::allocate(Context *context,
         if (mMappedMemory)
         {
             ANGLE_TRY(flush(context));
-            mMemory.unmap(context->getDevice());
-            mMappedMemory = nullptr;
+            unmap(context->getDevice());
         }
 
         mRetainedBuffers.emplace_back(std::move(mBuffer), std::move(mMemory));
@@ -172,7 +163,7 @@ angle::Result DynamicBuffer::allocate(Context *context,
 
     ASSERT(mMappedMemory);
     *ptrOut    = mMappedMemory + mNextAllocationOffset;
-    *offsetOut = mNextAllocationOffset;
+    *offsetOut = static_cast<VkDeviceSize>(mNextAllocationOffset);
     mNextAllocationOffset += static_cast<uint32_t>(sizeToAllocate);
     return angle::Result::Continue();
 }
@@ -213,9 +204,10 @@ angle::Result DynamicBuffer::invalidate(Context *context)
 
 void DynamicBuffer::release(RendererVk *renderer)
 {
+    unmap(renderer->getDevice());
+    reset();
     releaseRetainedBuffers(renderer);
 
-    mAlignment           = 0;
     Serial currentSerial = renderer->getCurrentQueueSerial();
     renderer->releaseObject(currentSerial, &mBuffer);
     renderer->releaseObject(currentSerial, &mMemory);
@@ -235,6 +227,9 @@ void DynamicBuffer::releaseRetainedBuffers(RendererVk *renderer)
 
 void DynamicBuffer::destroy(VkDevice device)
 {
+    unmap(device);
+    reset();
+
     for (BufferAndMemory &toFree : mRetainedBuffers)
     {
         toFree.buffer.destroy(device);
@@ -243,7 +238,6 @@ void DynamicBuffer::destroy(VkDevice device)
 
     mRetainedBuffers.clear();
 
-    mAlignment = 0;
     mBuffer.destroy(device);
     mMemory.destroy(device);
 }
@@ -260,6 +254,22 @@ void DynamicBuffer::setMinimumSizeForTesting(size_t minSize)
 
     // Forces a new allocation on the next allocate.
     mSize = 0;
+}
+
+void DynamicBuffer::unmap(VkDevice device)
+{
+    if (mMappedMemory)
+    {
+        mMemory.unmap(device);
+        mMappedMemory = nullptr;
+    }
+}
+
+void DynamicBuffer::reset()
+{
+    mSize                        = 0;
+    mNextAllocationOffset        = 0;
+    mLastFlushOrInvalidateOffset = 0;
 }
 
 // DynamicDescriptorPool implementation.
@@ -331,7 +341,7 @@ angle::Result DynamicDescriptorPool::allocateNewPool(Context *context)
     descriptorPoolInfo.pPoolSizes    = &mPoolSize;
 
     mFreeDescriptorSets = mPoolSize.descriptorCount;
-    mCurrentSetsCount = 0;
+    mCurrentSetsCount   = 0;
 
     ANGLE_TRY(mCurrentDescriptorPool.init(context, descriptorPoolInfo));
     return angle::Result::Continue();
@@ -363,13 +373,11 @@ angle::Result LineLoopHelper::getIndexBufferForDrawArrays(Context *context,
 {
     uint32_t *indices    = nullptr;
     size_t allocateBytes = sizeof(uint32_t) * (drawCallParams.vertexCount() + 1);
-    uint32_t offset      = 0;
 
     mDynamicIndexBuffer.releaseRetainedBuffers(context->getRenderer());
     ANGLE_TRY(mDynamicIndexBuffer.allocate(context, allocateBytes,
                                            reinterpret_cast<uint8_t **>(&indices), bufferHandleOut,
-                                           &offset, nullptr));
-    *offsetOut = static_cast<VkDeviceSize>(offset);
+                                           offsetOut, nullptr));
 
     uint32_t clampedVertexCount = drawCallParams.getClampedVertexCount<uint32_t>();
 
@@ -401,7 +409,6 @@ angle::Result LineLoopHelper::getIndexBufferForElementArrayBuffer(Context *conte
     ASSERT(indexType == VK_INDEX_TYPE_UINT16 || indexType == VK_INDEX_TYPE_UINT32);
 
     uint32_t *indices          = nullptr;
-    uint32_t destinationOffset = 0;
 
     auto unitSize = (indexType == VK_INDEX_TYPE_UINT16 ? sizeof(uint16_t) : sizeof(uint32_t));
     size_t allocateBytes = unitSize * (indexCount + 1);
@@ -409,13 +416,12 @@ angle::Result LineLoopHelper::getIndexBufferForElementArrayBuffer(Context *conte
     mDynamicIndexBuffer.releaseRetainedBuffers(context->getRenderer());
     ANGLE_TRY(mDynamicIndexBuffer.allocate(context, allocateBytes,
                                            reinterpret_cast<uint8_t **>(&indices), bufferHandleOut,
-                                           &destinationOffset, nullptr));
-    *bufferOffsetOut = static_cast<VkDeviceSize>(destinationOffset);
+                                           bufferOffsetOut, nullptr));
 
     VkDeviceSize sourceOffset = static_cast<VkDeviceSize>(elementArrayOffset);
     uint64_t unitCount        = static_cast<VkDeviceSize>(indexCount);
-    VkBufferCopy copy1        = {sourceOffset, destinationOffset, unitCount * unitSize};
-    VkBufferCopy copy2        = {sourceOffset, destinationOffset + unitCount * unitSize, unitSize};
+    VkBufferCopy copy1        = {sourceOffset, *bufferOffsetOut, unitCount * unitSize};
+    VkBufferCopy copy2        = {sourceOffset, *bufferOffsetOut + unitCount * unitSize, unitSize};
     std::array<VkBufferCopy, 2> copies = {{copy1, copy2}};
 
     vk::CommandBuffer *commandBuffer;
@@ -438,14 +444,12 @@ angle::Result LineLoopHelper::getIndexBufferForClientElementArray(
     VkIndexType indexType = gl_vk::GetIndexType(drawCallParams.type());
 
     uint8_t *indices = nullptr;
-    uint32_t offset  = 0;
 
     auto unitSize = (indexType == VK_INDEX_TYPE_UINT16 ? sizeof(uint16_t) : sizeof(uint32_t));
     size_t allocateBytes = unitSize * (drawCallParams.indexCount() + 1);
     ANGLE_TRY(mDynamicIndexBuffer.allocate(context, allocateBytes,
                                            reinterpret_cast<uint8_t **>(&indices), bufferHandleOut,
-                                           &offset, nullptr));
-    *bufferOffsetOut = static_cast<VkDeviceSize>(offset);
+                                           bufferOffsetOut, nullptr));
 
     if (drawCallParams.type() == GL_UNSIGNED_BYTE)
     {
@@ -486,10 +490,7 @@ void LineLoopHelper::Draw(uint32_t count, CommandBuffer *commandBuffer)
 
 // ImageHelper implementation.
 ImageHelper::ImageHelper()
-    : mFormat(nullptr),
-      mSamples(0),
-      mCurrentLayout(VK_IMAGE_LAYOUT_UNDEFINED),
-      mLayerCount(0)
+    : mFormat(nullptr), mSamples(0), mCurrentLayout(VK_IMAGE_LAYOUT_UNDEFINED), mLayerCount(0)
 {
 }
 

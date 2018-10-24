@@ -11,11 +11,12 @@
 #include <vector>
 
 #include "core/fxcodec/codec/ccodec_gifmodule.h"
+#include "core/fxcodec/codec/cfx_codec_memory.h"
 #include "core/fxcodec/gif/cfx_gif.h"
 #include "core/fxcodec/gif/cfx_lzwdecompressor.h"
-#include "core/fxcrt/cfx_memorystream.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "third_party/base/span.h"
 
 class CFX_GifContext : public CCodec_GifModule::Context {
  public:
@@ -40,7 +41,7 @@ class CFX_GifContext : public CCodec_GifModule::Context {
   CFX_GifDecodeStatus ReadHeader();
   CFX_GifDecodeStatus GetFrame();
   CFX_GifDecodeStatus LoadFrame(int32_t frame_num);
-  void SetInputBuffer(uint8_t* src_buf, uint32_t src_size);
+  void SetInputBuffer(pdfium::span<uint8_t> src_buf);
   uint32_t GetAvailInput(uint8_t** avail_buf) const;
   size_t GetFrameNum() const { return images_.size(); }
 
@@ -66,7 +67,8 @@ class CFX_GifContext : public CCodec_GifModule::Context {
   bool ReadData(uint8_t* dest, uint32_t size);
   CFX_GifDecodeStatus ReadGifSignature();
   CFX_GifDecodeStatus ReadLogicalScreenDescriptor();
-  RetainPtr<CFX_MemoryStream> input_buffer_;
+
+  RetainPtr<CFX_CodecMemory> input_buffer_;
 
  private:
   void SaveDecodingStatus(int32_t status);

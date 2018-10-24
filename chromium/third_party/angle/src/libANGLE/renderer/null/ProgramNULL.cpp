@@ -41,11 +41,11 @@ void ProgramNULL::setSeparable(bool separable)
 {
 }
 
-gl::LinkResult ProgramNULL::link(const gl::Context *contextImpl,
-                                 const gl::ProgramLinkedResources &resources,
-                                 gl::InfoLog &infoLog)
+std::unique_ptr<LinkEvent> ProgramNULL::link(const gl::Context *contextImpl,
+                                             const gl::ProgramLinkedResources &resources,
+                                             gl::InfoLog &infoLog)
 {
-    return true;
+    return std::make_unique<LinkEventDone>(true);
 }
 
 GLboolean ProgramNULL::validate(const gl::Caps &caps, gl::InfoLog *infoLog)
@@ -177,10 +177,6 @@ void ProgramNULL::getUniformiv(const gl::Context *context, GLint location, GLint
 void ProgramNULL::getUniformuiv(const gl::Context *context, GLint location, GLuint *params) const
 {
     // TODO(jmadill): Write some values.
-}
-
-void ProgramNULL::setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding)
-{
 }
 
 void ProgramNULL::setPathFragmentInputGen(const std::string &inputName,

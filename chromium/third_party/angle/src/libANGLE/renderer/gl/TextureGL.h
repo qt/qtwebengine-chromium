@@ -75,6 +75,7 @@ class TextureGL : public TextureImpl
                           GLenum format,
                           GLenum type,
                           const gl::PixelUnpackState &unpack,
+                          gl::Buffer *unpackBuffer,
                           const uint8_t *pixels) override;
 
     gl::Error setCompressedImage(const gl::Context *context,
@@ -160,7 +161,8 @@ class TextureGL : public TextureImpl
                                 gl::TextureType type,
                                 egl::Image *image) override;
 
-    GLuint getTextureID() const;
+    GLuint getTextureID() const { return mTextureID; }
+
     gl::TextureType getType() const;
 
     gl::Error syncState(const gl::Context *context,
@@ -176,6 +178,8 @@ class TextureGL : public TextureImpl
     void setMagFilter(const gl::Context *context, GLenum filter);
 
     void setSwizzle(const gl::Context *context, GLint swizzle[4]);
+
+    GLenum getNativeInternalFormat(const gl::ImageIndex &index) const;
 
   private:
     void setImageHelper(const gl::Context *context,

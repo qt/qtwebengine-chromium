@@ -23,6 +23,7 @@
 namespace rx
 {
 class Buffer11;
+class DisplayD3D;
 class Framebuffer11;
 struct RenderTargetDesc;
 struct Renderer11DeviceCaps;
@@ -48,10 +49,11 @@ class ShaderConstants11 : angle::NonCopyable
                          unsigned int samplerIndex,
                          const gl::Texture &texture);
 
-    gl::Error updateBuffer(Renderer11 *renderer,
-                           gl::ShaderType shaderType,
-                           const ProgramD3D &programD3D,
-                           const d3d11::Buffer &driverConstantBuffer);
+    angle::Result updateBuffer(const gl::Context *context,
+                               Renderer11 *renderer,
+                               gl::ShaderType shaderType,
+                               const ProgramD3D &programD3D,
+                               const d3d11::Buffer &driverConstantBuffer);
 
   private:
     struct Vertex
@@ -144,15 +146,14 @@ class StateManager11 final : angle::NonCopyable
     StateManager11(Renderer11 *renderer);
     ~StateManager11();
 
-    gl::Error initialize(const gl::Caps &caps, const gl::Extensions &extensions);
     void deinitialize();
 
     void syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits);
 
-    gl::Error updateStateForCompute(const gl::Context *context,
-                                    GLuint numGroupsX,
-                                    GLuint numGroupsY,
-                                    GLuint numGroupsZ);
+    angle::Result updateStateForCompute(const gl::Context *context,
+                                        GLuint numGroupsX,
+                                        GLuint numGroupsY,
+                                        GLuint numGroupsZ);
 
     void updateStencilSizeIfChanged(bool depthStencilInitialized, unsigned int stencilSize);
 
@@ -197,13 +198,13 @@ class StateManager11 final : angle::NonCopyable
 
     void onBeginQuery(Query11 *query);
     void onDeleteQueryObject(Query11 *query);
-    gl::Error onMakeCurrent(const gl::Context *context);
+    angle::Result onMakeCurrent(const gl::Context *context);
 
     void setInputLayout(const d3d11::InputLayout *inputLayout);
 
     void setSingleVertexBuffer(const d3d11::Buffer *buffer, UINT stride, UINT offset);
 
-    gl::Error updateState(const gl::Context *context, const gl::DrawCallParams &drawCallParams);
+    angle::Result updateState(const gl::Context *context, const gl::DrawCallParams &drawCallParams);
 
     void setShaderResourceShared(gl::ShaderType shaderType,
                                  UINT resourceSlot,
@@ -234,11 +235,12 @@ class StateManager11 final : angle::NonCopyable
 
     void setIndexBuffer(ID3D11Buffer *buffer, DXGI_FORMAT indexFormat, unsigned int offset);
 
-    gl::Error updateVertexOffsetsForPointSpritesEmulation(GLint startVertex,
-                                                          GLsizei emulatedInstanceId);
+    angle::Result updateVertexOffsetsForPointSpritesEmulation(const gl::Context *context,
+                                                              GLint startVertex,
+                                                              GLsizei emulatedInstanceId);
 
     // TODO(jmadill): Should be private.
-    gl::Error applyComputeUniforms(ProgramD3D *programD3D);
+    angle::Result applyComputeUniforms(const gl::Context *context, ProgramD3D *programD3D);
 
     // Only used in testing.
     InputLayoutCache *getInputLayoutCache() { return &mInputLayoutCache; }
@@ -249,6 +251,8 @@ class StateManager11 final : angle::NonCopyable
     ProgramD3D *getProgramD3D() const { return mProgramD3D; }
 
   private:
+    angle::Result ensureInitialized(const gl::Context *context);
+
     template <typename SRVType>
     void setShaderResourceInternal(gl::ShaderType shaderType,
                                    UINT resourceSlot,
@@ -265,15 +269,15 @@ class StateManager11 final : angle::NonCopyable
     void unsetConflictingAttachmentResources(const gl::FramebufferAttachment &attachment,
                                              ID3D11Resource *resource);
 
-    gl::Error syncBlendState(const gl::Context *context,
-                             const gl::BlendState &blendState,
-                             const gl::ColorF &blendColor,
-                             unsigned int sampleMask);
+    angle::Result syncBlendState(const gl::Context *context,
+                                 const gl::BlendState &blendState,
+                                 const gl::ColorF &blendColor,
+                                 unsigned int sampleMask);
 
-    gl::Error syncDepthStencilState(const gl::State &glState);
+    angle::Result syncDepthStencilState(const gl::Context *context);
 
-    gl::Error syncRasterizerState(const gl::Context *context,
-                                  const gl::DrawCallParams &drawCallParams);
+    angle::Result syncRasterizerState(const gl::Context *context,
+                                      const gl::DrawCallParams &drawCallParams);
 
     void syncScissorRectangle(const gl::Rectangle &scissor, bool enabled);
 
@@ -281,48 +285,53 @@ class StateManager11 final : angle::NonCopyable
 
     void checkPresentPath(const gl::Context *context);
 
-    gl::Error syncFramebuffer(const gl::Context *context);
-    gl::Error syncProgram(const gl::Context *context, gl::PrimitiveMode drawMode);
+    angle::Result syncFramebuffer(const gl::Context *context);
+    angle::Result syncProgram(const gl::Context *context, gl::PrimitiveMode drawMode);
 
-    gl::Error syncTextures(const gl::Context *context);
-    gl::Error applyTextures(const gl::Context *context, gl::ShaderType shaderType);
-    gl::Error syncTexturesForCompute(const gl::Context *context);
+    angle::Result syncTextures(const gl::Context *context);
+    angle::Result applyTexturesForSamplers(const gl::Context *context, gl::ShaderType shaderType);
+    angle::Result applyTexturesForImages(const gl::Context *context, gl::ShaderType shaderType);
+    angle::Result syncTexturesForCompute(const gl::Context *context);
 
-    gl::Error setSamplerState(const gl::Context *context,
-                              gl::ShaderType type,
-                              int index,
-                              gl::Texture *texture,
-                              const gl::SamplerState &sampler);
-    gl::Error setTexture(const gl::Context *context,
-                         gl::ShaderType type,
-                         int index,
-                         gl::Texture *texture);
-    gl::Error setTextureForImage(const gl::Context *context,
-                                 gl::ShaderType type,
-                                 int index,
-                                 bool readonly,
-                                 const gl::ImageUnit &imageUnit);
+    angle::Result setSamplerState(const gl::Context *context,
+                                  gl::ShaderType type,
+                                  int index,
+                                  gl::Texture *texture,
+                                  const gl::SamplerState &sampler);
+    angle::Result setTextureForSampler(const gl::Context *context,
+                                       gl::ShaderType type,
+                                       int index,
+                                       gl::Texture *texture,
+                                       const gl::SamplerState &sampler);
+    angle::Result setTextureForImage(const gl::Context *context,
+                                     gl::ShaderType type,
+                                     int index,
+                                     bool readonly,
+                                     const gl::ImageUnit &imageUnit);
 
     // Faster than calling setTexture a jillion times
-    gl::Error clearSRVs(gl::ShaderType shaderType, size_t rangeStart, size_t rangeEnd);
-    gl::Error clearUAVs(gl::ShaderType shaderType, size_t rangeStart, size_t rangeEnd);
+    angle::Result clearSRVs(gl::ShaderType shaderType, size_t rangeStart, size_t rangeEnd);
+    angle::Result clearUAVs(gl::ShaderType shaderType, size_t rangeStart, size_t rangeEnd);
     void handleMultiviewDrawFramebufferChange(const gl::Context *context);
 
-    gl::Error syncCurrentValueAttribs(
+    angle::Result syncCurrentValueAttribs(
+        const gl::Context *context,
         const std::vector<gl::VertexAttribCurrentValueData> &currentValues);
 
-    gl::Error generateSwizzle(const gl::Context *context, gl::Texture *texture);
-    gl::Error generateSwizzlesForShader(const gl::Context *context, gl::ShaderType type);
-    gl::Error generateSwizzles(const gl::Context *context);
+    angle::Result generateSwizzle(const gl::Context *context, gl::Texture *texture);
+    angle::Result generateSwizzlesForShader(const gl::Context *context, gl::ShaderType type);
+    angle::Result generateSwizzles(const gl::Context *context);
 
-    gl::Error applyDriverUniforms();
-    gl::Error applyDriverUniformsForShader(gl::ShaderType shaderType);
-    gl::Error applyUniforms();
-    gl::Error applyUniformsForShader(gl::ShaderType shaderType);
+    angle::Result applyDriverUniforms(const gl::Context *context);
+    angle::Result applyDriverUniformsForShader(const gl::Context *context,
+                                               gl::ShaderType shaderType);
+    angle::Result applyUniforms(const gl::Context *context);
+    angle::Result applyUniformsForShader(const gl::Context *context, gl::ShaderType shaderType);
 
-    gl::Error syncUniformBuffers(const gl::Context *context);
-    gl::Error syncUniformBuffersForShader(const gl::Context *context, gl::ShaderType shaderType);
-    gl::Error syncTransformFeedbackBuffers(const gl::Context *context);
+    angle::Result syncUniformBuffers(const gl::Context *context);
+    angle::Result syncUniformBuffersForShader(const gl::Context *context,
+                                              gl::ShaderType shaderType);
+    angle::Result syncTransformFeedbackBuffers(const gl::Context *context);
 
     // These are currently only called internally.
     void invalidateTexturesAndSamplers();
@@ -334,13 +343,13 @@ class StateManager11 final : angle::NonCopyable
     void processFramebufferInvalidation(const gl::Context *context);
 
     bool syncIndexBuffer(ID3D11Buffer *buffer, DXGI_FORMAT indexFormat, unsigned int offset);
-    gl::Error syncVertexBuffersAndInputLayout(const gl::Context *context,
-                                              const gl::DrawCallParams &vertexParams);
+    angle::Result syncVertexBuffersAndInputLayout(const gl::Context *context,
+                                                  const gl::DrawCallParams &vertexParams);
 
     bool setInputLayoutInternal(const d3d11::InputLayout *inputLayout);
 
-    gl::Error applyVertexBuffers(const gl::Context *context,
-                                 const gl::DrawCallParams &drawCallParams);
+    angle::Result applyVertexBuffers(const gl::Context *context,
+                                     const gl::DrawCallParams &drawCallParams);
     // TODO(jmadill): Migrate to d3d11::Buffer.
     bool queueVertexBufferChange(size_t bufferIndex,
                                  ID3D11Buffer *buffer,
@@ -351,8 +360,8 @@ class StateManager11 final : angle::NonCopyable
     void syncPrimitiveTopology(const gl::State &glState, gl::PrimitiveMode currentDrawMode);
 
     // Not handled by an internal dirty bit because it isn't synced on drawArrays calls.
-    gl::Error applyIndexBuffer(const gl::Context *context,
-                               const gl::DrawCallParams &drawCallParams);
+    angle::Result applyIndexBuffer(const gl::Context *context,
+                                   const gl::DrawCallParams &drawCallParams);
 
     enum DirtyBitType
     {
@@ -539,24 +548,6 @@ class StateManager11 final : angle::NonCopyable
     FragmentConstantBufferArray<ResourceSerial> mCurrentConstantBufferPS;
     FragmentConstantBufferArray<GLintptr> mCurrentConstantBufferPSOffset;
     FragmentConstantBufferArray<GLsizeiptr> mCurrentConstantBufferPSSize;
-
-    class ConstantBufferObserver : public angle::ObserverInterface
-    {
-      public:
-        ConstantBufferObserver();
-        ~ConstantBufferObserver() override;
-
-        void onSubjectStateChange(const gl::Context *context,
-                                  angle::SubjectIndex index,
-                                  angle::SubjectMessage message) override;
-
-        void reset();
-        void bindToShader(gl::ShaderType shaderType, size_t index, Buffer11 *buffer);
-
-      private:
-        gl::ShaderMap<std::vector<angle::ObserverBinding>> mShaderBindings;
-    };
-    ConstantBufferObserver mConstantBufferObserver;
 
     // Currently applied transform feedback buffers
     Serial mAppliedTFSerial;

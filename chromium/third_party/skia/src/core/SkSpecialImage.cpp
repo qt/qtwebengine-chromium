@@ -14,6 +14,7 @@
 #include "SkSpecialSurface.h"
 #include "SkSurfacePriv.h"
 #include "SkPixelRef.h"
+#include <atomic>
 
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
@@ -54,7 +55,8 @@ public:
     virtual sk_sp<SkSpecialImage> onMakeSubset(const SkIRect& subset) const = 0;
 
     virtual sk_sp<SkSpecialSurface> onMakeSurface(const SkImageFilter::OutputProperties& outProps,
-                                                  const SkISize& size, SkAlphaType at) const = 0;
+                                                  const SkISize& size, SkAlphaType at,
+                                                  const SkSurfaceProps* = nullptr) const = 0;
 
     virtual sk_sp<SkImage> onAsImage(const SkIRect* subset) const = 0;
 
@@ -151,8 +153,9 @@ sk_sp<GrTextureProxy> SkSpecialImage::asTextureProxyRef(GrContext* context) cons
 #endif
 
 sk_sp<SkSpecialSurface> SkSpecialImage::makeSurface(const SkImageFilter::OutputProperties& outProps,
-                                                    const SkISize& size, SkAlphaType at) const {
-    return as_SIB(this)->onMakeSurface(outProps, size, at);
+                                                    const SkISize& size, SkAlphaType at,
+                                                    const SkSurfaceProps* props) const {
+    return as_SIB(this)->onMakeSurface(outProps, size, at, props);
 }
 
 sk_sp<SkSurface> SkSpecialImage::makeTightSurface(const SkImageFilter::OutputProperties& outProps,
@@ -254,7 +257,8 @@ public:
 #define RASTER_IMAGE_FILTERS_SUPPORT_SRGB_AND_F16 0
 
     sk_sp<SkSpecialSurface> onMakeSurface(const SkImageFilter::OutputProperties& outProps,
-                                          const SkISize& size, SkAlphaType at) const override {
+                                          const SkISize& size, SkAlphaType at,
+                                          const SkSurfaceProps* props) const override {
 #if RASTER_IMAGE_FILTERS_SUPPORT_SRGB_AND_F16
         SkColorSpace* colorSpace = outProps.colorSpace();
 #else
@@ -264,7 +268,7 @@ public:
             ? kRGBA_F16_SkColorType : kN32_SkColorType;
         SkImageInfo info = SkImageInfo::Make(size.width(), size.height(), colorType, at,
                                              sk_ref_sp(colorSpace));
-        return SkSpecialSurface::MakeRaster(info, nullptr);
+        return SkSpecialSurface::MakeRaster(info, props);
     }
 
     sk_sp<SkSpecialImage> onMakeSubset(const SkIRect& subset) const override {
@@ -427,14 +431,16 @@ public:
     }
 
     sk_sp<SkSpecialSurface> onMakeSurface(const SkImageFilter::OutputProperties& outProps,
-                                          const SkISize& size, SkAlphaType at) const override {
+                                          const SkISize& size, SkAlphaType at,
+                                          const SkSurfaceProps* props) const override {
         if (!fContext) {
             return nullptr;
         }
 
         return SkSpecialSurface::MakeRenderTarget(
             fContext, size.width(), size.height(),
-            SkColorType2GrPixelConfig(outProps.colorType()), sk_ref_sp(outProps.colorSpace()));
+            SkColorType2GrPixelConfig(outProps.colorType()), sk_ref_sp(outProps.colorSpace()),
+            props);
     }
 
     sk_sp<SkSpecialImage> onMakeSubset(const SkIRect& subset) const override {
@@ -490,11 +496,11 @@ public:
     }
 
 private:
-    GrContext*              fContext;
-    sk_sp<GrTextureProxy>   fTextureProxy;
-    const SkAlphaType       fAlphaType;
-    sk_sp<SkColorSpace>     fColorSpace;
-    mutable SkAtomic<bool>  fAddedRasterVersionToCache;
+    GrContext*                fContext;
+    sk_sp<GrTextureProxy>     fTextureProxy;
+    const SkAlphaType         fAlphaType;
+    sk_sp<SkColorSpace>       fColorSpace;
+    mutable std::atomic<bool> fAddedRasterVersionToCache;
 
     typedef SkSpecialImage_Base INHERITED;
 };

@@ -78,6 +78,12 @@ IceCandidateInterface* CreateIceCandidate(const std::string& sdp_mid,
                                           const std::string& sdp,
                                           SdpParseError* error);
 
+// Creates an IceCandidateInterface based on a parsed candidate structure.
+std::unique_ptr<IceCandidateInterface> CreateIceCandidate(
+    const std::string& sdp_mid,
+    int sdp_mline_index,
+    const cricket::Candidate& candidate);
+
 // This class represents a collection of candidates for a specific m= section.
 // Used in SessionDescriptionInterface.
 class IceCandidateCollection {
@@ -191,6 +197,14 @@ std::unique_ptr<SessionDescriptionInterface> CreateSessionDescription(
     const std::string& sdp,
     SdpParseError* error_out);
 
+// Creates a SessionDescriptionInterface based on a parsed SDP structure and the
+// given type, ID and version.
+std::unique_ptr<SessionDescriptionInterface> CreateSessionDescription(
+    SdpType type,
+    const std::string& session_id,
+    const std::string& session_version,
+    std::unique_ptr<cricket::SessionDescription> description);
+
 // CreateOffer and CreateAnswer callback interface.
 class CreateSessionDescriptionObserver : public rtc::RefCountInterface {
  public:
@@ -205,10 +219,8 @@ class CreateSessionDescriptionObserver : public rtc::RefCountInterface {
   // is deprecated; in order to let clients remove the old version, it has a
   // default implementation. If both versions are unimplemented, the
   // result will be a runtime error (stack overflow). This is intentional.
-  virtual void OnFailure(RTCError error) { OnFailure(error.message()); }
-  virtual void OnFailure(const std::string& error) {
-    OnFailure(RTCError(RTCErrorType::INTERNAL_ERROR, std::string(error)));
-  }
+  virtual void OnFailure(RTCError error);
+  virtual void OnFailure(const std::string& error);
 
  protected:
   ~CreateSessionDescriptionObserver() override = default;
@@ -219,13 +231,9 @@ class SetSessionDescriptionObserver : public rtc::RefCountInterface {
  public:
   virtual void OnSuccess() = 0;
   // See description in CreateSessionDescriptionObserver for OnFailure.
-  virtual void OnFailure(RTCError error) {
-    std::string message(error.message());
-    OnFailure(message);
-  }
-  virtual void OnFailure(const std::string& error) {
-    OnFailure(RTCError(RTCErrorType::INTERNAL_ERROR, std::string(error)));
-  }
+  virtual void OnFailure(RTCError error);
+
+  virtual void OnFailure(const std::string& error);
 
  protected:
   ~SetSessionDescriptionObserver() override = default;

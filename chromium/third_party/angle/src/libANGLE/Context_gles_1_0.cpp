@@ -59,6 +59,7 @@ void Context::clearDepthx(GLfixed depth)
 void Context::clientActiveTexture(GLenum texture)
 {
     mGLState.gles1().setClientTextureUnit(texture - GL_TEXTURE0);
+    mStateCache.onGLES1ClientStateChange(this);
 }
 
 void Context::clipPlanef(GLenum p, const GLfloat *eqn)
@@ -109,12 +110,14 @@ void Context::disableClientState(ClientVertexArrayType clientState)
 {
     mGLState.gles1().setClientStateEnabled(clientState, false);
     disableVertexAttribArray(vertexArrayIndex(clientState));
+    mStateCache.onGLES1ClientStateChange(this);
 }
 
 void Context::enableClientState(ClientVertexArrayType clientState)
 {
     mGLState.gles1().setClientStateEnabled(clientState, true);
     enableVertexAttribArray(vertexArrayIndex(clientState));
+    mStateCache.onGLES1ClientStateChange(this);
 }
 
 void Context::fogf(GLenum pname, GLfloat param)
@@ -324,9 +327,9 @@ void Context::loadMatrixx(const GLfixed *m)
     mGLState.gles1().loadMatrix(FixedMatrixToMat4(m));
 }
 
-void Context::logicOp(GLenum opcode)
+void Context::logicOp(LogicalOperation opcodePacked)
 {
-    UNIMPLEMENTED();
+    mGLState.gles1().setLogicOp(opcodePacked);
 }
 
 void Context::materialf(GLenum face, MaterialParameter pname, GLfloat param)
@@ -576,42 +579,54 @@ void Context::vertexPointer(GLint size, GLenum type, GLsizei stride, const void 
 // GL_OES_draw_texture
 void Context::drawTexf(float x, float y, float z, float width, float height)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, x, y, z, width, height);
 }
 
 void Context::drawTexfv(const GLfloat *coords)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, coords[0], coords[1], coords[2], coords[3],
+                                coords[4]);
 }
 
 void Context::drawTexi(GLint x, GLint y, GLint z, GLint width, GLint height)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, static_cast<GLfloat>(x), static_cast<GLfloat>(y),
+                                static_cast<GLfloat>(z), static_cast<GLfloat>(width),
+                                static_cast<GLfloat>(height));
 }
 
 void Context::drawTexiv(const GLint *coords)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, static_cast<GLfloat>(coords[0]),
+                                static_cast<GLfloat>(coords[1]), static_cast<GLfloat>(coords[2]),
+                                static_cast<GLfloat>(coords[3]), static_cast<GLfloat>(coords[4]));
 }
 
 void Context::drawTexs(GLshort x, GLshort y, GLshort z, GLshort width, GLshort height)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, static_cast<GLfloat>(x), static_cast<GLfloat>(y),
+                                static_cast<GLfloat>(z), static_cast<GLfloat>(width),
+                                static_cast<GLfloat>(height));
 }
 
 void Context::drawTexsv(const GLshort *coords)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, static_cast<GLfloat>(coords[0]),
+                                static_cast<GLfloat>(coords[1]), static_cast<GLfloat>(coords[2]),
+                                static_cast<GLfloat>(coords[3]), static_cast<GLfloat>(coords[4]));
 }
 
 void Context::drawTexx(GLfixed x, GLfixed y, GLfixed z, GLfixed width, GLfixed height)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, FixedToFloat(x), FixedToFloat(y), FixedToFloat(z),
+                                FixedToFloat(width), FixedToFloat(height));
 }
 
 void Context::drawTexxv(const GLfixed *coords)
 {
-    UNIMPLEMENTED();
+    mGLES1Renderer->drawTexture(this, &mGLState, FixedToFloat(coords[0]), FixedToFloat(coords[1]),
+                                FixedToFloat(coords[2]), FixedToFloat(coords[3]),
+                                FixedToFloat(coords[4]));
 }
 
 // GL_OES_matrix_palette
@@ -697,7 +712,7 @@ void Context::texGenxv(GLenum coord, GLenum pname, const GLint *params)
 
 int Context::vertexArrayIndex(ClientVertexArrayType type) const
 {
-    return mGLES1Renderer->vertexArrayIndex(type, &mGLState);
+    return GLES1Renderer::VertexArrayIndex(type, mGLState.gles1());
 }
 
 // static
@@ -705,11 +720,4 @@ int Context::TexCoordArrayIndex(unsigned int unit)
 {
     return GLES1Renderer::TexCoordArrayIndex(unit);
 }
-
-AttributesMask Context::getVertexArraysAttributeMask() const
-{
-    return mGLES1Renderer->getVertexArraysAttributeMask(&mGLState);
-}
-
-// static
 }  // namespace gl

@@ -21,8 +21,8 @@ GrCCClipProcessor::GrCCClipProcessor(const GrCCClipPath* clipPath, MustCheckBoun
         , fMustCheckBounds((bool)mustCheckBounds)
         , fOverrideFillType(overrideFillType)
         , fAtlasAccess(sk_ref_sp(fClipPath->atlasLazyProxy()), GrSamplerState::Filter::kNearest,
-                       GrSamplerState::WrapMode::kClamp, kFragment_GrShaderFlag) {
-    this->addTextureSampler(&fAtlasAccess);
+                       GrSamplerState::WrapMode::kClamp) {
+    this->setTextureSamplerCnt(1);
 }
 
 std::unique_ptr<GrFragmentProcessor> GrCCClipProcessor::clone() const {

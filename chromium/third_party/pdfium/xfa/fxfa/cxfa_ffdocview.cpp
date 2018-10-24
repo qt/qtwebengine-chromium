@@ -71,7 +71,7 @@ int32_t CXFA_FFDocView::StartLayout() {
   m_pDoc->GetXFADoc()->DoDataMerge();
   m_pXFADocLayout = GetXFALayout();
 
-  int32_t iStatus = m_pXFADocLayout->StartLayout();
+  int32_t iStatus = m_pXFADocLayout->StartLayout(false);
   if (iStatus < 0)
     return iStatus;
 
@@ -235,9 +235,9 @@ void CXFA_FFDocView::ResetNode(CXFA_Node* pNode) {
   if (pFormNode->GetElementType() != XFA_Element::Field &&
       pFormNode->GetElementType() != XFA_Element::ExclGroup) {
     CXFA_ReadyNodeIterator it(pFormNode);
-    while (CXFA_Node* pNode = it.MoveToNext()) {
-      bChanged |= ResetSingleNodeData(pNode);
-      if (pNode->GetElementType() == XFA_Element::ExclGroup)
+    while (CXFA_Node* next_node = it.MoveToNext()) {
+      bChanged |= ResetSingleNodeData(next_node);
+      if (next_node->GetElementType() == XFA_Element::ExclGroup)
         it.SkipTree();
     }
   }
@@ -446,7 +446,7 @@ bool CXFA_FFDocView::RunLayout() {
   LockUpdate();
   m_bInLayoutStatus = true;
   if (!m_pXFADocLayout->IncrementLayout() &&
-      m_pXFADocLayout->StartLayout() < 100) {
+      m_pXFADocLayout->StartLayout(false) < 100) {
     m_pXFADocLayout->DoLayout();
     UnlockUpdate();
     m_bInLayoutStatus = false;
@@ -622,7 +622,7 @@ void CXFA_FFDocView::RunBindItems() {
     WideString wsValue;
     WideString wsLabel;
     uint32_t uValueHash = FX_HashCode_GetW(wsValueRef.AsStringView(), false);
-    for (CXFA_Object* refObject : rs.objects) {
+    for (auto& refObject : rs.objects) {
       CXFA_Node* refNode = refObject->AsNode();
       if (!refNode)
         continue;

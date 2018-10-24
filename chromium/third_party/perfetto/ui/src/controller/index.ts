@@ -12,19 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {createEmptyState, State} from '../common/state';
+import '../tracks/all_controller';
 
-const state: State = createEmptyState();
+import {Remote} from '../base/remote';
 
-function main() {
-  // TODO(hjd): Compile this with the worker lib.
-  // tslint:disable-next-line no-any
-  (self as any).onmessage = (_: MessageEvent) => {
-    state.i++;
-    // TODO(hjd): Compile this with the worker lib.
-    // tslint:disable-next-line no-any
-    (self as any).postMessage(state);
+import {AppController} from './app_controller';
+import {globals} from './globals';
+
+function main(port: MessagePort) {
+  let receivedFrontendPort = false;
+  port.onmessage = ({data}) => {
+    if (!receivedFrontendPort) {
+      const frontendPort = data as MessagePort;
+      const frontend = new Remote(frontendPort);
+      globals.initialize(new AppController(), frontend);
+      receivedFrontendPort = true;
+    } else {
+      globals.dispatch(data);
+    }
   };
 }
 
-main();
+main(self as {} as MessagePort);

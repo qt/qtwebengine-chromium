@@ -8,6 +8,9 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "api/test/simulated_network.h"
+#include "call/fake_network_pipe.h"
+#include "call/simulated_network.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/call_test.h"
@@ -137,7 +140,11 @@ TEST_P(RetransmissionEndToEndTest, ReceivesNackAndRetransmitsAudio) {
         test::SingleThreadedTaskQueueForTesting* task_queue) override {
       test::PacketTransport* receive_transport = new test::PacketTransport(
           task_queue, nullptr, this, test::PacketTransport::kReceiver,
-          payload_type_map_, FakeNetworkPipe::Config());
+          payload_type_map_,
+          absl::make_unique<FakeNetworkPipe>(
+              Clock::GetRealTimeClock(),
+              absl::make_unique<SimulatedNetwork>(
+                  DefaultNetworkSimulationConfig())));
       receive_transport_ = receive_transport;
       return receive_transport;
     }

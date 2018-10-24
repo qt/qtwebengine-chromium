@@ -18,9 +18,9 @@
 #include "pc/rtptransport.h"
 #include "pc/srtpsession.h"
 #include "rtc_base/asyncpacketsocket.h"
-#include "rtc_base/base64.h"
 #include "rtc_base/copyonwritebuffer.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "rtc_base/third_party/base64/base64.h"
 #include "rtc_base/trace_event.h"
 #include "rtc_base/zero_memory.h"
 
@@ -325,11 +325,6 @@ bool SrtpTransport::SetRtcpParams(int send_cs,
     return false;
   }
 
-  if (metrics_observer_) {
-    send_rtcp_session_->SetMetricsObserver(metrics_observer_);
-    recv_rtcp_session_->SetMetricsObserver(metrics_observer_);
-  }
-
   RTC_LOG(LS_INFO) << "SRTCP activated with negotiated parameters:"
                       " send cipher_suite "
                    << send_cs << " recv cipher_suite " << recv_cs;
@@ -357,11 +352,6 @@ void SrtpTransport::ResetParams() {
 void SrtpTransport::CreateSrtpSessions() {
   send_session_.reset(new cricket::SrtpSession());
   recv_session_.reset(new cricket::SrtpSession());
-  if (metrics_observer_) {
-    send_session_->SetMetricsObserver(metrics_observer_);
-    recv_session_->SetMetricsObserver(metrics_observer_);
-  }
-
   if (external_auth_enabled_) {
     send_session_->EnableExternalAuth();
   }
@@ -504,23 +494,6 @@ bool SrtpTransport::ParseKeyParams(const std::string& key_params,
   // sensitive data.
   rtc::ExplicitZeroMemory(&key_str[0], key_str.size());
   return true;
-}
-
-void SrtpTransport::SetMetricsObserver(
-    rtc::scoped_refptr<MetricsObserverInterface> metrics_observer) {
-  metrics_observer_ = metrics_observer;
-  if (send_session_) {
-    send_session_->SetMetricsObserver(metrics_observer_);
-  }
-  if (recv_session_) {
-    recv_session_->SetMetricsObserver(metrics_observer_);
-  }
-  if (send_rtcp_session_) {
-    send_rtcp_session_->SetMetricsObserver(metrics_observer_);
-  }
-  if (recv_rtcp_session_) {
-    recv_rtcp_session_->SetMetricsObserver(metrics_observer_);
-  }
 }
 
 void SrtpTransport::MaybeUpdateWritableState() {

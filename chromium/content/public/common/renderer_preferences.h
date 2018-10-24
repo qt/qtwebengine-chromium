@@ -25,14 +25,6 @@
 
 namespace content {
 
-enum TapMultipleTargetsStrategy {
-  TAP_MULTIPLE_TARGETS_STRATEGY_ZOOM = 0,
-  TAP_MULTIPLE_TARGETS_STRATEGY_POPUP,
-  TAP_MULTIPLE_TARGETS_STRATEGY_NONE,
-
-  TAP_MULTIPLE_TARGETS_STRATEGY_MAX = TAP_MULTIPLE_TARGETS_STRATEGY_NONE,
-};
-
 // User preferences needed to be passed to the renderer process.
 // TODO(crbug.com/869748): Move the preferences into
 // third_party/blink/public/mojom as a mojom struct.
@@ -123,9 +115,6 @@ struct CONTENT_EXPORT RendererPreferences {
 
   // The accept-languages of the browser, comma-separated.
   std::string accept_languages;
-
-  // How to handle a tap gesture touching multiple targets
-  TapMultipleTargetsStrategy tap_multiple_targets_strategy;
 
   // Disables rendering default error page when client choses to block a page.
   // Corresponds to net::ERR_BLOCKED_BY_CLIENT.

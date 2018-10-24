@@ -45,6 +45,8 @@ Differences from GLSL
 * use sk_InstanceID instead of gl_InstanceID
 * the fragment coordinate is sk_FragCoord, and is always relative to the upper
   left.
+* use sk_Clockwise instead of gl_FrontFacing. This is always relative to an
+  upper left origin.
 * you do not need to include ".0" to make a number a float (meaning that
   "float2(x, y) * 4" is perfectly legal in SkSL, unlike GLSL where it would
   often have to be expressed "float2(x, y) * 4.0". There is no performance
@@ -55,6 +57,7 @@ Differences from GLSL
   Use swizzles instead.
 * Use texture() instead of textureProj(), e.g. texture(sampler2D, float3) is
   equivalent to GLSL's textureProj(sampler2D, float3)
+* Render target width and height are available via sk_Width and sk_Height
 * some built-in functions and one or two rarely-used language features are not
   yet supported (sorry!)
 

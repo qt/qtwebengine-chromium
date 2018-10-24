@@ -24,7 +24,9 @@
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/common.h"
 #include "modules/audio_processing/echo_cancellation_impl.h"
+#include "modules/audio_processing/echo_cancellation_proxy.h"
 #include "modules/audio_processing/echo_control_mobile_impl.h"
+#include "modules/audio_processing/echo_control_mobile_proxy.h"
 #include "modules/audio_processing/gain_control_for_experimental_agc.h"
 #include "modules/audio_processing/gain_control_impl.h"
 #include "modules/audio_processing/gain_controller2.h"
@@ -33,6 +35,8 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/platform_file.h"
 #include "rtc_base/refcountedobject.h"
+#include "rtc_base/system/arch.h"
+#include "rtc_base/timeutils.h"
 #include "rtc_base/trace_event.h"
 #if WEBRTC_INTELLIGIBILITY_ENHANCER
 #include "modules/audio_processing/intelligibility/intelligibility_enhancer.h"
@@ -262,6 +266,8 @@ struct AudioProcessingImpl::ApmPublicSubmodules {
   // Accessed externally of APM without any lock acquired.
   std::unique_ptr<EchoCancellationImpl> echo_cancellation;
   std::unique_ptr<EchoControlMobileImpl> echo_control_mobile;
+  std::unique_ptr<EchoCancellationProxy> echo_cancellation_proxy;
+  std::unique_ptr<EchoControlMobileProxy> echo_control_mobile_proxy;
   std::unique_ptr<GainControlImpl> gain_control;
   std::unique_ptr<LevelEstimatorImpl> level_estimator;
   std::unique_ptr<NoiseSuppressionImpl> noise_suppression;
@@ -372,7 +378,7 @@ AudioProcessingImpl::AudioProcessingImpl(
 #else
                  config.Get<ExperimentalAgc>().enabled,
                  config.Get<ExperimentalAgc>().enabled_agc2_level_estimator,
-                 config.Get<ExperimentalAgc>().enabled_agc2_digital_adaptive),
+                 config.Get<ExperimentalAgc>().digital_adaptive_disabled),
 #endif
 #if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS)
       capture_(false),
@@ -392,6 +398,11 @@ AudioProcessingImpl::AudioProcessingImpl(
         new EchoCancellationImpl(&crit_render_, &crit_capture_));
     public_submodules_->echo_control_mobile.reset(
         new EchoControlMobileImpl(&crit_render_, &crit_capture_));
+    public_submodules_->echo_cancellation_proxy.reset(new EchoCancellationProxy(
+        this, public_submodules_->echo_cancellation.get()));
+    public_submodules_->echo_control_mobile_proxy.reset(
+        new EchoControlMobileProxy(
+            this, public_submodules_->echo_control_mobile.get()));
     public_submodules_->gain_control.reset(
         new GainControlImpl(&crit_render_, &crit_capture_));
     public_submodules_->level_estimator.reset(
@@ -571,7 +582,7 @@ int AudioProcessingImpl::InitializeLocked() {
   InitializePreProcessor();
 
   if (aec_dump_) {
-    aec_dump_->WriteInitMessage(formats_.api_format);
+    aec_dump_->WriteInitMessage(formats_.api_format, rtc::TimeUTCMillis());
   }
   return kNoError;
 }
@@ -665,6 +676,13 @@ void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
   // Run in a single-threaded manner when applying the settings.
   rtc::CritScope cs_render(&crit_render_);
   rtc::CritScope cs_capture(&crit_capture_);
+
+  static_cast<EchoCancellation*>(public_submodules_->echo_cancellation.get())
+      ->Enable(config_.echo_canceller.enabled &&
+               !config_.echo_canceller.mobile_mode);
+  static_cast<EchoControlMobile*>(public_submodules_->echo_control_mobile.get())
+      ->Enable(config_.echo_canceller.enabled &&
+               config_.echo_canceller.mobile_mode);
 
   InitializeLowCutFilter();
 
@@ -1098,10 +1116,10 @@ int AudioProcessingImpl::ProcessStream(AudioFrame* frame) {
   TRACE_EVENT0("webrtc", "AudioProcessing::ProcessStream_AudioFrame");
   {
     // Acquire the capture lock in order to safely call the function
-    // that retrieves the render side data. This function accesses apm
+    // that retrieves the render side data. This function accesses APM
     // getters that need the capture lock held when being called.
     // The lock needs to be released as
-    // public_submodules_->echo_control_mobile->is_enabled() aquires this lock
+    // public_submodules_->echo_control_mobile->is_enabled() acquires this lock
     // as well.
     rtc::CritScope cs_capture(&crit_capture_);
     EmptyQueuedRenderAudio();
@@ -1333,6 +1351,8 @@ int AudioProcessingImpl::ProcessCaptureStreamLocked() {
   }
 
   if (config_.gain_controller2.enabled) {
+    private_submodules_->gain_controller2->NotifyAnalogLevel(
+        gain_control()->stream_analog_level());
     private_submodules_->gain_controller2->Process(capture_buffer);
   }
 
@@ -1478,13 +1498,13 @@ int AudioProcessingImpl::ProcessReverseStream(AudioFrame* frame) {
 int AudioProcessingImpl::ProcessRenderStreamLocked() {
   AudioBuffer* render_buffer = render_.render_audio.get();  // For brevity.
 
-  QueueNonbandedRenderAudio(render_buffer);
-
   HandleRenderRuntimeSettings();
 
   if (private_submodules_->render_pre_processor) {
     private_submodules_->render_pre_processor->Process(render_buffer);
   }
+
+  QueueNonbandedRenderAudio(render_buffer);
 
   if (submodule_states_.RenderMultiBandSubModulesActive() &&
       SampleRateSupportsMultiBand(
@@ -1503,7 +1523,7 @@ int AudioProcessingImpl::ProcessRenderStreamLocked() {
     QueueBandedRenderAudio(render_buffer);
   }
 
-  // TODO(peah): Perform the queueing ínside QueueRenderAudiuo().
+  // TODO(peah): Perform the queuing inside QueueRenderAudiuo().
   if (private_submodules_->echo_controller) {
     private_submodules_->echo_controller->AnalyzeRender(render_buffer);
   }
@@ -1572,7 +1592,7 @@ void AudioProcessingImpl::AttachAecDump(std::unique_ptr<AecDump> aec_dump) {
   // 'aec_dump' parameter, which is after locks are released.
   aec_dump_.swap(aec_dump);
   WriteAecDumpConfigMessage(true);
-  aec_dump_->WriteInitMessage(formats_.api_format);
+  aec_dump_->WriteInitMessage(formats_.api_format, rtc::TimeUTCMillis());
 }
 
 void AudioProcessingImpl::DetachAecDump() {
@@ -1710,11 +1730,11 @@ AudioProcessingStats AudioProcessingImpl::GetStatistics(
 }
 
 EchoCancellation* AudioProcessingImpl::echo_cancellation() const {
-  return public_submodules_->echo_cancellation.get();
+  return public_submodules_->echo_cancellation_proxy.get();
 }
 
 EchoControlMobile* AudioProcessingImpl::echo_control_mobile() const {
-  return public_submodules_->echo_control_mobile.get();
+  return public_submodules_->echo_control_mobile_proxy.get();
 }
 
 GainControl* AudioProcessingImpl::gain_control() const {

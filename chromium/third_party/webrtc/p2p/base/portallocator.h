@@ -20,13 +20,12 @@
 #include "p2p/base/portinterface.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/proxyinfo.h"
-#include "rtc_base/sigslot.h"
 #include "rtc_base/sslcertificate.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_checker.h"
 
 namespace webrtc {
-class MetricsObserverInterface;
 class TurnCustomizer;
 }  // namespace webrtc
 
@@ -75,9 +74,18 @@ enum {
   // When specified, do not collect IPv6 ICE candidates on Wi-Fi.
   PORTALLOCATOR_ENABLE_IPV6_ON_WIFI = 0x4000,
 
+  // When this flag is set, ports not bound to any specific network interface
+  // will be used, in addition to normal ports bound to the enumerated
+  // interfaces. Without this flag, these "any address" ports would only be
+  // used when network enumeration fails or is disabled. But under certain
+  // conditions, these ports may succeed where others fail, so they may allow
+  // the application to work in a wider variety of environments, at the expense
+  // of having to allocate additional candidates.
+  PORTALLOCATOR_ENABLE_ANY_ADDRESS_PORTS = 0x8000,
+
   // Exclude link-local network interfaces
   // from considertaion after adapter enumeration.
-  PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS = 0x8000,
+  PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS = 0x10000,
 };
 
 // Defines various reasons that have caused ICE regathering.
@@ -527,11 +535,6 @@ class PortAllocator : public sigslot::has_slots<> {
     origin_ = origin;
   }
 
-  void SetMetricsObserver(webrtc::MetricsObserverInterface* observer) {
-    CheckRunOnValidThreadIfInitialized();
-    metrics_observer_ = observer;
-  }
-
   webrtc::TurnCustomizer* turn_customizer() {
     CheckRunOnValidThreadIfInitialized();
     return turn_customizer_;
@@ -551,10 +554,6 @@ class PortAllocator : public sigslot::has_slots<> {
       int component,
       const std::string& ice_ufrag,
       const std::string& ice_pwd) = 0;
-
-  webrtc::MetricsObserverInterface* metrics_observer() {
-    return metrics_observer_;
-  }
 
   const std::deque<std::unique_ptr<PortAllocatorSession>>& pooled_sessions() {
     return pooled_sessions_;
@@ -590,8 +589,6 @@ class PortAllocator : public sigslot::has_slots<> {
   std::deque<std::unique_ptr<PortAllocatorSession>> pooled_sessions_;
   bool candidate_pool_frozen_ = false;
   bool prune_turn_ports_ = false;
-
-  webrtc::MetricsObserverInterface* metrics_observer_ = nullptr;
 
   // Customizer for TURN messages.
   // The instance is owned by application and will be shared among

@@ -43,6 +43,7 @@ if (!build_with_chromium) {
         ":video_engine_tests",
         ":webrtc_nonparallel_tests",
         ":webrtc_perf_tests",
+        "call:fake_network_unittests",
         "common_audio:common_audio_unittests",
         "common_video:common_video_unittests",
         "media:rtc_media_unittests",
@@ -67,7 +68,7 @@ if (!build_with_chromium) {
       if (is_android) {
         deps += [
           ":android_junit_tests",
-          "sdk/android:libjingle_peerconnection_android_unittest",
+          "sdk/android:android_instrumentation_test_apk",
         ]
       } else {
         deps += [ "modules/video_capture:video_capture_tests" ]
@@ -92,6 +93,10 @@ config("common_inherited_config") {
     defines += [ "WEBRTC_MOZILLA_BUILD" ]
   }
 
+  if (!rtc_builtin_ssl_root_certificates) {
+    defines += [ "WEBRTC_EXCLUDE_BUILT_IN_SSL_ROOT_CERTS" ]
+  }
+
   # Some tests need to declare their own trace event handlers. If this define is
   # not set, the first time TRACE_EVENT_* is called it will store the return
   # value for the current handler in an static variable, so that subsequent
@@ -104,12 +109,7 @@ config("common_inherited_config") {
     defines += [ "WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=0" ]
   }
   if (build_with_chromium) {
-    defines += [
-      # TODO(kjellander): Cleanup unused ones and move defines closer to
-      # the source when webrtc:4256 is completed.
-      "GTEST_RELATIVE_PATH",
-      "WEBRTC_CHROMIUM_BUILD",
-    ]
+    defines += [ "WEBRTC_CHROMIUM_BUILD" ]
     include_dirs = [
       # The overrides must be included first as that is the mechanism for
       # selecting the override headers in Chromium.
@@ -330,7 +330,7 @@ if (!build_with_chromium) {
 
     sources = []
     complete_static_lib = true
-    rtc_remove_configs = [ "//build/config/compiler:thin_archive" ]
+    suppressed_configs += [ "//build/config/compiler:thin_archive" ]
     defines = []
 
     deps = [
@@ -348,6 +348,17 @@ if (!build_with_chromium) {
       "sdk",
       "system_wrappers:system_wrappers_default",
       "video",
+    ]
+
+    # Additional factory functions to be exposed.
+    # Rational: These factories are small enough (89 KiB / 32+ MiB)
+    #           to be unconditionaly included for user convenience.
+    # That begin said:
+    # TODO(yvesg) Consider making all non-core APIs optional, so that users
+    #             can build a customized library tailored to their needs.
+    deps += [
+      "api/audio_codecs:builtin_audio_decoder_factory",
+      "api/audio_codecs:builtin_audio_encoder_factory",
     ]
 
     if (build_with_mozilla) {
@@ -373,22 +384,11 @@ if (!build_with_chromium) {
   }
 }
 
-rtc_source_set("typedefs") {
-  sources = [
-    "typedefs.h",
-  ]
-  deps = [
-    "rtc_base/system:arch",
-    "rtc_base/system:unused",
-  ]
-}
-
 rtc_source_set("webrtc_common") {
   sources = [
     "common_types.h",
   ]
   deps = [
-    ":typedefs",
     "api:array_view",
     "api/video:video_bitrate_allocation",
     "rtc_base:checks",
@@ -433,6 +433,7 @@ if (rtc_include_tests) {
       "rtc_base:rtc_numerics_unittests",
       "rtc_base:rtc_task_queue_unittests",
       "rtc_base:sequenced_task_checker_unittests",
+      "rtc_base:sigslot_unittest",
       "rtc_base:weak_ptr_unittests",
       "rtc_base/experiments:experiments_unittests",
       "system_wrappers:metrics_default",
@@ -456,7 +457,7 @@ if (rtc_include_tests) {
     }
 
     if (is_ios || is_mac) {
-      deps += [ "sdk:sdk_unittests_objc" ]
+      deps += [ "sdk:rtc_unittests_objc" ]
     }
   }
 
@@ -571,8 +572,12 @@ if (rtc_include_tests) {
         "examples/androidjunit/src/org/appspot/apprtc/BluetoothManagerTest.java",
         "examples/androidjunit/src/org/appspot/apprtc/DirectRTCClientTest.java",
         "examples/androidjunit/src/org/appspot/apprtc/TCPChannelClientTest.java",
-        "sdk/android/tests/src/org/webrtc/GlGenericDrawerTest.java",
         "sdk/android/tests/src/org/webrtc/CameraEnumerationTest.java",
+        "sdk/android/tests/src/org/webrtc/CodecTestHelper.java",
+        "sdk/android/tests/src/org/webrtc/FakeMediaCodecWrapper.java",
+        "sdk/android/tests/src/org/webrtc/GlGenericDrawerTest.java",
+        "sdk/android/tests/src/org/webrtc/HardwareVideoEncoderTest.java",
+        "sdk/android/tests/src/org/webrtc/HardwareVideoDecoderTest.java",
         "sdk/android/tests/src/org/webrtc/ScalingSettingsTest.java",
       ]
 
@@ -580,6 +585,7 @@ if (rtc_include_tests) {
         "examples:AppRTCMobile_javalib",
         "sdk/android:libjingle_peerconnection_java",
         "//base:base_java_test_support",
+        "//third_party/google-truth:google_truth_java",
       ]
     }
   }

@@ -244,6 +244,9 @@
     "glLightxv" : {
         "pname" : "LightParameter"
     },
+    "glLogicOp" : {
+        "opcode" : "LogicalOperation"
+    },
     "glMapBuffer": {
         "target": "BufferBinding"
     },
@@ -362,6 +365,9 @@
         "target": "TextureType"
     },
     "glTexStorage2DMultisample": {
+        "target": "TextureType"
+    },
+    "glTexStorage3DMultisampleANGLE": {
         "target": "TextureType"
     },
     "glTexStorage3D": {

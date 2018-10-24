@@ -51,6 +51,8 @@ rewrap text to fit in some number of columns
      would rather keep links for body above #Literal, and/or make it a block and not a one-liner
 add check to require #Const to contain #Code block if defining const or constexpr (enum consts have
      #Code blocks inside the #Enum def)
+subclasses (e.g. Iter in SkPath) need to check for #Line and generate overview
+     subclass methods should also disallow #In
 
 There are a number of formatting bugs with ad hoc patches where a substitution doesn't keep
 the space before or after, or the linefeeds before or after. The rules are not very good either.
@@ -974,9 +976,12 @@ bool BmhParser::dumpExamples(FILE* fiddleOut, Definition& def, bool* continuatio
 }
 
 bool BmhParser::dumpExamples(const char* fiddleJsonFileName) const {
-    FILE* fiddleOut = fopen(fiddleJsonFileName, "wb");
+    string oldFiddle(fiddleJsonFileName);
+    string newFiddle(fiddleJsonFileName);
+    newFiddle += "_new";
+    FILE* fiddleOut = fopen(newFiddle.c_str(), "wb");
     if (!fiddleOut) {
-        SkDebugf("could not open output file %s\n", fiddleJsonFileName);
+        SkDebugf("could not open output file %s\n", newFiddle.c_str());
         return false;
     }
     fprintf(fiddleOut, "{\n");
@@ -989,7 +994,10 @@ bool BmhParser::dumpExamples(const char* fiddleJsonFileName) const {
     }
     fprintf(fiddleOut, "\n}\n");
     fclose(fiddleOut);
-    SkDebugf("wrote %s\n", fiddleJsonFileName);
+    if (ParserCommon::WrittenFileDiffers(oldFiddle, newFiddle)) {
+        ParserCommon::CopyToFile(oldFiddle, newFiddle);
+        SkDebugf("wrote %s\n", fiddleJsonFileName);
+    }
     return true;
 }
 
@@ -1553,7 +1561,7 @@ bool HackParser::hackFiles() {
     this->topicIter(root);
     fprintf(fOut, "%.*s", (int) (fEnd - fChar), fChar);
     fclose(fOut);
-    if (this->writtenFileDiffers(filename, root->fFileName)) {
+    if (ParserCommon::WrittenFileDiffers(filename, root->fFileName)) {
         SkDebugf("wrote %s\n", filename.c_str());
     } else {
         remove(filename.c_str());
@@ -2696,16 +2704,16 @@ int main(int argc, char** const argv) {
     if (!done && FLAGS_catalog && FLAGS_examples.isEmpty()) {
         Catalog cparser(&bmhParser);
         cparser.fDebugOut = FLAGS_stdout;
-        if (!FLAGS_bmh.isEmpty() && !cparser.openCatalog(FLAGS_bmh[0], FLAGS_ref[0])) {
+        if (!FLAGS_bmh.isEmpty() && !cparser.openCatalog(FLAGS_bmh[0])) {
             return -1;
         }
-        if (!FLAGS_status.isEmpty() && !cparser.openStatus(FLAGS_status[0], FLAGS_ref[0])) {
+        if (!FLAGS_status.isEmpty() && !cparser.openStatus(FLAGS_status[0])) {
             return -1;
         }
         if (!cparser.parseFile(FLAGS_fiddle[0], ".txt", ParserCommon::OneFile::kNo)) {
             return -1;
         }
-        if (!cparser.closeCatalog()) {
+        if (!cparser.closeCatalog(FLAGS_ref[0])) {
             return -1;
         }
         bmhParser.fWroteOut = true;

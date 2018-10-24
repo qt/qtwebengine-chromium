@@ -16,7 +16,7 @@
 
 class CFX_XMLDocument;
 
-class CFX_XMLElement : public CFX_XMLNode {
+class CFX_XMLElement final : public CFX_XMLNode {
  public:
   explicit CFX_XMLElement(const WideString& wsTag);
   ~CFX_XMLElement() override;
@@ -53,5 +53,17 @@ class CFX_XMLElement : public CFX_XMLNode {
   WideString name_;
   std::map<WideString, WideString> attrs_;
 };
+
+inline CFX_XMLElement* ToXMLElement(CFX_XMLNode* pNode) {
+  return pNode && pNode->GetType() == FX_XMLNODE_Element
+             ? static_cast<CFX_XMLElement*>(pNode)
+             : nullptr;
+}
+
+inline const CFX_XMLElement* ToXMLElement(const CFX_XMLNode* pNode) {
+  return pNode && pNode->GetType() == FX_XMLNODE_Element
+             ? static_cast<const CFX_XMLElement*>(pNode)
+             : nullptr;
+}
 
 #endif  // CORE_FXCRT_XML_CFX_XMLELEMENT_H_

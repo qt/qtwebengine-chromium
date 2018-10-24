@@ -12,7 +12,6 @@
 #include <cctype>
 #include <cwctype>
 
-#include "core/fxcrt/cfx_utf8decoder.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
@@ -275,43 +274,6 @@ Optional<WideString> TryVSWPrintf(size_t size,
   }
   str.ReleaseBuffer(str.GetStringLength());
   return {str};
-}
-
-#ifndef NDEBUG
-bool IsValidWideCodePage(uint16_t codepage) {
-  switch (codepage) {
-    case FX_CODEPAGE_DefANSI:
-    case FX_CODEPAGE_ShiftJIS:
-    case FX_CODEPAGE_ChineseSimplified:
-    case FX_CODEPAGE_Hangul:
-    case FX_CODEPAGE_ChineseTraditional:
-      return true;
-    default:
-      return false;
-  }
-}
-#endif
-
-WideString GetWideString(uint16_t codepage, const ByteStringView& bstr) {
-#ifndef NDEBUG
-  ASSERT(IsValidWideCodePage(codepage));
-#endif
-
-  int src_len = bstr.GetLength();
-  int dest_len = FXSYS_MultiByteToWideChar(
-      codepage, 0, bstr.unterminated_c_str(), src_len, nullptr, 0);
-  if (!dest_len)
-    return WideString();
-
-  WideString wstr;
-  {
-    // Span's lifetime must end before ReleaseBuffer() below.
-    pdfium::span<wchar_t> dest_buf = wstr.GetBuffer(dest_len);
-    FXSYS_MultiByteToWideChar(codepage, 0, bstr.unterminated_c_str(), src_len,
-                              dest_buf.data(), dest_len);
-  }
-  wstr.ReleaseBuffer(dest_len);
-  return wstr;
 }
 
 }  // namespace
@@ -673,6 +635,25 @@ intptr_t WideString::ReferenceCountForTesting() const {
   return m_pData ? m_pData->m_nRefs : 0;
 }
 
+// static
+ByteString WideString::ToDefANSI() const {
+  int src_len = GetLength();
+  int dest_len = FXSYS_WideCharToMultiByte(
+      FX_CODEPAGE_DefANSI, 0, c_str(), src_len, nullptr, 0, nullptr, nullptr);
+  if (!dest_len)
+    return ByteString();
+
+  ByteString bstr;
+  {
+    // Span's lifetime must end before ReleaseBuffer() below.
+    pdfium::span<char> dest_buf = bstr.GetBuffer(dest_len);
+    FXSYS_WideCharToMultiByte(FX_CODEPAGE_DefANSI, 0, c_str(), src_len,
+                              dest_buf.data(), dest_len, nullptr, nullptr);
+  }
+  bstr.ReleaseBuffer(dest_len);
+  return bstr;
+}
+
 ByteString WideString::UTF8Encode() const {
   return FX_UTF8Encode(AsStringView());
 }
@@ -883,26 +864,27 @@ size_t WideString::Replace(const WideStringView& pOld,
 }
 
 // static
-WideString WideString::FromLocal(const ByteStringView& str) {
-  return FromCodePage(str, 0);
-}
+WideString WideString::FromLocal(const ByteStringView& bstr) {
+  int src_len = bstr.GetLength();
+  int dest_len = FXSYS_MultiByteToWideChar(
+      FX_CODEPAGE_DefANSI, 0, bstr.unterminated_c_str(), src_len, nullptr, 0);
+  if (!dest_len)
+    return WideString();
 
-// static
-WideString WideString::FromCodePage(const ByteStringView& str,
-                                    uint16_t codepage) {
-  return GetWideString(codepage, str);
+  WideString wstr;
+  {
+    // Span's lifetime must end before ReleaseBuffer() below.
+    pdfium::span<wchar_t> dest_buf = wstr.GetBuffer(dest_len);
+    FXSYS_MultiByteToWideChar(FX_CODEPAGE_DefANSI, 0, bstr.unterminated_c_str(),
+                              src_len, dest_buf.data(), dest_len);
+  }
+  wstr.ReleaseBuffer(dest_len);
+  return wstr;
 }
 
 // static
 WideString WideString::FromUTF8(const ByteStringView& str) {
-  if (str.IsEmpty())
-    return WideString();
-
-  CFX_UTF8Decoder decoder;
-  for (size_t i = 0; i < str.GetLength(); i++)
-    decoder.Input(str[i]);
-
-  return WideString(decoder.GetResult());
+  return FX_UTF8Decode(str);
 }
 
 // static

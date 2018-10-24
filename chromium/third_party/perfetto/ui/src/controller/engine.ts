@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {IRawQueryArgs, RawQueryResult, TraceProcessor} from '../common/protos';
+import {TimeSpan} from '../common/time';
 
 /**
  * Abstract interface of a trace proccessor.
@@ -26,12 +27,63 @@ import {IRawQueryArgs, RawQueryResult, TraceProcessor} from '../common/protos';
  * (e.g. rawQuery).
  */
 export abstract class Engine {
-  abstract get traceProcessor(): TraceProcessor;
+  abstract readonly id: string;
+
+  /**
+   * Push trace data into the engine. The engine is supposed to automatically
+   * figure out the type of the trace (JSON vs Protobuf).
+   */
+  abstract parse(data: Uint8Array): void;
+
+  /*
+   * The RCP interface to call service methods defined in trace_processor.proto.
+   */
+  abstract get rpc(): TraceProcessor;
 
   /**
    * Send a raw SQL query to the engine.
    */
   rawQuery(args: IRawQueryArgs): Promise<RawQueryResult> {
-    return this.traceProcessor.rawQuery(args);
+    return this.rpc.rawQuery(args);
   }
+
+  async rawQueryOneRow(sqlQuery: string): Promise<number[]> {
+    const result = await this.rawQuery({sqlQuery});
+    const res: number[] = [];
+    result.columns.map(c => res.push(+c.longValues![0]));
+    return res;
+  }
+
+  // TODO(hjd): Maybe we should cache result? But then Engine must be
+  // streaming aware.
+  async getNumberOfCpus(): Promise<number> {
+    const result = await this.rawQuery({
+      sqlQuery: 'select count(distinct(cpu)) as cpuCount from sched;',
+    });
+    return +result.columns[0].longValues![0];
+  }
+
+  // TODO: This should live in code that's more specific to chrome, instead of
+  // in engine.
+  async getNumberOfProcesses(): Promise<number> {
+    const result = await this.rawQuery({
+      sqlQuery: 'select count(distinct(upid)) from thread;',
+    });
+    return +result.columns[0].longValues![0];
+  }
+
+  async getTraceTimeBounds(): Promise<TimeSpan> {
+    const maxQuery = 'select max(ts) from (select max(ts) as ts from sched ' +
+        'union all select max(ts) as ts from slices)';
+    const minQuery = 'select min(ts) from (select min(ts) as ts from sched ' +
+        'union all select min(ts) as ts from slices)';
+    const start = (await this.rawQueryOneRow(minQuery))[0];
+    const end = (await this.rawQueryOneRow(maxQuery))[0];
+    return new TimeSpan(start / 1e9, end / 1e9);
+  }
+}
+
+export interface EnginePortAndId {
+  id: string;
+  port: MessagePort;
 }

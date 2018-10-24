@@ -18,21 +18,22 @@ import {WasmBridge, WasmBridgeRequest} from './wasm_bridge';
 
 // tslint:disable no-any
 
-declare var FileReaderSync: any;
-
+// We expect to get exactly one message from the creator of the worker:
+// a MessagePort we should listen to for future messages.
+// This indirection is due to workers not being able create workers in Chrome
+// which is tracked at: crbug.com/31666
+// TODO(hjd): Remove this once the fix has landed.
+// Once we have the MessagePort we proxy all messages to WasmBridge#callWasm.
 const anySelf = (self as any);
+anySelf.onmessage = (msg: MessageEvent) => {
+  const port: MessagePort = msg.data;
 
-const bridge = new WasmBridge(
-    init_trace_processor,
-    anySelf.postMessage.bind(anySelf),
-    new FileReaderSync(), );
-bridge.initialize();
+  const bridge =
+      new WasmBridge(init_trace_processor, port.postMessage.bind(port));
+  bridge.initialize();
 
-anySelf.onmessage = (m: any) => {
-  if (m.data.blob) {
-    bridge.setBlob(m.data.blob);
-    return;
-  }
-  const request = (m.data as WasmBridgeRequest);
-  bridge.callWasm(request);
+  port.onmessage = (msg: MessageEvent) => {
+    const request: WasmBridgeRequest = msg.data;
+    bridge.callWasm(request);
+  };
 };

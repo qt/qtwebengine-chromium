@@ -77,8 +77,8 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
       mBuffers(),
       mIndexedBuffers(),
       mTextureUnitIndex(0),
-      mTextures(),
-      mSamplers(rendererCaps.maxCombinedTextureImageUnits, 0),
+      mTextures{},
+      mSamplers{},
       mImages(rendererCaps.maxImageUnits, ImageUnitBinding()),
       mTransformFeedback(0),
       mCurrentTransformFeedback(nullptr),
@@ -168,13 +168,6 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
     ASSERT(mFunctions);
     ASSERT(extensions.maxViews >= 1u);
 
-    mTextures[gl::TextureType::_2D].resize(rendererCaps.maxCombinedTextureImageUnits);
-    mTextures[gl::TextureType::Rectangle].resize(rendererCaps.maxCombinedTextureImageUnits);
-    mTextures[gl::TextureType::CubeMap].resize(rendererCaps.maxCombinedTextureImageUnits);
-    mTextures[gl::TextureType::_2DArray].resize(rendererCaps.maxCombinedTextureImageUnits);
-    mTextures[gl::TextureType::_3D].resize(rendererCaps.maxCombinedTextureImageUnits);
-    mTextures[gl::TextureType::_2DMultisample].resize(rendererCaps.maxCombinedTextureImageUnits);
-
     mIndexedBuffers[gl::BufferBinding::Uniform].resize(rendererCaps.maxUniformBufferBindings);
     mIndexedBuffers[gl::BufferBinding::AtomicCounter].resize(
         rendererCaps.maxAtomicCounterBufferBindings);
@@ -240,7 +233,7 @@ void StateManagerGL::deleteTexture(GLuint texture)
     {
         for (gl::TextureType type : angle::AllEnums<gl::TextureType>())
         {
-            const std::vector<GLuint> &textureVector = mTextures[type];
+            const auto &textureVector = mTextures[type];
             for (size_t textureUnitIndex = 0; textureUnitIndex < textureVector.size();
                  textureUnitIndex++)
             {
@@ -912,23 +905,20 @@ void StateManagerGL::setGenericShaderState(const gl::Context *context)
     // TODO(xinghua.cao@intel.com): Track image units state with dirty bits to
     // avoid update every draw call.
     ASSERT(context->getClientVersion() >= gl::ES_3_1 || program->getImageBindings().size() == 0);
-    for (const gl::ImageBinding &imageUniform : program->getImageBindings())
+    for (size_t imageUnitIndex : program->getActiveImagesMask())
     {
-        for (GLuint imageUnitIndex : imageUniform.boundImageUnits)
+        const gl::ImageUnit &imageUnit = glState.getImageUnit(imageUnitIndex);
+        const TextureGL *textureGL     = SafeGetImplAs<TextureGL>(imageUnit.texture.get());
+        if (textureGL)
         {
-            const gl::ImageUnit &imageUnit = glState.getImageUnit(imageUnitIndex);
-            const TextureGL *textureGL = SafeGetImplAs<TextureGL>(imageUnit.texture.get());
-            if (textureGL)
-            {
-                bindImageTexture(imageUnitIndex, textureGL->getTextureID(), imageUnit.level,
-                                 imageUnit.layered, imageUnit.layer, imageUnit.access,
-                                 imageUnit.format);
-            }
-            else
-            {
-                bindImageTexture(imageUnitIndex, 0, imageUnit.level, imageUnit.layered,
-                                 imageUnit.layer, imageUnit.access, imageUnit.format);
-            }
+            bindImageTexture(imageUnitIndex, textureGL->getTextureID(), imageUnit.level,
+                             imageUnit.layered, imageUnit.layer, imageUnit.access,
+                             imageUnit.format);
+        }
+        else
+        {
+            bindImageTexture(imageUnitIndex, 0, imageUnit.level, imageUnit.layered, imageUnit.layer,
+                             imageUnit.access, imageUnit.format);
         }
     }
 
@@ -959,49 +949,46 @@ void StateManagerGL::updateProgramTextureAndSamplerBindings(const gl::Context *c
     const gl::State &glState   = context->getGLState();
     const gl::Program *program = glState.getProgram();
 
-    const auto &completeTextures = glState.getCompleteTextureCache();
-    for (const gl::SamplerBinding &samplerBinding : program->getSamplerBindings())
+    const gl::ActiveTexturePointerArray &textures  = glState.getActiveTexturesCache();
+    const gl::ActiveTextureMask &activeTextures    = program->getActiveSamplersMask();
+    const gl::ActiveTextureTypeArray &textureTypes = program->getActiveSamplerTypes();
+
+    for (size_t textureUnitIndex : activeTextures)
     {
-        if (samplerBinding.unreferenced)
-            continue;
+        gl::TextureType textureType = textureTypes[textureUnitIndex];
+        gl::Texture *texture        = textures[textureUnitIndex];
 
-        gl::TextureType textureType = samplerBinding.textureType;
-        for (GLuint textureUnitIndex : samplerBinding.boundTextureUnits)
+        // A nullptr texture indicates incomplete.
+        if (texture != nullptr)
         {
-            gl::Texture *texture = completeTextures[textureUnitIndex];
+            const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
+            ASSERT(!texture->hasAnyDirtyBit());
+            ASSERT(!textureGL->hasAnyDirtyBit());
 
-            // A nullptr texture indicates incomplete.
-            if (texture != nullptr)
+            if (mTextures[textureType][textureUnitIndex] != textureGL->getTextureID())
             {
-                const TextureGL *textureGL = GetImplAs<TextureGL>(texture);
-                ASSERT(!texture->hasAnyDirtyBit());
-                ASSERT(!textureGL->hasAnyDirtyBit());
+                activeTexture(textureUnitIndex);
+                bindTexture(textureType, textureGL->getTextureID());
+            }
+        }
+        else
+        {
+            if (mTextures[textureType][textureUnitIndex] != 0)
+            {
+                activeTexture(textureUnitIndex);
+                bindTexture(textureType, 0);
+            }
+        }
 
-                if (mTextures[textureType][textureUnitIndex] != textureGL->getTextureID())
-                {
-                    activeTexture(textureUnitIndex);
-                    bindTexture(textureType, textureGL->getTextureID());
-                }
-            }
-            else
-            {
-                if (mTextures[textureType][textureUnitIndex] != 0)
-                {
-                    activeTexture(textureUnitIndex);
-                    bindTexture(textureType, 0);
-                }
-            }
-
-            const gl::Sampler *sampler = glState.getSampler(textureUnitIndex);
-            if (sampler != nullptr)
-            {
-                SamplerGL *samplerGL = GetImplAs<SamplerGL>(sampler);
-                bindSampler(textureUnitIndex, samplerGL->getSamplerID());
-            }
-            else
-            {
-                bindSampler(textureUnitIndex, 0);
-            }
+        const gl::Sampler *sampler = glState.getSampler(static_cast<GLuint>(textureUnitIndex));
+        if (sampler != nullptr)
+        {
+            SamplerGL *samplerGL = GetImplAs<SamplerGL>(sampler);
+            bindSampler(textureUnitIndex, samplerGL->getSamplerID());
+        }
+        else
+        {
+            bindSampler(textureUnitIndex, 0);
         }
     }
 }
@@ -1955,8 +1942,8 @@ void StateManagerGL::syncState(const gl::Context *context, const gl::State::Dirt
                 const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(state.getVertexArray());
                 bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
 
-                propagateNumViewsToVAO(state.getProgram(),
-                                       GetImplAs<VertexArrayGL>(state.getVertexArray()));
+                propagateProgramToVAO(state.getProgram(),
+                                      GetImplAs<VertexArrayGL>(state.getVertexArray()));
                 break;
             }
             case gl::State::DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING:
@@ -1988,8 +1975,8 @@ void StateManagerGL::syncState(const gl::Context *context, const gl::State::Dirt
             case gl::State::DIRTY_BIT_PROGRAM_EXECUTABLE:
                 mProgramTexturesAndSamplersDirty = true;
                 mProgramStorageBuffersDirty      = true;
-                propagateNumViewsToVAO(state.getProgram(),
-                                       GetImplAs<VertexArrayGL>(state.getVertexArray()));
+                propagateProgramToVAO(state.getProgram(),
+                                      GetImplAs<VertexArrayGL>(state.getVertexArray()));
                 updateMultiviewBaseViewLayerIndexUniform(
                     state.getProgram(),
                     state.getDrawFramebuffer()->getImplementation()->getState());
@@ -2248,9 +2235,15 @@ void StateManagerGL::applyViewportOffsetsAndSetViewports(const gl::Rectangle &vi
     setViewportArrayv(0u, viewportArray);
 }
 
-void StateManagerGL::propagateNumViewsToVAO(const gl::Program *program, VertexArrayGL *vao)
+void StateManagerGL::propagateProgramToVAO(const gl::Program *program, VertexArrayGL *vao)
 {
-    if (mIsMultiviewEnabled && vao != nullptr)
+    if (vao == nullptr)
+    {
+        return;
+    }
+
+    // Number of views:
+    if (mIsMultiviewEnabled)
     {
         int programNumViews = 1;
         if (program && program->usesMultiview())
@@ -2258,6 +2251,12 @@ void StateManagerGL::propagateNumViewsToVAO(const gl::Program *program, VertexAr
             programNumViews = program->getNumViews();
         }
         vao->applyNumViewsToDivisor(programNumViews);
+    }
+
+    // Attribute enabled mask:
+    if (program)
+    {
+        vao->applyActiveAttribLocationsMask(program->getActiveAttribLocationsMask());
     }
 }
 

@@ -39,6 +39,7 @@ void CPPCodeGenerator::writef(const char* s, va_list va) {
         vsprintf(heap.get(), s, copy);
         fOut->write(heap.get(), length);
     }
+    va_end(copy);
 }
 
 void CPPCodeGenerator::writef(const char* s, ...) {
@@ -245,6 +246,12 @@ void CPPCodeGenerator::writeVariableReference(const VariableReference& ref) {
             this->write("%s");
             fFormatArgs.push_back(String("args.fOutputColor"));
             break;
+        case SK_WIDTH_BUILTIN:
+            this->write("sk_Width");
+            break;
+        case SK_HEIGHT_BUILTIN:
+            this->write("sk_Height");
+            break;
         default:
             if (ref.fVariable.fType.kind() == Type::kSampler_Kind) {
                 this->write("%s");
@@ -282,6 +289,13 @@ void CPPCodeGenerator::writeIfStatement(const IfStatement& s) {
         this->write("@");
     }
     INHERITED::writeIfStatement(s);
+}
+
+void CPPCodeGenerator::writeReturnStatement(const ReturnStatement& s) {
+    if (fInMain) {
+        fErrors.error(s.fOffset, "fragmentProcessor main() may not contain return statements");
+    }
+    INHERITED::writeReturnStatement(s);
 }
 
 void CPPCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {
@@ -339,10 +353,12 @@ void CPPCodeGenerator::writeFunction(const FunctionDefinition& f) {
         OutputStream* oldOut = fOut;
         StringStream buffer;
         fOut = &buffer;
+        fInMain = true;
         for (const auto& s : ((Block&) *f.fBody).fStatements) {
             this->writeStatement(*s);
             this->writeLine();
         }
+        fInMain = false;
 
         fOut = oldOut;
         this->write(fFunctionHeader);
@@ -434,6 +450,9 @@ void CPPCodeGenerator::addUniform(const Variable& var) {
     if (var.fModifiers.fLayout.fWhen.size()) {
         this->write("        }\n");
     }
+}
+
+void CPPCodeGenerator::writeInputVars() {
 }
 
 void CPPCodeGenerator::writePrivateVars() {
@@ -610,7 +629,7 @@ void CPPCodeGenerator::writeSetData(std::vector<const Variable*>& uniforms) {
                         this->writef("        GrSurfaceProxy& %sProxy = "
                                      "*_outer.textureSampler(%d).proxy();\n",
                                      name, samplerIndex);
-                        this->writef("        GrTexture& %s = *%sProxy.priv().peekTexture();\n",
+                        this->writef("        GrTexture& %s = *%sProxy.peekTexture();\n",
                                      name, name);
                         this->writef("        (void) %s;\n", name);
                         ++samplerIndex;
@@ -637,6 +656,29 @@ void CPPCodeGenerator::writeSetData(std::vector<const Variable*>& uniforms) {
     this->write("    }\n");
 }
 
+void CPPCodeGenerator::writeOnTextureSampler() {
+    bool foundSampler = false;
+    for (const auto& param : fSectionAndParameterHelper.getParameters()) {
+        if (param->fType.kind() == Type::kSampler_Kind) {
+            if (!foundSampler) {
+                this->writef(
+                        "const GrFragmentProcessor::TextureSampler& %s::onTextureSampler(int "
+                        "index) const {\n",
+                        fFullName.c_str());
+                this->writef("    return IthTextureSampler(index, %s",
+                             HCodeGenerator::FieldName(String(param->fName).c_str()).c_str());
+                foundSampler = true;
+            } else {
+                this->writef(", %s",
+                             HCodeGenerator::FieldName(String(param->fName).c_str()).c_str());
+            }
+        }
+    }
+    if (foundSampler) {
+        this->write(");\n}\n");
+    }
+}
+
 void CPPCodeGenerator::writeClone() {
     if (!this->writeSection(CLONE_SECTION)) {
         if (fSectionAndParameterHelper.getSection(FIELDS_SECTION)) {
@@ -655,25 +697,30 @@ void CPPCodeGenerator::writeClone() {
                          fieldName.c_str(),
                          fieldName.c_str());
         }
-        for (const Section* s : fSectionAndParameterHelper.getSections(COORD_TRANSFORM_SECTION)) {
-            String fieldName = HCodeGenerator::FieldName(s->fArgument.c_str());
-            this->writef("\n, %sCoordTransform(src.%sCoordTransform)", fieldName.c_str(),
-                         fieldName.c_str());
+        const auto transforms = fSectionAndParameterHelper.getSections(COORD_TRANSFORM_SECTION);
+        for (size_t i = 0; i < transforms.size(); ++i) {
+            const Section& s = *transforms[i];
+            String fieldName = HCodeGenerator::CoordTransformName(s.fArgument, i);
+            this->writef("\n, %s(src.%s)", fieldName.c_str(), fieldName.c_str());
         }
         this->writef(" {\n");
         int childCount = 0;
+        int samplerCount = 0;
         for (const auto& param : fSectionAndParameterHelper.getParameters()) {
             if (param->fType.kind() == Type::kSampler_Kind) {
-                this->writef("    this->addTextureSampler(&%s);\n",
-                             HCodeGenerator::FieldName(String(param->fName).c_str()).c_str());
+                ++samplerCount;
             } else if (param->fType == *fContext.fFragmentProcessor_Type) {
                 this->writef("    this->registerChildProcessor(src.childProcessor(%d).clone());"
                              "\n", childCount++);
             }
         }
-        for (const Section* s : fSectionAndParameterHelper.getSections(COORD_TRANSFORM_SECTION)) {
-            String field = HCodeGenerator::FieldName(s->fArgument.c_str());
-            this->writef("    this->addCoordTransform(&%sCoordTransform);\n", field.c_str());
+        if (samplerCount) {
+            this->writef("     this->setTextureSamplerCnt(%d);", samplerCount);
+        }
+        for (size_t i = 0; i < transforms.size(); ++i) {
+            const Section& s = *transforms[i];
+            String fieldName = HCodeGenerator::CoordTransformName(s.fArgument, i);
+            this->writef("    this->addCoordTransform(&%s);\n", fieldName.c_str());
         }
         this->write("}\n");
         this->writef("std::unique_ptr<GrFragmentProcessor> %s::clone() const {\n",
@@ -819,6 +866,7 @@ bool CPPCodeGenerator::generateCode() {
     this->write("    return true;\n"
                 "}\n");
     this->writeClone();
+    this->writeOnTextureSampler();
     this->writeTest();
     this->writeSection(CPP_END_SECTION);
 

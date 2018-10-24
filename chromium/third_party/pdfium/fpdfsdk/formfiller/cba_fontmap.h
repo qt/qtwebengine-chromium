@@ -13,7 +13,7 @@
 class CPDF_Dictionary;
 class CPDFSDK_Annot;
 
-class CBA_FontMap : public CPWL_FontMap {
+class CBA_FontMap final : public CPWL_FontMap {
  public:
   CBA_FontMap(CPDFSDK_Annot* pAnnot, CFX_SystemHandler* pSystemHandler);
   ~CBA_FontMap() override;
@@ -36,11 +36,11 @@ class CBA_FontMap : public CPWL_FontMap {
   CPDF_Font* GetAnnotDefaultFont(ByteString* csNameTag);
   void AddFontToAnnotDict(CPDF_Font* pFont, const ByteString& sAlias);
 
-  UnownedPtr<CPDF_Document> m_pDocument;
-  UnownedPtr<CPDF_Dictionary> m_pAnnotDict;
+  UnownedPtr<CPDF_Document> const m_pDocument;
+  UnownedPtr<CPDF_Dictionary> const m_pAnnotDict;
   UnownedPtr<CPDF_Font> m_pDefaultFont;
   ByteString m_sDefaultFontName;
-  ByteString m_sAPType;
+  ByteString m_sAPType = "N";
 };
 
 #endif  // FPDFSDK_FORMFILLER_CBA_FONTMAP_H_

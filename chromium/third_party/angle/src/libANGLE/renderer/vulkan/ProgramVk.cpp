@@ -120,10 +120,10 @@ angle::Result SyncDefaultUniformBlock(ContextVk *contextVk,
     ASSERT(!bufferData.empty());
     uint8_t *data       = nullptr;
     VkBuffer *outBuffer = nullptr;
-    uint32_t offset;
+    VkDeviceSize offset = 0;
     ANGLE_TRY(dynamicBuffer->allocate(contextVk, bufferData.size(), &data, outBuffer, &offset,
                                       outBufferModified));
-    *outOffset = offset;
+    *outOffset = static_cast<uint32_t>(offset);
     memcpy(data, bufferData.data(), bufferData.size());
     ANGLE_TRY(dynamicBuffer->flush(contextVk));
     return angle::Result::Continue();
@@ -250,16 +250,25 @@ void ProgramVk::setSeparable(bool separable)
     UNIMPLEMENTED();
 }
 
-gl::LinkResult ProgramVk::link(const gl::Context *glContext,
-                               const gl::ProgramLinkedResources &resources,
-                               gl::InfoLog &infoLog)
+std::unique_ptr<LinkEvent> ProgramVk::link(const gl::Context *glContext,
+                                           const gl::ProgramLinkedResources &resources,
+                                           gl::InfoLog &infoLog)
+{
+    // TODO(jie.a.chen@intel.com): Parallelize linking.
+    // http://crbug.com/849576
+    return std::make_unique<LinkEventDone>(linkImpl(glContext, resources, infoLog));
+}
+
+gl::LinkResult ProgramVk::linkImpl(const gl::Context *glContext,
+                                   const gl::ProgramLinkedResources &resources,
+                                   gl::InfoLog &infoLog)
 {
     ContextVk *contextVk = vk::GetImpl(glContext);
     RendererVk *renderer = contextVk->getRenderer();
 
     ANGLE_TRY(reset(contextVk));
 
-    GlslangWrapper::GetShaderSource(glContext, mState, resources, &mVertexSource, &mFragmentSource);
+    GlslangWrapper::GetShaderSource(mState, resources, &mVertexSource, &mFragmentSource);
 
     ANGLE_TRY(initDefaultUniformBlocks(glContext));
 
@@ -346,7 +355,7 @@ angle::Result ProgramVk::initDefaultUniformBlocks(const gl::Context *glContext)
     {
         gl::ShaderType glShaderType = static_cast<gl::ShaderType>(shaderType);
         gl::Shader *shader                       = mState.getAttachedShader(glShaderType);
-        const std::vector<sh::Uniform> &uniforms = shader->getUniforms(glContext);
+        const std::vector<sh::Uniform> &uniforms = shader->getUniforms();
         InitDefaultUniformBlock(uniforms, shader, &layoutMap[shaderType],
                                 &requiredBufferSize[shaderType]);
     }
@@ -712,11 +721,6 @@ void ProgramVk::setUniformMatrix4x3fv(GLint location,
                                       const GLfloat *value)
 {
     setUniformMatrixfv<4, 3>(location, count, transpose, value);
-}
-
-void ProgramVk::setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding)
-{
-    UNIMPLEMENTED();
 }
 
 void ProgramVk::setPathFragmentInputGen(const std::string &inputName,

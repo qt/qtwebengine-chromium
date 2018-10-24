@@ -32,6 +32,42 @@ namespace {
 
 const int nMaxRecursion = 32;
 
+ByteString GenerateNewFontResourceName(const CPDF_Dictionary* pResDict,
+                                       const ByteString& csPrefix) {
+  static const char kDummyFontName[] = "ZiTi";
+  ByteString csStr = csPrefix;
+  if (csStr.IsEmpty())
+    csStr = kDummyFontName;
+
+  const size_t szCount = csStr.GetLength();
+  size_t m = 0;
+  ByteString csTmp;
+  while (m < strlen(kDummyFontName) && m < szCount)
+    csTmp += csStr[m++];
+  while (m < strlen(kDummyFontName)) {
+    csTmp += '0' + m % 10;
+    m++;
+  }
+
+  const CPDF_Dictionary* pDict = pResDict->GetDictFor("Font");
+  ASSERT(pDict);
+
+  int num = 0;
+  ByteString bsNum;
+  while (true) {
+    ByteString csKey = csTmp + bsNum;
+    if (!pDict->KeyExist(csKey))
+      return csKey;
+    if (m < szCount)
+      csTmp += csStr[m++];
+    else
+      bsNum = ByteString::Format("%d", num++);
+
+    m++;
+  }
+  return csTmp;
+}
+
 void AddFont(CPDF_Dictionary*& pFormDict,
              CPDF_Document* pDocument,
              const CPDF_Font* pFont,
@@ -245,8 +281,7 @@ void AddFont(CPDF_Dictionary*& pFormDict,
     *csNameTag = pFont->GetBaseFont();
 
   csNameTag->Remove(' ');
-  *csNameTag = CPDF_InterForm::GenerateNewResourceName(pDR, "Font", 4,
-                                                       csNameTag->c_str());
+  *csNameTag = GenerateNewFontResourceName(pDR, *csNameTag);
   pFonts->SetFor(*csNameTag, pFont->GetFontDict()->MakeReference(pDocument));
 }
 
@@ -300,10 +335,10 @@ class CFieldNameExtractor {
 };
 
 #if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-typedef struct {
+struct PDF_FONTDATA {
   bool bFind;
   LOGFONTA lf;
-} PDF_FONTDATA;
+};
 
 static int CALLBACK EnumFontFamExProc(ENUMLOGFONTEXA* lpelfe,
                                       NEWTEXTMETRICEX* lpntme,
@@ -573,60 +608,6 @@ void CPDF_InterForm::SetUpdateAP(bool bUpdateAP) {
   s_bUpdateAP = bUpdateAP;
 }
 
-ByteString CPDF_InterForm::GenerateNewResourceName(
-    const CPDF_Dictionary* pResDict,
-    const char* csType,
-    int iMinLen,
-    const char* csPrefix) {
-  ByteString csStr = csPrefix;
-  ByteString csBType = csType;
-  if (csStr.IsEmpty()) {
-    if (csBType == "ExtGState")
-      csStr = "GS";
-    else if (csBType == "ColorSpace")
-      csStr = "CS";
-    else if (csBType == "Font")
-      csStr = "ZiTi";
-    else
-      csStr = "Res";
-  }
-  ByteString csTmp = csStr;
-  int iCount = csStr.GetLength();
-  int m = 0;
-  if (iMinLen > 0) {
-    csTmp.clear();
-    while (m < iMinLen && m < iCount)
-      csTmp += csStr[m++];
-    while (m < iMinLen) {
-      csTmp += '0' + m % 10;
-      m++;
-    }
-  } else {
-    m = iCount;
-  }
-  if (!pResDict)
-    return csTmp;
-
-  const CPDF_Dictionary* pDict = pResDict->GetDictFor(csType);
-  if (!pDict)
-    return csTmp;
-
-  int num = 0;
-  ByteString bsNum;
-  while (true) {
-    ByteString csKey = csTmp + bsNum;
-    if (!pDict->KeyExist(csKey))
-      return csKey;
-    if (m < iCount)
-      csTmp += csStr[m++];
-    else
-      bsNum = ByteString::Format("%d", num++);
-
-    m++;
-  }
-  return csTmp;
-}
-
 CPDF_Font* CPDF_InterForm::AddStandardFont(CPDF_Document* pDocument,
                                            ByteString csFontName) {
   if (!pDocument || csFontName.IsEmpty())
@@ -688,7 +669,7 @@ CPDF_Font* CPDF_InterForm::AddNativeFont(uint8_t charSet,
   if (!csFontName.IsEmpty()) {
     if (csFontName == CFX_Font::kDefaultAnsiFontName)
       return AddStandardFont(pDocument, csFontName);
-    return pDocument->AddWindowsFont(&lf, false, true);
+    return pDocument->AddWindowsFont(&lf);
   }
 #endif
   return nullptr;
@@ -815,7 +796,7 @@ int CPDF_InterForm::GetFormAlignment() const {
 
 void CPDF_InterForm::ResetForm(const std::vector<CPDF_FormField*>& fields,
                                bool bIncludeOrExclude,
-                               bool bNotify) {
+                               NotificationOption notify) {
   size_t nCount = m_pFieldTree->m_Root.CountFields();
   for (size_t i = 0; i < nCount; ++i) {
     CPDF_FormField* pField = m_pFieldTree->m_Root.GetFieldAtIndex(i);
@@ -823,22 +804,22 @@ void CPDF_InterForm::ResetForm(const std::vector<CPDF_FormField*>& fields,
       continue;
 
     if (bIncludeOrExclude == pdfium::ContainsValue(fields, pField))
-      pField->ResetField(bNotify);
+      pField->ResetField(notify);
   }
-  if (bNotify && m_pFormNotify)
+  if (notify == NotificationOption::kNotify && m_pFormNotify)
     m_pFormNotify->AfterFormReset(this);
 }
 
-void CPDF_InterForm::ResetForm(bool bNotify) {
+void CPDF_InterForm::ResetForm(NotificationOption notify) {
   size_t nCount = m_pFieldTree->m_Root.CountFields();
   for (size_t i = 0; i < nCount; ++i) {
     CPDF_FormField* pField = m_pFieldTree->m_Root.GetFieldAtIndex(i);
     if (!pField)
       continue;
 
-    pField->ResetField(bNotify);
+    pField->ResetField(notify);
   }
-  if (bNotify && m_pFormNotify)
+  if (notify == NotificationOption::kNotify && m_pFormNotify)
     m_pFormNotify->AfterFormReset(this);
 }
 
@@ -1030,8 +1011,8 @@ std::unique_ptr<CFDF_Document> CPDF_InterForm::ExportToFDF(
   if (!pdf_path.IsEmpty()) {
     if (bSimpleFileSpec) {
       WideString wsFilePath = CPDF_FileSpec::EncodeFileName(pdf_path);
-      pMainDict->SetNewFor<CPDF_String>(
-          pdfium::stream::kF, ByteString::FromUnicode(wsFilePath), false);
+      pMainDict->SetNewFor<CPDF_String>(pdfium::stream::kF,
+                                        wsFilePath.ToDefANSI(), false);
       pMainDict->SetNewFor<CPDF_String>("UF", PDF_EncodeText(wsFilePath),
                                         false);
     } else {

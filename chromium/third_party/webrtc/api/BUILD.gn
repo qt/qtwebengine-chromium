@@ -48,14 +48,17 @@ rtc_static_library("libjingle_peerconnection_api") {
   visibility = [ "*" ]
   cflags = []
   sources = [
+    "asyncresolverfactory.h",
     "bitrate_constraints.h",
     "candidate.cc",
     "candidate.h",
     "cryptoparams.h",
+    "datachannelinterface.cc",
     "datachannelinterface.h",
     "dtmfsenderinterface.h",
     "jsep.cc",
     "jsep.h",
+    "jsepicecandidate.cc",
     "jsepicecandidate.h",
     "jsepsessiondescription.h",
     "mediaconstraintsinterface.cc",
@@ -68,6 +71,7 @@ rtc_static_library("libjingle_peerconnection_api") {
     "mediatypes.h",
     "notifier.h",
     "peerconnectionfactoryproxy.h",
+    "peerconnectioninterface.cc",
     "peerconnectioninterface.h",
     "peerconnectionproxy.h",
     "proxy.cc",
@@ -81,6 +85,7 @@ rtc_static_library("libjingle_peerconnection_api") {
     "rtpreceiverinterface.cc",
     "rtpreceiverinterface.h",
     "rtpsenderinterface.h",
+    "rtptransceiverinterface.cc",
     "rtptransceiverinterface.h",
     "setremotedescriptionobserverinterface.h",
     "statstypes.cc",
@@ -89,11 +94,6 @@ rtc_static_library("libjingle_peerconnection_api") {
     "umametrics.h",
     "videosourceproxy.h",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   deps = [
     ":array_view",
@@ -112,7 +112,6 @@ rtc_static_library("libjingle_peerconnection_api") {
     # Basically, don't add stuff here. You might break sensitive downstream
     # targets like pnacl. API should not depend on anything outside of this
     # file, really. All these should arguably go away in time.
-    "..:typedefs",
     "..:webrtc_common",
     "../logging:rtc_event_log_api",
     "../media:rtc_media_config",
@@ -426,6 +425,18 @@ if (rtc_include_tests) {
     ]
   }
 
+  rtc_source_set("mock_video_bitrate_allocator") {
+    testonly = true
+    sources = [
+      "test/mock_video_bitrate_allocator.h",
+    ]
+
+    deps = [
+      "../api/video:video_bitrate_allocator",
+      "../test:test_support",
+    ]
+  }
+
   rtc_source_set("mock_video_codec_factory") {
     testonly = true
     sources = [
@@ -458,7 +469,6 @@ if (rtc_include_tests) {
     deps = [
       ":array_view",
       ":libjingle_peerconnection_api",
-      ":libjingle_peerconnection_test_api",
       ":ortc_api",
       "../rtc_base:checks",
       "../rtc_base:rtc_base_approved",

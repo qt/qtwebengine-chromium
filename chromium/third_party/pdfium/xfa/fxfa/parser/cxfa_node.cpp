@@ -15,7 +15,7 @@
 
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/cfx_decimal.h"
-#include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/cfx_readonlymemorystream.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/locale_iface.h"
@@ -29,6 +29,7 @@
 #include "third_party/base/compiler_specific.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/ptr_util.h"
+#include "third_party/base/span.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fgas/font/cfgas_fontmgr.h"
@@ -72,13 +73,11 @@
 #include "xfa/fxfa/parser/xfa_basic_data.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
-class CXFA_WidgetLayoutData {
- public:
-  CXFA_WidgetLayoutData() : m_fWidgetHeight(-1) {}
-  virtual ~CXFA_WidgetLayoutData() {}
-
-  float m_fWidgetHeight;
-};
+class CXFA_FieldLayoutData;
+class CXFA_ImageEditData;
+class CXFA_ImageLayoutData;
+class CXFA_TextEditData;
+class CXFA_TextLayoutData;
 
 namespace {
 
@@ -201,25 +200,21 @@ RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
     return nullptr;
 
   FXCODEC_IMAGE_TYPE type = XFA_GetImageType(pImage->GetContentType());
-  ByteString bsContent;
-  uint8_t* pImageBuffer = nullptr;
+  std::vector<uint8_t> buffer;
   RetainPtr<IFX_SeekableReadStream> pImageFileRead;
   if (wsImage.GetLength() > 0) {
     XFA_AttributeEnum iEncoding = pImage->GetTransferEncoding();
     if (iEncoding == XFA_AttributeEnum::Base64) {
       ByteString bsData = wsImage.UTF8Encode();
-      int32_t iLength = bsData.GetLength();
-      pImageBuffer = FX_Alloc(uint8_t, iLength);
-      int32_t iRead = XFA_Base64Decode(bsData.c_str(), pImageBuffer);
+      buffer.resize(bsData.GetLength());
+      int32_t iRead = XFA_Base64Decode(bsData.c_str(), buffer.data());
       if (iRead > 0) {
-        pImageFileRead =
-            pdfium::MakeRetain<CFX_MemoryStream>(pImageBuffer, iRead, false);
+        pImageFileRead = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(
+            pdfium::make_span(buffer.data(), iRead));
       }
     } else {
-      bsContent = ByteString::FromUnicode(wsImage);
-      pImageFileRead = pdfium::MakeRetain<CFX_MemoryStream>(
-          const_cast<uint8_t*>(bsContent.raw_str()), bsContent.GetLength(),
-          false);
+      pImageFileRead = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(
+          wsImage.ToDefANSI().AsRawSpan());
     }
   } else {
     WideString wsURL = wsHref;
@@ -233,126 +228,14 @@ RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
     }
     pImageFileRead = pDoc->GetDocEnvironment()->OpenLinkedFile(pDoc, wsURL);
   }
-  if (!pImageFileRead) {
-    FX_Free(pImageBuffer);
+  if (!pImageFileRead)
     return nullptr;
-  }
+
   bNameImage = false;
   RetainPtr<CFX_DIBitmap> pBitmap =
       XFA_LoadImageFromBuffer(pImageFileRead, type, iImageXDpi, iImageYDpi);
-  FX_Free(pImageBuffer);
   return pBitmap;
 }
-
-class CXFA_TextLayoutData : public CXFA_WidgetLayoutData {
- public:
-  CXFA_TextLayoutData() {}
-  ~CXFA_TextLayoutData() override {}
-
-  CXFA_TextLayout* GetTextLayout() const { return m_pTextLayout.get(); }
-  CXFA_TextProvider* GetTextProvider() const { return m_pTextProvider.get(); }
-
-  void LoadText(CXFA_FFDoc* doc, CXFA_Node* pNode) {
-    if (m_pTextLayout)
-      return;
-
-    m_pTextProvider =
-        pdfium::MakeUnique<CXFA_TextProvider>(pNode, XFA_TEXTPROVIDERTYPE_Text);
-    m_pTextLayout =
-        pdfium::MakeUnique<CXFA_TextLayout>(doc, m_pTextProvider.get());
-  }
-
- private:
-  std::unique_ptr<CXFA_TextLayout> m_pTextLayout;
-  std::unique_ptr<CXFA_TextProvider> m_pTextProvider;
-};
-
-class CXFA_ImageLayoutData : public CXFA_WidgetLayoutData {
- public:
-  CXFA_ImageLayoutData()
-      : m_bNamedImage(false), m_iImageXDpi(0), m_iImageYDpi(0) {}
-
-  ~CXFA_ImageLayoutData() override {}
-
-  bool LoadImageData(CXFA_FFDoc* doc, CXFA_Node* pNode) {
-    if (m_pDIBitmap)
-      return true;
-
-    CXFA_Value* value = pNode->GetFormValueIfExists();
-    if (!value)
-      return false;
-
-    CXFA_Image* image = value->GetImageIfExists();
-    if (!image)
-      return false;
-
-    pNode->SetImageImage(XFA_LoadImageData(doc, image, m_bNamedImage,
-                                           m_iImageXDpi, m_iImageYDpi));
-    return !!m_pDIBitmap;
-  }
-
-  RetainPtr<CFX_DIBitmap> m_pDIBitmap;
-  bool m_bNamedImage;
-  int32_t m_iImageXDpi;
-  int32_t m_iImageYDpi;
-};
-
-class CXFA_FieldLayoutData : public CXFA_WidgetLayoutData {
- public:
-  CXFA_FieldLayoutData() {}
-  ~CXFA_FieldLayoutData() override {}
-
-  bool LoadCaption(CXFA_FFDoc* doc, CXFA_Node* pNode) {
-    if (m_pCapTextLayout)
-      return true;
-    CXFA_Caption* caption = pNode->GetCaptionIfExists();
-    if (!caption || caption->IsHidden())
-      return false;
-
-    m_pCapTextProvider = pdfium::MakeUnique<CXFA_TextProvider>(
-        pNode, XFA_TEXTPROVIDERTYPE_Caption);
-    m_pCapTextLayout =
-        pdfium::MakeUnique<CXFA_TextLayout>(doc, m_pCapTextProvider.get());
-    return true;
-  }
-
-  std::unique_ptr<CXFA_TextLayout> m_pCapTextLayout;
-  std::unique_ptr<CXFA_TextProvider> m_pCapTextProvider;
-  std::unique_ptr<CFDE_TextOut> m_pTextOut;
-  std::vector<float> m_FieldSplitArray;
-};
-
-class CXFA_TextEditData : public CXFA_FieldLayoutData {};
-
-class CXFA_ImageEditData : public CXFA_FieldLayoutData {
- public:
-  CXFA_ImageEditData()
-      : m_bNamedImage(false), m_iImageXDpi(0), m_iImageYDpi(0) {}
-
-  ~CXFA_ImageEditData() override {}
-
-  bool LoadImageData(CXFA_FFDoc* doc, CXFA_Node* pNode) {
-    if (m_pDIBitmap)
-      return true;
-
-    CXFA_Value* value = pNode->GetFormValueIfExists();
-    if (!value)
-      return false;
-
-    CXFA_Image* image = value->GetImageIfExists();
-    if (!image)
-      return false;
-
-    pNode->SetImageEditImage(XFA_LoadImageData(doc, image, m_bNamedImage,
-                                               m_iImageXDpi, m_iImageYDpi));
-    return !!m_pDIBitmap;
-  }
-
-  RetainPtr<CFX_DIBitmap> m_pDIBitmap;
-  bool m_bNamedImage;
-  int32_t m_iImageXDpi;
-  int32_t m_iImageYDpi;
-};
 
 bool SplitDateTime(const WideString& wsDateTime,
                    WideString& wsDate,
@@ -474,8 +357,7 @@ void ReorderDataNodes(const std::set<CXFA_Node*>& sSet1,
 float GetEdgeThickness(const std::vector<CXFA_Stroke*>& strokes,
                        bool b3DStyle,
                        int32_t nIndex) {
-  float fThickness = 0;
-
+  float fThickness = 0.0f;
   CXFA_Stroke* stroke = strokes[nIndex * 2 + 1];
   if (stroke->IsVisible()) {
     if (nIndex == 0)
@@ -486,7 +368,178 @@ float GetEdgeThickness(const std::vector<CXFA_Stroke*>& strokes,
   return fThickness;
 }
 
+WideString FormatNumStr(const WideString& wsValue, LocaleIface* pLocale) {
+  if (wsValue.IsEmpty())
+    return L"";
+
+  WideString wsSrcNum = wsValue;
+  WideString wsGroupSymbol = pLocale->GetGroupingSymbol();
+  bool bNeg = false;
+  if (wsSrcNum[0] == '-') {
+    bNeg = true;
+    wsSrcNum.Delete(0, 1);
+  }
+
+  auto dot_index = wsSrcNum.Find('.');
+  dot_index = !dot_index.has_value() ? wsSrcNum.GetLength() : dot_index;
+
+  if (dot_index.value() < 1)
+    return L"";
+
+  size_t nPos = dot_index.value() % 3;
+  WideString wsOutput;
+  for (size_t i = 0; i < dot_index.value(); i++) {
+    if (i % 3 == nPos && i != 0)
+      wsOutput += wsGroupSymbol;
+
+    wsOutput += wsSrcNum[i];
+  }
+  if (dot_index.value() < wsSrcNum.GetLength()) {
+    wsOutput += pLocale->GetDecimalSymbol();
+    wsOutput += wsSrcNum.Right(wsSrcNum.GetLength() - dot_index.value() - 1);
+  }
+  if (bNeg)
+    return pLocale->GetMinusSymbol() + wsOutput;
+
+  return wsOutput;
+}
+
 }  // namespace
+
+class CXFA_WidgetLayoutData {
+ public:
+  CXFA_WidgetLayoutData() = default;
+  virtual ~CXFA_WidgetLayoutData() = default;
+
+  virtual CXFA_FieldLayoutData* AsFieldLayoutData() { return nullptr; }
+  virtual CXFA_ImageLayoutData* AsImageLayoutData() { return nullptr; }
+  virtual CXFA_TextLayoutData* AsTextLayoutData() { return nullptr; }
+
+  float m_fWidgetHeight = -1.0f;
+};
+
+class CXFA_TextLayoutData final : public CXFA_WidgetLayoutData {
+ public:
+  CXFA_TextLayoutData() = default;
+  ~CXFA_TextLayoutData() override = default;
+
+  CXFA_TextLayoutData* AsTextLayoutData() override { return this; }
+
+  CXFA_TextLayout* GetTextLayout() const { return m_pTextLayout.get(); }
+  CXFA_TextProvider* GetTextProvider() const { return m_pTextProvider.get(); }
+
+  void LoadText(CXFA_FFDoc* doc, CXFA_Node* pNode) {
+    if (m_pTextLayout)
+      return;
+
+    m_pTextProvider =
+        pdfium::MakeUnique<CXFA_TextProvider>(pNode, XFA_TEXTPROVIDERTYPE_Text);
+    m_pTextLayout =
+        pdfium::MakeUnique<CXFA_TextLayout>(doc, m_pTextProvider.get());
+  }
+
+ private:
+  std::unique_ptr<CXFA_TextLayout> m_pTextLayout;
+  std::unique_ptr<CXFA_TextProvider> m_pTextProvider;
+};
+
+class CXFA_ImageLayoutData final : public CXFA_WidgetLayoutData {
+ public:
+  CXFA_ImageLayoutData() = default;
+  ~CXFA_ImageLayoutData() override = default;
+
+  CXFA_ImageLayoutData* AsImageLayoutData() override { return this; }
+
+  bool LoadImageData(CXFA_FFDoc* doc, CXFA_Node* pNode) {
+    if (m_pDIBitmap)
+      return true;
+
+    CXFA_Value* value = pNode->GetFormValueIfExists();
+    if (!value)
+      return false;
+
+    CXFA_Image* image = value->GetImageIfExists();
+    if (!image)
+      return false;
+
+    pNode->SetImageImage(XFA_LoadImageData(doc, image, m_bNamedImage,
+                                           m_iImageXDpi, m_iImageYDpi));
+    return !!m_pDIBitmap;
+  }
+
+  bool m_bNamedImage = false;
+  int32_t m_iImageXDpi = 0;
+  int32_t m_iImageYDpi = 0;
+  RetainPtr<CFX_DIBitmap> m_pDIBitmap;
+};
+
+class CXFA_FieldLayoutData : public CXFA_WidgetLayoutData {
+ public:
+  CXFA_FieldLayoutData() = default;
+  ~CXFA_FieldLayoutData() override = default;
+
+  CXFA_FieldLayoutData* AsFieldLayoutData() override { return this; }
+
+  virtual CXFA_ImageEditData* AsImageEditData() { return nullptr; }
+  virtual CXFA_TextEditData* AsTextEditData() { return nullptr; }
+
+  bool LoadCaption(CXFA_FFDoc* doc, CXFA_Node* pNode) {
+    if (m_pCapTextLayout)
+      return true;
+    CXFA_Caption* caption = pNode->GetCaptionIfExists();
+    if (!caption || caption->IsHidden())
+      return false;
+
+    m_pCapTextProvider = pdfium::MakeUnique<CXFA_TextProvider>(
+        pNode, XFA_TEXTPROVIDERTYPE_Caption);
+    m_pCapTextLayout =
+        pdfium::MakeUnique<CXFA_TextLayout>(doc, m_pCapTextProvider.get());
+    return true;
+  }
+
+  std::unique_ptr<CXFA_TextLayout> m_pCapTextLayout;
+  std::unique_ptr<CXFA_TextProvider> m_pCapTextProvider;
+  std::unique_ptr<CFDE_TextOut> m_pTextOut;
+  std::vector<float> m_FieldSplitArray;
+};
+
+class CXFA_TextEditData final : public CXFA_FieldLayoutData {
+ public:
+  CXFA_TextEditData() = default;
+  ~CXFA_TextEditData() override = default;
+
+  CXFA_TextEditData* AsTextEditData() override { return this; }
+};
+
+class CXFA_ImageEditData final : public CXFA_FieldLayoutData {
+ public:
+  CXFA_ImageEditData() = default;
+  ~CXFA_ImageEditData() override = default;
+
+  CXFA_ImageEditData* AsImageEditData() override { return this; }
+
+  bool LoadImageData(CXFA_FFDoc* doc, CXFA_Node* pNode) {
+    if (m_pDIBitmap)
+      return true;
+
+    CXFA_Value* value = pNode->GetFormValueIfExists();
+    if (!value)
+      return false;
+
+    CXFA_Image* image = value->GetImageIfExists();
+    if (!image)
+      return false;
+
+    pNode->SetImageEditImage(XFA_LoadImageData(doc, image, m_bNamedImage,
+                                               m_iImageXDpi, m_iImageYDpi));
+    return !!m_pDIBitmap;
+  }
+
+  bool m_bNamedImage = false;
+  int32_t m_iImageXDpi = 0;
+  int32_t m_iImageYDpi = 0;
+  RetainPtr<CFX_DIBitmap> m_pDIBitmap;
+};
 
 // static
 WideString CXFA_Node::AttributeEnumToName(XFA_AttributeEnum item) {
@@ -742,7 +795,7 @@ std::vector<CXFA_Node*> CXFA_Node::GetNodeList(uint32_t dwTypeFilter,
   std::vector<CXFA_Node*> nodes;
   for (CXFA_Node* pChild = first_child_; pChild;
        pChild = pChild->next_sibling_) {
-    if (!HasProperty(pChild->GetElementType())) {
+    if (HasProperty(pChild->GetElementType())) {
       if (bFilterProperties) {
         nodes.push_back(pChild);
       } else if (bFilterOneOfProperties &&
@@ -940,8 +993,8 @@ LocaleIface* CXFA_Node::GetLocale() {
   if (!localeName)
     return nullptr;
   if (localeName.value() == L"ambient")
-    return GetDocument()->GetLocalMgr()->GetDefLocale();
-  return GetDocument()->GetLocalMgr()->GetLocaleByName(localeName.value());
+    return GetDocument()->GetLocaleMgr()->GetDefLocale();
+  return GetDocument()->GetLocaleMgr()->GetLocaleByName(localeName.value());
 }
 
 Optional<WideString> CXFA_Node::GetLocaleName() {
@@ -962,7 +1015,7 @@ Optional<WideString> CXFA_Node::GetLocaleName() {
 
   CXFA_Node* pConfig = ToNode(GetDocument()->GetXFAObject(XFA_HASHCODE_Config));
   Optional<WideString> localeName = {
-      GetDocument()->GetLocalMgr()->GetConfigLocaleName(pConfig)};
+      GetDocument()->GetLocaleMgr()->GetConfigLocaleName(pConfig)};
   if (localeName && !localeName->IsEmpty())
     return localeName;
 
@@ -973,7 +1026,7 @@ Optional<WideString> CXFA_Node::GetLocaleName() {
       return localeName;
   }
 
-  LocaleIface* pLocale = GetDocument()->GetLocalMgr()->GetDefLocale();
+  LocaleIface* pLocale = GetDocument()->GetLocaleMgr()->GetDefLocale();
   if (!pLocale)
     return {};
 
@@ -1238,11 +1291,9 @@ void CXFA_Node::RemoveChild(CXFA_Node* pNode, bool bNotify) {
     return;
   }
 
-  ASSERT(pNode->xml_node_.Get() == xml_node_.Get() &&
-         xml_node_->GetType() == FX_XMLNODE_Element);
-  if (pNode->xml_node_->GetType() == FX_XMLNODE_Element) {
-    CFX_XMLElement* pXMLElement =
-        static_cast<CFX_XMLElement*>(pNode->xml_node_.Get());
+  ASSERT(pNode->xml_node_.Get() == xml_node_.Get());
+  CFX_XMLElement* pXMLElement = ToXMLElement(pNode->xml_node_.Get());
+  if (pXMLElement) {
     WideString wsAttributeName =
         pNode->JSObject()->GetCData(XFA_Attribute::QualifiedName);
     pXMLElement->RemoveAttribute(wsAttributeName);
@@ -1987,11 +2038,17 @@ int32_t CXFA_Node::ProcessEvent(CXFA_FFDocView* docView,
     case XFA_Element::SignData:
       break;
     case XFA_Element::Submit: {
+// TODO(crbug.com/867485): Submit is disabled for now. Fix it and reenable this
+// code.
+#ifdef PDF_XFA_ELEMENT_SUBMIT_ENABLED
       CXFA_Submit* submit = event->GetSubmitIfExists();
       if (!submit)
         return XFA_EVENTERROR_NotExist;
       return docView->GetDoc()->GetDocEnvironment()->Submit(docView->GetDoc(),
                                                             submit);
+#else
+      return XFA_EVENTERROR_Disabled;
+#endif  // PDF_XFA_ELEMENT_SUBMIT_ENABLED
     }
     default:
       break;
@@ -2162,8 +2219,7 @@ int32_t CXFA_Node::ProcessNullTestValidate(CXFA_FFDocView* docView,
     case XFA_AttributeEnum::Error: {
       if (wsNullMsg.IsEmpty()) {
         wsCaptionName = GetValidateCaptionName(bVersionFlag);
-        wsNullMsg =
-            WideString::Format(L"%ls cannot be blank.", wsCaptionName.c_str());
+        wsNullMsg = wsCaptionName + L" cannot be blank.";
       }
       pAppProvider->MsgBox(wsNullMsg, wsTitle,
                            static_cast<uint32_t>(AlertIcon::kStatus),
@@ -2176,10 +2232,9 @@ int32_t CXFA_Node::ProcessNullTestValidate(CXFA_FFDocView* docView,
 
       if (wsNullMsg.IsEmpty()) {
         wsCaptionName = GetValidateCaptionName(bVersionFlag);
-        wsNullMsg = WideString::Format(
-            L"%ls cannot be blank. To ignore validations for %ls, click "
-            L"Ignore.",
-            wsCaptionName.c_str(), wsCaptionName.c_str());
+        wsNullMsg = wsCaptionName +
+                    L" cannot be blank. To ignore validations for " +
+                    wsCaptionName + L", click Ignore.";
       }
       if (pAppProvider->MsgBox(wsNullMsg, wsTitle,
                                static_cast<uint32_t>(AlertIcon::kWarning),
@@ -2263,15 +2318,14 @@ WideString CXFA_Node::GetValidateCaptionName(bool bVersionFlag) {
 WideString CXFA_Node::GetValidateMessage(bool bError, bool bVersionFlag) {
   WideString wsCaptionName = GetValidateCaptionName(bVersionFlag);
   if (bVersionFlag)
-    return WideString::Format(L"%ls validation failed", wsCaptionName.c_str());
-  if (bError) {
-    return WideString::Format(L"The value you entered for %ls is invalid.",
-                              wsCaptionName.c_str());
+    return wsCaptionName + L" validation failed";
+  WideString result =
+      L"The value you entered for " + wsCaptionName + L" is invalid.";
+  if (!bError) {
+    result +=
+        L" To ignore validations for " + wsCaptionName + L", click Ignore.";
   }
-  return WideString::Format(
-      L"The value you entered for %ls is invalid. To ignore "
-      L"validations for %ls, click Ignore.",
-      wsCaptionName.c_str(), wsCaptionName.c_str());
+  return result;
 }
 
 int32_t CXFA_Node::ExecuteScript(CXFA_FFDocView* docView,
@@ -2691,11 +2745,10 @@ void CXFA_Node::SetImageEdit(const WideString& wsContentType,
   CXFA_Node* pHrefNode = pBind->GetFirstChild();
   if (pHrefNode) {
     pHrefNode->JSObject()->SetCData(XFA_Attribute::Value, wsHref, false, false);
-  } else {
-    CFX_XMLNode* pXMLNode = pBind->GetXMLMappingNode();
-    ASSERT(pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element);
-    static_cast<CFX_XMLElement*>(pXMLNode)->SetAttribute(L"href", wsHref);
+    return;
   }
+  CFX_XMLElement* pElement = ToXMLElement(pBind->GetXMLMappingNode());
+  pElement->SetAttribute(L"href", wsHref);
 }
 
 CXFA_FFWidget* CXFA_Node::GetNextWidget(CXFA_FFWidget* pWidget) {
@@ -2723,14 +2776,13 @@ void CXFA_Node::CalcCaptionSize(CXFA_FFDoc* doc, CFX_SizeF* pszCap) {
 
   LoadCaption(doc);
 
-  XFA_AttributeEnum iCapPlacement = caption->GetPlacementType();
-  float fCapReserve = caption->GetReserve();
+  const float fCapReserve = caption->GetReserve();
+  const XFA_AttributeEnum iCapPlacement = caption->GetPlacementType();
+  const bool bReserveExit = fCapReserve > 0.01;
   const bool bVert = iCapPlacement == XFA_AttributeEnum::Top ||
                      iCapPlacement == XFA_AttributeEnum::Bottom;
-  const bool bReserveExit = fCapReserve > 0.01;
   CXFA_TextLayout* pCapTextLayout =
-      static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get())
-          ->m_pCapTextLayout.get();
+      m_pLayoutData->AsFieldLayoutData()->m_pCapTextLayout.get();
   if (pCapTextLayout) {
     if (!bVert && GetFFWidgetType() != XFA_FFWidgetType::kButton)
       pszCap->width = fCapReserve;
@@ -2858,8 +2910,7 @@ void CXFA_Node::CalculateTextContentSize(CXFA_FFDoc* doc, CFX_SizeF* pSize) {
   if (wsLast == wcEnter)
     wsText = wsText + wcEnter;
 
-  CXFA_FieldLayoutData* layoutData =
-      static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get());
+  CXFA_FieldLayoutData* layoutData = m_pLayoutData->AsFieldLayoutData();
   if (!layoutData->m_pTextOut) {
     layoutData->m_pTextOut = pdfium::MakeUnique<CFDE_TextOut>();
     CFDE_TextOut* pTextOut = layoutData->m_pTextOut.get();
@@ -2999,25 +3050,23 @@ bool CXFA_Node::CalculateImageEditAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize) {
 
 bool CXFA_Node::LoadImageImage(CXFA_FFDoc* doc) {
   InitLayoutData();
-  return static_cast<CXFA_ImageLayoutData*>(m_pLayoutData.get())
-      ->LoadImageData(doc, this);
+  return m_pLayoutData->AsImageLayoutData()->LoadImageData(doc, this);
 }
 
 bool CXFA_Node::LoadImageEditImage(CXFA_FFDoc* doc) {
   InitLayoutData();
-  return static_cast<CXFA_ImageEditData*>(m_pLayoutData.get())
-      ->LoadImageData(doc, this);
+  return m_pLayoutData->AsFieldLayoutData()->AsImageEditData()->LoadImageData(
+      doc, this);
 }
 
 CFX_Size CXFA_Node::GetImageDpi() const {
-  CXFA_ImageLayoutData* pData =
-      static_cast<CXFA_ImageLayoutData*>(m_pLayoutData.get());
+  CXFA_ImageLayoutData* pData = m_pLayoutData->AsImageLayoutData();
   return CFX_Size(pData->m_iImageXDpi, pData->m_iImageYDpi);
 }
 
 CFX_Size CXFA_Node::GetImageEditDpi() const {
   CXFA_ImageEditData* pData =
-      static_cast<CXFA_ImageEditData*>(m_pLayoutData.get());
+      m_pLayoutData->AsFieldLayoutData()->AsImageEditData();
   return CFX_Size(pData->m_iImageXDpi, pData->m_iImageYDpi);
 }
 
@@ -3037,7 +3086,7 @@ float CXFA_Node::CalculateWidgetAutoWidth(float fWidthCalc) {
   return fWidthCalc;
 }
 
-float CXFA_Node::GetWidthWithoutMargin(float fWidthCalc) {
+float CXFA_Node::GetWidthWithoutMargin(float fWidthCalc) const {
   CXFA_Margin* margin = GetMarginIfExists();
   if (margin)
     fWidthCalc -= margin->GetLeftInset() + margin->GetRightInset();
@@ -3060,7 +3109,7 @@ float CXFA_Node::CalculateWidgetAutoHeight(float fHeightCalc) {
   return fHeightCalc;
 }
 
-float CXFA_Node::GetHeightWithoutMargin(float fHeightCalc) {
+float CXFA_Node::GetHeightWithoutMargin(float fHeightCalc) const {
   CXFA_Margin* margin = GetMarginIfExists();
   if (margin)
     fHeightCalc -= margin->GetTopInset() + margin->GetBottomInset();
@@ -3194,9 +3243,8 @@ bool CXFA_Node::FindSplitPos(CXFA_FFDocView* docView,
       *pCalcHeight -= fTopInset;
       *pCalcHeight = std::max(*pCalcHeight, 0.0f);
     }
-
     CXFA_TextLayout* pTextLayout =
-        static_cast<CXFA_TextLayoutData*>(m_pLayoutData.get())->GetTextLayout();
+        m_pLayoutData->AsTextLayoutData()->GetTextLayout();
     *pCalcHeight =
         pTextLayout->DoLayout(iBlockIndex, *pCalcHeight, *pCalcHeight,
                               m_pLayoutData->m_fWidgetHeight - fTopInset);
@@ -3230,8 +3278,7 @@ bool CXFA_Node::FindSplitPos(CXFA_FFDocView* docView,
     if (iCapPlacement != XFA_AttributeEnum::Top)
       fCapReserve = 0;
   }
-  CXFA_FieldLayoutData* pFieldData =
-      static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get());
+  CXFA_FieldLayoutData* pFieldData = m_pLayoutData->AsFieldLayoutData();
   int32_t iLinesCount = 0;
   float fHeight = m_pLayoutData->m_fWidgetHeight;
   if (GetValue(XFA_VALUEPICTURE_Display).IsEmpty()) {
@@ -3424,10 +3471,11 @@ void CXFA_Node::StartTextLayout(CXFA_FFDoc* doc,
                                 float* pCalcWidth,
                                 float* pCalcHeight) {
   InitLayoutData();
-  static_cast<CXFA_TextLayoutData*>(m_pLayoutData.get())->LoadText(doc, this);
 
-  CXFA_TextLayout* pTextLayout =
-      static_cast<CXFA_TextLayoutData*>(m_pLayoutData.get())->GetTextLayout();
+  CXFA_TextLayoutData* pTextLayoutData = m_pLayoutData->AsTextLayoutData();
+  pTextLayoutData->LoadText(doc, this);
+
+  CXFA_TextLayout* pTextLayout = pTextLayoutData->GetTextLayout();
   float fTextHeight = 0;
   if (*pCalcWidth > 0 && *pCalcHeight > 0) {
     float fWidth = GetWidthWithoutMargin(*pCalcWidth);
@@ -3441,7 +3489,6 @@ void CXFA_Node::StartTextLayout(CXFA_FFDoc* doc,
     float fWidth = GetWidthWithoutMargin(*pCalcWidth);
     pTextLayout->StartLayout(fWidth);
   }
-
   if (*pCalcWidth < 0 && *pCalcHeight < 0) {
     Optional<float> width = TryWidth();
     if (width) {
@@ -3453,7 +3500,6 @@ void CXFA_Node::StartTextLayout(CXFA_FFDoc* doc,
       *pCalcWidth = fMaxWidth;
     }
   }
-
   if (m_pLayoutData->m_fWidgetHeight < 0) {
     m_pLayoutData->m_fWidgetHeight = pTextLayout->GetLayoutHeight();
     m_pLayoutData->m_fWidgetHeight =
@@ -3467,44 +3513,41 @@ void CXFA_Node::StartTextLayout(CXFA_FFDoc* doc,
 
 bool CXFA_Node::LoadCaption(CXFA_FFDoc* doc) {
   InitLayoutData();
-  return static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get())
-      ->LoadCaption(doc, this);
+  return m_pLayoutData->AsFieldLayoutData()->LoadCaption(doc, this);
 }
 
 CXFA_TextLayout* CXFA_Node::GetCaptionTextLayout() {
-  return m_pLayoutData ? static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get())
-                             ->m_pCapTextLayout.get()
-                       : nullptr;
+  return m_pLayoutData
+             ? m_pLayoutData->AsFieldLayoutData()->m_pCapTextLayout.get()
+             : nullptr;
 }
 
 CXFA_TextLayout* CXFA_Node::GetTextLayout() {
-  return m_pLayoutData ? static_cast<CXFA_TextLayoutData*>(m_pLayoutData.get())
-                             ->GetTextLayout()
+  return m_pLayoutData ? m_pLayoutData->AsTextLayoutData()->GetTextLayout()
                        : nullptr;
 }
 
 RetainPtr<CFX_DIBitmap> CXFA_Node::GetImageImage() {
-  return m_pLayoutData ? static_cast<CXFA_ImageLayoutData*>(m_pLayoutData.get())
-                             ->m_pDIBitmap
+  return m_pLayoutData ? m_pLayoutData->AsImageLayoutData()->m_pDIBitmap
                        : nullptr;
 }
 
 RetainPtr<CFX_DIBitmap> CXFA_Node::GetImageEditImage() {
-  return m_pLayoutData ? static_cast<CXFA_ImageEditData*>(m_pLayoutData.get())
+  return m_pLayoutData ? m_pLayoutData->AsFieldLayoutData()
+                             ->AsImageEditData()
                              ->m_pDIBitmap
                        : nullptr;
 }
 
 void CXFA_Node::SetImageImage(const RetainPtr<CFX_DIBitmap>& newImage) {
-  CXFA_ImageLayoutData* pData =
-      static_cast<CXFA_ImageLayoutData*>(m_pLayoutData.get());
+  CXFA_ImageLayoutData* pData = m_pLayoutData->AsImageLayoutData();
   if (pData->m_pDIBitmap != newImage)
     pData->m_pDIBitmap = newImage;
 }
 
 void CXFA_Node::SetImageEditImage(const RetainPtr<CFX_DIBitmap>& newImage) {
   CXFA_ImageEditData* pData =
-      static_cast<CXFA_ImageEditData*>(m_pLayoutData.get());
+      m_pLayoutData->AsFieldLayoutData()->AsImageEditData();
   if (pData->m_pDIBitmap != newImage)
     pData->m_pDIBitmap = newImage;
 }
@@ -3942,10 +3985,10 @@ void CXFA_Node::SetItemState(int32_t nIndex,
 
   int32_t iSel = -1;
   std::vector<WideString> wsValueArray = GetSelectedItemsValue();
-  auto it = std::find(wsValueArray.begin(), wsValueArray.end(),
-                      wsSaveTextArray[nIndex]);
-  if (it != wsValueArray.end())
-    iSel = it - wsValueArray.begin();
+  auto value_iter = std::find(wsValueArray.begin(), wsValueArray.end(),
+                              wsSaveTextArray[nIndex]);
+  if (value_iter != wsValueArray.end())
+    iSel = value_iter - wsValueArray.begin();
 
   if (IsChoiceListMultiSelect()) {
     if (bSelected) {
@@ -3960,9 +4003,10 @@ void CXFA_Node::SetItemState(int32_t nIndex,
       }
     } else if (iSel >= 0) {
       std::vector<int32_t> iSelArray = GetSelectedItems();
-      auto it = std::find(iSelArray.begin(), iSelArray.end(), nIndex);
-      if (it != iSelArray.end())
-        iSelArray.erase(it);
+      auto selected_iter =
+          std::find(iSelArray.begin(), iSelArray.end(), nIndex);
+      if (selected_iter != iSelArray.end())
+        iSelArray.erase(selected_iter);
       SetSelectedItems(iSelArray, bNotify, bScriptModify, bSyncData);
     }
   } else {
@@ -4072,22 +4116,17 @@ void CXFA_Node::InsertItem(const WideString& wsLabel,
                                                     wsValue.c_str(), nIndex);
 }
 
-void CXFA_Node::GetItemLabel(const WideStringView& wsValue,
-                             WideString& wsLabel) {
-  int32_t iCount = 0;
+WideString CXFA_Node::GetItemLabel(const WideStringView& wsValue) const {
   std::vector<CXFA_Node*> listitems;
   CXFA_Node* pItems = GetFirstChild();
   for (; pItems; pItems = pItems->GetNextSibling()) {
     if (pItems->GetElementType() != XFA_Element::Items)
       continue;
-    iCount++;
     listitems.push_back(pItems);
   }
 
-  if (iCount <= 1) {
-    wsLabel = wsValue;
-    return;
-  }
+  if (listitems.size() <= 1)
+    return WideString(wsValue);
 
   CXFA_Node* pLabelItems = listitems[0];
   bool bSave = pLabelItems->JSObject()->GetBoolean(XFA_Attribute::Save);
@@ -4098,8 +4137,8 @@ void CXFA_Node::GetItemLabel(const WideStringView& wsValue,
   } else {
     pSaveItems = listitems[1];
   }
-  iCount = 0;
 
+  int32_t iCount = 0;
   int32_t iSearch = -1;
   for (CXFA_Node* pChildItem = pSaveItems->GetFirstChild(); pChildItem;
        pChildItem = pChildItem->GetNextSibling()) {
@@ -4110,12 +4149,11 @@ void CXFA_Node::GetItemLabel(const WideStringView& wsValue,
     iCount++;
   }
   if (iSearch < 0)
-    return;
+    return WideString();
 
   CXFA_Node* pText =
       pLabelItems->GetChild<CXFA_Node>(iSearch, XFA_Element::Unknown, false);
-  if (pText)
-    wsLabel = pText->JSObject()->GetContent(false);
+  return pText ? pText->JSObject()->GetContent(false) : WideString();
 }
 
 WideString CXFA_Node::GetItemValue(const WideStringView& wsLabel) {
@@ -4296,14 +4334,14 @@ bool CXFA_Node::SetValue(XFA_VALUEPICTURE eValueType,
 
   XFA_Element eType = pNode->GetElementType();
   if (!wsPicture.IsEmpty()) {
-    CXFA_LocaleMgr* pLocalMgr = GetDocument()->GetLocalMgr();
+    CXFA_LocaleMgr* pLocaleMgr = GetDocument()->GetLocaleMgr();
     LocaleIface* pLocale = GetLocale();
     CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
     bValidate =
         widgetValue.ValidateValue(wsValue, wsPicture, pLocale, &wsPicture);
     if (bValidate) {
       widgetValue = CXFA_LocaleValue(widgetValue.GetType(), wsNewText,
-                                     wsPicture, pLocale, pLocalMgr);
+                                     wsPicture, pLocale, pLocaleMgr);
       wsNewText = widgetValue.GetValue();
       if (eType == XFA_Element::NumericEdit)
         wsNewText = NumericLimit(wsNewText);
@@ -4406,7 +4444,7 @@ WideString CXFA_Node::GetValue(XFA_VALUEPICTURE eValueType) {
   WideString wsValue = JSObject()->GetContent(false);
 
   if (eValueType == XFA_VALUEPICTURE_Display)
-    GetItemLabel(wsValue.AsStringView(), wsValue);
+    wsValue = GetItemLabel(wsValue.AsStringView());
 
   WideString wsPicture = GetPictureContent(eValueType);
   CXFA_Node* pNode = GetUIChildNode();
@@ -4439,12 +4477,12 @@ WideString CXFA_Node::GetValue(XFA_VALUEPICTURE eValueType) {
 
   if (LocaleIface* pLocale = GetLocale()) {
     CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
-    CXFA_LocaleMgr* pLocalMgr = GetDocument()->GetLocalMgr();
+    CXFA_LocaleMgr* pLocaleMgr = GetDocument()->GetLocaleMgr();
     switch (widgetValue.GetType()) {
       case XFA_VT_DATE: {
         WideString wsDate, wsTime;
         if (SplitDateTime(wsValue, wsDate, wsTime)) {
-          CXFA_LocaleValue date(XFA_VT_DATE, wsDate, pLocalMgr);
+          CXFA_LocaleValue date(XFA_VT_DATE, wsDate, pLocaleMgr);
           if (date.FormatPatterns(wsValue, wsPicture, pLocale, eValueType))
             return wsValue;
         }
@@ -4453,7 +4491,7 @@ WideString CXFA_Node::GetValue(XFA_VALUEPICTURE eValueType) {
       case XFA_VT_TIME: {
         WideString wsDate, wsTime;
         if (SplitDateTime(wsValue, wsDate, wsTime)) {
-          CXFA_LocaleValue time(XFA_VT_TIME, wsTime, pLocalMgr);
+          CXFA_LocaleValue time(XFA_VT_TIME, wsTime, pLocaleMgr);
           if (time.FormatPatterns(wsValue, wsPicture, pLocale, eValueType))
             return wsValue;
         }
@@ -4475,12 +4513,12 @@ WideString CXFA_Node::GetNormalizeDataValue(const WideString& wsValue) {
   if (wsPicture.IsEmpty())
     return wsValue;
 
-  CXFA_LocaleMgr* pLocalMgr = GetDocument()->GetLocalMgr();
+  CXFA_LocaleMgr* pLocaleMgr = GetDocument()->GetLocaleMgr();
   LocaleIface* pLocale = GetLocale();
   CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
   if (widgetValue.ValidateValue(wsValue, wsPicture, pLocale, &wsPicture)) {
     widgetValue = CXFA_LocaleValue(widgetValue.GetType(), wsValue, wsPicture,
-                                   pLocale, pLocalMgr);
+                                   pLocale, pLocaleMgr);
     return widgetValue.GetValue();
   }
   return wsValue;
@@ -4534,13 +4572,13 @@ WideString CXFA_Node::GetFormatDataValue(const WideString& wsValue) {
         iVTType = XFA_VT_NULL;
         break;
     }
-    CXFA_LocaleMgr* pLocalMgr = GetDocument()->GetLocalMgr();
-    CXFA_LocaleValue widgetValue(iVTType, wsValue, pLocalMgr);
+    CXFA_LocaleMgr* pLocaleMgr = GetDocument()->GetLocaleMgr();
+    CXFA_LocaleValue widgetValue(iVTType, wsValue, pLocaleMgr);
     switch (widgetValue.GetType()) {
       case XFA_VT_DATE: {
         WideString wsDate, wsTime;
         if (SplitDateTime(wsValue, wsDate, wsTime)) {
-          CXFA_LocaleValue date(XFA_VT_DATE, wsDate, pLocalMgr);
+          CXFA_LocaleValue date(XFA_VT_DATE, wsDate, pLocaleMgr);
           if (date.FormatPatterns(wsFormattedValue, wsPicture, pLocale,
                                   XFA_VALUEPICTURE_DataBind)) {
             return wsFormattedValue;
@@ -4551,7 +4589,7 @@ WideString CXFA_Node::GetFormatDataValue(const WideString& wsValue) {
       case XFA_VT_TIME: {
         WideString wsDate, wsTime;
         if (SplitDateTime(wsValue, wsDate, wsTime)) {
-          CXFA_LocaleValue time(XFA_VT_TIME, wsTime, pLocalMgr);
+          CXFA_LocaleValue time(XFA_VT_TIME, wsTime, pLocaleMgr);
           if (time.FormatPatterns(wsFormattedValue, wsPicture, pLocale,
                                   XFA_VALUEPICTURE_DataBind)) {
             return wsFormattedValue;
@@ -4581,43 +4619,6 @@ WideString CXFA_Node::NormalizeNumStr(const WideString& wsValue) {
   }
   if (wsOutput.IsEmpty() || wsOutput[0] == '.')
     wsOutput.InsertAtFront('0');
-
-  return wsOutput;
-}
-
-WideString CXFA_Node::FormatNumStr(const WideString& wsValue,
-                                   LocaleIface* pLocale) {
-  if (wsValue.IsEmpty())
-    return L"";
-
-  WideString wsSrcNum = wsValue;
-  WideString wsGroupSymbol = pLocale->GetGroupingSymbol();
-  bool bNeg = false;
-  if (wsSrcNum[0] == '-') {
-    bNeg = true;
-    wsSrcNum.Delete(0, 1);
-  }
-
-  auto dot_index = wsSrcNum.Find('.');
-  dot_index = !dot_index.has_value() ? wsSrcNum.GetLength() : dot_index;
-
-  if (dot_index.value() < 1)
-    return L"";
-
-  size_t nPos = dot_index.value() % 3;
-  WideString wsOutput;
-  for (size_t i = 0; i < dot_index.value(); i++) {
-    if (i % 3 == nPos && i != 0)
-      wsOutput += wsGroupSymbol;
-
-    wsOutput += wsSrcNum[i];
-  }
-  if (dot_index.value() < wsSrcNum.GetLength()) {
-    wsOutput += pLocale->GetDecimalSymbol();
-    wsOutput += wsSrcNum.Right(wsSrcNum.GetLength() - dot_index.value() - 1);
-  }
-  if (bNeg)
-    return pLocale->GetMinusSymbol() + wsOutput;
 
   return wsOutput;
 }
@@ -4684,10 +4685,10 @@ bool CXFA_Node::PresenceRequiresSpace() const {
 }
 
 void CXFA_Node::SetToXML(const WideString& value) {
-  auto* elem = static_cast<CFX_XMLElement*>(GetXMLMappingNode());
-  FX_XMLNODETYPE eXMLType = elem->GetType();
-  switch (eXMLType) {
+  auto* pNode = GetXMLMappingNode();
+  switch (pNode->GetType()) {
     case FX_XMLNODE_Element: {
+      auto* elem = static_cast<CFX_XMLElement*>(pNode);
       if (IsAttributeInXML()) {
         elem->SetAttribute(JSObject()->GetCData(XFA_Attribute::QualifiedName),
                            value);
@@ -4716,7 +4717,7 @@ void CXFA_Node::SetToXML(const WideString& value) {
       break;
     }
     case FX_XMLNODE_Text:
-      static_cast<CFX_XMLText*>(GetXMLMappingNode())->SetText(value);
+      ToXMLText(GetXMLMappingNode())->SetText(value);
       break;
     default:
       NOTREACHED();

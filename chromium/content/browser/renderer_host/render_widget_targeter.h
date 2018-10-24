@@ -70,6 +70,8 @@ class RenderWidgetTargeter {
         const ui::LatencyInfo& latency,
         const base::Optional<gfx::PointF>& target_location) = 0;
 
+    virtual void SetEventsBeingFlushed(bool events_being_flushed) = 0;
+
     virtual RenderWidgetHostViewBase* FindViewFromFrameSinkId(
         const viz::FrameSinkId& frame_sink_id) const = 0;
   };
@@ -115,6 +117,11 @@ class RenderWidgetTargeter {
 
   // |event| is in the coordinate space of |root_view|. |target_location|, if
   // set, is the location in |target|'s coordinate space.
+  // |target| is the current target that will be queried using its
+  // InputTargetClient interface.
+  // |frame_sink_id| is returned from the InputTargetClient to indicate where
+  // the event should be routed, and |transformed_location| is the point in
+  // that new target's coordinate space.
   void FoundFrameSinkId(base::WeakPtr<RenderWidgetHostViewBase> root_view,
                         base::WeakPtr<RenderWidgetHostViewBase> target,
                         ui::WebScopedInputEvent event,
@@ -122,7 +129,8 @@ class RenderWidgetTargeter {
                         uint32_t request_id,
                         const gfx::PointF& target_location,
                         TracingUmaTracker tracker,
-                        const viz::FrameSinkId& frame_sink_id);
+                        const viz::FrameSinkId& frame_sink_id,
+                        const gfx::PointF& transformed_location);
 
   // |event| is in the coordinate space of |root_view|. |target_location|, if
   // set, is the location in |target|'s coordinate space. If |latched_target| is

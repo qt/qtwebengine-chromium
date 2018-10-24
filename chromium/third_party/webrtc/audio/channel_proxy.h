@@ -34,7 +34,6 @@ class RtcpBandwidthObserver;
 class RtcpRttStats;
 class RtpPacketSender;
 class RtpPacketReceived;
-class RtpReceiver;
 class RtpRtcp;
 class RtpTransportControllerSendInterface;
 class Transport;
@@ -62,7 +61,6 @@ class ChannelProxy : public RtpPacketSinkInterface {
 
   virtual void SetRTCPStatus(bool enable);
   virtual void SetLocalSSRC(uint32_t ssrc);
-  virtual void SetRemoteSSRC(uint32_t ssrc);
   virtual void SetMid(const std::string& mid, int extension_id);
   virtual void SetRTCP_CNAME(const std::string& c_name);
   virtual void SetNACKStatus(bool enable, int max_packets);
@@ -99,7 +97,6 @@ class ChannelProxy : public RtpPacketSinkInterface {
   void OnRtpPacket(const RtpPacketReceived& packet) override;
   virtual bool ReceivedRTCPPacket(const uint8_t* packet, size_t length);
   virtual void SetChannelOutputVolumeScaling(float scaling);
-  virtual void SetRtcEventLog(RtcEventLog* event_log);
   virtual AudioMixer::Source::AudioFrameInfo GetAudioFrameWithInfo(
       int sample_rate_hz,
       AudioFrame* audio_frame);
@@ -108,7 +105,10 @@ class ChannelProxy : public RtpPacketSinkInterface {
   virtual void SetTransportOverhead(int transport_overhead_per_packet);
   virtual void AssociateSendChannel(const ChannelProxy& send_channel_proxy);
   virtual void DisassociateSendChannel();
-  virtual void GetRtpRtcp(RtpRtcp** rtp_rtcp, RtpReceiver** rtp_receiver) const;
+  virtual RtpRtcp* GetRtpRtcp() const;
+
+  // Produces the transport-related timestamps; current_delay_ms is left unset.
+  absl::optional<Syncable::Info> GetSyncInfo() const;
   virtual uint32_t GetPlayoutTimestamp() const;
   virtual void SetMinimumPlayoutDelay(int delay_ms);
   virtual bool GetRecCodec(CodecInst* codec_inst) const;

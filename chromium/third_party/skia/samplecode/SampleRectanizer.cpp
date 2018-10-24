@@ -5,10 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm.h"
-#include "SampleCode.h"
+#include "Sample.h"
+#include "SkCanvas.h"
 #include "SkRandom.h"
-#include "SkUtils.h"
+#include "SkPaint.h"
+#include "SkUTF.h"
 #if SK_SUPPORT_GPU
 #include "GrRectanizer_pow2.h"
 #include "GrRectanizer_skyline.h"
@@ -22,7 +23,7 @@
 //          Rand -> random rects from 2-256
 //          Pow2Rand -> random power of 2 sized rects from 2-256
 //          SmallPow2 -> 128x128 rects
-class RectanizerView : public SampleView {
+class RectanizerView : public Sample {
 public:
     RectanizerView()
         : fCurRandRect(0)
@@ -52,15 +53,15 @@ public:
     }
 
 protected:
-    bool onQuery(SkEvent* evt) override {
-        if (SampleCode::TitleQ(*evt)) {
-            SampleCode::TitleR(evt, "Rectanizer");
+    bool onQuery(Sample::Event* evt) override {
+        if (Sample::TitleQ(*evt)) {
+            Sample::TitleR(evt, "Rectanizer");
             return true;
         }
         SkUnichar uni;
-        if (SampleCode::CharQ(*evt, &uni)) {
-            char utf8[kMaxBytesInUTF8Sequence];
-            size_t size = SkUTF8_FromUnichar(uni, utf8);
+        if (Sample::CharQ(*evt, &uni)) {
+            char utf8[SkUTF::kMaxBytesInUTF8Sequence];
+            size_t size = SkUTF::ToUTF8(uni, utf8);
             // Only consider events for single char keys
             if (1 == size) {
                 switch (utf8[0]) {
@@ -183,11 +184,11 @@ private:
         fCurRandRect = 0;
     }
 
-    typedef SampleView INHERITED;
+    typedef Sample INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
-static SkView* MyFactory() { return new RectanizerView; }
-static SkViewRegister reg(MyFactory);
+
+DEF_SAMPLE( return new RectanizerView(); )
 
 #endif

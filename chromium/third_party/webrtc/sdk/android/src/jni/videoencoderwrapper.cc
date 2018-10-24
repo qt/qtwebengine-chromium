@@ -70,7 +70,9 @@ int32_t VideoEncoderWrapper::InitEncodeInternal(JNIEnv* jni) {
   ScopedJavaLocalRef<jobject> settings = Java_Settings_Constructor(
       jni, number_of_cores_, codec_settings_.width, codec_settings_.height,
       static_cast<int>(codec_settings_.startBitrate),
-      static_cast<int>(codec_settings_.maxFramerate), automatic_resize_on);
+      static_cast<int>(codec_settings_.maxFramerate),
+      static_cast<int>(codec_settings_.numberOfSimulcastStreams),
+      automatic_resize_on);
 
   ScopedJavaLocalRef<jobject> callback =
       Java_VideoEncoderWrapper_createEncoderCallback(jni,
@@ -274,7 +276,7 @@ void VideoEncoderWrapper::OnEncodedFrame(JNIEnv* jni,
                          task_buffer.size(), task_buffer.size());
       frame._encodedWidth = encoded_width;
       frame._encodedHeight = encoded_height;
-      frame._timeStamp = frame_extra_info.timestamp_rtp;
+      frame.SetTimestamp(frame_extra_info.timestamp_rtp);
       frame.capture_time_ms_ = capture_time_ns / rtc::kNumNanosecsPerMillisec;
       frame._frameType = (FrameType)frame_type;
       frame.rotation_ = (VideoRotation)rotation;

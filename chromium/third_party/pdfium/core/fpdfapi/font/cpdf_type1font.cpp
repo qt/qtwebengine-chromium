@@ -60,7 +60,15 @@ bool FT_UseType1Charmap(FXFT_Face face) {
 
 }  // namespace
 
-CPDF_Type1Font::CPDF_Type1Font() : m_Base14Font(-1) {}
+CPDF_Type1Font::CPDF_Type1Font(CPDF_Document* pDocument,
+                               CPDF_Dictionary* pFontDict)
+    : CPDF_SimpleFont(pDocument, pFontDict) {
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
+  memset(m_ExtGID, 0xff, sizeof(m_ExtGID));
+#endif
+}
+
+CPDF_Type1Font::~CPDF_Type1Font() = default;
 
 bool CPDF_Type1Font::IsType1Font() const {
   return true;
@@ -76,38 +84,37 @@ CPDF_Type1Font* CPDF_Type1Font::AsType1Font() {
 
 bool CPDF_Type1Font::Load() {
   m_Base14Font = PDF_GetStandardFontName(&m_BaseFont);
-  if (m_Base14Font >= 0) {
-    const CPDF_Dictionary* pFontDesc =
-        m_pFontDict->GetDictFor("FontDescriptor");
-    if (pFontDesc && pFontDesc->KeyExist("Flags"))
-      m_Flags = pFontDesc->GetIntegerFor("Flags");
-    else
-      m_Flags = m_Base14Font >= 12 ? FXFONT_SYMBOLIC : FXFONT_NONSYMBOLIC;
+  if (!IsBase14Font())
+    return LoadCommon();
 
-    if (m_Base14Font < 4) {
-      for (int i = 0; i < 256; i++)
-        m_CharWidth[i] = 600;
-    }
-    if (m_Base14Font == 12)
-      m_BaseEncoding = PDFFONT_ENCODING_ADOBE_SYMBOL;
-    else if (m_Base14Font == 13)
-      m_BaseEncoding = PDFFONT_ENCODING_ZAPFDINGBATS;
-    else if (FontStyleIsNonSymbolic(m_Flags))
-      m_BaseEncoding = PDFFONT_ENCODING_STANDARD;
+  const CPDF_Dictionary* pFontDesc = m_pFontDict->GetDictFor("FontDescriptor");
+  if (pFontDesc && pFontDesc->KeyExist("Flags"))
+    m_Flags = pFontDesc->GetIntegerFor("Flags");
+  else
+    m_Flags = m_Base14Font >= 12 ? FXFONT_SYMBOLIC : FXFONT_NONSYMBOLIC;
+
+  if (m_Base14Font < 4) {
+    for (int i = 0; i < 256; i++)
+      m_CharWidth[i] = 600;
   }
+  if (m_Base14Font == 12)
+    m_BaseEncoding = PDFFONT_ENCODING_ADOBE_SYMBOL;
+  else if (m_Base14Font == 13)
+    m_BaseEncoding = PDFFONT_ENCODING_ZAPFDINGBATS;
+  else if (FontStyleIsNonSymbolic(m_Flags))
+    m_BaseEncoding = PDFFONT_ENCODING_STANDARD;
   return LoadCommon();
 }
 
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
 int CPDF_Type1Font::GlyphFromCharCodeExt(uint32_t charcode) {
-  if (charcode > 0xff) {
+  if (charcode > 0xff)
     return -1;
-  }
-  int index = m_ExtGID[(uint8_t)charcode];
-  if (index == 0xffff) {
-    return -1;
-  }
-  return index;
+
+  int index = m_ExtGID[static_cast<uint8_t>(charcode)];
+  return index != 0xffff ? index : -1;
 }
+#endif
 
 void CPDF_Type1Font::LoadGlyphMap() {
   if (!m_Font.GetFace())
@@ -122,8 +129,8 @@ void CPDF_Type1Font::LoadGlyphMap() {
     if (m_Font.GetPsName() == "DFHeiStd-W5")
       bCoreText = false;
 
-    m_Font.SetPlatformFont(
-        quartz2d.CreateFont(m_Font.GetFontData(), m_Font.GetSize()));
+    pdfium::span<const uint8_t> span = m_Font.GetFontSpan();
+    m_Font.SetPlatformFont(quartz2d.CreateFont(span.data(), span.size()));
     if (!m_Font.GetPlatformFont())
       bCoreText = false;
   }
@@ -193,8 +200,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
             GetAdobeCharName(m_BaseEncoding, m_CharNames, charcode);
         if (name) {
           m_Encoding.m_Unicodes[charcode] = PDF_UnicodeFromAdobeName(name);
-          m_GlyphIndex[charcode] =
-              FXFT_Get_Name_Index(m_Font.GetFace(), const_cast<char*>(name));
+          m_GlyphIndex[charcode] = FXFT_Get_Name_Index(m_Font.GetFace(), name);
           SetExtGID(name, charcode);
         } else {
           m_GlyphIndex[charcode] =
@@ -229,12 +235,10 @@ void CPDF_Type1Font::LoadGlyphMap() {
 
       m_Encoding.m_Unicodes[charcode] = PDF_UnicodeFromAdobeName(name);
       const char* pStrUnicode = GlyphNameRemap(name);
-      if (pStrUnicode &&
-          FXFT_Get_Name_Index(m_Font.GetFace(), const_cast<char*>(name)) == 0) {
+      if (pStrUnicode && FXFT_Get_Name_Index(m_Font.GetFace(), name) == 0) {
         name = pStrUnicode;
       }
-      m_GlyphIndex[charcode] =
-          FXFT_Get_Name_Index(m_Font.GetFace(), const_cast<char*>(name));
+      m_GlyphIndex[charcode] = FXFT_Get_Name_Index(m_Font.GetFace(), name);
       SetExtGID(name, charcode);
       if (m_GlyphIndex[charcode] != 0)
         continue;
@@ -260,8 +264,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
           GetAdobeCharName(m_BaseEncoding, m_CharNames, charcode);
       if (name) {
         m_Encoding.m_Unicodes[charcode] = PDF_UnicodeFromAdobeName(name);
-        m_GlyphIndex[charcode] =
-            FXFT_Get_Name_Index(m_Font.GetFace(), const_cast<char*>(name));
+        m_GlyphIndex[charcode] = FXFT_Get_Name_Index(m_Font.GetFace(), name);
       } else {
         m_GlyphIndex[charcode] =
             FXFT_Get_Char_Index(m_Font.GetFace(), charcode);
@@ -297,8 +300,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
       continue;
 
     m_Encoding.m_Unicodes[charcode] = PDF_UnicodeFromAdobeName(name);
-    m_GlyphIndex[charcode] =
-        FXFT_Get_Name_Index(m_Font.GetFace(), const_cast<char*>(name));
+    m_GlyphIndex[charcode] = FXFT_Get_Name_Index(m_Font.GetFace(), name);
     if (m_GlyphIndex[charcode] != 0)
       continue;
 

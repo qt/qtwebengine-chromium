@@ -15,9 +15,17 @@
 #define SkColorSpacePrintf(...)
 
 static constexpr float gSRGB_toXYZD50[] {
+#ifdef SK_LEGACY_SRGB_GAMUT
     0.4360747f, 0.3850649f, 0.1430804f, // Rx, Gx, Bx
     0.2225045f, 0.7168786f, 0.0606169f, // Ry, Gy, By
     0.0139322f, 0.0971045f, 0.7141733f, // Rz, Gz, Bz
+#else
+    // These are taken from skcms, and there originally from 16-bit fixed point.
+    // For best results, please keep them exactly in sync with skcms.
+    0.436065674f, 0.385147095f, 0.143066406f,
+    0.222488403f, 0.716873169f, 0.060607910f,
+    0.013916016f, 0.097076416f, 0.714096069f,
+#endif
 };
 
 static constexpr float gAdobeRGB_toXYZD50[] {
@@ -49,8 +57,13 @@ static constexpr float gNarrow_toXYZD50[] {
     0.032925f,  0.153615f,  0.638669f,
 };
 
+// Like gSRGB_toXYZD50, keeping this bitwise exactly the same as skcms makes things fastest.
 static constexpr SkColorSpaceTransferFn gSRGB_TransferFn =
+#ifdef SK_LEGACY_SRGB_TRANSFER_FUNCTION
         { 2.4f, 1.0f / 1.055f, 0.055f / 1.055f, 1.0f / 12.92f, 0.04045f, 0.0f, 0.0f };
+#else
+        { 2.4f, (float)(1/1.055), (float)(0.055/1.055), (float)(1/12.92), 0.04045f, 0.0f, 0.0f };
+#endif
 
 static constexpr SkColorSpaceTransferFn g2Dot2_TransferFn =
         { 2.2f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
@@ -180,40 +193,9 @@ static inline bool is_almost_linear(const SkColorSpaceTransferFn& coeffs) {
     return linearExp || linearFn;
 }
 
-static inline bool is_just_gamma(const SkColorSpaceTransferFn& coeffs) {
-    return transfer_fn_almost_equal(coeffs.fA, 1.0f)
-        && transfer_fn_almost_equal(coeffs.fB, 0.0f)
-        && transfer_fn_almost_equal(coeffs.fC, 0.0f)
-        && transfer_fn_almost_equal(coeffs.fD, 0.0f)
-        && transfer_fn_almost_equal(coeffs.fE, 0.0f)
-        && transfer_fn_almost_equal(coeffs.fF, 0.0f);
-}
+// Return raw pointers to commonly used SkColorSpaces.
+// No need to ref/unref these, but if you do, do it in pairs.
+SkColorSpace* sk_srgb_singleton();
+SkColorSpace* sk_srgb_linear_singleton();
 
-
-static inline void value_to_parametric(SkColorSpaceTransferFn* coeffs, float exponent) {
-    coeffs->fA = 1.0f;
-    coeffs->fB = 0.0f;
-    coeffs->fC = 0.0f;
-    coeffs->fD = 0.0f;
-    coeffs->fE = 0.0f;
-    coeffs->fF = 0.0f;
-    coeffs->fG = exponent;
-}
-
-static inline bool named_to_parametric(SkColorSpaceTransferFn* coeffs,
-                                       SkGammaNamed gammaNamed) {
-    switch (gammaNamed) {
-        case kSRGB_SkGammaNamed:
-            *coeffs = gSRGB_TransferFn;
-            return true;
-        case k2Dot2Curve_SkGammaNamed:
-            *coeffs = g2Dot2_TransferFn;
-            return true;
-        case kLinear_SkGammaNamed:
-            *coeffs = gLinear_TransferFn;
-            return true;
-        default:
-            return false;
-    }
-}
 #endif  // SkColorSpacePriv_DEFINED

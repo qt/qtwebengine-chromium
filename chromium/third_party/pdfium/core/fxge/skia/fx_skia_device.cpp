@@ -60,7 +60,7 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
                                 int dest_top,
                                 int width,
                                 int height,
-                                const RetainPtr<CFX_DIBSource>& pSrcBitmap,
+                                const RetainPtr<CFX_DIBBase>& pSrcBitmap,
                                 int src_left,
                                 int src_top) {
   if (!pBitmap)
@@ -80,8 +80,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
   if (dest_format == src_format) {
     for (int row = 0; row < height; row++) {
       uint8_t* dest_scan = buffer + (dest_top + row) * pitch + dest_left * Bpp;
-      uint8_t* src_scan =
-          (uint8_t*)pSrcBitmap->GetScanline(src_top + row) + src_left * Bpp;
+      const uint8_t* src_scan =
+          pSrcBitmap->GetScanline(src_top + row) + src_left * Bpp;
       if (Bpp == 4) {
         for (int col = 0; col < width; col++) {
           FXARGB_SETDIB(dest_scan, ArgbEncode(src_scan[3], src_scan[0],
@@ -106,8 +106,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
     if (src_format == FXDIB_Rgb32) {
       for (int row = 0; row < height; row++) {
         uint8_t* dest_scan = dest_buf + row * pitch;
-        uint8_t* src_scan =
-            (uint8_t*)pSrcBitmap->GetScanline(src_top + row) + src_left * 4;
+        const uint8_t* src_scan =
+            pSrcBitmap->GetScanline(src_top + row) + src_left * 4;
         for (int col = 0; col < width; col++) {
           *dest_scan++ = src_scan[2];
           *dest_scan++ = src_scan[1];
@@ -125,8 +125,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
     if (src_format == FXDIB_Rgb) {
       for (int row = 0; row < height; row++) {
         uint8_t* dest_scan = (uint8_t*)(dest_buf + row * pitch);
-        uint8_t* src_scan =
-            (uint8_t*)pSrcBitmap->GetScanline(src_top + row) + src_left * 3;
+        const uint8_t* src_scan =
+            pSrcBitmap->GetScanline(src_top + row) + src_left * 3;
         for (int col = 0; col < width; col++) {
           FXARGB_SETDIB(dest_scan, ArgbEncode(0xff, src_scan[0], src_scan[1],
                                               src_scan[2]));
@@ -138,8 +138,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
       ASSERT(dest_format == FXDIB_Argb);
       for (int row = 0; row < height; row++) {
         uint8_t* dest_scan = dest_buf + row * pitch;
-        uint8_t* src_scan =
-            (uint8_t*)(pSrcBitmap->GetScanline(src_top + row) + src_left * 4);
+        const uint8_t* src_scan =
+            pSrcBitmap->GetScanline(src_top + row) + src_left * 4;
         for (int col = 0; col < width; col++) {
           FXARGB_SETDIB(dest_scan, ArgbEncode(0xff, src_scan[0], src_scan[1],
                                               src_scan[2]));
@@ -566,7 +566,7 @@ void SetBitmapPaint(bool isAlphaMask,
   paint->setAlpha(bitmap_alpha);
 }
 
-bool Upsample(const RetainPtr<CFX_DIBSource>& pSource,
+bool Upsample(const RetainPtr<CFX_DIBBase>& pSource,
               std::unique_ptr<uint8_t, FxFreeDeleter>& dst8Storage,
               std::unique_ptr<uint32_t, FxFreeDeleter>& dst32Storage,
               SkBitmap* skBitmap,
@@ -843,7 +843,7 @@ class SkiaState {
     if (Accumulator::kPath == m_type || drawIndex != m_commandIndex ||
         (Accumulator::kText == m_type &&
          (FontChanged(pFont, pMatrix, font_size, scaleX, color) ||
-          hasRSX == !m_rsxform.count()))) {
+          hasRSX == m_rsxform.isEmpty()))) {
       Flush();
     }
     if (Accumulator::kText != m_type) {
@@ -857,12 +857,15 @@ class SkiaState {
       m_drawIndex = m_commandIndex;
       m_type = Accumulator::kText;
     }
+    if (!hasRSX && !m_rsxform.isEmpty())
+      FlushText();
+
     int count = m_positions.count();
     m_positions.setCount(nChars + count);
     m_glyphs.setCount(nChars + count);
-    if (hasRSX) {
+    if (hasRSX)
       m_rsxform.setCount(nChars + count);
-    }
+
     SkScalar flip = m_fontSize < 0 ? -1 : 1;
     SkScalar vFlip = flip;
     if (pFont->IsVertical())
@@ -928,15 +931,15 @@ class SkiaState {
     SkTDArray<SkUnichar> text;
     text.setCount(m_glyphs.count());
     skPaint.glyphsToUnichars(m_glyphs.begin(), m_glyphs.count(), text.begin());
-    for (size_t i = 0; i < m_glyphs.count(); ++i)
+    for (int i = 0; i < m_glyphs.count(); ++i)
       printf("%lc", m_glyphs[i]);
     printf("\n");
 #endif
     if (m_rsxform.count()) {
-      skCanvas->drawTextRSXform(m_glyphs.begin(), m_glyphs.count() * 2,
+      skCanvas->drawTextRSXform(m_glyphs.begin(), m_glyphs.bytes(),
                                 m_rsxform.begin(), nullptr, skPaint);
     } else {
-      skCanvas->drawPosText(m_glyphs.begin(), m_glyphs.count() * 2,
+      skCanvas->drawPosText(m_glyphs.begin(), m_glyphs.bytes(),
                             m_positions.begin(), skPaint);
     }
     skCanvas->restore();
@@ -1607,7 +1610,7 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
   SkTDArray<SkUnichar> text;
   text.setCount(glyphs.count());
   paint.glyphsToUnichars(glyphs.begin(), glyphs.count(), text.begin());
-  for (size_t i = 0; i < glyphs.count(); ++i)
+  for (int i = 0; i < glyphs.count(); ++i)
     printf("%lc", text[i]);
   printf("\n");
 #endif
@@ -2253,7 +2256,7 @@ RetainPtr<CFX_DIBitmap> CFX_SkiaDeviceDriver::GetBackDrop() {
   return m_pBackdropBitmap;
 }
 
-bool CFX_SkiaDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBSource>& pBitmap,
+bool CFX_SkiaDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
                                      uint32_t argb,
                                      const FX_RECT* pSrcRect,
                                      int left,
@@ -2283,16 +2286,15 @@ bool CFX_SkiaDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBSource>& pBitmap,
 #endif  // _SKIA_SUPPORT_PATHS_
 }
 
-bool CFX_SkiaDeviceDriver::StretchDIBits(
-    const RetainPtr<CFX_DIBSource>& pSource,
-    uint32_t argb,
-    int dest_left,
-    int dest_top,
-    int dest_width,
-    int dest_height,
-    const FX_RECT* pClipRect,
-    uint32_t flags,
-    int blend_type) {
+bool CFX_SkiaDeviceDriver::StretchDIBits(const RetainPtr<CFX_DIBBase>& pSource,
+                                         uint32_t argb,
+                                         int dest_left,
+                                         int dest_top,
+                                         int dest_width,
+                                         int dest_height,
+                                         const FX_RECT* pClipRect,
+                                         uint32_t flags,
+                                         int blend_type) {
 #ifdef _SKIA_SUPPORT_
   m_pCache->FlushForDraw();
   if (!m_pBitmap->GetBuffer())
@@ -2336,7 +2338,7 @@ bool CFX_SkiaDeviceDriver::StretchDIBits(
 }
 
 bool CFX_SkiaDeviceDriver::StartDIBits(
-    const RetainPtr<CFX_DIBSource>& pSource,
+    const RetainPtr<CFX_DIBBase>& pSource,
     int bitmap_alpha,
     uint32_t argb,
     const CFX_Matrix* pMatrix,
@@ -2469,8 +2471,8 @@ void CFX_DIBitmap::UnPreMultiply() {
 
 #ifdef _SKIA_SUPPORT_
 bool CFX_SkiaDeviceDriver::DrawBitsWithMask(
-    const RetainPtr<CFX_DIBSource>& pSource,
-    const RetainPtr<CFX_DIBSource>& pMask,
+    const RetainPtr<CFX_DIBBase>& pSource,
+    const RetainPtr<CFX_DIBBase>& pMask,
     int bitmap_alpha,
     const CFX_Matrix* pMatrix,
     int blend_type) {
@@ -2510,8 +2512,8 @@ bool CFX_SkiaDeviceDriver::DrawBitsWithMask(
 }
 
 bool CFX_SkiaDeviceDriver::SetBitsWithMask(
-    const RetainPtr<CFX_DIBSource>& pBitmap,
-    const RetainPtr<CFX_DIBSource>& pMask,
+    const RetainPtr<CFX_DIBBase>& pBitmap,
+    const RetainPtr<CFX_DIBBase>& pMask,
     int dest_left,
     int dest_top,
     int bitmap_alpha,
@@ -2611,8 +2613,8 @@ void CFX_DefaultRenderDevice::DebugVerifyBitmapIsPreMultiplied() const {
 }
 
 bool CFX_DefaultRenderDevice::SetBitsWithMask(
-    const RetainPtr<CFX_DIBSource>& pBitmap,
-    const RetainPtr<CFX_DIBSource>& pMask,
+    const RetainPtr<CFX_DIBBase>& pBitmap,
+    const RetainPtr<CFX_DIBBase>& pMask,
     int left,
     int top,
     int bitmap_alpha,
@@ -2626,7 +2628,7 @@ bool CFX_DefaultRenderDevice::SetBitsWithMask(
 }
 #endif  // _SKIA_SUPPORT_
 
-void CFX_DIBSource::DebugVerifyBitmapIsPreMultiplied(void* opt) const {
+void CFX_DIBBase::DebugVerifyBitmapIsPreMultiplied(void* opt) const {
 #ifdef SK_DEBUG
   SkASSERT(32 == GetBPP());
   const uint32_t* buffer = (const uint32_t*)(opt ? opt : GetBuffer());

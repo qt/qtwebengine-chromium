@@ -75,10 +75,11 @@ CFX_RectF CFWL_Widget::GetWidgetRect() {
 }
 
 void CFWL_Widget::InflateWidgetRect(CFX_RectF& rect) {
-  if (HasBorder()) {
-    float fBorder = GetBorderSize(true);
-    rect.Inflate(fBorder, fBorder);
-  }
+  if (!HasBorder())
+    return;
+
+  float fBorder = GetCXBorderSize();
+  rect.Inflate(fBorder, fBorder);
 }
 
 void CFWL_Widget::SetWidgetRect(const CFX_RectF& rect) {
@@ -171,7 +172,7 @@ CFX_PointF CFWL_Widget::TransformTo(CFWL_Widget* pWidget,
   return point + CFX_PointF(szOffset.width, szOffset.height);
 }
 
-CFX_Matrix CFWL_Widget::GetMatrix() {
+CFX_Matrix CFWL_Widget::GetMatrix() const {
   if (!m_pProperties)
     return CFX_Matrix();
 
@@ -191,18 +192,14 @@ CFX_Matrix CFWL_Widget::GetMatrix() {
     if (parent->m_pProperties)
       ctmOnParent.SetIdentity();
     rect = parent->GetWidgetRect();
-    matrix.Concat(ctmOnParent, true);
-    matrix.Translate(rect.left, rect.top, true);
+    matrix.ConcatPrepend(ctmOnParent);
+    matrix.TranslatePrepend(rect.left, rect.top);
   }
   CFX_Matrix m;
   m.SetIdentity();
-  matrix.Concat(m, true);
+  matrix.ConcatPrepend(m);
   parents.clear();
   return matrix;
-}
-
-IFWL_ThemeProvider* CFWL_Widget::GetThemeProvider() const {
-  return m_pProperties->m_pThemeProvider;
 }
 
 void CFWL_Widget::SetThemeProvider(IFWL_ThemeProvider* pThemeProvider) {
@@ -234,34 +231,34 @@ bool CFWL_Widget::IsChild() const {
   return !!(m_pProperties->m_dwStyles & FWL_WGTSTYLE_Child);
 }
 
-CFX_RectF CFWL_Widget::GetEdgeRect() {
+CFX_RectF CFWL_Widget::GetEdgeRect() const {
   CFX_RectF rtEdge(0, 0, m_pProperties->m_rtWidget.width,
                    m_pProperties->m_rtWidget.height);
-  if (HasBorder()) {
-    float fCX = GetBorderSize(true);
-    float fCY = GetBorderSize(false);
-    rtEdge.Deflate(fCX, fCY);
-  }
+  if (HasBorder())
+    rtEdge.Deflate(GetCXBorderSize(), GetCYBorderSize());
   return rtEdge;
 }
 
-float CFWL_Widget::GetBorderSize(bool bCX) {
+float CFWL_Widget::GetCXBorderSize() const {
   IFWL_ThemeProvider* theme = GetAvailableTheme();
-  if (!theme)
-    return 0.0f;
-  return bCX ? theme->GetCXBorderSize() : theme->GetCYBorderSize();
+  return theme ? theme->GetCXBorderSize() : 0.0f;
 }
 
-CFX_RectF CFWL_Widget::GetRelativeRect() {
+float CFWL_Widget::GetCYBorderSize() const {
+  IFWL_ThemeProvider* theme = GetAvailableTheme();
+  return theme ? theme->GetCYBorderSize() : 0.0f;
+}
+
+CFX_RectF CFWL_Widget::GetRelativeRect() const {
   return CFX_RectF(0, 0, m_pProperties->m_rtWidget.width,
                    m_pProperties->m_rtWidget.height);
 }
 
-IFWL_ThemeProvider* CFWL_Widget::GetAvailableTheme() {
+IFWL_ThemeProvider* CFWL_Widget::GetAvailableTheme() const {
   if (m_pProperties->m_pThemeProvider)
-    return m_pProperties->m_pThemeProvider;
+    return m_pProperties->m_pThemeProvider.Get();
 
-  CFWL_Widget* pUp = this;
+  const CFWL_Widget* pUp = this;
   do {
     pUp = (pUp->GetStyles() & FWL_WGTSTYLE_Popup)
               ? m_pWidgetMgr->GetOwnerWidget(pUp)
@@ -386,7 +383,7 @@ void CFWL_Widget::DrawBackground(CXFA_Graphics* pGraphics,
   param.m_iPart = iPartBk;
   param.m_pGraphics = pGraphics;
   if (pMatrix)
-    param.m_matrix.Concat(*pMatrix, true);
+    param.m_matrix.ConcatPrepend(*pMatrix);
   param.m_rtPart = GetRelativeRect();
   pTheme->DrawBackground(&param);
 }
@@ -399,7 +396,7 @@ void CFWL_Widget::DrawBorder(CXFA_Graphics* pGraphics,
   param.m_pWidget = this;
   param.m_iPart = iPartBorder;
   param.m_pGraphics = pGraphics;
-  param.m_matrix.Concat(matrix, true);
+  param.m_matrix.ConcatPrepend(matrix);
   param.m_rtPart = GetRelativeRect();
   pTheme->DrawBackground(&param);
 }

@@ -23,6 +23,8 @@
 class GrPipeline;
 
 class GrVkBufferImpl;
+class GrVkGpuRTCommandBuffer;
+class GrVkGpuTextureCommandBuffer;
 class GrVkMemoryAllocator;
 class GrVkPipeline;
 class GrVkPipelineState;
@@ -77,8 +79,7 @@ public:
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
     void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
 
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType,
-                                                               GrSRGBEncoded) override;
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     void testingOnly_flushGpuAndSync() override;
@@ -90,12 +91,13 @@ public:
 
     void clearStencil(GrRenderTarget* target, int clearValue) override;
 
-    GrGpuRTCommandBuffer* createCommandBuffer(
+    GrGpuRTCommandBuffer* getCommandBuffer(
             GrRenderTarget*, GrSurfaceOrigin,
             const GrGpuRTCommandBuffer::LoadAndStoreInfo&,
             const GrGpuRTCommandBuffer::StencilLoadAndStoreInfo&) override;
 
-    GrGpuTextureCommandBuffer* createCommandBuffer(GrTexture*, GrSurfaceOrigin) override;
+    GrGpuTextureCommandBuffer* getCommandBuffer(GrTexture*, GrSurfaceOrigin) override;
+
 
     void addMemoryBarrier(VkPipelineStageFlags srcStageMask,
                           VkPipelineStageFlags dstStageMask,
@@ -126,6 +128,8 @@ public:
                                       GrVkRenderTarget*, GrSurfaceOrigin,
                                       const SkIRect& bounds);
 
+    void submit(GrGpuCommandBuffer*) override;
+
     GrFence SK_WARN_UNUSED_RESULT insertFence() override;
     bool waitFence(GrFence, uint64_t timeout) override;
     void deleteFence(GrFence) const override;
@@ -144,7 +148,7 @@ public:
     bool updateBuffer(GrVkBuffer* buffer, const void* src, VkDeviceSize offset, VkDeviceSize size);
 
 private:
-    GrVkGpu(GrContext*, const GrContextOptions&, const GrVkBackendContext& backendContext,
+    GrVkGpu(GrContext*, const GrContextOptions&, const GrVkBackendContext&,
             sk_sp<const GrVkInterface>);
 
     void onResetContext(uint32_t resetBits) override {}
@@ -252,6 +256,9 @@ private:
     // We need a bool to track whether or not we've already disconnected all the gpu resources from
     // vulkan context.
     bool                                   fDisconnected;
+
+    std::unique_ptr<GrVkGpuRTCommandBuffer>      fCachedRTCommandBuffer;
+    std::unique_ptr<GrVkGpuTextureCommandBuffer> fCachedTexCommandBuffer;
 
     typedef GrGpu INHERITED;
 };

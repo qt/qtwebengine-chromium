@@ -12,6 +12,7 @@
 
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "pc/webrtcsdp.h"
 #include "rtc_base/stringencode.h"
 
@@ -27,6 +28,14 @@ IceCandidateInterface* CreateIceCandidate(const std::string& sdp_mid,
     return NULL;
   }
   return jsep_ice;
+}
+
+std::unique_ptr<IceCandidateInterface> CreateIceCandidate(
+    const std::string& sdp_mid,
+    int sdp_mline_index,
+    const cricket::Candidate& candidate) {
+  return absl::make_unique<JsepIceCandidate>(sdp_mid, sdp_mline_index,
+                                             candidate);
 }
 
 JsepIceCandidate::JsepIceCandidate(const std::string& sdp_mid,
@@ -51,41 +60,6 @@ bool JsepIceCandidate::ToString(std::string* out) const {
     return false;
   *out = SdpSerializeCandidate(*this);
   return !out->empty();
-}
-
-JsepCandidateCollection::~JsepCandidateCollection() {
-  for (std::vector<JsepIceCandidate*>::iterator it = candidates_.begin();
-       it != candidates_.end(); ++it) {
-    delete *it;
-  }
-}
-
-bool JsepCandidateCollection::HasCandidate(
-    const IceCandidateInterface* candidate) const {
-  bool ret = false;
-  for (std::vector<JsepIceCandidate*>::const_iterator it = candidates_.begin();
-       it != candidates_.end(); ++it) {
-    if ((*it)->sdp_mid() == candidate->sdp_mid() &&
-        (*it)->sdp_mline_index() == candidate->sdp_mline_index() &&
-        (*it)->candidate().IsEquivalent(candidate->candidate())) {
-      ret = true;
-      break;
-    }
-  }
-  return ret;
-}
-
-size_t JsepCandidateCollection::remove(const cricket::Candidate& candidate) {
-  auto iter = std::find_if(candidates_.begin(), candidates_.end(),
-                           [candidate](JsepIceCandidate* c) {
-                             return candidate.MatchesForRemoval(c->candidate());
-                           });
-  if (iter != candidates_.end()) {
-    delete *iter;
-    candidates_.erase(iter);
-    return 1;
-  }
-  return 0;
 }
 
 }  // namespace webrtc

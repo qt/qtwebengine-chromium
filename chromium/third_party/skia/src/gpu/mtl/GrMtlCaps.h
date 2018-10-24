@@ -46,10 +46,19 @@ public:
         return fPreferedStencilFormat;
     }
 #endif
+    bool canCopyAsBlit(GrPixelConfig dstConfig, int dstSampleCount, GrSurfaceOrigin dstOrigin,
+                       GrPixelConfig srcConfig, int srcSampleCount, GrSurfaceOrigin srcOrigin,
+                       const SkIRect& srcRect, const SkIPoint& dstPoint,
+                       bool areDstSrcSameObj) const;
+
+    bool canCopyAsDraw(GrPixelConfig dstConfig, bool dstIsRenderable,
+                       GrPixelConfig srcConfig, bool srcIsTextureable) const;
+
+    bool canCopyAsDrawThenBlit(GrPixelConfig dstConfig, GrPixelConfig srcConfig,
+                               bool srcIsTextureable) const;
+
     bool canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                        const SkIRect& srcRect, const SkIPoint& dstPoint) const override {
-        return false;
-    }
+                        const SkIRect& srcRect, const SkIPoint& dstPoint) const override;
 
     bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc, GrSurfaceOrigin*,
                             bool* rectsMustMatch, bool* disallowSubrect) const override {
@@ -91,8 +100,9 @@ private:
             kMSAA_Flag        = 0x4,
             kResolve_Flag     = 0x8,
         };
+        // TODO: Put kMSAA_Flag back when MSAA is implemented
         static const uint16_t kAllFlags = kTextureable_Flag | kRenderable_Flag |
-                                          kMSAA_Flag | kResolve_Flag;
+                                          /*kMSAA_Flag |*/ kResolve_Flag;
 
         uint16_t fFlags;
     };

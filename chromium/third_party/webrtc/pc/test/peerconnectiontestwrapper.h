@@ -19,7 +19,7 @@
 #include "api/test/fakeconstraints.h"
 #include "pc/test/fakeaudiocapturemodule.h"
 #include "pc/test/fakevideotrackrenderer.h"
-#include "rtc_base/sigslot.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
 
 class PeerConnectionTestWrapper
     : public webrtc::PeerConnectionObserver,
@@ -35,7 +35,6 @@ class PeerConnectionTestWrapper
   virtual ~PeerConnectionTestWrapper();
 
   bool CreatePc(
-      const webrtc::MediaConstraintsInterface* constraints,
       const webrtc::PeerConnectionInterface::RTCConfiguration& config,
       rtc::scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory,
       rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory);
@@ -66,8 +65,10 @@ class PeerConnectionTestWrapper
   void OnSuccess(webrtc::SessionDescriptionInterface* desc) override;
   void OnFailure(webrtc::RTCError) override {}
 
-  void CreateOffer(const webrtc::MediaConstraintsInterface* constraints);
-  void CreateAnswer(const webrtc::MediaConstraintsInterface* constraints);
+  void CreateOffer(
+      const webrtc::PeerConnectionInterface::RTCOfferAnswerOptions& options);
+  void CreateAnswer(
+      const webrtc::PeerConnectionInterface::RTCOfferAnswerOptions& options);
   void ReceiveOfferSdp(const std::string& sdp);
   void ReceiveAnswerSdp(const std::string& sdp);
   void AddIceCandidate(const std::string& sdp_mid,

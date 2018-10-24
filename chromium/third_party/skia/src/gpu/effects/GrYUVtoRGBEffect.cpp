@@ -60,6 +60,19 @@ std::unique_ptr<GrFragmentProcessor> GrYUVtoRGBEffect::Make(sk_sp<GrTextureProxy
             std::move(yProxy), yTransform, std::move(uProxy), uTransform, std::move(vProxy),
             vTransform, mat, nv12, GrSamplerState(GrSamplerState::WrapMode::kClamp, uvFilterMode)));
 }
+
+SkString GrYUVtoRGBEffect::dumpInfo() const {
+    SkString str;
+    str.appendf("Y: %d %d U: %d %d V: %d %d\n",
+                fYSampler.proxy()->uniqueID().asUInt(),
+                fYSampler.proxy()->underlyingUniqueID().asUInt(),
+                fUSampler.proxy()->uniqueID().asUInt(),
+                fUSampler.proxy()->underlyingUniqueID().asUInt(),
+                fVSampler.proxy()->uniqueID().asUInt(),
+                fVSampler.proxy()->underlyingUniqueID().asUInt());
+
+    return str;
+}
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramBuilder.h"
@@ -158,13 +171,14 @@ GrYUVtoRGBEffect::GrYUVtoRGBEffect(const GrYUVtoRGBEffect& src)
         , fYSamplerCoordTransform(src.fYSamplerCoordTransform)
         , fUSamplerCoordTransform(src.fUSamplerCoordTransform)
         , fVSamplerCoordTransform(src.fVSamplerCoordTransform) {
-    this->addTextureSampler(&fYSampler);
-    this->addTextureSampler(&fUSampler);
-    this->addTextureSampler(&fVSampler);
+    this->setTextureSamplerCnt(3);
     this->addCoordTransform(&fYSamplerCoordTransform);
     this->addCoordTransform(&fUSamplerCoordTransform);
     this->addCoordTransform(&fVSamplerCoordTransform);
 }
 std::unique_ptr<GrFragmentProcessor> GrYUVtoRGBEffect::clone() const {
     return std::unique_ptr<GrFragmentProcessor>(new GrYUVtoRGBEffect(*this));
+}
+const GrFragmentProcessor::TextureSampler& GrYUVtoRGBEffect::onTextureSampler(int index) const {
+    return IthTextureSampler(index, fYSampler, fUSampler, fVSampler);
 }

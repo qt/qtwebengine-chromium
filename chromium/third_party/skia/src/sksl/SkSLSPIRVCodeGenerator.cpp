@@ -69,6 +69,7 @@ void SPIRVCodeGenerator::setupIntrinsics() {
     fIntrinsicMap[String("min")]           = SPECIAL(Min);
     fIntrinsicMap[String("max")]           = SPECIAL(Max);
     fIntrinsicMap[String("clamp")]         = SPECIAL(Clamp);
+    fIntrinsicMap[String("saturate")]      = SPECIAL(Saturate);
     fIntrinsicMap[String("dot")]           = std::make_tuple(kSPIRV_IntrinsicKind, SpvOpDot,
                                                              SpvOpUndef, SpvOpUndef, SpvOpUndef);
     fIntrinsicMap[String("mix")]           = SPECIAL(Mix);
@@ -942,6 +943,17 @@ SpvId SPIRVCodeGenerator::writeSpecialIntrinsic(const FunctionCall& c, SpecialIn
                                                SpvOpUndef, args, out);
             break;
         }
+        case kSaturate_SpecialIntrinsic: {
+            SkASSERT(c.fArguments.size() == 1);
+            std::vector<std::unique_ptr<Expression>> finalArgs;
+            finalArgs.push_back(c.fArguments[0]->clone());
+            finalArgs.emplace_back(new FloatLiteral(fContext, -1, 0));
+            finalArgs.emplace_back(new FloatLiteral(fContext, -1, 1));
+            std::vector<SpvId> spvArgs = this->vectorize(finalArgs, out);
+            this->writeGLSLExtendedInstruction(c.fType, result, GLSLstd450FClamp, GLSLstd450SClamp,
+                                               GLSLstd450UClamp, spvArgs, out);
+            break;
+        }
     }
     return result;
 }
@@ -1765,6 +1777,15 @@ SpvId SPIRVCodeGenerator::writeVariableReference(const VariableReference& ref, O
         this->writeWord(oneId, out);
         return flipped;
     }
+    if (ref.fVariable.fModifiers.fLayout.fBuiltin == SK_CLOCKWISE_BUILTIN &&
+        !fProgram.fSettings.fFlipY) {
+        // FrontFacing in Vulkan is defined in terms of a top-down render target. In skia, we use
+        // the default convention of "counter-clockwise face is front".
+        SpvId inverse = this->nextId();
+        this->writeInstruction(SpvOpLogicalNot, this->getType(*fContext.fBool_Type), inverse,
+                               result, out);
+        return inverse;
+    }
     return result;
 }
 
@@ -2278,7 +2299,7 @@ SpvId SPIRVCodeGenerator::writeLogicalOr(const BinaryExpression& o, OutputStream
 
 SpvId SPIRVCodeGenerator::writeTernaryExpression(const TernaryExpression& t, OutputStream& out) {
     SpvId test = this->writeExpression(*t.fTest, out);
-    if (t.fIfTrue->isConstant() && t.fIfFalse->isConstant()) {
+    if (t.fIfTrue->fType.columns() == 1 && t.fIfTrue->isConstant() && t.fIfFalse->isConstant()) {
         // both true and false are constants, can just use OpSelect
         SpvId result = this->nextId();
         SpvId trueId = this->writeExpression(*t.fIfTrue, out);
@@ -2311,10 +2332,10 @@ SpvId SPIRVCodeGenerator::writeTernaryExpression(const TernaryExpression& t, Out
 
 std::unique_ptr<Expression> create_literal_1(const Context& context, const Type& type) {
     if (type.isInteger()) {
-        return std::unique_ptr<Expression>(new IntLiteral(context, -1, 1, &type));
+        return std::unique_ptr<Expression>(new IntLiteral(-1, 1, &type));
     }
     else if (type.isFloat()) {
-        return std::unique_ptr<Expression>(new FloatLiteral(context, -1, 1.0, &type));
+        return std::unique_ptr<Expression>(new FloatLiteral(-1, 1.0, &type));
     } else {
         ABORT("math is unsupported on type '%s'", type.name().c_str());
     }

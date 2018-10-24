@@ -19,6 +19,7 @@ public:
                                                      sk_sp<GrTextureProxy> uProxy,
                                                      sk_sp<GrTextureProxy> vProxy,
                                                      SkYUVColorSpace colorSpace, bool nv12);
+    SkString dumpInfo() const override;
     SkMatrix44 ySamplerTransform() const { return fYSamplerTransform; }
     SkMatrix44 uSamplerTransform() const { return fUSamplerTransform; }
     SkMatrix44 vSamplerTransform() const { return fVSamplerTransform; }
@@ -54,9 +55,7 @@ private:
             , fYSamplerCoordTransform(ySamplerTransform, fYSampler.proxy())
             , fUSamplerCoordTransform(uSamplerTransform, fUSampler.proxy())
             , fVSamplerCoordTransform(vSamplerTransform, fVSampler.proxy()) {
-        this->addTextureSampler(&fYSampler);
-        this->addTextureSampler(&fUSampler);
-        this->addTextureSampler(&fVSampler);
+        this->setTextureSamplerCnt(3);
         this->addCoordTransform(&fYSamplerCoordTransform);
         this->addCoordTransform(&fUSamplerCoordTransform);
         this->addCoordTransform(&fVSamplerCoordTransform);
@@ -64,6 +63,7 @@ private:
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
+    const TextureSampler& onTextureSampler(int) const override;
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     TextureSampler fYSampler;
     SkMatrix44 fYSamplerTransform;

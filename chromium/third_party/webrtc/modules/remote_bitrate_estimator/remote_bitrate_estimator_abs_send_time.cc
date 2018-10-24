@@ -20,7 +20,6 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/metrics.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -57,6 +56,9 @@ uint32_t ConvertMsTo24Bits(int64_t time_ms) {
       0x00FFFFFF;
   return time_24_bits;
 }
+
+RemoteBitrateEstimatorAbsSendTime::~RemoteBitrateEstimatorAbsSendTime() =
+    default;
 
 bool RemoteBitrateEstimatorAbsSendTime::IsWithinClusterBounds(
     int send_delta_ms,

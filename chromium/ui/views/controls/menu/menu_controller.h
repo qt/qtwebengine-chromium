@@ -28,6 +28,7 @@
 
 #if defined(OS_MACOSX)
 #include "ui/views/controls/menu/menu_closure_animation_mac.h"
+#include "ui/views/controls/menu/menu_cocoa_watcher_mac.h"
 #endif
 
 namespace ui {
@@ -38,14 +39,11 @@ namespace views {
 class MenuButton;
 class MenuHostRootView;
 class MenuItemView;
+class MenuPreTargetHandler;
 class MouseEvent;
 class SubmenuView;
 class View;
 class ViewTracker;
-
-#if defined(USE_AURA)
-class MenuPreTargetHandler;
-#endif
 
 namespace internal {
 class MenuControllerDelegate;
@@ -582,6 +580,12 @@ class VIEWS_EXPORT MenuController
   // Updates the current |hot_button_| and its hot tracked state.
   void SetHotTrackedButton(Button* hot_button);
 
+  // Returns whether typing a new character will continue the existing prefix
+  // selection. If this returns false, typing a new character will start a new
+  // prefix selection, and some characters (such as Space) will be treated as
+  // commands instead of parts of the prefix.
+  bool ShouldContinuePrefixSelection() const;
+
   // The active instance.
   static MenuController* active_instance_;
 
@@ -727,11 +731,10 @@ class VIEWS_EXPORT MenuController
 
 #if defined(OS_MACOSX)
   std::unique_ptr<MenuClosureAnimationMac> menu_closure_animation_;
+  std::unique_ptr<MenuCocoaWatcherMac> menu_cocoa_watcher_;
 #endif
 
-#if defined(USE_AURA)
   std::unique_ptr<MenuPreTargetHandler> menu_pre_target_handler_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(MenuController);
 };

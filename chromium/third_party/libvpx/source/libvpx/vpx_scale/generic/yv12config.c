@@ -142,6 +142,10 @@ int vpx_realloc_frame_buffer(YV12_BUFFER_CONFIG *ybf, int width, int height,
                              int border, int byte_alignment,
                              vpx_codec_frame_buffer_t *fb,
                              vpx_get_frame_buffer_cb_fn_t cb, void *cb_priv) {
+#if CONFIG_SIZE_LIMIT
+  if (width > DECODE_WIDTH_LIMIT || height > DECODE_HEIGHT_LIMIT) return -1;
+#endif
+
   if (ybf) {
     const int vp9_byte_align = (byte_alignment == 0) ? 1 : byte_alignment;
     const int aligned_width = (width + 7) & ~7;

@@ -23,7 +23,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/ptr_util.h"
 #include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/timeutils.h"
@@ -518,7 +517,7 @@ int32_t MediaCodecVideoDecoder::DecodeOnCodecThread(
   bool success = Java_MediaCodecVideoDecoder_queueInputBuffer(
       jni, j_media_codec_video_decoder_, j_input_buffer_index,
       static_cast<int>(inputImage._length), presentation_timestamp_us,
-      static_cast<int64_t>(inputImage._timeStamp), inputImage.ntp_time_ms_);
+      static_cast<int64_t>(inputImage.Timestamp()), inputImage.ntp_time_ms_);
   if (CheckException(jni) || !success) {
     ALOGE << "queueInputBuffer error";
     return ProcessHWErrorOnCodecThread();

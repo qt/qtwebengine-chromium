@@ -12,13 +12,13 @@
 
 class CXFA_EventParam;
 
-class CXFA_FFComboBox : public CXFA_FFDropDown {
+class CXFA_FFComboBox final : public CXFA_FFDropDown {
  public:
   explicit CXFA_FFComboBox(CXFA_Node* pNode);
   ~CXFA_FFComboBox() override;
 
   // CXFA_FFField
-  CFX_RectF GetBBox(uint32_t dwStatus, bool bDrawFocus = false) override;
+  CFX_RectF GetBBox(uint32_t dwStatus, FocusOption focus) override;
   bool LoadWidget() override;
   void UpdateWidgetProperty() override;
   bool OnRButtonUp(uint32_t dwFlags, const CFX_PointF& point) override;

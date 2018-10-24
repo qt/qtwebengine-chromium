@@ -59,12 +59,13 @@
 #include "SkReadBuffer.h"
 #include "SkTableColorFilter.h"
 #include "SkTextBlob.h"
+#include "SkTextOnPath.h"
 #include "SkTileImageFilter.h"
 #include "SkXfermodeImageFilter.h"
 
 // SRC
 #include "SkCommandLineFlags.h"
-#include "SkUtils.h"
+#include "SkUTF.h"
 
 #if SK_SUPPORT_GPU
 #include "GrContextFactory.h"
@@ -507,17 +508,8 @@ static sk_sp<SkMaskFilter> make_fuzz_maskfilter(Fuzz* fuzz) {
             fuzz_enum_range(fuzz, &blurStyle, 0, kLastEnum_SkBlurStyle);
             SkScalar sigma;
             fuzz->next(&sigma);
-            SkRect occluder{0.0f, 0.0f, 0.0f, 0.0f};
-            bool useOccluder;
-            fuzz->next(&useOccluder);
-            if (useOccluder) {
-                fuzz->next(&occluder);
-            }
             bool respectCTM;
             fuzz->next(&respectCTM);
-            if (useOccluder) {
-                return SkMaskFilter::MakeBlur(blurStyle, sigma, occluder, respectCTM);
-            }
             return SkMaskFilter::MakeBlur(blurStyle, sigma, respectCTM);
         }
         default:
@@ -1020,21 +1012,21 @@ static SkTDArray<uint8_t> make_fuzz_text(Fuzz* fuzz, const SkPaint& paint) {
         case SkPaint::kUTF8_TextEncoding: {
             size_t utf8len = 0;
             for (int j = 0; j < length; ++j) {
-                utf8len += SkUTF8_FromUnichar(buffer[j], nullptr);
+                utf8len += SkUTF::ToUTF8(buffer[j], nullptr);
             }
             char* ptr = (char*)array.append(utf8len);
             for (int j = 0; j < length; ++j) {
-                ptr += SkUTF8_FromUnichar(buffer[j], ptr);
+                ptr += SkUTF::ToUTF8(buffer[j], ptr);
             }
         } break;
         case SkPaint::kUTF16_TextEncoding: {
             size_t utf16len = 0;
             for (int j = 0; j < length; ++j) {
-                utf16len += SkUTF16_FromUnichar(buffer[j]);
+                utf16len += SkUTF::ToUTF16(buffer[j]);
             }
             uint16_t* ptr = (uint16_t*)array.append(utf16len * sizeof(uint16_t));
             for (int j = 0; j < length; ++j) {
-                ptr += SkUTF16_FromUnichar(buffer[j], ptr);
+                ptr += SkUTF::ToUTF16(buffer[j], ptr);
             }
         } break;
         case SkPaint::kUTF32_TextEncoding:
@@ -1605,8 +1597,8 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
                 FuzzPath(fuzz, &path, 20);
                 SkScalar hOffset, vOffset;
                 fuzz->next(&hOffset, &vOffset);
-                canvas->drawTextOnPathHV(text.begin(), SkToSizeT(text.count()), path, hOffset,
-                                         vOffset, paint);
+                SkDrawTextOnPathHV(text.begin(), SkToSizeT(text.count()), paint, path, hOffset,
+                                   vOffset, canvas);
                 break;
             }
             case 49: {
@@ -1621,8 +1613,8 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
                 SkTDArray<uint8_t> text = make_fuzz_text(fuzz, paint);
                 SkPath path;
                 FuzzPath(fuzz, &path, 20);
-                canvas->drawTextOnPath(text.begin(), SkToSizeT(text.count()), path,
-                                       useMatrix ? &matrix : nullptr, paint);
+                SkDrawTextOnPath(text.begin(), SkToSizeT(text.count()), paint, path,
+                                 useMatrix ? &matrix :nullptr, canvas);
                 break;
             }
             case 50: {

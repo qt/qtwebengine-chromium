@@ -177,6 +177,26 @@ public:
         return false;
     }
 
+    bool addAndTrueToLoopCondition() const {
+        return false;
+    }
+
+    bool unfoldShortCircuitAsTernary() const {
+        return false;
+    }
+
+    bool emulateAbsIntFunction() const {
+        return false;
+    }
+
+    bool rewriteDoWhileLoops() const {
+        return false;
+    }
+
+    bool removePowWithConstantExponent() const {
+        return false;
+    }
+
     const char* fbFetchColorName() const {
         return nullptr;
     }
@@ -318,6 +338,41 @@ public:
         result->fVersionDeclString = "#version 310es";
         result->fUsesPrecisionModifiers = true;
         result->fIncompleteShortIntPrecision = true;
+        return result;
+    }
+
+    static sk_sp<GrShaderCaps> AddAndTrueToLoopCondition() {
+        sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
+        result->fVersionDeclString = "#version 400";
+        result->fAddAndTrueToLoopCondition = true;
+        return result;
+    }
+
+    static sk_sp<GrShaderCaps> UnfoldShortCircuitAsTernary() {
+        sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
+        result->fVersionDeclString = "#version 400";
+        result->fUnfoldShortCircuitAsTernary = true;
+        return result;
+    }
+
+    static sk_sp<GrShaderCaps> EmulateAbsIntFunction() {
+        sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
+        result->fVersionDeclString = "#version 400";
+        result->fEmulateAbsIntFunction = true;
+        return result;
+    }
+
+    static sk_sp<GrShaderCaps> RewriteDoWhileLoops() {
+        sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
+        result->fVersionDeclString = "#version 400";
+        result->fRewriteDoWhileLoops = true;
+        return result;
+    }
+
+    static sk_sp<GrShaderCaps> RemovePowWithConstantExponent() {
+        sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
+        result->fVersionDeclString = "#version 400";
+        result->fRemovePowWithConstantExponent = true;
         return result;
     }
 };

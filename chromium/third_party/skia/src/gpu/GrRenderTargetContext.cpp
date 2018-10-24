@@ -27,6 +27,7 @@
 #include "GrStyle.h"
 #include "GrTracing.h"
 #include "SkDrawShadowInfo.h"
+#include "SkGlyphRun.h"
 #include "SkGr.h"
 #include "SkLatticeIter.h"
 #include "SkMatrixPriv.h"
@@ -51,25 +52,26 @@
 #include "ops/GrStencilPathOp.h"
 #include "ops/GrTextureOp.h"
 #include "text/GrTextContext.h"
-#include "text/GrTextUtils.h"
+#include "text/GrTextTarget.h"
 
-class GrRenderTargetContext::TextTarget : public GrTextUtils::Target {
+
+
+class GrRenderTargetContext::TextTarget : public GrTextTarget {
 public:
     TextTarget(GrRenderTargetContext* renderTargetContext)
-            : Target(renderTargetContext->width(), renderTargetContext->height(),
+            : GrTextTarget(renderTargetContext->width(), renderTargetContext->height(),
                      renderTargetContext->colorSpaceInfo())
-            , fRenderTargetContext(renderTargetContext) {}
+            , fRenderTargetContext(renderTargetContext)
+            , fGlyphPainter{*renderTargetContext}{}
 
     void addDrawOp(const GrClip& clip, std::unique_ptr<GrAtlasTextOp> op) override {
         fRenderTargetContext->addDrawOp(clip, std::move(op));
     }
 
-    void drawPath(const GrClip& clip, const SkPath& path, const SkPaint& paint,
-                  const SkMatrix& viewMatrix, const SkMatrix* pathMatrix,
-                  const SkIRect& clipBounds) override {
-        GrBlurUtils::drawPathWithMaskFilter(fRenderTargetContext->fContext, fRenderTargetContext,
-                                            clip, path, paint, viewMatrix, pathMatrix, clipBounds,
-                                            false);
+    void drawShape(const GrClip& clip, const SkPaint& paint,
+                  const SkMatrix& viewMatrix, const GrShape& shape) override {
+        GrBlurUtils::drawShapeWithMaskFilter(fRenderTargetContext->fContext, fRenderTargetContext,
+                                             clip, paint, viewMatrix, shape);
     }
 
     void makeGrPaint(GrMaskFormat maskFormat, const SkPaint& skPaint, const SkMatrix& viewMatrix,
@@ -87,8 +89,14 @@ public:
         return fRenderTargetContext->fContext;
     }
 
+    SkGlyphRunListPainter* glyphPainter() override {
+        return &fGlyphPainter;
+    }
+
 private:
     GrRenderTargetContext* fRenderTargetContext;
+    SkGlyphRunListPainter fGlyphPainter;
+
 };
 
 #define ASSERT_OWNED_RESOURCE(R) SkASSERT(!(R) || (R)->getContext() == this->drawingManager()->getContext())
@@ -223,33 +231,17 @@ GrOpList* GrRenderTargetContext::getOpList() {
     return this->getRTOpList();
 }
 
-void GrRenderTargetContext::drawPosText(const GrClip& clip, const SkPaint& paint,
-                                        const SkMatrix& viewMatrix, const char text[],
-                                        size_t byteLength, const SkScalar pos[],
-                                        int scalarsPerPosition, const SkPoint& offset,
-                                        const SkIRect& clipBounds) {
+void GrRenderTargetContext::drawGlyphRunList(
+        const GrClip& clip, const SkMatrix& viewMatrix,
+        const SkGlyphRunList& blob) {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawPosText", fContext);
+    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawGlyphRunList", fContext);
 
     GrTextContext* atlasTextContext = this->drawingManager()->getTextContext();
-    atlasTextContext->drawPosText(fContext, fTextTarget.get(), clip, paint, viewMatrix,
-                                  fSurfaceProps, text, byteLength, pos, scalarsPerPosition, offset,
-                                  clipBounds);
-}
-
-void GrRenderTargetContext::drawTextBlob(const GrClip& clip, const SkPaint& paint,
-                                         const SkMatrix& viewMatrix, const SkTextBlob* blob,
-                                         SkScalar x, SkScalar y, const SkIRect& clipBounds) {
-    ASSERT_SINGLE_OWNER
-    RETURN_IF_ABANDONED
-    SkDEBUGCODE(this->validate();)
-    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawTextBlob", fContext);
-
-    GrTextContext* atlasTextContext = this->drawingManager()->getTextContext();
-    atlasTextContext->drawTextBlob(fContext, fTextTarget.get(), clip, paint, viewMatrix,
-                                   fSurfaceProps, blob, x, y, clipBounds);
+    atlasTextContext->drawGlyphRunList(fContext, fTextTarget.get(), clip, viewMatrix,
+                                       fSurfaceProps, blob);
 }
 
 void GrRenderTargetContext::discard() {
@@ -494,12 +486,12 @@ void GrRenderTargetContext::drawRect(const GrClip& clip,
     AutoCheckFlush acf(this->drawingManager());
 
     const SkStrokeRec& stroke = style->strokeRec();
-    if (stroke.getStyle() == SkStrokeRec::kFill_Style && !paint.numCoverageFragmentProcessors()) {
+    if (stroke.getStyle() == SkStrokeRec::kFill_Style) {
         // Check if this is a full RT draw and can be replaced with a clear. We don't bother
         // checking cases where the RT is fully inside a stroke.
         SkRect rtRect = fRenderTargetProxy->getBoundsRect();
         // Does the clip contain the entire RT?
-        if (clip.quickContains(rtRect)) {
+        if (clip.quickContains(rtRect) && !paint.numCoverageFragmentProcessors()) {
             SkMatrix invM;
             if (!viewMatrix.invert(&invM)) {
                 return;
@@ -764,7 +756,8 @@ void GrRenderTargetContext::drawTexture(const GrClip& clip, sk_sp<GrTextureProxy
                                         const SkRect& srcRect, const SkRect& dstRect, GrAA aa,
                                         SkCanvas::SrcRectConstraint constraint,
                                         const SkMatrix& viewMatrix,
-                                        sk_sp<GrColorSpaceXform> colorSpaceXform) {
+                                        sk_sp<GrColorSpaceXform> textureColorSpaceXform,
+                                        sk_sp<GrColorSpaceXform> paintColorSpaceXform) {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
@@ -790,7 +783,8 @@ void GrRenderTargetContext::drawTexture(const GrClip& clip, sk_sp<GrTextureProxy
     }
     this->addDrawOp(clip, GrTextureOp::Make(fContext, std::move(proxy), filter, color,
                                             clippedSrcRect, clippedDstRect, aaType, constraint,
-                                            viewMatrix, std::move(colorSpaceXform)));
+                                            viewMatrix, std::move(textureColorSpaceXform),
+                                            std::move(paintColorSpaceXform)));
 }
 
 void GrRenderTargetContext::fillRectWithLocalMatrix(const GrClip& clip,
@@ -845,7 +839,7 @@ void GrRenderTargetContext::drawVertices(const GrClip& clip,
                                          GrPaint&& paint,
                                          const SkMatrix& viewMatrix,
                                          sk_sp<SkVertices> vertices,
-                                         const SkMatrix bones[],
+                                         const SkVertices::Bone bones[],
                                          int boneCount,
                                          GrPrimitiveType* overridePrimType) {
     ASSERT_SINGLE_OWNER
@@ -1288,6 +1282,8 @@ void GrRenderTargetContext::drawRegion(const GrClip& clip,
     if (complexStyle || GrAA::kYes == aa) {
         SkPath path;
         region.getBoundaryPath(&path);
+        path.setIsVolatile(true);
+
         return this->drawPath(clip, std::move(paint), aa, viewMatrix, path, style);
     }
 
@@ -1439,53 +1435,6 @@ void GrRenderTargetContext::insertEventMarker(const SkString& str) {
     this->getRTOpList()->addOp(std::move(op), *this->caps());
 }
 
-
-// Can 'path' be drawn as a pair of filled nested rectangles?
-static bool fills_as_nested_rects(const SkMatrix& viewMatrix, const SkPath& path, SkRect rects[2]) {
-
-    if (path.isInverseFillType()) {
-        return false;
-    }
-
-    // TODO: this restriction could be lifted if we were willing to apply
-    // the matrix to all the points individually rather than just to the rect
-    if (!viewMatrix.rectStaysRect()) {
-        return false;
-    }
-
-    SkPath::Direction dirs[2];
-    if (!path.isNestedFillRects(rects, dirs)) {
-        return false;
-    }
-
-    if (SkPath::kWinding_FillType == path.getFillType() && dirs[0] == dirs[1]) {
-        // The two rects need to be wound opposite to each other
-        return false;
-    }
-
-    // Right now, nested rects where the margin is not the same width
-    // all around do not render correctly
-    const SkScalar* outer = rects[0].asScalars();
-    const SkScalar* inner = rects[1].asScalars();
-
-    bool allEq = true;
-
-    SkScalar margin = SkScalarAbs(outer[0] - inner[0]);
-    bool allGoE1 = margin >= SK_Scalar1;
-
-    for (int i = 1; i < 4; ++i) {
-        SkScalar temp = SkScalarAbs(outer[i] - inner[i]);
-        if (temp < SK_Scalar1) {
-            allGoE1 = false;
-        }
-        if (!SkScalarNearlyEqual(margin, temp)) {
-            allEq = false;
-        }
-    }
-
-    return allEq || allGoE1;
-}
-
 void GrRenderTargetContext::drawPath(const GrClip& clip,
                                      GrPaint&& paint,
                                      GrAA aa,
@@ -1495,9 +1444,23 @@ void GrRenderTargetContext::drawPath(const GrClip& clip,
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-            GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContextPriv", "drawPath", fContext);
+    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawPath", fContext);
 
     GrShape shape(path, style);
+
+    this->drawShape(clip, std::move(paint), aa, viewMatrix, shape);
+}
+
+void GrRenderTargetContext::drawShape(const GrClip& clip,
+                                      GrPaint&& paint,
+                                      GrAA aa,
+                                      const SkMatrix& viewMatrix,
+                                      const GrShape& shape) {
+    ASSERT_SINGLE_OWNER
+    RETURN_IF_ABANDONED
+    SkDEBUGCODE(this->validate();)
+    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawShape", fContext);
+
     if (shape.isEmpty()) {
         if (shape.inverseFilled()) {
             this->drawPaint(clip, std::move(paint), viewMatrix);
@@ -1508,6 +1471,7 @@ void GrRenderTargetContext::drawPath(const GrClip& clip,
     AutoCheckFlush acf(this->drawingManager());
 
     if (!shape.style().hasPathEffect()) {
+        GrAAType aaType = this->chooseAAType(aa, GrAllowMixedSamples::kNo);
         SkRRect rrect;
         // We can ignore the starting point and direction since there is no path effect.
         bool inverted;
@@ -1522,28 +1486,24 @@ void GrRenderTargetContext::drawPath(const GrClip& clip,
             }
             this->drawRRect(clip, std::move(paint), aa, viewMatrix, rrect, shape.style());
             return;
-        }
-    }
-
-    GrAAType aaType = this->chooseAAType(aa, GrAllowMixedSamples::kNo);
-    if (GrAAType::kCoverage == aaType) {
-        // TODO: Make GrShape check for nested rects.
-        SkRect rects[2];
-        if (shape.style().isSimpleFill() && fills_as_nested_rects(viewMatrix, path, rects)) {
-            // Concave AA paths are expensive - try to avoid them for special cases
+        } else if (GrAAType::kCoverage == aaType && shape.style().isSimpleFill() &&
+                   viewMatrix.rectStaysRect()) {
+            // TODO: the rectStaysRect restriction could be lifted if we were willing to apply
+            // the matrix to all the points individually rather than just to the rect
             SkRect rects[2];
-
-            if (fills_as_nested_rects(viewMatrix, path, rects)) {
+            if (shape.asNestedRects(rects)) {
+                // Concave AA paths are expensive - try to avoid them for special cases
                 std::unique_ptr<GrDrawOp> op = GrRectOpFactory::MakeAAFillNestedRects(
                                 fContext, std::move(paint), viewMatrix, rects);
                 if (op) {
                     this->addDrawOp(clip, std::move(op));
                 }
-                // A null return indicates that there is nothing to draw in this case.
+                // Returning here indicates that there is nothing to draw in this case.
                 return;
             }
         }
     }
+
     this->drawShapeUsingPathRenderer(clip, std::move(paint), aa, viewMatrix, shape);
 }
 

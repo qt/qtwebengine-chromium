@@ -81,11 +81,6 @@ public:
                         const SkScalar xpos[],
                         SkScalar constY,
                         const SkPaint& paint) override;
-    void onDrawTextOnPath(const void* text,
-                          size_t byteLength,
-                          const SkPath& path,
-                          const SkMatrix* matrix,
-                          const SkPaint& paint) override;
     void onDrawTextRSXform(const void* text,
                            size_t byteLength,
                            const SkRSXform[],
@@ -121,8 +116,8 @@ public:
                             const SkPaint*) override;
     void onDrawBitmapLattice(const SkBitmap&, const Lattice& lattice, const SkRect& dst,
                              const SkPaint*) override;
-    void onDrawVerticesObject(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
-                              const SkPaint&) override;
+    void onDrawVerticesObject(const SkVertices*, const SkVertices::Bone bones[], int boneCount,
+                              SkBlendMode, const SkPaint&) override;
     void onDrawAtlas(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[],
                      int count, SkBlendMode, const SkRect* cull, const SkPaint*) override;
     void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&) override;

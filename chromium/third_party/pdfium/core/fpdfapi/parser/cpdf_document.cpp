@@ -26,7 +26,7 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fpdfapi/render/cpdf_dibsource.h"
+#include "core/fpdfapi/render/cpdf_dibbase.h"
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 #include "core/fxcodec/JBig2_DocumentContext.h"
 #include "core/fxcrt/fx_codepage.h"
@@ -196,22 +196,15 @@ std::unique_ptr<CPDF_Object> CPDF_Document::ParseIndirectObject(
   return m_pParser ? m_pParser->ParseIndirectObject(objnum) : nullptr;
 }
 
-void CPDF_Document::LoadDocInternal() {
+bool CPDF_Document::TryInit() {
   SetLastObjNum(m_pParser->GetLastObjNum());
 
   CPDF_Object* pRootObj = GetOrParseIndirectObject(m_pParser->GetRootObjNum());
-  if (!pRootObj)
-    return;
+  if (pRootObj)
+    m_pRootDict = pRootObj->GetDict();
 
-  m_pRootDict = pRootObj->GetDict();
-  if (!m_pRootDict)
-    return;
-}
-
-bool CPDF_Document::TryInit() {
-  LoadDocInternal();
   LoadPages();
-  return GetRoot() && (GetPageCount() > 0);
+  return GetRoot() && GetPageCount() > 0;
 }
 
 CPDF_Parser::Error CPDF_Document::LoadDoc(
@@ -434,7 +427,7 @@ int CPDF_Document::GetPageIndex(uint32_t objnum) {
     return -1;
 
   int start_index = 0;
-  int found_index = FindPageIndex(pPages, &skip_count, objnum, &start_index);
+  int found_index = FindPageIndex(pPages, &skip_count, objnum, &start_index, 0);
 
   // Corrupt page tree may yield out-of-range results.
   if (!pdfium::IndexInBounds(m_PageList, found_index))
@@ -663,7 +656,6 @@ size_t CPDF_Document::CalculateEncodingDict(int charset,
 CPDF_Dictionary* CPDF_Document::ProcessbCJK(
     CPDF_Dictionary* pBaseDict,
     int charset,
-    bool bVert,
     ByteString basefont,
     std::function<void(wchar_t, wchar_t, CPDF_Array*)> Insert) {
   CPDF_Dictionary* pFontDict = NewIndirect<CPDF_Dictionary>();
@@ -673,14 +665,14 @@ CPDF_Dictionary* CPDF_Document::ProcessbCJK(
   CPDF_Array* pWidthArray = pFontDict->SetNewFor<CPDF_Array>("W");
   switch (charset) {
     case FX_CHARSET_ChineseTraditional:
-      cmap = bVert ? "ETenms-B5-V" : "ETenms-B5-H";
+      cmap = "ETenms-B5-H";
       ordering = "CNS1";
       supplement = 4;
       pWidthArray->AddNew<CPDF_Number>(1);
       Insert(0x20, 0x7e, pWidthArray);
       break;
     case FX_CHARSET_ChineseSimplified:
-      cmap = bVert ? "GBK-EUC-V" : "GBK-EUC-H";
+      cmap = "GBK-EUC-H";
       ordering = "GB1";
       supplement = 2;
       pWidthArray->AddNew<CPDF_Number>(7716);
@@ -689,14 +681,14 @@ CPDF_Dictionary* CPDF_Document::ProcessbCJK(
       Insert(0x21, 0x7e, pWidthArray);
       break;
     case FX_CHARSET_Hangul:
-      cmap = bVert ? "KSCms-UHC-V" : "KSCms-UHC-H";
+      cmap = "KSCms-UHC-H";
       ordering = "Korea1";
       supplement = 2;
       pWidthArray->AddNew<CPDF_Number>(1);
       Insert(0x20, 0x7e, pWidthArray);
       break;
     case FX_CHARSET_ShiftJIS:
-      cmap = bVert ? "90ms-RKSJ-V" : "90ms-RKSJ-H";
+      cmap = "90ms-RKSJ-H";
       ordering = "Japan1";
       supplement = 5;
       pWidthArray->AddNew<CPDF_Number>(231);
@@ -727,7 +719,7 @@ CPDF_Dictionary* CPDF_Document::ProcessbCJK(
   return pFontDict;
 }
 
-CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset, bool bVert) {
+CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset) {
   if (!pFont)
     return nullptr;
 
@@ -772,7 +764,7 @@ CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset, bool bVert) {
                    std::move(pWidths));
   } else {
     pFontDict = ProcessbCJK(
-        pBaseDict, charset, bVert, basefont,
+        pBaseDict, charset, basefont,
         [pFont, &pEncoding](wchar_t start, wchar_t end, CPDF_Array* widthArr) {
           InsertWidthArray1(pFont, pEncoding.get(), start, end, widthArr);
         });
@@ -809,23 +801,7 @@ CPDF_Font* CPDF_Document::AddFont(CFX_Font* pFont, int charset, bool bVert) {
 }
 
 #if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-CPDF_Font* CPDF_Document::AddWindowsFont(LOGFONTW* pLogFont,
-                                         bool bVert,
-                                         bool bTranslateName) {
-  LOGFONTA lfa;
-  memcpy(&lfa, pLogFont, (char*)lfa.lfFaceName - (char*)&lfa);
-  ByteString face = ByteString::FromUnicode(pLogFont->lfFaceName);
-  if (face.GetLength() >= LF_FACESIZE)
-    return nullptr;
-
-  strncpy(lfa.lfFaceName, face.c_str(),
-          (face.GetLength() + 1) * sizeof(ByteString::CharType));
-  return AddWindowsFont(&lfa, bVert, bTranslateName);
-}
-
-CPDF_Font* CPDF_Document::AddWindowsFont(LOGFONTA* pLogFont,
-                                         bool bVert,
-                                         bool bTranslateName) {
+CPDF_Font* CPDF_Document::AddWindowsFont(LOGFONTA* pLogFont) {
   pLogFont->lfHeight = -1000;
   pLogFont->lfWidth = 0;
   HGDIOBJ hFont = CreateFontIndirectA(pLogFont);
@@ -850,7 +826,7 @@ CPDF_Font* CPDF_Document::AddWindowsFont(LOGFONTA* pLogFont,
 
   const bool bCJK = FX_CharSetIsCJK(pLogFont->lfCharSet);
   ByteString basefont;
-  if (bTranslateName && bCJK)
+  if (bCJK)
     basefont = FPDF_GetPSNameFromTT(hDC);
 
   if (basefont.IsEmpty())
@@ -884,7 +860,7 @@ CPDF_Font* CPDF_Document::AddWindowsFont(LOGFONTA* pLogFont,
                    pLogFont->lfItalic != 0, basefont, std::move(pWidths));
   } else {
     pFontDict =
-        ProcessbCJK(pBaseDict, pLogFont->lfCharSet, bVert, basefont,
+        ProcessbCJK(pBaseDict, pLogFont->lfCharSet, basefont,
                     [&hDC](wchar_t start, wchar_t end, CPDF_Array* widthArr) {
                       InsertWidthArray(hDC, start, end, widthArr);
                     });

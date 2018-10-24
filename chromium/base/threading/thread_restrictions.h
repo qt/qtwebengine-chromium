@@ -20,7 +20,12 @@ class AwFormDatabaseService;
 class CookieManager;
 class ScopedAllowInitGLBindings;
 }
-
+namespace audio {
+class OutputDevice;
+}
+namespace blink {
+class VideoFrameResourceProvider;
+}
 namespace cc {
 class CompletionEvent;
 class SingleThreadTaskGraphRunner;
@@ -36,7 +41,6 @@ class Predictor;
 }
 namespace content {
 class BrowserGpuChannelHostFactory;
-class BrowserGpuMemoryBufferManager;
 class BrowserMainLoop;
 class BrowserProcessSubThread;
 class BrowserShutdownProfileDumper;
@@ -117,16 +121,12 @@ namespace service_manager {
 class ServiceProcessLauncher;
 }
 
-namespace shell_integration {
+namespace shell_integration_linux {
 class LaunchXdgUtilityScopedAllowBaseSyncPrimitives;
 }
 
 namespace ui {
 class WindowResizeHelperMac;
-}
-
-namespace views {
-class ScreenMus;
 }
 
 namespace viz {
@@ -147,6 +147,7 @@ namespace internal {
 class TaskTracker;
 }
 
+class AdjustOOMScoreHelper;
 class GetAppOutputScopedAllowBaseSyncPrimitives;
 class SimpleThread;
 class StackSamplingProfiler;
@@ -248,7 +249,9 @@ class BASE_EXPORT ScopedAllowBlocking {
   // This can only be instantiated by friends. Use ScopedAllowBlockingForTesting
   // in unit tests to avoid the friend requirement.
   FRIEND_TEST_ALL_PREFIXES(ThreadRestrictionsTest, ScopedAllowBlocking);
+  friend class AdjustOOMScoreHelper;
   friend class android_webview::ScopedAllowInitGLBindings;
+  friend class audio::OutputDevice;
   friend class content::BrowserProcessSubThread;
   friend class content::GpuProcessTransportFactory;
   friend class cronet::CronetPrefsManager;
@@ -326,10 +329,11 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
   friend class mojo::core::ScopedIPCSupport;
   friend class net::MultiThreadedCertVerifierScopedAllowBaseSyncPrimitives;
   friend class rlz_lib::FinancialPing;
-  friend class shell_integration::LaunchXdgUtilityScopedAllowBaseSyncPrimitives;
+  friend class shell_integration_linux::
+      LaunchXdgUtilityScopedAllowBaseSyncPrimitives;
   friend class webrtc::DesktopConfigurationMonitor;
   friend class content::ServiceWorkerSubresourceLoader;
-  friend class viz::HostGpuMemoryBufferManager;
+  friend class blink::VideoFrameResourceProvider;
 
   ScopedAllowBaseSyncPrimitives() EMPTY_BODY_IF_DCHECK_IS_OFF;
   ~ScopedAllowBaseSyncPrimitives() EMPTY_BODY_IF_DCHECK_IS_OFF;
@@ -359,6 +363,7 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
   friend class midi::TaskService;  // https://crbug.com/796830
   // Not used in production yet, https://crbug.com/844078.
   friend class service_manager::ServiceProcessLauncher;
+  friend class viz::HostGpuMemoryBufferManager;
 
   ScopedAllowBaseSyncPrimitivesOutsideBlockingScope()
       EMPTY_BODY_IF_DCHECK_IS_OFF;
@@ -486,8 +491,6 @@ class BASE_EXPORT ThreadRestrictions {
   friend class chrome_browser_net::Predictor;     // http://crbug.com/78451
   friend class
       content::BrowserGpuChannelHostFactory;      // http://crbug.com/125248
-  friend class
-      content::BrowserGpuMemoryBufferManager;     // http://crbug.com/420368
   friend class content::TextInputClientMac;       // http://crbug.com/121917
   friend class dbus::Bus;                         // http://crbug.com/125222
   friend class disk_cache::BackendImpl;           // http://crbug.com/74623
@@ -500,7 +503,6 @@ class BASE_EXPORT ThreadRestrictions {
 #if !defined(OFFICIAL_BUILD)
   friend class content::SoftwareOutputDeviceMus;  // Interim non-production code
 #endif
-  friend class views::ScreenMus;
 // END USAGE THAT NEEDS TO BE FIXED.
 
 #if DCHECK_IS_ON()

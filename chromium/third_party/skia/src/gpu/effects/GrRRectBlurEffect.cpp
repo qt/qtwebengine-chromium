@@ -108,7 +108,7 @@ private:
         UniformHandle& cornerRadius = fCornerRadiusVar;
         (void)cornerRadius;
         GrSurfaceProxy& ninePatchSamplerProxy = *_outer.textureSampler(0).proxy();
-        GrTexture& ninePatchSampler = *ninePatchSamplerProxy.priv().peekTexture();
+        GrTexture& ninePatchSampler = *ninePatchSamplerProxy.peekTexture();
         (void)ninePatchSampler;
         UniformHandle& proxyRect = fProxyRectVar;
         (void)proxyRect;
@@ -146,10 +146,13 @@ GrRRectBlurEffect::GrRRectBlurEffect(const GrRRectBlurEffect& src)
         , fRect(src.fRect)
         , fCornerRadius(src.fCornerRadius)
         , fNinePatchSampler(src.fNinePatchSampler) {
-    this->addTextureSampler(&fNinePatchSampler);
+    this->setTextureSamplerCnt(1);
 }
 std::unique_ptr<GrFragmentProcessor> GrRRectBlurEffect::clone() const {
     return std::unique_ptr<GrFragmentProcessor>(new GrRRectBlurEffect(*this));
+}
+const GrFragmentProcessor::TextureSampler& GrRRectBlurEffect::onTextureSampler(int index) const {
+    return IthTextureSampler(index, fNinePatchSampler);
 }
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrRRectBlurEffect);
 #if GR_TEST_UTILS

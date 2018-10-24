@@ -77,23 +77,19 @@ bool SkColorSpaceXform_skcms::apply(ColorFormat dstFormat, void* dst,
 }
 
 void SkColorSpace::toProfile(skcms_ICCProfile* profile) const {
-    if (auto blob = this->onProfileData()) {
-        SkAssertResult(skcms_Parse(blob->data(), blob->size(), profile));
-    } else {
-        SkMatrix44 toXYZ(SkMatrix44::kUninitialized_Constructor);
-        SkColorSpaceTransferFn tf;
-        SkAssertResult(this->toXYZD50(&toXYZ) && this->isNumericalTransferFn(&tf));
+    SkMatrix44 toXYZ(SkMatrix44::kUninitialized_Constructor);
+    SkColorSpaceTransferFn tf;
+    SkAssertResult(this->toXYZD50(&toXYZ) && this->isNumericalTransferFn(&tf));
 
-        skcms_Matrix3x3 m = { {
-            { toXYZ.get(0, 0), toXYZ.get(0, 1), toXYZ.get(0, 2) },
-            { toXYZ.get(1, 0), toXYZ.get(1, 1), toXYZ.get(1, 2) },
-            { toXYZ.get(2, 0), toXYZ.get(2, 1), toXYZ.get(2, 2) },
-        } };
+    skcms_Matrix3x3 m = { {
+        { toXYZ.get(0, 0), toXYZ.get(0, 1), toXYZ.get(0, 2) },
+        { toXYZ.get(1, 0), toXYZ.get(1, 1), toXYZ.get(1, 2) },
+        { toXYZ.get(2, 0), toXYZ.get(2, 1), toXYZ.get(2, 2) },
+    } };
 
-        skcms_Init(profile);
-        skcms_SetTransferFunction(profile, (const skcms_TransferFunction*)&tf);
-        skcms_SetXYZD50(profile, &m);
-    }
+    skcms_Init(profile);
+    skcms_SetTransferFunction(profile, (const skcms_TransferFunction*)&tf);
+    skcms_SetXYZD50(profile, &m);
 }
 
 std::unique_ptr<SkColorSpaceXform> SkMakeColorSpaceXform(SkColorSpace* src, SkColorSpace* dst) {
@@ -134,7 +130,11 @@ sk_sp<SkColorSpace> SkColorSpace::Make(const skcms_ICCProfile& profile) {
         trc[1].table_entries ||
         trc[2].table_entries ||
         memcmp(&trc[0].parametric, &trc[1].parametric, sizeof(trc[0].parametric)) ||
-        memcmp(&trc[0].parametric, &trc[2].parametric, sizeof(trc[0].parametric))) {
+        memcmp(&trc[0].parametric, &trc[2].parametric, sizeof(trc[0].parametric)))
+    {
+        if (skcms_TRCs_AreApproximateInverse(&profile, skcms_sRGB_Inverse_TransferFunction())) {
+            return SkColorSpace::MakeRGB(kSRGB_SkGammaNamed, toXYZD50);
+        }
         return nullptr;
     }
 

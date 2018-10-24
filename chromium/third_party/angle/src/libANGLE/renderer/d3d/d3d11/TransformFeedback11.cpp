@@ -100,8 +100,8 @@ UINT TransformFeedback11::getNumSOBuffers() const
     return static_cast<UINT>(mBuffers.size());
 }
 
-gl::ErrorOrResult<const std::vector<ID3D11Buffer *> *> TransformFeedback11::getSOBuffers(
-    const gl::Context *context)
+angle::Result TransformFeedback11::getSOBuffers(const gl::Context *context,
+                                                const std::vector<ID3D11Buffer *> **buffersOut)
 {
     for (size_t bindingIdx = 0; bindingIdx < mBuffers.size(); bindingIdx++)
     {
@@ -109,12 +109,13 @@ gl::ErrorOrResult<const std::vector<ID3D11Buffer *> *> TransformFeedback11::getS
         if (binding.get() != nullptr)
         {
             Buffer11 *storage = GetImplAs<Buffer11>(binding.get());
-            ANGLE_TRY_RESULT(storage->getBuffer(context, BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK),
-                             mBuffers[bindingIdx]);
+            ANGLE_TRY(storage->getBuffer(context, BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK,
+                                         &mBuffers[bindingIdx]));
         }
     }
 
-    return &mBuffers;
+    *buffersOut = &mBuffers;
+    return angle::Result::Continue();
 }
 
 const std::vector<UINT> &TransformFeedback11::getSOBufferOffsets() const

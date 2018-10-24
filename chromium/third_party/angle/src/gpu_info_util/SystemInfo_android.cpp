@@ -39,7 +39,7 @@ class VulkanLibrary final : NonCopyable
     VkInstance getVulkanInstance()
     {
         // Find the system's Vulkan library and open it:
-        mLibVulkan = dlopen("mLibVulkan.so", RTLD_NOW | RTLD_LOCAL);
+        mLibVulkan = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
         if (!mLibVulkan)
         {
             // If Vulkan doesn't exist, bail-out early:
@@ -50,7 +50,8 @@ class VulkanLibrary final : NonCopyable
         uint32_t instanceVersion = VK_API_VERSION_1_0;
 #if defined(VK_VERSION_1_1)
         PFN_vkEnumerateInstanceVersion pfnEnumerateInstanceVersion =
-            reinterpret_cast<PFN_vkCreateInstance>(dlsym(mLibVulkan, "vkEnumerateInstanceVersion"));
+            reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+                dlsym(mLibVulkan, "vkEnumerateInstanceVersion"));
         if (!pfnEnumerateInstanceVersion ||
             pfnEnumerateInstanceVersion(&instanceVersion) != VK_SUCCESS)
         {
@@ -128,24 +129,25 @@ bool GetSystemInfo(SystemInfo *info)
     PFN_vkGetPhysicalDeviceProperties pfnGetPhysicalDeviceProperties =
         GPA(vkLibrary, PFN_vkGetPhysicalDeviceProperties, "vkGetPhysicalDeviceProperties");
     uint32_t physicalDeviceCount       = 0;
-    VkPhysicalDevice *pPhysicalDevices = nullptr;
     if (!pfnEnumeratePhysicalDevices ||
         pfnEnumeratePhysicalDevices(instance, &physicalDeviceCount, nullptr) != VK_SUCCESS)
     {
         return false;
     }
     std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
-    info->gpus.resize(physicalDeviceCount);
     if (pfnEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices.data()) !=
         VK_SUCCESS)
     {
         return false;
     }
 
+    // If we get to here, we will likely provide a valid answer (unless an unknown vendorID):
+    info->gpus.resize(physicalDeviceCount);
+
     for (uint32_t i = 0; i < physicalDeviceCount; i++)
     {
         VkPhysicalDeviceProperties properties;
-        pfnGetPhysicalDeviceProperties(pPhysicalDevices[i], &properties);
+        pfnGetPhysicalDeviceProperties(physicalDevices[i], &properties);
         // Fill in data for a given physical device (a.k.a. gpu):
         GPUDeviceInfo &gpu = info->gpus[i];
         gpu.vendorId       = properties.vendorID;
@@ -159,18 +161,22 @@ bool GetSystemInfo(SystemInfo *info)
             case kVendorID_AMD:
                 gpu.driverVendor  = "Advanced Micro Devices, Inc";
                 gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                gpu.detailedDriverVersion.major = properties.driverVersion;
                 break;
             case kVendorID_ARM:
                 gpu.driverVendor  = "Arm Holdings";
                 gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                gpu.detailedDriverVersion.major = properties.driverVersion;
                 break;
             case kVendorID_ImgTec:
                 gpu.driverVendor  = "Imagination Technologies Limited";
                 gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                gpu.detailedDriverVersion.major = properties.driverVersion;
                 break;
             case kVendorID_Intel:
                 gpu.driverVendor  = "Intel Corporation";
                 gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                gpu.detailedDriverVersion.major = properties.driverVersion;
                 break;
             case kVendorID_Nvidia:
                 gpu.driverVendor  = "NVIDIA Corporation";
@@ -178,6 +184,10 @@ bool GetSystemInfo(SystemInfo *info)
                                                  (properties.driverVersion >> 14) & 0XFF,
                                                  (properties.driverVersion >> 6) & 0XFF,
                                                  properties.driverVersion & 0x3F);
+                gpu.detailedDriverVersion.major    = properties.driverVersion >> 22;
+                gpu.detailedDriverVersion.minor    = (properties.driverVersion >> 14) & 0xFF;
+                gpu.detailedDriverVersion.subMinor = (properties.driverVersion >> 6) & 0xFF;
+                gpu.detailedDriverVersion.patch    = properties.driverVersion & 0x3F;
                 break;
             case kVendorID_Qualcomm:
                 gpu.driverVendor = "Qualcomm Technologies, Inc";
@@ -186,23 +196,30 @@ bool GetSystemInfo(SystemInfo *info)
                     gpu.driverVersion = FormatString("%d.%d.%d", properties.driverVersion >> 22,
                                                      (properties.driverVersion >> 12) & 0X3FF,
                                                      properties.driverVersion & 0xFFF);
+                    gpu.detailedDriverVersion.major    = properties.driverVersion >> 22;
+                    gpu.detailedDriverVersion.minor    = (properties.driverVersion >> 12) & 0x3FF;
+                    gpu.detailedDriverVersion.subMinor = properties.driverVersion & 0xFFF;
                 }
                 else
                 {
                     gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                    gpu.detailedDriverVersion.major = properties.driverVersion;
                 }
                 break;
             case kVendorID_Vivante:
                 gpu.driverVendor  = "Vivante";
                 gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                gpu.detailedDriverVersion.major = properties.driverVersion;
                 break;
             case kVendorID_VeriSilicon:
                 gpu.driverVendor  = "VeriSilicon";
                 gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                gpu.detailedDriverVersion.major = properties.driverVersion;
                 break;
             case kVendorID_Kazan:
                 gpu.driverVendor  = "Kazan Software";
                 gpu.driverVersion = FormatString("0x%x", properties.driverVersion);
+                gpu.detailedDriverVersion.major = properties.driverVersion;
                 break;
             default:
                 return false;

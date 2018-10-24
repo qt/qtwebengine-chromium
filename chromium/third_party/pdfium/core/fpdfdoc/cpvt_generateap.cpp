@@ -504,7 +504,7 @@ void GenerateAndSetAPDict(CPDF_Document* pDoc,
                           std::unique_ptr<CPDF_Dictionary> pResourceDict,
                           bool bIsTextMarkupAnnotation) {
   CPDF_Stream* pNormalStream = pDoc->NewIndirect<CPDF_Stream>();
-  pNormalStream->SetData(psAppStream);
+  pNormalStream->SetDataFromStringstream(psAppStream);
 
   CPDF_Dictionary* pAPDict = pAnnotDict->GetDictFor("AP");
   if (!pAPDict)
@@ -763,8 +763,8 @@ bool GeneratePopupAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
 
   auto pExtGStateDict =
       GenerateExtGStateDict(*pAnnotDict, sExtGSDictName, "Normal");
-  auto pResourceDict = GenerateResourceDict(pDoc, std::move(pResourceFontDict),
-                                            std::move(pExtGStateDict));
+  auto pResourceDict = GenerateResourceDict(pDoc, std::move(pExtGStateDict),
+                                            std::move(pResourceFontDict));
 
   sAppStream << GetPopupContentsString(pDoc, *pAnnotDict, pDefFont, sFontName);
   GenerateAndSetAPDict(pDoc, pAnnotDict, &sAppStream, std::move(pResourceDict),
@@ -1300,7 +1300,7 @@ void CPVT_GenerateAP::GenerateFormAP(Type type,
   }
 
   if (pNormalStream) {
-    pNormalStream->SetDataAndRemoveFilter(&sAppStream);
+    pNormalStream->SetDataFromStringstreamAndRemoveFilter(&sAppStream);
     pStreamDict = pNormalStream->GetDict();
     if (pStreamDict) {
       pStreamDict->SetMatrixFor("Matrix", matrix);

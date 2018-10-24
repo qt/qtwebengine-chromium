@@ -1006,7 +1006,7 @@ Call <a href='#SkRect_sort'>sort</a> to reverse <a href='#SkRect_fLeft'>fLeft</a
 
 ### Example
 
-<div><fiddle-embed name="02750ceaa874f956e6e6544ef6b858ee">
+<div><fiddle-embed name="23c77a35ac54a439a2989f840aa5cb99">
 
 #### Example Output
 
@@ -1530,7 +1530,7 @@ added: nan, 8 count: 4 rect: 0, 0, 0, 0
 
 ### See Also
 
-<a href='#SkRect_set'>set</a><sup><a href='#SkRect_set_2'>[2]</a></sup><sup><a href='#SkRect_set_3'>[3]</a></sup><sup><a href='#SkRect_set_4'>[4]</a></sup> <a href='#SkRect_setBoundsCheck'>setBoundsCheck</a> <a href='SkPath_Reference#SkPath_addPoly'>SkPath::addPoly</a>
+<a href='#SkRect_set'>set</a><sup><a href='#SkRect_set_2'>[2]</a></sup><sup><a href='#SkRect_set_3'>[3]</a></sup><sup><a href='#SkRect_set_4'>[4]</a></sup> <a href='#SkRect_setBoundsCheck'>setBoundsCheck</a> <a href='SkPath_Reference#SkPath_addPoly'>SkPath::addPoly</a><sup><a href='SkPath_Reference#SkPath_addPoly_2'>[2]</a></sup>
 
 ---
 
@@ -1580,7 +1580,7 @@ added: nan, 8 count: 4 rect: 0, 0, 0, 0 success: false
 
 ### See Also
 
-<a href='#SkRect_set'>set</a><sup><a href='#SkRect_set_2'>[2]</a></sup><sup><a href='#SkRect_set_3'>[3]</a></sup><sup><a href='#SkRect_set_4'>[4]</a></sup> <a href='#SkRect_setBounds'>setBounds</a> <a href='SkPath_Reference#SkPath_addPoly'>SkPath::addPoly</a>
+<a href='#SkRect_set'>set</a><sup><a href='#SkRect_set_2'>[2]</a></sup><sup><a href='#SkRect_set_3'>[3]</a></sup><sup><a href='#SkRect_set_4'>[4]</a></sup> <a href='#SkRect_setBounds'>setBounds</a> <a href='SkPath_Reference#SkPath_addPoly'>SkPath::addPoly</a><sup><a href='SkPath_Reference#SkPath_addPoly_2'>[2]</a></sup>
 
 ---
 
@@ -1849,7 +1849,7 @@ added: nan, 8 count: 4 rect: 0, 0, 0, 0
 
 ### See Also
 
-<a href='#SkRect_setBounds'>setBounds</a> <a href='#SkRect_setBoundsCheck'>setBoundsCheck</a> <a href='SkPath_Reference#SkPath_addPoly'>SkPath::addPoly</a>
+<a href='#SkRect_setBounds'>setBounds</a> <a href='#SkRect_setBoundsCheck'>setBoundsCheck</a> <a href='SkPath_Reference#SkPath_addPoly'>SkPath::addPoly</a><sup><a href='SkPath_Reference#SkPath_addPoly_2'>[2]</a></sup>
 
 ---
 
@@ -2504,16 +2504,16 @@ Returns false if <a href='#SkRect'>SkRect</a> is empty.
 ### Parameters
 
 <table>  <tr>    <td><a name='SkRect_contains_x'><code><strong>x</strong></code></a></td>
-    <td>test <a href='SkPoint_Reference#SkPoint'>SkPoint</a> x-coordinate</td>
+    <td>test <a href='SkPoint_Reference#Point'>Point</a> x-coordinate</td>
   </tr>
   <tr>    <td><a name='SkRect_contains_y'><code><strong>y</strong></code></a></td>
-    <td>test <a href='SkPoint_Reference#SkPoint'>SkPoint</a> y-coordinate</td>
+    <td>test <a href='SkPoint_Reference#Point'>Point</a> y-coordinate</td>
   </tr>
 </table>
 
 ### Return Value
 
-true if (x, y) is inside <a href='#SkRect'>SkRect</a>
+true if (x, y) is inside <a href='#Rect'>Rect</a>
 
 ### Example
 

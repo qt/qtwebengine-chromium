@@ -65,15 +65,17 @@ static bool get_unclipped_shape_dev_bounds(const GrShape& shape, const SkMatrix&
 
 // Gets the shape bounds, the clip bounds, and the intersection (if any). Returns false if there
 // is no intersection.
-static bool get_shape_and_clip_bounds(int width, int height,
-                                      const GrClip& clip,
-                                      const GrShape& shape,
-                                      const SkMatrix& matrix,
-                                      SkIRect* unclippedDevShapeBounds,
-                                      SkIRect* clippedDevShapeBounds,
-                                      SkIRect* devClipBounds) {
+bool GrSoftwarePathRenderer::GetShapeAndClipBounds(GrRenderTargetContext* renderTargetContext,
+                                                   const GrClip& clip,
+                                                   const GrShape& shape,
+                                                   const SkMatrix& matrix,
+                                                   SkIRect* unclippedDevShapeBounds,
+                                                   SkIRect* clippedDevShapeBounds,
+                                                   SkIRect* devClipBounds) {
     // compute bounds as intersection of rt size, clip, and path
-    clip.getConservativeBounds(width, height, devClipBounds);
+    clip.getConservativeBounds(renderTargetContext->width(),
+                               renderTargetContext->height(),
+                               devClipBounds);
 
     if (!get_unclipped_shape_dev_bounds(shape, matrix, unclippedDevShapeBounds)) {
         *unclippedDevShapeBounds = SkIRect::EmptyIRect();
@@ -238,13 +240,12 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
         return false;
     }
 
-    // We really need to know if the shape will be inverse filled or not
-    bool inverseFilled = false;
-    SkTLazy<GrShape> tmpShape;
     SkASSERT(!args.fShape->style().applies());
+    // We really need to know if the shape will be inverse filled or not
     // If the path is hairline, ignore inverse fill.
-    inverseFilled = args.fShape->inverseFilled() &&
-                    !IsStrokeHairlineOrEquivalent(args.fShape->style(), *args.fViewMatrix, nullptr);
+    bool inverseFilled = args.fShape->inverseFilled() &&
+                        !IsStrokeHairlineOrEquivalent(args.fShape->style(),
+                                                      *args.fViewMatrix, nullptr);
 
     SkIRect unclippedDevShapeBounds, clippedDevShapeBounds, devClipBounds;
     // To prevent overloading the cache with entries during animations we limit the cache of masks
@@ -252,12 +253,11 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
     bool useCache = fAllowCaching && !inverseFilled && args.fViewMatrix->preservesAxisAlignment() &&
                     args.fShape->hasUnstyledKey() && GrAAType::kCoverage == args.fAAType;
 
-    if (!get_shape_and_clip_bounds(args.fRenderTargetContext->width(),
-                                   args.fRenderTargetContext->height(),
-                                   *args.fClip, *args.fShape,
-                                   *args.fViewMatrix, &unclippedDevShapeBounds,
-                                   &clippedDevShapeBounds,
-                                   &devClipBounds)) {
+    if (!GetShapeAndClipBounds(args.fRenderTargetContext,
+                               *args.fClip, *args.fShape,
+                               *args.fViewMatrix, &unclippedDevShapeBounds,
+                               &clippedDevShapeBounds,
+                               &devClipBounds)) {
         if (inverseFilled) {
             DrawAroundInvPath(args.fRenderTargetContext, std::move(args.fPaint),
                               *args.fUserStencilSettings, *args.fClip, *args.fViewMatrix,
@@ -291,31 +291,33 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
         SkScalar kx = args.fViewMatrix->get(SkMatrix::kMSkewX);
         SkScalar ky = args.fViewMatrix->get(SkMatrix::kMSkewY);
         static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
+        GrUniqueKey::Builder builder(&maskKey, kDomain, 5 + args.fShape->unstyledKeySize(),
+                                     "SW Path Mask");
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
         // Fractional translate does not affect caching on Android. This is done for better cache
         // hit ratio and speed, but it is matching HWUI behavior, which doesn't consider the matrix
         // at all when caching paths.
-        GrUniqueKey::Builder builder(&maskKey, kDomain, 4 + args.fShape->unstyledKeySize(),
-                                     "SW Path Mask");
+        SkFixed fracX = 0;
+        SkFixed fracY = 0;
 #else
         SkScalar tx = args.fViewMatrix->get(SkMatrix::kMTransX);
         SkScalar ty = args.fViewMatrix->get(SkMatrix::kMTransY);
         // Allow 8 bits each in x and y of subpixel positioning.
         SkFixed fracX = SkScalarToFixed(SkScalarFraction(tx)) & 0x0000FF00;
         SkFixed fracY = SkScalarToFixed(SkScalarFraction(ty)) & 0x0000FF00;
-        GrUniqueKey::Builder builder(&maskKey, kDomain, 5 + args.fShape->unstyledKeySize(),
-                                     "SW Path Mask");
 #endif
         builder[0] = SkFloat2Bits(sx);
         builder[1] = SkFloat2Bits(sy);
         builder[2] = SkFloat2Bits(kx);
         builder[3] = SkFloat2Bits(ky);
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-        args.fShape->writeUnstyledKey(&builder[4]);
-#else
-        builder[4] = fracX | (fracY >> 8);
+        // Distinguish between hairline and filled paths. For hairlines, we also need to include
+        // the cap. (SW grows hairlines by 0.5 pixel with round and square caps). Note that
+        // stroke-and-fill of hairlines is turned into pure fill by SkStrokeRec, so this covers
+        // all cases we might see.
+        uint32_t styleBits = args.fShape->style().isSimpleHairline() ?
+                             ((args.fShape->style().strokeRec().getCap() << 1) | 1) : 0;
+        builder[4] = fracX | (fracY >> 8) | (styleBits << 16);
         args.fShape->writeUnstyledKey(&builder[5]);
-#endif
     }
 
     sk_sp<GrTextureProxy> proxy;

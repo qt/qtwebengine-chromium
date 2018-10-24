@@ -17,11 +17,6 @@
 
 #define VK_CALL(GPU, X) GR_VK_CALL(GPU->vkInterface(), X)
 
-// This method parallels GrTextureProxy::highestFilterMode
-static inline GrSamplerState::Filter highest_filter_mode(GrPixelConfig config) {
-    return GrSamplerState::Filter::kMipMap;
-}
-
 // Because this class is virtually derived from GrSurface we must explicitly call its constructor.
 GrVkTexture::GrVkTexture(GrVkGpu* gpu,
                          SkBudgeted budgeted,
@@ -30,11 +25,10 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
                          sk_sp<GrVkImageLayout> layout,
                          const GrVkImageView* view,
                          GrMipMapsStatus mipMapsStatus)
-    : GrSurface(gpu, desc)
-    , GrVkImage(info, std::move(layout), GrBackendObjectOwnership::kOwned)
-    , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                mipMapsStatus)
-    , fTextureView(view) {
+        : GrSurface(gpu, desc)
+        , GrVkImage(info, std::move(layout), GrBackendObjectOwnership::kOwned)
+        , INHERITED(gpu, desc, GrTextureType::k2D, mipMapsStatus)
+        , fTextureView(view) {
     SkASSERT((GrMipMapsStatus::kNotAllocated == mipMapsStatus) == (1 == info.fLevelCount));
     this->registerWithCache(budgeted);
 }
@@ -47,11 +41,10 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
                          const GrVkImageView* view,
                          GrMipMapsStatus mipMapsStatus,
                          GrBackendObjectOwnership ownership)
-    : GrSurface(gpu, desc)
-    , GrVkImage(info, std::move(layout), ownership)
-    , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                mipMapsStatus)
-    , fTextureView(view) {
+        : GrSurface(gpu, desc)
+        , GrVkImage(info, std::move(layout), ownership)
+        , INHERITED(gpu, desc, GrTextureType::k2D, mipMapsStatus)
+        , fTextureView(view) {
     SkASSERT((GrMipMapsStatus::kNotAllocated == mipMapsStatus) == (1 == info.fLevelCount));
     this->registerWithCacheWrapped();
 }
@@ -64,11 +57,10 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
                          const GrVkImageView* view,
                          GrMipMapsStatus mipMapsStatus,
                          GrBackendObjectOwnership ownership)
-    : GrSurface(gpu, desc)
-    , GrVkImage(info, layout, ownership)
-    , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                mipMapsStatus)
-    , fTextureView(view) {
+        : GrSurface(gpu, desc)
+        , GrVkImage(info, layout, ownership)
+        , INHERITED(gpu, desc, GrTextureType::k2D, mipMapsStatus)
+        , fTextureView(view) {
     SkASSERT((GrMipMapsStatus::kNotAllocated == mipMapsStatus) == (1 == info.fLevelCount));
 }
 

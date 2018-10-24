@@ -7,19 +7,20 @@
 #ifndef FXJS_XFA_CJX_HANDLER_H_
 #define FXJS_XFA_CJX_HANDLER_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_textnode.h"
 
 class CXFA_Handler;
 
-class CJX_Handler : public CJX_TextNode {
+class CJX_Handler final : public CJX_TextNode {
  public:
   explicit CJX_Handler(CXFA_Handler* node);
   ~CJX_Handler() override;
 
-  JS_PROP(type);
-  JS_PROP(use);
-  JS_PROP(version);
-  JS_PROP(usehref);
+  JSE_PROP(type);
+  JSE_PROP(use);
+  JSE_PROP(version);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_HANDLER_H_

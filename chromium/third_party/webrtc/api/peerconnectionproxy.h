@@ -88,14 +88,6 @@ PROXY_CONSTMETHOD0(const SessionDescriptionInterface*,
 PROXY_METHOD2(void,
               CreateOffer,
               CreateSessionDescriptionObserver*,
-              const MediaConstraintsInterface*)
-PROXY_METHOD2(void,
-              CreateAnswer,
-              CreateSessionDescriptionObserver*,
-              const MediaConstraintsInterface*)
-PROXY_METHOD2(void,
-              CreateOffer,
-              CreateSessionDescriptionObserver*,
               const RTCOfferAnswerOptions&)
 PROXY_METHOD2(void,
               CreateAnswer,
@@ -127,7 +119,6 @@ PROXY_METHOD1(bool,
               const std::vector<cricket::Candidate>&);
 PROXY_METHOD1(void, SetAudioPlayout, bool)
 PROXY_METHOD1(void, SetAudioRecording, bool)
-PROXY_METHOD1(void, RegisterUMAObserver, UMAObserver*)
 PROXY_METHOD1(RTCError, SetBitrate, const BitrateSettings&);
 PROXY_METHOD1(void,
               SetBitrateAllocationStrategy,

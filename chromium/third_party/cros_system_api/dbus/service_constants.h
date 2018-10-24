@@ -16,6 +16,7 @@
 #include "cros-disks/dbus-constants.h"
 #include "cryptohome/dbus-constants.h"
 #include "debugd/dbus-constants.h"
+#include "diagnosticsd/dbus-constants.h"
 #include "drivefs/dbus-constants.h"
 #include "hammerd/dbus-constants.h"
 #include "login_manager/dbus-constants.h"
@@ -75,6 +76,7 @@ const char kLoadComponentAtPath[] = "LoadComponentAtPath";
 const char kGetComponentVersion[] = "GetComponentVersion";
 const char kRemoveComponent[] = "RemoveComponent";
 const char kUnmountComponent[] = "UnmountComponent";
+const char kLoadDlcImage[] = "LoadDlcImage";
 // Constants
 const char kBadResult[] = "";
 const char kTerminaComponentName[] = "cros-termina";
@@ -179,6 +181,10 @@ const char kChromeFeaturesServiceInterface[] =
     "org.chromium.ChromeFeaturesServiceInterface";
 const char kChromeFeaturesServiceIsCrostiniEnabledMethod[] =
     "IsCrostiniEnabled";
+const char kChromeFeaturesServiceIsUsbguardEnabledMethod[] =
+    "IsUsbguardEnabled";
+const char kChromeFeaturesServiceIsShillSandboxingEnabledMethod[] =
+    "IsShillSandboxingEnabled";
 
 const char kUrlHandlerServiceName[] = "org.chromium.UrlHandlerService";
 const char kUrlHandlerServicePath[] = "/org/chromium/UrlHandlerService";
@@ -328,6 +334,7 @@ const char kDiscoverableTimeoutProperty[] = "DiscoverableTimeout";
 const char kDiscoveringProperty[] = "Discovering";
 const char kUUIDsProperty[] = "UUIDs";
 const char kModaliasProperty[] = "Modalias";
+const char kStackSyncQuittingProperty[] = "StackSyncQuitting";
 
 // Bluetooth Adapter errors.
 const char kErrorNotReady[] = "org.bluez.Error.NotReady";
@@ -433,6 +440,7 @@ const char kErrorNotReady[] = "org.bluez.Error.NotReady";
 const char kErrorFailed[] = "org.bluez.Error.Failed";
 const char kErrorInProgress[] = "org.bluez.Error.InProgress";
 const char kErrorAlreadyConnected[] = "org.bluez.Error.AlreadyConnected";
+const char kErrorAlreadyExists[] = "org.bluez.Error.AlreadyExists";
 const char kErrorNotConnected[] = "org.bluez.Error.NotConnected";
 const char kErrorDoesNotExist[] = "org.bluez.Error.DoesNotExist";
 const char kErrorInvalidArguments[] = "org.bluez.Error.InvalidArguments";
@@ -1108,13 +1116,17 @@ constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
 }  // namespace midis
 
 namespace ml {
-constexpr char kMlServiceName[] = "org.chromium.Ml";
-constexpr char kMlServicePath[] = "/org/chromium/Ml";
-constexpr char kMlInterfaceName[] = "org.chromium.Ml";
+constexpr char kMachineLearningServiceName[] = "org.chromium.MachineLearning";
+constexpr char kMachineLearningServicePath[] = "/org/chromium/MachineLearning";
+constexpr char kMachineLearningInterfaceName[] = "org.chromium.MachineLearning";
 // Methods
 constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
 // Token identifying the primordial Mojo pipe passed to BootstrapMojoConnection.
 constexpr char kBootstrapMojoConnectionChannelToken[] = "ml-service-bootstrap";
+// Deprecated, use longer names above:
+constexpr char kMlServiceName[] = "org.chromium.MachineLearning";
+constexpr char kMlServicePath[] = "/org/chromium/MachineLearning";
+constexpr char kMlInterfaceName[] = "org.chromium.MachineLearning";
 }  // namespace ml
 
 namespace virtual_file_provider {

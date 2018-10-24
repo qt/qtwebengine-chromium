@@ -91,6 +91,9 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
             fIsCoreProfile = SkToBool(profileMask & GR_GL_CONTEXT_CORE_PROFILE_BIT);
         }
     }
+    if (fDriverBugWorkarounds.max_fragment_uniform_vectors_32) {
+        fMaxFragmentUniformVectors = SkMin32(fMaxFragmentUniformVectors, 32);
+    }
     GR_GL_GetIntegerv(gli, GR_GL_MAX_VERTEX_ATTRIBS, &fMaxVertexAttributes);
 
     if (kGL_GrGLStandard == standard) {
@@ -363,30 +366,6 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     shaderCaps->fMaxFragmentSamplers = SkTMin<GrGLint>(kMaxSaneSamplers, maxSamplers);
     GR_GL_GetIntegerv(gli, GR_GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &maxSamplers);
     shaderCaps->fMaxCombinedSamplers = SkTMin<GrGLint>(kMaxSaneSamplers, maxSamplers);
-
-    // This is all *very* approximate.
-    switch (ctxInfo.vendor()) {
-        case kNVIDIA_GrGLVendor:
-            // We've seen a range from 100 x 100 (TegraK1, GTX660) up to 300 x 300 (GTX 1070)
-            // but it doesn't clearly align with Pascal vs Maxwell vs Kepler.
-            fShaderCaps->fDisableImageMultitexturingDstRectAreaThreshold = 150 * 150;
-            break;
-        case kImagination_GrGLVendor:
-            // Two PowerVR Rogues, Nexus Player and Chromebook Cb5-312T (PowerVR GX6250), show that
-            // it is always a win to use multitexturing.
-            if (kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
-                fShaderCaps->fDisableImageMultitexturingDstRectAreaThreshold =
-                        std::numeric_limits<size_t>::max();
-            }
-            break;
-        case kATI_GrGLVendor:
-            // So far no AMD GPU shows a performance difference. A tie goes to disabling
-            // multitexturing for simplicity's sake.
-            fShaderCaps->fDisableImageMultitexturingDstRectAreaThreshold = 0;
-            break;
-        default:
-            break;
-    }
 
     // SGX and Mali GPUs that are based on a tiled-deferred architecture that have trouble with
     // frequently changing VBOs. We've measured a performance increase using non-VBO vertex
@@ -1204,9 +1183,12 @@ bool GrGLCaps::getReadPixelsFormat(GrPixelConfig surfaceConfig, GrPixelConfig ex
     return true;
 }
 
-bool GrGLCaps::getRenderbufferFormat(GrPixelConfig config, GrGLenum* internalFormat) const {
+void GrGLCaps::getRenderbufferFormat(GrPixelConfig config, GrGLenum* internalFormat) const {
     *internalFormat = fConfigTable[config].fFormats.fInternalFormatRenderbuffer;
-    return true;
+}
+
+void GrGLCaps::getSizedInternalFormat(GrPixelConfig config, GrGLenum* internalFormat) const {
+    *internalFormat = fConfigTable[config].fFormats.fSizedInternalFormat;
 }
 
 bool GrGLCaps::getExternalFormat(GrPixelConfig surfaceConfig, GrPixelConfig memoryConfig,
@@ -1373,6 +1355,9 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
     } else {
         texStorageSupported = version >= GR_GL_VER(3,0) ||
                               ctxInfo.hasExtension("GL_EXT_texture_storage");
+    }
+    if (fDriverBugWorkarounds.disable_texture_storage) {
+        texStorageSupported = false;
     }
 
     bool textureRedSupport = false;
@@ -1745,32 +1730,48 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
     // NOTE: We disallow floating point textures on ES devices if linear filtering modes are not
     // supported. This is for simplicity, but a more granular approach is possible. Coincidentally,
     // [half] floating point textures became part of the standard in ES3.1 / OGL 3.0.
-    bool hasFPTextures = false;
-    bool hasHalfFPTextures = false;
+    bool hasFP32Textures = false;
+    bool hasFP16Textures = false;
     bool rgIsTexturable = false;
+    bool hasFP32RenderTargets = false;
+    bool hasFP16RenderTargets = false;
     // for now we don't support floating point MSAA on ES
     uint32_t fpRenderFlags = (kGL_GrGLStandard == standard) ? allRenderFlags : nonMSAARenderFlags;
 
     if (kGL_GrGLStandard == standard) {
         if (version >= GR_GL_VER(3, 0)) {
-            hasFPTextures = true;
-            hasHalfFPTextures = true;
+            hasFP32Textures = true;
+            hasFP16Textures = true;
             rgIsTexturable = true;
+            hasFP32RenderTargets = true;
+            hasFP16RenderTargets = true;
         }
     } else {
         if (version >= GR_GL_VER(3, 0)) {
-            hasFPTextures = true;
-            hasHalfFPTextures = true;
+            hasFP32Textures = true;
+            hasFP16Textures = true;
             rgIsTexturable = true;
-        } else {
-            if (ctxInfo.hasExtension("GL_OES_texture_float_linear") &&
-                ctxInfo.hasExtension("GL_OES_texture_float")) {
-                hasFPTextures = true;
-            }
-            if (ctxInfo.hasExtension("GL_OES_texture_half_float_linear") &&
-                ctxInfo.hasExtension("GL_OES_texture_half_float")) {
-                hasHalfFPTextures = true;
-            }
+        } else if (ctxInfo.hasExtension("GL_OES_texture_float_linear") &&
+                   ctxInfo.hasExtension("GL_OES_texture_float")) {
+            hasFP32Textures = true;
+            hasFP16Textures = true;
+        } else if (ctxInfo.hasExtension("GL_OES_texture_half_float_linear") &&
+                   ctxInfo.hasExtension("GL_OES_texture_half_float")) {
+            hasFP16Textures = true;
+        }
+
+        if (version >= GR_GL_VER(3, 2)) {
+            // For now we only enable rendering to fp32 on desktop, because on ES we'd have to solve
+            // many precision issues and no clients actually want this yet.
+            // hasFP32RenderTargets = true;
+            hasFP16RenderTargets = true;
+        } else if (ctxInfo.hasExtension("GL_EXT_color_buffer_float")) {
+            // For now we only enable rendering to fp32 on desktop, because on ES we'd have to
+            // solve many precision issues and no clients actually want this yet.
+            // hasFP32RenderTargets = true;
+            hasFP16RenderTargets = true;
+        } else if (ctxInfo.hasExtension("GL_EXT_color_buffer_half_float")) {
+            hasFP16RenderTargets = true;
         }
     }
 
@@ -1782,12 +1783,9 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
         fConfigTable[fpconfig].fFormats.fExternalFormat[kReadPixels_ExternalFormatUsage] = format;
         fConfigTable[fpconfig].fFormats.fExternalType = GR_GL_FLOAT;
         fConfigTable[fpconfig].fFormatType = kFloat_FormatType;
-        if (hasFPTextures) {
+        if (hasFP32Textures) {
             fConfigTable[fpconfig].fFlags = rgIsTexturable ? ConfigInfo::kTextureable_Flag : 0;
-            // For now we only enable rendering to float on desktop, because on ES we'd have to
-            // solve many precision issues and no clients actually want this yet.
-            if (kGL_GrGLStandard == standard /* || version >= GR_GL_VER(3,2) ||
-                ctxInfo.hasExtension("GL_EXT_color_buffer_float")*/) {
+            if (hasFP32RenderTargets) {
                 fConfigTable[fpconfig].fFlags |= fpRenderFlags;
             }
         }
@@ -1810,11 +1808,10 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
     redHalf.fFormats.fSizedInternalFormat = GR_GL_R16F;
     redHalf.fFormats.fExternalFormat[kReadPixels_ExternalFormatUsage] = GR_GL_RED;
     redHalf.fSwizzle = GrSwizzle::RRRR();
-    if (textureRedSupport && hasHalfFPTextures) {
+    if (textureRedSupport && hasFP16Textures) {
         redHalf.fFlags = ConfigInfo::kTextureable_Flag;
 
-        if (kGL_GrGLStandard == standard || version >= GR_GL_VER(3, 2) ||
-            (textureRedSupport && ctxInfo.hasExtension("GL_EXT_color_buffer_half_float"))) {
+        if (hasFP16RenderTargets) {
             redHalf.fFlags |= fpRenderFlags;
         }
 
@@ -1834,11 +1831,10 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
         fConfigTable[kRGBA_half_GrPixelConfig].fFormats.fExternalType = GR_GL_HALF_FLOAT_OES;
     }
     fConfigTable[kRGBA_half_GrPixelConfig].fFormatType = kFloat_FormatType;
-    if (hasHalfFPTextures) {
+    if (hasFP16Textures) {
         fConfigTable[kRGBA_half_GrPixelConfig].fFlags = ConfigInfo::kTextureable_Flag;
         // ES requires 3.2 or EXT_color_buffer_half_float.
-        if (kGL_GrGLStandard == standard || version >= GR_GL_VER(3,2) ||
-             ctxInfo.hasExtension("GL_EXT_color_buffer_half_float")) {
+        if (hasFP16RenderTargets) {
             fConfigTable[kRGBA_half_GrPixelConfig].fFlags |= fpRenderFlags;
         }
     }
@@ -2174,8 +2170,8 @@ bool GrGLCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* s
     const GrTextureProxy* dstTex = dst->asTextureProxy();
     const GrTextureProxy* srcTex = src->asTextureProxy();
 
-    bool dstIsTex2D = dstTex ? dstTex->texPriv().isGLTexture2D() : false;
-    bool srcIsTex2D = srcTex ? srcTex->texPriv().isGLTexture2D() : false;
+    bool dstIsTex2D = dstTex ? (dstTex->textureType() == GrTextureType::k2D) : false;
+    bool srcIsTex2D = srcTex ? (srcTex->textureType() == GrTextureType::k2D) : false;
 
     // One of the possible requirements for copy as blit is that the srcRect must match the bounds
     // of the src surface. If we have a approx fit surface we can't know for sure what the src
@@ -2223,7 +2219,7 @@ bool GrGLCaps::initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc*
     {
         // The only way we could see a non-GR_GL_TEXTURE_2D texture would be if it were
         // wrapped. In that case the proxy would already be instantiated.
-        const GrTexture* srcTexture = src->priv().peekTexture();
+        const GrTexture* srcTexture = src->peekTexture();
         const GrGLTexture* glSrcTexture = static_cast<const GrGLTexture*>(srcTexture);
         if (glSrcTexture && glSrcTexture->target() != GR_GL_TEXTURE_2D) {
             // Not supported for FBO blit or CopyTexSubImage
@@ -2577,6 +2573,26 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         shaderCaps->fIncompleteShortIntPrecision = true;
     }
 
+    if (fDriverBugWorkarounds.add_and_true_to_loop_condition) {
+        shaderCaps->fAddAndTrueToLoopCondition = true;
+    }
+
+    if (fDriverBugWorkarounds.unfold_short_circuit_as_ternary_operation) {
+        shaderCaps->fUnfoldShortCircuitAsTernary = true;
+    }
+
+    if (fDriverBugWorkarounds.emulate_abs_int_function) {
+        shaderCaps->fEmulateAbsIntFunction = true;
+    }
+
+    if (fDriverBugWorkarounds.rewrite_do_while_loops) {
+        shaderCaps->fRewriteDoWhileLoops = true;
+    }
+
+    if (fDriverBugWorkarounds.remove_pow_with_constant_exponent) {
+        shaderCaps->fRemovePowWithConstantExponent = true;
+    }
+
     // Disabling advanced blend on various platforms with major known issues. We also block Chrome
     // for now until its own blacklists can be updated.
     if (kAdreno430_GrGLRenderer == ctxInfo.renderer() ||
@@ -2660,6 +2676,14 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // "shapes_mixed_10000_32x33" bench crashes PowerVRGX6250 in Release mode with ccpr.
     // http://skbug.com/8098
     if (kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
+        fBlacklistCoverageCounting = true;
+    }
+
+    // CCPR edge AA is busted on Mesa, Sandy Bridge/Bay Trail.
+    // http://skbug.com/8162
+    if (kMesa_GrGLDriver == ctxInfo.driver() &&
+        (kIntelSandyBridge_GrGLRenderer == ctxInfo.renderer() ||
+         kIntelBayTrail_GrGLRenderer == ctxInfo.renderer())) {
         fBlacklistCoverageCounting = true;
     }
 }

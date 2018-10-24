@@ -23,6 +23,7 @@
 #include "fxbarcode/pdf417/BC_PDF417Writer.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "fxbarcode/BC_TwoDimWriter.h"
 #include "fxbarcode/common/BC_CommonBitArray.h"
@@ -34,9 +35,9 @@
 CBC_PDF417Writer::CBC_PDF417Writer() {
   m_bFixedSize = false;
 }
-CBC_PDF417Writer::~CBC_PDF417Writer() {
-  m_bTruncated = true;
-}
+
+CBC_PDF417Writer::~CBC_PDF417Writer() {}
+
 bool CBC_PDF417Writer::SetErrorCorrectionLevel(int32_t level) {
   if (level < 0 || level > 8) {
     return false;
@@ -44,18 +45,15 @@ bool CBC_PDF417Writer::SetErrorCorrectionLevel(int32_t level) {
   m_iCorrectLevel = level;
   return true;
 }
-void CBC_PDF417Writer::SetTruncated(bool truncated) {
-  m_bTruncated = truncated;
-}
 
 uint8_t* CBC_PDF417Writer::Encode(const WideString& contents,
-                                  int32_t& outWidth,
-                                  int32_t& outHeight) {
+                                  int32_t* outWidth,
+                                  int32_t* outHeight) {
   CBC_PDF417 encoder;
   int32_t col = (m_Width / m_ModuleWidth - 69) / 17;
   int32_t row = m_Height / (m_ModuleWidth * 20);
   if (row >= 3 && row <= 90 && col >= 1 && col <= 30)
-    encoder.setDimensions(col, col, row, row);
+    encoder.setDimensions(col, 1, row, 3);
   else if (col >= 1 && col <= 30)
     encoder.setDimensions(col, col, 90, 3);
   else if (row >= 3 && row <= 90)
@@ -63,38 +61,19 @@ uint8_t* CBC_PDF417Writer::Encode(const WideString& contents,
   if (!encoder.generateBarcodeLogic(contents, m_iCorrectLevel))
     return nullptr;
 
-  int32_t lineThickness = 2;
-  int32_t aspectRatio = 4;
   CBC_BarcodeMatrix* barcodeMatrix = encoder.getBarcodeMatrix();
-  std::vector<uint8_t> originalScale = barcodeMatrix->getScaledMatrix(
-      lineThickness, aspectRatio * lineThickness);
-  int32_t width = outWidth;
-  int32_t height = outHeight;
-  outWidth = barcodeMatrix->getWidth();
-  outHeight = barcodeMatrix->getHeight();
-  bool rotated = false;
-  if ((height > width) ^ (outWidth < outHeight)) {
-    rotateArray(originalScale, outHeight, outWidth);
-    rotated = true;
-    int32_t temp = outHeight;
-    outHeight = outWidth;
-    outWidth = temp;
+  std::vector<uint8_t> matrixData = barcodeMatrix->toBitArray();
+  int32_t matrixWidth = barcodeMatrix->getWidth();
+  int32_t matrixHeight = barcodeMatrix->getHeight();
+
+  if (matrixWidth < matrixHeight) {
+    rotateArray(matrixData, matrixHeight, matrixWidth);
+    std::swap(matrixWidth, matrixHeight);
   }
-  int32_t scaleX = width / outWidth;
-  int32_t scaleY = height / outHeight;
-  int32_t scale = std::min(scaleX, scaleY);
-  if (scale > 1) {
-    originalScale = barcodeMatrix->getScaledMatrix(
-        scale * lineThickness, scale * aspectRatio * lineThickness);
-    if (rotated) {
-      rotateArray(originalScale, outHeight, outWidth);
-      int32_t temp = outHeight;
-      outHeight = outWidth;
-      outWidth = temp;
-    }
-  }
-  uint8_t* result = FX_Alloc2D(uint8_t, outHeight, outWidth);
-  memcpy(result, originalScale.data(), outHeight * outWidth);
+  uint8_t* result = FX_Alloc2D(uint8_t, matrixHeight, matrixWidth);
+  memcpy(result, matrixData.data(), matrixHeight * matrixWidth);
+  *outWidth = matrixWidth;
+  *outHeight = matrixHeight;
   return result;
 }
 

@@ -202,6 +202,11 @@ enum GrClipType {
     kPath_ClipType
 };
 
+enum class GrScissorTest : bool {
+    kDisabled = false,
+    kEnabled = true
+};
+
 struct GrMipLevel {
     const void* fPixels;
     size_t fRowBytes;
@@ -328,9 +333,17 @@ enum GrSLType {
     kTexture2DSampler_GrSLType,
     kTextureExternalSampler_GrSLType,
     kTexture2DRectSampler_GrSLType,
-    kBufferSampler_GrSLType,
-    kTexture2D_GrSLType,
-    kSampler_GrSLType,
+};
+
+/**
+ * The type of texture. Backends other than GL currently only use the 2D value but the type must
+ * still be known at the API-neutral layer as it used to determine whether MIP maps, renderability,
+ * and sampling parameters are legal for proxies that will be instantiated with wrapped textures.
+ */
+enum class GrTextureType {
+    k2D,
+    kRectangle,
+    kExternal
 };
 
 enum GrShaderType {
@@ -395,7 +408,6 @@ static inline bool GrSLTypeIsFloatType(GrSLType type) {
         case kTexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
-        case kBufferSampler_GrSLType:
         case kBool_GrSLType:
         case kByte_GrSLType:
         case kByte2_GrSLType:
@@ -419,8 +431,6 @@ static inline bool GrSLTypeIsFloatType(GrSLType type) {
         case kInt4_GrSLType:
         case kUint_GrSLType:
         case kUint2_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
             return false;
     }
     SK_ABORT("Unexpected type");
@@ -479,66 +489,36 @@ static inline int GrSLTypeVecLength(GrSLType type) {
         case kTexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
-        case kBufferSampler_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
             return -1;
     }
     SK_ABORT("Unexpected type");
     return -1;
 }
 
-static inline bool GrSLTypeIs2DCombinedSamplerType(GrSLType type) {
+static inline GrSLType GrSLCombinedSamplerTypeForTextureType(GrTextureType type) {
     switch (type) {
-        case kTexture2DSampler_GrSLType:
-        case kTextureExternalSampler_GrSLType:
-        case kTexture2DRectSampler_GrSLType:
-            return true;
-
-        case kVoid_GrSLType:
-        case kFloat_GrSLType:
-        case kFloat2_GrSLType:
-        case kFloat3_GrSLType:
-        case kFloat4_GrSLType:
-        case kFloat2x2_GrSLType:
-        case kFloat3x3_GrSLType:
-        case kFloat4x4_GrSLType:
-        case kHalf_GrSLType:
-        case kHalf2_GrSLType:
-        case kHalf3_GrSLType:
-        case kHalf4_GrSLType:
-        case kHalf2x2_GrSLType:
-        case kHalf3x3_GrSLType:
-        case kHalf4x4_GrSLType:
-        case kInt_GrSLType:
-        case kInt2_GrSLType:
-        case kInt3_GrSLType:
-        case kInt4_GrSLType:
-        case kUint_GrSLType:
-        case kUint2_GrSLType:
-        case kBufferSampler_GrSLType:
-        case kBool_GrSLType:
-        case kByte_GrSLType:
-        case kByte2_GrSLType:
-        case kByte3_GrSLType:
-        case kByte4_GrSLType:
-        case kUByte_GrSLType:
-        case kUByte2_GrSLType:
-        case kUByte3_GrSLType:
-        case kUByte4_GrSLType:
-        case kShort_GrSLType:
-        case kShort2_GrSLType:
-        case kShort3_GrSLType:
-        case kShort4_GrSLType:
-        case kUShort_GrSLType:
-        case kUShort2_GrSLType:
-        case kUShort3_GrSLType:
-        case kUShort4_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
-            return false;
+        case GrTextureType::k2D:
+            return kTexture2DSampler_GrSLType;
+        case GrTextureType::kRectangle:
+            return kTexture2DRectSampler_GrSLType;
+        case GrTextureType::kExternal:
+            return kTextureExternalSampler_GrSLType;
     }
-    SK_ABORT("Unexpected type");
+    SK_ABORT("Unexpected texture type");
+    return kTexture2DSampler_GrSLType;
+}
+
+/** Rectangle and external textures ony support the clamp wrap mode and do not support MIP maps. */
+static inline bool GrTextureTypeHasRestrictedSampling(GrTextureType type) {
+    switch (type) {
+        case GrTextureType::k2D:
+            return false;
+        case GrTextureType::kRectangle:
+            return true;
+        case GrTextureType::kExternal:
+            return true;
+    }
+    SK_ABORT("Unexpected texture type");
     return false;
 }
 
@@ -547,7 +527,6 @@ static inline bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kTexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
-        case kBufferSampler_GrSLType:
             return true;
 
         case kVoid_GrSLType:
@@ -588,8 +567,6 @@ static inline bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kUShort2_GrSLType:
         case kUShort3_GrSLType:
         case kUShort4_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
             return false;
     }
     SK_ABORT("Unexpected type");
@@ -601,9 +578,6 @@ static inline bool GrSLTypeAcceptsPrecision(GrSLType type) {
         case kTexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
-        case kBufferSampler_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
             return true;
 
         case kVoid_GrSLType:
@@ -679,9 +653,6 @@ static inline bool GrSLTypeTemporarilyAcceptsPrecision(GrSLType type) {
         case kTexture2DSampler_GrSLType:
         case kTextureExternalSampler_GrSLType:
         case kTexture2DRectSampler_GrSLType:
-        case kBufferSampler_GrSLType:
-        case kTexture2D_GrSLType:
-        case kSampler_GrSLType:
             return true;
 
         case kVoid_GrSLType:
@@ -899,17 +870,6 @@ enum class GrInternalSurfaceFlags {
 
     kSurfaceMask                    = kNoPendingIO,
 
-    // Texture-only flags
-
-    // This flag is for GL only. It says that the GL texture we will use has a target which is
-    // either GL_TEXTURE_RECTANGLE or GL_GL_TEXTURE_EXTERNAL. We use this information to make
-    // decisions about various rendering capabilites (e.g. is clamp the only supported wrap mode).
-    // Note: Ganesh does not internally create these types of textures so they will only occur on
-    // resources passed into Ganesh.
-    kIsGLTextureRectangleOrExternal = 1 << 1,
-
-    kTextureMask                    = kIsGLTextureRectangleOrExternal,
-
     // RT-only
 
     // For internal resources:
@@ -972,14 +932,14 @@ enum class GpuPathRenderers {
     kNone              = 0, // Always use sofware masks and/or GrDefaultPathRenderer.
     kDashLine          = 1 << 0,
     kStencilAndCover   = 1 << 1,
-    kAAConvex          = 1 << 2,
-    kAALinearizing     = 1 << 3,
-    kSmall             = 1 << 4,
-    kCoverageCounting  = 1 << 5,
-    kTessellating      = 1 << 6,
+    kCoverageCounting  = 1 << 2,
+    kAAHairline        = 1 << 3,
+    kAAConvex          = 1 << 4,
+    kAALinearizing     = 1 << 5,
+    kSmall             = 1 << 6,
+    kTessellating      = 1 << 7,
 
-    kAll               = (kTessellating | (kTessellating - 1)),
-    kDefault           = kAll
+    kAll               = (kTessellating | (kTessellating - 1))
 };
 
 /**

@@ -122,10 +122,10 @@ AudioDeviceIOS::AudioDeviceIOS()
 }
 
 AudioDeviceIOS::~AudioDeviceIOS() {
-  LOGI() << "~dtor" << ios::GetCurrentThreadDescription();
-  audio_session_observer_ = nil;
   RTC_DCHECK(thread_checker_.CalledOnValidThread());
+  LOGI() << "~dtor" << ios::GetCurrentThreadDescription();
   Terminate();
+  audio_session_observer_ = nil;
 }
 
 void AudioDeviceIOS::AttachAudioBuffer(AudioDeviceBuffer* audioBuffer) {
@@ -271,6 +271,10 @@ int32_t AudioDeviceIOS::StopPlayout() {
   return 0;
 }
 
+bool AudioDeviceIOS::Playing() const {
+  return playing_;
+}
+
 int32_t AudioDeviceIOS::StartRecording() {
   LOGI() << "StartRecording";
   RTC_DCHECK_RUN_ON(&thread_checker_);
@@ -303,6 +307,10 @@ int32_t AudioDeviceIOS::StopRecording() {
   }
   rtc::AtomicOps::ReleaseStore(&recording_, 0);
   return 0;
+}
+
+bool AudioDeviceIOS::Recording() const {
+  return recording_;
 }
 
 int32_t AudioDeviceIOS::PlayoutDelay(uint16_t& delayMS) const {
@@ -827,6 +835,7 @@ void AudioDeviceIOS::UnconfigureAudioSession() {
   RTCAudioSession* session = [RTCAudioSession sharedInstance];
   [session lockForConfiguration];
   [session unconfigureWebRTCSession:nil];
+  [session endWebRTCSession:nil];
   [session unlockForConfiguration];
   has_configured_session_ = false;
   RTCLog(@"Unconfigured audio session.");
@@ -852,6 +861,7 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
   if (![session beginWebRTCSession:&error]) {
     [session unlockForConfiguration];
     RTCLogError(@"Failed to begin WebRTC session: %@", error.localizedDescription);
+    audio_unit_.reset();
     return false;
   }
 
@@ -863,6 +873,7 @@ bool AudioDeviceIOS::InitPlayOrRecord() {
       // audio session during or after a Media Services failure.
       // See AVAudioSessionErrorCodeMediaServicesFailed for details.
       [session unlockForConfiguration];
+      audio_unit_.reset();
       return false;
     }
     SetupAudioBuffersForActiveAudioSession();
@@ -894,10 +905,7 @@ void AudioDeviceIOS::ShutdownPlayOrRecord() {
 
   // All I/O should be stopped or paused prior to deactivating the audio
   // session, hence we deactivate as last action.
-  [session lockForConfiguration];
   UnconfigureAudioSession();
-  [session endWebRTCSession:nil];
-  [session unlockForConfiguration];
 }
 
 void AudioDeviceIOS::PrepareForNewStart() {

@@ -706,7 +706,7 @@ static const size_t N = sizeof(F) / sizeof(float);
 
 // Any custom ABI to use for all (non-externally-facing) stage functions?
 // Also decide here whether to use narrow (compromise) or wide (ideal) stages.
-#if defined(__arm__) && defined(__ARM_NEON)
+#if defined(__arm__) && defined(JUMPER_IS_NEON)
     // This lets us pass vectors more efficiently on 32-bit ARM.
     // We can still only pass 16 floats, so best as 4x {r,g,b,a}.
     #define ABI __attribute__((pcs("aapcs-vfp")))
@@ -1320,44 +1320,6 @@ STAGE(unpremul, Ctx::None) {
 STAGE(force_opaque    , Ctx::None) {  a = 1; }
 STAGE(force_opaque_dst, Ctx::None) { da = 1; }
 
-STAGE(from_srgb, Ctx::None) {
-    auto fn = [](F s) {
-        auto lo = s * (1/12.92f);
-        auto hi = mad(s*s, mad(s, 0.3000f, 0.6975f), 0.0025f);
-        return if_then_else(s < 0.055f, lo, hi);
-    };
-    r = fn(r);
-    g = fn(g);
-    b = fn(b);
-}
-STAGE(to_srgb, Ctx::None) {
-    auto fn = [](F l) {
-        // We tweak c and d for each instruction set to make sure fn(1) is exactly 1.
-    #if defined(JUMPER_IS_AVX512)
-        const float c = 1.130026340485f,
-                    d = 0.141387879848f;
-    #elif defined(JUMPER_IS_SSE2) || defined(JUMPER_IS_SSE41) || \
-          defined(JUMPER_IS_AVX ) || defined(JUMPER_IS_HSW )
-        const float c = 1.130048394203f,
-                    d = 0.141357362270f;
-    #elif defined(JUMPER_IS_NEON)
-        const float c = 1.129999995232f,
-                    d = 0.141381442547f;
-    #else
-        const float c = 1.129999995232f,
-                    d = 0.141377761960f;
-    #endif
-        F t = rsqrt(l);
-        auto lo = l * 12.92f;
-        auto hi = mad(t, mad(t, -0.0024542345f, 0.013832027f), c)
-                * rcp(d + t);
-        return if_then_else(l < 0.00465985f, lo, hi);
-    };
-    r = fn(r);
-    g = fn(g);
-    b = fn(b);
-}
-
 STAGE(rgb_to_hsl, Ctx::None) {
     F mx = max(r,g,b),
       mn = min(r,g,b),
@@ -1483,13 +1445,37 @@ STAGE(byte_tables, const void* ctx) {  // TODO: rename Tables SkJumper_ByteTable
     a = from_byte(gather(tables->a, to_unorm(a, 255)));
 }
 
+#if defined(SK_LEGACY_EXTENDED_TRANSFER_FUNCTIONS)
+    SI F strip_sign(F x, U32* sign) {
+        (void)sign;
+        return x;
+    }
+    SI F apply_sign(F x, U32 sign) {
+        (void)sign;
+        return x;
+    }
+#else
+    SI F strip_sign(F x, U32* sign) {
+        U32 bits = bit_cast<U32>(x);
+        *sign = bits & 0x80000000;
+        return bit_cast<F>(bits ^ *sign);
+    }
+
+    SI F apply_sign(F x, U32 sign) {
+        return bit_cast<F>(sign | bit_cast<U32>(x));
+    }
+#endif
+
 STAGE(parametric, const SkJumper_ParametricTransferFunction* ctx) {
     auto fn = [&](F v) {
+        U32 sign;
+        v = strip_sign(v, &sign);
+
         F r = if_then_else(v <= ctx->D, mad(ctx->C, v, ctx->F)
                                       , approx_powf(mad(ctx->A, v, ctx->B), ctx->G) + ctx->E);
         // Clamp to [0,1], with argument order mattering to handle NaN.
         // TODO: should we really be clamping here?
-        return min(max(r, 0), 1.0f);
+        return apply_sign(min(max(r, 0), 1.0f), sign);
     };
     r = fn(r);
     g = fn(g);
@@ -1497,9 +1483,56 @@ STAGE(parametric, const SkJumper_ParametricTransferFunction* ctx) {
 }
 
 STAGE(gamma, const float* G) {
-    r = approx_powf(r, *G);
-    g = approx_powf(g, *G);
-    b = approx_powf(b, *G);
+    auto fn = [&](F v) {
+        U32 sign;
+        v = strip_sign(v, &sign);
+        return apply_sign(approx_powf(v, *G), sign);
+    };
+    r = fn(r);
+    g = fn(g);
+    b = fn(b);
+}
+
+STAGE(from_srgb, Ctx::None) {
+    auto fn = [](F s) {
+        U32 sign;
+        s = strip_sign(s, &sign);
+        auto lo = s * (1/12.92f);
+        auto hi = mad(s*s, mad(s, 0.3000f, 0.6975f), 0.0025f);
+        return apply_sign(if_then_else(s < 0.055f, lo, hi), sign);
+    };
+    r = fn(r);
+    g = fn(g);
+    b = fn(b);
+}
+STAGE(to_srgb, Ctx::None) {
+    auto fn = [](F l) {
+        U32 sign;
+        l = strip_sign(l, &sign);
+        // We tweak c and d for each instruction set to make sure fn(1) is exactly 1.
+    #if defined(JUMPER_IS_AVX512)
+        const float c = 1.130026340485f,
+                    d = 0.141387879848f;
+    #elif defined(JUMPER_IS_SSE2) || defined(JUMPER_IS_SSE41) || \
+          defined(JUMPER_IS_AVX ) || defined(JUMPER_IS_HSW )
+        const float c = 1.130048394203f,
+                    d = 0.141357362270f;
+    #elif defined(JUMPER_IS_NEON)
+        const float c = 1.129999995232f,
+                    d = 0.141381442547f;
+    #else
+        const float c = 1.129999995232f,
+                    d = 0.141377761960f;
+    #endif
+        F t = rsqrt(l);
+        auto lo = l * 12.92f;
+        auto hi = mad(t, mad(t, -0.0024542345f, 0.013832027f), c)
+                * rcp(d + t);
+        return apply_sign(if_then_else(l < 0.00465985f, lo, hi), sign);
+    };
+    r = fn(r);
+    g = fn(g);
+    b = fn(b);
 }
 
 STAGE(load_a8, const SkJumper_MemoryCtx* ctx) {
@@ -2363,7 +2396,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
 SI U16 div255(U16 v) {
 #if 0
     return (v+127)/255;  // The ideal rounding divide by 255.
-#elif 1 && defined(__ARM_NEON)
+#elif 1 && defined(JUMPER_IS_NEON)
     // With NEON we can compute (v+127)/255 as (v + ((v+128)>>8) + 128)>>8
     // just as fast as we can do the approximation below, so might as well be correct!
     // First we compute v + ((v+128)>>8), then one more round of (...+128)>>8 to finish up.
@@ -2425,7 +2458,7 @@ SI F rcp(F x) {
     __m128 lo,hi;
     split(x, &lo,&hi);
     return join<F>(_mm_rcp_ps(lo), _mm_rcp_ps(hi));
-#elif defined(__ARM_NEON)
+#elif defined(JUMPER_IS_NEON)
     auto rcp = [](float32x4_t v) {
         auto est = vrecpeq_f32(v);
         return vrecpsq_f32(v,est)*est;
@@ -2450,7 +2483,7 @@ SI F sqrt_(F x) {
     float32x4_t lo,hi;
     split(x, &lo,&hi);
     return join<F>(vsqrtq_f32(lo), vsqrtq_f32(hi));
-#elif defined(__ARM_NEON)
+#elif defined(JUMPER_IS_NEON)
     auto sqrt = [](float32x4_t v) {
         auto est = vrsqrteq_f32(v);  // Estimate and two refinement steps for est = rsqrt(v).
         est *= vrsqrtsq_f32(v,est*est);
@@ -2537,6 +2570,9 @@ STAGE_PP(set_rgb, const float rgb[3]) {
     g = from_float(rgb[1]);
     b = from_float(rgb[2]);
 }
+
+STAGE_PP(clamp_0, Ctx::None) { /*definitely a noop*/ }
+STAGE_PP(clamp_1, Ctx::None) { /*_should_ be a noop*/ }
 
 STAGE_PP(clamp_a, Ctx::None) {
     r = min(r, a);
@@ -2770,7 +2806,7 @@ SI void from_8888(U32 rgba, U16* r, U16* g, U16* b, U16* a) {
 }
 
 SI void load_8888_(const uint32_t* ptr, size_t tail, U16* r, U16* g, U16* b, U16* a) {
-#if 1 && defined(__ARM_NEON)
+#if 1 && defined(JUMPER_IS_NEON)
     uint8x8x4_t rgba;
     switch (tail & (N-1)) {
         case 0: rgba = vld4_u8     ((const uint8_t*)(ptr+0)         ); break;
@@ -2791,7 +2827,7 @@ SI void load_8888_(const uint32_t* ptr, size_t tail, U16* r, U16* g, U16* b, U16
 #endif
 }
 SI void store_8888_(uint32_t* ptr, size_t tail, U16 r, U16 g, U16 b, U16 a) {
-#if 1 && defined(__ARM_NEON)
+#if 1 && defined(JUMPER_IS_NEON)
     uint8x8x4_t rgba = {{
         cast<U8>(r),
         cast<U8>(g),
@@ -3207,7 +3243,6 @@ using NotImplemented = void(*)(void);
 
 static NotImplemented
         callback, load_rgba, store_rgba,
-        clamp_0, clamp_1,
         unbounded_uniform_color,
         unpremul, dither,
         from_srgb, from_srgb_dst, to_srgb,

@@ -7,20 +7,21 @@
 #ifndef FXJS_XFA_CJX_SUBFORMSET_H_
 #define FXJS_XFA_CJX_SUBFORMSET_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_container.h"
 
 class CXFA_SubformSet;
 
-class CJX_SubformSet : public CJX_Container {
+class CJX_SubformSet final : public CJX_Container {
  public:
   explicit CJX_SubformSet(CXFA_SubformSet* node);
   ~CJX_SubformSet() override;
 
-  JS_PROP(instanceIndex);
-  JS_PROP(relation);
-  JS_PROP(relevant);
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(instanceIndex);
+  JSE_PROP(relation);
+  JSE_PROP(relevant);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_SUBFORMSET_H_

@@ -7,17 +7,18 @@
 #ifndef FXJS_XFA_CJX_UPDATE_H_
 #define FXJS_XFA_CJX_UPDATE_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_textnode.h"
 
 class CXFA_Update;
 
-class CJX_Update : public CJX_TextNode {
+class CJX_Update final : public CJX_TextNode {
  public:
   explicit CJX_Update(CXFA_Update* node);
   ~CJX_Update() override;
 
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_UPDATE_H_

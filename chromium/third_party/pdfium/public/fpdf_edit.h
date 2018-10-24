@@ -1257,6 +1257,44 @@ FPDFPageObj_CreateTextObj(FPDF_DOCUMENT document,
 FPDF_EXPORT int FPDF_CALLCONV FPDFText_GetTextRenderMode(FPDF_PAGEOBJECT text);
 
 // Experimental API.
+// Get the font name of a text object.
+//
+// text             - the handle to the text object.
+// buffer           - the address of a buffer that receives the font name.
+// length           - the size, in bytes, of |buffer|.
+//
+// Returns the number of bytes in the font name (including the trailing NUL
+// character) on success, 0 on error.
+//
+// Regardless of the platform, the |buffer| is always in UTF-8 encoding.
+// If |length| is less than the returned length, or |buffer| is NULL, |buffer|
+// will not be modified.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFTextObj_GetFontName(FPDF_PAGEOBJECT text,
+                        void* buffer,
+                        unsigned long length);
+
+// Experimental API.
+// Get the text of a text object.
+//
+// text_object      - the handle to the text object.
+// text_page        - the handle to the text page.
+// buffer           - the address of a buffer that receives the text.
+// length           - the size, in bytes, of |buffer|.
+//
+// Returns the number of bytes in the text (including the trailing NUL
+// character) on success, 0 on error.
+//
+// Regardless of the platform, the |buffer| is always in UTF16-LE encoding.
+// If |length| is less than the returned length, or |buffer| is NULL, |buffer|
+// will not be modified.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFTextObj_GetText(FPDF_PAGEOBJECT text_object,
+                    FPDF_TEXTPAGE text_page,
+                    void* buffer,
+                    unsigned long length);
+
+// Experimental API.
 // Get number of page objects inside |form_object|.
 //
 //   form_object - handle to a form object.
@@ -1274,6 +1312,32 @@ FPDFFormObj_CountObjects(FPDF_PAGEOBJECT form_object);
 // Returns the handle to the page object, or NULL on error.
 FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
 FPDFFormObj_GetObject(FPDF_PAGEOBJECT form_object, unsigned long index);
+
+// Experimental API.
+// Get the transform matrix of a form object.
+//
+//   form_object - handle to a form.
+//   a           - pointer to out variable to receive matrix value.
+//   b           - pointer to out variable to receive matrix value.
+//   c           - pointer to out variable to receive matrix value.
+//   d           - pointer to out variable to receive matrix value.
+//   e           - pointer to out variable to receive matrix value.
+//   f           - pointer to out variable to receive matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and used to scale, rotate, shear and translate the form object.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFFormObj_GetMatrix(FPDF_PAGEOBJECT form_object,
+                      double* a,
+                      double* b,
+                      double* c,
+                      double* d,
+                      double* e,
+                      double* f);
 
 #ifdef __cplusplus
 }  // extern "C"

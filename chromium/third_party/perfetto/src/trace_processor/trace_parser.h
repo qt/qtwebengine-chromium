@@ -17,46 +17,23 @@
 #ifndef SRC_TRACE_PROCESSOR_TRACE_PARSER_H_
 #define SRC_TRACE_PROCESSOR_TRACE_PARSER_H_
 
-#include <stdint.h>
 #include <memory>
-
-#include "perfetto/protozero/proto_decoder.h"
-#include "src/trace_processor/blob_reader.h"
-#include "src/trace_processor/trace_storage.h"
 
 namespace perfetto {
 namespace trace_processor {
 
-// Reads a trace in chunks from an abstract data source and parses it into a
-// form which is efficient to query.
+// Base interface for trace parsers (JsonTraceParser, ProtoTraceParser).
 class TraceParser {
  public:
-  // |reader| is the abstract method of getting chunks of size |chunk_size_b|
-  // from a trace file with these chunks parsed into |trace|.
-  TraceParser(BlobReader* reader, TraceStorage* storage, uint32_t chunk_size_b);
+  virtual ~TraceParser();
 
-  // Parses the next chunk of TracePackets from the BlobReader. Returns true
-  // if there are more chunks which can be read and false otherwise.
-  bool ParseNextChunk();
-
- private:
-  void ParsePacket(const uint8_t* data, size_t length);
-  void ParseFtraceEventBundle(const uint8_t* data, size_t length);
-  void ParseFtraceEvent(uint32_t cpu, const uint8_t* data, size_t length);
-  void ParseSchedSwitch(uint32_t cpu,
-                        uint64_t timestamp,
-                        const uint8_t* data,
-                        size_t length);
-  void ParseProcessTree(const uint8_t* data, size_t length);
-  void ParseProcess(const uint8_t* data, size_t length);
-  void ParseThread(const uint8_t* data, size_t length);
-
-  BlobReader* const reader_;
-  TraceStorage* const storage_;
-  const uint32_t chunk_size_b_;
-
-  uint64_t offset_ = 0;
-  std::unique_ptr<uint8_t[]> buffer_;
+  // Pushes more data into the trace parser. There is no requirement for the
+  // caller to match line/protos boundaries. The parser class has to deal with
+  // intermediate buffering lines/protos that span across different chunks.
+  // The buffer size is guaranteed to be > 0.
+  // Returns true if the data has been succesfully parsed, false if some
+  // unrecoverable parsing error happened and no more chunks should be pushed.
+  virtual bool Parse(std::unique_ptr<uint8_t[]>, size_t) = 0;
 };
 
 }  // namespace trace_processor

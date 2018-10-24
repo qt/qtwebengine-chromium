@@ -11,6 +11,7 @@
     # Can be enabled if your jpeg has GYP support.
     'libyuv_disable_jpeg%': 1,
     'mips_msa%': 0,  # Default to msa off.
+    'mips_mmi%': 0,  # Default to mmi off.
   },
   'targets': [
     {
@@ -93,6 +94,12 @@
           and (mips_msa == 1)', {
           'defines': [
             'LIBYUV_MSA'
+          ],
+        }],
+        [ '(target_arch == "mipsel" or target_arch == "mips64el") \
+          and (mips_mmi == 1)', {
+          'defines': [
+            'LIBYUV_MMI'
           ],
         }],
       ], # conditions

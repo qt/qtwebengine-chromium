@@ -307,16 +307,6 @@ bool NetEqImpl::SetMaximumDelay(int delay_ms) {
   return false;
 }
 
-int NetEqImpl::LeastRequiredDelayMs() const {
-  rtc::CritScope lock(&crit_sect_);
-  assert(delay_manager_.get());
-  return delay_manager_->least_required_delay_ms();
-}
-
-int NetEqImpl::SetTargetDelay() {
-  return kNotImplemented;
-}
-
 int NetEqImpl::TargetDelayMs() const {
   rtc::CritScope lock(&crit_sect_);
   RTC_DCHECK(delay_manager_.get());
@@ -452,14 +442,6 @@ absl::optional<SdpAudioFormat> NetEqImpl::GetDecoderFormat(
     return absl::nullopt;  // Payload type not registered.
   }
   return di->GetFormat();
-}
-
-int NetEqImpl::SetTargetNumberOfChannels() {
-  return kNotImplemented;
-}
-
-int NetEqImpl::SetTargetSampleRate() {
-  return kNotImplemented;
 }
 
 void NetEqImpl::FlushBuffers() {

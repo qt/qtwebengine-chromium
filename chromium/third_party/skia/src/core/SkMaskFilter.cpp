@@ -323,31 +323,20 @@ SkMaskFilterBase::onAsFragmentProcessor(const GrFPArgs&) const {
 }
 bool SkMaskFilterBase::onHasFragmentProcessor() const { return false; }
 
-bool SkMaskFilterBase::canFilterMaskGPU(const SkRRect& devRRect,
+bool SkMaskFilterBase::canFilterMaskGPU(const GrShape& shape,
+                                        const SkIRect& devSpaceShapeBounds,
                                         const SkIRect& clipBounds,
                                         const SkMatrix& ctm,
-                                        SkRect* maskRect) const {
+                                        SkIRect* maskRect) const {
     return false;
 }
 
 bool SkMaskFilterBase::directFilterMaskGPU(GrContext*,
-                                           GrRenderTargetContext* renderTargetContext,
+                                           GrRenderTargetContext*,
                                            GrPaint&&,
                                            const GrClip&,
                                            const SkMatrix& viewMatrix,
-                                           const SkStrokeRec& strokeRec,
-                                           const SkPath& path) const {
-    return false;
-}
-
-bool SkMaskFilterBase::directFilterRRectMaskGPU(GrContext*,
-                                                GrRenderTargetContext* renderTargetContext,
-                                                GrPaint&&,
-                                                const GrClip&,
-                                                const SkMatrix& viewMatrix,
-                                                const SkStrokeRec& strokeRec,
-                                                const SkRRect& rrect,
-                                                const SkRRect& devRRect) const {
+                                           const GrShape&) const {
     return false;
 }
 

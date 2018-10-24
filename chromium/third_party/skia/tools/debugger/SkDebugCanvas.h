@@ -130,8 +130,6 @@ protected:
                        const SkPaint&) override;
     void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
                         SkScalar constY, const SkPaint&) override;
-    void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
-                          const SkMatrix* matrix, const SkPaint&) override;
     void onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform[], const SkRect*,
                            const SkPaint&) override;
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
@@ -146,8 +144,8 @@ protected:
     void onDrawArc(const SkRect&, SkScalar, SkScalar, bool, const SkPaint&) override;
     void onDrawRRect(const SkRRect&, const SkPaint&) override;
     void onDrawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) override;
-    void onDrawVerticesObject(const SkVertices*, const SkMatrix* bones, int boneCount, SkBlendMode,
-                              const SkPaint&) override;
+    void onDrawVerticesObject(const SkVertices*, const SkVertices::Bone bones[], int boneCount,
+                              SkBlendMode, const SkPaint&) override;
     void onDrawPath(const SkPath&, const SkPaint&) override;
     void onDrawRegion(const SkRegion&, const SkPaint&) override;
     void onDrawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint*) override;

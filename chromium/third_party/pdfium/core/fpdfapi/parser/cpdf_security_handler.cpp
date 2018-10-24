@@ -18,6 +18,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
+#include "core/fxcrt/fx_extension.h"
 
 namespace {
 
@@ -119,7 +120,13 @@ bool CPDF_SecurityHandler::CheckSecurity(const ByteString& password) {
 }
 
 uint32_t CPDF_SecurityHandler::GetPermissions() const {
-  return m_bOwnerUnlocked ? 0xFFFFFFFF : m_Permissions;
+  uint32_t dwPermission = m_bOwnerUnlocked ? 0xFFFFFFFF : m_Permissions;
+  if (m_pEncryptDict && m_pEncryptDict->GetStringFor("Filter") == "Standard") {
+    // See PDF Reference 1.7, page 123, table 3.20.
+    dwPermission &= 0xFFFFFFFC;
+    dwPermission |= 0xFFFFF0C0;
+  }
+  return dwPermission;
 }
 
 static bool LoadCryptInfo(const CPDF_Dictionary* pEncryptDict,
@@ -525,7 +532,7 @@ void CPDF_SecurityHandler::OnCreateInternal(CPDF_Dictionary* pEncryptDict,
     owner_password_copy = user_password;
 
   if (m_Revision >= 5) {
-    int t = (int)time(nullptr);
+    int t = static_cast<int>(FXSYS_time(nullptr));
     CRYPT_sha2_context sha;
     CRYPT_SHA256Start(&sha);
     CRYPT_SHA256Update(&sha, (uint8_t*)&t, sizeof t);

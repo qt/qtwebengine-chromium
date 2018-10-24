@@ -76,15 +76,14 @@ FWL_WidgetHit CFWL_Form::HitTest(const CFX_PointF& point) {
 void CFWL_Form::DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) {
   if (!pGraphics)
     return;
-  if (!m_pProperties->m_pThemeProvider)
+
+  IFWL_ThemeProvider* pTheme = m_pProperties->m_pThemeProvider.Get();
+  if (!pTheme)
     return;
 
-  IFWL_ThemeProvider* pTheme = m_pProperties->m_pThemeProvider;
   DrawBackground(pGraphics, pTheme);
 
-#if _FX_OS_ == _FX_OS_MACOSX_
-  return;
-#endif
+#if _FX_OS_ != _FX_OS_MACOSX_
   CFWL_ThemeBackground param;
   param.m_pWidget = this;
   param.m_dwStates = CFWL_PartState_Normal;
@@ -95,6 +94,7 @@ void CFWL_Form::DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) {
     param.m_iPart = CFWL_Part::Border;
     pTheme->DrawBackground(&param);
   }
+#endif
 }
 
 CFWL_Widget* CFWL_Form::DoModal() {
@@ -158,8 +158,8 @@ void CFWL_Form::DrawBackground(CXFA_Graphics* pGraphics,
 CFX_RectF CFWL_Form::GetEdgeRect() {
   CFX_RectF rtEdge = m_rtRelative;
   if (m_pProperties->m_dwStyles & FWL_WGTSTYLE_Border) {
-    float fCX = GetBorderSize(true);
-    float fCY = GetBorderSize(false);
+    float fCX = GetCXBorderSize();
+    float fCY = GetCYBorderSize();
     rtEdge.Deflate(fCX, fCY, fCX, fCY);
   }
   return rtEdge;

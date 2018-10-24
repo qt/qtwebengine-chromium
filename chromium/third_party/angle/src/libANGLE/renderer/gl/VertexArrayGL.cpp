@@ -13,6 +13,7 @@
 #include "common/mathutil.h"
 #include "common/utilities.h"
 #include "libANGLE/Buffer.h"
+#include "libANGLE/Context.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/gl/BufferGL.h"
@@ -149,7 +150,7 @@ gl::Error VertexArrayGL::syncDrawState(const gl::Context *context,
     // Check if any attributes need to be streamed, determines if the index range needs to be
     // computed
     const gl::AttributesMask &needsStreamingAttribs =
-        (mState.getEnabledClientMemoryAttribsMask() & activeAttributesMask);
+        context->getStateCache().getActiveClientAttribsMask();
 
     // Determine if an index buffer needs to be streamed and the range of vertices that need to be
     // copied
@@ -416,7 +417,8 @@ GLuint VertexArrayGL::getAppliedElementArrayBufferID() const
 
 void VertexArrayGL::updateAttribEnabled(size_t attribIndex)
 {
-    const bool enabled = mState.getVertexAttribute(attribIndex).enabled;
+    const bool enabled = mState.getVertexAttribute(attribIndex).enabled &
+                         mProgramActiveAttribLocationsMask.test(attribIndex);
     if (mAppliedAttributes[attribIndex].enabled == enabled)
     {
         return;
@@ -727,6 +729,17 @@ void VertexArrayGL::applyNumViewsToDivisor(int numViews)
         {
             updateBindingDivisor(index);
         }
+    }
+}
+
+void VertexArrayGL::applyActiveAttribLocationsMask(const gl::AttributesMask &activeMask)
+{
+    gl::AttributesMask updateMask     = mProgramActiveAttribLocationsMask ^ activeMask;
+    mProgramActiveAttribLocationsMask = activeMask;
+
+    for (size_t attribIndex : updateMask)
+    {
+        updateAttribEnabled(attribIndex);
     }
 }
 

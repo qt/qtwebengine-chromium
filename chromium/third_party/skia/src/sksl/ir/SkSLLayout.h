@@ -181,7 +181,7 @@ struct Layout {
             separator = ", ";
         }
         if (fInputAttachmentIndex >= 0) {
-            result += separator + "input_attachment_index = " + to_string(fBuiltin);
+            result += separator + "input_attachment_index = " + to_string(fInputAttachmentIndex);
             separator = ", ";
         }
         if (Format::kUnspecified != fFormat) {
@@ -310,6 +310,9 @@ struct Layout {
         }
         if (result.size() > 0) {
             result = "layout (" + result + ")";
+        }
+        if (fKey) {
+            result += "/* key */";
         }
         return result;
     }

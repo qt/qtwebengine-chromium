@@ -22,12 +22,12 @@ CFWL_WidgetMgr::CFWL_WidgetMgr(CXFA_FFApp* pAdapterNative)
 
 CFWL_WidgetMgr::~CFWL_WidgetMgr() {}
 
-CFWL_Widget* CFWL_WidgetMgr::GetParentWidget(CFWL_Widget* pWidget) const {
+CFWL_Widget* CFWL_WidgetMgr::GetParentWidget(const CFWL_Widget* pWidget) const {
   Item* pItem = GetWidgetMgrItem(pWidget);
   return pItem && pItem->pParent ? pItem->pParent->pWidget : nullptr;
 }
 
-CFWL_Widget* CFWL_WidgetMgr::GetOwnerWidget(CFWL_Widget* pWidget) const {
+CFWL_Widget* CFWL_WidgetMgr::GetOwnerWidget(const CFWL_Widget* pWidget) const {
   Item* pItem = GetWidgetMgrItem(pWidget);
   return pItem && pItem->pOwner ? pItem->pOwner->pWidget : nullptr;
 }
@@ -328,7 +328,7 @@ void CFWL_WidgetMgr::ResetRedrawCounts(CFWL_Widget* pWidget) {
 }
 
 CFWL_WidgetMgr::Item* CFWL_WidgetMgr::GetWidgetMgrItem(
-    CFWL_Widget* pWidget) const {
+    const CFWL_Widget* pWidget) const {
   auto it = m_mapWidgetItem.find(pWidget);
   return it != m_mapWidgetItem.end() ? static_cast<Item*>(it->second.get())
                                      : nullptr;
@@ -424,7 +424,7 @@ void CFWL_WidgetMgr::DrawChild(CFWL_Widget* parent,
     if (pMatrix)
       widgetMatrix.Concat(*pMatrix);
 
-    widgetMatrix.Translate(rtWidget.left, rtWidget.top, true);
+    widgetMatrix.TranslatePrepend(rtWidget.left, rtWidget.top);
 
     if (IFWL_WidgetDelegate* pDelegate = child->GetDelegate())
       pDelegate->OnDrawWidget(pGraphics, widgetMatrix);

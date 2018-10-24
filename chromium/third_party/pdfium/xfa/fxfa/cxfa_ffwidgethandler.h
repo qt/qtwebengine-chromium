@@ -25,7 +25,7 @@ class CXFA_FFWidgetHandler {
 
   CXFA_FFWidget* CreateWidget(CXFA_FFWidget* hParent,
                               XFA_WIDGETTYPE eType,
-                              CXFA_FFWidget* hBefore = nullptr);
+                              CXFA_FFWidget* hBefore);
 
   bool OnMouseEnter(CXFA_FFWidget* hWidget);
   bool OnMouseExit(CXFA_FFWidget* hWidget);
@@ -112,7 +112,7 @@ class CXFA_FFWidgetHandler {
                             CXFA_Node* pBefore) const;
   CXFA_Node* CreateCopyNode(XFA_Element eElement,
                             CXFA_Node* pParent,
-                            CXFA_Node* pBefore = nullptr) const;
+                            CXFA_Node* pBefore) const;
   CXFA_Node* CreateTemplateNode(XFA_Element eElement,
                                 CXFA_Node* pParent,
                                 CXFA_Node* pBefore) const;

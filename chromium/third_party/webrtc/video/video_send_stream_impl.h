@@ -15,10 +15,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "api/video/video_bitrate_allocator.h"
+#include "api/video/video_stream_encoder_interface.h"
 #include "call/bitrate_allocator.h"
-#include "call/payload_router.h"
+#include "call/rtp_video_sender_interface.h"
 #include "common_types.h"  // NOLINT(build/include)
-#include "common_video/include/video_bitrate_allocator.h"
 #include "modules/utility/include/process_thread.h"
 #include "modules/video_coding/utility/ivf_file_writer.h"
 #include "rtc_base/weak_ptr.h"
@@ -27,7 +28,6 @@
 #include "video/send_delay_stats.h"
 #include "video/send_statistics_proxy.h"
 #include "video/video_send_stream.h"
-#include "video/video_stream_encoder.h"
 
 namespace webrtc {
 namespace internal {
@@ -42,7 +42,7 @@ namespace internal {
 class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
                             public webrtc::OverheadObserver,
                             public webrtc::VCMProtectionCallback,
-                            public VideoStreamEncoder::EncoderSink,
+                            public VideoStreamEncoderInterface::EncoderSink,
                             public VideoBitrateAllocationObserver,
                             public webrtc::PacketFeedbackObserver {
  public:
@@ -140,6 +140,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   void SignalEncoderActive();
 
   const bool send_side_bwe_with_overhead_;
+  const bool has_alr_probing_;
 
   SendStatisticsProxy* const stats_proxy_;
   const VideoSendStream::Config* const config_;
@@ -170,7 +171,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   EncoderRtcpFeedback encoder_feedback_;
 
   RtcpBandwidthObserver* const bandwidth_observer_;
-  VideoRtpSenderInterface* const payload_router_;
+  RtpVideoSenderInterface* const rtp_video_sender_;
 
   // |weak_ptr_| to our self. This is used since we can not call
   // |weak_ptr_factory_.GetWeakPtr| from multiple sequences but it is ok to copy

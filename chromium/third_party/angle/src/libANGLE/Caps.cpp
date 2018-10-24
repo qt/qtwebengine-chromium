@@ -102,8 +102,8 @@ TextureCapsMap::~TextureCapsMap()
 
 void TextureCapsMap::insert(GLenum internalFormat, const TextureCaps &caps)
 {
-    angle::Format::ID formatID = angle::Format::InternalFormatToID(internalFormat);
-    get(formatID)              = caps;
+    angle::FormatID formatID = angle::Format::InternalFormatToID(internalFormat);
+    get(formatID)            = caps;
 }
 
 void TextureCapsMap::clear()
@@ -113,21 +113,21 @@ void TextureCapsMap::clear()
 
 const TextureCaps &TextureCapsMap::get(GLenum internalFormat) const
 {
-    angle::Format::ID formatID = angle::Format::InternalFormatToID(internalFormat);
+    angle::FormatID formatID = angle::Format::InternalFormatToID(internalFormat);
     return get(formatID);
 }
 
-const TextureCaps &TextureCapsMap::get(angle::Format::ID formatID) const
+const TextureCaps &TextureCapsMap::get(angle::FormatID formatID) const
 {
     return mFormatData[static_cast<size_t>(formatID)];
 }
 
-TextureCaps &TextureCapsMap::get(angle::Format::ID formatID)
+TextureCaps &TextureCapsMap::get(angle::FormatID formatID)
 {
     return mFormatData[static_cast<size_t>(formatID)];
 }
 
-void TextureCapsMap::set(angle::Format::ID formatID, const TextureCaps &caps)
+void TextureCapsMap::set(angle::FormatID formatID, const TextureCaps &caps)
 {
     get(formatID) = caps;
 }
@@ -246,9 +246,11 @@ Extensions::Extensions()
       pointSizeArray(false),
       textureCubeMap(false),
       pointSprite(false),
+      drawTexture(false),
       explicitContextGles1(false),
       explicitContext(false),
-      parallelShaderCompile(false)
+      parallelShaderCompile(false),
+      textureMultisampleArray(false)
 {
 }
 
@@ -853,10 +855,12 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ANGLE_explicit_context_gles1"] = enableableExtension(&Extensions::explicitContextGles1);
         map["GL_ANGLE_explicit_context"] = enableableExtension(&Extensions::explicitContext);
         map["GL_KHR_parallel_shader_compile"] = enableableExtension(&Extensions::parallelShaderCompile);
+        map["GL_ANGLE_texture_multisample_array"] = enableableExtension(&Extensions::textureMultisampleArray);
         // GLES1 extensinos
         map["GL_OES_point_size_array"] = enableableExtension(&Extensions::pointSizeArray);
         map["GL_OES_texture_cube_map"] = enableableExtension(&Extensions::textureCubeMap);
         map["GL_OES_point_sprite"] = enableableExtension(&Extensions::pointSprite);
+        map["GL_OES_draw_texture"] = enableableExtension(&Extensions::drawTexture);
         // clang-format on
 
         return map;
@@ -1018,7 +1022,9 @@ Caps::Caps()
       maxProjectionMatrixStackDepth(0),
       maxTextureMatrixStackDepth(0),
       minSmoothPointSize(0),
-      maxSmoothPointSize(0)
+      maxSmoothPointSize(0),
+      minSmoothLineWidth(0),
+      maxSmoothLineWidth(0)
 
 {
     for (size_t i = 0; i < 3; ++i)

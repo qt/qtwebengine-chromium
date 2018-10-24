@@ -71,13 +71,13 @@ class TextureCapsMap final : angle::NonCopyable
     void clear();
 
     // Prefer using angle::Format methods.
-    const TextureCaps &get(angle::Format::ID formatID) const;
-    void set(angle::Format::ID formatID, const TextureCaps &caps);
+    const TextureCaps &get(angle::FormatID formatID) const;
+    void set(angle::FormatID formatID, const TextureCaps &caps);
 
   private:
-    TextureCaps &get(angle::Format::ID formatID);
+    TextureCaps &get(angle::FormatID formatID);
 
-    // Indexed by angle::Format::ID
+    // Indexed by angle::FormatID
     std::array<TextureCaps, angle::kNumANGLEFormats> mFormatData;
 };
 
@@ -415,6 +415,8 @@ struct Extensions
     bool textureCubeMap;
     // GL_OES_point_sprite
     bool pointSprite;
+    // GL_OES_draw_texture
+    bool drawTexture;
 
     // EGL_ANGLE_explicit_context GL subextensions
     // GL_ANGLE_explicit_context_gles1
@@ -424,6 +426,9 @@ struct Extensions
 
     // GL_KHR_parallel_shader_compile
     bool parallelShaderCompile;
+
+    // GL_ANGLE_texture_multisample_array
+    bool textureMultisampleArray;
 };
 
 struct ExtensionInfo
@@ -632,6 +637,8 @@ struct Caps
     GLuint maxTextureMatrixStackDepth;
     GLfloat minSmoothPointSize;
     GLfloat maxSmoothPointSize;
+    GLfloat minSmoothLineWidth;
+    GLfloat maxSmoothLineWidth;
 };
 
 Caps GenerateMinimumCaps(const Version &clientVersion, const Extensions &extensions);

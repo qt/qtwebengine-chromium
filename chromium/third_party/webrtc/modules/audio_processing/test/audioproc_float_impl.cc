@@ -118,14 +118,10 @@ DEFINE_int(aec3,
 DEFINE_int(experimental_agc,
            kParameterNotSpecifiedValue,
            "Activate (1) or deactivate(0) the experimental AGC");
-DEFINE_int(
-    experimental_agc_agc2_level_estimator,
-    kParameterNotSpecifiedValue,
-    "Activate (1) or deactivate(0) AGC2 level estimate in experimental AGC");
-DEFINE_int(experimental_agc_agc2_digital_adaptive,
+DEFINE_int(experimental_agc_disable_digital_adaptive,
            kParameterNotSpecifiedValue,
-           "Activate (1) or deactivate(0) AGC2 digital adaptation in "
-           "experimental AGC");
+           "Force-deactivate (1) digital adaptation in "
+           "experimental AGC. Digital adaptation is active by default (0).");
 DEFINE_int(
     refined_adaptive_filter,
     kParameterNotSpecifiedValue,
@@ -172,6 +168,7 @@ DEFINE_int(simulated_mic_kind,
            "Specify which microphone kind to use for microphone simulation");
 DEFINE_bool(performance_report, false, "Report the APM performance ");
 DEFINE_bool(verbose, false, "Produce verbose output");
+DEFINE_bool(quiet, false, "Avoid producing information about the progress.");
 DEFINE_bool(bitexactness_report,
             false,
             "Report bitexactness for aec dump result reproduction");
@@ -264,10 +261,8 @@ SimulationSettings CreateSettings() {
 
   SetSettingIfFlagSet(FLAG_aec3, &settings.use_aec3);
   SetSettingIfFlagSet(FLAG_experimental_agc, &settings.use_experimental_agc);
-  SetSettingIfFlagSet(FLAG_experimental_agc_agc2_level_estimator,
-                      &settings.use_experimental_agc_agc2_level_estimator);
-  SetSettingIfFlagSet(FLAG_experimental_agc_agc2_digital_adaptive,
-                      &settings.use_experimental_agc_agc2_digital_adaptive);
+  SetSettingIfFlagSet(FLAG_experimental_agc_disable_digital_adaptive,
+                      &settings.experimental_agc_disable_digital_adaptive);
 
   SetSettingIfSpecified(FLAG_aecm_routing_mode, &settings.aecm_routing_mode);
   SetSettingIfFlagSet(FLAG_aecm_comfort_noise,
@@ -293,6 +288,7 @@ SimulationSettings CreateSettings() {
   SetSettingIfSpecified(FLAG_simulated_mic_kind, &settings.simulated_mic_kind);
   settings.report_performance = FLAG_performance_report;
   settings.use_verbose_logging = FLAG_verbose;
+  settings.use_quiet_output = FLAG_quiet;
   settings.report_bitexactness = FLAG_bitexactness_report;
   settings.discard_all_settings_in_aecdump = FLAG_discard_settings_in_aecdump;
   settings.fixed_interface = FLAG_fixed_interface;
@@ -377,11 +373,6 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
       settings.agc_compression_gain && ((*settings.agc_compression_gain) < 0 ||
                                         (*settings.agc_compression_gain) > 90),
       "Error: --agc_compression_gain must be specified between 0 and 90.\n");
-
-  ReportConditionalErrorAndExit(
-      settings.use_agc && *settings.use_agc && settings.use_agc2 &&
-          *settings.use_agc2,
-      "Error: --agc and --agc2 cannot be both active.\n");
 
   ReportConditionalErrorAndExit(
       settings.use_agc2 && *settings.use_agc2 &&

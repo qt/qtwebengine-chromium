@@ -19,12 +19,15 @@ class CPDF_AllStates;
 class CFX_Matrix;
 class CPDF_Type3Char;
 
-class CPDF_Form : public CPDF_PageObjectHolder {
+class CPDF_Form final : public CPDF_PageObjectHolder {
  public:
   CPDF_Form(CPDF_Document* pDocument,
             CPDF_Dictionary* pPageResources,
+            CPDF_Stream* pFormStream);
+  CPDF_Form(CPDF_Document* pDocument,
+            CPDF_Dictionary* pPageResources,
             CPDF_Stream* pFormStream,
-            CPDF_Dictionary* pParentResources = nullptr);
+            CPDF_Dictionary* pParentResources);
   ~CPDF_Form() override;
 
   void ParseContent(CPDF_AllStates* pGraphicStates,

@@ -46,16 +46,19 @@ class VideoAnalyzer : public PacketReceiver,
   ~VideoAnalyzer();
 
   virtual void SetReceiver(PacketReceiver* receiver);
-  void SetSource(test::VideoCapturer* video_capturer, bool respect_sink_wants);
+  void SetSource(test::TestVideoCapturer* video_capturer,
+                 bool respect_sink_wants);
   void SetCall(Call* call);
   void SetSendStream(VideoSendStream* stream);
   void SetReceiveStream(VideoReceiveStream* stream);
+  void SetAudioReceiveStream(AudioReceiveStream* recv_stream);
+
   rtc::VideoSinkInterface<VideoFrame>* InputInterface();
   rtc::VideoSourceInterface<VideoFrame>* OutputInterface();
 
   DeliveryStatus DeliverPacket(MediaType media_type,
                                rtc::CopyOnWriteBuffer packet,
-                               const PacketTime& packet_time) override;
+                               int64_t packet_time_us) override;
 
   void PreEncodeOnFrame(const VideoFrame& video_frame);
 
@@ -149,7 +152,7 @@ class VideoAnalyzer : public PacketReceiver,
                                  public rtc::VideoSourceInterface<VideoFrame> {
    public:
     explicit CapturedFrameForwarder(VideoAnalyzer* analyzer, Clock* clock);
-    void SetSource(test::VideoCapturer* video_capturer);
+    void SetSource(test::TestVideoCapturer* video_capturer);
 
    private:
     void OnFrame(const VideoFrame& video_frame) override;
@@ -165,7 +168,7 @@ class VideoAnalyzer : public PacketReceiver,
     rtc::CriticalSection crit_;
     rtc::VideoSinkInterface<VideoFrame>* send_stream_input_
         RTC_GUARDED_BY(crit_);
-    test::VideoCapturer* video_capturer_;
+    test::TestVideoCapturer* video_capturer_;
     Clock* clock_;
   };
 
@@ -208,6 +211,7 @@ class VideoAnalyzer : public PacketReceiver,
   Call* call_;
   VideoSendStream* send_stream_;
   VideoReceiveStream* receive_stream_;
+  AudioReceiveStream* audio_receive_stream_;
   CapturedFrameForwarder captured_frame_forwarder_;
   const std::string test_label_;
   FILE* const graph_data_output_file_;
@@ -239,6 +243,9 @@ class VideoAnalyzer : public PacketReceiver,
   test::Statistics send_bandwidth_bps_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics memory_usage_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics time_between_freezes_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics audio_expand_rate_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics audio_accelerate_rate_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics audio_jitter_buffer_ms_ RTC_GUARDED_BY(comparison_lock_);
   // Rendered frame with worst PSNR is saved for further analysis.
   absl::optional<FrameWithPsnr> worst_frame_ RTC_GUARDED_BY(comparison_lock_);
 

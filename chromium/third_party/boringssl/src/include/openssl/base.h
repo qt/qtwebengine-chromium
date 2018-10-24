@@ -6,7 +6,7 @@
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer. 
+ *    notice, this list of conditions and the following disclaimer.
  *
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in
@@ -71,10 +71,6 @@
 #include <openssl/is_boringssl.h>
 #include <openssl/opensslconf.h>
 
-#if defined(BORINGSSL_PREFIX)
-#include <boringssl_prefix_symbols.h>
-#endif
-
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -137,6 +133,10 @@ extern "C" {
 #if defined(TRUSTY)
 #define OPENSSL_TRUSTY
 #define OPENSSL_NO_THREADS
+#endif
+
+#if defined(__ANDROID_API__)
+#define OPENSSL_ANDROID
 #endif
 
 #if !defined(OPENSSL_NO_THREADS)
@@ -221,6 +221,9 @@ extern "C" {
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
 #define OPENSSL_ASAN
+#endif
+#if __has_feature(thread_sanitizer)
+#define OPENSSL_TSAN
 #endif
 #if __has_feature(memory_sanitizer)
 #define OPENSSL_MSAN
@@ -378,6 +381,7 @@ extern "C++" {
 #if defined(BORINGSSL_NO_CXX)
 
 #define BORINGSSL_MAKE_DELETER(type, deleter)
+#define BORINGSSL_MAKE_UP_REF(type, up_ref_func)
 
 #else
 

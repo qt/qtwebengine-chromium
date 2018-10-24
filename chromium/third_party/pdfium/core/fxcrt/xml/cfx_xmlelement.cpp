@@ -76,13 +76,11 @@ WideString CFX_XMLElement::GetNamespaceURI() const {
 
 WideString CFX_XMLElement::GetTextData() const {
   CFX_WideTextBuf buffer;
-
   for (CFX_XMLNode* pChild = GetFirstChild(); pChild;
        pChild = pChild->GetNextSibling()) {
-    if (pChild->GetType() == FX_XMLNODE_Text ||
-        pChild->GetType() == FX_XMLNODE_CharData) {
-      buffer << static_cast<CFX_XMLText*>(pChild)->GetText();
-    }
+    CFX_XMLText* pText = ToXMLText(pChild);
+    if (pText)
+      buffer << pText->GetText();
   }
   return buffer.MakeString();
 }
@@ -125,11 +123,8 @@ CFX_XMLElement* CFX_XMLElement::GetFirstChildNamed(
 CFX_XMLElement* CFX_XMLElement::GetNthChildNamed(const WideStringView& name,
                                                  size_t idx) const {
   for (auto* child = GetFirstChild(); child; child = child->GetNextSibling()) {
-    if (child->GetType() != FX_XMLNODE_Element)
-      continue;
-
-    CFX_XMLElement* elem = static_cast<CFX_XMLElement*>(child);
-    if (elem->name_ != name)
+    CFX_XMLElement* elem = ToXMLElement(child);
+    if (!elem || elem->name_ != name)
       continue;
     if (idx == 0)
       return elem;

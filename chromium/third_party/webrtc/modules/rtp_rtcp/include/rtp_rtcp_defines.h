@@ -21,11 +21,9 @@
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/include/module_common_types.h"
 #include "system_wrappers/include/clock.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 #define RTCP_CNAME_SIZE 256  // RFC 3550 page 44, including null termination
 #define IP_PACKET_SIZE 1500  // we assume ethernet
-#define MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS 10
 
 namespace webrtc {
 namespace rtcp {
@@ -90,8 +88,6 @@ class PayloadUnion {
  private:
   absl::variant<AudioPayload, VideoPayload> payload_;
 };
-
-enum RTPAliveType { kRtpDead = 0, kRtpNoRtp = 1, kRtpAlive = 2 };
 
 enum ProtectionType { kUnprotectedPacket, kProtectedPacket };
 
@@ -197,7 +193,7 @@ struct RTCPReportBlock {
   uint32_t sender_ssrc;  // SSRC of sender of this report.
   uint32_t source_ssrc;  // SSRC of the RTP packet sender.
   uint8_t fraction_lost;
-  uint32_t packets_lost;  // 24 bits valid.
+  int32_t packets_lost;  // 24 bits valid.
   uint32_t extended_highest_sequence_number;
   uint32_t jitter;
   uint32_t last_sender_report_timestamp;

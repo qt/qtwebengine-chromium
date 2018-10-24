@@ -33,6 +33,9 @@
 #include <ft2build.h>
 #include FT_ADVANCES_H
 #include FT_BITMAP_H
+#ifdef FT_COLOR_H
+#   include FT_COLOR_H
+#endif
 #include FT_FREETYPE_H
 #include FT_LCD_FILTER_H
 #include FT_MODULE_H
@@ -489,7 +492,7 @@ public:
 protected:
     unsigned generateGlyphCount() override;
     uint16_t generateCharToGlyph(SkUnichar uni) override;
-    void generateAdvance(SkGlyph* glyph) override;
+    bool generateAdvance(SkGlyph* glyph) override;
     void generateMetrics(SkGlyph* glyph) override;
     void generateImage(const SkGlyph& glyph) override;
     bool generatePath(SkGlyphID glyphID, SkPath* path) override;
@@ -519,7 +522,7 @@ private:
     bool      fLCDIsVert;
 
     FT_Error setupSize();
-    void getBBoxForCurrentGlyph(SkGlyph* glyph, FT_BBox* bbox,
+    void getBBoxForCurrentGlyph(const SkGlyph* glyph, FT_BBox* bbox,
                                 bool snapToPixelBoundary = false);
     bool getCBoxForLetter(char letter, FT_BBox* bbox);
     // Caller must lock gFTMutex before calling this function.
@@ -815,7 +818,7 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(sk_sp<SkTypeface> typeface,
     fLCDIsVert = SkToBool(fRec.fFlags & SkScalerContext::kLCD_Vertical_Flag);
 
     // compute the flags we send to Load_Glyph
-    bool linearMetrics = SkToBool(fRec.fFlags & SkScalerContext::kSubpixelPositioning_Flag);
+    bool linearMetrics = this->isSubpixel();
     {
         FT_Int32 loadFlags = FT_LOAD_DEFAULT;
 
@@ -872,7 +875,7 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(sk_sp<SkTypeface> typeface,
         loadFlags |= FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH;
 
         // Use vertical layout if requested.
-        if (fRec.fFlags & SkScalerContext::kVertical_Flag) {
+        if (this->isVertical()) {
             loadFlags |= FT_LOAD_VERTICAL_LAYOUT;
         }
 
@@ -968,6 +971,10 @@ SkScalerContext_FreeType::SkScalerContext_FreeType(sk_sp<SkTypeface> typeface,
     fMatrix22.yx = SkScalarToFixed(-fMatrix22Scalar.getSkewY());
     fMatrix22.yy = SkScalarToFixed(fMatrix22Scalar.getScaleY());
 
+#ifdef FT_COLOR_H
+    FT_Palette_Select(fFaceRec->fFace.get(), 0, nullptr);
+#endif
+
     fFTSize = ftSize.release();
     fFace = fFaceRec->fFace.get();
     fDoLinearMetrics = linearMetrics;
@@ -1023,44 +1030,45 @@ SkUnichar SkScalerContext_FreeType::generateGlyphToChar(uint16_t glyph) {
     return 0;
 }
 
-void SkScalerContext_FreeType::generateAdvance(SkGlyph* glyph) {
+bool SkScalerContext_FreeType::generateAdvance(SkGlyph* glyph) {
    /* unhinted and light hinted text have linearly scaled advances
     * which are very cheap to compute with some font formats...
     */
-    if (fDoLinearMetrics) {
-        SkAutoMutexAcquire  ac(gFTMutex);
-
-        if (this->setupSize()) {
-            glyph->zeroMetrics();
-            return;
-        }
-
-        FT_Error    error;
-        FT_Fixed    advance;
-
-        error = FT_Get_Advance( fFace, glyph->getGlyphID(),
-                                fLoadGlyphFlags | FT_ADVANCE_FLAG_FAST_ONLY,
-                                &advance );
-        if (0 == error) {
-            const SkScalar advanceScalar = SkFT_FixedToScalar(advance);
-            glyph->fAdvanceX = SkScalarToFloat(fMatrix22Scalar.getScaleX() * advanceScalar);
-            glyph->fAdvanceY = SkScalarToFloat(fMatrix22Scalar.getSkewY() * advanceScalar);
-            return;
-        }
+    if (!fDoLinearMetrics) {
+        return false;
     }
 
-    /* otherwise, we need to load/hint the glyph, which is slower */
-    this->generateMetrics(glyph);
-    return;
+    SkAutoMutexAcquire  ac(gFTMutex);
+
+    if (this->setupSize()) {
+        glyph->zeroMetrics();
+        return true;
+    }
+
+    FT_Error    error;
+    FT_Fixed    advance;
+
+    error = FT_Get_Advance( fFace, glyph->getGlyphID(),
+                            fLoadGlyphFlags | FT_ADVANCE_FLAG_FAST_ONLY,
+                            &advance );
+
+    if (error != 0) {
+        return false;
+    }
+
+    const SkScalar advanceScalar = SkFT_FixedToScalar(advance);
+    glyph->fAdvanceX = SkScalarToFloat(fMatrix22Scalar.getScaleX() * advanceScalar);
+    glyph->fAdvanceY = SkScalarToFloat(fMatrix22Scalar.getSkewY() * advanceScalar);
+    return true;
 }
 
-void SkScalerContext_FreeType::getBBoxForCurrentGlyph(SkGlyph* glyph,
+void SkScalerContext_FreeType::getBBoxForCurrentGlyph(const SkGlyph* glyph,
                                                       FT_BBox* bbox,
                                                       bool snapToPixelBoundary) {
 
     FT_Outline_Get_CBox(&fFace->glyph->outline, bbox);
 
-    if (fRec.fFlags & SkScalerContext::kSubpixelPositioning_Flag) {
+    if (this->isSubpixel()) {
         int dx = SkFixedToFDot6(glyph->getSubXFixed());
         int dy = SkFixedToFDot6(glyph->getSubYFixed());
         // negate dy since freetype-y-goes-up and skia-y-goes-down
@@ -1081,7 +1089,7 @@ void SkScalerContext_FreeType::getBBoxForCurrentGlyph(SkGlyph* glyph,
     // Must come after snapToPixelBoundary so that the width and height are
     // consistent. Otherwise asserts will fire later on when generating the
     // glyph image.
-    if (fRec.fFlags & SkScalerContext::kVertical_Flag) {
+    if (this->isVertical()) {
         FT_Vector vector;
         vector.x = fFace->glyph->metrics.vertBearingX - fFace->glyph->metrics.horiBearingX;
         vector.y = -fFace->glyph->metrics.vertBearingY - fFace->glyph->metrics.horiBearingY;
@@ -1107,7 +1115,7 @@ bool SkScalerContext_FreeType::getCBoxForLetter(char letter, FT_BBox* bbox) {
 }
 
 void SkScalerContext_FreeType::updateGlyphIfLCD(SkGlyph* glyph) {
-    if (isLCD(fRec)) {
+    if (glyph->fMaskFormat == SkMask::kLCD16_Format) {
         if (fLCDIsVert) {
             glyph->fHeight += gFTLibrary->lcdExtra();
             glyph->fTop -= gFTLibrary->lcdExtra() >> 1;
@@ -1121,7 +1129,7 @@ void SkScalerContext_FreeType::updateGlyphIfLCD(SkGlyph* glyph) {
 bool SkScalerContext_FreeType::shouldSubpixelBitmap(const SkGlyph& glyph, const SkMatrix& matrix) {
     // If subpixel rendering of a bitmap *can* be done.
     bool mechanism = fFace->glyph->format == FT_GLYPH_FORMAT_BITMAP &&
-                     fRec.fFlags & SkScalerContext::kSubpixelPositioning_Flag &&
+                     this->isSubpixel() &&
                      (glyph.getSubXFixed() || glyph.getSubYFixed());
 
     // If subpixel rendering of a bitmap *should* be done.
@@ -1137,13 +1145,14 @@ bool SkScalerContext_FreeType::shouldSubpixelBitmap(const SkGlyph& glyph, const 
 void SkScalerContext_FreeType::generateMetrics(SkGlyph* glyph) {
     SkAutoMutexAcquire  ac(gFTMutex);
 
-    FT_Error    err;
+    glyph->fMaskFormat = fRec.fMaskFormat;
 
     if (this->setupSize()) {
         glyph->zeroMetrics();
         return;
     }
 
+    FT_Error    err;
     err = FT_Load_Glyph( fFace, glyph->getGlyphID(),
                          fLoadGlyphFlags | FT_LOAD_BITMAP_METRICS_ONLY );
     if (err != 0) {
@@ -1161,19 +1170,67 @@ void SkScalerContext_FreeType::generateMetrics(SkGlyph* glyph) {
             glyph->fLeft = 0;
         } else {
             FT_BBox bbox;
-            getBBoxForCurrentGlyph(glyph, &bbox, true);
 
-            glyph->fWidth   = SkToU16(SkFDot6Floor(bbox.xMax - bbox.xMin));
-            glyph->fHeight  = SkToU16(SkFDot6Floor(bbox.yMax - bbox.yMin));
-            glyph->fTop     = -SkToS16(SkFDot6Floor(bbox.yMax));
-            glyph->fLeft    = SkToS16(SkFDot6Floor(bbox.xMin));
+#ifdef FT_COLOR_H
+            SkRect bounds = SkRect::MakeEmpty();
 
+            FT_LayerIterator layerIterator;
+            layerIterator.p  = NULL;
+            FT_Bool haveLayers = false;
+            FT_UInt layerGlyphIndex;
+            FT_UInt layerColorIndex;
+            while (FT_Get_Color_Glyph_Layer(fFace,
+                                            glyph->getGlyphID(),
+                                            &layerGlyphIndex,
+                                            &layerColorIndex,
+                                            &layerIterator)) {
+                haveLayers = true;
+                err = FT_Load_Glyph(fFace, layerGlyphIndex,
+                                    fLoadGlyphFlags | FT_LOAD_BITMAP_METRICS_ONLY);
+                if (err != 0) {
+                    glyph->zeroMetrics();
+                    return;
+                }
+                emboldenIfNeeded(fFace, fFace->glyph, layerGlyphIndex);
+
+                if (0 < fFace->glyph->outline.n_contours) {
+                    getBBoxForCurrentGlyph(glyph, &bbox, true);
+
+                    SkRect layerBounds = SkRect::MakeLTRB(SkFDot6ToScalar(bbox.xMin),
+                                                          SkFDot6ToScalar(-bbox.yMax),
+                                                          SkFDot6ToScalar(bbox.xMax),
+                                                          SkFDot6ToScalar(-bbox.yMin)
+                    );
+
+                    bounds.join(layerBounds);
+                }
+            }
+
+            if (haveLayers) {
+                glyph->fMaskFormat = SkMask::kARGB32_Format;
+
+                SkIRect ibounds = bounds.roundOut();
+                glyph->fWidth   = SkToU16(ibounds.width());
+                glyph->fHeight  = SkToU16(ibounds.height());
+                glyph->fTop     = SkToS16(ibounds.top());
+                glyph->fLeft    = SkToS16(ibounds.left());
+            } else {
+#endif
+                getBBoxForCurrentGlyph(glyph, &bbox, true);
+
+                glyph->fWidth   = SkToU16(SkFDot6Floor(bbox.xMax - bbox.xMin));
+                glyph->fHeight  = SkToU16(SkFDot6Floor(bbox.yMax - bbox.yMin));
+                glyph->fTop     = -SkToS16(SkFDot6Floor(bbox.yMax));
+                glyph->fLeft    = SkToS16(SkFDot6Floor(bbox.xMin));
+#ifdef FT_COLOR_H
+            }
+#endif
             updateGlyphIfLCD(glyph);
         }
         break;
 
       case FT_GLYPH_FORMAT_BITMAP:
-        if (fRec.fFlags & SkScalerContext::kVertical_Flag) {
+        if (this->isVertical()) {
             FT_Vector vector;
             vector.x = fFace->glyph->metrics.vertBearingX - fFace->glyph->metrics.horiBearingX;
             vector.y = -fFace->glyph->metrics.vertBearingY - fFace->glyph->metrics.horiBearingY;
@@ -1210,7 +1267,7 @@ void SkScalerContext_FreeType::generateMetrics(SkGlyph* glyph) {
         return;
     }
 
-    if (fRec.fFlags & SkScalerContext::kVertical_Flag) {
+    if (this->isVertical()) {
         if (fDoLinearMetrics) {
             const SkScalar advanceScalar = SkFT_FixedToScalar(fFace->glyph->linearVertAdvance);
             glyph->fAdvanceX = SkScalarToFloat(fMatrix22Scalar.getSkewX() * advanceScalar);
@@ -1298,7 +1355,7 @@ bool SkScalerContext_FreeType::generatePath(SkGlyphID glyphID, SkPath* path) {
 
     // The path's origin from FreeType is always the horizontal layout origin.
     // Offset the path so that it is relative to the vertical origin if needed.
-    if (fRec.fFlags & SkScalerContext::kVertical_Flag) {
+    if (this->isVertical()) {
         FT_Vector vector;
         vector.x = fFace->glyph->metrics.vertBearingX - fFace->glyph->metrics.horiBearingX;
         vector.y = -fFace->glyph->metrics.vertBearingY - fFace->glyph->metrics.horiBearingY;
@@ -1560,15 +1617,15 @@ int SkTypeface_FreeType::onCountGlyphs() const {
 }
 
 SkTypeface::LocalizedStrings* SkTypeface_FreeType::onCreateFamilyNameIterator() const {
-    SkTypeface::LocalizedStrings* nameIter =
-        SkOTUtils::LocalizedStrings_NameTable::CreateForFamilyNames(*this);
-    if (nullptr == nameIter) {
+    sk_sp<SkTypeface::LocalizedStrings> nameIter =
+        SkOTUtils::LocalizedStrings_NameTable::MakeForFamilyNames(*this);
+    if (!nameIter) {
         SkString familyName;
         this->getFamilyName(&familyName);
         SkString language("und"); //undetermined
-        nameIter = new SkOTUtils::LocalizedStrings_SingleName(familyName, language);
+        nameIter = sk_make_sp<SkOTUtils::LocalizedStrings_SingleName>(familyName, language);
     }
-    return nameIter;
+    return nameIter.release();
 }
 
 int SkTypeface_FreeType::onGetVariationDesignPosition(

@@ -147,8 +147,8 @@ QueuedHistoryDBTask::QueuedHistoryDBTask(
 QueuedHistoryDBTask::~QueuedHistoryDBTask() {
   // Ensure that |task_| is destroyed on its origin thread.
   origin_loop_->PostTask(FROM_HERE,
-                         base::Bind(&base::DeletePointer<HistoryDBTask>,
-                                    base::Unretained(task_.release())));
+                         base::BindOnce(&base::DeletePointer<HistoryDBTask>,
+                                        base::Unretained(task_.release())));
 }
 
 bool QueuedHistoryDBTask::is_canceled() {
@@ -161,10 +161,10 @@ bool QueuedHistoryDBTask::Run(HistoryBackend* backend, HistoryDatabase* db) {
 
 void QueuedHistoryDBTask::DoneRun() {
   origin_loop_->PostTask(
-      FROM_HERE, base::Bind(&RunUnlessCanceled,
-                            base::Bind(&HistoryDBTask::DoneRunOnMainThread,
-                                       base::Unretained(task_.get())),
-                            is_canceled_));
+      FROM_HERE, base::BindOnce(&RunUnlessCanceled,
+                                base::Bind(&HistoryDBTask::DoneRunOnMainThread,
+                                           base::Unretained(task_.get())),
+                                is_canceled_));
 }
 
 // HistoryBackendHelper --------------------------------------------------------
@@ -1131,8 +1131,10 @@ void HistoryBackend::QueryURL(const GURL& url,
     db_->GetVisitsForURL(result->row.id(), &result->visits);
 }
 
-TypedURLSyncBridge* HistoryBackend::GetTypedURLSyncBridge() const {
-  return typed_url_sync_bridge_.get();
+base::WeakPtr<syncer::ModelTypeControllerDelegate>
+HistoryBackend::GetTypedURLSyncControllerDelegate() {
+  DCHECK(typed_url_sync_bridge_);
+  return typed_url_sync_bridge_->change_processor()->GetControllerDelegate();
 }
 
 // Statistics ------------------------------------------------------------------
@@ -1279,8 +1281,6 @@ void HistoryBackend::RemoveDownloads(const std::set<uint32_t>& ids) {
   if (downloads_count_after > downloads_count_before)
     return;
   size_t num_downloads_deleted = downloads_count_before - downloads_count_after;
-  UMA_HISTOGRAM_COUNTS("Download.DatabaseRemoveDownloadsCount",
-                       num_downloads_deleted);
   DCHECK_GE(ids.size(), num_downloads_deleted);
 }
 
@@ -1500,7 +1500,7 @@ void HistoryBackend::DeleteFTSIndexDatabases() {
   int num_databases_deleted = 0;
   base::FilePath current_file;
   while (!(current_file = enumerator.Next()).empty()) {
-    if (sql::Connection::Delete(current_file))
+    if (sql::Database::Delete(current_file))
       num_databases_deleted++;
   }
   UMA_HISTOGRAM_COUNTS("History.DeleteFTSIndexDatabases",
@@ -2448,7 +2448,7 @@ void HistoryBackend::ProcessDBTaskImpl() {
     // tasks, and process it after an invoke later.
     queued_history_db_tasks_.push_back(std::move(task));
     task_runner_->PostTask(
-        FROM_HERE, base::Bind(&HistoryBackend::ProcessDBTaskImpl, this));
+        FROM_HERE, base::BindOnce(&HistoryBackend::ProcessDBTaskImpl, this));
   }
 }
 
@@ -2607,7 +2607,7 @@ void HistoryBackend::DatabaseErrorCallback(int error, sql::Statement* stmt) {
     // the DB or consider changing KillHistoryDatabase() to use RazeAndClose()
     // (then it can be cleared immediately).
     task_runner_->PostTask(
-        FROM_HERE, base::Bind(&HistoryBackend::KillHistoryDatabase, this));
+        FROM_HERE, base::BindOnce(&HistoryBackend::KillHistoryDatabase, this));
   }
 }
 
@@ -2770,7 +2770,7 @@ bool HistoryBackend::ClearAllThumbnailHistory(
     // error opening it. In this case, we just try to blow it away to try to
     // fix the error if it exists. This may fail, in which case either the
     // file doesn't exist or there's no more we can do.
-    sql::Connection::Delete(GetFaviconsFileName());
+    sql::Database::Delete(GetFaviconsFileName());
     return true;
   }
 

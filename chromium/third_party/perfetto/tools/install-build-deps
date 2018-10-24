@@ -144,6 +144,34 @@ BUILD_DEPS_HOST = [
    '98729f2c2d57d166e3d6d9862744c1d66388e286',
    'all'
   ),
+
+  # JsonCpp for legacy json import. Used only by the trace processor in
+  # standalone builds.
+  ('buildtools/jsoncpp.zip',
+   'https://github.com/open-source-parsers/jsoncpp/archive/1.0.0.zip',
+   '3219e26f2e249bb46b7d688478208c7ec138fea4',
+   'all'
+  ),
+
+  # These dependencies are for libunwindstack, which is used by src/profiling.
+  ('buildtools/android-core',
+   'https://android.googlesource.com/platform/system/core.git',
+   '50973d1865f1ca5d9c72cf8a3ca35b66686c98d7',
+   'all'
+  ),
+
+  ('buildtools/lzma',
+   'https://android.googlesource.com/platform/external/lzma.git',
+   '7851dce6f4ca17f5caa1c93a4e0a45686b1d56c3',
+   'all'
+  ),
+
+  # Example traces for regression tests.
+  ('buildtools/test_data.zip',
+   'https://storage.googleapis.com/perfetto/test-data-20180808.zip',
+   '4adec454b60a943dd58603d4be80d42b2db62cbd',
+   'all',
+  ),
 ]
 
 # Dependencies required to build Android code.
@@ -153,13 +181,13 @@ BUILD_DEPS_HOST = [
 BUILD_DEPS_ANDROID = [
   # Android NDK
   ('buildtools/ndk.zip',
-   'https://dl.google.com/android/repository/android-ndk-r15c-darwin-x86_64.zip',
-   'ea4b5d76475db84745aa8828000d009625fc1f98',
+   'https://dl.google.com/android/repository/android-ndk-r17b-darwin-x86_64.zip',
+   'f990aafaffec0b583d2c5420bfa622e52ac14248',
    'darwin'
   ),
   ('buildtools/ndk.zip',
-   'https://dl.google.com/android/repository/android-ndk-r15c-linux-x86_64.zip',
-   '0bf02d4e8b85fd770fd7b9b2cdec57f9441f27a2',
+   'https://dl.google.com/android/repository/android-ndk-r17b-linux-x86_64.zip',
+   'dd5762ee7ef4995ad04fe0c45a608c344d99ca9f',
    'linux2'
   ),
 ]

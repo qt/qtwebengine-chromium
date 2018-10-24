@@ -11,6 +11,10 @@
 #ifndef API_UNITS_DATA_SIZE_H_
 #define API_UNITS_DATA_SIZE_H_
 
+#ifdef UNIT_TEST
+#include <ostream>  // no-presubmit-check TODO(webrtc:8982)
+#endif              // UNIT_TEST
+
 #include <stdint.h>
 #include <cmath>
 #include <limits>
@@ -29,9 +33,15 @@ constexpr int64_t kPlusInfinityVal = std::numeric_limits<int64_t>::max();
 class DataSize {
  public:
   DataSize() = delete;
-  static DataSize Zero() { return DataSize(0); }
-  static DataSize Infinity() {
+  static constexpr DataSize Zero() { return DataSize(0); }
+  static constexpr DataSize Infinity() {
     return DataSize(data_size_impl::kPlusInfinityVal);
+  }
+  template <int64_t bytes>
+  static constexpr DataSize Bytes() {
+    static_assert(bytes >= 0, "");
+    static_assert(bytes < data_size_impl::kPlusInfinityVal, "");
+    return DataSize(bytes);
   }
 
   template <
@@ -64,18 +74,20 @@ class DataSize {
   }
 
   template <typename T>
-  typename std::enable_if<std::is_floating_point<T>::value, T>::type bytes()
-      const {
-    if (IsInfinite()) {
-      return std::numeric_limits<T>::infinity();
-    } else {
-      return bytes_;
-    }
+  constexpr typename std::enable_if<std::is_floating_point<T>::value, T>::type
+  bytes() const {
+    return IsInfinite() ? std::numeric_limits<T>::infinity() : bytes_;
   }
 
-  bool IsZero() const { return bytes_ == 0; }
-  bool IsInfinite() const { return bytes_ == data_size_impl::kPlusInfinityVal; }
-  bool IsFinite() const { return !IsInfinite(); }
+  constexpr int64_t bytes_or(int64_t fallback_value) const {
+    return IsFinite() ? bytes_ : fallback_value;
+  }
+
+  constexpr bool IsZero() const { return bytes_ == 0; }
+  constexpr bool IsInfinite() const {
+    return bytes_ == data_size_impl::kPlusInfinityVal;
+  }
+  constexpr bool IsFinite() const { return !IsInfinite(); }
   DataSize operator-(const DataSize& other) const {
     return DataSize::bytes(bytes() - other.bytes());
   }
@@ -90,26 +102,30 @@ class DataSize {
     bytes_ += other.bytes();
     return *this;
   }
-  double operator/(const DataSize& other) const {
+  constexpr double operator/(const DataSize& other) const {
     return bytes<double>() / other.bytes<double>();
   }
-  bool operator==(const DataSize& other) const {
+  constexpr bool operator==(const DataSize& other) const {
     return bytes_ == other.bytes_;
   }
-  bool operator!=(const DataSize& other) const {
+  constexpr bool operator!=(const DataSize& other) const {
     return bytes_ != other.bytes_;
   }
-  bool operator<=(const DataSize& other) const {
+  constexpr bool operator<=(const DataSize& other) const {
     return bytes_ <= other.bytes_;
   }
-  bool operator>=(const DataSize& other) const {
+  constexpr bool operator>=(const DataSize& other) const {
     return bytes_ >= other.bytes_;
   }
-  bool operator>(const DataSize& other) const { return bytes_ > other.bytes_; }
-  bool operator<(const DataSize& other) const { return bytes_ < other.bytes_; }
+  constexpr bool operator>(const DataSize& other) const {
+    return bytes_ > other.bytes_;
+  }
+  constexpr bool operator<(const DataSize& other) const {
+    return bytes_ < other.bytes_;
+  }
 
  private:
-  explicit DataSize(int64_t bytes) : bytes_(bytes) {}
+  explicit constexpr DataSize(int64_t bytes) : bytes_(bytes) {}
   int64_t bytes_;
 };
 
@@ -136,6 +152,14 @@ inline DataSize operator/(const DataSize& size, const int64_t& scalar) {
 }
 
 std::string ToString(const DataSize& value);
+
+#ifdef UNIT_TEST
+inline std::ostream& operator<<(  // no-presubmit-check TODO(webrtc:8982)
+    std::ostream& stream,         // no-presubmit-check TODO(webrtc:8982)
+    DataSize value) {
+  return stream << ToString(value);
+}
+#endif  // UNIT_TEST
 
 }  // namespace webrtc
 

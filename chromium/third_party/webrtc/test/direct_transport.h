@@ -15,8 +15,9 @@
 #include <memory>
 
 #include "api/call/transport.h"
+#include "api/test/simulated_network.h"
 #include "call/call.h"
-#include "call/fake_network_pipe.h"
+#include "call/simulated_packet_receiver.h"
 #include "rtc_base/sequenced_task_checker.h"
 #include "rtc_base/thread_annotations.h"
 #include "test/single_threaded_task_queue.h"
@@ -41,25 +42,29 @@ class Demuxer {
 // same task-queue - the one that's passed in via the constructor.
 class DirectTransport : public Transport {
  public:
+  // Deprecated. DO NOT USE. Use the constructor that takes an
+  // explicit pipe instead.Because there can be different ways to simulated
+  // underlying network passing implementation specific config to the transport
+  // constructor makes no sense.
   DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
                   Call* send_call,
                   const std::map<uint8_t, MediaType>& payload_type_map);
 
+  // Deprecated. DO NOT USE. Use the constructor that takes an
+  // explicit pipe instead.Because there can be different ways to simulated
+  // underlying network passing implementation specific config to the transport
+  // constructor makes no sense.
   DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                  const FakeNetworkPipe::Config& config,
+                  const DefaultNetworkSimulationConfig& config,
                   Call* send_call,
                   const std::map<uint8_t, MediaType>& payload_type_map);
 
   DirectTransport(SingleThreadedTaskQueueForTesting* task_queue,
-                  std::unique_ptr<FakeNetworkPipe> pipe,
+                  std::unique_ptr<SimulatedPacketReceiverInterface> pipe,
                   Call* send_call,
                   const std::map<uint8_t, MediaType>& payload_type_map);
 
   ~DirectTransport() override;
-
-  void SetClockOffset(int64_t offset_ms);
-
-  void SetConfig(const FakeNetworkPipe::Config& config);
 
   RTC_DEPRECATED void StopSending();
 
@@ -86,7 +91,7 @@ class DirectTransport : public Transport {
       RTC_GUARDED_BY(&sequence_checker_);
 
   const Demuxer demuxer_;
-  const std::unique_ptr<FakeNetworkPipe> fake_network_;
+  const std::unique_ptr<SimulatedPacketReceiverInterface> fake_network_;
 
   rtc::SequencedTaskChecker sequence_checker_;
 };

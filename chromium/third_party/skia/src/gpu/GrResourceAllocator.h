@@ -22,6 +22,9 @@ class GrUninstantiateProxyTracker;
 // Print out explicit allocation information
 #define GR_ALLOCATION_SPEW 0
 
+// Print out information about interval creation
+#define GR_TRACK_INTERVAL_CREATION 0
+
 /*
  * The ResourceAllocator explicitly distributes GPU resources at flush time. It operates by
  * being given the usage intervals of the various proxies. It keeps these intervals in a singly
@@ -112,16 +115,27 @@ private:
             , fEnd(end)
             , fNext(nullptr) {
             SkASSERT(proxy);
+#if GR_TRACK_INTERVAL_CREATION
+            fUniqueID = CreateUniqueID();
+            SkDebugf("New intvl %d: proxyID: %d [ %d, %d ]\n",
+                     fUniqueID, proxy->uniqueID().asUInt(), start, end);
+#endif
         }
 
         void resetTo(GrSurfaceProxy* proxy, unsigned int start, unsigned int end) {
             SkASSERT(proxy);
+            SkASSERT(!fNext);
 
             fProxy = proxy;
             fProxyID = proxy->uniqueID().asUInt();
             fStart = start;
             fEnd = end;
             fNext = nullptr;
+#if GR_TRACK_INTERVAL_CREATION
+            fUniqueID = CreateUniqueID();
+            SkDebugf("New intvl %d: proxyID: %d [ %d, %d ]\n",
+                     fUniqueID, proxy->uniqueID().asUInt(), start, end);
+#endif
         }
 
         ~Interval() {
@@ -140,6 +154,9 @@ private:
         void extendEnd(unsigned int newEnd) {
             if (newEnd > fEnd) {
                 fEnd = newEnd;
+#if GR_TRACK_INTERVAL_CREATION
+                SkDebugf("intvl %d: extending from %d to %d\n", fUniqueID, fEnd, newEnd);
+#endif
             }
         }
 
@@ -160,6 +177,12 @@ private:
         unsigned int     fStart;
         unsigned int     fEnd;
         Interval*        fNext;
+
+#if GR_TRACK_INTERVAL_CREATION
+        uint32_t        fUniqueID;
+
+        uint32_t CreateUniqueID();
+#endif
     };
 
     class IntervalList {
@@ -170,7 +193,10 @@ private:
             // Since the arena allocator will clean up for us we don't bother here.
         }
 
-        bool empty() const { return !SkToBool(fHead); }
+        bool empty() const {
+            SkASSERT(SkToBool(fHead) == SkToBool(fTail));
+            return !SkToBool(fHead);
+        }
         const Interval* peekHead() const { return fHead; }
         Interval* popHead();
         void insertByIncreasingStart(Interval*);
@@ -178,7 +204,10 @@ private:
         Interval* detachAll();
 
     private:
+        SkDEBUGCODE(void validate() const;)
+
         Interval* fHead = nullptr;
+        Interval* fTail = nullptr;
     };
 
     // Gathered statistics indicate that 99% of flushes will be covered by <= 12 Intervals

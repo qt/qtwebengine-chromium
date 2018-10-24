@@ -15,10 +15,8 @@
 import("../../gn/perfetto.gni")
 import("../../gn/wasm.gni")
 
-wasm_lib("trace_processor") {
+wasm_lib("trace_processor_wasm") {
   sources = [
-    "emscripten_task_runner.cc",
-    "emscripten_task_runner.h",
     "wasm_bridge.cc",
   ]
 
@@ -33,22 +31,43 @@ wasm_lib("trace_processor") {
   ]
 }
 
+# The library which eases processing of Perfetto traces by exposing reading
+# friendly APIs.
+static_library("trace_processor") {
+  deps = [
+    ":lib",
+  ]
+}
+
 source_set("lib") {
   sources = [
-    "blob_reader.h",
     "process_table.cc",
     "process_table.h",
+    "process_tracker.cc",
+    "process_tracker.h",
+    "proto_trace_parser.cc",
+    "proto_trace_parser.h",
     "query_constraints.cc",
     "query_constraints.h",
     "sched_slice_table.cc",
     "sched_slice_table.h",
+    "sched_tracker.cc",
+    "sched_tracker.h",
     "scoped_db.h",
+    "slice_table.cc",
+    "slice_table.h",
+    "sqlite_utils.h",
+    "string_table.cc",
+    "string_table.h",
+    "table.cc",
+    "table.h",
     "thread_table.cc",
     "thread_table.h",
-    "trace_database.cc",
-    "trace_database.h",
-    "trace_parser.cc",
     "trace_parser.h",
+    "trace_processor.cc",
+    "trace_processor.h",
+    "trace_processor_context.cc",
+    "trace_processor_context.h",
     "trace_storage.cc",
     "trace_storage.h",
     "virtual_destructors.cc",
@@ -61,17 +80,53 @@ source_set("lib") {
     "../base",
     "../protozero",
   ]
+  if (build_standalone) {
+    sources += [
+      "json_trace_parser.cc",
+      "json_trace_parser.h",
+    ]
+    deps += [ "../../gn:jsoncpp_deps" ]
+  }
+}
+
+if (current_toolchain == host_toolchain) {
+  executable("trace_processor_shell_host") {
+    deps = [
+      ":lib",
+      "../../gn:default_deps",
+      "../../protos/perfetto/trace_processor:lite",
+      "../base",
+    ]
+    sources = [
+      "trace_processor_shell.cc",
+    ]
+  }
+}
+
+copy("trace_processor_shell") {
+  host_out_dir_ = get_label_info(":trace_processor_shell_host($host_toolchain)",
+                                 "root_out_dir")
+  deps = [
+    ":trace_processor_shell_host($host_toolchain)",
+  ]
+  sources = [
+    "${host_out_dir_}/trace_processor_shell_host",
+  ]
+  outputs = [
+    "${root_out_dir}/trace_processor_shell",
+  ]
 }
 
 source_set("unittests") {
   testonly = true
   sources = [
     "process_table_unittest.cc",
+    "process_tracker_unittest.cc",
+    "proto_trace_parser_unittest.cc",
     "query_constraints_unittest.cc",
     "sched_slice_table_unittest.cc",
+    "sched_tracker_unittest.cc",
     "thread_table_unittest.cc",
-    "trace_parser_unittest.cc",
-    "trace_storage_unittest.cc",
   ]
   deps = [
     ":lib",
@@ -86,7 +141,7 @@ source_set("unittests") {
 source_set("integrationtests") {
   testonly = true
   sources = [
-    "sched_slice_table_integrationtest.cc",
+    "trace_database_integrationtest.cc",
   ]
   deps = [
     ":lib",
@@ -94,6 +149,8 @@ source_set("integrationtests") {
     "../../gn:default_deps",
     "../../gn:gtest_deps",
     "../../protos/perfetto/trace:lite",
+    "../../protos/perfetto/trace_processor:lite",
     "../base",
+    "../base:test_support",
   ]
 }

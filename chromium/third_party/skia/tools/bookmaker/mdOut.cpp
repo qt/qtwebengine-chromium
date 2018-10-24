@@ -621,7 +621,7 @@ bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
         this->writePending();
         fclose(fOut);
         fflush(fOut);
-        if (this->writtenFileDiffers(filename, fullName)) {
+        if (ParserCommon::WrittenFileDiffers(filename, fullName)) {
             fOut = fopen(fullName.c_str(), "wb");
             int writtenSize;
             const char* written = ReadToBuffer(filename, &writtenSize);
@@ -2121,7 +2121,7 @@ void MdOut::subtopicsOut(Definition* def) {
 
 void MdOut::subtopicOut(string name) {
     const Definition* topicParent = fSubtopic ? fSubtopic->topicParent() : nullptr;
-    Definition* csParent = this->csParent();
+    Definition* csParent = fRoot && fRoot->isStructOrClass() ? fRoot : this->csParent();
     if (!csParent) {
         auto csIter = std::find_if(topicParent->fChildren.begin(), topicParent->fChildren.end(),
                 [](const Definition* def){ return MarkType::kEnum == def->fMarkType

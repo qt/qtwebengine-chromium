@@ -438,7 +438,7 @@ bool CBC_PDF417::generateBarcodeLogic(WideString msg,
     return false;
   }
   WideString fullCodewords = dataCodewords + ec;
-  m_barcodeMatrix = pdfium::MakeUnique<CBC_BarcodeMatrix>(rows, cols);
+  m_barcodeMatrix = pdfium::MakeUnique<CBC_BarcodeMatrix>(cols, rows);
   encodeLowLevel(fullCodewords, cols, rows, errorCorrectionLevel,
                  m_barcodeMatrix.get());
   return true;
@@ -505,9 +505,9 @@ void CBC_PDF417::encodeLowLevel(WideString fullCodewords,
                                 CBC_BarcodeMatrix* logic) {
   int32_t idx = 0;
   for (int32_t y = 0; y < r; y++) {
+    CBC_BarcodeRow* logicRow = logic->getRow(y);
     int32_t cluster = y % 3;
-    logic->startRow();
-    encodeChar(START_PATTERN, 17, logic->getCurrentRow());
+    encodeChar(START_PATTERN, 17, logicRow);
     int32_t left;
     int32_t right;
     if (cluster == 0) {
@@ -521,18 +521,18 @@ void CBC_PDF417::encodeLowLevel(WideString fullCodewords,
       right = (30 * (y / 3)) + (errorCorrectionLevel * 3) + ((r - 1) % 3);
     }
     int32_t pattern = CODEWORD_TABLE[cluster][left];
-    encodeChar(pattern, 17, logic->getCurrentRow());
+    encodeChar(pattern, 17, logicRow);
     for (int32_t x = 0; x < c; x++) {
       pattern = CODEWORD_TABLE[cluster][fullCodewords[idx]];
-      encodeChar(pattern, 17, logic->getCurrentRow());
+      encodeChar(pattern, 17, logicRow);
       idx++;
     }
     if (m_compact) {
-      encodeChar(STOP_PATTERN, 1, logic->getCurrentRow());
+      encodeChar(STOP_PATTERN, 1, logicRow);
     } else {
       pattern = CODEWORD_TABLE[cluster][right];
-      encodeChar(pattern, 17, logic->getCurrentRow());
-      encodeChar(STOP_PATTERN, 18, logic->getCurrentRow());
+      encodeChar(pattern, 17, logicRow);
+      encodeChar(STOP_PATTERN, 18, logicRow);
     }
   }
 }
@@ -562,14 +562,14 @@ std::vector<int32_t> CBC_PDF417::determineDimensions(
   }
   if (dimensions.empty()) {
     int32_t rows = calculateNumberOfRows(sourceCodeWords,
-                                         errorCorrectionCodeWords, m_minCols);
+                                         errorCorrectionCodeWords, m_maxCols);
     if (rows < m_minRows) {
       dimensions.resize(2);
-      dimensions[0] = m_minCols;
+      dimensions[0] = m_maxCols;
       dimensions[1] = m_minRows;
     } else if (rows >= 3 && rows <= 90) {
       dimensions.resize(2);
-      dimensions[0] = m_minCols;
+      dimensions[0] = m_maxCols;
       dimensions[1] = rows;
     }
   }

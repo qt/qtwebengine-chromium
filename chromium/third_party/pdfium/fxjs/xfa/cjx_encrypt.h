@@ -7,18 +7,19 @@
 #ifndef FXJS_XFA_CJX_ENCRYPT_H_
 #define FXJS_XFA_CJX_ENCRYPT_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
 
 class CXFA_Encrypt;
 
-class CJX_Encrypt : public CJX_Node {
+class CJX_Encrypt final : public CJX_Node {
  public:
   explicit CJX_Encrypt(CXFA_Encrypt* node);
   ~CJX_Encrypt() override;
 
-  JS_PROP(format);
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(format);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_ENCRYPT_H_

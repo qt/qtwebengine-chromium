@@ -56,12 +56,12 @@ DEFINE_bool(disableDriverCorrectnessWorkarounds, false, "Disables all GPU driver
 #ifdef SK_BUILD_FOR_ANDROID
 DEFINE_string(skps, "/data/local/tmp/skps", "Directory to read skps from.");
 DEFINE_string(jpgs, "/data/local/tmp/resources", "Directory to read jpgs from.");
-DEFINE_string(jsons, "/data/local/tmp/jsons", "Directory to read (Bodymovin) jsons from.");
+DEFINE_string(lotties, "/data/local/tmp/lotties", "Directory to read (Bodymovin) jsons from.");
 DEFINE_string(nimas, "/data/local/tmp/nimas", "Directory to read NIMA animations from.");
 #else
 DEFINE_string(skps, "skps", "Directory to read skps from.");
 DEFINE_string(jpgs, "jpgs", "Directory to read jpgs from.");
-DEFINE_string(jsons, "jsons", "Directory to read (Bodymovin) jsons from.");
+DEFINE_string(lotties, "lotties", "Directory to read (Bodymovin) jsons from.");
 DEFINE_string(nimas, "nimas", "Directory to read NIMA animations from.");
 #endif
 
@@ -161,10 +161,12 @@ DEFINE_bool(cachePathMasks, true, "Allows path mask textures to be cached in GPU
 
 DEFINE_bool(noGS, false, "Disables support for geometry shaders.");
 
-DEFINE_string(pr, "default",
+DEFINE_string(pr, "all",
               "Set of enabled gpu path renderers. Defined as a list of: "
-              "[~]all [~]default [~]dashline [~]nvpr [~]aaconvex "
-              "[~]aalinearizing [~]small [~]tess]");
+              "[~]none [~]dashline [~]nvpr [~]ccpr [~]aahairline [~]aaconvex [~]aalinearizing "
+              "[~]small [~]tess] [~]all");
+
+DEFINE_bool(disableExplicitAlloc, false, "Disable explicit allocation of GPU resources");
 
 void SetCtxOptionsFromCommonFlags(GrContextOptions* ctxOptions) {
     static std::unique_ptr<SkExecutor> gGpuExecutor = (0 != FLAGS_gpuThreads)
@@ -174,4 +176,10 @@ void SetCtxOptionsFromCommonFlags(GrContextOptions* ctxOptions) {
     ctxOptions->fSuppressGeometryShaders = FLAGS_noGS;
     ctxOptions->fGpuPathRenderers = CollectGpuPathRenderersFromFlags();
     ctxOptions->fDisableDriverCorrectnessWorkarounds = FLAGS_disableDriverCorrectnessWorkarounds;
+
+    if (FLAGS_disableExplicitAlloc) {
+        ctxOptions->fExplicitlyAllocateGPUResources = GrContextOptions::Enable::kNo;
+        // Can't have sorting enabled when explicit allocation is disabled.
+        ctxOptions->fSortRenderTargets = GrContextOptions::Enable::kNo;
+    }
 }

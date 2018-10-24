@@ -10,9 +10,10 @@
 #include "core/fpdfapi/font/cpdf_simplefont.h"
 #include "core/fxcrt/fx_system.h"
 
-class CPDF_TrueTypeFont : public CPDF_SimpleFont {
+class CPDF_TrueTypeFont final : public CPDF_SimpleFont {
  public:
-  CPDF_TrueTypeFont();
+  CPDF_TrueTypeFont(CPDF_Document* pDocument, CPDF_Dictionary* pFontDict);
+  ~CPDF_TrueTypeFont() override;
 
   // CPDF_Font:
   bool IsTrueTypeFont() const override;

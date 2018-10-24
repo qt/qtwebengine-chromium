@@ -32,7 +32,8 @@ MaybeHandle<Object> DebugEvaluate::Global(Isolate* isolate,
   ScriptOriginOptions origin_options(false, true);
   MaybeHandle<SharedFunctionInfo> maybe_function_info =
       Compiler::GetSharedFunctionInfoForScript(
-          source, Compiler::ScriptDetails(isolate->factory()->empty_string()),
+          isolate, source,
+          Compiler::ScriptDetails(isolate->factory()->empty_string()),
           origin_options, nullptr, nullptr, ScriptCompiler::kNoCompileOptions,
           ScriptCompiler::kNoCacheNoReason, NOT_NATIVES_CODE);
 
@@ -254,111 +255,112 @@ namespace {
 
 bool IntrinsicHasNoSideEffect(Runtime::FunctionId id) {
 // Use macro to include both inlined and non-inlined version of an intrinsic.
-#define INTRINSIC_WHITELIST(V)           \
-  /* Conversions */                      \
-  V(NumberToStringSkipCache)             \
-  V(ToBigInt)                            \
-  V(ToInteger)                           \
-  V(ToLength)                            \
-  V(ToNumber)                            \
-  V(ToObject)                            \
-  V(ToString)                            \
-  /* Type checks */                      \
-  V(IsArray)                             \
-  V(IsDate)                              \
-  V(IsFunction)                          \
-  V(IsJSProxy)                           \
-  V(IsJSReceiver)                        \
-  V(IsJSWeakMap)                         \
-  V(IsJSWeakSet)                         \
-  V(IsRegExp)                            \
-  V(IsSmi)                               \
-  V(IsTypedArray)                        \
-  /* Loads */                            \
-  V(LoadLookupSlotForCall)               \
-  /* Arrays */                           \
-  V(ArraySpeciesConstructor)             \
-  V(EstimateNumberOfElements)            \
-  V(GetArrayKeys)                        \
-  V(HasComplexElements)                  \
-  V(HasFastPackedElements)               \
-  V(NewArray)                            \
-  V(NormalizeElements)                   \
-  V(PrepareElementsForSort)              \
-  V(TrySliceSimpleNonFastElements)       \
-  V(TypedArrayGetBuffer)                 \
-  /* Errors */                           \
-  V(NewTypeError)                        \
-  V(ReThrow)                             \
-  V(ThrowCalledNonCallable)              \
-  V(ThrowInvalidStringLength)            \
-  V(ThrowIteratorResultNotAnObject)      \
-  V(ThrowReferenceError)                 \
-  V(ThrowSymbolIteratorInvalid)          \
-  /* Strings */                          \
-  V(RegExpInternalReplace)               \
-  V(StringIncludes)                      \
-  V(StringIndexOf)                       \
-  V(StringReplaceOneCharWithString)      \
-  V(StringSubstring)                     \
-  V(StringToNumber)                      \
-  V(StringTrim)                          \
-  /* BigInts */                          \
-  V(BigIntEqualToBigInt)                 \
-  V(BigIntToBoolean)                     \
-  V(BigIntToNumber)                      \
-  /* Literals */                         \
-  V(CreateArrayLiteral)                  \
-  V(CreateObjectLiteral)                 \
-  V(CreateRegExpLiteral)                 \
-  /* Called from builtins */             \
-  V(AllocateInNewSpace)                  \
-  V(AllocateInTargetSpace)               \
-  V(AllocateSeqOneByteString)            \
-  V(AllocateSeqTwoByteString)            \
-  V(ArrayIncludes_Slow)                  \
-  V(ArrayIndexOf)                        \
-  V(ArrayIsArray)                        \
-  V(ClassOf)                             \
-  V(GenerateRandomNumbers)               \
-  V(GetFunctionName)                     \
-  V(GetOwnPropertyDescriptor)            \
-  V(GlobalPrint)                         \
-  V(HasProperty)                         \
-  V(ObjectCreate)                        \
-  V(ObjectEntries)                       \
-  V(ObjectEntriesSkipFastPath)           \
-  V(ObjectHasOwnProperty)                \
-  V(ObjectValues)                        \
-  V(ObjectValuesSkipFastPath)            \
-  V(ObjectGetOwnPropertyNames)           \
-  V(ObjectGetOwnPropertyNamesTryFast)    \
-  V(RegExpInitializeAndCompile)          \
-  V(StackGuard)                          \
-  V(StringAdd)                           \
-  V(StringCharCodeAt)                    \
-  V(StringEqual)                         \
-  V(StringIndexOfUnchecked)              \
-  V(StringParseFloat)                    \
-  V(StringParseInt)                      \
-  V(SymbolDescriptiveString)             \
-  V(ThrowRangeError)                     \
-  V(ThrowTypeError)                      \
-  V(ToName)                              \
-  V(TransitionElementsKind)              \
-  /* Misc. */                            \
-  V(Call)                                \
-  V(CompleteInobjectSlackTrackingForMap) \
-  V(HasInPrototypeChain)                 \
-  V(MaxSmi)                              \
-  V(NewObject)                           \
-  V(SmiLexicographicCompare)             \
-  V(StringMaxLength)                     \
-  V(StringToArray)                       \
-  /* Test */                             \
-  V(GetOptimizationStatus)               \
-  V(OptimizeFunctionOnNextCall)          \
-  V(OptimizeOsr)                         \
+#define INTRINSIC_WHITELIST(V)                \
+  /* Conversions */                           \
+  V(NumberToString)                           \
+  V(ToBigInt)                                 \
+  V(ToInteger)                                \
+  V(ToLength)                                 \
+  V(ToNumber)                                 \
+  V(ToObject)                                 \
+  V(ToString)                                 \
+  /* Type checks */                           \
+  V(IsArray)                                  \
+  V(IsDate)                                   \
+  V(IsFunction)                               \
+  V(IsJSProxy)                                \
+  V(IsJSReceiver)                             \
+  V(IsRegExp)                                 \
+  V(IsSmi)                                    \
+  V(IsTypedArray)                             \
+  /* Loads */                                 \
+  V(LoadLookupSlotForCall)                    \
+  V(GetProperty)                              \
+  /* Arrays */                                \
+  V(ArraySpeciesConstructor)                  \
+  V(EstimateNumberOfElements)                 \
+  V(GetArrayKeys)                             \
+  V(HasComplexElements)                       \
+  V(HasFastPackedElements)                    \
+  V(NewArray)                                 \
+  V(NormalizeElements)                        \
+  V(PrepareElementsForSort)                   \
+  V(TrySliceSimpleNonFastElements)            \
+  V(TypedArrayGetBuffer)                      \
+  /* Errors */                                \
+  V(NewTypeError)                             \
+  V(ReThrow)                                  \
+  V(ThrowCalledNonCallable)                   \
+  V(ThrowInvalidStringLength)                 \
+  V(ThrowIteratorResultNotAnObject)           \
+  V(ThrowReferenceError)                      \
+  V(ThrowSymbolIteratorInvalid)               \
+  /* Strings */                               \
+  V(RegExpInternalReplace)                    \
+  V(StringIncludes)                           \
+  V(StringIndexOf)                            \
+  V(StringReplaceOneCharWithString)           \
+  V(StringSubstring)                          \
+  V(StringToNumber)                           \
+  V(StringTrim)                               \
+  /* BigInts */                               \
+  V(BigIntEqualToBigInt)                      \
+  V(BigIntToBoolean)                          \
+  V(BigIntToNumber)                           \
+  /* Literals */                              \
+  V(CreateArrayLiteral)                       \
+  V(CreateArrayLiteralWithoutAllocationSite)  \
+  V(CreateObjectLiteral)                      \
+  V(CreateObjectLiteralWithoutAllocationSite) \
+  V(CreateRegExpLiteral)                      \
+  /* Called from builtins */                  \
+  V(AllocateInNewSpace)                       \
+  V(AllocateInTargetSpace)                    \
+  V(AllocateSeqOneByteString)                 \
+  V(AllocateSeqTwoByteString)                 \
+  V(ArrayIncludes_Slow)                       \
+  V(ArrayIndexOf)                             \
+  V(ArrayIsArray)                             \
+  V(ClassOf)                                  \
+  V(GenerateRandomNumbers)                    \
+  V(GetFunctionName)                          \
+  V(GetOwnPropertyDescriptor)                 \
+  V(GlobalPrint)                              \
+  V(HasProperty)                              \
+  V(ObjectCreate)                             \
+  V(ObjectEntries)                            \
+  V(ObjectEntriesSkipFastPath)                \
+  V(ObjectHasOwnProperty)                     \
+  V(ObjectValues)                             \
+  V(ObjectValuesSkipFastPath)                 \
+  V(ObjectGetOwnPropertyNames)                \
+  V(ObjectGetOwnPropertyNamesTryFast)         \
+  V(RegExpInitializeAndCompile)               \
+  V(StackGuard)                               \
+  V(StringAdd)                                \
+  V(StringCharCodeAt)                         \
+  V(StringEqual)                              \
+  V(StringIndexOfUnchecked)                   \
+  V(StringParseFloat)                         \
+  V(StringParseInt)                           \
+  V(SymbolDescriptiveString)                  \
+  V(ThrowRangeError)                          \
+  V(ThrowTypeError)                           \
+  V(ToName)                                   \
+  V(TransitionElementsKind)                   \
+  /* Misc. */                                 \
+  V(Call)                                     \
+  V(CompleteInobjectSlackTrackingForMap)      \
+  V(HasInPrototypeChain)                      \
+  V(MaxSmi)                                   \
+  V(NewObject)                                \
+  V(SmiLexicographicCompare)                  \
+  V(StringMaxLength)                          \
+  V(StringToArray)                            \
+  /* Test */                                  \
+  V(GetOptimizationStatus)                    \
+  V(OptimizeFunctionOnNextCall)               \
+  V(OptimizeOsr)                              \
   V(UnblockConcurrentRecompilation)
 
 #define CASE(Name)       \
@@ -553,12 +555,14 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtins::Name id) {
     case Builtins::kArrayPrototypeValues:
     case Builtins::kArrayIncludes:
     case Builtins::kArrayPrototypeEntries:
+    case Builtins::kArrayPrototypeFill:
     case Builtins::kArrayPrototypeFind:
     case Builtins::kArrayPrototypeFindIndex:
     case Builtins::kArrayPrototypeFlat:
     case Builtins::kArrayPrototypeFlatMap:
     case Builtins::kArrayPrototypeKeys:
     case Builtins::kArrayPrototypeSlice:
+    case Builtins::kArrayPrototypeSort:
     case Builtins::kArrayForEach:
     case Builtins::kArrayEvery:
     case Builtins::kArraySome:
@@ -567,6 +571,9 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtins::Name id) {
     case Builtins::kArrayMap:
     case Builtins::kArrayReduce:
     case Builtins::kArrayReduceRight:
+    // Trace builtins.
+    case Builtins::kIsTraceCategoryEnabled:
+    case Builtins::kTrace:
     // TypedArray builtins.
     case Builtins::kTypedArrayConstructor:
     case Builtins::kTypedArrayPrototypeBuffer:
@@ -810,6 +817,7 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtins::Name id) {
     case Builtins::kArrayIteratorPrototypeNext:
     case Builtins::kArrayPrototypePop:
     case Builtins::kArrayPrototypePush:
+    case Builtins::kArrayPrototypeReverse:
     case Builtins::kArrayPrototypeShift:
     case Builtins::kArraySplice:
     case Builtins::kArrayUnshift:
@@ -987,12 +995,7 @@ void DebugEvaluate::ApplySideEffectChecks(
   for (interpreter::BytecodeArrayIterator it(bytecode_array); !it.done();
        it.Advance()) {
     interpreter::Bytecode bytecode = it.current_bytecode();
-    if (BytecodeRequiresRuntimeCheck(bytecode)) {
-      interpreter::Bytecode debugbreak =
-          interpreter::Bytecodes::GetDebugBreak(bytecode);
-      bytecode_array->set(it.current_offset(),
-                          interpreter::Bytecodes::ToByte(debugbreak));
-    }
+    if (BytecodeRequiresRuntimeCheck(bytecode)) it.ApplyDebugBreak();
   }
 }
 

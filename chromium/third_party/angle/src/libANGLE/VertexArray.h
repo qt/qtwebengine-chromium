@@ -65,14 +65,11 @@ class VertexArrayState final : angle::NonCopyable
 
     void setAttribBinding(size_t attribIndex, GLuint newBindingIndex);
 
-    // Combines mClientMemoryAttribsMask with mEnabledAttributesMask.
-    gl::AttributesMask getEnabledClientMemoryAttribsMask() const;
-
     // Extra validation performed on the Vertex Array.
     bool hasEnabledNullPointerClientArray() const;
 
     // Get all the attributes in an AttributesMask that are using the given binding.
-    AttributesMask getBindingToAttributeMasks(GLuint bindingIndex) const;
+    AttributesMask getBindingToAttributesMask(GLuint bindingIndex) const;
 
   private:
     friend class VertexArray;
@@ -90,13 +87,14 @@ class VertexArrayState final : angle::NonCopyable
     gl::AttributesMask mClientMemoryAttribsMask;
     gl::AttributesMask mNullPointerClientMemoryAttribsMask;
 
-    // Records the mappings from each binding to all of the attributes that are using that binding.
-    // It is used to label all the relevant attributes dirty when we are updating a dirty binding in
-    // VertexArray11::syncStates().
-    std::array<AttributesMask, MAX_VERTEX_ATTRIB_BINDINGS> mBindingToAttributeMasks;
+    // Used for validation cache. Indexed by attribute.
+    AttributesMask mCachedMappedArrayBuffers;
+    AttributesMask mCachedEnabledMappedArrayBuffers;
 };
 
-class VertexArray final : public angle::ObserverInterface, public LabeledObject
+class VertexArray final : public angle::ObserverInterface,
+                          public LabeledObject,
+                          public angle::Subject
 {
   public:
     VertexArray(rx::GLImplFactory *factory, GLuint id, size_t maxAttribs, size_t maxAttribBindings);
@@ -177,14 +175,16 @@ class VertexArray final : public angle::ObserverInterface, public LabeledObject
         return mState.getEnabledAttributesMask();
     }
 
-    gl::AttributesMask getEnabledClientMemoryAttribsMask() const
-    {
-        return mState.getEnabledClientMemoryAttribsMask();
-    }
+    gl::AttributesMask getClientAttribsMask() const { return mState.mClientMemoryAttribsMask; }
 
     bool hasEnabledNullPointerClientArray() const
     {
         return mState.hasEnabledNullPointerClientArray();
+    }
+
+    bool hasMappedEnabledArrayBuffer() const
+    {
+        return mState.mCachedEnabledMappedArrayBuffers.any();
     }
 
     // Observer implementation
@@ -254,8 +254,8 @@ class VertexArray final : public angle::ObserverInterface, public LabeledObject
     ComponentTypeMask getAttributesTypeMask() const { return mState.mVertexAttributesTypeMask; }
     AttributesMask getAttributesMask() const { return mState.mEnabledAttributesMask; }
 
-    void onBindingChanged(const Context *context, bool bound);
-    bool hasTransformFeedbackBindingConflict(const AttributesMask &activeAttribues) const;
+    void onBindingChanged(const Context *context, int incr);
+    bool hasTransformFeedbackBindingConflict(const gl::Context *context) const;
 
   private:
     ~VertexArray() override;
@@ -270,9 +270,9 @@ class VertexArray final : public angle::ObserverInterface, public LabeledObject
                               angle::SubjectIndex index);
 
     // These are used to optimize draw call validation.
-    void updateCachedVertexAttributeSize(size_t attribIndex);
-    void updateCachedBufferBindingSize(size_t bindingIndex);
+    void updateCachedBufferBindingSize(VertexBinding *binding);
     void updateCachedTransformFeedbackBindingValidation(size_t bindingIndex, const Buffer *buffer);
+    void updateCachedMappedArrayBuffers(VertexBinding *binding);
 
     GLuint mId;
 

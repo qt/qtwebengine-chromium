@@ -33,6 +33,7 @@ namespace
 const uint32_t kMockVendorID     = 0xba5eba11;
 const uint32_t kMockDeviceID     = 0xf005ba11;
 constexpr char kMockDeviceName[] = "Vulkan Mock Device";
+constexpr size_t kInFlightCommandsLimit = 50000u;
 }  // anonymous namespace
 
 namespace rx
@@ -135,13 +136,14 @@ class ScopedVkLoaderEnvironment : angle::NonCopyable
                 mEnableMockICD = false;
             }
         }
-        if (mEnableValidationLayers)
+        if (mEnableValidationLayers || mEnableMockICD)
         {
             const auto &cwd = angle::GetCWD();
             if (!cwd.valid())
             {
                 ERR() << "Error getting CWD for Vulkan layers init.";
                 mEnableValidationLayers = false;
+                mEnableMockICD          = false;
             }
             else
             {
@@ -152,6 +154,7 @@ class ScopedVkLoaderEnvironment : angle::NonCopyable
                 {
                     ERR() << "Error setting CWD for Vulkan layers init.";
                     mEnableValidationLayers = false;
+                    mEnableMockICD          = false;
                 }
             }
         }
@@ -318,6 +321,7 @@ void RendererVk::onDestroy(vk::Context *context)
         mInstance = VK_NULL_HANDLE;
     }
 
+    mMemoryProperties.destroy();
     mPhysicalDevice = VK_NULL_HANDLE;
 }
 
@@ -807,8 +811,12 @@ angle::Result RendererVk::submitFrame(vk::Context *context,
 
     mInFlightCommands.emplace_back(scopedBatch.release());
 
-    // Sanity check.
-    ASSERT(mInFlightCommands.size() < 1000u);
+    // Check that mInFlightCommands isn't growing too fast
+    // If it is, wait for the queue to complete work it has alread been assigned
+    if (mInFlightCommands.size() > kInFlightCommandsLimit)
+    {
+        vkQueueWaitIdle(mQueue);
+    }
 
     // Increment the queue serial. If this fails, we should restart ANGLE.
     // TODO(jmadill): Overflow check.

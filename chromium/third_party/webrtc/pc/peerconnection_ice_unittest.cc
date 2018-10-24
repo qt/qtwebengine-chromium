@@ -28,6 +28,7 @@
 #include "rtc_base/fakenetwork.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/virtualsocketserver.h"
+#include "system_wrappers/include/metrics_default.h"
 
 namespace webrtc {
 
@@ -50,8 +51,9 @@ class PeerConnectionWrapperForIceTest : public PeerConnectionWrapper {
     RTC_DCHECK(desc->contents().size() > 0);
     const auto& first_content = desc->contents()[0];
     candidate->set_transport_name(first_content.name);
-    JsepIceCandidate jsep_candidate(first_content.name, 0, *candidate);
-    return pc()->AddIceCandidate(&jsep_candidate);
+    std::unique_ptr<IceCandidateInterface> jsep_candidate =
+        CreateIceCandidate(first_content.name, 0, *candidate);
+    return pc()->AddIceCandidate(jsep_candidate.get());
   }
 
   // Returns ICE candidates from the remote session description.
@@ -220,8 +222,9 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
     RTC_DCHECK(desc->contents().size() > 0);
     const auto& first_content = desc->contents()[0];
     candidate->set_transport_name(first_content.name);
-    JsepIceCandidate jsep_candidate(first_content.name, 0, *candidate);
-    return sdesc->AddCandidate(&jsep_candidate);
+    std::unique_ptr<IceCandidateInterface> jsep_candidate =
+        CreateIceCandidate(first_content.name, 0, *candidate);
+    return sdesc->AddCandidate(jsep_candidate.get());
   }
 
   rtc::FakeNetworkManager* NewFakeNetwork() {
@@ -246,7 +249,9 @@ class PeerConnectionIceTest
     : public PeerConnectionIceBaseTest,
       public ::testing::WithParamInterface<SdpSemantics> {
  protected:
-  PeerConnectionIceTest() : PeerConnectionIceBaseTest(GetParam()) {}
+  PeerConnectionIceTest() : PeerConnectionIceBaseTest(GetParam()) {
+    webrtc::metrics::Reset();
+  }
 };
 
 ::testing::AssertionResult AssertCandidatesEqual(const char* a_expr,
@@ -408,13 +413,19 @@ TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenRemoteDescriptionNotSet) {
 
   auto caller = CreatePeerConnectionWithAudioVideo();
   cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
-  JsepIceCandidate jsep_candidate(cricket::CN_AUDIO, 0, candidate);
+  std::unique_ptr<IceCandidateInterface> jsep_candidate =
+      CreateIceCandidate(cricket::CN_AUDIO, 0, candidate);
 
-  EXPECT_FALSE(caller->pc()->AddIceCandidate(&jsep_candidate));
+  EXPECT_FALSE(caller->pc()->AddIceCandidate(jsep_candidate.get()));
 
   caller->CreateOfferAndSetAsLocal();
 
-  EXPECT_FALSE(caller->pc()->AddIceCandidate(&jsep_candidate));
+  EXPECT_FALSE(caller->pc()->AddIceCandidate(jsep_candidate.get()));
+  EXPECT_EQ(
+      2, webrtc::metrics::NumSamples("WebRTC.PeerConnection.AddIceCandidate"));
+  EXPECT_EQ(
+      2, webrtc::metrics::NumEvents("WebRTC.PeerConnection.AddIceCandidate",
+                                    kAddIceCandidateFailNoRemoteDescription));
 }
 
 TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenPeerConnectionClosed) {
@@ -428,11 +439,12 @@ TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenPeerConnectionClosed) {
   cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
   auto* audio_content = cricket::GetFirstAudioContent(
       caller->pc()->local_description()->description());
-  JsepIceCandidate jsep_candidate(audio_content->name, 0, candidate);
+  std::unique_ptr<IceCandidateInterface> jsep_candidate =
+      CreateIceCandidate(audio_content->name, 0, candidate);
 
   caller->pc()->Close();
 
-  EXPECT_FALSE(caller->pc()->AddIceCandidate(&jsep_candidate));
+  EXPECT_FALSE(caller->pc()->AddIceCandidate(jsep_candidate.get()));
 }
 
 TEST_P(PeerConnectionIceTest, DuplicateIceCandidateIgnoredWhenAdded) {
@@ -463,9 +475,10 @@ TEST_P(PeerConnectionIceTest,
   cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
   auto* audio_content = cricket::GetFirstAudioContent(
       caller->pc()->local_description()->description());
-  JsepIceCandidate ice_candidate(audio_content->name, 0, candidate);
+  std::unique_ptr<IceCandidateInterface> ice_candidate =
+      CreateIceCandidate(audio_content->name, 0, candidate);
 
-  ASSERT_TRUE(caller->pc()->AddIceCandidate(&ice_candidate));
+  ASSERT_TRUE(caller->pc()->AddIceCandidate(ice_candidate.get()));
 
   caller->pc()->Close();
 
@@ -487,8 +500,9 @@ TEST_P(PeerConnectionIceTest,
   cricket::Candidate candidate = CreateLocalUdpCandidate(kCalleeAddress);
   auto* audio_content = cricket::GetFirstAudioContent(
       caller->pc()->local_description()->description());
-  JsepIceCandidate ice_candidate(audio_content->name, 0, candidate);
-  EXPECT_TRUE(caller->pc()->AddIceCandidate(&ice_candidate));
+  std::unique_ptr<IceCandidateInterface> ice_candidate =
+      CreateIceCandidate(audio_content->name, 0, candidate);
+  EXPECT_TRUE(caller->pc()->AddIceCandidate(ice_candidate.get()));
   EXPECT_TRUE(caller->pc()->RemoveIceCandidates({candidate}));
 }
 
@@ -961,9 +975,9 @@ class PeerConnectionIceConfigTest : public testing::Test {
         new cricket::FakePortAllocator(rtc::Thread::Current(), nullptr));
     port_allocator_ = port_allocator.get();
     rtc::scoped_refptr<PeerConnectionInterface> pc(
-        pc_factory_->CreatePeerConnection(
-            config, nullptr /* constraint */, std::move(port_allocator),
-            nullptr /* cert_generator */, &observer_));
+        pc_factory_->CreatePeerConnection(config, std::move(port_allocator),
+                                          nullptr /* cert_generator */,
+                                          &observer_));
     EXPECT_TRUE(pc.get());
     pc_ = std::move(pc.get());
   }

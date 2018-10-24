@@ -49,8 +49,12 @@ public:
         return this->uniformHandler()->samplerSwizzle(handle);
     }
 
-    // Used to add a uniform for the RenderTarget height (used for frag position) without mangling
+    // Used to add a uniform for the RenderTarget width (used for sk_Width) without mangling
     // the name of the uniform inside of a stage.
+    void addRTWidthUniform(const char* name);
+
+    // Used to add a uniform for the RenderTarget height (used for sk_Height and frag position)
+    // without mangling the name of the uniform inside of a stage.
     void addRTHeightUniform(const char* name);
 
     // Generates a name for a variable. The generated string will be name prefixed by the prefix
@@ -135,9 +139,7 @@ private:
                                     SkString output,
                                     SkTArray<std::unique_ptr<GrGLSLFragmentProcessor>>*);
     void emitAndInstallXferProc(const SkString& colorIn, const SkString& coverageIn);
-    void emitSamplers(const GrResourceIOProcessor& processor,
-                      SkTArray<SamplerHandle>* outTexSamplerHandles);
-    SamplerHandle emitSampler(GrSLType samplerType, GrPixelConfig, const char* name,
+    SamplerHandle emitSampler(GrTextureType, GrPixelConfig, const char* name,
                               GrShaderFlags visibility);
     void emitFSOutputSwizzle(bool hasSecondaryOutput);
     void updateSamplerCounts(GrShaderFlags visibility);

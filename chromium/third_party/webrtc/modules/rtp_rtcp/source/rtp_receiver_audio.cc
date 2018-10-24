@@ -25,46 +25,9 @@ RTPReceiverStrategy* RTPReceiverStrategy::CreateAudioStrategy(
 }
 
 RTPReceiverAudio::RTPReceiverAudio(RtpData* data_callback)
-    : RTPReceiverStrategy(data_callback),
-      TelephoneEventHandler(),
-      telephone_event_forward_to_decoder_(false),
-      telephone_event_payload_type_(-1),
-      cng_nb_payload_type_(-1),
-      cng_wb_payload_type_(-1),
-      cng_swb_payload_type_(-1),
-      cng_fb_payload_type_(-1) {}
+    : RTPReceiverStrategy(data_callback) {}
 
 RTPReceiverAudio::~RTPReceiverAudio() = default;
-
-// Outband TelephoneEvent(DTMF) detection
-void RTPReceiverAudio::SetTelephoneEventForwardToDecoder(
-    bool forward_to_decoder) {
-  rtc::CritScope lock(&crit_sect_);
-  telephone_event_forward_to_decoder_ = forward_to_decoder;
-}
-
-// Is forwarding of outband telephone events turned on/off?
-bool RTPReceiverAudio::TelephoneEventForwardToDecoder() const {
-  rtc::CritScope lock(&crit_sect_);
-  return telephone_event_forward_to_decoder_;
-}
-
-bool RTPReceiverAudio::TelephoneEventPayloadType(int8_t payload_type) const {
-  rtc::CritScope lock(&crit_sect_);
-  return telephone_event_payload_type_ == payload_type;
-}
-
-TelephoneEventHandler* RTPReceiverAudio::GetTelephoneEventHandler() {
-  return this;
-}
-
-bool RTPReceiverAudio::CNGPayloadType(int8_t payload_type) {
-  rtc::CritScope lock(&crit_sect_);
-  return payload_type == cng_nb_payload_type_ ||
-         payload_type == cng_wb_payload_type_ ||
-         payload_type == cng_swb_payload_type_ ||
-         payload_type == cng_fb_payload_type_;
-}
 
 // -   Sample based or frame based codecs based on RFC 3551
 // -
@@ -98,32 +61,6 @@ bool RTPReceiverAudio::CNGPayloadType(int8_t payload_type) {
 // -   MPA       frame         N/A              var.      var.
 // -
 // -   G7221     frame         N/A
-int32_t RTPReceiverAudio::OnNewPayloadTypeCreated(
-    int payload_type,
-    const SdpAudioFormat& audio_format) {
-  rtc::CritScope lock(&crit_sect_);
-
-  if (RtpUtility::StringCompare(audio_format.name.c_str(), "telephone-event",
-                                15)) {
-    telephone_event_payload_type_ = payload_type;
-  }
-  if (RtpUtility::StringCompare(audio_format.name.c_str(), "cn", 2)) {
-    // We support comfort noise at four different frequencies.
-    if (audio_format.clockrate_hz == 8000) {
-      cng_nb_payload_type_ = payload_type;
-    } else if (audio_format.clockrate_hz == 16000) {
-      cng_wb_payload_type_ = payload_type;
-    } else if (audio_format.clockrate_hz == 32000) {
-      cng_swb_payload_type_ = payload_type;
-    } else if (audio_format.clockrate_hz == 48000) {
-      cng_fb_payload_type_ = payload_type;
-    } else {
-      assert(false);
-      return -1;
-    }
-  }
-  return 0;
-}
 
 int32_t RTPReceiverAudio::ParseRtpPacket(WebRtcRTPHeader* rtp_header,
                                          const PayloadUnion& specific_payload,
@@ -138,24 +75,6 @@ int32_t RTPReceiverAudio::ParseRtpPacket(WebRtcRTPHeader* rtp_header,
                                  specific_payload.audio_payload());
 }
 
-RTPAliveType RTPReceiverAudio::ProcessDeadOrAlive(
-    uint16_t last_payload_length) const {
-  // Our CNG is 9 bytes; if it's a likely CNG the receiver needs to check
-  // kRtpNoRtp against NetEq speech_type kOutputPLCtoCNG.
-  if (last_payload_length < 10) {  // our CNG is 9 bytes
-    return kRtpNoRtp;
-  } else {
-    return kRtpDead;
-  }
-}
-
-void RTPReceiverAudio::CheckPayloadChanged(int8_t payload_type,
-                                           PayloadUnion* /* specific_payload */,
-                                           bool* should_discard_changes) {
-  *should_discard_changes =
-      TelephoneEventPayloadType(payload_type) || CNGPayloadType(payload_type);
-}
-
 // We are not allowed to have any critsects when calling data_callback.
 int32_t RTPReceiverAudio::ParseAudioCodecSpecific(
     WebRtcRTPHeader* rtp_header,
@@ -168,71 +87,6 @@ int32_t RTPReceiverAudio::ParseAudioCodecSpecific(
   if (payload_data_length == 0) {
     rtp_header->frameType = kEmptyFrame;
     return data_callback_->OnReceivedPayloadData(nullptr, 0, rtp_header);
-  }
-
-  bool telephone_event_packet =
-      TelephoneEventPayloadType(rtp_header->header.payloadType);
-  if (telephone_event_packet) {
-    rtc::CritScope lock(&crit_sect_);
-
-    // RFC 4733 2.3
-    // 0                   1                   2                   3
-    // 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-    // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    // |     event     |E|R| volume    |          duration             |
-    // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    //
-    if (payload_data_length % 4 != 0) {
-      return -1;
-    }
-    size_t number_of_events = payload_data_length / 4;
-
-    // sanity
-    if (number_of_events >= MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS) {
-      number_of_events = MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS;
-    }
-    for (size_t n = 0; n < number_of_events; ++n) {
-      RTC_DCHECK_GE(payload_data_length, (4 * n) + 2);
-      bool end = (payload_data[(4 * n) + 1] & 0x80) ? true : false;
-
-      std::set<uint8_t>::iterator event =
-          telephone_event_reported_.find(payload_data[4 * n]);
-
-      if (event != telephone_event_reported_.end()) {
-        // we have already seen this event
-        if (end) {
-          telephone_event_reported_.erase(payload_data[4 * n]);
-        }
-      } else {
-        if (end) {
-          // don't add if it's a end of a tone
-        } else {
-          telephone_event_reported_.insert(payload_data[4 * n]);
-        }
-      }
-    }
-
-    // RFC 4733 2.5.1.3 & 2.5.2.3 Long-Duration Events
-    // should not be a problem since we don't care about the duration
-
-    // RFC 4733 See 2.5.1.5. & 2.5.2.4.  Multiple Events in a Packet
-  }
-
-  {
-    rtc::CritScope lock(&crit_sect_);
-
-    // check if it's a DTMF event, hence something we can playout
-    if (telephone_event_packet) {
-      if (!telephone_event_forward_to_decoder_) {
-        // don't forward event to decoder
-        return 0;
-      }
-      std::set<uint8_t>::iterator first = telephone_event_reported_.begin();
-      if (first != telephone_event_reported_.end() && *first > 15) {
-        // don't forward non DTMF events
-        return 0;
-      }
-    }
   }
 
   return data_callback_->OnReceivedPayloadData(payload_data,

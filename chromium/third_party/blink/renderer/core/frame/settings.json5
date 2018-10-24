@@ -555,6 +555,14 @@
       invalidate: "ViewportDescription",
     },
 
+    // When true, Blink will use the content width and viewport size to set the
+    // minimum scale factor such that the user can't zoom out into the area
+    // beyond the content.
+    {
+      name: "shrinksViewportContentToFit",
+      initial: false,
+    },
+
     {
       name: "dnsPrefetchingEnabled",
       initial: false,
@@ -575,11 +583,11 @@
       initial: false,
     },
 
-    // Set the timeout seconds of NetworkQuietTimers in FirstMeaningfulPainterDetector.
+    // Set the timeout seconds of the network-quiet timers in IdlenessDetector.
     // Used by embedders who want to change the timeout time in order to run web contents
     // on various embedded devices and changeable network bandwidths in different regions.
     {
-      name: "FMPNetworkQuietTimeout",
+      name: "NetworkQuietTimeout",
       initial: "0.5",
       type: "double",
     },
@@ -654,13 +662,6 @@
       initial: "kHoverTypeNone",
       invalidate: "MediaQuery",
       type: "HoverType",
-    },
-
-    // Whether accessibility support is enabled at all.
-    {
-      name: "accessibilityEnabled",
-      initial: false,
-      invalidate: "AccessibilityState",
     },
 
     // If true, the value in password fields is exposed to assistive technologies.
@@ -856,17 +857,6 @@
       type: "PassiveListenerDefault",
     },
 
-    // Whether the CSSPreloadScanner is used for externally CSS preloads. NoPreload
-    // indicates that the scanner will be used, but no preloads issued.
-    {
-      name: "cssExternalScannerNoPreload",
-      initial: false,
-    },
-    {
-      name: "cssExternalScannerPreload",
-      initial: false,
-    },
-
     // Some platforms have media subsystems which are too buggy to allow preloading
     // of content by default. See http://crbug.com/612909 for details.
     {
@@ -890,12 +880,6 @@
     // Whether download UI should be hidden for the current page content.
     {
       name: "hideDownloadUI",
-      initial: false,
-    },
-
-    // Whether or not to issue range requests for images and show placeholders.
-    {
-      name: "fetchImagePlaceholders",
       initial: false,
     },
 
@@ -997,6 +981,40 @@
     },
     {
       name: "lazyFrameLoadingDistanceThresholdPx4G",
+      initial: 800,
+      type: "int",
+    },
+
+    //
+    // Lazy image loading distance-from-viewport thresholds for different effective connection types.
+    //
+    {
+      name: "lazyImageLoadingDistanceThresholdPxUnknown",
+      initial: 800,
+      type: "int",
+    },
+    {
+      name: "lazyImageLoadingDistanceThresholdPxOffline",
+      initial: 800,
+      type: "int",
+    },
+    {
+      name: "lazyImageLoadingDistanceThresholdPxSlow2G",
+      initial: 800,
+      type: "int",
+    },
+    {
+      name: "lazyImageLoadingDistanceThresholdPx2G",
+      initial: 800,
+      type: "int",
+    },
+    {
+      name: "lazyImageLoadingDistanceThresholdPx3G",
+      initial: 800,
+      type: "int",
+    },
+    {
+      name: "lazyImageLoadingDistanceThresholdPx4G",
       initial: 800,
       type: "int",
     },

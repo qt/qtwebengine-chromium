@@ -9,7 +9,7 @@
 
 #include "xfa/fwl/theme/cfwl_widgettp.h"
 
-class CFWL_CaretTP : public CFWL_WidgetTP {
+class CFWL_CaretTP final : public CFWL_WidgetTP {
  public:
   CFWL_CaretTP();
   ~CFWL_CaretTP() override;
@@ -22,7 +22,7 @@ class CFWL_CaretTP : public CFWL_WidgetTP {
                    uint32_t dwStates,
                    const CFX_RectF* pRect,
                    CXFA_GEColor* crFill,
-                   CFX_Matrix* pMatrix = nullptr);
+                   CFX_Matrix* pMatrix);
 };
 
 #endif  // XFA_FWL_THEME_CFWL_CARETTP_H_

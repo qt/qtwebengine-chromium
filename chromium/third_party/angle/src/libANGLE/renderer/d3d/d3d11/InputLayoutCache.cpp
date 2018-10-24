@@ -113,7 +113,8 @@ void InputLayoutCache::clear()
     mLayoutCache.Clear();
 }
 
-gl::Error InputLayoutCache::getInputLayout(
+angle::Result InputLayoutCache::getInputLayout(
+    const gl::Context *context,
     Renderer11 *renderer,
     const gl::State &state,
     const std::vector<const TranslatedAttribute *> &currentAttributes,
@@ -181,18 +182,19 @@ gl::Error InputLayoutCache::getInputLayout(
             angle::TrimCache(mLayoutCache.max_size() / 2, kGCLimit, "input layout", &mLayoutCache);
 
             d3d11::InputLayout newInputLayout;
-            ANGLE_TRY(createInputLayout(renderer, sortedSemanticIndices, currentAttributes, program,
-                                        drawCallParams, &newInputLayout));
+            ANGLE_TRY(createInputLayout(context, renderer, sortedSemanticIndices, currentAttributes,
+                                        program, drawCallParams, &newInputLayout));
 
             auto insertIt   = mLayoutCache.Put(layout, std::move(newInputLayout));
             *inputLayoutOut = &insertIt->second;
         }
     }
 
-    return gl::NoError();
+    return angle::Result::Continue();
 }
 
-gl::Error InputLayoutCache::createInputLayout(
+angle::Result InputLayoutCache::createInputLayout(
+    const gl::Context *context,
     Renderer11 *renderer,
     const AttribIndexArray &sortedSemanticIndices,
     const std::vector<const TranslatedAttribute *> &currentAttributes,
@@ -291,15 +293,16 @@ gl::Error InputLayoutCache::createInputLayout(
     }
 
     ShaderExecutableD3D *shader = nullptr;
-    ANGLE_TRY(programD3D->getVertexExecutableForCachedInputLayout(&shader, nullptr));
+    ANGLE_TRY(programD3D->getVertexExecutableForCachedInputLayout(context, &shader, nullptr));
 
     ShaderExecutableD3D *shader11 = GetAs<ShaderExecutable11>(shader);
 
     InputElementArray inputElementArray(inputElements.data(), inputElementCount);
     ShaderData vertexShaderData(shader11->getFunction(), shader11->getLength());
 
-    ANGLE_TRY(renderer->allocateResource(inputElementArray, &vertexShaderData, inputLayoutOut));
-    return gl::NoError();
+    ANGLE_TRY(renderer->allocateResource(GetImplAs<Context11>(context), inputElementArray,
+                                         &vertexShaderData, inputLayoutOut));
+    return angle::Result::Continue();
 }
 
 void InputLayoutCache::setCacheSize(size_t newCacheSize)

@@ -57,7 +57,8 @@ typedef enum {
   BIGDIA = 3,
   SQUARE = 4,
   FAST_HEX = 5,
-  FAST_DIAMOND = 6
+  FAST_DIAMOND = 6,
+  MESH = 7
 } SEARCH_METHODS;
 
 typedef enum {
@@ -221,6 +222,21 @@ typedef struct MESH_PATTERN {
   int interval;
 } MESH_PATTERN;
 
+typedef enum {
+  // No reaction to rate control on a detected slide/scene change.
+  NO_DETECTION = 0,
+
+  // Set to larger Q (max_q set by user) based only on the
+  // detected slide/scene change and current/past Q.
+  FAST_DETECTION_MAXQ = 1,
+
+  // Based on (first pass) encoded frame, if large frame size is detected
+  // then set to higher Q for the second re-encode. This involves 2 pass
+  // encoding on slide change, so slower than 1, but more accurate for
+  // detecting overshoot.
+  RE_ENCODE_MAXQ = 2
+} OVERSHOOT_DETECTION_CBR_RT;
+
 typedef struct SPEED_FEATURES {
   MV_SPEED_FEATURES mv;
 
@@ -319,6 +335,9 @@ typedef struct SPEED_FEATURES {
   int use_square_partition_only;
   BLOCK_SIZE use_square_only_threshold;
 
+  // Prune reference frames for rectangular partitions.
+  int prune_ref_frame_for_rect_partitions;
+
   // Sets min and max partition sizes for this 64x64 region based on the
   // same 64x64 in last encoded frame, and the left and above neighbor.
   AUTO_MIN_MAX_MODE auto_min_max_partition_size;
@@ -348,6 +367,9 @@ typedef struct SPEED_FEATURES {
   // This allows us to use motion search at other sizes as a starting
   // point for this motion search and limits the search range around it.
   int adaptive_motion_search;
+
+  // Do extra full pixel motion search to obtain better motion vector.
+  int enhanced_full_pixel_motion_search;
 
   // Threshold for allowing exhaistive motion search.
   int exhaustive_searches_thresh;
@@ -535,9 +557,9 @@ typedef struct SPEED_FEATURES {
   // For SVC: enables use of partition from lower spatial resolution.
   int svc_use_lowres_part;
 
-  // Enable re-encoding on scene change with potential high overshoot,
-  // for real-time encoding flow.
-  int re_encode_overshoot_rt;
+  // Flag to indicate process for handling overshoot on slide/scene change,
+  // for real-time CBR mode.
+  OVERSHOOT_DETECTION_CBR_RT overshoot_detection_cbr_rt;
 
   // Disable partitioning of 16x16 blocks.
   int disable_16x16part_nonkey;

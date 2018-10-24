@@ -7,22 +7,22 @@
 #ifndef FXJS_XFA_CJX_MANIFEST_H_
 #define FXJS_XFA_CJX_MANIFEST_H_
 
-#include "fxjs/cjx_define.h"
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
 
 class CXFA_Manifest;
 
-class CJX_Manifest : public CJX_Node {
+class CJX_Manifest final : public CJX_Node {
  public:
   explicit CJX_Manifest(CXFA_Manifest* manifest);
   ~CJX_Manifest() override;
 
-  JS_METHOD(evaluate, CJX_Manifest);
+  JSE_METHOD(evaluate, CJX_Manifest);
 
-  JS_PROP(defaultValue); /* {default} */
-  JS_PROP(action);
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(defaultValue); /* {default} */
+  JSE_PROP(action);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 
  private:
   static const CJX_MethodSpec MethodSpecs[];

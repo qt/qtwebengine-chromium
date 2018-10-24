@@ -87,6 +87,9 @@ public:
 
         op->visitProxies(addDependency);
         clip.visitProxies(addDependency);
+        if (dstProxy.proxy()) {
+            addDependency(dstProxy.proxy());
+        }
 
         return this->recordOp(std::move(op), caps, clip.doesClip() ? &clip : nullptr, &dstProxy);
     }
@@ -168,9 +171,8 @@ private:
 
     void forwardCombine(const GrCaps&);
 
-    // If this returns true then b has been merged into a's op.
-    bool combineIfPossible(const RecordedOp& a, GrOp* b, const GrAppliedClip* bClip,
-                           const DstProxy* bDstTexture, const GrCaps&);
+    GrOp::CombineResult combineIfPossible(const RecordedOp& a, GrOp* b, const GrAppliedClip* bClip,
+                                          const DstProxy* bDstTexture, const GrCaps&);
 
     uint32_t                       fLastClipStackGenID;
     SkIRect                        fLastDevClipBounds;

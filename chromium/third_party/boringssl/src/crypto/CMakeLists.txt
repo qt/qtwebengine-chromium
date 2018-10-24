@@ -2,27 +2,27 @@ include_directories(../include)
 
 if(NOT OPENSSL_NO_ASM)
   if(UNIX)
-    if (${ARCH} STREQUAL "aarch64")
+    if(${ARCH} STREQUAL "aarch64")
       # The "armx" Perl scripts look for "64" in the style argument
       # in order to decide whether to generate 32- or 64-bit asm.
-      if (APPLE)
+      if(APPLE)
         set(PERLASM_STYLE ios64)
       else()
         set(PERLASM_STYLE linux64)
       endif()
-    elseif (${ARCH} STREQUAL "arm")
-      if (APPLE)
+    elseif(${ARCH} STREQUAL "arm")
+      if(APPLE)
         set(PERLASM_STYLE ios32)
       else()
         set(PERLASM_STYLE linux32)
       endif()
-    elseif (${ARCH} STREQUAL "ppc64le")
+    elseif(${ARCH} STREQUAL "ppc64le")
       set(PERLASM_STYLE linux64le)
     else()
-      if (${ARCH} STREQUAL "x86")
+      if(${ARCH} STREQUAL "x86")
         set(PERLASM_FLAGS "-fPIC -DOPENSSL_IA32_SSE2")
       endif()
-      if (APPLE)
+      if(APPLE)
         set(PERLASM_STYLE macosx)
       else()
         set(PERLASM_STYLE elf)
@@ -38,8 +38,8 @@ if(NOT OPENSSL_NO_ASM)
     endif()
 
     # CMake does not add -isysroot and -arch flags to assembly.
-    if (APPLE)
-      if (CMAKE_OSX_SYSROOT)
+    if(APPLE)
+      if(CMAKE_OSX_SYSROOT)
         set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -isysroot \"${CMAKE_OSX_SYSROOT}\"")
       endif()
       foreach(arch ${CMAKE_OSX_ARCHITECTURES})
@@ -47,7 +47,7 @@ if(NOT OPENSSL_NO_ASM)
       endforeach()
     endif()
   else()
-    if (${ARCH} STREQUAL "x86_64")
+    if(${ARCH} STREQUAL "x86_64")
       set(PERLASM_STYLE nasm)
     else()
       set(PERLASM_STYLE win32n)
@@ -109,7 +109,7 @@ add_subdirectory(dh)
 add_subdirectory(dsa)
 add_subdirectory(rsa_extra)
 add_subdirectory(ec_extra)
-add_subdirectory(ecdh)
+add_subdirectory(ecdh_extra)
 add_subdirectory(ecdsa_extra)
 
 # Level 3
@@ -192,7 +192,7 @@ add_library(
   $<TARGET_OBJECTS:dsa>
   $<TARGET_OBJECTS:rsa_extra>
   $<TARGET_OBJECTS:ec_extra>
-  $<TARGET_OBJECTS:ecdh>
+  $<TARGET_OBJECTS:ecdh_extra>
   $<TARGET_OBJECTS:ecdsa_extra>
   $<TARGET_OBJECTS:cmac>
   $<TARGET_OBJECTS:evp>
@@ -216,6 +216,12 @@ if(NOT MSVC AND NOT ANDROID)
   target_link_libraries(crypto pthread)
 endif()
 
+# Every target depends on crypto, so we add libcxx as a dependency here to
+# simplify injecting it everywhere.
+if(USE_CUSTOM_LIBCXX)
+  target_link_libraries(crypto libcxx)
+endif()
+
 # TODO(davidben): Convert the remaining tests to GTest.
 add_executable(
   crypto_test
@@ -234,7 +240,7 @@ add_executable(
   curve25519/ed25519_test.cc
   curve25519/spake25519_test.cc
   curve25519/x25519_test.cc
-  ecdh/ecdh_test.cc
+  ecdh_extra/ecdh_test.cc
   dh/dh_test.cc
   digest_extra/digest_test.cc
   dsa/dsa_test.cc
@@ -254,6 +260,7 @@ add_executable(
   hmac_extra/hmac_test.cc
   lhash/lhash_test.cc
   obj/obj_test.cc
+  pem/pem_test.cc
   pkcs7/pkcs7_test.cc
   pkcs8/pkcs8_test.cc
   pkcs8/pkcs12_test.cc
@@ -275,7 +282,7 @@ add_executable(
 )
 
 target_link_libraries(crypto_test crypto boringssl_gtest)
-if (WIN32)
+if(WIN32)
   target_link_libraries(crypto_test ws2_32)
 endif()
 add_dependencies(all_tests crypto_test)

@@ -12,6 +12,7 @@
 
 #include "core/fxcrt/fx_extension.h"
 #include "fxjs/cfxjse_engine.h"
+#include "fxjs/cfxjse_value.h"
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
@@ -25,7 +26,7 @@
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 CFXJSE_ResolveProcessor::CFXJSE_ResolveProcessor()
-    : m_iCurStart(0), m_pNodeHelper(pdfium::MakeUnique<CXFA_NodeHelper>()) {}
+    : m_pNodeHelper(pdfium::MakeUnique<CXFA_NodeHelper>()) {}
 
 CFXJSE_ResolveProcessor::~CFXJSE_ResolveProcessor() {}
 

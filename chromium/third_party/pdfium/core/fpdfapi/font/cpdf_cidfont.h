@@ -32,9 +32,9 @@ class CPDF_CID2UnicodeMap;
 class CPDF_CMap;
 class CPDF_StreamAcc;
 
-class CPDF_CIDFont : public CPDF_Font {
+class CPDF_CIDFont final : public CPDF_Font {
  public:
-  CPDF_CIDFont();
+  CPDF_CIDFont(CPDF_Document* pDocument, CPDF_Dictionary* pFontDict);
   ~CPDF_CIDFont() override;
 
   static float CIDTransformToFloat(uint8_t ch);
@@ -47,7 +47,7 @@ class CPDF_CIDFont : public CPDF_Font {
   uint32_t GetCharWidthF(uint32_t charcode) override;
   FX_RECT GetCharBBox(uint32_t charcode) override;
   uint32_t GetNextChar(const ByteStringView& pString,
-                       size_t& offset) const override;
+                       size_t* pOffset) const override;
   size_t CountChar(const ByteStringView& pString) const override;
   int AppendChar(char* str, uint32_t charcode) const override;
   bool IsVertWriting() const override;
@@ -74,18 +74,18 @@ class CPDF_CIDFont : public CPDF_Font {
 
   RetainPtr<CPDF_CMap> m_pCMap;
   UnownedPtr<const CPDF_CID2UnicodeMap> m_pCID2UnicodeMap;
-  CIDSet m_Charset;
-  bool m_bType1;
-  bool m_bCIDIsGID;
-  uint16_t m_DefaultWidth;
   RetainPtr<CPDF_StreamAcc> m_pStreamAcc;
-  bool m_bAnsiWidthsFixed;
-  std::vector<uint32_t> m_WidthList;
-  short m_DefaultVY;
-  short m_DefaultW1;
-  std::vector<uint32_t> m_VertMetrics;
-  bool m_bAdobeCourierStd;
   std::unique_ptr<CFX_CTTGSUBTable> m_pTTGSUBTable;
+  bool m_bType1 = false;
+  bool m_bCIDIsGID = false;
+  bool m_bAnsiWidthsFixed = false;
+  bool m_bAdobeCourierStd = false;
+  CIDSet m_Charset = CIDSET_UNKNOWN;
+  uint16_t m_DefaultWidth = 1000;
+  short m_DefaultVY = 880;
+  short m_DefaultW1 = -1000;
+  std::vector<uint32_t> m_WidthList;
+  std::vector<uint32_t> m_VertMetrics;
   FX_RECT m_CharBBox[256];
 };
 

@@ -55,6 +55,7 @@ if (is_ios || is_mac) {
   }
 
   rtc_static_library("common_objc") {
+    visibility = [ "*" ]
     sources = [
       "objc/Framework/Classes/Common/NSString+StdString.h",
       "objc/Framework/Classes/Common/NSString+StdString.mm",
@@ -199,12 +200,6 @@ if (is_ios || is_mac) {
           "../rtc_base:rtc_base",
           "../rtc_base:rtc_base_approved",
         ]
-
-        if (is_clang) {
-          # Suppress warnings from the Chromium Clang plugin
-          # (bugs.webrtc.org/163).
-          suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-        }
       }
     }
 
@@ -234,14 +229,10 @@ if (is_ios || is_mac) {
         "..:common_objc",
         ":used_from_extension",
       ]
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
 
     rtc_static_library("videoframebuffer_objc") {
+      visibility = [ "*" ]
       sources = [
         "objc/Framework/Classes/PeerConnection/RTCVideoFrame.mm",
         "objc/Framework/Classes/Video/RTCCVPixelBuffer.mm",
@@ -316,11 +307,6 @@ if (is_ios || is_mac) {
         "..:common_objc",
         ":used_from_extension",
       ]
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
 
     rtc_static_library("ui_objc") {
@@ -442,12 +428,6 @@ if (is_ios || is_mac) {
 
       public_configs = [ ":common_config_objc" ]
 
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
-
       deps = [
         ":common_objc",
         ":video_objc",
@@ -519,12 +499,6 @@ if (is_ios || is_mac) {
         "objc/Framework/Headers/WebRTC/RTCVideoEncoderVP8.h",
       ]
 
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
-
       deps = [
         ":wrapped_native_codec_objc",
         "../modules/video_coding:webrtc_vp8",
@@ -540,12 +514,6 @@ if (is_ios || is_mac) {
         "objc/Framework/Headers/WebRTC/RTCVideoDecoderVP9.h",
         "objc/Framework/Headers/WebRTC/RTCVideoEncoderVP9.h",
       ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
 
       deps = [
         ":wrapped_native_codec_objc",
@@ -575,12 +543,6 @@ if (is_ios || is_mac) {
 
       public_configs = [ ":common_config_objc" ]
 
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
-
       deps = [
         ":native_api",
         ":native_video",
@@ -596,11 +558,6 @@ if (is_ios || is_mac) {
         "objc/Framework/Classes/PeerConnection/RTCMediaConstraints.mm",
         "objc/Framework/Headers/WebRTC/RTCMediaConstraints.h",
       ]
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
 
       public_configs = [ ":common_config_objc" ]
       deps = [
@@ -674,6 +631,7 @@ if (is_ios || is_mac) {
         "objc/Framework/Classes/PeerConnection/RTCAudioSource.mm",
         "objc/Framework/Classes/PeerConnection/RTCAudioTrack+Private.h",
         "objc/Framework/Classes/PeerConnection/RTCAudioTrack.mm",
+        "objc/Framework/Classes/PeerConnection/RTCCertificate.mm",
         "objc/Framework/Classes/PeerConnection/RTCConfiguration+Native.h",
         "objc/Framework/Classes/PeerConnection/RTCConfiguration+Private.h",
         "objc/Framework/Classes/PeerConnection/RTCConfiguration.mm",
@@ -736,6 +694,7 @@ if (is_ios || is_mac) {
         "objc/Framework/Classes/PeerConnection/RTCVideoTrack.mm",
         "objc/Framework/Headers/WebRTC/RTCAudioSource.h",
         "objc/Framework/Headers/WebRTC/RTCAudioTrack.h",
+        "objc/Framework/Headers/WebRTC/RTCCertificate.h",
         "objc/Framework/Headers/WebRTC/RTCConfiguration.h",
         "objc/Framework/Headers/WebRTC/RTCDataChannel.h",
         "objc/Framework/Headers/WebRTC/RTCDataChannelConfiguration.h",
@@ -770,12 +729,6 @@ if (is_ios || is_mac) {
         ":used_from_extension",
       ]
       public_configs = [ ":common_config_objc" ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
 
       deps = [
         ":common_objc",
@@ -856,8 +809,6 @@ if (is_ios || is_mac) {
             ":videoframebuffer_objc",
             ":videosource_objc",
             ":videotoolbox_objc",
-            "../../system_wrappers:system_wrappers",
-            "../../system_wrappers:system_wrappers_default",
             "../api/video:video_frame_i420",
             "../common_video:common_video",
             "../media:rtc_media_base",
@@ -865,6 +816,8 @@ if (is_ios || is_mac) {
             "../modules:module_api",
             "../rtc_base:rtc_base",
             "../rtc_base:rtc_base_tests_utils",
+            "../system_wrappers:system_wrappers",
+            "../system_wrappers:system_wrappers_default",
             "//third_party/libyuv",
           ]
 
@@ -879,12 +832,6 @@ if (is_ios || is_mac) {
           ]
 
           include_dirs += [ "$root_out_dir/WebRTC.framework/Headers/" ]
-
-          if (!build_with_chromium && is_clang) {
-            # Suppress warnings from the Chromium Clang plugin
-            # (bugs.webrtc.org/163).
-            suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-          }
         }
 
         bundle_data("sdk_unittests_bundle_data") {
@@ -915,20 +862,15 @@ if (is_ios || is_mac) {
             ":sdk_unittests_sources",
           ]
           ldflags = [ "-all_load" ]
-
-          if (is_clang) {
-            # Suppress warnings from the Chromium Clang plugin
-            # (bugs.webrtc.org/163).
-            suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-          }
         }
       }
 
       # TODO(denicija): once all tests are migrated to xctest remove this source set.
-      rtc_source_set("sdk_unittests_objc") {
+      rtc_source_set("rtc_unittests_objc") {
         testonly = true
 
         sources = [
+          "objc/Framework/UnitTests/RTCCertificateTest.mm",
           "objc/Framework/UnitTests/RTCConfigurationTest.mm",
           "objc/Framework/UnitTests/RTCDataChannelConfigurationTest.mm",
           "objc/Framework/UnitTests/RTCIceCandidateTest.mm",
@@ -953,7 +895,6 @@ if (is_ios || is_mac) {
         # https://developer.apple.com/library/mac/qa/qa1490/_index.html
         ldflags = [ "-ObjC" ]
 
-        defines = [ "GTEST_RELATIVE_PATH" ]
         deps = [
           ":common_objc",
           ":mediaconstraints_objc",
@@ -966,7 +907,6 @@ if (is_ios || is_mac) {
           ":videoframebuffer_objc",
           ":videosource_objc",
           ":videotoolbox_objc",
-          "../../system_wrappers:system_wrappers_default",
           "../api/audio_codecs:audio_codecs_api",
           "../api/audio_codecs:builtin_audio_decoder_factory",
           "../api/audio_codecs:builtin_audio_encoder_factory",
@@ -977,6 +917,8 @@ if (is_ios || is_mac) {
           "../modules/audio_processing:audio_processing",
           "../modules/video_coding:video_codec_interface",
           "../rtc_base:rtc_base_tests_utils",
+          "../rtc_base/system:unused",
+          "../system_wrappers:system_wrappers_default",
           "//test:test_support",
           "//third_party/ocmock",
         ]
@@ -984,12 +926,6 @@ if (is_ios || is_mac) {
         if (is_ios) {
           sources += [ "objc/Framework/UnitTests/RTCAudioSessionTest.mm" ]
           deps += [ ":audio_objc" ]
-        }
-
-        if (!build_with_chromium && is_clang) {
-          # Suppress warnings from the Chromium Clang plugin
-          # (bugs.webrtc.org/163).
-          suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
         }
       }
     }
@@ -1008,6 +944,7 @@ if (is_ios || is_mac) {
           "objc/Framework/Headers/WebRTC/RTCAudioTrack.h",
           "objc/Framework/Headers/WebRTC/RTCCameraVideoCapturer.h",
           "objc/Framework/Headers/WebRTC/RTCCameraPreviewView.h",
+          "objc/Framework/Headers/WebRTC/RTCCertificate.h",
           "objc/Framework/Headers/WebRTC/RTCConfiguration.h",
           "objc/Framework/Headers/WebRTC/RTCDataChannel.h",
           "objc/Framework/Headers/WebRTC/RTCDataChannelConfiguration.h",
@@ -1027,6 +964,7 @@ if (is_ios || is_mac) {
           "objc/Framework/Headers/WebRTC/RTCMediaStreamTrack.h",
           "objc/Framework/Headers/WebRTC/RTCMetrics.h",
           "objc/Framework/Headers/WebRTC/RTCMetricsSampleInfo.h",
+          "objc/Framework/Headers/WebRTC/RTCMTLVideoView.h",
           "objc/Framework/Headers/WebRTC/RTCPeerConnection.h",
           "objc/Framework/Headers/WebRTC/RTCPeerConnectionFactory.h",
           "objc/Framework/Headers/WebRTC/RTCPeerConnectionFactoryOptions.h",
@@ -1062,10 +1000,6 @@ if (is_ios || is_mac) {
             "objc/Framework/Headers/WebRTC/RTCCallbackLogger.h",
             "objc/Framework/Headers/WebRTC/RTCFileLogger.h",
           ]
-        }
-        if (rtc_use_metal_rendering) {
-          common_objc_headers +=
-              [ "objc/Framework/Headers/WebRTC/RTCMTLVideoView.h" ]
         }
 
         sources = common_objc_headers
@@ -1110,12 +1044,6 @@ if (is_ios || is_mac) {
         ]
 
         public_configs = [ ":common_config_objc" ]
-
-        if (!build_with_chromium && is_clang) {
-          # Suppress warnings from the Chromium Clang plugin
-          # (bugs.webrtc.org/163).
-          configs -= [ "//build/config/clang:find_bad_constructs" ]
-        }
       }
     }
 
@@ -1129,12 +1057,6 @@ if (is_ios || is_mac) {
 
       configs += [ "..:common_objc" ]
       public_configs = [ ":common_config_objc" ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
 
       deps = [
         ":common_objc",
@@ -1169,12 +1091,6 @@ if (is_ios || is_mac) {
       configs += [ "..:common_objc" ]
 
       public_configs = [ ":common_config_objc" ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
 
       deps = [
         ":native_video",
@@ -1253,11 +1169,6 @@ if (is_ios || is_mac) {
         "../rtc_base:checks",
         "../rtc_base:rtc_base_approved",
       ]
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
 
     rtc_static_library("videotoolbox_objc") {
@@ -1308,12 +1219,6 @@ if (is_ios || is_mac) {
         "CoreVideo.framework",
         "VideoToolbox.framework",
       ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin
-        # (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
   }
 }

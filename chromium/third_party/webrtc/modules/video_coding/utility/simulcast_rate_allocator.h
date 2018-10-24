@@ -17,9 +17,9 @@
 #include <memory>
 #include <vector>
 
+#include "api/video/video_bitrate_allocator.h"
 #include "api/video_codecs/video_encoder.h"
 #include "common_types.h"  // NOLINT(build/include)
-#include "common_video/include/video_bitrate_allocator.h"
 #include "rtc_base/constructormagic.h"
 
 namespace webrtc {
@@ -27,6 +27,7 @@ namespace webrtc {
 class SimulcastRateAllocator : public VideoBitrateAllocator {
  public:
   explicit SimulcastRateAllocator(const VideoCodec& codec);
+  ~SimulcastRateAllocator() override;
 
   VideoBitrateAllocation GetAllocation(uint32_t total_bitrate_bps,
                                        uint32_t framerate) override;
@@ -37,7 +38,7 @@ class SimulcastRateAllocator : public VideoBitrateAllocator {
  private:
   void DistributeAllocationToSimulcastLayers(
       uint32_t total_bitrate_bps,
-      VideoBitrateAllocation* allocated_bitrates_bps) const;
+      VideoBitrateAllocation* allocated_bitrates_bps);
   void DistributeAllocationToTemporalLayers(
       uint32_t framerate,
       VideoBitrateAllocation* allocated_bitrates_bps) const;
@@ -53,6 +54,8 @@ class SimulcastRateAllocator : public VideoBitrateAllocator {
   int NumTemporalStreams(size_t simulcast_id) const;
 
   const VideoCodec codec_;
+  const double hysteresis_factor_;
+  std::vector<bool> stream_enabled_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(SimulcastRateAllocator);
 };

@@ -25,6 +25,7 @@
 #include "test/encoder_proxy_factory.h"
 #include "test/encoder_settings.h"
 #include "test/fake_encoder.h"
+#include "test/field_trial.h"
 #include "test/frame_generator.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -92,9 +93,8 @@ class CpuOveruseDetectorProxy : public OveruseFrameDetector {
 
 class VideoStreamEncoderUnderTest : public VideoStreamEncoder {
  public:
-  VideoStreamEncoderUnderTest(
-      SendStatisticsProxy* stats_proxy,
-      const VideoSendStream::Config::EncoderSettings& settings)
+  VideoStreamEncoderUnderTest(SendStatisticsProxy* stats_proxy,
+                              const VideoStreamEncoderSettings& settings)
       : VideoStreamEncoder(1 /* number_of_cores */,
                            stats_proxy,
                            settings,
@@ -225,6 +225,7 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
   absl::optional<int> last_height_;
 };
 
+// TODO(nisse): Mock only VideoStreamEncoderObserver.
 class MockableSendStatisticsProxy : public SendStatisticsProxy {
  public:
   MockableSendStatisticsProxy(Clock* clock,
@@ -239,6 +240,12 @@ class MockableSendStatisticsProxy : public SendStatisticsProxy {
     return SendStatisticsProxy::GetStats();
   }
 
+  int GetInputFrameRate() const override {
+    rtc::CritScope cs(&lock_);
+    if (mock_stats_)
+      return mock_stats_->input_frame_rate;
+    return SendStatisticsProxy::GetInputFrameRate();
+  }
   void SetMockStats(const VideoSendStream::Stats& stats) {
     rtc::CritScope cs(&lock_);
     mock_stats_.emplace(stats);
@@ -649,7 +656,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
         const RTPFragmentationHeader* fragmentation) override {
       rtc::CritScope lock(&crit_);
       EXPECT_TRUE(expect_frames_);
-      last_timestamp_ = encoded_image._timeStamp;
+      last_timestamp_ = encoded_image.Timestamp();
       last_width_ = encoded_image._encodedWidth;
       last_height_ = encoded_image._encodedHeight;
       encoded_frame_event_.Set();
@@ -2326,6 +2333,30 @@ TEST_F(VideoStreamEncoderTest, InitialFrameDropOffWhenEncoderDisabledScaling) {
 
   video_stream_encoder_->Stop();
   fake_encoder_.SetQualityScaling(true);
+}
+
+TEST_F(VideoStreamEncoderTest, InitialFrameDropActivatesWhenBWEstimateReady) {
+  webrtc::test::ScopedFieldTrials field_trials(
+      "WebRTC-InitialFramedrop/Enabled/");
+  // Reset encoder for field trials to take effect.
+  ConfigureEncoder(video_encoder_config_.Copy());
+  const int kTooLowBitrateForFrameSizeBps = 10000;
+  const int kWidth = 640;
+  const int kHeight = 360;
+
+  video_stream_encoder_->OnBitrateUpdated(kTargetBitrateBps, 0, 0);
+  video_source_.IncomingCapturedFrame(CreateFrame(1, kWidth, kHeight));
+  // Frame should not be dropped.
+  WaitForEncodedFrame(1);
+
+  video_stream_encoder_->OnBitrateUpdated(kTooLowBitrateForFrameSizeBps, 0, 0);
+  video_source_.IncomingCapturedFrame(CreateFrame(2, kWidth, kHeight));
+  // Expect to drop this frame, the wait should time out.
+  ExpectDroppedFrame();
+
+  // Expect the sink_wants to specify a scaled frame.
+  EXPECT_LT(video_source_.sink_wants().max_pixel_count, kWidth * kHeight);
+  video_stream_encoder_->Stop();
 }
 
 TEST_F(VideoStreamEncoderTest,

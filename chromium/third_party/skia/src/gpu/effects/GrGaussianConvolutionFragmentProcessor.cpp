@@ -121,7 +121,7 @@ void GrGLConvolutionEffect::onSetData(const GrGLSLProgramDataManager& pdman,
     const GrGaussianConvolutionFragmentProcessor& conv =
             processor.cast<GrGaussianConvolutionFragmentProcessor>();
     GrSurfaceProxy* proxy = conv.textureSampler(0).proxy();
-    GrTexture& texture = *proxy->priv().peekTexture();
+    GrTexture& texture = *proxy->peekTexture();
 
     float imageIncrement[2] = {0};
     float ySign = proxy->origin() != kTopLeft_GrSurfaceOrigin ? 1.0f : -1.0f;
@@ -223,7 +223,7 @@ GrGaussianConvolutionFragmentProcessor::GrGaussianConvolutionFragmentProcessor(
         , fDirection(direction)
         , fMode(mode) {
     this->addCoordTransform(&fCoordTransform);
-    this->addTextureSampler(&fTextureSampler);
+    this->setTextureSamplerCnt(1);
     SkASSERT(radius <= kMaxKernelRadius);
 
     fill_in_1D_gaussian_kernel(fKernel, this->width(), gaussianSigma, this->radius());
@@ -240,7 +240,7 @@ GrGaussianConvolutionFragmentProcessor::GrGaussianConvolutionFragmentProcessor(
         , fDirection(that.fDirection)
         , fMode(that.fMode) {
     this->addCoordTransform(&fCoordTransform);
-    this->addTextureSampler(&fTextureSampler);
+    this->setTextureSamplerCnt(1);
     memcpy(fKernel, that.fKernel, that.width() * sizeof(float));
     memcpy(fBounds, that.fBounds, sizeof(fBounds));
 }

@@ -60,8 +60,11 @@ skia_utils_sources = [
   "$_src/utils/SkShadowTessellator.cpp",
   "$_src/utils/SkShadowTessellator.h",
   "$_src/utils/SkShadowUtils.cpp",
+  "$_src/utils/SkTextOnPath.cpp",
   "$_src/utils/SkThreadUtils_pthread.cpp",
   "$_src/utils/SkThreadUtils_win.cpp",
+  "$_src/utils/SkUTF.cpp",
+  "$_src/utils/SkUTF.h",
   "$_src/utils/SkWhitelistTypefaces.cpp",
 
   #mac
@@ -77,6 +80,7 @@ skia_utils_sources = [
   "$_src/utils/win/SkDWriteFontFileStream.h",
   "$_src/utils/win/SkDWriteGeometrySink.cpp",
   "$_src/utils/win/SkDWriteGeometrySink.h",
+  "$_src/utils/win/SkDWriteNTDDI_VERSION.h",
   "$_src/utils/win/SkHRESULT.h",
   "$_src/utils/win/SkHRESULT.cpp",
   "$_src/utils/win/SkIStream.h",

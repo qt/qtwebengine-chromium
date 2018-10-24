@@ -1218,6 +1218,7 @@ void IncludeWriter::structSizeMembers(const Definition& child) {
                 case KeyWord::kSize_t:
                 case KeyWord::kFloat:
                 case KeyWord::kBool:
+                case KeyWord::kChar:
                 case KeyWord::kVoid:
                     if (!typeStart) {
                         typeStart = &token;
@@ -1781,6 +1782,7 @@ bool IncludeWriter::populate(Definition* def, ParentPair* prevPair, RootDefiniti
                         memberStart = &child;
                     }
                     break;
+                case KeyWord::kAlignAs:
                 case KeyWord::kPublic:
                 case KeyWord::kPrivate:
                 case KeyWord::kProtected:
@@ -1804,7 +1806,8 @@ bool IncludeWriter::populate(Definition* def, ParentPair* prevPair, RootDefiniti
             if (KeyWord::kUint8_t == child.fKeyWord || KeyWord::kUint32_t == child.fKeyWord) {
                 continue;
             } else {
-                if (fInEnum && KeyWord::kClass == child.fChildren[0]->fKeyWord) {
+                if (fInEnum && child.fChildren.size() > 0
+                        && KeyWord::kClass == child.fChildren[0]->fKeyWord) {
                     if (!this->populate(child.fChildren[0], &pair, root)) {
                         return false;
                     }
@@ -2110,7 +2113,7 @@ bool IncludeWriter::populate(BmhParser& bmhParser) {
         }
         string dir = fFileName.substr(0, SkTMax(slash, back) + 1);
         string readname = dir + fileName;
-        if (this->writtenFileDiffers(fileName, readname)) {
+        if (ParserCommon::WrittenFileDiffers(fileName, readname)) {
             SkDebugf("wrote updated %s\n", fileName.c_str());
         } else {
             remove(fileName.c_str());
@@ -2691,6 +2694,7 @@ bool IncludeWriter::writeHeader(std::pair<const string, Definition>& include) {
 
     // find end of copyright header
     fChar = fStart;
+    this->skipWhiteSpace();
     if (!this->skipExact(
             "/*\n"
             " * Copyright ")) {

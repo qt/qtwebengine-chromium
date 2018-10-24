@@ -13,6 +13,7 @@
 #include <memory>
 
 #include "call/call.h"
+#include "call/simulated_network.h"
 #include "modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "system_wrappers/include/clock.h"
 #include "test/gmock.h"
@@ -28,9 +29,7 @@ namespace webrtc {
 class MockReceiver : public PacketReceiver {
  public:
   MOCK_METHOD3(DeliverPacket,
-               DeliveryStatus(MediaType,
-                              rtc::CopyOnWriteBuffer,
-                              const PacketTime&));
+               DeliveryStatus(MediaType, rtc::CopyOnWriteBuffer, int64_t));
   virtual ~MockReceiver() = default;
 };
 
@@ -38,7 +37,7 @@ class ReorderTestReceiver : public MockReceiver {
  public:
   DeliveryStatus DeliverPacket(MediaType media_type,
                                rtc::CopyOnWriteBuffer packet,
-                               const PacketTime& packet_time) override {
+                               int64_t /* packet_time_us */) override {
     RTC_DCHECK_GE(packet.size(), sizeof(int));
     int seq_num;
     memcpy(&seq_num, packet.data<uint8_t>(), sizeof(int));
@@ -61,7 +60,7 @@ class FakeNetworkPipeTest : public ::testing::Test {
       // using the first bytes in the packet.
       memcpy(packet.get(), &i, sizeof(int));
       rtc::CopyOnWriteBuffer buffer(packet.get(), packet_size);
-      pipe->DeliverPacket(MediaType::ANY, buffer, PacketTime());
+      pipe->DeliverPacket(MediaType::ANY, buffer, /* packet_time_us */ -1);
     }
   }
 
@@ -74,12 +73,13 @@ class FakeNetworkPipeTest : public ::testing::Test {
 
 // Test the capacity link and verify we get as many packets as we expect.
 TEST_F(FakeNetworkPipeTest, CapacityTest) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = 20;
   config.link_capacity_kbps = 80;
   MockReceiver receiver;
-  std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+  auto simulated_network = absl::make_unique<SimulatedNetwork>(config);
+  std::unique_ptr<FakeNetworkPipe> pipe(new FakeNetworkPipe(
+      &fake_clock_, std::move(simulated_network), &receiver));
 
   // Add 10 packets of 1000 bytes, = 80 kb, and verify it takes one second to
   // get through the pipe.
@@ -113,13 +113,14 @@ TEST_F(FakeNetworkPipeTest, CapacityTest) {
 
 // Test the extra network delay.
 TEST_F(FakeNetworkPipeTest, ExtraDelayTest) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = 20;
   config.queue_delay_ms = 100;
   config.link_capacity_kbps = 80;
   MockReceiver receiver;
-  std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+  auto simulated_network = absl::make_unique<SimulatedNetwork>(config);
+  std::unique_ptr<FakeNetworkPipe> pipe(new FakeNetworkPipe(
+      &fake_clock_, std::move(simulated_network), &receiver));
 
   const int kNumPackets = 2;
   const int kPacketSize = 1000;
@@ -148,12 +149,13 @@ TEST_F(FakeNetworkPipeTest, ExtraDelayTest) {
 // Test the number of buffers and packets are dropped when sending too many
 // packets too quickly.
 TEST_F(FakeNetworkPipeTest, QueueLengthTest) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = 2;
   config.link_capacity_kbps = 80;
   MockReceiver receiver;
-  std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+  auto simulated_network = absl::make_unique<SimulatedNetwork>(config);
+  std::unique_ptr<FakeNetworkPipe> pipe(new FakeNetworkPipe(
+      &fake_clock_, std::move(simulated_network), &receiver));
 
   const int kPacketSize = 1000;
   const int kPacketTimeMs =
@@ -171,13 +173,14 @@ TEST_F(FakeNetworkPipeTest, QueueLengthTest) {
 
 // Test we get statistics as expected.
 TEST_F(FakeNetworkPipeTest, StatisticsTest) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = 2;
   config.queue_delay_ms = 20;
   config.link_capacity_kbps = 80;
   MockReceiver receiver;
-  std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+  auto simulated_network = absl::make_unique<SimulatedNetwork>(config);
+  std::unique_ptr<FakeNetworkPipe> pipe(new FakeNetworkPipe(
+      &fake_clock_, std::move(simulated_network), &receiver));
 
   const int kPacketSize = 1000;
   const int kPacketTimeMs =
@@ -202,12 +205,14 @@ TEST_F(FakeNetworkPipeTest, StatisticsTest) {
 // Change the link capacity half-way through the test and verify that the
 // delivery times change accordingly.
 TEST_F(FakeNetworkPipeTest, ChangingCapacityWithEmptyPipeTest) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = 20;
   config.link_capacity_kbps = 80;
   MockReceiver receiver;
+  std::unique_ptr<SimulatedNetwork> network(new SimulatedNetwork(config));
+  SimulatedNetwork* simulated_network = network.get();
   std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+      new FakeNetworkPipe(&fake_clock_, std::move(network), &receiver));
 
   // Add 10 packets of 1000 bytes, = 80 kb, and verify it takes one second to
   // get through the pipe.
@@ -231,7 +236,7 @@ TEST_F(FakeNetworkPipeTest, ChangingCapacityWithEmptyPipeTest) {
 
   // Change the capacity.
   config.link_capacity_kbps /= 2;  // Reduce to 50%.
-  pipe->SetConfig(config);
+  simulated_network->SetConfig(config);
 
   // Add another 10 packets of 1000 bytes, = 80 kb, and verify it takes two
   // seconds to get them through the pipe.
@@ -261,12 +266,14 @@ TEST_F(FakeNetworkPipeTest, ChangingCapacityWithEmptyPipeTest) {
 // Change the link capacity half-way through the test and verify that the
 // delivery times change accordingly.
 TEST_F(FakeNetworkPipeTest, ChangingCapacityWithPacketsInPipeTest) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = 20;
   config.link_capacity_kbps = 80;
   MockReceiver receiver;
+  std::unique_ptr<SimulatedNetwork> network(new SimulatedNetwork(config));
+  SimulatedNetwork* simulated_network = network.get();
   std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+      new FakeNetworkPipe(&fake_clock_, std::move(network), &receiver));
 
   // Add 10 packets of 1000 bytes, = 80 kb.
   const int kNumPackets = 10;
@@ -278,7 +285,7 @@ TEST_F(FakeNetworkPipeTest, ChangingCapacityWithPacketsInPipeTest) {
 
   // Change the capacity.
   config.link_capacity_kbps *= 2;  // Double the capacity.
-  pipe->SetConfig(config);
+  simulated_network->SetConfig(config);
 
   // Add another 10 packets of 1000 bytes, = 80 kb, and verify it takes two
   // seconds to get them through the pipe.
@@ -314,14 +321,16 @@ TEST_F(FakeNetworkPipeTest, ChangingCapacityWithPacketsInPipeTest) {
 
 // At first disallow reordering and then allow reordering.
 TEST_F(FakeNetworkPipeTest, DisallowReorderingThenAllowReordering) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = 1000;
   config.link_capacity_kbps = 800;
   config.queue_delay_ms = 100;
   config.delay_standard_deviation_ms = 10;
   ReorderTestReceiver receiver;
+  std::unique_ptr<SimulatedNetwork> network(new SimulatedNetwork(config));
+  SimulatedNetwork* simulated_network = network.get();
   std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+      new FakeNetworkPipe(&fake_clock_, std::move(network), &receiver));
 
   const uint32_t kNumPackets = 100;
   const int kPacketSize = 10;
@@ -338,7 +347,7 @@ TEST_F(FakeNetworkPipeTest, DisallowReorderingThenAllowReordering) {
   }
 
   config.allow_reordering = true;
-  pipe->SetConfig(config);
+  simulated_network->SetConfig(config);
   SendPackets(pipe.get(), kNumPackets, kPacketSize);
   fake_clock_.AdvanceTimeMilliseconds(1000);
   receiver.delivered_sequence_numbers_.clear();
@@ -365,13 +374,14 @@ TEST_F(FakeNetworkPipeTest, BurstLoss) {
   const int kNumPackets = 10000;
   const int kPacketSize = 10;
 
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.queue_length_packets = kNumPackets;
   config.loss_percent = kLossPercent;
   config.avg_burst_loss_length = kAvgBurstLength;
   ReorderTestReceiver receiver;
+  auto simulated_network = absl::make_unique<SimulatedNetwork>(config);
   std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+      new FakeNetworkPipe(&fake_clock_, std::move(config), &receiver));
 
   SendPackets(pipe.get(), kNumPackets, kPacketSize);
   fake_clock_.AdvanceTimeMilliseconds(1000);
@@ -399,11 +409,12 @@ TEST_F(FakeNetworkPipeTest, BurstLoss) {
 }
 
 TEST_F(FakeNetworkPipeTest, SetReceiver) {
-  FakeNetworkPipe::Config config;
+  DefaultNetworkSimulationConfig config;
   config.link_capacity_kbps = 800;
   MockReceiver receiver;
-  std::unique_ptr<FakeNetworkPipe> pipe(
-      new FakeNetworkPipe(&fake_clock_, config, &receiver));
+  auto simulated_network = absl::make_unique<SimulatedNetwork>(config);
+  std::unique_ptr<FakeNetworkPipe> pipe(new FakeNetworkPipe(
+      &fake_clock_, std::move(simulated_network), &receiver));
 
   const int kPacketSize = 1000;
   const int kPacketTimeMs =

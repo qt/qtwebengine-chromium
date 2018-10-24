@@ -25,11 +25,6 @@ rtc_static_library("goog_cc") {
     "include/goog_cc_factory.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":alr_detector",
     ":delay_based_bwe",
@@ -37,7 +32,6 @@ rtc_static_library("goog_cc") {
     ":probe_controller",
     "../..:module_api",
     "../../..:webrtc_common",
-    "../../../:typedefs",
     "../../../api/transport:network_control",
     "../../../logging:rtc_event_log_api",
     "../../../logging:rtc_event_pacing",
@@ -60,13 +54,8 @@ rtc_source_set("alr_detector") {
     "alr_detector.cc",
     "alr_detector.h",
   ]
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
   deps = [
     "../../..:webrtc_common",
-    "../../../:typedefs",
     "../../../logging:rtc_event_log_api",
     "../../../logging:rtc_event_pacing",
     "../../../rtc_base:checks",
@@ -97,11 +86,6 @@ rtc_source_set("estimators") {
   # TODO(jschuh): Bug 1348: fix this warning.
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     "../../../logging:rtc_event_bwe",
     "../../../logging:rtc_event_log_api",
@@ -127,7 +111,6 @@ rtc_source_set("delay_based_bwe") {
 
   deps = [
     ":estimators",
-    "../../../:typedefs",
     "../../../logging:rtc_event_bwe",
     "../../../logging:rtc_event_log_api",
     "../../../rtc_base:checks",
@@ -138,11 +121,6 @@ rtc_source_set("delay_based_bwe") {
     "../../remote_bitrate_estimator",
     "//third_party/abseil-cpp/absl/memory",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 }
 
 rtc_source_set("probe_controller") {
@@ -157,15 +135,11 @@ rtc_source_set("probe_controller") {
     "../../../logging:rtc_event_pacing",
     "../../../rtc_base:checks",
     "../../../rtc_base:rtc_base_approved",
+    "../../../rtc_base/system:unused",
     "../../../system_wrappers:field_trial_api",
     "../../../system_wrappers:metrics_api",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 }
 
 if (rtc_include_tests) {
@@ -212,12 +186,9 @@ if (rtc_include_tests) {
       "../../pacing",
       "../../remote_bitrate_estimator",
       "../../rtp_rtcp:rtp_rtcp_format",
+      "//system_wrappers:field_trial_api",
       "//testing/gmock",
       "//third_party/abseil-cpp/absl/memory",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 }

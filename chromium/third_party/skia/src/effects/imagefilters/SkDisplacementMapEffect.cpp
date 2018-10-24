@@ -208,6 +208,10 @@ private:
                             sk_sp<GrTextureProxy> displacement, const SkMatrix& offsetMatrix,
                             sk_sp<GrTextureProxy> color, const SkISize& colorDimensions);
 
+    const TextureSampler& onTextureSampler(int i) const override {
+        return IthTextureSampler(i, fDisplacementSampler, fColorSampler);
+    }
+
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     GrCoordTransform            fDisplacementTransform;
@@ -302,7 +306,8 @@ sk_sp<SkSpecialImage> SkDisplacementMapEffect::onFilterImage(SkSpecialImage* sou
                                               offsetMatrix,
                                               std::move(colorProxy),
                                               SkISize::Make(color->width(), color->height()));
-        fp = GrColorSpaceXformEffect::Make(std::move(fp), color->getColorSpace(), colorSpace);
+        fp = GrColorSpaceXformEffect::Make(std::move(fp), color->getColorSpace(),
+                                           color->alphaType(), colorSpace);
 
         GrPaint paint;
         paint.addColorFragmentProcessor(std::move(fp));
@@ -461,9 +466,8 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(
         , fYChannelSelector(yChannelSelector)
         , fScale(scale) {
     this->addCoordTransform(&fDisplacementTransform);
-    this->addTextureSampler(&fDisplacementSampler);
     this->addCoordTransform(&fColorTransform);
-    this->addTextureSampler(&fColorSampler);
+    this->setTextureSamplerCnt(2);
 }
 
 GrDisplacementMapEffect::GrDisplacementMapEffect(const GrDisplacementMapEffect& that)
@@ -478,9 +482,8 @@ GrDisplacementMapEffect::GrDisplacementMapEffect(const GrDisplacementMapEffect& 
         , fYChannelSelector(that.fYChannelSelector)
         , fScale(that.fScale) {
     this->addCoordTransform(&fDisplacementTransform);
-    this->addTextureSampler(&fDisplacementSampler);
     this->addCoordTransform(&fColorTransform);
-    this->addTextureSampler(&fColorSampler);
+    this->setTextureSamplerCnt(2);
 }
 
 GrDisplacementMapEffect::~GrDisplacementMapEffect() {}
@@ -544,12 +547,12 @@ void GrGLDisplacementMapEffect::emitCode(EmitArgs& args) {
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
     fragBuilder->codeAppendf("\t\thalf4 %s = ", dColor);
     fragBuilder->appendTextureLookup(args.fTexSamplers[0], args.fTransformedCoords[0].c_str(),
-                                   args.fTransformedCoords[0].getType());
+                                     args.fTransformedCoords[0].getType());
     fragBuilder->codeAppend(";\n");
 
     // Unpremultiply the displacement
     fragBuilder->codeAppendf(
-        "\t\t%s.rgb = (%s.a < %s) ? half3(0.0) : clamp(%s.rgb / %s.a, 0.0, 1.0);",
+        "\t\t%s.rgb = (%s.a < %s) ? half3(0.0) : saturate(%s.rgb / %s.a);",
         dColor, dColor, nearZero, dColor, dColor);
     SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[1]);
     fragBuilder->codeAppendf("\t\tfloat2 %s = %s + %s*(%s.",
@@ -606,7 +609,7 @@ void GrGLDisplacementMapEffect::onSetData(const GrGLSLProgramDataManager& pdman,
                                           const GrFragmentProcessor& proc) {
     const GrDisplacementMapEffect& displacementMap = proc.cast<GrDisplacementMapEffect>();
     GrSurfaceProxy* proxy = displacementMap.textureSampler(1).proxy();
-    GrTexture* colorTex = proxy->priv().peekTexture();
+    GrTexture* colorTex = proxy->peekTexture();
 
     SkScalar scaleX = displacementMap.scale().fX / colorTex->width();
     SkScalar scaleY = displacementMap.scale().fY / colorTex->height();

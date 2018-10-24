@@ -7,17 +7,18 @@
 #ifndef FXJS_XFA_CJX_ENCODING_H_
 #define FXJS_XFA_CJX_ENCODING_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
 
 class CXFA_Encoding;
 
-class CJX_Encoding : public CJX_Node {
+class CJX_Encoding final : public CJX_Node {
  public:
   explicit CJX_Encoding(CXFA_Encoding* node);
   ~CJX_Encoding() override;
 
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_ENCODING_H_

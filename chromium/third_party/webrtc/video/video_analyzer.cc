@@ -60,6 +60,7 @@ VideoAnalyzer::VideoAnalyzer(test::LayerFilteringTransport* transport,
       call_(nullptr),
       send_stream_(nullptr),
       receive_stream_(nullptr),
+      audio_receive_stream_(nullptr),
       captured_frame_forwarder_(this, clock),
       test_label_(test_label),
       graph_data_output_file_(graph_data_output_file),
@@ -138,7 +139,7 @@ void VideoAnalyzer::SetReceiver(PacketReceiver* receiver) {
   receiver_ = receiver;
 }
 
-void VideoAnalyzer::SetSource(test::VideoCapturer* video_capturer,
+void VideoAnalyzer::SetSource(test::TestVideoCapturer* video_capturer,
                               bool respect_sink_wants) {
   if (respect_sink_wants)
     captured_frame_forwarder_.SetSource(video_capturer);
@@ -164,6 +165,12 @@ void VideoAnalyzer::SetReceiveStream(VideoReceiveStream* stream) {
   receive_stream_ = stream;
 }
 
+void VideoAnalyzer::SetAudioReceiveStream(AudioReceiveStream* recv_stream) {
+  rtc::CritScope lock(&crit_);
+  RTC_CHECK(!audio_receive_stream_);
+  audio_receive_stream_ = recv_stream;
+}
+
 rtc::VideoSinkInterface<VideoFrame>* VideoAnalyzer::InputInterface() {
   return &captured_frame_forwarder_;
 }
@@ -175,11 +182,12 @@ rtc::VideoSourceInterface<VideoFrame>* VideoAnalyzer::OutputInterface() {
 PacketReceiver::DeliveryStatus VideoAnalyzer::DeliverPacket(
     MediaType media_type,
     rtc::CopyOnWriteBuffer packet,
-    const PacketTime& packet_time) {
+    int64_t packet_time_us) {
   // Ignore timestamps of RTCP packets. They're not synchronized with
   // RTP packet timestamps and so they would confuse wrap_handler_.
   if (RtpHeaderParser::IsRtcp(packet.cdata(), packet.size())) {
-    return receiver_->DeliverPacket(media_type, std::move(packet), packet_time);
+    return receiver_->DeliverPacket(media_type, std::move(packet),
+                                    packet_time_us);
   }
 
   if (rtp_file_writer_) {
@@ -207,7 +215,8 @@ PacketReceiver::DeliveryStatus VideoAnalyzer::DeliverPacket(
         Clock::GetRealTimeClock()->CurrentNtpInMilliseconds();
   }
 
-  return receiver_->DeliverPacket(media_type, std::move(packet), packet_time);
+  return receiver_->DeliverPacket(media_type, std::move(packet),
+                                  packet_time_us);
 }
 
 void VideoAnalyzer::PreEncodeOnFrame(const VideoFrame& video_frame) {
@@ -407,12 +416,19 @@ bool VideoAnalyzer::IsInSelectedSpatialAndTemporalLayer(
     bool result =
         depacketizer->Parse(&parsed_payload, payload, payload_data_length);
     RTC_DCHECK(result);
-    const int temporal_idx = static_cast<int>(
-        is_vp8 ? parsed_payload.video_header().vp8().temporalIdx
-               : parsed_payload.video_header().vp9().temporal_idx);
-    const int spatial_idx = static_cast<int>(
-        is_vp8 ? kNoSpatialIdx
-               : parsed_payload.video_header().vp9().spatial_idx);
+
+    int temporal_idx;
+    int spatial_idx;
+    if (is_vp8) {
+      temporal_idx = parsed_payload.video_header().vp8().temporalIdx;
+      spatial_idx = kNoTemporalIdx;
+    } else {
+      const auto& vp9_header = absl::get<RTPVideoHeaderVP9>(
+          parsed_payload.video_header().video_type_header);
+      temporal_idx = vp9_header.temporal_idx;
+      spatial_idx = vp9_header.spatial_idx;
+    }
+
     return (selected_tl_ < 0 || temporal_idx == kNoTemporalIdx ||
             temporal_idx <= selected_tl_) &&
            (selected_sl_ < 0 || spatial_idx == kNoSpatialIdx ||
@@ -456,6 +472,14 @@ void VideoAnalyzer::PollStats() {
         decode_time_ms_.AddSample(receive_stats.decode_ms);
       if (receive_stats.max_decode_ms > 0)
         decode_time_max_ms_.AddSample(receive_stats.max_decode_ms);
+    }
+
+    if (audio_receive_stream_ != nullptr) {
+      AudioReceiveStream::Stats receive_stats =
+          audio_receive_stream_->GetStats();
+      audio_expand_rate_.AddSample(receive_stats.expand_rate);
+      audio_accelerate_rate_.AddSample(receive_stats.accelerate_rate);
+      audio_jitter_buffer_ms_.AddSample(receive_stats.jitter_buffer_ms);
     }
 
     memory_usage_.AddSample(rtc::GetProcessResidentSizeBytes());
@@ -590,6 +614,12 @@ void VideoAnalyzer::PrintResults() {
     test::JpegFrameWriter frame_writer(output_path);
     RTC_CHECK(
         frame_writer.WriteFrame(worst_frame_->frame, 100 /*best quality*/));
+  }
+
+  if (audio_receive_stream_ != nullptr) {
+    PrintResult("audio_expand_rate", audio_expand_rate_, "");
+    PrintResult("audio_accelerate_rate", audio_accelerate_rate_, "");
+    PrintResult("audio_jitter_buffer", audio_jitter_buffer_ms_, " ms");
   }
 
   //  Disable quality check for quick test, as quality checks may fail
@@ -825,7 +855,7 @@ VideoAnalyzer::CapturedFrameForwarder::CapturedFrameForwarder(
       clock_(clock) {}
 
 void VideoAnalyzer::CapturedFrameForwarder::SetSource(
-    test::VideoCapturer* video_capturer) {
+    test::TestVideoCapturer* video_capturer) {
   video_capturer_ = video_capturer;
 }
 

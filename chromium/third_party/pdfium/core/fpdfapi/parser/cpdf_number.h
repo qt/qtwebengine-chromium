@@ -13,7 +13,7 @@
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
-class CPDF_Number : public CPDF_Object {
+class CPDF_Number final : public CPDF_Object {
  public:
   CPDF_Number();
   explicit CPDF_Number(int value);
@@ -31,7 +31,8 @@ class CPDF_Number : public CPDF_Object {
   bool IsNumber() const override;
   CPDF_Number* AsNumber() override;
   const CPDF_Number* AsNumber() const override;
-  bool WriteTo(IFX_ArchiveStream* archive) const override;
+  bool WriteTo(IFX_ArchiveStream* archive,
+               const CPDF_Encryptor* encryptor) const override;
 
   bool IsInteger() const { return m_bInteger; }
 

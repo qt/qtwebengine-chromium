@@ -7,22 +7,23 @@
 #ifndef FXJS_XFA_CJX_EXDATA_H_
 #define FXJS_XFA_CJX_EXDATA_H_
 
+#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_content.h"
 
 class CXFA_ExData;
 
-class CJX_ExData : public CJX_Content {
+class CJX_ExData final : public CJX_Content {
  public:
   explicit CJX_ExData(CXFA_ExData* node);
   ~CJX_ExData() override;
 
-  JS_PROP(defaultValue); /* {default} */
-  JS_PROP(contentType);
-  JS_PROP(href);
-  JS_PROP(maxLength);
-  JS_PROP(transferEncoding);
-  JS_PROP(use);
-  JS_PROP(usehref);
+  JSE_PROP(defaultValue); /* {default} */
+  JSE_PROP(contentType);
+  JSE_PROP(href);
+  JSE_PROP(maxLength);
+  JSE_PROP(transferEncoding);
+  JSE_PROP(use);
+  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_EXDATA_H_

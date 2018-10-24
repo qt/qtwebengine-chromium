@@ -53,7 +53,7 @@ private:
 SkTrimPE::SkTrimPE(SkScalar startT, SkScalar stopT, SkTrimPathEffect::Mode mode)
     : fStartT(startT), fStopT(stopT), fMode(mode) {}
 
-bool SkTrimPE::filterPath(SkPath* dst, const SkPath& src, SkStrokeRec* rec,
+bool SkTrimPE::onFilterPath(SkPath* dst, const SkPath& src, SkStrokeRec* rec,
                             const SkRect* cullRect) const {
     if (fStartT >= fStopT) {
         SkASSERT(fMode == SkTrimPathEffect::Mode::kNormal);
@@ -89,12 +89,18 @@ void SkTrimPE::flatten(SkWriteBuffer& buffer) const {
 }
 
 sk_sp<SkFlattenable> SkTrimPE::CreateProc(SkReadBuffer& buffer) {
+#ifdef WEB_ASSEMBLY
+    // Should not be reachable by WebAssembly Code.
+    SkASSERT(false);
+    return nullptr;
+#else
     const auto start = buffer.readScalar(),
                stop  = buffer.readScalar();
     const auto mode  = buffer.readUInt();
 
     return SkTrimPathEffect::Make(start, stop,
         (mode & 1) ? SkTrimPathEffect::Mode::kInverted : SkTrimPathEffect::Mode::kNormal);
+#endif
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

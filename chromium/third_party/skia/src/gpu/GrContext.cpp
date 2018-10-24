@@ -37,12 +37,14 @@
 #include "SkTaskGroup.h"
 #include "SkUnPreMultiplyPriv.h"
 #include "effects/GrConfigConversionEffect.h"
+#include "effects/GrSkSLFP.h"
 #include "text/GrTextBlobCache.h"
+#include <unordered_map>
 
 #define ASSERT_OWNED_PROXY(P) \
-SkASSERT(!(P) || !((P)->priv().peekTexture()) || (P)->priv().peekTexture()->getContext() == this)
+    SkASSERT(!(P) || !((P)->peekTexture()) || (P)->peekTexture()->getContext() == this)
 #define ASSERT_OWNED_PROXY_PRIV(P) \
-SkASSERT(!(P) || !((P)->priv().peekTexture()) || (P)->priv().peekTexture()->getContext() == fContext)
+    SkASSERT(!(P) || !((P)->peekTexture()) || (P)->peekTexture()->getContext() == fContext)
 
 #define ASSERT_OWNED_RESOURCE(R) SkASSERT(!(R) || (R)->getContext() == this)
 #define ASSERT_SINGLE_OWNER \
@@ -160,7 +162,6 @@ GrContext::~GrContext() {
     if (fDrawingManager) {
         fDrawingManager->cleanup();
     }
-
     fTextureStripAtlasManager = nullptr;
     delete fResourceProvider;
     delete fResourceCache;
@@ -172,11 +173,13 @@ GrContext::~GrContext() {
 
 GrContextThreadSafeProxy::GrContextThreadSafeProxy(sk_sp<const GrCaps> caps, uint32_t uniqueID,
                                                    GrBackend backend,
-                                                   const GrContextOptions& options)
+                                                   const GrContextOptions& options,
+                                                   sk_sp<GrSkSLFPFactoryCache> cache)
         : fCaps(std::move(caps))
         , fContextUniqueID(uniqueID)
         , fBackend(backend)
-        , fOptions(options) {}
+        , fOptions(options)
+        , fFPFactoryCache(std::move(cache)) {}
 
 GrContextThreadSafeProxy::~GrContextThreadSafeProxy() = default;
 
@@ -466,7 +469,7 @@ bool GrContextPriv::writeSurfacePixels(GrSurfaceContext* dst, int left, int top,
     }
 
     GrSurfaceProxy* dstProxy = dst->asSurfaceProxy();
-    GrSurface* dstSurface = dstProxy->priv().peekSurface();
+    GrSurface* dstSurface = dstProxy->peekSurface();
 
     if (!GrSurfacePriv::AdjustWritePixelParams(dstSurface->width(), dstSurface->height(),
                                                GrColorTypeBytesPerPixel(srcColorType), &left, &top,
@@ -637,7 +640,7 @@ bool GrContextPriv::readSurfacePixels(GrSurfaceContext* src, int left, int top, 
     }
 
     GrSurfaceProxy* srcProxy = src->asSurfaceProxy();
-    GrSurface* srcSurface = srcProxy->priv().peekSurface();
+    GrSurface* srcSurface = srcProxy->peekSurface();
 
     if (!GrSurfacePriv::AdjustReadPixelParams(srcSurface->width(), srcSurface->height(),
                                               GrColorTypeBytesPerPixel(dstColorType), &left, &top,

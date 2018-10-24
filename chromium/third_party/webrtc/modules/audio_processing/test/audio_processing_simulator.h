@@ -67,7 +67,7 @@ struct SimulationSettings {
   absl::optional<bool> use_aec3;
   absl::optional<bool> use_experimental_agc;
   absl::optional<bool> use_experimental_agc_agc2_level_estimator;
-  absl::optional<bool> use_experimental_agc_agc2_digital_adaptive;
+  absl::optional<bool> experimental_agc_disable_digital_adaptive;
   absl::optional<int> aecm_routing_mode;
   absl::optional<bool> use_aecm_comfort_noise;
   absl::optional<int> agc_mode;
@@ -85,6 +85,7 @@ struct SimulationSettings {
   bool report_performance = false;
   bool report_bitexactness = false;
   bool use_verbose_logging = false;
+  bool use_quiet_output = false;
   bool discard_all_settings_in_aecdump = true;
   absl::optional<std::string> aec_dump_input_filename;
   absl::optional<std::string> aec_dump_output_filename;

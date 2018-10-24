@@ -188,7 +188,12 @@ struct CONTENT_EXPORT WebPreferences {
   bool supports_multiple_windows;
   bool viewport_enabled;
   bool viewport_meta_enabled;
+
+  // If true - Blink will clamp the minimum scale factor to the content width,
+  // preventing zoom beyond the visible content. This is really only needed if
+  // viewport_enabled is on.
   bool shrinks_viewport_contents_to_fit;
+
   ViewportStyle viewport_style;
   bool always_show_context_menu_on_touch;
   bool smooth_scroll_for_find_enabled;
@@ -306,12 +311,19 @@ struct CONTENT_EXPORT WebPreferences {
   // Whether Picture-in-Picture is enabled.
   bool picture_in_picture_enabled;
 
-  // Specifies how close a lazily loaded iframe should be from the viewport
-  // before it should start being loaded in, depending on the effective
+  // Whether a translate service is available.
+  // blink's hrefTranslate attribute existence relies on the result.
+  // See https://github.com/dtapuska/html-translate
+  bool translate_service_available;
+
+  // Specifies how close a lazily loaded iframe or image should be from the
+  // viewport before it should start being loaded in, depending on the effective
   // connection type of the current network. Blink will use the default distance
   // threshold for effective connection types that aren't specified here.
   std::map<net::EffectiveConnectionType, int>
       lazy_frame_loading_distance_thresholds_px;
+  std::map<net::EffectiveConnectionType, int>
+      lazy_image_loading_distance_thresholds_px;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

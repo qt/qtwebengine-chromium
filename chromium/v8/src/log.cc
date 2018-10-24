@@ -8,7 +8,7 @@
 #include <memory>
 #include <sstream>
 
-#include "src/api.h"
+#include "src/api-inl.h"
 #include "src/bailout-reason.h"
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
@@ -127,21 +127,10 @@ class CodeEventLogger::NameBuffer {
 
   void AppendString(String* str) {
     if (str == nullptr) return;
-    int uc16_length = Min(str->length(), kUtf16BufferSize);
-    String::WriteToFlat(str, utf16_buffer, 0, uc16_length);
-    int previous = unibrow::Utf16::kNoPreviousCharacter;
-    for (int i = 0; i < uc16_length && utf8_pos_ < kUtf8BufferSize; ++i) {
-      uc16 c = utf16_buffer[i];
-      if (c <= unibrow::Utf8::kMaxOneByteChar) {
-        utf8_buffer_[utf8_pos_++] = static_cast<char>(c);
-      } else {
-        int char_length = unibrow::Utf8::Length(c, previous);
-        if (utf8_pos_ + char_length > kUtf8BufferSize) break;
-        unibrow::Utf8::Encode(utf8_buffer_ + utf8_pos_, c, previous);
-        utf8_pos_ += char_length;
-      }
-      previous = c;
-    }
+    int length = 0;
+    std::unique_ptr<char[]> c_str =
+        str->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL, &length);
+    AppendBytes(c_str.get(), length);
   }
 
   void AppendBytes(const char* bytes, int size) {
@@ -188,7 +177,6 @@ class CodeEventLogger::NameBuffer {
 
   int utf8_pos_;
   char utf8_buffer_[kUtf8BufferSize];
-  uc16 utf16_buffer[kUtf16BufferSize];
 };
 
 CodeEventLogger::CodeEventLogger(Isolate* isolate)
@@ -270,7 +258,7 @@ class PerfBasicLogger : public CodeEventLogger {
   explicit PerfBasicLogger(Isolate* isolate);
   ~PerfBasicLogger() override;
 
-  void CodeMoveEvent(AbstractCode* from, Address to) override {}
+  void CodeMoveEvent(AbstractCode* from, AbstractCode* to) override {}
   void CodeDisableOptEvent(AbstractCode* code,
                            SharedFunctionInfo* shared) override {}
 
@@ -496,7 +484,7 @@ class LowLevelLogger : public CodeEventLogger {
   LowLevelLogger(Isolate* isolate, const char* file_name);
   ~LowLevelLogger() override;
 
-  void CodeMoveEvent(AbstractCode* from, Address to) override;
+  void CodeMoveEvent(AbstractCode* from, AbstractCode* to) override;
   void CodeDisableOptEvent(AbstractCode* code,
                            SharedFunctionInfo* shared) override {}
   void SnapshotPositionEvent(HeapObject* obj, int pos);
@@ -615,11 +603,10 @@ void LowLevelLogger::LogRecordedBuffer(const wasm::WasmCode* code,
                 code->instructions().length());
 }
 
-void LowLevelLogger::CodeMoveEvent(AbstractCode* from, Address to) {
+void LowLevelLogger::CodeMoveEvent(AbstractCode* from, AbstractCode* to) {
   CodeMoveStruct event;
   event.from_address = from->InstructionStart();
-  size_t header_size = from->InstructionStart() - from->address();
-  event.to_address = to + header_size;
+  event.to_address = to->InstructionStart();
   LogWriteStruct(event);
 }
 
@@ -641,7 +628,7 @@ class JitLogger : public CodeEventLogger {
  public:
   JitLogger(Isolate* isolate, JitCodeEventHandler code_event_handler);
 
-  void CodeMoveEvent(AbstractCode* from, Address to) override;
+  void CodeMoveEvent(AbstractCode* from, AbstractCode* to) override;
   void CodeDisableOptEvent(AbstractCode* code,
                            SharedFunctionInfo* shared) override {}
   void AddCodeLinePosInfoEvent(void* jit_handler_data, int pc_offset,
@@ -700,7 +687,7 @@ void JitLogger::LogRecordedBuffer(const wasm::WasmCode* code, const char* name,
   code_event_handler_(&event);
 }
 
-void JitLogger::CodeMoveEvent(AbstractCode* from, Address to) {
+void JitLogger::CodeMoveEvent(AbstractCode* from, AbstractCode* to) {
   base::LockGuard<base::Mutex> guard(&logger_mutex_);
 
   JitCodeEvent event;
@@ -709,12 +696,7 @@ void JitLogger::CodeMoveEvent(AbstractCode* from, Address to) {
       from->IsCode() ? JitCodeEvent::JIT_CODE : JitCodeEvent::BYTE_CODE;
   event.code_start = reinterpret_cast<void*>(from->InstructionStart());
   event.code_len = from->InstructionSize();
-
-  // Calculate the header size.
-  const size_t header_size = from->InstructionStart() - from->address();
-
-  // Calculate the new start address of the instructions.
-  event.new_code_start = reinterpret_cast<void*>(to + header_size);
+  event.new_code_start = reinterpret_cast<void*>(to->InstructionStart());
   event.isolate = reinterpret_cast<v8::Isolate*>(isolate_);
 
   code_event_handler_(&event);
@@ -1029,7 +1011,7 @@ void Logger::UncheckedIntPtrTEvent(const char* name, intptr_t value) {
   if (!log_->IsEnabled()) return;
   Log::MessageBuilder msg(log_);
   msg << name << kNext;
-  msg.Append("%" V8PRIdPTR, value);
+  msg.AppendFormatString("%" V8PRIdPTR, value);
   msg.WriteToLogFile();
 }
 
@@ -1289,7 +1271,7 @@ void Logger::CodeCreateEvent(CodeEventListener::LogEventsAndTags tag,
   if (name.is_empty()) {
     msg << "<unknown wasm>";
   } else {
-    msg.AppendStringPart(name.start(), name.length());
+    msg.AppendString(name);
   }
   // We have to add two extra fields that allow the tick processor to group
   // events for the same wasm function, even if it gets compiled again. For
@@ -1431,9 +1413,10 @@ void Logger::RegExpCodeCreateEvent(AbstractCode* code, String* source) {
   msg.WriteToLogFile();
 }
 
-void Logger::CodeMoveEvent(AbstractCode* from, Address to) {
+void Logger::CodeMoveEvent(AbstractCode* from, AbstractCode* to) {
   if (!is_listening_to_code_events()) return;
-  MoveEventInternal(CodeEventListener::CODE_MOVE_EVENT, from->address(), to);
+  MoveEventInternal(CodeEventListener::CODE_MOVE_EVENT, from->address(),
+                    to->address());
 }
 
 namespace {
@@ -1504,7 +1487,8 @@ void Logger::ResourceEvent(const char* name, const char* tag) {
   if (base::OS::GetUserTime(&sec, &usec) != -1) {
     msg << sec << kNext << usec << kNext;
   }
-  msg.Append("%.0f", V8::GetCurrentPlatform()->CurrentClockTimeMillis());
+  msg.AppendFormatString("%.0f",
+                         V8::GetCurrentPlatform()->CurrentClockTimeMillis());
   msg.WriteToLogFile();
 }
 
@@ -1550,7 +1534,7 @@ void Logger::FunctionEvent(const char* reason, int script_id, double time_delta,
   AppendFunctionMessage(msg, reason, script_id, time_delta, start_position,
                         end_position, &timer_);
   if (function_name_length > 0) {
-    msg.AppendStringPart(function_name, function_name_length);
+    msg.AppendString(function_name, function_name_length);
   }
   msg.WriteToLogFile();
 }
@@ -2032,17 +2016,20 @@ sampler::Sampler* Logger::sampler() {
   return ticker_;
 }
 
-
-FILE* Logger::TearDown() {
-  if (!is_initialized_) return nullptr;
-  is_initialized_ = false;
-
-  // Stop the profiler before closing the file.
+void Logger::StopProfilerThread() {
   if (profiler_ != nullptr) {
     profiler_->Disengage();
     delete profiler_;
     profiler_ = nullptr;
   }
+}
+
+FILE* Logger::TearDown() {
+  if (!is_initialized_) return nullptr;
+  is_initialized_ = false;
+
+  // Stop the profiler thread before closing the file.
+  StopProfilerThread();
 
   delete ticker_;
   ticker_ = nullptr;
@@ -2244,9 +2231,6 @@ void ExistingCodeLogger::LogExistingFunction(
 #endif
       CALL_CODE_EVENT_HANDLER(CallbackEvent(shared->DebugName(), entry_point))
     }
-  } else {
-    CALL_CODE_EVENT_HANDLER(CodeCreateEvent(
-        tag, *code, *shared, ReadOnlyRoots(isolate_).empty_string()))
   }
 }
 

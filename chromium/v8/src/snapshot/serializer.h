@@ -28,8 +28,8 @@ class CodeAddressMap : public CodeEventLogger {
     isolate_->logger()->RemoveCodeEventListener(this);
   }
 
-  void CodeMoveEvent(AbstractCode* from, Address to) override {
-    address_to_name_map_.Move(from->address(), to);
+  void CodeMoveEvent(AbstractCode* from, AbstractCode* to) override {
+    address_to_name_map_.Move(from->address(), to->address());
   }
 
   void CodeDisableOptEvent(AbstractCode* code,
@@ -170,6 +170,7 @@ class Serializer : public SerializerDeserializer {
 
   void VisitRootPointers(Root root, const char* description, Object** start,
                          Object** end) override;
+  void SerializeRootObject(Object* object);
 
   void PutRoot(int index, HeapObject* object, HowToCode how, WhereToPoint where,
                int skip);
@@ -253,10 +254,8 @@ class Serializer : public SerializerDeserializer {
 
 #ifdef OBJECT_PRINT
   static const int kInstanceTypes = LAST_TYPE + 1;
-  int* instance_type_count_;
-  size_t* instance_type_size_;
-  int* read_only_instance_type_count_;
-  size_t* read_only_instance_type_size_;
+  int* instance_type_count_[LAST_SPACE];
+  size_t* instance_type_size_[LAST_SPACE];
 #endif  // OBJECT_PRINT
 
 #ifdef DEBUG

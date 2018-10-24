@@ -28,7 +28,6 @@
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/criticalsection.h"
 #include "rtc_base/thread_annotations.h"
-#include "typedefs.h"  // NOLINT(build/include)
 
 namespace webrtc {
 
@@ -158,10 +157,6 @@ class NetEqImpl : public webrtc::NetEq {
 
   bool SetMaximumDelay(int delay_ms) override;
 
-  int LeastRequiredDelayMs() const override;
-
-  int SetTargetDelay() override;
-
   int TargetDelayMs() const override;
 
   int CurrentDelayMs() const override;
@@ -196,10 +191,6 @@ class NetEqImpl : public webrtc::NetEq {
 
   absl::optional<SdpAudioFormat> GetDecoderFormat(
       int payload_type) const override;
-
-  int SetTargetNumberOfChannels() override;
-
-  int SetTargetSampleRate() override;
 
   // Flushes both the packet buffer and the sync buffer.
   void FlushBuffers() override;

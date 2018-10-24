@@ -37,6 +37,7 @@ const char kSessionManagerListStoredComponentPolicies[] =
     "ListStoredComponentPolicies";
 const char kSessionManagerRetrieveSessionState[] = "RetrieveSessionState";
 const char kSessionManagerRetrieveActiveSessions[] = "RetrieveActiveSessions";
+const char kSessionManagerRetrievePrimarySession[] = "RetrievePrimarySession";
 const char kSessionManagerStartTPMFirmwareUpdate[] = "StartTPMFirmwareUpdate";
 const char kSessionManagerStartDeviceWipe[] = "StartDeviceWipe";
 const char kSessionManagerHandleSupervisedUserCreationStarting[] =
@@ -85,6 +86,7 @@ const char kArcInstanceRunning[] = INTERFACE ".ArcInstanceRunning";
 const char kArcContainerNotFound[] = INTERFACE ".ArcContainerNotFound";
 const char kContainerStartupFail[] = INTERFACE ".ContainerStartupFail";
 const char kContainerShutdownFail[] = INTERFACE ".ContainerShutdownFail";
+const char kDeleteFail[] = INTERFACE ".DeleteFail";
 const char kEmitFailed[] = INTERFACE ".EmitFailed";
 const char kGetServiceFail[] = INTERFACE ".kGetServiceFail";
 const char kInitMachineInfoFail[] = INTERFACE ".InitMachineInfoFail";

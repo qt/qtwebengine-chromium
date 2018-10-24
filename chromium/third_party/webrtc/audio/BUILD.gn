@@ -54,7 +54,6 @@ rtc_static_library("audio") {
     "../api/audio:audio_frame_api",
     "../api/audio:audio_mixer_api",
     "../api/audio_codecs:audio_codecs_api",
-    "../api/audio_codecs:builtin_audio_encoder_factory",
     "../call:bitrate_allocator",
     "../call:call_interfaces",
     "../call:rtp_interfaces",
@@ -100,6 +99,9 @@ if (rtc_include_tests) {
     ]
     deps = [
       ":audio",
+      "../api:simulated_network_api",
+      "../call:fake_network",
+      "../call:simulated_network",
       "../system_wrappers:system_wrappers",
       "../test:test_common",
       "../test:test_support",
@@ -121,6 +123,7 @@ if (rtc_include_tests) {
       "audio_state_unittest.cc",
       "mock_voe_channel_proxy.h",
       "remix_resample_unittest.cc",
+      "test/audio_stats_test.cc",
       "time_interval_unittest.cc",
       "transport_feedback_packet_loss_tracker_unittest.cc",
     ]
@@ -159,11 +162,6 @@ if (rtc_include_tests) {
       "//third_party/abseil-cpp/absl/memory",
     ]
 
-    if (!rtc_use_memcheck) {
-      # This test is timing dependent, which rules out running on memcheck bots.
-      sources += [ "test/audio_stats_test.cc" ]
-    }
-
     if (!build_with_chromium && is_clang) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
@@ -180,6 +178,7 @@ if (rtc_include_tests) {
 
       deps = [
         ":audio_end_to_end_test",
+        "../api:simulated_network_api",
         "../common_audio",
         "../rtc_base:rtc_base_approved",
         "../system_wrappers",
@@ -251,6 +250,9 @@ if (rtc_include_tests) {
       "test/audio_bwe_integration_test.h",
     ]
     deps = [
+      "../api:simulated_network_api",
+      "../call:fake_network",
+      "../call:simulated_network",
       "../common_audio",
       "../rtc_base:rtc_base_approved",
       "../system_wrappers",

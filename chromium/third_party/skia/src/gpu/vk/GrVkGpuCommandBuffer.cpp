@@ -73,22 +73,10 @@ void get_vk_load_store_ops(GrLoadOp loadOpIn, GrStoreOp storeOpIn,
     }
 }
 
-GrVkGpuRTCommandBuffer::GrVkGpuRTCommandBuffer(GrVkGpu* gpu,
-                                               GrRenderTarget* rt, GrSurfaceOrigin origin,
-                                               const LoadAndStoreInfo& colorInfo,
-                                               const StencilLoadAndStoreInfo& stencilInfo)
-        : INHERITED(rt, origin)
+GrVkGpuRTCommandBuffer::GrVkGpuRTCommandBuffer(GrVkGpu* gpu)
+        : fCurrentCmdInfo(-1)
         , fGpu(gpu)
-        , fClearColor(GrColor4f::FromGrColor(colorInfo.fClearColor))
         , fLastPipelineState(nullptr) {
-    get_vk_load_store_ops(colorInfo.fLoadOp, colorInfo.fStoreOp,
-                          &fVkColorLoadOp, &fVkColorStoreOp);
-
-    get_vk_load_store_ops(stencilInfo.fLoadOp, stencilInfo.fStoreOp,
-                          &fVkStencilLoadOp, &fVkStencilStoreOp);
-    fCurrentCmdInfo = -1;
-
-    this->init();
 }
 
 void GrVkGpuRTCommandBuffer::init() {
@@ -137,13 +125,7 @@ void GrVkGpuRTCommandBuffer::init() {
 
 
 GrVkGpuRTCommandBuffer::~GrVkGpuRTCommandBuffer() {
-    for (int i = 0; i < fCommandBufferInfos.count(); ++i) {
-        CommandBufferInfo& cbInfo = fCommandBufferInfos[i];
-        for (int j = 0; j < cbInfo.fCommandBuffers.count(); ++j) {
-            cbInfo.fCommandBuffers[j]->unref(fGpu);
-        }
-        cbInfo.fRenderPass->unref(fGpu);
-    }
+    this->reset();
 }
 
 GrGpu* GrVkGpuRTCommandBuffer::gpu() { return fGpu; }
@@ -239,6 +221,44 @@ void GrVkGpuRTCommandBuffer::submit() {
                                                &cbInfo.fColorClearValue, vkRT, fOrigin, iBounds);
         }
     }
+}
+
+void GrVkGpuRTCommandBuffer::set(GrRenderTarget* rt, GrSurfaceOrigin origin,
+                                 const GrGpuRTCommandBuffer::LoadAndStoreInfo& colorInfo,
+                                 const GrGpuRTCommandBuffer::StencilLoadAndStoreInfo& stencilInfo) {
+    SkASSERT(!fRenderTarget);
+    SkASSERT(fCommandBufferInfos.empty());
+    SkASSERT(-1 == fCurrentCmdInfo);
+    SkASSERT(fGpu == rt->getContext()->contextPriv().getGpu());
+    SkASSERT(!fLastPipelineState);
+
+    this->INHERITED::set(rt, origin);
+
+    fClearColor = GrColor4f::FromGrColor(colorInfo.fClearColor);
+
+    get_vk_load_store_ops(colorInfo.fLoadOp, colorInfo.fStoreOp,
+                          &fVkColorLoadOp, &fVkColorStoreOp);
+
+    get_vk_load_store_ops(stencilInfo.fLoadOp, stencilInfo.fStoreOp,
+                          &fVkStencilLoadOp, &fVkStencilStoreOp);
+
+    this->init();
+}
+
+void GrVkGpuRTCommandBuffer::reset() {
+    for (int i = 0; i < fCommandBufferInfos.count(); ++i) {
+        CommandBufferInfo& cbInfo = fCommandBufferInfos[i];
+        for (int j = 0; j < cbInfo.fCommandBuffers.count(); ++j) {
+            cbInfo.fCommandBuffers[j]->unref(fGpu);
+        }
+        cbInfo.fRenderPass->unref(fGpu);
+    }
+    fCommandBufferInfos.reset();
+
+    fCurrentCmdInfo = -1;
+
+    fLastPipelineState = nullptr;
+    fRenderTarget = nullptr;
 }
 
 void GrVkGpuRTCommandBuffer::discard() {
@@ -585,7 +605,11 @@ GrVkPipelineState* GrVkGpuRTCommandBuffer::prepareDrawState(
     }
     fLastPipelineState = pipelineState;
 
-    pipelineState->setData(fGpu, primProc, pipeline);
+    const GrTextureProxy* const* primProcProxies = nullptr;
+    if (fixedDynamicState) {
+        primProcProxies = fixedDynamicState->fPrimitiveProcessorTextures;
+    }
+    pipelineState->setData(fGpu, primProc, pipeline, primProcProxies);
 
     pipelineState->bind(fGpu, cbInfo.currentCmdBuf());
 
@@ -608,31 +632,6 @@ GrVkPipelineState* GrVkGpuRTCommandBuffer::prepareDrawState(
     return pipelineState;
 }
 
-static void prepare_sampled_images(const GrResourceIOProcessor& processor,
-                                   SkTArray<GrVkImage*>* sampledImages,
-                                   GrVkGpu* gpu) {
-    for (int i = 0; i < processor.numTextureSamplers(); ++i) {
-        const GrResourceIOProcessor::TextureSampler& sampler = processor.textureSampler(i);
-        GrVkTexture* vkTexture = static_cast<GrVkTexture*>(sampler.peekTexture());
-
-        // We may need to resolve the texture first if it is also a render target
-        GrVkRenderTarget* texRT = static_cast<GrVkRenderTarget*>(vkTexture->asRenderTarget());
-        if (texRT) {
-            gpu->onResolveRenderTarget(texRT);
-        }
-
-        // Check if we need to regenerate any mip maps
-        if (GrSamplerState::Filter::kMipMap == sampler.samplerState().filter() &&
-            (vkTexture->width() != 1 || vkTexture->height() != 1)) {
-            SkASSERT(vkTexture->texturePriv().mipMapped() == GrMipMapped::kYes);
-            if (vkTexture->texturePriv().mipMapsAreDirty()) {
-                gpu->regenerateMipMapLevels(vkTexture);
-            }
-        }
-        sampledImages->push_back(vkTexture);
-    }
-}
-
 void GrVkGpuRTCommandBuffer::onDraw(const GrPrimitiveProcessor& primProc,
                                     const GrPipeline& pipeline,
                                     const GrPipeline::FixedDynamicState* fixedDynamicState,
@@ -648,10 +647,35 @@ void GrVkGpuRTCommandBuffer::onDraw(const GrPrimitiveProcessor& primProc,
 
     CommandBufferInfo& cbInfo = fCommandBufferInfos[fCurrentCmdInfo];
 
-    prepare_sampled_images(primProc, &cbInfo.fSampledImages, fGpu);
+    auto prepareSampledImage = [&](GrTexture* texture, GrSamplerState::Filter filter) {
+        GrVkTexture* vkTexture = static_cast<GrVkTexture*>(texture);
+        // We may need to resolve the texture first if it is also a render target
+        GrVkRenderTarget* texRT = static_cast<GrVkRenderTarget*>(vkTexture->asRenderTarget());
+        if (texRT) {
+            fGpu->onResolveRenderTarget(texRT);
+        }
+
+        // Check if we need to regenerate any mip maps
+        if (GrSamplerState::Filter::kMipMap == filter &&
+            (vkTexture->width() != 1 || vkTexture->height() != 1)) {
+            SkASSERT(vkTexture->texturePriv().mipMapped() == GrMipMapped::kYes);
+            if (vkTexture->texturePriv().mipMapsAreDirty()) {
+                fGpu->regenerateMipMapLevels(vkTexture);
+            }
+        }
+        cbInfo.fSampledImages.push_back(vkTexture);
+    };
+
+    for (int i = 0; i < primProc.numTextureSamplers(); ++i) {
+        auto texture = fixedDynamicState->fPrimitiveProcessorTextures[i]->peekTexture();
+        prepareSampledImage(texture, primProc.textureSampler(i).samplerState().filter());
+    }
     GrFragmentProcessor::Iter iter(pipeline);
     while (const GrFragmentProcessor* fp = iter.next()) {
-        prepare_sampled_images(*fp, &cbInfo.fSampledImages, fGpu);
+        for (int i = 0; i < fp->numTextureSamplers(); ++i) {
+            const GrFragmentProcessor::TextureSampler& sampler = fp->textureSampler(i);
+            prepareSampledImage(sampler.peekTexture(), sampler.samplerState().filter());
+        }
     }
     if (GrTexture* dstTexture = pipeline.peekDstTexture()) {
         cbInfo.fSampledImages.push_back(static_cast<GrVkTexture*>(dstTexture));

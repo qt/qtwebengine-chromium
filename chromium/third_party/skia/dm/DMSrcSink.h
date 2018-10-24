@@ -21,8 +21,6 @@
 
 //#define TEST_VIA_SVG
 
-namespace skottie { class Animation; }
-
 namespace DM {
 
 // This is just convenience.  It lets you use either return "foo" or return SkStringPrintf(...).
@@ -102,7 +100,7 @@ struct Sink {
 
 class GMSrc : public Src {
 public:
-    explicit GMSrc(skiagm::GMRegistry::Factory);
+    explicit GMSrc(skiagm::GMFactory);
 
     Error draw(SkCanvas*) const override;
     SkISize size() const override;
@@ -110,7 +108,7 @@ public:
     void modifyGrContextOptions(GrContextOptions* options) const override;
 
 private:
-    skiagm::GMRegistry::Factory fFactory;
+    skiagm::GMFactory fFactory;
 };
 
 class CodecSrc : public Src {
@@ -265,9 +263,11 @@ private:
     // Generates a kTileCount x kTileCount filmstrip with evenly distributed frames.
     static constexpr int      kTileCount = 5;
 
-    Name                      fName;
-    SkISize                   fTileSize = SkISize::MakeEmpty();
-    sk_sp<skottie::Animation> fAnimation;
+    // Fit kTileCount x kTileCount frames to a 1000x1000 film strip.
+    static constexpr SkScalar kTargetSize = 1000;
+    static constexpr SkScalar kTileSize = kTargetSize / kTileCount;
+
+    Path                      fPath;
 };
 #endif
 
@@ -441,9 +441,8 @@ public:
     Error draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     const char* fileExtension() const override { return "png"; }
     SinkFlags flags() const override { return SinkFlags{ SinkFlags::kRaster, SinkFlags::kDirect }; }
-protected:
-    void allocPixels(const Src& src, SkBitmap*) const;
 
+private:
     SkColorType         fColorType;
     sk_sp<SkColorSpace> fColorSpace;
 };
