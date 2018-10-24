@@ -52,9 +52,16 @@ void HTMLImportsController::dispose() {
     m_root.clear();
   }
 
-  for (size_t i = 0; i < m_loaders.size(); ++i)
-    m_loaders[i]->dispose();
-  m_loaders.clear();
+  // TODO(tkent): We copy loaders_ before iteration to avoid crashes.
+  // This copy should be unnecessary. loaders_ is not modified during
+  // the iteration.  Also, null-check for |loader| should be
+  // unnecessary.  crbug.com/843151.
+  LoaderList list;
+  list.swap(m_loaders);
+  for (const auto& loader : list) {
+    if (loader)
+      loader->dispose();
+  }
 }
 
 static bool makesCycle(HTMLImport* parent, const KURL& url) {
