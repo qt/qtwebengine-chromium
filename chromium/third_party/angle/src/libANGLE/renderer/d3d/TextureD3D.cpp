@@ -258,13 +258,12 @@ gl::Error TextureD3D::subImage(const gl::Context *context,
                                GLenum format,
                                GLenum type,
                                const gl::PixelUnpackState &unpack,
+                               gl::Buffer *unpackBuffer,
                                const uint8_t *pixels,
                                ptrdiff_t layerOffset)
 {
     // CPU readback & copy where direct GPU copy is not supported
     const uint8_t *pixelData = nullptr;
-    gl::Buffer *unpackBuffer =
-        context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
     ANGLE_TRY(GetUnpackPointer(context, unpack, unpackBuffer, pixels, layerOffset, &pixelData));
 
     if (pixelData != nullptr)
@@ -885,12 +884,11 @@ gl::Error TextureD3D_2D::setSubImage(const gl::Context *context,
                                      GLenum format,
                                      GLenum type,
                                      const gl::PixelUnpackState &unpack,
+                                     gl::Buffer *unpackBuffer,
                                      const uint8_t *pixels)
 {
     ASSERT(index.getTarget() == gl::TextureTarget::_2D && area.depth == 1 && area.z == 0);
 
-    gl::Buffer *unpackBuffer =
-        context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
     GLenum mipFormat = getInternalFormat(index.getLevelIndex());
     if (isFastUnpackable(unpackBuffer, mipFormat) && isLevelComplete(index.getLevelIndex()))
     {
@@ -902,7 +900,8 @@ gl::Error TextureD3D_2D::setSubImage(const gl::Context *context,
     }
     else
     {
-        return TextureD3D::subImage(context, index, area, format, type, unpack, pixels, 0);
+        return TextureD3D::subImage(context, index, area, format, type, unpack, unpackBuffer,
+                                    pixels, 0);
     }
 }
 
@@ -1650,10 +1649,12 @@ gl::Error TextureD3D_Cube::setSubImage(const gl::Context *context,
                                        GLenum format,
                                        GLenum type,
                                        const gl::PixelUnpackState &unpack,
+                                       gl::Buffer *unpackBuffer,
                                        const uint8_t *pixels)
 {
     ASSERT(area.depth == 1 && area.z == 0);
-    return TextureD3D::subImage(context, index, area, format, type, unpack, pixels, 0);
+    return TextureD3D::subImage(context, index, area, format, type, unpack, unpackBuffer, pixels,
+                                0);
 }
 
 gl::Error TextureD3D_Cube::setCompressedImage(const gl::Context *context,
@@ -2406,13 +2407,12 @@ gl::Error TextureD3D_3D::setSubImage(const gl::Context *context,
                                      GLenum format,
                                      GLenum type,
                                      const gl::PixelUnpackState &unpack,
+                                     gl::Buffer *unpackBuffer,
                                      const uint8_t *pixels)
 {
     ASSERT(index.getTarget() == gl::TextureTarget::_3D);
 
     // Attempt a fast gpu copy of the pixel data to the surface if the app bound an unpack buffer
-    gl::Buffer *unpackBuffer =
-        context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
     GLenum mipFormat = getInternalFormat(index.getLevelIndex());
     if (isFastUnpackable(unpackBuffer, mipFormat) && isLevelComplete(index.getLevelIndex()))
     {
@@ -2424,7 +2424,8 @@ gl::Error TextureD3D_3D::setSubImage(const gl::Context *context,
     }
     else
     {
-        return TextureD3D::subImage(context, index, area, format, type, unpack, pixels, 0);
+        return TextureD3D::subImage(context, index, area, format, type, unpack, unpackBuffer,
+                                    pixels, 0);
     }
 }
 
@@ -2934,6 +2935,7 @@ gl::Error TextureD3D_2DArray::setSubImage(const gl::Context *context,
                                           GLenum format,
                                           GLenum type,
                                           const gl::PixelUnpackState &unpack,
+                                          gl::Buffer *unpackBuffer,
                                           const uint8_t *pixels)
 {
     ASSERT(index.getTarget() == gl::TextureTarget::_2DArray);
@@ -2952,8 +2954,8 @@ gl::Error TextureD3D_2DArray::setSubImage(const gl::Context *context,
         gl::Box layerArea(area.x, area.y, 0, area.width, area.height, 1);
 
         gl::ImageIndex layerIndex = gl::ImageIndex::Make2DArray(index.getLevelIndex(), layer);
-        ANGLE_TRY(TextureD3D::subImage(context, layerIndex, layerArea, format, type, unpack, pixels,
-                                       layerOffset));
+        ANGLE_TRY(TextureD3D::subImage(context, layerIndex, layerArea, format, type, unpack,
+                                       unpackBuffer, pixels, layerOffset));
     }
 
     return gl::NoError();
@@ -3492,6 +3494,7 @@ gl::Error TextureD3D_External::setSubImage(const gl::Context *context,
                                            GLenum format,
                                            GLenum type,
                                            const gl::PixelUnpackState &unpack,
+                                           gl::Buffer *unpackBuffer,
                                            const uint8_t *pixels)
 {
     UNREACHABLE();

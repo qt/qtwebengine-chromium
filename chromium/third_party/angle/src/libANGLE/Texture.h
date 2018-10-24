@@ -288,6 +288,7 @@ class Texture final : public egl::ImageSibling, public LabeledObject
                    const uint8_t *pixels);
     Error setSubImage(const Context *context,
                       const PixelUnpackState &unpackState,
+                      Buffer *unpackBuffer,
                       TextureTarget target,
                       GLint level,
                       const Box &area,
