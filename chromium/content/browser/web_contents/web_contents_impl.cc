@@ -2172,8 +2172,7 @@ void WebContentsImpl::CreateNewWindow(
 
   // Any new WebContents opened while this WebContents is in fullscreen can be
   // used to confuse the user, so drop fullscreen.
-  if (IsFullscreenForCurrentTab())
-    ExitFullscreen(true);
+  ForSecurityDropFullscreen();
 
   if (params.opener_suppressed) {
     // When the opener is suppressed, the original renderer cannot access the
@@ -4141,8 +4140,7 @@ void WebContentsImpl::RunJavaScriptMessage(
 
   // Running a dialog causes an exit to webpage-initiated fullscreen.
   // http://crbug.com/728276
-  if (IsFullscreenForCurrentTab())
-    ExitFullscreen(true);
+  ForSecurityDropFullscreen();
 
   // Suppress JavaScript dialogs when requested. Also suppress messages when
   // showing an interstitial as it's shown over the previous page and we don't
@@ -4191,8 +4189,7 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
 
   // Running a dialog causes an exit to webpage-initiated fullscreen.
   // http://crbug.com/728276
-  if (IsFullscreenForCurrentTab())
-    ExitFullscreen(true);
+  ForSecurityDropFullscreen();
 
   RenderFrameHostImpl* rfhi =
       static_cast<RenderFrameHostImpl*>(render_frame_host);
@@ -4728,6 +4725,15 @@ void WebContentsImpl::EnsureOpenerProxiesExist(RenderFrameHost* source_rfh) {
   }
 }
 
+void WebContentsImpl::ForSecurityDropFullscreen() {
+  WebContentsImpl* web_contents = this;
+  while (web_contents) {
+    if (web_contents->IsFullscreenForCurrentTab())
+      web_contents->ExitFullscreen(true);
+    web_contents = web_contents->GetOuterWebContents();
+  }
+}
+
 void WebContentsImpl::SetAsFocusedWebContentsIfNecessary() {
   // Only change focus if we are not currently focused.
   WebContentsImpl* old_contents = GetFocusedWebContents();
@@ -4758,8 +4764,7 @@ void WebContentsImpl::SetFocusedFrame(FrameTreeNode* node,
 void WebContentsImpl::DidCallFocus() {
   // Any explicit focusing of another window while this WebContents is in
   // fullscreen can be used to confuse the user, so drop fullscreen.
-  if (IsFullscreenForCurrentTab())
-    ExitFullscreen(true);
+  ForSecurityDropFullscreen();
 }
 
 void WebContentsImpl::OnFocusedElementChangedInFrame(

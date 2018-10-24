@@ -810,6 +810,11 @@ class CONTENT_EXPORT WebContentsImpl
   void IncrementBluetoothConnectedDeviceCount();
   void DecrementBluetoothConnectedDeviceCount();
 
+  // The WebContents is trying to take some action that would cause user
+  // confusion if taken while in fullscreen. If this WebContents or any outer
+  // WebContents is in fullscreen, drop it.
+  void ForSecurityDropFullscreen();
+
 #if defined(OS_ANDROID)
   // Called by FindRequestManager when all of the find match rects are in.
   void NotifyFindMatchRectsReply(int version,
@@ -849,6 +854,8 @@ class CONTENT_EXPORT WebContentsImpl
                            JavaScriptDialogsInMainAndSubframes);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            DialogsFromJavaScriptEndFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
+                           DialogsFromJavaScriptEndFullscreenEvenInInnerWC);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            PopupsFromJavaScriptEndFullscreen);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
