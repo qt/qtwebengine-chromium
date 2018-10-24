@@ -4809,6 +4809,170 @@ TEST_P(GLES2DecoderTest, TestDiscardableTextureBindGeneratesUnlocked) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
+TEST_P(GLES2DecoderTest, CopySubTextureCHROMIUMTwiceClearsUnclearedTexture) {
+  // Create uninitialized source texture.
+  EXPECT_CALL(*gl_, GenTextures(1, _))
+      .WillOnce(SetArgPointee<1>(kNewServiceId))
+      .RetiresOnSaturation();
+  GenHelper<GenTexturesImmediate>(kNewClientId);
+  DoBindTexture(GL_TEXTURE_2D, kNewClientId, kNewServiceId);
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0,
+               0);
+
+  // Create uninitialized dest texture.
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0,
+               0);
+
+  // This will write the top half of the destination.
+  {
+    // Source is undefined, so first call to CopySubTexture will clear the
+    // source.
+    SetupClearTextureExpectations(kNewServiceId, kServiceTextureId,
+                                  GL_TEXTURE_2D, GL_TEXTURE_2D, 0, GL_RGBA,
+                                  GL_UNSIGNED_BYTE, 0, 0, 2, 2, 0);
+    CopySubTextureCHROMIUM cmd;
+    cmd.Init(kNewClientId /* source_id */, 0 /* source_level */,
+             GL_TEXTURE_2D /* dest_target */, client_texture_id_ /* dest_id */,
+             0 /* dest_level */, 0 /* xoffset */, 0 /* yoffset */, 0 /* x */,
+             0 /* y */, 2 /* width */, 1 /* height */,
+             false /* unpack_flip_y */, false /* unpack_premultiply_alpha */,
+             false /* unpack_unmultiply_alpha */);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+
+  // This will write the bottom right pixel of the destination.
+  {
+    // This will clear the bottom part of destination as a rectangle is not
+    // sufficient to keep track of the initialized area.
+    SetupClearTextureExpectations(kServiceTextureId, kServiceTextureId,
+                                  GL_TEXTURE_2D, GL_TEXTURE_2D, 0, GL_RGBA,
+                                  GL_UNSIGNED_BYTE, 0, 1, 2, 1, 0);
+    CopySubTextureCHROMIUM cmd;
+    cmd.Init(kNewClientId /* source_id */, 0 /* source_level */,
+             GL_TEXTURE_2D /* dest_target */, client_texture_id_ /* dest_id */,
+             0 /* dest_level */, 1 /* xoffset */, 1 /* yoffset */, 0 /* x */,
+             0 /* y */, 1 /* width */, 1 /* height */,
+             false /* unpack_flip_y */, false /* unpack_premultiply_alpha */,
+             false /* unpack_unmultiply_alpha */);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+
+  TextureManager* manager = group().texture_manager();
+  TextureRef* texture_ref = manager->GetTexture(client_texture_id_);
+  ASSERT_TRUE(texture_ref != nullptr);
+  Texture* texture = texture_ref->texture();
+  EXPECT_TRUE(texture->SafeToRenderFrom());
+}
+
+TEST_P(GLES3DecoderTest, ImmutableTextureBaseLevelMaxLevelClamping) {
+  GLenum kTarget = GL_TEXTURE_3D;
+  GLint kBaseLevel = 1416354905;
+  GLint kMaxLevel = 800;
+  GLsizei kLevels = 4;
+  GLenum kInternalFormat = GL_R8;
+  GLsizei kWidth = 20;
+  GLsizei kHeight = 20;
+  GLsizei kDepth = 20;
+  GLint kClampedBaseLevel = kLevels - 1;
+  GLint kClampedMaxLevel = kLevels - 1;
+
+  DoBindTexture(kTarget, client_texture_id_, kServiceTextureId);
+  TextureRef* texture_ref =
+      group().texture_manager()->GetTexture(client_texture_id_);
+  ASSERT_TRUE(texture_ref != nullptr);
+  Texture* texture = texture_ref->texture();
+
+  // Before TexStorage3D call, base/max levels are not clamped.
+  {
+    EXPECT_CALL(*gl_, TexParameteri(kTarget, GL_TEXTURE_BASE_LEVEL, kBaseLevel))
+        .Times(1)
+        .RetiresOnSaturation();
+    TexParameteri cmd;
+    cmd.Init(kTarget, GL_TEXTURE_BASE_LEVEL, kBaseLevel);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+  {
+    EXPECT_CALL(*gl_, TexParameteri(kTarget, GL_TEXTURE_MAX_LEVEL, kMaxLevel))
+        .Times(1)
+        .RetiresOnSaturation();
+    TexParameteri cmd;
+    cmd.Init(kTarget, GL_TEXTURE_MAX_LEVEL, kMaxLevel);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  EXPECT_EQ(kBaseLevel, texture->base_level());
+  EXPECT_EQ(kMaxLevel, texture->max_level());
+
+  {
+    EXPECT_CALL(*gl_, TexStorage3D(kTarget, kLevels, kInternalFormat, kWidth,
+                                   kHeight, kDepth))
+        .Times(1)
+        .RetiresOnSaturation();
+    TexStorage3D cmd;
+    cmd.Init(kTarget, kLevels, kInternalFormat, kWidth, kHeight, kDepth);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+    EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  }
+  EXPECT_EQ(kClampedBaseLevel, texture->base_level());
+  EXPECT_EQ(kClampedMaxLevel, texture->max_level());
+
+  GLint kNewBaseLevel = 827344;
+  GLint kNewMaxLevel = 17619;
+  // After TexStorage3D call, base/max levels are clamped.
+  {
+    EXPECT_CALL(
+        *gl_, TexParameteri(kTarget, GL_TEXTURE_BASE_LEVEL, kClampedBaseLevel))
+        .Times(1)
+        .RetiresOnSaturation();
+    TexParameteri cmd;
+    cmd.Init(kTarget, GL_TEXTURE_BASE_LEVEL, kNewBaseLevel);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+  {
+    EXPECT_CALL(*gl_,
+                TexParameteri(kTarget, GL_TEXTURE_MAX_LEVEL, kClampedMaxLevel))
+        .Times(1)
+        .RetiresOnSaturation();
+    TexParameteri cmd;
+    cmd.Init(kTarget, GL_TEXTURE_MAX_LEVEL, kNewMaxLevel);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  }
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  EXPECT_EQ(kClampedBaseLevel, texture->base_level());
+  EXPECT_EQ(kClampedMaxLevel, texture->max_level());
+
+  // GetTexParameteriv still returns unclamped values.
+  {
+    EXPECT_CALL(*gl_, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+    typedef GetTexParameteriv::Result Result;
+    Result* result = static_cast<Result*>(shared_memory_address_);
+    result->size = 0;
+    GetTexParameteriv cmd;
+    cmd.Init(kTarget, GL_TEXTURE_BASE_LEVEL, shared_memory_id_,
+             shared_memory_offset_);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+    EXPECT_EQ(kNewBaseLevel, static_cast<GLint>(result->GetData()[0]));
+  }
+  {
+    EXPECT_CALL(*gl_, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+    typedef GetTexParameteriv::Result Result;
+    Result* result = static_cast<Result*>(shared_memory_address_);
+    result->size = 0;
+    GetTexParameteriv cmd;
+    cmd.Init(kTarget, GL_TEXTURE_MAX_LEVEL, shared_memory_id_,
+             shared_memory_offset_);
+    EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+    EXPECT_EQ(kNewMaxLevel, static_cast<GLint>(result->GetData()[0]));
+  }
+}
+
 // TODO(gman): Complete this test.
 // TEST_P(GLES2DecoderTest, CompressedTexImage2DGLError) {
 // }

@@ -155,6 +155,10 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
     return max_level_;
   }
 
+  GLint unclamped_base_level() const { return unclamped_base_level_; }
+
+  GLint unclamped_max_level() const { return unclamped_max_level_; }
+
   GLenum swizzle_r() const { return swizzle_r_; }
 
   GLenum swizzle_g() const { return swizzle_g_; }
@@ -577,6 +581,9 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   GLenum swizzle_g_;
   GLenum swizzle_b_;
   GLenum swizzle_a_;
+
+  GLint unclamped_base_level_ = 0;
+  GLint unclamped_max_level_ = 1000;
 
   // The maximum level that has been set.
   GLint max_level_set_;
