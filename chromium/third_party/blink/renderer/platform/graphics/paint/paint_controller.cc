@@ -760,9 +760,9 @@ void PaintController::ValidateNewChunkId(const PaintChunk::Id& id) {
   auto it = new_paint_chunk_id_index_map_.find(id.AsHashKey());
   if (it != new_paint_chunk_id_index_map_.end()) {
     ShowDebugData();
-    NOTREACHED() << "New paint chunk id " << id
-                 << " has duplicated id with previous chuck "
-                 << new_paint_artifact_->PaintChunks()[it->value];
+    DLOG(ERROR) << "New paint chunk id " << id
+                << " has duplicated id with previous chuck "
+                << new_paint_artifact_->PaintChunks()[it->value];
   }
 #endif
 }
