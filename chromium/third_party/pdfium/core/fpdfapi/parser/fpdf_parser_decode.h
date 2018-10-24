@@ -9,10 +9,13 @@
 
 #include "core/fxcrt/fx_basic.h"
 
+class CPDF_Array;
 class CPDF_Dictionary;
 
 // Indexed by 8-bit char code, contains unicode code points.
 extern const uint16_t PDFDocEncoding[256];
+
+bool ValidateDecoderPipeline(const CPDF_Array* pDecoders);
 
 CFX_ByteString PDF_NameDecode(const CFX_ByteStringC& orig);
 CFX_ByteString PDF_NameDecode(const CFX_ByteString& orig);
