@@ -13,10 +13,13 @@
 #include "core/fxcrt/unowned_ptr.h"
 
 class CCodec_ScanlineDecoder;
+class CPDF_Array;
 class CPDF_Dictionary;
 
 // Indexed by 8-bit char code, contains unicode code points.
 extern const uint16_t PDFDocEncoding[256];
+
+bool ValidateDecoderPipeline(const CPDF_Array* pDecoders);
 
 ByteString PDF_EncodeString(const ByteString& src, bool bHex);
 WideString PDF_DecodeText(const uint8_t* pData, uint32_t size);
