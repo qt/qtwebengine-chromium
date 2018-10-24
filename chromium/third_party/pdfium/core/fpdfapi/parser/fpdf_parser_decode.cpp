@@ -23,6 +23,7 @@
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/fx_extension.h"
 #include "third_party/base/numerics/safe_math.h"
+#include "third_party/base/stl_util.h"
 
 namespace {
 
@@ -77,6 +78,22 @@ const uint16_t PDFDocEncoding[256] = {
     0x00ea, 0x00eb, 0x00ec, 0x00ed, 0x00ee, 0x00ef, 0x00f0, 0x00f1, 0x00f2,
     0x00f3, 0x00f4, 0x00f5, 0x00f6, 0x00f7, 0x00f8, 0x00f9, 0x00fa, 0x00fb,
     0x00fc, 0x00fd, 0x00fe, 0x00ff};
+
+bool ValidateDecoderPipeline(const CPDF_Array* pDecoders) {
+  size_t count = pDecoders->GetCount();
+  if (count <= 1)
+    return true;
+
+  // TODO(thestig): Consolidate all the places that use these filter names.
+  static const char kValidDecoders[][16] = {
+      "FlateDecode",    "Fl",  "LZWDecode",       "LZW", "ASCII85Decode", "A85",
+      "ASCIIHexDecode", "AHx", "RunLengthDecode", "RL"};
+  for (size_t i = 0; i < count - 1; ++i) {
+    if (!pdfium::ContainsValue(kValidDecoders, pDecoders->GetStringAt(i)))
+      return false;
+  }
+  return true;
+}
 
 uint32_t A85Decode(const uint8_t* src_buf,
                    uint32_t src_size,
@@ -346,9 +363,12 @@ bool PDF_DataDecode(const uint8_t* src_buf,
   CPDF_Object* pParams =
       pDict ? pDict->GetDirectObjectFor("DecodeParms") : nullptr;
 
-  std::vector<std::pair<ByteString, CPDF_Object*>> DecoderArray;
-  if (CPDF_Array* pDecoders = pDecoder->AsArray()) {
-    CPDF_Array* pParamsArray = ToArray(pParams);
+  std::vector<std::pair<ByteString, const CPDF_Object*>> DecoderArray;
+  if (const CPDF_Array* pDecoders = pDecoder->AsArray()) {
+    if (!ValidateDecoderPipeline(pDecoders))
+      return false;
+
+    const CPDF_Array* pParamsArray = ToArray(pParams);
     for (size_t i = 0; i < pDecoders->GetCount(); ++i) {
       DecoderArray.push_back(
           {pDecoders->GetStringAt(i),

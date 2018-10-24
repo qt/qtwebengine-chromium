@@ -12,6 +12,7 @@
 #include "core/fxcrt/fx_string.h"
 
 class CCodec_ScanlineDecoder;
+class CPDF_Array;
 class CPDF_Dictionary;
 
 // Indexed by 8-bit char code, contains unicode code points.
@@ -20,6 +21,8 @@ extern const uint16_t PDFDocEncoding[256];
 ByteString PDF_NameDecode(const ByteStringView& orig);
 ByteString PDF_NameDecode(const ByteString& orig);
 ByteString PDF_NameEncode(const ByteString& orig);
+bool ValidateDecoderPipeline(const CPDF_Array* pDecoders);
+
 ByteString PDF_EncodeString(const ByteString& src, bool bHex);
 WideString PDF_DecodeText(const uint8_t* pData, uint32_t size);
 WideString PDF_DecodeText(const ByteString& bstr);
