@@ -50,7 +50,6 @@ source_set("power_save_blocker") {
     }
     deps += [
       "//dbus",
-      "//ui/gfx/x",
     ]
   }
 
