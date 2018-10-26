@@ -967,6 +967,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            DialogsFromJavaScriptEndFullscreenEvenInInnerWC);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
+                           FileChooserEndsFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            PopupsFromJavaScriptEndFullscreen);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            FocusFromJavaScriptEndsFullscreen);
