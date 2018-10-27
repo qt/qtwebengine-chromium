@@ -117,7 +117,7 @@ class CC_ANIMATION_EXPORT ScrollOffsetAnimationCurve
   FRIEND_TEST_ALL_PREFIXES(ScrollOffsetAnimationCurveTest,
                            ImpulseUpdateTargetSwitchDirections);
   friend class ScrollOffsetAnimationCurveFactory;
-  enum class AnimationType { kLinear, kEaseInOut, kImpulse };
+  enum class AnimationType { kLinear, kEaseInOut, kImpulse, kEaseOutNatural };
 
   // |duration_behavior| should be provided if (and only if) |animation_type| is
   // kEaseInOut.
