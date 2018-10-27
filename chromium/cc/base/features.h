@@ -16,6 +16,7 @@ namespace features {
 
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kAnimatedImageResume);
 CC_BASE_EXPORT extern bool IsImpulseScrollAnimationEnabled();
+CC_BASE_EXPORT extern bool IsNaturalScrollAnimationEnabled();
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kSynchronizedScrolling);
 
 // When enabled, scrolling within a covering snap area avoids or snaps to inner
