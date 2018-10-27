@@ -144,6 +144,18 @@ BASE_FEATURE(kWaylandExternalBeginFrameSource,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_OZONE)
 
+// Enables naturally behaving scrolling for mousewheel and keyboard initiated
+// scrolls.
+#if BUILDFLAG(IS_QTWEBENGINE)
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
+
 #if BUILDFLAG(IS_LINUX)
 BASE_FEATURE(kGlobalShortcutsPortalPreferredTrigger,
              base::FEATURE_DISABLED_BY_DEFAULT);

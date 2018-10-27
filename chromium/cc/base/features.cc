@@ -23,6 +23,14 @@ std::atomic<bool> s_is_eligible_for_throttle_main_frame_to_60hz = false;
 BASE_FEATURE(kComputeRasterTranslateForExternalScale,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+bool IsNaturalScrollAnimationEnabled() {
+  return base::FeatureList::IsEnabled(features::kNaturalScrollingPersonality);
+}
+
 BASE_FEATURE(kDeferImplInvalidation, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // TODO(crbug.com/446920991): Reduce back to 1 frame delay once we have a
