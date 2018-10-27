@@ -6,6 +6,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
+#include "cc/base/features.h"
 
 namespace cc {
 namespace {
@@ -17,6 +18,8 @@ ScrollOffsetAnimationCurve::DurationBehavior GetDurationBehaviorFromScrollType(
     case ScrollOffsetAnimationCurveFactory::ScrollType::kKeyboard:
       return ScrollOffsetAnimationCurve::DurationBehavior::kConstant;
     case ScrollOffsetAnimationCurveFactory::ScrollType::kMouseWheel:
+      if (features::IsNaturalScrollAnimationEnabled())
+        return ScrollOffsetAnimationCurve::DurationBehavior::kConstant;
       return ScrollOffsetAnimationCurve::DurationBehavior::kInverseDelta;
     case ScrollOffsetAnimationCurveFactory::ScrollType::kAutoScroll:
       NOTREACHED();
@@ -31,6 +34,12 @@ ScrollOffsetAnimationCurveFactory::CreateAnimation(
     ScrollType scroll_type) {
   if (scroll_type == ScrollType::kAutoScroll) {
     return CreateLinearAnimation(target_value);
+  }
+
+  if (features::IsNaturalScrollAnimationEnabled()) {
+    return base::WrapUnique(new ScrollOffsetAnimationCurve(
+        target_value, ScrollOffsetAnimationCurve::AnimationType::kEaseOutNatural,
+        GetDurationBehaviorFromScrollType(scroll_type)));
   }
 
   return CreateEaseInOutAnimation(
