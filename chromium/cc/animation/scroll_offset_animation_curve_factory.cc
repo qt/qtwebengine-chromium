@@ -72,7 +72,7 @@ ScrollOffsetAnimationCurveFactory::CreateEaseInOutAnimation(
     const gfx::ScrollOffset& target_value,
     ScrollOffsetAnimationCurve::DurationBehavior duration_behavior) {
   return base::WrapUnique(new ScrollOffsetAnimationCurve(
-      target_value, ScrollOffsetAnimationCurve::AnimationType::kEaseInOut,
+      target_value, ScrollOffsetAnimationCurve::AnimationType::kEaseOutNatural,
       duration_behavior));
 }
 
