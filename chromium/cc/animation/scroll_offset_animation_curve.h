@@ -116,7 +116,7 @@ class CC_ANIMATION_EXPORT ScrollOffsetAnimationCurve
 
  private:
   friend class ScrollOffsetAnimationCurveFactory;
-  enum class AnimationType { kLinear, kEaseInOut };
+  enum class AnimationType { kLinear, kEaseInOut, kEaseOutNatural };
 
   // |duration_behavior| should be provided if (and only if) |animation_type| is
   // kEaseInOut.

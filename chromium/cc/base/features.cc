@@ -18,6 +18,14 @@ BASE_FEATURE(kAlignSurfaceLayerImplToPixelGrid,
              "AlignSurfaceLayerImplToPixelGrid",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+bool IsNaturalScrollAnimationEnabled() {
+  return base::FeatureList::IsEnabled(features::kNaturalScrollingPersonality);
+}
+
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
 BASE_FEATURE(kSynchronizedScrolling,
@@ -53,6 +61,7 @@ BASE_FEATURE(kUseDMSAAForTiles,
 BASE_FEATURE(kUIEnableSharedImageCacheForGpu,
              "UIEnableSharedImageCacheForGpu",
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 BASE_FEATURE(kReclaimResourcesDelayedFlushInBackground,
              "ReclaimResourcesDelayedFlushInBackground",

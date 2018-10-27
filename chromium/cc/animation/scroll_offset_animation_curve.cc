@@ -56,6 +56,17 @@ static std::unique_ptr<TimingFunction> EaseInOutWithInitialSlope(double slope) {
   return CubicBezierTimingFunction::Create(x1, y1, 0.58, 1);
 }
 
+static std::unique_ptr<TimingFunction> EaseOutNaturalWithInitialSlope(double slope) {
+  // Clamp slope to a sane value.
+  slope = std::clamp(slope, -1000.0, 1000.0);
+
+  // Based on CubicBezierTimingFunction::EaseType::EASE_OUT_NATURAL preset
+  // with first control point scaled.
+  const double x1 = 0.26;
+  const double y1 = slope * x1;
+  return CubicBezierTimingFunction::Create(x1, y1, 0.45, 0.94);
+}
+
 base::TimeDelta VelocityBasedDurationBound(gfx::Vector2dF old_delta,
                                            double velocity,
                                            gfx::Vector2dF new_delta) {
@@ -91,12 +102,16 @@ ScrollOffsetAnimationCurve::ScrollOffsetAnimationCurve(
       animation_type_(animation_type),
       duration_behavior_(duration_behavior),
       has_set_initial_value_(false) {
-  DCHECK_EQ(animation_type == AnimationType::kEaseInOut,
+  DCHECK_EQ(animation_type == AnimationType::kEaseInOut || animation_type_ == AnimationType::kEaseOutNatural,
             duration_behavior.has_value());
   switch (animation_type) {
     case AnimationType::kEaseInOut:
       timing_function_ = CubicBezierTimingFunction::CreatePreset(
           CubicBezierTimingFunction::EaseType::EASE_IN_OUT);
+      break;
+    case AnimationType::kEaseOutNatural:
+      timing_function_ = CubicBezierTimingFunction::CreatePreset(
+          CubicBezierTimingFunction::EaseType::EASE_OUT_NATURAL);
       break;
     case AnimationType::kLinear:
       timing_function_ = LinearTimingFunction::Create();
@@ -114,7 +129,7 @@ ScrollOffsetAnimationCurve::ScrollOffsetAnimationCurve(
       animation_type_(animation_type),
       duration_behavior_(duration_behavior),
       has_set_initial_value_(false) {
-  DCHECK_EQ(animation_type == AnimationType::kEaseInOut,
+  DCHECK_EQ(animation_type == AnimationType::kEaseInOut || animation_type_ == AnimationType::kEaseOutNatural,
             duration_behavior.has_value());
 }
 
@@ -175,6 +190,8 @@ base::TimeDelta ScrollOffsetAnimationCurve::SegmentDuration(
     base::TimeDelta delayed_by,
     std::optional<double> velocity) {
   switch (animation_type_) {
+    case AnimationType::kEaseOutNatural:
+      // FIXME Check!
     case AnimationType::kEaseInOut:
       DCHECK(duration_behavior_.has_value());
       return EaseInOutSegmentDuration(delta, duration_behavior_.value(),
@@ -312,7 +329,7 @@ void ScrollOffsetAnimationCurve::UpdateTarget(base::TimeDelta t,
   base::TimeDelta delayed_by = std::max(base::TimeDelta(), last_retarget_ - t);
   t = std::max(t, last_retarget_);
 
-  if (animation_type_ == AnimationType::kEaseInOut &&
+  if ((animation_type_ == AnimationType::kEaseInOut || animation_type_ == AnimationType::kEaseOutNatural) &&
       std::abs(MaximumDimension(target_value_ - new_target)) < kEpsilon) {
     // Don't update the animation if the new target is the same as the old one.
     // This is done for EaseInOut-style animation curves, since the duration is
@@ -360,7 +377,11 @@ void ScrollOffsetAnimationCurve::UpdateTarget(base::TimeDelta t,
   double new_slope =
       velocity * (new_duration.InSecondsF() / MaximumDimension(new_delta));
 
-  timing_function_ = EaseInOutWithInitialSlope(new_slope);
+  if (animation_type_ == AnimationType::kEaseOutNatural) {
+    timing_function_ = EaseOutNaturalWithInitialSlope(new_slope);
+  } else {
+    timing_function_ = EaseInOutWithInitialSlope(new_slope);
+  }
   initial_value_ = current_position;
   target_value_ = new_target;
   total_animation_duration_ = t + new_duration;
