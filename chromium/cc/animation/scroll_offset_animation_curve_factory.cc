@@ -60,7 +60,7 @@ ScrollOffsetAnimationCurveFactory::CreateEaseInOutAnimation(
   return base::WrapUnique(new ScrollOffsetAnimationCurve(
       target_value,
       CubicBezierTimingFunction::CreatePreset(
-          CubicBezierTimingFunction::EaseType::EASE_IN_OUT),
+          CubicBezierTimingFunction::EaseType::EASE_OUT_NATURAL),
       ScrollOffsetAnimationCurve::AnimationType::kEaseInOut,
       duration_behavior));
 }

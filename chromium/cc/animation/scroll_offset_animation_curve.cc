@@ -45,13 +45,13 @@ static float MaximumDimension(const gfx::Vector2dF& delta) {
 static std::unique_ptr<TimingFunction> EaseInOutWithInitialVelocity(
     double velocity) {
   // Clamp velocity to a sane value.
-  velocity = base::ClampToRange(velocity, -1000.0, 1000.0);
+  velocity = base::ClampToRange(velocity, -100.0, 100.0);
 
-  // Based on CubicBezierTimingFunction::EaseType::EASE_IN_OUT preset
+  // Based on CubicBezierTimingFunction::EaseType::EASE_OUT_NATURAL preset
   // with first control point scaled.
-  const double x1 = 0.42;
+  const double x1 = 0.25;
   const double y1 = velocity * x1;
-  return CubicBezierTimingFunction::Create(x1, y1, 0.58, 1);
+  return CubicBezierTimingFunction::Create(x1, y1, 0.45, 0.94);
 }
 
 }  // namespace
