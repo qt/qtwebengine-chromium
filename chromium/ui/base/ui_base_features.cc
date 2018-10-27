@@ -177,6 +177,18 @@ bool IsPercentBasedScrollingEnabled() {
   return base::FeatureList::IsEnabled(features::kWindowsScrollingPersonality);
 }
 
+// Enables naturally behaving scrolling for mousewheel and keyboard initiated
+// scrolls.
+#if BUILDFLAG(IS_QTWEBENGINE)
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
+
 // Uses a stylus-specific tap slop region parameter for gestures.  Stylus taps
 // tend to slip more than touch taps (presumably because the user doesn't feel
 // the movement friction with a stylus).  As a result, it is harder to tap with

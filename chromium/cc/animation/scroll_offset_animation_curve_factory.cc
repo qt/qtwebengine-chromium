@@ -19,6 +19,8 @@ ScrollOffsetAnimationCurve::DurationBehavior GetDurationBehaviorFromScrollType(
     case ScrollOffsetAnimationCurveFactory::ScrollType::kKeyboard:
       return ScrollOffsetAnimationCurve::DurationBehavior::kConstant;
     case ScrollOffsetAnimationCurveFactory::ScrollType::kMouseWheel:
+      if (features::IsNaturalScrollAnimationEnabled())
+        return ScrollOffsetAnimationCurve::DurationBehavior::kConstant;
       return ScrollOffsetAnimationCurve::DurationBehavior::kInverseDelta;
     case ScrollOffsetAnimationCurveFactory::ScrollType::kAutoScroll:
       NOTREACHED();
@@ -37,6 +39,12 @@ ScrollOffsetAnimationCurveFactory::CreateAnimation(
 
   if (features::IsImpulseScrollAnimationEnabled())
     return CreateImpulseAnimation(target_value);
+
+  if (features::IsNaturalScrollAnimationEnabled()) {
+    return base::WrapUnique(new ScrollOffsetAnimationCurve(
+        target_value, ScrollOffsetAnimationCurve::AnimationType::kEaseOutNatural,
+        GetDurationBehaviorFromScrollType(scroll_type)));
+  }
 
   return CreateEaseInOutAnimation(
       target_value, GetDurationBehaviorFromScrollType(scroll_type));

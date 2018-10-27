@@ -26,6 +26,10 @@ bool IsImpulseScrollAnimationEnabled() {
   return base::FeatureList::IsEnabled(features::kWindowsScrollingPersonality);
 }
 
+bool IsNaturalScrollAnimationEnabled() {
+  return base::FeatureList::IsEnabled(features::kNaturalScrollingPersonality);
+}
+
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
 BASE_FEATURE(kSynchronizedScrolling,
