@@ -137,6 +137,18 @@ BASE_FEATURE(kWaylandSessionManagement,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_OZONE)
 
+// Enables naturally behaving scrolling for mousewheel and keyboard initiated
+// scrolls.
+#if BUILDFLAG(IS_QTWEBENGINE)
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
+
 // When enabled, the feature will query the OS for a default cursor size,
 // to be used in determining the concrete object size of a custom cursor in
 // blink. Currently enabled by default on Windows only.

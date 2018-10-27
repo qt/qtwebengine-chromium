@@ -32,6 +32,13 @@ static constexpr CubicBezierPoints kEaseInOutControlPoints{
     .y2 = 1,
 };
 
+static constexpr CubicBezierPoints kEaseOutNaturalControlPoints{
+    .x1 = 0.26,
+    .y1 = 0.46,
+    .x2 = 0.45,
+    .y2 = 0.94,
+};
+
 CubicBezierPoints GetCubicBezierPointsForProgrammaticScroll() {
   return {
       .x1 = features::kCubicBezierX1.Get(),
@@ -115,9 +122,10 @@ ScrollOffsetAnimationCurve::ScrollOffsetAnimationCurve(
       scroll_type_(scroll_type),
       duration_behavior_(duration_behavior),
       has_set_initial_value_(false) {
-  DCHECK_EQ(animation_type == AnimationType::kEaseInOut,
+  DCHECK_EQ(animation_type == AnimationType::kEaseInOut || animation_type_ == AnimationType::kEaseOutNatural,
             duration_behavior.has_value());
   switch (animation_type) {
+    case AnimationType::kEaseOutNatural:
     case AnimationType::kEaseInOut:
       timing_function_ = GetEasingFunction(/*slope=*/std::nullopt);
       break;
@@ -139,7 +147,7 @@ ScrollOffsetAnimationCurve::ScrollOffsetAnimationCurve(
       scroll_type_(scroll_type),
       duration_behavior_(duration_behavior),
       has_set_initial_value_(false) {
-  DCHECK_EQ(animation_type == AnimationType::kEaseInOut,
+  DCHECK_EQ(animation_type == AnimationType::kEaseInOut || animation_type_ == AnimationType::kEaseOutNatural,
             duration_behavior.has_value());
 }
 
@@ -202,6 +210,7 @@ base::TimeDelta ScrollOffsetAnimationCurve::SegmentDuration(
     base::TimeDelta delayed_by,
     std::optional<double> velocity) {
   switch (animation_type_) {
+    case AnimationType::kEaseOutNatural:
     case AnimationType::kEaseInOut:
       DCHECK(duration_behavior_.has_value());
       return EaseInOutSegmentDuration(delta, duration_behavior_.value(),
@@ -326,7 +335,8 @@ double ScrollOffsetAnimationCurve::CalculateVelocity(base::TimeDelta t) {
 
 std::unique_ptr<TimingFunction> ScrollOffsetAnimationCurve::GetEasingFunction(
     std::optional<double> slope) {
-  CubicBezierPoints control_points = kEaseInOutControlPoints;
+  CubicBezierPoints control_points =
+      (animation_type_ == AnimationType::kEaseOutNatural) ? kEaseOutNaturalControlPoints : kEaseInOutControlPoints;
   if (scroll_type_ == ScrollType::kProgrammatic) {
     control_points = GetCubicBezierPointsForProgrammaticScroll();
   }
@@ -354,7 +364,7 @@ void ScrollOffsetAnimationCurve::UpdateTarget(base::TimeDelta t,
   base::TimeDelta delayed_by = std::max(base::TimeDelta(), last_retarget_ - t);
   t = std::max(t, last_retarget_);
 
-  if (animation_type_ == AnimationType::kEaseInOut &&
+  if ((animation_type_ == AnimationType::kEaseInOut || animation_type_ == AnimationType::kEaseOutNatural) &&
       std::abs(MaximumDimension(target_value_ - new_target)) < kEpsilon) {
     // Don't update the animation if the new target is the same as the old one.
     // This is done for EaseInOut-style animation curves, since the duration is

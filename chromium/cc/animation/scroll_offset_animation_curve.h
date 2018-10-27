@@ -110,7 +110,7 @@ class CC_ANIMATION_EXPORT ScrollOffsetAnimationCurve
   FRIEND_TEST_ALL_PREFIXES(ScrollOffsetAnimationCurveTest,
                            UpdateTargetZeroLastSegmentDuration);
   friend class ScrollOffsetAnimationCurveFactory;
-  enum class AnimationType { kLinear, kEaseInOut };
+  enum class AnimationType { kLinear, kEaseInOut, kEaseOutNatural };
 
   // |duration_behavior| should be provided if (and only if) |animation_type| is
   // kEaseInOut.
