@@ -60,7 +60,7 @@ void ScrollOffsetAnimationsImpl::ScrollAnimationCreate(
       ScrollOffsetAnimationCurve::Create(
           target_offset,
           CubicBezierTimingFunction::CreatePreset(
-              CubicBezierTimingFunction::EaseType::EASE_IN_OUT),
+              CubicBezierTimingFunction::EaseType::EASE_OUT_NATURAL),
           ScrollOffsetAnimationCurve::DurationBehavior::INVERSE_DELTA);
   curve->SetInitialValue(current_offset, delayed_by);
   ScrollAnimationCreateInternal(element_id, std::move(curve),
