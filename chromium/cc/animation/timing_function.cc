@@ -34,6 +34,9 @@ CubicBezierTimingFunction::CreatePreset(EaseType ease_type) {
     case EaseType::EASE_IN_OUT:
       return base::WrapUnique(
           new CubicBezierTimingFunction(ease_type, 0.42, 0.0, 0.58, 1));
+    case EaseType::EASE_OUT_NATURAL:
+      return base::WrapUnique(
+          new CubicBezierTimingFunction(ease_type, 0.26, 0.46, 0.45, 0.94));
     default:
       NOTREACHED();
       return nullptr;
