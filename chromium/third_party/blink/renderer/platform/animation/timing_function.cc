@@ -94,6 +94,9 @@ CubicBezierTimingFunction* CubicBezierTimingFunction::Preset(
   DEFINE_STATIC_REF(
       CubicBezierTimingFunction, ease_in_out,
       (base::AdoptRef(new CubicBezierTimingFunction(EaseType::EASE_IN_OUT))));
+  DEFINE_STATIC_REF(
+      CubicBezierTimingFunction, ease_out_natural,
+      (base::AdoptRef(new CubicBezierTimingFunction(EaseType::EASE_OUT_NATURAL))));
 
   switch (ease_type) {
     case EaseType::EASE:
@@ -104,6 +107,8 @@ CubicBezierTimingFunction* CubicBezierTimingFunction::Preset(
       return ease_out;
     case EaseType::EASE_IN_OUT:
       return ease_in_out;
+    case EaseType::EASE_OUT_NATURAL:
+      return ease_out_natural;
     default:
       NOTREACHED();
   }
@@ -119,6 +124,7 @@ String CubicBezierTimingFunction::ToString() const {
       return "ease-out";
     case CubicBezierTimingFunction::EaseType::EASE_IN_OUT:
       return "ease-in-out";
+    case CubicBezierTimingFunction::EaseType::EASE_OUT_NATURAL:
     case CubicBezierTimingFunction::EaseType::CUSTOM:
       return StrCat({"cubic-bezier(", String::NumberToStringECMAScript(X1()),
                      ", ", String::NumberToStringECMAScript(Y1()), ", ",

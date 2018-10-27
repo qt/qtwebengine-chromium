@@ -23,6 +23,14 @@ std::atomic<bool> s_is_eligible_for_throttle_main_frame_to_60hz = false;
 BASE_FEATURE(kComputeRasterTranslateForExternalScale,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kNaturalScrollingPersonality,
+             "NaturalScrollingPersonality",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+bool IsNaturalScrollAnimationEnabled() {
+  return base::FeatureList::IsEnabled(features::kNaturalScrollingPersonality);
+}
+
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
