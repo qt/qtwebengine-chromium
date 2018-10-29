@@ -9,25 +9,28 @@
 
 #include "base/memory/ptr_util.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/public/browser/web_contents.h"
 
 namespace content {
 
 KeyboardLockServiceImpl::KeyboardLockServiceImpl(
-    RenderFrameHost* render_frame_host)
-    : web_contents_(WebContents::FromRenderFrameHost(render_frame_host)) {
-  DCHECK(web_contents_);
+    RenderFrameHost* render_frame_host,
+    blink::mojom::KeyboardLockServiceRequest request)
+    : FrameServiceBase(render_frame_host, std::move(request)),
+      render_frame_host_(static_cast<RenderFrameHostImpl*>(render_frame_host)) {
+  DCHECK(render_frame_host_);
 }
-
-KeyboardLockServiceImpl::~KeyboardLockServiceImpl() = default;
 
 // static
 void KeyboardLockServiceImpl::CreateMojoService(
     RenderFrameHost* render_frame_host,
     blink::mojom::KeyboardLockServiceRequest request) {
-  mojo::MakeStrongBinding(
-      std::make_unique<KeyboardLockServiceImpl>(render_frame_host),
-      std::move(request));
+  DCHECK(render_frame_host);
+
+  // The object is bound to the lifetime of |render_frame_host| and the mojo
+  // connection. See FrameServiceBase for details.
+  new KeyboardLockServiceImpl(render_frame_host, std::move(request));
 }
 
 void KeyboardLockServiceImpl::RequestKeyboardLock(
@@ -40,5 +43,7 @@ void KeyboardLockServiceImpl::RequestKeyboardLock(
 void KeyboardLockServiceImpl::CancelKeyboardLock() {
   // TODO(zijiehe): Implementation required.
 }
+
+KeyboardLockServiceImpl::~KeyboardLockServiceImpl() = default;
 
 }  // namespace content
