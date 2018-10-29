@@ -236,7 +236,8 @@ bool SystemClipboard::IsValidBufferType(mojom::ClipboardBuffer buffer) {
     case mojom::ClipboardBuffer::kStandard:
       return true;
     case mojom::ClipboardBuffer::kSelection:
-#if defined(USE_X11)
+      // mirroring ui/base/clipboard/clipboard.h
+#if !defined(OS_WIN) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
       return true;
 #else
       // Chrome OS and non-X11 unix builds do not support
