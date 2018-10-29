@@ -27,7 +27,8 @@ struct EnumTraits<blink::mojom::ClipboardBuffer, ui::ClipboardType> {
         *out = ui::CLIPBOARD_TYPE_COPY_PASTE;
         return true;
       case blink::mojom::ClipboardBuffer::kSelection:
-#if defined(USE_X11)
+        // mirroring ui/base/clipboard/clipboard.h
+#if !defined(OS_WIN) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
         *out = ui::CLIPBOARD_TYPE_SELECTION;
         return true;
 #else
