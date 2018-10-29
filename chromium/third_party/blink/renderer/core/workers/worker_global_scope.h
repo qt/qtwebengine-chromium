@@ -112,6 +112,7 @@ class CORE_EXPORT WorkerGlobalScope
   bool IsContextThread() const final;
   const KURL& BaseURL() const final { return url_; }
   String UserAgent() const final { return user_agent_; }
+  HttpsState GetHttpsState() const override { return https_state_; }
 
   DOMTimerCoordinator* Timers() final { return &timers_; }
   SecurityContext& GetSecurityContext() final { return *this; }
@@ -226,6 +227,8 @@ class CORE_EXPORT WorkerGlobalScope
   TraceWrapperMember<WorkerAnimationFrameProvider> animation_frame_provider_;
 
   service_manager::InterfaceProvider interface_provider_;
+
+  HttpsState https_state_;
 };
 
 DEFINE_TYPE_CASTS(WorkerGlobalScope,
