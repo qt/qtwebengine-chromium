@@ -292,8 +292,6 @@ void WorkerFetchContext::PrepareRequest(ResourceRequest& request,
   DCHECK(!user_agent.IsNull());
   request.SetHTTPUserAgent(AtomicString(user_agent));
 
-  FrameLoader::UpgradeInsecureRequest(request, global_scope_);
-
   WrappedResourceRequest webreq(request);
   web_context_->WillSendRequest(webreq);
 }
@@ -390,6 +388,7 @@ void WorkerFetchContext::PopulateResourceRequest(
     const ClientHintsPreferences& hints_preferences,
     const FetchParameters::ResourceWidth& resource_width,
     ResourceRequest& out_request) {
+  FrameLoader::UpgradeInsecureRequest(out_request, global_scope_);
   SetFirstPartyCookieAndRequestorOrigin(out_request);
 }
 
