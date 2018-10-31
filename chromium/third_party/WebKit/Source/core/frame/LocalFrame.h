@@ -300,8 +300,8 @@ class CORE_EXPORT LocalFrame final : public Frame,
   bool should_send_resource_timing_info_to_parent() const {
     return should_send_resource_timing_info_to_parent_;
   }
-  void DidSendResourceTimingInfoToParent() {
-    should_send_resource_timing_info_to_parent_ = false;
+  void SetShouldSendResourceTimingInfoToParent(bool value) {
+    should_send_resource_timing_info_to_parent_ = value;
   }
 
   void SetIsProvisional(bool is_provisional) {
