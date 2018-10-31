@@ -75,7 +75,7 @@ struct COMPONENT_EXPORT(NETWORK_SERVICE) MdnsResponseSendOption
   uint8_t num_send_retries_done = 0;
 
  private:
-  friend class RefCounted<MdnsResponseSendOption>;
+  friend class base::RefCounted<MdnsResponseSendOption>;
 
   ~MdnsResponseSendOption();
 };

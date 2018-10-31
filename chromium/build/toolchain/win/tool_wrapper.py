@@ -200,7 +200,7 @@ class WinTool(object):
           not line.startswith('Copy' + 'right (C' +
                               ') Microsoft Corporation') and
           line):
-        print line
+        print(line)
     return popen.returncode
 
   def ExecActionWrapper(self, arch, rspfile, *dirname):
