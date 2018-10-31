@@ -215,7 +215,8 @@ base::Version OSInfo::Kernel32BaseVersion() const {
         HIWORD(file_version_info->fixed_file_info()->dwFileVersionLS);
     const int patch =
         LOWORD(file_version_info->fixed_file_info()->dwFileVersionLS);
-    return base::Version(std::vector<uint32_t>{major, minor, build, patch});
+    return base::Version(std::vector<uint32_t>{uint32_t(major), uint32_t(minor),
+                                               uint32_t(build), uint32_t(patch)});
   }());
   return *version;
 }

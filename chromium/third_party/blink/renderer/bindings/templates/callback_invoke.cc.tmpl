@@ -193,7 +193,8 @@
   {% endfor %}
   {% if has_variadic_argument %}
   const int argc = {{arguments_length}};
-  v8::Local<v8::Value> argv[argc];
+  std::vector<v8::Local<v8::Value>> argvector(argc);
+  v8::Local<v8::Value>* argv = argvector.data();
   {% for argument in non_variadic_arguments %}
   argv[{{loop.index0}}] = {{argument.v8_name}};
   {% endfor %}

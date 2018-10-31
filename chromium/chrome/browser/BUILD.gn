@@ -3267,7 +3267,7 @@ jumbo_split_static_library("browser") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     sources += [
       "downgrade/user_data_downgrade.cc",
       "downgrade/user_data_downgrade.h",

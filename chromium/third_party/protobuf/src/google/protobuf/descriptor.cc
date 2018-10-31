@@ -487,6 +487,9 @@ void DeleteAllowedProto3Extendee() {
 }
 
 void InitAllowedProto3Extendee() {
+  // Protect against MSVC error:
+  if (allowed_proto3_extendees_)
+    return;
   allowed_proto3_extendees_ = new std::set<string>;
   const char* kOptionNames[] = {
       "FileOptions",      "MessageOptions", "FieldOptions", "EnumOptions",
@@ -842,6 +845,9 @@ void DeleteFileDescriptorTables() {
 }
 
 void InitFileDescriptorTables() {
+  // Protect against MSVC error:
+  if (file_descriptor_tables_)
+    return;
   file_descriptor_tables_ = new FileDescriptorTables();
   internal::OnShutdown(&DeleteFileDescriptorTables);
 }
@@ -1353,6 +1359,9 @@ void DeleteGeneratedPool() {
 }
 
 static void InitGeneratedPool() {
+  // Protect against MSVC error:
+  if (generated_pool_)
+    return;
   generated_database_ = new EncodedDescriptorDatabase;
   generated_pool_ = new DescriptorPool(generated_database_);
   generated_pool_->InternalSetLazilyBuildDependencies();

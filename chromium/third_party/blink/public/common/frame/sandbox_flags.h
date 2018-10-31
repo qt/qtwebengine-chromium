@@ -54,7 +54,11 @@ inline constexpr WebSandboxFlags operator~(WebSandboxFlags flags) {
 }
 
 inline std::ostream& operator<<(std::ostream& out, WebSandboxFlags flags) {
+#ifndef _MSC_VER
   return out << std::bitset<sizeof(int) * 8>(static_cast<int>(flags));
+#else
+  return out << static_cast<int>(flags);
+#endif
 }
 
 }  // namespace blink

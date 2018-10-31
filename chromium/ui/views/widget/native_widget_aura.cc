@@ -1061,7 +1061,7 @@ void CloseWindow(aura::Window* window) {
 }
 #endif
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 BOOL CALLBACK WindowCallbackProc(HWND hwnd, LPARAM lParam) {
   aura::Window* root_window =
       DesktopWindowTreeHostWin::GetContentWindowForHWND(hwnd);
@@ -1073,7 +1073,7 @@ BOOL CALLBACK WindowCallbackProc(HWND hwnd, LPARAM lParam) {
 
 // static
 void Widget::CloseAllSecondaryWidgets() {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   EnumThreadWindows(GetCurrentThreadId(), WindowCallbackProc, 0);
 #endif
 
