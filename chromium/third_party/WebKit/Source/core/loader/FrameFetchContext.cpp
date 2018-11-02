@@ -818,7 +818,7 @@ bool FrameFetchContext::UpdateTimingInfoForIFrameNavigation(
   if (!GetFrame()->should_send_resource_timing_info_to_parent())
     return false;
   // location may have been changed after initial navigation,
-  if (MasterDocumentLoader()->LoadType() == WebFrameLoadType::kBackForward) {
+  if (MasterDocumentLoader()->LoadType() == kFrameLoadTypeBackForward) {
     // ...and do not report subsequent navigations in the iframe too.
     GetFrame()->SetShouldSendResourceTimingInfoToParent(false);
     return false;
