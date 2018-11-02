@@ -61,7 +61,8 @@ class CPDF_Object {
   virtual WideString GetUnicodeText() const;
   virtual float GetNumber() const;
   virtual int GetInteger() const;
-  virtual CPDF_Dictionary* GetDict() const;
+  virtual CPDF_Dictionary* GetDict();
+  virtual const CPDF_Dictionary* GetDict() const;
 
   virtual void SetString(const ByteString& str);
 

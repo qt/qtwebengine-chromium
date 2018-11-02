@@ -36,7 +36,11 @@ CPDF_Object::Type CPDF_Stream::GetType() const {
   return STREAM;
 }
 
-CPDF_Dictionary* CPDF_Stream::GetDict() const {
+CPDF_Dictionary* CPDF_Stream::GetDict() {
+  return m_pDict.get();
+}
+
+const CPDF_Dictionary* CPDF_Stream::GetDict() const {
   return m_pDict.get();
 }
 
@@ -83,11 +87,11 @@ std::unique_ptr<CPDF_Object> CPDF_Stream::CloneNonCyclic(
   pAcc->LoadAllDataRaw();
 
   uint32_t streamSize = pAcc->GetSize();
-  CPDF_Dictionary* pDict = GetDict();
+  const CPDF_Dictionary* pDict = GetDict();
   std::unique_ptr<CPDF_Dictionary> pNewDict;
   if (pDict && !pdfium::ContainsKey(*pVisited, pDict)) {
     pNewDict = ToDictionary(
-        static_cast<CPDF_Object*>(pDict)->CloneNonCyclic(bDirect, pVisited));
+        static_cast<const CPDF_Object*>(pDict)->CloneNonCyclic(bDirect, pVisited));
   }
   return pdfium::MakeUnique<CPDF_Stream>(pAcc->DetachData(), streamSize,
                                          std::move(pNewDict));

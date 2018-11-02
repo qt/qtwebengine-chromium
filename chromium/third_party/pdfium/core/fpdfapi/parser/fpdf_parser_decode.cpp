@@ -324,7 +324,7 @@ std::unique_ptr<CCodec_ScanlineDecoder> FPDFAPI_CreateFlateDecoder(
 uint32_t FPDFAPI_FlateOrLZWDecode(bool bLZW,
                                   const uint8_t* src_buf,
                                   uint32_t src_size,
-                                  CPDF_Dictionary* pParams,
+                                  const CPDF_Dictionary* pParams,
                                   uint32_t estimated_size,
                                   uint8_t** dest_buf,
                                   uint32_t* dest_size) {
@@ -355,7 +355,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
                     uint8_t** dest_buf,
                     uint32_t* dest_size,
                     ByteString* ImageEncoding,
-                    CPDF_Dictionary** pImageParms) {
+                    UnownedPtr<const CPDF_Dictionary>* pImageParams) {
   CPDF_Object* pDecoder = pDict ? pDict->GetDirectObjectFor("Filter") : nullptr;
   if (!pDecoder || (!pDecoder->IsArray() && !pDecoder->IsName()))
     return false;
@@ -384,7 +384,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
   for (size_t i = 0; i < nSize; ++i) {
     int estimated_size = i == nSize - 1 ? last_estimated_size : 0;
     ByteString decoder = DecoderArray[i].first;
-    CPDF_Dictionary* pParam = ToDictionary(DecoderArray[i].second);
+    const CPDF_Dictionary* pParam = ToDictionary(DecoderArray[i].second);
     uint8_t* new_buf = nullptr;
     uint32_t new_size = 0xFFFFFFFF;
     uint32_t offset = FX_INVALID_OFFSET;
@@ -395,7 +395,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
         *ImageEncoding = "FlateDecode";
         *dest_buf = last_buf;
         *dest_size = last_size;
-        *pImageParms = pParam;
+        *pImageParams = pParam;
         return true;
       }
       offset = FPDFAPI_FlateOrLZWDecode(false, last_buf, last_size, pParam,
@@ -412,7 +412,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
         *ImageEncoding = "RunLengthDecode";
         *dest_buf = last_buf;
         *dest_size = last_size;
-        *pImageParms = pParam;
+        *pImageParams = pParam;
         return true;
       }
       offset = RunLengthDecode(last_buf, last_size, &new_buf, &new_size);
@@ -423,7 +423,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
       else if (decoder == "CCF")
         decoder = "CCITTFaxDecode";
       *ImageEncoding = decoder;
-      *pImageParms = pParam;
+      *pImageParams = pParam;
       *dest_buf = last_buf;
       *dest_size = last_size;
       return true;
@@ -438,7 +438,7 @@ bool PDF_DataDecode(const uint8_t* src_buf,
     last_size = new_size;
   }
   ImageEncoding->clear();
-  *pImageParms = nullptr;
+  *pImageParams = nullptr;
   *dest_buf = last_buf;
   *dest_size = last_size;
   return true;

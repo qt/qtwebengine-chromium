@@ -28,13 +28,13 @@ class CPDF_StreamAcc : public Retainable {
   void LoadAllDataRaw();
 
   const CPDF_Stream* GetStream() const { return m_pStream.Get(); }
-  CPDF_Dictionary* GetDict() const;
+  const CPDF_Dictionary* GetDict() const;
 
   const uint8_t* GetData() const;
   uint8_t* GetData();
   uint32_t GetSize() const;
   const ByteString& GetImageDecoder() const { return m_ImageDecoder; }
-  const CPDF_Dictionary* GetImageParam() const { return m_pImageParam; }
+  const CPDF_Dictionary* GetImageParam() const { return m_pImageParam.Get(); }
   std::unique_ptr<uint8_t, FxFreeDeleter> DetachData();
 
  protected:
@@ -48,7 +48,7 @@ class CPDF_StreamAcc : public Retainable {
   uint32_t m_dwSize = 0;
   bool m_bNewBuf = false;
   ByteString m_ImageDecoder;
-  CPDF_Dictionary* m_pImageParam = nullptr;
+  UnownedPtr<const CPDF_Dictionary> m_pImageParam;
   UnownedPtr<const CPDF_Stream> const m_pStream;
   uint8_t* m_pSrcData = nullptr;
 };

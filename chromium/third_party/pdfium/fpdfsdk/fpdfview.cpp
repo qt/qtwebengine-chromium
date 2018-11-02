@@ -390,14 +390,14 @@ unsigned long DecodeStreamMaybeCopyAndReturnLength(const CPDF_Stream* stream,
   ASSERT(stream);
   uint8_t* data = stream->GetRawData();
   uint32_t len = stream->GetRawSize();
-  CPDF_Dictionary* dict = stream->GetDict();
+  const CPDF_Dictionary* dict = stream->GetDict();
   CPDF_Object* decoder = dict ? dict->GetDirectObjectFor("Filter") : nullptr;
   if (decoder && (decoder->IsArray() || decoder->IsName())) {
     // Decode the stream if one or more stream filters are specified.
     uint8_t* decoded_data = nullptr;
     uint32_t decoded_len = 0;
     ByteString dummy_last_decoder;
-    CPDF_Dictionary* dummy_last_param;
+    UnownedPtr<const CPDF_Dictionary> dummy_last_param;
     if (PDF_DataDecode(data, len, dict, dict->GetIntegerFor("DL"), false,
                        &decoded_data, &decoded_len, &dummy_last_decoder,
                        &dummy_last_param)) {

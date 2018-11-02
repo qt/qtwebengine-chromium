@@ -55,7 +55,11 @@ int CPDF_Object::GetInteger() const {
   return 0;
 }
 
-CPDF_Dictionary* CPDF_Object::GetDict() const {
+CPDF_Dictionary* CPDF_Object::GetDict() {
+  return nullptr;
+}
+
+const CPDF_Dictionary* CPDF_Object::GetDict() const {
   return nullptr;
 }
 
