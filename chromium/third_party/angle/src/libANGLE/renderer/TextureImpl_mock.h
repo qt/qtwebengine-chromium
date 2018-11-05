@@ -31,7 +31,7 @@ class MockTextureImpl : public TextureImpl
                            GLenum,
                            const gl::PixelUnpackState &,
                            const uint8_t *));
-    MOCK_METHOD8(setSubImage,
+    MOCK_METHOD9(setSubImage,
                  gl::Error(const gl::Context *,
                            GLenum,
                            size_t,
@@ -39,6 +39,7 @@ class MockTextureImpl : public TextureImpl
                            GLenum,
                            GLenum,
                            const gl::PixelUnpackState &,
+                           gl::Buffer *,
                            const uint8_t *));
     MOCK_METHOD8(setCompressedImage,
                  gl::Error(const gl::Context *,

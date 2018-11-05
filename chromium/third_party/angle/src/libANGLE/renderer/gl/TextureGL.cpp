@@ -277,11 +277,10 @@ gl::Error TextureGL::setSubImage(const gl::Context *context,
                                  GLenum format,
                                  GLenum type,
                                  const gl::PixelUnpackState &unpack,
+                                 gl::Buffer *unpackBuffer,
                                  const uint8_t *pixels)
 {
     ASSERT(CompatibleTextureTarget(getTarget(), target));
-    const gl::Buffer *unpackBuffer =
-        context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
 
     nativegl::TexSubImageFormat texSubImageFormat =
         nativegl::GetTexSubImageFormat(mFunctions, mWorkarounds, format, type);

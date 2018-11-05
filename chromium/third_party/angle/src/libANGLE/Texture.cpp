@@ -930,6 +930,7 @@ Error Texture::setImage(const Context *context,
 
 Error Texture::setSubImage(const Context *context,
                            const PixelUnpackState &unpackState,
+                           Buffer *unpackBuffer,
                            GLenum target,
                            size_t level,
                            const Box &area,
@@ -942,7 +943,7 @@ Error Texture::setSubImage(const Context *context,
 
     ANGLE_TRY(ensureSubImageInitialized(context, target, level, area));
 
-    return mTexture->setSubImage(context, target, level, area, format, type, unpackState, pixels);
+    return mTexture->setSubImage(context, target, level, area, format, type, unpackState, unpackBuffer, pixels);
 }
 
 Error Texture::setCompressedImage(const Context *context,

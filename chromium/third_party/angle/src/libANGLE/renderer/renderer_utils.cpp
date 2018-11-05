@@ -525,7 +525,7 @@ gl::Error IncompleteTextureSet::getIncompleteTexture(
              face++)
         {
             ANGLE_TRY(
-                t->setSubImage(context, unpack, face, 0, area, GL_RGBA, GL_UNSIGNED_BYTE, color));
+                t->setSubImage(context, unpack, nullptr, face, 0, area, GL_RGBA, GL_UNSIGNED_BYTE, color));
         }
     }
     else if (type == GL_TEXTURE_2D_MULTISAMPLE)
@@ -536,7 +536,7 @@ gl::Error IncompleteTextureSet::getIncompleteTexture(
     else
     {
         ANGLE_TRY(
-            t->setSubImage(context, unpack, createType, 0, area, GL_RGBA, GL_UNSIGNED_BYTE, color));
+            t->setSubImage(context, unpack, nullptr, createType, 0, area, GL_RGBA, GL_UNSIGNED_BYTE, color));
     }
 
     t->syncState();
