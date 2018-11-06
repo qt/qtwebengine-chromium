@@ -16,7 +16,9 @@
 #include "components/download/public/common/url_download_request_handle.h"
 #include "content/browser/byte_stream.h"
 #include "content/browser/download/byte_stream_input_stream.h"
+#include "content/browser/download/download_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/child_process_host.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -39,6 +41,7 @@ std::unique_ptr<UrlDownloader> UrlDownloader::BeginDownload(
       Referrer::SanitizeForRequest(request->url(), referrer);
   Referrer::SetReferrerForRequest(request.get(), sanitized_referrer);
 
+  // TODO(xingliu): Figure out if we can support blob scheme.
   if (request->url().SchemeIs(url::kBlobScheme))
     return nullptr;
 
@@ -83,9 +86,13 @@ void UrlDownloader::Start() {
 void UrlDownloader::OnReceivedRedirect(net::URLRequest* request,
                                        const net::RedirectInfo& redirect_info,
                                        bool* defer_redirect) {
-  DVLOG(1) << "OnReceivedRedirect: " << request_->url().spec();
-  if (follow_cross_origin_redirects_)
+  DVLOG(1) << __func__ << " , request url: " << request_->url().spec()
+           << " ,redirect url:" << redirect_info.new_url;
+  if (follow_cross_origin_redirects_ &&
+      CanRequestURL(content::ChildProcessHost::kInvalidUniqueID,
+                    redirect_info.new_url)) {
     return;
+  }
 
   // Block redirects since there is no security policy being applied here.
   core_.OnWillAbort(download::DOWNLOAD_INTERRUPT_REASON_SERVER_UNREACHABLE);
@@ -99,6 +106,14 @@ void UrlDownloader::OnResponseStarted(net::URLRequest* request, int net_error) {
 
   if (net_error != net::OK) {
     ResponseCompleted(net_error);
+    return;
+  }
+
+  if (!CanRequestURL(content::ChildProcessHost::kInvalidUniqueID,
+                     request_->url())) {
+    core_.OnWillAbort(
+        download::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST);
+    request_->CancelWithError(net::ERR_DISALLOWED_URL_SCHEME);
     return;
   }
 
