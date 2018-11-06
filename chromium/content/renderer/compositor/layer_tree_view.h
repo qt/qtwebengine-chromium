@@ -257,6 +257,8 @@ class LayerTreeView : public blink::WebLayerTreeView,
 
   bool layer_tree_frame_sink_request_failed_while_invisible_ = false;
 
+  int layer_tree_frame_sink_init_failures = 0;
+
   bool in_synchronous_compositor_update_ = false;
 
   viz::FrameSinkId frame_sink_id_;
