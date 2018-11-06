@@ -238,6 +238,8 @@ class CONTENT_EXPORT LayerTreeView
 
   bool layer_tree_frame_sink_request_failed_while_invisible_ = false;
 
+  int layer_tree_frame_sink_init_failures = 0;
+
   bool in_synchronous_compositor_update_ = false;
   base::OnceClosure layout_and_paint_async_callback_;
 
