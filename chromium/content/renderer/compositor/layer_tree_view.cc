@@ -131,6 +131,7 @@ void LayerTreeView::SetLayerTreeFrameSink(
     layer_tree_host_->SetRenderFrameObserver(
         std::move(render_frame_metadata_observer));
   }
+  layer_tree_frame_sink_init_failures = 0;
   layer_tree_host_->SetLayerTreeFrameSink(std::move(layer_tree_frame_sink));
 }
 
@@ -261,6 +262,14 @@ void LayerTreeView::DidFailToInitializeLayerTreeFrameSink() {
     return;
   }
   layer_tree_frame_sink_request_failed_while_invisible_ = false;
+
+  // Guard against infinite loop of trying to request a new sink, and constantly failing,
+  // and trying again, when the child's main process was killed / crashed. This allows the
+  // orhpan render processes to quit gracefully, isntead of spinning the CPU forever.
+  ++layer_tree_frame_sink_init_failures;
+  if (layer_tree_frame_sink_init_failures > 9)
+      return;
+
   layer_tree_host_->GetTaskRunnerProvider()->MainThreadTaskRunner()->PostTask(
       FROM_HERE, base::BindOnce(&LayerTreeView::RequestNewLayerTreeFrameSink,
                                 weak_factory_.GetWeakPtr()));

@@ -147,6 +147,8 @@ class CONTENT_EXPORT LayerTreeView : public cc::LayerTreeHostClient,
   // true.
   bool layer_tree_frame_sink_request_failed_while_invisible_ = false;
 
+  int layer_tree_frame_sink_init_failures = 0;
+
   base::circular_deque<
       std::pair<uint32_t,
                 std::vector<base::OnceCallback<void(base::TimeTicks)>>>>
