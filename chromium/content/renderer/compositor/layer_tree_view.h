@@ -219,6 +219,8 @@ class CONTENT_EXPORT LayerTreeView
 
   bool layer_tree_frame_sink_request_failed_while_invisible_ = false;
 
+  int layer_tree_frame_sink_init_failures = 0;
+
   viz::FrameSinkId frame_sink_id_;
   base::circular_deque<
       std::pair<uint32_t,
