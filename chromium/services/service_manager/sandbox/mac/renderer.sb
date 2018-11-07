@@ -50,3 +50,17 @@
 ; file-read-metadata /System/Library/LinguisticData/en/US/hyphenation.dat
 ; for CFStringIsHyphenationAvailableForLocale and CFStringGetHyphenationLocationBeforeIndex
 (allow file-read* (subpath "/System/Library/LinguisticData"))
+
+; https://crbug.com/850021
+(allow mach-lookup (global-name "com.apple.cvmsServ"))
+
+; Reads of signed Mach-O blobs created by the CVMS server.
+; https://crbug.com/850021
+(allow file-read*
+  (extension "com.apple.cvms.kernel")
+  (prefix "/private/tmp/cvmsCodeSignObj")
+  (subpath "/private/var/db/CVMS"))
+
+; Reads from /Library.
+(allow file-read-data
+  (subpath "/Library/GPUBundles"))  ; https://crbug.com/850021
