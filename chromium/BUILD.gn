@@ -1062,7 +1062,7 @@ group("gn_visibility") {
   }
 }
 
-if (!is_ios) {
+if (!is_ios && !is_qtwebengine) {
   group("chromedriver") {
     testonly = true
 
