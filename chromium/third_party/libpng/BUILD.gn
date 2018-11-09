@@ -11,6 +11,8 @@ declare_args() {
   use_system_libpng = false
 }
 
+assert(!is_linux || host_toolchain != current_toolchain, "Trying to include png for host build")
+
 config("libpng_config") {
   include_dirs = [ "." ]
 
