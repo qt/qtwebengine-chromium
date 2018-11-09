@@ -1030,7 +1030,7 @@ group("gn_visibility") {
   }
 }
 
-if (!is_ios) {
+if (!is_ios && !use_qt) {
   group("chromedriver") {
     testonly = true
 
