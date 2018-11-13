@@ -109,7 +109,15 @@ Object* PrepareSlowElementsForSort(Handle<JSObject> object, uint32_t limit) {
   new_dict->UpdateMaxNumberKey(max_key, object);
   JSObject::ValidateElements(*object);
 
-  return *isolate->factory()->NewNumberFromUint(result);
+  // TODO(jgruber, szuend, chromium:897512): This is a workaround to prevent
+  // returning a number greater than array.length to Array.p.sort, which could
+  // trigger OOB accesses. There is still a correctness bug here though in
+  // how we shift around undefineds and delete elements in the two blocks above.
+  // This needs to be fixed soon.
+  const uint32_t number_of_non_undefined_elements = std::min(limit, result);
+
+  return *isolate->factory()->NewNumberFromUint(
+      number_of_non_undefined_elements);
 }
 
 // Collects all defined (non-hole) and non-undefined (array) elements at the
@@ -123,6 +131,7 @@ Object* PrepareElementsForSort(Handle<JSObject> object, uint32_t limit) {
   }
   if (object->HasStringWrapperElements()) {
     int len = String::cast(Handle<JSValue>::cast(object)->value())->length();
+    DCHECK_LE(len, limit);
     return Smi::FromInt(len);
   }
 
@@ -241,6 +250,7 @@ Object* PrepareElementsForSort(Handle<JSObject> object, uint32_t limit) {
     }
   }
 
+  DCHECK_LE(result, limit);
   return *isolate->factory()->NewNumberFromUint(result);
 }
 
