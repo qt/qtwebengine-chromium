@@ -489,6 +489,7 @@ class HandleScopeImplementer {
   // Returns the last entered context or an empty handle if no
   // contexts have been entered.
   inline Handle<Context> LastEnteredContext();
+  inline Handle<Context> LastEnteredOrMicrotaskContext();
 
   inline void EnterMicrotaskContext(Handle<Context> context);
   inline void LeaveMicrotaskContext();
@@ -636,6 +637,12 @@ bool HandleScopeImplementer::LastEnteredContextWas(Handle<Context> context) {
 
 
 Handle<Context> HandleScopeImplementer::LastEnteredContext() {
+  if (entered_contexts_.empty()) return Handle<Context>::null();
+  return Handle<Context>(entered_contexts_.back(), isolate_);
+}
+
+Handle<Context> HandleScopeImplementer::LastEnteredOrMicrotaskContext() {
+  if (MicrotaskContextIsLastEnteredContext()) return MicrotaskContext();
   if (entered_contexts_.empty()) return Handle<Context>::null();
   return Handle<Context>(entered_contexts_.back(), isolate_);
 }
