@@ -1855,7 +1855,7 @@ typedef enum {
 
 // First, instantiate our default exec_ops() implementation using the default compiliation target.
 
-#if defined(SKCMS_PORTABLE) || !(defined(__clang__) || defined(__GNUC__))
+#if defined(SKCMS_PORTABLE) || defined(__INTEL_COMPILER) || !(defined(__clang__) || defined(__GNUC__))
     #define N 1
 
     #define F   float
@@ -1923,7 +1923,7 @@ typedef enum {
 
 // Now, instantiate any other versions of run_program() we may want for runtime detection.
 #if !defined(SKCMS_PORTABLE) && (defined(__clang__) || defined(__GNUC__)) \
-        && defined(__x86_64__) && !defined(__AVX2__)
+        && defined(__x86_64__) && !defined(__AVX2__) && !defined(__INTEL_COMPILER)
     #define N 8
     #define F     Fx8
     #define U64 U64x8
