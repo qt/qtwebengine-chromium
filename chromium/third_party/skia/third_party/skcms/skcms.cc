@@ -1829,7 +1829,7 @@ typedef enum {
 // First, instantiate our default exec_ops() implementation using the default compiliation target.
 
 namespace baseline {
-#if defined(SKCMS_PORTABLE) || !(defined(__clang__) || defined(__GNUC__))
+#if defined(SKCMS_PORTABLE) || defined(__INTEL_COMPILER) || !(defined(__clang__) || defined(__GNUC__))
     #define N 1
     using F   = float;
     using U64 = uint64_t;
@@ -1873,7 +1873,7 @@ namespace baseline {
         ((defined(__APPLE__) && defined(__apple_build_version__) && __clang_major__ >= 9) || \
          (!defined(__apple_build_version__) && defined(__clang__) && __clang_major__ >= 5) || \
          (!defined(__clang__) && defined(__GNUC__)))      \
-     && defined(__x86_64__) && !defined(__AVX2__)
+     && defined(__x86_64__) && !defined(__AVX2__) && !defined(__INTEL_COMPILER)
 
     #if defined(__clang__)
         #pragma clang attribute push(__attribute__((target("avx2,f16c"))), apply_to=function)
