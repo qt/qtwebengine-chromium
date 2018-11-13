@@ -793,6 +793,7 @@ function InnerArraySort(array, length, comparefn) {
   // array and move the undefineds after that. Holes are removed.
   // This happens for Array as well as non-Array objects.
   var num_non_undefined = %PrepareElementsForSort(array, length);
+  assert(num_non_undefined <= length);
 
   QuickSort(array, 0, num_non_undefined);
 
