@@ -283,7 +283,7 @@ static_library("bundled_zlib") {
   }
 
   if (current_cpu == "arm" || current_cpu == "arm64") {
-    if (arm_use_neon) {
+    if (arm_use_neon  && arm_use_thumb) {
       deps += [ ":zlib_adler32_simd" ]
 
       deps += [ ":zlib_arm_crc32" ]
