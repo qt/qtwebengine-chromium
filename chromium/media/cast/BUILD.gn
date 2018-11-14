@@ -267,7 +267,7 @@ static_library("test_support") {
   # TODO(miu): There *are* hardware decoder APIs available via FFMPEG, and we
   # should use those for the Android receiver.  See media's BUILD.gn for usage
   # details.  http://crbug.com/558714
-  if (!is_android && !is_chromecast) {
+  if (!is_android && !is_chromecast && !use_qt) {
     sources += [
       "test/fake_media_source.cc",
       "test/fake_media_source.h",
