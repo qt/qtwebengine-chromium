@@ -278,7 +278,7 @@ static_library("bundled_zlib") {
     sources -= [ "inflate.c" ]
   }
 
-  if (current_cpu == "arm" || current_cpu == "arm64") {
+  if ((current_cpu == "arm" && arm_use_thumb) || current_cpu == "arm64") {
     if (arm_use_neon) {
       deps += [ ":zlib_adler32_simd" ]
 
