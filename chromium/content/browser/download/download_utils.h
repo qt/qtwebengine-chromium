@@ -9,7 +9,6 @@
 
 #include "base/optional.h"
 #include "content/common/content_export.h"
-#include "url/gurl.h"
 
 namespace download {
 class DownloadUrlParameters;
@@ -33,9 +32,6 @@ CreateURLRequestOnIOThread(download::DownloadUrlParameters* params);
 
 storage::BlobStorageContext* BlobStorageContextGetter(
     ResourceContext* resource_context);
-
-// Returns if the URL passes the security check and can be requested.
-bool CanRequestURL(int render_process_id, const GURL& url);
 
 }  // namespace content
 

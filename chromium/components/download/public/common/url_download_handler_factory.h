@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_DOWNLOAD_PUBLIC_COMMON_URL_DOWNLOAD_HANDLER_FACTORY_H_
 #define COMPONENTS_DOWNLOAD_PUBLIC_COMMON_URL_DOWNLOAD_HANDLER_FACTORY_H_
 
+#include "components/download/public/common/download_utils.h"
 #include "components/download/public/common/url_download_handler.h"
 
 namespace download {
@@ -27,6 +28,7 @@ class COMPONENTS_DOWNLOAD_EXPORT UrlDownloadHandlerFactory {
       base::WeakPtr<download::UrlDownloadHandler::Delegate> delegate,
       scoped_refptr<download::DownloadURLLoaderFactoryGetter>
           url_loader_factory_getter,
+      const URLSecurityPolicy& url_security_policy,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
   virtual ~UrlDownloadHandlerFactory();
@@ -42,6 +44,7 @@ class COMPONENTS_DOWNLOAD_EXPORT UrlDownloadHandlerFactory {
       base::WeakPtr<download::UrlDownloadHandler::Delegate> delegate,
       scoped_refptr<download::DownloadURLLoaderFactoryGetter>
           url_loader_factory_getter,
+      const URLSecurityPolicy& url_security_policy,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) = 0;
 };
 

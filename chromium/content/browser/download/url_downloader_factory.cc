@@ -21,6 +21,7 @@ UrlDownloaderFactory::CreateUrlDownloadHandler(
     base::WeakPtr<download::UrlDownloadHandler::Delegate> delegate,
     scoped_refptr<download::DownloadURLLoaderFactoryGetter>
         url_loader_factory_getter,
+    const download::URLSecurityPolicy& url_security_policy,
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
   std::unique_ptr<net::URLRequest> url_request =
       DownloadRequestCore::CreateRequestOnIOThread(true, params.get());
