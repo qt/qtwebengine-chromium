@@ -22,7 +22,7 @@
 #include "services/service_manager/public/cpp/interface_provider.h"
 
 #if BUILDFLAG(ENABLE_WEBRTC)
-#include "content/renderer/media/stream/media_stream_device_observer.h"
+#include "content/renderer/media/media_stream_device_observer.h"
 #endif
 
 namespace content {
