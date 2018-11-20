@@ -112,6 +112,9 @@ struct URLRequest {
   // done if there really is no way to determine the correct value.
   url.mojom.Url site_for_cookies;
 
+  // Top-level frame URL for QtWebEngine.
+  url.mojom.Url first_party_url;
+
   // Boolean indicating whether SameSite cookies are allowed to be attached
   // to the request. It should be used as additional input to network side
   // checks.

@@ -26,6 +26,9 @@ struct CONTENT_EXPORT NavigationRequestInfo {
   NavigationRequestInfo(mojom::CommonNavigationParamsPtr common_params,
                         mojom::BeginNavigationParamsPtr begin_params,
                         const GURL& site_for_cookies,
+#if defined(TOOLKIT_QT)
+                        const GURL& first_party_url,
+#endif
                         const net::NetworkIsolationKey& network_isolation_key,
                         bool is_main_frame,
                         bool parent_is_main_frame,
@@ -50,6 +53,10 @@ struct CONTENT_EXPORT NavigationRequestInfo {
   // checked by the third-party cookie blocking policy.
   const GURL site_for_cookies;
 
+#if defined(TOOLKIT_QT)
+  // The top level frame URL
+  const GURL first_party_url;
+#endif
   // Navigation resource requests will be keyed using |network_isolation_key|
   // for accessing shared network resources like the http cache.
   const net::NetworkIsolationKey network_isolation_key;

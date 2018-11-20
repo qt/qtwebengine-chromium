@@ -57,6 +57,10 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   std::string method = "GET";
   GURL url;
   GURL site_for_cookies;
+#if defined(TOOLKIT_QT)
+  // The top-level frame URL.
+  GURL first_party_url;
+#endif
   bool attach_same_site_cookies = false;
   bool update_first_party_url_on_redirect = false;
 

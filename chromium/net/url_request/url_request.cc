@@ -461,6 +461,12 @@ void URLRequest::set_site_for_cookies(const GURL& site_for_cookies) {
   DCHECK(!is_pending_);
   site_for_cookies_ = site_for_cookies;
 }
+#if defined(TOOLKIT_QT)
+void URLRequest::set_first_party_url(const GURL& first_party_url) {
+  DCHECK(!is_pending_);
+  first_party_url_ = first_party_url;
+}
+#endif
 
 void URLRequest::set_first_party_url_policy(
     FirstPartyURLPolicy first_party_url_policy) {

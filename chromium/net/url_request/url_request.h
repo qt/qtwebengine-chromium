@@ -288,6 +288,12 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   // This method may only be called before Start().
   void set_site_for_cookies(const GURL& site_for_cookies);
 
+#if defined(TOOLKIT_QT)
+  // The top-level frame URL.
+  const GURL& first_party_url() const { return first_party_url_; }
+  void set_first_party_url(const GURL& first_party_url);
+#endif
+
   // This key is used to isolate requests from different contexts in accessing
   // shared network resources like the cache.
   const NetworkIsolationKey& network_isolation_key() const {
@@ -851,6 +857,9 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   std::vector<GURL> url_chain_;
   GURL site_for_cookies_;
+#if defined(TOOLKIT_QT)
+  GURL first_party_url_;
+#endif
 
   NetworkIsolationKey network_isolation_key_;
 

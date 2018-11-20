@@ -75,6 +75,11 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
   static const GURL& site_for_cookies(const network::ResourceRequest& request) {
     return request.site_for_cookies;
   }
+#if defined(TOOLKIT_QT)
+  static const GURL& first_party_url(const network::ResourceRequest& request) {
+    return request.first_party_url;
+  }
+#endif
   static bool attach_same_site_cookies(
       const network::ResourceRequest& request) {
     return request.attach_same_site_cookies;

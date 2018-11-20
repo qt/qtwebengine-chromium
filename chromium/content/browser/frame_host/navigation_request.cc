@@ -2130,6 +2130,14 @@ void NavigationRequest::OnStartChecksComplete(
   // Mark the fetch_start (Navigation Timing API).
   commit_params_->navigation_timing->fetch_start = base::TimeTicks::Now();
 
+#if defined(TOOLKIT_QT)
+  const GURL& top_document_url =
+          frame_tree_node_->frame_tree()->root()->current_url();
+  const GURL& first_party_url =
+          frame_tree_node_->IsMainFrame() ? common_params_->url
+                                          : top_document_url;
+#endif
+
   GURL site_for_cookies =
       frame_tree_node_->current_frame_host()
           ->ComputeSiteForCookiesForNavigation(common_params_->url);
@@ -2166,6 +2174,9 @@ void NavigationRequest::OnStartChecksComplete(
       browser_context, partition,
       std::make_unique<NavigationRequestInfo>(
           common_params_->Clone(), begin_params_.Clone(), site_for_cookies,
+#if defined(TOOLKIT_QT)
+          first_party_url,
+#endif
           GetNetworkIsolationKey(), frame_tree_node_->IsMainFrame(),
           parent_is_main_frame, IsSecureFrame(frame_tree_node_->parent()),
           frame_tree_node_->frame_tree_node_id(), is_for_guests_only,

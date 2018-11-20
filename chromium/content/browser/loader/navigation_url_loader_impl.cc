@@ -177,6 +177,9 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   new_request->method = request_info->common_params->method;
   new_request->url = request_info->common_params->url;
   new_request->site_for_cookies = request_info->site_for_cookies;
+#if defined(TOOLKIT_QT)
+  new_request->first_party_url = request_info->first_party_url;
+#endif
   new_request->trusted_params = network::ResourceRequest::TrustedParams();
   new_request->trusted_params->network_isolation_key =
       request_info->network_isolation_key;
