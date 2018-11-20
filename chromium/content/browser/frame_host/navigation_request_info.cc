@@ -11,6 +11,9 @@ NavigationRequestInfo::NavigationRequestInfo(
     const CommonNavigationParams& common_params,
     mojom::BeginNavigationParamsPtr begin_params,
     const GURL& site_for_cookies,
+#if defined(TOOLKIT_QT)
+    const GURL& first_party_url,
+#endif
     bool is_main_frame,
     bool parent_is_main_frame,
     bool are_ancestors_secure,
@@ -26,6 +29,9 @@ NavigationRequestInfo::NavigationRequestInfo(
     : common_params(common_params),
       begin_params(std::move(begin_params)),
       site_for_cookies(site_for_cookies),
+#if defined(TOOLKIT_QT)
+      first_party_url(first_party_url),
+#endif
       is_main_frame(is_main_frame),
       parent_is_main_frame(parent_is_main_frame),
       are_ancestors_secure(are_ancestors_secure),
@@ -42,6 +48,9 @@ NavigationRequestInfo::NavigationRequestInfo(const NavigationRequestInfo& other)
     : common_params(other.common_params),
       begin_params(other.begin_params.Clone()),
       site_for_cookies(other.site_for_cookies),
+#if defined(TOOLKIT_QT)
+      first_party_url(other.first_party_url),
+#endif
       is_main_frame(other.is_main_frame),
       parent_is_main_frame(other.parent_is_main_frame),
       are_ancestors_secure(other.are_ancestors_secure),

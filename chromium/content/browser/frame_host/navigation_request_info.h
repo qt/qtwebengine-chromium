@@ -26,6 +26,9 @@ struct CONTENT_EXPORT NavigationRequestInfo {
   NavigationRequestInfo(const CommonNavigationParams& common_params,
                         mojom::BeginNavigationParamsPtr begin_params,
                         const GURL& site_for_cookies,
+#if defined(TOOLKIT_QT)
+                        const GURL& first_party_url,
+#endif
                         bool is_main_frame,
                         bool parent_is_main_frame,
                         bool are_ancestors_secure,
@@ -48,6 +51,10 @@ struct CONTENT_EXPORT NavigationRequestInfo {
   // checked by the third-party cookie blocking policy.
   const GURL site_for_cookies;
 
+#if defined(TOOLKIT_QT)
+  // The top level frame URL
+  const GURL first_party_url;
+#endif
   const bool is_main_frame;
   const bool parent_is_main_frame;
 
