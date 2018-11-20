@@ -40,6 +40,12 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   std::string method = "GET";
   GURL url;
   GURL site_for_cookies;
+
+#if defined(TOOLKIT_QT)
+  // The top-level frame URL.
+  GURL first_party_url;
+#endif
+
   base::Optional<url::Origin> top_frame_origin;
   net::NetworkIsolationKey trusted_network_isolation_key;
   mojom::UpdateNetworkIsolationKeyOnRedirect

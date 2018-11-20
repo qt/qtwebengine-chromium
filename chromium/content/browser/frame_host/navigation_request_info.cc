@@ -10,6 +10,9 @@ NavigationRequestInfo::NavigationRequestInfo(
     const CommonNavigationParams& common_params,
     mojom::BeginNavigationParamsPtr begin_params,
     const GURL& site_for_cookies,
+#if defined(TOOLKIT_QT)
+    const GURL& first_party_url,
+#endif
     const net::NetworkIsolationKey& network_isolation_key,
     bool is_main_frame,
     bool parent_is_main_frame,
@@ -26,6 +29,9 @@ NavigationRequestInfo::NavigationRequestInfo(
     : common_params(common_params),
       begin_params(std::move(begin_params)),
       site_for_cookies(site_for_cookies),
+#if defined(TOOLKIT_QT)
+      first_party_url(first_party_url),
+#endif
       network_isolation_key(network_isolation_key),
       is_main_frame(is_main_frame),
       parent_is_main_frame(parent_is_main_frame),
