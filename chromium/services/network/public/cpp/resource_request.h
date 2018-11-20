@@ -43,6 +43,11 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   // done if there really is no way to determine the correct value.
   GURL site_for_cookies;
 
+#if defined(TOOLKIT_QT)
+  // The top-level frame URL.
+  GURL first_party_url;
+#endif
+
   // Boolean indicating whether SameSite cookies are allowed to be attached
   // to the request. It should be used as additional input to network side
   // checks.

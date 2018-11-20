@@ -286,6 +286,12 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   // This method may only be called before Start().
   void set_site_for_cookies(const GURL& site_for_cookies);
 
+#if defined(TOOLKIT_QT)
+  // The top-level frame URL.
+  const GURL& first_party_url() const { return first_party_url_; }
+  void set_first_party_url(const GURL& first_party_url);
+#endif
+
   // Indicate whether SameSite cookies should be attached even though the
   // request is cross-site.
   bool attach_same_site_cookies() const { return attach_same_site_cookies_; }
@@ -851,6 +857,9 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   std::vector<GURL> url_chain_;
   GURL site_for_cookies_;
+#if defined(TOOLKIT_QT)
+  GURL first_party_url_;
+#endif
   bool attach_same_site_cookies_;
   base::Optional<url::Origin> initiator_;
   GURL delegate_redirect_url_;

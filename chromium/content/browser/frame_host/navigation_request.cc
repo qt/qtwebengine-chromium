@@ -1353,6 +1353,12 @@ void NavigationRequest::OnStartChecksComplete(
     current = current->parent();
   }
 
+#if defined(TOOLKIT_QT)
+  const GURL& first_party_url =
+          frame_tree_node_->IsMainFrame() ? common_params_.url
+                                          : top_document_url;
+#endif
+
   const GURL& site_for_cookies =
       (ancestors_are_same_site || !base_url.is_empty())
           ? (frame_tree_node_->IsMainFrame() ? common_params_.url
@@ -1381,6 +1387,9 @@ void NavigationRequest::OnStartChecksComplete(
       browser_context->GetResourceContext(), partition,
       std::make_unique<NavigationRequestInfo>(
           common_params_, begin_params_.Clone(), site_for_cookies,
+#if defined(TOOLKIT_QT)
+          first_party_url,
+#endif
           frame_tree_node_->IsMainFrame(), parent_is_main_frame,
           IsSecureFrame(frame_tree_node_->parent()),
           frame_tree_node_->frame_tree_node_id(), is_for_guests_only,
