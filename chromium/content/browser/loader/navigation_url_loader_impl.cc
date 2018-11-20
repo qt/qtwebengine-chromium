@@ -208,6 +208,9 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   new_request->method = request_info->common_params.method;
   new_request->url = request_info->common_params.url;
   new_request->site_for_cookies = request_info->site_for_cookies;
+#if defined(TOOLKIT_QT)
+  new_request->first_party_url = request_info->first_party_url;
+#endif
   new_request->top_frame_origin = request_info->top_frame_origin;
 
   net::RequestPriority net_priority = net::HIGHEST;
@@ -299,6 +302,9 @@ std::unique_ptr<NavigationRequestInfo> CreateNavigationRequestInfoForRedirect(
   return std::make_unique<NavigationRequestInfo>(
       std::move(new_common_params), std::move(new_begin_params),
       updated_resource_request.site_for_cookies,
+#if defined(TOOLKIT_QT)
+      previous_request_info.first_party_url,
+#endif
       updated_resource_request.top_frame_origin,
       previous_request_info.is_main_frame,
       previous_request_info.parent_is_main_frame,
