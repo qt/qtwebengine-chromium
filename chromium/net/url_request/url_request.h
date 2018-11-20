@@ -286,6 +286,12 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   // This method may only be called before Start().
   void set_site_for_cookies(const GURL& site_for_cookies);
 
+#if defined(TOOLKIT_QT)
+  // The top-level frame URL.
+  const GURL& first_party_url() const { return first_party_url_; }
+  void set_first_party_url(const GURL& first_party_url);
+#endif
+
   // The origin of the top frame of the page making the request (where
   // applicable). Note that this is experimental and may not always be set.
   const base::Optional<url::Origin>& top_frame_origin() const {
@@ -861,6 +867,9 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   std::vector<GURL> url_chain_;
   GURL site_for_cookies_;
+#if defined(TOOLKIT_QT)
+  GURL first_party_url_;
+#endif
   base::Optional<url::Origin> top_frame_origin_;
 
   bool attach_same_site_cookies_;

@@ -26,6 +26,9 @@ struct CONTENT_EXPORT NavigationRequestInfo {
   NavigationRequestInfo(const CommonNavigationParams& common_params,
                         mojom::BeginNavigationParamsPtr begin_params,
                         const GURL& site_for_cookies,
+#if defined(TOOLKIT_QT)
+                        const GURL& first_party_url,
+#endif
                         const base::Optional<url::Origin>& top_frame_origin,
                         bool is_main_frame,
                         bool parent_is_main_frame,
@@ -49,6 +52,10 @@ struct CONTENT_EXPORT NavigationRequestInfo {
   // checked by the third-party cookie blocking policy.
   const GURL site_for_cookies;
 
+#if defined(TOOLKIT_QT)
+  // The top level frame URL
+  const GURL first_party_url;
+#endif
   // The origin of the navigation if top frame, else the origin of the top
   // frame.
   // TODO(crbug.com/910716) Make this required. I believe we just need to add
