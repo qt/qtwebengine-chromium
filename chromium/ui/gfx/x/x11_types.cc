@@ -10,13 +10,15 @@
 #include "build/build_config.h"
 #include "ui/gfx/x/x11_switches.h"
 
+#ifdef TOOLKIT_QT
+extern void* GetQtXDisplay();
+#endif
+
 namespace gfx {
 
 XDisplay* GetXDisplay() {
 #ifdef TOOLKIT_QT
-  // this should never be called
-  DCHECK(false);
-  return nullptr;
+  return static_cast<XDisplay*>(GetQtXDisplay());
 #else
   static XDisplay* display = NULL;
   if (!display)
