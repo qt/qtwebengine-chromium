@@ -5511,7 +5511,8 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
   if (GURL(frame_document.BaseURL()) != params->url)
     params->base_url = frame_document.BaseURL();
 
-  if (GURL(frame_document.Url()) != params->url)
+  if (document_state->was_load_data_with_base_url_request() &&
+      GURL(frame_document.Url()) != params->url)
     params->virtual_url = frame_document.Url();
 
   GetRedirectChain(document_loader, &params->redirects);
