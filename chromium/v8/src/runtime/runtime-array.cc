@@ -30,6 +30,16 @@ RUNTIME_FUNCTION(Runtime_TransitionElementsKind) {
   return *object;
 }
 
+RUNTIME_FUNCTION(Runtime_TransitionElementsKindWithKind) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSObject, object, 0);
+  CONVERT_ARG_HANDLE_CHECKED(Smi, elements_kind_smi, 1);
+  ElementsKind to_kind = static_cast<ElementsKind>(elements_kind_smi->value());
+  JSObject::TransitionElementsKind(object, to_kind);
+  return *object;
+}
+
 namespace {
 // Find the next free position. undefined and holes are both considered
 // free spots. Returns "Nothing" if an exception occurred.
@@ -145,7 +155,15 @@ Object* RemoveArrayHolesGeneric(Isolate* isolate, Handle<JSReceiver> receiver,
     MAYBE_RETURN(delete_result, ReadOnlyRoots(isolate).exception());
   }
 
-  return *isolate->factory()->NewNumberFromUint(result);
+  // TODO(jgruber, szuend, chromium:897512): This is a workaround to prevent
+  // returning a number greater than array.length to Array.p.sort, which could
+  // trigger OOB accesses. There is still a correctness bug here though in
+  // how we shift around undefineds and delete elements in the two blocks above.
+  // This needs to be fixed soon.
+  const uint32_t number_of_non_undefined_elements = std::min(limit, result);
+
+  return *isolate->factory()->NewNumberFromUint(
+      number_of_non_undefined_elements);
 }
 
 // Collects all defined (non-hole) and non-undefined (array) elements at the
@@ -162,6 +180,7 @@ Object* RemoveArrayHoles(Isolate* isolate, Handle<JSReceiver> receiver,
   Handle<JSObject> object = Handle<JSObject>::cast(receiver);
   if (object->HasStringWrapperElements()) {
     int len = String::cast(Handle<JSValue>::cast(object)->value())->length();
+    DCHECK_LE(len, limit);
     return Smi::FromInt(len);
   }
 
@@ -284,6 +303,7 @@ Object* RemoveArrayHoles(Isolate* isolate, Handle<JSReceiver> receiver,
     }
   }
 
+  DCHECK_LE(result, limit);
   return *isolate->factory()->NewNumberFromUint(result);
 }
 
@@ -303,7 +323,7 @@ Maybe<bool> ConditionalCopy(Isolate* isolate, Handle<JSReceiver> source,
 
   Handle<Object> source_element;
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-      isolate, source_element, JSReceiver::GetElement(isolate, source, index),
+      isolate, source_element, JSReceiver::GetElement(isolate, target, index),
       Nothing<bool>());
 
   Handle<Object> set_result;

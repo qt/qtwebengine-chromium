@@ -63,7 +63,8 @@ void CompileJsToWasmWrappers(Isolate* isolate,
                              Handle<WasmModuleObject> module_object);
 
 V8_EXPORT_PRIVATE Handle<Script> CreateWasmScript(
-    Isolate* isolate, const ModuleWireBytes& wire_bytes);
+    Isolate* isolate, const ModuleWireBytes& wire_bytes,
+    const std::string& source_map_url);
 
 // Triggered by the WasmCompileLazy builtin.
 // Returns the instruction start of the compiled code object.
@@ -125,6 +126,10 @@ class AsyncCompileJob {
   // execute it.
   template <typename Step, typename... Args>
   void DoSync(Args&&... args);
+
+  // Switches to the compilation step {Step} and immediately executes that step.
+  template <typename Step, typename... Args>
+  void DoImmediately(Args&&... args);
 
   // Switches to the compilation step {Step} and starts a background task to
   // execute it.
