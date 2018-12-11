@@ -294,7 +294,7 @@ static hb_font_funcs_t* HarfBuzzSkiaGetFontFuncs() {
     hb_font_funcs_set_glyph_h_advance_func(
         funcs, HarfBuzzGetGlyphHorizontalAdvance, nullptr, nullptr);
     hb_font_funcs_set_glyph_h_advances_func(
-        funcs, HarfBuzzGetGlyphHorizontalAdvances, nullptr, nullptr);
+        funcs, (hb_font_get_glyph_h_advances_func_t)HarfBuzzGetGlyphHorizontalAdvances, nullptr, nullptr);
     // TODO(https://crbug.com/899718): Replace vertical metrics callbacks with
     // HarfBuzz VORG/VMTX internal implementation by deregistering those.
     hb_font_funcs_set_glyph_v_advance_func(
