@@ -70,8 +70,10 @@ std::unique_ptr<base::FieldTrialList> SetUpFieldTrialsAndFeatureList() {
 }
 
 void StartBrowserThreadPool() {
-  auto thread_pool_init_params =
-      GetContentClient()->browser()->GetThreadPoolInitParams();
+  std::unique_ptr<base::ThreadPool::InitParams> thread_pool_init_params;
+  if (GetContentClient()->browser())
+    thread_pool_init_params =
+        GetContentClient()->browser()->GetThreadPoolInitParams();
   if (!thread_pool_init_params)
     thread_pool_init_params = GetDefaultThreadPoolInitParams();
   DCHECK(thread_pool_init_params);

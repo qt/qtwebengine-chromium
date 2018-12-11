@@ -23,7 +23,6 @@ ResolveHostRequest::ResolveHostRequest(
         optional_parameters,
     net::NetLog* net_log) {
   DCHECK(resolver);
-  DCHECK(net_log);
 
   internal_request_ = resolver->CreateRequest(
       host, net::NetLogWithSource::Make(net_log, net::NetLogSourceType::NONE),

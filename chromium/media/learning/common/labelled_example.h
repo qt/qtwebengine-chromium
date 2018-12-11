@@ -32,7 +32,7 @@ struct COMPONENT_EXPORT(LEARNING_COMMON) LabelledExample {
   LabelledExample(std::initializer_list<FeatureValue> init_list,
                   TargetValue target);
   LabelledExample(const LabelledExample& rhs);
-  LabelledExample(LabelledExample&& rhs) noexcept;
+  LabelledExample(LabelledExample&& rhs);
   ~LabelledExample();
 
   // Comparisons ignore weight, because it's convenient.

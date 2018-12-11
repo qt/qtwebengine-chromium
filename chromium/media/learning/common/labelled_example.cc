@@ -21,7 +21,7 @@ LabelledExample::LabelledExample(std::initializer_list<FeatureValue> init_list,
 
 LabelledExample::LabelledExample(const LabelledExample& rhs) = default;
 
-LabelledExample::LabelledExample(LabelledExample&& rhs) noexcept = default;
+LabelledExample::LabelledExample(LabelledExample&& rhs) = default;
 
 LabelledExample::~LabelledExample() = default;
 
