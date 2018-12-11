@@ -83,7 +83,9 @@ std::unique_ptr<base::FieldTrialList> SetUpFieldTrialsAndFeatureList() {
 }
 
 void StartBrowserTaskScheduler() {
-  auto task_scheduler_init_params =
+  std::unique_ptr<base::TaskScheduler::InitParams> task_scheduler_init_params;
+  if (GetContentClient()->browser())
+    task_scheduler_init_params =
       GetContentClient()->browser()->GetTaskSchedulerInitParams();
   if (!task_scheduler_init_params)
     task_scheduler_init_params = GetDefaultTaskSchedulerInitParams();
