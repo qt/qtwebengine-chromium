@@ -318,7 +318,7 @@ static hb_font_funcs_t* HarfBuzzSkiaGetFontFuncs() {
     hb_font_funcs_set_glyph_h_advance_func(
         funcs, HarfBuzzGetGlyphHorizontalAdvance, nullptr, nullptr);
     hb_font_funcs_set_glyph_h_advances_func(
-        funcs, HarfBuzzGetGlyphHorizontalAdvances, nullptr, nullptr);
+        funcs, (hb_font_get_glyph_h_advances_func_t)HarfBuzzGetGlyphHorizontalAdvances, nullptr, nullptr);
     hb_font_funcs_set_glyph_h_kerning_func(
         funcs, HarfBuzzGetGlyphHorizontalKerning, nullptr, nullptr);
     hb_font_funcs_set_glyph_v_advance_func(
