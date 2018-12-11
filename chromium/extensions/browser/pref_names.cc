@@ -56,5 +56,9 @@ const char kPrefRegularOnlyPreferences[] = "regular_only_preferences";
 const char kPrefContentSettings[] = "content_settings";
 const char kPrefIncognitoContentSettings[] = "incognito_content_settings";
 
+// Deprecated 1/2019.
+const char kNextUpdateCheck[] = "extensions.autoupdate.next_check";
+const char kLastUpdateCheck[] = "extensions.autoupdate.last_check";
+
 }  // namespace pref_names
 }  // namespace extensions
