@@ -122,7 +122,7 @@ bool IsCanonicalHostGoogleHostname(base::StringPiece canonical_host,
 
   static base::NoDestructor<std::set<std::string>> google_tlds(
       std::move(std::set<std::string>{GOOGLE_TLD_LIST}));
-  return google_tlds->contains(tld);
+  return google_tlds->find(std::string(tld)) != google_tlds->end();
 }
 
 // True if |url| is a valid URL with a host that is in the static list of
