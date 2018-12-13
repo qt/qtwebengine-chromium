@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <type_traits>
+#include <vector>
 
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fxcrt/cfx_string_pool_template.h"
@@ -52,6 +53,11 @@ class CPDF_IndirectObjectHolder {
       uint32_t objnum,
       std::unique_ptr<CPDF_Object> pObj);
 
+  // Takes ownership of |pObj|, persist it for life of the indirect object
+  // holder (typically so that unowned pointers to it remain valid). No-op
+  // if |pObj| is NULL.
+  void AddOrphan(std::unique_ptr<CPDF_Object> pObj);
+
   uint32_t GetLastObjNum() const { return m_LastObjNum; }
   void SetLastObjNum(uint32_t objnum) { m_LastObjNum = objnum; }
 
@@ -68,6 +74,7 @@ class CPDF_IndirectObjectHolder {
  private:
   uint32_t m_LastObjNum;
   std::map<uint32_t, std::unique_ptr<CPDF_Object>> m_IndirectObjs;
+  std::vector<std::unique_ptr<CPDF_Object>> m_OrphanObjs;
   CFX_WeakPtr<CFX_ByteStringPool> m_pByteStringPool;
 };
 

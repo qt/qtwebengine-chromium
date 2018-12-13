@@ -204,13 +204,14 @@ void CPDF_Dictionary::ConvertToIndirectObjectFor(
   it->second = new CPDF_Reference(pHolder, pObj->GetObjNum());
 }
 
-void CPDF_Dictionary::RemoveFor(const CFX_ByteString& key) {
+std::unique_ptr<CPDF_Object> CPDF_Dictionary::RemoveFor(const CFX_ByteString& key) {
+  std::unique_ptr<CPDF_Object> result;
   auto it = m_Map.find(key);
-  if (it == m_Map.end())
-    return;
-
-  delete it->second;
-  m_Map.erase(it);
+  if (it != m_Map.end()) {
+    result = std::unique_ptr<CPDF_Object>(it->second);
+    m_Map.erase(it);
+  }
+  return result;
 }
 
 void CPDF_Dictionary::ReplaceKey(const CFX_ByteString& oldkey,

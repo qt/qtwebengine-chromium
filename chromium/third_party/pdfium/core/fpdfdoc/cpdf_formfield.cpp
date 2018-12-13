@@ -223,14 +223,16 @@ bool CPDF_FormField::ResetField(bool bNotify) {
         if (!pClone)
           return false;
 
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("V"));
         m_pDict->SetFor("V", pClone.release());
         if (pRV) {
           std::unique_ptr<CPDF_Object> pCloneR = pDV->Clone();
+          m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("RV"));
           m_pDict->SetFor("RV", pCloneR.release());
         }
       } else {
-        m_pDict->RemoveFor("V");
-        m_pDict->RemoveFor("RV");
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("V"));
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("RV"));
       }
       if (bNotify)
         NotifyAfterValueChange();
@@ -361,15 +363,18 @@ bool CPDF_FormField::SetValue(const CFX_WideString& value,
       if (bNotify && !NotifyBeforeValueChange(csValue))
         return false;
 
+      CFX_ByteString key(bDefault ? "DV" : "V");
       int iIndex = FindOptionValue(csValue);
       if (iIndex < 0) {
         CFX_ByteString bsEncodeText = PDF_EncodeText(csValue);
-        m_pDict->SetStringFor(bDefault ? "DV" : "V", bsEncodeText);
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor(key));
+        m_pDict->SetStringFor(key, bsEncodeText);
         if (m_Type == RichText && !bDefault)
           m_pDict->SetStringFor("RV", bsEncodeText);
-        m_pDict->RemoveFor("I");
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("I"));
       } else {
-        m_pDict->SetStringFor(bDefault ? "DV" : "V", PDF_EncodeText(csValue));
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor(key));
+        m_pDict->SetStringFor(key, PDF_EncodeText(csValue));
         if (!bDefault) {
           ClearSelection();
           SetItemSelection(iIndex, true);
@@ -486,8 +491,8 @@ bool CPDF_FormField::ClearSelection(bool bNotify) {
     if (!NotifyListOrComboBoxBeforeChange(csValue))
       return false;
   }
-  m_pDict->RemoveFor("V");
-  m_pDict->RemoveFor("I");
+  m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("V"));
+  m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("I"));
   if (bNotify)
     NotifyListOrComboBoxAfterChange();
   return true;
@@ -573,7 +578,7 @@ bool CPDF_FormField::SetItemSelection(int index, bool bSelected, bool bNotify) {
         SelectOption(index, false);
         if (pValue->IsString()) {
           if (pValue->GetUnicodeText() == opt_value)
-            m_pDict->RemoveFor("V");
+            m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("V"));
         } else if (pValue->IsArray()) {
           std::unique_ptr<CPDF_Array> pArray(new CPDF_Array);
           for (int i = 0; i < CountOptions(); i++) {
@@ -582,12 +587,14 @@ bool CPDF_FormField::SetItemSelection(int index, bool bSelected, bool bNotify) {
               pArray->AddNew<CPDF_String>(PDF_EncodeText(opt_value), false);
             }
           }
-          if (pArray->GetCount() > 0)
+          if (pArray->GetCount() > 0) {
+            m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("V"));
             m_pDict->SetFor("V", pArray.release());  // std::move someday
+          }
         }
       } else {
-        m_pDict->RemoveFor("V");
-        m_pDict->RemoveFor("I");
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("V"));
+        m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("I"));
       }
     }
   }
@@ -888,7 +895,7 @@ bool CPDF_FormField::SelectOption(int iOptIndex, bool bSelected, bool bNotify) {
       pArray->AddNew<CPDF_Number>(iOptIndex);
 
     if (pArray->IsEmpty())
-      m_pDict->RemoveFor("I");
+      m_pForm->GetDocument()->AddOrphan(m_pDict->RemoveFor("I"));
   }
   if (bNotify)
     NotifyListOrComboBoxAfterChange();

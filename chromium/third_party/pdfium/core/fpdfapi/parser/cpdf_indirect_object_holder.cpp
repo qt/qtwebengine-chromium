@@ -52,7 +52,8 @@ CPDF_Object* CPDF_IndirectObjectHolder::AddIndirectObject(
   CHECK(!pObj->m_ObjNum);
   CPDF_Object* pUnowned = pObj.get();
   pObj->m_ObjNum = ++m_LastObjNum;
-  m_IndirectObjs[m_LastObjNum].release();  // TODO(tsepez): stop this leak.
+  AddOrphan(std::move(m_IndirectObjs[m_LastObjNum]));
+
   m_IndirectObjs[m_LastObjNum] = std::move(pObj);
   return pUnowned;
 }
@@ -69,6 +70,7 @@ bool CPDF_IndirectObjectHolder::ReplaceIndirectObjectIfHigherGeneration(
     return false;
 
   pObj->m_ObjNum = objnum;
+  AddOrphan(std::move(m_IndirectObjs[objnum]));
   m_IndirectObjs[objnum] = std::move(pObj);
   m_LastObjNum = std::max(m_LastObjNum, objnum);
   return true;
@@ -80,4 +82,10 @@ void CPDF_IndirectObjectHolder::DeleteIndirectObject(uint32_t objnum) {
     return;
 
   m_IndirectObjs.erase(objnum);
+}
+
+void CPDF_IndirectObjectHolder::AddOrphan(
+    std::unique_ptr<CPDF_Object> pObject) {
+  if (pObject)
+    m_OrphanObjs.push_back(std::move(pObject));
 }

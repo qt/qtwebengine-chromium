@@ -89,6 +89,8 @@ class CPDF_InterForm {
   bool HasXFAForm() const;
   void FixPageFields(const CPDF_Page* pPage);
 
+  CPDF_Document* GetDocument() const { return m_pDocument; }
+
  private:
   friend class CPDF_FormControl;
   friend class CPDF_FormField;
