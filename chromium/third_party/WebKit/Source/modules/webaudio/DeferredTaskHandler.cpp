@@ -131,38 +131,38 @@ void DeferredTaskHandler::handleDirtyAudioNodeOutputs() {
     output->updateRenderingState();
 }
 
-void DeferredTaskHandler::addAutomaticPullNode(AudioHandler* node) {
+void DeferredTaskHandler::addAutomaticPullNode(RefPtr<AudioHandler> node) {
   ASSERT(isGraphOwner());
 
-  if (!m_automaticPullNodes.contains(node)) {
-    m_automaticPullNodes.add(node);
-    m_automaticPullNodesNeedUpdating = true;
+  if (!m_automaticPullHandlers.contains(node)) {
+    m_automaticPullHandlers.add(node);
+    m_automaticPullHandlersNeedUpdating = true;
   }
 }
 
-void DeferredTaskHandler::removeAutomaticPullNode(AudioHandler* node) {
+void DeferredTaskHandler::removeAutomaticPullNode(RefPtr<AudioHandler> node) {
   ASSERT(isGraphOwner());
 
-  if (m_automaticPullNodes.contains(node)) {
-    m_automaticPullNodes.remove(node);
-    m_automaticPullNodesNeedUpdating = true;
+  if (m_automaticPullHandlers.contains(node)) {
+    m_automaticPullHandlers.remove(node);
+    m_automaticPullHandlersNeedUpdating = true;
   }
 }
 
 void DeferredTaskHandler::updateAutomaticPullNodes() {
   ASSERT(isGraphOwner());
 
-  if (m_automaticPullNodesNeedUpdating) {
-    copyToVector(m_automaticPullNodes, m_renderingAutomaticPullNodes);
-    m_automaticPullNodesNeedUpdating = false;
+  if (m_automaticPullHandlersNeedUpdating) {
+    copyToVector(m_automaticPullHandlers, m_renderingAutomaticPullHandlers);
+    m_automaticPullHandlersNeedUpdating = false;
   }
 }
 
 void DeferredTaskHandler::processAutomaticPullNodes(size_t framesToProcess) {
   DCHECK(isAudioThread());
 
-  for (unsigned i = 0; i < m_renderingAutomaticPullNodes.size(); ++i)
-    m_renderingAutomaticPullNodes[i]->processIfNecessary(framesToProcess);
+  for (unsigned i = 0; i < m_renderingAutomaticPullHandlers.size(); ++i)
+    m_renderingAutomaticPullHandlers[i]->processIfNecessary(framesToProcess);
 }
 
 void DeferredTaskHandler::addChangedChannelCountMode(AudioHandler* node) {
@@ -207,18 +207,13 @@ void DeferredTaskHandler::updateChangedChannelInterpretation() {
 }
 
 DeferredTaskHandler::DeferredTaskHandler()
-    : m_automaticPullNodesNeedUpdating(false), m_audioThread(0) {}
+    : m_automaticPullHandlersNeedUpdating(false), m_audioThread(0) {}
 
 PassRefPtr<DeferredTaskHandler> DeferredTaskHandler::create() {
   return adoptRef(new DeferredTaskHandler());
 }
 
-DeferredTaskHandler::~DeferredTaskHandler() {
-  DCHECK(!m_automaticPullNodes.size());
-  if (m_automaticPullNodesNeedUpdating)
-    m_renderingAutomaticPullNodes.resize(m_automaticPullNodes.size());
-  DCHECK(!m_renderingAutomaticPullNodes.size());
-}
+DeferredTaskHandler::~DeferredTaskHandler() = default;
 
 void DeferredTaskHandler::handleDeferredTasks() {
   updateChangedChannelCountMode();
@@ -279,6 +274,8 @@ void DeferredTaskHandler::clearHandlersToBeDeleted() {
   AutoLocker locker(*this);
   m_renderingOrphanHandlers.clear();
   m_deletableOrphanHandlers.clear();
+  m_automaticPullHandlers.clear();
+  m_renderingAutomaticPullHandlers.clear();
 }
 
 void DeferredTaskHandler::setAudioThreadToCurrentThread() {

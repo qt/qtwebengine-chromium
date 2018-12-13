@@ -71,8 +71,9 @@ class MODULES_EXPORT DeferredTaskHandler final
   // when they are not connected to any downstream nodes.  These two methods are
   // called by the nodes who want to add/remove themselves into/from the
   // automatic pull lists.
-  void addAutomaticPullNode(AudioHandler*);
-  void removeAutomaticPullNode(AudioHandler*);
+  void addAutomaticPullNode(RefPtr<AudioHandler>);
+  void removeAutomaticPullNode(RefPtr<AudioHandler>);
+
   // Called right before handlePostRenderTasks() to handle nodes which need to
   // be pulled even when they are not connected to anything.
   void processAutomaticPullNodes(size_t framesToProcess);
@@ -173,15 +174,16 @@ class MODULES_EXPORT DeferredTaskHandler final
   void handleDirtyAudioNodeOutputs();
   void deleteHandlersOnMainThread();
 
-  // For the sake of thread safety, we maintain a seperate Vector of automatic
-  // pull nodes for rendering in m_renderingAutomaticPullNodes.  It will be
-  // copied from m_automaticPullNodes by updateAutomaticPullNodes() at the
-  // very start or end of the rendering quantum.
-  HashSet<AudioHandler*> m_automaticPullNodes;
-  Vector<AudioHandler*> m_renderingAutomaticPullNodes;
-  // m_automaticPullNodesNeedUpdating keeps track if m_automaticPullNodes is
-  // modified.
-  bool m_automaticPullNodesNeedUpdating;
+  // For the sake of thread safety, we maintain a seperate Vector of
+  // AudioHandlers for "automatic-pull nodes":
+  // |rendering_automatic_pull_handlers|. This storage will be copied from
+  // |automatic_pull_handlers| by |UpdateAutomaticPullNodes()| at the beginning
+  // or end of the render quantum.
+  HashSet<RefPtr<AudioHandler>> m_automaticPullHandlers;
+  Vector<RefPtr<AudioHandler>> m_renderingAutomaticPullHandlers;
+
+  // Keeps track if the |automatic_pull_handlers| storage is touched.
+  bool m_automaticPullHandlersNeedUpdating;
 
   // Collection of nodes where the channel count mode has changed. We want the
   // channel count mode to change in the pre- or post-rendering phase so as
