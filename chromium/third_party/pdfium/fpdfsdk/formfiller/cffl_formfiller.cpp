@@ -32,15 +32,17 @@ CFFL_FormFiller::~CFFL_FormFiller() {
 }
 
 void CFFL_FormFiller::DestroyWindows() {
-  for (const auto& it : m_Maps) {
-    CPWL_Wnd* pWnd = it.second;
-    CFFL_PrivateData* pData = (CFFL_PrivateData*)pWnd->GetAttachedData();
-    pWnd->InvalidateProvider(this);
-    pWnd->Destroy();
-    delete pWnd;
-    delete pData;
+  while (!m_Maps.empty()) {
+    std::unique_ptr<CFFL_PrivateData> pData;
+    {
+      auto it = m_Maps.begin();
+      std::unique_ptr<CPWL_Wnd> pWnd = std::move(it->second);
+      pData.reset(static_cast<CFFL_PrivateData*>(pWnd->GetAttachedData()));
+      m_Maps.erase(it);
+      pWnd->InvalidateProvider(this);
+      pWnd->Destroy();
+    }
   }
-  m_Maps.clear();
 }
 
 void CFFL_FormFiller::SetWindowRect(CPDFSDK_PageView* pPageView,
@@ -344,36 +346,34 @@ PWL_CREATEPARAM CFFL_FormFiller::GetCreateParam() {
 CPWL_Wnd* CFFL_FormFiller::GetPDFWindow(CPDFSDK_PageView* pPageView,
                                         bool bNew) {
   ASSERT(pPageView);
-
   auto it = m_Maps.find(pPageView);
-  const bool found = it != m_Maps.end();
-  CPWL_Wnd* pWnd = found ? it->second : nullptr;
-  if (!bNew)
-    return pWnd;
+  if (it == m_Maps.end()) {
+    if (!bNew)
+      return nullptr;
 
-  if (found) {
-    CFFL_PrivateData* pPrivateData = (CFFL_PrivateData*)pWnd->GetAttachedData();
-    if (pPrivateData->nWidgetAge != m_pWidget->GetAppearanceAge()) {
-      return ResetPDFWindow(
-          pPageView, m_pWidget->GetValueAge() == pPrivateData->nValueAge);
-    }
-  } else {
     PWL_CREATEPARAM cp = GetCreateParam();
     cp.pAttachedWidget.Reset(m_pWidget);
 
-    CFFL_PrivateData* pPrivateData = new CFFL_PrivateData;
+    auto pPrivateData = pdfium::MakeUnique<CFFL_PrivateData>();
     pPrivateData->pWidget = m_pWidget;
     pPrivateData->pPageView = pPageView;
     pPrivateData->nWidgetAge = m_pWidget->GetAppearanceAge();
     pPrivateData->nValueAge = 0;
 
-    cp.pAttachedData = pPrivateData;
-
-    pWnd = NewPDFWindow(cp, pPageView);
-    m_Maps[pPageView] = pWnd;
+    cp.pAttachedData = pPrivateData.release();
+    m_Maps[pPageView] = NewPDFWindow(cp, pPageView);
+    return m_Maps[pPageView].get();
   }
+  CPWL_Wnd* pWnd = it->second.get();
+  if (!bNew)
+    return pWnd;
 
-  return pWnd;
+  auto* pPrivateData = static_cast<CFFL_PrivateData*>(pWnd->GetAttachedData());
+  if (pPrivateData->nWidgetAge == m_pWidget->GetAppearanceAge())
+    return pWnd;
+
+  return ResetPDFWindow(
+      pPageView, m_pWidget->GetValueAge() == pPrivateData->nValueAge);
 }
 
 void CFFL_FormFiller::DestroyPDFWindow(CPDFSDK_PageView* pPageView) {
@@ -381,13 +381,13 @@ void CFFL_FormFiller::DestroyPDFWindow(CPDFSDK_PageView* pPageView) {
   if (it == m_Maps.end())
     return;
 
-  CPWL_Wnd* pWnd = it->second;
-  CFFL_PrivateData* pData = (CFFL_PrivateData*)pWnd->GetAttachedData();
-  pWnd->Destroy();
-  delete pWnd;
-  delete pData;
-
-  m_Maps.erase(it);
+  std::unique_ptr<CFFL_PrivateData> pData;
+  {
+    std::unique_ptr<CPWL_Wnd> pWnd = std::move(it->second);
+    m_Maps.erase(it);
+    pData.reset(static_cast<CFFL_PrivateData*>(pWnd->GetAttachedData()));
+    pWnd->Destroy();
+  }
 }
 
 CFX_Matrix CFFL_FormFiller::GetWindowMatrix(void* pAttachedData) {

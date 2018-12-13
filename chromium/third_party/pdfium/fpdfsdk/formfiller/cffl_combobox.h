@@ -7,6 +7,8 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_COMBOBOX_H_
 #define FPDFSDK_FORMFILLER_CFFL_COMBOBOX_H_
 
+#include <memory>
+
 #include "core/fxcrt/fx_string.h"
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 
@@ -26,8 +28,8 @@ class CFFL_ComboBox : public CFFL_FormFiller, public IPWL_FocusHandler {
 
   // CFFL_FormFiller:
   PWL_CREATEPARAM GetCreateParam() override;
-  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
-                         CPDFSDK_PageView* pPageView) override;
+  std::unique_ptr<CPWL_Wnd> NewPDFWindow(
+      const PWL_CREATEPARAM& cp, CPDFSDK_PageView* pPageView) override;
   bool OnChar(CPDFSDK_Annot* pAnnot, uint32_t nChar, uint32_t nFlags) override;
   bool IsDataChanged(CPDFSDK_PageView* pPageView) override;
   void SaveData(CPDFSDK_PageView* pPageView) override;

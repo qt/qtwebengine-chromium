@@ -7,6 +7,8 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_CHECKBOX_H_
 #define FPDFSDK_FORMFILLER_CFFL_CHECKBOX_H_
 
+#include <memory>
+
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 
 class CFFL_CheckBox : public CFFL_Button {
@@ -15,8 +17,8 @@ class CFFL_CheckBox : public CFFL_Button {
   ~CFFL_CheckBox() override;
 
   // CFFL_Button
-  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
-                         CPDFSDK_PageView* pPageView) override;
+  std::unique_ptr<CPWL_Wnd> NewPDFWindow(const PWL_CREATEPARAM& cp,
+                                         CPDFSDK_PageView* pPageView) override;
   bool OnKeyDown(CPDFSDK_Annot* pAnnot,
                  uint32_t nKeyCode,
                  uint32_t nFlags) override;

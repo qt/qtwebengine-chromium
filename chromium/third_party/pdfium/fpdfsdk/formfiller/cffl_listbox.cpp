@@ -46,9 +46,9 @@ PWL_CREATEPARAM CFFL_ListBox::GetCreateParam() {
   return cp;
 }
 
-CPWL_Wnd* CFFL_ListBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                     CPDFSDK_PageView* pPageView) {
-  CPWL_ListBox* pWnd = new CPWL_ListBox();
+std::unique_ptr<CPWL_Wnd> CFFL_ListBox::NewPDFWindow(
+    const PWL_CREATEPARAM& cp, CPDFSDK_PageView* pPageView) {
+  auto pWnd = pdfium::MakeUnique<CPWL_ListBox>();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
   pWnd->SetFillerNotify(m_pFormFillEnv->GetInteractiveFormFiller());
@@ -80,8 +80,7 @@ CPWL_Wnd* CFFL_ListBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
   }
 
   pWnd->SetTopVisibleIndex(m_pWidget->GetTopVisibleIndex());
-
-  return pWnd;
+  return std::move(pWnd);
 }
 
 bool CFFL_ListBox::OnChar(CPDFSDK_Annot* pAnnot,

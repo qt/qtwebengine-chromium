@@ -82,9 +82,9 @@ PWL_CREATEPARAM CFFL_TextField::GetCreateParam() {
   return cp;
 }
 
-CPWL_Wnd* CFFL_TextField::NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                       CPDFSDK_PageView* pPageView) {
-  CPWL_Edit* pWnd = new CPWL_Edit();
+std::unique_ptr<CPWL_Wnd> CFFL_TextField::NewPDFWindow(
+    const PWL_CREATEPARAM& cp, CPDFSDK_PageView* pPageView) {
+  auto pWnd = pdfium::MakeUnique<CPWL_Edit>();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
   pWnd->SetFillerNotify(m_pFormFillEnv->GetInteractiveFormFiller());
@@ -100,9 +100,8 @@ CPWL_Wnd* CFFL_TextField::NewPDFWindow(const PWL_CREATEPARAM& cp,
       pWnd->SetLimitChar(nMaxLen);
     }
   }
-
   pWnd->SetText(swValue);
-  return pWnd;
+  return std::move(pWnd);
 }
 
 bool CFFL_TextField::OnChar(CPDFSDK_Annot* pAnnot,

@@ -49,9 +49,9 @@ PWL_CREATEPARAM CFFL_ComboBox::GetCreateParam() {
   return cp;
 }
 
-CPWL_Wnd* CFFL_ComboBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                      CPDFSDK_PageView* pPageView) {
-  CPWL_ComboBox* pWnd = new CPWL_ComboBox();
+std::unique_ptr<CPWL_Wnd> CFFL_ComboBox::NewPDFWindow(
+    const PWL_CREATEPARAM& cp, CPDFSDK_PageView* pPageView) {
+  auto pWnd = pdfium::MakeUnique<CPWL_ComboBox>();
   pWnd->AttachFFLData(this);
   pWnd->Create(cp);
 
@@ -66,13 +66,12 @@ CPWL_Wnd* CFFL_ComboBox::NewPDFWindow(const PWL_CREATEPARAM& cp,
   else
     swText = m_pWidget->GetOptionLabel(nCurSel);
 
-  for (int32_t i = 0, sz = m_pWidget->CountOptions(); i < sz; i++) {
+  for (int32_t i = 0, sz = m_pWidget->CountOptions(); i < sz; i++)
     pWnd->AddString(m_pWidget->GetOptionLabel(i));
-  }
 
   pWnd->SetSelect(nCurSel);
   pWnd->SetText(swText);
-  return pWnd;
+  return std::move(pWnd);
 }
 
 bool CFFL_ComboBox::OnChar(CPDFSDK_Annot* pAnnot,

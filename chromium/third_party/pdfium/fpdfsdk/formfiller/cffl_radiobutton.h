@@ -7,6 +7,8 @@
 #ifndef FPDFSDK_FORMFILLER_CFFL_RADIOBUTTON_H_
 #define FPDFSDK_FORMFILLER_CFFL_RADIOBUTTON_H_
 
+#include <memory>
+
 #include "fpdfsdk/formfiller/cffl_formfiller.h"
 
 class CFFL_RadioButton : public CFFL_Button {
@@ -15,7 +17,7 @@ class CFFL_RadioButton : public CFFL_Button {
   ~CFFL_RadioButton() override;
 
   // CFFL_Button
-  CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
+  std::unique_ptr<CPWL_Wnd> NewPDFWindow(const PWL_CREATEPARAM& cp,
                          CPDFSDK_PageView* pPageView) override;
   bool OnKeyDown(CPDFSDK_Annot* pAnnot,
                  uint32_t nKeyCode,

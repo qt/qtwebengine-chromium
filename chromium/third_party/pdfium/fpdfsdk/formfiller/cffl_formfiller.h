@@ -8,6 +8,7 @@
 #define FPDFSDK_FORMFILLER_CFFL_FORMFILLER_H_
 
 #include <map>
+#include <memory>
 
 #include "fpdfsdk/formfiller/cba_fontmap.h"
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
@@ -101,7 +102,6 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
                                    bool bRestoreValue);
 
   CFX_Matrix GetCurMatrix();
-
   CFX_FloatRect FFLtoPWL(const CFX_FloatRect& rect);
   CFX_FloatRect PWLtoFFL(const CFX_FloatRect& rect);
   CFX_FloatPoint FFLtoPWL(const CFX_FloatPoint& point);
@@ -129,8 +129,8 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   void EscapeFiller(CPDFSDK_PageView* pPageView, bool bDestroyPDFWindow);
 
   virtual PWL_CREATEPARAM GetCreateParam();
-  virtual CPWL_Wnd* NewPDFWindow(const PWL_CREATEPARAM& cp,
-                                 CPDFSDK_PageView* pPageView) = 0;
+  virtual std::unique_ptr<CPWL_Wnd> NewPDFWindow(
+      const PWL_CREATEPARAM& cp, CPDFSDK_PageView* pPageView) = 0;
   virtual CFX_FloatRect GetFocusBox(CPDFSDK_PageView* pPageView);
 
   bool IsValid() const;
@@ -146,8 +146,6 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   CPDFSDK_Annot* GetSDKAnnot() { return m_pAnnot; }
 
  protected:
-  using CFFL_PageView2PDFWindow = std::map<CPDFSDK_PageView*, CPWL_Wnd*>;
-
   // If the inheriting widget has its own fontmap and a PWL_Edit widget that
   // access that fontmap then you have to call DestroyWindows before destroying
   // the font map in order to not get a use-after-free.
@@ -161,7 +159,7 @@ class CFFL_FormFiller : public IPWL_Provider, public CPWL_TimerHandler {
   CPDFSDK_Annot* m_pAnnot;
 
   bool m_bValid;
-  CFFL_PageView2PDFWindow m_Maps;
+  std::map<CPDFSDK_PageView*, std::unique_ptr<CPWL_Wnd>> m_Maps;
   CFX_FloatPoint m_ptOldPos;
 };
 
