@@ -173,8 +173,13 @@ MediaRecorder::MediaRecorder(ExecutionContext* context,
       m_dispatchScheduledEventRunner(AsyncMethodRunner<MediaRecorder>::create(
           this,
           &MediaRecorder::dispatchScheduledEvent)) {
-  DCHECK(m_stream->getTracks().size());
+  if (context->activeDOMObjectsAreStopped()) {
+    exceptionState.throwDOMException(
+        NotAllowedError, "Execution context is detached.");
+    return;
+  }
 
+  DCHECK(m_stream->getTracks().size());
   m_recorderHandler =
       wrapUnique(Platform::current()->createMediaRecorderHandler());
   DCHECK(m_recorderHandler);
