@@ -184,6 +184,9 @@ Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(
   if (!insertionPoint->isConnected())
     return InsertionDone;
   DCHECK(isConnected());
+
+  document().styleEngine().addStyleSheetCandidateNode(*this);
+
   if (!shouldLoadLink()) {
     DCHECK(isInShadowTree());
     String message = "HTML element <link> is ignored in shadow tree.";
@@ -191,8 +194,6 @@ Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(
         ConsoleMessage::create(JSMessageSource, WarningMessageLevel, message));
     return InsertionDone;
   }
-
-  document().styleEngine().addStyleSheetCandidateNode(*this);
 
   process();
 
