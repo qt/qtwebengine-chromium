@@ -11,6 +11,7 @@
 #include "core/frame/RemoteDOMWindow.h"
 #include "core/frame/RemoteFrameClient.h"
 #include "core/frame/RemoteFrameView.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/layout/api/LayoutPartItem.h"
 #include "core/loader/FrameLoadRequest.h"
@@ -68,6 +69,13 @@ void RemoteFrame::navigate(Document& originDocument,
                            const KURL& url,
                            bool replaceCurrentItem,
                            UserGestureStatus userGestureStatus) {
+  if (!originDocument.getSecurityOrigin()->canDisplay(url)) {
+    originDocument.addConsoleMessage(ConsoleMessage::create(
+        SecurityMessageSource, ErrorMessageLevel,
+        "Not allowed to load local resource: " + url.elidedString()));
+    return;
+  }
+
   FrameLoadRequest frameRequest(&originDocument, url);
   frameRequest.setReplacesCurrentItem(replaceCurrentItem);
   frameRequest.resourceRequest().setHasUserGesture(userGestureStatus ==
