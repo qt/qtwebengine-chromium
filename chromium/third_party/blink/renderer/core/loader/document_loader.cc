@@ -897,10 +897,13 @@ void DocumentLoader::StartLoading() {
                                         : fetch_params.GetResourceRequest();
 }
 
-void DocumentLoader::DidInstallNewDocument(Document* document) {
+void DocumentLoader::DidInstallNewDocument(
+    Document* document,
+    const ContentSecurityPolicy* previous_csp) {
   document->SetReadyState(Document::kLoading);
   if (content_security_policy_) {
-    document->InitContentSecurityPolicy(content_security_policy_.Release());
+    document->InitContentSecurityPolicy(content_security_policy_.Release(),
+                                        nullptr, previous_csp);
   }
 
   if (history_item_ && IsBackForwardLoadType(load_type_))
@@ -1051,8 +1054,11 @@ void DocumentLoader::InstallNewDocument(
   }
 
   const SecurityOrigin* previous_security_origin = nullptr;
-  if (frame_->GetDocument())
+  const ContentSecurityPolicy* previous_csp = nullptr;
+  if (frame_->GetDocument()) {
     previous_security_origin = frame_->GetDocument()->GetSecurityOrigin();
+    previous_csp = frame_->GetDocument()->GetContentSecurityPolicy();
+  }
 
   // In some rare cases, we'll re-use a LocalDOMWindow for a new Document. For
   // example, when a script calls window.open("..."), the browser gives
@@ -1074,7 +1080,8 @@ void DocumentLoader::InstallNewDocument(
           .WithFrame(frame_)
           .WithURL(url)
           .WithOwnerDocument(owner_document)
-          .WithNewRegistrationContext(),
+          .WithNewRegistrationContext()
+	  .WithPreviousDocumentCSP(previous_csp),
       false);
 
   // Clear the user activation state.
@@ -1102,7 +1109,7 @@ void DocumentLoader::InstallNewDocument(
 
   if (!overriding_url.IsEmpty())
     document->SetBaseURLOverride(overriding_url);
-  DidInstallNewDocument(document);
+  DidInstallNewDocument(document, previous_csp);
 
   // This must be called before the document is opened, otherwise HTML parser
   // will use stale values from HTMLParserOption.

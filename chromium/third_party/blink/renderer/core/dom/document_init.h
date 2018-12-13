@@ -103,6 +103,11 @@ class CORE_EXPORT DocumentInit final {
   V0CustomElementRegistrationContext* RegistrationContext(Document*) const;
   DocumentInit& WithNewRegistrationContext();
 
+  DocumentInit& WithPreviousDocumentCSP(const ContentSecurityPolicy*);
+  const ContentSecurityPolicy* PreviousDocumentCSP() const {
+    return previous_csp_.Get();
+  }
+
  private:
   DocumentInit(HTMLImportsController*);
 
@@ -119,6 +124,8 @@ class CORE_EXPORT DocumentInit final {
 
   Member<V0CustomElementRegistrationContext> registration_context_;
   bool create_new_registration_context_;
+
+  Member<const ContentSecurityPolicy> previous_csp_;
 };
 
 }  // namespace blink
