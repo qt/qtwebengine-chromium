@@ -273,7 +273,7 @@ class CONTENT_EXPORT RenderViewImpl : private RenderWidget,
       const blink::WebVector<blink::WebRect>& target_rects) override;
 #endif
   blink::WebString AcceptLanguages() override;
-  void NavigateBackForwardSoon(int offset) override;
+  void NavigateBackForwardSoon(int offset, bool has_user_gesture) override;
   int HistoryBackListCount() override;
   int HistoryForwardListCount() override;
   void ZoomLimitsChanged(double minimum_level, double maximum_level) override;
