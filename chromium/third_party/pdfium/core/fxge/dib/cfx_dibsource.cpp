@@ -886,8 +886,19 @@ void CFX_DIBSource::GetOverlapRect(int& dest_left,
     dest_rect.Intersect(pClipRgn->GetBox());
   dest_left = dest_rect.left;
   dest_top = dest_rect.top;
-  src_left = dest_left - x_offset;
-  src_top = dest_top - y_offset;
+
+  pdfium::base::CheckedNumeric<int> safe_src_left = dest_left;
+  safe_src_left -= x_offset;
+  if (!safe_src_left.IsValid())
+    return;
+  src_left = safe_src_left.ValueOrDie();
+
+  pdfium::base::CheckedNumeric<int> safe_src_top = dest_top;
+  safe_src_top -= y_offset;
+  if (!safe_src_top.IsValid())
+    return;
+  src_top = safe_src_top.ValueOrDie();
+
   width = dest_rect.right - dest_rect.left;
   height = dest_rect.bottom - dest_rect.top;
 }
