@@ -61,6 +61,7 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_content_disposition.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/redirect_util.h"
 #include "net/url_request/url_request.h"
@@ -924,6 +925,16 @@ class NavigationURLLoaderImpl::URLLoaderRequestController
           network::mojom::URLLoaderClientEndpoints::New(
               response_url_loader_.PassInterface(),
               response_loader_binding_.Unbind());
+    }
+
+    // 304 responses should abort the navigation, rather than display the page.
+    // This needs to be after the URLLoader has been moved to
+    // |url_loader_client_endpoints| in order to abort the request, to avoid
+    // receiving unexpected call.
+    if (head.headers &&
+        head.headers->response_code() == net::HTTP_NOT_MODIFIED) {
+      OnComplete(network::URLLoaderCompletionStatus(net::ERR_ABORTED));
+      return;
     }
 
     bool is_download;
