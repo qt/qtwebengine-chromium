@@ -169,7 +169,11 @@ namespace {
 
 void VisitRO(InstructionSelector* selector, Node* node, ArchOpcode opcode) {
   IA32OperandGenerator g(selector);
-  selector->Emit(opcode, g.DefineAsRegister(node), g.Use(node->InputAt(0)));
+  Node* input = node->InputAt(0);
+  // We have to use a byte register as input to movsxb.
+  InstructionOperand input_op =
+      opcode == kIA32Movsxbl ? g.UseFixed(input, eax) : g.Use(input);
+  selector->Emit(opcode, g.DefineAsRegister(node), input_op);
 }
 
 
