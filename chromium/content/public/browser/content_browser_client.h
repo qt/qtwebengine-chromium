@@ -20,6 +20,7 @@
 #include "base/task/task_scheduler/task_scheduler.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "content/common/buildflags.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/global_routing_id.h"
@@ -1294,8 +1295,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // destroyed before the RenderFrame goes out of scope. The embedder may choose
   // to return nullptr to indicate that the request cannot be serviced right
   // now.
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   virtual std::unique_ptr<AuthenticatorRequestClientDelegate>
   GetWebAuthenticationRequestDelegate(RenderFrameHost* render_frame_host);
+#endif
 
 #if defined(OS_MACOSX)
   // Returns whether WebAuthn supports the built-in Touch ID platform
