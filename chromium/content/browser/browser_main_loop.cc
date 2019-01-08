@@ -1327,7 +1327,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:Devices");
     device::GamepadService::GetInstance()->StartUp(
         base::BindRepeating(&BindHidManager));
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
     device::FidoHidDiscovery::SetHidManagerBinder(
         base::BindRepeating(&BindHidManager));
 #endif

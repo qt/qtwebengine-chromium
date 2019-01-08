@@ -12,6 +12,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
+#include "content/common/buildflags.h"
 #include "content/common/content_navigation_policy.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/common/content_features.h"
@@ -105,13 +106,15 @@ void SetRuntimeFeatureDefaultsForPlatform(
       base::FeatureList::IsEnabled(features::kWebAuth) &&
       base::android::BuildInfo::GetInstance()->sdk_int() >=
           base::android::SDK_VERSION_NOUGAT);
-#else
+#elif BUILDFLAG(ENABLE_WEB_AUTH)
   WebRuntimeFeatures::EnableWebAuth(
       base::FeatureList::IsEnabled(features::kWebAuth));
 #endif
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   WebRuntimeFeatures::EnableWebAuthenticationFeaturePolicy(
       base::FeatureList::IsEnabled(device::kWebAuthFeaturePolicy));
+#endif
 
 #if defined(OS_ANDROID)
   WebRuntimeFeatures::EnablePictureInPictureAPI(

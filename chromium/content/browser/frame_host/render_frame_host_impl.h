@@ -1347,8 +1347,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // WebContents.
   RenderFrameHostImpl* ParentOrOuterDelegateFrame();
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   scoped_refptr<WebAuthRequestSecurityChecker>
   GetWebAuthRequestSecurityChecker();
+#endif
 
   base::WeakPtr<RenderFrameHostImpl> GetWeakPtr();
 
@@ -2752,8 +2754,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // loading. Or newer navigations occur.
   std::unique_ptr<PeakGpuMemoryTracker> loading_mem_tracker_ = nullptr;
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   scoped_refptr<WebAuthRequestSecurityChecker>
       webauth_request_security_checker_;
+#endif
 
   // This time is used to record the last WebXR DOM Overlay setup request.
   base::TimeTicks last_xr_overlay_setup_time_;

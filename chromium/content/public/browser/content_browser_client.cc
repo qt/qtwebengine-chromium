@@ -20,7 +20,6 @@
 #include "base/no_destructor.h"
 #include "base/sequenced_task_runner.h"
 #include "build/build_config.h"
-#include "content/public/browser/authenticator_request_client_delegate.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/client_certificate_delegate.h"
@@ -55,6 +54,10 @@
 #include "ui/shell_dialogs/select_file_policy.h"
 #include "url/gurl.h"
 #include "url/origin.h"
+
+#if BUILDFLAG(ENABLE_WEB_AUTH)
+#include "content/public/browser/authenticator_request_client_delegate.h"
+#endif
 
 namespace content {
 
@@ -883,11 +886,13 @@ bool ContentBrowserClient::ShouldCreateThreadPool() {
   return true;
 }
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
 std::unique_ptr<AuthenticatorRequestClientDelegate>
 ContentBrowserClient::GetWebAuthenticationRequestDelegate(
     RenderFrameHost* render_frame_host) {
   return std::make_unique<AuthenticatorRequestClientDelegate>();
 }
+#endif
 
 std::unique_ptr<net::ClientCertStore>
 ContentBrowserClient::CreateClientCertStore(BrowserContext* browser_context) {

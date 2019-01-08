@@ -6830,6 +6830,7 @@ void RenderFrameHostImpl::BindSerialService(
   serial_service_->Bind(std::move(receiver));
 }
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
 void RenderFrameHostImpl::BindAuthenticatorReceiver(
     mojo::PendingReceiver<blink::mojom::Authenticator> receiver) {
   if (!authenticator_impl_)
@@ -7032,11 +7033,11 @@ void RenderFrameHostImpl::CreatePermissionService(
 
 void RenderFrameHostImpl::GetAuthenticator(
     mojo::PendingReceiver<blink::mojom::Authenticator> receiver) {
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   if (base::FeatureList::IsEnabled(features::kWebAuth)) {
     BindAuthenticatorReceiver(std::move(receiver));
   }
-#else
+#elif defined(OS_ANDROID)
   GetJavaInterfaces()->GetInterface(std::move(receiver));
 #endif  // !defined(OS_ANDROID)
 }
@@ -7066,7 +7067,7 @@ void RenderFrameHostImpl::GetPushMessaging(
 void RenderFrameHostImpl::GetVirtualAuthenticatorManager(
     mojo::PendingReceiver<blink::test::mojom::VirtualAuthenticatorManager>
         receiver) {
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   if (base::FeatureList::IsEnabled(features::kWebAuth)) {
     auto* environment_singleton = AuthenticatorEnvironmentImpl::GetInstance();
     environment_singleton->EnableVirtualAuthenticatorFor(frame_tree_node_);
@@ -8376,6 +8377,7 @@ void RenderFrameHostImpl::UpdateAdFrameType(
 blink::mojom::AuthenticatorStatus
 RenderFrameHostImpl::PerformGetAssertionWebAuthSecurityChecks(
     const std::string& relying_party_id) {
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   bool is_cross_origin;
   blink::mojom::AuthenticatorStatus status =
       GetWebAuthRequestSecurityChecker()->ValidateAncestorOrigins(
@@ -8391,11 +8393,15 @@ RenderFrameHostImpl::PerformGetAssertionWebAuthSecurityChecks(
   }
 
   return blink::mojom::AuthenticatorStatus::SUCCESS;
+#else
+  return blink::mojom::AuthenticatorStatus::NOT_IMPLEMENTED;
+#endif
 }
 
 blink::mojom::AuthenticatorStatus
 RenderFrameHostImpl::PerformMakeCredentialWebAuthSecurityChecks(
     const std::string& relying_party_id) {
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   bool is_cross_origin;
   blink::mojom::AuthenticatorStatus status =
       GetWebAuthRequestSecurityChecker()->ValidateAncestorOrigins(
@@ -8411,6 +8417,9 @@ RenderFrameHostImpl::PerformMakeCredentialWebAuthSecurityChecks(
   }
 
   return blink::mojom::AuthenticatorStatus::SUCCESS;
+#else
+  return blink::mojom::AuthenticatorStatus::NOT_IMPLEMENTED;
+#endif
 }
 
 void RenderFrameHostImpl::IsClipboardPasteAllowed(
@@ -8436,6 +8445,7 @@ RenderFrameHostImpl* RenderFrameHostImpl::ParentOrOuterDelegateFrame() {
   return nullptr;
 }
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
 scoped_refptr<WebAuthRequestSecurityChecker>
 RenderFrameHostImpl::GetWebAuthRequestSecurityChecker() {
   if (!webauth_request_security_checker_)
@@ -8444,5 +8454,6 @@ RenderFrameHostImpl::GetWebAuthRequestSecurityChecker() {
 
   return webauth_request_security_checker_;
 }
+#endif
 
 }  // namespace content
