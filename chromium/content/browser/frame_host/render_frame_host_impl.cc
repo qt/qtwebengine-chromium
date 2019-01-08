@@ -6517,6 +6517,7 @@ void RenderFrameHostImpl::BindSerialService(
   serial_service_->Bind(std::move(receiver));
 }
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
 void RenderFrameHostImpl::BindAuthenticatorReceiver(
     mojo::PendingReceiver<blink::mojom::Authenticator> receiver) {
   if (!authenticator_impl_)
@@ -6713,11 +6714,11 @@ void RenderFrameHostImpl::CreatePermissionService(
 
 void RenderFrameHostImpl::GetAuthenticator(
     mojo::PendingReceiver<blink::mojom::Authenticator> receiver) {
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   if (base::FeatureList::IsEnabled(features::kWebAuth)) {
     BindAuthenticatorReceiver(std::move(receiver));
   }
-#else
+#elif defined(OS_ANDROID)
   GetJavaInterfaces()->GetInterface(std::move(receiver));
 #endif  // !defined(OS_ANDROID)
 }
@@ -6747,7 +6748,7 @@ void RenderFrameHostImpl::GetPushMessaging(
 void RenderFrameHostImpl::GetVirtualAuthenticatorManager(
     mojo::PendingReceiver<blink::test::mojom::VirtualAuthenticatorManager>
         receiver) {
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   if (base::FeatureList::IsEnabled(features::kWebAuth)) {
     if (base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kEnableWebAuthTestingAPI)) {

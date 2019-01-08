@@ -21,6 +21,7 @@
 #include "base/optional.h"
 #include "base/strings/string_piece.h"
 #include "base/time/time.h"
+#include "content/common/buildflags.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/generated_code_cache_settings.h"
@@ -1552,9 +1553,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // to return nullptr to indicate that the request cannot be serviced right
   // now. |relying_party_id| is the RP ID from Webauthn, essentially a domain
   // name.
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   virtual std::unique_ptr<AuthenticatorRequestClientDelegate>
   GetWebAuthenticationRequestDelegate(RenderFrameHost* render_frame_host,
                                       const std::string& relying_party_id);
+#endif
 
   // Get platform ClientCertStore. May return nullptr. Called on the UI thread.
   virtual std::unique_ptr<net::ClientCertStore> CreateClientCertStore(

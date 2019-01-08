@@ -4,8 +4,10 @@
 
 import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
+import("//content/common/features.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//third_party/webrtc/webrtc.gni")
+import("//media/media_options.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -48,9 +50,6 @@ jumbo_source_set("browser_sources") {
     "audio_loopback_stream_creator.h",
     "audio_service_info.cc",
     "audio_service_info.h",
-    "authenticator_environment.h",
-    "authenticator_request_client_delegate.cc",
-    "authenticator_request_client_delegate.h",
     "ax_event_notification_details.cc",
     "ax_event_notification_details.h",
     "back_forward_cache.h",
@@ -440,7 +439,6 @@ jumbo_source_set("browser_sources") {
     "//cc",
     "//components/viz/host",
     "//content/browser",  # Must not be public_deps!
-    "//device/fido",
     "//gpu",
     "//gpu/command_buffer/service:gles2",
     "//media",
@@ -490,6 +488,15 @@ jumbo_source_set("browser_sources") {
   if (is_chromeos) {
     sources +=
         [ "chromeos/delegate_to_browser_gpu_service_accelerator_factory.h" ]
+  }
+
+  if (enable_web_auth) {
+    sources += [
+      "authenticator_environment.h",
+      "authenticator_request_client_delegate.cc",
+      "authenticator_request_client_delegate.h",
+    ]
+    deps += [ "//device/fido" ]
   }
 }
 
