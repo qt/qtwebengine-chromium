@@ -22,6 +22,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "content/common/buildflags.h"
 #include "content/public/browser/browser_or_resource_context.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/generated_code_cache_settings.h"
@@ -1403,9 +1404,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // to return nullptr to indicate that the request cannot be serviced right
   // now. |relying_party_id| is the RP ID from Webauthn, essentially a domain
   // name.
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   virtual std::unique_ptr<AuthenticatorRequestClientDelegate>
   GetWebAuthenticationRequestDelegate(RenderFrameHost* render_frame_host,
                                       const std::string& relying_party_id);
+#endif
 
 #if defined(OS_MACOSX)
   // Returns whether WebAuthn supports the built-in Touch ID platform

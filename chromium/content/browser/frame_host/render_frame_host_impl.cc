@@ -5774,6 +5774,7 @@ void RenderFrameHostImpl::BindSerialServiceRequest(
   serial_service_->Bind(std::move(request));
 }
 
+#if BUILDFLAG(ENABLE_WEB_AUTH)
 void RenderFrameHostImpl::BindAuthenticatorRequest(
     blink::mojom::AuthenticatorRequest request) {
   if (!authenticator_impl_)
@@ -5837,7 +5838,7 @@ void RenderFrameHostImpl::GetAudioContextManager(
 
 void RenderFrameHostImpl::GetAuthenticator(
     blink::mojom::AuthenticatorRequest request) {
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   if (base::FeatureList::IsEnabled(features::kWebAuth)) {
     if (base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kEnableWebAuthTestingAPI)) {
@@ -5846,7 +5847,7 @@ void RenderFrameHostImpl::GetAuthenticator(
 
     BindAuthenticatorRequest(std::move(request));
   }
-#else
+#elif defined(OS_ANDROID)
   GetJavaInterfaces()->GetInterface(std::move(request));
 #endif  // !defined(OS_ANDROID)
 }
@@ -5859,7 +5860,7 @@ void RenderFrameHostImpl::GetCredentialManager(
 
 void RenderFrameHostImpl::GetVirtualAuthenticatorManager(
     blink::test::mojom::VirtualAuthenticatorManagerRequest request) {
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   if (base::FeatureList::IsEnabled(features::kWebAuth)) {
     if (base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kEnableWebAuthTestingAPI)) {
