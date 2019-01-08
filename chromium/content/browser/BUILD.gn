@@ -105,7 +105,6 @@ jumbo_source_set("browser") {
     "//device/base",
     "//device/bluetooth",
     "//device/bluetooth/public/cpp",
-    "//device/fido",
     "//device/gamepad",
     "//device/vr/public/mojom",
     "//google_apis",
@@ -2420,15 +2419,9 @@ jumbo_source_set("browser") {
   } else {
     # Not Android.
     sources += [
-      # The WebAuthn devtools protocol API is not supported in Android yet.
-      "$target_gen_dir/devtools/protocol/web_authn.cc",
-      "$target_gen_dir/devtools/protocol/web_authn.h",
-
       # Devtools frontend not included in Android
       "devtools/devtools_frontend_host_impl.cc",
       "devtools/devtools_frontend_host_impl.h",
-      "devtools/protocol/webauthn_handler.cc",
-      "devtools/protocol/webauthn_handler.h",
       "host_zoom_level_context.cc",
       "host_zoom_level_context.h",
       "host_zoom_map_impl.cc",
@@ -2441,6 +2434,16 @@ jumbo_source_set("browser") {
       # The SMS API is stubbed out outside of Android.
       "sms/sms_provider_desktop.cc",
       "sms/sms_provider_desktop.h",
+    ]
+  }
+
+  if (enable_web_auth) {
+    sources += [
+      # The WebAuthn devtools protocol API is not supported in Android yet.
+      "$target_gen_dir/devtools/protocol/web_authn.cc",
+      "$target_gen_dir/devtools/protocol/web_authn.h",
+      "devtools/protocol/webauthn_handler.cc",
+      "devtools/protocol/webauthn_handler.h",
 
       # Most webauth code is non-Android
       "webauth/authenticator_common.cc",
@@ -2459,6 +2462,9 @@ jumbo_source_set("browser") {
       "webauth/virtual_discovery.h",
       "webauth/virtual_fido_discovery_factory.cc",
       "webauth/virtual_fido_discovery_factory.h",
+    ]
+    deps += [
+      "//device/fido",
     ]
   }
 

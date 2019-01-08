@@ -67,7 +67,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "services/device/public/mojom/wake_lock_context.mojom.h"
-#else
+#elif BUILDFLAG(ENABLE_WEB_AUTH)
 #include "content/browser/devtools/protocol/webauthn_handler.h"
 #endif
 
@@ -328,9 +328,9 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
     session->AddHandler(std::make_unique<protocol::TracingHandler>(
         frame_tree_node_, GetIOContext()));
   }
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   session->AddHandler(std::make_unique<protocol::WebAuthnHandler>());
-#endif  // !defined(OS_ANDROID)
+#endif  // BUILDFLAG(ENABLE_WEB_AUTH)
 
   if (sessions().empty()) {
 #ifdef OS_ANDROID
