@@ -4092,7 +4092,7 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
 
   registry_->AddInterface(base::Bind(&ImageCaptureImpl::Create));
 
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   if (base::FeatureList::IsEnabled(features::kWebAuth)) {
     registry_->AddInterface(
         base::Bind(&RenderFrameHostImpl::BindAuthenticatorRequest,
@@ -4106,7 +4106,7 @@ void RenderFrameHostImpl::RegisterMojoInterfaces() {
           base::Unretained(environment_singleton)));
     }
   }
-#endif  // !defined(OS_ANDROID)
+#endif  // BUILDFLAG(ENABLE_WEB_AUTH)
 
   sensor_provider_proxy_.reset(
       new SensorProviderProxyImpl(permission_controller, this));
@@ -5794,7 +5794,7 @@ void RenderFrameHostImpl::BindPresentationServiceRequest(
   presentation_service_->Bind(std::move(request));
 }
 
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
 void RenderFrameHostImpl::BindAuthenticatorRequest(
     blink::mojom::AuthenticatorRequest request) {
   if (!authenticator_impl_)

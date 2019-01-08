@@ -9,6 +9,7 @@ import("//build/config/linux/pangocairo/pangocairo.gni")
 import("//build/config/ui.gni")
 import("//chromeos/assistant/assistant.gni")
 import("//components/ui_devtools/devtools.gni")
+import("//content/common/features.gni")
 import("//gpu/vulkan/features.gni")
 import("//media/media_options.gni")
 import("//net/features.gni")
@@ -93,7 +94,6 @@ jumbo_source_set("browser") {
     "//crypto",
     "//device/base",
     "//device/bluetooth",
-    "//device/fido",
     "//device/gamepad",
     "//device/vr/public/mojom",
     "//google_apis",
@@ -2376,8 +2376,11 @@ jumbo_source_set("browser") {
       "host_zoom_map_impl.h",
       "host_zoom_map_observer.cc",
       "host_zoom_map_observer.h",
+    ]
+  }
 
-      # Most webauth code is non-Android
+  if (enable_web_auth) {
+    sources += [
       "webauth/authenticator_impl.cc",
       "webauth/authenticator_impl.h",
       "webauth/authenticator_type_converters.cc",
@@ -2388,6 +2391,9 @@ jumbo_source_set("browser") {
       "webauth/virtual_authenticator.h",
       "webauth/virtual_discovery.cc",
       "webauth/virtual_discovery.h",
+    ]
+    deps += [
+      "//device/fido",
     ]
   }
 

@@ -1274,7 +1274,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void BindPresentationServiceRequest(
       blink::mojom::PresentationServiceRequest request);
 
-#if !defined(OS_ANDROID)
+#if BUILDFLAG(ENABLE_WEB_AUTH)
   void BindAuthenticatorRequest(blink::mojom::AuthenticatorRequest request);
 #endif
 
