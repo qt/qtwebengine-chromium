@@ -72,7 +72,11 @@ void StreamsPrivateAPI::SendExecuteMimeTypeHandlerEvent(
   // will take ownership of the stream.
   GURL handler_url(Extension::GetBaseURLFromExtensionId(extension_id).spec() +
                    handler->handler_url());
+#if !defined(TOOLKIT_QT)
   int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+#else
+  int tab_id = -1;
+#endif // !defined(TOOLKIT_QT)
   std::unique_ptr<StreamContainer> stream_container(new StreamContainer(
       std::move(stream), tab_id, embedded, handler_url, extension_id,
       std::move(transferrable_loader), original_url));
