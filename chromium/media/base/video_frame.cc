@@ -974,7 +974,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalStorage(
       // http://crbug.com/555909
       frame = new VideoFrame(
           VideoFrameLayout(format, coded_size,
-                           {RowBytes(kYPlane, format, coded_size.width()),
+                           {int32_t(RowBytes(kYPlane, format, coded_size.width())),
                             coded_size.width() / 2, coded_size.width() / 2}),
           storage_type, visible_rect, natural_size, timestamp);
       frame->data_[kYPlane] = data;

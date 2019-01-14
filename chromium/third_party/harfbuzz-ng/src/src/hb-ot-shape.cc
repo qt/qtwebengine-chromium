@@ -663,8 +663,8 @@ hb_ot_substitute_complex (hb_ot_shape_context_t *c)
 
   c->plan->substitute (c->font, buffer);
 
-  if (0) /* XXX Call morx instead. */
-    hb_aat_layout_substitute (c->font, c->buffer);
+//  if (0) /* XXX Call morx instead. */
+//    hb_aat_layout_substitute (c->font, c->buffer);
 }
 
 static inline void

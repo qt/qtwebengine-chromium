@@ -692,6 +692,8 @@ jumbo_component("base") {
         "clipboard/clipboard_util_win.h",
         "clipboard/clipboard_win.cc",
         "clipboard/clipboard_win.h",
+        "dragdrop/drag_source_win.cc",
+        "dragdrop/drag_source_win.h",
         "dragdrop/os_exchange_data_provider_win.cc",
         "dragdrop/os_exchange_data_provider_win.h",
         "resource/resource_bundle_win.cc",

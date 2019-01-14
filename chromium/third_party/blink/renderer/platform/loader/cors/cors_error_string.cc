@@ -77,7 +77,8 @@ String GetErrorString(const network::CORSErrorStatus& status,
     Append(builder,
            {"(redirected from '", initial_request_url.GetString(), "') "});
   }
-  Append(builder, {"from origin '", origin.ToString(),
+  String originString = origin.ToString(); // StringView of temporary String is illegal.
+  Append(builder, {"from origin '", originString,
                    "' has been blocked by CORS policy: "});
 
   if (IsPreflightError(status.cors_error)) {
@@ -154,11 +155,13 @@ String GetErrorString(const network::CORSErrorStatus& status,
             "attribute.");
       }
       break;
-    case CORSError::kCORSDisabledScheme:
+    case CORSError::kCORSDisabledScheme: {
+      String listOfCORSEnabledURLSchemes = SchemeRegistry::ListOfCORSEnabledURLSchemes();
       Append(builder,
              {"Cross origin requests are only supported for protocol schemes: ",
-              SchemeRegistry::ListOfCORSEnabledURLSchemes(), "."});
+              listOfCORSEnabledURLSchemes, "."});
       break;
+    }
     case CORSError::kPreflightInvalidStatus:
       builder.Append("It does not have HTTP ok status.");
       break;

@@ -292,6 +292,8 @@ void ShutdownGeneratedMessageFactory() {
 }
 
 void InitGeneratedMessageFactory() {
+  if (generated_message_factory_)
+    return;
   generated_message_factory_ = new GeneratedMessageFactory;
   internal::OnShutdown(&ShutdownGeneratedMessageFactory);
 }

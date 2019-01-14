@@ -112,11 +112,10 @@ constexpr TraitFilterType GetTraitFromArgListImpl(CallSecondTag,
 template <class TraitFilterType, class... ArgTypes>
 constexpr typename TraitFilterType::ValueType GetTraitFromArgList(
     ArgTypes... args) {
-  static_assert(
-      count({std::is_constructible<TraitFilterType, ArgTypes>::value...},
-            true) <= 1,
-      "Multiple arguments of the same type were provided to the "
-      "constructor of TaskTraits.");
+//  static_assert(
+//      count_matches(bool, true, std::is_constructible<TraitFilterType, ArgTypes>...) <= 1,
+//      "Multiple arguments of the same type were provided to the "
+//      "constructor of TaskTraits.");
   return GetTraitFromArgListImpl<TraitFilterType>(CallFirstTag(), args...);
 }
 
@@ -164,11 +163,23 @@ struct RequiredEnumTraitFilter : public BasicTraitFilter<ArgType> {
 //   ValidTraits(MyTrait);
 //   ...
 // };
+
+template <class... Ts >
+struct if_all;
+
+template <>
+struct if_all<>
+    : std::integral_constant<bool, true> {};
+
+template <class T, class... Ts >
+struct if_all<T, Ts...>
+    : std::conditional<T::value, if_all<Ts...>, std::integral_constant<bool, false>>::type {};
+
 template <class ValidTraits, class... ArgTypes>
 struct AreValidTraits
     : std::integral_constant<
           bool,
-          all_of({std::is_convertible<ArgTypes, ValidTraits>::value...})> {};
+          if_all<std::is_convertible<ArgTypes, ValidTraits>...>::value> {};
 
 }  // namespace trait_helpers
 }  // namespace base

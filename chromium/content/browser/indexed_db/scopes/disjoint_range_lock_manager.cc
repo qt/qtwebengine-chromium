@@ -14,7 +14,9 @@ DisjointRangeLockManager::LockRequest::LockRequest(LockRequest&&) noexcept =
     default;
 DisjointRangeLockManager::LockRequest::~LockRequest() = default;
 DisjointRangeLockManager::Lock::Lock() = default;
-DisjointRangeLockManager::Lock::Lock(Lock&&) noexcept = default;
+DisjointRangeLockManager::Lock::Lock(DisjointRangeLockManager::Lock&& lock) noexcept
+    : acquired_count(std::move(lock.acquired_count)), lock_mode(lock.lock_mode),
+      queue(std::move(lock.queue)) {}
 DisjointRangeLockManager::Lock::~Lock() = default;
 DisjointRangeLockManager::Lock& DisjointRangeLockManager::Lock::operator=(
     DisjointRangeLockManager::Lock&&) noexcept = default;

@@ -184,7 +184,7 @@ NGExclusionSpaceInternal::NGExclusionSpaceInternal(
   other.derived_geometry_ = nullptr;
 }
 
-NGExclusionSpaceInternal::NGExclusionSpaceInternal(NGExclusionSpaceInternal&&) =
+NGExclusionSpaceInternal::NGExclusionSpaceInternal(NGExclusionSpaceInternal&&) noexcept =
     default;
 
 NGExclusionSpaceInternal& NGExclusionSpaceInternal::operator=(

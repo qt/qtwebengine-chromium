@@ -76,6 +76,7 @@ class TransformStream::Algorithm : public ScriptFunction {
     ExceptionState exception_state_;
     ExceptionToRejectPromiseScope reject_promise_scope_;
   };
+  friend class AlgorithmScope;
 
   Member<TransformStreamTransformer> transformer_;
   const char* const interface_name_;
@@ -84,9 +85,13 @@ class TransformStream::Algorithm : public ScriptFunction {
 
 class TransformStream::FlushAlgorithm : public TransformStream::Algorithm {
  protected:
-  using Algorithm::Algorithm;
+  FlushAlgorithm(TransformStreamTransformer* transformer,
+                 ScriptState* script_state,
+                 ExceptionState& exception_state)
+        : Algorithm(transformer, script_state, exception_state) {}
 
  private:
+  friend class Algorithm;
   void CallRaw(const v8::FunctionCallbackInfo<v8::Value>& info) override {
     DCHECK_EQ(info.Length(), 1);
     AlgorithmScope algorithm_scope(this, info, info[0]);
@@ -102,9 +107,13 @@ class TransformStream::FlushAlgorithm : public TransformStream::Algorithm {
 
 class TransformStream::TransformAlgorithm : public TransformStream::Algorithm {
  protected:
-  using Algorithm::Algorithm;
+  TransformAlgorithm(TransformStreamTransformer* transformer,
+                     ScriptState* script_state,
+                     ExceptionState& exception_state)
+        : Algorithm(transformer, script_state, exception_state) {}
 
  private:
+  friend class Algorithm;
   void CallRaw(const v8::FunctionCallbackInfo<v8::Value>& info) override {
     DCHECK_EQ(info.Length(), 2);
     AlgorithmScope algorithm_scope(this, info, info[1]);
