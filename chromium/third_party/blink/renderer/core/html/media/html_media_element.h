@@ -266,11 +266,6 @@ class CORE_EXPORT HTMLMediaElement
   // of one of them here.
   using HTMLElement::GetExecutionContext;
 
-  bool HasSingleSecurityOrigin() const {
-    return GetWebMediaPlayer() ? GetWebMediaPlayer()->HasSingleSecurityOrigin()
-                               : true;
-  }
-
   bool IsFullscreen() const;
   void DidEnterFullscreen();
   void DidExitFullscreen();

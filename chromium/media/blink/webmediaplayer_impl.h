@@ -186,10 +186,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
 
   blink::WebString GetErrorMessage() const override;
   bool DidLoadingProgress() override;
-
-  bool DidGetOpaqueResponseFromServiceWorker() const override;
-  bool HasSingleSecurityOrigin() const override;
-  bool DidPassCORSAccessCheck() const override;
+  bool WouldTaintOrigin() const override;
 
   double MediaTimeForTimeValue(double timeValue) const override;
 
@@ -326,6 +323,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void OnBeforePipelineResume();
   void OnPipelineResumed();
   void OnDemuxerOpened();
+
+  bool HasSingleSecurityOrigin() const;
 
   // Pipeline::Client overrides.
   void OnError(PipelineStatus status) override;

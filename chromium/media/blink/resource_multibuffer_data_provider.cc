@@ -37,13 +37,13 @@ namespace media {
 
 namespace {
 
-bool IsOpaqueData(network::mojom::FetchResponseType response_type) {
+bool IsCORSCrossOriginResponseType(network::mojom::FetchResponseType response_type) {
   switch (response_type) {
     case network::mojom::FetchResponseType::kBasic:
     case network::mojom::FetchResponseType::kCORS:
     case network::mojom::FetchResponseType::kDefault:
-      return false;
     case network::mojom::FetchResponseType::kError:
+      return false;
     case network::mojom::FetchResponseType::kOpaque:
     case network::mojom::FetchResponseType::kOpaqueRedirect:
       return true;
@@ -289,6 +289,8 @@ void ResourceMultiBufferDataProvider::DidReceiveResponse(
   int64_t content_length = response.ExpectedContentLength();
   bool end_of_file = false;
   bool do_fail = false;
+  // We get the response type here because aborting the loader may change it.
+  const auto response_type = response.ResponseTypeViaServiceWorker();
   bytes_to_discard_ = 0;
 
   // We make a strong assumption that when we reach here we have either
@@ -342,10 +344,9 @@ void ResourceMultiBufferDataProvider::DidReceiveResponse(
         url_data_->url_index()->TryInsert(destination_url_data);
   }
 
-  // This is vital for security! A service worker can respond with a response
-  // from a different origin, so this response type is needed to detect that.
-  destination_url_data->set_has_opaque_data(
-      IsOpaqueData(response.ResponseTypeViaServiceWorker()));
+  // This is vital for security!
+  destination_url_data->set_is_cors_cross_origin(
+      IsCORSCrossOriginResponseType(response_type));
 
   if (destination_url_data != url_data_) {
     // At this point, we've encountered a redirect, or found a better url data

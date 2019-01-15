@@ -790,19 +790,9 @@ void WebMediaPlayerMS::Paint(cc::PaintCanvas* canvas,
                         context_3d);
 }
 
-bool WebMediaPlayerMS::DidGetOpaqueResponseFromServiceWorker() const {
+bool WebMediaPlayerMS::WouldTaintOrigin() const {
   DCHECK(thread_checker_.CalledOnValidThread());
   return false;
-}
-
-bool WebMediaPlayerMS::HasSingleSecurityOrigin() const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return true;
-}
-
-bool WebMediaPlayerMS::DidPassCORSAccessCheck() const {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  return true;
 }
 
 double WebMediaPlayerMS::MediaTimeForTimeValue(double timeValue) const {
