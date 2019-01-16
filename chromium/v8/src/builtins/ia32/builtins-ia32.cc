@@ -143,7 +143,7 @@ void Generate_StackOverflowCheck(MacroAssembler* masm, Register num_args,
       ExternalReference::address_of_real_stack_limit(masm->isolate());
   // Compute the space that is left as a negative number in scratch. If
   // we already overflowed, this will be a positive number.
-  __ mov(scratch, __ ExternalReferenceAsOperand(real_stack_limit, scratch));
+  __ mov(scratch, Operand::StaticVariable(real_stack_limit));
   __ sub(scratch, esp);
   // Add the size of the arguments.
   static_assert(kPointerSize == 4,
@@ -381,9 +381,9 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     __ mov(ebx, Operand(ebx, EntryFrameConstants::kArgvOffset));
 
     // Check if we have enough stack space to push all arguments.
-    // Argument count in eax. Clobbers ecx and edx.
+    // Argument count in eax. Clobbers ecx.
     Label enough_stack_space, stack_overflow;
-    Generate_StackOverflowCheck(masm, eax, ecx, edx, &stack_overflow);
+    Generate_StackOverflowCheck(masm, eax, ecx, &stack_overflow);
     __ jmp(&enough_stack_space);
 
     __ bind(&stack_overflow);
@@ -971,7 +971,7 @@ void Builtins::Generate_InterpreterPushArgsThenCallImpl(
   // to perform a stack check. So push it onto the stack temporarily. This
   // might cause stack overflow, but it will be detected by the check.
   __ Push(edi);
-  Generate_StackOverflowCheck(masm, ecx, edx, edi, &stack_overflow);
+  Generate_StackOverflowCheck(masm, ecx, edx, &stack_overflow);
   __ Pop(edi);
 
   // Pop return address to allow tail-call after pushing arguments.
@@ -1043,13 +1043,11 @@ void Generate_InterpreterPushZeroAndArgsAndReturnAddress(
   // | return addr |            | receiver slot |
 
   // Check for stack overflow before we increment the stack pointer.
-  Generate_StackOverflowCheck(masm, num_args, scratch1, scratch2,
-                              stack_overflow, true);
+  Generate_StackOverflowCheck(masm, num_args, scratch1, stack_overflow, true);
 
-  // Step 1 - Update the stack pointer. scratch1 already contains the required
-  // increment to the stack. i.e. num_args + 1 stack slots. This is computed in
-  // Generate_StackOverflowCheck.
+  // Step 1 - Update the stack pointer.
 
+  __ lea(scratch1, Operand(num_args, times_4, kPointerSize));
   __ AllocateStackFrame(scratch1);
 
   // Step 2 move return_address and slots above it to the correct locations.
@@ -2240,7 +2238,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     EnterArgumentsAdaptorFrame(masm);
     // edi is used as a scratch register. It should be restored from the frame
     // when needed.
-    Generate_StackOverflowCheck(masm, ebx, ecx, edi, &stack_overflow);
+    Generate_StackOverflowCheck(masm, ebx, ecx, &stack_overflow);
 
     // Copy receiver and all expected arguments.
     const int offset = StandardFrameConstants::kCallerSPOffset;
@@ -2263,7 +2261,7 @@ void Builtins::Generate_ArgumentsAdaptorTrampoline(MacroAssembler* masm) {
     EnterArgumentsAdaptorFrame(masm);
     // edi is used as a scratch register. It should be restored from the frame
     // when needed.
-    Generate_StackOverflowCheck(masm, ebx, ecx, edi, &stack_overflow);
+    Generate_StackOverflowCheck(masm, ebx, ecx, &stack_overflow);
 
     // Remember expected arguments in ecx.
     __ mov(ecx, ebx);
