@@ -5942,7 +5942,7 @@ test("unit_tests") {
 
   public_deps = []
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [
       "../browser/accessibility/live_caption_unavailability_notifier_unittest.cc",
