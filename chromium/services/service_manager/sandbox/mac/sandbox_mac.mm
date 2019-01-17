@@ -59,6 +59,9 @@ const char* SandboxMac::kSandboxBrowserPID = "BROWSER_PID";
 const char* SandboxMac::kSandboxBundlePath = "BUNDLE_PATH";
 const char* SandboxMac::kSandboxChromeBundleId = "BUNDLE_ID";
 const char* SandboxMac::kSandboxComponentPath = "COMPONENT_PATH";
+#if defined(TOOLKIT_QT)
+const char* SandboxMac::kSandboxQtPrefixPath = "QT_PREFIX_PATH";
+#endif
 const char* SandboxMac::kSandboxDisableDenialLogging =
     "DISABLE_SANDBOX_DENIAL_LOGGING";
 const char* SandboxMac::kSandboxEnableLogging = "ENABLE_LOGGING";

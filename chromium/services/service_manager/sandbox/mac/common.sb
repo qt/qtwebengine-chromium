@@ -14,6 +14,7 @@
 (define bundle-id "BUNDLE_ID")
 (define bundle-path "BUNDLE_PATH")
 (define component-path "COMPONENT_PATH")
+(define qt-prefix-path "QT_PREFIX_PATH")
 (define current-pid "CURRENT_PID")
 (define disable-sandbox-denial-logging "DISABLE_SANDBOX_DENIAL_LOGGING")
 (define enable-logging "ENABLE_LOGGING")
@@ -89,6 +90,9 @@
 ; Allow component builds to work.
 (if (param-defined? component-path)
   (allow file-read* (subpath (param component-path))))
+
+(if (param-defined? qt-prefix-path)
+  (allow file-read* (subpath (param qt-prefix-path))))
 
 (allow process-exec (path (param executable-path)))
 (allow file-read* (path (param executable-path)))
