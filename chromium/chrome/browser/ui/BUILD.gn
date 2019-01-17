@@ -2339,7 +2339,7 @@ jumbo_static_library("ui") {
     sources += [ "web_contents_sizer.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [
       "network_profile_bubble.cc",
