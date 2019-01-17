@@ -64,6 +64,9 @@ const char* SandboxMac::kSandboxSodaComponentPath = "SODA_COMPONENT_PATH";
 const char* SandboxMac::kSandboxSodaLanguagePackPath =
     "SODA_LANGUAGE_PACK_PATH";
 const char* SandboxMac::kSandboxComponentPath = "COMPONENT_PATH";
+#if defined(TOOLKIT_QT)
+const char* SandboxMac::kSandboxQtPrefixPath = "QT_PREFIX_PATH";
+#endif
 const char* SandboxMac::kSandboxDisableDenialLogging =
     "DISABLE_SANDBOX_DENIAL_LOGGING";
 const char* SandboxMac::kSandboxEnableLogging = "ENABLE_LOGGING";
