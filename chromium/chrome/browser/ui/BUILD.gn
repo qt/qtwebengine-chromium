@@ -3293,7 +3293,7 @@ static_library("ui") {
     }
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     assert(use_aura)
     sources += [
