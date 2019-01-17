@@ -22,6 +22,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/system/sys_info.h"
+#include "build/build_config.h"
 #include "content/browser/mac_helpers.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
@@ -34,6 +35,10 @@
 #include "sandbox/policy/switches.h"
 
 namespace content {
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+base::FilePath getSandboxPath();
+#endif
 
 namespace {
 
@@ -130,6 +135,14 @@ void SetupCommonSandboxParameters(
       sandbox::policy::GetCanonicalPath(component_path).value();
   CHECK(serializer->SetParameter(sandbox::policy::kParamComponentPath,
                                  component_path_canonical));
+#endif
+#if BUILDFLAG(IS_QTWEBENGINE)
+  // Allow read access to files under the Qt path.
+  const base::FilePath qt_prefix_path = getSandboxPath();
+  const std::string qt_prefix_path_canonical =
+      sandbox::policy::GetCanonicalPath(qt_prefix_path).value();
+  CHECK(serializer->SetParameter(sandbox::policy::kParamQtPrefixPath,
+                                 qt_prefix_path_canonical));
 #endif
 
   CHECK(serializer->SetParameter(sandbox::policy::kParamOsVersion,
