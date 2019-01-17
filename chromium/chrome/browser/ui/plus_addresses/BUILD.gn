@@ -5,7 +5,7 @@
 import("//build/config/chrome_build.gni")
 import("//build/config/ui.gni")
 
-assert(toolkit_views || is_android)
+#assert(toolkit_views || is_android)
 
 source_set("plus_addresses") {
   public = [

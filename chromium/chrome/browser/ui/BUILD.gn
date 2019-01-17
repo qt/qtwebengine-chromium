@@ -1740,9 +1740,6 @@ static_library("ui") {
       "//chrome/browser/ui/read_anything",
       "//chrome/browser/ui/views/side_panel",
 
-      # TODO(crbug/com/387527798): Remove circular dependencies.
-      "//chrome/browser/ui/views/download",
-
       # TODO(crbug.com/40246046): Remove allow_circular_includes_from when
       # dependencies for controller are fixed.
       "//chrome/browser/lens/region_search",
@@ -1763,7 +1760,6 @@ static_library("ui") {
       "//chrome/browser/ui/views/contextual_tasks:impl",
       "//chrome/browser/ui/webui/customize_buttons:impl",
       "//chrome/browser/ui/views/toolbar",
-      "//chrome/browser/ui/views/toolbar:impl",
       "//chrome/browser/ui/views/new_tab_footer",
       "//chrome/browser/ui/webui/searchbox",
       "//chrome/browser/ui/webui/cr_components/searchbox:searchbox_impl",
@@ -3277,7 +3273,7 @@ static_library("ui") {
     }
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     assert(use_aura)
 
@@ -4858,11 +4854,14 @@ static_library("ui") {
       "//chrome/browser/ui/dialogs:impl",
       "//chrome/browser/ui/views",
       "//chrome/browser/ui/views/bubble",
+      "//chrome/browser/ui/views/page_action",
       "//chrome/browser/ui/commerce:impl",
       "//chrome/browser/ui/sharing_hub:impl",
       "//chrome/browser/ui/views/permissions/chip:impl",
       "//chrome/browser/ui/views/page_info:impl",
       "//chrome/browser/ui/window_name_prompt",
+      # TODO(crbug/com/387527798): Remove circular dependencies.
+      "//chrome/browser/ui/views/download",
 
       # TODO(crbug.com/408801109): Remove this circular dependency when the following
       # headers get componentized:
