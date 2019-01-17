@@ -699,11 +699,13 @@ int ContentMainRunnerImpl::Initialize(const ContentMainParams& params) {
     }
 #endif
 
+#if !defined(TOOLKIT_QT)
     // If we are on a platform where the default allocator is overridden (shim
     // layer on windows, tcmalloc on Linux Desktop) smoke-tests that the
     // overriding logic is working correctly. If not causes a hard crash, as its
     // unexpected absence has security implications.
     CHECK(base::allocator::IsAllocatorInitialized());
+#endif
 
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
     if (!process_type.empty()) {
