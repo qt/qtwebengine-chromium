@@ -832,11 +832,13 @@ int ContentMainRunnerImpl::Initialize(ContentMainParams params) {
   TRACE_EVENT0("startup,benchmark,rail", "ContentMainRunnerImpl::Initialize");
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+#if !defined(TOOLKIT_QT)
   // If we are on a platform where the default allocator is overridden (e.g.
   // with PartitionAlloc on most platforms) smoke-tests that the overriding
   // logic is working correctly. If not causes a hard crash, as its unexpected
   // absence has security implications.
   CHECK(base::allocator::IsAllocatorInitialized());
+#endif
 
 #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   if (!process_type.empty()) {
