@@ -4850,7 +4850,7 @@ test("unit_tests") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [
       "../browser/chrome_browser_main_win_unittest.cc",
@@ -5324,7 +5324,7 @@ test("unit_tests") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [ "../browser/ui/startup/credential_provider_signin_info_fetcher_win_unittest.cc" ]
     deps += [
