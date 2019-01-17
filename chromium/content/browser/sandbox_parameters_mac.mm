@@ -35,6 +35,10 @@
 
 namespace content {
 
+#if defined(TOOLKIT_QT)
+std::string getQtPrefix();
+#endif
+
 namespace {
 
 absl::optional<base::FilePath>& GetNetworkTestCertsDirectory() {
@@ -82,11 +86,11 @@ void AddDarwinDirs(sandbox::SandboxCompiler* compiler) {
       sandbox::policy::GetCanonicalPath(base::FilePath(dir_path)).value()));
 }
 
-// All of the below functions populate the `compiler` with the parameters that
-// the sandbox needs to resolve information that cannot be known at build time,
-// such as the user's home directory.
-void SetupCommonSandboxParameters(
-    sandbox::SandboxCompiler* compiler,
+// All of the below functions populate the |client| with the parameters that the
+// sandbox needs to resolve information that cannot be known at build time, such
+// as the user's home directory.
+
+void SetupCommonSandboxParameters(sandbox::SandboxCompiler* compiler,
     const base::CommandLine& target_command_line) {
   const base::CommandLine* browser_command_line =
       base::CommandLine::ForCurrentProcess();
@@ -133,6 +137,16 @@ void SetupCommonSandboxParameters(
 
   CHECK(
       compiler->SetParameter(sandbox::policy::kParamOsVersion, GetOSVersion()));
+
+#if defined(TOOLKIT_QT)
+  // Allow read access to files under the Qt Prefix.
+  const std::string qt_prefix_path_string = getQtPrefix();
+  const base::FilePath qt_prefix_path = base::FilePath(qt_prefix_path_string);
+  const std::string qt_prefix_path_canonical =
+      sandbox::policy::GetCanonicalPath(qt_prefix_path).value();
+  CHECK(client->SetParameter(sandbox::policy::kParamQtPrefixPath,
+                             qt_prefix_path_canonical));
+#endif
 
   std::string homedir =
       sandbox::policy::GetCanonicalPath(base::GetHomeDir()).value();
