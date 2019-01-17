@@ -924,7 +924,7 @@ static_library("test_support") {
     ]
   }
 
-  if (is_win || is_mac || is_linux || is_chromeos) {
+  if ((is_win || is_mac || is_linux || is_chromeos) && toolkit_views) {
     public_deps += [
       "//ui/base:pixel_diff_test_support",
       "//ui/views:view_pixel_diff_test_support",
@@ -6081,7 +6081,7 @@ template("performance_test_suite_template_base") {
       data_deps += [ "//third_party/angle/src/tests:angle_perftests" ]
     }
 
-    if (!is_android && !is_chromeos_lacros && !is_qtwebengine) {
+    if (!is_android && !is_chromeos_lacros && toolkit_views) {
       data_deps += [
         "//chrome/test:load_library_perf_tests",
         "//ui/views:views_perftests",
@@ -9574,7 +9574,7 @@ test("unit_tests") {
     ]
   }
 
-  if (use_aura) {
+  if (use_aura && toolkit_views) {
     sources += [ "../browser/ui/overscroll_pref_manager_unittest.cc" ]
 
     deps += [

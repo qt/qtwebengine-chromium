@@ -58,7 +58,7 @@ component("shell_dialogs") {
       "//components/dbus/thread_linux",
       "//ui/linux:linux_ui",
     ]
-    if (use_dbus) {
+    if (use_dbus && toolkit_views) {
       defines += [ "USE_DBUS" ]
       sources += [
         "select_file_dialog_linux_portal.cc",

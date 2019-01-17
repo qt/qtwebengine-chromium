@@ -68,6 +68,9 @@ component("linux_ui_factory") {
   if (use_qt) {
     deps += [ "//ui/qt" ]
   }
+  if (!is_qtwebengine) {
+    deps -= [ "//ui/views" ]
+  }
 }
 
 source_set("display_server_utils") {
