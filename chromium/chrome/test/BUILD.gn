@@ -5470,7 +5470,7 @@ test("unit_tests") {
 
   public_deps = []
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [
       "../browser/chrome_browser_main_win_unittest.cc",
