@@ -84,7 +84,7 @@ source_set("startup") {
   }
 
   if (is_win) {
-    assert(toolkit_views)
+#    assert(toolkit_views)
     assert(use_aura)
 
     sources += [
@@ -272,7 +272,7 @@ source_set("impl") {
   }
 
   if (is_win) {
-    assert(toolkit_views)
+#    assert(toolkit_views)
     assert(use_aura)
 
     sources += [
@@ -359,7 +359,7 @@ source_set("unit_tests") {
     ]
 
     if (is_win) {
-      assert(toolkit_views)
+#      assert(toolkit_views)
       sources += [ "credential_provider_signin_info_fetcher_win_unittest.cc" ]
       deps += [ ":credential_provider_test_utils" ]
     }
