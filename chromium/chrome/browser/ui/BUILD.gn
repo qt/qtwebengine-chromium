@@ -2126,7 +2126,7 @@ jumbo_split_static_library("ui") {
     sources += [ "web_contents_sizer.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [
       "desktop_ios_promotion/desktop_ios_promotion_bubble_controller.cc",
