@@ -1887,9 +1887,6 @@ static_library("ui") {
       # TODO(crbug.com/345487716): Remove circular dependencies.
       "//chrome/browser/ui/views/side_panel",
 
-      # TODO(crbug/com/387527798): Remove circular dependencies.
-      "//chrome/browser/ui/views/download",
-
       # TODO(crbug.com/40246046): Remove allow_circular_includes_from when
       # dependencies for controller are fixed.
       "//chrome/browser/lens/region_search",
@@ -1903,7 +1900,6 @@ static_library("ui") {
       "//chrome/browser/ui/exclusive_access",
       "//chrome/browser/ui/toasts:impl",
       "//chrome/browser/ui/views/toolbar",
-      "//chrome/browser/ui/views/page_action",
       "//chrome/browser/ui/webui/searchbox",
       "//chrome/browser/ui/webui/top_chrome:impl",
 
@@ -3436,7 +3432,7 @@ static_library("ui") {
     }
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     assert(use_aura)
 
@@ -5030,7 +5026,10 @@ static_library("ui") {
       "//chrome/browser/ui/qrcode_generator:impl",
       "//chrome/browser/ui/views",
       "//chrome/browser/ui/views/bubble",
+      "//chrome/browser/ui/views/page_action",
       "//chrome/browser/ui/commerce:impl",
+      # TODO(crbug/com/387527798): Remove circular dependencies.
+      "//chrome/browser/ui/views/download",
     ]
 
     if (is_chrome_branded && !is_android) {
