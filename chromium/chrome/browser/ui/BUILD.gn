@@ -3970,7 +3970,7 @@ static_library("ui") {
     weak_frameworks = [ "ScreenTime.framework" ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     assert(use_aura)
     sources += [
