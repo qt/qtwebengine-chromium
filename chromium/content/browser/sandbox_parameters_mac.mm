@@ -47,6 +47,10 @@ std::string GetOSVersion() {
 
 }  // namespace
 
+#if defined(TOOLKIT_QT)
+std::string getQtPrefix();
+#endif
+
 void SetupCommonSandboxParameters(sandbox::SeatbeltExecClient* client) {
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
@@ -86,6 +90,16 @@ void SetupCommonSandboxParameters(sandbox::SeatbeltExecClient* client) {
       service_manager::SandboxMac::GetCanonicalPath(component_path).value();
   CHECK(client->SetParameter(service_manager::SandboxMac::kSandboxComponentPath,
                              component_path_canonical));
+#endif
+
+#if defined(TOOLKIT_QT)
+  // Allow read access to files under the Qt Prefix.
+  const std::string qt_prefix_path_string = getQtPrefix();
+  const base::FilePath qt_prefix_path = base::FilePath(qt_prefix_path_string);
+  const std::string qt_prefix_path_canonical =
+      service_manager::SandboxMac::GetCanonicalPath(qt_prefix_path).value();
+  CHECK(client->SetParameter(service_manager::SandboxMac::kSandboxQtPrefixPath,
+                             qt_prefix_path_canonical));
 #endif
 
   CHECK(client->SetParameter(service_manager::SandboxMac::kSandboxOSVersion,
