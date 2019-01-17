@@ -1027,7 +1027,7 @@ static_library("test_support") {
     ]
   }
 
-  if (is_win || is_mac || is_linux || is_chromeos) {
+  if ((is_win || is_mac || is_linux || is_chromeos) && toolkit_views) {
     public_deps += [
       "//ui/base:pixel_diff_test_support",
       "//ui/views:view_pixel_diff_test_support",
@@ -5690,7 +5690,7 @@ template("performance_test_suite_template_base") {
       "//third_party/dawn/src/tint/cmd/bench:bench_cmd",
     ]
 
-    if (!is_android) {
+    if (!is_android && !toolkit_views) {
       data_deps += [
         "//base:base_perftests",
         "//chrome/test:load_library_perf_tests",
@@ -9180,7 +9180,7 @@ test("unit_tests") {
     ]
   }
 
-  if (use_aura) {
+  if (use_aura && toolkit_views) {
     sources += [ "../browser/ui/overscroll_pref_manager_unittest.cc" ]
 
     deps += [
