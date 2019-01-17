@@ -49,6 +49,9 @@ class SANDBOX_POLICY_EXPORT SandboxMac {
   static const char* kSandboxSodaComponentPath;
   static const char* kSandboxSodaLanguagePackPath;
   static const char* kSandboxComponentPath;
+#if defined(TOOLKIT_QT)
+  static const char* kSandboxQtPrefixPath;
+#endif
   static const char* kSandboxDisableDenialLogging;
   static const char* kSandboxEnableLogging;
   static const char* kSandboxHomedirAsLiteral;
