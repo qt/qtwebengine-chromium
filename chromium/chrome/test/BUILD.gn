@@ -3444,7 +3444,7 @@ test("unit_tests") {
     sources += [ "views/accessibility_checker_unittest.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [
       "../browser/notifications/win/fake_notification_image_retainer.cc",
@@ -3635,7 +3635,7 @@ test("unit_tests") {
     data_deps += [ "//chrome:chrome_framework" ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     assert(toolkit_views)
     sources += [ "../browser/ui/startup/credential_provider_signin_info_fetcher_win_unittest.cc" ]
     deps += [
