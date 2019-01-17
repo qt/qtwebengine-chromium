@@ -46,6 +46,9 @@ class SERVICE_MANAGER_SANDBOX_EXPORT SandboxMac {
   static const char* kSandboxBundlePath;
   static const char* kSandboxChromeBundleId;
   static const char* kSandboxComponentPath;
+#if defined(TOOLKIT_QT)
+  static const char* kSandboxQtPrefixPath;
+#endif
   static const char* kSandboxDisableDenialLogging;
   static const char* kSandboxEnableLogging;
   static const char* kSandboxHomedirAsLiteral;
