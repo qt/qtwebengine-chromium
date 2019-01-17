@@ -35,6 +35,10 @@
 
 namespace content {
 
+#if defined(TOOLKIT_QT)
+base::FilePath getSandboxPath();
+#endif
+
 namespace {
 
 std::optional<base::FilePath>& GetNetworkTestCertsDirectory() {
@@ -130,6 +134,14 @@ void SetupCommonSandboxParameters(
       sandbox::policy::GetCanonicalPath(component_path).value();
   CHECK(serializer->SetParameter(sandbox::policy::kParamComponentPath,
                                  component_path_canonical));
+#endif
+#if defined(TOOLKIT_QT)
+  // Allow read access to files under the Qt path.
+  const base::FilePath qt_prefix_path = getSandboxPath();
+  const std::string qt_prefix_path_canonical =
+      sandbox::policy::GetCanonicalPath(qt_prefix_path).value();
+  CHECK(serializer->SetParameter(sandbox::policy::kParamQtPrefixPath,
+                                 qt_prefix_path_canonical));
 #endif
 
   CHECK(serializer->SetParameter(sandbox::policy::kParamOsVersion,
