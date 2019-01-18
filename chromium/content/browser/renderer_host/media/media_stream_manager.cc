@@ -80,6 +80,10 @@
 #include "media/capture/video/chromeos/video_capture_device_factory_chromeos.h"
 #endif
 
+#if defined(TOOLKIT_QT) && defined(OS_MACOSX)
+#include "base/message_loop/message_pump_mac.h"
+#endif
+
 namespace content {
 
 base::LazyInstance<base::ThreadLocalPointer<MediaStreamManager>>::Leaky
@@ -475,7 +479,7 @@ MediaStreamManager::MediaStreamManager(
 
   if (!video_capture_provider) {
     scoped_refptr<base::SingleThreadTaskRunner> device_task_runner =
-#if defined(OS_WIN)
+#if defined(OS_WIN) || (defined(TOOLKIT_QT) && defined(OS_MACOSX))
         // Windows unconditionally requires its own thread (see below).
         nullptr;
 #else
@@ -490,7 +494,14 @@ MediaStreamManager::MediaStreamManager(
       // of buggy third party Direct Show modules, http://crbug.com/428958.
       video_capture_thread_->init_com_with_mta(false);
 #endif
+#if defined(TOOLKIT_QT) && defined(OS_MACOSX)
+      // VideoCaptureDeviceFactoryMac needs a CFRunLoop-based message pump.
+      base::Thread::Options options;
+      options.message_pump_factory = base::BindRepeating(&base::MessagePumpMac::Create);
+      CHECK(video_capture_thread_->StartWithOptions(options));
+#else
       CHECK(video_capture_thread_->Start());
+#endif
       device_task_runner = video_capture_thread_->task_runner();
     }
 
