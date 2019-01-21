@@ -28,9 +28,9 @@ class ChromeAppCacheService;
 // both classes.
 class AppCacheNavigationHandleCore : public AppCacheFrontend {
  public:
-  AppCacheNavigationHandleCore(
-      ChromeAppCacheService* appcache_service,
-      int appcache_host_id);
+  AppCacheNavigationHandleCore(ChromeAppCacheService* appcache_service,
+                               int appcache_host_id,
+                               int process_id);
   ~AppCacheNavigationHandleCore() override;
 
   // Returns the raw AppCacheHost pointer. Ownership remains with this class.
@@ -44,6 +44,12 @@ class AppCacheNavigationHandleCore : public AppCacheFrontend {
   static std::unique_ptr<AppCacheHost> GetPrecreatedHost(int host_id);
 
   AppCacheServiceImpl* GetAppCacheService();
+
+  // SetProcessId may only be called once, and only if kInvalidUniqueID was
+  // passed to the AppCacheNavigationHandleCore's constructor (e.g. in a
+  // scenario where NavigationHandleImpl needs to delay specifying the
+  // |process_id| until ReadyToCommit time).
+  void SetProcessId(int process_id);
 
  protected:
   // AppCacheFrontend methods
@@ -72,6 +78,7 @@ class AppCacheNavigationHandleCore : public AppCacheFrontend {
   std::unique_ptr<AppCacheHost> precreated_host_;
   scoped_refptr<ChromeAppCacheService> appcache_service_;
   int appcache_host_id_;
+  int process_id_;
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheNavigationHandleCore);
 };

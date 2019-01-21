@@ -33,6 +33,7 @@
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/child_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -612,7 +613,10 @@ void NavigationHandleImpl::InitServiceWorkerHandle(
 
 void NavigationHandleImpl::InitAppCacheHandle(
     ChromeAppCacheService* appcache_service) {
-  appcache_handle_.reset(new AppCacheNavigationHandle(appcache_service));
+  // The final process id won't be available until
+  // NavigationHandleImpl::ReadyToCommitNavigation.
+  appcache_handle_.reset(new AppCacheNavigationHandle(
+      appcache_service, ChildProcessHost::kInvalidUniqueID));
 }
 
 void NavigationHandleImpl::WillStartRequest(
@@ -822,6 +826,9 @@ void NavigationHandleImpl::ReadyToCommitNavigation(
   render_frame_host_ = render_frame_host;
   state_ = READY_TO_COMMIT;
   ready_to_commit_time_ = base::TimeTicks::Now();
+
+  if (appcache_handle_)
+    appcache_handle_->SetProcessId(render_frame_host->GetProcess()->GetID());
 
   // Record metrics for the time it takes to get to this state from the
   // beginning of the navigation.
