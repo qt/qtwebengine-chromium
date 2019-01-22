@@ -856,32 +856,44 @@ bool RendererBlinkPlatformImpl::SetSandboxEnabledForTesting(bool enable) {
 
 scoped_refptr<base::SingleThreadTaskRunner>
 RendererBlinkPlatformImpl::GetWebRtcWorkerThread() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->GetWebRtcWorkerThread();
+#else
+  return nullptr;
+#endif
 }
 
 rtc::Thread* RendererBlinkPlatformImpl::GetWebRtcWorkerThreadRtcThread() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->GetWebRtcWorkerThreadRtcThread();
+#else
+  return nullptr;
+#endif
 }
 
 std::unique_ptr<cricket::PortAllocator>
 RendererBlinkPlatformImpl::CreateWebRtcPortAllocator(
     blink::WebLocalFrame* frame) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   DCHECK(render_thread);
   PeerConnectionDependencyFactory* rtc_dependency_factory =
       render_thread->GetPeerConnectionDependencyFactory();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->CreatePortAllocator(frame);
+#else
+  return nullptr;
+#endif
 }
 
 //------------------------------------------------------------------------------

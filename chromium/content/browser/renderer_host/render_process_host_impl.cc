@@ -2271,10 +2271,12 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       base::Unretained(storage_partition_impl_->GetAppCacheService()),
       GetID()));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(&P2PSocketDispatcherHost::BindRequest,
                           base::Unretained(p2p_socket_dispatcher_host_.get())));
+#endif
 
   AddUIThreadInterface(registry.get(), base::Bind(&FieldTrialRecorder::Create));
 
