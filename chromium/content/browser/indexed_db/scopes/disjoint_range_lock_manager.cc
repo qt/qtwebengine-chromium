@@ -19,7 +19,11 @@ DisjointRangeLockManager::Lock::Lock(DisjointRangeLockManager::Lock&& lock) noex
       queue(std::move(lock.queue)) {}
 DisjointRangeLockManager::Lock::~Lock() = default;
 DisjointRangeLockManager::Lock& DisjointRangeLockManager::Lock::operator=(
-    DisjointRangeLockManager::Lock&&) noexcept = default;
+    DisjointRangeLockManager::Lock&& lock) noexcept {
+  acquired_count = lock.acquired_count;
+  lock_mode = lock.lock_mode;
+  queue = std::move(lock.queue);
+}
 
 DisjointRangeLockManager::DisjointRangeLockManager(
     int level_count,
