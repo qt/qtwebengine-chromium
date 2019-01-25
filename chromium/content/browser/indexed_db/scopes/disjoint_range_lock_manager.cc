@@ -23,6 +23,7 @@ DisjointRangeLockManager::Lock& DisjointRangeLockManager::Lock::operator=(
   acquired_count = lock.acquired_count;
   lock_mode = lock.lock_mode;
   queue = std::move(lock.queue);
+  return *this;
 }
 
 DisjointRangeLockManager::DisjointRangeLockManager(
