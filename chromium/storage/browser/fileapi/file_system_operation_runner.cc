@@ -701,7 +701,8 @@ FileSystemOperationRunner::BeginOperation(
     base::WeakPtr<BeginOperationScoper> scope) {
   OperationHandle handle;
   handle.id = next_operation_id_++;
-  operations_.emplace(handle.id, std::move(operation));
+  DCHECK(operations_.find(handle.id) == operations_.end());
+  operations_[handle.id] = std::move(operation);
   handle.scope = scope;
   return handle;
 }

@@ -53,7 +53,7 @@ class STORAGE_EXPORT FileSystemOperationRunner
   using CopyOrMoveOption = FileSystemOperation::CopyOrMoveOption;
   using GetMetadataField = FileSystemOperation::GetMetadataField;
 
-  using OperationID = int;
+  using OperationID = uint64_t;
 
   virtual ~FileSystemOperationRunner();
 
