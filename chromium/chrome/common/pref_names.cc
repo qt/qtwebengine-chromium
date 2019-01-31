@@ -12,4 +12,7 @@ const char kAcceptLanguages[] = "intl.accept_languages";
 const char kShowInternalAccessibilityTree[] =
     "accessibility.show_internal_accessibility_tree";
 
+// Integer that holds the value of the next persistent notification ID to be
+// used.
+const char kNotificationNextPersistentId[] = "persistent_notifications.next_id";
 }  // namespace prefs

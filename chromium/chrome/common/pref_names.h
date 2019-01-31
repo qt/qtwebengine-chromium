@@ -10,6 +10,7 @@
 namespace prefs {
 extern const char kAcceptLanguages[];
 extern const char kShowInternalAccessibilityTree[];
+extern const char kNotificationNextPersistentId[];
 }  // namespace prefs
 
 #endif  // CHROME_COMMON_PREF_NAMES_H_
