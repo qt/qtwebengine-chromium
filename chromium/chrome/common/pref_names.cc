@@ -6,4 +6,8 @@
 
 namespace prefs {
 const char kAcceptLanguages[] = "intl.accept_languages";
+
+// Integer that holds the value of the next persistent notification ID to be
+// used.
+const char kNotificationNextPersistentId[] = "persistent_notifications.next_id";
 }  // namespace prefs
