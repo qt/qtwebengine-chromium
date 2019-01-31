@@ -20,11 +20,6 @@ source_set("app_shim") {
   ]
 
   deps = [
-    "//apps",
-    "//chrome/browser/apps/platform_apps",
-    "//chrome/browser/extensions",
-    "//chrome/browser/web_applications/components",
-    "//chrome/browser/web_applications/extensions",
     "//chrome/common",
     "//chrome/common:app_mode_app_support",
     "//chrome/common:constants",
@@ -44,6 +39,11 @@ source_set("app_shim") {
     ]
 
     deps += [
+      "//apps",
+      "//chrome/browser/apps/platform_apps",
+      "//chrome/browser/extensions",
+      "//chrome/browser/web_applications/components",
+      "//chrome/browser/web_applications/extensions",
       "//extensions/browser",
       "//extensions/common",
     ]

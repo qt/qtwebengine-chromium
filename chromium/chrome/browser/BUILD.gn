@@ -1672,7 +1672,6 @@ jumbo_split_static_library("browser") {
     "//chrome/browser/metrics:expired_histograms_array",
     "//chrome/browser/metrics/variations:chrome_ui_string_overrider_factory",
     "//chrome/browser/net:probe_message_proto",
-    "//chrome/browser/profiling_host",
     "//chrome/browser/push_messaging:budget_proto",
     "//chrome/browser/resource_coordinator:mojo_bindings",
     "//chrome/browser/safe_browsing",
@@ -3924,6 +3923,7 @@ jumbo_split_static_library("browser") {
     deps += [
       "//apps",
       "//chrome/browser/sync_file_system/drive_backend:sync_file_system_drive_proto",
+      "//chrome/browser/profiling_host",
       "//chrome/browser/web_applications",
       "//chrome/browser/web_applications/bookmark_apps",
       "//chrome/browser/web_applications/components",
