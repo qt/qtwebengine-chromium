@@ -808,8 +808,9 @@ bool Document::info(IJS_Context* cc,
   pRuntime->PutObjectString(pObj, L"ModDate", cwModDate);
   pRuntime->PutObjectString(pObj, L"Trapped", cwTrapped);
 
-  // It's to be compatible to non-standard info dictionary.
-  for (const auto& it : *pDictionary) {
+  // PutObjectProperty() calls below may re-enter JS and change info dict.
+  auto pCopy = pDictionary->Clone();
+  for (const auto& it : *ToDictionary(pCopy.get())) {
     const CFX_ByteString& bsKey = it.first;
     CPDF_Object* pValueObj = it.second;
     CFX_WideString wsKey = CFX_WideString::FromUTF8(bsKey.AsStringC());
