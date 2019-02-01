@@ -307,6 +307,11 @@ void FileAPIMessageFilter::OnCreate(
     int request_id, const GURL& path, bool exclusive,
     bool is_directory, bool recursive) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  // This depends on a default off feature not even introduced in Chromium 69:
+  // blink::features::kWritableFilesAPI.
+  return;
+
   FileSystemURL url(context_->CrackURL(path));
   if (!ValidateFileSystemURL(request_id, url))
     return;
