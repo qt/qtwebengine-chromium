@@ -5667,8 +5667,12 @@ void RenderFrameImpl::OnFindMatchRects(int current_version) {
 void RenderFrameImpl::OnSelectPopupMenuItem(int selected_index) {
   if (external_popup_menu_ == NULL)
     return;
-  external_popup_menu_->DidSelectItem(selected_index);
-  external_popup_menu_.reset();
+  // We need to reset |external_popup_menu_| before calling DidSelectItem(),
+  // which might delete |this|.
+  // See ExternalPopupMenuRemoveTest.RemoveFrameOnChange
+  std::unique_ptr<ExternalPopupMenu> popup;
+  popup.swap(external_popup_menu_);
+  popup->DidSelectItem(selected_index);
 }
 #else
 void RenderFrameImpl::OnSelectPopupMenuItems(
@@ -5681,8 +5685,12 @@ void RenderFrameImpl::OnSelectPopupMenuItems(
   if (!external_popup_menu_)
     return;
 
-  external_popup_menu_->DidSelectItems(canceled, selected_indices);
-  external_popup_menu_.reset();
+  // We need to reset |external_popup_menu_| before calling DidSelectItems(),
+  // which might delete |this|.
+  // See ExternalPopupMenuRemoveTest.RemoveFrameOnChange
+  std::unique_ptr<ExternalPopupMenu> popup;
+  popup.swap(external_popup_menu_);
+  popup->DidSelectItems(canceled, selected_indices);
 }
 #endif
 #endif
