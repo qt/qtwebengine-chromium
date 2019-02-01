@@ -85,7 +85,6 @@ VideoCaptureManager::VideoCaptureManager(
       emit_log_message_cb_(std::move(emit_log_message_cb)) {}
 
 VideoCaptureManager::~VideoCaptureManager() {
-  DCHECK(controllers_.empty());
   DCHECK(device_start_request_queue_.empty());
 }
 

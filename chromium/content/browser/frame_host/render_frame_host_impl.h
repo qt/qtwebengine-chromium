@@ -1095,12 +1095,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void CreateAudioOutputStreamFactory(
       mojom::RendererAudioOutputStreamFactoryRequest request);
 
-#if BUILDFLAG(ENABLE_WEBRTC)
-  void CreateMediaStreamDispatcherHost(
-      MediaStreamManager* media_stream_manager,
-      mojom::MediaStreamDispatcherHostRequest request);
-#endif
-
   void BindMediaInterfaceFactoryRequest(
       media::mojom::InterfaceFactoryRequest request);
 

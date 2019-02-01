@@ -203,6 +203,7 @@ class MediaStreamManagerTest : public ::testing::Test {
   std::string MakeMediaAccessRequest(int index) {
     const int render_process_id = 1;
     const int render_frame_id = 1;
+    const int requester_id = 1;
     const int page_request_id = 1;
     const url::Origin security_origin;
     MediaStreamManager::MediaAccessRequestCallback callback =
@@ -210,8 +211,8 @@ class MediaStreamManagerTest : public ::testing::Test {
                        base::Unretained(this), index);
     StreamControls controls(true, true);
     return media_stream_manager_->MakeMediaAccessRequest(
-        render_process_id, render_frame_id, page_request_id, controls,
-        security_origin, std::move(callback));
+        render_process_id, render_frame_id, requester_id, page_request_id,
+        controls, security_origin, std::move(callback));
   }
 
   // media_stream_manager_ needs to outlive thread_bundle_ because it is a
@@ -273,14 +274,15 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
   // Second request.
   int render_process_id = 2;
   int render_frame_id = 2;
+  int requester_id = 2;
   int page_request_id = 2;
   url::Origin security_origin;
   StreamControls controls(true, true);
   MediaStreamManager::MediaAccessRequestCallback callback = base::BindOnce(
       &MediaStreamManagerTest::ResponseCallback, base::Unretained(this), 1);
   std::string label2 = media_stream_manager_->MakeMediaAccessRequest(
-      render_process_id, render_frame_id, page_request_id, controls,
-      security_origin, std::move(callback));
+      render_process_id, render_frame_id, requester_id, page_request_id,
+      controls, security_origin, std::move(callback));
 
   // Expecting the callbackS from requests will be triggered and quit the test.
   // Note, the callbacks might come in a different order depending on the
