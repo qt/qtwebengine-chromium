@@ -35,6 +35,7 @@
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ScriptState.h"
+#include "core/dom/ContextLifecycleObserver.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/imagebitmap/ImageBitmapOptions.h"
@@ -102,7 +103,10 @@ class ImageBitmapFactories final
  private:
   class ImageBitmapLoader final
       : public GarbageCollectedFinalized<ImageBitmapLoader>,
+        public ContextLifecycleObserver,
         public FileReaderLoaderClient {
+    USING_GARBAGE_COLLECTED_MIXIN(ImageBitmapLoader);
+
    public:
     static ImageBitmapLoader* create(ImageBitmapFactories& factory,
                                      Optional<IntRect> cropRect,
@@ -116,7 +120,7 @@ class ImageBitmapFactories final
 
     DECLARE_TRACE();
 
-    ~ImageBitmapLoader() override {}
+    ~ImageBitmapLoader() override;
 
    private:
     ImageBitmapLoader(ImageBitmapFactories&,
@@ -132,6 +136,9 @@ class ImageBitmapFactories final
                                     const String& premultiplyAlphaOption,
                                     const String& colorSpaceConversionOption);
     void resolvePromiseOnOriginalThread(sk_sp<SkImage>);
+
+    // ContextLifecycleObserver
+    void contextDestroyed() override;
 
     // FileReaderLoaderClient
     void didStartLoading() override {}

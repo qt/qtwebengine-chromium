@@ -204,12 +204,19 @@ void ImageBitmapFactories::didFinishLoading(ImageBitmapLoader* loader) {
   m_pendingLoaders.remove(loader);
 }
 
+DEFINE_TRACE(ImageBitmapFactories) {
+  visitor->trace(m_pendingLoaders);
+  Supplement<LocalDOMWindow>::trace(visitor);
+  Supplement<WorkerGlobalScope>::trace(visitor);
+}
+
 ImageBitmapFactories::ImageBitmapLoader::ImageBitmapLoader(
     ImageBitmapFactories& factory,
     Optional<IntRect> cropRect,
     ScriptState* scriptState,
     const ImageBitmapOptions& options)
-    : m_loader(
+    : ContextLifecycleObserver(scriptState->getExecutionContext()),
+      m_loader(
           FileReaderLoader::create(FileReaderLoader::ReadAsArrayBuffer, this)),
       m_factory(&factory),
       m_resolver(ScriptPromiseResolver::create(scriptState)),
@@ -222,20 +229,26 @@ void ImageBitmapFactories::ImageBitmapLoader::loadBlobAsync(
   m_loader->start(context, blob->blobDataHandle());
 }
 
-DEFINE_TRACE(ImageBitmapFactories) {
-  visitor->trace(m_pendingLoaders);
-  Supplement<LocalDOMWindow>::trace(visitor);
-  Supplement<WorkerGlobalScope>::trace(visitor);
+ImageBitmapFactories::ImageBitmapLoader::~ImageBitmapLoader() {
+  DCHECK(!m_loader);
 }
 
 void ImageBitmapFactories::ImageBitmapLoader::rejectPromise() {
   m_resolver->reject(DOMException::create(
       InvalidStateError, "The source image cannot be decoded."));
+  m_loader.reset();
   m_factory->didFinishLoading(this);
+}
+
+void ImageBitmapFactories::ImageBitmapLoader::contextDestroyed() {
+  if (m_loader)
+    m_factory->didFinishLoading(this);
+  m_loader.reset();
 }
 
 void ImageBitmapFactories::ImageBitmapLoader::didFinishLoading() {
   DOMArrayBuffer* arrayBuffer = m_loader->arrayBufferResult();
+  m_loader.reset();
   if (!arrayBuffer) {
     rejectPromise();
     return;
@@ -318,6 +331,7 @@ void ImageBitmapFactories::ImageBitmapLoader::resolvePromiseOnOriginalThread(
 }
 
 DEFINE_TRACE(ImageBitmapFactories::ImageBitmapLoader) {
+  ContextLifecycleObserver::trace(visitor);
   visitor->trace(m_factory);
   visitor->trace(m_resolver);
 }
