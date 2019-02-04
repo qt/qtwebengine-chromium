@@ -38,7 +38,7 @@ gclient_gn_args = [
 
 
 vars = {
-  "buildspec_platforms": "win, linux64, chromeos, win64, android, mac64",
+  "buildspec_platforms": "win, ios, linux64, chromeos, win64, android, mac64",
   # Variable that can be used to support multiple build scenarios, like having
   # Chromium specific targets in a client project's GN file or sync dependencies
   # conditionally etc.
@@ -110,11 +110,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'v8_revision': 'd77b970954effa1843af951e6b1026ba52142ca4',
+  'v8_revision': '6136a1bcb3c56fe51be0ccad91046c2093a88d57',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
-  'swarming_revision': '486c9b53c4d54dd4b95bb6ce0e31160e600dfc11',
+  'swarming_revision': '0e3e1c4dc4e79f25a5b58fcbc135dc93183c0c54',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
@@ -130,7 +130,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling PDFium
   # and whatever else without interference from each other.
-  'pdfium_revision': '5fe886fd17a413b39214ffdd7b2fba5326b88011',
+  'pdfium_revision': '2ebef1487e139dfe1f44998f312ed59f80202c82',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openmax_dl
   # and whatever else without interference from each other.
@@ -380,7 +380,15 @@ deps = {
       'packages': [
         {
           'package': 'infra/tools/luci/isolate/${{platform}}',
-          'version': 'git_revision:bc125484b8513898f17bc2501ac5e95330f44a3b',
+          'version': 'git_revision:f140d0c3c6acecf6ca6cd8d66ddad9421158ab40',
+        },
+        {
+          'package': 'infra/tools/luci/isolated/${{platform}}',
+          'version': 'git_revision:f140d0c3c6acecf6ca6cd8d66ddad9421158ab40',
+        },
+        {
+          'package': 'infra/tools/luci/swarming/${{platform}}',
+          'version': 'git_revision:f140d0c3c6acecf6ca6cd8d66ddad9421158ab40',
         },
       ],
       'dep_type': 'cipd',
@@ -662,7 +670,7 @@ deps = {
   },
 
   'src/third_party/ffmpeg':
-    Var('chromium_git') + '/chromium/third_party/ffmpeg.git' + '@' + '458e9fd3f8e8c913a739389c65dfaf1f77ee9106',
+    Var('chromium_git') + '/chromium/third_party/ffmpeg.git' + '@' + '8ffab7d32469e1ad3614eb6fcabfb6ae184acaf7',
 
   'src/third_party/flac':
     Var('chromium_git') + '/chromium/deps/flac.git' + '@' + 'af862024c8c8fa0ae07ced05e89013d881b00596',
@@ -768,7 +776,7 @@ deps = {
     Var('chromium_git') + '/chromium/deps/hunspell_dictionaries.git' + '@' + 'a9bac57ce6c9d390a52ebaad3259f5fdb871210e',
 
   'src/third_party/icu':
-    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + '5841b97d994b2e3aa67629c555e2226361e09272',
+    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + '6939c54120cb37a5e5c49f73a8ab28e952440d9b',
 
   'src/third_party/icu4j': {
       'packages': [
@@ -1139,7 +1147,7 @@ deps = {
     Var('chromium_git') + '/v8/v8.git' + '@' +  Var('v8_revision'),
 
   'src-internal': {
-    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@94d6ff130fc7ba14e320257e6cd42792fbf402cd',
+    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@81d6b43c6e6fdf4ae3a5288f72946415a71bf728',
     'condition': 'checkout_src_internal',
   },
 
