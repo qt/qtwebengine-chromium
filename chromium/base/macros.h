@@ -33,6 +33,10 @@
   TypeName() = delete;                           \
   DISALLOW_COPY_AND_ASSIGN(TypeName)
 
+// Workaround for MSVC, which expands __VA_ARGS__ as one macro argument. To
+// work around this bug, wrap the entire expression in this macro...
+#define CR_EXPAND_ARG(arg) arg
+
 // Used to explicitly mark the return value of a function as unused. If you are
 // really sure you don't want to do anything with the return value of a function
 // that has been marked WARN_UNUSED_RESULT, wrap it with this. Example:
