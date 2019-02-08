@@ -5548,7 +5548,7 @@ class AXPosition {
           return text_position->CreatePositionAtStartOfAnchor();
         } else {
           text_position->text_offset_ =
-              int{boundary_offsets[boundary_offsets.size() - 1]};
+              int(boundary_offsets[boundary_offsets.size() - 1]);
           return text_position;
         }
         break;
@@ -5556,7 +5556,7 @@ class AXPosition {
         if (boundary_offsets.empty()) {
           return text_position->CreatePositionAtEndOfAnchor();
         } else {
-          text_position->text_offset_ = int{boundary_offsets[0]};
+          text_position->text_offset_ = int(boundary_offsets[0]);
           return text_position;
         }
         break;
