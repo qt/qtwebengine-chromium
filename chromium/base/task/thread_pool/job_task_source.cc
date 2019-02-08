@@ -45,7 +45,7 @@ JobTaskSourceNew::State::Value JobTaskSourceNew::State::IncrementWorkerCount() {
       value_.fetch_add(kWorkerCountIncrement, std::memory_order_relaxed);
   // The worker count must not overflow a uint8_t.
   DCHECK((prev >> kWorkerCountBitOffset) < ((1 << 8) - 1));
-  return {prev};
+  return {uint32_t(prev)};
 }
 
 JobTaskSourceNew::State::Value JobTaskSourceNew::State::DecrementWorkerCount() {
