@@ -393,7 +393,7 @@ bool GamepadDeviceLinux::ReadEvdevSpecialKeys(Gamepad* pad) {
   ssize_t bytes_read;
   while ((bytes_read = HANDLE_EINTR(
               read(evdev_fd_.get(), &ev, sizeof(input_event)))) > 0) {
-    if (size_t{bytes_read} < sizeof(input_event))
+    if (size_t(bytes_read) < sizeof(input_event))
       break;
     if (ev.type != EV_KEY)
       continue;

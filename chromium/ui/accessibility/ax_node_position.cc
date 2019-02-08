@@ -69,7 +69,7 @@ void AXNodePosition::AnchorChild(int child_index,
     child = child_tree_manager->GetRootAsAXNode();
     *tree_id = child_tree_manager->GetTreeID();
   } else {
-    child = GetAnchor()->children()[size_t{child_index}];
+    child = GetAnchor()->children()[size_t(child_index)];
     *tree_id = this->tree_id();
   }
 
@@ -86,7 +86,7 @@ int AXNodePosition::AnchorChildCount() const {
   if (child_tree_manager)
     return 1;
 
-  return int{GetAnchor()->children().size()};
+  return int(GetAnchor()->children().size());
 }
 
 int AXNodePosition::AnchorUnignoredChildCount() const {
@@ -97,7 +97,7 @@ int AXNodePosition::AnchorUnignoredChildCount() const {
 }
 
 int AXNodePosition::AnchorIndexInParent() const {
-  return GetAnchor() ? int{GetAnchor()->index_in_parent()} : INVALID_INDEX;
+  return GetAnchor() ? int(GetAnchor()->index_in_parent()) : INVALID_INDEX;
 }
 
 int AXNodePosition::AnchorSiblingCount() const {

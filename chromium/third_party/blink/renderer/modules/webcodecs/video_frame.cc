@@ -158,7 +158,7 @@ VideoFrame* VideoFrame::Create(ImageBitmap* source,
     SkIRect src_rect = SkIRect::MakeWH(source->width(), source->height());
     sk_image->asyncRescaleAndReadPixelsYUV420(
         kRec709_SkYUVColorSpace, sk_color_space, src_rect,
-        {source->width(), source->height()}, SkImage::RescaleGamma::kSrc,
+        {int(source->width()), int(source->height())}, SkImage::RescaleGamma::kSrc,
         kHigh_SkFilterQuality, &OnYUVReadbackDone, frame.get());
     GrDirectContext* gr_context =
         source->BitmapImage()->ContextProvider()->GetGrContext();

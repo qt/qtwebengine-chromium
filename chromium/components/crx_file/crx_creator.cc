@@ -74,8 +74,8 @@ CreatorResult Create(const base::FilePath& output_path,
       signed_header_data.SerializeAsString();
   const int signed_header_size = signed_header_data_str.size();
   const uint8_t signed_header_size_octets[] = {
-      signed_header_size, signed_header_size >> 8, signed_header_size >> 16,
-      signed_header_size >> 24};
+      uint8_t(signed_header_size), uint8_t(signed_header_size >> 8),
+      uint8_t(signed_header_size >> 16), uint8_t(signed_header_size >> 24)};
 
   // Create a signer, init with purpose, SignedData length, run SignedData
   // through, run ZIP through.
@@ -104,8 +104,9 @@ CreatorResult Create(const base::FilePath& output_path,
   header.set_signed_header_data(signed_header_data_str);
   const std::string header_str = header.SerializeAsString();
   const int header_size = header_str.size();
-  const uint8_t header_size_octets[] = {header_size, header_size >> 8,
-                                        header_size >> 16, header_size >> 24};
+  const uint8_t header_size_octets[] = {
+      uint8_t(header_size), uint8_t(header_size >> 8),
+      uint8_t(header_size >> 16), uint8_t(header_size >> 24)};
 
   // Write CRX.
   const uint8_t format_version_octets[] = {3, 0, 0, 0};

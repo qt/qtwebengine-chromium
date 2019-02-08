@@ -69,7 +69,7 @@ class SystemFonts {
                             LOGFONT* logfont) {
     DCHECK_GT(font_adjustment.font_scale, 0.0);
     LONG new_height =
-        LONG{std::round(logfont->lfHeight * font_adjustment.font_scale)};
+        LONG(std::round(logfont->lfHeight * font_adjustment.font_scale));
     if (logfont->lfHeight && !new_height)
       new_height = logfont->lfHeight > 0 ? 1 : -1;
     logfont->lfHeight = new_height;

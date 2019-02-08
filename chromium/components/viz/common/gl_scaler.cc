@@ -1408,8 +1408,8 @@ void GLScaler::ScalerStage::ScaleToMultipleOutputs(
 gfx::RectF GLScaler::ScalerStage::ToSourceRect(
     const gfx::Rect& output_rect) const {
   return gfx::ScaleRect(gfx::RectF(output_rect),
-                        float{scale_from_.x()} / scale_to_.x(),
-                        float{scale_from_.y()} / scale_to_.y());
+                        float(scale_from_.x()) / scale_to_.x(),
+                        float(scale_from_.y()) / scale_to_.y());
 }
 
 gfx::Rect GLScaler::ScalerStage::ToInputRect(gfx::RectF source_rect) const {

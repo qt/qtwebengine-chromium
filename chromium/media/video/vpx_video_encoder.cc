@@ -71,7 +71,7 @@ Status SetUpVpxConfig(const VideoEncoder::Options& opts,
   } else {
     config->rc_end_usage = VPX_VBR;
     config->rc_target_bitrate =
-        double{opts.frame_size.GetCheckedArea().ValueOrDie()} / config->g_w /
+        double(opts.frame_size.GetCheckedArea().ValueOrDie()) / config->g_w /
         config->g_h * config->rc_target_bitrate;
   }
 

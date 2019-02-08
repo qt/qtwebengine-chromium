@@ -46,13 +46,13 @@ JobTaskSource::State::Value JobTaskSource::State::DecrementWorkerCount() {
   const size_t value_before_sub =
       value_.fetch_sub(kWorkerCountIncrement, std::memory_order_relaxed);
   DCHECK((value_before_sub >> kWorkerCountBitOffset) > 0);
-  return {value_before_sub};
+  return {uint32_t(value_before_sub)};
 }
 
 JobTaskSource::State::Value JobTaskSource::State::IncrementWorkerCount() {
   size_t value_before_add =
       value_.fetch_add(kWorkerCountIncrement, std::memory_order_relaxed);
-  return {value_before_add};
+  return {uint32_t(value_before_add)};
 }
 
 JobTaskSource::State::Value JobTaskSource::State::Load() const {

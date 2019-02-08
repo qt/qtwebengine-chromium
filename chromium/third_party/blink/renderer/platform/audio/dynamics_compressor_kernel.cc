@@ -62,8 +62,8 @@ DynamicsCompressorKernel::DynamicsCompressorKernel(float sample_rate,
   Reset();
 
   metering_release_k_ =
-      float{audio_utilities::DiscreteTimeConstantForSampleRate(
-          kMeteringReleaseTimeConstant, sample_rate)};
+      float(audio_utilities::DiscreteTimeConstantForSampleRate(
+          kMeteringReleaseTimeConstant, sample_rate));
 }
 
 void DynamicsCompressorKernel::SetNumberOfChannels(

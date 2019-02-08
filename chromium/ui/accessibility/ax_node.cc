@@ -611,14 +611,14 @@ base::Optional<int> AXNode::GetTableColCount() const {
   const AXTableInfo* table_info = GetAncestorTableInfo();
   if (!table_info)
     return base::nullopt;
-  return int{table_info->col_count};
+  return int(table_info->col_count);
 }
 
 base::Optional<int> AXNode::GetTableRowCount() const {
   const AXTableInfo* table_info = GetAncestorTableInfo();
   if (!table_info)
     return base::nullopt;
-  return int{table_info->row_count};
+  return int(table_info->row_count);
 }
 
 base::Optional<int> AXNode::GetTableAriaColCount() const {
@@ -657,11 +657,11 @@ AXNode* AXNode::GetTableCellFromIndex(int index) const {
     return nullptr;
 
   // There is a table but there is no cell with the given index.
-  if (index < 0 || size_t{index} >= table_info->unique_cell_ids.size()) {
+  if (index < 0 || size_t(index) >= table_info->unique_cell_ids.size()) {
     return nullptr;
   }
 
-  return tree_->GetFromId(table_info->unique_cell_ids[size_t{index}]);
+  return tree_->GetFromId(table_info->unique_cell_ids[size_t(index)]);
 }
 
 AXNode* AXNode::GetTableCaption() const {
@@ -678,13 +678,13 @@ AXNode* AXNode::GetTableCellFromCoords(int row_index, int col_index) const {
     return nullptr;
 
   // There is a table but the given coordinates are outside the table.
-  if (row_index < 0 || size_t{row_index} >= table_info->row_count ||
-      col_index < 0 || size_t{col_index} >= table_info->col_count) {
+  if (row_index < 0 || size_t(row_index) >= table_info->row_count ||
+      col_index < 0 || size_t(col_index) >= table_info->col_count) {
     return nullptr;
   }
 
   return tree_->GetFromId(
-      table_info->cell_ids[size_t{row_index}][size_t{col_index}]);
+      table_info->cell_ids[size_t(row_index)][size_t(col_index)]);
 }
 
 std::vector<AXNode::AXID> AXNode::GetTableColHeaderNodeIds() const {
@@ -709,10 +709,10 @@ std::vector<AXNode::AXID> AXNode::GetTableColHeaderNodeIds(
   if (!table_info)
     return std::vector<AXNode::AXID>();
 
-  if (col_index < 0 || size_t{col_index} >= table_info->col_count)
+  if (col_index < 0 || size_t(col_index) >= table_info->col_count)
     return std::vector<AXNode::AXID>();
 
-  return std::vector<AXNode::AXID>(table_info->col_headers[size_t{col_index}]);
+  return std::vector<AXNode::AXID>(table_info->col_headers[(size_t)col_index]);
 }
 
 std::vector<AXNode::AXID> AXNode::GetTableRowHeaderNodeIds(
@@ -721,10 +721,10 @@ std::vector<AXNode::AXID> AXNode::GetTableRowHeaderNodeIds(
   if (!table_info)
     return std::vector<AXNode::AXID>();
 
-  if (row_index < 0 || size_t{row_index} >= table_info->row_count)
+  if (row_index < 0 || size_t(row_index) >= table_info->row_count)
     return std::vector<AXNode::AXID>();
 
-  return std::vector<AXNode::AXID>(table_info->row_headers[size_t{row_index}]);
+  return std::vector<AXNode::AXID>(table_info->row_headers[(size_t)row_index]);
 }
 
 std::vector<AXNode::AXID> AXNode::GetTableUniqueCellIds() const {
@@ -763,7 +763,7 @@ base::Optional<int> AXNode::GetTableRowRowIndex() const {
   const auto& iter = table_info->row_id_to_index.find(id());
   if (iter == table_info->row_id_to_index.end())
     return base::nullopt;
-  return int{iter->second};
+  return int(iter->second);
 }
 
 std::vector<AXNode::AXID> AXNode::GetTableRowNodeIds() const {
@@ -825,7 +825,7 @@ base::Optional<int> AXNode::GetTableCellIndex() const {
 
   const auto& iter = table_info->cell_id_to_index.find(id());
   if (iter != table_info->cell_id_to_index.end())
-    return int{iter->second};
+    return int(iter->second);
   return base::nullopt;
 }
 
@@ -838,7 +838,7 @@ base::Optional<int> AXNode::GetTableCellColIndex() const {
   if (!index)
     return base::nullopt;
 
-  return int{table_info->cell_data_vector[*index].col_index};
+  return int(table_info->cell_data_vector[*index].col_index);
 }
 
 base::Optional<int> AXNode::GetTableCellRowIndex() const {
@@ -850,7 +850,7 @@ base::Optional<int> AXNode::GetTableCellRowIndex() const {
   if (!index)
     return base::nullopt;
 
-  return int{table_info->cell_data_vector[*index].row_index};
+  return int(table_info->cell_data_vector[*index].row_index);
 }
 
 base::Optional<int> AXNode::GetTableCellColSpan() const {
@@ -888,7 +888,7 @@ base::Optional<int> AXNode::GetTableCellAriaColIndex() const {
   if (!index)
     return base::nullopt;
 
-  return int{table_info->cell_data_vector[*index].aria_col_index};
+  return int(table_info->cell_data_vector[*index].aria_col_index);
 }
 
 base::Optional<int> AXNode::GetTableCellAriaRowIndex() const {
@@ -900,7 +900,7 @@ base::Optional<int> AXNode::GetTableCellAriaRowIndex() const {
   if (!index)
     return base::nullopt;
 
-  return int{table_info->cell_data_vector[*index].aria_row_index};
+  return int(table_info->cell_data_vector[*index].aria_row_index);
 }
 
 std::vector<AXNode::AXID> AXNode::GetTableCellColHeaderNodeIds() const {
