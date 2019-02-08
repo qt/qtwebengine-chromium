@@ -201,7 +201,7 @@ base::Value AsValue(const SkPaint& paint) {
 }
 
 base::Value SaveLayerFlagsAsValue(SkCanvas::SaveLayerFlags flags) {
-  return base::Value(int{flags});
+  return base::Value(int(flags));
 }
 
 base::Value AsValue(SkClipOp op) {

@@ -122,7 +122,7 @@ AnchorElementMetricsSender::AnchorElementMetricsSender(Document& document)
 
   document.View()->RegisterForLifecycleNotifications(this);
   intersection_observer_ = IntersectionObserver::Create(
-      {}, {INTERSECTION_RATIO_THRESHOLD}, &document,
+      {}, {float(INTERSECTION_RATIO_THRESHOLD)}, &document,
       WTF::BindRepeating(&AnchorElementMetricsSender::UpdateVisibleAnchors,
                          WrapWeakPersistent(this)),
       LocalFrameUkmAggregator::kAnchorElementMetricsIntersectionObserver,
