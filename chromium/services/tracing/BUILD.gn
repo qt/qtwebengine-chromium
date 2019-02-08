@@ -14,14 +14,6 @@ source_set("lib") {
     "agent_registry.h",
     "coordinator.cc",
     "coordinator.h",
-    "perfetto/json_trace_exporter.cc",
-    "perfetto/json_trace_exporter.h",
-    "perfetto/perfetto_service.cc",
-    "perfetto/perfetto_service.h",
-    "perfetto/perfetto_tracing_coordinator.cc",
-    "perfetto/perfetto_tracing_coordinator.h",
-    "perfetto/producer_host.cc",
-    "perfetto/producer_host.h",
     "recorder.cc",
     "recorder.h",
     "tracing_service.cc",
@@ -35,12 +27,26 @@ source_set("lib") {
     "//mojo/public/cpp/bindings",
     "//services/service_manager/public/cpp",
     "//services/tracing/public/cpp",
-    "//third_party/perfetto:libperfetto",
   ]
 
-  deps = [
-    "//third_party/perfetto/protos/perfetto/trace/chrome:minimal_complete_lite",
-  ]
+  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
+    sources += [
+      "perfetto/json_trace_exporter.cc",
+      "perfetto/json_trace_exporter.h",
+      "perfetto/perfetto_service.cc",
+      "perfetto/perfetto_service.h",
+      "perfetto/perfetto_tracing_coordinator.cc",
+      "perfetto/perfetto_tracing_coordinator.h",
+      "perfetto/producer_host.cc",
+      "perfetto/producer_host.h",
+    ]
+
+    deps = [
+      "//third_party/perfetto/protos/perfetto/trace/chrome:minimal_complete_lite",
+    ]
+
+    public_deps += [ "//third_party/perfetto:libperfetto" ]
+  }
 
   if (is_chromecast) {
     defines = [ "IS_CHROMECAST" ]
@@ -72,7 +78,7 @@ source_set("tests") {
     "test_util.h",
   ]
 
-  if (is_mac || is_linux || is_android || is_fuchsia) {
+  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
     sources += [
       "public/cpp/perfetto/trace_event_data_source_unittest.cc",
       "public/cpp/perfetto/traced_value_proto_writer_unittest.cc",
@@ -96,7 +102,7 @@ source_set("tests") {
     "//testing/gtest",
   ]
 
-  if (is_mac || is_linux || is_android || is_fuchsia) {
+  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
     sources += [
       "perfetto/json_trace_exporter_unittest.cc",
       "perfetto/perfetto_integration_unittest.cc",

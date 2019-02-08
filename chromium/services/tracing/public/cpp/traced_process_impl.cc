@@ -8,9 +8,14 @@
 
 #include "base/no_destructor.h"
 #include "services/tracing/public/cpp/base_agent.h"
-#include "services/tracing/public/cpp/perfetto/producer_client.h"
 #include "services/tracing/public/cpp/trace_event_agent.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
+
+#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
+     defined(OS_WIN) || defined(OS_FUCHSIA)
+#define PERFETTO_AVAILABLE
+#include "services/tracing/public/cpp/perfetto/producer_client.h"
+#endif
 
 namespace tracing {
 
@@ -93,9 +98,10 @@ void TracedProcessImpl::ConnectToTracingService(
   for (auto* agent : agents_) {
     agent->Connect(agent_registry_.get());
   }
-
+#if defined(PERFETTO_AVAILABLE)
   ProducerClient::Get()->Connect(
       tracing::mojom::PerfettoServicePtr(std::move(request->perfetto_service)));
+#endif
 }
 
 }  // namespace tracing

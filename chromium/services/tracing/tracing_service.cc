@@ -11,9 +11,12 @@
 #include "services/service_manager/public/mojom/service_manager.mojom.h"
 #include "services/tracing/agent_registry.h"
 #include "services/tracing/coordinator.h"
+#include "services/tracing/public/cpp/tracing_features.h"
+
+#if defined(PERFETTO_SERVICE_AVAILABLE)
 #include "services/tracing/perfetto/perfetto_service.h"
 #include "services/tracing/perfetto/perfetto_tracing_coordinator.h"
-#include "services/tracing/public/cpp/tracing_features.h"
+#endif
 
 namespace tracing {
 
@@ -48,8 +51,10 @@ class ServiceListener : public service_manager::mojom::ServiceManagerListener {
 
     auto new_connection_request = mojom::ConnectToTracingRequest::New();
 
+#if defined(PERFETTO_SERVICE_AVAILABLE)
     PerfettoService::GetInstance()->BindRequest(
         mojo::MakeRequest(&new_connection_request->perfetto_service));
+#endif
 
     agent_registry_->BindAgentRegistryRequest(
         task_runner_,
@@ -93,10 +98,12 @@ TracingService::TracingService(service_manager::mojom::ServiceRequest request)
 TracingService::~TracingService() {
   task_runner_->DeleteSoon(FROM_HERE, std::move(tracing_agent_registry_));
 
+#if defined(PERFETTO_SERVICE_AVAILABLE)
   if (perfetto_tracing_coordinator_) {
     task_runner_->DeleteSoon(FROM_HERE,
                              std::move(perfetto_tracing_coordinator_));
   }
+#endif
 }
 
 void TracingService::OnDisconnected() {
@@ -106,6 +113,9 @@ void TracingService::OnDisconnected() {
 void TracingService::OnStart() {
   tracing_agent_registry_ = std::make_unique<AgentRegistry>();
 
+  bool enable_legacy_tracing = true;
+
+#if defined(PERFETTO_SERVICE_AVAILABLE)
   if (TracingUsesPerfettoBackend()) {
     task_runner_ = tracing::PerfettoService::GetInstance()->task_runner();
 
@@ -118,7 +128,19 @@ void TracingService::OnStart() {
         base::BindRepeating(&PerfettoTracingCoordinator::BindCoordinatorRequest,
                             base::Unretained(perfetto_coordinator.get())));
     perfetto_tracing_coordinator_ = std::move(perfetto_coordinator);
-  } else {
+
+    enable_legacy_tracing = false;
+  }
+#else
+  if (TracingUsesPerfettoBackend()) {
+    LOG(ERROR) << "Perfetto is not yet available for this platform; falling "
+                  "back to using legacy TraceLog";
+  }
+#endif
+
+  // Use legacy tracing if we're on an unsupported platform or the feature flag
+  // is disabled.
+  if (enable_legacy_tracing) {
     auto tracing_coordinator = std::make_unique<Coordinator>(
         tracing_agent_registry_.get(),
         base::BindRepeating(&TracingService::OnCoordinatorConnectionClosed,
