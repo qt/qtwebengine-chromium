@@ -14,7 +14,6 @@
 #include "base/threading/thread_local.h"
 #include "base/timer/timer.h"
 #include "services/tracing/public/mojom/perfetto_service.mojom.h"
-#include "third_party/perfetto/include/perfetto/base/task_runner.h"
 
 namespace tracing {
 

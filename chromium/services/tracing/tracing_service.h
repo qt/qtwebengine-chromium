@@ -19,6 +19,11 @@
 #include "services/tracing/agent_registry.h"
 #include "services/tracing/coordinator.h"
 
+#if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
+    defined(OS_WIN) || defined(OS_FUCHSIA)
+#define PERFETTO_SERVICE_AVAILABLE
+#endif
+
 namespace tracing {
 
 class ServiceListener;

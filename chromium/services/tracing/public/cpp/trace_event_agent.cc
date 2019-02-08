@@ -18,10 +18,16 @@
 #include "base/trace_event/trace_log.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "services/tracing/public/cpp/tracing_features.h"
+
+#if (defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_MACOSX) || \
+     defined(OS_WIN) || defined(OS_FUCHSIA))
+#define PERFETTO_AVAILABLE
 #include "services/tracing/public/cpp/perfetto/producer_client.h"
 #include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
 #include "services/tracing/public/cpp/trace_event_args_whitelist.h"
 #include "services/tracing/public/cpp/tracing_features.h"
+#endif
 
 namespace {
 
@@ -56,7 +62,9 @@ TraceEventAgent::TraceEventAgent()
         base::BindRepeating(&IsMetadataWhitelisted));
   }
 
+#if defined(PERFETTO_AVAILABLE)
   ProducerClient::Get()->AddDataSource(TraceEventDataSource::GetInstance());
+#endif
 }
 
 TraceEventAgent::~TraceEventAgent() = default;
@@ -73,6 +81,7 @@ void TraceEventAgent::AddMetadataGeneratorFunction(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   metadata_generator_functions_.push_back(generator);
 
+#if defined(PERFETTO_AVAILABLE)
   // Instantiate and register the metadata data source on the first
   // call.
   static TraceEventMetadataSource* metadata_source = []() {
@@ -82,6 +91,7 @@ void TraceEventAgent::AddMetadataGeneratorFunction(
   }();
 
   metadata_source->AddGeneratorFunction(generator);
+#endif
 }
 
 void TraceEventAgent::StartTracing(const std::string& config,

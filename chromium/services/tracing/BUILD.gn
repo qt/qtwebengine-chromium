@@ -11,18 +11,6 @@ source_set("lib") {
     "agent_registry.h",
     "coordinator.cc",
     "coordinator.h",
-    "perfetto/consumer_host.cc",
-    "perfetto/consumer_host.h",
-    "perfetto/json_trace_exporter.cc",
-    "perfetto/json_trace_exporter.h",
-    "perfetto/perfetto_service.cc",
-    "perfetto/perfetto_service.h",
-    "perfetto/perfetto_tracing_coordinator.cc",
-    "perfetto/perfetto_tracing_coordinator.h",
-    "perfetto/producer_host.cc",
-    "perfetto/producer_host.h",
-    "perfetto/track_event_json_exporter.cc",
-    "perfetto/track_event_json_exporter.h",
     "recorder.cc",
     "recorder.h",
     "tracing_service.cc",
@@ -36,13 +24,33 @@ source_set("lib") {
     "//mojo/public/cpp/bindings",
     "//services/service_manager/public/cpp",
     "//services/tracing/public/cpp",
-    "//third_party/perfetto:libperfetto",
-    "//third_party/perfetto/protos/perfetto/config:lite",
   ]
 
-  deps = [
-    "//third_party/perfetto/protos/perfetto/trace/chrome:minimal_complete_lite",
-  ]
+  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
+    sources += [
+      "perfetto/consumer_host.cc",
+      "perfetto/consumer_host.h",
+      "perfetto/json_trace_exporter.cc",
+      "perfetto/json_trace_exporter.h",
+      "perfetto/perfetto_service.cc",
+      "perfetto/perfetto_service.h",
+      "perfetto/perfetto_tracing_coordinator.cc",
+      "perfetto/perfetto_tracing_coordinator.h",
+      "perfetto/producer_host.cc",
+      "perfetto/producer_host.h",
+      "perfetto/track_event_json_exporter.cc",
+      "perfetto/track_event_json_exporter.h",
+    ]
+
+    deps = [
+      "//third_party/perfetto/protos/perfetto/trace/chrome:minimal_complete_lite",
+    ]
+
+    public_deps += [
+      "//third_party/perfetto:libperfetto",
+      "//third_party/perfetto/protos/perfetto/config:lite",
+    ]
+  }
 }
 
 source_set("manifest") {
@@ -72,7 +80,7 @@ source_set("tests") {
     "test_util.h",
   ]
 
-  if (is_mac || is_linux || is_android || is_fuchsia) {
+  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
     sources += [
       "public/cpp/perfetto/task_runner_unittest.cc",
       "public/cpp/perfetto/trace_event_data_source_unittest.cc",
@@ -97,7 +105,7 @@ source_set("tests") {
     "//testing/gtest",
   ]
 
-  if (is_mac || is_linux || is_android || is_fuchsia) {
+  if (is_mac || is_linux || is_android || is_win || is_fuchsia) {
     sources += [
       "perfetto/consumer_host_unittest.cc",
       "perfetto/json_trace_exporter_unittest.cc",

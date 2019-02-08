@@ -13,9 +13,6 @@
 #include "services/service_manager/public/mojom/service_manager.mojom.h"
 #include "services/tracing/agent_registry.h"
 #include "services/tracing/coordinator.h"
-#include "services/tracing/perfetto/consumer_host.h"
-#include "services/tracing/perfetto/perfetto_service.h"
-#include "services/tracing/perfetto/perfetto_tracing_coordinator.h"
 #include "services/tracing/public/cpp/tracing_features.h"
 #include "services/tracing/public/mojom/traced_process.mojom.h"
 
@@ -72,8 +69,10 @@ class ServiceListener : public service_manager::mojom::ServiceManagerListener {
 
     auto new_connection_request = mojom::ConnectToTracingRequest::New();
 
+#if defined(PERFETTO_SERVICE_AVAILABLE)
     PerfettoService::GetInstance()->BindRequest(
         mojo::MakeRequest(&new_connection_request->perfetto_service), pid);
+#endif
 
     agent_registry_->BindAgentRegistryRequest(
         mojo::MakeRequest(&new_connection_request->agent_registry));
@@ -149,6 +148,9 @@ void TracingService::OnDisconnected() {
 void TracingService::OnStart() {
   tracing_agent_registry_ = std::make_unique<AgentRegistry>();
 
+  bool enable_legacy_tracing = true;
+
+#if defined(PERFETTO_SERVICE_AVAILABLE)
   if (TracingUsesPerfettoBackend()) {
     auto perfetto_coordinator = std::make_unique<PerfettoTracingCoordinator>(
         tracing_agent_registry_.get(),
@@ -158,7 +160,9 @@ void TracingService::OnStart() {
         base::BindRepeating(&PerfettoTracingCoordinator::BindCoordinatorRequest,
                             base::Unretained(perfetto_coordinator.get())));
     tracing_coordinator_ = std::move(perfetto_coordinator);
-  } else {
+  } else
+#endif
+  {
     auto tracing_coordinator = std::make_unique<Coordinator>(
         tracing_agent_registry_.get(),
         base::BindRepeating(&TracingService::OnCoordinatorConnectionClosed,
@@ -168,6 +172,7 @@ void TracingService::OnStart() {
                             base::Unretained(tracing_coordinator.get())));
     tracing_coordinator_ = std::move(tracing_coordinator);
   }
+
 
   registry_.AddInterface(
       base::BindRepeating(&ConsumerHost::BindConsumerRequest,
