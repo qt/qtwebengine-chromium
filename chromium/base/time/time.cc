@@ -173,7 +173,7 @@ Optional<TimeDelta> TimeDelta::FromString(StringPiece duration_string) {
     if (number.int_part != 0)
       delta += sign * number.int_part * unit;
     if (number.frac_part != 0)
-      delta += (double{sign} * number.frac_part / number.frac_scale) * unit;
+      delta += (double(sign) * number.frac_part / number.frac_scale) * unit;
   }
   return delta;
 }
@@ -198,7 +198,7 @@ int TimeDelta::InDaysFloored() const {
 
 double TimeDelta::InSecondsF() const {
   if (!is_inf())
-    return double{delta_} / Time::kMicrosecondsPerSecond;
+    return double(delta_) / Time::kMicrosecondsPerSecond;
   return (delta_ < 0) ? -std::numeric_limits<double>::infinity()
                       : std::numeric_limits<double>::infinity();
 }
@@ -209,7 +209,7 @@ int64_t TimeDelta::InSeconds() const {
 
 double TimeDelta::InMillisecondsF() const {
   if (!is_inf())
-    return double{delta_} / Time::kMicrosecondsPerMillisecond;
+    return double(delta_) / Time::kMicrosecondsPerMillisecond;
   return (delta_ < 0) ? -std::numeric_limits<double>::infinity()
                       : std::numeric_limits<double>::infinity();
 }
@@ -233,7 +233,7 @@ int64_t TimeDelta::InMillisecondsRoundedUp() const {
 
 double TimeDelta::InMicrosecondsF() const {
   if (!is_inf())
-    return double{delta_};
+    return double(delta_);
   return (delta_ < 0) ? -std::numeric_limits<double>::infinity()
                       : std::numeric_limits<double>::infinity();
 }

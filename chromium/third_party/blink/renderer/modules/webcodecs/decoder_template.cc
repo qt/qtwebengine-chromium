@@ -231,7 +231,7 @@ bool DecoderTemplate<Traits>::ProcessConfigureRequest(Request* request) {
   // already queued requests in a special mode. It seems easier to drop all of
   // this and require configure() after reset() instead.
   if (pending_decodes_.size() + 1 >
-      size_t{Traits::GetMaxDecodeRequests(*decoder_)}) {
+      size_t(Traits::GetMaxDecodeRequests(*decoder_))) {
     // Try again after OnDecodeDone().
     return false;
   }
@@ -260,7 +260,7 @@ bool DecoderTemplate<Traits>::ProcessDecodeRequest(Request* request) {
   }
 
   if (pending_decodes_.size() + 1 >
-      size_t{Traits::GetMaxDecodeRequests(*decoder_)}) {
+      size_t(Traits::GetMaxDecodeRequests(*decoder_))) {
     // Try again after OnDecodeDone().
     return false;
   }
@@ -304,7 +304,7 @@ bool DecoderTemplate<Traits>::ProcessFlushRequest(Request* request) {
   }
 
   if (pending_decodes_.size() + 1 >
-      size_t{Traits::GetMaxDecodeRequests(*decoder_)}) {
+      size_t(Traits::GetMaxDecodeRequests(*decoder_))) {
     // Try again after OnDecodeDone().
     return false;
   }

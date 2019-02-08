@@ -2302,11 +2302,11 @@ void OutOfProcessInstance::UserMetricsRecordAction(const std::string& action) {
 pp::FloatPoint OutOfProcessInstance::BoundScrollOffsetToDocument(
     const pp::FloatPoint& scroll_offset) {
   float max_x = std::max(
-      document_size_.width() * float{zoom_} - plugin_dip_size_.width(), 0.0f);
+      document_size_.width() * float(zoom_) - plugin_dip_size_.width(), 0.0f);
   float x = base::ClampToRange(scroll_offset.x(), 0.0f, max_x);
   float min_y = -top_toolbar_height_in_viewport_coords_;
   float max_y = std::max(
-      document_size_.height() * float{zoom_} - plugin_dip_size_.height(),
+      document_size_.height() * float(zoom_) - plugin_dip_size_.height(),
       min_y);
   float y = base::ClampToRange(scroll_offset.y(), min_y, max_y);
   return pp::FloatPoint(x, y);

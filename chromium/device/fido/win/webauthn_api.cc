@@ -293,7 +293,7 @@ AuthenticatorMakeCredentialBlocking(WinWebAuthnApi* webauthn_api,
       kWinWebAuthnTimeoutMilliseconds,
       WEBAUTHN_CREDENTIALS{
           0, nullptr},  // Ignored because pExcludeCredentialList is set.
-      WEBAUTHN_EXTENSIONS{extensions.size(), extensions.data()},
+      WEBAUTHN_EXTENSIONS{DWORD(extensions.size()), extensions.data()},
       authenticator_attachment,
       request.resident_key_required,
       ToWinUserVerificationRequirement(request.user_verification),
@@ -401,7 +401,7 @@ AuthenticatorGetAssertionBlocking(WinWebAuthnApi* webauthn_api,
       // As a workaround, MS tells us to also set the CredentialList
       // parameter with an accurate cCredentials count and some arbitrary
       // pCredentials data.
-      WEBAUTHN_CREDENTIALS{legacy_credentials.size(),
+      WEBAUTHN_CREDENTIALS{DWORD(legacy_credentials.size()),
                            legacy_credentials.data()},
       WEBAUTHN_EXTENSIONS{0, nullptr},
       authenticator_attachment,

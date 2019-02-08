@@ -61,7 +61,7 @@ MojoSharedBufferVideoFrame::CreateDefaultForTesting(
     return Create(
         format, coded_size, visible_rect, dimensions, std::move(handle),
         allocation_size,
-        {0 /* y_offset */, coded_size.GetArea(), coded_size.GetArea() * 5 / 4},
+        {0 /* y_offset */, uint32_t(coded_size.GetArea()), uint32_t(coded_size.GetArea() * 5 / 4)},
         {coded_size.width(), coded_size.width() / 2, coded_size.width() / 2},
         timestamp);
   } else {
@@ -73,7 +73,7 @@ MojoSharedBufferVideoFrame::CreateDefaultForTesting(
     //  - UVplane, full width, half height (each pair represents a 2x2 block)
     return Create(format, coded_size, visible_rect, dimensions,
                   std::move(handle), allocation_size,
-                  {0 /* y_offset */, coded_size.GetArea()},
+                  {0 /* y_offset */, uint32_t(coded_size.GetArea())},
                   {coded_size.width(), coded_size.width()}, timestamp);
   }
 }

@@ -2903,7 +2903,7 @@ AXObject::InOrderTraversalIterator AXObject::GetInOrderTraversalIterator() {
 }
 
 int AXObject::ChildCountIncludingIgnored() const {
-  return HasIndirectChildren() ? 0 : int{ChildrenIncludingIgnored().size()};
+  return HasIndirectChildren() ? 0 : int(ChildrenIncludingIgnored().size());
 }
 
 AXObject* AXObject::ChildAtIncludingIgnored(int index) const {
@@ -3122,12 +3122,12 @@ AXObject* AXObject::PreviousInPostOrderIncludingIgnored(
 }
 
 int AXObject::UnignoredChildCount() const {
-  return int{UnignoredChildren().size()};
+  return int(UnignoredChildren().size());
 }
 
 AXObject* AXObject::UnignoredChildAt(int index) const {
   const AXObjectVector unignored_children = UnignoredChildren();
-  if (index < 0 || index >= int{unignored_children.size()})
+  if (index < 0 || index >= int(unignored_children.size()))
     return nullptr;
   return unignored_children[index];
 }
@@ -3611,14 +3611,14 @@ int AXObject::AriaRowCount() const {
   if (!HasAOMPropertyOrARIAAttribute(AOMIntProperty::kRowCount, row_count))
     return 0;
 
-  if (row_count > int{RowCount()})
+  if (row_count > int(RowCount()))
     return row_count;
 
   // Spec says that if all of the rows are present in the DOM, it is
   // not necessary to set this attribute as the user agent can
   // automatically calculate the total number of rows.
   // It returns 0 in order not to set this attribute.
-  if (row_count == int{RowCount()} || row_count != -1)
+  if (row_count == int(RowCount()) || row_count != -1)
     return 0;
 
   // In the spec, -1 explicitly means an unknown number of rows.

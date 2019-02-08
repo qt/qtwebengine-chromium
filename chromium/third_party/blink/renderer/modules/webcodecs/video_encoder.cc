@@ -75,7 +75,7 @@ std::unique_ptr<media::VideoEncoder> CreateAcceleratedVideoEncoder(
       continue;
 
     double max_supported_framerate =
-        double{supported_profile.max_framerate_numerator} /
+        double(supported_profile.max_framerate_numerator) /
         supported_profile.max_framerate_denominator;
     if (options.framerate > max_supported_framerate)
       continue;
@@ -368,9 +368,9 @@ void VideoEncoder::encode(VideoFrame* frame,
   }
 
   DCHECK(active_config_);
-  if (internal_frame->cropWidth() != uint32_t{active_config_->options.width} ||
+  if (internal_frame->cropWidth() != uint32_t(active_config_->options.width) ||
       internal_frame->cropHeight() !=
-          uint32_t{active_config_->options.height}) {
+          uint32_t(active_config_->options.height)) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kOperationError,
         "Frame size doesn't match initial encoder parameters.");

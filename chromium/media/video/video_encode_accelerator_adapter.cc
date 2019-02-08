@@ -80,20 +80,20 @@ class VideoEncodeAcceleratorAdapter::SharedMemoryPool
       // Suspiciously many buffers have been allocated already.
       return false;
     }
-    *id = int32_t{regions_.size()} - 1;
+    *id = int32_t(regions_.size()) - 1;
     return true;
   }
 
   void ReleaseBuffer(int32_t id) { free_buffer_ids_.push_back(id); }
 
   base::WritableSharedMemoryMapping* GetMapping(int32_t buffer_id) {
-    if (size_t{buffer_id} >= mappings_.size())
+    if (size_t(buffer_id) >= mappings_.size())
       return nullptr;
     return &mappings_[buffer_id];
   }
 
   base::UnsafeSharedMemoryRegion* GetRegion(int32_t buffer_id) {
-    if (size_t{buffer_id} >= regions_.size())
+    if (size_t(buffer_id) >= regions_.size())
       return nullptr;
     return &regions_[buffer_id];
   }

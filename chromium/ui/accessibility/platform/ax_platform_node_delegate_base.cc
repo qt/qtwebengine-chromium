@@ -65,7 +65,7 @@ base::string16 AXPlatformNodeDelegateBase::GetInnerText() const {
 
 const AXTree::Selection AXPlatformNodeDelegateBase::GetUnignoredSelection()
     const {
-  return AXTree::Selection{-1, -1, -1, ax::mojom::TextAffinity::kDownstream};
+  return AXTree::Selection{true, -1, -1, ax::mojom::TextAffinity::kDownstream};
 }
 
 AXNodePosition::AXPositionInstance
