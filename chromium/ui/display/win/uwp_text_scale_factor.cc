@@ -162,7 +162,7 @@ class UwpTextScaleFactorImpl : public UwpTextScaleFactor {
     // equal to 1. Let's make sure that's the case - if we don't, we could get
     // bizarre behavior and divide-by-zeros later on.
     DCHECK_GE(result, 1.0);
-    return float{result};
+    return float(result);
   }
 
  private:

@@ -987,7 +987,7 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     uint16_t skip = static_cast<uint16_t>(ComputeOpSkip(sizeof(T)));
     T* op = reinterpret_cast<T*>(AllocatePaintOp(skip));
 
-    new (op) T{std::forward<Args>(args)...};
+    new (op) T(std::forward<Args>(args)...);
     DCHECK_EQ(op->type, static_cast<uint32_t>(T::kType));
     op->skip = skip;
     AnalyzeAddedOp(op);
