@@ -94,7 +94,7 @@ class TextEncoderStream::Transformer final : public TransformStreamTransformer {
 
  private:
   static CString ReplacementCharacterInUtf8() {
-    constexpr char kRawBytes[] = {0xEF, 0xBF, 0xBD};
+    constexpr char kRawBytes[] = {(char)0xEF, (char)0xBF, (char)0xBD};
     return CString(kRawBytes, sizeof(kRawBytes));
   }
 

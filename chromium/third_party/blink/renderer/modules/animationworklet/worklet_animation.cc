@@ -601,7 +601,7 @@ void WorkletAnimation::UpdateInputState(
     input_state->Add(
         {id_,
          std::string(animator_name_.Ascii().data(), animator_name_.length()),
-         current_time_ms, CloneOptions(), effects_.size()});
+         current_time_ms, CloneOptions(), int(effects_.size())});
   } else if (was_active && is_active) {
     // Skip if the input time is not changed.
     if (did_time_change)
