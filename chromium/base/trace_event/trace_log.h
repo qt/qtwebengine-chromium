@@ -216,13 +216,20 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
   // Called by TRACE_EVENT* macros, don't call this directly.
   // If |copy| is set, |name|, |arg_name1| and |arg_name2| will be deep copied
   // into the event; see "Memory scoping note" and TRACE_EVENT_COPY_XXX above.
-  TraceEventHandle AddTraceEvent(char phase,
-                                 const unsigned char* category_group_enabled,
-                                 const char* name,
-                                 const char* scope,
-                                 unsigned long long id,
-                                 TraceArguments* args,
-                                 unsigned int flags);
+
+  // TODO(898794): Remove methods below when all callers have been updated.
+  TraceEventHandle AddTraceEvent(
+      char phase,
+      const unsigned char* category_group_enabled,
+      const char* name,
+      const char* scope,
+      unsigned long long id,
+      int num_args,
+      const char* const* arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      std::unique_ptr<ConvertableToTraceFormat>* convertable_values,
+      unsigned int flags);
   TraceEventHandle AddTraceEventWithBindId(
       char phase,
       const unsigned char* category_group_enabled,
@@ -230,7 +237,11 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
       const char* scope,
       unsigned long long id,
       unsigned long long bind_id,
-      TraceArguments* args,
+      int num_args,
+      const char* const* arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      std::unique_ptr<ConvertableToTraceFormat>* convertable_values,
       unsigned int flags);
   TraceEventHandle AddTraceEventWithProcessId(
       char phase,
@@ -239,7 +250,11 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
       const char* scope,
       unsigned long long id,
       int process_id,
-      TraceArguments* args,
+      int num_args,
+      const char* const* arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      std::unique_ptr<ConvertableToTraceFormat>* convertable_values,
       unsigned int flags);
   TraceEventHandle AddTraceEventWithThreadIdAndTimestamp(
       char phase,
@@ -249,7 +264,11 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
       unsigned long long id,
       int thread_id,
       const TimeTicks& timestamp,
-      TraceArguments* args,
+      int num_args,
+      const char* const* arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      std::unique_ptr<ConvertableToTraceFormat>* convertable_values,
       unsigned int flags);
   TraceEventHandle AddTraceEventWithThreadIdAndTimestamp(
       char phase,
@@ -260,14 +279,23 @@ class BASE_EXPORT TraceLog : public MemoryDumpProvider {
       unsigned long long bind_id,
       int thread_id,
       const TimeTicks& timestamp,
-      TraceArguments* args,
+      int num_args,
+      const char* const* arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      std::unique_ptr<ConvertableToTraceFormat>* convertable_values,
       unsigned int flags);
 
   // Adds a metadata event that will be written when the trace log is flushed.
-  void AddMetadataEvent(const unsigned char* category_group_enabled,
-                        const char* name,
-                        TraceArguments* args,
-                        unsigned int flags);
+  void AddMetadataEvent(
+      const unsigned char* category_group_enabled,
+      const char* name,
+      int num_args,
+      const char* const* arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,
+      std::unique_ptr<ConvertableToTraceFormat>* convertable_values,
+      unsigned int flags);
 
   void UpdateTraceEventDuration(const unsigned char* category_group_enabled,
                                 const char* name,
