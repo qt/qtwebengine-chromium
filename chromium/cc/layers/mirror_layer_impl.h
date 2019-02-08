@@ -55,7 +55,7 @@ class CC_EXPORT MirrorLayerImpl : public LayerImpl {
  private:
   const char* LayerTypeAsString() const override;
   viz::CompositorRenderPassId mirrored_layer_render_pass_id() const {
-    return viz::CompositorRenderPassId{mirrored_layer_id()};
+    return viz::CompositorRenderPassId(mirrored_layer_id());
   }
 
   int mirrored_layer_id_ = 0;

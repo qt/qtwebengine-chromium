@@ -4778,7 +4778,7 @@ class AXPosition {
           // can safely move the iterator one position back, even if it's
           // currently at the vector's end.
           --offsets_iterator;
-          text_position->text_offset_ = int{*offsets_iterator};
+          text_position->text_offset_ = int(*offsets_iterator);
           text_position->affinity_ = ax::mojom::TextAffinity::kDownstream;
         }
         break;
@@ -4789,7 +4789,7 @@ class AXPosition {
                              int32_t{text_position->text_offset_});
         // If there is no next offset, the current offset should be unchanged.
         if (offsets_iterator < boundary_offsets.end()) {
-          text_position->text_offset_ = int{*offsets_iterator};
+          text_position->text_offset_ = int(*offsets_iterator);
           text_position->affinity_ = ax::mojom::TextAffinity::kDownstream;
         }
         break;
@@ -4824,7 +4824,7 @@ class AXPosition {
           return text_position->CreatePositionAtStartOfAnchor();
         } else {
           text_position->text_offset_ =
-              int{boundary_offsets[boundary_offsets.size() - 1]};
+              int(boundary_offsets[boundary_offsets.size() - 1]);
           return text_position;
         }
         break;
@@ -4832,7 +4832,7 @@ class AXPosition {
         if (boundary_offsets.empty()) {
           return text_position->CreatePositionAtEndOfAnchor();
         } else {
-          text_position->text_offset_ = int{boundary_offsets[0]};
+          text_position->text_offset_ = int(boundary_offsets[0]);
           return text_position;
         }
         break;
