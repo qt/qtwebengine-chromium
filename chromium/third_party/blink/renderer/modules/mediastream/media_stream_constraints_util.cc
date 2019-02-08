@@ -296,8 +296,8 @@ WebMediaStreamSource::Capabilities ComputeCapabilitiesForVideoSource(
       max_height = std::max(max_height, format.frame_size.height());
       max_frame_rate = std::max(max_frame_rate, format.frame_rate);
     }
-    capabilities.width = {1, max_width};
-    capabilities.height = {1, max_height};
+    capabilities.width = {1, unsigned(max_width)};
+    capabilities.height = {1, unsigned(max_height)};
     capabilities.aspect_ratio = {1.0 / max_height,
                                  static_cast<double>(max_width)};
     capabilities.frame_rate = {min_frame_rate, max_frame_rate};

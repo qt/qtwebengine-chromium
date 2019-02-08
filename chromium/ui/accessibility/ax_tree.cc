@@ -2055,7 +2055,7 @@ AXTree::Selection AXTree::GetUnignoredSelection() const {
     unignored_selection.anchor_affinity = anchor_position->affinity();
   } else if (anchor_position->IsTreePosition()) {
     // Fix offset to be in terms of the unignored index.
-    if (data().sel_anchor_offset == int32_t{anchor_node->children().size()}) {
+    if (data().sel_anchor_offset == int32_t(anchor_node->children().size())) {
       unignored_selection.anchor_offset = anchor_node->GetUnignoredChildCount();
     } else {
       AXNode* child = anchor_node->children()[data().sel_anchor_offset];
@@ -2084,7 +2084,7 @@ AXTree::Selection AXTree::GetUnignoredSelection() const {
     unignored_selection.focus_affinity = focus_position->affinity();
   } else if (focus_position->IsTreePosition()) {
     // Fix offset to be in terms of the unignored index.
-    if (data().sel_focus_offset == int32_t{focus_node->children().size()}) {
+    if (data().sel_focus_offset == int32_t(focus_node->children().size())) {
       unignored_selection.focus_offset = focus_node->GetUnignoredChildCount();
     } else {
       AXNode* child = focus_node->children()[data().sel_focus_offset];

@@ -226,8 +226,8 @@ void Dualshock4Controller::SetVibrationUsb(double strong_magnitude,
   control_report.fill(0);
   control_report[0] = kReportId05;
   control_report[1] = 0x01;  // motor only, don't update LEDs
-  control_report[4] = uint8_t{weak_magnitude * kRumbleMagnitudeMax};
-  control_report[5] = uint8_t{strong_magnitude * kRumbleMagnitudeMax};
+  control_report[4] = uint8_t(weak_magnitude * kRumbleMagnitudeMax);
+  control_report[5] = uint8_t(strong_magnitude * kRumbleMagnitudeMax);
 
   writer_->WriteOutputReport(control_report);
 }

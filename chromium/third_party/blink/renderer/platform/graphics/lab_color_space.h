@@ -62,7 +62,7 @@ class sRGBColorSpace {
                  ? clamp(u / 12.92f, .0f, 1.0f)
                  : clamp(std::pow((u + 0.055f) / 1.055f, 2.4f), .0f, 1.0f);
     };
-    return {EOTF(v.X()), EOTF(v.Y()), EOTF(v.Z())};
+    return FloatPoint3D(EOTF(v.X()), EOTF(v.Y()), EOTF(v.Z()));
   }
 
   FloatPoint3D fromLinear(const FloatPoint3D& v) const {
@@ -71,7 +71,7 @@ class sRGBColorSpace {
                   ? clamp(12.92 * u, .0, 1.0)
                   : clamp(1.055 * std::pow(u, 1.0 / 2.4) - 0.055, .0, 1.0));
     };
-    return {OETF(v.X()), OETF(v.Y()), OETF(v.Z())};
+    return FloatPoint3D(OETF(v.X()), OETF(v.Y()), OETF(v.Z()));
   }
 
   // See https://en.wikipedia.org/wiki/SRGB#The_reverse_transformation.

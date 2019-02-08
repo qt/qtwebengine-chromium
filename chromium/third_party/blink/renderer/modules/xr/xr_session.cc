@@ -552,8 +552,8 @@ ScriptPromise XRSession::requestHitTest(ScriptState* script_state,
   ray_mojo->origin = WebFloatPoint3D(ray->origin()->x(), ray->origin()->y(),
                                      ray->origin()->z());
 
-  ray_mojo->direction = {ray->direction()->x(), ray->direction()->y(),
-                         ray->direction()->z()};
+  ray_mojo->direction = {float(ray->direction()->x()), float(ray->direction()->y()),
+                         float(ray->direction()->z())};
 
   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
