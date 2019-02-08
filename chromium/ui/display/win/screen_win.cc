@@ -63,7 +63,7 @@ int GetPerMonitorDPI(HMONITOR monitor) {
   }
 
   DCHECK_EQ(dpi_x, dpi_y);
-  return int{dpi_x};
+  return int(dpi_x);
 }
 
 // Gets the raw monitor scale factor.
