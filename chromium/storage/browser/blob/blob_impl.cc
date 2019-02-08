@@ -224,7 +224,7 @@ void BlobImpl::CaptureSnapshot(CaptureSnapshotCallback callback) {
         }
 
         struct SizeAndTime {
-          uint64_t size;
+          int64_t size;
           absl::optional<base::Time> time;
         };
         base::ThreadPool::PostTaskAndReplyWithResult(
@@ -234,7 +234,7 @@ void BlobImpl::CaptureSnapshot(CaptureSnapshotCallback callback) {
                   base::File::Info info;
                   if (!base::GetFileInfo(path, &info))
                     return SizeAndTime{0, absl::nullopt};
-                  return SizeAndTime{static_cast<uint64_t>(info.size),
+                  return SizeAndTime{info.size,
                                      info.last_modified};
                 },
                 item->path()),
