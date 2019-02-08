@@ -157,7 +157,7 @@ FontPlatformData FontCustomPlatformData::GetFontPlatformData(
     }
 
     SkFontArguments font_args;
-    font_args.setVariationDesignPosition({variation.data(), variation.size()});
+    font_args.setVariationDesignPosition({variation.data(), int(variation.size())});
     sk_sp<SkTypeface> sk_variation_font(base_typeface_->makeClone(font_args));
 
     if (sk_variation_font) {

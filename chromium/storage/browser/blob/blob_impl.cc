@@ -221,7 +221,7 @@ void BlobImpl::CaptureSnapshot(CaptureSnapshotCallback callback) {
         }
 
         struct SizeAndTime {
-          uint64_t size;
+          int64_t size;
           absl::optional<base::Time> time;
         };
         base::ThreadPool::PostTaskAndReplyWithResult(

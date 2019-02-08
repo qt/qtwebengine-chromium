@@ -271,7 +271,7 @@ SkColor AlphaBlend(SkColor foreground, SkColor background, float alpha) {
 
 SkColor GetResultingPaintColor(SkColor foreground, SkColor background) {
   return AlphaBlend(SkColorSetA(foreground, SK_AlphaOPAQUE), background,
-                    SkAlpha{SkColorGetA(foreground)});
+                    SkAlpha(SkColorGetA(foreground)));
 }
 
 bool IsDark(SkColor color) {

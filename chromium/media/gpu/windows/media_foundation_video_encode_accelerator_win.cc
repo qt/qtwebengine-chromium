@@ -871,8 +871,8 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBuffer(
     input_texture->GetDesc(&input_desc);
 
     Microsoft::WRL::ComPtr<ID3D11Texture2D> sample_texture;
-    if (input_desc.Width != uint32_t{input_visible_size_.width()} ||
-        input_desc.Height != uint32_t{input_visible_size_.height()}) {
+    if (input_desc.Width != uint32_t(input_visible_size_.width()) ||
+        input_desc.Height != uint32_t(input_visible_size_.height())) {
       hr = PerformD3DScaling(input_texture.Get());
       RETURN_ON_HR_FAILURE(hr, "Failed to perform D3D video processing", hr);
       sample_texture = scaled_d3d11_texture_;
@@ -929,7 +929,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBuffer(
       frame->row_bytes(VideoFrame::kYPlane) * frame->rows(VideoFrame::kYPlane);
   uint8_t* end = dst_uv + frame->row_bytes(VideoFrame::kUVPlane) *
                               frame->rows(VideoFrame::kUVPlane);
-  DCHECK_GE(std::ptrdiff_t{scoped_buffer.max_length()},
+  DCHECK_GE(std::ptrdiff_t(scoped_buffer.max_length()),
             end - scoped_buffer.get());
 
   if (frame->format() == PIXEL_FORMAT_NV12) {

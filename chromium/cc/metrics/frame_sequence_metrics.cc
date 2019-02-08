@@ -225,7 +225,7 @@ void FrameSequenceMetrics::ReportMetrics() {
         .Run({
             main_throughput_.frames_expected,
             main_throughput_.frames_produced,
-            jank_reporter_->jank_count(),
+            uint32_t(jank_reporter_->jank_count()),
         });
 
     main_throughput_ = {};

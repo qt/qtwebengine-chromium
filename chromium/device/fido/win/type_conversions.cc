@@ -172,7 +172,7 @@ std::vector<WEBAUTHN_CREDENTIAL> ToWinCredentialVector(
     }
     result.push_back(WEBAUTHN_CREDENTIAL{
         WEBAUTHN_CREDENTIAL_CURRENT_VERSION,
-        credential.id().size(),
+        DWORD(credential.id().size()),
         const_cast<unsigned char*>(credential.id().data()),
         WEBAUTHN_CREDENTIAL_TYPE_PUBLIC_KEY,
     });
@@ -188,7 +188,7 @@ std::vector<WEBAUTHN_CREDENTIAL_EX> ToWinCredentialExVector(
       continue;
     }
     result.push_back(WEBAUTHN_CREDENTIAL_EX{
-        WEBAUTHN_CREDENTIAL_EX_CURRENT_VERSION, credential.id().size(),
+        WEBAUTHN_CREDENTIAL_EX_CURRENT_VERSION, DWORD(credential.id().size()),
         const_cast<unsigned char*>(credential.id().data()),
         WEBAUTHN_CREDENTIAL_TYPE_PUBLIC_KEY,
         ToWinTransportsMask(credential.transports())});

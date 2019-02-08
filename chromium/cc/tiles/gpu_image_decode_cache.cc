@@ -2960,7 +2960,7 @@ sk_sp<SkImage> GpuImageDecodeCache::CreateImageFromYUVATexturesInternal(
   DCHECK(uploaded_y_image);
   DCHECK(uploaded_u_image);
   DCHECK(uploaded_v_image);
-  SkYUVAInfo yuva_info({image_width, image_height}, yuva_plane_config,
+  SkYUVAInfo yuva_info({int(image_width), int(image_height)}, yuva_plane_config,
                        yuva_subsampling, yuv_color_space);
   GrBackendTexture yuv_textures[3]{};
   yuv_textures[0] = uploaded_y_image->getBackendTexture(false);

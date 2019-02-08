@@ -102,7 +102,7 @@ class TextEncoderStream::Transformer final : public TransformStreamTransformer {
 
  private:
   static std::string ReplacementCharacterInUtf8() {
-    constexpr char kRawBytes[] = {0xEF, 0xBF, 0xBD};
+    constexpr char kRawBytes[] = {(char)0xEF, (char)0xBF, (char)0xBD};
     return std::string(kRawBytes, sizeof(kRawBytes));
   }
 

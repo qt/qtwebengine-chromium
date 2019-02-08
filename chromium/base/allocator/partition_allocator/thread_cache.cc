@@ -345,7 +345,7 @@ void ThreadCache::SetGlobalLimits(PartitionRoot<ThreadSafe>* root,
     constexpr uint8_t kMinLimit = 1;
     // |PutInBucket()| is called on a full bucket, which should not overflow.
     constexpr uint8_t kMaxLimit = std::numeric_limits<uint8_t>::max() - 1;
-    global_limits_[index] = std::max(kMinLimit, {std::min(value, {kMaxLimit})});
+    global_limits_[index] = std::max(kMinLimit, uint8_t(std::min(value, size_t(kMaxLimit))));
     PA_DCHECK(global_limits_[index] >= kMinLimit);
     PA_DCHECK(global_limits_[index] <= kMaxLimit);
   }

@@ -114,7 +114,7 @@ Status SetUpVpxConfig(const VideoEncoder::Options& opts,
   } else {
     config->rc_end_usage = VPX_VBR;
     config->rc_target_bitrate =
-        double{opts.frame_size.GetCheckedArea().ValueOrDie()} / config->g_w /
+        double(opts.frame_size.GetCheckedArea().ValueOrDie()) / config->g_w /
         config->g_h * config->rc_target_bitrate;
   }
 
@@ -180,8 +180,8 @@ Status ReallocateVpxImageIfNeeded(vpx_image_t* vpx_image,
                                   const vpx_img_fmt fmt,
                                   int width,
                                   int height) {
-  if (vpx_image->fmt != fmt || int{vpx_image->w} != width ||
-      int{vpx_image->h} != height) {
+  if (vpx_image->fmt != fmt || int(vpx_image->w) != width ||
+      int(vpx_image->h) != height) {
     vpx_img_free(vpx_image);
     if (vpx_image != vpx_img_alloc(vpx_image, fmt, width, height, 1)) {
       return Status(StatusCode::kEncoderFailedEncode,

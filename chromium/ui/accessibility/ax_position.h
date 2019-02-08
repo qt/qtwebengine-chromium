@@ -348,9 +348,9 @@ class AXPosition {
     const std::u16string text = GetText();
     DCHECK_GE(text_offset_, 0);
     const size_t max_text_offset = text.size();
-    DCHECK_LE(text_offset_, int{max_text_offset}) << text;
+    DCHECK_LE(text_offset_, int(max_text_offset)) << text;
     std::u16string annotated_text;
-    if (text_offset_ == int{max_text_offset}) {
+    if (text_offset_ == int(max_text_offset)) {
       annotated_text = text + u"<>";
     } else {
       annotated_text = text.substr(0, text_offset_) + u"<" +
@@ -2340,13 +2340,13 @@ class AXPosition {
           text_position->GetGraphemeIterator();
       DCHECK_GE(text_position->text_offset_, 0);
       DCHECK_LE(text_position->text_offset_,
-                int{text_position->name_.length()});
+                int(text_position->name_.length()));
       while (
           !text_position->AtStartOfAnchor() &&
           (!gfx::IsValidCodePointIndex(text_position->name_,
-                                       size_t{text_position->text_offset_}) ||
+                                       size_t(text_position->text_offset_)) ||
            (grapheme_iterator && !grapheme_iterator->IsGraphemeBoundary(
-                                     size_t{text_position->text_offset_})))) {
+                                     size_t(text_position->text_offset_))))) {
         --text_position->text_offset_;
       }
       return text_position;
@@ -2390,18 +2390,18 @@ class AXPosition {
       //
       // TODO(nektar): Remove this workaround as soon as the source of the bug
       // is identified.
-      if (text_position->text_offset_ > int{text_position->name_.length()})
+      if (text_position->text_offset_ > int(text_position->name_.length()))
         return CreateNullPosition();
 
       DCHECK_GE(text_position->text_offset_, 0);
       DCHECK_LE(text_position->text_offset_,
-                int{text_position->name_.length()});
+                int(text_position->name_.length()));
       while (
           !text_position->AtEndOfAnchor() &&
           (!gfx::IsValidCodePointIndex(text_position->name_,
-                                       size_t{text_position->text_offset_}) ||
+                                       size_t(text_position->text_offset_)) ||
            (grapheme_iterator && !grapheme_iterator->IsGraphemeBoundary(
-                                     size_t{text_position->text_offset_})))) {
+                                     size_t(text_position->text_offset_))))) {
         ++text_position->text_offset_;
       }
 
@@ -2470,7 +2470,7 @@ class AXPosition {
     } while (text_position->text_offset_ < max_text_offset &&
              grapheme_iterator &&
              !grapheme_iterator->IsGraphemeBoundary(
-                 size_t{text_position->text_offset_}));
+                 size_t(text_position->text_offset_)));
     DCHECK_GT(text_position->text_offset_, 0);
     DCHECK_LE(text_position->text_offset_, text_position->MaxTextOffset());
 
@@ -2544,7 +2544,7 @@ class AXPosition {
       --text_position->text_offset_;
     } while (!text_position->AtStartOfAnchor() && grapheme_iterator &&
              !grapheme_iterator->IsGraphemeBoundary(
-                 size_t{text_position->text_offset_}));
+                 size_t(text_position->text_offset_)));
     DCHECK_GE(text_position->text_offset_, 0);
     DCHECK_LT(text_position->text_offset_, text_position->MaxTextOffset());
 
@@ -3895,9 +3895,9 @@ class AXPosition {
       case AXEmbeddedObjectBehavior::kSuppressCharacter:
         // TODO(nektar): Switch to anchor->GetInnerTextLength() after AXPosition
         // switches to using UTF8.
-        return int{base::UTF8ToUTF16(GetAnchor()->GetInnerText()).length()};
+        return int(base::UTF8ToUTF16(GetAnchor()->GetInnerText()).length());
       case AXEmbeddedObjectBehavior::kExposeCharacter:
-        return int{GetAnchor()->GetHypertext().length()};
+        return int(GetAnchor()->GetHypertext().length());
     }
   }
 
@@ -4008,7 +4008,7 @@ class AXPosition {
   int AnchorChildCount() const {
     if (!GetAnchor())
       return 0;
-    return int{GetAnchor()->GetChildCountCrossingTreeBoundary()};
+    return int(GetAnchor()->GetChildCountCrossingTreeBoundary());
   }
 
   // When a child is ignored, it looks for unignored nodes of that child's
@@ -4022,12 +4022,12 @@ class AXPosition {
   int AnchorUnignoredChildCount() const {
     if (!GetAnchor())
       return 0;
-    return int{GetAnchor()->GetUnignoredChildCountCrossingTreeBoundary()};
+    return int(GetAnchor()->GetUnignoredChildCountCrossingTreeBoundary());
   }
 
   int AnchorIndexInParent() const {
     // If this is the root tree, the index in parent will be 0.
-    return GetAnchor() ? int{GetAnchor()->index_in_parent()} : INVALID_INDEX;
+    return GetAnchor() ? int(GetAnchor()->index_in_parent()) : INVALID_INDEX;
   }
 
   base::stack<AXNode*> GetAncestorAnchors() const {
@@ -4829,7 +4829,7 @@ class AXPosition {
           // can safely move the iterator one position back, even if it's
           // currently at the vector's end.
           --offsets_iterator;
-          text_position->text_offset_ = int{*offsets_iterator};
+          text_position->text_offset_ = int(*offsets_iterator);
           text_position->affinity_ = ax::mojom::TextAffinity::kDownstream;
         }
         break;
@@ -4840,7 +4840,7 @@ class AXPosition {
                              int32_t{text_position->text_offset_});
         // If there is no next offset, the current offset should be unchanged.
         if (offsets_iterator < boundary_offsets.end()) {
-          text_position->text_offset_ = int{*offsets_iterator};
+          text_position->text_offset_ = int(*offsets_iterator);
           text_position->affinity_ = ax::mojom::TextAffinity::kDownstream;
         }
         break;
@@ -4875,7 +4875,7 @@ class AXPosition {
           return text_position->CreatePositionAtStartOfAnchor();
         } else {
           text_position->text_offset_ =
-              int{boundary_offsets[boundary_offsets.size() - 1]};
+              int(boundary_offsets[boundary_offsets.size() - 1]);
           return text_position;
         }
         break;
@@ -4883,7 +4883,7 @@ class AXPosition {
         if (boundary_offsets.empty()) {
           return text_position->CreatePositionAtEndOfAnchor();
         } else {
-          text_position->text_offset_ = int{boundary_offsets[0]};
+          text_position->text_offset_ = int(boundary_offsets[0]);
           return text_position;
         }
         break;

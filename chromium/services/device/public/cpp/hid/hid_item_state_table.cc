@@ -50,10 +50,10 @@ int32_t Int32FromValueAndSize(uint32_t value, size_t payload_size) {
     return 0;
 
   if (payload_size == 1)
-    return int8_t{uint8_t{value}};
+    return int8_t(uint8_t(value));
 
   if (payload_size == 2)
-    return int16_t{uint16_t{value}};
+    return int16_t(uint16_t(value));
 
   DCHECK_EQ(payload_size, 4u);
   return value;
