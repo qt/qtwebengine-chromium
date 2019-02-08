@@ -125,8 +125,8 @@ VerifierResult VerifyCrx3(
   // Create a little-endian representation of [signed-header-size].
   const int signed_header_size = signed_header_data_str.size();
   const uint8_t header_size_octets[] = {
-      signed_header_size, signed_header_size >> 8, signed_header_size >> 16,
-      signed_header_size >> 24};
+      uint8_t(signed_header_size), uint8_t(signed_header_size >> 8),
+      uint8_t(signed_header_size >> 16), uint8_t(signed_header_size >> 24)};
 
   // Create a set of all required key hashes.
   std::set<std::vector<uint8_t>> required_key_set(required_key_hashes.begin(),

@@ -1511,7 +1511,7 @@ const ui::AXTree::Selection BrowserAccessibility::GetUnignoredSelection()
     const {
   if (manager())
     return manager()->ax_tree()->GetUnignoredSelection();
-  return ui::AXTree::Selection{-1, -1, -1,
+  return ui::AXTree::Selection{true, -1, -1,
                                ax::mojom::TextAffinity::kDownstream};
 }
 

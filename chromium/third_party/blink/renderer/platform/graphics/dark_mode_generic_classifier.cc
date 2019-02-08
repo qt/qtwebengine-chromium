@@ -37,9 +37,9 @@ DarkModeClassification ClassifyUsingDecisionTree(
 // the vector. Do not change the order here without also changing the neural
 // network code!
 Vector<float> ToVector(const DarkModeImageClassifier::Features& features) {
-  return {features.is_colorful, features.color_buckets_ratio,
+  return {float(features.is_colorful), features.color_buckets_ratio,
           features.transparency_ratio, features.background_ratio,
-          features.is_svg};
+          float(features.is_svg)};
 }
 
 }  // namespace

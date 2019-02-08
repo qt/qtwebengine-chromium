@@ -58,7 +58,7 @@ base::Optional<int> GetPerMonitorDPI(HMONITOR monitor) {
     return base::nullopt;
 
   DCHECK_EQ(dpi_x, dpi_y);
-  return int{dpi_x};
+  return int(dpi_x);
 }
 
 float GetScaleFactorForDPI(int dpi, bool include_accessibility) {
@@ -165,7 +165,7 @@ DisplaySettings GetDisplaySettingsForDevice(const wchar_t* device_name) {
   if (!::EnumDisplaySettings(device_name, ENUM_CURRENT_SETTINGS, &mode))
     return {Display::ROTATE_0, 0};
   return {OrientationToRotation(mode.dmDisplayOrientation),
-          mode.dmDisplayFrequency};
+          int(mode.dmDisplayFrequency)};
 }
 
 std::vector<DisplayInfo> FindAndRemoveTouchingDisplayInfos(
@@ -437,7 +437,7 @@ std::vector<DisplayInfo> GetDisplayInfosFromSystem() {
   std::vector<DisplayInfo> display_infos;
   EnumDisplayMonitors(nullptr, nullptr, EnumMonitorForDisplayInfoCallback,
                       reinterpret_cast<LPARAM>(&display_infos));
-  DCHECK_EQ(::GetSystemMetrics(SM_CMONITORS), int{display_infos.size()});
+  DCHECK_EQ(::GetSystemMetrics(SM_CMONITORS), int(display_infos.size()));
   return display_infos;
 }
 
@@ -674,7 +674,7 @@ gfx::NativeWindow ScreenWin::GetWindowAtScreenPoint(const gfx::Point& point) {
 }
 
 int ScreenWin::GetNumDisplays() const {
-  return int{screen_win_displays_.size()};
+  return int(screen_win_displays_.size());
 }
 
 const std::vector<Display>& ScreenWin::GetAllDisplays() const {

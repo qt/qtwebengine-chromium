@@ -111,7 +111,7 @@ gfx::SwapResult VulkanSwapChain::PresentBuffer(const gfx::Rect& rect) {
   VkPresentRegionsKHR present_regions = {VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR};
   if (is_incremental_present_supported_) {
     rect_layer.offset = {rect.x(), rect.y()};
-    rect_layer.extent = {rect.width(), rect.height()};
+    rect_layer.extent = {uint32_t(rect.width()), uint32_t(rect.height())};
     rect_layer.layer = 0;
 
     present_region.rectangleCount = 1;
