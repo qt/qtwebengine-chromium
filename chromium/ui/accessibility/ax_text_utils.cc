@@ -72,7 +72,7 @@ size_t FindAccessibleTextBoundary(const base::string16& text,
   if (boundary == ax::mojom::TextBoundary::kLineStart) {
     if (direction == ax::mojom::MoveDirection::kForward) {
       for (int line_break : line_breaks) {
-        size_t clamped_line_break = size_t{std::max(0, line_break)};
+        size_t clamped_line_break = (size_t)std::max(0, line_break);
         if ((affinity == ax::mojom::TextAffinity::kDownstream &&
              clamped_line_break > start_offset) ||
             (affinity == ax::mojom::TextAffinity::kUpstream &&

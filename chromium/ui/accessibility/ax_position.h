@@ -2349,13 +2349,13 @@ class AXPosition {
           text_position->GetGraphemeIterator();
       DCHECK_GE(text_position->text_offset_, 0);
       DCHECK_LE(text_position->text_offset_,
-                int{text_position->name_.length()});
+                int(text_position->name_.length()));
       while (
           !text_position->AtStartOfAnchor() &&
           (!gfx::IsValidCodePointIndex(text_position->name_,
-                                       size_t{text_position->text_offset_}) ||
+                                       size_t(text_position->text_offset_)) ||
            (grapheme_iterator && !grapheme_iterator->IsGraphemeBoundary(
-                                     size_t{text_position->text_offset_})))) {
+                                     size_t(text_position->text_offset_))))) {
         --text_position->text_offset_;
       }
       return text_position;
@@ -2399,18 +2399,18 @@ class AXPosition {
       //
       // TODO(nektar): Remove this workaround as soon as the source of the bug
       // is identified.
-      if (text_position->text_offset_ > int{text_position->name_.length()})
+      if (text_position->text_offset_ > int(text_position->name_.length()))
         return CreateNullPosition();
 
       DCHECK_GE(text_position->text_offset_, 0);
       DCHECK_LE(text_position->text_offset_,
-                int{text_position->name_.length()});
+                int(text_position->name_.length()));
       while (
           !text_position->AtEndOfAnchor() &&
           (!gfx::IsValidCodePointIndex(text_position->name_,
-                                       size_t{text_position->text_offset_}) ||
+                                       size_t(text_position->text_offset_)) ||
            (grapheme_iterator && !grapheme_iterator->IsGraphemeBoundary(
-                                     size_t{text_position->text_offset_})))) {
+                                     size_t(text_position->text_offset_))))) {
         ++text_position->text_offset_;
       }
 
@@ -2477,7 +2477,7 @@ class AXPosition {
       ++text_position->text_offset_;
     } while (!text_position->AtEndOfAnchor() && grapheme_iterator &&
              !grapheme_iterator->IsGraphemeBoundary(
-                 size_t{text_position->text_offset_}));
+                 size_t(text_position->text_offset_)));
     DCHECK_GT(text_position->text_offset_, 0);
     DCHECK_LE(text_position->text_offset_, text_position->MaxTextOffset());
 
@@ -2551,7 +2551,7 @@ class AXPosition {
       --text_position->text_offset_;
     } while (!text_position->AtStartOfAnchor() && grapheme_iterator &&
              !grapheme_iterator->IsGraphemeBoundary(
-                 size_t{text_position->text_offset_}));
+                 size_t(text_position->text_offset_)));
     DCHECK_GE(text_position->text_offset_, 0);
     DCHECK_LT(text_position->text_offset_, text_position->MaxTextOffset());
 
@@ -3924,9 +3924,9 @@ class AXPosition {
       case AXEmbeddedObjectBehavior::kSuppressCharacter:
         // TODO(nektar): Switch to anchor->GetInnerTextLength() after AXPosition
         // switches to using UTF8.
-        return int{base::UTF8ToUTF16(anchor->GetInnerText()).length()};
+        return int(base::UTF8ToUTF16(anchor->GetInnerText()).length());
       case AXEmbeddedObjectBehavior::kExposeCharacter:
-        return int{anchor->GetHypertext().length()};
+        return int(anchor->GetHypertext().length());
     }
   }
 
@@ -4054,7 +4054,7 @@ class AXPosition {
       child = child_tree_manager->GetRootAsAXNode();
       *tree_id = child_tree_manager->GetTreeID();
     } else {
-      child = GetAnchor()->children()[size_t{child_index}];
+      child = GetAnchor()->children()[size_t(child_index)];
       *tree_id = this->tree_id();
     }
     *child_id = child->id();
@@ -4069,7 +4069,7 @@ class AXPosition {
     if (child_tree_manager)
       return 1;
 
-    return int{GetAnchor()->children().size()};
+    return int(GetAnchor()->children().size());
   }
 
   // When a child is ignored, it looks for unignored nodes of that child's
@@ -4093,12 +4093,12 @@ class AXPosition {
       return 1;  // A child tree is never ignored.
     }
 
-    return int{GetAnchor()->GetUnignoredChildCount()};
+    return int(GetAnchor()->GetUnignoredChildCount());
   }
 
   int AnchorIndexInParent() const {
     // If this is the root tree, the index in parent will be 0.
-    return GetAnchor() ? int{GetAnchor()->index_in_parent()} : INVALID_INDEX;
+    return GetAnchor() ? int(GetAnchor()->index_in_parent()) : INVALID_INDEX;
   }
 
   base::stack<AXNodeType*> GetAncestorAnchors() const {
@@ -4933,7 +4933,7 @@ class AXPosition {
           // can safely move the iterator one position back, even if it's
           // currently at the vector's end.
           --offsets_iterator;
-          text_position->text_offset_ = int{*offsets_iterator};
+          text_position->text_offset_ = int(*offsets_iterator);
           text_position->affinity_ = ax::mojom::TextAffinity::kDownstream;
         }
         break;
@@ -4944,7 +4944,7 @@ class AXPosition {
                              int32_t{text_position->text_offset_});
         // If there is no next offset, the current offset should be unchanged.
         if (offsets_iterator < boundary_offsets.end()) {
-          text_position->text_offset_ = int{*offsets_iterator};
+          text_position->text_offset_ = int(*offsets_iterator);
           text_position->affinity_ = ax::mojom::TextAffinity::kDownstream;
         }
         break;

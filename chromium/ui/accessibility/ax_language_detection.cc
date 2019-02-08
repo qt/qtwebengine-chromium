@@ -420,7 +420,7 @@ AXLanguageDetectionManager::GetLanguageAnnotationForStringAttribute(
   if (node.HasStringAttribute(ax::mojom::StringAttribute::kLanguage)) {
     // Use author-provided language if present.
     language_annotation.push_back(AXLanguageSpan{
-        0 /* start_index */, attr_value.length() /* end_index */,
+        0 /* start_index */, int(attr_value.length()) /* end_index */,
         node.GetStringAttribute(
             ax::mojom::StringAttribute::kLanguage) /* language */,
         1 /* probability */});

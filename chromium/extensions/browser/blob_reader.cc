@@ -22,7 +22,7 @@ void BlobReader::Read(content::BrowserContext* browser_context,
   CHECK_GT(length, 0);
   CHECK_LE(offset, std::numeric_limits<int64_t>::max() - length);
 
-  base::Optional<Range> range = Range{offset, length};
+  base::Optional<Range> range = Range{uint64_t(offset), uint64_t(length)};
   Read(browser_context, blob_uuid, std::move(callback), std::move(range));
 }
 

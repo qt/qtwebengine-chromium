@@ -303,7 +303,7 @@ bool DecoderTemplate<Traits>::ProcessConfigureRequest(Request* request) {
   }
 
   if (pending_decodes_.size() + 1 >
-      size_t{Traits::GetMaxDecodeRequests(*decoder_)}) {
+      size_t(Traits::GetMaxDecodeRequests(*decoder_))) {
     // Try again after OnDecodeDone().
     return false;
   }
@@ -332,7 +332,7 @@ bool DecoderTemplate<Traits>::ProcessDecodeRequest(Request* request) {
   }
 
   if (pending_decodes_.size() + 1 >
-      size_t{Traits::GetMaxDecodeRequests(*decoder_)}) {
+      size_t(Traits::GetMaxDecodeRequests(*decoder_))) {
     // Try again after OnDecodeDone().
     return false;
   }
@@ -377,7 +377,7 @@ bool DecoderTemplate<Traits>::ProcessFlushRequest(Request* request) {
   DCHECK(decoder_);
 
   if (pending_decodes_.size() + 1 >
-      size_t{Traits::GetMaxDecodeRequests(*decoder_)}) {
+      size_t(Traits::GetMaxDecodeRequests(*decoder_))) {
     // Try again after OnDecodeDone().
     return false;
   }

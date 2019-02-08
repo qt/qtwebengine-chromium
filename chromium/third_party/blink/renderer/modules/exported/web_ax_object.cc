@@ -228,7 +228,7 @@ WebAXObject WebAXObject::ChildAt(unsigned index) const {
   if (IsDetached())
     return WebAXObject();
 
-  return WebAXObject(private_->ChildAtIncludingIgnored(int{index}));
+  return WebAXObject(private_->ChildAtIncludingIgnored(int(index)));
 }
 
 WebAXObject WebAXObject::ParentObject() const {

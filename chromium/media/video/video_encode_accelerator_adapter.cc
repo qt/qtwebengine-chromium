@@ -330,10 +330,10 @@ void VideoEncodeAcceleratorAdapter::ChangeOptionsOnAcceleratorThread(
       std::min(options.bitrate.value_or(options.frame_size.width() *
                                         options.frame_size.height() *
                                         kVEADefaultBitratePerPixel),
-               uint64_t{std::numeric_limits<uint32_t>::max()});
+               uint64_t(std::numeric_limits<uint32_t>::max()));
 
-  uint32_t framerate = uint32_t{std::round(
-      options.framerate.value_or(VideoEncodeAccelerator::kDefaultFramerate))};
+  uint32_t framerate = uint32_t(std::round(
+      options.framerate.value_or(VideoEncodeAccelerator::kDefaultFramerate)));
 
   accelerator_->RequestEncodingParametersChange(bitrate, framerate);
 

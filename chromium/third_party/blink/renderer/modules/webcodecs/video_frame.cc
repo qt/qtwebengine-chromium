@@ -395,7 +395,7 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
           String::Format("The stride of plane %u is too large", i));
       return nullptr;
     }
-    if (planes[i]->stride() < uint32_t{minimum_size.width()}) {
+    if (planes[i]->stride() < uint32_t(minimum_size.width())) {
       exception_state.ThrowDOMException(
           DOMExceptionCode::kConstraintError,
           String::Format(
@@ -405,7 +405,7 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
               planes[i]->stride()));
       return nullptr;
     }
-    if (planes[i]->rows() != uint32_t{minimum_size.height()}) {
+    if (planes[i]->rows() != uint32_t(minimum_size.height())) {
       exception_state.ThrowDOMException(
           DOMExceptionCode::kConstraintError,
           String::Format(
@@ -450,8 +450,8 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
         init->hasCropWidth() ? visible_rect.width() - init->cropWidth() : 0;
     const auto crop_h =
         init->hasCropHeight() ? visible_rect.height() - init->cropHeight() : 0;
-    if (crop_w < 0 || crop_h < 0 || crop_w > unsigned{visible_rect.width()} ||
-        crop_h > unsigned{visible_rect.height()}) {
+    if (crop_w < 0 || crop_h < 0 || crop_w > unsigned(visible_rect.width()) ||
+        crop_h > unsigned(visible_rect.height())) {
       visible_rect = gfx::Rect();
     } else {
       visible_rect.Inset(crop_left, crop_top, crop_w, crop_h);

@@ -140,10 +140,10 @@ bool PdfAXActionTarget::SetSelection(const ui::AXActionTarget* anchor_object,
   }
   pdf_action_data.action = PP_PdfAccessibilityAction::PP_PDF_SET_SELECTION;
   pdf_action_data.target_rect = {
-      {target_plugin_node_.data().relative_bounds.bounds.x(),
-       target_plugin_node_.data().relative_bounds.bounds.y()},
-      {target_plugin_node_.data().relative_bounds.bounds.width(),
-       target_plugin_node_.data().relative_bounds.bounds.height()}};
+      {int(target_plugin_node_.data().relative_bounds.bounds.x()),
+       int(target_plugin_node_.data().relative_bounds.bounds.y())},
+      {int(target_plugin_node_.data().relative_bounds.bounds.width()),
+       int(target_plugin_node_.data().relative_bounds.bounds.height())}};
   pdf_accessibility_tree_source_->HandleAction(pdf_action_data);
   return true;
 }
@@ -169,10 +169,10 @@ bool PdfAXActionTarget::ScrollToMakeVisibleWithSubFocus(
   pdf_action_data.vertical_scroll_alignment =
       ConvertAXScrollToPdfScrollAlignment(vertical_scroll_alignment);
   pdf_action_data.target_rect = {
-      {target_plugin_node_.data().relative_bounds.bounds.x(),
-       target_plugin_node_.data().relative_bounds.bounds.y()},
-      {target_plugin_node_.data().relative_bounds.bounds.width(),
-       target_plugin_node_.data().relative_bounds.bounds.height()}};
+      {int32_t(target_plugin_node_.data().relative_bounds.bounds.x()),
+       int32_t(target_plugin_node_.data().relative_bounds.bounds.y())},
+      {int32_t(target_plugin_node_.data().relative_bounds.bounds.width()),
+       int32_t(target_plugin_node_.data().relative_bounds.bounds.height())}};
   pdf_accessibility_tree_source_->HandleAction(pdf_action_data);
   return true;
 }
@@ -183,10 +183,10 @@ bool PdfAXActionTarget::ScrollToGlobalPoint(const gfx::Point& point) const {
       PP_PdfAccessibilityAction::PP_PDF_SCROLL_TO_GLOBAL_POINT;
   pdf_action_data.target_point = {point.x(), point.y()};
   pdf_action_data.target_rect = {
-      {target_plugin_node_.data().relative_bounds.bounds.x(),
-       target_plugin_node_.data().relative_bounds.bounds.y()},
-      {target_plugin_node_.data().relative_bounds.bounds.width(),
-       target_plugin_node_.data().relative_bounds.bounds.height()}};
+      {int32_t(target_plugin_node_.data().relative_bounds.bounds.x()),
+       int32_t(target_plugin_node_.data().relative_bounds.bounds.y())},
+      {int32_t(target_plugin_node_.data().relative_bounds.bounds.width()),
+       int32_t(target_plugin_node_.data().relative_bounds.bounds.height())}};
   pdf_accessibility_tree_source_->HandleAction(pdf_action_data);
   return true;
 }

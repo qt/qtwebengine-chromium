@@ -299,12 +299,12 @@ void AXTableInfo::BuildCellDataVectorFromRowAndCellNodes(
       if (aria_row_count != ax::mojom::kUnknownAriaColumnOrRowCount) {
         aria_row_count =
             std::max((aria_row_count),
-                     int{current_aria_row_index + cell_data.row_span - 1});
+                     int(current_aria_row_index + cell_data.row_span - 1));
       }
       if (aria_col_count != ax::mojom::kUnknownAriaColumnOrRowCount) {
         aria_col_count =
             std::max((aria_col_count),
-                     int{current_aria_col_index + cell_data.col_span - 1});
+                     int(current_aria_col_index + cell_data.col_span - 1));
       }
       // Update |current_col_index| to reflect the next available index after
       // this cell including its colspan. The next column index in this row
@@ -480,7 +480,7 @@ void AXTableInfo::UpdateExtraMacColumnNodeAttributes(size_t col_index) {
   data.int_attributes.clear();
 
   // Update the column index.
-  data.AddIntAttribute(IntAttribute::kTableColumnIndex, int32_t{col_index});
+  data.AddIntAttribute(IntAttribute::kTableColumnIndex, int32_t(col_index));
 
   // Update the column header.
   if (!col_headers[col_index].empty()) {
