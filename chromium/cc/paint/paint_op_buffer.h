@@ -255,7 +255,7 @@ class CC_PAINT_EXPORT PaintOpBuffer : public SkRefCnt {
     uint16_t aligned_size = ComputeOpAlignedSize<T>();
     T* op = reinterpret_cast<T*>(AllocatePaintOp(aligned_size));
 
-    new (op) T{std::forward<Args>(args)...};
+    new (op) T(std::forward<Args>(args)...);
     DCHECK_EQ(op->type, static_cast<uint8_t>(T::kType));
     op->aligned_size = aligned_size;
     AnalyzeAddedOp(op);
