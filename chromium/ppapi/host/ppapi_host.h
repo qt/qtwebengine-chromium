@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <set>
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
@@ -140,6 +141,8 @@ class PPAPI_HOST_EXPORT PpapiHost : public IPC::Sender, public IPC::Listener {
   typedef std::map<int, std::unique_ptr<ResourceHost>> PendingHostResourceMap;
   PendingHostResourceMap pending_resource_hosts_;
   int next_pending_resource_host_id_;
+
+  std::set<PP_Resource> uninitialized_resources_;
 
   DISALLOW_COPY_AND_ASSIGN(PpapiHost);
 };

@@ -241,9 +241,10 @@ void PpapiHost::OnHostMsgResourceCreated(
 #ifndef TOOLKIT_QT
     NOTREACHED();
 #else
-    LOG(INFO) << "Failed to create PPAPI resource host"
-              << IPC_MESSAGE_ID_CLASS(nested_msg.type())
+    LOG(INFO) << "Failed to create PPAPI resource host, class:"
+              << IPC_MESSAGE_ID_CLASS(nested_msg.type()) << ", line:"
               << IPC_MESSAGE_ID_LINE(nested_msg.type());
+    uninitialized_resources_.insert(params.pp_resource());
 #endif
     return;
   }
@@ -271,7 +272,11 @@ void PpapiHost::OnHostMsgAttachToPendingHost(PP_Resource pp_resource,
 void PpapiHost::OnHostMsgResourceDestroyed(PP_Resource resource) {
   ResourceMap::iterator found = resources_.find(resource);
   if (found == resources_.end()) {
-    NOTREACHED();
+#if defined(TOOLKIT_QT)
+    auto found_uninitialized = uninitialized_resources_.find(resource);
+    if (found_uninitialized == uninitialized_resources_.end())
+#endif
+        NOTREACHED();
     return;
   }
   // Invoking the HostResource destructor might result in looking up the
