@@ -10,15 +10,22 @@
 
 #include "modules/video_coding/packet_buffer.h"
 
+#include <string.h>
 #include <algorithm>
-#include <limits>
+#include <cstdint>
 #include <utility>
 
+#include "absl/types/variant.h"
+#include "api/video/encoded_frame.h"
+#include "common_types.h"  // NOLINT(build/include)
 #include "common_video/h264/h264_common.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
+#include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "modules/video_coding/frame_object.h"
-#include "rtc_base/atomicops.h"
+#include "rtc_base/atomic_ops.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/numerics/mod_ops.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -259,6 +266,8 @@ bool PacketBuffer::PotentialNewFrame(uint16_t seq_num) const {
       static_cast<uint16_t>(sequence_buffer_[index].seq_num - 1)) {
     return false;
   }
+  if (data_buffer_[prev_index].timestamp != data_buffer_[index].timestamp)
+    return false;
   if (sequence_buffer_[prev_index].continuous)
     return true;
 
@@ -278,6 +287,8 @@ std::vector<std::unique_ptr<RtpFrameObject>> PacketBuffer::FindFrames(
       size_t frame_size = 0;
       int max_nack_count = -1;
       uint16_t start_seq_num = seq_num;
+      int64_t min_recv_time = data_buffer_[index].receive_time_ms;
+      int64_t max_recv_time = data_buffer_[index].receive_time_ms;
 
       // Find the start index by searching backward until the packet with
       // the |frame_begin| flag is set.
@@ -298,6 +309,11 @@ std::vector<std::unique_ptr<RtpFrameObject>> PacketBuffer::FindFrames(
         max_nack_count =
             std::max(max_nack_count, data_buffer_[start_index].timesNacked);
         sequence_buffer_[start_index].frame_created = true;
+
+        min_recv_time =
+            std::min(min_recv_time, data_buffer_[start_index].receive_time_ms);
+        max_recv_time =
+            std::max(max_recv_time, data_buffer_[start_index].receive_time_ms);
 
         if (!is_h264 && sequence_buffer_[start_index].frame_begin)
           break;
@@ -386,7 +402,7 @@ std::vector<std::unique_ptr<RtpFrameObject>> PacketBuffer::FindFrames(
 
       found_frames.emplace_back(
           new RtpFrameObject(this, start_seq_num, seq_num, frame_size,
-                             max_nack_count, clock_->TimeInMilliseconds()));
+                             max_nack_count, min_recv_time, max_recv_time));
     }
     ++seq_num;
   }

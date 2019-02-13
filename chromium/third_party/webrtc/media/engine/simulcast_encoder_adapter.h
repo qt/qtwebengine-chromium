@@ -21,7 +21,7 @@
 #include "absl/types/optional.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "modules/video_coding/include/video_codec_interface.h"
-#include "rtc_base/atomicops.h"
+#include "rtc_base/atomic_ops.h"
 #include "rtc_base/sequenced_task_checker.h"
 
 namespace webrtc {
@@ -83,11 +83,17 @@ class SimulcastEncoderAdapter : public VideoEncoder {
     bool send_stream;
   };
 
+  enum class StreamResolution {
+    OTHER,
+    HIGHEST,
+    LOWEST,
+  };
+
   // Populate the codec settings for each simulcast stream.
   void PopulateStreamCodec(const webrtc::VideoCodec& inst,
                            int stream_index,
                            uint32_t start_bitrate_kbps,
-                           bool highest_resolution_stream,
+                           StreamResolution stream_resolution,
                            webrtc::VideoCodec* stream_codec);
 
   bool Initialized() const;

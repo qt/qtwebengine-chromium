@@ -10,10 +10,10 @@
 #include <utility>
 
 #include "core/fxcrt/fx_coordinates.h"
-#include "fxjs/cfxjse_class.h"
-#include "fxjs/cfxjse_engine.h"
-#include "fxjs/cfxjse_value.h"
 #include "fxjs/js_resources.h"
+#include "fxjs/xfa/cfxjse_class.h"
+#include "fxjs/xfa/cfxjse_engine.h"
+#include "fxjs/xfa/cfxjse_value.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
@@ -57,6 +57,10 @@ CJX_LayoutPseudoModel::CJX_LayoutPseudoModel(CScript_LayoutPseudoModel* model)
 
 CJX_LayoutPseudoModel::~CJX_LayoutPseudoModel() {}
 
+bool CJX_LayoutPseudoModel::DynamicTypeIs(TypeTag eType) const {
+  return eType == static_type__ || ParentType__::DynamicTypeIs(eType);
+}
+
 void CJX_LayoutPseudoModel::ready(CFXJSE_Value* pValue,
                                   bool bSetting,
                                   XFA_Attribute eAttribute) {
@@ -64,7 +68,7 @@ void CJX_LayoutPseudoModel::ready(CFXJSE_Value* pValue,
   if (!pNotify)
     return;
   if (bSetting) {
-    ThrowException(L"Unable to set ready value.");
+    ThrowException(WideString::FromASCII("Unable to set ready value."));
     return;
   }
 
@@ -84,7 +88,7 @@ CJS_Result CJX_LayoutPseudoModel::HWXY(
   if (!pNode)
     return CJS_Result::Success();
 
-  WideString unit(L"pt");
+  WideString unit = WideString::FromASCII("pt");
   if (params.size() >= 2) {
     WideString tmp_unit = runtime->ToWideString(params[1]);
     if (!tmp_unit.IsEmpty())
@@ -227,12 +231,12 @@ std::vector<CXFA_Node*> CJX_LayoutPseudoModel::GetObjArray(
     return std::vector<CXFA_Node*>();
 
   std::vector<CXFA_Node*> retArray;
-  if (wsType == L"pageArea") {
+  if (wsType.EqualsASCII("pageArea")) {
     if (pLayoutPage->GetFormNode())
       retArray.push_back(pLayoutPage->GetFormNode());
     return retArray;
   }
-  if (wsType == L"contentArea") {
+  if (wsType.EqualsASCII("contentArea")) {
     for (CXFA_LayoutItem* pItem = pLayoutPage->m_pFirstChild; pItem;
          pItem = pItem->m_pNextSibling) {
       if (pItem->GetFormNode()->GetElementType() == XFA_Element::ContentArea)
@@ -296,13 +300,13 @@ std::vector<CXFA_Node*> CJX_LayoutPseudoModel::GetObjArray(
   }
 
   XFA_Element eType = XFA_Element::Unknown;
-  if (wsType == L"field")
+  if (wsType.EqualsASCII("field"))
     eType = XFA_Element::Field;
-  else if (wsType == L"draw")
+  else if (wsType.EqualsASCII("draw"))
     eType = XFA_Element::Draw;
-  else if (wsType == L"subform")
+  else if (wsType.EqualsASCII("subform"))
     eType = XFA_Element::Subform;
-  else if (wsType == L"area")
+  else if (wsType.EqualsASCII("area"))
     eType = XFA_Element::Area;
 
   if (eType != XFA_Element::Unknown) {
@@ -406,13 +410,14 @@ CJS_Result CJX_LayoutPseudoModel::relayout(
     CFX_V8* runtime,
     const std::vector<v8::Local<v8::Value>>& params) {
   CXFA_Node* pRootNode = GetDocument()->GetRoot();
+  CXFA_LayoutProcessor* pLayoutProcessor = GetDocument()->GetLayoutProcessor();
   CXFA_Form* pFormRoot =
       pRootNode->GetFirstChildByClass<CXFA_Form>(XFA_Element::Form);
-  CXFA_Node* pContentRootNode = pFormRoot->GetFirstChild();
-  CXFA_LayoutProcessor* pLayoutProcessor = GetDocument()->GetLayoutProcessor();
-  if (pContentRootNode)
-    pLayoutProcessor->AddChangedContainer(pContentRootNode);
-
+  if (pFormRoot) {
+    CXFA_Node* pContentRootNode = pFormRoot->GetFirstChild();
+    if (pContentRootNode)
+      pLayoutProcessor->AddChangedContainer(pContentRootNode);
+  }
   pLayoutProcessor->SetForceReLayout(true);
   return CJS_Result::Success();
 }

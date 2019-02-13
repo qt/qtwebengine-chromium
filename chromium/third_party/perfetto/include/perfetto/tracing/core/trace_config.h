@@ -51,7 +51,9 @@ class InodeFileConfig_MountPointMappingEntry;
 class ProcessStatsConfig;
 class SysStatsConfig;
 class HeapprofdConfig;
-class HeapprofdConfig_ContinousDumpConfig;
+class HeapprofdConfig_ContinuousDumpConfig;
+class AndroidPowerConfig;
+class AndroidLogConfig;
 class TestConfig;
 class TestConfig_DummyFields;
 class TraceConfig_ProducerConfig;
@@ -198,10 +200,18 @@ class PERFETTO_EXPORT TraceConfig {
       triggering_config_id_ = value;
     }
 
+    int64_t triggering_subscription_id() const {
+      return triggering_subscription_id_;
+    }
+    void set_triggering_subscription_id(int64_t value) {
+      triggering_subscription_id_ = value;
+    }
+
    private:
     int64_t triggering_alert_id_ = {};
     int32_t triggering_config_uid_ = {};
     int64_t triggering_config_id_ = {};
+    int64_t triggering_subscription_id_ = {};
 
     // Allows to preserve unknown protobuf fields for compatibility
     // with future versions of .proto files.
@@ -310,6 +320,16 @@ class PERFETTO_EXPORT TraceConfig {
   uint32_t flush_period_ms() const { return flush_period_ms_; }
   void set_flush_period_ms(uint32_t value) { flush_period_ms_ = value; }
 
+  uint32_t flush_timeout_ms() const { return flush_timeout_ms_; }
+  void set_flush_timeout_ms(uint32_t value) { flush_timeout_ms_ = value; }
+
+  bool disable_clock_snapshotting() const {
+    return disable_clock_snapshotting_;
+  }
+  void set_disable_clock_snapshotting(bool value) {
+    disable_clock_snapshotting_ = value;
+  }
+
  private:
   std::vector<BufferConfig> buffers_;
   std::vector<DataSource> data_sources_;
@@ -324,6 +344,8 @@ class PERFETTO_EXPORT TraceConfig {
   GuardrailOverrides guardrail_overrides_ = {};
   bool deferred_start_ = {};
   uint32_t flush_period_ms_ = {};
+  uint32_t flush_timeout_ms_ = {};
+  bool disable_clock_snapshotting_ = {};
 
   // Allows to preserve unknown protobuf fields for compatibility
   // with future versions of .proto files.

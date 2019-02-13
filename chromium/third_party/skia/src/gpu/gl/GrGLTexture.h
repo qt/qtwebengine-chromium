@@ -27,6 +27,10 @@ public:
         GrGLenum fWrapT = GR_GL_REPEAT;
         GrGLfloat fMinLOD = -1000.f;
         GrGLfloat fMaxLOD = 1000.f;
+        // We always want the border color to be transparent black, so no need to store 4 floats.
+        // Just track if it's been invalidated and no longer the default
+        bool fBorderColorInvalid = false;
+
         void invalidate() {
             fMinFilter = ~0U;
             fMagFilter = ~0U;
@@ -34,6 +38,7 @@ public:
             fWrapT = ~0U;
             fMinLOD = SK_ScalarNaN;
             fMaxLOD = SK_ScalarNaN;
+            fBorderColorInvalid = true;
         }
     };
 
@@ -77,6 +82,12 @@ public:
         fReleaseHelper = std::move(releaseHelper);
     }
 
+    void setIdleProc(IdleProc proc, void* context) override {
+        fIdleProc = proc;
+        fIdleProcContext = context;
+    }
+    void* idleContext() const override { return fIdleProcContext; }
+
     // These functions are used to track the texture parameters associated with the texture.
     GrGpu::ResetTimestamp getCachedParamsTimestamp() const { return fParamsTimestamp; }
     const SamplerParams& getCachedSamplerParams() const { return fSamplerParams; }
@@ -100,7 +111,7 @@ public:
     void baseLevelWasBoundToFBO() { fBaseLevelHasBeenBoundToFBO = true; }
 
     static sk_sp<GrGLTexture> MakeWrapped(GrGLGpu*, const GrSurfaceDesc&, GrMipMapsStatus,
-                                          const IDDesc&, bool purgeImmediately);
+                                          const IDDesc&, GrIOType, bool purgeImmediately);
 
     void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const override;
 
@@ -110,7 +121,7 @@ protected:
 
     enum Wrapped { kWrapped };
     // Constructor for instances wrapping backend objects.
-    GrGLTexture(GrGLGpu*, Wrapped, const GrSurfaceDesc&, GrMipMapsStatus, const IDDesc&,
+    GrGLTexture(GrGLGpu*, Wrapped, const GrSurfaceDesc&, GrMipMapsStatus, const IDDesc&, GrIOType,
                 bool purgeImmediately);
 
     void init(const GrSurfaceDesc&, const IDDesc&);
@@ -122,10 +133,16 @@ protected:
 
 private:
     void invokeReleaseProc() {
-        if (fReleaseHelper) {
-            // Depending on the ref count of fReleaseHelper this may or may not actually trigger the
-            // ReleaseProc to be called.
-            fReleaseHelper.reset();
+        // Depending on the ref count of fReleaseHelper this may or may not actually trigger the
+        // ReleaseProc to be called.
+        fReleaseHelper.reset();
+    }
+
+    void becamePurgeable() override {
+        if (fIdleProc) {
+            fIdleProc(fIdleProcContext);
+            fIdleProc = nullptr;
+            fIdleProcContext = nullptr;
         }
     }
 
@@ -133,6 +150,8 @@ private:
     NonSamplerParams fNonSamplerParams;
     GrGpu::ResetTimestamp fParamsTimestamp;
     sk_sp<GrReleaseProcHelper> fReleaseHelper;
+    IdleProc* fIdleProc = nullptr;
+    void* fIdleProcContext = nullptr;
     GrGLuint fID;
     GrGLenum fFormat;
     GrBackendObjectOwnership fTextureIDOwnership;

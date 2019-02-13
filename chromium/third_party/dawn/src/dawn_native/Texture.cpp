@@ -82,6 +82,15 @@ namespace dawn_native {
             }
         }
 
+        // TODO(jiawei.shao@intel.com): support multisampled textures
+        MaybeError ValidateSampleCount(uint32_t sampleCount) {
+            if (sampleCount != 1) {
+                return DAWN_VALIDATION_ERROR("The sample count of the texture is not supported.");
+            }
+
+            return {};
+        }
+
         MaybeError ValidateTextureViewDimensionCompatibility(
             const TextureBase* texture,
             const TextureViewDescriptor* descriptor) {
@@ -142,10 +151,11 @@ namespace dawn_native {
         DAWN_TRY(ValidateTextureUsageBit(descriptor->usage));
         DAWN_TRY(ValidateTextureDimension(descriptor->dimension));
         DAWN_TRY(ValidateTextureFormat(descriptor->format));
+        DAWN_TRY(ValidateSampleCount(descriptor->sampleCount));
 
         // TODO(jiawei.shao@intel.com): check stuff based on the dimension
         if (descriptor->size.width == 0 || descriptor->size.height == 0 ||
-            descriptor->size.depth == 0 || descriptor->arrayLayer == 0 ||
+            descriptor->size.depth == 0 || descriptor->arraySize == 0 ||
             descriptor->levelCount == 0) {
             return DAWN_VALIDATION_ERROR("Cannot create an empty texture");
         }
@@ -250,6 +260,26 @@ namespace dawn_native {
         }
     }
 
+    bool IsDepthStencilRenderableTextureFormat(dawn::TextureFormat format) {
+        switch (format) {
+            case dawn::TextureFormat::D32FloatS8Uint:
+                return true;
+
+            case dawn::TextureFormat::B8G8R8A8Unorm:
+            case dawn::TextureFormat::R8G8B8A8Uint:
+            case dawn::TextureFormat::R8G8B8A8Unorm:
+            case dawn::TextureFormat::R8G8Uint:
+            case dawn::TextureFormat::R8G8Unorm:
+            case dawn::TextureFormat::R8Uint:
+            case dawn::TextureFormat::R8Unorm:
+                return false;
+
+            default:
+                UNREACHABLE();
+                return false;
+        }
+    }
+
     // TextureBase
 
     TextureBase::TextureBase(DeviceBase* device, const TextureDescriptor* descriptor)
@@ -257,7 +287,7 @@ namespace dawn_native {
           mDimension(descriptor->dimension),
           mFormat(descriptor->format),
           mSize(descriptor->size),
-          mArrayLayers(descriptor->arrayLayer),
+          mArrayLayers(descriptor->arraySize),
           mNumMipLevels(descriptor->levelCount),
           mUsage(descriptor->usage) {
     }
@@ -300,7 +330,9 @@ namespace dawn_native {
         : ObjectBase(texture->GetDevice()),
           mTexture(texture),
           mFormat(descriptor->format),
+          mBaseMipLevel(descriptor->baseMipLevel),
           mLevelCount(descriptor->levelCount),
+          mBaseArrayLayer(descriptor->baseArrayLayer),
           mLayerCount(descriptor->layerCount) {
     }
 
@@ -316,8 +348,16 @@ namespace dawn_native {
         return mFormat;
     }
 
+    uint32_t TextureViewBase::GetBaseMipLevel() const {
+        return mBaseMipLevel;
+    }
+
     uint32_t TextureViewBase::GetLevelCount() const {
         return mLevelCount;
+    }
+
+    uint32_t TextureViewBase::GetBaseArrayLayer() const {
+        return mBaseArrayLayer;
     }
 
     uint32_t TextureViewBase::GetLayerCount() const {

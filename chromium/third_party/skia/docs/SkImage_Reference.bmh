@@ -253,6 +253,40 @@ for (int quality : { 100, 50, 10, 1} ) {
 
 # ------------------------------------------------------------------------------
 
+#Enum CompressionType
+#Line # option for MakeFromCompressed ##
+#Code
+#Populate
+##
+
+Used to inform MakeFromCompressed which compression method was used on the
+input data.
+
+#Const kETC1_CompressionType 0
+#Line # compressed data uses ETC1 compression ##
+##
+
+#NoExample
+##
+
+#SeeAlso MakeFromCompressed
+
+#Enum ##
+
+#Method static sk_sp<SkImage> MakeFromCompressed(GrContext* context, sk_sp<SkData> data, int width, int height, CompressionType type)
+#In Constructors
+#Line # creates a GPU-backed Image from compressed data ##
+#Populate
+
+#NoExample
+##
+
+#SeeAlso MakeFromTexture CompressionType
+
+#Method ##
+
+# ------------------------------------------------------------------------------
+
 #Typedef void (*TextureReleaseProc)(ReleaseContext releaseContext)
 #Line # parameter type for MakeFromTexture ##
 
@@ -312,6 +346,10 @@ x += 512;
 #Populate
 
 #Example
+#Description
+textureReleaseProc may be called at some later point in time. In this example,
+textureReleaseProc has no effect on the drawing.
+##
 #Platform gpu
 #Image 4
 GrContext* context = canvas->getGrContext();
@@ -319,15 +357,14 @@ if (!context) {
    return;
 }
 auto debugster = [](SkImage::ReleaseContext releaseContext) -> void {
- // broken
- //   *((int *) releaseContext) += 128;
+   *((int *) releaseContext) += 128;
 };
-int x = 0;
+int x = 0, y = 0;
 for (auto origin : { kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin } ) {
     sk_sp<SkImage> image = SkImage::MakeFromTexture(context, backEndTexture,
            origin, kRGBA_8888_SkColorType, kOpaque_SkAlphaType, nullptr, debugster, &x);
-    canvas->drawImage(image, x, 0);
-    x += 128;
+    canvas->drawImage(image, x, y);
+    y += 128;
 }
 ##
 
@@ -1535,7 +1572,8 @@ If cachingHint is kDisallow_CachingHint, pixels are not added to the local cache
 
 # ------------------------------------------------------------------------------
 
-#Method sk_sp<SkImage> makeWithFilter(const SkImageFilter* filter, const SkIRect& subset,
+#Method sk_sp<SkImage> makeWithFilter(GrContext* context,
+                                  const SkImageFilter* filter, const SkIRect& subset,
                                   const SkIRect& clipBounds, SkIRect* outSubset,
                                   SkIPoint* offset) const
 #In Constructors
@@ -1560,7 +1598,8 @@ By translating canvas by returned offset, Image appears stationary.
     clipBounds.outset(60, 60);
     SkIRect outSubset;
     SkIPoint offset;
-    sk_sp<SkImage> filtered(image->makeWithFilter(offsetFilter.get(), subset, clipBounds,
+    sk_sp<SkImage> filtered(image->makeWithFilter(canvas->getGrContext(),
+                            offsetFilter.get(), subset, clipBounds,
                             &outSubset, &offset));
     SkPaint paint;
     paint.setAntiAlias(true);
@@ -1573,6 +1612,19 @@ By translating canvas by returned offset, Image appears stationary.
 
 #SeeAlso makeShader SkPaint::setImageFilter
 
+#Method ##
+
+# ------------------------------------------------------------------------------
+
+#Method sk_sp<SkImage> makeWithFilter(const SkImageFilter* filter, const SkIRect& subset,
+                                  const SkIRect& clipBounds, SkIRect* outSubset,
+                                  SkIPoint* offset) const
+#In  Constructors
+#Line # creates filtered, clipped Image ##
+#Populate
+#NoExample
+##
+#SeeAlso makeShader SkPaint::setImageFilter
 #Method ##
 
 # ------------------------------------------------------------------------------

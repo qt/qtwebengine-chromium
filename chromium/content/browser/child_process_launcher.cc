@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/clang_coverage_buildflags.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/i18n/icu_util.h"
@@ -34,7 +35,7 @@ ChildProcessLauncher::ChildProcessLauncher(
       start_time_(base::TimeTicks::Now()),
 #if defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) ||  \
     defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || \
-    defined(UNDEFINED_SANITIZER) || defined(CLANG_COVERAGE)
+    defined(UNDEFINED_SANITIZER) || BUILDFLAG(CLANG_COVERAGE)
       terminate_child_on_shutdown_(false),
 #else
       terminate_child_on_shutdown_(terminate_on_shutdown),
@@ -149,7 +150,7 @@ bool ChildProcessLauncher::TerminateProcess(const base::Process& process,
 // static
 void ChildProcessLauncher::SetRegisteredFilesForService(
     const std::string& service_name,
-    catalog::RequiredFileMap required_files) {
+    std::map<std::string, base::FilePath> required_files) {
   ChildProcessLauncherHelper::SetRegisteredFilesForService(
       service_name, std::move(required_files));
 }

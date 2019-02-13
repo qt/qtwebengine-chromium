@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {
@@ -27,107 +28,13 @@ SimulatedNetwork::Config CreateSimulationConfig(NetworkNodeConfig config) {
 }
 }  // namespace
 
-bool NullReceiver::TryDeliverPacket(rtc::CopyOnWriteBuffer packet,
-                                    uint64_t receiver,
-                                    Timestamp at_time) {
-  return true;
-}
+void NullReceiver::OnPacketReceived(EmulatedIpPacket packet) {}
 
 ActionReceiver::ActionReceiver(std::function<void()> action)
     : action_(action) {}
 
-bool ActionReceiver::TryDeliverPacket(rtc::CopyOnWriteBuffer packet,
-                                      uint64_t receiver,
-                                      Timestamp at_time) {
+void ActionReceiver::OnPacketReceived(EmulatedIpPacket packet) {
   action_();
-  return true;
-}
-
-NetworkNode::~NetworkNode() = default;
-
-NetworkNode::NetworkNode(NetworkNodeConfig config,
-                         std::unique_ptr<NetworkBehaviorInterface> behavior)
-    : packet_overhead_(config.packet_overhead.bytes()),
-      behavior_(std::move(behavior)) {}
-
-void NetworkNode::SetRoute(uint64_t receiver, NetworkReceiverInterface* node) {
-  rtc::CritScope crit(&crit_sect_);
-  routing_[receiver] = node;
-}
-
-void NetworkNode::ClearRoute(uint64_t receiver_id) {
-  rtc::CritScope crit(&crit_sect_);
-  auto it = routing_.find(receiver_id);
-  routing_.erase(it);
-}
-
-bool NetworkNode::TryDeliverPacket(rtc::CopyOnWriteBuffer packet,
-                                   uint64_t receiver,
-                                   Timestamp at_time) {
-  rtc::CritScope crit(&crit_sect_);
-  if (routing_.find(receiver) == routing_.end())
-    return false;
-  uint64_t packet_id = next_packet_id_++;
-  bool sent = behavior_->EnqueuePacket(PacketInFlightInfo(
-      packet.size() + packet_overhead_, at_time.us(), packet_id));
-  if (sent) {
-    packets_.emplace_back(StoredPacket{packet, receiver, packet_id, false});
-  }
-  return sent;
-}
-
-void NetworkNode::Process(Timestamp at_time) {
-  std::vector<PacketDeliveryInfo> delivery_infos;
-  {
-    rtc::CritScope crit(&crit_sect_);
-    absl::optional<int64_t> delivery_us = behavior_->NextDeliveryTimeUs();
-    if (delivery_us && *delivery_us > at_time.us())
-      return;
-
-    delivery_infos = behavior_->DequeueDeliverablePackets(at_time.us());
-  }
-  for (PacketDeliveryInfo& delivery_info : delivery_infos) {
-    StoredPacket* packet = nullptr;
-    NetworkReceiverInterface* receiver = nullptr;
-    {
-      rtc::CritScope crit(&crit_sect_);
-      for (StoredPacket& stored_packet : packets_) {
-        if (stored_packet.id == delivery_info.packet_id) {
-          packet = &stored_packet;
-          break;
-        }
-      }
-      RTC_CHECK(packet);
-      RTC_DCHECK(!packet->removed);
-      receiver = routing_[packet->receiver_id];
-      packet->removed = true;
-    }
-    // We don't want to keep the lock here. Otherwise we would get a deadlock if
-    // the receiver tries to push a new packet.
-    receiver->TryDeliverPacket(packet->packet_data, packet->receiver_id,
-                               at_time);
-    {
-      rtc::CritScope crit(&crit_sect_);
-      while (!packets_.empty() && packets_.front().removed) {
-        packets_.pop_front();
-      }
-    }
-  }
-}
-
-void NetworkNode::Route(int64_t receiver_id,
-                        std::vector<NetworkNode*> nodes,
-                        NetworkReceiverInterface* receiver) {
-  RTC_CHECK(!nodes.empty());
-  for (size_t i = 0; i + 1 < nodes.size(); ++i)
-    nodes[i]->SetRoute(receiver_id, nodes[i + 1]);
-  nodes.back()->SetRoute(receiver_id, receiver);
-}
-
-void NetworkNode::ClearRoute(int64_t receiver_id,
-                             std::vector<NetworkNode*> nodes) {
-  for (NetworkNode* node : nodes)
-    node->ClearRoute(receiver_id);
 }
 
 std::unique_ptr<SimulationNode> SimulationNode::Create(
@@ -166,7 +73,8 @@ SimulationNode::SimulationNode(
     NetworkNodeConfig config,
     std::unique_ptr<NetworkBehaviorInterface> behavior,
     SimulatedNetwork* simulation)
-    : NetworkNode(config, std::move(behavior)),
+    : EmulatedNetworkNode(std::move(behavior),
+                          config.packet_overhead.bytes_or(0)),
       simulated_network_(simulation),
       config_(config) {}
 
@@ -196,7 +104,10 @@ bool NetworkNodeTransport::SendRtp(const uint8_t* packet,
   rtc::CopyOnWriteBuffer buffer(packet, length,
                                 length + packet_overhead_.bytes());
   buffer.SetSize(length + packet_overhead_.bytes());
-  return send_net_->TryDeliverPacket(buffer, receiver_id_, send_time);
+  send_net_->OnPacketReceived(EmulatedIpPacket(
+      rtc::SocketAddress() /*from*/, rtc::SocketAddress() /*to*/, receiver_id_,
+      buffer, send_time));
+  return true;
 }
 
 bool NetworkNodeTransport::SendRtcp(const uint8_t* packet, size_t length) {
@@ -206,10 +117,13 @@ bool NetworkNodeTransport::SendRtcp(const uint8_t* packet, size_t length) {
   buffer.SetSize(length + packet_overhead_.bytes());
   if (!send_net_)
     return false;
-  return send_net_->TryDeliverPacket(buffer, receiver_id_, send_time);
+  send_net_->OnPacketReceived(EmulatedIpPacket(
+      rtc::SocketAddress() /*from*/, rtc::SocketAddress() /*to*/, receiver_id_,
+      buffer, send_time));
+  return true;
 }
 
-void NetworkNodeTransport::Connect(NetworkNode* send_node,
+void NetworkNodeTransport::Connect(EmulatedNetworkNode* send_node,
                                    uint64_t receiver_id,
                                    DataSize packet_overhead) {
   rtc::CritScope crit(&crit_sect_);
@@ -226,7 +140,7 @@ void NetworkNodeTransport::Connect(NetworkNode* send_node,
       transport_name, route);
 }
 
-CrossTrafficSource::CrossTrafficSource(NetworkReceiverInterface* target,
+CrossTrafficSource::CrossTrafficSource(EmulatedNetworkReceiverInterface* target,
                                        uint64_t receiver_id,
                                        CrossTrafficConfig config)
     : target_(target),
@@ -262,8 +176,9 @@ void CrossTrafficSource::Process(Timestamp at_time, TimeDelta delta) {
   }
   pending_size_ += TrafficRate() * delta;
   if (pending_size_ > config_.min_packet_size) {
-    target_->TryDeliverPacket(rtc::CopyOnWriteBuffer(pending_size_.bytes()),
-                              receiver_id_, at_time);
+    target_->OnPacketReceived(EmulatedIpPacket(
+        rtc::SocketAddress() /*from*/, rtc::SocketAddress() /*to*/,
+        receiver_id_, rtc::CopyOnWriteBuffer(pending_size_.bytes()), at_time));
     pending_size_ = DataSize::Zero();
   }
 }

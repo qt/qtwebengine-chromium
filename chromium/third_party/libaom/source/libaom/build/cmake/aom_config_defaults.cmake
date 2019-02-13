@@ -121,8 +121,6 @@ set_aom_config_var(CONFIG_SIZE_LIMIT 0 NUMBER "Limit max decode width/height.")
 set_aom_config_var(CONFIG_SPATIAL_RESAMPLING 1 NUMBER "Spatial resampling.")
 set_aom_config_var(DECODE_HEIGHT_LIMIT 0 NUMBER "Set limit for decode height.")
 set_aom_config_var(DECODE_WIDTH_LIMIT 0 NUMBER "Set limit for decode width.")
-set_aom_config_var(CONFIG_GLOBAL_MOTION_SEARCH 1 NUMBER
-                   "Global motion search flag.")
 
 # AV1 experiment flags.
 set_aom_config_var(CONFIG_COLLECT_INTER_MODE_RD_STATS 1 NUMBER
@@ -137,6 +135,8 @@ set_aom_config_var(CONFIG_2PASS_PARTITION_SEARCH_LVL 1 NUMBER
                    "AV1 experiment flag.")
 set_aom_config_var(CONFIG_SHARP_SETTINGS 0 NUMBER "AV1 experiment flag.")
 set_aom_config_var(CONFIG_ONE_PASS_SVM 0 NUMBER "AV1 experiment flag.")
+set_aom_config_var(CONFIG_DISABLE_FULL_PIXEL_SPLIT_8X8 1 NUMBER
+                   "Disable full_pixel_motion_search_based_split on BLOCK_8X8")
 
 #
 # Variables in this section control optional features of the build system.

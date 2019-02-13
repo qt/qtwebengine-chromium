@@ -77,8 +77,6 @@ bool GetAvailableValidationLayers(const std::vector<VkLayerProperties> &layerPro
                                   const char *const **enabledLayerNames,
                                   uint32_t *enabledLayerCount);
 
-uint32_t GetImageLayerCount(gl::TextureType textureType);
-
 extern const char *g_VkLoaderLayersPathEnv;
 extern const char *g_VkICDPathEnv;
 
@@ -268,6 +266,8 @@ class WrappedObject : angle::NonCopyable
     HandleT mHandle;
 };
 
+// TODO(jmadill): Inline all the methods in the wrapper classes. http://anglebug.com/3014
+
 class MemoryProperties final : angle::NonCopyable
 {
   public:
@@ -293,6 +293,20 @@ class CommandPool final : public WrappedObject<CommandPool, VkCommandPool>
     void destroy(VkDevice device);
 
     VkResult init(VkDevice device, const VkCommandPoolCreateInfo &createInfo);
+};
+
+class Pipeline final : public WrappedObject<Pipeline, VkPipeline>
+{
+  public:
+    Pipeline();
+    void destroy(VkDevice device);
+
+    VkResult initGraphics(VkDevice device,
+                          const VkGraphicsPipelineCreateInfo &createInfo,
+                          const PipelineCache &pipelineCacheVk);
+    VkResult initCompute(VkDevice device,
+                         const VkComputePipelineCreateInfo &createInfo,
+                         const PipelineCache &pipelineCacheVk);
 };
 
 // Helper class that wraps a Vulkan command buffer.
@@ -400,11 +414,27 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                          firstInstance);
     }
 
-    void bindPipeline(VkPipelineBindPoint pipelineBindPoint, const Pipeline &pipeline);
+    void dispatch(uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
+    {
+        ASSERT(valid());
+        vkCmdDispatch(mHandle, groupCountX, groupCountY, groupCountZ);
+    }
+
+    void bindPipeline(VkPipelineBindPoint pipelineBindPoint, const Pipeline &pipeline)
+    {
+        ASSERT(valid() && pipeline.valid());
+        vkCmdBindPipeline(mHandle, pipelineBindPoint, pipeline.getHandle());
+    }
+
     void bindVertexBuffers(uint32_t firstBinding,
                            uint32_t bindingCount,
                            const VkBuffer *buffers,
-                           const VkDeviceSize *offsets);
+                           const VkDeviceSize *offsets)
+    {
+        ASSERT(valid());
+        vkCmdBindVertexBuffers(mHandle, firstBinding, bindingCount, buffers, offsets);
+    }
+
     void bindIndexBuffer(const VkBuffer &buffer, VkDeviceSize offset, VkIndexType indexType);
     void bindDescriptorSets(VkPipelineBindPoint bindPoint,
                             const PipelineLayout &layout,
@@ -582,20 +612,6 @@ class PipelineCache final : public WrappedObject<PipelineCache, VkPipelineCache>
 
     VkResult init(VkDevice device, const VkPipelineCacheCreateInfo &createInfo);
     VkResult getCacheData(VkDevice device, size_t *cacheSize, void *cacheData);
-};
-
-class Pipeline final : public WrappedObject<Pipeline, VkPipeline>
-{
-  public:
-    Pipeline();
-    void destroy(VkDevice device);
-
-    VkResult initGraphics(VkDevice device,
-                          const VkGraphicsPipelineCreateInfo &createInfo,
-                          const PipelineCache &pipelineCacheVk);
-    VkResult initCompute(VkDevice device,
-                         const VkComputePipelineCreateInfo &createInfo,
-                         const PipelineCache &pipelineCacheVk);
 };
 
 class DescriptorSetLayout final : public WrappedObject<DescriptorSetLayout, VkDescriptorSetLayout>
@@ -854,6 +870,19 @@ class BindingPointer final : angle::NonCopyable
 };
 }  // namespace vk
 
+// List of function pointers for used extensions.
+// VK_EXT_debug_utils
+extern PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
+extern PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
+
+// VK_EXT_debug_report
+extern PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT;
+extern PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT;
+
+// Lazily load entry points for each extension as necessary.
+void InitDebugUtilsEXTFunctions(VkInstance instance);
+void InitDebugReportEXTFunctions(VkInstance instance);
+
 namespace gl_vk
 {
 VkRect2D GetRect(const gl::Rectangle &source);
@@ -865,7 +894,13 @@ VkCullModeFlags GetCullMode(const gl::RasterizerState &rasterState);
 VkFrontFace GetFrontFace(GLenum frontFace, bool invertCullFace);
 VkSampleCountFlagBits GetSamples(GLint sampleCount);
 VkComponentSwizzle GetSwizzle(const GLenum swizzle);
-VkIndexType GetIndexType(GLenum elementType);
+
+constexpr angle::PackedEnumMap<gl::DrawElementsType, VkIndexType> kIndexTypeMap = {
+    {gl::DrawElementsType::UnsignedByte, VK_INDEX_TYPE_UINT16},
+    {gl::DrawElementsType::UnsignedShort, VK_INDEX_TYPE_UINT16},
+    {gl::DrawElementsType::UnsignedInt, VK_INDEX_TYPE_UINT32},
+};
+
 void GetOffset(const gl::Offset &glOffset, VkOffset3D *vkOffset);
 void GetExtent(const gl::Extents &glExtent, VkExtent3D *vkExtent);
 VkImageType GetImageType(gl::TextureType textureType);
@@ -893,7 +928,7 @@ void GetScissor(const gl::State &glState,
         if (ANGLE_UNLIKELY(ANGLE_LOCAL_VAR != VK_SUCCESS))                             \
         {                                                                              \
             context->handleError(ANGLE_LOCAL_VAR, __FILE__, ANGLE_FUNCTION, __LINE__); \
-            return angle::Result::Stop();                                              \
+            return angle::Result::Stop;                                                \
         }                                                                              \
     } while (0)
 

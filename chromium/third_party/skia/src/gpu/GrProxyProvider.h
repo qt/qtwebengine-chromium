@@ -47,7 +47,7 @@ public:
      * Removes a unique key from a proxy. If the proxy has already been instantiated, it will
      * also remove the unique key from the target GrSurface.
      */
-    void removeUniqueKeyFromProxy(const GrUniqueKey&, GrTextureProxy*);
+    void removeUniqueKeyFromProxy(GrTextureProxy*);
 
     /*
      * Finds a proxy by unique key.
@@ -99,16 +99,22 @@ public:
                                  surfaceFlags);
     }
 
+    /*
+     * Create a texture proxy with data. It's assumed that the data is packed tightly.
+     */
+    sk_sp<GrTextureProxy> createProxy(sk_sp<SkData>, const GrSurfaceDesc& desc);
+
     // These match the definitions in SkImage & GrTexture.h, for whence they came
     typedef void* ReleaseContext;
     typedef void (*ReleaseProc)(ReleaseContext);
 
     /*
-     * Create a texture proxy that wraps a (non-renderable) backend texture.
+     * Create a texture proxy that wraps a (non-renderable) backend texture. GrIOType must be
+     * kRead or kRW.
      */
     sk_sp<GrTextureProxy> wrapBackendTexture(const GrBackendTexture&, GrSurfaceOrigin,
-                                             GrWrapOwnership = kBorrow_GrWrapOwnership,
-                                             ReleaseProc = nullptr, ReleaseContext = nullptr);
+                                             GrWrapOwnership, GrIOType, ReleaseProc = nullptr,
+                                             ReleaseContext = nullptr);
 
     /*
      * Create a texture proxy that wraps a backend texture and is both texture-able and renderable
@@ -119,7 +125,7 @@ public:
                                                        GrWrapOwnership = kBorrow_GrWrapOwnership);
 
     /*
-     * Create a render target proxy that wraps a backend rendertarget
+     * Create a render target proxy that wraps a backend render target
      */
     sk_sp<GrSurfaceProxy> wrapBackendRenderTarget(const GrBackendRenderTarget&, GrSurfaceOrigin);
 
@@ -129,6 +135,9 @@ public:
     sk_sp<GrSurfaceProxy> wrapBackendTextureAsRenderTarget(const GrBackendTexture& backendTex,
                                                            GrSurfaceOrigin origin,
                                                            int sampleCnt);
+
+    sk_sp<GrRenderTargetProxy> wrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
+                                                                   const GrVkDrawableInfo&);
 
     using LazyInstantiateCallback = std::function<sk_sp<GrSurface>(GrResourceProvider*)>;
 
@@ -188,21 +197,22 @@ public:
     // determine if it is going to need a texture domain or a full clear.
     static bool IsFunctionallyExact(GrSurfaceProxy* proxy);
 
-    /**
-     * Either the proxy attached to the unique key is being deleted (in which case we
-     * don't want it cluttering up the hash table) or the client has indicated that
-     * it will never refer to the unique key again. In either case, remove the key
-     * from the hash table.
-     * Note: this does not, by itself, alter unique key attached to the underlying GrTexture.
-     */
-    void processInvalidProxyUniqueKey(const GrUniqueKey&);
+    enum class InvalidateGPUResource : bool { kNo = false, kYes = true };
 
-    /**
-     * Same as above, but you must pass in a GrTextureProxy to save having to search for it. The
-     * GrUniqueKey of the proxy must be valid and it must match the passed in key. This function
-     * also gives the option to invalidate the GrUniqueKey on the underlying GrTexture.
+    /*
+     * This method ensures that, if a proxy w/ the supplied unique key exists, it is removed from
+     * the proxy provider's map and its unique key is removed. If 'invalidateSurface' is true, it
+     * will independently ensure that the unique key is removed from any GrGpuResources that may
+     * have it.
+     *
+     * If 'proxy' is provided (as an optimization to stop re-looking it up), its unique key must be
+     * valid and match the provided unique key.
+     *
+     * This method is called if either the proxy attached to the unique key is being deleted
+     * (in which case we don't want it cluttering up the hash table) or the client has indicated
+     * that it will never refer to the unique key again.
      */
-    void processInvalidProxyUniqueKey(const GrUniqueKey&, GrTextureProxy*, bool invalidateSurface);
+    void processInvalidUniqueKey(const GrUniqueKey&, GrTextureProxy*, InvalidateGPUResource);
 
     uint32_t contextUniqueID() const { return fContextUniqueID; }
     const GrCaps* caps() const { return fCaps.get(); }

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2018 The Khronos Group Inc.
+// Copyright (c) 2014-2019 The Khronos Group Inc.
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and/or associated documentation files (the "Materials"),
@@ -26,14 +26,16 @@
 // the Binary Section of the SPIR-V specification.
 
 // Enumeration tokens for SPIR-V, in various styles:
-//   C, C++, C++11, JSON, Lua, Python, C#
+//   C, C++, C++11, JSON, Lua, Python, C#, D
 // 
 // - C will have tokens with a "Spv" prefix, e.g.: SpvSourceLanguageGLSL
 // - C++ will have tokens in the "spv" name space, e.g.: spv::SourceLanguageGLSL
 // - C++11 will use enum classes in the spv namespace, e.g.: spv::SourceLanguage::GLSL
 // - Lua will use tables, e.g.: spv.SourceLanguage.GLSL
 // - Python will use dictionaries, e.g.: spv['SourceLanguage']['GLSL']
-// - C# will use enum classes in the Specification class located in the "Spv" namespace, e.g.: Spv.Specification.SourceLanguage.GLSL
+// - C# will use enum classes in the Specification class located in the "Spv" namespace,
+//     e.g.: Spv.Specification.SourceLanguage.GLSL
+// - D will have tokens under the "spv" module, e.g: spv.SourceLanguage.GLSL
 // 
 // Some tokens act like mask values, which can be OR'd together,
 // while others are mutually exclusive.  The mask-like ones have
@@ -47,7 +49,7 @@ namespace Spv
     {
         public const uint MagicNumber = 0x07230203;
         public const uint Version = 0x00010300;
-        public const uint Revision = 1;
+        public const uint Revision = 6;
         public const uint OpCodeMask = 0xffff;
         public const uint WordCountShift = 16;
 
@@ -85,6 +87,7 @@ namespace Spv
             Logical = 0,
             Physical32 = 1,
             Physical64 = 2,
+            PhysicalStorageBuffer64EXT = 5348,
         }
 
         public enum MemoryModel
@@ -136,6 +139,11 @@ namespace Spv
             LocalSizeId = 38,
             LocalSizeHintId = 39,
             PostDepthCoverage = 4446,
+            DenormPreserve = 4459,
+            DenormFlushToZero = 4460,
+            SignedZeroInfNanPreserve = 4461,
+            RoundingModeRTE = 4462,
+            RoundingModeRTZ = 4463,
             StencilRefReplacingEXT = 5027,
             OutputLinesNV = 5269,
             OutputPrimitivesNV = 5270,
@@ -165,6 +173,7 @@ namespace Spv
             HitAttributeNV = 5339,
             IncomingRayPayloadNV = 5342,
             ShaderRecordBufferNV = 5343,
+            PhysicalStorageBufferEXT = 5349,
         }
 
         public enum Dim
@@ -415,6 +424,8 @@ namespace Spv
             MaxByteOffset = 45,
             AlignmentId = 46,
             MaxByteOffsetId = 47,
+            NoSignedWrap = 4469,
+            NoUnsignedWrap = 4470,
             ExplicitInterpAMD = 4999,
             OverrideCoverageNV = 5248,
             PassthroughNV = 5250,
@@ -425,6 +436,8 @@ namespace Spv
             PerTaskNV = 5273,
             PerVertexNV = 5285,
             NonUniformEXT = 5300,
+            RestrictPointerEXT = 5355,
+            AliasedPointerEXT = 5356,
             HlslCounterBufferGOOGLE = 5634,
             HlslSemanticGOOGLE = 5635,
         }
@@ -760,6 +773,11 @@ namespace Spv
             StorageBuffer8BitAccess = 4448,
             UniformAndStorageBuffer8BitAccess = 4449,
             StoragePushConstant8 = 4450,
+            DenormPreserve = 4464,
+            DenormFlushToZero = 4465,
+            SignedZeroInfNanPreserve = 4466,
+            RoundingModeRTE = 4467,
+            RoundingModeRTZ = 4468,
             Float16ImageAMD = 5008,
             ImageGatherBiasLodAMD = 5009,
             FragmentMaskAMD = 5010,
@@ -795,10 +813,12 @@ namespace Spv
             RayTracingNV = 5340,
             VulkanMemoryModelKHR = 5345,
             VulkanMemoryModelDeviceScopeKHR = 5346,
+            PhysicalStorageBufferAddressesEXT = 5347,
             ComputeDerivativeGroupLinearNV = 5350,
             SubgroupShuffleINTEL = 5568,
             SubgroupBufferBlockIOINTEL = 5569,
             SubgroupImageBlockIOINTEL = 5570,
+            SubgroupImageMediaBlockIOINTEL = 5579,
         }
 
         public enum Op
@@ -1176,6 +1196,8 @@ namespace Spv
             OpSubgroupBlockWriteINTEL = 5576,
             OpSubgroupImageBlockReadINTEL = 5577,
             OpSubgroupImageBlockWriteINTEL = 5578,
+            OpSubgroupImageMediaBlockReadINTEL = 5580,
+            OpSubgroupImageMediaBlockWriteINTEL = 5581,
             OpDecorateStringGOOGLE = 5632,
             OpMemberDecorateStringGOOGLE = 5633,
         }

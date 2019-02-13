@@ -19,25 +19,21 @@
 
 namespace dawn_native {
 
+    class AdapterBase;
     class BindGroupBase;
     class BindGroupBuilder;
     class BindGroupLayoutBase;
     class BindGroupLayoutBuilder;
-    class BlendStateBase;
-    class BlendStateBuilder;
     class BufferBase;
     class BufferBuilder;
-    class BufferViewBase;
-    class BufferViewBuilder;
     class ComputePipelineBase;
-    class ComputePipelineBuilder;
     class CommandBufferBase;
     class CommandBufferBuilder;
     class ComputePassEncoderBase;
-    class DepthStencilStateBase;
-    class DepthStencilStateBuilder;
+    class FenceBase;
     class InputStateBase;
     class InputStateBuilder;
+    class InstanceBase;
     class PipelineLayoutBase;
     class PipelineLayoutBuilder;
     class QueueBase;
@@ -45,7 +41,6 @@ namespace dawn_native {
     class RenderPassDescriptorBuilder;
     class RenderPassEncoderBase;
     class RenderPipelineBase;
-    class RenderPipelineBuilder;
     class SamplerBase;
     class ShaderModuleBase;
     class ShaderModuleBuilder;

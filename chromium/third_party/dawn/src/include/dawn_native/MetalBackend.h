@@ -23,9 +23,8 @@
 #import <QuartzCore/CAMetalLayer.h>
 
 namespace dawn_native { namespace metal {
-    DAWN_NATIVE_EXPORT dawnDevice CreateDevice(id<MTLDevice> metalDevice);
-    DAWN_NATIVE_EXPORT void SetNextDrawable(dawnDevice device, id<CAMetalDrawable> drawable);
-    DAWN_NATIVE_EXPORT void Present(dawnDevice device);
+    DAWN_NATIVE_EXPORT dawnDevice CreateDevice();
+    DAWN_NATIVE_EXPORT id<MTLDevice> GetMetalDevice(dawnDevice device);
 }}  // namespace dawn_native::metal
 
 #endif  // DAWNNATIVE_METALBACKEND_H_

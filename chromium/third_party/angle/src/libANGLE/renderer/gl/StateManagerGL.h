@@ -20,9 +20,8 @@
 namespace gl
 {
 struct Caps;
-class ContextState;
-class State;
 class FramebufferState;
+class State;
 }  // namespace gl
 
 namespace rx
@@ -150,6 +149,8 @@ class StateManagerGL final : angle::NonCopyable
     void setPathRenderingModelViewMatrix(const GLfloat *m);
     void setPathRenderingProjectionMatrix(const GLfloat *m);
     void setPathRenderingStencilState(GLenum func, GLint ref, GLuint mask);
+
+    void setProvokingVertex(GLenum mode);
 
     void pauseTransformFeedback();
     angle::Result pauseAllQueries(const gl::Context *context);
@@ -346,6 +347,8 @@ class StateManagerGL final : angle::NonCopyable
 
     bool mIsSideBySideDrawFramebuffer;
     const bool mIsMultiviewEnabled;
+
+    GLenum mProvokingVertex;
 
     gl::State::DirtyBits mLocalDirtyBits;
     gl::AttributesMask mLocalDirtyCurrentValues;

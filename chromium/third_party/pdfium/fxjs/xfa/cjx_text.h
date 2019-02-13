@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_TEXT_H_
 #define FXJS_XFA_CJX_TEXT_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_content.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_Text;
 
@@ -17,11 +17,17 @@ class CJX_Text final : public CJX_Content {
   explicit CJX_Text(CXFA_Text* node);
   ~CJX_Text() override;
 
+  // CJX_Object:
+  bool DynamicTypeIs(TypeTag eType) const override;
+
   JSE_PROP(defaultValue); /* {default} */
-  JSE_PROP(maxChars);
-  JSE_PROP(use);
-  JSE_PROP(usehref);
   JSE_PROP(value);
+
+ private:
+  using Type__ = CJX_Text;
+  using ParentType__ = CJX_Content;
+
+  static const TypeTag static_type__ = TypeTag::Text;
 };
 
 #endif  // FXJS_XFA_CJX_TEXT_H_

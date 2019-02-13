@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "fxjs/cfx_v8.h"
-#include "fxjs/cfxjse_value.h"
 #include "fxjs/js_resources.h"
+#include "fxjs/xfa/cfxjse_value.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/fxfa.h"
@@ -28,6 +28,10 @@ CJX_Subform::CJX_Subform(CXFA_Node* node) : CJX_Container(node) {
 }
 
 CJX_Subform::~CJX_Subform() {}
+
+bool CJX_Subform::DynamicTypeIs(TypeTag eType) const {
+  return eType == static_type__ || ParentType__::DynamicTypeIs(eType);
+}
 
 CJS_Result CJX_Subform::execEvent(
     CFX_V8* runtime,
@@ -96,137 +100,17 @@ void CJX_Subform::locale(CFXJSE_Value* pValue,
 void CJX_Subform::instanceIndex(CFXJSE_Value* pValue,
                                 bool bSetting,
                                 XFA_Attribute eAttribute) {
-  Script_Som_InstanceIndex(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::allowMacro(CFXJSE_Value* pValue,
-                             bool bSetting,
-                             XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::anchorType(CFXJSE_Value* pValue,
-                             bool bSetting,
-                             XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::colSpan(CFXJSE_Value* pValue,
-                          bool bSetting,
-                          XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::columnWidths(CFXJSE_Value* pValue,
-                               bool bSetting,
-                               XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::h(CFXJSE_Value* pValue,
-                    bool bSetting,
-                    XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::hAlign(CFXJSE_Value* pValue,
-                         bool bSetting,
-                         XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
+  ScriptSomInstanceIndex(pValue, bSetting, eAttribute);
 }
 
 void CJX_Subform::layout(CFXJSE_Value* pValue,
                          bool bSetting,
                          XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::maxH(CFXJSE_Value* pValue,
-                       bool bSetting,
-                       XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::maxW(CFXJSE_Value* pValue,
-                       bool bSetting,
-                       XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::minH(CFXJSE_Value* pValue,
-                       bool bSetting,
-                       XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::minW(CFXJSE_Value* pValue,
-                       bool bSetting,
-                       XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::presence(CFXJSE_Value* pValue,
-                           bool bSetting,
-                           XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::relevant(CFXJSE_Value* pValue,
-                           bool bSetting,
-                           XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::restoreState(CFXJSE_Value* pValue,
-                               bool bSetting,
-                               XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::scope(CFXJSE_Value* pValue,
-                        bool bSetting,
-                        XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::use(CFXJSE_Value* pValue,
-                      bool bSetting,
-                      XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::usehref(CFXJSE_Value* pValue,
-                          bool bSetting,
-                          XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
+  ScriptAttributeString(pValue, bSetting, eAttribute);
 }
 
 void CJX_Subform::validationMessage(CFXJSE_Value* pValue,
                                     bool bSetting,
                                     XFA_Attribute eAttribute) {
-  Script_Som_ValidationMessage(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::vAlign(CFXJSE_Value* pValue,
-                         bool bSetting,
-                         XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::w(CFXJSE_Value* pValue,
-                    bool bSetting,
-                    XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::x(CFXJSE_Value* pValue,
-                    bool bSetting,
-                    XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
-}
-
-void CJX_Subform::y(CFXJSE_Value* pValue,
-                    bool bSetting,
-                    XFA_Attribute eAttribute) {
-  Script_Attribute_String(pValue, bSetting, eAttribute);
+  ScriptSomValidationMessage(pValue, bSetting, eAttribute);
 }

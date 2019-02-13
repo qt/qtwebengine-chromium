@@ -18,11 +18,12 @@
 #include <vector>
 
 #include "absl/memory/memory.h"
-#include "api/rtceventlogoutput.h"
+#include "absl/types/optional.h"
+#include "api/rtc_event_log_output.h"
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_legacy.h"
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_new_format.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/event.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -30,6 +31,7 @@
 #include "rtc_base/sequenced_task_checker.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread_annotations.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -127,7 +129,7 @@ class RtcEventLogImpl final : public RtcEventLog {
   std::unique_ptr<RtcEventLogOutput> event_output_ RTC_GUARDED_BY(*task_queue_);
 
   size_t num_config_events_written_ RTC_GUARDED_BY(*task_queue_);
-  int64_t output_period_ms_ RTC_GUARDED_BY(*task_queue_);
+  absl::optional<int64_t> output_period_ms_ RTC_GUARDED_BY(*task_queue_);
   int64_t last_output_ms_ RTC_GUARDED_BY(*task_queue_);
   bool output_scheduled_ RTC_GUARDED_BY(*task_queue_);
 
@@ -147,7 +149,6 @@ RtcEventLogImpl::RtcEventLogImpl(
       written_bytes_(0),
       event_encoder_(std::move(event_encoder)),
       num_config_events_written_(0),
-      output_period_ms_(kImmediateOutput),
       last_output_ms_(rtc::TimeMillis()),
       output_scheduled_(false),
       task_queue_(std::move(task_queue)) {
@@ -250,7 +251,8 @@ void RtcEventLogImpl::ScheduleOutput() {
     return;
   }
 
-  if (output_period_ms_ == kImmediateOutput) {
+  RTC_DCHECK(output_period_ms_.has_value());
+  if (*output_period_ms_ == kImmediateOutput) {
     // We are already on the |task_queue_| so there is no reason to post a task
     // if we want to output immediately.
     LogEventsFromMemoryToOutput();
@@ -268,10 +270,10 @@ void RtcEventLogImpl::ScheduleOutput() {
       }
       output_scheduled_ = false;
     };
-    int64_t now_ms = rtc::TimeMillis();
-    int64_t time_since_output_ms = now_ms - last_output_ms_;
-    uint32_t delay = rtc::SafeClamp(output_period_ms_ - time_since_output_ms, 0,
-                                    output_period_ms_);
+    const int64_t now_ms = rtc::TimeMillis();
+    const int64_t time_since_output_ms = now_ms - last_output_ms_;
+    const uint32_t delay = rtc::SafeClamp(
+        *output_period_ms_ - time_since_output_ms, 0, *output_period_ms_);
     task_queue_->PostDelayedTask(output_task, delay);
   }
 }
@@ -368,16 +370,10 @@ void RtcEventLogImpl::WriteToOutput(const std::string& output_string) {
 
 // RtcEventLog member functions.
 std::unique_ptr<RtcEventLog> RtcEventLog::Create(EncodingType encoding_type) {
-  return Create(encoding_type,
-                absl::make_unique<rtc::TaskQueue>("rtc_event_log"));
-}
-
-std::unique_ptr<RtcEventLog> RtcEventLog::Create(
-    EncodingType encoding_type,
-    std::unique_ptr<rtc::TaskQueue> task_queue) {
 #ifdef ENABLE_RTC_EVENT_LOG
-  return absl::make_unique<RtcEventLogImpl>(CreateEncoder(encoding_type),
-                                            std::move(task_queue));
+  return absl::make_unique<RtcEventLogImpl>(
+      CreateEncoder(encoding_type),
+      absl::make_unique<rtc::TaskQueue>("rtc_event_log"));
 #else
   return CreateNull();
 #endif  // ENABLE_RTC_EVENT_LOG

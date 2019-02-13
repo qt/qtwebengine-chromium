@@ -19,14 +19,12 @@
 
 namespace dawn_native { namespace d3d12 {
 
+    class Adapter;
     class BindGroup;
     class BindGroupLayout;
-    class BlendState;
     class Buffer;
-    class BufferView;
     class CommandBuffer;
     class ComputePipeline;
-    class DepthStencilState;
     class Device;
     class InputState;
     class PipelineLayout;
@@ -40,14 +38,12 @@ namespace dawn_native { namespace d3d12 {
     class TextureView;
 
     struct D3D12BackendTraits {
+        using AdapterType = Adapter;
         using BindGroupType = BindGroup;
         using BindGroupLayoutType = BindGroupLayout;
-        using BlendStateType = BlendState;
         using BufferType = Buffer;
-        using BufferViewType = BufferView;
         using CommandBufferType = CommandBuffer;
         using ComputePipelineType = ComputePipeline;
-        using DepthStencilStateType = DepthStencilState;
         using DeviceType = Device;
         using InputStateType = InputState;
         using PipelineLayoutType = PipelineLayout;

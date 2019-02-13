@@ -77,6 +77,9 @@ public:
                                                                  sk_sp<SkColorSpace> colorSpace,
                                                                  const SkSurfaceProps* = nullptr);
 
+    sk_sp<GrRenderTargetContext> makeVulkanSecondaryCBRenderTargetContext(
+            const SkImageInfo&, const GrVkDrawableInfo&, const SkSurfaceProps* = nullptr);
+
     bool disableGpuYUVConversion() const { return fContext->fDisableGpuYUVConversion; }
     bool sharpenMipmappedTextures() const { return fContext->fSharpenMipmappedTextures; }
 
@@ -194,7 +197,7 @@ public:
     GrGpu* getGpu() { return fContext->fGpu.get(); }
     const GrGpu* getGpu() const { return fContext->fGpu.get(); }
 
-    GrGlyphCache* getGlyphCache() { return fContext->fGlyphCache; }
+    GrStrikeCache* getGlyphCache() { return fContext->fGlyphCache; }
     GrTextBlobCache* getTextBlobCache() { return fContext->fTextBlobCache.get(); }
 
     // This accessor should only ever be called by the GrOpFlushState.

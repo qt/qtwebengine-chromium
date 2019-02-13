@@ -72,6 +72,8 @@ public:
     void drawPoints(SkCanvas::PointMode mode, size_t count, const SkPoint[],
                     const SkPaint& paint) override;
     void drawRect(const SkRect& r, const SkPaint& paint) override;
+    void drawEdgeAARect(const SkRect& r, SkCanvas::QuadAAFlags edgeAA, SkColor color,
+                        SkBlendMode mode) override;
     void drawRRect(const SkRRect& r, const SkPaint& paint) override;
     void drawDRRect(const SkRRect& outer, const SkRRect& inner, const SkPaint& paint) override;
     void drawRegion(const SkRegion& r, const SkPaint& paint) override;
@@ -115,6 +117,7 @@ public:
     sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&) override;
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
     sk_sp<SkSpecialImage> snapSpecial() override;
+    sk_sp<SkSpecialImage> snapBackImage(const SkIRect&) override;
 
     void flush() override;
     GrSemaphoresSubmitted flushAndSignalSemaphores(int numSemaphores,

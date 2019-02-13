@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_SUBFORMSET_H_
 #define FXJS_XFA_CJX_SUBFORMSET_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_container.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_SubformSet;
 
@@ -17,11 +17,16 @@ class CJX_SubformSet final : public CJX_Container {
   explicit CJX_SubformSet(CXFA_SubformSet* node);
   ~CJX_SubformSet() override;
 
+  // CJX_Object:
+  bool DynamicTypeIs(TypeTag eType) const override;
+
   JSE_PROP(instanceIndex);
-  JSE_PROP(relation);
-  JSE_PROP(relevant);
-  JSE_PROP(use);
-  JSE_PROP(usehref);
+
+ private:
+  using Type__ = CJX_SubformSet;
+  using ParentType__ = CJX_Container;
+
+  static const TypeTag static_type__ = TypeTag::SubformSet;
 };
 
 #endif  // FXJS_XFA_CJX_SUBFORMSET_H_

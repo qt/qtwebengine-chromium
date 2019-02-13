@@ -11,7 +11,6 @@
 #define GL_GLEXT_PROTOTYPES
 #define EGL_EGLEXT_PROTOTYPES
 
-#include "vk/GrVkVulkan.h"
 
 #include "GrAHardwareBufferImageGenerator.h"
 
@@ -189,19 +188,44 @@ static GrBackendTexture make_vk_backend_texture(
         return GrBackendTexture();
     }
 
-    SkASSERT(format == hwbFormatProps.format);
-    SkASSERT(SkToBool(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT & hwbFormatProps.formatFeatures) &&
-             SkToBool(VK_FORMAT_FEATURE_TRANSFER_SRC_BIT & hwbFormatProps.formatFeatures) &&
-             SkToBool(VK_FORMAT_FEATURE_TRANSFER_DST_BIT & hwbFormatProps.formatFeatures));
+    VkExternalFormatANDROID externalFormat;
+    externalFormat.sType = VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID;
+    externalFormat.pNext = nullptr;
+    externalFormat.externalFormat = 0;  // If this is zero it is as if we aren't using this struct.
 
-    const VkExternalMemoryImageCreateInfo externalMemoryImageInfo {
-        VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO, // sType
-        nullptr, // pNext
-        VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID, // handleTypes
+    const GrVkYcbcrConversionInfo* ycbcrConversion = backendFormat.getVkYcbcrConversionInfo();
+    if (!ycbcrConversion) {
+        return GrBackendTexture();
+    }
+
+    if (hwbFormatProps.format != VK_FORMAT_UNDEFINED) {
+        // TODO: We should not assume the transfer features here and instead should have a way for
+        // Ganesh's tracking of intenral images to report whether or not they support transfers.
+        SkASSERT(SkToBool(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT & hwbFormatProps.formatFeatures) &&
+                 SkToBool(VK_FORMAT_FEATURE_TRANSFER_SRC_BIT & hwbFormatProps.formatFeatures) &&
+                 SkToBool(VK_FORMAT_FEATURE_TRANSFER_DST_BIT & hwbFormatProps.formatFeatures));
+        SkASSERT(!ycbcrConversion->isValid());
+    } else {
+        SkASSERT(ycbcrConversion->isValid());
+        // We have an external only format
+        SkASSERT(SkToBool(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT & hwbFormatProps.formatFeatures));
+        SkASSERT(format == VK_FORMAT_UNDEFINED);
+        SkASSERT(hwbFormatProps.externalFormat == ycbcrConversion->fExternalFormat);
+        externalFormat.externalFormat = hwbFormatProps.externalFormat;
+    }
+    SkASSERT(format == hwbFormatProps.format);
+
+    const VkExternalMemoryImageCreateInfo externalMemoryImageInfo{
+            VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,                 // sType
+            &externalFormat,                                                     // pNext
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID,  // handleTypes
     };
-    VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_SAMPLED_BIT |
-                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_SAMPLED_BIT;
+    if (format != VK_FORMAT_UNDEFINED) {
+        usageFlags = usageFlags |
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
 
     // TODO: Check the supported tilings vkGetPhysicalDeviceImageFormatProperties2 to see if we have
     // to use linear. Add better linear support throughout Ganesh.
@@ -230,22 +254,6 @@ static GrBackendTexture make_vk_backend_texture(
     if (VK_SUCCESS != err) {
         return GrBackendTexture();
     }
-
-    VkImageMemoryRequirementsInfo2 memReqsInfo;
-    memReqsInfo.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2;
-    memReqsInfo.pNext = nullptr;
-    memReqsInfo.image = image;
-
-    VkMemoryDedicatedRequirements dedicatedMemReqs;
-    dedicatedMemReqs.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS;
-    dedicatedMemReqs.pNext = nullptr;
-
-    VkMemoryRequirements2 memReqs;
-    memReqs.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-    memReqs.pNext = &dedicatedMemReqs;
-
-    VK_CALL(GetImageMemoryRequirements2(device, &memReqsInfo, &memReqs));
-    SkASSERT(VK_TRUE == dedicatedMemReqs.requiresDedicatedAllocation);
 
     VkPhysicalDeviceMemoryProperties2 phyDevMemProps;
     phyDevMemProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
@@ -325,6 +333,7 @@ static GrBackendTexture make_vk_backend_texture(
     // support that extension. Or if we know the source of the AHardwareBuffer is not from a
     // "foreign" device we can leave them as external.
     imageInfo.fCurrentQueueFamily = VK_QUEUE_FAMILY_EXTERNAL;
+    imageInfo.fYcbcrConversionInfo = *ycbcrConversion;
 
     *deleteProc = GrAHardwareBufferImageGenerator::DeleteVkImage;
     *deleteCtx = new VulkanCleanupHelper(gpu, image, memory);
@@ -441,7 +450,8 @@ static GrBackendTexture make_backend_texture(
     }
 }
 
-GrBackendFormat get_backend_format(GrBackendApi backend, uint32_t bufferFormat) {
+GrBackendFormat get_backend_format(GrContext* context, AHardwareBuffer* hardwareBuffer,
+                                   GrBackendApi backend, uint32_t bufferFormat) {
     if (backend == GrBackendApi::kOpenGL) {
         switch (bufferFormat) {
             //TODO: find out if we can detect, which graphic buffers support GR_GL_TEXTURE_2D
@@ -460,8 +470,8 @@ GrBackendFormat get_backend_format(GrBackendApi backend, uint32_t bufferFormat) 
                 return GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_EXTERNAL);
         }
     } else if (backend == GrBackendApi::kVulkan) {
+#ifdef SK_VULKAN
         switch (bufferFormat) {
-            //TODO: find out if we can detect, which graphic buffers support GR_GL_TEXTURE_2D
             case AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM:
                 return GrBackendFormat::MakeVk(VK_FORMAT_R8G8B8A8_UNORM);
             case AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT:
@@ -474,9 +484,54 @@ GrBackendFormat get_backend_format(GrBackendApi backend, uint32_t bufferFormat) 
                 return GrBackendFormat::MakeVk(VK_FORMAT_R8G8B8A8_UNORM);
             case AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM:
                 return GrBackendFormat::MakeVk(VK_FORMAT_R8G8B8_UNORM);
-            default:
-                return GrBackendFormat::MakeVk(VK_FORMAT_R8G8B8_UNORM);
+            default: {
+                GrVkGpu* gpu = static_cast<GrVkGpu*>(context->contextPriv().getGpu());
+                SkASSERT(gpu);
+                VkDevice device = gpu->device();
+
+                if (!gpu->vkCaps().supportsAndroidHWBExternalMemory()) {
+                    return GrBackendFormat();
+                }
+                VkAndroidHardwareBufferFormatPropertiesANDROID hwbFormatProps;
+                hwbFormatProps.sType =
+                        VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID;
+                hwbFormatProps.pNext = nullptr;
+
+                VkAndroidHardwareBufferPropertiesANDROID hwbProps;
+                hwbProps.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID;
+                hwbProps.pNext = &hwbFormatProps;
+
+                VkResult err = VK_CALL(GetAndroidHardwareBufferProperties(device, hardwareBuffer,
+                                                                          &hwbProps));
+                if (VK_SUCCESS != err) {
+                    return GrBackendFormat();
+                }
+
+                if (hwbFormatProps.format != VK_FORMAT_UNDEFINED) {
+                    return GrBackendFormat();
+                }
+
+                GrVkYcbcrConversionInfo ycbcrConversion;
+                ycbcrConversion.fYcbcrModel = hwbFormatProps.suggestedYcbcrModel;
+                ycbcrConversion.fYcbcrRange = hwbFormatProps.suggestedYcbcrRange;
+                ycbcrConversion.fXChromaOffset = hwbFormatProps.suggestedXChromaOffset;
+                ycbcrConversion.fYChromaOffset = hwbFormatProps.suggestedYChromaOffset;
+                ycbcrConversion.fForceExplicitReconstruction = VK_FALSE;
+                ycbcrConversion.fExternalFormat = hwbFormatProps.externalFormat;
+                ycbcrConversion.fExternalFormatFeatures = hwbFormatProps.formatFeatures;
+                if (VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT &
+                    hwbFormatProps.formatFeatures) {
+                    ycbcrConversion.fChromaFilter = VK_FILTER_LINEAR;
+                } else {
+                    ycbcrConversion.fChromaFilter = VK_FILTER_NEAREST;
+                }
+
+                return GrBackendFormat::MakeVk(ycbcrConversion);
+            }
         }
+#else
+        return GrBackendFormat();
+#endif
     }
     return GrBackendFormat();
 }
@@ -486,11 +541,13 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* cont
         return nullptr;
     }
 
-    GrPixelConfig pixelConfig;
-    GrBackendFormat backendFormat = get_backend_format(context->contextPriv().getBackend(),
+    GrBackendFormat backendFormat = get_backend_format(context, fHardwareBuffer,
+                                                       context->contextPriv().getBackend(),
                                                        fBufferFormat);
-    if (!context->contextPriv().caps()->getConfigFromBackendFormat(
-            backendFormat, this->getInfo().colorType(), &pixelConfig)) {
+    GrPixelConfig pixelConfig = context->contextPriv().caps()->getConfigFromBackendFormat(
+            backendFormat, this->getInfo().colorType());
+
+    if (pixelConfig == kUnknown_GrPixelConfig) {
         return nullptr;
     }
 
@@ -505,6 +562,12 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* cont
     GrTextureType textureType = GrTextureType::k2D;
     if (context->contextPriv().getBackend() == GrBackendApi::kOpenGL) {
         textureType = GrTextureType::kExternal;
+    } else if (context->contextPriv().getBackend() == GrBackendApi::kVulkan) {
+        const VkFormat* format = backendFormat.getVkFormat();
+        SkASSERT(format);
+        if (*format == VK_FORMAT_UNDEFINED) {
+            textureType = GrTextureType::kExternal;
+        }
     }
 
     auto proxyProvider = context->contextPriv().proxyProvider();
@@ -515,8 +578,8 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* cont
     const bool isProtectedContent = fIsProtectedContent;
 
     sk_sp<GrTextureProxy> texProxy = proxyProvider->createLazyProxy(
-            [context, hardwareBuffer, width, height, pixelConfig, isProtectedContent, backendFormat]
-            (GrResourceProvider* resourceProvider) {
+            [context, hardwareBuffer, width, height, pixelConfig, isProtectedContent,
+             backendFormat](GrResourceProvider* resourceProvider) {
                 if (!resourceProvider) {
                     AHardwareBuffer_release(hardwareBuffer);
                     return sk_sp<GrTexture>();
@@ -537,7 +600,8 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* cont
                 SkASSERT(deleteImageProc && deleteImageCtx);
 
                 backendTex.fConfig = pixelConfig;
-                sk_sp<GrTexture> tex = resourceProvider->wrapBackendTexture(backendTex);
+                sk_sp<GrTexture> tex = resourceProvider->wrapBackendTexture(
+                        backendTex, kBorrow_GrWrapOwnership, kRead_GrIOType);
                 if (!tex) {
                     deleteImageProc(deleteImageCtx);
                     return sk_sp<GrTexture>();
@@ -551,8 +615,8 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::makeProxy(GrContext* cont
 
                 return tex;
             },
-            backendFormat, desc, fSurfaceOrigin, GrMipMapped::kNo, SkBackingFit::kExact,
-            SkBudgeted::kNo);
+            backendFormat, desc, fSurfaceOrigin, GrMipMapped::kNo,
+            GrInternalSurfaceFlags::kReadOnly, SkBackingFit::kExact, SkBudgeted::kNo);
 
     if (!texProxy) {
         AHardwareBuffer_release(hardwareBuffer);
@@ -578,7 +642,8 @@ sk_sp<GrTextureProxy> GrAHardwareBufferImageGenerator::onGenerateTexture(
 
     GrMipMapped mipMapped = willNeedMipMaps ? GrMipMapped::kYes : GrMipMapped::kNo;
 
-    return GrSurfaceProxy::Copy(context, texProxy.get(), mipMapped, subset, SkBudgeted::kYes);
+    return GrSurfaceProxy::Copy(context, texProxy.get(), mipMapped, subset, SkBackingFit::kExact,
+                                SkBudgeted::kYes);
 }
 
 bool GrAHardwareBufferImageGenerator::onIsValid(GrContext* context) const {

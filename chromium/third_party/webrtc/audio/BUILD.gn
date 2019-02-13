@@ -61,7 +61,6 @@ rtc_static_library("audio") {
     "../logging:rtc_stream_config",
     "../modules/audio_coding",
     "../modules/audio_coding:audio_encoder_cng",
-    "../modules/audio_coding:audio_format_conversion",
     "../modules/audio_coding:audio_network_adaptor_config",
     "../modules/audio_device",
     "../modules/audio_processing",
@@ -79,7 +78,6 @@ rtc_static_library("audio") {
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_task_queue",
     "../rtc_base:safe_minmax",
-    "../rtc_base:stringutils",
     "../system_wrappers",
     "../system_wrappers:field_trial",
     "../system_wrappers:metrics",
@@ -104,6 +102,7 @@ if (rtc_include_tests) {
       "../system_wrappers:system_wrappers",
       "../test:test_common",
       "../test:test_support",
+      "//third_party/abseil-cpp/absl/memory",
     ]
 
     if (!build_with_chromium && is_clang) {
@@ -163,6 +162,7 @@ if (rtc_include_tests) {
       "../rtc_base:rtc_base_approved",
       "../rtc_base:rtc_task_queue",
       "../rtc_base:safe_compare",
+      "../rtc_base:timeutils",
       "../system_wrappers:system_wrappers",
       "../test:audio_codec_mocks",
       "../test:rtp_test_utils",

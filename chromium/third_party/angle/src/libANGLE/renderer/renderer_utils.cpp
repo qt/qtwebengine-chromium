@@ -414,7 +414,7 @@ angle::Result IncompleteTextureSet::getIncompleteTexture(
     *textureOut = mIncompleteTextures[type].get();
     if (*textureOut != nullptr)
     {
-        return angle::Result::Continue();
+        return angle::Result::Continue;
     }
 
     ContextImpl *implFactory = context->getImplementation();
@@ -468,7 +468,7 @@ angle::Result IncompleteTextureSet::getIncompleteTexture(
 
     mIncompleteTextures[type].set(context, t.release());
     *textureOut = mIncompleteTextures[type].get();
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 #define ANGLE_INSTANTIATE_SET_UNIFORM_MATRIX_FUNC(cols, rows)                            \
@@ -580,23 +580,23 @@ angle::Result ComputeStartVertex(ContextImpl *contextImpl,
     ANGLE_CHECK_GL_MATH(contextImpl, startVertexInt64 <= std::numeric_limits<GLint>::max())
 
     *firstVertexOut = static_cast<GLint>(startVertexInt64);
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result GetVertexRangeInfo(const gl::Context *context,
                                  GLint firstVertex,
                                  GLsizei vertexOrIndexCount,
-                                 GLenum indexTypeOrNone,
+                                 gl::DrawElementsType indexTypeOrInvalid,
                                  const void *indices,
                                  GLint baseVertex,
                                  GLint *startVertexOut,
                                  size_t *vertexCountOut)
 {
-    if (indexTypeOrNone != GL_NONE)
+    if (indexTypeOrInvalid != gl::DrawElementsType::InvalidEnum)
     {
         gl::IndexRange indexRange;
-        ANGLE_TRY(context->getGLState().getVertexArray()->getIndexRange(
-            context, indexTypeOrNone, vertexOrIndexCount, indices, &indexRange));
+        ANGLE_TRY(context->getState().getVertexArray()->getIndexRange(
+            context, indexTypeOrInvalid, vertexOrIndexCount, indices, &indexRange));
         ANGLE_TRY(ComputeStartVertex(context->getImplementation(), indexRange, baseVertex,
                                      startVertexOut));
         *vertexCountOut = indexRange.vertexCount();
@@ -606,6 +606,6 @@ angle::Result GetVertexRangeInfo(const gl::Context *context,
         *startVertexOut = firstVertex;
         *vertexCountOut = vertexOrIndexCount;
     }
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 }  // namespace rx

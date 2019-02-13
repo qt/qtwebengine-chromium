@@ -38,7 +38,7 @@ namespace dawn_native { namespace vulkan {
 
     class Device : public DeviceBase {
       public:
-        Device(const std::vector<const char*>& requiredInstanceExtensions);
+        Device();
         ~Device();
 
         // Contains all the Vulkan entry points, vkDoFoo is called via device->fn.DoFoo.
@@ -57,29 +57,27 @@ namespace dawn_native { namespace vulkan {
         MemoryAllocator* GetMemoryAllocator() const;
         RenderPassCache* GetRenderPassCache() const;
 
-        Serial GetSerial() const;
-
         VkCommandBuffer GetPendingCommandBuffer();
+        Serial GetPendingCommandSerial() const;
         void SubmitPendingCommands();
         void AddWaitSemaphore(VkSemaphore semaphore);
 
         // Dawn API
-        BindGroupBase* CreateBindGroup(BindGroupBuilder* builder) override;
-        BlendStateBase* CreateBlendState(BlendStateBuilder* builder) override;
-        BufferViewBase* CreateBufferView(BufferViewBuilder* builder) override;
         CommandBufferBase* CreateCommandBuffer(CommandBufferBuilder* builder) override;
-        DepthStencilStateBase* CreateDepthStencilState(DepthStencilStateBuilder* builder) override;
         InputStateBase* CreateInputState(InputStateBuilder* builder) override;
         RenderPassDescriptorBase* CreateRenderPassDescriptor(
             RenderPassDescriptorBuilder* builder) override;
-        RenderPipelineBase* CreateRenderPipeline(RenderPipelineBuilder* builder) override;
         SwapChainBase* CreateSwapChain(SwapChainBuilder* builder) override;
 
+        Serial GetCompletedCommandSerial() const final override;
+        Serial GetLastSubmittedCommandSerial() const final override;
         void TickImpl() override;
 
         const dawn_native::PCIInfo& GetPCIInfo() const override;
 
       private:
+        ResultOrError<BindGroupBase*> CreateBindGroupImpl(
+            const BindGroupDescriptor* descriptor) override;
         ResultOrError<BindGroupLayoutBase*> CreateBindGroupLayoutImpl(
             const BindGroupLayoutDescriptor* descriptor) override;
         ResultOrError<BufferBase*> CreateBufferImpl(const BufferDescriptor* descriptor) override;
@@ -88,6 +86,8 @@ namespace dawn_native { namespace vulkan {
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
         ResultOrError<QueueBase*> CreateQueueImpl() override;
+        ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
+            const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
         ResultOrError<ShaderModuleBase*> CreateShaderModuleImpl(
             const ShaderModuleDescriptor* descriptor) override;
@@ -96,12 +96,12 @@ namespace dawn_native { namespace vulkan {
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) override;
 
-        bool CreateInstance(VulkanGlobalKnobs* usedKnobs,
-                            const std::vector<const char*>& requiredExtensions);
-        bool CreateDevice(VulkanDeviceKnobs* usedKnobs);
+        MaybeError Initialize();
+        ResultOrError<VulkanGlobalKnobs> CreateInstance();
+        ResultOrError<VulkanDeviceKnobs> CreateDevice();
         void GatherQueueFromDevice();
 
-        bool RegisterDebugReport();
+        MaybeError RegisterDebugReport();
         static VKAPI_ATTR VkBool32 VKAPI_CALL
         OnDebugReportCallback(VkDebugReportFlagsEXT flags,
                               VkDebugReportObjectTypeEXT objectType,
@@ -116,8 +116,8 @@ namespace dawn_native { namespace vulkan {
         // the Device is allowed to mutate them through these private methods.
         VulkanFunctions* GetMutableFunctions();
 
-        VulkanGlobalInfo mGlobalInfo;
-        VulkanDeviceInfo mDeviceInfo;
+        VulkanGlobalInfo mGlobalInfo = {};
+        VulkanDeviceInfo mDeviceInfo = {};
 
         DynamicLib mVulkanLib;
 
@@ -143,8 +143,8 @@ namespace dawn_native { namespace vulkan {
         // have finished.
         std::queue<std::pair<VkFence, Serial>> mFencesInFlight;
         std::vector<VkFence> mUnusedFences;
-        Serial mNextSerial = 1;
         Serial mCompletedSerial = 0;
+        Serial mLastSubmittedSerial = 0;
 
         struct CommandPoolAndBuffer {
             VkCommandPool pool = VK_NULL_HANDLE;

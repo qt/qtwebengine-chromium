@@ -10,6 +10,7 @@
 #include "SkCanvas.h"
 #include "SkColorData.h"
 #include "SkColorPriv.h"
+#include "SkFontPriv.h"
 #include "SkFloatingPoint.h"
 #include "SkImage.h"
 #include "SkMatrix.h"
@@ -119,13 +120,13 @@ SkBitmap create_string_bitmap(int w, int h, SkColor c, int x, int y,
     SkCanvas canvas(bitmap);
 
     SkPaint paint;
-    paint.setAntiAlias(true);
-    sk_tool_utils::set_portable_typeface(&paint);
     paint.setColor(c);
-    paint.setTextSize(SkIntToScalar(textSize));
+
+    SkFont font(sk_tool_utils::create_portable_typeface(), textSize);
 
     canvas.clear(0x00000000);
-    canvas.drawString(str, SkIntToScalar(x), SkIntToScalar(y), paint);
+    canvas.drawSimpleText(str, strlen(str), kUTF8_SkTextEncoding,
+                          SkIntToScalar(x), SkIntToScalar(y), font, paint);
 
     // Tag data as sRGB (without doing any color space conversion). Color-space aware configs
     // will process this correctly but legacy configs will render as if this returned N32.
@@ -136,29 +137,50 @@ SkBitmap create_string_bitmap(int w, int h, SkColor c, int x, int y,
 }
 
 void add_to_text_blob_w_len(SkTextBlobBuilder* builder, const char* text, size_t len,
-                            const SkPaint& paint, SkScalar x, SkScalar y) {
-    SkFont font = SkFont::LEGACY_ExtractFromPaint(paint);
-    SkTDArray<uint16_t> glyphs;
-
-    glyphs.append(font.countText(text, len, (SkTextEncoding)paint.getTextEncoding()));
-    font.textToGlyphs(text, len, (SkTextEncoding)paint.getTextEncoding(), glyphs.begin(), glyphs.count());
-
-    const SkTextBlobBuilder::RunBuffer& run = builder->allocRun(font, glyphs.count(), x, y,
-                                                                nullptr);
-    memcpy(run.glyphs, glyphs.begin(), glyphs.count() * sizeof(uint16_t));
+                            SkTextEncoding encoding, const SkFont& font, SkScalar x, SkScalar y) {
+    int count = font.countText(text, len, encoding);
+    auto run = builder->allocRun(font, count, x, y);
+    font.textToGlyphs(text, len, encoding, run.glyphs, count);
 }
 
-void add_to_text_blob(SkTextBlobBuilder* builder, const char* text,
-                      const SkPaint& origPaint, SkScalar x, SkScalar y) {
-    add_to_text_blob_w_len(builder, text, strlen(text), origPaint, x, y);
+void add_to_text_blob(SkTextBlobBuilder* builder, const char* text, const SkFont& font,
+                      SkScalar x, SkScalar y) {
+    add_to_text_blob_w_len(builder, text, strlen(text), kUTF8_SkTextEncoding, font, x, y);
+}
+
+void get_text_path(const SkFont& font, const void* text, size_t length, SkTextEncoding encoding,
+                   SkPath* dst, const SkPoint pos[]) {
+    SkAutoToGlyphs atg(font, text, length, encoding);
+    const int count = atg.count();
+    SkAutoTArray<SkPoint> computedPos;
+    if (pos == nullptr) {
+        computedPos.reset(count);
+        font.getPos(atg.glyphs(), count, &computedPos[0]);
+        pos = computedPos.get();
+    }
+
+    struct Rec {
+        SkPath* fDst;
+        const SkPoint* fPos;
+    } rec = { dst, pos };
+    font.getPaths(atg.glyphs(), atg.count(), [](const SkPath* src, const SkMatrix& mx, void* ctx) {
+        Rec* rec = (Rec*)ctx;
+        if (src) {
+            SkMatrix tmp(mx);
+            tmp.postTranslate(rec->fPos->fX, rec->fPos->fY);
+            rec->fDst->addPath(*src, tmp);
+        }
+        rec->fPos += 1;
+    }, &rec);
 }
 
 SkPath make_star(const SkRect& bounds, int numPts, int step) {
+    SkASSERT(numPts != step);
     SkPath path;
     path.setFillType(SkPath::kEvenOdd_FillType);
     path.moveTo(0,-1);
     for (int i = 1; i < numPts; ++i) {
-        int idx = i*step;
+        int idx = i*step % numPts;
         SkScalar theta = idx * 2*SK_ScalarPI/numPts + SK_ScalarPI/2;
         SkScalar x = SkScalarCos(theta);
         SkScalar y = -SkScalarSin(theta);

@@ -108,7 +108,7 @@ bool CPDF_Font::IsUnicodeCompatible() const {
   return false;
 }
 
-size_t CPDF_Font::CountChar(const ByteStringView& pString) const {
+size_t CPDF_Font::CountChar(ByteStringView pString) const {
   return pString.GetLength();
 }
 
@@ -271,7 +271,7 @@ void CPDF_Font::LoadUnicodeMap() const {
   m_pToUnicodeMap->Load(pStream);
 }
 
-uint32_t CPDF_Font::GetStringWidth(const ByteStringView& pString) {
+uint32_t CPDF_Font::GetStringWidth(ByteStringView pString) {
   size_t offset = 0;
   uint32_t width = 0;
   while (offset < pString.GetLength())
@@ -280,8 +280,7 @@ uint32_t CPDF_Font::GetStringWidth(const ByteStringView& pString) {
 }
 
 // static
-CPDF_Font* CPDF_Font::GetStockFont(CPDF_Document* pDoc,
-                                   const ByteStringView& name) {
+CPDF_Font* CPDF_Font::GetStockFont(CPDF_Document* pDoc, ByteStringView name) {
   ByteString fontname(name);
   int font_id = PDF_GetStandardFontName(&fontname);
   if (font_id < 0)
@@ -329,8 +328,7 @@ std::unique_ptr<CPDF_Font> CPDF_Font::Create(CPDF_Document* pDoc,
   return pFont->Load() ? std::move(pFont) : nullptr;
 }
 
-uint32_t CPDF_Font::GetNextChar(const ByteStringView& pString,
-                                size_t* pOffset) const {
+uint32_t CPDF_Font::GetNextChar(ByteStringView pString, size_t* pOffset) const {
   if (pString.IsEmpty())
     return 0;
 
@@ -347,14 +345,13 @@ bool CPDF_Font::IsStandardFont() const {
   return AsType1Font()->IsBase14Font();
 }
 
+// static
 const char* CPDF_Font::GetAdobeCharName(
     int iBaseEncoding,
     const std::vector<ByteString>& charnames,
-    int charcode) {
-  if (charcode < 0 || charcode >= 256) {
-    NOTREACHED();
+    uint32_t charcode) {
+  if (charcode >= 256)
     return nullptr;
-  }
 
   if (!charnames.empty() && !charnames[charcode].IsEmpty())
     return charnames[charcode].c_str();
@@ -362,7 +359,11 @@ const char* CPDF_Font::GetAdobeCharName(
   const char* name = nullptr;
   if (iBaseEncoding)
     name = PDF_CharNameFromPredefinedCharSet(iBaseEncoding, charcode);
-  return name && name[0] ? name : nullptr;
+  if (!name)
+    return nullptr;
+
+  ASSERT(name[0]);
+  return name;
 }
 
 uint32_t CPDF_Font::FallbackFontFromCharcode(uint32_t charcode) {

@@ -102,7 +102,7 @@ static const char* equation_string(GrBlendEquation eq) {
         case kIllegal_GrBlendEquation:
             SkASSERT(false);
             return "<illegal>";
-    };
+    }
     return "";
 }
 
@@ -176,10 +176,8 @@ GrXPFactory::AnalysisProperties GrXPFactory::GetAnalysisProperties(
     SkASSERT(!(result & AnalysisProperties::kRequiresDstTexture));
     if ((result & AnalysisProperties::kReadsDstInShader) &&
         !caps.shaderCaps()->dstReadInShaderSupport()) {
-        result |= AnalysisProperties::kRequiresDstTexture;
-        if (caps.textureBarrierSupport()) {
-            result |= AnalysisProperties::kRequiresBarrierBetweenOverlappingDraws;
-        }
+        result |= AnalysisProperties::kRequiresDstTexture |
+                  AnalysisProperties::kRequiresNonOverlappingDraws;
     }
     return result;
 }

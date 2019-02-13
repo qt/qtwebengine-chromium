@@ -6,6 +6,7 @@
 
 #include "xfa/fxfa/parser/cxfa_localevalue.h"
 
+#include <cwchar>
 #include <utility>
 #include <vector>
 
@@ -46,8 +47,8 @@ FX_LOCALECATEGORY ValueCategory(FX_LOCALECATEGORY eCategory,
 bool ValueSplitDateTime(const WideString& wsDateTime,
                         WideString& wsDate,
                         WideString& wsTime) {
-  wsDate = L"";
-  wsTime = L"";
+  wsDate.clear();
+  wsTime.clear();
   if (wsDateTime.IsEmpty())
     return false;
 
@@ -146,7 +147,7 @@ bool CXFA_LocaleValue::ValidateValue(const WideString& wsValue,
       case FX_LOCALECATEGORY_Zero:
         bRet = pFormat->ParseZero(wsValue, wsFormat);
         if (!bRet)
-          bRet = wsValue == L"0";
+          bRet = wsValue.EqualsASCII("0");
         break;
       case FX_LOCALECATEGORY_Num: {
         WideString fNum;
@@ -210,66 +211,7 @@ double CXFA_LocaleValue::GetDoubleNum() const {
     return 0;
   }
 
-  size_t cc = 0;
-  pdfium::span<const wchar_t> str = m_wsValue.AsSpan();
-  while (cc < str.size() && FXSYS_iswspace(str[cc]))
-    cc++;
-
-  if (cc >= str.size())
-    return 0;
-
-  bool bNegative = false;
-  if (str[cc] == '+') {
-    cc++;
-  } else if (str[cc] == '-') {
-    bNegative = true;
-    cc++;
-  }
-
-  int64_t nIntegral = 0;
-  size_t nIntegralLen = 0;
-  while (cc < str.size()) {
-    if (str[cc] == '.' || !FXSYS_IsDecimalDigit(str[cc]) || nIntegralLen > 17)
-      break;
-
-    nIntegral = nIntegral * 10 + str[cc++] - '0';
-    nIntegralLen++;
-  }
-  nIntegral = bNegative ? -nIntegral : nIntegral;
-
-  int32_t scale = 0;
-  int32_t nExponent = 0;
-  double fraction = 0.0;
-  if (cc < str.size() && str[cc] == '.') {
-    cc++;
-    while (cc < str.size() && FXSYS_IsDecimalDigit(str[cc])) {
-      fraction += XFA_GetFractionalScale(scale) * (str[cc++] - '0');
-      if (++scale == XFA_GetMaxFractionalScale())
-        break;
-    }
-  }
-  if (cc < str.size() && (str[cc] == 'E' || str[cc] == 'e')) {
-    cc++;
-    bool bExpSign = false;
-    if (cc < str.size()) {
-      if (str[cc] == '+') {
-        cc++;
-      } else if (str[cc] == '-') {
-        bExpSign = true;
-        cc++;
-      }
-    }
-    while (cc < str.size() && FXSYS_IsDecimalDigit(str[cc]))
-      nExponent = nExponent * 10 + str[cc++] - '0';
-
-    nExponent = bExpSign ? -nExponent : nExponent;
-  }
-
-  double dValue = nIntegral + (bNegative ? -fraction : fraction);
-  if (nExponent != 0)
-    dValue *= FXSYS_pow(10, static_cast<float>(nExponent));
-
-  return dValue;
+  return wcstod(m_wsValue.c_str(), nullptr);
 }
 
 CFX_DateTime CXFA_LocaleValue::GetDate() const {
@@ -325,9 +267,8 @@ bool CXFA_LocaleValue::FormatPatterns(WideString& wsResult,
   std::vector<WideString> wsPatterns;
   pFormat->SplitFormatString(wsFormat, &wsPatterns);
   wsResult.clear();
-  int32_t iCount = pdfium::CollectionSize<int32_t>(wsPatterns);
-  for (int32_t i = 0; i < iCount; i++) {
-    if (FormatSinglePattern(wsResult, wsPatterns[i], pLocale, eValueType))
+  for (const auto& pattern : wsPatterns) {
+    if (FormatSinglePattern(wsResult, pattern, pLocale, eValueType))
       return true;
   }
   return false;
@@ -353,7 +294,7 @@ bool CXFA_LocaleValue::FormatSinglePattern(WideString& wsResult,
         bRet = pFormat->FormatNull(wsFormat, &wsResult);
       break;
     case FX_LOCALECATEGORY_Zero:
-      if (m_wsValue == L"0")
+      if (m_wsValue.EqualsASCII("0"))
         bRet = pFormat->FormatZero(wsFormat, &wsResult);
       break;
     case FX_LOCALECATEGORY_Num:

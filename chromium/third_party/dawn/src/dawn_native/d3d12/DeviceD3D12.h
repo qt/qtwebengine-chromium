@@ -41,17 +41,14 @@ namespace dawn_native { namespace d3d12 {
         Device();
         ~Device();
 
-        BindGroupBase* CreateBindGroup(BindGroupBuilder* builder) override;
-        BlendStateBase* CreateBlendState(BlendStateBuilder* builder) override;
-        BufferViewBase* CreateBufferView(BufferViewBuilder* builder) override;
         CommandBufferBase* CreateCommandBuffer(CommandBufferBuilder* builder) override;
-        DepthStencilStateBase* CreateDepthStencilState(DepthStencilStateBuilder* builder) override;
         InputStateBase* CreateInputState(InputStateBuilder* builder) override;
         RenderPassDescriptorBase* CreateRenderPassDescriptor(
             RenderPassDescriptorBuilder* builder) override;
-        RenderPipelineBase* CreateRenderPipeline(RenderPipelineBuilder* builder) override;
         SwapChainBase* CreateSwapChain(SwapChainBuilder* builder) override;
 
+        Serial GetCompletedCommandSerial() const final override;
+        Serial GetLastSubmittedCommandSerial() const final override;
         void TickImpl() override;
 
         const dawn_native::PCIInfo& GetPCIInfo() const override;
@@ -68,16 +65,18 @@ namespace dawn_native { namespace d3d12 {
 
         void OpenCommandList(ComPtr<ID3D12GraphicsCommandList>* commandList);
         ComPtr<ID3D12GraphicsCommandList> GetPendingCommandList();
+        Serial GetPendingCommandSerial() const;
 
-        uint64_t GetSerial() const;
         void NextSerial();
-        void WaitForSerial(uint64_t serial);
+        void WaitForSerial(Serial serial);
 
         void ReferenceUntilUnused(ComPtr<IUnknown> object);
 
         void ExecuteCommandLists(std::initializer_list<ID3D12CommandList*> commandLists);
 
       private:
+        ResultOrError<BindGroupBase*> CreateBindGroupImpl(
+            const BindGroupDescriptor* descriptor) override;
         ResultOrError<BindGroupLayoutBase*> CreateBindGroupLayoutImpl(
             const BindGroupLayoutDescriptor* descriptor) override;
         ResultOrError<BufferBase*> CreateBufferImpl(const BufferDescriptor* descriptor) override;
@@ -86,6 +85,8 @@ namespace dawn_native { namespace d3d12 {
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
         ResultOrError<QueueBase*> CreateQueueImpl() override;
+        ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
+            const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
         ResultOrError<ShaderModuleBase*> CreateShaderModuleImpl(
             const ShaderModuleDescriptor* descriptor) override;
@@ -99,7 +100,8 @@ namespace dawn_native { namespace d3d12 {
         // D3D12 DLLs are unloaded before we are done using it.
         std::unique_ptr<PlatformFunctions> mFunctions;
 
-        uint64_t mSerial = 0;
+        Serial mCompletedSerial = 0;
+        Serial mLastSubmittedSerial = 0;
         ComPtr<ID3D12Fence> mFence;
         HANDLE mFenceEvent;
 

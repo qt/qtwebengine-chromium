@@ -10,16 +10,15 @@
 
 #include "modules/video_coding/utility/quality_scaler.h"
 
-#include <math.h>
-
-#include <algorithm>
 #include <memory>
+#include <utility>
 
+#include "absl/types/optional.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/exp_filter.h"
 #include "rtc_base/task_queue.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 
 // TODO(kthelgason): Some versions of Android have issues with log2.
 // See https://code.google.com/p/android/issues/detail?id=212634 for details
@@ -66,34 +65,6 @@ class QualityScaler::QpSmoother {
   rtc::ExpFilter smoother_;
 };
 
-class QualityScaler::CheckQpTask : public rtc::QueuedTask {
- public:
-  explicit CheckQpTask(QualityScaler* scaler) : scaler_(scaler) {
-    RTC_LOG(LS_INFO) << "Created CheckQpTask. Scheduling on queue...";
-    rtc::TaskQueue::Current()->PostDelayedTask(
-        std::unique_ptr<rtc::QueuedTask>(this), scaler_->GetSamplingPeriodMs());
-  }
-  void Stop() {
-    RTC_DCHECK_CALLED_SEQUENTIALLY(&task_checker_);
-    RTC_LOG(LS_INFO) << "Stopping QP Check task.";
-    stop_ = true;
-  }
-
- private:
-  bool Run() override {
-    RTC_DCHECK_CALLED_SEQUENTIALLY(&task_checker_);
-    if (stop_)
-      return true;  // TaskQueue will free this task.
-    scaler_->CheckQp();
-    rtc::TaskQueue::Current()->PostDelayedTask(
-        std::unique_ptr<rtc::QueuedTask>(this), scaler_->GetSamplingPeriodMs());
-    return false;  // Retain the task in order to reuse it.
-  }
-
-  QualityScaler* const scaler_;
-  bool stop_ = false;
-  rtc::SequencedTaskChecker task_checker_;
-};
 
 QualityScaler::QualityScaler(AdaptationObserverInterface* observer,
                              VideoEncoder::QpThresholds thresholds)
@@ -103,8 +74,7 @@ QualityScaler::QualityScaler(AdaptationObserverInterface* observer,
 QualityScaler::QualityScaler(AdaptationObserverInterface* observer,
                              VideoEncoder::QpThresholds thresholds,
                              int64_t sampling_period_ms)
-    : check_qp_task_(nullptr),
-      observer_(observer),
+    : observer_(observer),
       thresholds_(thresholds),
       sampling_period_ms_(sampling_period_ms),
       fast_rampup_(true),
@@ -121,14 +91,18 @@ QualityScaler::QualityScaler(AdaptationObserverInterface* observer,
     qp_smoother_low_.reset(new QpSmoother(config_.alpha_low));
   }
   RTC_DCHECK(observer_ != nullptr);
-  check_qp_task_ = new CheckQpTask(this);
+  check_qp_task_ = RepeatingTaskHandle::DelayedStart(
+      TimeDelta::ms(GetSamplingPeriodMs()), [this]() {
+        CheckQp();
+        return TimeDelta::ms(GetSamplingPeriodMs());
+      });
   RTC_LOG(LS_INFO) << "QP thresholds: low: " << thresholds_.low
                    << ", high: " << thresholds_.high;
 }
 
 QualityScaler::~QualityScaler() {
   RTC_DCHECK_CALLED_SEQUENTIALLY(&task_checker_);
-  check_qp_task_->Stop();
+  check_qp_task_.Stop();
 }
 
 int64_t QualityScaler::GetSamplingPeriodMs() const {

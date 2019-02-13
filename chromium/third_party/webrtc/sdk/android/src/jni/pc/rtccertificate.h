@@ -1,5 +1,5 @@
 /*
- *  Copyright 2018 The WebRTC project authors. All Rights Reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -11,23 +11,9 @@
 #ifndef SDK_ANDROID_SRC_JNI_PC_RTCCERTIFICATE_H_
 #define SDK_ANDROID_SRC_JNI_PC_RTCCERTIFICATE_H_
 
-#include "rtc_base/refcount.h"
-#include "rtc_base/rtccertificate.h"
-#include "sdk/android/native_api/jni/java_types.h"
-#include "sdk/android/src/jni/jni_helpers.h"
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
 
-namespace webrtc {
-namespace jni {
-
-rtc::RTCCertificatePEM JavaToNativeRTCCertificatePEM(
-    JNIEnv* jni,
-    const JavaRef<jobject>& j_rtc_certificate);
-
-ScopedJavaLocalRef<jobject> NativeToJavaRTCCertificatePEM(
-    JNIEnv* env,
-    const rtc::RTCCertificatePEM& certificate);
-
-}  // namespace jni
-}  // namespace webrtc
+#include "sdk/android/src/jni/pc/rtc_certificate.h"
 
 #endif  // SDK_ANDROID_SRC_JNI_PC_RTCCERTIFICATE_H_

@@ -56,12 +56,81 @@ void init() {
     dawnShaderModule fsModule = utils::CreateShaderModule(device, dawn::ShaderStage::Fragment, fs).Release();
 
     {
-        dawnRenderPipelineBuilder builder = dawnDeviceCreateRenderPipelineBuilder(device);
-        dawnRenderPipelineBuilderSetColorAttachmentFormat(builder, 0, swapChainFormat);
-        dawnRenderPipelineBuilderSetStage(builder, DAWN_SHADER_STAGE_VERTEX, vsModule, "main");
-        dawnRenderPipelineBuilderSetStage(builder, DAWN_SHADER_STAGE_FRAGMENT, fsModule, "main");
-        pipeline = dawnRenderPipelineBuilderGetResult(builder);
-        dawnRenderPipelineBuilderRelease(builder);
+        dawnRenderPipelineDescriptor descriptor;
+        descriptor.nextInChain = nullptr;
+
+        dawnPipelineStageDescriptor vertexStage;
+        vertexStage.nextInChain = nullptr;
+        vertexStage.module = vsModule;
+        vertexStage.entryPoint = "main";
+        descriptor.vertexStage = &vertexStage;
+
+        dawnPipelineStageDescriptor fragmentStage;
+        fragmentStage.nextInChain = nullptr;
+        fragmentStage.module = fsModule;
+        fragmentStage.entryPoint = "main";
+        descriptor.fragmentStage = &fragmentStage;
+
+        dawnAttachmentsStateDescriptor attachmentsState;
+        attachmentsState.nextInChain = nullptr;
+        attachmentsState.numColorAttachments = 1;
+        dawnAttachmentDescriptor colorAttachment = {nullptr, swapChainFormat};
+        dawnAttachmentDescriptor* colorAttachmentPtr[] = {&colorAttachment};
+        attachmentsState.colorAttachments = colorAttachmentPtr;
+        attachmentsState.hasDepthStencilAttachment = false;
+        // Even with hasDepthStencilAttachment = false, depthStencilAttachment must point to valid
+        // data because we don't have optional substructures yet.
+        attachmentsState.depthStencilAttachment = &colorAttachment;
+        descriptor.attachmentsState = &attachmentsState;
+
+        descriptor.sampleCount = 1;
+
+        descriptor.numBlendStates = 1;
+
+        dawnBlendDescriptor blendDescriptor;
+        blendDescriptor.operation = DAWN_BLEND_OPERATION_ADD;
+        blendDescriptor.srcFactor = DAWN_BLEND_FACTOR_ONE;
+        blendDescriptor.dstFactor = DAWN_BLEND_FACTOR_ONE;
+        dawnBlendStateDescriptor blendStateDescriptor;
+        blendStateDescriptor.nextInChain = nullptr;
+        blendStateDescriptor.blendEnabled = false;
+        blendStateDescriptor.alphaBlend = blendDescriptor;
+        blendStateDescriptor.colorBlend = blendDescriptor;
+        blendStateDescriptor.colorWriteMask = DAWN_COLOR_WRITE_MASK_ALL;
+        descriptor.blendStates = &blendStateDescriptor;
+
+        dawnPipelineLayoutDescriptor pl;
+        pl.nextInChain = nullptr;
+        pl.numBindGroupLayouts = 0;
+        pl.bindGroupLayouts = nullptr;
+        descriptor.layout = dawnDeviceCreatePipelineLayout(device, &pl);
+
+        dawnInputStateBuilder inputStateBuilder = dawnDeviceCreateInputStateBuilder(device);
+        descriptor.inputState = dawnInputStateBuilderGetResult(inputStateBuilder);
+        dawnInputStateBuilderRelease(inputStateBuilder);
+
+        descriptor.indexFormat = DAWN_INDEX_FORMAT_UINT32;
+        descriptor.primitiveTopology = DAWN_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        dawnStencilStateFaceDescriptor stencilFace;
+        stencilFace.compare = DAWN_COMPARE_FUNCTION_ALWAYS;
+        stencilFace.stencilFailOp = DAWN_STENCIL_OPERATION_KEEP;
+        stencilFace.depthFailOp = DAWN_STENCIL_OPERATION_KEEP;
+        stencilFace.passOp = DAWN_STENCIL_OPERATION_KEEP;
+
+        dawnDepthStencilStateDescriptor depthStencilState;
+        depthStencilState.nextInChain = nullptr;
+        depthStencilState.depthWriteEnabled = false;
+        depthStencilState.depthCompare = DAWN_COMPARE_FUNCTION_ALWAYS;
+        depthStencilState.back = stencilFace;
+        depthStencilState.front = stencilFace;
+        depthStencilState.stencilReadMask = 0xff;
+        depthStencilState.stencilWriteMask = 0xff;
+        descriptor.depthStencilState = &depthStencilState;
+
+        pipeline = dawnDeviceCreateRenderPipeline(device, &descriptor);
+
+        dawnInputStateRelease(descriptor.inputState);
     }
 
     dawnShaderModuleRelease(vsModule);
@@ -77,7 +146,13 @@ void frame() {
     dawnRenderPassDescriptor renderpassInfo;
     {
         dawnRenderPassDescriptorBuilder builder = dawnDeviceCreateRenderPassDescriptorBuilder(device);
-        dawnRenderPassDescriptorBuilderSetColorAttachment(builder, 0, backbufferView, DAWN_LOAD_OP_CLEAR);
+        dawnRenderPassColorAttachmentDescriptor colorAttachment;
+        colorAttachment.attachment = backbufferView;
+        colorAttachment.resolveTarget = nullptr;
+        colorAttachment.clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+        colorAttachment.loadOp = DAWN_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = DAWN_STORE_OP_STORE;
+        dawnRenderPassDescriptorBuilderSetColorAttachments(builder, 1, &colorAttachment);
         renderpassInfo = dawnRenderPassDescriptorBuilderGetResult(builder);
         dawnRenderPassDescriptorBuilderRelease(builder);
     }
@@ -86,8 +161,8 @@ void frame() {
         dawnCommandBufferBuilder builder = dawnDeviceCreateCommandBufferBuilder(device);
 
         dawnRenderPassEncoder pass = dawnCommandBufferBuilderBeginRenderPass(builder, renderpassInfo);
-        dawnRenderPassEncoderSetRenderPipeline(pass, pipeline);
-        dawnRenderPassEncoderDrawArrays(pass, 3, 1, 0, 0);
+        dawnRenderPassEncoderSetPipeline(pass, pipeline);
+        dawnRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         dawnRenderPassEncoderEndPass(pass);
         dawnRenderPassEncoderRelease(pass);
 

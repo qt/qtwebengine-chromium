@@ -264,11 +264,15 @@ void ModuleRtpRtcpImpl::IncomingRtcpPacket(const uint8_t* rtcp_packet,
   rtcp_receiver_.IncomingPacket(rtcp_packet, length);
 }
 
-int32_t ModuleRtpRtcpImpl::RegisterSendPayload(const CodecInst& voice_codec) {
-  rtcp_sender_.SetRtpClockRate(voice_codec.pltype, voice_codec.plfreq);
-  return rtp_sender_->RegisterPayload(
-      voice_codec.plname, voice_codec.pltype, voice_codec.plfreq,
-      voice_codec.channels, (voice_codec.rate < 0) ? 0 : voice_codec.rate);
+void ModuleRtpRtcpImpl::RegisterAudioSendPayload(int payload_type,
+                                                 absl::string_view payload_name,
+                                                 int frequency,
+                                                 int channels,
+                                                 int rate) {
+  rtcp_sender_.SetRtpClockRate(payload_type, frequency);
+  RTC_CHECK_EQ(0,
+               rtp_sender_->RegisterPayload(payload_name, payload_type,
+                                            frequency, channels, rate));
 }
 
 void ModuleRtpRtcpImpl::RegisterVideoSendPayload(int payload_type,
@@ -329,6 +333,12 @@ void ModuleRtpRtcpImpl::SetSSRC(const uint32_t ssrc) {
   }
   rtcp_sender_.SetSSRC(ssrc);
   SetRtcpReceiverSsrcs(ssrc);
+}
+
+void ModuleRtpRtcpImpl::SetRid(const std::string& rid) {
+  if (rtp_sender_) {
+    rtp_sender_->SetRid(rid);
+  }
 }
 
 void ModuleRtpRtcpImpl::SetMid(const std::string& mid) {
@@ -814,6 +824,10 @@ void ModuleRtpRtcpImpl::BitrateSent(uint32_t* total_rate,
   *video_rate = rtp_sender_->VideoBitrateSent();
   *fec_rate = rtp_sender_->FecOverheadRate();
   *nack_rate = rtp_sender_->NackOverheadRate();
+}
+
+uint32_t ModuleRtpRtcpImpl::PacketizationOverheadBps() const {
+  return rtp_sender_->PacketizationOverheadBps();
 }
 
 void ModuleRtpRtcpImpl::OnRequestSendReport() {

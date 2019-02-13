@@ -53,7 +53,15 @@ CHANGES BETWEEN 2.9.1 and 2.10
 
     - `FT_Outline_New_Internal'  and  `FT_Outline_Done_Internal'  have
       been removed.  These two functions were public by oversight only
-      and were never documented either.
+      and were never documented.
+
+    - A new  function `FT_Error_String' returns descriptions  of error
+      codes if  configuration macro  FT_CONFIG_OPTION_ERROR_STRINGS is
+      defined.
+
+    - `FT_Set_MM_WeightVector'  and  `FT_Get_MM_WeightVector' are  new
+      functions limited to Adobe MultiMaster fonts to directly set and
+      get the weight vector.
 
 
 ======================================================================
@@ -68,7 +76,7 @@ CHANGES BETWEEN 2.9 and 2.9.1
     - CVE-2018-6942: Older  FreeType versions  can crash  with certain
       malformed variation fonts.
 
-        http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-6942
+        https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-6942
 
 
   II. MISCELLANEOUS
@@ -1385,7 +1393,7 @@ CHANGES BETWEEN 2.4.10 and 2.4.11
 
       Originally, it was a separate patch available from
 
-        http://www.infinality.net/blog/
+        https://web.archive.org/web/20150710073951/http://www.infinality.net:80/blog/
 
       and which has been integrated.
 
@@ -4107,7 +4115,7 @@ CHANGES BETWEEN beta8 and 2.0
     untested for now.
 
   - Updated `docs/docmaker.py', a draft  API reference is available at
-    http://www.freetype.org/ft2api.html.
+    https://web.archive.org/web/20001215173400/http://www.freetype.org:80/ft2api.html.
 
   - Changed `type1' to use `psaux'.
 

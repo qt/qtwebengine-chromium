@@ -2330,18 +2330,22 @@ static void start_pipeline(const size_t x0,     const size_t y0,
 // and will have (x,y) geometry and/or (r,g,b,a, dr,dg,db,da) pixel arguments as appropriate.
 
 #if JUMPER_NARROW_STAGES
-    #define STAGE_GG(name, ...)                                                            \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y);      \
-        static void ABI name(Params* params, void** program, U16 r, U16 g, U16 b, U16 a) { \
-            auto x = join<F>(r,g),                                                         \
-                 y = join<F>(b,a);                                                         \
-            name##_k(Ctx{program}, params->dx,params->dy,params->tail, x,y);               \
-            split(x, &r,&g);                                                               \
-            split(y, &b,&a);                                                               \
-            auto next = (Stage)load_and_inc(program);                                      \
-            next(params,program, r,g,b,a);                                                 \
-        }                                                                                  \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y)
+    #define STAGE_GG(name, ...)                                                                \
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y,           \
+                         U16    , U16    , U16    , U16    ,                                   \
+                         U16    , U16    , U16    , U16    );                                  \
+        static void ABI name(Params* params, void** program, U16 r, U16 g, U16 b, U16 a) {     \
+            auto x = join<F>(r,g),                                                             \
+                 y = join<F>(b,a);                                                             \
+            name##_k(Ctx{program}, params->dx,params->dy,params->tail, x,y, 0,0,0,0, 0,0,0,0); \
+            split(x, &r,&g);                                                                   \
+            split(y, &b,&a);                                                                   \
+            auto next = (Stage)load_and_inc(program);                                          \
+            next(params,program, r,g,b,a);                                                     \
+        }                                                                                      \
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y,           \
+                         U16    , U16    , U16    , U16    ,                                   \
+                         U16    , U16    , U16    , U16    )
 
     #define STAGE_GP(name, ...)                                                            \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F x, F y,         \
@@ -2360,33 +2364,37 @@ static void start_pipeline(const size_t x0,     const size_t y0,
                          U16& dr, U16& dg, U16& db, U16& da)
 
     #define STAGE_PP(name, ...)                                                            \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F  , F  ,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
                          U16& dr, U16& dg, U16& db, U16& da);                              \
         static void ABI name(Params* params, void** program, U16 r, U16 g, U16 b, U16 a) { \
-            name##_k(Ctx{program}, params->dx,params->dy,params->tail, r,g,b,a,            \
+            name##_k(Ctx{program}, params->dx,params->dy,params->tail, 0,0, r,g,b,a,       \
                      params->dr,params->dg,params->db,params->da);                         \
             auto next = (Stage)load_and_inc(program);                                      \
             next(params,program, r,g,b,a);                                                 \
         }                                                                                  \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F  , F  ,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
                          U16& dr, U16& dg, U16& db, U16& da)
 #else
     #define STAGE_GG(name, ...)                                                            \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y);      \
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y,       \
+                         U16    , U16    , U16    , U16    ,                               \
+                         U16    , U16    , U16    , U16    );                              \
         static void ABI name(size_t tail, void** program, size_t dx, size_t dy,            \
                              U16  r, U16  g, U16  b, U16  a,                               \
                              U16 dr, U16 dg, U16 db, U16 da) {                             \
             auto x = join<F>(r,g),                                                         \
                  y = join<F>(b,a);                                                         \
-            name##_k(Ctx{program}, dx,dy,tail, x,y);                                       \
+            name##_k(Ctx{program}, dx,dy,tail, x,y, 0,0,0,0, 0,0,0,0);                     \
             split(x, &r,&g);                                                               \
             split(y, &b,&a);                                                               \
             auto next = (Stage)load_and_inc(program);                                      \
             next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
         }                                                                                  \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y)
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y,       \
+                         U16    , U16    , U16    , U16    ,                               \
+                         U16    , U16    , U16    , U16    )
 
     #define STAGE_GP(name, ...)                                                            \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F x, F y,         \
@@ -2406,17 +2414,17 @@ static void start_pipeline(const size_t x0,     const size_t y0,
                          U16& dr, U16& dg, U16& db, U16& da)
 
     #define STAGE_PP(name, ...)                                                            \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F  , F  ,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
                          U16& dr, U16& dg, U16& db, U16& da);                              \
         static void ABI name(size_t tail, void** program, size_t dx, size_t dy,            \
                              U16  r, U16  g, U16  b, U16  a,                               \
                              U16 dr, U16 dg, U16 db, U16 da) {                             \
-            name##_k(Ctx{program}, dx,dy,tail, r,g,b,a, dr,dg,db,da);                      \
+            name##_k(Ctx{program}, dx,dy,tail, 0,0, r,g,b,a, dr,dg,db,da);                 \
             auto next = (Stage)load_and_inc(program);                                      \
             next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
         }                                                                                  \
-        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
+        SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F  , F  ,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
                          U16& dr, U16& dg, U16& db, U16& da)
 #endif
@@ -3262,45 +3270,80 @@ STAGE_PP(srcover_rgba_8888, const SkRasterPipeline_MemoryCtx* ctx) {
     a = a + div255( da*inv(a) );
     store_8888_(ptr, tail, r,g,b,a);
 }
+
 // Now we'll add null stand-ins for stages we haven't implemented in lowp.
 // If a pipeline uses these stages, it'll boot it out of lowp into highp.
-
-using NotImplemented = void(*)(void);
-
-static NotImplemented
-        callback, load_rgba, store_rgba,
-        unbounded_set_rgb, unbounded_uniform_color,
-        unpremul, dither,
-        from_srgb, from_srgb_dst, to_srgb,
-        load_f16    , load_f16_dst    , store_f16    , gather_f16,
-        load_f32    , load_f32_dst    , store_f32    , gather_f32,
-        load_1010102, load_1010102_dst, store_1010102, gather_1010102,
-        store_u16_be,
-        byte_tables,
-        colorburn, colordodge, softlight, hue, saturation, color, luminosity,
-        matrix_3x3, matrix_3x4, matrix_4x5, matrix_4x3,
-        parametric, gamma,
-        rgb_to_hsl, hsl_to_rgb,
-        gauss_a_to_rgba,
-        mirror_x, repeat_x,
-        mirror_y, repeat_y,
-        negate_x,
-        bilerp_clamp_8888,
-        bilinear_nx, bilinear_ny, bilinear_px, bilinear_py,
-        bicubic_n3x, bicubic_n1x, bicubic_p1x, bicubic_p3x,
-        bicubic_n3y, bicubic_n1y, bicubic_p1y, bicubic_p3y,
-        save_xy, accumulate,
-        xy_to_2pt_conical_well_behaved,
-        xy_to_2pt_conical_strip,
-        xy_to_2pt_conical_focal_on_circle,
-        xy_to_2pt_conical_smaller,
-        xy_to_2pt_conical_greater,
-        xy_to_2pt_conical_compensate_focal,
-        alter_2pt_conical_compensate_focal,
-        alter_2pt_conical_unswap,
-        mask_2pt_conical_nan,
-        mask_2pt_conical_degenerates,
-        apply_vector_mask;
+#define NOT_IMPLEMENTED(st) static void (*st)(void) = nullptr;
+    NOT_IMPLEMENTED(callback)
+    NOT_IMPLEMENTED(load_rgba)
+    NOT_IMPLEMENTED(store_rgba)
+    NOT_IMPLEMENTED(unbounded_set_rgb)
+    NOT_IMPLEMENTED(unbounded_uniform_color)
+    NOT_IMPLEMENTED(unpremul)
+    NOT_IMPLEMENTED(dither)
+    NOT_IMPLEMENTED(from_srgb)
+    NOT_IMPLEMENTED(to_srgb)
+    NOT_IMPLEMENTED(load_f16)
+    NOT_IMPLEMENTED(load_f16_dst)
+    NOT_IMPLEMENTED(store_f16)
+    NOT_IMPLEMENTED(gather_f16)
+    NOT_IMPLEMENTED(load_f32)
+    NOT_IMPLEMENTED(load_f32_dst)
+    NOT_IMPLEMENTED(store_f32)
+    NOT_IMPLEMENTED(gather_f32)
+    NOT_IMPLEMENTED(load_1010102)
+    NOT_IMPLEMENTED(load_1010102_dst)
+    NOT_IMPLEMENTED(store_1010102)
+    NOT_IMPLEMENTED(gather_1010102)
+    NOT_IMPLEMENTED(store_u16_be)
+    NOT_IMPLEMENTED(byte_tables)
+    NOT_IMPLEMENTED(colorburn)
+    NOT_IMPLEMENTED(colordodge)
+    NOT_IMPLEMENTED(softlight)
+    NOT_IMPLEMENTED(hue)
+    NOT_IMPLEMENTED(saturation)
+    NOT_IMPLEMENTED(color)
+    NOT_IMPLEMENTED(luminosity)
+    NOT_IMPLEMENTED(matrix_3x3)
+    NOT_IMPLEMENTED(matrix_3x4)
+    NOT_IMPLEMENTED(matrix_4x5)
+    NOT_IMPLEMENTED(matrix_4x3)
+    NOT_IMPLEMENTED(parametric)
+    NOT_IMPLEMENTED(gamma)
+    NOT_IMPLEMENTED(rgb_to_hsl)
+    NOT_IMPLEMENTED(hsl_to_rgb)
+    NOT_IMPLEMENTED(gauss_a_to_rgba)
+    NOT_IMPLEMENTED(mirror_x)
+    NOT_IMPLEMENTED(repeat_x)
+    NOT_IMPLEMENTED(mirror_y)
+    NOT_IMPLEMENTED(repeat_y)
+    NOT_IMPLEMENTED(negate_x)
+    NOT_IMPLEMENTED(bilerp_clamp_8888)
+    NOT_IMPLEMENTED(bilinear_nx)
+    NOT_IMPLEMENTED(bilinear_ny)
+    NOT_IMPLEMENTED(bilinear_px)
+    NOT_IMPLEMENTED(bilinear_py)
+    NOT_IMPLEMENTED(bicubic_n3x)
+    NOT_IMPLEMENTED(bicubic_n1x)
+    NOT_IMPLEMENTED(bicubic_p1x)
+    NOT_IMPLEMENTED(bicubic_p3x)
+    NOT_IMPLEMENTED(bicubic_n3y)
+    NOT_IMPLEMENTED(bicubic_n1y)
+    NOT_IMPLEMENTED(bicubic_p1y)
+    NOT_IMPLEMENTED(bicubic_p3y)
+    NOT_IMPLEMENTED(save_xy)
+    NOT_IMPLEMENTED(accumulate)
+    NOT_IMPLEMENTED(xy_to_2pt_conical_well_behaved)
+    NOT_IMPLEMENTED(xy_to_2pt_conical_strip)
+    NOT_IMPLEMENTED(xy_to_2pt_conical_focal_on_circle)
+    NOT_IMPLEMENTED(xy_to_2pt_conical_smaller)
+    NOT_IMPLEMENTED(xy_to_2pt_conical_greater)
+    NOT_IMPLEMENTED(alter_2pt_conical_compensate_focal)
+    NOT_IMPLEMENTED(alter_2pt_conical_unswap)
+    NOT_IMPLEMENTED(mask_2pt_conical_nan)
+    NOT_IMPLEMENTED(mask_2pt_conical_degenerates)
+    NOT_IMPLEMENTED(apply_vector_mask)
+#undef NOT_IMPLEMENTED
 
 #endif//defined(JUMPER_IS_SCALAR) controlling whether we build lowp stages
 }  // namespace lowp

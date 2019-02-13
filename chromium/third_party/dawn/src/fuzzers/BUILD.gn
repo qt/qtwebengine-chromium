@@ -76,7 +76,7 @@ static_library("dawn_spirv_cross_fuzzer_common") {
     "DawnSPIRVCrossFuzzer.h",
   ]
   public_deps = [
-    "${dawn_top_level}/third_party:spirv_cross",
+    "${dawn_top_level}/third_party:spirv_cross_full_for_fuzzers",
   ]
 }
 
@@ -164,10 +164,13 @@ dawn_fuzzer_test("dawn_wire_server_and_frontend_fuzzer") {
   ]
 
   deps = [
-    "${dawn_top_level}:libdawn_sources",
-    "${dawn_top_level}:libdawn_native_sources",
-    "${dawn_top_level}:libdawn_wire_sources",
+    "${dawn_top_level}:dawn_common",
+    "${dawn_top_level}:libdawn_static",
+    "${dawn_top_level}:libdawn_native_static",
+    "${dawn_top_level}:libdawn_wire_static",
   ]
 
-  additional_configs = [ "${dawn_top_level}:dawn_shared_library_public" ]
+  additional_configs = [
+    "${dawn_top_level}:dawn_internal",
+  ]
 }

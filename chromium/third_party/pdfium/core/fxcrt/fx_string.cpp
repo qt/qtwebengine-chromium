@@ -14,7 +14,7 @@
 #include "core/fxcrt/fx_extension.h"
 #include "third_party/base/compiler_specific.h"
 
-ByteString FX_UTF8Encode(const WideStringView& wsStr) {
+ByteString FX_UTF8Encode(WideStringView wsStr) {
   size_t len = wsStr.GetLength();
   const wchar_t* pStr = wsStr.unterminated_c_str();
   CFX_UTF8Encoder encoder;
@@ -24,7 +24,7 @@ ByteString FX_UTF8Encode(const WideStringView& wsStr) {
   return ByteString(encoder.GetResult());
 }
 
-WideString FX_UTF8Decode(const ByteStringView& bsStr) {
+WideString FX_UTF8Decode(ByteStringView bsStr) {
   if (bsStr.IsEmpty())
     return WideString();
 
@@ -48,7 +48,7 @@ float FractionalScale(size_t scale_factor, int value) {
 
 }  // namespace
 
-float FX_atof(const ByteStringView& strc) {
+float StringToFloat(ByteStringView strc) {
   if (strc.IsEmpty())
     return 0.0;
 
@@ -87,11 +87,11 @@ float FX_atof(const ByteStringView& strc) {
   return bNegative ? -value : value;
 }
 
-float FX_atof(const WideStringView& wsStr) {
-  return FX_atof(FX_UTF8Encode(wsStr).c_str());
+float StringToFloat(WideStringView wsStr) {
+  return StringToFloat(FX_UTF8Encode(wsStr).c_str());
 }
 
-size_t FX_ftoa(float d, char* buf) {
+size_t FloatToString(float d, char* buf) {
   buf[0] = '0';
   buf[1] = '\0';
   if (d == 0.0f) {

@@ -13,6 +13,7 @@
 
 #include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "absl/types/optional.h"
@@ -20,9 +21,9 @@
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/call/audio_sink.h"
 #include "api/call/transport.h"
-#include "api/crypto/cryptooptions.h"
+#include "api/crypto/crypto_options.h"
 #include "api/media_transport_interface.h"
-#include "api/rtpreceiverinterface.h"
+#include "api/rtp_receiver_interface.h"
 #include "call/rtp_packet_sink_interface.h"
 #include "call/syncable.h"
 #include "modules/audio_coding/include/audio_coding_module.h"
@@ -79,7 +80,9 @@ class ChannelReceiveInterface : public RtpPacketSinkInterface {
   virtual void StartPlayout() = 0;
   virtual void StopPlayout() = 0;
 
-  virtual bool GetRecCodec(CodecInst* codec) const = 0;
+  // Payload type and format of last received RTP packet, if any.
+  virtual absl::optional<std::pair<int, SdpAudioFormat>>
+      GetReceiveCodec() const = 0;
 
   virtual bool ReceivedRTCPPacket(const uint8_t* data, size_t length) = 0;
 
@@ -136,6 +139,7 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout,
     int jitter_buffer_min_delay_ms,
+    bool jitter_buffer_enable_rtx_handling,
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
     absl::optional<AudioCodecPairId> codec_pair_id,
     rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor,

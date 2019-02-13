@@ -5,12 +5,13 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{1 రోజు క్రితం}other{# రోజుల క్రితం}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{1 నిమిషం క్రితం}other{# నిమిషాల క్రితం}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1ని}other{#ని}}</translation>
+<translation id="1181037720776840403">తీసివేయి</translation>
 <translation id="1243314992276662751">అప్‌లోడ్ చేయి</translation>
 <translation id="1269641567813814718">Win</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">సిఫార్సు చేసిన యాప్‌లు</translation>
 <translation id="1368832886055348810">ఎడమ నుండి కుడికి</translation>
-<translation id="1383876407941801731">శోధించు</translation>
+<translation id="1383876407941801731">వెతుకు</translation>
 <translation id="1398853756734560583">గరిష్ఠీకరించు</translation>
 <translation id="1413622004203049571"><ph name="NOTIFIER_NAME" /> నుండి వచ్చే నోటిఫికేషన్‌లను నిలిపివేయి</translation>
 <translation id="1591184457164800433">{MINUTES,plural, =1{1 నిమిషం మరియు }other{# నిమిషాలు మరియు }}</translation>
@@ -63,8 +64,10 @@
 <translation id="3234408098842461169">క్రింది బాణం</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{1 రోజు}other{# రోజులు}}</translation>
 <translation id="335581015389089642">ప్రసంగం</translation>
+<translation id="3462241349431650993">ఈ సూచనను దాచడం వలన మీ అన్ని పరికరాలలో మీ ఖాతా నుండి ఇది మళ్లీ చూపబడదు.</translation>
 <translation id="3479552764303398839">ఇప్పుడు కాదు</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{1 రోజు మిగిలి ఉంది}other{# రోజులు మిగిలి ఉన్నాయి}}</translation>
+<translation id="3608915363409716668"><ph name="MAXIMUM_VALUE" />+</translation>
 <translation id="3618849550573277856">“<ph name="LOOKUP_STRING" />”ని వెతకండి</translation>
 <translation id="364720409959344976">అప్‌లోడ్ చేయడానికి ఫోల్డర్‌ని ఎంచుకోండి</translation>
 <translation id="3660179305079774227">ఎగువ బాణం</translation>
@@ -125,6 +128,7 @@
 <translation id="6483402905448010557">{SECONDS,plural, =1{1 సెకను క్రితం}other{# సెకన్ల క్రితం}}</translation>
 <translation id="654149438358937226">అన్ని నోటిఫికేషన్‌లను బ్లాక్ చేయి</translation>
 <translation id="6567071839949112727">క్లిక్ మూలకం</translation>
+<translation id="6578407462441924264">పేరు లేదు</translation>
 <translation id="6612467943526193239">క్రమాంకనం నుండి నిష్క్రమించేందుకు, Esc నొక్కండి.</translation>
 <translation id="6620110761915583480">ఫైల్‌ను సేవ్ చేయి</translation>
 <translation id="6699343763173986273">మీడియా తరువాత ట్రాక్</translation>
@@ -159,6 +163,7 @@
 <translation id="8087772101393322318"><ph name="KEY_MODIFIER_NAME" />+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8106081041558092062">{HOURS,plural, =1{1 గంట క్రితం}other{# గంటల క్రితం}}</translation>
 <translation id="8131263257437993507">{SECONDS,plural, =1{1 సెక. మిగిలి ఉంది}other{# సెక. మిగిలి ఉన్నాయి}}</translation>
+<translation id="8152264887680882389"><ph name="TEXT" />, స్వయంపూర్తి</translation>
 <translation id="815598010540052116">క్రిందికి  స్క్రోల్ చేయి</translation>
 <translation id="8179976553408161302">Enter</translation>
 <translation id="8210608804940886430">పేజీ క్రిందికి</translation>
@@ -170,6 +175,7 @@
 <translation id="838869780401515933">తనిఖీ చేయి</translation>
 <translation id="8393700583063109961">సందేశాన్ని పంపండి</translation>
 <translation id="8394908167088220973">మీడియా ప్లే/పాజ్</translation>
+<translation id="8420205633584771378">ఈ సూచనని తీసివేయలా?</translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1సం}other{#సం}}</translation>
 <translation id="8602707065186045623"><ph name="SAVEAS_EXTENSION_TYPE" /> ఫైల్ (.<ph name="SAVEAS_EXTENSION_NAME" />)</translation>
 <translation id="8677655579646609597"><ph name="QUANTITY" /> KB/సె</translation>
@@ -182,7 +188,6 @@
 <translation id="8841375032071747811">వెనుకకు బటన్</translation>
 <translation id="8901569739625249689"><ph name="QUANTITY" /> KB</translation>
 <translation id="9002566407876343676">తెరువు</translation>
-<translation id="9038489124413477075">పేరులేని ఫోల్డర్</translation>
 <translation id="9044832324875206639">{SECONDS,plural, =1{1 సెక.}other{# సెక.}}</translation>
 <translation id="9059834730836941392">నోటిఫికేషన్‌ను కుదించు</translation>
 <translation id="9150735707954472829">ట్యాబ్</translation>

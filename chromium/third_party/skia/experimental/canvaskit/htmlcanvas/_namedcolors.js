@@ -1,13 +1,13 @@
 // This node script is meant to pre-compute the named colors.
 // node ./htmlcanvas/_namedcolors.js --expose-wasm
-// Put the result in canvas2d.js
+// Put the result in color.js
 // This should likely never need to be re-run.
 
 const CanvasKitInit = require('../canvaskit/bin/canvaskit.js');
 
 CanvasKitInit({
   locateFile: (file) => __dirname + '/../canvaskit/bin/'+file,
-}).then((CanvasKit) => {
+}).ready().then((CanvasKit) => {
   let colorMap = {
     // From https://drafts.csswg.org/css-color/#named-colors
     'aliceblue': CanvasKit.Color(240, 248, 255),

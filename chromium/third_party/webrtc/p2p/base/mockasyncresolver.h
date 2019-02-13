@@ -1,5 +1,5 @@
 /*
- *  Copyright 2018 The WebRTC Project Authors. All rights reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -11,43 +11,9 @@
 #ifndef P2P_BASE_MOCKASYNCRESOLVER_H_
 #define P2P_BASE_MOCKASYNCRESOLVER_H_
 
-#include "api/asyncresolverfactory.h"
-#include "rtc_base/asyncresolverinterface.h"
-#include "test/gmock.h"
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
 
-namespace rtc {
-
-using ::testing::_;
-using ::testing::InvokeWithoutArgs;
-
-class MockAsyncResolver : public AsyncResolverInterface {
- public:
-  MockAsyncResolver() {
-    ON_CALL(*this, Start(_)).WillByDefault(InvokeWithoutArgs([this] {
-      SignalDone(this);
-    }));
-  }
-  ~MockAsyncResolver() = default;
-
-  MOCK_METHOD1(Start, void(const rtc::SocketAddress&));
-  MOCK_CONST_METHOD2(GetResolvedAddress, bool(int family, SocketAddress* addr));
-  MOCK_CONST_METHOD0(GetError, int());
-
-  // Note that this won't delete the object like AsyncResolverInterface says in
-  // order to avoid sanitizer failures caused by this being a synchronous
-  // implementation. The test code should delete the object instead.
-  MOCK_METHOD1(Destroy, void(bool));
-};
-
-}  // namespace rtc
-
-namespace webrtc {
-
-class MockAsyncResolverFactory : public AsyncResolverFactory {
- public:
-  MOCK_METHOD0(Create, rtc::AsyncResolverInterface*());
-};
-
-}  // namespace webrtc
+#include "p2p/base/mock_async_resolver.h"
 
 #endif  // P2P_BASE_MOCKASYNCRESOLVER_H_

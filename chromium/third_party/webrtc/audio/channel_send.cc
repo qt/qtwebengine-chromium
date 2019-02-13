@@ -20,7 +20,7 @@
 #include "absl/memory/memory.h"
 #include "api/array_view.h"
 #include "api/call/transport.h"
-#include "api/crypto/frameencryptorinterface.h"
+#include "api/crypto/frame_encryptor_interface.h"
 #include "audio/utility/audio_frame_operations.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "logging/rtc_event_log/events/rtc_event_audio_playout.h"
@@ -31,7 +31,7 @@
 #include "modules/pacing/packet_router.h"
 #include "modules/utility/include/process_thread.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/location.h"
@@ -41,7 +41,7 @@
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread_checker.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -78,7 +78,6 @@ class VoERtcpObserver;
 
 class ChannelSend
     : public ChannelSendInterface,
-      public Transport,
       public OverheadObserver,
       public AudioPacketizationCallback,  // receive encoded packets from the
                                           // ACM
@@ -134,6 +133,9 @@ class ChannelSend
 
   // RTP+RTCP
   void SetLocalSSRC(uint32_t ssrc) override;
+  void SetRid(const std::string& rid,
+              int extension_id,
+              int repaired_extension_id) override;
   void SetMid(const std::string& mid, int extension_id) override;
   void SetExtmapAllowMixed(bool extmap_allow_mixed) override;
   void SetSendAudioLevelIndicationStatus(bool enable, int id) override;
@@ -186,12 +188,6 @@ class ChannelSend
                    size_t payloadSize,
                    const RTPFragmentationHeader* fragmentation) override;
 
-  // From Transport (called by the RTP/RTCP module)
-  bool SendRtp(const uint8_t* data,
-               size_t len,
-               const PacketOptions& packet_options) override;
-  bool SendRtcp(const uint8_t* data, size_t len) override;
-
   // From OverheadObserver in the RTP/RTCP module
   void OnOverheadChanged(size_t overhead_bytes_per_packet) override;
 
@@ -238,7 +234,6 @@ class ChannelSend
   // audio thread to another, but access is still sequential.
   rtc::RaceChecker audio_thread_race_checker_;
 
-  rtc::CriticalSection _callbackCritSect;
   rtc::CriticalSection volume_settings_critsect_;
 
   bool sending_ RTC_GUARDED_BY(&worker_thread_checker_) = false;
@@ -254,7 +249,6 @@ class ChannelSend
 
   // uses
   ProcessThread* const _moduleProcessThreadPtr;
-  Transport* const _transportPtr;  // WebRtc socket or external transport
   RmsLevel rms_level_ RTC_GUARDED_BY(encoder_queue_);
   bool input_mute_ RTC_GUARDED_BY(volume_settings_critsect_);
   bool previous_frame_muted_ RTC_GUARDED_BY(encoder_queue_);
@@ -641,45 +635,6 @@ int32_t ChannelSend::SendMediaTransportAudio(
   return 0;
 }
 
-bool ChannelSend::SendRtp(const uint8_t* data,
-                          size_t len,
-                          const PacketOptions& options) {
-  // We should not be sending RTP packets if media transport is available.
-  RTC_CHECK(!media_transport());
-
-  rtc::CritScope cs(&_callbackCritSect);
-
-  if (_transportPtr == NULL) {
-    RTC_DLOG(LS_ERROR)
-        << "ChannelSend::SendPacket() failed to send RTP packet due to"
-        << " invalid transport object";
-    return false;
-  }
-
-  if (!_transportPtr->SendRtp(data, len, options)) {
-    RTC_DLOG(LS_ERROR) << "ChannelSend::SendPacket() RTP transmission failed";
-    return false;
-  }
-  return true;
-}
-
-bool ChannelSend::SendRtcp(const uint8_t* data, size_t len) {
-  rtc::CritScope cs(&_callbackCritSect);
-  if (_transportPtr == NULL) {
-    RTC_DLOG(LS_ERROR)
-        << "ChannelSend::SendRtcp() failed to send RTCP packet due to"
-        << " invalid transport object";
-    return false;
-  }
-
-  int n = _transportPtr->SendRtcp(data, len);
-  if (n < 0) {
-    RTC_DLOG(LS_ERROR) << "ChannelSend::SendRtcp() transmission failed";
-    return false;
-  }
-  return true;
-}
-
 ChannelSend::ChannelSend(rtc::TaskQueue* encoder_queue,
                          ProcessThread* module_process_thread,
                          MediaTransportInterface* media_transport,
@@ -695,7 +650,6 @@ ChannelSend::ChannelSend(rtc::TaskQueue* encoder_queue,
                       // random offset
       send_sequence_number_(0),
       _moduleProcessThreadPtr(module_process_thread),
-      _transportPtr(rtp_transport),
       input_mute_(false),
       previous_frame_muted_(false),
       _includeAudioLevelIndication(false),
@@ -732,7 +686,7 @@ ChannelSend::ChannelSend(rtc::TaskQueue* encoder_queue,
   }
 
   configuration.audio = true;
-  configuration.outgoing_transport = this;
+  configuration.outgoing_transport = rtp_transport;
 
   configuration.paced_sender = rtp_packet_sender_proxy_.get();
   configuration.transport_sequence_number_allocator =
@@ -854,33 +808,14 @@ bool ChannelSend::SetEncoder(int payload_type,
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
   RTC_DCHECK_GE(payload_type, 0);
   RTC_DCHECK_LE(payload_type, 127);
-  // TODO(ossu): Make CodecInsts up, for now: one for the RTP/RTCP module and
-  // one for for us to keep track of sample rate and number of channels, etc.
 
   // The RTP/RTCP module needs to know the RTP timestamp rate (i.e. clockrate)
   // as well as some other things, so we collect this info and send it along.
-  CodecInst rtp_codec;
-  rtp_codec.pltype = payload_type;
-  strncpy(rtp_codec.plname, "audio", sizeof(rtp_codec.plname));
-  rtp_codec.plname[sizeof(rtp_codec.plname) - 1] = 0;
-  // Seems unclear if it should be clock rate or sample rate. CodecInst
-  // supposedly carries the sample rate, but only clock rate seems sensible to
-  // send to the RTP/RTCP module.
-  rtp_codec.plfreq = encoder->RtpTimestampRateHz();
-  rtp_codec.pacsize = rtc::CheckedDivExact(
-      static_cast<int>(encoder->Max10MsFramesInAPacket() * rtp_codec.plfreq),
-      100);
-  rtp_codec.channels = encoder->NumChannels();
-  rtp_codec.rate = 0;
-
-  if (_rtpRtcpModule->RegisterSendPayload(rtp_codec) != 0) {
-    _rtpRtcpModule->DeRegisterSendPayload(payload_type);
-    if (_rtpRtcpModule->RegisterSendPayload(rtp_codec) != 0) {
-      RTC_DLOG(LS_ERROR)
-          << "SetEncoder() failed to register codec to RTP/RTCP module";
-      return false;
-    }
-  }
+  _rtpRtcpModule->RegisterAudioSendPayload(payload_type,
+                                           "audio",
+                                           encoder->RtpTimestampRateHz(),
+                                           encoder->NumChannels(),
+                                           0);
 
   if (media_transport_) {
     rtc::CritScope cs(&media_transport_lock_);
@@ -1017,19 +952,8 @@ bool ChannelSend::SetSendTelephoneEventPayloadType(int payload_type,
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
   RTC_DCHECK_LE(0, payload_type);
   RTC_DCHECK_GE(127, payload_type);
-  CodecInst codec = {0};
-  codec.pltype = payload_type;
-  codec.plfreq = payload_frequency;
-  memcpy(codec.plname, "telephone-event", 16);
-  if (_rtpRtcpModule->RegisterSendPayload(codec) != 0) {
-    _rtpRtcpModule->DeRegisterSendPayload(codec.pltype);
-    if (_rtpRtcpModule->RegisterSendPayload(codec) != 0) {
-      RTC_DLOG(LS_ERROR)
-          << "SetSendTelephoneEventPayloadType() failed to register "
-             "send payload type";
-      return false;
-    }
-  }
+  _rtpRtcpModule->RegisterAudioSendPayload(payload_type, "telephone-event",
+                                           payload_frequency, 0, 0);
   return true;
 }
 
@@ -1042,6 +966,23 @@ void ChannelSend::SetLocalSSRC(uint32_t ssrc) {
     media_transport_channel_id_ = ssrc;
   }
   _rtpRtcpModule->SetSSRC(ssrc);
+}
+
+void ChannelSend::SetRid(const std::string& rid,
+                         int extension_id,
+                         int repaired_extension_id) {
+  RTC_DCHECK_RUN_ON(&worker_thread_checker_);
+  if (extension_id != 0) {
+    int ret = SetSendRtpHeaderExtension(!rid.empty(), kRtpExtensionRtpStreamId,
+                                        extension_id);
+    RTC_DCHECK_EQ(0, ret);
+  }
+  if (repaired_extension_id != 0) {
+    int ret = SetSendRtpHeaderExtension(!rid.empty(), kRtpExtensionRtpStreamId,
+                                        repaired_extension_id);
+    RTC_DCHECK_EQ(0, ret);
+  }
+  _rtpRtcpModule->SetRid(rid);
 }
 
 void ChannelSend::SetMid(const std::string& mid, int extension_id) {

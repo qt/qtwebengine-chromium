@@ -487,7 +487,7 @@ bool ContentBrowserClient::CanCreateWindow(
     RenderFrameHost* opener,
     const GURL& opener_url,
     const GURL& opener_top_level_frame_url,
-    const GURL& source_origin,
+    const url::Origin& source_origin,
     content::mojom::WindowContainerType container_type,
     const GURL& target_url,
     const Referrer& referrer,
@@ -507,6 +507,10 @@ SpeechRecognitionManagerDelegate*
 }
 
 TtsControllerDelegate* ContentBrowserClient::GetTtsControllerDelegate() {
+  return nullptr;
+}
+
+TtsPlatform* ContentBrowserClient::GetTtsPlatform() {
   return nullptr;
 }
 
@@ -644,11 +648,6 @@ base::string16 ContentBrowserClient::GetAppContainerSidForSandboxType(
 }
 #endif  // defined(OS_WIN)
 
-std::unique_ptr<base::Value> ContentBrowserClient::GetServiceManifestOverlay(
-    base::StringPiece name) {
-  return nullptr;
-}
-
 ContentBrowserClient::OutOfProcessServiceInfo::OutOfProcessServiceInfo() =
     default;
 
@@ -676,9 +675,14 @@ bool ContentBrowserClient::ShouldTerminateOnServiceQuit(
   return false;
 }
 
-std::vector<ContentBrowserClient::ServiceManifestInfo>
+base::Optional<service_manager::Manifest>
+ContentBrowserClient::GetServiceManifestOverlay(base::StringPiece name) {
+  return base::nullopt;
+}
+
+std::vector<service_manager::Manifest>
 ContentBrowserClient::GetExtraServiceManifests() {
-  return std::vector<ContentBrowserClient::ServiceManifestInfo>();
+  return std::vector<service_manager::Manifest>();
 }
 
 std::vector<std::string> ContentBrowserClient::GetStartupServices() {
@@ -752,7 +756,7 @@ network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
   network::mojom::NetworkContextPtr network_context;
   network::mojom::NetworkContextParamsPtr context_params =
       network::mojom::NetworkContextParams::New();
-  context_params->user_agent = GetContentClient()->GetUserAgent();
+  context_params->user_agent = GetUserAgent();
   context_params->accept_language = "en-us,en";
   context_params->enable_data_url_support = true;
   GetNetworkService()->CreateNetworkContext(MakeRequest(&network_context),
@@ -760,7 +764,16 @@ network::mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
   return network_context;
 }
 
+std::vector<base::FilePath>
+ContentBrowserClient::GetNetworkContextsParentDirectory() {
+  return {};
+}
+
 #if defined(OS_ANDROID)
+bool ContentBrowserClient::NeedURLRequestContext() {
+  return true;
+}
+
 bool ContentBrowserClient::ShouldOverrideUrlLoading(
     int frame_tree_node_id,
     bool browser_initiated,
@@ -889,6 +902,25 @@ content::PreviewsState ContentBrowserClient::DetermineCommittedPreviews(
     content::NavigationHandle* navigation_handle,
     const net::HttpResponseHeaders* response_headers) {
   return content::PREVIEWS_OFF;
+}
+
+std::string ContentBrowserClient::GetProduct() const {
+  return std::string();
+}
+
+std::string ContentBrowserClient::GetUserAgent() const {
+  return std::string();
+}
+
+bool ContentBrowserClient::IsBuiltinComponent(BrowserContext* browser_context,
+                                              const url::Origin& origin) {
+  return false;
+}
+
+bool ContentBrowserClient::IsRendererDebugURLBlacklisted(
+    const GURL& url,
+    BrowserContext* context) {
+  return false;
 }
 
 }  // namespace content

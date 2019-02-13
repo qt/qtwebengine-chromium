@@ -18,6 +18,14 @@ import("//build_overrides/build.gni")
 
 import("//testing/test.gni")
 
+# Use Chromium's dcheck_always_on when available so that we respect it when
+# running tests on the GPU builders
+if (build_with_chromium) {
+  import("//build/config/dcheck_always_on.gni")
+} else {
+  dcheck_always_on = false
+}
+
 ###############################################################################
 # Template to wrap the Dawn code generator
 ###############################################################################
@@ -46,6 +54,8 @@ template("dawn_generator") {
   # target using templates in this directory.
   generator_args = [
     rebase_path("dawn.json", root_build_dir),
+    "--wire-json",
+    rebase_path("dawn_wire.json", root_build_dir),
     "--template-dir",
     rebase_path("generator/templates", root_build_dir),
     "--targets",
@@ -125,35 +135,121 @@ template("dawn_generator") {
 }
 
 ###############################################################################
+# Template to produce static and shared versions of Dawn's libraries
+###############################################################################
+
+# Template that produces static and shared versions of the same library.
+#  - The shared version exports symbols and has dependent import the symbols
+#    as libname.so with target name libname_shared
+#  - The static library doesn't export symbols nor make dependents import them
+#  - The libname target is an alias for libname_shared. This is mostly to keep
+#    the GN convention that target_type(name) defines a "name" target.
+#
+# The DEFINE_PREFIX must be provided and must match the respective "_export.h"
+# file.
+#
+# Example usage:
+#
+#   dawn_static_and_shared_library("my_library") {
+#     // my_library_export.h must use the MY_LIBRARY_IMPLEMENTATION and
+#     // MY_LIBRARY_SHARED_LIBRARY macros.
+#     DEFINE_PREFIX = "MY_LIBRARY"
+#
+#     sources = [...]
+#     deps = [...]
+#     configs = [...]
+#   }
+#
+#   executable("foo") {
+#     deps = [ ":my_library_shared" ] // or :my_library for the same effect
+#   }
+template("dawn_static_and_shared_library") {
+  # Copy the target_name in the local scope so it doesn't get shadowed in the
+  # definition of targets.
+  libname = target_name
+
+  # The config that will apply to dependents of the shared library so they know
+  # they should "import" the symbols
+  config("${libname}_shared_public_config") {
+    defines = [ "${invoker.DEFINE_PREFIX}_SHARED_LIBRARY" ]
+
+    # Executable needs an rpath to find our shared libraries on OSX and Linux
+    if (is_mac) {
+      ldflags = [
+        "-rpath",
+        "@executable_path/",
+      ]
+    }
+    if (is_linux) {
+      configs = [ "//build/config/gcc:rpath_for_built_shared_libraries" ]
+    }
+  }
+
+  shared_library("${libname}_shared") {
+    output_name = libname
+
+    # Copy all variables except "configs", which has a default value
+    forward_variables_from(invoker, "*", [ "configs" ])
+    if (defined(invoker.configs)) {
+      configs += invoker.configs
+    }
+
+    # Tell dependents where to find this shared library
+    if (is_mac) {
+      ldflags = [
+        "-install_name",
+        "@rpath/${libname}.dylib",
+      ]
+    }
+
+    # Use the config that makes the ${DEFINE_PREFIX}_EXPORT macro do something
+    if (!defined(public_configs)) {
+      public_configs = []
+    }
+    public_configs += [ ":${libname}_shared_public_config" ]
+
+    # Tell sources of this library to export the symbols (and not import)
+    if (!defined(defines)) {
+      defines = []
+    }
+    defines += [ "${invoker.DEFINE_PREFIX}_IMPLEMENTATION" ]
+  }
+
+  static_library("${libname}_static") {
+    output_name = libname
+
+    complete_static_lib = dawn_complete_static_libs
+
+    # Copy all variables except "configs", which has a default value
+    forward_variables_from(invoker, "*", [ "configs" ])
+    if (defined(invoker.configs)) {
+      configs += invoker.configs
+    }
+  }
+
+  group(libname) {
+    public_deps = [
+      ":${libname}_shared",
+    ]
+  }
+}
+
+###############################################################################
 # Common dawn libraries and configs
 ###############################################################################
 
-config("libdawn_public") {
+config("dawn_public") {
   include_dirs = [
     target_gen_dir,
     "src/include",
   ]
 }
 
-# Executable needs an rpath to find our shared libraries on OSX and Linux
-config("dawn_shared_library_public") {
-  if (is_mac) {
-    ldflags = [
-      "-rpath",
-      "@executable_path/",
-    ]
-  }
-
-  if (is_linux) {
-    configs = [ "//build/config/gcc:rpath_for_built_shared_libraries" ]
-  }
-}
-
 config("dawn_internal") {
   include_dirs = [ "src" ]
 
   defines = []
-  if (dawn_always_assert || is_debug) {
+  if (dawn_always_assert || dcheck_always_on || is_debug) {
     defines += [ "DAWN_ENABLE_ASSERTS" ]
   }
 
@@ -173,10 +269,7 @@ config("dawn_internal") {
     defines += [ "DAWN_ENABLE_BACKEND_VULKAN" ]
   }
 
-  configs = [
-    ":libdawn_public",
-    ":dawn_shared_library_public",
-  ]
+  configs = [ ":dawn_public" ]
 
   # Only internal Dawn targets can use this config, this means only targets in
   # this BUILD.gn file.
@@ -212,7 +305,7 @@ static_library("dawn_common") {
 }
 
 ###############################################################################
-# Dawn headers and libdawn.so
+# Dawn headers
 ###############################################################################
 
 dawn_generator("dawn_headers_gen") {
@@ -225,7 +318,7 @@ dawn_generator("dawn_headers_gen") {
 }
 
 source_set("dawn_headers") {
-  public_configs = [ ":libdawn_public" ]
+  public_configs = [ ":dawn_public" ]
   deps = [
     ":dawn_headers_gen",
   ]
@@ -238,6 +331,10 @@ source_set("dawn_headers") {
   ]
 }
 
+###############################################################################
+# libdawn
+###############################################################################
+
 dawn_generator("libdawn_gen") {
   target = "libdawn"
   outputs = [
@@ -246,11 +343,9 @@ dawn_generator("libdawn_gen") {
   ]
 }
 
-config("libdawn_export") {
-  defines = [ "DAWN_IMPLEMENTATION" ]
-}
+dawn_static_and_shared_library("libdawn") {
+  DEFINE_PREFIX = "DAWN"
 
-source_set("libdawn_sources") {
   public_deps = [
     ":dawn_headers",
   ]
@@ -259,31 +354,10 @@ source_set("libdawn_sources") {
     ":libdawn_gen",
   ]
   sources = get_target_outputs(":libdawn_gen")
-
-  # Put the export config public so that dependents use the same declspec.
-  public_configs = [ ":libdawn_export" ]
-}
-
-shared_library("libdawn") {
-  public_deps = [
-    ":dawn_headers",
-  ]
-
-  deps = [
-    ":libdawn_sources",
-  ]
-
-  # Tell dependents where to find this shared library
-  if (is_mac) {
-    ldflags = [
-      "-install_name",
-      "@rpath/${target_name}.dylib",
-    ]
-  }
 }
 
 ###############################################################################
-# libdawn_native.so
+# libdawn_native
 ###############################################################################
 
 config("libdawn_native_internal") {
@@ -293,10 +367,6 @@ config("libdawn_native_internal") {
   if (is_mac) {
     cflags_objcc = [ "-Wno-unguarded-availability" ]
   }
-}
-
-config("libdawn_native_export") {
-  defines = [ "DAWN_NATIVE_IMPLEMENTATION" ]
 }
 
 dawn_generator("libdawn_native_utils_gen") {
@@ -316,6 +386,7 @@ source_set("libdawn_native_headers") {
   public_deps = [
     ":dawn_headers",
   ]
+  public_configs = [ ":dawn_public" ]
   sources = [
     "src/include/dawn_native/DawnNative.h",
     "src/include/dawn_native/dawn_native_export.h",
@@ -331,32 +402,30 @@ source_set("libdawn_native_headers") {
 }
 
 # The meat of the compilation for libdawn_native so that we can cheaply have
-# shared_library / static_library / component versions of it.
+# shared_library / static_library versions of it. It compiles all the files
+# except those that define exported symbols.
 source_set("libdawn_native_sources") {
   deps = [
     ":dawn_common",
+    ":libdawn_native_headers",
     ":libdawn_native_utils_gen",
     "${dawn_spirv_tools_dir}:spvtools_val",
     "third_party:spirv_cross",
   ]
-  public_deps = [
-    ":libdawn_native_headers",
-  ]
-
-  # Put the export config public so that dependents use the same declspec.
-  public_configs = [ ":libdawn_native_export" ]
 
   configs += [ ":libdawn_native_internal" ]
   libs = []
 
   sources = get_target_outputs(":libdawn_native_utils_gen")
   sources += [
+    "src/dawn_native/Adapter.cpp",
+    "src/dawn_native/Adapter.h",
+    "src/dawn_native/BackendConnection.cpp",
+    "src/dawn_native/BackendConnection.h",
     "src/dawn_native/BindGroup.cpp",
     "src/dawn_native/BindGroup.h",
     "src/dawn_native/BindGroupLayout.cpp",
     "src/dawn_native/BindGroupLayout.h",
-    "src/dawn_native/BlendState.cpp",
-    "src/dawn_native/BlendState.h",
     "src/dawn_native/Buffer.cpp",
     "src/dawn_native/Buffer.h",
     "src/dawn_native/Builder.cpp",
@@ -373,18 +442,21 @@ source_set("libdawn_native_sources") {
     "src/dawn_native/ComputePassEncoder.h",
     "src/dawn_native/ComputePipeline.cpp",
     "src/dawn_native/ComputePipeline.h",
-    "src/dawn_native/DawnNative.cpp",
-    "src/dawn_native/DepthStencilState.cpp",
-    "src/dawn_native/DepthStencilState.h",
     "src/dawn_native/Device.cpp",
     "src/dawn_native/Device.h",
     "src/dawn_native/Error.cpp",
     "src/dawn_native/Error.h",
     "src/dawn_native/ErrorData.cpp",
     "src/dawn_native/ErrorData.h",
+    "src/dawn_native/Fence.cpp",
+    "src/dawn_native/Fence.h",
+    "src/dawn_native/FenceSignalTracker.cpp",
+    "src/dawn_native/FenceSignalTracker.h",
     "src/dawn_native/Forward.h",
     "src/dawn_native/InputState.cpp",
     "src/dawn_native/InputState.h",
+    "src/dawn_native/Instance.cpp",
+    "src/dawn_native/Instance.h",
     "src/dawn_native/ObjectBase.cpp",
     "src/dawn_native/ObjectBase.h",
     "src/dawn_native/PassResourceUsage.h",
@@ -425,8 +497,6 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/d3d12/BindGroupD3D12.h",
       "src/dawn_native/d3d12/BindGroupLayoutD3D12.cpp",
       "src/dawn_native/d3d12/BindGroupLayoutD3D12.h",
-      "src/dawn_native/d3d12/BlendStateD3D12.cpp",
-      "src/dawn_native/d3d12/BlendStateD3D12.h",
       "src/dawn_native/d3d12/BufferD3D12.cpp",
       "src/dawn_native/d3d12/BufferD3D12.h",
       "src/dawn_native/d3d12/CommandAllocatorManager.cpp",
@@ -435,8 +505,6 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/d3d12/CommandBufferD3D12.h",
       "src/dawn_native/d3d12/ComputePipelineD3D12.cpp",
       "src/dawn_native/d3d12/ComputePipelineD3D12.h",
-      "src/dawn_native/d3d12/DepthStencilStateD3D12.cpp",
-      "src/dawn_native/d3d12/DepthStencilStateD3D12.h",
       "src/dawn_native/d3d12/DescriptorHeapAllocator.cpp",
       "src/dawn_native/d3d12/DescriptorHeapAllocator.h",
       "src/dawn_native/d3d12/DeviceD3D12.cpp",
@@ -470,6 +538,8 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/d3d12/TextureCopySplitter.h",
       "src/dawn_native/d3d12/TextureD3D12.cpp",
       "src/dawn_native/d3d12/TextureD3D12.h",
+      "src/dawn_native/d3d12/UtilsD3D12.cpp",
+      "src/dawn_native/d3d12/UtilsD3D12.h",
       "src/dawn_native/d3d12/d3d12_platform.h",
     ]
   }
@@ -481,16 +551,12 @@ source_set("libdawn_native_sources") {
       "IOKit.framework",
     ]
     sources += [
-      "src/dawn_native/metal/BlendStateMTL.h",
-      "src/dawn_native/metal/BlendStateMTL.mm",
       "src/dawn_native/metal/BufferMTL.h",
       "src/dawn_native/metal/BufferMTL.mm",
       "src/dawn_native/metal/CommandBufferMTL.h",
       "src/dawn_native/metal/CommandBufferMTL.mm",
       "src/dawn_native/metal/ComputePipelineMTL.h",
       "src/dawn_native/metal/ComputePipelineMTL.mm",
-      "src/dawn_native/metal/DepthStencilStateMTL.h",
-      "src/dawn_native/metal/DepthStencilStateMTL.mm",
       "src/dawn_native/metal/DeviceMTL.h",
       "src/dawn_native/metal/DeviceMTL.mm",
       "src/dawn_native/metal/Forward.h",
@@ -512,29 +578,29 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/metal/SwapChainMTL.mm",
       "src/dawn_native/metal/TextureMTL.h",
       "src/dawn_native/metal/TextureMTL.mm",
+      "src/dawn_native/metal/UtilsMetal.h",
+      "src/dawn_native/metal/UtilsMetal.mm",
     ]
   }
 
   if (dawn_enable_null) {
     sources += [
-      "src/dawn_native/null/NullBackend.cpp",
-      "src/dawn_native/null/NullBackend.h",
+      "src/dawn_native/null/DeviceNull.cpp",
+      "src/dawn_native/null/DeviceNull.h",
     ]
   }
 
   if (dawn_enable_opengl) {
     deps += [ "third_party:glad" ]
     sources += [
-      "src/dawn_native/opengl/BlendStateGL.cpp",
-      "src/dawn_native/opengl/BlendStateGL.h",
+      "src/dawn_native/opengl/BackendGL.cpp",
+      "src/dawn_native/opengl/BackendGL.h",
       "src/dawn_native/opengl/BufferGL.cpp",
       "src/dawn_native/opengl/BufferGL.h",
       "src/dawn_native/opengl/CommandBufferGL.cpp",
       "src/dawn_native/opengl/CommandBufferGL.h",
       "src/dawn_native/opengl/ComputePipelineGL.cpp",
       "src/dawn_native/opengl/ComputePipelineGL.h",
-      "src/dawn_native/opengl/DepthStencilStateGL.cpp",
-      "src/dawn_native/opengl/DepthStencilStateGL.h",
       "src/dawn_native/opengl/DeviceGL.cpp",
       "src/dawn_native/opengl/DeviceGL.h",
       "src/dawn_native/opengl/Forward.h",
@@ -558,6 +624,8 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/opengl/SwapChainGL.h",
       "src/dawn_native/opengl/TextureGL.cpp",
       "src/dawn_native/opengl/TextureGL.h",
+      "src/dawn_native/opengl/UtilsGL.cpp",
+      "src/dawn_native/opengl/UtilsGL.h",
     ]
   }
 
@@ -568,8 +636,6 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/vulkan/BindGroupLayoutVk.h",
       "src/dawn_native/vulkan/BindGroupVk.cpp",
       "src/dawn_native/vulkan/BindGroupVk.h",
-      "src/dawn_native/vulkan/BlendStateVk.cpp",
-      "src/dawn_native/vulkan/BlendStateVk.h",
       "src/dawn_native/vulkan/BufferUploader.cpp",
       "src/dawn_native/vulkan/BufferUploader.h",
       "src/dawn_native/vulkan/BufferVk.cpp",
@@ -578,8 +644,6 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/vulkan/CommandBufferVk.h",
       "src/dawn_native/vulkan/ComputePipelineVk.cpp",
       "src/dawn_native/vulkan/ComputePipelineVk.h",
-      "src/dawn_native/vulkan/DepthStencilStateVk.cpp",
-      "src/dawn_native/vulkan/DepthStencilStateVk.h",
       "src/dawn_native/vulkan/DeviceVk.cpp",
       "src/dawn_native/vulkan/DeviceVk.h",
       "src/dawn_native/vulkan/FencedDeleter.cpp",
@@ -609,6 +673,10 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/vulkan/SwapChainVk.h",
       "src/dawn_native/vulkan/TextureVk.cpp",
       "src/dawn_native/vulkan/TextureVk.h",
+      "src/dawn_native/vulkan/UtilsVulkan.cpp",
+      "src/dawn_native/vulkan/UtilsVulkan.h",
+      "src/dawn_native/vulkan/VulkanError.cpp",
+      "src/dawn_native/vulkan/VulkanError.h",
       "src/dawn_native/vulkan/VulkanFunctions.cpp",
       "src/dawn_native/vulkan/VulkanFunctions.h",
       "src/dawn_native/vulkan/VulkanInfo.cpp",
@@ -617,29 +685,47 @@ source_set("libdawn_native_sources") {
   }
 }
 
-# The shared library for libdawn_native for use by samples, tests, etc.
-shared_library("libdawn_native") {
-  deps = [
-    ":libdawn_native_sources",
-  ]
+# The static and shared libraries for libdawn_native. Most of the files are
+# already compiled in libdawn_native_sources, but we still need to compile
+# files defining exported symbols.
+dawn_static_and_shared_library("libdawn_native") {
+  DEFINE_PREFIX = "DAWN_NATIVE"
 
   #Make headers publically visible
   public_deps = [
     ":libdawn_native_headers",
   ]
-  public_configs = [ ":libdawn_public" ]
 
-  # Tell dependents where to find this shared library
-  if (is_mac) {
-    ldflags = [
-      "-install_name",
-      "@rpath/${target_name}.dylib",
-    ]
+  deps = [
+    ":dawn_common",
+    ":libdawn_native_sources",
+  ]
+  sources = [
+    "src/dawn_native/DawnNative.cpp",
+  ]
+  configs = [ ":libdawn_native_internal" ]
+
+  if (dawn_enable_d3d12) {
+    sources += [ "src/dawn_native/d3d12/D3D12Backend.cpp" ]
+  }
+  if (dawn_enable_metal) {
+    sources += [ "src/dawn_native/metal/MetalBackend.mm" ]
+  }
+  if (dawn_enable_null) {
+    sources += [ "src/dawn_native/null/NullBackend.cpp" ]
+  }
+  if (dawn_enable_opengl) {
+    sources += [ "src/dawn_native/opengl/OpenGLBackend.cpp" ]
+    deps += [ "third_party:glad" ]
+  }
+  if (dawn_enable_vulkan) {
+    sources += [ "src/dawn_native/vulkan/VulkanBackend.cpp" ]
+    deps += [ "third_party:vulkan_headers" ]
   }
 }
 
 ###############################################################################
-# libdawn_wire.so
+# libdawn_wire
 ###############################################################################
 
 # Public libdawn_wire headers so they can be publically visible for
@@ -648,65 +734,60 @@ source_set("libdawn_wire_headers") {
   public_deps = [
     ":dawn_headers",
   ]
+  public_configs = [ ":dawn_public" ]
   sources = [
     "src/include/dawn_wire/Wire.h",
     "src/include/dawn_wire/dawn_wire_export.h",
   ]
 }
 
-config("libdawn_wire_export") {
-  defines = [ "DAWN_WIRE_IMPLEMENTATION" ]
-}
-
 dawn_generator("libdawn_wire_gen") {
   target = "dawn_wire"
   outputs = [
-    "dawn_wire/WireServer.cpp",
+    "dawn_wire/TypeTraits_autogen.h",
     "dawn_wire/WireCmd_autogen.h",
-    "dawn_wire/WireClient.cpp",
     "dawn_wire/WireCmd_autogen.cpp",
+    "dawn_wire/WireServer.cpp",
+    "dawn_wire/client/ApiObjects_autogen.h",
+    "dawn_wire/client/ApiProcs_autogen.cpp",
+    "dawn_wire/client/ApiProcs_autogen.h",
+    "dawn_wire/client/ClientHandlers_autogen.cpp",
+    "dawn_wire/client/ClientPrototypes_autogen.inl",
+    "dawn_wire/client/Device_autogen.h",
   ]
 }
 
-source_set("libdawn_wire_sources") {
+dawn_static_and_shared_library("libdawn_wire") {
+  DEFINE_PREFIX = "DAWN_WIRE"
+
   deps = [
     ":dawn_common",
     ":libdawn_wire_gen",
     ":libdawn_wire_headers",
   ]
 
-  configs += [ ":dawn_internal" ]
+  configs = [ ":dawn_internal" ]
   sources = get_target_outputs(":libdawn_wire_gen")
-  sources += [ "src/dawn_wire/WireCmd.h" ]
+  sources += [
+    "src/dawn_wire/DawnWire.cpp",
+    "src/dawn_wire/WireDeserializeAllocator.cpp",
+    "src/dawn_wire/WireDeserializeAllocator.h",
+    "src/dawn_wire/client/ApiObjects.h",
+    "src/dawn_wire/client/ApiProcs.cpp",
+    "src/dawn_wire/client/Buffer.cpp",
+    "src/dawn_wire/client/Buffer.h",
+    "src/dawn_wire/client/Client.cpp",
+    "src/dawn_wire/client/Client.h",
+    "src/dawn_wire/client/ClientHandlers.cpp",
+    "src/dawn_wire/client/Fence.cpp",
+    "src/dawn_wire/client/Fence.h",
+    "src/dawn_wire/client/ObjectAllocator.h",
+  ]
 
   # Make headers publically visible
   public_deps = [
     ":libdawn_wire_headers",
   ]
-  public_configs = [ ":libdawn_public" ]
-
-  # Put the export config public so that dependents use the same declspec.
-  public_configs += [ ":libdawn_wire_export" ]
-}
-
-shared_library("libdawn_wire") {
-  deps = [
-    ":libdawn_wire_sources",
-  ]
-
-  # Make headers publically visible
-  public_deps = [
-    ":libdawn_wire_headers",
-  ]
-  public_configs = [ ":libdawn_public" ]
-
-  # Tell dependents where to find this shared library
-  if (is_mac) {
-    ldflags = [
-      "-install_name",
-      "@rpath/${target_name}.dylib",
-    ]
-  }
 }
 
 ###############################################################################
@@ -719,6 +800,8 @@ static_library("dawn_utils") {
   sources = [
     "src/utils/BackendBinding.cpp",
     "src/utils/BackendBinding.h",
+    "src/utils/ComboRenderPipelineDescriptor.cpp",
+    "src/utils/ComboRenderPipelineDescriptor.h",
     "src/utils/DawnHelpers.cpp",
     "src/utils/DawnHelpers.h",
     "src/utils/SystemUtils.cpp",
@@ -787,6 +870,7 @@ test("dawn_unittests") {
     ":dawn_headers",
     ":dawn_utils",
     ":libdawn",
+    ":libdawn_native",
     ":libdawn_native_sources",
     ":libdawn_wire",
     ":mock_dawn_gen",
@@ -813,19 +897,19 @@ test("dawn_unittests") {
     "src/tests/unittests/ToBackendTests.cpp",
     "src/tests/unittests/WireTests.cpp",
     "src/tests/unittests/validation/BindGroupValidationTests.cpp",
-    "src/tests/unittests/validation/BlendStateValidationTests.cpp",
     "src/tests/unittests/validation/BufferValidationTests.cpp",
     "src/tests/unittests/validation/CommandBufferValidationTests.cpp",
     "src/tests/unittests/validation/ComputeValidationTests.cpp",
     "src/tests/unittests/validation/CopyCommandsValidationTests.cpp",
-    "src/tests/unittests/validation/DepthStencilStateValidationTests.cpp",
     "src/tests/unittests/validation/DynamicStateCommandValidationTests.cpp",
+    "src/tests/unittests/validation/FenceValidationTests.cpp",
     "src/tests/unittests/validation/InputStateValidationTests.cpp",
     "src/tests/unittests/validation/PushConstantsValidationTests.cpp",
     "src/tests/unittests/validation/QueueSubmitValidationTests.cpp",
     "src/tests/unittests/validation/RenderPassDescriptorValidationTests.cpp",
     "src/tests/unittests/validation/RenderPipelineValidationTests.cpp",
     "src/tests/unittests/validation/ShaderModuleValidationTests.cpp",
+    "src/tests/unittests/validation/TextureValidationTests.cpp",
     "src/tests/unittests/validation/TextureViewValidationTests.cpp",
     "src/tests/unittests/validation/ValidationTest.cpp",
     "src/tests/unittests/validation/ValidationTest.h",
@@ -868,7 +952,8 @@ test("dawn_end2end_tests") {
     "src/tests/end2end/ComputeCopyStorageBufferTests.cpp",
     "src/tests/end2end/CopyTests.cpp",
     "src/tests/end2end/DepthStencilStateTests.cpp",
-    "src/tests/end2end/DrawElementsTests.cpp",
+    "src/tests/end2end/DrawIndexedTests.cpp",
+    "src/tests/end2end/FenceTests.cpp",
     "src/tests/end2end/IndexFormatTests.cpp",
     "src/tests/end2end/InputStateTests.cpp",
     "src/tests/end2end/PrimitiveTopologyTests.cpp",
@@ -887,6 +972,21 @@ test("dawn_end2end_tests") {
   } else {
     sources += [ "src/tests/End2EndTestsMain.cpp" ]
   }
+}
+
+# Temporary groups to make a 5-way patch to fix crbug.com/913171
+group("dawn_unittests_temp_group") {
+  testonly = true
+  deps = [
+    ":dawn_unittests",
+  ]
+}
+
+group("dawn_end2end_tests_temp_group") {
+  testonly = true
+  deps = [
+    ":dawn_end2end_tests",
+  ]
 }
 
 ###############################################################################

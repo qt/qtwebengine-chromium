@@ -14,14 +14,15 @@
 
 #include "dawn_native/Device.h"
 
+#include "dawn_native/Adapter.h"
 #include "dawn_native/BindGroup.h"
 #include "dawn_native/BindGroupLayout.h"
-#include "dawn_native/BlendState.h"
 #include "dawn_native/Buffer.h"
 #include "dawn_native/CommandBuffer.h"
 #include "dawn_native/ComputePipeline.h"
-#include "dawn_native/DepthStencilState.h"
 #include "dawn_native/ErrorData.h"
+#include "dawn_native/Fence.h"
+#include "dawn_native/FenceSignalTracker.h"
 #include "dawn_native/InputState.h"
 #include "dawn_native/PipelineLayout.h"
 #include "dawn_native/Queue.h"
@@ -49,8 +50,9 @@ namespace dawn_native {
 
     // DeviceBase
 
-    DeviceBase::DeviceBase() {
+    DeviceBase::DeviceBase(AdapterBase* adapter) : mAdapter(adapter) {
         mCaches = std::make_unique<DeviceBase::Caches>();
+        mFenceSignalTracker = std::make_unique<FenceSignalTracker>(this);
     }
 
     DeviceBase::~DeviceBase() {
@@ -70,6 +72,10 @@ namespace dawn_native {
 
     DeviceBase* DeviceBase::GetDevice() {
         return this;
+    }
+
+    FenceSignalTracker* DeviceBase::GetFenceSignalTracker() const {
+        return mFenceSignalTracker.get();
     }
 
     ResultOrError<BindGroupLayoutBase*> DeviceBase::GetOrCreateBindGroupLayout(
@@ -92,10 +98,21 @@ namespace dawn_native {
         mCaches->bindGroupLayouts.erase(obj);
     }
 
+    const PCIInfo& DeviceBase::GetPCIInfo() const {
+        ASSERT(mAdapter != nullptr);
+        return mAdapter->GetPCIInfo();
+    }
+
     // Object creation API methods
 
-    BindGroupBuilder* DeviceBase::CreateBindGroupBuilder() {
-        return new BindGroupBuilder(this);
+    BindGroupBase* DeviceBase::CreateBindGroup(const BindGroupDescriptor* descriptor) {
+        BindGroupBase* result = nullptr;
+
+        if (ConsumedError(CreateBindGroupInternal(&result, descriptor))) {
+            return nullptr;
+        }
+
+        return result;
     }
     BindGroupLayoutBase* DeviceBase::CreateBindGroupLayout(
         const BindGroupLayoutDescriptor* descriptor) {
@@ -106,9 +123,6 @@ namespace dawn_native {
         }
 
         return result;
-    }
-    BlendStateBuilder* DeviceBase::CreateBlendStateBuilder() {
-        return new BlendStateBuilder(this);
     }
     BufferBase* DeviceBase::CreateBuffer(const BufferDescriptor* descriptor) {
         BufferBase* result = nullptr;
@@ -132,8 +146,14 @@ namespace dawn_native {
 
         return result;
     }
-    DepthStencilStateBuilder* DeviceBase::CreateDepthStencilStateBuilder() {
-        return new DepthStencilStateBuilder(this);
+    FenceBase* DeviceBase::CreateFence(const FenceDescriptor* descriptor) {
+        FenceBase* result = nullptr;
+
+        if (ConsumedError(CreateFenceInternal(&result, descriptor))) {
+            return nullptr;
+        }
+
+        return result;
     }
     InputStateBuilder* DeviceBase::CreateInputStateBuilder() {
         return new InputStateBuilder(this);
@@ -160,13 +180,20 @@ namespace dawn_native {
     RenderPassDescriptorBuilder* DeviceBase::CreateRenderPassDescriptorBuilder() {
         return new RenderPassDescriptorBuilder(this);
     }
-    RenderPipelineBuilder* DeviceBase::CreateRenderPipelineBuilder() {
-        return new RenderPipelineBuilder(this);
-    }
     SamplerBase* DeviceBase::CreateSampler(const SamplerDescriptor* descriptor) {
         SamplerBase* result = nullptr;
 
         if (ConsumedError(CreateSamplerInternal(&result, descriptor))) {
+            return nullptr;
+        }
+
+        return result;
+    }
+    RenderPipelineBase* DeviceBase::CreateRenderPipeline(
+        const RenderPipelineDescriptor* descriptor) {
+        RenderPipelineBase* result = nullptr;
+
+        if (ConsumedError(CreateRenderPipelineInternal(&result, descriptor))) {
             return nullptr;
         }
 
@@ -206,6 +233,7 @@ namespace dawn_native {
 
     void DeviceBase::Tick() {
         TickImpl();
+        mFenceSignalTracker->Tick(GetCompletedCommandSerial());
     }
 
     void DeviceBase::Reference() {
@@ -222,6 +250,13 @@ namespace dawn_native {
     }
 
     // Implementation details of object creation
+
+    MaybeError DeviceBase::CreateBindGroupInternal(BindGroupBase** result,
+                                                   const BindGroupDescriptor* descriptor) {
+        DAWN_TRY(ValidateBindGroupDescriptor(this, descriptor));
+        DAWN_TRY_ASSIGN(*result, CreateBindGroupImpl(descriptor));
+        return {};
+    }
 
     MaybeError DeviceBase::CreateBindGroupLayoutInternal(
         BindGroupLayoutBase** result,
@@ -246,6 +281,13 @@ namespace dawn_native {
         return {};
     }
 
+    MaybeError DeviceBase::CreateFenceInternal(FenceBase** result,
+                                               const FenceDescriptor* descriptor) {
+        DAWN_TRY(ValidateFenceDescriptor(this, descriptor));
+        *result = new FenceBase(this, descriptor);
+        return {};
+    }
+
     MaybeError DeviceBase::CreatePipelineLayoutInternal(
         PipelineLayoutBase** result,
         const PipelineLayoutDescriptor* descriptor) {
@@ -256,6 +298,14 @@ namespace dawn_native {
 
     MaybeError DeviceBase::CreateQueueInternal(QueueBase** result) {
         DAWN_TRY_ASSIGN(*result, CreateQueueImpl());
+        return {};
+    }
+
+    MaybeError DeviceBase::CreateRenderPipelineInternal(
+        RenderPipelineBase** result,
+        const RenderPipelineDescriptor* descriptor) {
+        DAWN_TRY(ValidateRenderPipelineDescriptor(this, descriptor));
+        DAWN_TRY_ASSIGN(*result, CreateRenderPipelineImpl(descriptor));
         return {};
     }
 

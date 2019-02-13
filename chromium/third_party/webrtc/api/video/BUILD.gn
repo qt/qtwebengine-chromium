@@ -32,6 +32,7 @@ rtc_source_set("video_frame") {
   ]
 
   deps = [
+    "..:array_view",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
     "../../rtc_base/system:rtc_export",
@@ -101,6 +102,14 @@ rtc_source_set("encoded_frame") {
   ]
 }
 
+rtc_source_set("video_codec_constants") {
+  visibility = [ "*" ]
+  sources = [
+    "video_codec_constants.h",
+  ]
+  deps = []
+}
+
 rtc_source_set("video_bitrate_allocation") {
   visibility = [ "*" ]
   sources = [
@@ -108,6 +117,7 @@ rtc_source_set("video_bitrate_allocation") {
     "video_bitrate_allocation.h",
   ]
   deps = [
+    ":video_codec_constants",
     "../../rtc_base:checks",
     "../../rtc_base:safe_conversions",
     "../../rtc_base:stringutils",
@@ -175,6 +185,7 @@ rtc_source_set("video_stream_encoder") {
   ]
 
   deps = [
+    ":video_bitrate_allocator",
     ":video_bitrate_allocator_factory",
     ":video_frame",
 
@@ -187,7 +198,6 @@ rtc_source_set("video_stream_encoder") {
 
 rtc_source_set("video_stream_encoder_create") {
   visibility = [ "*" ]
-  allow_poison = [ "software_video_codecs" ]  # TODO(bugs.webrtc.org/7925): Remove.
   sources = [
     "video_stream_encoder_create.cc",
     "video_stream_encoder_create.h",
@@ -199,6 +209,7 @@ rtc_source_set("video_stream_encoder_create") {
   }
 
   deps = [
+    ":video_frame",
     ":video_stream_encoder",
     "../../rtc_base:ptr_util",
     "../../video:video_stream_encoder_impl",
@@ -216,12 +227,15 @@ rtc_static_library("builtin_video_bitrate_allocator_factory") {
 
   deps = [
     ":video_bitrate_allocation",
+    ":video_bitrate_allocator",
     ":video_bitrate_allocator_factory",
+    "../../:webrtc_common",
     "../../media:rtc_media_base",
     "../../modules/video_coding:video_coding_utility",
     "../../modules/video_coding:webrtc_vp9_helpers",
     "../../rtc_base:ptr_util",
     "../../rtc_base/system:fallthrough",
+    "../video_codecs:video_codecs_api",
     "//third_party/abseil-cpp/absl/memory",
   ]
 }

@@ -22,6 +22,9 @@ namespace fxcrt {
 // An immutable string with caller-provided storage which must outlive the
 // string itself. These are not necessarily nul-terminated, so that substring
 // extraction (via the Mid(), Left(), and Right() methods) is copy-free.
+//
+// String view arguments should be passed by value, since they are small,
+// rather than const-ref, even if they are not modified.
 template <typename T>
 class StringViewTemplate {
  public:
@@ -107,6 +110,40 @@ class StringViewTemplate {
   bool operator!=(const CharType* ptr) const { return !(*this == ptr); }
   bool operator!=(const StringViewTemplate& other) const {
     return !(*this == other);
+  }
+
+  bool IsASCII() const {
+    for (auto c : *this) {
+      if (c <= 0 || c > 127)  // Questionable signedness of |c|.
+        return false;
+    }
+    return true;
+  }
+
+  bool EqualsASCII(const StringViewTemplate<char>& that) const {
+    size_t length = GetLength();
+    if (length != that.GetLength())
+      return false;
+
+    for (size_t i = 0; i < length; ++i) {
+      auto c = (*this)[i];
+      if (c <= 0 || c > 127 || c != that[i])  // Questionable signedness of |c|.
+        return false;
+    }
+    return true;
+  }
+
+  bool EqualsASCIINoCase(const StringViewTemplate<char>& that) const {
+    size_t length = GetLength();
+    if (length != that.GetLength())
+      return false;
+
+    for (size_t i = 0; i < length; ++i) {
+      auto c = (*this)[i];
+      if (c <= 0 || c > 127 || tolower(c) != tolower(that[i]))
+        return false;
+    }
+    return true;
   }
 
   uint32_t GetID() const {

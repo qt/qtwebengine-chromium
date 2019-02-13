@@ -1,5 +1,5 @@
 /*
- *  Copyright 2018 The WebRTC project authors. All Rights Reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -11,31 +11,9 @@
 #ifndef SDK_ANDROID_SRC_JNI_PC_SSLCERTIFICATEVERIFIERWRAPPER_H_
 #define SDK_ANDROID_SRC_JNI_PC_SSLCERTIFICATEVERIFIERWRAPPER_H_
 
-#include <jni.h>
-#include <vector>
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
 
-#include "rtc_base/sslcertificate.h"
-#include "sdk/android/src/jni/jni_helpers.h"
-
-namespace webrtc {
-namespace jni {
-
-// Wrapper for Java SSLCertifiacteVerifier class. Delegates method calls through
-// JNI and wraps the encoder inside SSLCertificateVerifierWrapper.
-class SSLCertificateVerifierWrapper : public rtc::SSLCertificateVerifier {
- public:
-  SSLCertificateVerifierWrapper(
-      JNIEnv* jni,
-      const JavaRef<jobject>& ssl_certificate_verifier);
-  ~SSLCertificateVerifierWrapper() override;
-
-  bool Verify(const rtc::SSLCertificate& certificate) override;
-
- private:
-  const ScopedJavaGlobalRef<jobject> ssl_certificate_verifier_;
-};
-
-}  // namespace jni
-}  // namespace webrtc
+#include "sdk/android/src/jni/pc/ssl_certificate_verifier_wrapper.h"
 
 #endif  // SDK_ANDROID_SRC_JNI_PC_SSLCERTIFICATEVERIFIERWRAPPER_H_

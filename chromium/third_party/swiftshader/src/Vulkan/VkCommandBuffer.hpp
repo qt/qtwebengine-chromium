@@ -17,6 +17,13 @@
 
 #include "VkConfig.h"
 #include "VkObject.hpp"
+#include <memory>
+#include <vector>
+
+namespace sw
+{
+	class Renderer;
+}
 
 namespace vk
 {
@@ -107,20 +114,34 @@ public:
 	void drawIndirect(VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
 	void drawIndexedIndirect(VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
 
-	void submit();
+	// TODO(sugoi): Move ExecutionState out of CommandBuffer (possibly into Device)
+	struct ExecutionState
+	{
+		sw::Renderer* renderer = nullptr;
+		VkRenderPass renderpass = VK_NULL_HANDLE;
+		VkPipeline pipelines[VK_PIPELINE_BIND_POINT_RANGE_SIZE] = {};
 
+		struct VertexInputBinding
+		{
+			VkBuffer buffer;
+			VkDeviceSize offset;
+		};
+		VertexInputBinding vertexInputBindings[MAX_VERTEX_INPUT_BINDINGS] = {};
+	};
+
+	void submit(CommandBuffer::ExecutionState& executionState);
+
+	class Command;
 private:
+	void resetState();
+	template<typename T, typename... Args> void addCommand(Args&&... args);
+
 	enum State { INITIAL, RECORDING, EXECUTABLE, PENDING, INVALID };
 	State state = INITIAL;
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	VkPipeline pipelines[VK_PIPELINE_BIND_POINT_RANGE_SIZE];
 
-	struct VertexInputBindings
-	{
-		VkBuffer buffer;
-		VkDeviceSize offset;
-	};
-	VertexInputBindings vertexInputBindings[MAX_VERTEX_INPUT_BINDINGS];
+	// FIXME (b/119409619): replace this vector by an allocator so we can control all memory allocations
+	std::vector<std::unique_ptr<Command>>* commands;
 };
 
 using DispatchableCommandBuffer = DispatchableObject<CommandBuffer, VkCommandBuffer>;

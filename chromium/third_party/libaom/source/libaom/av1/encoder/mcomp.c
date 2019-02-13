@@ -2209,9 +2209,9 @@ int av1_full_pixel_search(const AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
 
         // for the hashMap
         hash_table *ref_frame_hash =
-            intra
-                ? &cpi->common.cur_frame->hash_table
-                : av1_get_ref_frame_hash_map(cpi, x->e_mbd.mi[0]->ref_frame[0]);
+            intra ? &cpi->common.cur_frame->hash_table
+                  : av1_get_ref_frame_hash_map(&cpi->common,
+                                               x->e_mbd.mi[0]->ref_frame[0]);
 
         av1_get_block_hash_value(
             what, what_stride, block_width, &hash_value1, &hash_value2,
@@ -2301,8 +2301,9 @@ int av1_full_pixel_search(const AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
                                         mask, vfp, z, pre(y, y_stride, r, c), \
                                         y_stride, sp(c), sp(r), w, h, &sse,   \
                                         use_accurate_subpel_search);          \
-    if ((v = MVC(r, c) + thismse) < besterr) {                                \
-      besterr = v;                                                            \
+    v = mv_err_cost(&this_mv, ref_mv, mvjcost, mvcost, error_per_bit);        \
+    if ((v + thismse) < besterr) {                                            \
+      besterr = v + thismse;                                                  \
       br = r;                                                                 \
       bc = c;                                                                 \
       *distortion = thismse;                                                  \

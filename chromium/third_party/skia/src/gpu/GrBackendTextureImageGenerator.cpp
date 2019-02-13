@@ -43,8 +43,13 @@ GrBackendTextureImageGenerator::Make(sk_sp<GrTexture> texture, GrSurfaceOrigin o
     context->contextPriv().getResourceCache()->insertCrossContextGpuResource(texture.get());
 
     GrBackendTexture backendTexture = texture->getBackendTexture();
-    if (!context->contextPriv().caps()->validateBackendTexture(backendTexture, colorType,
-                                                               &backendTexture.fConfig)) {
+    GrBackendFormat backendFormat = backendTexture.getBackendFormat();
+    if (!backendFormat.isValid()) {
+        return nullptr;
+    }
+    backendTexture.fConfig =
+            context->contextPriv().caps()->getConfigFromBackendFormat(backendFormat, colorType);
+    if (backendTexture.fConfig == kUnknown_GrPixelConfig) {
         return nullptr;
     }
 
@@ -133,13 +138,12 @@ sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
     GrBackendTexture backendTexture = fBackendTexture;
     RefHelper* refHelper = fRefHelper;
 
-    GrBackendFormat format =
-            context->contextPriv().caps()->createFormatFromBackendTexture(backendTexture);
+    GrBackendFormat format = backendTexture.getBackendFormat();
     SkASSERT(format.isValid());
 
     sk_sp<GrTextureProxy> proxy = proxyProvider->createLazyProxy(
-            [refHelper, releaseProcHelper, semaphore, backendTexture]
-            (GrResourceProvider* resourceProvider) {
+            [refHelper, releaseProcHelper, semaphore,
+             backendTexture](GrResourceProvider* resourceProvider) {
                 if (!resourceProvider) {
                     return sk_sp<GrTexture>();
                 }
@@ -163,9 +167,8 @@ sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
                     // informs us that the context is done with it. This is unfortunate - we'll have
                     // two texture objects referencing the same GPU object. However, no client can
                     // ever see the original texture, so this should be safe.
-                    tex = resourceProvider->wrapBackendTexture(backendTexture,
-                                                               kBorrow_GrWrapOwnership,
-                                                               true);
+                    tex = resourceProvider->wrapBackendTexture(
+                            backendTexture, kBorrow_GrWrapOwnership, kRead_GrIOType, true);
                     if (!tex) {
                         return sk_sp<GrTexture>();
                     }
@@ -176,7 +179,8 @@ sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
 
                 return tex;
             },
-            format, desc, fSurfaceOrigin, mipMapped, SkBackingFit::kExact, SkBudgeted::kNo);
+            format, desc, fSurfaceOrigin, mipMapped, GrInternalSurfaceFlags::kReadOnly,
+            SkBackingFit::kExact, SkBudgeted::kNo);
 
     if (!proxy) {
         return nullptr;

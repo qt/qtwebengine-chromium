@@ -440,7 +440,7 @@ void get_layer_resolution(const int width_org, const int height_org,
   *height_out = h;
 }
 
-void reset_fb_idx_unused(VP9_COMP *const cpi) {
+static void reset_fb_idx_unused(VP9_COMP *const cpi) {
   // If a reference frame is not referenced or refreshed, then set the
   // fb_idx for that reference to the first one used/referenced.
   // This is to avoid setting fb_idx for a reference to a slot that is not
@@ -884,7 +884,10 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
       svc->non_reference_frame = 0;
   }
 
-  if (svc->spatial_layer_id == 0) svc->high_source_sad_superframe = 0;
+  if (svc->spatial_layer_id == 0) {
+    svc->high_source_sad_superframe = 0;
+    svc->high_num_blocks_with_motion = 0;
+  }
 
   if (svc->temporal_layering_mode != VP9E_TEMPORAL_LAYERING_MODE_BYPASS &&
       svc->last_layer_dropped[svc->spatial_layer_id] &&
@@ -1106,6 +1109,16 @@ void vp9_svc_assert_constraints_pattern(VP9_COMP *const cpi) {
   }
 }
 
+#if CONFIG_VP9_TEMPORAL_DENOISING
+int vp9_denoise_svc_non_key(VP9_COMP *const cpi) {
+  int layer =
+      LAYER_IDS_TO_IDX(cpi->svc.spatial_layer_id, cpi->svc.temporal_layer_id,
+                       cpi->svc.number_temporal_layers);
+  LAYER_CONTEXT *lc = &cpi->svc.layer_context[layer];
+  return denoise_svc(cpi) && !lc->is_key_frame;
+}
+#endif
+
 void vp9_svc_check_spatial_layer_sync(VP9_COMP *const cpi) {
   SVC *const svc = &cpi->svc;
   // Only for superframes whose base is not key, as those are
@@ -1213,4 +1226,26 @@ void vp9_svc_adjust_frame_rate(VP9_COMP *const cpi) {
   int64_t this_duration =
       cpi->svc.timebase_fac * cpi->svc.duration[cpi->svc.spatial_layer_id];
   vp9_new_framerate(cpi, 10000000.0 / this_duration);
+}
+
+void vp9_svc_adjust_avg_frame_qindex(VP9_COMP *const cpi) {
+  VP9_COMMON *const cm = &cpi->common;
+  SVC *const svc = &cpi->svc;
+  RATE_CONTROL *const rc = &cpi->rc;
+  // On key frames in CBR mode: reset the avg_frame_index for base layer
+  // (to level closer to worst_quality) if the overshoot is significant.
+  // Reset it for all temporal layers on base spatial layer.
+  if (cm->frame_type == KEY_FRAME && cpi->oxcf.rc_mode == VPX_CBR &&
+      rc->projected_frame_size > 3 * rc->avg_frame_bandwidth) {
+    int tl;
+    rc->avg_frame_qindex[INTER_FRAME] =
+        VPXMAX(rc->avg_frame_qindex[INTER_FRAME],
+               (cm->base_qindex + rc->worst_quality) >> 1);
+    for (tl = 0; tl < svc->number_temporal_layers; ++tl) {
+      const int layer = LAYER_IDS_TO_IDX(0, tl, svc->number_temporal_layers);
+      LAYER_CONTEXT *lc = &svc->layer_context[layer];
+      RATE_CONTROL *lrc = &lc->rc;
+      lrc->avg_frame_qindex[INTER_FRAME] = rc->avg_frame_qindex[INTER_FRAME];
+    }
+  }
 }

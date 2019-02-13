@@ -13,7 +13,7 @@
 
 #include "absl/memory/memory.h"
 #include "common_video/h264/h264_common.h"
-#include "media/base/mediaconstants.h"
+#include "media/base/media_constants.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/rtp_rtcp/source/rtp_generic_frame_descriptor.h"
 #include "modules/rtp_rtcp/source/rtp_generic_frame_descriptor_extension.h"
@@ -23,7 +23,7 @@
 #include "modules/video_coding/include/video_coding_defines.h"
 #include "modules/video_coding/packet.h"
 #include "modules/video_coding/rtp_frame_reference_finder.h"
-#include "rtc_base/bytebuffer.h"
+#include "rtc_base/byte_buffer.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/field_trial.h"
@@ -80,9 +80,8 @@ class MockOnCompleteFrameCallback
       DoOnCompleteFrameFailLength(frame.get());
       return;
     }
-    std::vector<uint8_t> actual_data(frame->size());
-    frame->GetBitstream(actual_data.data());
-    if (memcmp(buffer_.Data(), actual_data.data(), buffer_.Length()) != 0) {
+    if (frame->size() != buffer_.Length() ||
+        memcmp(buffer_.Data(), frame->data(), buffer_.Length()) != 0) {
       DoOnCompleteFrameFailBitstream(frame.get());
       return;
     }
@@ -518,8 +517,6 @@ TEST_F(RtpVideoStreamReceiverTest, ParseGenericDescriptorOnePacket) {
   RtpGenericFrameDescriptor generic_descriptor;
   generic_descriptor.SetFirstPacketInSubFrame(true);
   generic_descriptor.SetLastPacketInSubFrame(true);
-  generic_descriptor.SetFirstSubFrameInFrame(true);
-  generic_descriptor.SetLastSubFrameInFrame(true);
   generic_descriptor.SetFrameId(100);
   generic_descriptor.SetSpatialLayersBitmask(1 << kSpatialIndex);
   generic_descriptor.AddFrameDependencyDiff(90);
@@ -565,8 +562,6 @@ TEST_F(RtpVideoStreamReceiverTest, ParseGenericDescriptorTwoPackets) {
   RtpGenericFrameDescriptor first_packet_descriptor;
   first_packet_descriptor.SetFirstPacketInSubFrame(true);
   first_packet_descriptor.SetLastPacketInSubFrame(false);
-  first_packet_descriptor.SetFirstSubFrameInFrame(true);
-  first_packet_descriptor.SetLastSubFrameInFrame(true);
   first_packet_descriptor.SetFrameId(100);
   first_packet_descriptor.SetSpatialLayersBitmask(1 << kSpatialIndex);
   first_packet_descriptor.SetResolution(480, 360);
@@ -587,8 +582,6 @@ TEST_F(RtpVideoStreamReceiverTest, ParseGenericDescriptorTwoPackets) {
   RtpGenericFrameDescriptor second_packet_descriptor;
   second_packet_descriptor.SetFirstPacketInSubFrame(false);
   second_packet_descriptor.SetLastPacketInSubFrame(true);
-  second_packet_descriptor.SetFirstSubFrameInFrame(true);
-  second_packet_descriptor.SetLastSubFrameInFrame(true);
   EXPECT_TRUE(second_packet.SetExtension<RtpGenericFrameDescriptorExtension>(
       second_packet_descriptor));
 

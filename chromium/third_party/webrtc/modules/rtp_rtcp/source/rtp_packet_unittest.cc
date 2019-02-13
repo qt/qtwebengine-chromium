@@ -10,6 +10,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 
+#include "common_video/test/utilities.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "rtc_base/random.h"
@@ -186,22 +187,21 @@ constexpr uint8_t kPacketWithLegacyTimingExtension[] = {
     0x00, 0x00, 0x00, 0x00};
 // clang-format on
 
-HdrMetadata CreateTestHdrMetadata() {
-  // Random but reasonable HDR metadata.
-  HdrMetadata hdr_metadata;
-  hdr_metadata.mastering_metadata.luminance_max = 2000.0;
-  hdr_metadata.mastering_metadata.luminance_min = 2.0001;
-  hdr_metadata.mastering_metadata.primary_r.x = 0.3003;
-  hdr_metadata.mastering_metadata.primary_r.y = 0.4004;
-  hdr_metadata.mastering_metadata.primary_g.x = 0.3201;
-  hdr_metadata.mastering_metadata.primary_g.y = 0.4604;
-  hdr_metadata.mastering_metadata.primary_b.x = 0.3409;
-  hdr_metadata.mastering_metadata.primary_b.y = 0.4907;
-  hdr_metadata.mastering_metadata.white_point.x = 0.4103;
-  hdr_metadata.mastering_metadata.white_point.y = 0.4806;
-  hdr_metadata.max_content_light_level = 2345;
-  hdr_metadata.max_frame_average_light_level = 1789;
-  return hdr_metadata;
+void TestCreateAndParseColorSpaceExtension(bool with_hdr_metadata) {
+  // Create packet with extension.
+  RtpPacket::ExtensionManager extensions(/*extmap-allow-mixed=*/true);
+  extensions.Register<ColorSpaceExtension>(1);
+  RtpPacket packet(&extensions);
+  const ColorSpace kColorSpace = CreateTestColorSpace(with_hdr_metadata);
+  EXPECT_TRUE(packet.SetExtension<ColorSpaceExtension>(kColorSpace));
+  packet.SetPayloadSize(42);
+
+  // Read packet with the extension.
+  RtpPacketReceived parsed(&extensions);
+  EXPECT_TRUE(parsed.Parse(packet.Buffer()));
+  ColorSpace parsed_color_space;
+  EXPECT_TRUE(parsed.GetExtension<ColorSpaceExtension>(&parsed_color_space));
+  EXPECT_EQ(kColorSpace, parsed_color_space);
 }
 }  // namespace
 
@@ -819,21 +819,12 @@ TEST(RtpPacketTest, ParseLegacyTimingFrameExtension) {
   EXPECT_EQ(receivied_timing.flags, 0);
 }
 
-TEST(RtpPacketTest, CreateAndParseHdrMetadataExtension) {
-  // Create packet with extension.
-  RtpPacket::ExtensionManager extensions(/*extmap-allow-mixed=*/true);
-  extensions.Register<HdrMetadataExtension>(1);
-  RtpPacket packet(&extensions);
-  const HdrMetadata kHdrMetadata = CreateTestHdrMetadata();
-  EXPECT_TRUE(packet.SetExtension<HdrMetadataExtension>(kHdrMetadata));
-  packet.SetPayloadSize(42);
+TEST(RtpPacketTest, CreateAndParseColorSpaceExtension) {
+  TestCreateAndParseColorSpaceExtension(/*with_hdr_metadata=*/true);
+}
 
-  // Read packet with the extension.
-  RtpPacketReceived parsed(&extensions);
-  EXPECT_TRUE(parsed.Parse(packet.Buffer()));
-  HdrMetadata parsed_hdr_metadata;
-  EXPECT_TRUE(parsed.GetExtension<HdrMetadataExtension>(&parsed_hdr_metadata));
-  EXPECT_EQ(kHdrMetadata, parsed_hdr_metadata);
+TEST(RtpPacketTest, CreateAndParseColorSpaceExtensionWithoutHdrMetadata) {
+  TestCreateAndParseColorSpaceExtension(/*with_hdr_metadata=*/false);
 }
 
 }  // namespace webrtc

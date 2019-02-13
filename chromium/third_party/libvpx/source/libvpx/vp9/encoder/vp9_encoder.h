@@ -119,9 +119,10 @@ typedef enum {
   COMPLEXITY_AQ = 2,
   CYCLIC_REFRESH_AQ = 3,
   EQUATOR360_AQ = 4,
+  PSNR_AQ = 5,
   // AQ based on lookahead temporal
   // variance (only valid for altref frames)
-  LOOKAHEAD_AQ = 5,
+  LOOKAHEAD_AQ = 6,
   AQ_MODE_COUNT  // This should always be the last member of the enum
 } AQ_MODE;
 
@@ -297,10 +298,13 @@ typedef struct TplDepStats {
   int64_t inter_cost_arr[3];
   int64_t recon_error_arr[3];
   int64_t sse_arr[3];
-  int_mv mv_arr[3];
   double feature_score;
 #endif
 } TplDepStats;
+
+#if CONFIG_NON_GREEDY_MV
+#define SQUARE_BLOCK_SIZES 4
+#endif
 
 typedef struct TplDepFrame {
   uint8_t is_valid;
@@ -315,8 +319,51 @@ typedef struct TplDepFrame {
   double lambda;
   double mv_dist_sum[3];
   double mv_cost_sum[3];
+  int_mv *pyramid_mv_arr[3][SQUARE_BLOCK_SIZES];
 #endif
 } TplDepFrame;
+
+#if CONFIG_NON_GREEDY_MV
+static INLINE int get_square_block_idx(BLOCK_SIZE bsize) {
+  if (bsize == BLOCK_4X4) {
+    return 0;
+  }
+  if (bsize == BLOCK_8X8) {
+    return 1;
+  }
+  if (bsize == BLOCK_16X16) {
+    return 2;
+  }
+  if (bsize == BLOCK_32X32) {
+    return 3;
+  }
+  assert(0 && "ERROR: non-square block size");
+  return -1;
+}
+
+static INLINE BLOCK_SIZE square_block_idx_to_bsize(int square_block_idx) {
+  if (square_block_idx == 0) {
+    return BLOCK_4X4;
+  }
+  if (square_block_idx == 1) {
+    return BLOCK_8X8;
+  }
+  if (square_block_idx == 2) {
+    return BLOCK_16X16;
+  }
+  if (square_block_idx == 3) {
+    return BLOCK_32X32;
+  }
+  assert(0 && "ERROR: invalid square_block_idx");
+  return BLOCK_INVALID;
+}
+
+static INLINE int_mv *get_pyramid_mv(const TplDepFrame *tpl_frame, int rf_idx,
+                                     BLOCK_SIZE bsize, int mi_row, int mi_col) {
+  return &tpl_frame->pyramid_mv_arr[rf_idx][get_square_block_idx(bsize)]
+                                   [mi_row * tpl_frame->stride + mi_col];
+}
+#endif
 
 #define TPL_DEP_COST_SCALE_LOG2 4
 
@@ -539,6 +586,7 @@ typedef struct VP9_COMP {
   YV12_BUFFER_CONFIG *tpl_recon_frames[REF_FRAMES];
   EncFrameBuf enc_frame_buf[REF_FRAMES];
 #if CONFIG_NON_GREEDY_MV
+  int feature_score_loc_alloc;
   FEATURE_SCORE_LOC *feature_score_loc_arr;
   FEATURE_SCORE_LOC **feature_score_loc_sort;
   FEATURE_SCORE_LOC **feature_score_loc_heap;

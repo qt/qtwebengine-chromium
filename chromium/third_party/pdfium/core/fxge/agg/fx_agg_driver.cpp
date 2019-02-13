@@ -151,11 +151,11 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
   if (!pBitmap)
     return;
 
-  pBitmap->GetOverlapRect(dest_left, dest_top, width, height,
-                          pSrcBitmap->GetWidth(), pSrcBitmap->GetHeight(),
-                          src_left, src_top, nullptr);
-  if (width == 0 || height == 0)
+  if (!pBitmap->GetOverlapRect(dest_left, dest_top, width, height,
+                               pSrcBitmap->GetWidth(), pSrcBitmap->GetHeight(),
+                               src_left, src_top, nullptr)) {
     return;
+  }
 
   int Bpp = pBitmap->GetBPP() / 8;
   FXDIB_Format dest_format = pBitmap->GetFormat();
@@ -1361,8 +1361,7 @@ bool CFX_AggDeviceDriver::DrawPath(const CFX_PathData* pPathData,
         pObject2Device->a / matrix1.a, pObject2Device->b / matrix1.a,
         pObject2Device->c / matrix1.d, pObject2Device->d / matrix1.d, 0, 0);
 
-    matrix1 = *pObject2Device;
-    matrix1.Concat(matrix2.GetInverse());
+    matrix1 = *pObject2Device * matrix2.GetInverse();
   }
 
   CAgg_PathData path_data;

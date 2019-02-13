@@ -41,7 +41,7 @@ public:
     sk_sp<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
                                             GrResourceProvider::SemaphoreWrapType wrapType,
                                             GrWrapOwnership ownership) override { return nullptr; }
-    void insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override {}
+    void insertSemaphore(sk_sp<GrSemaphore> semaphore) override {}
     void waitSemaphore(sk_sp<GrSemaphore> semaphore) override {}
     sk_sp<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override { return nullptr; }
 
@@ -59,7 +59,7 @@ private:
     sk_sp<GrTexture> onCreateTexture(const GrSurfaceDesc&, SkBudgeted, const GrMipLevel[],
                                      int mipLevelCount) override;
 
-    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership,
+    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership, GrIOType,
                                           bool purgeImmediately) override;
 
     sk_sp<GrTexture> onWrapRenderableBackendTexture(const GrBackendTexture&,

@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
@@ -39,7 +40,6 @@ static const int kSendSideSeqNumSetMaxSize = 5500;
 static const size_t kPathMTU = 1500;
 
 std::vector<std::unique_ptr<RtpRtcp>> CreateRtpRtcpModules(
-    const std::vector<uint32_t>& ssrcs,
     const RtpConfig& rtp_config,
     int rtcp_report_interval_ms,
     Transport* send_transport,
@@ -59,7 +59,7 @@ std::vector<std::unique_ptr<RtpRtcp>> CreateRtpRtcpModules(
     RtpKeepAliveConfig keepalive_config,
     FrameEncryptorInterface* frame_encryptor,
     const CryptoOptions& crypto_options) {
-  RTC_DCHECK_GT(ssrcs.size(), 0);
+  RTC_DCHECK_GT(rtp_config.ssrcs.size(), 0);
 
   RtpRtcp::Configuration configuration;
   configuration.audio = false;
@@ -91,7 +91,7 @@ std::vector<std::unique_ptr<RtpRtcp>> CreateRtpRtcpModules(
   std::vector<std::unique_ptr<RtpRtcp>> modules;
   const std::vector<uint32_t>& flexfec_protected_ssrcs =
       rtp_config.flexfec.protected_media_ssrcs;
-  for (uint32_t ssrc : ssrcs) {
+  for (uint32_t ssrc : rtp_config.ssrcs) {
     bool enable_flexfec = flexfec_sender != nullptr &&
                           std::find(flexfec_protected_ssrcs.begin(),
                                     flexfec_protected_ssrcs.end(),
@@ -179,7 +179,6 @@ int CalculatePacketRate(uint32_t bitrate_bps, size_t packet_size_bytes) {
 }  // namespace
 
 RtpVideoSender::RtpVideoSender(
-    const std::vector<uint32_t>& ssrcs,
     std::map<uint32_t, RtpState> suspended_ssrcs,
     const std::map<uint32_t, RtpPayloadState>& states,
     const RtpConfig& rtp_config,
@@ -194,13 +193,14 @@ RtpVideoSender::RtpVideoSender(
     const CryptoOptions& crypto_options)
     : send_side_bwe_with_overhead_(
           webrtc::field_trial::IsEnabled("WebRTC-SendSideBwe-WithOverhead")),
+      account_for_packetization_overhead_(!webrtc::field_trial::IsDisabled(
+          "WebRTC-SubtractPacketizationOverhead")),
       active_(false),
       module_process_thread_(nullptr),
       suspended_ssrcs_(std::move(suspended_ssrcs)),
       flexfec_sender_(MaybeCreateFlexfecSender(rtp_config, suspended_ssrcs_)),
       fec_controller_(std::move(fec_controller)),
-      rtp_modules_(CreateRtpRtcpModules(ssrcs,
-                                        rtp_config,
+      rtp_modules_(CreateRtpRtcpModules(rtp_config,
                                         rtcp_report_interval_ms,
                                         send_transport,
                                         observers.intra_frame_callback,
@@ -224,10 +224,10 @@ RtpVideoSender::RtpVideoSender(
       transport_overhead_bytes_per_packet_(0),
       overhead_bytes_per_packet_(0),
       encoder_target_rate_bps_(0) {
-  RTC_DCHECK_EQ(ssrcs.size(), rtp_modules_.size());
+  RTC_DCHECK_EQ(rtp_config.ssrcs.size(), rtp_modules_.size());
   module_process_thread_checker_.DetachFromThread();
   // SSRCs are assumed to be sorted in the same order as |rtp_modules|.
-  for (uint32_t ssrc : ssrcs) {
+  for (uint32_t ssrc : rtp_config.ssrcs) {
     // Restore state if it previously existed.
     const RtpPayloadState* state = nullptr;
     auto it = states.find(ssrc);
@@ -263,6 +263,7 @@ RtpVideoSender::RtpVideoSender(
 
   ConfigureProtection(rtp_config);
   ConfigureSsrcs(rtp_config);
+  ConfigureRids(rtp_config);
 
   if (!rtp_config.mid.empty()) {
     for (auto& rtp_rtcp : rtp_modules_) {
@@ -348,7 +349,7 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_specific_info,
     const RTPFragmentationHeader* fragmentation) {
-  fec_controller_->UpdateWithEncodedData(encoded_image._length,
+  fec_controller_->UpdateWithEncodedData(encoded_image.size(),
                                          encoded_image._frameType);
   rtc::CritScope lock(&crit_);
   RTC_DCHECK(!rtp_modules_.empty());
@@ -376,7 +377,7 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
   bool send_result = rtp_modules_[stream_index]->SendOutgoingData(
       encoded_image._frameType, rtp_config_.payload_type,
       encoded_image.Timestamp(), encoded_image.capture_time_ms_,
-      encoded_image._buffer, encoded_image._length, fragmentation,
+      encoded_image.data(), encoded_image.size(), fragmentation,
       &rtp_video_header, &frame_id);
   if (!send_result)
     return Result(Result::ERROR_SEND_FAILED);
@@ -482,6 +483,16 @@ bool RtpVideoSender::NackEnabled() const {
   return nack_enabled;
 }
 
+uint32_t RtpVideoSender::GetPacketizationOverheadRate() const {
+  uint32_t packetization_overhead_bps = 0;
+  for (auto& rtp_rtcp : rtp_modules_) {
+    if (rtp_rtcp->SendingMedia()) {
+      packetization_overhead_bps += rtp_rtcp->PacketizationOverheadBps();
+    }
+  }
+  return packetization_overhead_bps;
+}
+
 void RtpVideoSender::DeliverRtcp(const uint8_t* packet, size_t length) {
   // Runs on a network thread.
   for (auto& rtp_rtcp : rtp_modules_)
@@ -529,6 +540,18 @@ void RtpVideoSender::ConfigureSsrcs(const RtpConfig& rtp_config) {
       rtp_rtcp->SetRtxSendPayloadType(rtp_config.ulpfec.red_rtx_payload_type,
                                       rtp_config.ulpfec.red_payload_type);
     }
+  }
+}
+
+void RtpVideoSender::ConfigureRids(const RtpConfig& rtp_config) {
+  RTC_DCHECK(rtp_config.rids.empty() ||
+             rtp_config.rids.size() == rtp_config.ssrcs.size());
+  RTC_DCHECK(rtp_config.rids.empty() ||
+             rtp_config.rids.size() == rtp_modules_.size());
+  for (size_t i = 0; i < rtp_config.rids.size(); ++i) {
+    const std::string& rid = rtp_config.rids[i];
+    RtpRtcp* const rtp_rtcp = rtp_modules_[i].get();
+    rtp_rtcp->SetRid(rid);
   }
 }
 
@@ -612,6 +635,18 @@ void RtpVideoSender::OnBitrateUpdated(uint32_t bitrate_bps,
   // protection overhead.
   encoder_target_rate_bps_ = fec_controller_->UpdateFecRates(
       payload_bitrate_bps, framerate, fraction_loss, loss_mask_vector_, rtt);
+
+  uint32_t packetization_rate_bps = 0;
+  if (account_for_packetization_overhead_) {
+    // Subtract packetization overhead from the encoder target. If target rate
+    // is really low, cap the overhead at 50%. This also avoids the case where
+    // |encoder_target_rate_bps_| is 0 due to encoder pause event while the
+    // packetization rate is positive since packets are still flowing.
+    packetization_rate_bps =
+        std::min(GetPacketizationOverheadRate(), encoder_target_rate_bps_ / 2);
+    encoder_target_rate_bps_ -= packetization_rate_bps;
+  }
+
   loss_mask_vector_.clear();
 
   uint32_t encoder_overhead_rate_bps =
@@ -628,8 +663,11 @@ void RtpVideoSender::OnBitrateUpdated(uint32_t bitrate_bps,
 
   // When the field trial "WebRTC-SendSideBwe-WithOverhead" is enabled
   // protection_bitrate includes overhead.
-  protection_bitrate_bps_ =
-      bitrate_bps - (encoder_target_rate_bps_ + encoder_overhead_rate_bps);
+  const uint32_t media_rate = encoder_target_rate_bps_ +
+                              encoder_overhead_rate_bps +
+                              packetization_rate_bps;
+  RTC_DCHECK_GE(bitrate_bps, media_rate);
+  protection_bitrate_bps_ = bitrate_bps - media_rate;
 }
 
 uint32_t RtpVideoSender::GetPayloadBitrateBps() const {

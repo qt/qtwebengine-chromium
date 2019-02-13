@@ -41,7 +41,6 @@ rtc_source_set("rtc_event_log_api") {
     "../api:libjingle_logging_api",
     "../rtc_base:ptr_util",
     "../rtc_base:rtc_base_approved",
-    "../rtc_base:rtc_task_queue",
     "//third_party/abseil-cpp/absl/memory",
   ]
 }
@@ -158,7 +157,6 @@ rtc_source_set("rtc_event_video") {
 # TODO(eladalon): Break down into (1) encoder and (2) decoder; we don't need
 # the decoder code in the WebRTC library, only in unit tests and tools.
 rtc_static_library("rtc_event_log_impl_encoder") {
-  visibility = [ "*" ]
   sources = [
     "rtc_event_log/encoder/blob_encoding.cc",
     "rtc_event_log/encoder/blob_encoding.h",
@@ -166,13 +164,16 @@ rtc_static_library("rtc_event_log_impl_encoder") {
     "rtc_event_log/encoder/delta_encoding.h",
     "rtc_event_log/encoder/rtc_event_log_encoder_common.cc",
     "rtc_event_log/encoder/rtc_event_log_encoder_common.h",
-    "rtc_event_log/encoder/varint.cc",
+    "rtc_event_log/encoder/var_int.cc",
+    "rtc_event_log/encoder/var_int.h",
     "rtc_event_log/encoder/varint.h",
   ]
 
   defines = []
 
   deps = [
+    "../api:libjingle_peerconnection_api",
+    "../api/transport:network_control",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
     "//third_party/abseil-cpp/absl/memory",
@@ -223,6 +224,8 @@ rtc_source_set("rtc_event_log_impl_output") {
 }
 
 rtc_static_library("rtc_event_log_impl_base") {
+  # TODO(terelius): Should this really be visible? Currently used to instantiate
+  # the default event log factory.
   visibility = [ "*" ]
   sources = [
     "rtc_event_log/rtc_event_log_factory.cc",
@@ -242,6 +245,7 @@ rtc_static_library("rtc_event_log_impl_base") {
     "../rtc_base:safe_minmax",
     "../rtc_base:sequenced_task_checker",
     "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 
   if (rtc_enable_protobuf) {
@@ -287,8 +291,11 @@ if (rtc_enable_protobuf) {
   rtc_static_library("rtc_event_log_parser") {
     visibility = [ "*" ]
     sources = [
-      "rtc_event_log/rtc_event_log_parser_new.cc",
-      "rtc_event_log/rtc_event_log_parser_new.h",
+      "rtc_event_log/logged_events.cc",
+      "rtc_event_log/logged_events.h",
+      "rtc_event_log/rtc_event_log_parser.cc",
+      "rtc_event_log/rtc_event_log_parser.h",
+      "rtc_event_log/rtc_event_processor.cc",
       "rtc_event_log/rtc_event_processor.h",
     ]
 
@@ -301,6 +308,9 @@ if (rtc_enable_protobuf) {
       ":rtc_event_log_proto",
       ":rtc_stream_config",
       "../api:libjingle_peerconnection_api",
+      "../api/units:data_rate",
+      "../api/units:time_delta",
+      "../api/units:timestamp",
       "../call:video_stream_api",
       "../modules/audio_coding:audio_network_adaptor",
       "../modules/congestion_controller/rtp:transport_feedback",
@@ -308,8 +318,10 @@ if (rtc_enable_protobuf) {
       "../modules/rtp_rtcp",
       "../modules/rtp_rtcp:rtp_rtcp_format",
       "../rtc_base:checks",
+      "../rtc_base:deprecation",
       "../rtc_base:protobuf_utils",
       "../rtc_base:rtc_base_approved",
+      "../rtc_base:rtc_numerics",
       "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
@@ -346,6 +358,7 @@ if (rtc_enable_protobuf) {
         ":rtc_event_rtp_rtcp",
         ":rtc_event_video",
         ":rtc_stream_config",
+        "../api:array_view",
         "../api:libjingle_peerconnection_api",
         "../call",
         "../call:call_interfaces",
@@ -355,6 +368,7 @@ if (rtc_enable_protobuf) {
         "../rtc_base:checks",
         "../rtc_base:rtc_base_approved",
         "../rtc_base:rtc_base_tests_utils",
+        "../system_wrappers:system_wrappers",
         "../test:fileutils",
         "../test:test_support",
         "//testing/gtest",
@@ -375,13 +389,15 @@ if (rtc_enable_protobuf) {
       deps = [
         ":rtc_event_log_api",
         ":rtc_event_log_parser",
+        "../api:array_view",
+        "../api:libjingle_peerconnection_api",
         "../modules/rtp_rtcp",
         "../modules/rtp_rtcp:rtp_rtcp_format",
         "../rtc_base:checks",
         "../rtc_base:protobuf_utils",
         "../rtc_base:rtc_base_approved",
         "../test:rtp_test_utils",
-        "//third_party/abseil-cpp/absl/memory:memory",
+        "//third_party/abseil-cpp/absl/memory",
         "//third_party/abseil-cpp/absl/types:optional",
       ]
       if (!build_with_chromium && is_clang) {
@@ -394,17 +410,23 @@ if (rtc_enable_protobuf) {
 
 rtc_source_set("ice_log") {
   sources = [
+    "rtc_event_log/events/rtc_event_dtls_transport_state.cc",
+    "rtc_event_log/events/rtc_event_dtls_transport_state.h",
+    "rtc_event_log/events/rtc_event_dtls_writable_state.cc",
+    "rtc_event_log/events/rtc_event_dtls_writable_state.h",
     "rtc_event_log/events/rtc_event_ice_candidate_pair.cc",
     "rtc_event_log/events/rtc_event_ice_candidate_pair.h",
     "rtc_event_log/events/rtc_event_ice_candidate_pair_config.cc",
     "rtc_event_log/events/rtc_event_ice_candidate_pair_config.h",
-    "rtc_event_log/icelogger.cc",
+    "rtc_event_log/ice_logger.cc",
+    "rtc_event_log/ice_logger.h",
     "rtc_event_log/icelogger.h",
   ]
 
   deps = [
     ":rtc_event_log_api",
     "../api:libjingle_logging_api",
+    "../api:libjingle_peerconnection_api",
     "../rtc_base:rtc_base_approved",
     "//third_party/abseil-cpp/absl/memory",
   ]

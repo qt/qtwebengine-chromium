@@ -14,6 +14,7 @@
 #include "src/isolate-inl.h"
 #include "src/objects/js-generator-inl.h"
 #include "src/objects/module.h"
+#include "src/ostreams.h"
 #include "src/parsing/parse-info.h"
 #include "src/parsing/parsing.h"
 #include "src/parsing/rewriter.h"
@@ -185,7 +186,7 @@ void ScopeIterator::UnwrapEvaluationContext() {
   if (!context_->IsDebugEvaluateContext()) return;
   Context current = *context_;
   do {
-    Object* wrapped = current->get(Context::WRAPPED_CONTEXT_INDEX);
+    Object wrapped = current->get(Context::WRAPPED_CONTEXT_INDEX);
     if (wrapped->IsContext()) {
       current = Context::cast(wrapped);
     } else {
@@ -605,7 +606,12 @@ bool ScopeIterator::VisitContextLocals(const Visitor& visitor,
 
 bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode) const {
   for (Variable* var : *current_scope_->locals()) {
-    if (!var->is_this() && ScopeInfo::VariableIsSynthetic(*var->name())) {
+    if (var->is_this()) {
+      // Only collect "this" for DebugEvaluate. The debugger will manually add
+      // "this" in a different way, and if we'd add it here as well, it shows up
+      // twice.
+      if (mode == Mode::ALL) continue;
+    } else if (ScopeInfo::VariableIsSynthetic(*var->name())) {
       continue;
     }
 
@@ -618,8 +624,6 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode) const {
 
       case VariableLocation::UNALLOCATED:
         if (!var->is_this()) continue;
-        // No idea why we only add it sometimes.
-        if (mode == Mode::ALL) continue;
         // No idea why this diverges...
         value = frame_inspector_->GetReceiver();
         break;
@@ -681,8 +685,6 @@ bool ScopeIterator::VisitLocals(const Visitor& visitor, Mode mode) const {
 
       case VariableLocation::CONTEXT:
         if (mode == Mode::STACK) continue;
-        // TODO(verwaest): Why don't we want to show it if it's there?...
-        if (var->is_this()) continue;
         DCHECK(var->IsContextSlot());
         value = handle(context_->get(index), isolate_);
         // Reflect variables under TDZ as undeclared in scope object.
@@ -756,7 +758,7 @@ void ScopeIterator::VisitLocalScope(const Visitor& visitor, Mode mode) const {
     DCHECK(!context_->IsNativeContext());
     DCHECK(!context_->IsWithContext());
     if (!context_->scope_info()->CallsSloppyEval()) return;
-    if (context_->extension_object() == nullptr) return;
+    if (context_->extension_object().is_null()) return;
     Handle<JSObject> extension(context_->extension_object(), isolate_);
     Handle<FixedArray> keys =
         KeyAccumulator::GetKeys(extension, KeyCollectionMode::kOwnOnly,

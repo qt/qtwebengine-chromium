@@ -15,6 +15,7 @@
 #include "utils/DawnHelpers.h"
 
 #include "common/Assert.h"
+#include "common/Constants.h"
 
 #include <shaderc/shaderc.hpp>
 
@@ -138,7 +139,8 @@ namespace utils {
         descriptor.size.width = width;
         descriptor.size.height = height;
         descriptor.size.depth = 1;
-        descriptor.arrayLayer = 1;
+        descriptor.arraySize = 1;
+        descriptor.sampleCount = 1;
         descriptor.format = result.colorFormat;
         descriptor.levelCount = 1;
         descriptor.usage =
@@ -146,8 +148,14 @@ namespace utils {
         result.color = device.CreateTexture(&descriptor);
 
         dawn::TextureView colorView = result.color.CreateDefaultTextureView();
+        dawn::RenderPassColorAttachmentDescriptor colorAttachment;
+        colorAttachment.attachment = colorView;
+        colorAttachment.resolveTarget = nullptr;
+        colorAttachment.clearColor = {0.0f, 0.0f, 0.0f, 0.0f};
+        colorAttachment.loadOp = dawn::LoadOp::Clear;
+        colorAttachment.storeOp = dawn::StoreOp::Store;
         result.renderPassInfo = device.CreateRenderPassDescriptorBuilder()
-                                    .SetColorAttachment(0, colorView, dawn::LoadOp::Clear)
+                                    .SetColorAttachments(1, &colorAttachment)
                                     .GetResult();
 
         return result;
@@ -169,14 +177,12 @@ namespace utils {
     dawn::TextureCopyView CreateTextureCopyView(dawn::Texture texture,
                                                 uint32_t level,
                                                 uint32_t slice,
-                                                dawn::Origin3D origin,
-                                                dawn::TextureAspect aspect) {
+                                                dawn::Origin3D origin) {
         dawn::TextureCopyView textureCopyView;
         textureCopyView.texture = texture;
         textureCopyView.level = level;
         textureCopyView.slice = slice;
         textureCopyView.origin = origin;
-        textureCopyView.aspect = aspect;
 
         return textureCopyView;
     }
@@ -190,6 +196,10 @@ namespace utils {
         desc.addressModeU = dawn::AddressMode::Repeat;
         desc.addressModeV = dawn::AddressMode::Repeat;
         desc.addressModeW = dawn::AddressMode::Repeat;
+        desc.lodMinClamp = kLodMin;
+        desc.lodMaxClamp = kLodMax;
+        desc.compareFunction = dawn::CompareFunction::Never;
+        desc.borderColor = dawn::BorderColor::TransparentBlack;
 
         return desc;
     }
@@ -209,10 +219,11 @@ namespace utils {
 
     dawn::BindGroupLayout MakeBindGroupLayout(
         const dawn::Device& device,
-        std::initializer_list<dawn::BindGroupBinding> bindingsInitializer) {
-        std::vector<dawn::BindGroupBinding> bindings;
-        dawn::ShaderStageBit kNoStages{};
-        for (const dawn::BindGroupBinding& binding : bindingsInitializer) {
+        std::initializer_list<dawn::BindGroupLayoutBinding> bindingsInitializer) {
+        constexpr dawn::ShaderStageBit kNoStages{};
+
+        std::vector<dawn::BindGroupLayoutBinding> bindings;
+        for (const dawn::BindGroupLayoutBinding& binding : bindingsInitializer) {
             if (binding.visibility != kNoStages) {
                 bindings.push_back(binding);
             }
@@ -222,6 +233,53 @@ namespace utils {
         descriptor.numBindings = static_cast<uint32_t>(bindings.size());
         descriptor.bindings = bindings.data();
         return device.CreateBindGroupLayout(&descriptor);
+    }
+
+    BindingInitializationHelper::BindingInitializationHelper(uint32_t binding,
+                                                             const dawn::Sampler& sampler)
+        : binding(binding), sampler(sampler) {
+    }
+
+    BindingInitializationHelper::BindingInitializationHelper(uint32_t binding,
+                                                             const dawn::TextureView& textureView)
+        : binding(binding), textureView(textureView) {
+    }
+
+    BindingInitializationHelper::BindingInitializationHelper(uint32_t binding,
+                                                             const dawn::Buffer& buffer,
+                                                             uint32_t offset,
+                                                             uint32_t size)
+        : binding(binding), buffer(buffer), offset(offset), size(size) {
+    }
+
+    dawn::BindGroupBinding BindingInitializationHelper::GetAsBinding() const {
+        dawn::BindGroupBinding result;
+
+        result.binding = binding;
+        result.sampler = sampler;
+        result.textureView = textureView;
+        result.buffer = buffer;
+        result.offset = offset;
+        result.size = size;
+
+        return result;
+    }
+
+    dawn::BindGroup MakeBindGroup(
+        const dawn::Device& device,
+        const dawn::BindGroupLayout& layout,
+        std::initializer_list<BindingInitializationHelper> bindingsInitializer) {
+        std::vector<dawn::BindGroupBinding> bindings;
+        for (const BindingInitializationHelper& helper : bindingsInitializer) {
+            bindings.push_back(helper.GetAsBinding());
+        }
+
+        dawn::BindGroupDescriptor descriptor;
+        descriptor.layout = layout;
+        descriptor.numBindings = bindings.size();
+        descriptor.bindings = bindings.data();
+
+        return device.CreateBindGroup(&descriptor);
     }
 
 }  // namespace utils

@@ -11,8 +11,10 @@
 #include <memory>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/test/simulated_network.h"
 #include "api/video/encoded_image.h"
+#include "api/video/video_bitrate_allocation.h"
 #include "call/call.h"
 #include "call/fake_network_pipe.h"
 #include "call/rtp_transport_controller_send.h"
@@ -25,13 +27,13 @@
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "rtc_base/experiments/alr_experiment.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/rate_limiter.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/call_test.h"
 #include "test/configurable_frame_size_encoder.h"
@@ -78,8 +80,6 @@ enum VideoFormat {
 };
 }  // namespace
 
-void ExpectEqualFramesVector(const std::vector<VideoFrame>& frames1,
-                             const std::vector<VideoFrame>& frames2);
 VideoFrame CreateVideoFrame(int width, int height, uint8_t data);
 
 class VideoSendStreamTest : public test::CallTest,
@@ -400,7 +400,8 @@ TEST_P(VideoSendStreamTest, SupportsVideoContentType) {
 TEST_P(VideoSendStreamTest, SupportsVideoTimingFrames) {
   class VideoTimingObserver : public test::SendTest {
    public:
-    VideoTimingObserver() : SendTest(kDefaultTimeoutMs) {
+    VideoTimingObserver()
+        : SendTest(kDefaultTimeoutMs), first_frame_sent_(false) {
       EXPECT_TRUE(parser_->RegisterRtpHeaderExtension(
           kRtpExtensionVideoTiming, test::kVideoTimingExtensionId));
     }
@@ -409,10 +410,13 @@ TEST_P(VideoSendStreamTest, SupportsVideoTimingFrames) {
       RTPHeader header;
       EXPECT_TRUE(parser_->Parse(packet, length, &header));
       // Only the last packet of the frame must have extension.
-      if (!header.markerBit)
+      // Also don't check packets of the second frame if they happen to get
+      // through before the test terminates.
+      if (!header.markerBit || first_frame_sent_)
         return SEND_PACKET;
       EXPECT_TRUE(header.extension.has_video_timing);
       observation_complete_.Set();
+      first_frame_sent_ = true;
       return SEND_PACKET;
     }
 
@@ -428,6 +432,9 @@ TEST_P(VideoSendStreamTest, SupportsVideoTimingFrames) {
     void PerformTest() override {
       EXPECT_TRUE(Wait()) << "Timed out while waiting for timing frames.";
     }
+
+   private:
+    bool first_frame_sent_;
   } test;
 
   RunBaseTest(&test);
@@ -1221,12 +1228,32 @@ TEST_P(VideoSendStreamTest, FragmentsVp8AccordingToMaxPacketSizeWithFec) {
 TEST_P(VideoSendStreamTest, SuspendBelowMinBitrate) {
   static const int kSuspendTimeFrames = 60;  // Suspend for 2 seconds @ 30 fps.
 
-  class RembObserver : public test::SendTest,
-                       public rtc::VideoSinkInterface<VideoFrame> {
+  class RembObserver : public test::SendTest {
    public:
+    class CaptureObserver : public rtc::VideoSinkInterface<VideoFrame> {
+     public:
+      explicit CaptureObserver(RembObserver* remb_observer)
+          : remb_observer_(remb_observer) {}
+
+      void OnFrame(const VideoFrame&) {
+        rtc::CritScope lock(&remb_observer_->crit_);
+        if (remb_observer_->test_state_ == kDuringSuspend &&
+            ++remb_observer_->suspended_frame_count_ > kSuspendTimeFrames) {
+          VideoSendStream::Stats stats = remb_observer_->stream_->GetStats();
+          EXPECT_TRUE(stats.suspended);
+          remb_observer_->SendRtcpFeedback(remb_observer_->high_remb_bps_);
+          remb_observer_->test_state_ = kWaitingForPacket;
+        }
+      }
+
+     private:
+      RembObserver* const remb_observer_;
+    };
+
     RembObserver()
         : SendTest(kDefaultTimeoutMs),
           clock_(Clock::GetRealTimeClock()),
+          capture_observer_(this),
           stream_(nullptr),
           test_state_(kBeforeSuspend),
           rtp_count_(0),
@@ -1273,19 +1300,6 @@ TEST_P(VideoSendStreamTest, SuspendBelowMinBitrate) {
       return SEND_PACKET;
     }
 
-    // This method implements the rtc::VideoSinkInterface. This is called when
-    // a frame is provided to the VideoSendStream.
-    void OnFrame(const VideoFrame& video_frame) override {
-      rtc::CritScope lock(&crit_);
-      if (test_state_ == kDuringSuspend &&
-          ++suspended_frame_count_ > kSuspendTimeFrames) {
-        VideoSendStream::Stats stats = stream_->GetStats();
-        EXPECT_TRUE(stats.suspended);
-        SendRtcpFeedback(high_remb_bps_);
-        test_state_ = kWaitingForPacket;
-      }
-    }
-
     void set_low_remb_bps(int value) {
       rtc::CritScope lock(&crit_);
       low_remb_bps_ = value;
@@ -1302,6 +1316,12 @@ TEST_P(VideoSendStreamTest, SuspendBelowMinBitrate) {
       stream_ = send_stream;
     }
 
+    void OnFrameGeneratorCapturerCreated(
+        test::FrameGeneratorCapturer* frame_generator_capturer) override {
+      frame_generator_capturer->AddOrUpdateSink(&capture_observer_,
+                                                rtc::VideoSinkWants());
+    }
+
     void ModifyVideoConfigs(
         VideoSendStream::Config* send_config,
         std::vector<VideoReceiveStream::Config>* receive_configs,
@@ -1311,7 +1331,6 @@ TEST_P(VideoSendStreamTest, SuspendBelowMinBitrate) {
           new internal::TransportAdapter(send_config->send_transport));
       transport_adapter_->Enable();
       send_config->rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
-      send_config->pre_encode_callback = this;
       send_config->suspend_below_min_bitrate = true;
       int min_bitrate_bps =
           test::DefaultVideoStreamFactory::kDefaultMinBitratePerStream[0];
@@ -1351,6 +1370,7 @@ TEST_P(VideoSendStreamTest, SuspendBelowMinBitrate) {
 
     std::unique_ptr<internal::TransportAdapter> transport_adapter_;
     Clock* const clock_;
+    CaptureObserver capture_observer_;
     VideoSendStream* stream_;
 
     rtc::CriticalSection crit_;
@@ -2226,97 +2246,17 @@ TEST_P(VideoSendStreamTest, VideoSendStreamUpdateActiveSimulcastLayers) {
     DestroyCalls();
   });
 }
-TEST_P(VideoSendStreamTest, CapturesTextureAndVideoFrames) {
-  class FrameObserver : public rtc::VideoSinkInterface<VideoFrame> {
-   public:
-    void OnFrame(const VideoFrame& video_frame) override {
-      output_frames_.push_back(video_frame);
-      output_frame_event_.Set();
-    }
-
-    void WaitOutputFrame() {
-      const int kWaitFrameTimeoutMs = 3000;
-      EXPECT_TRUE(output_frame_event_.Wait(kWaitFrameTimeoutMs))
-          << "Timeout while waiting for output frames.";
-    }
-
-    const std::vector<VideoFrame>& output_frames() const {
-      return output_frames_;
-    }
-
-   private:
-    // Delivered output frames.
-    std::vector<VideoFrame> output_frames_;
-
-    // Indicate an output frame has arrived.
-    rtc::Event output_frame_event_;
-  };
-
-  test::NullTransport transport;
-  FrameObserver observer;
-  std::vector<VideoFrame> input_frames;
-
-  task_queue_.SendTask([this, &transport, &observer, &input_frames]() {
-    // Initialize send stream.
-    CreateSenderCall();
-
-    CreateSendConfig(1, 0, 0, &transport);
-    GetVideoSendConfig()->pre_encode_callback = &observer;
-    CreateVideoStreams();
-
-    // Prepare five input frames. Send ordinary VideoFrame and texture frames
-    // alternatively.
-    int width = 168;
-    int height = 132;
-
-    input_frames.push_back(test::FakeNativeBuffer::CreateFrame(
-        width, height, 1, 1, kVideoRotation_0));
-    input_frames.push_back(test::FakeNativeBuffer::CreateFrame(
-        width, height, 2, 2, kVideoRotation_0));
-    input_frames.push_back(CreateVideoFrame(width, height, 3));
-    input_frames.push_back(CreateVideoFrame(width, height, 4));
-    input_frames.push_back(test::FakeNativeBuffer::CreateFrame(
-        width, height, 5, 5, kVideoRotation_0));
-
-    GetVideoSendStream()->Start();
-    test::FrameForwarder forwarder;
-    GetVideoSendStream()->SetSource(&forwarder,
-                                    DegradationPreference::MAINTAIN_FRAMERATE);
-    for (size_t i = 0; i < input_frames.size(); i++) {
-      forwarder.IncomingCapturedFrame(input_frames[i]);
-      // Wait until the output frame is received before sending the next input
-      // frame. Or the previous input frame may be replaced without delivering.
-      observer.WaitOutputFrame();
-    }
-    GetVideoSendStream()->Stop();
-    GetVideoSendStream()->SetSource(nullptr,
-                                    DegradationPreference::MAINTAIN_FRAMERATE);
-  });
-
-  // Test if the input and output frames are the same. render_time_ms and
-  // timestamp are not compared because capturer sets those values.
-  ExpectEqualFramesVector(input_frames, observer.output_frames());
-
-  task_queue_.SendTask([this]() {
-    DestroyStreams();
-    DestroyCalls();
-  });
-}
-
-void ExpectEqualFramesVector(const std::vector<VideoFrame>& frames1,
-                             const std::vector<VideoFrame>& frames2) {
-  EXPECT_EQ(frames1.size(), frames2.size());
-  for (size_t i = 0; i < std::min(frames1.size(), frames2.size()); ++i)
-    // Compare frame buffers, since we don't care about differing timestamps.
-    EXPECT_TRUE(test::FrameBufsEqual(frames1[i].video_frame_buffer(),
-                                     frames2[i].video_frame_buffer()));
-}
 
 VideoFrame CreateVideoFrame(int width, int height, uint8_t data) {
   const int kSizeY = width * height * 2;
   std::unique_ptr<uint8_t[]> buffer(new uint8_t[kSizeY]);
   memset(buffer.get(), data, kSizeY);
-  VideoFrame frame(I420Buffer::Create(width, height), kVideoRotation_0, data);
+  VideoFrame frame =
+      webrtc::VideoFrame::Builder()
+          .set_video_frame_buffer(I420Buffer::Create(width, height))
+          .set_rotation(webrtc::kVideoRotation_0)
+          .set_timestamp_us(data)
+          .build();
   frame.set_timestamp(data);
   // Use data as a ms timestamp.
   frame.set_timestamp_us(data * rtc::kNumMicrosecsPerMillisec);
@@ -2828,6 +2768,13 @@ TEST_P(VideoSendStreamTest, ReconfigureBitratesSetsEncoderBitratesCorrectly) {
   static const int kMaxBitrateKbps = 413;
   static const int kIncreasedStartBitrateKbps = 451;
   static const int kIncreasedMaxBitrateKbps = 597;
+  // If these fields trial are on, we get lower bitrates than expected by this
+  // test, due to the packetization overhead and encoder pushback.
+  webrtc::test::ScopedFieldTrials field_trials(
+      std::string(field_trial::GetFieldTrialString()) +
+      "WebRTC-SubtractPacketizationOverhead/Disabled/"
+      "WebRTC-VideoRateControl/bitrate_adjuster:false/");
+
   class EncoderBitrateThresholdObserver : public test::SendTest,
                                           public test::FakeEncoder {
    public:
@@ -2891,11 +2838,21 @@ TEST_P(VideoSendStreamTest, ReconfigureBitratesSetsEncoderBitratesCorrectly) {
     }
 
     void WaitForSetRates(uint32_t expected_bitrate) {
-      EXPECT_TRUE(
-          bitrate_changed_event_.Wait(VideoSendStreamTest::kDefaultTimeoutMs))
-          << "Timed out while waiting encoder rate to be set.";
+      // Wait for the expected rate to be set. In some cases there can be
+      // more than one update pending, in which case we keep waiting
+      // until the correct value has been observed.
+      const int64_t start_time = rtc::TimeMillis();
+      do {
+        rtc::CritScope lock(&crit_);
+        if (target_bitrate_ == expected_bitrate) {
+          return;
+        }
+      } while (bitrate_changed_event_.Wait(
+          std::max(int64_t{1}, VideoSendStreamTest::kDefaultTimeoutMs -
+                                   (rtc::TimeMillis() - start_time))));
       rtc::CritScope lock(&crit_);
-      EXPECT_EQ(expected_bitrate, target_bitrate_);
+      EXPECT_EQ(target_bitrate_, expected_bitrate)
+          << "Timed out while waiting encoder rate to be set.";
     }
 
     void ModifySenderBitrateConfig(

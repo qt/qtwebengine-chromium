@@ -19,7 +19,8 @@
 #include "modules/video_coding/jitter_buffer.h"
 #include "modules/video_coding/packet.h"
 #include "modules/video_coding/timing.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
+#include "system_wrappers/include/event_wrapper.h"
 
 namespace webrtc {
 
@@ -77,10 +78,6 @@ class VCMReceiver {
                        int max_incomplete_time_ms);
   VCMNackMode NackMode() const;
   std::vector<uint16_t> NackList(bool* request_key_frame);
-
-  // Decoding with errors.
-  void SetDecodeErrorMode(VCMDecodeErrorMode decode_error_mode);
-  VCMDecodeErrorMode DecodeErrorMode() const;
 
   void RegisterStatsCallback(VCMReceiveStatisticsCallback* callback);
 

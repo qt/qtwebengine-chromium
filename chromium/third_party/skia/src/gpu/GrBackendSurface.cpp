@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "vk/GrVkVulkan.h"
 
 #include "GrBackendSurface.h"
 
@@ -18,6 +17,7 @@
 #endif
 #ifdef SK_METAL
 #include "mtl/GrMtlTypes.h"
+#include "mtl/GrMtlCppUtil.h"
 #endif
 
 GrBackendFormat::GrBackendFormat(GrGLenum format, GrGLenum target)
@@ -63,20 +63,36 @@ const GrGLenum* GrBackendFormat::getGLTarget() const {
     return nullptr;
 }
 
-GrBackendFormat::GrBackendFormat(VkFormat vkFormat)
+GrBackendFormat GrBackendFormat::MakeVk(const GrVkYcbcrConversionInfo& ycbcrInfo) {
+#ifdef SK_BUILD_FOR_ANDROID
+    return GrBackendFormat(VK_FORMAT_UNDEFINED, ycbcrInfo);
+#else
+    return GrBackendFormat();
+#endif
+}
+
+GrBackendFormat::GrBackendFormat(VkFormat vkFormat, const GrVkYcbcrConversionInfo& ycbcrInfo)
         : fBackend(GrBackendApi::kVulkan)
 #ifdef SK_VULKAN
         , fValid(true)
 #else
         , fValid(false)
 #endif
-        , fVkFormat(vkFormat)
         , fTextureType(GrTextureType::k2D) {
+    fVk.fFormat = vkFormat;
+    fVk.fYcbcrConversionInfo = ycbcrInfo;
 }
 
 const VkFormat* GrBackendFormat::getVkFormat() const {
     if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        return &fVkFormat;
+        return &fVk.fFormat;
+    }
+    return nullptr;
+}
+
+const GrVkYcbcrConversionInfo* GrBackendFormat::getVkYcbcrConversionInfo() const {
+    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
+        return &fVk.fYcbcrConversionInfo;
     }
     return nullptr;
 }
@@ -117,6 +133,38 @@ GrBackendFormat GrBackendFormat::makeTexture2D() const {
     GrBackendFormat copy = *this;
     copy.fTextureType = GrTextureType::k2D;
     return copy;
+}
+
+bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
+    // Invalid GrBackendFormats are never equal to anything.
+    if (!fValid || !that.fValid) {
+        return false;
+    }
+
+    if (fBackend != that.fBackend) {
+        return false;
+    }
+
+    switch (fBackend) {
+        case GrBackendApi::kOpenGL:
+            return fGLFormat == that.fGLFormat;
+        case GrBackendApi::kVulkan:
+#ifdef SK_VULKAN
+            return fVk.fFormat == that.fVk.fFormat &&
+                   fVk.fYcbcrConversionInfo == that.fVk.fYcbcrConversionInfo;
+#endif
+            break;
+#ifdef SK_METAL
+        case GrBackendApi::kMetal:
+            return fMtlFormat == that.fMtlFormat;
+#endif
+            break;
+        case GrBackendApi::kMock:
+            return fMockFormat == that.fMockFormat;
+        default:
+            SK_ABORT("Unknown GrBackend");
+    }
+    return false;
 }
 
 GrBackendTexture::GrBackendTexture(int width,
@@ -292,6 +340,37 @@ bool GrBackendTexture::getMockTextureInfo(GrMockTextureInfo* outInfo) const {
         return true;
     }
     return false;
+}
+
+GrBackendFormat GrBackendTexture::getBackendFormat() const {
+    if (!this->isValid()) {
+        return GrBackendFormat();
+    }
+    switch (fBackend) {
+        case GrBackendApi::kOpenGL:
+            return GrBackendFormat::MakeGL(fGLInfo.fFormat, fGLInfo.fTarget);
+#ifdef SK_VULKAN
+        case GrBackendApi::kVulkan: {
+            auto info = fVkInfo.snapImageInfo();
+            if (info.fYcbcrConversionInfo.isValid()) {
+                SkASSERT(info.fFormat == VK_FORMAT_UNDEFINED);
+                return GrBackendFormat::MakeVk(info.fYcbcrConversionInfo);
+            }
+            return GrBackendFormat::MakeVk(info.fFormat);
+        }
+#endif
+#ifdef SK_METAL
+        case GrBackendApi::kMetal: {
+            GrMtlTextureInfo mtlInfo;
+            SkAssertResult(this->getMtlTextureInfo(&mtlInfo));
+            return GrBackendFormat::MakeMtl(GrGetMTLPixelFormatFromMtlTextureInfo(mtlInfo));
+        }
+#endif
+        case GrBackendApi::kMock:
+            return GrBackendFormat::MakeMock(fMockInfo.fConfig);
+        default:
+            return GrBackendFormat();
+    }
 }
 
 #if GR_TEST_UTILS

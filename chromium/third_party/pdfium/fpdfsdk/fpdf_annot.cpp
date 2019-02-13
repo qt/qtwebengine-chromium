@@ -735,8 +735,7 @@ FPDFAnnot_SetStringValue(FPDF_ANNOTATION annot,
   if (!pAnnotDict)
     return false;
 
-  pAnnotDict->SetNewFor<CPDF_String>(
-      key, CFXByteStringFromFPDFWideString(value), false);
+  pAnnotDict->SetNewFor<CPDF_String>(key, WideStringFromFPDFWideString(value));
   return true;
 }
 
@@ -786,7 +785,7 @@ FPDFAnnot_SetAP(FPDF_ANNOTATION annot,
     if (!pApDict)
       pApDict = pAnnotDict->SetNewFor<CPDF_Dictionary>("AP");
 
-    ByteString newValue = CFXByteStringFromFPDFWideString(value);
+    ByteString newValue = PDF_EncodeText(WideStringFromFPDFWideString(value));
     auto pNewApStream = pdfium::MakeUnique<CPDF_Stream>();
     pNewApStream->SetData(newValue.AsRawSpan());
     pApDict->SetFor(modeKey, std::move(pNewApStream));
@@ -823,7 +822,7 @@ FPDFAnnot_GetAP(FPDF_ANNOTATION annot,
 
   CPDF_Stream* pStream = GetAnnotAPNoFallback(pAnnotDict, mode);
   return Utf16EncodeMaybeCopyAndReturnLength(
-      pStream ? pStream->GetUnicodeText() : L"", buffer, buflen);
+      pStream ? pStream->GetUnicodeText() : WideString(), buffer, buflen);
 }
 
 FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV

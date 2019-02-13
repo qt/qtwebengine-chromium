@@ -13,6 +13,8 @@
 #include "libANGLE/Buffer.h"
 #include "libANGLE/Config.h"
 #include "libANGLE/Context.h"
+#include "libANGLE/Display.h"
+#include "libANGLE/EGLSync.h"
 #include "libANGLE/Fence.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/GLES1State.h"
@@ -318,43 +320,43 @@ void SetTexParameterBase(Context *context, Texture *texture, GLenum pname, const
     switch (pname)
     {
         case GL_TEXTURE_WRAP_S:
-            texture->setWrapS(ConvertToGLenum(pname, params[0]));
+            texture->setWrapS(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_WRAP_T:
-            texture->setWrapT(ConvertToGLenum(pname, params[0]));
+            texture->setWrapT(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_WRAP_R:
-            texture->setWrapR(ConvertToGLenum(pname, params[0]));
+            texture->setWrapR(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_MIN_FILTER:
-            texture->setMinFilter(ConvertToGLenum(pname, params[0]));
+            texture->setMinFilter(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_MAG_FILTER:
-            texture->setMagFilter(ConvertToGLenum(pname, params[0]));
+            texture->setMagFilter(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_USAGE_ANGLE:
-            texture->setUsage(ConvertToGLenum(pname, params[0]));
+            texture->setUsage(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_MAX_ANISOTROPY_EXT:
-            texture->setMaxAnisotropy(CastQueryValueTo<GLfloat>(pname, params[0]));
+            texture->setMaxAnisotropy(context, CastQueryValueTo<GLfloat>(pname, params[0]));
             break;
         case GL_TEXTURE_COMPARE_MODE:
-            texture->setCompareMode(ConvertToGLenum(pname, params[0]));
+            texture->setCompareMode(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_COMPARE_FUNC:
-            texture->setCompareFunc(ConvertToGLenum(pname, params[0]));
+            texture->setCompareFunc(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_SWIZZLE_R:
-            texture->setSwizzleRed(ConvertToGLenum(pname, params[0]));
+            texture->setSwizzleRed(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_SWIZZLE_G:
-            texture->setSwizzleGreen(ConvertToGLenum(pname, params[0]));
+            texture->setSwizzleGreen(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_SWIZZLE_B:
-            texture->setSwizzleBlue(ConvertToGLenum(pname, params[0]));
+            texture->setSwizzleBlue(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_SWIZZLE_A:
-            texture->setSwizzleAlpha(ConvertToGLenum(pname, params[0]));
+            texture->setSwizzleAlpha(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_BASE_LEVEL:
         {
@@ -363,19 +365,20 @@ void SetTexParameterBase(Context *context, Texture *texture, GLenum pname, const
             break;
         }
         case GL_TEXTURE_MAX_LEVEL:
-            texture->setMaxLevel(clampCast<GLuint>(CastQueryValueTo<GLint>(pname, params[0])));
+            texture->setMaxLevel(context,
+                                 clampCast<GLuint>(CastQueryValueTo<GLint>(pname, params[0])));
             break;
         case GL_TEXTURE_MIN_LOD:
-            texture->setMinLod(CastQueryValueTo<GLfloat>(pname, params[0]));
+            texture->setMinLod(context, CastQueryValueTo<GLfloat>(pname, params[0]));
             break;
         case GL_TEXTURE_MAX_LOD:
-            texture->setMaxLod(CastQueryValueTo<GLfloat>(pname, params[0]));
+            texture->setMaxLod(context, CastQueryValueTo<GLfloat>(pname, params[0]));
             break;
         case GL_DEPTH_STENCIL_TEXTURE_MODE:
-            texture->setDepthStencilTextureMode(ConvertToGLenum(pname, params[0]));
+            texture->setDepthStencilTextureMode(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_SRGB_DECODE_EXT:
-            texture->setSRGBDecode(ConvertToGLenum(pname, params[0]));
+            texture->setSRGBDecode(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_CROP_RECT_OES:
             texture->setCrop(gl::Rectangle(CastQueryValueTo<GLint>(pname, params[0]),
@@ -387,7 +390,7 @@ void SetTexParameterBase(Context *context, Texture *texture, GLenum pname, const
             texture->setGenerateMipmapHint(ConvertToGLenum(params[0]));
             break;
         case GL_TEXTURE_BORDER_COLOR:
-            texture->setBorderColor(ConvertToColor<isPureInteger>(params));
+            texture->setBorderColor(context, ConvertToColor<isPureInteger>(params));
             break;
         default:
             UNREACHABLE();
@@ -520,7 +523,7 @@ void QueryVertexAttribBase(const VertexAttribute &attrib,
             *params = CastFromGLintStateValue<ParamType>(pname, attrib.vertexAttribArrayStride);
             break;
         case GL_VERTEX_ATTRIB_ARRAY_TYPE:
-            *params = CastFromGLintStateValue<ParamType>(pname, attrib.type);
+            *params = CastFromGLintStateValue<ParamType>(pname, ToGLenum(attrib.type));
             break;
         case GL_VERTEX_ATTRIB_ARRAY_NORMALIZED:
             *params = CastFromStateValue<ParamType>(pname, static_cast<GLint>(attrib.normalized));
@@ -1501,7 +1504,7 @@ angle::Result QuerySynciv(const Context *context,
         {
             *length = 0;
         }
-        return angle::Result::Continue();
+        return angle::Result::Continue;
     }
 
     switch (pname)
@@ -1529,7 +1532,7 @@ angle::Result QuerySynciv(const Context *context,
         *length = 1;
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void SetTexParameterf(Context *context, Texture *texture, GLenum pname, GLfloat param)
@@ -3023,6 +3026,29 @@ void SetSurfaceAttrib(Surface *surface, EGLint attribute, EGLint value)
             UNREACHABLE();
             break;
     }
+}
+
+Error GetSyncAttrib(Display *display, Sync *sync, EGLint attribute, EGLint *value)
+{
+    switch (attribute)
+    {
+        case EGL_SYNC_TYPE_KHR:
+            *value = sync->getType();
+            return NoError();
+
+        case EGL_SYNC_STATUS_KHR:
+            return sync->getStatus(display, value);
+
+        case EGL_SYNC_CONDITION_KHR:
+            *value = sync->getCondition();
+            return NoError();
+
+        default:
+            break;
+    }
+
+    UNREACHABLE();
+    return NoError();
 }
 
 }  // namespace egl

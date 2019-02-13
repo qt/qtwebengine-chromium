@@ -8,10 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <memory>
+#include <string.h>
+#include <map>
 #include <set>
 
+#include "absl/container/inlined_vector.h"
+#include "absl/types/optional.h"
+#include "absl/types/variant.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_rotation.h"
 #include "call/rtp_payload_params.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/video_coding/codecs/h264/include/h264_globals.h"
+#include "modules/video_coding/codecs/interface/common_constants.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
+#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "test/field_trial.h"
 #include "test/gtest.h"
@@ -95,6 +106,7 @@ TEST(RtpPayloadParamsTest, InfoMappedToRtpVideoHeader_Vp9) {
   EXPECT_EQ(kVideoRotation_90, header.rotation);
   EXPECT_EQ(VideoContentType::SCREENSHARE, header.content_type);
   EXPECT_EQ(kVideoCodecVP9, header.codec);
+  EXPECT_FALSE(header.color_space);
   const auto& vp9_header =
       absl::get<RTPVideoHeaderVP9>(header.video_type_header);
   EXPECT_EQ(kPictureId + 1, vp9_header.picture_id);
@@ -111,11 +123,16 @@ TEST(RtpPayloadParamsTest, InfoMappedToRtpVideoHeader_Vp9) {
   codec_info.codecSpecific.VP9.end_of_picture = true;
 
   encoded_image.SetSpatialIndex(1);
+  ColorSpace color_space(
+      ColorSpace::PrimaryID::kSMPTE170M, ColorSpace::TransferID::kSMPTE170M,
+      ColorSpace::MatrixID::kSMPTE170M, ColorSpace::RangeID::kFull);
+  encoded_image.SetColorSpace(&color_space);
   header = params.GetRtpVideoHeader(encoded_image, &codec_info, kDontCare);
 
   EXPECT_EQ(kVideoRotation_90, header.rotation);
   EXPECT_EQ(VideoContentType::SCREENSHARE, header.content_type);
   EXPECT_EQ(kVideoCodecVP9, header.codec);
+  EXPECT_EQ(absl::make_optional(color_space), header.color_space);
   EXPECT_EQ(kPictureId + 1, vp9_header.picture_id);
   EXPECT_EQ(kTl0PicIdx, vp9_header.tl0_pic_idx);
   EXPECT_EQ(vp9_header.temporal_idx, codec_info.codecSpecific.VP9.temporal_idx);

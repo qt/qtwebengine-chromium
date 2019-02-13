@@ -19,8 +19,8 @@
 #include "api/test/video_quality_test_fixture.h"
 #include "api/video/video_bitrate_allocator_factory.h"
 #include "call/fake_network_pipe.h"
-#include "media/engine/internaldecoderfactory.h"
-#include "media/engine/internalencoderfactory.h"
+#include "media/engine/internal_decoder_factory.h"
+#include "media/engine/internal_encoder_factory.h"
 #include "test/call_test.h"
 #include "test/frame_generator.h"
 #include "test/layer_filtering_transport.h"
@@ -82,8 +82,6 @@ class VideoQualityTest :
   void SetupVideo(Transport* send_transport, Transport* recv_transport);
   void SetupThumbnails(Transport* send_transport, Transport* recv_transport);
   void StartAudioStreams();
-  void StartThumbnailCapture();
-  void StopThumbnailCapture();
   void StartThumbnails();
   void StopThumbnails();
   void DestroyThumbnailStreams();
@@ -99,7 +97,8 @@ class VideoQualityTest :
   virtual std::unique_ptr<test::LayerFilteringTransport> CreateSendTransport();
   virtual std::unique_ptr<test::DirectTransport> CreateReceiveTransport();
 
-  std::vector<std::unique_ptr<test::TestVideoCapturer>> thumbnail_capturers_;
+  std::vector<std::unique_ptr<rtc::VideoSourceInterface<VideoFrame>>>
+      thumbnail_capturers_;
   Clock* const clock_;
 
   test::FunctionVideoDecoderFactory video_decoder_factory_;

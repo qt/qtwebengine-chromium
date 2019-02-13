@@ -10,8 +10,9 @@
 
 #include "media/engine/apm_helpers.h"
 
-#include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_processing/include/audio_processing.h"
+#include "modules/audio_processing/include/gain_control.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
@@ -101,20 +102,6 @@ void SetNsStatus(AudioProcessing* apm, bool enable) {
     return;
   }
   RTC_LOG(LS_INFO) << "NS set to " << enable;
-}
-
-void SetTypingDetectionStatus(AudioProcessing* apm, bool enable) {
-  RTC_DCHECK(apm);
-  VoiceDetection* vd = apm->voice_detection();
-  if (vd->Enable(enable)) {
-    RTC_LOG(LS_ERROR) << "Failed to enable/disable VAD: " << enable;
-    return;
-  }
-  if (vd->set_likelihood(VoiceDetection::kVeryLowLikelihood)) {
-    RTC_LOG(LS_ERROR) << "Failed to set low VAD likelihood.";
-    return;
-  }
-  RTC_LOG(LS_INFO) << "VAD set to " << enable << " for typing detection.";
 }
 }  // namespace apm_helpers
 }  // namespace webrtc

@@ -233,10 +233,10 @@ static int combined_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
   }
 
   if (rv && search_subpel) {
-    int subpel_force_stop = cpi->sf.mv.subpel_force_stop;
-    if (use_base_mv && cpi->sf.base_mv_aggressive) subpel_force_stop = 2;
+    SUBPEL_FORCE_STOP subpel_force_stop = cpi->sf.mv.subpel_force_stop;
+    if (use_base_mv && cpi->sf.base_mv_aggressive) subpel_force_stop = HALF_PEL;
     if (cpi->sf.mv.enable_adaptive_subpel_force_stop) {
-      int mv_thresh = cpi->sf.mv.adapt_subpel_force_stop.mv_thresh;
+      const int mv_thresh = cpi->sf.mv.adapt_subpel_force_stop.mv_thresh;
       if (abs(tmp_mv->as_mv.row) >= mv_thresh ||
           abs(tmp_mv->as_mv.col) >= mv_thresh)
         subpel_force_stop = cpi->sf.mv.adapt_subpel_force_stop.force_stop_above;
@@ -898,6 +898,7 @@ static void encode_breakout_test(
   // Skipping threshold for dc.
   unsigned int thresh_dc;
   int motion_low = 1;
+
   if (cpi->use_svc && ref_frame == GOLDEN_FRAME) return;
   if (mi->mv[0].as_mv.row > 64 || mi->mv[0].as_mv.row < -64 ||
       mi->mv[0].as_mv.col > 64 || mi->mv[0].as_mv.col < -64)
@@ -1703,6 +1704,10 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
 
   init_best_pickmode(&best_pickmode);
 
+  x->encode_breakout = seg->enabled
+                           ? cpi->segment_encode_breakout[mi->segment_id]
+                           : cpi->encode_breakout;
+
   x->source_variance = UINT_MAX;
   if (cpi->sf.default_interp_filter == BILINEAR) {
     best_pickmode.best_pred_filter = BILINEAR;
@@ -1815,13 +1820,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
 
 #if CONFIG_VP9_TEMPORAL_DENOISING
   if (cpi->oxcf.noise_sensitivity > 0) {
-    if (cpi->use_svc) {
-      int layer =
-          LAYER_IDS_TO_IDX(svc->spatial_layer_id, svc->temporal_layer_id,
-                           svc->number_temporal_layers);
-      LAYER_CONTEXT *lc = &svc->layer_context[layer];
-      denoise_svc_pickmode = denoise_svc(cpi) && !lc->is_key_frame;
-    }
+    if (cpi->use_svc) denoise_svc_pickmode = vp9_denoise_svc_non_key(cpi);
     if (cpi->denoiser.denoising_level > kDenLowLow && denoise_svc_pickmode)
       vp9_denoiser_reset_frame_stats(ctx);
   }

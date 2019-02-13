@@ -69,10 +69,14 @@ public:
      */
     void draw(SkCanvas*, SkScalar x, SkScalar y, const SkPaint*) const;
 
-    static sk_sp<SkSpecialImage> MakeFromImage(const SkIRect& subset,
+    static sk_sp<SkSpecialImage> MakeFromImage(GrContext*,
+                                               const SkIRect& subset,
                                                sk_sp<SkImage>,
                                                const SkSurfaceProps* = nullptr);
     static sk_sp<SkSpecialImage> MakeFromRaster(const SkIRect& subset,
+                                                const SkBitmap&,
+                                                const SkSurfaceProps* = nullptr);
+    static sk_sp<SkSpecialImage> CopyFromRaster(const SkIRect& subset,
                                                 const SkBitmap&,
                                                 const SkSurfaceProps* = nullptr);
 #if SK_SUPPORT_GPU

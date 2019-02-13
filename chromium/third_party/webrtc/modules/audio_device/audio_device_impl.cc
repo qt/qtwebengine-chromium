@@ -16,7 +16,7 @@
 #include "modules/audio_device/audio_device_generic.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/refcountedobject.h"
+#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/scoped_ref_ptr.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -548,11 +548,14 @@ int32_t AudioDeviceModuleImpl::SetStereoRecording(bool enable) {
   RTC_LOG(INFO) << __FUNCTION__ << "(" << enable << ")";
   CHECKinitialized_();
   if (audio_device_->RecordingIsInitialized()) {
-    RTC_LOG(WARNING) << "recording in stereo is not supported";
+    RTC_LOG(LERROR)
+        << "unable to set stereo mode after recording is initialized";
     return -1;
   }
   if (audio_device_->SetStereoRecording(enable) == -1) {
-    RTC_LOG(WARNING) << "failed to change stereo recording";
+    if (enable) {
+      RTC_LOG(WARNING) << "failed to enable stereo recording";
+    }
     return -1;
   }
   int8_t nChannels(1);

@@ -101,6 +101,11 @@ class Optimizer {
   // from time to time.
   Optimizer& RegisterSizePasses();
 
+  // Registers passes that have been prescribed for WebGPU environments.
+  // This sequence of passes is subject to constant review and will change
+  // from time to time.
+  Optimizer& RegisterWebGPUPasses();
+
   // Registers passes that attempt to legalize the generated code.
   //
   // Note: this recipe is specially designed for legalizing SPIR-V. It should be
@@ -147,6 +152,10 @@ class Optimizer {
   // If |flag| takes one of the forms above, it returns true.  Otherwise, it
   // returns false.
   bool FlagHasValidForm(const std::string& flag) const;
+
+  // Allows changing, after creation time, the target environment to be
+  // optimized for.  Should be called before calling Run().
+  void SetTargetEnv(const spv_target_env env);
 
   // Optimizes the given SPIR-V module |original_binary| and writes the
   // optimized binary into |optimized_binary|.
@@ -706,6 +715,16 @@ Optimizer::PassToken CreateCombineAccessChainsPass();
 // TODO(greg-lunarg): Add support for vk_ext_descriptor_indexing.
 Optimizer::PassToken CreateInstBindlessCheckPass(uint32_t desc_set,
                                                  uint32_t shader_id);
+
+// Create a pass to upgrade to the VulkanKHR memory model.
+// This pass upgrades the Logical GLSL450 memory model to Logical VulkanKHR.
+// Additionally, it modifies memory, image, atomic and barrier operations to
+// conform to that model's requirements.
+Optimizer::PassToken CreateUpgradeMemoryModelPass();
+
+// Create a pass to do code sinking.  Code sinking is a transformation
+// where an instruction is moved into a more deeply nested construct.
+Optimizer::PassToken CreateCodeSinkingPass();
 
 }  // namespace spvtools
 

@@ -42,40 +42,84 @@ class ProtoDecoder {
     };
 
     uint32_t id = 0;
-    protozero::proto_utils::FieldType type;
+    proto_utils::ProtoWireType type;
     union {
       uint64_t int_value;
       LengthDelimited length_limited;
     };
 
     inline uint32_t as_uint32() const {
-      PERFETTO_DCHECK(type == proto_utils::FieldType::kFieldTypeVarInt ||
-                      type == proto_utils::FieldType::kFieldTypeFixed32);
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kVarInt ||
+                      type == proto_utils::ProtoWireType::kFixed32);
       return static_cast<uint32_t>(int_value);
     }
 
+    inline int32_t as_int32() const {
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kVarInt ||
+                      type == proto_utils::ProtoWireType::kFixed32);
+      return static_cast<int32_t>(int_value);
+    }
+
     inline uint64_t as_uint64() const {
-      PERFETTO_DCHECK(type == proto_utils::FieldType::kFieldTypeVarInt ||
-                      type == proto_utils::FieldType::kFieldTypeFixed64);
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kVarInt ||
+                      type == proto_utils::ProtoWireType::kFixed64);
       return int_value;
     }
 
+    inline int64_t as_int64() const {
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kVarInt ||
+                      type == proto_utils::ProtoWireType::kFixed64);
+      return static_cast<int64_t>(int_value);
+    }
+
+    // A relaxed version for when we are storing any int as an int64
+    // in the raw events table.
+    inline int64_t as_integer() const {
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kVarInt ||
+                      type == proto_utils::ProtoWireType::kFixed64 ||
+                      type == proto_utils::ProtoWireType::kFixed32);
+      return static_cast<int64_t>(int_value);
+    }
+
+    inline float as_float() const {
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kFixed32);
+      float res;
+      uint32_t value32 = static_cast<uint32_t>(int_value);
+      memcpy(&res, &value32, sizeof(res));
+      return res;
+    }
+
+    inline double as_double() const {
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kFixed64);
+      double res;
+      memcpy(&res, &int_value, sizeof(res));
+      return res;
+    }
+
+    // A relaxed version for when we are storing floats and doubles
+    // as real in the raw events table.
+    inline double as_real() const {
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kFixed64 ||
+                      type == proto_utils::ProtoWireType::kFixed32);
+      double res;
+      uint64_t value64 = static_cast<uint64_t>(int_value);
+      memcpy(&res, &value64, sizeof(res));
+      return res;
+    }
+
     inline StringView as_string() const {
-      PERFETTO_DCHECK(type ==
-                      proto_utils::FieldType::kFieldTypeLengthDelimited);
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kLengthDelimited);
       return StringView(reinterpret_cast<const char*>(length_limited.data),
                         length_limited.length);
     }
 
     inline const uint8_t* data() const {
-      PERFETTO_DCHECK(type ==
-                      proto_utils::FieldType::kFieldTypeLengthDelimited);
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kLengthDelimited);
       return length_limited.data;
     }
 
     inline size_t size() const {
-      PERFETTO_DCHECK(type ==
-                      proto_utils::FieldType::kFieldTypeLengthDelimited);
+      PERFETTO_DCHECK(type == proto_utils::ProtoWireType::kLengthDelimited);
       return static_cast<size_t>(length_limited.length);
     }
   };
@@ -94,6 +138,20 @@ class ProtoDecoder {
     for (auto f = ReadField(); f.id != 0; f = ReadField()) {
       if (f.id == field_id) {
         *field_value = f.int_value;
+        res = true;
+        break;
+      }
+    }
+    Reset();
+    return res;
+  }
+
+  template <int field_id>
+  inline bool FindStringField(StringView* field_value) {
+    bool res = false;
+    for (auto f = ReadField(); f.id != 0; f = ReadField()) {
+      if (f.id == field_id) {
+        *field_value = f.as_string();
         res = true;
         break;
       }

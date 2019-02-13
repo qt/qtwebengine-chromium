@@ -32,7 +32,33 @@ namespace trace_processor {
 namespace {
 
 constexpr int64_t kI64Max = std::numeric_limits<int64_t>::max();
-constexpr uint64_t kU64Max = std::numeric_limits<uint64_t>::max();
+
+constexpr char kTsColumnName[] = "ts";
+constexpr char kDurColumnName[] = "dur";
+
+bool IsRequiredColumn(const std::string& name) {
+  return name == kTsColumnName || name == kDurColumnName;
+}
+
+bool CheckRequiredColumns(const std::vector<Table::Column>& cols) {
+  int required_columns_found = 0;
+  for (const auto& col : cols) {
+    if (IsRequiredColumn(col.name())) {
+      ++required_columns_found;
+      if (col.type() != Table::ColumnType::kLong &&
+          col.type() != Table::ColumnType::kUnknown) {
+        PERFETTO_ELOG("Invalid column type for %s", col.name().c_str());
+        return false;
+      }
+    }
+  }
+  if (required_columns_found != 2) {
+    PERFETTO_ELOG("Required columns not found (found %d)",
+                  required_columns_found);
+    return false;
+  }
+  return true;
+}
 
 }  // namespace
 
@@ -46,12 +72,13 @@ void SpanJoinOperatorTable::RegisterTable(sqlite3* db,
                                          /* requires_args */ true);
 }
 
-Table::Schema SpanJoinOperatorTable::CreateSchema(int argc,
-                                                  const char* const* argv) {
+base::Optional<Table::Schema> SpanJoinOperatorTable::Init(
+    int argc,
+    const char* const* argv) {
   // argv[0] - argv[2] are SQLite populated fields which are always present.
   if (argc < 5) {
     PERFETTO_ELOG("SPAN JOIN expected at least 2 args, received %d", argc - 3);
-    return Table::Schema({}, {});
+    return base::nullopt;
   }
 
   std::string t1_raw_desc = reinterpret_cast<const char*>(argv[3]);
@@ -65,17 +92,21 @@ Table::Schema SpanJoinOperatorTable::CreateSchema(int argc,
   PERFETTO_CHECK(t1_desc.partition_col == t2_desc.partition_col);
 
   // TODO(lalitm): add logic to ensure that the tables that are being joined
-  // are actually valid to be joined i.e. they have the ts and dur columns and
-  // have the same partition.
+  // are actually valid to be joined i.e. they have the same partition.
   auto t1_cols = sqlite_utils::GetColumnsForTable(db_, t1_desc.name);
+  if (!CheckRequiredColumns(t1_cols))
+    return base::nullopt;
+
   auto t2_cols = sqlite_utils::GetColumnsForTable(db_, t2_desc.name);
+  if (!CheckRequiredColumns(t2_cols))
+    return base::nullopt;
 
   t1_defn_ = TableDefinition(t1_desc.name, t1_desc.partition_col, t1_cols);
   t2_defn_ = TableDefinition(t2_desc.name, t2_desc.partition_col, t2_cols);
 
   std::vector<Table::Column> cols;
-  cols.emplace_back(Column::kTimestamp, "ts", ColumnType::kUlong);
-  cols.emplace_back(Column::kDuration, "dur", ColumnType::kUlong);
+  cols.emplace_back(Column::kTimestamp, kTsColumnName, ColumnType::kLong);
+  cols.emplace_back(Column::kDuration, kDurColumnName, ColumnType::kLong);
 
   is_same_partition_ = t1_desc.partition_col == t2_desc.partition_col;
   const auto& partition_col = t1_desc.partition_col;
@@ -93,9 +124,9 @@ void SpanJoinOperatorTable::CreateSchemaColsForDefn(
     std::vector<Table::Column>* cols) {
   for (size_t i = 0; i < defn.columns().size(); i++) {
     const auto& n = defn.columns()[i].name();
-    if (n == "ts" || n == "dur")
+    if (IsRequiredColumn(n))
       continue;
-    else if (n == defn.partition_col() && is_same_partition_)
+    if (n == defn.partition_col() && is_same_partition_)
       continue;
 
     ColumnLocator* locator = &global_index_to_column_locator_[cols->size()];
@@ -132,9 +163,9 @@ SpanJoinOperatorTable::ComputeSqlConstraintsForDefinition(
     if (col_name == "")
       continue;
 
-    if (col_name == "ts" || col_name == "dur") {
+    if (col_name == kTsColumnName || col_name == kDurColumnName) {
       // We don't support constraints on ts or duration in the child tables.
-      PERFETTO_DCHECK(false);
+      PERFETTO_DFATAL("ts or duration constraints on child tables");
       continue;
     }
     auto op = sqlite_utils::OpToString(cs.op);
@@ -150,9 +181,9 @@ std::string SpanJoinOperatorTable::GetNameForGlobalColumnIndex(
     int global_column) {
   size_t col_idx = static_cast<size_t>(global_column);
   if (col_idx == Column::kTimestamp)
-    return "ts";
+    return kTsColumnName;
   else if (col_idx == Column::kDuration)
-    return "dur";
+    return kDurColumnName;
   else if (is_same_partition_ && col_idx == Column::kPartition)
     return defn.partition_col().c_str();
 
@@ -223,7 +254,7 @@ int SpanJoinOperatorTable::Cursor::Next() {
 }
 
 int SpanJoinOperatorTable::Cursor::Eof() {
-  return t1_.ts_start() == kU64Max || t2_.ts_start() == kU64Max;
+  return t1_.ts_start() == kI64Max || t2_.ts_start() == kI64Max;
 }
 
 int SpanJoinOperatorTable::Cursor::Column(sqlite3_context* context, int N) {
@@ -276,17 +307,24 @@ int SpanJoinOperatorTable::Cursor::TableQueryState::Initialize(
 
 int SpanJoinOperatorTable::Cursor::TableQueryState::StepAndCacheValues() {
   sqlite3_stmt* stmt = stmt_.get();
-  int res = sqlite3_step(stmt);
+
+  // Fastforward through any rows with null partition keys.
+  int res, row_type;
+  do {
+    res = sqlite3_step(stmt);
+    row_type = sqlite3_column_type(stmt, Column::kPartition);
+  } while (res == SQLITE_ROW && row_type == SQLITE_NULL);
+
   if (res == SQLITE_ROW) {
     int64_t ts = sqlite3_column_int64(stmt, Column::kTimestamp);
     int64_t dur = sqlite3_column_int64(stmt, Column::kDuration);
     int64_t partition = sqlite3_column_int64(stmt, Column::kPartition);
-    ts_start_ = static_cast<uint64_t>(ts);
-    ts_end_ = ts_start_ + static_cast<uint64_t>(dur);
+    ts_start_ = ts;
+    ts_end_ = ts_start_ + dur;
     partition_ = partition;
   } else if (res == SQLITE_DONE) {
-    ts_start_ = kU64Max;
-    ts_end_ = kU64Max;
+    ts_start_ = kI64Max;
+    ts_end_ = kI64Max;
     partition_ = kI64Max;
   }
   return res;
@@ -298,8 +336,7 @@ std::string SpanJoinOperatorTable::Cursor::TableQueryState::CreateSqlQuery(
   std::string sql;
   sql += "SELECT ts, dur, `" + defn_->partition_col() + "`";
   for (const auto& col : defn_->columns()) {
-    if (col.name() == "ts" || col.name() == "dur" ||
-        col.name() == defn_->partition_col())
+    if (IsRequiredColumn(col.name()) || col.name() == defn_->partition_col())
       continue;
     sql += ", " + col.name();
   }

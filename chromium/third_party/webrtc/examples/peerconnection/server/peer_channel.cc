@@ -10,15 +10,14 @@
 
 #include "examples/peerconnection/server/peer_channel.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
 #include <algorithm>
 
 #include "examples/peerconnection/server/data_socket.h"
 #include "examples/peerconnection/server/utils.h"
-#include "rtc_base/stringencode.h"
+#include "rtc_base/string_encode.h"
 
 // Set to the peer id of the originator when messages are being
 // exchanged between peers, but set to the id of the receiving peer

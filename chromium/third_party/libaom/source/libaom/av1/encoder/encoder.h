@@ -59,7 +59,7 @@ typedef struct {
   FRAME_CONTEXT fc;
 } CODING_CONTEXT;
 
-typedef enum {
+enum {
   // regular inter frame
   REGULAR_FRAME = 0,
   // alternate reference frame
@@ -73,22 +73,22 @@ typedef enum {
   // extra alternate reference frame
   EXT_ARF_FRAME = 5,
   FRAME_CONTEXT_INDEXES
-} FRAME_CONTEXT_INDEX;
+} UENUM1BYTE(FRAME_CONTEXT_INDEX);
 
-typedef enum {
+enum {
   NORMAL = 0,
   FOURFIVE = 1,
   THREEFIVE = 2,
   ONETWO = 3
-} AOM_SCALING;
+} UENUM1BYTE(AOM_SCALING);
 
-typedef enum {
+enum {
   // Good Quality Fast Encoding. The encoder balances quality with the amount of
   // time it takes to encode the output. Speed setting controls how fast.
   GOOD
-} MODE;
+} UENUM1BYTE(MODE);
 
-typedef enum {
+enum {
   FRAMEFLAGS_KEY = 1 << 0,
   FRAMEFLAGS_GOLDEN = 1 << 1,
   FRAMEFLAGS_BWDREF = 1 << 2,
@@ -97,30 +97,30 @@ typedef enum {
   FRAMEFLAGS_INTRAONLY = 1 << 4,
   FRAMEFLAGS_SWITCH = 1 << 5,
   FRAMEFLAGS_ERROR_RESILIENT = 1 << 6,
-} FRAMETYPE_FLAGS;
+} UENUM1BYTE(FRAMETYPE_FLAGS);
 
-typedef enum {
+enum {
   NO_AQ = 0,
   VARIANCE_AQ = 1,
   COMPLEXITY_AQ = 2,
   CYCLIC_REFRESH_AQ = 3,
   AQ_MODE_COUNT  // This should always be the last member of the enum
-} AQ_MODE;
-typedef enum {
+} UENUM1BYTE(AQ_MODE);
+enum {
   NO_DELTA_Q = 0,
   DELTA_Q_ONLY = 1,
   DELTA_Q_LF = 2,
   DELTAQ_MODE_COUNT  // This should always be the last member of the enum
-} DELTAQ_MODE;
+} UENUM1BYTE(DELTAQ_MODE);
 
-typedef enum {
+enum {
   RESIZE_NONE = 0,    // No frame resizing allowed.
   RESIZE_FIXED = 1,   // All frames are coded at the specified scale.
   RESIZE_RANDOM = 2,  // All frames are coded at a random scale.
   RESIZE_MODES
-} RESIZE_MODE;
+} UENUM1BYTE(RESIZE_MODE);
 
-typedef enum {
+enum {
   SUPERRES_NONE = 0,     // No frame superres allowed
   SUPERRES_FIXED = 1,    // All frames are coded at the specified scale,
                          // and super-resolved.
@@ -129,7 +129,7 @@ typedef enum {
   SUPERRES_QTHRESH = 3,  // Superres scale for a frame is determined based on
                          // q_index
   SUPERRES_MODES
-} SUPERRES_MODE;
+} UENUM1BYTE(SUPERRES_MODE);
 
 typedef struct TplDepStats {
   int64_t intra_cost;
@@ -215,6 +215,7 @@ typedef struct AV1EncoderConfig {
   DELTAQ_MODE deltaq_mode;
   int enable_cdef;
   int enable_restoration;
+  int enable_obmc;
   int disable_trellis_quant;
   int using_qm;
   int qm_y;
@@ -274,6 +275,7 @@ typedef struct AV1EncoderConfig {
 
   int min_gf_interval;
   int max_gf_interval;
+  int gf_max_pyr_height;
 
   int row_mt;
   int tile_columns;
@@ -288,7 +290,6 @@ typedef struct AV1EncoderConfig {
   int max_threads;
 
   aom_fixed_buf_t two_pass_stats_in;
-  struct aom_codec_pkt_list *output_pkt_list;
 
 #if CONFIG_FP_MB_STATS
   aom_fixed_buf_t firstpass_mb_stats_in;
@@ -304,15 +305,12 @@ typedef struct AV1EncoderConfig {
   int color_range;
   int render_width;
   int render_height;
-  aom_timing_info_type_t timing_info_type;
   int timing_info_present;
   aom_timing_info_t timing_info;
   int decoder_model_info_present_flag;
   int display_model_info_present_flag;
   int buffer_removal_time_present;
   aom_dec_model_info_t buffer_model;
-  aom_dec_model_op_parameters_t op_params[MAX_NUM_OPERATING_POINTS + 1];
-  aom_op_timing_info_t op_frame_timing[MAX_NUM_OPERATING_POINTS + 1];
   int film_grain_test_vector;
   const char *film_grain_table_filename;
 
@@ -325,13 +323,30 @@ typedef struct AV1EncoderConfig {
   int enable_dual_filter;
   unsigned int motion_vector_unit_test;
   const cfg_options_t *cfg;
+  int enable_rect_partitions;
+  int enable_intra_edge_filter;
+  int enable_tx64;
   int enable_order_hint;
-  int enable_jnt_comp;
+  int enable_dist_wtd_comp;
   int enable_ref_frame_mvs;
   unsigned int allow_ref_frame_mvs;
+  int enable_masked_comp;
+  int enable_interintra_comp;
+  int enable_smooth_interintra;
+  int enable_diff_wtd_comp;
+  int enable_interinter_wedge;
+  int enable_interintra_wedge;
+  int enable_global_motion;
   int enable_warped_motion;
   int allow_warped_motion;
+  int enable_filter_intra;
+  int enable_smooth_intra;
+  int enable_paeth_intra;
+  int enable_cfl_intra;
   int enable_superres;
+  int enable_palette;
+  int enable_intrabc;
+  int enable_angle_delta;
   unsigned int save_as_annexb;
 
 #if CONFIG_DENOISE
@@ -341,6 +356,7 @@ typedef struct AV1EncoderConfig {
 
   unsigned int chroma_subsampling_x;
   unsigned int chroma_subsampling_y;
+  int reduced_tx_type_set;
 } AV1EncoderConfig;
 
 static INLINE int is_lossless_requested(const AV1EncoderConfig *cfg) {
@@ -491,7 +507,6 @@ typedef struct AV1RowMTInfo {
 typedef struct TileDataEnc {
   TileInfo tile_info;
   int thresh_freq_fact[BLOCK_SIZES_ALL][MAX_MODES];
-  int mode_map[BLOCK_SIZES_ALL][MAX_MODES];
   int m_search_count;
   int ex_search_count;
   CFL_CTX cfl;
@@ -560,13 +575,13 @@ typedef struct ActiveMap {
 
 #if CONFIG_INTERNAL_STATS
 // types of stats
-typedef enum {
+enum {
   STAT_Y,
   STAT_U,
   STAT_V,
   STAT_ALL,
   NUM_STAT_TYPES  // This should always be the last member of the enum
-} StatType;
+} UENUM1BYTE(StatType);
 
 typedef struct IMAGE_STAT {
   double stat[NUM_STAT_TYPES];
@@ -578,11 +593,6 @@ typedef struct {
   int ref_count;
   YV12_BUFFER_CONFIG buf;
 } EncRefCntBuffer;
-
-typedef struct TileBufferEnc {
-  uint8_t *data;
-  size_t size;
-} TileBufferEnc;
 
 typedef struct AV1_COMP {
   QUANTS quants;
@@ -618,31 +628,11 @@ typedef struct AV1_COMP {
   int rate_index;
   hash_table *previous_hash_table;
   int previous_index;
-  int cur_poc;  // DebugInfo
 
   unsigned int row_mt;
-  int scaled_ref_idx[INTER_REFS_PER_FRAME];
+  RefCntBuffer *scaled_ref_buf[INTER_REFS_PER_FRAME];
 
-  // For encoder, we have a two-level mapping from reference frame type to the
-  // corresponding buffer in the buffer pool:
-  // * 'remapped_ref_idx[i - 1]' maps reference type ‘i’ (range: LAST_FRAME ...
-  // EXTREF_FRAME) to a remapped index ‘j’ (in range: 0 ... REF_FRAMES - 1)
-  // * Later, 'cm->ref_frame_map[j]' maps the remapped index ‘j’ to actual index
-  //   of the buffer in the buffer pool ‘cm->buffer_pool.frame_bufs’.
-  //
-  // LAST_FRAME,                        ...,      EXTREF_FRAME
-  //      |                                           |
-  //      v                                           v
-  // remapped_ref_idx[LAST_FRAME - 1],  ...,  remapped_ref_idx[EXTREF_FRAME - 1]
-  //      |                                           |
-  //      v                                           v
-  // ref_frame_map[],                   ...,     ref_frame_map[]
-  //
-  // Note: INTRA_FRAME always refers to the current frame, so there's no need to
-  // have a remapped index for the same.
-  int remapped_ref_idx[REF_FRAMES];
-
-  int last_show_frame_buf_idx;  // last show frame buffer index
+  RefCntBuffer *last_show_frame_buf;  // last show frame buffer
 
   // refresh_*_frame are boolean flags. If 'refresh_xyz_frame' is true, then
   // after the current frame is encoded, the XYZ reference frame gets refreshed
@@ -660,6 +650,12 @@ typedef struct AV1_COMP {
   int refresh_bwd_ref_frame;
   int refresh_alt2_ref_frame;
   int refresh_alt_ref_frame;
+
+  // For each type of reference frame, this contains the index of a reference
+  // frame buffer for a reference frame of the same type.  We use this to
+  // choose our primary reference frame (which is the most recent reference
+  // frame of the same type as the current frame).
+  int fb_of_context_type[REF_FRAMES];
 
 #if USE_SYMM_MULTI_LAYER
   // When true, a new rule for backward (future) reference frames is in effect:
@@ -709,8 +705,8 @@ typedef struct AV1_COMP {
 
   // Relevant for an inter frame.
   // - Index '0' corresponds to the values for the currently coded frame.
-  // - Indices 1 ... REF_FRAMES are used to store values for all the possible
-  // reference frames.
+  // - Indices LAST_FRAME ... EXTREF_FRAMES are used to store values for all the
+  // possible inter reference frames.
   int interp_filter_selected[REF_FRAMES + 1][SWITCHABLE];
 
   struct aom_codec_pkt_list *output_pkt_list;
@@ -720,14 +716,12 @@ typedef struct AV1_COMP {
   int static_mb_pct;     // % forced skip mbs by segmentation
   int ref_frame_flags;
   int ext_ref_frame_flags;
-  RATE_FACTOR_LEVEL frame_rf_level[FRAME_BUFFERS];
 
   SPEED_FEATURES sf;
 
   unsigned int max_mv_magnitude;
   int mv_step_param;
 
-  int allow_comp_inter_inter;
   int all_one_sided_refs;
 
   uint8_t *segmentation_map;
@@ -741,7 +735,6 @@ typedef struct AV1_COMP {
   uint64_t time_receive_data;
   uint64_t time_compress_data;
   uint64_t time_pick_lpf;
-  uint64_t time_encode_sb_row;
 
 #if CONFIG_FP_MB_STATS
   int use_fp_mb_stats;
@@ -805,15 +798,12 @@ typedef struct AV1_COMP {
   int allocated_tiles;  // Keep track of memory allocated for tiles.
 
   TOKENEXTRA *tile_tok[MAX_TILE_ROWS][MAX_TILE_COLS];
-  unsigned int tok_count[MAX_TILE_ROWS][MAX_TILE_COLS];
   TOKENLIST *tplist[MAX_TILE_ROWS][MAX_TILE_COLS];
-
-  TileBufferEnc tile_buffers[MAX_TILE_ROWS][MAX_TILE_COLS];
+  int largest_tile_id;
 
   int resize_state;
   int resize_avg_qp;
   int resize_buffer_underflow;
-  int resize_count;
 
   // Sequence parameters have been transmitted already and locked
   // or not. Once locked av1_change_config cannot change the seq
@@ -827,14 +817,12 @@ typedef struct AV1_COMP {
   int num_workers;
   AVxWorker *workers;
   struct EncWorkerData *tile_thr_data;
-  int refresh_frame_mask;
   int existing_fb_idx_to_show;
   int is_arf_filter_off[MAX_EXT_ARFS + 1];
   int num_extra_arfs;
   int arf_pos_in_gf[MAX_EXT_ARFS + 1];
   int arf_pos_for_ovrly[MAX_EXT_ARFS + 1];
   int global_motion_search_done;
-  tran_low_t *tcoeff_buf[MAX_MB_PLANE];
   int extra_arf_allowed;
   // A flag to indicate if intrabc is ever used in current frame.
   int intrabc_used;
@@ -843,10 +831,10 @@ typedef struct AV1_COMP {
   int dv_joint_cost[MV_JOINTS];
   int has_lossless_segment;
 
-  // For frame refs short signaling:
-  //   A mapping of each reference frame from its encoder side value to the
-  //   decoder side value obtained following the short signaling procedure.
-  int ref_conv[REF_FRAMES];
+  // Factors to control gating of compound type selection based on best
+  // approximate rd so far
+  int max_comp_type_rd_threshold_mul;
+  int max_comp_type_rd_threshold_div;
 
   AV1LfSync lf_row_sync;
   AV1LrSync lr_row_sync;
@@ -925,47 +913,32 @@ static INLINE int frame_is_kf_gf_arf(const AV1_COMP *cpi) {
          (cpi->refresh_golden_frame && !cpi->rc.is_src_frame_alt_ref);
 }
 
-static INLINE int get_ref_frame_map_idx(const AV1_COMP *cpi,
-                                        MV_REFERENCE_FRAME ref_frame) {
-  return (ref_frame >= 1) ? cpi->remapped_ref_idx[ref_frame - 1] : INVALID_IDX;
-}
-
-static INLINE int get_ref_frame_buf_idx(const AV1_COMP *cpi,
-                                        MV_REFERENCE_FRAME ref_frame) {
-  const AV1_COMMON *const cm = &cpi->common;
-  const int map_idx = get_ref_frame_map_idx(cpi, ref_frame);
-  return (map_idx != INVALID_IDX) ? cm->ref_frame_map[map_idx] : INVALID_IDX;
-}
-
 // TODO(huisu@google.com, youzhou@microsoft.com): enable hash-me for HBD.
 static INLINE int av1_use_hash_me(const AV1_COMMON *const cm) {
   return cm->allow_screen_content_tools;
 }
 
 static INLINE hash_table *av1_get_ref_frame_hash_map(
-    const AV1_COMP *cpi, MV_REFERENCE_FRAME ref_frame) {
-  const AV1_COMMON *const cm = &cpi->common;
-  const int buf_idx = get_ref_frame_buf_idx(cpi, ref_frame);
-  return buf_idx != INVALID_IDX
-             ? &cm->buffer_pool->frame_bufs[buf_idx].hash_table
-             : NULL;
+    const AV1_COMMON *cm, MV_REFERENCE_FRAME ref_frame) {
+  const int map_idx = get_ref_frame_map_idx(cm, ref_frame);
+  RefCntBuffer *buf =
+      (map_idx != INVALID_IDX) ? cm->ref_frame_map[map_idx] : NULL;
+  return buf ? &buf->hash_table : NULL;
 }
 
-static INLINE YV12_BUFFER_CONFIG *get_ref_frame_buffer(
-    const AV1_COMP *cpi, MV_REFERENCE_FRAME ref_frame) {
-  const AV1_COMMON *const cm = &cpi->common;
-  const int buf_idx = get_ref_frame_buf_idx(cpi, ref_frame);
-  return buf_idx != INVALID_IDX ? &cm->buffer_pool->frame_bufs[buf_idx].buf
-                                : NULL;
+static INLINE const YV12_BUFFER_CONFIG *get_ref_frame_yv12_buf(
+    const AV1_COMMON *const cm, MV_REFERENCE_FRAME ref_frame) {
+  const RefCntBuffer *const buf = get_ref_frame_buf(cm, ref_frame);
+  return buf != NULL ? &buf->buf : NULL;
 }
 
-static INLINE int enc_is_ref_frame_buf(AV1_COMP *cpi, RefCntBuffer *frame_buf) {
-  AV1_COMMON *const cm = &cpi->common;
+static INLINE int enc_is_ref_frame_buf(const AV1_COMMON *const cm,
+                                       const RefCntBuffer *const frame_buf) {
   MV_REFERENCE_FRAME ref_frame;
   for (ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ++ref_frame) {
-    const int buf_idx = get_ref_frame_buf_idx(cpi, ref_frame);
-    if (buf_idx == INVALID_IDX) continue;
-    if (frame_buf == &cm->buffer_pool->frame_bufs[buf_idx]) break;
+    const RefCntBuffer *const buf = get_ref_frame_buf(cm, ref_frame);
+    if (buf == NULL) continue;
+    if (frame_buf == buf) break;
   }
   return (ref_frame <= ALTREF_FRAME);
 }
@@ -1025,10 +998,10 @@ static INLINE int is_altref_enabled(const AV1_COMP *const cpi) {
 static INLINE void set_ref_ptrs(const AV1_COMMON *cm, MACROBLOCKD *xd,
                                 MV_REFERENCE_FRAME ref0,
                                 MV_REFERENCE_FRAME ref1) {
-  xd->block_refs[0] =
-      &cm->frame_refs[ref0 >= LAST_FRAME ? ref0 - LAST_FRAME : 0];
-  xd->block_refs[1] =
-      &cm->frame_refs[ref1 >= LAST_FRAME ? ref1 - LAST_FRAME : 0];
+  xd->block_ref_scale_factors[0] =
+      get_ref_scale_factors_const(cm, ref0 >= LAST_FRAME ? ref0 : 1);
+  xd->block_ref_scale_factors[1] =
+      get_ref_scale_factors_const(cm, ref1 >= LAST_FRAME ? ref1 : 1);
 }
 
 static INLINE int get_chessboard_index(int frame_index) {
@@ -1057,8 +1030,8 @@ static INLINE int av1_frame_scaled(const AV1_COMMON *cm) {
 // frame. An exception can be made for a forward keyframe since it has no
 // previous dependencies.
 static INLINE int encode_show_existing_frame(const AV1_COMMON *cm) {
-  return cm->show_existing_frame &&
-         (!cm->error_resilient_mode || cm->frame_type == KEY_FRAME);
+  return cm->show_existing_frame && (!cm->error_resilient_mode ||
+                                     cm->current_frame.frame_type == KEY_FRAME);
 }
 
 // Returns a Sequence Header OBU stored in an aom_fixed_buf_t, or NULL upon

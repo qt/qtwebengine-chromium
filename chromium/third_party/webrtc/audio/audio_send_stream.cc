@@ -19,7 +19,7 @@
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/call/transport.h"
-#include "api/crypto/frameencryptorinterface.h"
+#include "api/crypto/frame_encryptor_interface.h"
 #include "audio/audio_state.h"
 #include "audio/channel_send.h"
 #include "audio/conversion.h"
@@ -37,7 +37,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/audio_format_to_string.h"
 #include "rtc_base/task_queue.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
@@ -197,6 +197,10 @@ AudioSendStream::ExtensionIds AudioSendStream::FindExtensionIds(
       ids.transport_sequence_number = extension.id;
     } else if (extension.uri == RtpExtension::kMidUri) {
       ids.mid = extension.id;
+    } else if (extension.uri == RtpExtension::kRidUri) {
+      ids.rid = extension.id;
+    } else if (extension.uri == RtpExtension::kRepairedRidUri) {
+      ids.repaired_rid = extension.id;
     }
   }
   return ids;
@@ -281,6 +285,13 @@ void AudioSendStream::ConfigureStream(
     channel_send->SetMid(new_config.rtp.mid, new_ids.mid);
   }
 
+  // RID RTP header extension
+  if ((first_time || new_ids.rid != old_ids.rid ||
+       new_ids.repaired_rid != old_ids.repaired_rid ||
+       new_config.rtp.rid != old_config.rtp.rid)) {
+    channel_send->SetRid(new_config.rtp.rid, new_ids.rid, new_ids.repaired_rid);
+  }
+
   if (!ReconfigureSendCodec(stream, new_config)) {
     RTC_LOG(LS_ERROR) << "Failed to set up send codec state.";
   }
@@ -309,8 +320,7 @@ void AudioSendStream::Start() {
     rtp_transport_->packet_sender()->SetAccountForAudioPackets(true);
     rtp_rtcp_module_->SetAsPartOfAllocation(true);
     ConfigureBitrateObserver(config_.min_bitrate_bps, config_.max_bitrate_bps,
-                             config_.bitrate_priority,
-                             has_transport_sequence_number);
+                             config_.bitrate_priority);
   } else {
     rtp_rtcp_module_->SetAsPartOfAllocation(false);
   }
@@ -718,10 +728,10 @@ void AudioSendStream::ReconfigureBitrateObserver(
       (has_transport_sequence_number ||
        !webrtc::field_trial::IsEnabled("WebRTC-Audio-SendSideBwe"))) {
     stream->rtp_transport_->packet_sender()->SetAccountForAudioPackets(true);
-    stream->ConfigureBitrateObserver(
-        new_config.min_bitrate_bps, new_config.max_bitrate_bps,
-        new_config.bitrate_priority, has_transport_sequence_number);
     stream->rtp_rtcp_module_->SetAsPartOfAllocation(true);
+    stream->ConfigureBitrateObserver(new_config.min_bitrate_bps,
+                                     new_config.max_bitrate_bps,
+                                     new_config.bitrate_priority);
   } else {
     stream->rtp_transport_->packet_sender()->SetAccountForAudioPackets(false);
     stream->RemoveBitrateObserver();
@@ -731,8 +741,7 @@ void AudioSendStream::ReconfigureBitrateObserver(
 
 void AudioSendStream::ConfigureBitrateObserver(int min_bitrate_bps,
                                                int max_bitrate_bps,
-                                               double bitrate_priority,
-                                               bool has_packet_feedback) {
+                                               double bitrate_priority) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   RTC_DCHECK_GE(max_bitrate_bps, min_bitrate_bps);
   rtc::Event thread_sync_event;
@@ -744,10 +753,10 @@ void AudioSendStream::ConfigureBitrateObserver(int min_bitrate_bps,
     config_.bitrate_priority = bitrate_priority;
     // This either updates the current observer or adds a new observer.
     bitrate_allocator_->AddObserver(
-        this, MediaStreamAllocationConfig{
-                  static_cast<uint32_t>(min_bitrate_bps),
-                  static_cast<uint32_t>(max_bitrate_bps), 0, true,
-                  config_.track_id, bitrate_priority, has_packet_feedback});
+        this,
+        MediaStreamAllocationConfig{static_cast<uint32_t>(min_bitrate_bps),
+                                    static_cast<uint32_t>(max_bitrate_bps), 0,
+                                    true, config_.track_id, bitrate_priority});
     thread_sync_event.Set();
   });
   thread_sync_event.Wait(rtc::Event::kForever);
@@ -765,14 +774,8 @@ void AudioSendStream::RemoveBitrateObserver() {
 
 void AudioSendStream::RegisterCngPayloadType(int payload_type,
                                              int clockrate_hz) {
-  const CodecInst codec = {payload_type, "CN", clockrate_hz, 0, 1, 0};
-  if (rtp_rtcp_module_->RegisterSendPayload(codec) != 0) {
-    rtp_rtcp_module_->DeRegisterSendPayload(codec.pltype);
-    if (rtp_rtcp_module_->RegisterSendPayload(codec) != 0) {
-      RTC_DLOG(LS_ERROR) << "RegisterCngPayloadType() failed to register CN to "
-                            "RTP/RTCP module";
-    }
-  }
+  rtp_rtcp_module_->RegisterAudioSendPayload(payload_type, "CN", clockrate_hz,
+                                             1, 0);
 }
 }  // namespace internal
 }  // namespace webrtc

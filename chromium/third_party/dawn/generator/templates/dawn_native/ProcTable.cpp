@@ -20,7 +20,7 @@
 #include "dawn_native/ValidationUtils_autogen.h"
 
 {% for type in by_category["object"] %}
-    {% if not type.is_builder and type.name.canonical_case() not in ["buffer view", "texture view"] %}
+    {% if not type.is_builder and type.name.canonical_case() not in ["texture view"] %}
         #include "dawn_native/{{type.name.CamelCase()}}.h"
     {% endif %}
 {% endfor %}
@@ -159,7 +159,11 @@ namespace dawn_native {
                         {%- endfor -%}
                     );
                     {% if method.return_type.name.canonical_case() != "void" %}
-                        return reinterpret_cast<{{as_cType(method.return_type.name)}}>(result);
+                        {% if method.return_type.category == "object" %}
+                            return reinterpret_cast<{{as_cType(method.return_type.name)}}>(result);
+                        {% else %}
+                            return result;
+                        {% endif %}
                     {% endif %}
                 }
             {% endfor %}

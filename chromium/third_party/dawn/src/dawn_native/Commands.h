@@ -33,8 +33,8 @@ namespace dawn_native {
         CopyBufferToTexture,
         CopyTextureToBuffer,
         Dispatch,
-        DrawArrays,
-        DrawElements,
+        Draw,
+        DrawIndexed,
         EndComputePass,
         EndRenderPass,
         SetComputePipeline,
@@ -54,35 +54,36 @@ namespace dawn_native {
         Ref<RenderPassDescriptorBase> info;
     };
 
-    struct BufferCopyLocation {
+    struct BufferCopy {
         Ref<BufferBase> buffer;
-        uint32_t offset;
+        uint32_t offset;       // Bytes
+        uint32_t rowPitch;     // Bytes
+        uint32_t imageHeight;  // Texels
     };
 
-    struct TextureCopyLocation {
+    struct TextureCopy {
         Ref<TextureBase> texture;
-        uint32_t x, y, z;
-        uint32_t width, height, depth;
         uint32_t level;
         uint32_t slice;
+        Origin3D origin;  // Texels
     };
 
     struct CopyBufferToBufferCmd {
-        BufferCopyLocation source;
-        BufferCopyLocation destination;
+        BufferCopy source;
+        BufferCopy destination;
         uint32_t size;
     };
 
     struct CopyBufferToTextureCmd {
-        BufferCopyLocation source;
-        TextureCopyLocation destination;
-        uint32_t rowPitch;
+        BufferCopy source;
+        TextureCopy destination;
+        Extent3D copySize;  // Texels
     };
 
     struct CopyTextureToBufferCmd {
-        TextureCopyLocation source;
-        BufferCopyLocation destination;
-        uint32_t rowPitch;
+        TextureCopy source;
+        BufferCopy destination;
+        Extent3D copySize;  // Texels
     };
 
     struct DispatchCmd {
@@ -91,17 +92,18 @@ namespace dawn_native {
         uint32_t z;
     };
 
-    struct DrawArraysCmd {
+    struct DrawCmd {
         uint32_t vertexCount;
         uint32_t instanceCount;
         uint32_t firstVertex;
         uint32_t firstInstance;
     };
 
-    struct DrawElementsCmd {
+    struct DrawIndexedCmd {
         uint32_t indexCount;
         uint32_t instanceCount;
         uint32_t firstIndex;
+        uint32_t baseVertex;
         uint32_t firstInstance;
     };
 

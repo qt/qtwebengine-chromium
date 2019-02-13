@@ -23,6 +23,7 @@ debug:
 	mkdir -p ./canvaskit/bin
 	cp ../../out/canvaskit_wasm_debug/canvaskit.js   ./canvaskit/bin
 	cp ../../out/canvaskit_wasm_debug/canvaskit.wasm ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_debug/canvaskit.wasm.map ./canvaskit/bin
 
 debug_cpu:
 	# Does an incremental build where possible.
@@ -30,6 +31,21 @@ debug_cpu:
 	mkdir -p ./canvaskit/bin
 	cp ../../out/canvaskit_wasm_debug/canvaskit.js   ./canvaskit/bin
 	cp ../../out/canvaskit_wasm_debug/canvaskit.wasm ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_debug/canvaskit.wasm.map ./canvaskit/bin
+
+profile:
+	./compile.sh profiling
+	mkdir -p ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_profile/canvaskit.js       ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_profile/canvaskit.wasm     ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_profile/canvaskit.wasm.map ./canvaskit/bin
+
+profile_cpu:
+	./compile.sh profiling cpu_only
+	mkdir -p ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_profile/canvaskit.js       ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_profile/canvaskit.wasm     ./canvaskit/bin
+	cp ../../out/canvaskit_wasm_profile/canvaskit.wasm.map ./canvaskit/bin
 
 local-example:
 	rm -rf node_modules/canvaskit

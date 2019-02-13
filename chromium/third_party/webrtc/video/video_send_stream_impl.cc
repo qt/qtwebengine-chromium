@@ -9,20 +9,31 @@
  */
 #include "video/video_send_stream_impl.h"
 
+#include <stdio.h>
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <utility>
 
+#include "api/crypto/crypto_options.h"
+#include "api/rtp_parameters.h"
+#include "api/video_codecs/video_codec.h"
 #include "call/rtp_transport_controller_send_interface.h"
-#include "modules/pacing/packet_router.h"
-#include "modules/rtp_rtcp/source/rtp_sender.h"
+#include "call/video_send_stream.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/pacing/paced_sender.h"
+#include "rtc_base/atomic_ops.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/experiments/alr_experiment.h"
-#include "rtc_base/file.h"
-#include "rtc_base/location.h"
+#include "rtc_base/experiments/rate_control_settings.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "rtc_base/scoped_ref_ptr.h"
+#include "rtc_base/sequenced_task_checker.h"
+#include "rtc_base/thread_checker.h"
+#include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
+#include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
@@ -33,6 +44,8 @@ namespace {
 static constexpr int kMaxVbaSizeDifferencePercent = 10;
 // Max time we will throttle similar video bitrate allocations.
 static constexpr int64_t kMaxVbaThrottleTimeMs = 500;
+
+constexpr TimeDelta kEncoderTimeOut = TimeDelta::Seconds<2>();
 
 bool TransportSeqNumExtensionConfigured(const VideoSendStream::Config& config) {
   const std::vector<RtpExtension>& extensions = config.rtp.extensions;
@@ -169,58 +182,6 @@ PacingConfig::PacingConfig()
 PacingConfig::PacingConfig(const PacingConfig&) = default;
 PacingConfig::~PacingConfig() = default;
 
-// CheckEncoderActivityTask is used for tracking when the encoder last produced
-// and encoded video frame. If the encoder has not produced anything the last
-// kEncoderTimeOutMs we also want to stop sending padding.
-class VideoSendStreamImpl::CheckEncoderActivityTask : public rtc::QueuedTask {
- public:
-  static const int kEncoderTimeOutMs = 2000;
-  explicit CheckEncoderActivityTask(
-      const rtc::WeakPtr<VideoSendStreamImpl>& send_stream)
-      : activity_(0), send_stream_(std::move(send_stream)), timed_out_(false) {}
-
-  void Stop() {
-    RTC_CHECK(task_checker_.CalledSequentially());
-    send_stream_.reset();
-  }
-
-  void UpdateEncoderActivity() {
-    // UpdateEncoderActivity is called from VideoSendStreamImpl::Encoded on
-    // whatever thread the real encoder implementation run on. In the case of
-    // hardware encoders, there might be several encoders
-    // running in parallel on different threads.
-    rtc::AtomicOps::ReleaseStore(&activity_, 1);
-  }
-
- private:
-  bool Run() override {
-    RTC_CHECK(task_checker_.CalledSequentially());
-    if (!send_stream_)
-      return true;
-    if (!rtc::AtomicOps::AcquireLoad(&activity_)) {
-      if (!timed_out_) {
-        send_stream_->SignalEncoderTimedOut();
-      }
-      timed_out_ = true;
-    } else if (timed_out_) {
-      send_stream_->SignalEncoderActive();
-      timed_out_ = false;
-    }
-    rtc::AtomicOps::ReleaseStore(&activity_, 0);
-
-    rtc::TaskQueue::Current()->PostDelayedTask(
-        std::unique_ptr<rtc::QueuedTask>(this), kEncoderTimeOutMs);
-    // Return false to prevent this task from being deleted. Ownership has been
-    // transferred to the task queue when PostDelayedTask was called.
-    return false;
-  }
-  volatile int activity_;
-
-  rtc::SequencedTaskChecker task_checker_;
-  rtc::WeakPtr<VideoSendStreamImpl> send_stream_;
-  bool timed_out_;
-};
-
 VideoSendStreamImpl::VideoSendStreamImpl(
     SendStatisticsProxy* stats_proxy,
     rtc::TaskQueue* worker_queue,
@@ -236,14 +197,15 @@ VideoSendStreamImpl::VideoSendStreamImpl(
     std::map<uint32_t, RtpState> suspended_ssrcs,
     std::map<uint32_t, RtpPayloadState> suspended_payload_states,
     VideoEncoderConfig::ContentType content_type,
-    std::unique_ptr<FecController> fec_controller)
+    std::unique_ptr<FecController> fec_controller,
+    MediaTransportInterface* media_transport)
     : has_alr_probing_(config->periodic_alr_bandwidth_probing ||
                        GetAlrSettings(content_type)),
       pacing_config_(PacingConfig()),
       stats_proxy_(stats_proxy),
       config_(config),
       worker_queue_(worker_queue),
-      check_encoder_activity_task_(nullptr),
+      timed_out_(false),
       call_stats_(call_stats),
       transport_(transport),
       bitrate_allocator_(bitrate_allocator),
@@ -258,7 +220,6 @@ VideoSendStreamImpl::VideoSendStreamImpl(
                         video_stream_encoder),
       bandwidth_observer_(transport->GetBandwidthObserver()),
       rtp_video_sender_(transport_->CreateRtpVideoSender(
-          config_->rtp.ssrcs,
           suspended_ssrcs,
           suspended_payload_states,
           config_->rtp,
@@ -271,12 +232,19 @@ VideoSendStreamImpl::VideoSendStreamImpl(
           event_log,
           std::move(fec_controller),
           CreateFrameEncryptionConfig(config_))),
-      weak_ptr_factory_(this) {
+      weak_ptr_factory_(this),
+      media_transport_(media_transport) {
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_LOG(LS_INFO) << "VideoSendStreamInternal: " << config_->ToString();
   weak_ptr_ = weak_ptr_factory_.GetWeakPtr();
 
-  RTC_DCHECK(!config_->rtp.ssrcs.empty());
+  if (media_transport_) {
+    // The configured ssrc is interpreted as a channel id, so there must be
+    // exactly one.
+    RTC_DCHECK_EQ(config_->rtp.ssrcs.size(), 1);
+  } else {
+    RTC_DCHECK(!config_->rtp.ssrcs.empty());
+  }
   RTC_DCHECK(call_stats_);
   RTC_DCHECK(transport_);
   RTC_DCHECK_NE(initial_encoder_max_bitrate, 0);
@@ -312,9 +280,16 @@ VideoSendStreamImpl::VideoSendStreamImpl(
       configured_pacing_factor_ = alr_settings->pacing_factor;
       transport->SetQueueTimeLimit(alr_settings->max_paced_queue_time);
     } else {
-      transport->EnablePeriodicAlrProbing(false);
-      transport->SetPacingFactor(pacing_config_.pacing_factor);
-      configured_pacing_factor_ = pacing_config_.pacing_factor;
+      RateControlSettings rate_control_settings =
+          RateControlSettings::ParseFromFieldTrials();
+
+      transport->EnablePeriodicAlrProbing(
+          rate_control_settings.UseAlrProbing());
+      const double pacing_factor =
+          rate_control_settings.GetPacingFactor().value_or(
+              pacing_config_.pacing_factor);
+      transport->SetPacingFactor(pacing_factor);
+      configured_pacing_factor_ = pacing_factor;
       transport->SetQueueTimeLimit(pacing_config_.max_pacing_delay.Get().ms());
     }
   }
@@ -400,15 +375,28 @@ void VideoSendStreamImpl::StartupVideoSendStream() {
           static_cast<uint32_t>(encoder_min_bitrate_bps_),
           encoder_max_bitrate_bps_, static_cast<uint32_t>(max_padding_bitrate_),
           !config_->suspend_below_min_bitrate, config_->track_id,
-          encoder_bitrate_priority_, has_packet_feedback_});
+          encoder_bitrate_priority_});
   // Start monitoring encoder activity.
   {
-    rtc::CritScope lock(&encoder_activity_crit_sect_);
-    RTC_DCHECK(!check_encoder_activity_task_);
-    check_encoder_activity_task_ = new CheckEncoderActivityTask(weak_ptr_);
-    worker_queue_->PostDelayedTask(
-        std::unique_ptr<rtc::QueuedTask>(check_encoder_activity_task_),
-        CheckEncoderActivityTask::kEncoderTimeOutMs);
+    RTC_DCHECK(!check_encoder_activity_task_.Running());
+
+    activity_ = false;
+    timed_out_ = false;
+    check_encoder_activity_task_ =
+        RepeatingTaskHandle::DelayedStart(kEncoderTimeOut, [this] {
+          RTC_DCHECK_RUN_ON(worker_queue_);
+          if (!activity_) {
+            if (!timed_out_) {
+              SignalEncoderTimedOut();
+            }
+            timed_out_ = true;
+          } else if (timed_out_) {
+            SignalEncoderActive();
+            timed_out_ = false;
+          }
+          activity_ = false;
+          return kEncoderTimeOut;
+        });
   }
 
   video_stream_encoder_->SendKeyFrame();
@@ -426,18 +414,14 @@ void VideoSendStreamImpl::Stop() {
 
 void VideoSendStreamImpl::StopVideoSendStream() {
   bitrate_allocator_->RemoveObserver(this);
-  {
-    rtc::CritScope lock(&encoder_activity_crit_sect_);
-    check_encoder_activity_task_->Stop();
-    check_encoder_activity_task_ = nullptr;
-  }
+  check_encoder_activity_task_.Stop();
   video_stream_encoder_->OnBitrateUpdated(0, 0, 0);
   stats_proxy_->OnSetEncoderTargetRate(0);
 }
 
 void VideoSendStreamImpl::SignalEncoderTimedOut() {
   RTC_DCHECK_RUN_ON(worker_queue_);
-  // If the encoder has not produced anything the last kEncoderTimeOutMs and it
+  // If the encoder has not produced anything the last kEncoderTimeOut and it
   // is supposed to, deregister as BitrateAllocatorObserver. This can happen
   // if a camera stops producing frames.
   if (encoder_target_rate_bps_ > 0) {
@@ -504,7 +488,7 @@ void VideoSendStreamImpl::SignalEncoderActive() {
           static_cast<uint32_t>(encoder_min_bitrate_bps_),
           encoder_max_bitrate_bps_, static_cast<uint32_t>(max_padding_bitrate_),
           !config_->suspend_below_min_bitrate, config_->track_id,
-          encoder_bitrate_priority_, has_packet_feedback_});
+          encoder_bitrate_priority_});
 }
 
 void VideoSendStreamImpl::OnEncoderConfigurationChanged(
@@ -573,7 +557,7 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
                   encoder_max_bitrate_bps_,
                   static_cast<uint32_t>(max_padding_bitrate_),
                   !config_->suspend_below_min_bitrate, config_->track_id,
-                  encoder_bitrate_priority_, has_packet_feedback_});
+                  encoder_bitrate_priority_});
   }
 }
 
@@ -584,15 +568,36 @@ EncodedImageCallback::Result VideoSendStreamImpl::OnEncodedImage(
   // Encoded is called on whatever thread the real encoder implementation run
   // on. In the case of hardware encoders, there might be several encoders
   // running in parallel on different threads.
-  {
-    rtc::CritScope lock(&encoder_activity_crit_sect_);
-    if (check_encoder_activity_task_)
-      check_encoder_activity_task_->UpdateEncoderActivity();
+
+  // Indicate that there still is activity going on.
+  activity_ = true;
+
+  EncodedImageCallback::Result result(EncodedImageCallback::Result::OK);
+  if (media_transport_) {
+    int64_t frame_id;
+    {
+      // TODO(nisse): Responsibility for allocation of frame ids should move to
+      // VideoStreamEncoder.
+      rtc::CritScope cs(&media_transport_id_lock_);
+      frame_id = media_transport_frame_id_++;
+    }
+    // TODO(nisse): Responsibility for reference meta data should be moved
+    // upstream, ideally close to the encoders, but probably VideoStreamEncoder
+    // will need to do some translation to produce reference info using frame
+    // ids.
+    std::vector<int64_t> referenced_frame_ids;
+    if (encoded_image._frameType != kVideoFrameKey) {
+      RTC_DCHECK_GT(frame_id, 0);
+      referenced_frame_ids.push_back(frame_id - 1);
+    }
+    media_transport_->SendVideoFrame(
+        config_->rtp.ssrcs[0], webrtc::MediaTransportEncodedVideoFrame(
+                                   frame_id, referenced_frame_ids,
+                                   config_->rtp.payload_type, encoded_image));
+  } else {
+    result = rtp_video_sender_->OnEncodedImage(
+        encoded_image, codec_specific_info, fragmentation);
   }
-
-  EncodedImageCallback::Result result = rtp_video_sender_->OnEncodedImage(
-      encoded_image, codec_specific_info, fragmentation);
-
   // Check if there's a throttled VideoBitrateAllocation that we should try
   // sending.
   rtc::WeakPtr<VideoSendStreamImpl> send_stream = weak_ptr_;

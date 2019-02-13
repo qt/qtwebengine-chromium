@@ -23,8 +23,8 @@
 #include "modules/rtp_rtcp/source/rtp_sender.h"
 #include "modules/rtp_rtcp/source/rtp_utility.h"
 #include "modules/rtp_rtcp/source/ulpfec_generator.h"
-#include "rtc_base/criticalsection.h"
-#include "rtc_base/onetimeevent.h"
+#include "rtc_base/critical_section.h"
+#include "rtc_base/one_time_event.h"
 #include "rtc_base/rate_statistics.h"
 #include "rtc_base/sequenced_task_checker.h"
 #include "rtc_base/thread_annotations.h"
@@ -77,6 +77,7 @@ class RTPSenderVideo {
 
   uint32_t VideoBitrateSent() const;
   uint32_t FecOverheadRate() const;
+  uint32_t PacketizationOverheadBps() const;
 
   int SelectiveRetransmissions() const;
   void SetSelectiveRetransmissions(uint8_t settings);
@@ -138,6 +139,8 @@ class RTPSenderVideo {
   enum VideoCodecType video_type_;
   int32_t retransmission_settings_ RTC_GUARDED_BY(crit_);
   VideoRotation last_rotation_ RTC_GUARDED_BY(crit_);
+  absl::optional<ColorSpace> last_color_space_ RTC_GUARDED_BY(crit_);
+  bool transmit_color_space_next_frame_ RTC_GUARDED_BY(crit_);
 
   // RED/ULPFEC.
   int red_payload_type_ RTC_GUARDED_BY(crit_);
@@ -157,6 +160,7 @@ class RTPSenderVideo {
   RateStatistics fec_bitrate_ RTC_GUARDED_BY(stats_crit_);
   // Bitrate used for video payload and RTP headers.
   RateStatistics video_bitrate_ RTC_GUARDED_BY(stats_crit_);
+  RateStatistics packetization_overhead_bitrate_ RTC_GUARDED_BY(stats_crit_);
 
   std::map<int, TemporalLayerStats> frame_stats_by_temporal_layer_
       RTC_GUARDED_BY(stats_crit_);
@@ -169,6 +173,8 @@ class RTPSenderVideo {
   // initialized frame_encryptor_ before being sent out of the network.
   // Otherwise these payloads will be dropped.
   bool require_frame_encryption_;
+  // Set to true if the generic descriptor should be authenticated.
+  const bool generic_descriptor_auth_experiment_;
 };
 
 }  // namespace webrtc

@@ -17,7 +17,6 @@
 #include "core/fxcrt/cfx_readonlymemorystream.h"
 #include "core/fxcrt/cfx_seekablemultistream.h"
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/xml/cfx_xmldocument.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
@@ -159,7 +158,7 @@ bool CXFA_FFDoc::OpenDoc(CPDF_Document* pPDFDoc) {
     return true;
 
   WideString wsType = pDynamicRender->JSObject()->GetContent(false);
-  if (wsType == L"required")
+  if (wsType.EqualsASCII("required"))
     m_FormType = FormType::kXFAFull;
 
   return true;
@@ -181,10 +180,9 @@ void CXFA_FFDoc::CloseDoc() {
   m_pApp->ClearEventTargets();
 }
 
-RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(
-    const WideStringView& wsName,
-    int32_t& iImageXDpi,
-    int32_t& iImageYDpi) {
+RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(WideStringView wsName,
+                                                     int32_t& iImageXDpi,
+                                                     int32_t& iImageYDpi) {
   if (!m_pPDFDoc)
     return nullptr;
 

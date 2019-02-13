@@ -27,8 +27,8 @@
 #include "modules/rtp_rtcp/include/flexfec_sender.h"
 #include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/utility/include/process_thread.h"
-#include "rtc_base/constructormagic.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/constructor_magic.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/thread_checker.h"
@@ -49,7 +49,6 @@ class RtpVideoSender : public RtpVideoSenderInterface,
  public:
   // Rtp modules are assumed to be sorted in simulcast index order.
   RtpVideoSender(
-      const std::vector<uint32_t>& ssrcs,
       std::map<uint32_t, RtpState> suspended_ssrcs,
       const std::map<uint32_t, RtpPayloadState>& states,
       const RtpConfig& rtp_config,
@@ -126,10 +125,13 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   void UpdateModuleSendingState() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_);
   void ConfigureProtection(const RtpConfig& rtp_config);
   void ConfigureSsrcs(const RtpConfig& rtp_config);
+  void ConfigureRids(const RtpConfig& rtp_config);
   bool FecEnabled() const;
   bool NackEnabled() const;
+  uint32_t GetPacketizationOverheadRate() const;
 
   const bool send_side_bwe_with_overhead_;
+  const bool account_for_packetization_overhead_;
 
   // TODO(holmer): Remove crit_ once RtpVideoSender runs on the
   // transport task queue.

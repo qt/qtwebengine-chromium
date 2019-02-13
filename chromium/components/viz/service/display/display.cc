@@ -108,7 +108,8 @@ Display::Display(
       scheduler_(std::move(scheduler)),
       current_task_runner_(std::move(current_task_runner)),
       swapped_trace_id_(GetStartingTraceId()),
-      last_acked_trace_id_(swapped_trace_id_) {
+      last_acked_trace_id_(swapped_trace_id_),
+      last_presented_trace_id_(last_acked_trace_id_) {
   DCHECK(output_surface_);
   DCHECK(frame_sink_id_.is_valid());
   if (scheduler_)
@@ -134,13 +135,8 @@ Display::~Display() {
     if (scheduler_)
       surface_manager_->RemoveObserver(scheduler_.get());
   }
-  if (aggregator_) {
-    for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
-      Surface* surface = surface_manager_->GetSurfaceForId(id_entry.first);
-      if (surface)
-        surface->RunDrawCallback();
-    }
-  }
+
+  RunDrawCallbacks();
 }
 
 void Display::Initialize(DisplayClient* client,
@@ -381,12 +377,7 @@ bool Display::DrawAndSwap() {
                            swapped_trace_id_);
 
   // Run callbacks early to allow pipelining and collect presented callbacks.
-  for (const auto& surface_id : surfaces_to_ack_on_next_draw_) {
-    Surface* surface = surface_manager_->GetSurfaceForId(surface_id);
-    if (surface)
-      surface->RunDrawCallback();
-  }
-  surfaces_to_ack_on_next_draw_.clear();
+  RunDrawCallbacks();
 
   frame.metadata.latency_info.insert(frame.metadata.latency_info.end(),
                                      stored_latency_info_.begin(),
@@ -488,9 +479,7 @@ bool Display::DrawAndSwap() {
                                                  "Display::DrawAndSwap");
 
     cc::benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
-    const bool need_presentation_feedback = true;
-    renderer_->SwapBuffers(std::move(frame.metadata.latency_info),
-                           need_presentation_feedback);
+    renderer_->SwapBuffers(std::move(frame.metadata.latency_info));
     if (scheduler_)
       scheduler_->DidSwapBuffers();
     TRACE_EVENT_ASYNC_STEP_INTO0("viz,benchmark",
@@ -538,8 +527,8 @@ bool Display::DrawAndSwap() {
 
 void Display::DidReceiveSwapBuffersAck() {
   ++last_acked_trace_id_;
-  TRACE_EVENT_ASYNC_END0("viz,benchmark", "Graphics.Pipeline.DrawAndSwap",
-                         last_acked_trace_id_);
+  TRACE_EVENT_ASYNC_STEP_INTO0("viz,benchmark", "Graphics.Pipeline.DrawAndSwap",
+                               last_acked_trace_id_, "WaitForPresentation");
   if (scheduler_)
     scheduler_->DidReceiveSwapBuffersAck();
   if (renderer_)
@@ -566,6 +555,10 @@ void Display::DidSwapWithSize(const gfx::Size& pixel_size) {
 void Display::DidReceivePresentationFeedback(
     const gfx::PresentationFeedback& feedback) {
   DCHECK(!pending_presented_callbacks_.empty());
+  ++last_presented_trace_id_;
+  TRACE_EVENT_ASYNC_END_WITH_TIMESTAMP0(
+      "viz,benchmark", "Graphics.Pipeline.DrawAndSwap",
+      last_presented_trace_id_, feedback.timestamp);
   auto& callbacks = pending_presented_callbacks_.front().second;
   const auto swap_time = pending_presented_callbacks_.front().first;
   auto copy_feedback = SanitizePresentationFeedback(feedback, swap_time);
@@ -612,7 +605,7 @@ void Display::SurfaceDiscarded(const SurfaceId& surface_id) {
     aggregator_->ReleaseResources(surface_id);
 }
 
-bool Display::SurfaceHasUndrawnFrame(const SurfaceId& surface_id) const {
+bool Display::SurfaceHasUnackedFrame(const SurfaceId& surface_id) const {
   if (!surface_manager_)
     return false;
 
@@ -620,7 +613,7 @@ bool Display::SurfaceHasUndrawnFrame(const SurfaceId& surface_id) const {
   if (!surface)
     return false;
 
-  return surface->HasUndrawnActiveFrame();
+  return surface->HasUnackedActiveFrame();
 }
 
 void Display::DidFinishFrame(const BeginFrameAck& ack) {
@@ -824,6 +817,24 @@ void Display::RemoveOverdrawQuads(CompositorFrame* frame) {
       "Compositing.Display.Draw.Occlusion.Drawing.Area.Saved2",
       static_cast<uint64_t>(total_area_saved_in_px.ValueOrDefault(
           std::numeric_limits<uint64_t>::max())));
+}
+
+void Display::RunDrawCallbacks() {
+  for (const auto& surface_id : surfaces_to_ack_on_next_draw_) {
+    Surface* surface = surface_manager_->GetSurfaceForId(surface_id);
+    if (surface)
+      surface->SendAckToClient();
+  }
+  surfaces_to_ack_on_next_draw_.clear();
+  // |surfaces_to_ack_on_next_draw_| does not cover surfaces that are being
+  // embedded for the first time, so also go through SurfaceAggregator's list.
+  if (aggregator_) {
+    for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
+      Surface* surface = surface_manager_->GetSurfaceForId(id_entry.first);
+      if (surface)
+        surface->SendAckToClient();
+    }
+  }
 }
 
 }  // namespace viz

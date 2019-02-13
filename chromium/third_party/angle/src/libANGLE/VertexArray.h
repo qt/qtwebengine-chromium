@@ -13,11 +13,11 @@
 #ifndef LIBANGLE_VERTEXARRAY_H_
 #define LIBANGLE_VERTEXARRAY_H_
 
+#include "common/Optional.h"
 #include "libANGLE/Constants.h"
 #include "libANGLE/Debug.h"
 #include "libANGLE/Observer.h"
 #include "libANGLE/RefCountObject.h"
-#include "libANGLE/State.h"
 #include "libANGLE/VertexAttribute.h"
 
 #include <vector>
@@ -104,9 +104,9 @@ class VertexArray final : public angle::ObserverInterface,
 
     void onDestroy(const Context *context);
 
-    GLuint id() const;
+    GLuint id() const { return mId; }
 
-    void setLabel(const std::string &label) override;
+    void setLabel(const Context *context, const std::string &label) override;
     const std::string &getLabel() const override;
 
     const VertexBinding &getVertexBinding(size_t bindingIndex) const;
@@ -119,18 +119,27 @@ class VertexArray final : public angle::ObserverInterface,
     void detachBuffer(const Context *context, GLuint bufferName);
     void setVertexAttribDivisor(const Context *context, size_t index, GLuint divisor);
     void enableAttribute(size_t attribIndex, bool enabledState);
+
     void setVertexAttribPointer(const Context *context,
                                 size_t attribIndex,
                                 Buffer *boundBuffer,
                                 GLint size,
-                                GLenum type,
+                                VertexAttribType type,
                                 bool normalized,
-                                bool pureInteger,
                                 GLsizei stride,
                                 const void *pointer);
+
+    void setVertexAttribIPointer(const Context *context,
+                                 size_t attribIndex,
+                                 Buffer *boundBuffer,
+                                 GLint size,
+                                 VertexAttribType type,
+                                 GLsizei stride,
+                                 const void *pointer);
+
     void setVertexAttribFormat(size_t attribIndex,
                                GLint size,
-                               GLenum type,
+                               VertexAttribType type,
                                bool normalized,
                                bool pureInteger,
                                GLuint relativeOffset);
@@ -141,11 +150,10 @@ class VertexArray final : public angle::ObserverInterface,
                           GLsizei stride);
     void setVertexAttribBinding(const Context *context, size_t attribIndex, GLuint bindingIndex);
     void setVertexBindingDivisor(size_t bindingIndex, GLuint divisor);
-    void setVertexAttribFormatImpl(size_t attribIndex,
+    void setVertexAttribFormatImpl(VertexAttribute *attrib,
                                    GLint size,
-                                   GLenum type,
+                                   VertexAttribType type,
                                    bool normalized,
-                                   bool pureInteger,
                                    GLuint relativeOffset);
     void bindVertexBufferImpl(const Context *context,
                               size_t bindingIndex,
@@ -256,7 +264,7 @@ class VertexArray final : public angle::ObserverInterface,
     bool hasTransformFeedbackBindingConflict(const gl::Context *context) const;
 
     ANGLE_INLINE angle::Result getIndexRange(const Context *context,
-                                             GLenum type,
+                                             DrawElementsType type,
                                              GLsizei indexCount,
                                              const void *indices,
                                              IndexRange *indexRangeOut) const
@@ -264,7 +272,7 @@ class VertexArray final : public angle::ObserverInterface,
         Buffer *elementArrayBuffer = mState.mElementArrayBuffer.get();
         if (elementArrayBuffer && mIndexRangeCache.get(type, indexCount, indices, indexRangeOut))
         {
-            return angle::Result::Continue();
+            return angle::Result::Continue;
         }
 
         return getIndexRangeImpl(context, type, indexCount, indices, indexRangeOut);
@@ -291,10 +299,21 @@ class VertexArray final : public angle::ObserverInterface,
     void updateCachedMappedArrayBuffers(VertexBinding *binding);
 
     angle::Result getIndexRangeImpl(const Context *context,
-                                    GLenum type,
+                                    DrawElementsType type,
                                     GLsizei indexCount,
                                     const void *indices,
                                     IndexRange *indexRangeOut) const;
+
+    void setVertexAttribPointerImpl(const Context *context,
+                                    ComponentType componentType,
+                                    bool pureInteger,
+                                    size_t attribIndex,
+                                    Buffer *boundBuffer,
+                                    GLint size,
+                                    VertexAttribType type,
+                                    bool normalized,
+                                    GLsizei stride,
+                                    const void *pointer);
 
     GLuint mId;
 
@@ -315,9 +334,12 @@ class VertexArray final : public angle::ObserverInterface,
       public:
         IndexRangeCache();
 
-        void invalidate() { mTypeKey = GL_NONE; }
+        void invalidate() { mTypeKey = DrawElementsType::InvalidEnum; }
 
-        bool get(GLenum type, GLsizei indexCount, const void *indices, IndexRange *indexRangeOut)
+        bool get(DrawElementsType type,
+                 GLsizei indexCount,
+                 const void *indices,
+                 IndexRange *indexRangeOut)
         {
             size_t offset = reinterpret_cast<uintptr_t>(indices);
             if (mTypeKey == type && mIndexCountKey == indexCount && mOffsetKey == offset)
@@ -329,10 +351,13 @@ class VertexArray final : public angle::ObserverInterface,
             return false;
         }
 
-        void put(GLenum type, GLsizei indexCount, size_t offset, const IndexRange &indexRange);
+        void put(DrawElementsType type,
+                 GLsizei indexCount,
+                 size_t offset,
+                 const IndexRange &indexRange);
 
       private:
-        GLenum mTypeKey;
+        DrawElementsType mTypeKey;
         GLsizei mIndexCountKey;
         size_t mOffsetKey;
         IndexRange mPayload;

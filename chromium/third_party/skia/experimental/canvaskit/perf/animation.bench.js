@@ -11,9 +11,8 @@ describe('CanvasKit\'s Animation', function() {
         } else {
             CanvasKitInit({
                 locateFile: (file) => '/canvaskit/'+file,
-            }).then((_CanvasKit) => {
+            }).ready().then((_CanvasKit) => {
                 CanvasKit = _CanvasKit;
-                CanvasKit.initFonts();
                 resolve();
             });
         }

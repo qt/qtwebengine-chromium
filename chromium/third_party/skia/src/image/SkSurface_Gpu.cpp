@@ -101,14 +101,15 @@ sk_sp<SkImage> SkSurface_Gpu::onNewImageSnapshot(const SkIRect* subset) {
 
     if (subset) {
         srcProxy = GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), rtc->mipMapped(), *subset,
-                                        budgeted);
+                                        SkBackingFit::kExact, budgeted);
     } else if (!srcProxy || rtc->priv().refsWrappedObjects()) {
         // If the original render target is a buffer originally created by the client, then we don't
         // want to ever retarget the SkSurface at another buffer we create. Force a copy now to avoid
         // copy-on-write.
         SkASSERT(rtc->origin() == rtc->asSurfaceProxy()->origin());
 
-        srcProxy = GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), rtc->mipMapped(), budgeted);
+        srcProxy = GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), rtc->mipMapped(),
+                                        SkBackingFit::kExact, budgeted);
     }
 
     const SkImageInfo info = fDevice->imageInfo();
@@ -118,7 +119,7 @@ sk_sp<SkImage> SkSurface_Gpu::onNewImageSnapshot(const SkIRect* subset) {
         // above copy creates a kExact surfaceContext.
         SkASSERT(srcProxy->priv().isExact());
         image = sk_make_sp<SkImage_Gpu>(sk_ref_sp(ctx), kNeedNewImageUniqueID, info.alphaType(),
-                                        std::move(srcProxy), info.refColorSpace(), budgeted);
+                                        std::move(srcProxy), info.refColorSpace());
     }
     return image;
 }
@@ -190,7 +191,9 @@ bool SkSurface_Gpu::onCharacterize(SkSurfaceCharacterization* characterization) 
                           rtc->colorSpaceInfo().config(), rtc->fsaaType(), rtc->numStencilSamples(),
                           SkSurfaceCharacterization::Textureable(SkToBool(rtc->asTextureProxy())),
                           SkSurfaceCharacterization::MipMapped(mipmapped),
-                          SkSurfaceCharacterization::UsesGLFBO0(usesGLFBO0), this->props());
+                          SkSurfaceCharacterization::UsesGLFBO0(usesGLFBO0),
+                          SkSurfaceCharacterization::VulkanSecondaryCBCompatible(false),
+                          this->props());
 
     return true;
 }
@@ -393,7 +396,12 @@ bool validate_backend_texture(GrContext* ctx, const GrBackendTexture& tex, GrPix
         return false;
     }
 
-    if (!ctx->contextPriv().caps()->validateBackendTexture(tex, ct, config)) {
+    GrBackendFormat backendFormat = tex.getBackendFormat();
+    if (!backendFormat.isValid()) {
+        return false;
+    }
+    *config = ctx->contextPriv().caps()->getConfigFromBackendFormat(backendFormat, ct);
+    if (*config == kUnknown_GrPixelConfig) {
         return false;
     }
 
@@ -461,7 +469,8 @@ bool validate_backend_render_target(GrContext* ctx, const GrBackendRenderTarget&
         return false;
     }
 
-    if (!ctx->contextPriv().caps()->validateBackendRenderTarget(rt, ct, config)) {
+    *config = ctx->contextPriv().caps()->validateBackendRenderTarget(rt, ct);
+    if (*config == kUnknown_GrPixelConfig) {
         return false;
     }
 

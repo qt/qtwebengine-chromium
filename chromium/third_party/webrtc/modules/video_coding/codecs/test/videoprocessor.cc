@@ -10,22 +10,28 @@
 
 #include "modules/video_coding/codecs/test/videoprocessor.h"
 
+#include <string.h>
 #include <algorithm>
+#include <cstddef>
 #include <limits>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "api/video/i420_buffer.h"
+#include "api/video/video_bitrate_allocator_factory.h"
+#include "api/video/video_frame_buffer.h"
+#include "api/video/video_rotation.h"
+#include "api/video_codecs/video_codec.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "common_video/h264/h264_common.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "modules/video_coding/include/video_codec_initializer.h"
+#include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/include/video_error_codes.h"
-#include "modules/video_coding/utility/default_video_bitrate_allocator.h"
-#include "modules/video_coding/utility/simulcast_rate_allocator.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/scoped_ref_ptr.h"
+#include "rtc_base/time_utils.h"
 #include "test/gtest.h"
 #include "third_party/libyuv/include/libyuv/compare.h"
 #include "third_party/libyuv/include/libyuv/scale.h"
@@ -45,8 +51,7 @@ size_t GetMaxNaluSizeBytes(const EncodedImage& encoded_frame,
     return 0;
 
   std::vector<webrtc::H264::NaluIndex> nalu_indices =
-      webrtc::H264::FindNaluIndices(encoded_frame._buffer,
-                                    encoded_frame._length);
+      webrtc::H264::FindNaluIndices(encoded_frame.data(), encoded_frame.size());
 
   RTC_CHECK(!nalu_indices.empty());
 
@@ -244,9 +249,9 @@ VideoProcessor::~VideoProcessor() {
 
   // Deal with manual memory management of EncodedImage's.
   for (size_t i = 0; i < num_simulcast_or_spatial_layers_; ++i) {
-    uint8_t* buffer = merged_encoded_frames_.at(i)._buffer;
-    if (buffer) {
-      delete[] buffer;
+    uint8_t* data = merged_encoded_frames_.at(i).data();
+    if (data) {
+      delete[] data;
     }
   }
 }
@@ -261,9 +266,13 @@ void VideoProcessor::ProcessFrame() {
   RTC_CHECK(buffer) << "Tried to read too many frames from the file.";
   const size_t timestamp =
       last_inputed_timestamp_ + kVideoPayloadTypeFrequency / framerate_fps_;
-  VideoFrame input_frame(buffer, static_cast<uint32_t>(timestamp),
-                         static_cast<int64_t>(timestamp / kMsToRtpTimestamp),
-                         webrtc::kVideoRotation_0);
+  VideoFrame input_frame =
+      VideoFrame::Builder()
+          .set_video_frame_buffer(buffer)
+          .set_timestamp_rtp(static_cast<uint32_t>(timestamp))
+          .set_timestamp_ms(static_cast<int64_t>(timestamp / kMsToRtpTimestamp))
+          .set_rotation(webrtc::kVideoRotation_0)
+          .build();
   // Store input frame as a reference for quality calculations.
   if (config_.decode && !config_.measure_cpu) {
     if (input_frames_.size() == kMaxBufferedInputFrames) {
@@ -317,8 +326,13 @@ int32_t VideoProcessor::VideoProcessorDecodeCompleteCallback::Decoded(
   if (!task_queue_->IsCurrent()) {
     // There might be a limited amount of output buffers, make a copy to make
     // sure we don't block the decoder.
-    VideoFrame copy(I420Buffer::Copy(*image.video_frame_buffer()->ToI420()),
-                    image.rotation(), image.timestamp_us());
+    VideoFrame copy = VideoFrame::Builder()
+                          .set_video_frame_buffer(I420Buffer::Copy(
+                              *image.video_frame_buffer()->ToI420()))
+                          .set_rotation(image.rotation())
+                          .set_timestamp_us(image.timestamp_us())
+                          .set_id(image.id())
+                          .build();
     copy.set_timestamp(image.timestamp());
 
     task_queue_->PostTask([this, copy]() {
@@ -377,7 +391,7 @@ void VideoProcessor::FrameEncoded(
       frame_stat->encode_start_ns, encode_stop_ns - post_encode_time_ns_);
   frame_stat->target_bitrate_kbps =
       bitrate_allocation_.GetTemporalLayerSum(spatial_idx, temporal_idx) / 1000;
-  frame_stat->length_bytes = encoded_image._length;
+  frame_stat->length_bytes = encoded_image.size();
   frame_stat->frame_type = encoded_image._frameType;
   frame_stat->temporal_idx = temporal_idx;
   frame_stat->max_nalu_size_bytes = GetMaxNaluSizeBytes(encoded_image, config_);
@@ -539,7 +553,7 @@ const webrtc::EncodedImage* VideoProcessor::BuildAndStoreSuperframe(
   RTC_CHECK_GT(config_.NumberOfSpatialLayers(), 1);
 
   EncodedImage base_image;
-  RTC_CHECK_EQ(base_image._length, 0);
+  RTC_CHECK_EQ(base_image.size(), 0);
 
   // Each SVC layer is decoded with dedicated decoder. Find the nearest
   // non-dropped base frame and merge it and current frame into superframe.
@@ -553,30 +567,29 @@ const webrtc::EncodedImage* VideoProcessor::BuildAndStoreSuperframe(
       }
     }
   }
-  const size_t payload_size_bytes = base_image._length + encoded_image._length;
+  const size_t payload_size_bytes = base_image.size() + encoded_image.size();
   const size_t buffer_size_bytes =
       payload_size_bytes + EncodedImage::GetBufferPaddingBytes(codec);
 
   uint8_t* copied_buffer = new uint8_t[buffer_size_bytes];
   RTC_CHECK(copied_buffer);
 
-  if (base_image._length) {
-    RTC_CHECK(base_image._buffer);
-    memcpy(copied_buffer, base_image._buffer, base_image._length);
+  if (base_image.size()) {
+    RTC_CHECK(base_image.data());
+    memcpy(copied_buffer, base_image.data(), base_image.size());
   }
-  memcpy(copied_buffer + base_image._length, encoded_image._buffer,
-         encoded_image._length);
+  memcpy(copied_buffer + base_image.size(), encoded_image.data(),
+         encoded_image.size());
 
   EncodedImage copied_image = encoded_image;
   copied_image = encoded_image;
-  copied_image._buffer = copied_buffer;
-  copied_image._length = payload_size_bytes;
-  copied_image._size = buffer_size_bytes;
+  copied_image.set_buffer(copied_buffer, buffer_size_bytes);
+  copied_image.set_size(payload_size_bytes);
 
   // Replace previous EncodedImage for this spatial layer.
-  uint8_t* old_buffer = merged_encoded_frames_.at(spatial_idx)._buffer;
-  if (old_buffer) {
-    delete[] old_buffer;
+  uint8_t* old_data = merged_encoded_frames_.at(spatial_idx).data();
+  if (old_data) {
+    delete[] old_data;
   }
   merged_encoded_frames_.at(spatial_idx) = copied_image;
 

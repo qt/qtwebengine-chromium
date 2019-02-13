@@ -351,6 +351,8 @@ struct ImageUnit
     GLenum format;
 };
 
+using ImageUnitTextureTypeMap = std::map<unsigned int, gl::TextureType>;
+
 struct PixelStoreStateBase
 {
     GLint alignment   = 4;
@@ -381,26 +383,53 @@ using DrawBufferMask = angle::BitSet<IMPLEMENTATION_MAX_DRAW_BUFFERS>;
 template <typename T>
 using TexLevelArray = std::array<T, IMPLEMENTATION_MAX_TEXTURE_LEVELS>;
 
-constexpr size_t MAX_COMPONENT_TYPE_MASK_INDEX = 16;
-struct ComponentTypeMask final
+enum class ComponentType
 {
-    ComponentTypeMask();
-    ComponentTypeMask(const ComponentTypeMask &other);
-    ~ComponentTypeMask();
-    void reset();
-    bool none();
-    void setIndex(GLenum type, size_t index);
-    unsigned long to_ulong() const;
-    void from_ulong(unsigned long mask);
-    static bool Validate(unsigned long outputTypes,
-                         unsigned long inputTypes,
-                         unsigned long outputMask,
-                         unsigned long inputMask);
-
-  private:
-    // Each index type is represented by 2 bits
-    angle::BitSet<MAX_COMPONENT_TYPE_MASK_INDEX * 2> mTypeMask;
+    Float       = 0,
+    Int         = 1,
+    UnsignedInt = 2,
+    NoType      = 3,
+    EnumCount   = 4,
+    InvalidEnum = 4,
 };
+
+constexpr ComponentType GLenumToComponentType(GLenum componentType)
+{
+    switch (componentType)
+    {
+        case GL_FLOAT:
+            return ComponentType::Float;
+        case GL_INT:
+            return ComponentType::Int;
+        case GL_UNSIGNED_INT:
+            return ComponentType::UnsignedInt;
+        case GL_NONE:
+            return ComponentType::NoType;
+        default:
+            return ComponentType::InvalidEnum;
+    }
+}
+
+constexpr angle::PackedEnumMap<ComponentType, uint32_t> kComponentMasks = {{
+    {ComponentType::Float, 0x10001},
+    {ComponentType::Int, 0x00001},
+    {ComponentType::UnsignedInt, 0x10000},
+}};
+
+constexpr size_t kMaxComponentTypeMaskIndex = 16;
+using ComponentTypeMask                     = angle::BitSet<kMaxComponentTypeMaskIndex * 2>;
+
+ANGLE_INLINE void SetComponentTypeMask(ComponentType type, size_t index, ComponentTypeMask *mask)
+{
+    ASSERT(index <= kMaxComponentTypeMaskIndex);
+    *mask &= ~(0x10001 << index);
+    *mask |= kComponentMasks[type] << index;
+}
+
+bool ValidateComponentTypeMasks(unsigned long outputTypes,
+                                unsigned long inputTypes,
+                                unsigned long outputMask,
+                                unsigned long inputMask);
 
 using ContextID = uintptr_t;
 
@@ -427,6 +456,8 @@ using ActiveTextureArray = std::array<T, IMPLEMENTATION_MAX_ACTIVE_TEXTURES>;
 
 using ActiveTexturePointerArray = ActiveTextureArray<Texture *>;
 using ActiveTextureTypeArray    = ActiveTextureArray<TextureType>;
+
+using ImageUnitMask = angle::BitSet<IMPLEMENTATION_MAX_IMAGE_UNITS>;
 
 // OffsetBindingPointer.getSize() returns the size specified by the user, which may be larger than
 // the size of the bound buffer. This function reduces the returned size to fit the bound buffer if
@@ -603,8 +634,7 @@ using UniqueObjectPointer = UniqueObjectPointerBase<ObjT, DestroyThenDelete<ObjT
 
 namespace gl
 {
-class ContextState;
-
+class State;
 }  // namespace gl
 
 #endif  // LIBANGLE_ANGLETYPES_H_

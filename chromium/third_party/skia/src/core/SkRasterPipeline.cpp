@@ -77,20 +77,6 @@ void SkRasterPipeline::dump() const {
     SkDebugf("\n");
 }
 
-//#define TRACK_COLOR_HISTOGRAM
-#ifdef TRACK_COLOR_HISTOGRAM
-    static int gBlack;
-    static int gWhite;
-    static int gColor;
-    #define INC_BLACK   gBlack++
-    #define INC_WHITE   gWhite++
-    #define INC_COLOR   gColor++
-#else
-    #define INC_BLACK
-    #define INC_WHITE
-    #define INC_COLOR
-#endif
-
 void SkRasterPipeline::append_set_rgb(SkArenaAlloc* alloc, const float rgb[3]) {
     auto arg = alloc->makeArrayDefault<float>(3);
     arg[0] = rgb[0];
@@ -114,10 +100,8 @@ void SkRasterPipeline::append_constant_color(SkArenaAlloc* alloc, const float rg
 
     if (rgba[0] == 0 && rgba[1] == 0 && rgba[2] == 0 && rgba[3] == 1) {
         this->append(black_color);
-        INC_BLACK;
     } else if (rgba[0] == 1 && rgba[1] == 1 && rgba[2] == 1 && rgba[3] == 1) {
         this->append(white_color);
-        INC_WHITE;
     } else {
         auto ctx = alloc->make<SkRasterPipeline_UniformColorCtx>();
         Sk4f color = Sk4f::Load(rgba);
@@ -138,32 +122,11 @@ void SkRasterPipeline::append_constant_color(SkArenaAlloc* alloc, const float rg
         } else {
             this->unchecked_append(unbounded_uniform_color, ctx);
         }
-
-        INC_COLOR;
     }
-
-#ifdef TRACK_COLOR_HISTOGRAM
-    SkDebugf("B=%d W=%d C=%d\n", gBlack, gWhite, gColor);
-#endif
 }
-
-#undef INC_BLACK
-#undef INC_WHITE
-#undef INC_COLOR
-
-//static int gCounts[5] = { 0, 0, 0, 0, 0 };
 
 void SkRasterPipeline::append_matrix(SkArenaAlloc* alloc, const SkMatrix& matrix) {
     SkMatrix::TypeMask mt = matrix.getType();
-#if 0
-    if (mt > 4) mt = 4;
-    gCounts[mt] += 1;
-    SkDebugf("matrices: %d %d %d %d %d\n",
-             gCounts[0], gCounts[1], gCounts[2], gCounts[3], gCounts[4]);
-#endif
-
-    // Based on a histogram of skps, we determined the following special cases were common, more
-    // or fewer can be used if client behaviors change.
 
     if (mt == SkMatrix::kIdentity_Mask) {
         return;

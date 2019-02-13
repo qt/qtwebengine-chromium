@@ -23,14 +23,12 @@
 #include "common_audio/smoothing_filter.h"
 #include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor.h"
 #include "modules/audio_coding/codecs/opus/opus_interface.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/protobuf_utils.h"
 
 namespace webrtc {
 
 class RtcEventLog;
-
-struct CodecInst;
 
 class AudioEncoderOpusImpl final : public AudioEncoder {
  public:
@@ -53,8 +51,6 @@ class AudioEncoderOpusImpl final : public AudioEncoder {
     const float slope_;
     RTC_DISALLOW_COPY_AND_ASSIGN(NewPacketLossRateOptimizer);
   };
-
-  static AudioEncoderOpusConfig CreateConfig(const CodecInst& codec_inst);
 
   // Returns empty if the current bitrate falls within the hysteresis window,
   // defined by complexity_threshold_bps +/- complexity_threshold_window_bps.
@@ -83,7 +79,6 @@ class AudioEncoderOpusImpl final : public AudioEncoder {
       const AudioNetworkAdaptorCreator& audio_network_adaptor_creator,
       std::unique_ptr<SmoothingFilter> bitrate_smoother);
 
-  explicit AudioEncoderOpusImpl(const CodecInst& codec_inst);
   AudioEncoderOpusImpl(int payload_type, const SdpAudioFormat& format);
   ~AudioEncoderOpusImpl() override;
 

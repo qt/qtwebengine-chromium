@@ -27,7 +27,7 @@
 class Serializer;
 enum SkAxisAlignment : uint32_t;
 class SkDescriptor;
-class SkGlyphCache;
+class SkStrike;
 struct SkPackedGlyphID;
 enum SkScalerContextFlags : uint32_t;
 class SkStrikeCache;
@@ -72,13 +72,14 @@ public:
 
 protected:
     SkCanvas::SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec& rec) override;
+    bool onDoSaveBehind(const SkRect*) override;
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                         const SkPaint& paint) override;
 
 private:
     class TrackLayerDevice;
 
-
+    static SkScalar SetupForPath(SkPaint* paint, SkFont* font);
 };
 
 using SkDiscardableHandleId = uint32_t;
@@ -86,7 +87,7 @@ using SkDiscardableHandleId = uint32_t;
 // This class is not thread-safe.
 class SK_API SkStrikeServer {
 public:
-    // An interface used by the server to create handles for pinning SkGlyphCache
+    // An interface used by the server to create handles for pinning SkStrike
     // entries on the remote client.
     class SK_API DiscardableHandleManager {
     public:
@@ -124,7 +125,10 @@ public:
     // Methods used internally in skia ------------------------------------------
     class SkGlyphCacheState;
 
-    SkGlyphCacheState* getOrCreateCache(const SkPaint&, const SkSurfaceProps&, const SkMatrix&,
+    SkGlyphCacheState* getOrCreateCache(const SkPaint&,
+                                        const SkFont& font,
+                                        const SkSurfaceProps&,
+                                        const SkMatrix&,
                                         SkScalerContextFlags flags,
                                         SkScalerContextEffects* effects);
 

@@ -71,7 +71,7 @@ namespace dawn_native { namespace d3d12 {
 
                 // Descriptors don't need to be recorded if they have already been recorded in
                 // the heap. Indices are only updated when descriptors are recorded
-                const uint64_t serial = device->GetSerial();
+                const uint64_t serial = device->GetPendingCommandSerial();
                 if (group->GetHeapSerial() != serial ||
                     group->GetIndexInSubmit() != indexInSubmit) {
                     group->RecordDescriptors(cbvSrvUavCPUDescriptorHeap, &cbvSrvUavDescriptorIndex,
@@ -329,10 +329,9 @@ namespace dawn_native { namespace d3d12 {
                     texture->TransitionUsageNow(commandList, dawn::TextureUsageBit::TransferDst);
 
                     auto copySplit = ComputeTextureCopySplit(
-                        copy->destination.x, copy->destination.y, copy->destination.z,
-                        copy->destination.width, copy->destination.height, copy->destination.depth,
+                        copy->destination.origin, copy->copySize,
                         static_cast<uint32_t>(TextureFormatPixelSize(texture->GetFormat())),
-                        copy->source.offset, copy->rowPitch);
+                        copy->source.offset, copy->source.rowPitch, copy->source.imageHeight);
 
                     D3D12_TEXTURE_COPY_LOCATION textureLocation;
                     textureLocation.pResource = texture->GetD3D12Resource();
@@ -352,7 +351,7 @@ namespace dawn_native { namespace d3d12 {
                         bufferLocation.PlacedFootprint.Footprint.Width = info.bufferSize.width;
                         bufferLocation.PlacedFootprint.Footprint.Height = info.bufferSize.height;
                         bufferLocation.PlacedFootprint.Footprint.Depth = info.bufferSize.depth;
-                        bufferLocation.PlacedFootprint.Footprint.RowPitch = copy->rowPitch;
+                        bufferLocation.PlacedFootprint.Footprint.RowPitch = copy->source.rowPitch;
 
                         D3D12_BOX sourceRegion;
                         sourceRegion.left = info.bufferOffset.x;
@@ -377,10 +376,10 @@ namespace dawn_native { namespace d3d12 {
                     buffer->TransitionUsageNow(commandList, dawn::BufferUsageBit::TransferDst);
 
                     auto copySplit = ComputeTextureCopySplit(
-                        copy->source.x, copy->source.y, copy->source.z, copy->source.width,
-                        copy->source.height, copy->source.depth,
+                        copy->source.origin, copy->copySize,
                         static_cast<uint32_t>(TextureFormatPixelSize(texture->GetFormat())),
-                        copy->destination.offset, copy->rowPitch);
+                        copy->destination.offset, copy->destination.rowPitch,
+                        copy->destination.imageHeight);
 
                     D3D12_TEXTURE_COPY_LOCATION textureLocation;
                     textureLocation.pResource = texture->GetD3D12Resource();
@@ -399,7 +398,8 @@ namespace dawn_native { namespace d3d12 {
                         bufferLocation.PlacedFootprint.Footprint.Width = info.bufferSize.width;
                         bufferLocation.PlacedFootprint.Footprint.Height = info.bufferSize.height;
                         bufferLocation.PlacedFootprint.Footprint.Depth = info.bufferSize.depth;
-                        bufferLocation.PlacedFootprint.Footprint.RowPitch = copy->rowPitch;
+                        bufferLocation.PlacedFootprint.Footprint.RowPitch =
+                            copy->destination.rowPitch;
 
                         D3D12_BOX sourceRegion;
                         sourceRegion.left = info.textureOffset.x;
@@ -418,6 +418,47 @@ namespace dawn_native { namespace d3d12 {
                 default: { UNREACHABLE(); } break;
             }
         }
+    }
+
+    void CommandBuffer::FlushSetVertexBuffers(ComPtr<ID3D12GraphicsCommandList> commandList,
+                                              VertexBuffersInfo* vertexBuffersInfo,
+                                              const InputState* inputState) {
+        DAWN_ASSERT(vertexBuffersInfo != nullptr);
+        DAWN_ASSERT(inputState != nullptr);
+
+        auto inputsMask = inputState->GetInputsSetMask();
+
+        uint32_t startSlot = vertexBuffersInfo->startSlot;
+        uint32_t endSlot = vertexBuffersInfo->endSlot;
+
+        // If the input state has changed, we need to update the StrideInBytes
+        // for the D3D12 buffer views. We also need to extend the dirty range to
+        // touch all these slots because the stride may have changed.
+        if (vertexBuffersInfo->lastInputState != inputState) {
+            vertexBuffersInfo->lastInputState = inputState;
+
+            for (uint32_t slot : IterateBitSet(inputsMask)) {
+                startSlot = std::min(startSlot, slot);
+                endSlot = std::max(endSlot, slot + 1);
+                vertexBuffersInfo->d3d12BufferViews[slot].StrideInBytes =
+                    inputState->GetInput(slot).stride;
+            }
+        }
+
+        if (endSlot <= startSlot) {
+            return;
+        }
+
+        // d3d12BufferViews is kept up to date with the most recent data passed
+        // to SetVertexBuffers. This makes it correct to only track the start
+        // and end of the dirty range. When FlushSetVertexBuffers is called,
+        // we will at worst set non-dirty vertex buffers in duplicate.
+        uint32_t count = endSlot - startSlot;
+        commandList->IASetVertexBuffers(startSlot, count,
+                                        &vertexBuffersInfo->d3d12BufferViews[startSlot]);
+
+        vertexBuffersInfo->startSlot = kMaxVertexInputs;
+        vertexBuffersInfo->endSlot = 0;
     }
 
     void CommandBuffer::RecordComputePass(ComPtr<ID3D12GraphicsCommandList> commandList,
@@ -532,6 +573,8 @@ namespace dawn_native { namespace d3d12 {
 
         RenderPipeline* lastPipeline = nullptr;
         PipelineLayout* lastLayout = nullptr;
+        InputState* lastInputState = nullptr;
+        VertexBuffersInfo vertexBuffersInfo = {};
 
         Command type;
         while (mCommands.NextCommandId(&type)) {
@@ -541,22 +584,28 @@ namespace dawn_native { namespace d3d12 {
                     return;
                 } break;
 
-                case Command::DrawArrays: {
-                    DrawArraysCmd* draw = mCommands.NextCommand<DrawArraysCmd>();
+                case Command::Draw: {
+                    DrawCmd* draw = mCommands.NextCommand<DrawCmd>();
+
+                    FlushSetVertexBuffers(commandList, &vertexBuffersInfo, lastInputState);
                     commandList->DrawInstanced(draw->vertexCount, draw->instanceCount,
                                                draw->firstVertex, draw->firstInstance);
                 } break;
 
-                case Command::DrawElements: {
-                    DrawElementsCmd* draw = mCommands.NextCommand<DrawElementsCmd>();
+                case Command::DrawIndexed: {
+                    DrawIndexedCmd* draw = mCommands.NextCommand<DrawIndexedCmd>();
+
+                    FlushSetVertexBuffers(commandList, &vertexBuffersInfo, lastInputState);
                     commandList->DrawIndexedInstanced(draw->indexCount, draw->instanceCount,
-                                                      draw->firstIndex, 0, draw->firstInstance);
+                                                      draw->firstIndex, draw->baseVertex,
+                                                      draw->firstInstance);
                 } break;
 
                 case Command::SetRenderPipeline: {
                     SetRenderPipelineCmd* cmd = mCommands.NextCommand<SetRenderPipelineCmd>();
                     RenderPipeline* pipeline = ToBackend(cmd->pipeline).Get();
                     PipelineLayout* layout = ToBackend(pipeline->GetLayout());
+                    InputState* inputState = ToBackend(pipeline->GetInputState());
 
                     commandList->SetGraphicsRootSignature(layout->GetRootSignature().Get());
                     commandList->SetPipelineState(pipeline->GetPipelineState().Get());
@@ -566,6 +615,7 @@ namespace dawn_native { namespace d3d12 {
 
                     lastPipeline = pipeline;
                     lastLayout = layout;
+                    lastInputState = inputState;
                 } break;
 
                 case Command::SetStencilReference: {
@@ -616,19 +666,19 @@ namespace dawn_native { namespace d3d12 {
                     auto buffers = mCommands.NextData<Ref<BufferBase>>(cmd->count);
                     auto offsets = mCommands.NextData<uint32_t>(cmd->count);
 
-                    auto inputState = ToBackend(lastPipeline->GetInputState());
+                    vertexBuffersInfo.startSlot =
+                        std::min(vertexBuffersInfo.startSlot, cmd->startSlot);
+                    vertexBuffersInfo.endSlot =
+                        std::max(vertexBuffersInfo.endSlot, cmd->startSlot + cmd->count);
 
-                    std::array<D3D12_VERTEX_BUFFER_VIEW, kMaxVertexInputs> d3d12BufferViews;
                     for (uint32_t i = 0; i < cmd->count; ++i) {
-                        auto input = inputState->GetInput(cmd->startSlot + i);
                         Buffer* buffer = ToBackend(buffers[i].Get());
-                        d3d12BufferViews[i].BufferLocation = buffer->GetVA() + offsets[i];
-                        d3d12BufferViews[i].StrideInBytes = input.stride;
-                        d3d12BufferViews[i].SizeInBytes = buffer->GetSize() - offsets[i];
+                        auto* d3d12BufferView =
+                            &vertexBuffersInfo.d3d12BufferViews[cmd->startSlot + i];
+                        d3d12BufferView->BufferLocation = buffer->GetVA() + offsets[i];
+                        d3d12BufferView->SizeInBytes = buffer->GetSize() - offsets[i];
+                        // The bufferView stride is set based on the input state before a draw.
                     }
-
-                    commandList->IASetVertexBuffers(cmd->startSlot, cmd->count,
-                                                    d3d12BufferViews.data());
                 } break;
 
                 default: { UNREACHABLE(); } break;

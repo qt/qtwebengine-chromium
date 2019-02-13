@@ -68,7 +68,7 @@ WideString CFX_XMLElement::GetNamespaceURI() const {
     }
     return pElement->GetAttribute(attr);
   }
-  return L"";
+  return WideString();
 }
 
 WideString CFX_XMLElement::GetTextData() const {
@@ -112,12 +112,11 @@ void CFX_XMLElement::Save(
   pXMLStream->WriteString(">\n");
 }
 
-CFX_XMLElement* CFX_XMLElement::GetFirstChildNamed(
-    const WideStringView& name) const {
+CFX_XMLElement* CFX_XMLElement::GetFirstChildNamed(WideStringView name) const {
   return GetNthChildNamed(name, 0);
 }
 
-CFX_XMLElement* CFX_XMLElement::GetNthChildNamed(const WideStringView& name,
+CFX_XMLElement* CFX_XMLElement::GetNthChildNamed(WideStringView name,
                                                  size_t idx) const {
   for (auto* child = GetFirstChild(); child; child = child->GetNextSibling()) {
     CFX_XMLElement* elem = ToXMLElement(child);
@@ -137,7 +136,7 @@ bool CFX_XMLElement::HasAttribute(const WideString& name) const {
 
 WideString CFX_XMLElement::GetAttribute(const WideString& name) const {
   auto it = attrs_.find(name);
-  return it != attrs_.end() ? it->second : L"";
+  return it != attrs_.end() ? it->second : WideString();
 }
 
 void CFX_XMLElement::SetAttribute(const WideString& name,

@@ -1676,8 +1676,8 @@ private:
 static GrTextureDomain create_domain(GrTextureProxy* proxy, const SkIRect* srcBounds,
                                      GrTextureDomain::Mode mode) {
     if (srcBounds) {
-        SkRect texelDomain = GrTextureDomain::MakeTexelDomainForMode(*srcBounds, mode);
-        return GrTextureDomain(proxy, texelDomain, mode);
+        SkRect texelDomain = GrTextureDomain::MakeTexelDomain(*srcBounds, mode);
+        return GrTextureDomain(proxy, texelDomain, mode, mode);
     } else {
         return GrTextureDomain::IgnoredDomain();
     }
@@ -1926,7 +1926,7 @@ void GrGLLightingEffect::onSetData(const GrGLSLProgramDataManager& pdman,
     pdman.set1f(fSurfaceScaleUni, lighting.surfaceScale());
     sk_sp<SkImageFilterLight> transformedLight(
             lighting.light()->transform(lighting.filterMatrix()));
-    fDomain.setData(pdman, lighting.domain(), proxy);
+    fDomain.setData(pdman, lighting.domain(), proxy, lighting.textureSampler(0).samplerState());
     fLight->setData(pdman, transformedLight.get());
 }
 
@@ -2193,6 +2193,6 @@ void GrGLSpotLight::emitLightColor(GrGLSLUniformHandler* uniformHandler,
 #endif
 
 void SkLightingImageFilter::RegisterFlattenables() {
-    SK_REGISTER_FLATTENABLE(SkDiffuseLightingImageFilter)
-    SK_REGISTER_FLATTENABLE(SkSpecularLightingImageFilter)
+    SK_REGISTER_FLATTENABLE(SkDiffuseLightingImageFilter);
+    SK_REGISTER_FLATTENABLE(SkSpecularLightingImageFilter);
 }

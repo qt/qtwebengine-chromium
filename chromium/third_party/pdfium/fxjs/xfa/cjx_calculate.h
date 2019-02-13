@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_CALCULATE_H_
 #define FXJS_XFA_CJX_CALCULATE_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_Calculate;
 
@@ -16,10 +16,6 @@ class CJX_Calculate final : public CJX_Node {
  public:
   explicit CJX_Calculate(CXFA_Calculate* node);
   ~CJX_Calculate() override;
-
-  JSE_PROP(override);
-  JSE_PROP(use);
-  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_CALCULATE_H_

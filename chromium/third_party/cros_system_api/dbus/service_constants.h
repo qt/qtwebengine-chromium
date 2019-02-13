@@ -9,7 +9,6 @@
 
 // We use relative includes here to make this compatible with both the
 // Chromium OS and Chromium environment.
-#include "apmanager/dbus-constants.h"
 #include "authpolicy/dbus-constants.h"
 #include "biod/dbus-constants.h"
 #include "cecservice/dbus-constants.h"
@@ -32,6 +31,7 @@
 #include "vm_applications/dbus-constants.h"
 #include "vm_cicerone/dbus-constants.h"
 #include "vm_concierge/dbus-constants.h"
+#include "vm_plugin_dispatcher/dbus-constants.h"
 
 namespace dbus {
 const char kDBusInterface[] = "org.freedesktop.DBus";
@@ -189,8 +189,12 @@ const char kChromeFeaturesServiceName[] = "org.chromium.ChromeFeaturesService";
 const char kChromeFeaturesServicePath[] = "/org/chromium/ChromeFeaturesService";
 const char kChromeFeaturesServiceInterface[] =
     "org.chromium.ChromeFeaturesServiceInterface";
+const char kChromeFeaturesServiceIsFeatureEnabledMethod[] =
+    "IsFeatureEnabled";
 const char kChromeFeaturesServiceIsCrostiniEnabledMethod[] =
     "IsCrostiniEnabled";
+const char kChromeFeaturesServiceIsPluginVmEnabledMethod[] =
+    "IsPluginVmEnabled";
 const char kChromeFeaturesServiceIsUsbguardEnabledMethod[] =
     "IsUsbguardEnabled";
 const char kChromeFeaturesServiceIsShillSandboxingEnabledMethod[] =
@@ -203,6 +207,13 @@ const char kUrlHandlerServicePath[] = "/org/chromium/UrlHandlerService";
 const char kUrlHandlerServiceInterface[] =
     "org.chromium.UrlHandlerServiceInterface";
 const char kUrlHandlerServiceOpenUrlMethod[] = "OpenUrl";
+
+const char kPluginVmServiceName[] = "org.chromium.PluginVmService";
+const char kPluginVmServicePath[] = "/org/chromium/PluginVmService";
+const char kPluginVmServiceInterface[] =
+    "org.chromium.PluginVmServiceInterface";
+const char kPluginVmServiceGetLicenseDataMethod[] =
+    "GetLicenseData";
 
 }  // namespace chromeos
 
@@ -351,6 +362,7 @@ const char kStackSyncQuittingProperty[] = "StackSyncQuitting";
 // Bluetooth Adapter errors.
 const char kErrorNotReady[] = "org.bluez.Error.NotReady";
 const char kErrorFailed[] = "org.bluez.Error.Failed";
+const char kErrorInProgress[] = "org.bluez.Error.InProgress";
 const char kErrorNotAuthorized[] = "org.bluez.Error.NotAuthorized";
 const char kErrorInvalidArguments[] = "org.bluez.Error.InvalidArguments";
 const char kErrorAlreadyExists[] = "org.bluez.Error.AlreadyExists";
@@ -984,6 +996,14 @@ constexpr char kRemoveHostnameIpMappingMethod[] = "RemoveHostnameIpMapping";
 }
 
 namespace arc {
+
+namespace keymaster {
+constexpr char kArcKeymasterServiceName[] = "org.chromium.ArcKeymaster";
+constexpr char kArcKeymasterServicePath[] = "/org/chromium/ArcKeymaster";
+constexpr char kArcKeymasterInterfaceName[] = "org.chromium.ArcKeymaster";
+// Methods
+constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+}  // namespace keymaster
 
 namespace obb_mounter {
 // D-Bus service constants.

@@ -1,5 +1,5 @@
 /*
- *  Copyright 2018 The WebRTC Project Authors. All rights reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -11,56 +11,9 @@
 #ifndef API_CRYPTO_CRYPTOOPTIONS_H_
 #define API_CRYPTO_CRYPTOOPTIONS_H_
 
-#include <vector>
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
 
-namespace webrtc {
-
-// CryptoOptions defines advanced cryptographic settings for native WebRTC.
-// These settings must be passed into PeerConnectionFactoryInterface::Options
-// and are only applicable to native use cases of WebRTC.
-struct CryptoOptions {
-  CryptoOptions();
-  CryptoOptions(const CryptoOptions& other);
-  ~CryptoOptions();
-
-  // Helper method to return an instance of the CryptoOptions with GCM crypto
-  // suites disabled. This method should be used instead of depending on current
-  // default values set by the constructor.
-  static CryptoOptions NoGcm();
-
-  // Returns a list of the supported DTLS-SRTP Crypto suites based on this set
-  // of crypto options.
-  std::vector<int> GetSupportedDtlsSrtpCryptoSuites() const;
-
-  bool operator==(const CryptoOptions& other) const;
-  bool operator!=(const CryptoOptions& other) const;
-
-  // SRTP Related Peer Connection options.
-  struct Srtp {
-    // Enable GCM crypto suites from RFC 7714 for SRTP. GCM will only be used
-    // if both sides enable it.
-    bool enable_gcm_crypto_suites = false;
-
-    // If set to true, the (potentially insecure) crypto cipher
-    // SRTP_AES128_CM_SHA1_32 will be included in the list of supported ciphers
-    // during negotiation. It will only be used if both peers support it and no
-    // other ciphers get preferred.
-    bool enable_aes128_sha1_32_crypto_cipher = false;
-
-    // If set to true, encrypted RTP header extensions as defined in RFC 6904
-    // will be negotiated. They will only be used if both peers support them.
-    bool enable_encrypted_rtp_header_extensions = false;
-  } srtp;
-
-  // Options to be used when the FrameEncryptor / FrameDecryptor APIs are used.
-  struct SFrame {
-    // If set all RtpSenders must have an FrameEncryptor attached to them before
-    // they are allowed to send packets. All RtpReceivers must have a
-    // FrameDecryptor attached to them before they are able to receive packets.
-    bool require_frame_encryption = false;
-  } sframe;
-};
-
-}  // namespace webrtc
+#include "api/crypto/crypto_options.h"
 
 #endif  // API_CRYPTO_CRYPTOOPTIONS_H_

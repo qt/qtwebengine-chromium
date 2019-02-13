@@ -33,6 +33,9 @@ bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format) {
         case kRGB_888_GrPixelConfig:
             // TODO: MTLPixelFormatRGB8Unorm
             return false;
+        case kRG_88_GrPixelConfig:
+            // TODO: MTLPixelFormatRG8Unorm
+            return false;
         case kBGRA_8888_GrPixelConfig:
             *format = MTLPixelFormatBGRA8Unorm;
             return true;
@@ -84,6 +87,13 @@ bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format) {
         case kAlpha_half_as_Red_GrPixelConfig:
             *format = MTLPixelFormatR16Float;
             return true;
+        case kRGB_ETC1_GrPixelConfig:
+#ifdef SK_BUILD_FOR_IOS
+            *format = MTLPixelFormatETC2_RGB8;
+            return true;
+#else
+            return false;
+#endif
     }
     SK_ABORT("Unexpected config");
     return false;
@@ -107,6 +117,8 @@ GrPixelConfig GrMTLFormatToPixelConfig(MTLPixelFormat format) {
         case MTLPixelFormatABGR4Unorm:
             return kRGBA_4444_GrPixelConfig;
 #endif
+        case MTLPixelFormatRG8Unorm:
+            return kRG_88_GrPixelConfig;
         case MTLPixelFormatR8Unorm:
             // We currently set this to be Alpha_8 and have no way to go to Gray_8
             return kAlpha_8_GrPixelConfig;
@@ -118,6 +130,10 @@ GrPixelConfig GrMTLFormatToPixelConfig(MTLPixelFormat format) {
             return kRGBA_half_GrPixelConfig;
         case MTLPixelFormatR16Float:
             return kAlpha_half_GrPixelConfig;
+#ifdef SK_BUILD_FOR_IOS
+        case MTLPixelFormatETC2_RGB8:
+            return kRGB_ETC1_GrPixelConfig;
+#endif
         default:
             return kUnknown_GrPixelConfig;
     }
@@ -226,4 +242,14 @@ id<MTLTexture> GrGetMTLTextureFromSurface(GrSurface* surface, bool doResolve) {
         }
     }
     return mtlTexture;
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
+// CPP Utils
+
+GrMTLPixelFormat GrGetMTLPixelFormatFromMtlTextureInfo(const GrMtlTextureInfo& info) {
+    id<MTLTexture> mtlTexture = GrGetMTLTexture(info.fTexture,
+                                                GrWrapOwnership::kBorrow_GrWrapOwnership);
+    return static_cast<GrMTLPixelFormat>(mtlTexture.pixelFormat);
 }

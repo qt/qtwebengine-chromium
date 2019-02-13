@@ -33,7 +33,9 @@ class AllocationTrackerNULL : angle::NonCopyable
 class ContextNULL : public ContextImpl
 {
   public:
-    ContextNULL(const gl::ContextState &state, AllocationTrackerNULL *allocationTracker);
+    ContextNULL(const gl::State &state,
+                gl::ErrorSet *errorSet,
+                AllocationTrackerNULL *allocationTracker);
     ~ContextNULL() override;
 
     angle::Result initialize() override;
@@ -56,12 +58,12 @@ class ContextNULL : public ContextImpl
     angle::Result drawElements(const gl::Context *context,
                                gl::PrimitiveMode mode,
                                GLsizei count,
-                               GLenum type,
+                               gl::DrawElementsType type,
                                const void *indices) override;
     angle::Result drawElementsInstanced(const gl::Context *context,
                                         gl::PrimitiveMode mode,
                                         GLsizei count,
-                                        GLenum type,
+                                        gl::DrawElementsType type,
                                         const void *indices,
                                         GLsizei instances) override;
     angle::Result drawRangeElements(const gl::Context *context,
@@ -69,14 +71,14 @@ class ContextNULL : public ContextImpl
                                     GLuint start,
                                     GLuint end,
                                     GLsizei count,
-                                    GLenum type,
+                                    gl::DrawElementsType type,
                                     const void *indices) override;
     angle::Result drawArraysIndirect(const gl::Context *context,
                                      gl::PrimitiveMode mode,
                                      const void *indirect) override;
     angle::Result drawElementsIndirect(const gl::Context *context,
                                        gl::PrimitiveMode mode,
-                                       GLenum type,
+                                       gl::DrawElementsType type,
                                        const void *indirect) override;
 
     // CHROMIUM_path_rendering path drawing methods.

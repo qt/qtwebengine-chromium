@@ -16,10 +16,11 @@
 #include <string>
 #include <vector>
 
+#include "api/video/video_source_interface.h"
+#include "rtc_base/time_utils.h"
 #include "test/layer_filtering_transport.h"
 #include "test/rtp_file_writer.h"
 #include "test/statistics.h"
-#include "test/vcm_capturer.h"
 
 namespace webrtc {
 
@@ -45,7 +46,7 @@ class VideoAnalyzer : public PacketReceiver,
   ~VideoAnalyzer();
 
   virtual void SetReceiver(PacketReceiver* receiver);
-  void SetSource(test::TestVideoCapturer* video_capturer,
+  void SetSource(rtc::VideoSourceInterface<VideoFrame>* video_source,
                  bool respect_sink_wants);
   void SetCall(Call* call);
   void SetSendStream(VideoSendStream* stream);
@@ -135,8 +136,10 @@ class VideoAnalyzer : public PacketReceiver,
   class CapturedFrameForwarder : public rtc::VideoSinkInterface<VideoFrame>,
                                  public rtc::VideoSourceInterface<VideoFrame> {
    public:
-    explicit CapturedFrameForwarder(VideoAnalyzer* analyzer, Clock* clock);
-    void SetSource(test::TestVideoCapturer* video_capturer);
+    CapturedFrameForwarder(VideoAnalyzer* analyzer,
+                           Clock* clock,
+                           int frames_to_process);
+    void SetSource(rtc::VideoSourceInterface<VideoFrame>* video_source);
 
    private:
     void OnFrame(const VideoFrame& video_frame) override;
@@ -152,8 +155,10 @@ class VideoAnalyzer : public PacketReceiver,
     rtc::CriticalSection crit_;
     rtc::VideoSinkInterface<VideoFrame>* send_stream_input_
         RTC_GUARDED_BY(crit_);
-    test::TestVideoCapturer* video_capturer_;
+    VideoSourceInterface<VideoFrame>* video_source_;
     Clock* clock_;
+    int captured_frames_ RTC_GUARDED_BY(crit_);
+    int frames_to_process_ RTC_GUARDED_BY(crit_);
   };
 
   struct FrameWithPsnr {
@@ -229,6 +234,7 @@ class VideoAnalyzer : public PacketReceiver,
   test::Statistics audio_expand_rate_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics audio_accelerate_rate_ RTC_GUARDED_BY(comparison_lock_);
   test::Statistics audio_jitter_buffer_ms_ RTC_GUARDED_BY(comparison_lock_);
+  test::Statistics pixels_ RTC_GUARDED_BY(comparison_lock_);
   // Rendered frame with worst PSNR is saved for further analysis.
   absl::optional<FrameWithPsnr> worst_frame_ RTC_GUARDED_BY(comparison_lock_);
 
@@ -238,6 +244,7 @@ class VideoAnalyzer : public PacketReceiver,
   int frames_recorded_;
   int frames_processed_;
   int dropped_frames_;
+  int captured_frames_;
   int dropped_frames_before_first_encode_;
   int dropped_frames_before_rendering_;
   int64_t last_render_time_;

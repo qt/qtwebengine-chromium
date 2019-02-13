@@ -39,6 +39,16 @@ void HitTestAggregator::Aggregate(const SurfaceId& display_surface_id,
                                   RenderPassList* render_passes) {
   DCHECK(referenced_child_regions_.empty());
 
+  // The index will only have changed when new hit-test data has been submitted.
+  uint64_t submit_hit_test_region_list_index =
+      hit_test_manager_->submit_hit_test_region_list_index();
+
+  if (submit_hit_test_region_list_index ==
+      last_submit_hit_test_region_list_index_) {
+    return;
+  }
+
+  last_submit_hit_test_region_list_index_ = submit_hit_test_region_list_index;
   // Reset states.
   hit_test_data_.clear();
   hit_test_data_capacity_ = initial_region_size_;
@@ -100,12 +110,12 @@ void HitTestAggregator::InsertHitTestDebugQuads(RenderPassList* render_passes) {
 
     parents.push(i);
     // Concatenate transformation.
-    parent_transforms.push(child_to_parent * parent_transforms.top());
+    parent_transforms.push(parent_transforms.top() * child_to_parent);
 
     // We can only transform gfx::RectF.
     gfx::RectF rf(hit_test_data_[i].rect);
     parent_transforms.top().TransformRect(&rf);
-    const gfx::Rect debug_rect = gfx::ToNearestRect(rf);
+    const gfx::Rect debug_rect = gfx::ToEnclosedRect(rf);
 
     DebugBorderDrawQuad* debug_quad = static_cast<DebugBorderDrawQuad*>(
         ql.ElementAt(hit_test_debug_ask_regions_ + i));

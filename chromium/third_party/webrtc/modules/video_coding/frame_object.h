@@ -29,16 +29,15 @@ class RtpFrameObject : public EncodedFrame {
                  uint16_t last_seq_num,
                  size_t frame_size,
                  int times_nacked,
-                 int64_t received_time);
+                 int64_t first_packet_received_time,
+                 int64_t last_packet_received_time);
 
-  ~RtpFrameObject();
+  ~RtpFrameObject() override;
   uint16_t first_seq_num() const;
   uint16_t last_seq_num() const;
   int times_nacked() const;
   enum FrameType frame_type() const;
   VideoCodecType codec_type() const;
-  void SetBitstream(rtc::ArrayView<const uint8_t> bitstream);
-  bool GetBitstream(uint8_t* destination) const override;
   int64_t ReceivedTime() const override;
   int64_t RenderTime() const override;
   bool delayed_by_retransmission() const override;
@@ -54,7 +53,7 @@ class RtpFrameObject : public EncodedFrame {
   VideoCodecType codec_type_;
   uint16_t first_seq_num_;
   uint16_t last_seq_num_;
-  int64_t received_time_;
+  int64_t last_packet_received_time_;
 
   // Equal to times nacked of the packet with the highet times nacked
   // belonging to this frame.

@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+#include "src/profiling/memory/unwinding.h"
+
+// TODO(fmayer): Maybe replace this with
+//   https://android.googlesource.com/platform/system/core/+/master/demangle/
+#include <cxxabi.h>
+
 #include <unwindstack/MachineArm.h>
 #include <unwindstack/MachineArm64.h>
 #include <unwindstack/MachineMips.h>
@@ -42,7 +48,7 @@
 #include "perfetto/base/file_utils.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/scoped_file.h"
-#include "src/profiling/memory/unwinding.h"
+#include "perfetto/base/string_utils.h"
 #include "src/profiling/memory/wire_protocol.h"
 
 namespace perfetto {
@@ -50,6 +56,13 @@ namespace profiling {
 namespace {
 
 size_t kMaxFrames = 1000;
+
+#pragma GCC diagnostic push
+// We do not care about deterministic destructor order.
+#pragma GCC diagnostic ignored "-Wglobal-constructors"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
+static std::vector<std::string> kSkipMaps{"heapprofd_client.so"};
+#pragma GCC diagnostic pop
 
 std::unique_ptr<unwindstack::Regs> CreateFromRawData(unwindstack::ArchEnum arch,
                                                      void* raw_data) {
@@ -81,22 +94,40 @@ std::unique_ptr<unwindstack::Regs> CreateFromRawData(unwindstack::ArchEnum arch,
   return ret;
 }
 
+void MaybeDemangle(std::string* name) {
+  int ignored;
+  char* data = abi::__cxa_demangle(name->c_str(), nullptr, nullptr, &ignored);
+  if (data) {
+    *name = data;
+    free(data);
+  }
+}
+
 }  // namespace
 
-StackMemory::StackMemory(int mem_fd, uint64_t sp, uint8_t* stack, size_t size)
-    : mem_fd_(mem_fd), sp_(sp), stack_end_(sp + size), stack_(stack) {}
+StackOverlayMemory::StackOverlayMemory(std::shared_ptr<unwindstack::Memory> mem,
+                                       uint64_t sp,
+                                       uint8_t* stack,
+                                       size_t size)
+    : mem_(std::move(mem)), sp_(sp), stack_end_(sp + size), stack_(stack) {}
 
-size_t StackMemory::Read(uint64_t addr, void* dst, size_t size) {
+size_t StackOverlayMemory::Read(uint64_t addr, void* dst, size_t size) {
   if (addr >= sp_ && addr + size <= stack_end_ && addr + size > sp_) {
     size_t offset = static_cast<size_t>(addr - sp_);
     memcpy(dst, stack_ + offset, size);
     return size;
   }
 
-  if (lseek(mem_fd_, static_cast<off_t>(addr), SEEK_SET) == -1)
+  return mem_->Read(addr, dst, size);
+}
+
+FDMemory::FDMemory(base::ScopedFile mem_fd) : mem_fd_(std::move(mem_fd)) {}
+
+size_t FDMemory::Read(uint64_t addr, void* dst, size_t size) {
+  if (lseek(*mem_fd_, static_cast<off_t>(addr), SEEK_SET) == -1)
     return 0;
 
-  ssize_t rd = read(mem_fd_, dst, size);
+  ssize_t rd = read(*mem_fd_, dst, size);
   if (rd == -1) {
     PERFETTO_DPLOG("read");
     return 0;
@@ -140,33 +171,64 @@ bool DoUnwind(WireMessage* msg, UnwindingMetadata* metadata, AllocRecord* out) {
   std::unique_ptr<unwindstack::Regs> regs(
       CreateFromRawData(alloc_metadata->arch, alloc_metadata->register_data));
   if (regs == nullptr) {
+    unwindstack::FrameData frame_data{};
+    frame_data.function_name = "ERROR READING REGISTERS";
+    frame_data.map_name = "ERROR";
+
+    out->frames.emplace_back(frame_data, "");
     PERFETTO_DLOG("regs");
     return false;
   }
-  out->alloc_metadata = *alloc_metadata;
   uint8_t* stack = reinterpret_cast<uint8_t*>(msg->payload);
-  std::shared_ptr<unwindstack::Memory> mems = std::make_shared<StackMemory>(
-      *metadata->mem_fd, alloc_metadata->stack_pointer, stack,
-      msg->payload_size);
+  std::shared_ptr<unwindstack::Memory> mems =
+      std::make_shared<StackOverlayMemory>(metadata->fd_mem,
+                                           alloc_metadata->stack_pointer, stack,
+                                           msg->payload_size);
+
   unwindstack::Unwinder unwinder(kMaxFrames, &metadata->maps, regs.get(), mems);
+#if PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD)
+  unwinder.SetJitDebug(metadata->jit_debug.get(), regs->Arch());
+  unwinder.SetDexFiles(metadata->dex_files.get(), regs->Arch());
+#endif
   // Surpress incorrect "variable may be uninitialized" error for if condition
   // after this loop. error_code = LastErrorCode gets run at least once.
   uint8_t error_code = 0;
   for (int attempt = 0; attempt < 2; ++attempt) {
     if (attempt > 0) {
-      metadata->maps.Reset();
-      metadata->maps.Parse();
+      metadata->ReparseMaps();
+#if PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD)
+      unwinder.SetJitDebug(metadata->jit_debug.get(), regs->Arch());
+      unwinder.SetDexFiles(metadata->dex_files.get(), regs->Arch());
+#endif
     }
-    unwinder.Unwind();
+    unwinder.Unwind(&kSkipMaps, nullptr);
     error_code = unwinder.LastErrorCode();
     if (error_code != unwindstack::ERROR_INVALID_MAP)
       break;
   }
-  if (error_code == 0)
-    out->frames = unwinder.frames();
-  else
+  for (unwindstack::FrameData fd : unwinder.frames()) {
+    std::string build_id;
+    if (fd.map_name != "") {
+      unwindstack::MapInfo* map_info = metadata->maps.Find(fd.pc);
+      if (map_info)
+        build_id = map_info->GetBuildID();
+    }
+
+    if (base::EndsWith(fd.map_name, ".so"))
+      MaybeDemangle(&fd.function_name);
+    out->frames.emplace_back(std::move(fd), std::move(build_id));
+  }
+
+  if (error_code != 0) {
+    unwindstack::FrameData frame_data{};
+    frame_data.function_name = "ERROR " + std::to_string(error_code);
+    frame_data.map_name = "ERROR";
+
+    out->frames.emplace_back(frame_data, "");
     PERFETTO_DLOG("unwinding failed %" PRIu8, error_code);
-  return error_code == 0;
+  }
+
+  return true;
 }
 
 bool HandleUnwindingRecord(UnwindingRecord* rec, BookkeepingRecord* out) {
@@ -181,11 +243,10 @@ bool HandleUnwindingRecord(UnwindingRecord* rec, BookkeepingRecord* out) {
       return false;
     }
 
+    out->alloc_record.alloc_metadata = *msg.alloc_header;
     out->pid = rec->pid;
     out->record_type = BookkeepingRecord::Type::Malloc;
-    if (!DoUnwind(&msg, metadata.get(), &out->alloc_record)) {
-      return false;
-    }
+    DoUnwind(&msg, metadata.get(), &out->alloc_record);
     return true;
   } else if (msg.record_type == RecordType::Free) {
     out->record_type = BookkeepingRecord::Type::Free;

@@ -33,6 +33,7 @@
 #include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/synchronization/waitable_event.h"
@@ -78,6 +79,7 @@
 #include "content/browser/loader_delegate_impl.h"
 #include "content/browser/media/capture/audio_mirroring_manager.h"
 #include "content/browser/media/media_internals.h"
+#include "content/browser/media/media_keys_listener_manager_impl.h"
 #include "content/browser/memory/swap_metrics_delegate_uma.h"
 #include "content/browser/net/browser_online_state_observer.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
@@ -196,7 +198,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/memory/memory_pressure_monitor_chromeos.h"
-#include "chromeos/chromeos_switches.h"
+#include "chromeos/constants/chromeos_switches.h"
 #endif
 
 #if defined(USE_GLIB)
@@ -291,7 +293,7 @@ static void SetUpGLibLogHandler() {
   // Register GLib-handled assertions to go through our logging system.
   const char* const kLogDomains[] =
       { nullptr, "Gtk", "Gdk", "GLib", "GLib-GObject" };
-  for (size_t i = 0; i < arraysize(kLogDomains); i++) {
+  for (size_t i = 0; i < base::size(kLogDomains); i++) {
     g_log_set_handler(
         kLogDomains[i],
         static_cast<GLogLevelFlags>(G_LOG_FLAG_RECURSION | G_LOG_FLAG_FATAL |
@@ -1019,6 +1021,17 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
       base::BindOnce(
           base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed), true));
 
+  // Also allow waiting to join threads.
+  // TODO(https://crbug.com/800808): Ideally this (and the above SetIOAllowed()
+  // would be scoped allowances). That would be one of the first step to ensure
+  // no persistent work is being done after TaskScheduler::Shutdown() in order
+  // to move towards atomic shutdown.
+  base::ThreadRestrictions::SetWaitAllowed(true);
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::IO},
+      base::BindOnce(
+          base::IgnoreResult(&base::ThreadRestrictions::SetWaitAllowed), true));
+
 #if defined(OS_ANDROID)
   g_browser_main_loop_shutting_down = true;
 #endif
@@ -1096,16 +1109,13 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     save_file_manager_->Shutdown();
 
   {
-    base::ScopedAllowBaseSyncPrimitives allow_wait_for_join;
-    {
-      TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
-      ResetThread_IO(std::move(io_thread_));
-    }
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
+    ResetThread_IO(std::move(io_thread_));
+  }
 
-    {
-      TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:TaskScheduler");
-      base::TaskScheduler::GetInstance()->Shutdown();
-    }
+  {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:TaskScheduler");
+    base::TaskScheduler::GetInstance()->Shutdown();
   }
 
   // Must happen after the IO thread is shutdown since this may be accessed from
@@ -1318,6 +1328,14 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     midi_service_.reset(new midi::MidiService);
   }
 
+  {
+    TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:GamepadService");
+    device::GamepadService::GetInstance()->StartUp(
+        content::ServiceManagerConnection::GetForProcess()
+            ->GetConnector()
+            ->Clone());
+  }
+
 #if defined(OS_WIN)
   if (base::FeatureList::IsEnabled(features::kHighDynamicRange))
     HDRProxy::Initialize();
@@ -1434,6 +1452,12 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     GpuDataManagerImpl::GetInstance()->RequestGpuSupportedRuntimeVersion();
   }
 #endif
+
+  if (MediaKeysListenerManager::IsMediaKeysListenerManagerEnabled()) {
+    media_keys_listener_manager_ =
+        std::make_unique<MediaKeysListenerManagerImpl>(
+            content::ServiceManagerConnection::GetForProcess()->GetConnector());
+  }
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();

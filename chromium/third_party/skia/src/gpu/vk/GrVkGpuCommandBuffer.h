@@ -8,14 +8,13 @@
 #ifndef GrVkGpuCommandBuffer_DEFINED
 #define GrVkGpuCommandBuffer_DEFINED
 
-#include "GrVkVulkan.h"
-
 #include "GrGpuCommandBuffer.h"
 
 #include "GrColor.h"
 #include "GrMesh.h"
 #include "GrTypes.h"
 #include "GrVkPipelineState.h"
+#include "vk/GrVkTypes.h"
 
 class GrVkGpu;
 class GrVkImage;
@@ -87,6 +86,12 @@ public:
 
 private:
     void init();
+
+    // Called instead of init when we are drawing to a render target that already wraps a secondary
+    // command buffer.
+    void initWrapped();
+
+    bool wrapsSecondaryCommandBuffer() const;
 
     GrGpu* gpu() override;
 

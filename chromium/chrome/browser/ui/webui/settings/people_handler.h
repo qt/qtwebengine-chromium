@@ -24,15 +24,7 @@
 #include "components/sync/driver/sync_service_observer.h"
 #include "services/identity/public/cpp/identity_manager.h"
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-#include "components/signin/core/browser/account_tracker_service.h"
-#endif
-
 class LoginUIService;
-
-namespace browser_sync {
-class ProfileSyncService;
-}  // namespace browser_sync
 
 namespace content {
 class WebUI;
@@ -43,6 +35,7 @@ enum class AccessPoint;
 }  // namespace signin_metrics
 
 namespace syncer {
+class SyncService;
 class SyncSetupInProgressHandle;
 }  // namespace syncer
 
@@ -51,9 +44,6 @@ namespace settings {
 class PeopleHandler : public SettingsPageUIHandler,
                       public identity::IdentityManager::Observer,
                       public SyncStartupTracker::Observer,
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-                      public AccountTrackerService::Observer,
-#endif
                       public LoginUIService::LoginUI,
                       public syncer::SyncServiceObserver {
  public:
@@ -139,25 +129,22 @@ class PeopleHandler : public SettingsPageUIHandler,
   void OnPrimaryAccountSet(const AccountInfo& primary_account_info) override;
   void OnPrimaryAccountCleared(
       const AccountInfo& previous_primary_account_info) override;
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+  void OnAccountUpdated(const AccountInfo& info) override;
+  void OnAccountRemovedWithInfo(const AccountInfo& info) override;
+#endif
 
   // syncer::SyncServiceObserver implementation.
   void OnStateChanged(syncer::SyncService* sync) override;
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  // AccountTrackerService::Observer implementation.
-  void OnAccountUpdated(const AccountInfo& info) override;
-  void OnAccountImageUpdated(const std::string& account_id,
-                             const gfx::Image& image) override;
-  void OnAccountRemoved(const AccountInfo& info) override;
-#endif
 
   // Returns a newly created dictionary with a number of properties that
   // correspond to the status of sync.
   std::unique_ptr<base::DictionaryValue> GetSyncStatusDictionary();
 
-  // Helper routine that gets the ProfileSyncService associated with the parent
+  // Helper routine that gets the SyncService associated with the parent
   // profile.
-  browser_sync::ProfileSyncService* GetSyncService() const;
+  syncer::SyncService* GetSyncService() const;
 
   // Returns the LoginUIService for the parent profile.
   LoginUIService* GetLoginUIService() const;
@@ -196,7 +183,7 @@ class PeopleHandler : public SettingsPageUIHandler,
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   void HandleGetStoredAccounts(const base::ListValue* args);
   void HandleStartSyncingWithEmail(const base::ListValue* args);
-  std::unique_ptr<base::ListValue> GetStoredAccountsList();
+  base::Value GetStoredAccountsList();
 #endif
 
   // Displays spinner-only UI indicating that something is going on in the
@@ -224,12 +211,12 @@ class PeopleHandler : public SettingsPageUIHandler,
   bool IsProfileAuthNeededOrHasErrors();
 
   // If we're directly loading the sync setup page, we acquire a
-  // SetupInProgressHandle early in order to prevent a lapse in
-  // ProfileSyncService's "SetupInProgress" status. This lapse previously
-  // occured between when the sync confirmation dialog was closed and when the
-  // sync setup page hadn't yet fired the SyncSetupShowSetupUI event.
-  // InitializeSyncBlocker is responsible for checking if we're navigating to
-  // the setup page and acquiring the sync_blocker.
+  // SetupInProgressHandle early in order to prevent a lapse in SyncService's
+  // "SetupInProgress" status. This lapse previously occurred between when the
+  // sync confirmation dialog was closed and when the sync setup page hadn't yet
+  // fired the SyncSetupShowSetupUI event. InitializeSyncBlocker is responsible
+  // for checking if we're navigating to the setup page and acquiring the
+  // |sync_blocker_|.
   void InitializeSyncBlocker();
 
   // Weak pointer.
@@ -256,13 +243,7 @@ class PeopleHandler : public SettingsPageUIHandler,
   // Manages observer lifetimes.
   ScopedObserver<identity::IdentityManager, PeopleHandler>
       identity_manager_observer_;
-  ScopedObserver<browser_sync::ProfileSyncService, PeopleHandler>
-      sync_service_observer_;
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  ScopedObserver<AccountTrackerService, PeopleHandler>
-      account_tracker_observer_;
-#endif
+  ScopedObserver<syncer::SyncService, PeopleHandler> sync_service_observer_;
 
 #if defined(OS_CHROMEOS)
   base::WeakPtrFactory<PeopleHandler> weak_factory_{this};

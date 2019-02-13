@@ -24,6 +24,11 @@ namespace dawn_native {
     struct ToBackendTraits;
 
     template <typename BackendTraits>
+    struct ToBackendTraits<AdapterBase, BackendTraits> {
+        using BackendType = typename BackendTraits::AdapterType;
+    };
+
+    template <typename BackendTraits>
     struct ToBackendTraits<BindGroupBase, BackendTraits> {
         using BackendType = typename BackendTraits::BindGroupType;
     };
@@ -34,18 +39,8 @@ namespace dawn_native {
     };
 
     template <typename BackendTraits>
-    struct ToBackendTraits<BlendStateBase, BackendTraits> {
-        using BackendType = typename BackendTraits::BlendStateType;
-    };
-
-    template <typename BackendTraits>
     struct ToBackendTraits<BufferBase, BackendTraits> {
         using BackendType = typename BackendTraits::BufferType;
-    };
-
-    template <typename BackendTraits>
-    struct ToBackendTraits<BufferViewBase, BackendTraits> {
-        using BackendType = typename BackendTraits::BufferViewType;
     };
 
     template <typename BackendTraits>
@@ -56,11 +51,6 @@ namespace dawn_native {
     template <typename BackendTraits>
     struct ToBackendTraits<ComputePipelineBase, BackendTraits> {
         using BackendType = typename BackendTraits::ComputePipelineType;
-    };
-
-    template <typename BackendTraits>
-    struct ToBackendTraits<DepthStencilStateBase, BackendTraits> {
-        using BackendType = typename BackendTraits::DepthStencilStateType;
     };
 
     template <typename BackendTraits>

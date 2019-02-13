@@ -396,7 +396,6 @@ jumbo_source_set("parser") {
     "cxfa_neverembed.h",
     "cxfa_node.cpp",
     "cxfa_node.h",
-    "cxfa_node_statics.cpp",
     "cxfa_nodehelper.cpp",
     "cxfa_nodehelper.h",
     "cxfa_nodeiteratortemplate.h",
@@ -690,9 +689,8 @@ jumbo_source_set("parser") {
     "cxfa_xsl.h",
     "cxfa_zpl.cpp",
     "cxfa_zpl.h",
+    "xfa_basic_data.cpp",
     "xfa_basic_data.h",
-    "xfa_basic_data_element_script.cpp",
-    "xfa_basic_data_enum.cpp",
     "xfa_document_datamerger_imp.cpp",
     "xfa_document_datamerger_imp.h",
     "xfa_resolvenode_rs.h",
@@ -728,6 +726,7 @@ pdfium_unittest_source_set("unittests") {
     "cxfa_node_unittest.cpp",
     "cxfa_nodeiteratortemplate_unittest.cpp",
     "cxfa_xmllocale_unittest.cpp",
+    "xfa_basic_data_unittest.cpp",
     "xfa_utils_unittest.cpp",
   ]
   deps = [

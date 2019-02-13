@@ -87,20 +87,22 @@ void CXFA_TextParser::InitCSSData(CXFA_TextProvider* pTextProvider) {
 }
 
 std::unique_ptr<CFX_CSSStyleSheet> CXFA_TextParser::LoadDefaultSheetStyle() {
-  static const wchar_t s_pStyle[] =
-      L"html,body,ol,p,ul{display:block}"
-      L"li{display:list-item}"
-      L"ol,ul{padding-left:33px;margin:1.12em 0}"
-      L"ol{list-style-type:decimal}"
-      L"a{color:#0000ff;text-decoration:underline}"
-      L"b{font-weight:bolder}"
-      L"i{font-style:italic}"
-      L"sup{vertical-align:+15em;font-size:.66em}"
-      L"sub{vertical-align:-15em;font-size:.66em}";
-
+  static const char kStyle[] =
+      "html,body,ol,p,ul{display:block}"
+      "li{display:list-item}"
+      "ol,ul{padding-left:33px;margin:1.12em 0}"
+      "ol{list-style-type:decimal}"
+      "a{color:#0000ff;text-decoration:underline}"
+      "b{font-weight:bolder}"
+      "i{font-style:italic}"
+      "sup{vertical-align:+15em;font-size:.66em}"
+      "sub{vertical-align:-15em;font-size:.66em}";
+  WideString ws = WideString::FromASCII(kStyle);
   auto sheet = pdfium::MakeUnique<CFX_CSSStyleSheet>();
-  return sheet->LoadBuffer(s_pStyle, wcslen(s_pStyle)) ? std::move(sheet)
-                                                       : nullptr;
+  if (!sheet->LoadBuffer(ws.c_str(), ws.GetLength()))
+    return nullptr;
+
+  return sheet;
 }
 
 RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::CreateRootStyle(
@@ -117,20 +119,20 @@ RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::CreateRootStyle(
     pStyle->SetTextIndent(indent);
     CFX_CSSTextAlign hAlign = CFX_CSSTextAlign::Left;
     switch (para->GetHorizontalAlign()) {
-      case XFA_AttributeEnum::Center:
+      case XFA_AttributeValue::Center:
         hAlign = CFX_CSSTextAlign::Center;
         break;
-      case XFA_AttributeEnum::Right:
+      case XFA_AttributeValue::Right:
         hAlign = CFX_CSSTextAlign::Right;
         break;
-      case XFA_AttributeEnum::Justify:
+      case XFA_AttributeValue::Justify:
         hAlign = CFX_CSSTextAlign::Justify;
         break;
-      case XFA_AttributeEnum::JustifyAll:
+      case XFA_AttributeValue::JustifyAll:
         hAlign = CFX_CSSTextAlign::JustifyAll;
         break;
-      case XFA_AttributeEnum::Left:
-      case XFA_AttributeEnum::Radix:
+      case XFA_AttributeValue::Left:
+      case XFA_AttributeValue::Radix:
         break;
       default:
         NOTREACHED();
@@ -237,8 +239,8 @@ void CXFA_TextParser::ParseRichText(const CFX_XMLNode* pXMLNode,
     return;
 
   RetainPtr<CFX_CSSComputedStyle> pNewStyle;
-  if ((tagProvider->GetTagName() != L"body") ||
-      (tagProvider->GetTagName() != L"html")) {
+  if (!(tagProvider->GetTagName().EqualsASCII("body") &&
+        tagProvider->GetTagName().EqualsASCII("html"))) {
     auto pTextContext = pdfium::MakeUnique<CXFA_TextParseContext>();
     CFX_CSSDisplay eDisplay = CFX_CSSDisplay::Inline;
     if (!tagProvider->m_bContent) {
@@ -308,10 +310,10 @@ std::unique_ptr<CXFA_TextParser::TagProvider> CXFA_TextParser::ParseTagInfo(
   return tagProvider;
 }
 
-XFA_AttributeEnum CXFA_TextParser::GetVAlign(
+XFA_AttributeValue CXFA_TextParser::GetVAlign(
     CXFA_TextProvider* pTextProvider) const {
   CXFA_Para* para = pTextProvider->GetParaIfExists();
-  return para ? para->GetVerticalAlign() : XFA_AttributeEnum::Top;
+  return para ? para->GetVerticalAlign() : XFA_AttributeValue::Top;
 }
 
 float CXFA_TextParser::GetTabInterval(CFX_CSSComputedStyle* pStyle) const {
@@ -330,11 +332,8 @@ int32_t CXFA_TextParser::CountTabs(CFX_CSSComputedStyle* pStyle) const {
 
 bool CXFA_TextParser::IsSpaceRun(CFX_CSSComputedStyle* pStyle) const {
   WideString wsValue;
-  if (pStyle && pStyle->GetCustomStyle(L"xfa-spacerun", &wsValue)) {
-    wsValue.MakeLower();
-    return wsValue == L"yes";
-  }
-  return false;
+  return pStyle && pStyle->GetCustomStyle(L"xfa-spacerun", &wsValue) &&
+         wsValue.EqualsASCIINoCase("yes");
 }
 
 RetainPtr<CFGAS_GEFont> CXFA_TextParser::GetFont(
@@ -418,9 +417,9 @@ int32_t CXFA_TextParser::GetVerScale(CXFA_TextProvider* pTextProvider,
 void CXFA_TextParser::GetUnderline(CXFA_TextProvider* pTextProvider,
                                    CFX_CSSComputedStyle* pStyle,
                                    int32_t& iUnderline,
-                                   XFA_AttributeEnum& iPeriod) const {
+                                   XFA_AttributeValue& iPeriod) const {
   iUnderline = 0;
-  iPeriod = XFA_AttributeEnum::All;
+  iPeriod = XFA_AttributeValue::All;
   CXFA_Font* font = pTextProvider->GetFontIfExists();
   if (!pStyle) {
     if (font) {
@@ -438,8 +437,8 @@ void CXFA_TextParser::GetUnderline(CXFA_TextProvider* pTextProvider,
 
   WideString wsValue;
   if (pStyle->GetCustomStyle(L"underlinePeriod", &wsValue)) {
-    if (wsValue == L"word")
-      iPeriod = XFA_AttributeEnum::Word;
+    if (wsValue.EqualsASCII("word"))
+      iPeriod = XFA_AttributeValue::Word;
   } else if (font) {
     iPeriod = font->GetUnderlinePeriod();
   }
@@ -528,12 +527,12 @@ Optional<WideString> CXFA_TextParser::GetEmbeddedObj(
 
   WideString ws =
       GetLowerCaseElementAttributeOrDefault(pElement, L"xfa:embedType", L"som");
-  if (ws != L"uri")
+  if (!ws.EqualsASCII("uri"))
     return {};
 
   ws = GetLowerCaseElementAttributeOrDefault(pElement, L"xfa:embedMode",
                                              L"formatted");
-  if (ws != L"raw" && ws != L"formatted")
+  if (!(ws.EqualsASCII("raw") || ws.EqualsASCII("formatted")))
     return {};
 
   return pTextProvider->GetEmbeddedObj(wsAttr);

@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <limits.h>
 #include "./vpx_config.h"
 #include "vpx_dsp/vpx_dsp_common.h"
 #include "vpx_mem/vpx_mem.h"
@@ -158,7 +159,12 @@ static void loop_filter_rows_mt(YV12_BUFFER_CONFIG *frame, VP9_COMMON *cm,
   const VPxWorkerInterface *const winterface = vpx_get_worker_interface();
   // Number of superblock rows and cols
   const int sb_rows = mi_cols_aligned_to_sb(cm->mi_rows) >> MI_BLOCK_SIZE_LOG2;
-  const int num_workers = VPXMIN(nworkers, sb_rows);
+  const int num_tile_cols = 1 << cm->log2_tile_cols;
+  // Limit the number of workers to prevent changes in frame dimensions from
+  // causing incorrect sync calculations when sb_rows < threads/tile_cols.
+  // Further restrict them by the number of tile columns should the user
+  // request more as this implementation doesn't scale well beyond that.
+  const int num_workers = VPXMIN(nworkers, VPXMIN(num_tile_cols, sb_rows));
   int i;
 
   if (!lf_sync->sync_range || sb_rows != lf_sync->rows ||
@@ -402,6 +408,11 @@ static int get_next_row(VP9_COMMON *cm, VP9LfSync *lf_sync) {
   pthread_mutex_unlock(&lf_sync->recon_done_mutex[cur_row]);
   pthread_mutex_lock(&lf_sync->lf_mutex);
   if (lf_sync->corrupted) {
+    int row = return_val >> MI_BLOCK_SIZE_LOG2;
+    pthread_mutex_lock(&lf_sync->mutex[row]);
+    lf_sync->cur_sb_col[row] = INT_MAX;
+    pthread_cond_signal(&lf_sync->cond[row]);
+    pthread_mutex_unlock(&lf_sync->mutex[row]);
     return_val = -1;
   }
   pthread_mutex_unlock(&lf_sync->lf_mutex);

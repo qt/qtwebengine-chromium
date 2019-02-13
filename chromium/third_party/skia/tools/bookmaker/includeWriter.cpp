@@ -1197,6 +1197,8 @@ void IncludeWriter::structSizeMembers(const Definition& child) {
                     inMethod = false;
                 } else if (Punctuation::kSemicolon == token.fPunctuation) {
                     inMethod = false;
+                } else if (Punctuation::kAsterisk == token.fPunctuation) {
+                    inMethod = false;
                 } else {
                     SkASSERT(0);  // incomplete
                 }
@@ -2204,7 +2206,6 @@ string IncludeWriter::resolveRef(const char* start, const char* end, bool first,
                 if (fBmhParser->fAliasMap.end() != aliasIter) {
                     rootDef = aliasIter->second;
                 } else if (fInEnum && fEnumDef && this->findEnumSubtopic(undername, &rootDef)) {
-                    ;
                 } else if (!first) {
                     this->fChar = start;
                     this->fLine = start;

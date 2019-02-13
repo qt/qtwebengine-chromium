@@ -6,9 +6,10 @@
  */
 
 #include "GrCaps.h"
-
 #include "GrBackendSurface.h"
 #include "GrContextOptions.h"
+#include "GrSurface.h"
+#include "GrSurfaceProxy.h"
 #include "GrTypesPriv.h"
 #include "GrWindowRectangles.h"
 #include "SkJSONWriter.h"
@@ -33,11 +34,13 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fPreferFullscreenClears = false;
     fMustClearUploadedBufferData = false;
     fSupportsAHardwareBufferImages = false;
-    fSampleShadingSupport = false;
     fFenceSyncSupport = false;
     fCrossContextTextureSupport = false;
     fHalfFloatVertexAttributeSupport = false;
     fDynamicStateArrayGeometryProcessorTextureSupport = false;
+    fPerformPartialClearsAsDraws = false;
+    fPerformColorClearsAsDraws = false;
+    fPerformStencilClearsAsDraws = false;
 
     fBlendEquationSupport = kBasic_BlendEquationSupport;
     fAdvBlendEqBlacklist = 0;
@@ -72,6 +75,9 @@ GrCaps::GrCaps(const GrContextOptions& options) {
 
     fPreferVRAMUseOverFlushes = true;
 
+    // Default to true, allow older versions of OpenGL to disable explicitly
+    fClampToBorderSupport = true;
+
     fDriverBugWorkarounds = options.fDriverBugWorkarounds;
 }
 
@@ -83,6 +89,17 @@ void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
         // SkASSERT(!fBlacklistCoverageCounting);
         SkASSERT(!fAvoidStencilBuffers);
         SkASSERT(!fAdvBlendEqBlacklist);
+        SkASSERT(!fPerformColorClearsAsDraws);
+        SkASSERT(!fPerformStencilClearsAsDraws);
+        // Don't check the partial-clear workaround, since that is a backend limitation, not a
+        // driver workaround (it just so happens the fallbacks are the same).
+    }
+    if (GrContextOptions::Enable::kNo == options.fUseDrawInsteadOfClear) {
+        fPerformColorClearsAsDraws = false;
+        fPerformStencilClearsAsDraws = false;
+    } else if (GrContextOptions::Enable::kYes == options.fUseDrawInsteadOfClear) {
+        fPerformColorClearsAsDraws = true;
+        fPerformStencilClearsAsDraws = true;
     }
 
     fMaxTextureSize = SkTMin(fMaxTextureSize, options.fMaxTextureSizeOverride);
@@ -121,6 +138,7 @@ static const char* pixel_config_name(GrPixelConfig config) {
         case kRGBA_4444_GrPixelConfig: return "RGBA444";
         case kRGBA_8888_GrPixelConfig: return "RGBA8888";
         case kRGB_888_GrPixelConfig: return "RGB888";
+        case kRG_88_GrPixelConfig: return "RG88";
         case kBGRA_8888_GrPixelConfig: return "BGRA8888";
         case kSRGBA_8888_GrPixelConfig: return "SRGBA8888";
         case kSBGRA_8888_GrPixelConfig: return "SBGRA8888";
@@ -130,6 +148,7 @@ static const char* pixel_config_name(GrPixelConfig config) {
         case kAlpha_half_GrPixelConfig: return "AlphaHalf";
         case kAlpha_half_as_Red_GrPixelConfig: return "AlphaHalf_asRed";
         case kRGBA_half_GrPixelConfig: return "RGBAHalf";
+        case kRGB_ETC1_GrPixelConfig: return "RGBETC1";
     }
     SK_ABORT("Invalid pixel config");
     return "<invalid>";
@@ -177,12 +196,15 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Prefer fullscreen clears", fPreferFullscreenClears);
     writer->appendBool("Must clear buffer memory", fMustClearUploadedBufferData);
     writer->appendBool("Supports importing AHardwareBuffers", fSupportsAHardwareBufferImages);
-    writer->appendBool("Sample shading support", fSampleShadingSupport);
     writer->appendBool("Fence sync support", fFenceSyncSupport);
     writer->appendBool("Cross context texture support", fCrossContextTextureSupport);
     writer->appendBool("Half float vertex attribute support", fHalfFloatVertexAttributeSupport);
     writer->appendBool("Specify GeometryProcessor textures as a dynamic state array",
                        fDynamicStateArrayGeometryProcessorTextureSupport);
+    writer->appendBool("Use draws for partial clears", fPerformPartialClearsAsDraws);
+    writer->appendBool("Use draws for color clears", fPerformColorClearsAsDraws);
+    writer->appendBool("Use draws for stencil clip clears", fPerformStencilClearsAsDraws);
+    writer->appendBool("Clamp-to-border", fClampToBorderSupport);
 
     writer->appendBool("Blacklist Coverage Counting Path Renderer [workaround]",
                        fBlacklistCoverageCounting);
@@ -242,6 +264,15 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
 void GrCaps::dumpJSON(SkJSONWriter* writer) const { }
 #endif
 
+bool GrCaps::surfaceSupportsWritePixels(const GrSurface* surface) const {
+    return surface->readOnly() ? false : this->onSurfaceSupportsWritePixels(surface);
+}
+
+bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
+                            const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+    return dst->readOnly() ? false : this->onCanCopySurface(dst, src, srcRect, dstPoint);
+}
+
 bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) const {
     if (!this->isConfigTexturable(desc.fConfig)) {
         return false;
@@ -280,11 +311,3 @@ bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) 
 GrBackendFormat GrCaps::getBackendFormatFromColorType(SkColorType ct) const {
     return this->getBackendFormatFromGrColorType(SkColorTypeToGrColorType(ct), GrSRGBEncoded::kNo);
 }
-
-GrBackendFormat GrCaps::createFormatFromBackendTexture(const GrBackendTexture& backendTex) const {
-    if (!backendTex.isValid()) {
-        return GrBackendFormat();
-    }
-    return this->onCreateFormatFromBackendTexture(backendTex);
-}
-

@@ -1,5 +1,5 @@
 /*
- *  Copyright 2018 The WebRTC Project Authors. All rights reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -11,27 +11,9 @@
 #ifndef P2P_BASE_ICECREDENTIALSITERATOR_H_
 #define P2P_BASE_ICECREDENTIALSITERATOR_H_
 
-#include <vector>
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
 
-#include "p2p/base/transportdescription.h"
-
-namespace cricket {
-
-class IceCredentialsIterator {
- public:
-  explicit IceCredentialsIterator(const std::vector<IceParameters>&);
-  virtual ~IceCredentialsIterator();
-
-  // Get next pooled ice credentials.
-  // Returns a new random credential if the pool is empty.
-  IceParameters GetIceCredentials();
-
-  static IceParameters CreateRandomIceCredentials();
-
- private:
-  std::vector<IceParameters> pooled_ice_credentials_;
-};
-
-}  // namespace cricket
+#include "p2p/base/ice_credentials_iterator.h"
 
 #endif  // P2P_BASE_ICECREDENTIALSITERATOR_H_

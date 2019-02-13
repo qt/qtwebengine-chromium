@@ -33,16 +33,17 @@
 #include "modules/rtp_rtcp/source/contributing_sources.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "modules/utility/include/process_thread.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/thread_checker.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -51,8 +52,6 @@ namespace voe {
 namespace {
 
 constexpr double kAudioSampleDurationSeconds = 0.01;
-constexpr int64_t kMaxRetransmissionWindowMs = 1000;
-constexpr int64_t kMinRetransmissionWindowMs = 30;
 
 // Video Sync.
 constexpr int kVoiceEngineMinMinPlayoutDelayMs = 0;
@@ -103,6 +102,7 @@ class ChannelReceive : public ChannelReceiveInterface,
                  size_t jitter_buffer_max_packets,
                  bool jitter_buffer_fast_playout,
                  int jitter_buffer_min_delay_ms,
+                 bool jitter_buffer_enable_rtx_handling,
                  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
                  absl::optional<AudioCodecPairId> codec_pair_id,
                  rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor,
@@ -119,7 +119,8 @@ class ChannelReceive : public ChannelReceiveInterface,
   void StopPlayout() override;
 
   // Codecs
-  bool GetRecCodec(CodecInst* codec) const override;
+  absl::optional<std::pair<int, SdpAudioFormat>>
+      GetReceiveCodec() const override;
 
   bool ReceivedRTCPPacket(const uint8_t* data, size_t length) override;
 
@@ -451,6 +452,7 @@ ChannelReceive::ChannelReceive(
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout,
     int jitter_buffer_min_delay_ms,
+    bool jitter_buffer_enable_rtx_handling,
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
     absl::optional<AudioCodecPairId> codec_pair_id,
     rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor,
@@ -485,6 +487,8 @@ ChannelReceive::ChannelReceive(
   acm_config.neteq_config.enable_fast_accelerate = jitter_buffer_fast_playout;
   acm_config.neteq_config.min_delay_ms = jitter_buffer_min_delay_ms;
   acm_config.neteq_config.enable_muted_state = true;
+  acm_config.neteq_config.enable_rtx_handling =
+      jitter_buffer_enable_rtx_handling;
   audio_coding_.reset(AudioCodingModule::Create(acm_config));
 
   _outputAudioLevel.Clear();
@@ -552,9 +556,10 @@ void ChannelReceive::StopPlayout() {
   _outputAudioLevel.Clear();
 }
 
-bool ChannelReceive::GetRecCodec(CodecInst* codec) const {
+absl::optional<std::pair<int, SdpAudioFormat>>
+    ChannelReceive::GetReceiveCodec() const {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  return (audio_coding_->ReceiveCodec(codec) == 0);
+  return audio_coding_->ReceiveCodec();
 }
 
 std::vector<webrtc::RtpSource> ChannelReceive::GetSources() const {
@@ -690,13 +695,6 @@ bool ChannelReceive::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
     return true;
   }
 
-  int64_t nack_window_ms = rtt;
-  if (nack_window_ms < kMinRetransmissionWindowMs) {
-    nack_window_ms = kMinRetransmissionWindowMs;
-  } else if (nack_window_ms > kMaxRetransmissionWindowMs) {
-    nack_window_ms = kMaxRetransmissionWindowMs;
-  }
-
   uint32_t ntp_secs = 0;
   uint32_t ntp_frac = 0;
   uint32_t rtp_timestamp = 0;
@@ -802,11 +800,14 @@ CallReceiveStatistics ChannelReceive::GetRTCPStatistics() const {
 void ChannelReceive::SetNACKStatus(bool enable, int max_packets) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   // None of these functions can fail.
-  rtp_receive_statistics_->SetMaxReorderingThreshold(max_packets);
-  if (enable)
+  if (enable) {
+    rtp_receive_statistics_->SetMaxReorderingThreshold(max_packets);
     audio_coding_->EnableNack(max_packets);
-  else
+  } else {
+    rtp_receive_statistics_->SetMaxReorderingThreshold(
+        kDefaultMaxReorderingThreshold);
     audio_coding_->DisableNack();
+  }
 }
 
 // Called when we are missing one or more packets.
@@ -920,13 +921,13 @@ void ChannelReceive::UpdatePlayoutTimestamp(bool rtcp) {
 }
 
 int ChannelReceive::GetRtpTimestampRateHz() const {
-  const auto format = audio_coding_->ReceiveFormat();
+  const auto decoder = audio_coding_->ReceiveCodec();
   // Default to the playout frequency if we've not gotten any packets yet.
   // TODO(ossu): Zero clockrate can only happen if we've added an external
   // decoder for a format we don't support internally. Remove once that way of
   // adding decoders is gone!
-  return (format && format->clockrate_hz != 0)
-             ? format->clockrate_hz
+  return (decoder && decoder->second.clockrate_hz != 0)
+             ? decoder->second.clockrate_hz
              : audio_coding_->PlayoutFrequency();
 }
 
@@ -982,6 +983,7 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout,
     int jitter_buffer_min_delay_ms,
+    bool jitter_buffer_enable_rtx_handling,
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
     absl::optional<AudioCodecPairId> codec_pair_id,
     rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor,
@@ -990,8 +992,8 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
       module_process_thread, audio_device_module, media_transport,
       rtcp_send_transport, rtc_event_log, remote_ssrc,
       jitter_buffer_max_packets, jitter_buffer_fast_playout,
-      jitter_buffer_min_delay_ms, decoder_factory, codec_pair_id,
-      frame_decryptor, crypto_options);
+      jitter_buffer_min_delay_ms, jitter_buffer_enable_rtx_handling,
+      decoder_factory, codec_pair_id, frame_decryptor, crypto_options);
 }
 
 }  // namespace voe

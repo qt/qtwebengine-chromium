@@ -37,7 +37,12 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_METHOD1(SetRemoteSSRC, void(uint32_t ssrc));
   MOCK_METHOD1(SetMaxRtpPacketSize, void(size_t size));
   MOCK_CONST_METHOD0(MaxRtpPacketSize, size_t());
-  MOCK_METHOD1(RegisterSendPayload, int32_t(const CodecInst& voice_codec));
+  MOCK_METHOD5(RegisterAudioSendPayload,
+               void(int payload_type,
+                    absl::string_view payload_name,
+                    int frequency,
+                    int channels,
+                    int rate));
   MOCK_METHOD2(RegisterVideoSendPayload,
                void(int payload_type, const char* payload_name));
   MOCK_METHOD1(DeRegisterSendPayload, int32_t(int8_t payload_type));
@@ -59,6 +64,7 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_CONST_METHOD0(GetRtxState, RtpState());
   MOCK_CONST_METHOD0(SSRC, uint32_t());
   MOCK_METHOD1(SetSSRC, void(uint32_t ssrc));
+  MOCK_METHOD1(SetRid, void(const std::string& rid));
   MOCK_METHOD1(SetMid, void(const std::string& mid));
   MOCK_CONST_METHOD1(CSRCs, int32_t(uint32_t csrcs[kRtpCsrcSize]));
   MOCK_METHOD1(SetCsrcs, void(const std::vector<uint32_t>& csrcs));
@@ -79,6 +85,7 @@ class MockRtpRtcp : public RtpRtcp {
                           uint32_t* video_rate,
                           uint32_t* fec_rate,
                           uint32_t* nack_rate));
+  MOCK_CONST_METHOD0(PacketizationOverheadBps, uint32_t());
   MOCK_CONST_METHOD1(EstimatedReceiveBandwidth,
                      int(uint32_t* available_bandwidth));
   MOCK_METHOD9(SendOutgoingData,

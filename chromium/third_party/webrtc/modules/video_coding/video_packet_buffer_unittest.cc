@@ -434,8 +434,8 @@ TEST_F(TestPacketBuffer, GetBitstream) {
   memcpy(such, such_data, sizeof(such_data));
   memcpy(data, data_data, sizeof(data_data));
 
-  uint8_t result[sizeof(many_data) + sizeof(bitstream_data) +
-                 sizeof(such_data) + sizeof(data_data)];
+  const size_t result_length = sizeof(many_data) + sizeof(bitstream_data) +
+                               sizeof(such_data) + sizeof(data_data);
 
   const uint16_t seq_num = Rand();
 
@@ -450,14 +450,14 @@ TEST_F(TestPacketBuffer, GetBitstream) {
 
   ASSERT_EQ(1UL, frames_from_callback_.size());
   CheckFrame(seq_num);
-  EXPECT_EQ(frames_from_callback_[seq_num]->size(), sizeof(result));
-  EXPECT_TRUE(frames_from_callback_[seq_num]->GetBitstream(result));
-  EXPECT_EQ(memcmp(result, "many bitstream, such data", sizeof(result)), 0);
+  EXPECT_EQ(frames_from_callback_[seq_num]->size(), result_length);
+  EXPECT_EQ(memcmp(frames_from_callback_[seq_num]->data(),
+                   "many bitstream, such data", result_length),
+            0);
 }
 
 TEST_F(TestPacketBuffer, GetBitstreamOneFrameOnePacket) {
   uint8_t bitstream_data[] = "All the bitstream data for this frame!";
-  uint8_t result[sizeof(bitstream_data)];
   uint8_t* data = new uint8_t[sizeof(bitstream_data)];
   memcpy(data, bitstream_data, sizeof(bitstream_data));
 
@@ -467,14 +467,14 @@ TEST_F(TestPacketBuffer, GetBitstreamOneFrameOnePacket) {
   ASSERT_EQ(1UL, frames_from_callback_.size());
   CheckFrame(0);
   EXPECT_EQ(frames_from_callback_[0]->size(), sizeof(bitstream_data));
-  EXPECT_TRUE(frames_from_callback_[0]->GetBitstream(result));
-  EXPECT_EQ(memcmp(result, data, sizeof(bitstream_data)), 0);
+  EXPECT_EQ(
+      memcmp(frames_from_callback_[0]->data(), data, sizeof(bitstream_data)),
+      0);
 }
 
 TEST_F(TestPacketBuffer, GetBitstreamOneFrameFullBuffer) {
   uint8_t* data_arr[kStartSize];
   uint8_t expected[kStartSize];
-  uint8_t result[kStartSize];
 
   for (uint8_t i = 0; i < kStartSize; ++i) {
     data_arr[i] = new uint8_t[1];
@@ -491,8 +491,7 @@ TEST_F(TestPacketBuffer, GetBitstreamOneFrameFullBuffer) {
   ASSERT_EQ(1UL, frames_from_callback_.size());
   CheckFrame(0);
   EXPECT_EQ(frames_from_callback_[0]->size(), static_cast<size_t>(kStartSize));
-  EXPECT_TRUE(frames_from_callback_[0]->GetBitstream(result));
-  EXPECT_EQ(memcmp(result, expected, kStartSize), 0);
+  EXPECT_EQ(memcmp(frames_from_callback_[0]->data(), expected, kStartSize), 0);
 }
 
 TEST_F(TestPacketBuffer, InsertPacketAfterOldFrameObjectIsRemoved) {
@@ -601,7 +600,6 @@ TEST_P(TestPacketBufferH264Parameterized, DontRemoveMissingPacketOnClearTo) {
 TEST_P(TestPacketBufferH264Parameterized, GetBitstreamOneFrameFullBuffer) {
   uint8_t* data_arr[kStartSize];
   uint8_t expected[kStartSize];
-  uint8_t result[kStartSize];
 
   for (uint8_t i = 0; i < kStartSize; ++i) {
     data_arr[i] = new uint8_t[1];
@@ -620,8 +618,7 @@ TEST_P(TestPacketBufferH264Parameterized, GetBitstreamOneFrameFullBuffer) {
   ASSERT_EQ(1UL, frames_from_callback_.size());
   CheckFrame(0);
   EXPECT_EQ(frames_from_callback_[0]->size(), static_cast<size_t>(kStartSize));
-  EXPECT_TRUE(frames_from_callback_[0]->GetBitstream(result));
-  EXPECT_EQ(memcmp(result, expected, kStartSize), 0);
+  EXPECT_EQ(memcmp(frames_from_callback_[0]->data(), expected, kStartSize), 0);
 }
 
 TEST_P(TestPacketBufferH264Parameterized, GetBitstreamBufferPadding) {
@@ -629,10 +626,6 @@ TEST_P(TestPacketBufferH264Parameterized, GetBitstreamBufferPadding) {
   uint8_t data_data[] = "some plain old data";
   uint8_t* data = new uint8_t[sizeof(data_data)];
   memcpy(data, data_data, sizeof(data_data));
-
-  // EncodedImage::kBufferPaddingBytesH264 is unknown at compile time.
-  std::unique_ptr<uint8_t[]> result(
-      new uint8_t[sizeof(data_data) + EncodedImage::kBufferPaddingBytesH264]);
 
   VCMPacket packet;
   auto& h264_header =
@@ -650,12 +643,13 @@ TEST_P(TestPacketBufferH264Parameterized, GetBitstreamBufferPadding) {
   packet_buffer_->InsertPacket(&packet);
 
   ASSERT_EQ(1UL, frames_from_callback_.size());
-  EXPECT_EQ(frames_from_callback_[seq_num]->EncodedImage()._length,
+  EXPECT_EQ(frames_from_callback_[seq_num]->EncodedImage().size(),
             sizeof(data_data));
-  EXPECT_EQ(frames_from_callback_[seq_num]->EncodedImage()._size,
+  EXPECT_EQ(frames_from_callback_[seq_num]->EncodedImage().capacity(),
             sizeof(data_data) + EncodedImage::kBufferPaddingBytesH264);
-  EXPECT_TRUE(frames_from_callback_[seq_num]->GetBitstream(result.get()));
-  EXPECT_EQ(memcmp(result.get(), data, sizeof(data_data)), 0);
+  EXPECT_EQ(
+      memcmp(frames_from_callback_[seq_num]->data(), data, sizeof(data_data)),
+      0);
 }
 
 TEST_F(TestPacketBuffer, FreeSlotsOnFrameDestruction) {
@@ -697,16 +691,6 @@ TEST_F(TestPacketBuffer, Clear) {
   CheckFrame(seq_num + kStartSize);
 }
 
-TEST_F(TestPacketBuffer, InvalidateFrameByClearing) {
-  const uint16_t seq_num = Rand();
-
-  EXPECT_TRUE(Insert(seq_num, kKeyFrame, kFirst, kLast));
-  ASSERT_EQ(1UL, frames_from_callback_.size());
-
-  packet_buffer_->Clear();
-  EXPECT_FALSE(frames_from_callback_.begin()->second->GetBitstream(nullptr));
-}
-
 TEST_F(TestPacketBuffer, FramesAfterClear) {
   Insert(9025, kDeltaFrame, kFirst, kLast);
   Insert(9024, kKeyFrame, kFirst, kLast);
@@ -718,6 +702,13 @@ TEST_F(TestPacketBuffer, FramesAfterClear) {
   CheckFrame(9025);
   CheckFrame(9026);
   CheckFrame(9057);
+}
+
+TEST_F(TestPacketBuffer, SameFrameDifferentTimestamps) {
+  Insert(0, kKeyFrame, kFirst, kNotLast, 0, nullptr, 1000);
+  Insert(1, kKeyFrame, kNotFirst, kLast, 0, nullptr, 1001);
+
+  ASSERT_EQ(0UL, frames_from_callback_.size());
 }
 
 TEST_F(TestPacketBuffer, DontLeakPayloadData) {

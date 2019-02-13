@@ -19,3 +19,4 @@ import './chrome_slices/frontend';
 import './vsync/frontend';
 import './process_summary/frontend';
 import './counter/frontend';
+import './cpu_freq/frontend';

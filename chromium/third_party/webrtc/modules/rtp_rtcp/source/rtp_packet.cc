@@ -14,7 +14,7 @@
 #include <cstring>
 #include <utility>
 
-#include "api/rtpparameters.h"
+#include "api/rtp_parameters.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -567,6 +567,11 @@ rtc::ArrayView<uint8_t> RtpPacket::AllocateExtension(ExtensionType type,
     return nullptr;
   }
   return AllocateRawExtension(id, length);
+}
+
+bool RtpPacket::HasExtension(ExtensionType type) const {
+  // TODO(webrtc:7990): Add support for empty extensions (length==0).
+  return !FindExtension(type).empty();
 }
 
 }  // namespace webrtc

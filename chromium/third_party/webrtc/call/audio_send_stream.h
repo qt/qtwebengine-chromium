@@ -21,10 +21,10 @@
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/call/transport.h"
-#include "api/crypto/cryptooptions.h"
-#include "api/crypto/frameencryptorinterface.h"
+#include "api/crypto/crypto_options.h"
+#include "api/crypto/frame_encryptor_interface.h"
 #include "api/media_transport_interface.h"
-#include "api/rtpparameters.h"
+#include "api/rtp_parameters.h"
 #include "call/rtp_config.h"
 #include "modules/audio_processing/include/audio_processing_statistics.h"
 #include "rtc_base/scoped_ref_ptr.h"
@@ -78,6 +78,10 @@ class AudioSendStream {
 
       // Sender SSRC.
       uint32_t ssrc = 0;
+
+      // The value to send in the RID RTP header extension if the extension is
+      // included in the list of extensions.
+      std::string rid;
 
       // The value to send in the MID RTP header extension if the extension is
       // included in the list of extensions.

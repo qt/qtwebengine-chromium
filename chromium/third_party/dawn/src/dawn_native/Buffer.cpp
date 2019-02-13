@@ -60,10 +60,6 @@ namespace dawn_native {
         }
     }
 
-    BufferViewBuilder* BufferBase::CreateBufferViewBuilder() {
-        return new BufferViewBuilder(GetDevice(), this);
-    }
-
     uint32_t BufferBase::GetSize() const {
         return mSize;
     }
@@ -170,8 +166,12 @@ namespace dawn_native {
     }
 
     MaybeError BufferBase::ValidateSetSubData(uint32_t start, uint32_t count) const {
-        // TODO(cwallez@chromium.org): check for overflows.
-        if (start + count > GetSize()) {
+        if (count > GetSize()) {
+            return DAWN_VALIDATION_ERROR("Buffer subdata with too much data");
+        }
+
+        // Note that no overflow can happen because we already checked for GetSize() >= count
+        if (start > GetSize() - count) {
             return DAWN_VALIDATION_ERROR("Buffer subdata out of range");
         }
 
@@ -185,9 +185,13 @@ namespace dawn_native {
     MaybeError BufferBase::ValidateMap(uint32_t start,
                                        uint32_t size,
                                        dawn::BufferUsageBit requiredUsage) const {
-        // TODO(cwallez@chromium.org): check for overflows.
-        if (start + size > GetSize()) {
-            return DAWN_VALIDATION_ERROR("Buffer map read out of range");
+        if (size > GetSize()) {
+            return DAWN_VALIDATION_ERROR("Buffer mapping with too big a region");
+        }
+
+        // Note that no overflow can happen because we already checked for GetSize() >= size
+        if (start > GetSize() - size) {
+            return DAWN_VALIDATION_ERROR("Buffer mapping out of range");
         }
 
         if (mIsMapped) {
@@ -207,64 +211,6 @@ namespace dawn_native {
         }
 
         return {};
-    }
-
-    // BufferViewBase
-
-    BufferViewBase::BufferViewBase(BufferViewBuilder* builder)
-        : ObjectBase(builder->GetDevice()),
-          mBuffer(std::move(builder->mBuffer)),
-          mSize(builder->mSize),
-          mOffset(builder->mOffset) {
-    }
-
-    BufferBase* BufferViewBase::GetBuffer() {
-        return mBuffer.Get();
-    }
-
-    uint32_t BufferViewBase::GetSize() const {
-        return mSize;
-    }
-
-    uint32_t BufferViewBase::GetOffset() const {
-        return mOffset;
-    }
-
-    // BufferViewBuilder
-
-    enum BufferViewSetProperties {
-        BUFFER_VIEW_PROPERTY_EXTENT = 0x1,
-    };
-
-    BufferViewBuilder::BufferViewBuilder(DeviceBase* device, BufferBase* buffer)
-        : Builder(device), mBuffer(buffer) {
-    }
-
-    BufferViewBase* BufferViewBuilder::GetResultImpl() {
-        constexpr int allProperties = BUFFER_VIEW_PROPERTY_EXTENT;
-        if ((mPropertiesSet & allProperties) != allProperties) {
-            HandleError("Buffer view missing properties");
-            return nullptr;
-        }
-
-        return GetDevice()->CreateBufferView(this);
-    }
-
-    void BufferViewBuilder::SetExtent(uint32_t offset, uint32_t size) {
-        if ((mPropertiesSet & BUFFER_VIEW_PROPERTY_EXTENT) != 0) {
-            HandleError("Buffer view extent property set multiple times");
-            return;
-        }
-
-        uint64_t viewEnd = static_cast<uint64_t>(offset) + static_cast<uint64_t>(size);
-        if (viewEnd > static_cast<uint64_t>(mBuffer->GetSize())) {
-            HandleError("Buffer view end is OOB");
-            return;
-        }
-
-        mOffset = offset;
-        mSize = size;
-        mPropertiesSet |= BUFFER_VIEW_PROPERTY_EXTENT;
     }
 
 }  // namespace dawn_native

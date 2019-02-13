@@ -78,7 +78,7 @@ class SpanJoinOperatorTable : public Table {
   static void RegisterTable(sqlite3* db, const TraceStorage* storage);
 
   // Table implementation.
-  Table::Schema CreateSchema(int argc, const char* const* argv) override;
+  base::Optional<Table::Schema> Init(int, const char* const*) override;
   std::unique_ptr<Table::Cursor> CreateCursor(const QueryConstraints&,
                                               sqlite3_value**) override;
   int BestIndex(const QueryConstraints& qc, BestIndexInfo* info) override;
@@ -138,8 +138,8 @@ class SpanJoinOperatorTable : public Table {
 
       const TableDefinition* definition() const { return defn_; }
 
-      uint64_t ts_start() const { return ts_start_; }
-      uint64_t ts_end() const { return ts_end_; }
+      int64_t ts_start() const { return ts_start_; }
+      int64_t ts_end() const { return ts_end_; }
       int64_t partition() const { return partition_; }
 
      private:
@@ -148,8 +148,8 @@ class SpanJoinOperatorTable : public Table {
 
       ScopedStmt stmt_;
 
-      uint64_t ts_start_ = std::numeric_limits<uint64_t>::max();
-      uint64_t ts_end_ = std::numeric_limits<uint64_t>::max();
+      int64_t ts_start_ = std::numeric_limits<int64_t>::max();
+      int64_t ts_end_ = std::numeric_limits<int64_t>::max();
       int64_t partition_ = std::numeric_limits<int64_t>::max();
 
       const TableDefinition* const defn_;

@@ -9,13 +9,12 @@
  */
 #include <errno.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <algorithm>
 #include <string>
 
 #include "rtc_base/checks.h"
 #include "rtc_base/location.h"
-#include "rtc_base/messagequeue.h"
+#include "rtc_base/message_queue.h"
 #include "rtc_base/stream.h"
 #include "rtc_base/thread.h"
 
@@ -23,7 +22,7 @@
 #include <windows.h>
 
 #define fileno _fileno
-#include "rtc_base/stringutils.h"
+#include "rtc_base/string_utils.h"
 #endif
 
 namespace rtc {
@@ -78,24 +77,8 @@ void StreamInterface::PostEvent(int events, int err) {
   PostEvent(Thread::Current(), events, err);
 }
 
-bool StreamInterface::SetPosition(size_t position) {
-  return false;
-}
-
-bool StreamInterface::GetPosition(size_t* position) const {
-  return false;
-}
-
-bool StreamInterface::GetSize(size_t* size) const {
-  return false;
-}
-
 bool StreamInterface::Flush() {
   return false;
-}
-
-bool StreamInterface::ReserveSize(size_t size) {
-  return true;
 }
 
 StreamInterface::StreamInterface() {}
@@ -136,22 +119,6 @@ StreamResult StreamAdapterInterface::Write(const void* data,
 }
 void StreamAdapterInterface::Close() {
   stream_->Close();
-}
-
-bool StreamAdapterInterface::SetPosition(size_t position) {
-  return stream_->SetPosition(position);
-}
-
-bool StreamAdapterInterface::GetPosition(size_t* position) const {
-  return stream_->GetPosition(position);
-}
-
-bool StreamAdapterInterface::GetSize(size_t* size) const {
-  return stream_->GetSize(size);
-}
-
-bool StreamAdapterInterface::ReserveSize(size_t size) {
-  return stream_->ReserveSize(size);
 }
 
 bool StreamAdapterInterface::Flush() {
@@ -303,35 +270,6 @@ bool FileStream::SetPosition(size_t position) {
   if (!file_)
     return false;
   return (fseek(file_, static_cast<int>(position), SEEK_SET) == 0);
-}
-
-bool FileStream::GetPosition(size_t* position) const {
-  RTC_DCHECK(nullptr != position);
-  if (!file_)
-    return false;
-  long result = ftell(file_);
-  if (result < 0)
-    return false;
-  if (position)
-    *position = result;
-  return true;
-}
-
-bool FileStream::GetSize(size_t* size) const {
-  RTC_DCHECK(nullptr != size);
-  if (!file_)
-    return false;
-  struct stat file_stats;
-  if (fstat(fileno(file_), &file_stats) != 0)
-    return false;
-  if (size)
-    *size = file_stats.st_size;
-  return true;
-}
-
-bool FileStream::ReserveSize(size_t size) {
-  // TODO: extend the file to the proper length
-  return true;
 }
 
 bool FileStream::Flush() {

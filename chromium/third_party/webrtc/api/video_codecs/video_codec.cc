@@ -15,7 +15,6 @@
 
 #include "absl/strings/match.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/stringutils.h"
 
 namespace webrtc {
 
@@ -66,7 +65,6 @@ VideoCodec::VideoCodec()
       startBitrate(0),
       maxBitrate(0),
       minBitrate(0),
-      targetBitrate(0),
       maxFramerate(0),
       active(true),
       qpMax(0),
@@ -111,7 +109,6 @@ const VideoCodecH264& VideoCodec::H264() const {
 static const char* kPayloadNameVp8 = "VP8";
 static const char* kPayloadNameVp9 = "VP9";
 static const char* kPayloadNameH264 = "H264";
-static const char* kPayloadNameI420 = "I420";
 static const char* kPayloadNameGeneric = "Generic";
 static const char* kPayloadNameMultiplex = "Multiplex";
 
@@ -123,8 +120,6 @@ const char* CodecTypeToPayloadString(VideoCodecType type) {
       return kPayloadNameVp9;
     case kVideoCodecH264:
       return kPayloadNameH264;
-    case kVideoCodecI420:
-      return kPayloadNameI420;
     // Other codecs default to generic.
     default:
       return kPayloadNameGeneric;
@@ -138,8 +133,6 @@ VideoCodecType PayloadStringToCodecType(const std::string& name) {
     return kVideoCodecVP9;
   if (absl::EqualsIgnoreCase(name, kPayloadNameH264))
     return kVideoCodecH264;
-  if (absl::EqualsIgnoreCase(name, kPayloadNameI420))
-    return kVideoCodecI420;
   if (absl::EqualsIgnoreCase(name, kPayloadNameMultiplex))
     return kVideoCodecMultiplex;
   return kVideoCodecGeneric;

@@ -41,10 +41,12 @@ rtc_static_library("remote_bitrate_estimator") {
 
   deps = [
     "../..:webrtc_common",
+    "../../api:libjingle_peerconnection_api",
     "../../api/units:data_rate",
     "../../api/units:timestamp",
     "../../modules:module_api",
     "../../modules:module_api_public",
+    "../../modules/congestion_controller/goog_cc:link_capacity_estimator",
     "../../modules/rtp_rtcp:rtp_rtcp_format",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
@@ -124,7 +126,11 @@ if (rtc_include_tests) {
     deps = [
       ":remote_bitrate_estimator",
       "..:module_api",
+      "..:module_api_public",
       "../..:webrtc_common",
+      "../../api:libjingle_peerconnection_api",
+      "../../api/transport:field_trial_based_config",
+      "../../api/transport:network_control",
       "../../logging:mocks",
       "../../rtc_base:checks",
       "../../rtc_base:gtest_prod",
@@ -166,6 +172,7 @@ if (rtc_include_tests) {
       ":bwe_simulator_lib",
       ":remote_bitrate_estimator",
       "../../rtc_base:rtc_base_approved",
+      "../../system_wrappers:system_wrappers",
       "../../test:field_trial",
       "../../test:fileutils",
       "../../test:test_support",
@@ -199,6 +206,7 @@ if (rtc_include_tests) {
     deps = [
       ":bwe_simulator_lib",
       ":remote_bitrate_estimator",
+      "..:module_api_public",
       "../..:webrtc_common",
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base",
@@ -227,6 +235,7 @@ if (rtc_include_tests) {
       ":remote_bitrate_estimator",
       "../..:webrtc_common",
       "../../rtc_base:rtc_base_approved",
+      "../../system_wrappers:system_wrappers",
       "../../test:fileutils",
       "../../test:test_main",
       "../../test:test_support",

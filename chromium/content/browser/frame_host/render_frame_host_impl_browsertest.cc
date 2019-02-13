@@ -22,6 +22,7 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/public/browser/javascript_dialog_manager.h"
+#include "content/public/browser/page_visibility_state.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -43,8 +44,8 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "services/network/public/cpp/features.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom-test-utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 
 namespace content {
 
@@ -56,25 +57,24 @@ class PrerenderTestContentBrowserClient : public TestContentBrowserClient {
  public:
   PrerenderTestContentBrowserClient()
       : override_enabled_(false),
-        visibility_override_(blink::mojom::PageVisibilityState::kVisible) {}
+        visibility_override_(PageVisibilityState::kVisible) {}
   ~PrerenderTestContentBrowserClient() override {}
 
-  void EnableVisibilityOverride(
-      blink::mojom::PageVisibilityState visibility_override) {
+  void EnableVisibilityOverride(PageVisibilityState visibility_override) {
     override_enabled_ = true;
     visibility_override_ = visibility_override;
   }
 
   void OverridePageVisibilityState(
       RenderFrameHost* render_frame_host,
-      blink::mojom::PageVisibilityState* visibility_state) override {
+      PageVisibilityState* visibility_state) override {
     if (override_enabled_)
       *visibility_state = visibility_override_;
   }
 
  private:
   bool override_enabled_;
-  blink::mojom::PageVisibilityState visibility_override_;
+  PageVisibilityState visibility_override_;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderTestContentBrowserClient);
 };
@@ -164,11 +164,11 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   WebContents* web_contents = shell()->web_contents();
 
   web_contents->WasShown();
-  EXPECT_EQ(blink::mojom::PageVisibilityState::kVisible,
+  EXPECT_EQ(PageVisibilityState::kVisible,
             web_contents->GetMainFrame()->GetVisibilityState());
 
   web_contents->WasHidden();
-  EXPECT_EQ(blink::mojom::PageVisibilityState::kHidden,
+  EXPECT_EQ(PageVisibilityState::kHidden,
             web_contents->GetMainFrame()->GetVisibilityState());
 }
 
@@ -182,12 +182,11 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   ContentBrowserClient* old_client = SetBrowserClientForTesting(&new_client);
 
   web_contents->WasShown();
-  EXPECT_EQ(blink::mojom::PageVisibilityState::kVisible,
+  EXPECT_EQ(PageVisibilityState::kVisible,
             web_contents->GetMainFrame()->GetVisibilityState());
 
-  new_client.EnableVisibilityOverride(
-      blink::mojom::PageVisibilityState::kPrerender);
-  EXPECT_EQ(blink::mojom::PageVisibilityState::kPrerender,
+  new_client.EnableVisibilityOverride(PageVisibilityState::kPrerender);
+  EXPECT_EQ(PageVisibilityState::kPrerender,
             web_contents->GetMainFrame()->GetVisibilityState());
 
   SetBrowserClientForTesting(old_client);
@@ -1380,11 +1379,15 @@ class ScopedFakeInterfaceProviderRequestInjector
   bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
-      service_manager::mojom::InterfaceProviderRequest*
-          interface_provider_request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr& interface_params)
+      override {
     url_of_last_commit_ = params->url;
-    original_request_of_last_commit_ = std::move(*interface_provider_request);
-    *interface_provider_request = std::move(next_fake_request_);
+    if (interface_params) {
+      original_request_of_last_commit_ =
+          std::move(interface_params->interface_provider_request);
+      interface_params->interface_provider_request =
+          std::move(next_fake_request_);
+    }
     return true;
   }
 

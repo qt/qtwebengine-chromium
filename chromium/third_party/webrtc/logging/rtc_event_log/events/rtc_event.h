@@ -13,7 +13,7 @@
 
 #include <memory>
 
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -37,6 +37,8 @@ class RtcEvent {
     AudioSendStreamConfig,
     BweUpdateDelayBased,
     BweUpdateLossBased,
+    DtlsTransportState,
+    DtlsWritableState,
     IceCandidatePairConfig,
     IceCandidatePairEvent,
     ProbeClusterCreated,

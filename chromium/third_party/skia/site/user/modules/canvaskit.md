@@ -55,7 +55,7 @@ Samples
   <figure>
     <canvas id=patheffect width=400 height=400></canvas>
     <figcaption>
-      <a href="https://jsfiddle.skia.org/canvaskit/bb98ad306a0c826b6dc8e8b8f709fca75fee95210c529679def945f0be7ed90c"
+      <a href="https://jsfiddle.skia.org/canvaskit/28004d8841e7e497013263598241a3c1edc21dc1cf87a679abba307f39fa5fe6"
           target=_blank rel=noopener>
         Star JSFiddle</a>
     </figcaption>
@@ -87,12 +87,6 @@ Samples
     <canvas id=sk_onboarding width=500 height=500></canvas>
   </a>
 
-  <h3>Nima (click for fiddle)</h3>
-  <a href="https://jsfiddle.skia.org/canvaskit/8f72aa124b91d28c77ef38c849ad7b3b0a4c207010ecca6dccba2b273329895c"
-     target=_blank rel=noopener>
-    <canvas id=nima_robot width=300 height=300></canvas>
-  </a>
-
 </div>
 
 <script type="text/javascript" charset="utf-8">
@@ -102,7 +96,7 @@ Samples
   var locate_file = '';
   if (window.WebAssembly && typeof window.WebAssembly.compile === 'function') {
     console.log('WebAssembly is supported!');
-    locate_file = 'https://storage.googleapis.com/skia-cdn/canvaskit-wasm/0.2.1/bin/';
+    locate_file = 'https://unpkg.com/canvaskit-wasm@0.3.0/bin/';
   } else {
     console.log('WebAssembly is not supported (yet) on this browser.');
     document.getElementById('demo').innerHTML = "<div>WASM not supported by your browser. Try a recent version of Chrome, Firefox, Edge, or Safari.</div>";
@@ -115,13 +109,10 @@ Samples
   var drinksJSON = null;
   var confettiJSON = null;
   var onboardingJSON = null;
-  var nimaFile = null;
-  var nimaTexture = null;
   var fullBounds = {fLeft: 0, fTop: 0, fRight: 500, fBottom: 500};
   CanvasKitInit({
     locateFile: (file) => locate_file + file,
   }).then((CK) => {
-    CK.initFonts();
     CanvasKit = CK;
     DrawingExample(CanvasKit);
     InkExample(CanvasKit);
@@ -131,8 +122,6 @@ Samples
     SkottieExample(CanvasKit, 'sk_drinks', drinksJSON, fullBounds);
     SkottieExample(CanvasKit, 'sk_party', confettiJSON, fullBounds);
     SkottieExample(CanvasKit, 'sk_onboarding', onboardingJSON, fullBounds);
-
-    NimaExample(CanvasKit, nimaFile, nimaTexture);
   });
 
   fetch('https://storage.googleapis.com/skia-cdn/misc/lego_loader.json').then((resp) => {
@@ -160,28 +149,6 @@ Samples
     resp.text().then((str) => {
       onboardingJSON = str;
       SkottieExample(CanvasKit, 'sk_onboarding', onboardingJSON, fullBounds);
-    });
-  });
-
-  fetch('https://storage.googleapis.com/skia-cdn/misc/robot.nima').then((resp) => {
-    resp.blob().then((blob) => {
-      let reader = new FileReader();
-      reader.addEventListener('loadend', function() {
-          nimaFile = reader.result;
-          NimaExample(CanvasKit, nimaFile, nimaTexture);
-      });
-      reader.readAsArrayBuffer(blob);
-    });
-  });
-
-  fetch('https://storage.googleapis.com/skia-cdn/misc/robot.nima.png').then((resp) => {
-    resp.blob().then((blob) => {
-      let reader = new FileReader();
-      reader.addEventListener('loadend', function() {
-          nimaTexture = reader.result;
-          NimaExample(CanvasKit, nimaFile, nimaTexture);
-      });
-      reader.readAsArrayBuffer(blob);
     });
   });
 
@@ -369,42 +336,6 @@ Samples
     window.requestAnimationFrame(drawFrame);
     //animation.delete();
   }
-
-  function NimaExample(CanvasKit, nimaFile, nimaTexture) {
-    if (!CanvasKit || !nimaFile || !nimaTexture) {
-      return;
-    }
-    const animation = CanvasKit.MakeNimaActor(nimaFile, nimaTexture);
-    if (!animation) {
-      console.error('could not make animation');
-      return;
-    }
-
-    const surface = CanvasKit.MakeCanvasSurface('nima_robot');
-    if (!surface) {
-      console.error('Could not make surface');
-      return;
-    }
-
-    const context = CanvasKit.currentContext();
-    const canvas = surface.getCanvas();
-    canvas.translate(125, 275);
-    canvas.scale(0.4, -0.4);
-
-    let firstFrame = Date.now();
-    animation.setAnimationByName('attack');
-
-    function drawFrame() {
-      let seek = ((Date.now() - firstFrame) / 1000.0);
-      CanvasKit.setCurrentContext(context);
-      canvas.clear(CanvasKit.Color(255, 255, 255, 0.0));
-      animation.seek(seek);
-      animation.render(canvas);
-      surface.flush();
-      window.requestAnimationFrame(drawFrame);
-    }
-    window.requestAnimationFrame(drawFrame);
-  }
   }
   document.head.appendChild(s);
 })();
@@ -416,14 +347,10 @@ Lottie files courtesy of the lottiefiles.com community:
 [Confetti](https://www.lottiefiles.com/1370-confetti),
 [Onboarding](https://www.lottiefiles.com/1134-onboarding-1)
 
-Nima files courtesy of 2dimensions.com:
-[Robot](https://www.2dimensions.com/s/281-robot)
-
-
 Test server
 -----------
 Test your code on our [CanvasKit Fiddle](https://jsfiddle.skia.org/canvaskit)
 
 Download
 --------
-Work is underway on an npm download. Check back soon.
+Get [CanvasKit on NPM](https://www.npmjs.com/package/canvaskit-wasm)

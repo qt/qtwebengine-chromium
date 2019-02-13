@@ -38,8 +38,13 @@ namespace dawn_native {
         dispatch->z = z;
     }
 
-    void ComputePassEncoderBase::SetComputePipeline(ComputePipelineBase* pipeline) {
+    void ComputePassEncoderBase::SetPipeline(ComputePipelineBase* pipeline) {
         if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
+            return;
+        }
+
+        if (pipeline == nullptr) {
+            mTopLevelBuilder->HandleError("Pipeline cannot be null");
             return;
         }
 

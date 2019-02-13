@@ -16,22 +16,29 @@
 #include "api/test/mock_video_encoder.h"
 #include "api/video_codecs/vp8_temporal_layers.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "common_video/test/utilities.h"
 #include "modules/video_coding/codecs/test/video_codec_unittest.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/codecs/vp8/libvpx_vp8_encoder.h"
 #include "modules/video_coding/codecs/vp8/test/mock_libvpx_interface.h"
 #include "modules/video_coding/utility/vp8_header_parser.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "test/video_codec_settings.h"
 
 namespace webrtc {
 
+using testing::_;
+using testing::ElementsAreArray;
 using testing::Invoke;
 using testing::NiceMock;
 using testing::Return;
-using testing::_;
+using EncoderInfo = webrtc::VideoEncoder::EncoderInfo;
+using FramerateFractions =
+    absl::InlinedVector<uint8_t, webrtc::kMaxTemporalStreams>;
 
 namespace {
+constexpr uint32_t kLegacyScreenshareTl0BitrateKbps = 200;
+constexpr uint32_t kLegacyScreenshareTl1BitrateKbps = 1000;
 constexpr uint32_t kInitialTimestampRtp = 123;
 constexpr int64_t kTestNtpTimeMs = 456;
 constexpr int64_t kInitialTimestampMs = 789;
@@ -77,7 +84,10 @@ class TestVp8Impl : public VideoCodecUnitTest {
               encoder_->Encode(input_frame, nullptr, &frame_types));
     ASSERT_TRUE(WaitForEncodedFrame(encoded_frame, codec_specific_info));
     VerifyQpParser(*encoded_frame);
-    EXPECT_EQ("libvpx", encoder_->GetEncoderInfo().implementation_name);
+    VideoEncoder::EncoderInfo encoder_info = encoder_->GetEncoderInfo();
+    EXPECT_EQ("libvpx", encoder_info.implementation_name);
+    EXPECT_EQ(false, encoder_info.is_hardware_accelerated);
+    EXPECT_EQ(false, encoder_info.has_internal_source);
     EXPECT_EQ(kVideoCodecVP8, codec_specific_info->codecType);
     EXPECT_EQ(0, encoded_frame->SpatialIndex());
   }
@@ -94,8 +104,8 @@ class TestVp8Impl : public VideoCodecUnitTest {
 
   void VerifyQpParser(const EncodedImage& encoded_frame) const {
     int qp;
-    EXPECT_GT(encoded_frame._length, 0u);
-    ASSERT_TRUE(vp8::GetQp(encoded_frame._buffer, encoded_frame._length, &qp));
+    EXPECT_GT(encoded_frame.size(), 0u);
+    ASSERT_TRUE(vp8::GetQp(encoded_frame.data(), encoded_frame.size(), &qp));
     EXPECT_EQ(encoded_frame.qp_, qp) << "Encoder QP != parsed bitstream QP.";
   }
 };
@@ -170,6 +180,28 @@ TEST_F(TestVp8Impl, EncodedRotationEqualsInputRotation) {
   EXPECT_EQ(kVideoRotation_90, encoded_frame.rotation_);
 }
 
+TEST_F(TestVp8Impl, EncodedColorSpaceEqualsInputColorSpace) {
+  // Video frame without explicit color space information.
+  VideoFrame* input_frame = NextInputFrame();
+  EncodedImage encoded_frame;
+  CodecSpecificInfo codec_specific_info;
+  EncodeAndWaitForFrame(*input_frame, &encoded_frame, &codec_specific_info);
+  EXPECT_FALSE(encoded_frame.ColorSpace());
+
+  // Video frame with explicit color space information.
+  ColorSpace color_space = CreateTestColorSpace(/*with_hdr_metadata=*/false);
+  VideoFrame input_frame_w_color_space =
+      VideoFrame::Builder()
+          .set_video_frame_buffer(input_frame->video_frame_buffer())
+          .set_color_space(&color_space)
+          .build();
+
+  EncodeAndWaitForFrame(input_frame_w_color_space, &encoded_frame,
+                        &codec_specific_info);
+  ASSERT_TRUE(encoded_frame.ColorSpace());
+  EXPECT_EQ(*encoded_frame.ColorSpace(), color_space);
+}
+
 TEST_F(TestVp8Impl, DecodedQpEqualsEncodedQp) {
   VideoFrame* input_frame = NextInputFrame();
   EncodedImage encoded_frame;
@@ -187,6 +219,25 @@ TEST_F(TestVp8Impl, DecodedQpEqualsEncodedQp) {
   ASSERT_TRUE(decoded_qp);
   EXPECT_GT(I420PSNR(input_frame, decoded_frame.get()), 36);
   EXPECT_EQ(encoded_frame.qp_, *decoded_qp);
+}
+
+TEST_F(TestVp8Impl, DecodedColorSpaceEqualsEncodedColorSpace) {
+  VideoFrame* input_frame = NextInputFrame();
+  EncodedImage encoded_frame;
+  CodecSpecificInfo codec_specific_info;
+  EncodeAndWaitForFrame(*input_frame, &encoded_frame, &codec_specific_info);
+
+  // Encoded frame with explicit color space information.
+  ColorSpace color_space = CreateTestColorSpace(/*with_hdr_metadata=*/false);
+  encoded_frame.SetColorSpace(&color_space);
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            decoder_->Decode(encoded_frame, false, nullptr, -1));
+  std::unique_ptr<VideoFrame> decoded_frame;
+  absl::optional<uint8_t> decoded_qp;
+  ASSERT_TRUE(WaitForDecodedFrame(&decoded_frame, &decoded_qp));
+  ASSERT_TRUE(decoded_frame);
+  ASSERT_TRUE(decoded_frame->color_space());
+  EXPECT_EQ(color_space, *decoded_frame->color_space());
 }
 
 TEST_F(TestVp8Impl, ChecksSimulcastSettings) {
@@ -397,7 +448,6 @@ TEST_F(TestVp8Impl, KeepsTimestampOnReencode) {
 
   // Settings needed to trigger ScreenshareLayers usage, which is required for
   // overshoot-drop-reencode logic.
-  codec_settings_.targetBitrate = 200;
   codec_settings_.maxBitrate = 1000;
   codec_settings_.mode = VideoCodecMode::kScreensharing;
   codec_settings_.VP8()->numberOfTemporalLayers = 2;
@@ -426,6 +476,103 @@ TEST_F(TestVp8Impl, KeepsTimestampOnReencode) {
 
   auto delta_frame = std::vector<FrameType>{kVideoFrameDelta};
   encoder.Encode(*NextInputFrame(), nullptr, &delta_frame);
+}
+
+TEST_F(TestVp8Impl, GetEncoderInfoFpsAllocationNoLayers) {
+  FramerateFractions expected_fps_allocation[kMaxSpatialLayers] = {
+      FramerateFractions(1, EncoderInfo::kMaxFramerateFraction)};
+
+  EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
+              ::testing::ElementsAreArray(expected_fps_allocation));
+}
+
+TEST_F(TestVp8Impl, GetEncoderInfoFpsAllocationTwoTemporalLayers) {
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Release());
+  codec_settings_.numberOfSimulcastStreams = 1;
+  codec_settings_.simulcastStream[0].active = true;
+  codec_settings_.simulcastStream[0].targetBitrate = 100;
+  codec_settings_.simulcastStream[0].maxBitrate = 100;
+  codec_settings_.simulcastStream[0].numberOfTemporalLayers = 2;
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
+
+  FramerateFractions expected_fps_allocation[kMaxSpatialLayers];
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction / 2);
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction);
+
+  EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
+              ::testing::ElementsAreArray(expected_fps_allocation));
+}
+
+TEST_F(TestVp8Impl, GetEncoderInfoFpsAllocationThreeTemporalLayers) {
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Release());
+  codec_settings_.numberOfSimulcastStreams = 1;
+  codec_settings_.simulcastStream[0].active = true;
+  codec_settings_.simulcastStream[0].targetBitrate = 100;
+  codec_settings_.simulcastStream[0].maxBitrate = 100;
+  codec_settings_.simulcastStream[0].numberOfTemporalLayers = 3;
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
+
+  FramerateFractions expected_fps_allocation[kMaxSpatialLayers];
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction / 4);
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction / 2);
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction);
+
+  EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
+              ::testing::ElementsAreArray(expected_fps_allocation));
+}
+
+TEST_F(TestVp8Impl, GetEncoderInfoFpsAllocationScreenshareLayers) {
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Release());
+  codec_settings_.numberOfSimulcastStreams = 1;
+  codec_settings_.mode = VideoCodecMode::kScreensharing;
+  codec_settings_.simulcastStream[0].active = true;
+  codec_settings_.simulcastStream[0].minBitrate = 30;
+  codec_settings_.simulcastStream[0].targetBitrate =
+      kLegacyScreenshareTl0BitrateKbps;
+  codec_settings_.simulcastStream[0].maxBitrate =
+      kLegacyScreenshareTl1BitrateKbps;
+  codec_settings_.simulcastStream[0].numberOfTemporalLayers = 2;
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
+
+  // Expect empty vector, since this mode doesn't have a fixed framerate.
+  FramerateFractions expected_fps_allocation[kMaxSpatialLayers];
+  EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
+              ::testing::ElementsAreArray(expected_fps_allocation));
+}
+
+TEST_F(TestVp8Impl, GetEncoderInfoFpsAllocationSimulcastVideo) {
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, encoder_->Release());
+
+  // Set up three simulcast streams with three temporal layers each.
+  codec_settings_.numberOfSimulcastStreams = 3;
+  for (int i = 0; i < codec_settings_.numberOfSimulcastStreams; ++i) {
+    codec_settings_.simulcastStream[i].active = true;
+    codec_settings_.simulcastStream[i].minBitrate = 30;
+    codec_settings_.simulcastStream[i].targetBitrate = 30;
+    codec_settings_.simulcastStream[i].maxBitrate = 30;
+    codec_settings_.simulcastStream[i].numberOfTemporalLayers = 3;
+    codec_settings_.simulcastStream[i].width =
+        codec_settings_.width >>
+        (codec_settings_.numberOfSimulcastStreams - i - 1);
+    codec_settings_.simulcastStream[i].height =
+        codec_settings_.height >>
+        (codec_settings_.numberOfSimulcastStreams - i - 1);
+  }
+
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
+
+  FramerateFractions expected_fps_allocation[kMaxSpatialLayers];
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction / 4);
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction / 2);
+  expected_fps_allocation[0].push_back(EncoderInfo::kMaxFramerateFraction);
+  expected_fps_allocation[1] = expected_fps_allocation[0];
+  expected_fps_allocation[2] = expected_fps_allocation[0];
+  EXPECT_THAT(encoder_->GetEncoderInfo().fps_allocation,
+              ::testing::ElementsAreArray(expected_fps_allocation));
 }
 
 }  // namespace webrtc

@@ -208,6 +208,8 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
         GET_PROC(TexBufferRange);
     }
     GET_PROC(TexImage2D);
+    GET_PROC(TexParameterf);
+    GET_PROC(TexParameterfv);
     GET_PROC(TexParameteri);
     GET_PROC(TexParameteriv);
     if (glVer >= GR_GL_VER(4,2) || extensions.has("GL_ARB_texture_storage")) {
@@ -384,10 +386,6 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
     if (extensions.has("EGL_KHR_image") || extensions.has("EGL_KHR_image_base")) {
         GET_EGL_PROC_SUFFIX(CreateImage, KHR);
         GET_EGL_PROC_SUFFIX(DestroyImage, KHR);
-    }
-
-    if (glVer >= GR_GL_VER(4, 0) || extensions.has("GL_ARB_sample_shading")) {
-        GET_PROC(MinSampleShading);
     }
 
     if (glVer >= GR_GL_VER(3, 2) || extensions.has("GL_ARB_sync")) {
@@ -590,6 +588,8 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
     }
 
     GET_PROC(TexImage2D);
+    GET_PROC(TexParameterf);
+    GET_PROC(TexParameterfv);
     GET_PROC(TexParameteri);
     GET_PROC(TexParameteriv);
     GET_PROC(TexSubImage2D);
@@ -825,10 +825,6 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
     if (extensions.has("EGL_KHR_image") || extensions.has("EGL_KHR_image_base")) {
         GET_EGL_PROC_SUFFIX(CreateImage, KHR);
         GET_EGL_PROC_SUFFIX(DestroyImage, KHR);
-    }
-
-    if (extensions.has("GL_OES_sample_shading")) {
-        GET_PROC_SUFFIX(MinSampleShading, OES);
     }
 
     if (version >= GR_GL_VER(3, 0)) {

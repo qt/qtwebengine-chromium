@@ -27,6 +27,8 @@
 
 namespace webrtc {
 
+namespace {
+
 // Allow packets to be transmitted in up to 2 times max video bitrate if the
 // bandwidth estimate allows it.
 const uint8_t kTransmissionMaxBitrateMultiplier = 2;
@@ -38,8 +40,6 @@ const uint32_t kMinToggleBitrateBps = 20000;
 
 const int64_t kBweLogIntervalMs = 5000;
 
-namespace {
-
 double MediaRatio(uint32_t allocated_bitrate, uint32_t protection_bitrate) {
   RTC_DCHECK_GT(allocated_bitrate, 0);
   if (protection_bitrate == 0)
@@ -48,6 +48,7 @@ double MediaRatio(uint32_t allocated_bitrate, uint32_t protection_bitrate) {
   uint32_t media_bitrate = allocated_bitrate - protection_bitrate;
   return media_bitrate / static_cast<double>(allocated_bitrate);
 }
+
 }  // namespace
 
 BitrateAllocator::BitrateAllocator(LimitObserver* limit_observer)
@@ -64,8 +65,6 @@ BitrateAllocator::BitrateAllocator(LimitObserver* limit_observer)
       total_requested_padding_bitrate_(0),
       total_requested_min_bitrate_(0),
       total_requested_max_bitrate_(0),
-      allocated_without_feedback_(0),
-      has_packet_feedback_(false),
       bitrate_allocation_strategy_(nullptr),
       transmission_max_bitrate_multiplier_(
           GetTransmissionMaxBitrateMultiplier()) {
@@ -75,6 +74,11 @@ BitrateAllocator::BitrateAllocator(LimitObserver* limit_observer)
 BitrateAllocator::~BitrateAllocator() {
   RTC_HISTOGRAM_COUNTS_100("WebRTC.Call.NumberOfPauseEvents",
                            num_pause_events_);
+}
+
+void BitrateAllocator::UpdateStartRate(uint32_t start_rate_bps) {
+  RTC_DCHECK_CALLED_SEQUENTIALLY(&sequenced_checker_);
+  last_non_zero_bitrate_bps_ = start_rate_bps;
 }
 
 // static
@@ -170,10 +174,10 @@ void BitrateAllocator::AddObserver(BitrateAllocatorObserver* observer,
     it->enforce_min_bitrate = config.enforce_min_bitrate;
     it->bitrate_priority = config.bitrate_priority;
   } else {
-    bitrate_observer_configs_.push_back(ObserverConfig(
-        observer, config.min_bitrate_bps, config.max_bitrate_bps,
-        config.pad_up_bitrate_bps, config.enforce_min_bitrate, config.track_id,
-        config.bitrate_priority, config.has_packet_feedback));
+    bitrate_observer_configs_.push_back(
+        ObserverConfig(observer, config.min_bitrate_bps, config.max_bitrate_bps,
+                       config.pad_up_bitrate_bps, config.enforce_min_bitrate,
+                       config.track_id, config.bitrate_priority));
   }
 
   if (last_target_bps_ > 0) {
@@ -216,8 +220,6 @@ void BitrateAllocator::UpdateAllocationLimits() {
   uint32_t total_requested_padding_bitrate = 0;
   uint32_t total_requested_min_bitrate = 0;
   uint32_t total_requested_max_bitrate = 0;
-  bool has_packet_feedback = false;
-  uint32_t allocated_without_feedback = 0;
   for (const auto& config : bitrate_observer_configs_) {
     uint32_t stream_padding = config.pad_up_bitrate_bps;
     if (config.enforce_min_bitrate) {
@@ -228,27 +230,17 @@ void BitrateAllocator::UpdateAllocationLimits() {
     }
     total_requested_padding_bitrate += stream_padding;
     total_requested_max_bitrate += config.max_bitrate_bps;
-    if (config.allocated_bitrate_bps > 0 && config.has_packet_feedback)
-      has_packet_feedback = true;
-    // TODO(srte): Remove field trial check.
-    if (!config.has_packet_feedback &&
-        field_trial::IsEnabled("WebRTC-Audio-ABWENoTWCC"))
-      allocated_without_feedback += config.allocated_bitrate_bps;
   }
 
   if (total_requested_padding_bitrate == total_requested_padding_bitrate_ &&
       total_requested_min_bitrate == total_requested_min_bitrate_ &&
-      total_requested_max_bitrate == total_requested_max_bitrate_ &&
-      allocated_without_feedback == allocated_without_feedback_ &&
-      has_packet_feedback == has_packet_feedback_) {
+      total_requested_max_bitrate == total_requested_max_bitrate_) {
     return;
   }
 
   total_requested_min_bitrate_ = total_requested_min_bitrate;
   total_requested_padding_bitrate_ = total_requested_padding_bitrate;
   total_requested_max_bitrate_ = total_requested_max_bitrate;
-  allocated_without_feedback_ = allocated_without_feedback;
-  has_packet_feedback_ = has_packet_feedback;
 
   RTC_LOG(LS_INFO) << "UpdateAllocationLimits : total_requested_min_bitrate: "
                    << total_requested_min_bitrate
@@ -256,10 +248,9 @@ void BitrateAllocator::UpdateAllocationLimits() {
                    << total_requested_padding_bitrate
                    << "bps, total_requested_max_bitrate: "
                    << total_requested_max_bitrate << "bps";
-  limit_observer_->OnAllocationLimitsChanged(
-      total_requested_min_bitrate, total_requested_padding_bitrate,
-      total_requested_max_bitrate, allocated_without_feedback,
-      has_packet_feedback);
+  limit_observer_->OnAllocationLimitsChanged(total_requested_min_bitrate,
+                                             total_requested_padding_bitrate,
+                                             total_requested_max_bitrate);
 }
 
 void BitrateAllocator::RemoveObserver(BitrateAllocatorObserver* observer) {

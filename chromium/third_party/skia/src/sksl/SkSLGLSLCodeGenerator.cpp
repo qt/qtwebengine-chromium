@@ -756,17 +756,9 @@ void GLSLCodeGenerator::writeFragCoord() {
         this->write("gl_FragCoord");
     } else {
         if (!fSetupFragPositionLocal) {
-            // The Adreno compiler seems to be very touchy about access to "gl_FragCoord".
-            // Accessing glFragCoord.zw can cause a program to fail to link. Additionally,
-            // depending on the surrounding code, accessing .xy with a uniform involved can
-            // do the same thing. Copying gl_FragCoord.xy into a temp float2 beforehand
-            // (and only accessing .xy) seems to "fix" things.
-            const char* precision = usesPrecisionModifiers() ? "highp " : "";
-            fFunctionHeader += precision;
-            fFunctionHeader += "    vec2 _sktmpCoord = gl_FragCoord.xy;\n";
-            fFunctionHeader += precision;
-            fFunctionHeader += "    vec4 sk_FragCoord = vec4(_sktmpCoord.x, " SKSL_RTHEIGHT_NAME
-                               " - _sktmpCoord.y, 1.0, 1.0);\n";
+            fFunctionHeader += usesPrecisionModifiers() ? "highp " : "";
+            fFunctionHeader += "    vec4 sk_FragCoord = vec4(gl_FragCoord.x, " SKSL_RTHEIGHT_NAME
+                               " - gl_FragCoord.y, gl_FragCoord.z, gl_FragCoord.w);\n";
             fSetupFragPositionLocal = true;
         }
         this->write("sk_FragCoord");
@@ -1120,6 +1112,15 @@ void GLSLCodeGenerator::writeModifiers(const Modifiers& modifiers,
     if (modifiers.fFlags & Modifiers::kConst_Flag) {
         this->write("const ");
     }
+    if (modifiers.fFlags & Modifiers::kPLS_Flag) {
+        this->write("__pixel_localEXT ");
+    }
+    if (modifiers.fFlags & Modifiers::kPLSIn_Flag) {
+        this->write("__pixel_local_inEXT ");
+    }
+    if (modifiers.fFlags & Modifiers::kPLSOut_Flag) {
+        this->write("__pixel_local_outEXT ");
+    }
     if (usesPrecisionModifiers()) {
         if (modifiers.fFlags & Modifiers::kLowp_Flag) {
             this->write("lowp ");
@@ -1468,7 +1469,8 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
                     this->writeVarDeclarations(decl, true);
                     this->writeLine();
                 } else if (builtin == SK_FRAGCOLOR_BUILTIN &&
-                           fProgram.fSettings.fCaps->mustDeclareFragmentShaderOutput()) {
+                           fProgram.fSettings.fCaps->mustDeclareFragmentShaderOutput() &&
+                           ((VarDeclaration&) *decl.fVars[0]).fVar->fWriteCount) {
                     if (fProgram.fSettings.fFragColorIsInOut) {
                         this->write("inout ");
                     } else {

@@ -24,14 +24,14 @@
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/common/content_export.h"
-#include "content/common/service_worker/controller_service_worker.mojom.h"
 #include "content/common/service_worker/embedded_worker.mojom.h"
-#include "content/common/service_worker/service_worker.mojom.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/controller_service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
-#include "third_party/blink/public/platform/modules/cache_storage/cache_storage.mojom.h"
+#include "third_party/blink/public/web/web_console_message.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -194,7 +194,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   void OnWorkerVersionDoomed();
 
   // Add message to the devtools console.
-  void AddMessageToConsole(blink::WebConsoleMessage::Level level,
+  void AddMessageToConsole(blink::mojom::ConsoleMessageLevel level,
                            const std::string& message);
 
   static std::string StatusToString(EmbeddedWorkerStatus status);

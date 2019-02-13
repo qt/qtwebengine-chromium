@@ -20,11 +20,12 @@
 
 #include "absl/types/optional.h"
 #include "api/bitrate_constraints.h"
-#include "api/crypto/cryptooptions.h"
+#include "api/crypto/crypto_options.h"
 #include "api/fec_controller.h"
 #include "api/transport/bitrate_settings.h"
 #include "call/rtp_config.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
+#include "modules/rtp_rtcp/include/rtcp_statistics.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 
 namespace rtc {
@@ -99,7 +100,6 @@ class RtpTransportControllerSendInterface {
   virtual PacketRouter* packet_router() = 0;
 
   virtual RtpVideoSenderInterface* CreateRtpVideoSender(
-      const std::vector<uint32_t>& ssrcs,
       std::map<uint32_t, RtpState> suspended_ssrcs,
       // TODO(holmer): Move states into RtpTransportControllerSend.
       const std::map<uint32_t, RtpPayloadState>& states,
@@ -151,14 +151,11 @@ class RtpTransportControllerSendInterface {
   virtual int64_t GetFirstPacketTimeMs() const = 0;
   virtual void EnablePeriodicAlrProbing(bool enable) = 0;
   virtual void OnSentPacket(const rtc::SentPacket& sent_packet) = 0;
-  virtual void SetPerPacketFeedbackAvailable(bool available) = 0;
 
   virtual void SetSdpBitrateParameters(
       const BitrateConstraints& constraints) = 0;
   virtual void SetClientBitratePreferences(
       const BitrateSettings& preferences) = 0;
-
-  virtual void SetAllocatedBitrateWithoutFeedback(uint32_t bitrate_bps) = 0;
 
   virtual void OnTransportOverheadChanged(
       size_t transport_overhead_per_packet) = 0;

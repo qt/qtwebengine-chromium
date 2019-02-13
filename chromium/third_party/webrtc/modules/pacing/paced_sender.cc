@@ -26,7 +26,7 @@
 
 namespace {
 // Time limit in milliseconds between packet bursts.
-const int64_t kMinPacketLimitMs = 5;
+const int64_t kDefaultMinPacketLimitMs = 5;
 const int64_t kCongestedPacketIntervalMs = 500;
 const int64_t kPausedProcessIntervalMs = kCongestedPacketIntervalMs;
 const int64_t kMaxElapsedTimeMs = 2000;
@@ -47,11 +47,12 @@ PacedSender::PacedSender(const Clock* clock,
                          RtcEventLog* event_log)
     : clock_(clock),
       packet_sender_(packet_sender),
-      alr_detector_(absl::make_unique<AlrDetector>(event_log)),
+      alr_detector_(),
       drain_large_queues_(!field_trial::IsDisabled("WebRTC-Pacer-DrainQueue")),
       send_padding_if_silent_(
           field_trial::IsEnabled("WebRTC-Pacer-PadInSilence")),
       video_blocks_audio_(!field_trial::IsDisabled("WebRTC-Pacer-BlockAudio")),
+      min_packet_limit_ms_("", kDefaultMinPacketLimitMs),
       last_timestamp_ms_(clock_->TimeInMilliseconds()),
       paused_(false),
       media_budget_(0),
@@ -70,10 +71,13 @@ PacedSender::PacedSender(const Clock* clock,
       pacing_factor_(kDefaultPaceMultiplier),
       queue_time_limit(kMaxQueueLengthMs),
       account_for_audio_(false) {
-  if (!drain_large_queues_)
+  if (!drain_large_queues_) {
     RTC_LOG(LS_WARNING) << "Pacer queues will not be drained,"
                            "pushback experiment must be enabled.";
-  UpdateBudgetWithElapsedTime(kMinPacketLimitMs);
+  }
+  ParseFieldTrial({&min_packet_limit_ms_},
+                  field_trial::FindFullName("WebRTC-Pacer-MinPacketLimitMs"));
+  UpdateBudgetWithElapsedTime(min_packet_limit_ms_);
 }
 
 PacedSender::~PacedSender() {}
@@ -158,6 +162,8 @@ void PacedSender::SetEstimatedBitrate(uint32_t bitrate_bps) {
   pacing_bitrate_kbps_ =
       std::max(min_send_bitrate_kbps_, estimated_bitrate_bps_ / 1000) *
       pacing_factor_;
+  if (!alr_detector_)
+    alr_detector_ = absl::make_unique<AlrDetector>(nullptr /*event_log*/);
   alr_detector_->SetEstimatedBitrate(bitrate_bps);
 }
 
@@ -214,15 +220,21 @@ int64_t PacedSender::ExpectedQueueTimeMs() const {
                               pacing_bitrate_kbps_);
 }
 
-absl::optional<int64_t> PacedSender::GetApplicationLimitedRegionStartTime()
-    const {
+absl::optional<int64_t> PacedSender::GetApplicationLimitedRegionStartTime() {
   rtc::CritScope cs(&critsect_);
+  if (!alr_detector_)
+    alr_detector_ = absl::make_unique<AlrDetector>(nullptr /*event_log*/);
   return alr_detector_->GetApplicationLimitedRegionStartTime();
 }
 
 size_t PacedSender::QueueSizePackets() const {
   rtc::CritScope cs(&critsect_);
   return packets_.SizeInPackets();
+}
+
+int64_t PacedSender::QueueSizeBytes() const {
+  rtc::CritScope cs(&critsect_);
+  return packets_.SizeInBytes();
 }
 
 int64_t PacedSender::FirstSentPacketTimeMs() const {
@@ -255,7 +267,7 @@ int64_t PacedSender::TimeUntilNextProcess() {
     if (ret > 0 || (ret == 0 && !probing_send_failure_))
       return ret;
   }
-  return std::max<int64_t>(kMinPacketLimitMs - elapsed_time_ms, 0);
+  return std::max<int64_t>(min_packet_limit_ms_ - elapsed_time_ms, 0);
 }
 
 int64_t PacedSender::UpdateTimeAndGetElapsedMs(int64_t now_us) {
@@ -295,7 +307,8 @@ void PacedSender::Process() {
     size_t bytes_sent = packet_sender_->TimeToSendPadding(1, PacedPacketInfo());
     critsect_.Enter();
     OnPaddingSent(bytes_sent);
-    alr_detector_->OnBytesSent(bytes_sent, now_us / 1000);
+    if (alr_detector_)
+      alr_detector_->OnBytesSent(bytes_sent, now_us / 1000);
   }
 
   if (paused_)
@@ -378,7 +391,8 @@ void PacedSender::Process() {
     if (!probing_send_failure_)
       prober_.ProbeSent(TimeMilliseconds(), bytes_sent);
   }
-  alr_detector_->OnBytesSent(bytes_sent, now_us / 1000);
+  if (alr_detector_)
+    alr_detector_->OnBytesSent(bytes_sent, now_us / 1000);
 }
 
 void PacedSender::ProcessThreadAttached(ProcessThread* process_thread) {

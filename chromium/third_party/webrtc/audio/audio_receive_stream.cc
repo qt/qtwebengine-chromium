@@ -17,7 +17,7 @@
 #include "api/array_view.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/call/audio_sink.h"
-#include "api/rtpparameters.h"
+#include "api/rtp_parameters.h"
 #include "audio/audio_send_stream.h"
 #include "audio/audio_state.h"
 #include "audio/channel_receive.h"
@@ -27,7 +27,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -79,8 +79,8 @@ std::unique_ptr<voe::ChannelReceiveInterface> CreateChannelReceive(
       config.media_transport, config.rtcp_send_transport, event_log,
       config.rtp.remote_ssrc, config.jitter_buffer_max_packets,
       config.jitter_buffer_fast_accelerate, config.jitter_buffer_min_delay_ms,
-      config.decoder_factory, config.codec_pair_id, config.frame_decryptor,
-      config.crypto_options);
+      config.jitter_buffer_enable_rtx_handling, config.decoder_factory,
+      config.codec_pair_id, config.frame_decryptor, config.crypto_options);
 }
 }  // namespace
 
@@ -175,8 +175,8 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
       channel_receive_->GetRTCPStatistics();
   // TODO(solenberg): Don't return here if we can't get the codec - return the
   //                  stats we *can* get.
-  webrtc::CodecInst codec_inst = {0};
-  if (!channel_receive_->GetRecCodec(&codec_inst)) {
+  auto receive_codec = channel_receive_->GetReceiveCodec();
+  if (!receive_codec) {
     return stats;
   }
 
@@ -185,13 +185,12 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.packets_lost = call_stats.cumulativeLost;
   stats.fraction_lost = Q8ToFloat(call_stats.fractionLost);
   stats.capture_start_ntp_time_ms = call_stats.capture_start_ntp_time_ms_;
-  if (codec_inst.pltype != -1) {
-    stats.codec_name = codec_inst.plname;
-    stats.codec_payload_type = codec_inst.pltype;
-  }
+  stats.codec_name = receive_codec->second.name;
+  stats.codec_payload_type = receive_codec->first;
   stats.ext_seqnum = call_stats.extendedMax;
-  if (codec_inst.plfreq / 1000 > 0) {
-    stats.jitter_ms = call_stats.jitterSamples / (codec_inst.plfreq / 1000);
+  int clockrate_khz = receive_codec->second.clockrate_hz / 1000;
+  if (clockrate_khz > 0) {
+    stats.jitter_ms = call_stats.jitterSamples / clockrate_khz;
   }
   stats.delay_estimate_ms = channel_receive_->GetDelayEstimate();
   stats.audio_level = channel_receive_->GetSpeechOutputLevelFullRange();
@@ -208,6 +207,7 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.jitter_buffer_delay_seconds =
       static_cast<double>(ns.jitterBufferDelayMs) /
       static_cast<double>(rtc::kNumMillisecsPerSec);
+  stats.jitter_buffer_emitted_count = ns.jitterBufferEmittedCount;
   stats.expand_rate = Q14ToFloat(ns.currentExpandRate);
   stats.speech_expand_rate = Q14ToFloat(ns.currentSpeechExpandRate);
   stats.secondary_decoded_rate = Q14ToFloat(ns.currentSecondaryDecodedRate);

@@ -18,7 +18,8 @@
 
 #include "absl/types/optional.h"
 #include "api/transport/network_control.h"
-#include "rtc_base/constructormagic.h"
+#include "api/transport/webrtc_key_value_config.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/system/unused.h"
 
 namespace webrtc {
@@ -30,7 +31,7 @@ class Clock;
 // bitrate is adjusted by an application.
 class ProbeController {
  public:
-  ProbeController();
+  explicit ProbeController(const WebRtcKeyValueConfig* key_value_config);
   ~ProbeController();
 
   RTC_WARN_UNUSED_RESULT std::vector<ProbeClusterConfig> SetBitrates(
@@ -62,6 +63,9 @@ class ProbeController {
 
   RTC_WARN_UNUSED_RESULT std::vector<ProbeClusterConfig>
   InitiateCapacityProbing(int64_t bitrate_bps, int64_t at_time_ms);
+
+  // Sets a new maximum probing bitrate, without generating a new probe cluster.
+  void SetMaxBitrate(int64_t max_bitrate_bps);
 
   // Resets the ProbeController to a state equivalent to as if it was just
   // created EXCEPT for |enable_periodic_alr_probing_|.
@@ -102,7 +106,8 @@ class ProbeController {
   int64_t bitrate_before_last_large_drop_bps_;
   int64_t max_total_allocated_bitrate_;
 
-  bool in_rapid_recovery_experiment_;
+  const bool in_rapid_recovery_experiment_;
+  const bool limit_probes_with_allocateable_rate_;
   // For WebRTC.BWE.MidCallProbing.* metric.
   bool mid_call_probing_waiting_for_result_;
   int64_t mid_call_probing_bitrate_bps_;

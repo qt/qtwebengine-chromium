@@ -16,7 +16,6 @@
 #include "xfa/fwl/cfwl_combobox.h"
 #include "xfa/fwl/cfwl_event.h"
 #include "xfa/fwl/cfwl_eventmouse.h"
-#include "xfa/fwl/cfwl_form.h"
 #include "xfa/fwl/cfwl_messagekey.h"
 #include "xfa/fwl/cfwl_messagekillfocus.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
@@ -135,10 +134,10 @@ void CFWL_Widget::SetStates(uint32_t dwStates) {
   if (IsVisible())
     return;
 
-  CFWL_NoteDriver* noteDriver =
-      static_cast<CFWL_NoteDriver*>(GetOwnerApp()->GetNoteDriver());
-  CFWL_WidgetMgr* widgetMgr = GetOwnerApp()->GetWidgetMgr();
+  CFWL_NoteDriver* noteDriver = GetOwnerApp()->GetNoteDriver();
   noteDriver->NotifyTargetHide(this);
+
+  CFWL_WidgetMgr* widgetMgr = GetOwnerApp()->GetWidgetMgr();
   CFWL_Widget* child = widgetMgr->GetFirstChildWidget(this);
   while (child) {
     noteDriver->NotifyTargetHide(child);
@@ -182,21 +181,10 @@ CFX_Matrix CFWL_Widget::GetMatrix() const {
   }
 
   CFX_Matrix matrix;
-  CFX_Matrix ctmOnParent;
-  CFX_RectF rect;
-  int32_t count = pdfium::CollectionSize<int32_t>(parents);
-  for (int32_t i = count - 2; i >= 0; i--) {
-    parent = parents[i];
-    if (parent->m_pProperties)
-      ctmOnParent.SetIdentity();
-    rect = parent->GetWidgetRect();
-    matrix.ConcatPrepend(ctmOnParent);
+  for (size_t i = parents.size(); i >= 2; i--) {
+    CFX_RectF rect = parents[i - 2]->GetWidgetRect();
     matrix.TranslatePrepend(rect.left, rect.top);
   }
-  CFX_Matrix m;
-  m.SetIdentity();
-  matrix.ConcatPrepend(m);
-  parents.clear();
   return matrix;
 }
 
@@ -286,7 +274,7 @@ CFX_SizeF CFWL_Widget::CalcTextSize(const WideString& wsText,
   calPart.m_iTTOAlign = FDE_TextAlignment::kTopLeft;
   float fWidth = bMultiLine ? FWL_WGT_CalcMultiLineDefWidth : FWL_WGT_CalcWidth;
   CFX_RectF rect(0, 0, fWidth, FWL_WGT_CalcHeight);
-  pTheme->CalcTextRect(&calPart, &rect);
+  pTheme->CalcTextRect(calPart, &rect);
   return CFX_SizeF(rect.width, rect.height);
 }
 
@@ -300,40 +288,21 @@ void CFWL_Widget::CalcTextRect(const WideString& wsText,
   calPart.m_wsText = wsText;
   calPart.m_dwTTOStyles = dwTTOStyles;
   calPart.m_iTTOAlign = iTTOAlign;
-  pTheme->CalcTextRect(&calPart, pRect);
+  pTheme->CalcTextRect(calPart, pRect);
 }
 
 void CFWL_Widget::SetGrab(bool bSet) {
-  const CFWL_App* pApp = GetOwnerApp();
-  if (!pApp)
-    return;
-
-  CFWL_NoteDriver* pDriver =
-      static_cast<CFWL_NoteDriver*>(pApp->GetNoteDriver());
+  CFWL_NoteDriver* pDriver = GetOwnerApp()->GetNoteDriver();
   pDriver->SetGrab(this, bSet);
 }
 
 void CFWL_Widget::RegisterEventTarget(CFWL_Widget* pEventSource) {
-  const CFWL_App* pApp = GetOwnerApp();
-  if (!pApp)
-    return;
-
-  CFWL_NoteDriver* pNoteDriver = pApp->GetNoteDriver();
-  if (!pNoteDriver)
-    return;
-
+  CFWL_NoteDriver* pNoteDriver = GetOwnerApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(this, pEventSource);
 }
 
 void CFWL_Widget::UnregisterEventTarget() {
-  const CFWL_App* pApp = GetOwnerApp();
-  if (!pApp)
-    return;
-
-  CFWL_NoteDriver* pNoteDriver = pApp->GetNoteDriver();
-  if (!pNoteDriver)
-    return;
-
+  CFWL_NoteDriver* pNoteDriver = GetOwnerApp()->GetNoteDriver();
   pNoteDriver->UnregisterEventTarget(this);
 }
 
@@ -342,13 +311,7 @@ void CFWL_Widget::DispatchEvent(CFWL_Event* pEvent) {
     m_pOuter->GetDelegate()->OnProcessEvent(pEvent);
     return;
   }
-  const CFWL_App* pApp = GetOwnerApp();
-  if (!pApp)
-    return;
-
-  CFWL_NoteDriver* pNoteDriver = pApp->GetNoteDriver();
-  if (!pNoteDriver)
-    return;
+  CFWL_NoteDriver* pNoteDriver = GetOwnerApp()->GetNoteDriver();
   pNoteDriver->SendEvent(pEvent);
 }
 
@@ -365,9 +328,9 @@ void CFWL_Widget::DrawBackground(CXFA_Graphics* pGraphics,
   param.m_iPart = iPartBk;
   param.m_pGraphics = pGraphics;
   if (pMatrix)
-    param.m_matrix.ConcatPrepend(*pMatrix);
+    param.m_matrix = *pMatrix;
   param.m_rtPart = GetRelativeRect();
-  pTheme->DrawBackground(&param);
+  pTheme->DrawBackground(param);
 }
 
 void CFWL_Widget::DrawBorder(CXFA_Graphics* pGraphics,
@@ -378,21 +341,13 @@ void CFWL_Widget::DrawBorder(CXFA_Graphics* pGraphics,
   param.m_pWidget = this;
   param.m_iPart = iPartBorder;
   param.m_pGraphics = pGraphics;
-  param.m_matrix.ConcatPrepend(matrix);
+  param.m_matrix = matrix;
   param.m_rtPart = GetRelativeRect();
-  pTheme->DrawBackground(&param);
+  pTheme->DrawBackground(param);
 }
 
 void CFWL_Widget::NotifyDriver() {
-  const CFWL_App* pApp = GetOwnerApp();
-  if (!pApp)
-    return;
-
-  CFWL_NoteDriver* pDriver =
-      static_cast<CFWL_NoteDriver*>(pApp->GetNoteDriver());
-  if (!pDriver)
-    return;
-
+  CFWL_NoteDriver* pDriver = GetOwnerApp()->GetNoteDriver();
   pDriver->NotifyTargetDestroy(this);
 }
 
@@ -401,9 +356,6 @@ CFX_SizeF CFWL_Widget::GetOffsetFromParent(CFWL_Widget* pParent) {
     return CFX_SizeF();
 
   CFWL_WidgetMgr* pWidgetMgr = GetOwnerApp()->GetWidgetMgr();
-  if (!pWidgetMgr)
-    return CFX_SizeF();
-
   CFX_SizeF szRet(m_pProperties->m_rtWidget.left,
                   m_pProperties->m_rtWidget.top);
 

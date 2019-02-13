@@ -2,11 +2,21 @@ cmake_minimum_required(VERSION 2.8.12)
 project(shaderc)
 enable_testing()
 
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
+  message(STATUS "No build type selected, default to Debug")
+  set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
 message(STATUS "Shaderc: build type is \"${CMAKE_BUILD_TYPE}\".")
 
 option(SHADERC_SKIP_INSTALL "Skip installation" ${SHADERC_SKIP_INSTALL})
 if(NOT ${SHADERC_SKIP_INSTALL})
   set(SHADERC_ENABLE_INSTALL ON)
+endif()
+
+option(SHADERC_SKIP_SPVC "Skip libshaderc_spvc" ${SHADERC_SKIP_SPVC})
+if(NOT ${SHADERC_SKIP_SPVC})
+  set(SHADERC_ENABLE_SPVC OFF)
 endif()
 
 option(SHADERC_SKIP_TESTS "Skip building tests" ${SHADERC_SKIP_TESTS})
@@ -63,6 +73,9 @@ endif(MSVC)
 # We depend on these for later projects, so they should come first.
 add_subdirectory(third_party)
 
+if(SHADERC_ENABLE_SPVC)
+add_subdirectory(libshaderc_spvc)
+endif()
 add_subdirectory(libshaderc_util)
 add_subdirectory(libshaderc)
 add_subdirectory(glslc)

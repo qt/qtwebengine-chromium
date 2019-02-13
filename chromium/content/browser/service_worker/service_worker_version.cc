@@ -677,7 +677,8 @@ bool ServiceWorkerVersion::FinishExternalRequest(
 ServiceWorkerVersion::SimpleEventCallback
 ServiceWorkerVersion::CreateSimpleEventCallback(int request_id) {
   // The weak reference to |this| is safe because storage of the callbacks, the
-  // inflight responses of mojom::ServiceWorker messages, is owned by |this|.
+  // inflight responses of blink::mojom::ServiceWorker messages, is owned by
+  // |this|.
   return base::BindOnce(&ServiceWorkerVersion::OnSimpleEventFinished,
                         base::Unretained(this), request_id);
 }
@@ -769,8 +770,8 @@ void ServiceWorkerVersion::ReportError(blink::ServiceWorkerStatusCode status,
 }
 
 void ServiceWorkerVersion::ReportForceUpdateToDevTools() {
-  embedded_worker_->AddMessageToConsole(blink::WebConsoleMessage::kLevelWarning,
-                                        kForceUpdateInfoMessage);
+  embedded_worker_->AddMessageToConsole(
+      blink::mojom::ConsoleMessageLevel::kWarning, kForceUpdateInfoMessage);
 }
 
 void ServiceWorkerVersion::SetStartWorkerStatusCode(
@@ -1559,14 +1560,18 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   DCHECK_EQ(EmbeddedWorkerStatus::STOPPED, running_status());
   DCHECK(inflight_requests_.IsEmpty());
   DCHECK(request_timeouts_.empty());
-  DCHECK(start_worker_first_purpose_);
 
-  if (!ServiceWorkerMetrics::ShouldExcludeSiteFromHistogram(site_for_uma_) &&
-      start_worker_first_purpose_.value() ==
-          ServiceWorkerMetrics::EventType::NAVIGATION_HINT) {
-    DCHECK(!event_recorder_);
-    event_recorder_ =
-        std::make_unique<ServiceWorkerMetrics::ScopedEventRecorder>();
+  // TODO(falken): Figure out why |start_worker_first_purpose_| can be null
+  // here. Probably there is a bug with restarting the worker in
+  // OnStoppedInternal, despite the comment below about not clearing it.
+  if (start_worker_first_purpose_) {
+    if (!ServiceWorkerMetrics::ShouldExcludeSiteFromHistogram(site_for_uma_) &&
+        *start_worker_first_purpose_ ==
+            ServiceWorkerMetrics::EventType::NAVIGATION_HINT) {
+      DCHECK(!event_recorder_);
+      event_recorder_ =
+          std::make_unique<ServiceWorkerMetrics::ScopedEventRecorder>();
+    }
   }
   // We don't clear |start_worker_first_purpose_| here but clear in
   // FinishStartWorker. This is because StartWorkerInternal may be called
@@ -1576,7 +1581,8 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   worker_is_idle_on_renderer_ = false;
   needs_to_be_terminated_asap_ = false;
 
-  auto provider_info = mojom::ServiceWorkerProviderInfoForStartWorker::New();
+  auto provider_info =
+      blink::mojom::ServiceWorkerProviderInfoForStartWorker::New();
   provider_host_ = ServiceWorkerProviderHost::PreCreateForController(
       context(), base::WrapRefCounted(this), &provider_info);
 
@@ -1585,7 +1591,7 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   params->scope = scope_;
   params->script_url = script_url_;
   params->script_type = script_type_;
-  params->user_agent = GetContentClient()->GetUserAgent();
+  params->user_agent = GetContentClient()->browser()->GetUserAgent();
   params->is_installed = IsInstalled(status_);
   params->pause_after_download = pause_after_download();
 
@@ -1786,8 +1792,8 @@ void ServiceWorkerVersion::OnPingTimeout() {
          running_status() == EmbeddedWorkerStatus::RUNNING);
   // TODO(falken): Change the error code to
   // blink::ServiceWorkerStatusCode::kErrorTimeout.
-  embedded_worker_->AddMessageToConsole(blink::WebConsoleMessage::kLevelVerbose,
-                                        kNotRespondingErrorMesage);
+  embedded_worker_->AddMessageToConsole(
+      blink::mojom::ConsoleMessageLevel::kVerbose, kNotRespondingErrorMesage);
   embedded_worker_->StopIfNotAttachedToDevTools();
 }
 
@@ -2090,4 +2096,19 @@ void ServiceWorkerVersion::NotifyControlleeRemoved(const std::string& uuid) {
   }
 }
 
+void ServiceWorkerVersion::set_compared_script_info_map(
+    std::map<GURL, ServiceWorkerUpdateChecker::ComparedScriptInfo>
+        compared_script_info_map) {
+  compared_script_info_map_ = std::move(compared_script_info_map);
+};
+
+const std::map<GURL, ServiceWorkerUpdateChecker::ComparedScriptInfo>&
+ServiceWorkerVersion::compared_script_info_map() const {
+  return compared_script_info_map_;
+}
+
+std::unique_ptr<ServiceWorkerSingleScriptUpdateChecker::PausedState>
+ServiceWorkerVersion::TakePausedStateOfChangedScript(const GURL& script_url) {
+  return std::move(compared_script_info_map_[script_url].paused_state);
+}
 }  // namespace content

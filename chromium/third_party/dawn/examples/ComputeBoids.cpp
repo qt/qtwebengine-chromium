@@ -14,6 +14,7 @@
 
 #include "SampleUtils.h"
 
+#include "utils/ComboRenderPipelineDescriptor.h"
 #include "utils/DawnHelpers.h"
 #include "utils/SystemUtils.h"
 
@@ -123,13 +124,15 @@ void initRender() {
 
     depthStencilView = CreateDefaultDepthStencilView(device);
 
-    renderPipeline = device.CreateRenderPipelineBuilder()
-        .SetColorAttachmentFormat(0, GetPreferredSwapChainTextureFormat())
-        .SetDepthStencilAttachmentFormat(dawn::TextureFormat::D32FloatS8Uint)
-        .SetStage(dawn::ShaderStage::Vertex, vsModule, "main")
-        .SetStage(dawn::ShaderStage::Fragment, fsModule, "main")
-        .SetInputState(inputState)
-        .GetResult();
+    utils::ComboRenderPipelineDescriptor descriptor(device);
+    descriptor.cVertexStage.module = vsModule;
+    descriptor.cFragmentStage.module = fsModule;
+    descriptor.inputState = inputState;
+    descriptor.cAttachmentsState.hasDepthStencilAttachment = true;
+    descriptor.cDepthStencilAttachment.format = dawn::TextureFormat::D32FloatS8Uint;
+    descriptor.cColorAttachments[0]->format = GetPreferredSwapChainTextureFormat();
+
+    renderPipeline = device.CreateRenderPipeline(&descriptor);
 }
 
 void initSim() {
@@ -237,24 +240,12 @@ void initSim() {
     csDesc.layout = pl;
     updatePipeline = device.CreateComputePipeline(&csDesc);
 
-    dawn::BufferView updateParamsView = updateParams.CreateBufferViewBuilder()
-        .SetExtent(0, sizeof(SimParams))
-        .GetResult();
-
-    std::array<dawn::BufferView, 2> views;
     for (uint32_t i = 0; i < 2; ++i) {
-        views[i] = particleBuffers[i].CreateBufferViewBuilder()
-            .SetExtent(0, kNumParticles * sizeof(Particle))
-            .GetResult();
-    }
-
-    for (uint32_t i = 0; i < 2; ++i) {
-        updateBGs[i] = device.CreateBindGroupBuilder()
-            .SetLayout(bgl)
-            .SetBufferViews(0, 1, &updateParamsView)
-            .SetBufferViews(1, 1, &views[i])
-            .SetBufferViews(2, 1, &views[(i + 1) % 2])
-            .GetResult();
+        updateBGs[i] = utils::MakeBindGroup(device, bgl, {
+            {0, updateParams, 0, sizeof(SimParams)},
+            {1, particleBuffers[i], 0, kNumParticles * sizeof(Particle)},
+            {2, particleBuffers[(i + 1) % 2], 0, kNumParticles * sizeof(Particle)},
+        });
     }
 }
 
@@ -265,7 +256,7 @@ dawn::CommandBuffer createCommandBuffer(const dawn::RenderPassDescriptor& render
 
     {
         dawn::ComputePassEncoder pass = builder.BeginComputePass();
-        pass.SetComputePipeline(updatePipeline);
+        pass.SetPipeline(updatePipeline);
         pass.SetBindGroup(0, updateBGs[i]);
         pass.Dispatch(kNumParticles, 1, 1);
         pass.EndPass();
@@ -273,10 +264,10 @@ dawn::CommandBuffer createCommandBuffer(const dawn::RenderPassDescriptor& render
 
     {
         dawn::RenderPassEncoder pass = builder.BeginRenderPass(renderPass);
-        pass.SetRenderPipeline(renderPipeline);
+        pass.SetPipeline(renderPipeline);
         pass.SetVertexBuffers(0, 1, &bufferDst, zeroOffsets);
         pass.SetVertexBuffers(1, 1, &modelBuffer, zeroOffsets);
-        pass.DrawArrays(3, kNumParticles, 0, 0);
+        pass.Draw(3, kNumParticles, 0, 0);
         pass.EndPass();
     }
 

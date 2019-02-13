@@ -47,6 +47,29 @@ struct ShaderBlob
 }};
 
 {shader_tables_cpp}
+
+angle::Result GetShader(Context *context,
+                        RefCounted<ShaderAndSerial> *shaders,
+                        const ShaderBlob *shaderBlobs,
+                        size_t shadersCount,
+                        uint32_t shaderFlags,
+                        RefCounted<ShaderAndSerial> **shaderOut)
+{{
+    ASSERT(shaderFlags < shadersCount);
+    RefCounted<ShaderAndSerial> &shader = shaders[shaderFlags];
+    *shaderOut                          = &shader;
+
+    if (shader.get().valid())
+    {{
+        return angle::Result::Continue;
+    }}
+
+    // Create shader lazily. Access will need to be locked for multi-threading.
+    const ShaderBlob &shaderCode = shaderBlobs[shaderFlags];
+    ASSERT(shaderCode.code != nullptr);
+
+    return InitShaderAndSerial(context, &shader.get(), shaderCode.code, shaderCode.codeSize);
+}}
 }}  // anonymous namespace
 
 
@@ -230,11 +253,19 @@ shaders_dir = os.path.join('shaders', 'src')
 if not os.path.isdir(shaders_dir):
     raise Exception("Could not find shaders directory")
 
+print_inputs = len(sys.argv) == 2 and sys.argv[1] == 'inputs'
+print_outputs = len(sys.argv) == 2 and sys.argv[1] == 'outputs'
+# If an argument X is given that's not inputs or outputs, compile shaders that match *X*.
+# This is useful in development to build only the shader of interest.
+shader_files_to_compile = os.listdir(shaders_dir)
+if not (print_inputs or print_outputs or len(sys.argv) < 2):
+    shader_files_to_compile = [f for f in shader_files_to_compile if f.find(sys.argv[1]) != -1]
+
 valid_extensions = ['.vert', '.frag', '.comp']
 input_shaders = sorted([os.path.join(shaders_dir, shader)
     for shader in os.listdir(shaders_dir)
     if any([os.path.splitext(shader)[1] == ext for ext in valid_extensions])])
-if len(sys.argv) == 2 and sys.argv[1] == 'inputs':
+if print_inputs:
     print(",".join(input_shaders))
     sys.exit(0)
 
@@ -305,7 +336,7 @@ def compile_variation(shader_file, shader_basename, flags, enums,
         if result != 0:
             raise Exception("Error compiling " + shader_file)
 
-        with open(output_path, 'a') as incfile:
+        with open(output_path, 'ab') as incfile:
             shader_text = subprocess.check_output(glslang_preprocessor_output_args)
 
             incfile.write('\n\n#if 0  // Generated from:\n')
@@ -321,8 +352,6 @@ class ShaderAndVariations:
 
 input_shaders_and_variations = [ShaderAndVariations(shader_file) for shader_file in input_shaders]
 
-print_outputs = len(sys.argv) == 2 and sys.argv[1] == 'outputs'
-
 for shader_and_variation in input_shaders_and_variations:
     shader_file = shader_and_variation.shader_file
     flags = shader_and_variation.flags
@@ -337,11 +366,12 @@ for shader_and_variation in input_shaders_and_variations:
     output_name = os.path.basename(shader_file)
 
     while True:
+        do_compile = not print_outputs and output_name in shader_files_to_compile
         # a number where each bit says whether a flag is active or not,
         # with values in [0, 2^len(flags))
         for flags_active in range(1 << len(flags)):
             compile_variation(shader_file, output_name, flags, enums,
-                    flags_active, enum_indices, flags_bits, enum_bits, not print_outputs)
+                    flags_active, enum_indices, flags_bits, enum_bits, do_compile)
 
         if not next_enum_variation(enums, enum_indices):
             break
@@ -472,21 +502,8 @@ def get_get_function_cpp(shader_and_variation):
 
     definition = 'angle::Result ShaderLibrary::%s' % function_name
     definition += '(Context *context, uint32_t shaderFlags, RefCounted<ShaderAndSerial> **shaderOut)\n{\n'
-    definition += 'ASSERT(shaderFlags < ArraySize(%s));\n' % constant_table_name
-
-    definition += ''.join(['ASSERT((shaderFlags & %s::k%sMask) >= %s::k%s &&' %
-        (namespace_name, enums[e][0], namespace_name, enums[e][1][0]) +
-        '(shaderFlags & %s::k%sMask) <= %s::k%s);\n' %
-        (namespace_name, enums[e][0], namespace_name, enums[e][1][-1])
-        for e in range(len(enums))])
-
-    definition += 'RefCounted<ShaderAndSerial> &shader = %s[shaderFlags];\n' % member_table_name
-    definition += '*shaderOut              = &shader;\n\n'
-    definition += 'if (shader.get().valid())\n{\nreturn angle::Result::Continue();\n}\n\n'
-    definition += '// Create shader lazily. Access will need to be locked for multi-threading.\n'
-    definition += 'const ShaderBlob &shaderCode = %s[shaderFlags];\n' % constant_table_name
-    definition += 'return InitShaderAndSerial(context, &shader.get(), shaderCode.code, shaderCode.codeSize);\n'
-    definition += '}\n'
+    definition += 'return GetShader(context, %s, %s, ArraySize(%s), shaderFlags, shaderOut);\n}\n' % (
+            member_table_name, constant_table_name, constant_table_name)
 
     return definition
 

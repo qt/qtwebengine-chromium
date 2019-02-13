@@ -17,15 +17,14 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
-#include "core/fxcrt/cfx_memorystream.h"
 #include "core/fxcrt/fx_extension.h"
 #include "fpdfsdk/cpdfsdk_filewriteadapter.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/fpdf_edit.h"
 #include "third_party/base/optional.h"
-#include "third_party/base/ptr_util.h"
 
 #ifdef PDF_ENABLE_XFA
+#include "core/fxcrt/cfx_memorystream.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
 #include "public/fpdf_formfill.h"

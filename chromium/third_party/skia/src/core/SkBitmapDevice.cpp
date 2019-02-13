@@ -408,7 +408,7 @@ void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, const SkMatrix& matrix,
             bounds = &storage;
         }
     }
-    LOOP_TILER(drawBitmap(bitmap, matrix, dstOrNull, paint), bounds);
+    LOOP_TILER(drawBitmap(bitmap, matrix, dstOrNull, paint), bounds)
 }
 
 static inline bool CanApplyDstMatrixAsCTM(const SkMatrix& m, const SkPaint& paint) {
@@ -702,12 +702,16 @@ sk_sp<SkSpecialImage> SkBitmapDevice::makeSpecial(const SkBitmap& bitmap) {
 }
 
 sk_sp<SkSpecialImage> SkBitmapDevice::makeSpecial(const SkImage* image) {
-    return SkSpecialImage::MakeFromImage(SkIRect::MakeWH(image->width(), image->height()),
+    return SkSpecialImage::MakeFromImage(nullptr, SkIRect::MakeWH(image->width(), image->height()),
                                          image->makeNonTextureImage());
 }
 
 sk_sp<SkSpecialImage> SkBitmapDevice::snapSpecial() {
     return this->makeSpecial(fBitmap);
+}
+
+sk_sp<SkSpecialImage> SkBitmapDevice::snapBackImage(const SkIRect& bounds) {
+    return SkSpecialImage::CopyFromRaster(bounds, fBitmap, &this->surfaceProps());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

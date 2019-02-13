@@ -102,8 +102,6 @@ static SkString to_string(int n) {
     return str;
 }
 
-DECLARE_bool(undefok);
-
 DEFINE_int32(loops, kDefaultLoops, loops_help_txt().c_str());
 
 DEFINE_int32(samples, 10, "Number of samples to measure for each bench.");
@@ -478,10 +476,7 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
     CPU_CONFIG(565,  kRaster_Backend, kRGB_565_SkColorType, kOpaque_SkAlphaType, nullptr)
 
     // 'narrow' has a gamut narrower than sRGB, and different transfer function.
-    SkMatrix44 narrow_gamut;
-    narrow_gamut.set3x3RowMajorf(gNarrow_toXYZD50);
-
-    auto narrow = SkColorSpace::MakeRGB(k2Dot2Curve_SkGammaNamed, narrow_gamut),
+    auto narrow = SkColorSpace::MakeRGB(SkNamedTransferFn::k2Dot2, gNarrow_toXYZD50),
            srgb = SkColorSpace::MakeSRGB(),
      srgbLinear = SkColorSpace::MakeSRGBLinear();
 
@@ -506,13 +501,10 @@ void create_configs(SkTArray<Config>* configs) {
 
     // If no just default configs were requested, then we're okay.
     if (array.count() == 0 || FLAGS_config.count() == 0 ||
-        // If we've been told to ignore undefined flags, we're okay.
-        FLAGS_undefok ||
         // Otherwise, make sure that all specified configs have been created.
         array.count() == configs->count()) {
         return;
     }
-    SkDebugf("Invalid --config. Use --undefok to bypass this warning.\n");
     exit(1);
 }
 
@@ -1317,14 +1309,16 @@ int main(int argc, char** argv) {
                          , config);
             } else if (FLAGS_quiet) {
                 const char* mark = " ";
-                const double stddev_percent = 100 * sqrt(stats.var) / stats.mean;
+                const double stddev_percent =
+                    sk_ieee_double_divide(100 * sqrt(stats.var), stats.mean);
                 if (stddev_percent >  5) mark = "?";
                 if (stddev_percent > 10) mark = "!";
 
                 SkDebugf("%10.2f %s\t%s\t%s\n",
                          stats.median*1e3, mark, bench->getUniqueName(), config);
             } else if (FLAGS_csv) {
-                const double stddev_percent = 100 * sqrt(stats.var) / stats.mean;
+                const double stddev_percent =
+                    sk_ieee_double_divide(100 * sqrt(stats.var), stats.mean);
                 SkDebugf("%g,%g,%g,%g,%g,%s,%s\n"
                          , stats.min
                          , stats.median
@@ -1336,7 +1330,8 @@ int main(int argc, char** argv) {
                          );
             } else {
                 const char* format = "%4d/%-4dMB\t%d\t%s\t%s\t%s\t%s\t%.0f%%\t%s\t%s\t%s\n";
-                const double stddev_percent = 100 * sqrt(stats.var) / stats.mean;
+                const double stddev_percent =
+                    sk_ieee_double_divide(100 * sqrt(stats.var), stats.mean);
                 SkDebugf(format
                         , sk_tools::getCurrResidentSetSizeMB()
                         , sk_tools::getMaxResidentSetSizeMB()

@@ -100,15 +100,14 @@ typedef struct av1_ext_ref_frame {
   int num;
 } av1_ext_ref_frame_t;
 
-/*!\enum aom_dec_control_id
- * \brief AOM decoder control functions
+/*! \brief AOM decoder control functions
  *
  * This set of macros define the control functions available for the AOM
  * decoder interface.
  *
  * \sa #aom_codec_control
  */
-enum aom_dec_control_id {
+enum {
   /** control function to get info on which reference frames were updated
    *  by the last decode
    */
@@ -140,6 +139,9 @@ enum aom_dec_control_id {
 
   /** control function to get the size of the tile. */
   AV1D_GET_TILE_SIZE,
+
+  /** control function to get the tile count in a tile list. */
+  AV1D_GET_TILE_COUNT,
 
   /** control function to set the byte alignment of the planes in the reference
    * buffers. Valid values are power of 2, from 32 to 1024. A value of 0 sets
@@ -250,7 +252,7 @@ enum aom_dec_control_id {
   AV1D_SET_SKIP_FILM_GRAIN,
 
   AOM_DECODER_CTRL_ID_MAX,
-};
+} UENUM2BYTE(aom_dec_control_id) /**< enum type decoder control function*/;
 
 /*!\cond */
 /*!\brief AOM decoder control function parameter type
@@ -276,6 +278,8 @@ AOM_CTRL_USE_TYPE(AV1D_GET_IMG_FORMAT, aom_img_fmt_t *)
 #define AOM_CTRL_AV1D_GET_IMG_FORMAT
 AOM_CTRL_USE_TYPE(AV1D_GET_TILE_SIZE, unsigned int *)
 #define AOM_CTRL_AV1D_GET_TILE_SIZE
+AOM_CTRL_USE_TYPE(AV1D_GET_TILE_COUNT, unsigned int *)
+#define AOM_CTRL_AV1D_GET_TILE_COUNT
 AOM_CTRL_USE_TYPE(AV1D_GET_FRAME_SIZE, int *)
 #define AOM_CTRL_AV1D_GET_FRAME_SIZE
 AOM_CTRL_USE_TYPE(AV1_INVERT_TILE_DECODE_ORDER, int)

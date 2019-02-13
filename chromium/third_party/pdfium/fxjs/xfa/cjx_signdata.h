@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_SIGNDATA_H_
 #define FXJS_XFA_CJX_SIGNDATA_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_SignData;
 
@@ -16,12 +16,6 @@ class CJX_SignData final : public CJX_Node {
  public:
   explicit CJX_SignData(CXFA_SignData* node);
   ~CJX_SignData() override;
-
-  JSE_PROP(operation);
-  JSE_PROP(ref);
-  JSE_PROP(target);
-  JSE_PROP(use);
-  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_SIGNDATA_H_

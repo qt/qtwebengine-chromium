@@ -18,6 +18,8 @@
 #include <utility>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/string_view.h"
+#include "api/transport/field_trial_based_config.h"
 #include "api/transport/goog_cc_factory.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
@@ -444,7 +446,7 @@ std::string GetDirectionAsShortString(PacketDirection direction) {
 
 }  // namespace
 
-EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLogNew& log,
+EventLogAnalyzer::EventLogAnalyzer(const ParsedRtcEventLog& log,
                                    bool normalize_time)
     : parsed_log_(log),
       window_duration_(250000),
@@ -791,9 +793,8 @@ void EventLogAnalyzer::CreateIncomingDelayGraph(Plot* plot) {
 
   plot->SetXAxis(ToCallTimeSec(begin_time_), call_duration_s_, "Time (s)",
                  kLeftMargin, kRightMargin);
-  plot->SetSuggestedYAxis(0, 1, "Latency change (ms)", kBottomMargin,
-                          kTopMargin);
-  plot->SetTitle("Network latency (relative to first packet)");
+  plot->SetSuggestedYAxis(0, 1, "Delay (ms)", kBottomMargin, kTopMargin);
+  plot->SetTitle("Incoming network delay (relative to first packet)");
 }
 
 // Plot the fraction of packets lost (as perceived by the loss-based BWE).
@@ -967,6 +968,13 @@ void EventLogAnalyzer::CreateTotalOutgoingBitrateGraph(Plot* plot,
     result_series.points.emplace_back(x, y);
   }
 
+  TimeSeries probe_failures_series("Probe failed", LineStyle::kNone,
+                                   PointStyle::kHighlight);
+  for (auto& failure : parsed_log_.bwe_probe_failure_events()) {
+    float x = ToCallTimeSec(failure.log_time_us());
+    probe_failures_series.points.emplace_back(x, 0);
+  }
+
   IntervalSeries alr_state("ALR", "#555555", IntervalSeries::kHorizontal);
   bool previously_in_alr = false;
   int64_t alr_start = 0;
@@ -998,6 +1006,7 @@ void EventLogAnalyzer::CreateTotalOutgoingBitrateGraph(Plot* plot,
     plot->AppendIntervalSeries(std::move(alr_state));
   }
   plot->AppendTimeSeries(std::move(loss_series));
+  plot->AppendTimeSeriesIfNotEmpty(std::move(probe_failures_series));
   plot->AppendTimeSeries(std::move(delay_series));
   plot->AppendTimeSeries(std::move(created_series));
   plot->AppendTimeSeries(std::move(result_series));
@@ -1066,7 +1075,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
   RtcEventLogNullImpl null_event_log;
   PacketRouter packet_router;
   PacedSender pacer(&clock, &packet_router, &null_event_log);
-  TransportFeedbackAdapter transport_feedback(&clock);
+  TransportFeedbackAdapter transport_feedback;
   auto factory = GoogCcNetworkControllerFactory(&null_event_log);
   TimeDelta process_interval = factory.GetProcessInterval();
   // TODO(holmer): Log the call config and use that here instead.
@@ -1097,7 +1106,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
       return static_cast<int64_t>(rtcp_iterator->log_time_us());
     return std::numeric_limits<int64_t>::max();
   };
-  int64_t next_process_time_us_ = clock.TimeInMicroseconds();
+  int64_t next_process_time_us_ = std::min({NextRtpTime(), NextRtcpTime()});
 
   auto NextProcessTime = [&]() {
     if (rtcp_iterator != incoming_rtcp.end() ||
@@ -1109,6 +1118,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
 
   RateStatistics acked_bitrate(250, 8000);
 #if !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
+  FieldTrialBasedConfig field_trial_config_;
   // The event_log_visualizer should normally not be compiled with
   // BWE_TEST_LOGGING_COMPILE_TIME_ENABLE since the normal plots won't work.
   // However, compiling with BWE_TEST_LOGGING, runnning with --plot_sendside_bwe
@@ -1117,18 +1127,39 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
   // we don't instantiate the AcknowledgedBitrateEstimator both here and in
   // SendSideCongestionController since that would lead to duplicate outputs.
   AcknowledgedBitrateEstimator acknowledged_bitrate_estimator(
-      absl::make_unique<BitrateEstimator>());
+      &field_trial_config_,
+      absl::make_unique<BitrateEstimator>(&field_trial_config_));
 #endif  // !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
   int64_t time_us =
       std::min({NextRtpTime(), NextRtcpTime(), NextProcessTime()});
   int64_t last_update_us = 0;
   while (time_us != std::numeric_limits<int64_t>::max()) {
     clock.AdvanceTimeMicroseconds(time_us - clock.TimeInMicroseconds());
+    if (clock.TimeInMicroseconds() >= NextRtpTime()) {
+      RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextRtpTime());
+      const RtpPacketType& rtp_packet = *rtp_iterator->second;
+      if (rtp_packet.rtp.header.extension.hasTransportSequenceNumber) {
+        RTC_DCHECK(rtp_packet.rtp.header.extension.hasTransportSequenceNumber);
+        transport_feedback.AddPacket(
+            rtp_packet.rtp.header.ssrc,
+            rtp_packet.rtp.header.extension.transportSequenceNumber,
+            rtp_packet.rtp.total_length, PacedPacketInfo(),
+            Timestamp::us(rtp_packet.rtp.log_time_us()));
+        rtc::SentPacket sent_packet(
+            rtp_packet.rtp.header.extension.transportSequenceNumber,
+            rtp_packet.rtp.log_time_us() / 1000);
+        auto sent_msg = transport_feedback.ProcessSentPacket(sent_packet);
+        if (sent_msg)
+          observer.Update(goog_cc->OnSentPacket(*sent_msg));
+      }
+      ++rtp_iterator;
+    }
     if (clock.TimeInMicroseconds() >= NextRtcpTime()) {
       RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextRtcpTime());
 
       auto feedback_msg = transport_feedback.ProcessTransportFeedback(
-          rtcp_iterator->transport_feedback);
+          rtcp_iterator->transport_feedback,
+          Timestamp::ms(clock.TimeInMilliseconds()));
       absl::optional<uint32_t> bitrate_bps;
       if (feedback_msg) {
         observer.Update(goog_cc->OnTransportPacketsFeedback(*feedback_msg));
@@ -1153,24 +1184,6 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
       acked_estimate_time_series.points.emplace_back(x, y);
 #endif  // !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
       ++rtcp_iterator;
-    }
-    if (clock.TimeInMicroseconds() >= NextRtpTime()) {
-      RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextRtpTime());
-      const RtpPacketType& rtp_packet = *rtp_iterator->second;
-      if (rtp_packet.rtp.header.extension.hasTransportSequenceNumber) {
-        RTC_DCHECK(rtp_packet.rtp.header.extension.hasTransportSequenceNumber);
-        transport_feedback.AddPacket(
-            rtp_packet.rtp.header.ssrc,
-            rtp_packet.rtp.header.extension.transportSequenceNumber,
-            rtp_packet.rtp.total_length, PacedPacketInfo());
-        rtc::SentPacket sent_packet(
-            rtp_packet.rtp.header.extension.transportSequenceNumber,
-            rtp_packet.rtp.log_time_us() / 1000);
-        auto sent_msg = transport_feedback.ProcessSentPacket(sent_packet);
-        if (sent_msg)
-          observer.Update(goog_cc->OnSentPacket(*sent_msg));
-      }
-      ++rtp_iterator;
     }
     if (clock.TimeInMicroseconds() >= NextProcessTime()) {
       RTC_DCHECK_EQ(clock.TimeInMicroseconds(), NextProcessTime());
@@ -1320,7 +1333,7 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
   plot->SetXAxis(ToCallTimeSec(begin_time_), call_duration_s_, "Time (s)",
                  kLeftMargin, kRightMargin);
   plot->SetSuggestedYAxis(0, 10, "Delay (ms)", kBottomMargin, kTopMargin);
-  plot->SetTitle("Network delay (based on per-packet feedback)");
+  plot->SetTitle("Outgoing network delay (based on per-packet feedback)");
 }
 
 void EventLogAnalyzer::CreatePacerDelayGraph(Plot* plot) {
@@ -1686,6 +1699,40 @@ class NetEqStreamInput : public test::NetEqInput {
 };
 
 namespace {
+
+// Factory to create a "replacement decoder" that produces the decoded audio
+// by reading from a file rather than from the encoded payloads.
+class ReplacementAudioDecoderFactory : public AudioDecoderFactory {
+ public:
+  ReplacementAudioDecoderFactory(const absl::string_view replacement_file_name,
+                                 int file_sample_rate_hz)
+      : replacement_file_name_(replacement_file_name),
+        file_sample_rate_hz_(file_sample_rate_hz) {}
+
+  std::vector<AudioCodecSpec> GetSupportedDecoders() override {
+    RTC_NOTREACHED();
+    return {};
+  }
+
+  bool IsSupportedDecoder(const SdpAudioFormat& format) override {
+    return true;
+  }
+
+  std::unique_ptr<AudioDecoder> MakeAudioDecoder(
+      const SdpAudioFormat& format,
+      absl::optional<AudioCodecPairId> codec_pair_id) override {
+    auto replacement_file = absl::make_unique<test::ResampleInputAudioFile>(
+        replacement_file_name_, file_sample_rate_hz_);
+    replacement_file->set_output_rate_hz(48000);
+    return absl::make_unique<test::FakeDecodeFromFile>(
+        std::move(replacement_file), 48000, false);
+  }
+
+ private:
+  const std::string replacement_file_name_;
+  const int file_sample_rate_hz_;
+};
+
 // Creates a NetEq test object and all necessary input and output helpers. Runs
 // the test and returns the NetEqDelayAnalyzer object that was used to
 // instrument the test.
@@ -1710,20 +1757,12 @@ std::unique_ptr<test::NetEqStatsGetter> CreateNetEqTestAndRun(
 
   std::unique_ptr<test::VoidAudioSink> output(new test::VoidAudioSink());
 
-  test::NetEqTest::DecoderMap codecs;
+  rtc::scoped_refptr<AudioDecoderFactory> decoder_factory =
+      new rtc::RefCountedObject<ReplacementAudioDecoderFactory>(
+          replacement_file_name, file_sample_rate_hz);
 
-  // Create a "replacement decoder" that produces the decoded audio by reading
-  // from a file rather than from the encoded payloads.
-  std::unique_ptr<test::ResampleInputAudioFile> replacement_file(
-      new test::ResampleInputAudioFile(replacement_file_name,
-                                       file_sample_rate_hz));
-  replacement_file->set_output_rate_hz(48000);
-  std::unique_ptr<AudioDecoder> replacement_decoder(
-      new test::FakeDecodeFromFile(std::move(replacement_file), 48000, false));
-  test::NetEqTest::ExtDecoderMap ext_codecs;
-  ext_codecs[kReplacementPt] = {replacement_decoder.get(),
-                                NetEqDecoder::kDecoderArbitrary,
-                                "replacement codec"};
+  test::NetEqTest::DecoderMap codecs = {
+      {kReplacementPt, SdpAudioFormat("l16", 48000, 1)}};
 
   std::unique_ptr<test::NetEqDelayAnalyzer> delay_cb(
       new test::NetEqDelayAnalyzer);
@@ -1735,8 +1774,8 @@ std::unique_ptr<test::NetEqStatsGetter> CreateNetEqTestAndRun(
   callbacks.post_insert_packet = neteq_stats_getter->delay_analyzer();
   callbacks.get_audio_callback = neteq_stats_getter.get();
 
-  test::NetEqTest test(config, codecs, ext_codecs, std::move(input),
-                       std::move(output), callbacks);
+  test::NetEqTest test(config, decoder_factory, codecs, nullptr,
+                       std::move(input), std::move(output), callbacks);
   test.Run();
   return neteq_stats_getter;
 }
@@ -1961,7 +2000,9 @@ void EventLogAnalyzer::CreateIceConnectivityCheckGraph(Plot* plot) {
           LineStyle::kNone, PointStyle::kHighlight);
     }
     float x = ToCallTimeSec(event.log_time_us());
-    float y = static_cast<float>(event.type);
+    constexpr int kIceCandidatePairEventTypeOffset =
+        static_cast<int>(IceCandidatePairConfigType::kNumValues);
+    float y = static_cast<float>(event.type) + kIceCandidatePairEventTypeOffset;
     checks_by_cp_id[event.candidate_pair_id].points.emplace_back(x, y);
   }
 
@@ -1975,6 +2016,37 @@ void EventLogAnalyzer::CreateIceConnectivityCheckGraph(Plot* plot) {
   plot->SetSuggestedYAxis(0, 4, "Numeric Connectivity State", kBottomMargin,
                           kTopMargin);
   plot->SetTitle("[IceEventLog] ICE connectivity checks");
+}
+
+void EventLogAnalyzer::CreateDtlsTransportStateGraph(Plot* plot) {
+  TimeSeries states("DTLS Transport State", LineStyle::kNone,
+                    PointStyle::kHighlight);
+  for (const auto& event : parsed_log_.dtls_transport_states()) {
+    float x = ToCallTimeSec(event.log_time_us());
+    float y = static_cast<float>(event.dtls_transport_state);
+    states.points.emplace_back(x, y);
+  }
+  plot->AppendTimeSeries(std::move(states));
+  plot->SetXAxis(ToCallTimeSec(begin_time_), call_duration_s_, "Time (s)",
+                 kLeftMargin, kRightMargin);
+  plot->SetSuggestedYAxis(0, static_cast<float>(DtlsTransportState::kNumValues),
+                          "Numeric Transport State", kBottomMargin, kTopMargin);
+  plot->SetTitle("DTLS Transport State");
+}
+
+void EventLogAnalyzer::CreateDtlsWritableStateGraph(Plot* plot) {
+  TimeSeries writable("DTLS Writable", LineStyle::kNone,
+                      PointStyle::kHighlight);
+  for (const auto& event : parsed_log_.dtls_writable_states()) {
+    float x = ToCallTimeSec(event.log_time_us());
+    float y = static_cast<float>(event.writable);
+    writable.points.emplace_back(x, y);
+  }
+  plot->AppendTimeSeries(std::move(writable));
+  plot->SetXAxis(ToCallTimeSec(begin_time_), call_duration_s_, "Time (s)",
+                 kLeftMargin, kRightMargin);
+  plot->SetSuggestedYAxis(0, 1, "Writable", kBottomMargin, kTopMargin);
+  plot->SetTitle("DTLS Writable State");
 }
 
 void EventLogAnalyzer::PrintNotifications(FILE* file) {

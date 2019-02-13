@@ -38,8 +38,21 @@ public:
     bool onKey(sk_app::Window::Key key, sk_app::Window::InputState state, uint32_t modifiers) override;
     bool onChar(SkUnichar c, uint32_t modifiers) override;
 
-    struct SkPaintFields {
+    struct SkFontFields {
         bool fTypeface = false;
+        bool fTextSize = false;
+        SkScalar fTextSizeRange[2] = { 0, 20 };
+        bool fTextScaleX = false;
+        bool fTextSkewX = false;
+        bool fHinting = false;
+        bool fEdging = false;
+        bool fSubpixel = false;
+        bool fForceAutoHinting = false;
+        bool fEmbeddedBitmaps = false;
+        bool fLinearMetrics = false;
+        bool fEmbolden = false;
+    };
+    struct SkPaintFields {
         bool fPathEffect = false;
         bool fShader = false;
         bool fMaskFilter = false;
@@ -47,16 +60,13 @@ public:
         bool fDrawLooper = false;
         bool fImageFilter = false;
 
-        bool fTextSize = false;
-        SkScalar fTextSizeRange[2] = { 0, 20 };
-        bool fTextScaleX = false;
-        bool fTextSkewX = false;
         bool fColor = false;
         bool fWidth = false;
         bool fMiterLimit = false;
         bool fBlendMode = false;
 
-        uint32_t fFlags = 0;
+        bool fAntiAlias = false;
+        bool fDither = false;
         enum class AntiAliasState {
             Alias,
             Normal,
@@ -64,18 +74,15 @@ public:
             AnalyticAAForced,
             DeltaAAEnabled,
             DeltaAAForced,
-        } fAntiAlias = AntiAliasState::Alias;
+        } fAntiAliasState = AntiAliasState::Alias;
         const bool fOriginalSkUseAnalyticAA = gSkUseAnalyticAA;
         const bool fOriginalSkForceAnalyticAA = gSkForceAnalyticAA;
         const bool fOriginalSkUseDeltaAA = gSkUseDeltaAA;
         const bool fOriginalSkForceDeltaAA = gSkForceDeltaAA;
 
-        bool fTextAlign = false;
         bool fCapType = false;
         bool fJoinType = false;
         bool fStyle = false;
-        bool fTextEncoding = false;
-        bool fHinting = false;
         bool fFilterQuality = false;
     };
 private:
@@ -138,7 +145,7 @@ private:
     // Color properties for slide rendering
     ColorMode              fColorMode;
     SkColorSpacePrimaries  fColorSpacePrimaries;
-    SkColorSpaceTransferFn fColorSpaceTransferFn;
+    skcms_TransferFunction fColorSpaceTransferFn;
 
     // transform data
     SkScalar               fZoomLevel;
@@ -175,6 +182,8 @@ private:
 
     SkPaint fPaint;
     SkPaintFields fPaintOverrides;
+    SkFont fFont;
+    SkFontFields fFontOverrides;
     bool fPixelGeometryOverrides = false;
 };
 

@@ -21,10 +21,12 @@ class MockDelayManager : public DelayManager {
  public:
   MockDelayManager(size_t max_packets_in_buffer,
                    int base_min_target_delay_ms,
+                   bool enable_rtx_handling,
                    DelayPeakDetector* peak_detector,
                    const TickTimer* tick_timer)
       : DelayManager(max_packets_in_buffer,
                      base_min_target_delay_ms,
+                     enable_rtx_handling,
                      peak_detector,
                      tick_timer) {}
   virtual ~MockDelayManager() { Die(); }
@@ -34,7 +36,7 @@ class MockDelayManager : public DelayManager {
                int(uint16_t sequence_number,
                    uint32_t timestamp,
                    int sample_rate_hz));
-  MOCK_METHOD1(CalculateTargetLevel, int(int iat_packets));
+  MOCK_METHOD2(CalculateTargetLevel, int(int iat_packets, bool reordered));
   MOCK_METHOD1(SetPacketAudioLength, int(int length_ms));
   MOCK_METHOD0(Reset, void());
   MOCK_CONST_METHOD0(PeakFound, bool());

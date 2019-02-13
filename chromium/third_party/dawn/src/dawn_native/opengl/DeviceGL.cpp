@@ -14,15 +14,13 @@
 
 #include "dawn_native/opengl/DeviceGL.h"
 
+#include "dawn_native/BackendConnection.h"
 #include "dawn_native/BindGroup.h"
 #include "dawn_native/BindGroupLayout.h"
-#include "dawn_native/OpenGLBackend.h"
 #include "dawn_native/RenderPassDescriptor.h"
-#include "dawn_native/opengl/BlendStateGL.h"
 #include "dawn_native/opengl/BufferGL.h"
 #include "dawn_native/opengl/CommandBufferGL.h"
 #include "dawn_native/opengl/ComputePipelineGL.h"
-#include "dawn_native/opengl/DepthStencilStateGL.h"
 #include "dawn_native/opengl/InputStateGL.h"
 #include "dawn_native/opengl/PipelineLayoutGL.h"
 #include "dawn_native/opengl/QueueGL.h"
@@ -34,37 +32,30 @@
 
 namespace dawn_native { namespace opengl {
 
-    dawnDevice CreateDevice(void* (*getProc)(const char*)) {
-        gladLoadGLLoader(reinterpret_cast<GLADloadproc>(getProc));
-
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_SCISSOR_TEST);
-        glEnable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
-
-        return reinterpret_cast<dawnDevice>(new Device);
+    Device::Device(AdapterBase* adapter) : DeviceBase(adapter) {
     }
 
-    // Device
+    Device::~Device() {
+        CheckPassedFences();
+        ASSERT(mFencesInFlight.empty());
 
-    Device::Device() {
-        CollectPCIInfo();
+        // Some operations might have been started since the last submit and waiting
+        // on a serial that doesn't have a corresponding fence enqueued. Force all
+        // operations to look as if they were completed (because they were).
+        mCompletedSerial = mLastSubmittedSerial + 1;
+        Tick();
     }
 
-    BindGroupBase* Device::CreateBindGroup(BindGroupBuilder* builder) {
-        return new BindGroup(builder);
+    ResultOrError<BindGroupBase*> Device::CreateBindGroupImpl(
+        const BindGroupDescriptor* descriptor) {
+        return new BindGroup(this, descriptor);
     }
     ResultOrError<BindGroupLayoutBase*> Device::CreateBindGroupLayoutImpl(
         const BindGroupLayoutDescriptor* descriptor) {
         return new BindGroupLayout(this, descriptor);
     }
-    BlendStateBase* Device::CreateBlendState(BlendStateBuilder* builder) {
-        return new BlendState(builder);
-    }
     ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return new Buffer(this, descriptor);
-    }
-    BufferViewBase* Device::CreateBufferView(BufferViewBuilder* builder) {
-        return new BufferView(builder);
     }
     CommandBufferBase* Device::CreateCommandBuffer(CommandBufferBuilder* builder) {
         return new CommandBuffer(builder);
@@ -72,9 +63,6 @@ namespace dawn_native { namespace opengl {
     ResultOrError<ComputePipelineBase*> Device::CreateComputePipelineImpl(
         const ComputePipelineDescriptor* descriptor) {
         return new ComputePipeline(this, descriptor);
-    }
-    DepthStencilStateBase* Device::CreateDepthStencilState(DepthStencilStateBuilder* builder) {
-        return new DepthStencilState(builder);
     }
     InputStateBase* Device::CreateInputState(InputStateBuilder* builder) {
         return new InputState(builder);
@@ -90,8 +78,9 @@ namespace dawn_native { namespace opengl {
         RenderPassDescriptorBuilder* builder) {
         return new RenderPassDescriptor(builder);
     }
-    RenderPipelineBase* Device::CreateRenderPipeline(RenderPipelineBuilder* builder) {
-        return new RenderPipeline(builder);
+    ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
+        const RenderPipelineDescriptor* descriptor) {
+        return new RenderPipeline(this, descriptor);
     }
     ResultOrError<SamplerBase*> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
         return new Sampler(this, descriptor);
@@ -112,15 +101,47 @@ namespace dawn_native { namespace opengl {
         return new TextureView(texture, descriptor);
     }
 
+    void Device::SubmitFenceSync() {
+        GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        mLastSubmittedSerial++;
+        mFencesInFlight.emplace(sync, mLastSubmittedSerial);
+    }
+
+    Serial Device::GetCompletedCommandSerial() const {
+        return mCompletedSerial;
+    }
+
+    Serial Device::GetLastSubmittedCommandSerial() const {
+        return mLastSubmittedSerial;
+    }
+
     void Device::TickImpl() {
+        CheckPassedFences();
     }
 
-    const dawn_native::PCIInfo& Device::GetPCIInfo() const {
-        return mPCIInfo;
-    }
+    void Device::CheckPassedFences() {
+        while (!mFencesInFlight.empty()) {
+            GLsync sync = mFencesInFlight.front().first;
+            Serial fenceSerial = mFencesInFlight.front().second;
 
-    void Device::CollectPCIInfo() {
-        mPCIInfo.name = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            GLint status = 0;
+            GLsizei length;
+            glGetSynciv(sync, GL_SYNC_CONDITION, sizeof(GLint), &length, &status);
+            ASSERT(length == 1);
+
+            // Fence are added in order, so we can stop searching as soon
+            // as we see one that's not ready.
+            if (!status) {
+                return;
+            }
+
+            glDeleteSync(sync);
+
+            mFencesInFlight.pop();
+
+            ASSERT(fenceSerial > mCompletedSerial);
+            mCompletedSerial = fenceSerial;
+        }
     }
 
 }}  // namespace dawn_native::opengl

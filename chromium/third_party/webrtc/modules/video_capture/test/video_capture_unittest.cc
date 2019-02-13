@@ -14,15 +14,16 @@
 #include <memory>
 #include <sstream>
 
+#include "absl/memory/memory.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_frame.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/utility/include/process_thread.h"
 #include "modules/video_capture/video_capture.h"
 #include "modules/video_capture/video_capture_factory.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/scoped_ref_ptr.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/frame_utils.h"
 #include "test/gtest.h"
@@ -366,8 +367,12 @@ class VideoCaptureExternalTest : public testing::Test {
            buffer->ChromaHeight() * buffer->StrideU());
     memset(buffer->MutableDataV(), 127,
            buffer->ChromaHeight() * buffer->StrideV());
-    test_frame_.reset(new webrtc::VideoFrame(buffer, webrtc::kVideoRotation_0,
-                                             0 /* timestamp_us */));
+    test_frame_ = absl::make_unique<webrtc::VideoFrame>(
+        webrtc::VideoFrame::Builder()
+            .set_video_frame_buffer(buffer)
+            .set_rotation(webrtc::kVideoRotation_0)
+            .set_timestamp_us(0)
+            .build());
 
     SleepMs(1);  // Wait 1ms so that two tests can't have the same timestamp.
 

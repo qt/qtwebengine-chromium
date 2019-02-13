@@ -19,6 +19,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   ccp_pass.h
   cfg_cleanup_pass.h
   cfg.h
+  code_sink.h
   combine_access_chains.h
   common_uniform_elim_pass.h
   compact_ids_pass.h
@@ -99,6 +100,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   type_manager.h
   types.h
   unify_const_pass.h
+  upgrade_memory_model.h
   value_number_table.h
   vector_dce.h
   workaround1209.h
@@ -110,6 +112,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   ccp_pass.cpp
   cfg_cleanup_pass.cpp
   cfg.cpp
+  code_sink.cpp
   combine_access_chains.cpp
   common_uniform_elim_pass.cpp
   compact_ids_pass.cpp
@@ -186,6 +189,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   type_manager.cpp
   types.cpp
   unify_const_pass.cpp
+  upgrade_memory_model.cpp
   value_number_table.cpp
   vector_dce.cpp
   workaround1209.cpp

@@ -660,13 +660,19 @@ static int saveCursorKey(BtCursor *pCur){
     /* Only the rowid is required for a table btree */
     pCur->nKey = sqlite3BtreeIntegerKey(pCur);
   }else{
-    /* For an index btree, save the complete key content */
+    /* For an index btree, save the complete key content. It is possible
+    ** that the current key is corrupt. In that case, it is possible that
+    ** the sqlite3VdbeRecordUnpack() function may overread the buffer by
+    ** up to the size of 1 varint plus 1 8-byte value when the cursor
+    ** position is restored. Hence the 17 bytes of padding allocated
+    ** below. */
     void *pKey;
     pCur->nKey = sqlite3BtreePayloadSize(pCur);
-    pKey = sqlite3Malloc( pCur->nKey );
+    pKey = sqlite3Malloc( pCur->nKey + 9 + 8 );
     if( pKey ){
       rc = sqlite3BtreePayload(pCur, 0, (int)pCur->nKey, pKey);
       if( rc==SQLITE_OK ){
+        memset(((u8*)pKey)+pCur->nKey, 0, 9+8);
         pCur->pKey = pKey;
       }else{
         sqlite3_free(pKey);
@@ -1061,7 +1067,7 @@ static int ptrmapGet(BtShared *pBt, Pgno key, u8 *pEType, Pgno *pPgno){
 #else /* if defined SQLITE_OMIT_AUTOVACUUM */
   #define ptrmapPut(w,x,y,z,rc)
   #define ptrmapGet(w,x,y,z) SQLITE_OK
-  #define ptrmapPutOvflPtr(x, y, rc)
+  #define ptrmapPutOvflPtr(x, y, z, rc)
 #endif
 
 /*
@@ -1354,18 +1360,20 @@ static u16 cellSize(MemPage *pPage, int iCell){
 
 #ifndef SQLITE_OMIT_AUTOVACUUM
 /*
-** If the cell pCell, part of page pPage contains a pointer
-** to an overflow page, insert an entry into the pointer-map
-** for the overflow page.
+** The cell pCell is currently part of page pSrc but will ultimately be part
+** of pPage.  (pSrc and pPager are often the same.)  If pCell contains a
+** pointer to an overflow page, insert an entry into the pointer-map for
+** the overflow page that will be valid after pCell has been moved to pPage.
 */
-static void ptrmapPutOvflPtr(MemPage *pPage, u8 *pCell, int *pRC){
+static void ptrmapPutOvflPtr(MemPage *pPage, MemPage *pSrc, u8 *pCell, int *pRC){
   CellInfo info;
   if( *pRC ) return;
   assert( pCell!=0 );
   pPage->xParseCell(pPage, pCell, &info);
   if( info.nLocal<info.nPayload ){
     Pgno ovfl;
-    if( SQLITE_WITHIN(pPage->aDataEnd, pCell, pCell+info.nLocal) ){
+    if( SQLITE_WITHIN(pSrc->aDataEnd, pCell, pCell+info.nLocal) ){
+      testcase( pSrc!=pPage );
       *pRC = SQLITE_CORRUPT_BKPT;
       return;
     }
@@ -1424,18 +1432,14 @@ static int defragmentPage(MemPage *pPage, int nMaxFrag){
   ** reconstruct the entire page.  */
   if( (int)data[hdr+7]<=nMaxFrag ){
     int iFree = get2byte(&data[hdr+1]);
+
+    /* If the initial freeblock offset were out of bounds, that would
+    ** have been detected by btreeInitPage() when it was computing the
+    ** number of free bytes on the page. */
+    assert( iFree<=usableSize-4 );
     if( iFree ){
       int iFree2 = get2byte(&data[iFree]);
-
-      /* pageFindSlot() has already verified that free blocks are sorted
-      ** in order of offset within the page, and that no block extends
-      ** past the end of the page. Provided the two free slots do not
-      ** overlap, this guarantees that the memmove() calls below will not
-      ** overwrite the usableSize byte buffer, even if the database page
-      ** is corrupt.  */
-      assert( iFree2==0 || iFree2>iFree );
-      assert( iFree+get2byte(&data[iFree+2]) <= usableSize );
-      assert( iFree2==0 || iFree2+get2byte(&data[iFree2+2]) <= usableSize );
+      if( iFree2>usableSize-4 ) return SQLITE_CORRUPT_PAGE(pPage);
 
       if( 0==iFree2 || (data[iFree2]==0 && data[iFree2+1]==0) ){
         u8 *pEnd = &data[cellOffset + nCell*2];
@@ -1447,9 +1451,9 @@ static int defragmentPage(MemPage *pPage, int nMaxFrag){
           return SQLITE_CORRUPT_PAGE(pPage);
         }
         if( iFree2 ){
-          assert( iFree+sz<=iFree2 ); /* Verified by pageFindSlot() */
+          if( iFree+sz>iFree2 ) return SQLITE_CORRUPT_PAGE(pPage);
           sz2 = get2byte(&data[iFree2+2]);
-          assert( iFree+sz+sz2+iFree2-(iFree+sz) <= usableSize );
+          if( iFree2+sz2 > usableSize ) return SQLITE_CORRUPT_PAGE(pPage);
           memmove(&data[iFree+sz+sz2], &data[iFree+sz], iFree2-(iFree+sz));
           sz += sz2;
         }
@@ -2993,46 +2997,6 @@ static int newDatabase(BtShared*);
 
 
 /*
-** Change the 'auto-vacuum-slack-pages' property of the database. If auto vacuum
-** is enabled, this is the number of chunks of slack to allow before
-** automatically running an incremental vacuum.
-*/
-int sqlite3BtreeSetAutoVacuumSlackPages(Btree *p, int autoVacuumSlack){
-#ifdef SQLITE_OMIT_AUTOVACUUM
-  return SQLITE_READONLY;
-#else
-  BtShared *pBt = p->pBt;
-  int rc = SQLITE_OK;
-  u8 avs = (u8)autoVacuumSlack;
-  if( autoVacuumSlack>avs ){
-    avs = 0xFF;
-  }
-
-  sqlite3BtreeEnter(p);
-  pBt->autoVacuumSlack = avs;
-  sqlite3BtreeLeave(p);
-  return rc;
-#endif
-}
-
-/*
-** Return the value of the 'auto-vacuum-slack-pages' property.
-*/
-int sqlite3BtreeGetAutoVacuumSlackPages(Btree *p){
-#ifdef SQLITE_OMIT_AUTOVACUUM
-  return 0;
-#else
-  int rc = 0;
-  sqlite3BtreeEnter(p);
-  if( p->pBt->autoVacuum!=0 ){
-    rc = p->pBt->autoVacuumSlack;
-  }
-  sqlite3BtreeLeave(p);
-  return rc;
-#endif
-}
-
-/*
 ** Get a reference to pPage1 of the database file.  This will
 ** also acquire a readlock on that file.
 **
@@ -3044,9 +3008,9 @@ int sqlite3BtreeGetAutoVacuumSlackPages(Btree *p){
 static int lockBtree(BtShared *pBt){
   int rc;              /* Result code from subfunctions */
   MemPage *pPage1;     /* Page 1 of the database file */
-  int nPage;           /* Number of pages in the database */
-  int nPageFile = 0;   /* Number of pages in the database file */
-  int nPageHeader;     /* Number of pages in the database according to hdr */
+  u32 nPage;           /* Number of pages in the database */
+  u32 nPageFile = 0;   /* Number of pages in the database file */
+  u32 nPageHeader;     /* Number of pages in the database according to hdr */
 
   assert( sqlite3_mutex_held(pBt->mutex) );
   assert( pBt->pPage1==0 );
@@ -3059,7 +3023,7 @@ static int lockBtree(BtShared *pBt){
   ** a valid database file.
   */
   nPage = nPageHeader = get4byte(28+(u8*)pPage1->aData);
-  sqlite3PagerPagecount(pBt->pPager, &nPageFile);
+  sqlite3PagerPagecount(pBt->pPager, (int*)&nPageFile);
   if( nPage==0 || memcmp(24+(u8*)pPage1->aData, 92+(u8*)pPage1->aData,4)!=0 ){
     nPage = nPageFile;
   }
@@ -3530,7 +3494,7 @@ static int setChildPtrmaps(MemPage *pPage){
   for(i=0; i<nCell; i++){
     u8 *pCell = findCell(pPage, i);
 
-    ptrmapPutOvflPtr(pPage, pCell, &rc);
+    ptrmapPutOvflPtr(pPage, pPage, pCell, &rc);
 
     if( !pPage->leaf ){
       Pgno childPgno = get4byte(pCell);
@@ -3881,27 +3845,13 @@ int sqlite3BtreeIncrVacuum(Btree *p){
 */
 static int autoVacuumCommit(BtShared *pBt){
   int rc = SQLITE_OK;
-  int bShouldVacuum = pBt->autoVacuum && !pBt->incrVacuum;
   Pager *pPager = pBt->pPager;
   VVA_ONLY( int nRef = sqlite3PagerRefcount(pPager); )
 
   assert( sqlite3_mutex_held(pBt->mutex) );
   invalidateAllOverflowCache(pBt);
   assert(pBt->autoVacuum);
-  if( bShouldVacuum && pBt->autoVacuumSlack ){
-    Pgno nOrig;        /* Database size before freeing */
-    Pgno nFree;        /* Number of pages on the freelist initially */
-
-    nOrig = btreePagecount(pBt);
-    nFree = get4byte(&pBt->pPage1->aData[36]);
-    bShouldVacuum =
-        (nOrig-nFree-1)/pBt->autoVacuumSlack < (nOrig-1)/pBt->autoVacuumSlack;
-    /* TODO: When integrating this test with the following code, contrive to
-    ** trim to the integral chunk boundary, rather than trimming the entire free
-    ** list.
-    */
-  }
-  if( bShouldVacuum ){
+  if( !pBt->incrVacuum ){
     Pgno nFin;         /* Number of pages in database after autovacuuming */
     Pgno nFree;        /* Number of pages on the freelist initially */
     Pgno iFree;        /* The next page to be freed */
@@ -5524,7 +5474,7 @@ int sqlite3BtreeMovetoUnpacked(
           testcase( nCell==0 );  /* Invalid key size:  0x80 0x80 0x00 */
           testcase( nCell==1 );  /* Invalid key size:  0x80 0x80 0x01 */
           testcase( nCell==2 );  /* Minimum legal index key size */
-          if( nCell<2 ){
+          if( nCell<2 || nCell/pCur->pBt->usableSize>pCur->pBt->nPage ){
             rc = SQLITE_CORRUPT_PAGE(pPage);
             goto moveto_finish;
           }
@@ -6713,9 +6663,16 @@ static void insertCell(
     assert( idx >= pPage->cellOffset+2*pPage->nCell+2 || CORRUPT_DB );
     assert( idx+sz <= (int)pPage->pBt->usableSize );
     pPage->nFree -= (u16)(2 + sz);
-    memcpy(&data[idx], pCell, sz);
     if( iChild ){
+      /* In a corrupt database where an entry in the cell index section of
+      ** a btree page has a value of 3 or less, the pCell value might point
+      ** as many as 4 bytes in front of the start of the aData buffer for
+      ** the source page.  Make sure this does not cause problems by not
+      ** reading the first 4 bytes */
+      memcpy(&data[idx+4], pCell+4, sz-4);
       put4byte(&data[idx], iChild);
+    }else{
+      memcpy(&data[idx], pCell, sz);
     }
     pIns = pPage->aCellIdx + i*2;
     memmove(pIns+2, pIns, 2*(pPage->nCell - i));
@@ -6729,7 +6686,7 @@ static void insertCell(
       /* The cell may contain a pointer to an overflow page. If so, write
       ** the entry for the overflow page into the pointer map.
       */
-      ptrmapPutOvflPtr(pPage, pCell, pRC);
+      ptrmapPutOvflPtr(pPage, pPage, pCell, pRC);
     }
 #endif
   }
@@ -6816,6 +6773,7 @@ static int rebuildPage(
   for(i=0; i<nCell; i++){
     u8 *pCell = apCell[i];
     if( SQLITE_WITHIN(pCell,aData,pEnd) ){
+      if( ((uptr)(pCell+szCell[i]))>(uptr)pEnd ) return SQLITE_CORRUPT_BKPT;
       pCell = &pTmp[pCell - aData];
     }
     pData -= szCell[i];
@@ -7110,8 +7068,7 @@ static int balance_quick(MemPage *pParent, MemPage *pPage, u8 *pSpace){
   assert( sqlite3PagerIswriteable(pParent->pDbPage) );
   assert( pPage->nOverflow==1 );
 
-  /* This error condition is now caught prior to reaching this function */
-  if( NEVER(pPage->nCell==0) ) return SQLITE_CORRUPT_BKPT;
+  if( pPage->nCell==0 ) return SQLITE_CORRUPT_BKPT;  /* dbfuzz001.test */
 
   /* Allocate a new page. This page will become the right-sibling of
   ** pPage. Make the parent page writable, so that the new divider cell
@@ -7145,7 +7102,7 @@ static int balance_quick(MemPage *pParent, MemPage *pPage, u8 *pSpace){
     if( ISAUTOVACUUM ){
       ptrmapPut(pBt, pgnoNew, PTRMAP_BTREE, pParent->pgno, &rc);
       if( szCell>pNew->minLocal ){
-        ptrmapPutOvflPtr(pNew, pCell, &rc);
+        ptrmapPutOvflPtr(pNew, pNew, pCell, &rc);
       }
     }
 
@@ -7367,10 +7324,6 @@ static int balance_nonroot(
   pBt = pParent->pBt;
   assert( sqlite3_mutex_held(pBt->mutex) );
   assert( sqlite3PagerIswriteable(pParent->pDbPage) );
-
-#if 0
-  TRACE(("BALANCE: begin page %d child of %d\n", pPage->pgno, pParent->pgno));
-#endif
 
   /* At this point pParent may have at most one overflow cell. And if
   ** this overflow cell is present, it must be the cell with
@@ -7837,7 +7790,8 @@ static int balance_nonroot(
   ** populated, not here.
   */
   if( ISAUTOVACUUM ){
-    MemPage *pNew = apNew[0];
+    MemPage *pOld;
+    MemPage *pNew = pOld = apNew[0];
     u8 *aOld = pNew->aData;
     int cntOldNext = pNew->nCell + pNew->nOverflow;
     int usableSize = pBt->usableSize;
@@ -7847,7 +7801,7 @@ static int balance_nonroot(
     for(i=0; i<b.nCell; i++){
       u8 *pCell = b.apCell[i];
       if( i==cntOldNext ){
-        MemPage *pOld = (++iOld)<nNew ? apNew[iOld] : apOld[iOld];
+        pOld = (++iOld)<nNew ? apNew[iOld] : apOld[iOld];
         cntOldNext += pOld->nCell + pOld->nOverflow + !leafData;
         aOld = pOld->aData;
       }
@@ -7870,7 +7824,7 @@ static int balance_nonroot(
           ptrmapPut(pBt, get4byte(pCell), PTRMAP_BTREE, pNew->pgno, &rc);
         }
         if( cachedCellSize(&b,i)>pNew->minLocal ){
-          ptrmapPutOvflPtr(pNew, pCell, &rc);
+          ptrmapPutOvflPtr(pNew, pOld, pCell, &rc);
         }
         if( rc ) goto balance_cleanup;
       }
@@ -8689,6 +8643,7 @@ int sqlite3BtreeDelete(BtCursor *pCur, u8 flags){
   if( bPreserve ){
     if( !pPage->leaf
      || (pPage->nFree+cellSizePtr(pPage,pCell)+2)>(int)(pBt->usableSize*2/3)
+     || pPage->nCell==1  /* See dbfuzz001.test for a test case */
     ){
       /* A b-tree rebalance will be required after deleting this entry.
       ** Save the cursor key.  */
@@ -9467,7 +9422,7 @@ static void checkList(
     }
     pOvflData = (unsigned char *)sqlite3PagerGetData(pOvflPage);
     if( isFreeList ){
-      int n = get4byte(&pOvflData[4]);
+      u32 n = (u32)get4byte(&pOvflData[4]);
 #ifndef SQLITE_OMIT_AUTOVACUUM
       if( pCheck->pBt->autoVacuum ){
         checkPtrmap(pCheck, iPage, PTRMAP_FREEPAGE, 0);
@@ -9478,7 +9433,7 @@ static void checkList(
            "freelist leaf count too big on page %d", iPage);
         N--;
       }else{
-        for(i=0; i<n; i++){
+        for(i=0; i<(int)n; i++){
           Pgno iFreePage = get4byte(&pOvflData[8+i*4]);
 #ifndef SQLITE_OMIT_AUTOVACUUM
           if( pCheck->pBt->autoVacuum ){

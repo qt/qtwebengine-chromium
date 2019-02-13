@@ -4,12 +4,13 @@ set -e
 echo ""
 echo "Downloading latest copy of test data"
 echo ""
-LATEST_ZIP="$(gsutil ls gs://perfetto | sort | grep test-data | tail -n 1)"
-gsutil cp $LATEST_ZIP /tmp/latest-test-data.zip
+LATEST_ZIP="$(cat tools/install-build-deps  | grep -o 'https://.*/perfetto/test-data-.*.zip')"
+curl -o /tmp/latest-test-data.zip $LATEST_ZIP
 
 echo ""
 echo "Extracting test data to temp folder"
 echo ""
+rm -rf /tmp/latest-test-data 2>/dev/null
 unzip /tmp/latest-test-data.zip -d /tmp/latest-test-data
 
 echo ""
@@ -21,7 +22,10 @@ echo ""
 echo "Zipping file back up"
 echo ""
 NEW_TEST_DATA="test-data-$(date +%Y%m%d).zip"
-zip -r /tmp/$NEW_TEST_DATA /tmp/latest-test-data
+CWD="$(pwd)"
+cd /tmp/latest-test-data
+zip -r /tmp/$NEW_TEST_DATA *
+cd $CWD
 
 echo ""
 echo "Uploading file to Google Cloud"
@@ -34,8 +38,12 @@ echo ""
 gsutil acl ch -u AllUsers:R gs://perfetto/$NEW_TEST_DATA
 
 echo ""
-echo "sha1sum of file $NEW_TEST_DATA is"
-echo $(sha1sum /tmp/$NEW_TEST_DATA)
+echo "SHA1 of file $NEW_TEST_DATA is"
+if which shasum; then
+echo $(shasum /tmp/$NEW_TEST_DATA)  # Mac OS
+else
+echo $(sha1sum /tmp/$NEW_TEST_DATA)  # Linux
+fi
 
 echo ""
 echo "Cleaning up leftover files"

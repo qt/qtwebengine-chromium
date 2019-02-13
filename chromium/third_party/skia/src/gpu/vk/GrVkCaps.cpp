@@ -30,6 +30,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     fDiscardRenderTargetSupport = true;
     fReuseScratchTextures = true; //TODO: figure this out
     fGpuTracingSupport = false; //TODO: figure this out
+    fCompressedTexSubImageSupport = true;
     fOversizedStencilSupport = false; //TODO: figure this out
     fInstanceAttribSupport = true;
 
@@ -158,8 +159,8 @@ bool GrVkCaps::canCopyAsDraw(GrPixelConfig dstConfig, bool dstIsRenderable,
     return true;
 }
 
-bool GrVkCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                              const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+bool GrVkCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
+                                const SkIRect& srcRect, const SkIPoint& dstPoint) const {
     GrSurfaceOrigin dstOrigin = dst->origin();
     GrSurfaceOrigin srcOrigin = src->origin();
 
@@ -176,9 +177,21 @@ bool GrVkCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* s
     int dstSampleCnt = 0;
     int srcSampleCnt = 0;
     if (const GrRenderTargetProxy* rtProxy = dst->asRenderTargetProxy()) {
+        // Copying to or from render targets that wrap a secondary command buffer is not allowed
+        // since they would require us to know the VkImage, which we don't have, as well as need us
+        // to stop and start the VkRenderPass which we don't have access to.
+        if (rtProxy->wrapsVkSecondaryCB()) {
+            return false;
+        }
         dstSampleCnt = rtProxy->numColorSamples();
     }
     if (const GrRenderTargetProxy* rtProxy = src->asRenderTargetProxy()) {
+        // Copying to or from render targets that wrap a secondary command buffer is not allowed
+        // since they would require us to know the VkImage, which we don't have, as well as need us
+        // to stop and start the VkRenderPass which we don't have access to.
+        if (rtProxy->wrapsVkSecondaryCB()) {
+            return false;
+        }
         srcSampleCnt = rtProxy->numColorSamples();
     }
     SkASSERT((dstSampleCnt > 0) == SkToBool(dst->asRenderTargetProxy()));
@@ -192,6 +205,27 @@ bool GrVkCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* s
                                   srcConfig, srcSampleCnt, srcOrigin) ||
            this->canCopyAsDraw(dstConfig, dstSampleCnt > 0,
                                srcConfig, SkToBool(src->asTextureProxy()));
+}
+
+template<typename T> T* get_extension_feature_struct(const VkPhysicalDeviceFeatures2& features,
+                                                     VkStructureType type) {
+    // All Vulkan structs that could be part of the features chain will start with the
+    // structure type followed by the pNext pointer. We cast to the CommonVulkanHeader
+    // so we can get access to the pNext for the next struct.
+    struct CommonVulkanHeader {
+        VkStructureType sType;
+        void*           pNext;
+    };
+
+    void* pNext = features.pNext;
+    while (pNext) {
+        CommonVulkanHeader* header = static_cast<CommonVulkanHeader*>(pNext);
+        if (header->sType == type) {
+            return static_cast<T*>(pNext);
+        }
+        pNext = header->pNext;
+    }
+    return nullptr;
 }
 
 void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
@@ -263,6 +297,24 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
     }
 #endif
 
+    auto ycbcrFeatures =
+            get_extension_feature_struct<VkPhysicalDeviceSamplerYcbcrConversionFeatures>(
+                    features,
+                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES);
+    if (ycbcrFeatures && ycbcrFeatures->samplerYcbcrConversion &&
+        fSupportsAndroidHWBExternalMemory &&
+        (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
+         (extensions.hasExtension(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME, 1) &&
+          this->supportsMaintenance1() &&
+          this->supportsBindMemory2() &&
+          this->supportsMemoryRequirements2() &&
+          this->supportsPhysicalDeviceProperties2()))) {
+        fSupportsYcbcrConversion = true;
+    }
+    // We always push back the default GrVkYcbcrConversionInfo so that the case of no conversion
+    // will return a key of 0.
+    fYcbcrInfos.push_back(GrVkYcbcrConversionInfo());
+
     this->initGrCaps(vkInterface, physDev, properties, memoryProperties, features, extensions);
     this->initShaderCaps(properties, features);
 
@@ -303,10 +355,6 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
 void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDeviceProperties& properties) {
     if (kQualcomm_VkVendor == properties.vendorID) {
         fMustDoCopiesFromOrigin = true;
-    }
-
-    if (kNvidia_VkVendor == properties.vendorID) {
-        fMustSubmitCommandsBeforeCopyOp = true;
     }
 
 #if defined(SK_BUILD_FOR_WIN)
@@ -376,27 +424,6 @@ int get_max_sample_count(VkSampleCountFlags flags) {
     return 64;
 }
 
-template<typename T> T* get_extension_feature_struct(const VkPhysicalDeviceFeatures2& features,
-                                                     VkStructureType type) {
-    // All Vulkan structs that could be part of the features chain will start with the
-    // structure type followed by the pNext pointer. We cast to the CommonVulkanHeader
-    // so we can get access to the pNext for the next struct.
-    struct CommonVulkanHeader {
-        VkStructureType sType;
-        void*           pNext;
-    };
-
-    void* pNext = features.pNext;
-    while (pNext) {
-        CommonVulkanHeader* header = static_cast<CommonVulkanHeader*>(pNext);
-        if (header->sType == type) {
-            return static_cast<T*>(pNext);
-        }
-        pNext = header->pNext;
-    }
-    return nullptr;
-}
-
 void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
                           VkPhysicalDevice physDev,
                           const VkPhysicalDeviceProperties& properties,
@@ -431,7 +458,6 @@ void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
     fMapBufferFlags = kCanMap_MapFlag | kSubset_MapFlag;
 
     fOversizedStencilSupport = true;
-    fSampleShadingSupport = features.features.sampleRateShading;
 
     if (extensions.hasExtension(VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, 2) &&
         this->supportsPhysicalDeviceProperties2()) {
@@ -680,155 +706,138 @@ int GrVkCaps::maxRenderTargetSampleCount(GrPixelConfig config) const {
     return table[table.count() - 1];
 }
 
-bool GrVkCaps::surfaceSupportsWritePixels(const GrSurface* surface) const {
+bool GrVkCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
     if (auto rt = surface->asRenderTarget()) {
         return rt->numColorSamples() <= 1 && SkToBool(surface->asTexture());
     }
     return true;
 }
 
-bool validate_image_info(VkFormat format, SkColorType ct, GrPixelConfig* config) {
-    *config = kUnknown_GrPixelConfig;
+GrPixelConfig validate_image_info(VkFormat format, SkColorType ct, bool hasYcbcrConversion) {
+    if (format == VK_FORMAT_UNDEFINED) {
+        // If the format is undefined then it is only valid as an external image which requires that
+        // we have a valid VkYcbcrConversion.
+        if (hasYcbcrConversion) {
+            // We don't actually care what the color type or config are since we won't use those
+            // values for external textures, but since our code requires setting a config here
+            // just default it to RGBA.
+            return kRGBA_8888_GrPixelConfig;
+        } else {
+            return kUnknown_GrPixelConfig;
+        }
+    }
+
+    if (hasYcbcrConversion) {
+        // We only support having a ycbcr conversion for external images.
+        return kUnknown_GrPixelConfig;
+    }
 
     switch (ct) {
         case kUnknown_SkColorType:
-            return false;
+            break;
         case kAlpha_8_SkColorType:
             if (VK_FORMAT_R8_UNORM == format) {
-                *config = kAlpha_8_as_Red_GrPixelConfig;
+                return kAlpha_8_as_Red_GrPixelConfig;
             }
             break;
         case kRGB_565_SkColorType:
             if (VK_FORMAT_R5G6B5_UNORM_PACK16 == format) {
-                *config = kRGB_565_GrPixelConfig;
+                return kRGB_565_GrPixelConfig;
             }
             break;
         case kARGB_4444_SkColorType:
             if (VK_FORMAT_B4G4R4A4_UNORM_PACK16 == format) {
-                *config = kRGBA_4444_GrPixelConfig;
+                return kRGBA_4444_GrPixelConfig;
             }
             break;
         case kRGBA_8888_SkColorType:
             if (VK_FORMAT_R8G8B8A8_UNORM == format) {
-                *config = kRGBA_8888_GrPixelConfig;
+                return kRGBA_8888_GrPixelConfig;
             } else if (VK_FORMAT_R8G8B8A8_SRGB == format) {
-                *config = kSRGBA_8888_GrPixelConfig;
+                return kSRGBA_8888_GrPixelConfig;
             }
             break;
         case kRGB_888x_SkColorType:
             if (VK_FORMAT_R8G8B8_UNORM == format) {
-                *config = kRGB_888_GrPixelConfig;
+                return kRGB_888_GrPixelConfig;
             }
             break;
         case kBGRA_8888_SkColorType:
             if (VK_FORMAT_B8G8R8A8_UNORM == format) {
-                *config = kBGRA_8888_GrPixelConfig;
+                return kBGRA_8888_GrPixelConfig;
             } else if (VK_FORMAT_B8G8R8A8_SRGB == format) {
-                *config = kSBGRA_8888_GrPixelConfig;
+                return kSBGRA_8888_GrPixelConfig;
             }
             break;
         case kRGBA_1010102_SkColorType:
             if (VK_FORMAT_A2B10G10R10_UNORM_PACK32 == format) {
-                *config = kRGBA_1010102_GrPixelConfig;
+                return kRGBA_1010102_GrPixelConfig;
             }
             break;
         case kRGB_101010x_SkColorType:
-            return false;
+            return kUnknown_GrPixelConfig;
         case kGray_8_SkColorType:
             if (VK_FORMAT_R8_UNORM == format) {
-                *config = kGray_8_as_Red_GrPixelConfig;
+                return kGray_8_as_Red_GrPixelConfig;
             }
             break;
         case kRGBA_F16_SkColorType:
             if (VK_FORMAT_R16G16B16A16_SFLOAT == format) {
-                *config = kRGBA_half_GrPixelConfig;
+                return kRGBA_half_GrPixelConfig;
             }
             break;
         case kRGBA_F32_SkColorType:
             if (VK_FORMAT_R32G32B32A32_SFLOAT == format) {
-                *config = kRGBA_float_GrPixelConfig;
+                return kRGBA_float_GrPixelConfig;
             }
             break;
     }
 
-    return kUnknown_GrPixelConfig != *config;
+    return kUnknown_GrPixelConfig;
 }
 
-bool GrVkCaps::validateBackendTexture(const GrBackendTexture& tex, SkColorType ct,
-                                      GrPixelConfig* config) const {
-    GrVkImageInfo imageInfo;
-    if (!tex.getVkImageInfo(&imageInfo)) {
-        return false;
-    }
-
-    return validate_image_info(imageInfo.fFormat, ct, config);
-}
-
-bool GrVkCaps::validateBackendRenderTarget(const GrBackendRenderTarget& rt, SkColorType ct,
-                                           GrPixelConfig* config) const {
+GrPixelConfig GrVkCaps::validateBackendRenderTarget(const GrBackendRenderTarget& rt,
+                                                    SkColorType ct) const {
     GrVkImageInfo imageInfo;
     if (!rt.getVkImageInfo(&imageInfo)) {
-        return false;
+        return kUnknown_GrPixelConfig;
     }
-
-    return validate_image_info(imageInfo.fFormat, ct, config);
+    return validate_image_info(imageInfo.fFormat, ct, imageInfo.fYcbcrConversionInfo.isValid());
 }
 
-bool GrVkCaps::getConfigFromBackendFormat(const GrBackendFormat& format, SkColorType ct,
-                                          GrPixelConfig* config) const {
+GrPixelConfig GrVkCaps::getConfigFromBackendFormat(const GrBackendFormat& format,
+                                                   SkColorType ct) const {
     const VkFormat* vkFormat = format.getVkFormat();
-    if (!vkFormat) {
-        return false;
+    const GrVkYcbcrConversionInfo* ycbcrInfo = format.getVkYcbcrConversionInfo();
+    if (!vkFormat || !ycbcrInfo) {
+        return kUnknown_GrPixelConfig;
     }
-    return validate_image_info(*vkFormat, ct, config);
+    return validate_image_info(*vkFormat, ct, ycbcrInfo->isValid());
 }
 
-static bool get_yuva_config(VkFormat vkFormat, GrPixelConfig* config) {
-    *config = kUnknown_GrPixelConfig;
-
+static GrPixelConfig get_yuva_config(VkFormat vkFormat) {
     switch (vkFormat) {
-    case VK_FORMAT_R8_UNORM:
-        *config = kAlpha_8_as_Red_GrPixelConfig;
-        break;
-    case VK_FORMAT_R8G8B8A8_UNORM:
-        *config = kRGBA_8888_GrPixelConfig;
-        break;
-    case VK_FORMAT_R8G8B8_UNORM:
-        *config = kRGB_888_GrPixelConfig;
-        break;
-    case VK_FORMAT_B8G8R8A8_UNORM:
-        *config = kBGRA_8888_GrPixelConfig;
-        break;
-    default:
-        return false;
+        case VK_FORMAT_R8_UNORM:
+            return kAlpha_8_as_Red_GrPixelConfig;
+        case VK_FORMAT_R8G8B8A8_UNORM:
+            return kRGBA_8888_GrPixelConfig;
+        case VK_FORMAT_R8G8B8_UNORM:
+            return kRGB_888_GrPixelConfig;
+        case VK_FORMAT_R8G8_UNORM:
+            return kRG_88_GrPixelConfig;
+        case VK_FORMAT_B8G8R8A8_UNORM:
+            return kBGRA_8888_GrPixelConfig;
+        default:
+            return kUnknown_GrPixelConfig;
     }
-
-    return true;
 }
 
-bool GrVkCaps::getYUVAConfigFromBackendTexture(const GrBackendTexture& tex,
-                                               GrPixelConfig* config) const {
-    GrVkImageInfo imageInfo;
-    if (!tex.getVkImageInfo(&imageInfo)) {
-        return false;
-    }
-    return get_yuva_config(imageInfo.fFormat, config);
-}
-
-bool GrVkCaps::getYUVAConfigFromBackendFormat(const GrBackendFormat& format,
-                                              GrPixelConfig* config) const {
+GrPixelConfig GrVkCaps::getYUVAConfigFromBackendFormat(const GrBackendFormat& format) const {
     const VkFormat* vkFormat = format.getVkFormat();
     if (!vkFormat) {
-        return false;
+        return kUnknown_GrPixelConfig;
     }
-    return get_yuva_config(*vkFormat, config);
-}
-
-GrBackendFormat GrVkCaps::onCreateFormatFromBackendTexture(
-        const GrBackendTexture& backendTex) const {
-    GrVkImageInfo vkInfo;
-    SkAssertResult(backendTex.getVkImageInfo(&vkInfo));
-    return GrBackendFormat::MakeVk(vkInfo.fFormat);
+    return get_yuva_config(*vkFormat);
 }
 
 GrBackendFormat GrVkCaps::getBackendFormatFromGrColorType(GrColorType ct,

@@ -18,10 +18,7 @@ import("../../../gn/proto_library.gni")
 
 # Common protos used by both the ":minimal_lite" target (for the service) and
 # the generic ":lite" target
-proto_sources_minimal = [
-  "clock_snapshot.proto",
-  "trace_stats.proto",
-]
+proto_sources_minimal = [ "clock_snapshot.proto" ]
 
 proto_sources_trusted = [ "trusted_packet.proto" ]
 
@@ -35,9 +32,11 @@ proto_sources = [
 protozero_library("zero") {
   deps = [
     "../config:zero",
+    "android:zero",
     "chrome:zero",
     "filesystem:zero",
     "ftrace:zero",
+    "power:zero",
     "profiling:zero",
     "ps:zero",
     "sys_stats:zero",
@@ -54,9 +53,11 @@ proto_library("lite") {
   deps = [
     ":minimal_lite",
     "../config:lite",
+    "android:lite",
     "chrome:lite",
     "filesystem:lite",
     "ftrace:lite",
+    "power:lite",
     "profiling:lite",
     "ps:lite",
     "sys_stats:lite",

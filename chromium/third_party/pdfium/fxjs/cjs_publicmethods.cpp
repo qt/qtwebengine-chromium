@@ -277,7 +277,7 @@ bool CJS_PublicMethods::IsNumber(const WideString& str) {
       if (c != L'+' && c != L'-')
         return false;
       bKXJS = true;
-    } else if (!std::iswdigit(c)) {
+    } else if (!FXSYS_IsDecimalDigit(c)) {
       return false;
     }
     p++;
@@ -289,7 +289,7 @@ bool CJS_PublicMethods::IsNumber(const WideString& str) {
 bool CJS_PublicMethods::MaskSatisfied(wchar_t c_Change, wchar_t c_Mask) {
   switch (c_Mask) {
     case L'9':
-      return !!std::iswdigit(c_Change);
+      return !!FXSYS_IsDecimalDigit(c_Change);
     case L'A':
       return isascii(c_Change) && isalpha(c_Change);
     case L'O':
@@ -360,7 +360,7 @@ double CJS_PublicMethods::ParseDate(const WideString& value,
       break;
 
     wchar_t c = value[i];
-    if (std::iswdigit(c)) {
+    if (FXSYS_IsDecimalDigit(c)) {
       number[nIndex++] = FX_ParseStringInteger(value, i, &nSkip, 4);
       i += nSkip;
     } else {
@@ -585,7 +585,7 @@ CJS_Result CJS_PublicMethods::AFNumber_Format(
   CJS_EventHandler* pEvent =
       pRuntime->GetCurrentEventContext()->GetEventHandler();
   if (!pEvent->m_pValue)
-    return CJS_Result::Failure(L"No event handler");
+    return CJS_Result::Failure(WideString::FromASCII("No event handler"));
 
   WideString& Value = pEvent->Value();
   ByteString strValue = StrTrim(Value.ToDefANSI());
@@ -760,7 +760,7 @@ CJS_Result CJS_PublicMethods::AFNumber_Keystroke(
       continue;
     }
 
-    if (!std::iswdigit(wstrChange[i])) {
+    if (!FXSYS_IsDecimalDigit(wstrChange[i])) {
       pEvent->Rc() = false;
       return CJS_Result::Success();
     }
@@ -917,11 +917,11 @@ double CJS_PublicMethods::ParseDateAsGMT(const WideString& strValue) {
     }
   }
 
-  int nDay = FX_atof(wsArray[2].AsStringView());
-  int nHour = FX_atof(wsArray[3].AsStringView());
-  int nMin = FX_atof(wsArray[4].AsStringView());
-  int nSec = FX_atof(wsArray[5].AsStringView());
-  int nYear = FX_atof(wsArray[7].AsStringView());
+  int nDay = StringToFloat(wsArray[2].AsStringView());
+  int nHour = StringToFloat(wsArray[3].AsStringView());
+  int nMin = StringToFloat(wsArray[4].AsStringView());
+  int nSec = StringToFloat(wsArray[5].AsStringView());
+  int nYear = StringToFloat(wsArray[7].AsStringView());
   double dRet = FX_MakeDate(FX_MakeDay(nYear, nMonth - 1, nDay),
                             FX_MakeTime(nHour, nMin, nSec, 0));
   if (std::isnan(dRet))
@@ -935,8 +935,8 @@ CJS_Result CJS_PublicMethods::AFDate_KeystrokeEx(
     CJS_Runtime* pRuntime,
     const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1) {
-    return CJS_Result::Failure(
-        WideString(L"AFDate_KeystrokeEx's parameter size not correct"));
+    return CJS_Result::Failure(WideString::FromASCII(
+        "AFDate_KeystrokeEx's parameter size not correct"));
   }
 
   CJS_EventContext* pContext = pRuntime->GetCurrentEventContext();
@@ -1297,7 +1297,7 @@ CJS_Result CJS_PublicMethods::AFSimple_Calculate(
           WideString trimmed = pFormField->GetValue();
           trimmed.TrimRight();
           trimmed.TrimLeft();
-          dTemp = FX_atof(trimmed.AsStringView());
+          dTemp = StringToFloat(trimmed.AsStringView());
           break;
         }
         case FormFieldType::kPushButton:
@@ -1312,7 +1312,7 @@ CJS_Result CJS_PublicMethods::AFSimple_Calculate(
             WideString trimmed = pFormCtrl->GetExportValue();
             trimmed.TrimRight();
             trimmed.TrimLeft();
-            dTemp = FX_atof(trimmed.AsStringView());
+            dTemp = StringToFloat(trimmed.AsStringView());
             break;
           }
           break;
@@ -1321,7 +1321,7 @@ CJS_Result CJS_PublicMethods::AFSimple_Calculate(
             WideString trimmed = pFormField->GetValue();
             trimmed.TrimRight();
             trimmed.TrimLeft();
-            dTemp = FX_atof(trimmed.AsStringView());
+            dTemp = StringToFloat(trimmed.AsStringView());
           }
           break;
         default:
@@ -1419,7 +1419,7 @@ CJS_Result CJS_PublicMethods::AFExtractNums(
   v8::Local<v8::Array> nums = pRuntime->NewArray();
   int nIndex = 0;
   for (const auto& wc : str) {
-    if (std::iswdigit(wc)) {
+    if (FXSYS_IsDecimalDigit(wc)) {
       sPart += wc;
     } else if (sPart.GetLength() > 0) {
       pRuntime->PutArrayElement(nums, nIndex,

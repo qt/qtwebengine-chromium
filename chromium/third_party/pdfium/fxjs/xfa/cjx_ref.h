@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_REF_H_
 #define FXJS_XFA_CJX_REF_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_textnode.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_Ref;
 
@@ -16,9 +16,6 @@ class CJX_Ref final : public CJX_TextNode {
  public:
   explicit CJX_Ref(CXFA_Ref* node);
   ~CJX_Ref() override;
-
-  JSE_PROP(use);
-  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_REF_H_

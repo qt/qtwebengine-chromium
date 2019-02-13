@@ -9,9 +9,9 @@
 #include <memory>
 #include <vector>
 
-#include "fxjs/cfxjse_engine.h"
-#include "fxjs/cfxjse_value.h"
 #include "fxjs/js_resources.h"
+#include "fxjs/xfa/cfxjse_engine.h"
+#include "fxjs/xfa/cfxjse_value.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cscript_hostpseudomodel.h"
@@ -21,7 +21,7 @@
 
 namespace {
 
-int32_t FilterName(const WideStringView& wsExpression,
+int32_t FilterName(WideStringView wsExpression,
                    int32_t nStart,
                    WideString& wsFilter) {
   ASSERT(nStart > -1);
@@ -72,6 +72,10 @@ CJX_HostPseudoModel::CJX_HostPseudoModel(CScript_HostPseudoModel* model)
 }
 
 CJX_HostPseudoModel::~CJX_HostPseudoModel() {}
+
+bool CJX_HostPseudoModel::DynamicTypeIs(TypeTag eType) const {
+  return eType == static_type__ || ParentType__::DynamicTypeIs(eType);
+}
 
 void CJX_HostPseudoModel::appType(CFXJSE_Value* pValue,
                                   bool bSetting,
@@ -126,7 +130,7 @@ void CJX_HostPseudoModel::language(CFXJSE_Value* pValue,
     return;
 
   if (bSetting) {
-    ThrowException(L"Unable to set language value.");
+    ThrowException(WideString::FromASCII("Unable to set language value."));
     return;
   }
   pValue->SetString(
@@ -142,7 +146,7 @@ void CJX_HostPseudoModel::numPages(CFXJSE_Value* pValue,
 
   CXFA_FFDoc* hDoc = pNotify->GetHDOC();
   if (bSetting) {
-    ThrowException(L"Unable to set numPages value.");
+    ThrowException(WideString::FromASCII("Unable to set numPages value."));
     return;
   }
   pValue->SetInteger(hDoc->GetDocEnvironment()->CountPages(hDoc));
@@ -156,7 +160,7 @@ void CJX_HostPseudoModel::platform(CFXJSE_Value* pValue,
     return;
 
   if (bSetting) {
-    ThrowException(L"Unable to set platform value.");
+    ThrowException(WideString::FromASCII("Unable to set platform value."));
     return;
   }
   pValue->SetString(
@@ -208,7 +212,7 @@ void CJX_HostPseudoModel::variation(CFXJSE_Value* pValue,
     return;
 
   if (bSetting) {
-    ThrowException(L"Unable to set variation value.");
+    ThrowException(WideString::FromASCII("Unable to set variation value."));
     return;
   }
   pValue->SetString("Full");
@@ -218,7 +222,7 @@ void CJX_HostPseudoModel::version(CFXJSE_Value* pValue,
                                   bool bSetting,
                                   XFA_Attribute eAttribute) {
   if (bSetting) {
-    ThrowException(L"Unable to set version value.");
+    ThrowException(WideString::FromASCII("Unable to set version value."));
     return;
   }
   pValue->SetString("11");

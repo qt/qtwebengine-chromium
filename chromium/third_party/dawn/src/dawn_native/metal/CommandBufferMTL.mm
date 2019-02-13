@@ -18,7 +18,6 @@
 #include "dawn_native/Commands.h"
 #include "dawn_native/metal/BufferMTL.h"
 #include "dawn_native/metal/ComputePipelineMTL.h"
-#include "dawn_native/metal/DepthStencilStateMTL.h"
 #include "dawn_native/metal/DeviceMTL.h"
 #include "dawn_native/metal/InputStateMTL.h"
 #include "dawn_native/metal/PipelineLayoutMTL.h"
@@ -63,9 +62,11 @@ namespace dawn_native { namespace metal {
                     descriptor.colorAttachments[i].loadAction = MTLLoadActionLoad;
                 }
 
-                // TODO(jiawei.shao@intel.com): support rendering into a layer of a texture.
                 descriptor.colorAttachments[i].texture =
                     ToBackend(attachmentInfo.view->GetTexture())->GetMTLTexture();
+                descriptor.colorAttachments[i].level = attachmentInfo.view->GetBaseMipLevel();
+                descriptor.colorAttachments[i].slice = attachmentInfo.view->GetBaseArrayLayer();
+
                 descriptor.colorAttachments[i].storeAction = MTLStoreActionStore;
             }
 
@@ -119,12 +120,8 @@ namespace dawn_native { namespace metal {
             // TODO(kainino@chromium.org): Maintain buffers and offsets arrays in BindGroup
             // so that we only have to do one setVertexBuffers and one setFragmentBuffers
             // call here.
-            for (size_t binding = 0; binding < layout.mask.size(); ++binding) {
-                if (!layout.mask[binding]) {
-                    continue;
-                }
-
-                auto stage = layout.visibilities[binding];
+            for (uint32_t bindingIndex : IterateBitSet(layout.mask)) {
+                auto stage = layout.visibilities[bindingIndex];
                 bool hasVertStage = stage & dawn::ShaderStageBit::Vertex && render != nil;
                 bool hasFragStage = stage & dawn::ShaderStageBit::Fragment && render != nil;
                 bool hasComputeStage = stage & dawn::ShaderStageBit::Compute && compute != nil;
@@ -135,24 +132,23 @@ namespace dawn_native { namespace metal {
 
                 if (hasVertStage) {
                     vertIndex = pipelineLayout->GetBindingIndexInfo(
-                        dawn::ShaderStage::Vertex)[index][binding];
+                        dawn::ShaderStage::Vertex)[index][bindingIndex];
                 }
                 if (hasFragStage) {
                     fragIndex = pipelineLayout->GetBindingIndexInfo(
-                        dawn::ShaderStage::Fragment)[index][binding];
+                        dawn::ShaderStage::Fragment)[index][bindingIndex];
                 }
                 if (hasComputeStage) {
                     computeIndex = pipelineLayout->GetBindingIndexInfo(
-                        dawn::ShaderStage::Compute)[index][binding];
+                        dawn::ShaderStage::Compute)[index][bindingIndex];
                 }
 
-                switch (layout.types[binding]) {
+                switch (layout.types[bindingIndex]) {
                     case dawn::BindingType::UniformBuffer:
                     case dawn::BindingType::StorageBuffer: {
-                        BufferView* view = ToBackend(group->GetBindingAsBufferView(binding));
-                        auto b = ToBackend(view->GetBuffer());
-                        const id<MTLBuffer> buffer = b->GetMTLBuffer();
-                        const NSUInteger offset = view->GetOffset();
+                        BufferBinding binding = group->GetBindingAsBufferBinding(bindingIndex);
+                        const id<MTLBuffer> buffer = ToBackend(binding.buffer)->GetMTLBuffer();
+                        const NSUInteger offset = binding.offset;
 
                         if (hasVertStage) {
                             [render setVertexBuffers:&buffer
@@ -173,7 +169,7 @@ namespace dawn_native { namespace metal {
                     } break;
 
                     case dawn::BindingType::Sampler: {
-                        auto sampler = ToBackend(group->GetBindingAsSampler(binding));
+                        auto sampler = ToBackend(group->GetBindingAsSampler(bindingIndex));
                         if (hasVertStage) {
                             [render setVertexSamplerState:sampler->GetMTLSamplerState()
                                                   atIndex:vertIndex];
@@ -189,7 +185,7 @@ namespace dawn_native { namespace metal {
                     } break;
 
                     case dawn::BindingType::SampledTexture: {
-                        auto textureView = ToBackend(group->GetBindingAsTextureView(binding));
+                        auto textureView = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                         if (hasVertStage) {
                             [render setVertexTexture:textureView->GetMTLTexture()
                                              atIndex:vertIndex];
@@ -253,24 +249,25 @@ namespace dawn_native { namespace metal {
                     CopyBufferToTextureCmd* copy = mCommands.NextCommand<CopyBufferToTextureCmd>();
                     auto& src = copy->source;
                     auto& dst = copy->destination;
+                    auto& copySize = copy->copySize;
                     Buffer* buffer = ToBackend(src.buffer.Get());
                     Texture* texture = ToBackend(dst.texture.Get());
 
                     MTLOrigin origin;
-                    origin.x = dst.x;
-                    origin.y = dst.y;
-                    origin.z = dst.z;
+                    origin.x = dst.origin.x;
+                    origin.y = dst.origin.y;
+                    origin.z = dst.origin.z;
 
                     MTLSize size;
-                    size.width = dst.width;
-                    size.height = dst.height;
-                    size.depth = dst.depth;
+                    size.width = copySize.width;
+                    size.height = copySize.height;
+                    size.depth = copySize.depth;
 
                     encoders.EnsureBlit(commandBuffer);
                     [encoders.blit copyFromBuffer:buffer->GetMTLBuffer()
                                      sourceOffset:src.offset
-                                sourceBytesPerRow:copy->rowPitch
-                              sourceBytesPerImage:(copy->rowPitch * dst.height)
+                                sourceBytesPerRow:src.rowPitch
+                              sourceBytesPerImage:(src.rowPitch * src.imageHeight)
                                        sourceSize:size
                                         toTexture:texture->GetMTLTexture()
                                  destinationSlice:dst.slice
@@ -282,18 +279,19 @@ namespace dawn_native { namespace metal {
                     CopyTextureToBufferCmd* copy = mCommands.NextCommand<CopyTextureToBufferCmd>();
                     auto& src = copy->source;
                     auto& dst = copy->destination;
+                    auto& copySize = copy->copySize;
                     Texture* texture = ToBackend(src.texture.Get());
                     Buffer* buffer = ToBackend(dst.buffer.Get());
 
                     MTLOrigin origin;
-                    origin.x = src.x;
-                    origin.y = src.y;
-                    origin.z = src.z;
+                    origin.x = src.origin.x;
+                    origin.y = src.origin.y;
+                    origin.z = src.origin.z;
 
                     MTLSize size;
-                    size.width = src.width;
-                    size.height = src.height;
-                    size.depth = src.depth;
+                    size.width = copySize.width;
+                    size.height = copySize.height;
+                    size.depth = copySize.depth;
 
                     encoders.EnsureBlit(commandBuffer);
                     [encoders.blit copyFromTexture:texture->GetMTLTexture()
@@ -303,8 +301,8 @@ namespace dawn_native { namespace metal {
                                         sourceSize:size
                                           toBuffer:buffer->GetMTLBuffer()
                                  destinationOffset:dst.offset
-                            destinationBytesPerRow:copy->rowPitch
-                          destinationBytesPerImage:copy->rowPitch * src.height];
+                            destinationBytesPerRow:dst.rowPitch
+                          destinationBytesPerImage:(dst.rowPitch * dst.imageHeight)];
                 } break;
 
                 default: { UNREACHABLE(); } break;
@@ -407,8 +405,8 @@ namespace dawn_native { namespace metal {
                     return;
                 } break;
 
-                case Command::DrawArrays: {
-                    DrawArraysCmd* draw = mCommands.NextCommand<DrawArraysCmd>();
+                case Command::Draw: {
+                    DrawCmd* draw = mCommands.NextCommand<DrawCmd>();
 
                     [encoder drawPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                                 vertexStart:draw->firstVertex
@@ -417,8 +415,8 @@ namespace dawn_native { namespace metal {
                                baseInstance:draw->firstInstance];
                 } break;
 
-                case Command::DrawElements: {
-                    DrawElementsCmd* draw = mCommands.NextCommand<DrawElementsCmd>();
+                case Command::DrawIndexed: {
+                    DrawIndexedCmd* draw = mCommands.NextCommand<DrawIndexedCmd>();
                     size_t formatSize = IndexFormatSize(lastPipeline->GetIndexFormat());
 
                     [encoder
@@ -428,7 +426,7 @@ namespace dawn_native { namespace metal {
                                   indexBuffer:indexBuffer
                             indexBufferOffset:indexBufferBaseOffset + draw->firstIndex * formatSize
                                 instanceCount:draw->instanceCount
-                                   baseVertex:0
+                                   baseVertex:draw->baseVertex
                                  baseInstance:draw->firstInstance];
                 } break;
 
@@ -436,9 +434,7 @@ namespace dawn_native { namespace metal {
                     SetRenderPipelineCmd* cmd = mCommands.NextCommand<SetRenderPipelineCmd>();
                     lastPipeline = ToBackend(cmd->pipeline).Get();
 
-                    DepthStencilState* depthStencilState =
-                        ToBackend(lastPipeline->GetDepthStencilState());
-                    [encoder setDepthStencilState:depthStencilState->GetMTLDepthStencilState()];
+                    [encoder setDepthStencilState:lastPipeline->GetMTLDepthStencilState()];
                     lastPipeline->Encode(encoder);
                 } break;
 

@@ -20,7 +20,7 @@
 #include "call/audio_state.h"
 #include "call/bitrate_allocator.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/thread_checker.h"
 
@@ -112,8 +112,7 @@ class AudioSendStream final : public webrtc::AudioSendStream,
 
   void ConfigureBitrateObserver(int min_bitrate_bps,
                                 int max_bitrate_bps,
-                                double bitrate_priority,
-                                bool has_packet_feedback);
+                                double bitrate_priority);
   void RemoveBitrateObserver();
 
   void RegisterCngPayloadType(int payload_type, int clockrate_hz);
@@ -148,6 +147,8 @@ class AudioSendStream final : public webrtc::AudioSendStream,
     int audio_level = 0;
     int transport_sequence_number = 0;
     int mid = 0;
+    int rid = 0;
+    int repaired_rid = 0;
   };
   static ExtensionIds FindExtensionIds(
       const std::vector<RtpExtension>& extensions);

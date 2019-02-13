@@ -16,14 +16,16 @@
 #include <string>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "call/fake_network_pipe.h"
 #include "call/simulated_network.h"
 #include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
 #include "media/engine/adm_helpers.h"
-#include "media/engine/internalencoderfactory.h"
-#include "media/engine/vp8_encoder_simulcast_proxy.h"
-#include "media/engine/webrtcvideoengine.h"
+#include "media/engine/encoder_simulcast_proxy.h"
+#include "media/engine/fake_video_codec_factory.h"
+#include "media/engine/internal_encoder_factory.h"
+#include "media/engine/webrtc_video_engine.h"
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/video_coding/codecs/h264/include/h264.h"
@@ -34,7 +36,8 @@
 #include "modules/video_coding/utility/ivf_file_writer.h"
 #include "rtc_base/strings/string_builder.h"
 #include "test/run_loop.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
+#include "test/vcm_capturer.h"
 #include "test/video_renderer.h"
 #include "video/frame_dumping_decoder.h"
 #ifdef WEBRTC_WIN
@@ -168,6 +171,8 @@ std::unique_ptr<VideoDecoder> VideoQualityTest::CreateVideoDecoder(
   if (format.name == "multiplex") {
     decoder = absl::make_unique<MultiplexDecoderAdapter>(
         &internal_decoder_factory_, SdpVideoFormat(cricket::kVp9CodecName));
+  } else if (format.name == "FakeCodec") {
+    decoder = webrtc::FakeVideoDecoderFactory::CreateVideoDecoder();
   } else {
     decoder = internal_decoder_factory_.CreateVideoDecoder(format);
   }
@@ -187,11 +192,13 @@ std::unique_ptr<VideoEncoder> VideoQualityTest::CreateVideoEncoder(
     VideoAnalyzer* analyzer) {
   std::unique_ptr<VideoEncoder> encoder;
   if (format.name == "VP8") {
-    encoder = absl::make_unique<VP8EncoderSimulcastProxy>(
+    encoder = absl::make_unique<EncoderSimulcastProxy>(
         &internal_encoder_factory_, format);
   } else if (format.name == "multiplex") {
     encoder = absl::make_unique<MultiplexEncoderAdapter>(
         &internal_encoder_factory_, SdpVideoFormat(cricket::kVp9CodecName));
+  } else if (format.name == "FakeCodec") {
+    encoder = webrtc::FakeVideoEncoderFactory::CreateVideoEncoder();
   } else {
     encoder = internal_encoder_factory_.CreateVideoEncoder(format);
   }
@@ -554,6 +561,8 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       payload_type = kPayloadTypeVP9;
     } else if (params_.video[video_idx].codec == "multiplex") {
       payload_type = kPayloadTypeVP9;
+    } else if (params_.video[video_idx].codec == "FakeCodec") {
+      payload_type = kFakeVideoSendPayloadType;
     } else {
       RTC_NOTREACHED() << "Codec not supported!";
       return;
@@ -621,19 +630,17 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       video_encoder_configs_[video_idx].max_bitrate_bps +=
           params_.ss[video_idx].streams[i].max_bitrate_bps;
     }
-    if (params_.ss[video_idx].infer_streams) {
+    video_encoder_configs_[video_idx].simulcast_layers =
+        std::vector<VideoStream>(params_.ss[video_idx].streams.size());
+    if (!params_.ss[video_idx].infer_streams) {
       video_encoder_configs_[video_idx].simulcast_layers =
-          std::vector<VideoStream>(params_.ss[video_idx].streams.size());
-      video_encoder_configs_[video_idx].video_stream_factory =
-          new rtc::RefCountedObject<cricket::EncoderStreamFactory>(
-              params_.video[video_idx].codec,
-              params_.ss[video_idx].streams[0].max_qp,
-              params_.screenshare[video_idx].enabled, true);
-    } else {
-      video_encoder_configs_[video_idx].video_stream_factory =
-          new rtc::RefCountedObject<VideoStreamFactory>(
-              params_.ss[video_idx].streams);
+          params_.ss[video_idx].streams;
     }
+    video_encoder_configs_[video_idx].video_stream_factory =
+        new rtc::RefCountedObject<cricket::EncoderStreamFactory>(
+            params_.video[video_idx].codec,
+            params_.ss[video_idx].streams[0].max_qp,
+            params_.screenshare[video_idx].enabled, true);
 
     video_encoder_configs_[video_idx].spatial_layers =
         params_.ss[video_idx].spatial_layers;
@@ -703,10 +710,32 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
         video_encoder_configs_[video_idx].encoder_specific_settings =
             new rtc::RefCountedObject<
                 VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9_settings);
+      } else if (params_.video[video_idx].codec == "H264") {
+        // Quality scaling is always on for H.264.
       } else {
         RTC_NOTREACHED() << "Automatic scaling not supported for codec "
                          << params_.video[video_idx].codec << ", stream "
                          << video_idx;
+      }
+    } else {
+      // Default mode. Single SL, no automatic_scaling,
+      if (params_.video[video_idx].codec == "VP8") {
+        VideoCodecVP8 vp8_settings = VideoEncoder::GetDefaultVp8Settings();
+        vp8_settings.automaticResizeOn = false;
+        video_encoder_configs_[video_idx].encoder_specific_settings =
+            new rtc::RefCountedObject<
+                VideoEncoderConfig::Vp8EncoderSpecificSettings>(vp8_settings);
+      } else if (params_.video[video_idx].codec == "VP9") {
+        VideoCodecVP9 vp9_settings = VideoEncoder::GetDefaultVp9Settings();
+        vp9_settings.automaticResizeOn = false;
+        video_encoder_configs_[video_idx].encoder_specific_settings =
+            new rtc::RefCountedObject<
+                VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9_settings);
+      } else if (params_.video[video_idx].codec == "H264") {
+        VideoCodecH264 h264_settings = VideoEncoder::GetDefaultH264Settings();
+        video_encoder_configs_[video_idx].encoder_specific_settings =
+            new rtc::RefCountedObject<
+                VideoEncoderConfig::H264EncoderSpecificSettings>(h264_settings);
       }
     }
     total_streams_used += num_video_substreams;
@@ -780,16 +809,9 @@ void VideoQualityTest::SetupThumbnails(Transport* send_transport,
         params_.video[0].suspend_below_min_bitrate;
     thumbnail_encoder_config.number_of_streams = 1;
     thumbnail_encoder_config.max_bitrate_bps = 50000;
-    if (params_.ss[0].infer_streams) {
-      thumbnail_encoder_config.video_stream_factory =
-          new rtc::RefCountedObject<VideoStreamFactory>(params_.ss[0].streams);
-    } else {
-      thumbnail_encoder_config.simulcast_layers = std::vector<VideoStream>(1);
-      thumbnail_encoder_config.video_stream_factory =
-          new rtc::RefCountedObject<cricket::EncoderStreamFactory>(
-              params_.video[0].codec, params_.ss[0].streams[0].max_qp,
-              params_.screenshare[0].enabled, true);
-    }
+    std::vector<VideoStream> streams{params_.ss[0].streams[0]};
+    thumbnail_encoder_config.video_stream_factory =
+        new rtc::RefCountedObject<VideoStreamFactory>(streams);
     thumbnail_encoder_config.spatial_layers = params_.ss[0].spatial_layers;
 
     thumbnail_encoder_configs_.push_back(thumbnail_encoder_config.Copy());
@@ -822,9 +844,9 @@ void VideoQualityTest::DestroyThumbnailStreams() {
   }
   thumbnail_send_streams_.clear();
   thumbnail_receive_streams_.clear();
-  for (std::unique_ptr<test::TestVideoCapturer>& video_caputurer :
+  for (std::unique_ptr<rtc::VideoSourceInterface<VideoFrame>>& video_capturer :
        thumbnail_capturers_) {
-    video_caputurer.reset();
+    video_capturer.reset();
   }
 }
 
@@ -886,8 +908,7 @@ std::unique_ptr<test::FrameGenerator> VideoQualityTest::CreateFrameGenerator(
 
 void VideoQualityTest::CreateCapturers() {
   RTC_DCHECK(video_sources_.empty());
-  RTC_DCHECK(video_capturers_.empty());
-  video_capturers_.resize(num_video_streams_);
+  video_sources_.resize(num_video_streams_);
   for (size_t video_idx = 0; video_idx < num_video_streams_; ++video_idx) {
     if (params_.screenshare[video_idx].enabled) {
       std::unique_ptr<test::FrameGenerator> frame_generator =
@@ -896,53 +917,50 @@ void VideoQualityTest::CreateCapturers() {
           new test::FrameGeneratorCapturer(clock_, std::move(frame_generator),
                                            params_.video[video_idx].fps);
       EXPECT_TRUE(frame_generator_capturer->Init());
-      video_capturers_[video_idx].reset(frame_generator_capturer);
+      video_sources_[video_idx].reset(frame_generator_capturer);
     } else {
       if (params_.video[video_idx].clip_name == "Generator") {
-        video_capturers_[video_idx].reset(test::FrameGeneratorCapturer::Create(
+        video_sources_[video_idx].reset(test::FrameGeneratorCapturer::Create(
             static_cast<int>(params_.video[video_idx].width),
             static_cast<int>(params_.video[video_idx].height), absl::nullopt,
             absl::nullopt, params_.video[video_idx].fps, clock_));
       } else if (params_.video[video_idx].clip_name == "GeneratorI420A") {
-        video_capturers_[video_idx].reset(test::FrameGeneratorCapturer::Create(
+        video_sources_[video_idx].reset(test::FrameGeneratorCapturer::Create(
             static_cast<int>(params_.video[video_idx].width),
             static_cast<int>(params_.video[video_idx].height),
             test::FrameGenerator::OutputType::I420A, absl::nullopt,
             params_.video[video_idx].fps, clock_));
       } else if (params_.video[video_idx].clip_name == "GeneratorI010") {
-        video_capturers_[video_idx].reset(test::FrameGeneratorCapturer::Create(
+        video_sources_[video_idx].reset(test::FrameGeneratorCapturer::Create(
             static_cast<int>(params_.video[video_idx].width),
             static_cast<int>(params_.video[video_idx].height),
             test::FrameGenerator::OutputType::I010, absl::nullopt,
             params_.video[video_idx].fps, clock_));
       } else if (params_.video[video_idx].clip_name.empty()) {
-        video_capturers_[video_idx].reset(test::VcmCapturer::Create(
+        video_sources_[video_idx].reset(test::VcmCapturer::Create(
             params_.video[video_idx].width, params_.video[video_idx].height,
             params_.video[video_idx].fps,
             params_.video[video_idx].capture_device_index));
-        if (!video_capturers_[video_idx]) {
+        if (!video_sources_[video_idx]) {
           // Failed to get actual camera, use chroma generator as backup.
-          video_capturers_[video_idx].reset(
-              test::FrameGeneratorCapturer::Create(
-                  static_cast<int>(params_.video[video_idx].width),
-                  static_cast<int>(params_.video[video_idx].height),
-                  absl::nullopt, absl::nullopt, params_.video[video_idx].fps,
-                  clock_));
+          video_sources_[video_idx].reset(test::FrameGeneratorCapturer::Create(
+              static_cast<int>(params_.video[video_idx].width),
+              static_cast<int>(params_.video[video_idx].height), absl::nullopt,
+              absl::nullopt, params_.video[video_idx].fps, clock_));
         }
       } else {
-        video_capturers_[video_idx].reset(
+        video_sources_[video_idx].reset(
             test::FrameGeneratorCapturer::CreateFromYuvFile(
                 test::ResourcePath(params_.video[video_idx].clip_name, "yuv"),
                 params_.video[video_idx].width, params_.video[video_idx].height,
                 params_.video[video_idx].fps, clock_));
-        ASSERT_TRUE(video_capturers_[video_idx])
+        ASSERT_TRUE(video_sources_[video_idx])
             << "Could not create capturer for "
             << params_.video[video_idx].clip_name
             << ".yuv. Is this resource file present?";
       }
     }
-    RTC_DCHECK(video_capturers_[video_idx].get());
-    video_sources_.push_back(video_capturers_[video_idx].get());
+    RTC_DCHECK(video_sources_[video_idx]);
   }
 }
 
@@ -950,18 +968,6 @@ void VideoQualityTest::StartAudioStreams() {
   audio_send_stream_->Start();
   for (AudioReceiveStream* audio_recv_stream : audio_receive_streams_)
     audio_recv_stream->Start();
-}
-
-void VideoQualityTest::StartThumbnailCapture() {
-  for (std::unique_ptr<test::TestVideoCapturer>& capturer :
-       thumbnail_capturers_)
-    capturer->Start();
-}
-
-void VideoQualityTest::StopThumbnailCapture() {
-  for (std::unique_ptr<test::TestVideoCapturer>& capturer :
-       thumbnail_capturers_)
-    capturer->Stop();
 }
 
 void VideoQualityTest::StartThumbnails() {
@@ -1100,8 +1106,8 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     CreateFlexfecStreams();
     CreateVideoStreams();
     analyzer_->SetSendStream(video_send_streams_[0]);
-    if (video_receive_streams_.size() == 1)
-      analyzer_->SetReceiveStream(video_receive_streams_[0]);
+    analyzer_->SetReceiveStream(
+        video_receive_streams_[params_.ss[0].selected_stream]);
 
     GetVideoSendStream()->SetSource(analyzer_->OutputInterface(),
                                     degradation_preference_);
@@ -1113,12 +1119,11 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
 
     CreateCapturers();
 
-    analyzer_->SetSource(video_capturers_[0].get(),
-                         params_.ss[0].infer_streams);
+    analyzer_->SetSource(video_sources_[0].get(), true);
 
     for (size_t video_idx = 1; video_idx < num_video_streams_; ++video_idx) {
-      video_send_streams_[video_idx]->SetSource(
-          video_capturers_[video_idx].get(), degradation_preference_);
+      video_send_streams_[video_idx]->SetSource(video_sources_[video_idx].get(),
+                                                degradation_preference_);
     }
 
     if (params_.audio.enabled) {
@@ -1129,14 +1134,11 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     StartVideoStreams();
     StartThumbnails();
     analyzer_->StartMeasuringCpuProcessTime();
-    StartVideoCapture();
-    StartThumbnailCapture();
   });
 
   analyzer_->Wait();
 
   task_queue_.SendTask([&]() {
-    StopThumbnailCapture();
     StopThumbnails();
     Stop();
 
@@ -1146,7 +1148,7 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     if (graph_data_output_file)
       fclose(graph_data_output_file);
 
-    video_capturers_.clear();
+    video_sources_.clear();
     send_transport.reset();
     recv_transport.reset();
 
@@ -1232,6 +1234,8 @@ void VideoQualityTest::SetupAudio(Transport* transport) {
     audio_send_config.min_bitrate_bps = kOpusMinBitrateBps;
     audio_send_config.max_bitrate_bps = kOpusBitrateFbBps;
     audio_send_config.send_codec_spec->transport_cc_enabled = true;
+    // Only allow ANA when send-side BWE is enabled.
+    audio_send_config.audio_network_adaptor_config = params_.audio.ana_config;
   }
   audio_send_config.encoder_factory = audio_encoder_factory_;
   SetAudioConfig(audio_send_config);
@@ -1304,12 +1308,7 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
 
     if (params_.video[0].enabled) {
       // Create video renderers.
-      local_preview.reset(test::VideoRenderer::Create(
-          "Local Preview", params_.video[0].width, params_.video[0].height));
-
       SetupVideo(send_transport.get(), recv_transport.get());
-      GetVideoSendConfig()->pre_encode_callback = local_preview.get();
-
       size_t num_streams_processed = 0;
       for (size_t video_idx = 0; video_idx < num_video_streams_; ++video_idx) {
         const size_t selected_stream_id = params_.ss[video_idx].selected_stream;
@@ -1348,6 +1347,14 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
       CreateVideoStreams();
 
       CreateCapturers();
+      if (params_.video[0].enabled) {
+        // Create local preview
+        local_preview.reset(test::VideoRenderer::Create(
+            "Local Preview", params_.video[0].width, params_.video[0].height));
+
+        video_sources_[0]->AddOrUpdateSink(local_preview.get(),
+                                           rtc::VideoSinkWants());
+      }
       ConnectVideoSourcesToStreams();
     }
 
@@ -1364,7 +1371,7 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
     Stop();
     DestroyStreams();
 
-    video_capturers_.clear();
+    video_sources_.clear();
     send_transport.reset();
     recv_transport.reset();
 

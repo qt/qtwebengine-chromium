@@ -25,7 +25,7 @@
 #include "modules/video_coding/utility/simulcast_utility.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/metrics.h"
 #include "third_party/libyuv/include/libyuv/convert.h"
 #include "third_party/libyuv/include/libyuv/scale.h"
@@ -99,35 +99,35 @@ static void RtpFragmentize(EncodedImage* encoded_image,
                            SFrameBSInfo* info,
                            RTPFragmentationHeader* frag_header) {
   // Calculate minimum buffer size required to hold encoded data.
-  size_t required_size = 0;
+  size_t required_capacity = 0;
   size_t fragments_count = 0;
   for (int layer = 0; layer < info->iLayerNum; ++layer) {
     const SLayerBSInfo& layerInfo = info->sLayerInfo[layer];
     for (int nal = 0; nal < layerInfo.iNalCount; ++nal, ++fragments_count) {
       RTC_CHECK_GE(layerInfo.pNalLengthInByte[nal], 0);
-      // Ensure |required_size| will not overflow.
+      // Ensure |required_capacity| will not overflow.
       RTC_CHECK_LE(layerInfo.pNalLengthInByte[nal],
-                   std::numeric_limits<size_t>::max() - required_size);
-      required_size += layerInfo.pNalLengthInByte[nal];
+                   std::numeric_limits<size_t>::max() - required_capacity);
+      required_capacity += layerInfo.pNalLengthInByte[nal];
     }
   }
-  if (encoded_image->_size < required_size) {
+  if (encoded_image->capacity() < required_capacity) {
     // Increase buffer size. Allocate enough to hold an unencoded image, this
     // should be more than enough to hold any encoded data of future frames of
     // the same size (avoiding possible future reallocation due to variations in
     // required size).
-    encoded_image->_size = CalcBufferSize(
-        VideoType::kI420, frame_buffer.width(), frame_buffer.height());
-    if (encoded_image->_size < required_size) {
+    size_t new_capacity = CalcBufferSize(VideoType::kI420, frame_buffer.width(),
+                                         frame_buffer.height());
+    if (new_capacity < required_capacity) {
       // Encoded data > unencoded data. Allocate required bytes.
       RTC_LOG(LS_WARNING)
           << "Encoding produced more bytes than the original image "
-          << "data! Original bytes: " << encoded_image->_size
-          << ", encoded bytes: " << required_size << ".";
-      encoded_image->_size = required_size;
+          << "data! Original bytes: " << new_capacity
+          << ", encoded bytes: " << required_capacity << ".";
+      new_capacity = required_capacity;
     }
-    encoded_image->_buffer = new uint8_t[encoded_image->_size];
-    encoded_image_buffer->reset(encoded_image->_buffer);
+    encoded_image->set_buffer(new uint8_t[new_capacity], new_capacity);
+    encoded_image_buffer->reset(encoded_image->data());
   }
 
   // Iterate layers and NAL units, note each NAL unit as a fragment and copy
@@ -135,13 +135,13 @@ static void RtpFragmentize(EncodedImage* encoded_image,
   const uint8_t start_code[4] = {0, 0, 0, 1};
   frag_header->VerifyAndAllocateFragmentationHeader(fragments_count);
   size_t frag = 0;
-  encoded_image->_length = 0;
+  encoded_image->set_size(0);
   for (int layer = 0; layer < info->iLayerNum; ++layer) {
     const SLayerBSInfo& layerInfo = info->sLayerInfo[layer];
     // Iterate NAL units making up this layer, noting fragments.
     size_t layer_len = 0;
     for (int nal = 0; nal < layerInfo.iNalCount; ++nal, ++frag) {
-      // Because the sum of all layer lengths, |required_size|, fits in a
+      // Because the sum of all layer lengths, |required_capacity|, fits in a
       // |size_t|, we know that any indices in-between will not overflow.
       RTC_DCHECK_GE(layerInfo.pNalLengthInByte[nal], 4);
       RTC_DCHECK_EQ(layerInfo.pBsBuf[layer_len + 0], start_code[0]);
@@ -149,15 +149,15 @@ static void RtpFragmentize(EncodedImage* encoded_image,
       RTC_DCHECK_EQ(layerInfo.pBsBuf[layer_len + 2], start_code[2]);
       RTC_DCHECK_EQ(layerInfo.pBsBuf[layer_len + 3], start_code[3]);
       frag_header->fragmentationOffset[frag] =
-          encoded_image->_length + layer_len + sizeof(start_code);
+          encoded_image->size() + layer_len + sizeof(start_code);
       frag_header->fragmentationLength[frag] =
           layerInfo.pNalLengthInByte[nal] - sizeof(start_code);
       layer_len += layerInfo.pNalLengthInByte[nal];
     }
     // Copy the entire layer's data (including start codes).
-    memcpy(encoded_image->_buffer + encoded_image->_length, layerInfo.pBsBuf,
+    memcpy(encoded_image->data() + encoded_image->size(), layerInfo.pBsBuf,
            layer_len);
-    encoded_image->_length += layer_len;
+    encoded_image->set_size(encoded_image->size() + layer_len);
   }
 }
 
@@ -299,15 +299,16 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
     openh264_encoder->SetOption(ENCODER_OPTION_DATAFORMAT, &video_format);
 
     // Initialize encoded image. Default buffer size: size of unencoded data.
-    encoded_images_[i]._size =
+
+    const size_t new_capacity =
         CalcBufferSize(VideoType::kI420, codec_.simulcastStream[idx].width,
                        codec_.simulcastStream[idx].height);
-    encoded_images_[i]._buffer = new uint8_t[encoded_images_[i]._size];
-    encoded_image_buffers_[i].reset(encoded_images_[i]._buffer);
+    encoded_images_[i].set_buffer(new uint8_t[new_capacity], new_capacity);
+    encoded_image_buffers_[i].reset(encoded_images_[i].data());
     encoded_images_[i]._completeFrame = true;
     encoded_images_[i]._encodedWidth = codec_.simulcastStream[idx].width;
     encoded_images_[i]._encodedHeight = codec_.simulcastStream[idx].height;
-    encoded_images_[i]._length = 0;
+    encoded_images_[i].set_size(0);
   }
 
   SimulcastRateAllocator init_allocator(codec_);
@@ -501,6 +502,7 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
     encoded_images_[i].ntp_time_ms_ = input_frame.ntp_time_ms();
     encoded_images_[i].capture_time_ms_ = input_frame.render_time_ms();
     encoded_images_[i].rotation_ = input_frame.rotation();
+    encoded_images_[i].SetColorSpace(input_frame.color_space());
     encoded_images_[i].content_type_ =
             (codec_.mode == VideoCodecMode::kScreensharing)
             ? VideoContentType::SCREENSHARE
@@ -517,10 +519,10 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
 
     // Encoder can skip frames to save bandwidth in which case
     // |encoded_images_[i]._length| == 0.
-    if (encoded_images_[i]._length > 0) {
+    if (encoded_images_[i].size() > 0) {
       // Parse QP.
-      h264_bitstream_parser_.ParseBitstream(encoded_images_[i]._buffer,
-                                            encoded_images_[i]._length);
+      h264_bitstream_parser_.ParseBitstream(encoded_images_[i].data(),
+                                            encoded_images_[i].size());
       h264_bitstream_parser_.GetLastSliceQp(&encoded_images_[i].qp_);
 
       // Deliver encoded image.
@@ -627,6 +629,8 @@ VideoEncoder::EncoderInfo H264EncoderImpl::GetEncoderInfo() const {
   info.implementation_name = "OpenH264";
   info.scaling_settings =
       VideoEncoder::ScalingSettings(kLowH264QpThreshold, kHighH264QpThreshold);
+  info.is_hardware_accelerated = false;
+  info.has_internal_source = false;
   return info;
 }
 

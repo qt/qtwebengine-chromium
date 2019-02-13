@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_DECIMAL_H_
 #define FXJS_XFA_CJX_DECIMAL_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_content.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_Decimal;
 
@@ -17,12 +17,17 @@ class CJX_Decimal final : public CJX_Content {
   explicit CJX_Decimal(CXFA_Decimal* node);
   ~CJX_Decimal() override;
 
+  // CJX_Object:
+  bool DynamicTypeIs(TypeTag eType) const override;
+
   JSE_PROP(defaultValue); /* {default} */
-  JSE_PROP(fracDigits);
-  JSE_PROP(leadDigits);
-  JSE_PROP(use);
-  JSE_PROP(usehref);
   JSE_PROP(value);
+
+ private:
+  using Type__ = CJX_Decimal;
+  using ParentType__ = CJX_Content;
+
+  static const TypeTag static_type__ = TypeTag::Decimal;
 };
 
 #endif  // FXJS_XFA_CJX_DECIMAL_H_

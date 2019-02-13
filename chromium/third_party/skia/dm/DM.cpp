@@ -45,10 +45,6 @@
 
 #include <vector>
 
-#ifdef SK_PDF_IMAGE_STATS
-extern void SkPDFImageDumpStats();
-#endif
-
 #include "png.h"
 
 #include <stdlib.h>
@@ -63,7 +59,6 @@ extern void SkPDFImageDumpStats();
 
 extern bool gSkForceRasterPipelineBlitter;
 
-DECLARE_bool(undefok);
 DEFINE_string(src, "tests gm skp image", "Source types to test.");
 DEFINE_bool(nameByHash, false,
             "If true, write to FLAGS_writePath[0]/<hash>.png instead of "
@@ -833,7 +828,7 @@ static bool gather_srcs() {
 
 static sk_sp<SkColorSpace> rec2020() {
     return SkColorSpace::MakeRGB({2.22222f, 0.909672f, 0.0903276f, 0.222222f, 0.0812429f, 0, 0},
-                                 SkColorSpace::kRec2020_Gamut);
+                                 SkNamedGamut::kRec2020);
 }
 
 static void push_sink(const SkCommandLineConfig& config, Sink* s) {
@@ -901,7 +896,7 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
         return new SVGSink(pageIndex);
     }
 
-#define SINK(t, sink, ...) if (config->getBackend().equals(t)) { return new sink(__VA_ARGS__); }
+#define SINK(t, sink, ...) if (config->getBackend().equals(t)) return new sink(__VA_ARGS__)
 
     if (FLAGS_cpu) {
         SINK("g8",      RasterSink, kGray_8_SkColorType);
@@ -925,14 +920,10 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
         // Configs relevant to color management testing (and 8888 for reference).
 
         // 'narrow' has a gamut narrower than sRGB, and different transfer function.
-        SkMatrix44 narrow_gamut;
-        narrow_gamut.set3x3RowMajorf(gNarrow_toXYZD50);
-
-        auto narrow = SkColorSpace::MakeRGB(k2Dot2Curve_SkGammaNamed, narrow_gamut),
+        auto narrow = SkColorSpace::MakeRGB(SkNamedTransferFn::k2Dot2, gNarrow_toXYZD50),
                srgb = SkColorSpace::MakeSRGB(),
          srgbLinear = SkColorSpace::MakeSRGBLinear(),
-                 p3 = SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                            SkColorSpace::kDCIP3_D65_Gamut);
+                 p3 = SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDCIP3);
 
         SINK(     "f16",  RasterSink,  kRGBA_F16_SkColorType, srgbLinear);
         SINK(    "srgb",  RasterSink, kRGBA_8888_SkColorType, srgb      );
@@ -955,11 +946,10 @@ static sk_sp<SkColorSpace> rgb_to_gbr() {
 }
 
 static Sink* create_via(const SkString& tag, Sink* wrapped) {
-#define VIA(t, via, ...) if (tag.equals(t)) { return new via(__VA_ARGS__); }
+#define VIA(t, via, ...) if (tag.equals(t)) return new via(__VA_ARGS__)
     VIA("gbr",       ViaCSXform,           wrapped, rgb_to_gbr(), true);
     VIA("p3",        ViaCSXform,           wrapped,
-                     SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                           SkColorSpace::kDCIP3_D65_Gamut), false);
+                     SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDCIP3), false);
     VIA("lite",      ViaLite,              wrapped);
 #ifdef TEST_VIA_SVG
     VIA("svg",       ViaSVG,               wrapped);
@@ -969,7 +959,8 @@ static Sink* create_via(const SkString& tag, Sink* wrapped) {
     VIA("tiles",     ViaTiles, 256, 256, nullptr,            wrapped);
     VIA("tiles_rt",  ViaTiles, 256, 256, new SkRTreeFactory, wrapped);
 
-    VIA("ddl",       ViaDDL, 3,            wrapped);
+    VIA("ddl",       ViaDDL, 1, 3,         wrapped);
+    VIA("ddl2",      ViaDDL, 2, 3,         wrapped);
 
     if (FLAGS_matrix.count() == 4) {
         SkMatrix m;
@@ -1020,13 +1011,10 @@ static bool gather_sinks(const GrContextOptions& grCtxOptions, bool defaultConfi
     if (configs.count() == 0 ||
         // If we're using the default configs, we're okay.
         defaultConfigs ||
-        // If we've been told to ignore undefined flags, we're okay.
-        FLAGS_undefok ||
         // Otherwise, make sure that all specified configs have become sinks.
         configs.count() == gSinks.count()) {
         return true;
     }
-    info("Invalid --config. Use --undefok to bypass this warning.\n");
     return false;
 }
 
@@ -1447,10 +1435,6 @@ int main(int argc, char** argv) {
         info("%d failures\n", gFailures.count());
         return 1;
     }
-
-#ifdef SK_PDF_IMAGE_STATS
-    SkPDFImageDumpStats();
-#endif  // SK_PDF_IMAGE_STATS
 
     SkGraphics::PurgeAllCaches();
     info("Finished!\n");

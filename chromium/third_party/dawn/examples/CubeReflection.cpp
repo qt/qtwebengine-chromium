@@ -14,6 +14,7 @@
 
 #include "SampleUtils.h"
 
+#include "utils/ComboRenderPipelineDescriptor.h"
 #include "utils/DawnHelpers.h"
 #include "utils/SystemUtils.h"
 
@@ -180,80 +181,61 @@ void init() {
     transform = glm::translate(transform, glm::vec3(0.f, -2.f, 0.f));
     transformBuffer[1] = utils::CreateBufferFromData(device, &transform, sizeof(glm::mat4), dawn::BufferUsageBit::Uniform);
 
-    dawn::BufferView cameraBufferView = cameraBuffer.CreateBufferViewBuilder()
-        .SetExtent(0, sizeof(CameraData))
-        .GetResult();
+    bindGroup[0] = utils::MakeBindGroup(device, bgl, {
+        {0, cameraBuffer, 0, sizeof(CameraData)},
+        {1, transformBuffer[0], 0, sizeof(glm::mat4)}
+    });
 
-    dawn::BufferView transformBufferView[2] = {
-        transformBuffer[0].CreateBufferViewBuilder()
-            .SetExtent(0, sizeof(glm::mat4))
-            .GetResult(),
-        transformBuffer[1].CreateBufferViewBuilder()
-            .SetExtent(0, sizeof(glm::mat4))
-            .GetResult(),
-    };
-
-    bindGroup[0] = device.CreateBindGroupBuilder()
-        .SetLayout(bgl)
-        .SetBufferViews(0, 1, &cameraBufferView)
-        .SetBufferViews(1, 1, &transformBufferView[0])
-        .GetResult();
-
-    bindGroup[1] = device.CreateBindGroupBuilder()
-        .SetLayout(bgl)
-        .SetBufferViews(0, 1, &cameraBufferView)
-        .SetBufferViews(1, 1, &transformBufferView[1])
-        .GetResult();
+    bindGroup[1] = utils::MakeBindGroup(device, bgl, {
+        {0, cameraBuffer, 0, sizeof(CameraData)},
+        {1, transformBuffer[1], 0, sizeof(glm::mat4)}
+    });
 
     depthStencilView = CreateDefaultDepthStencilView(device);
 
-    auto depthStencilState = device.CreateDepthStencilStateBuilder()
-        .SetDepthCompareFunction(dawn::CompareFunction::Less)
-        .SetDepthWriteEnabled(true)
-        .GetResult();
+    utils::ComboRenderPipelineDescriptor descriptor(device);
+    descriptor.layout = pl;
+    descriptor.cVertexStage.module = vsModule;
+    descriptor.cFragmentStage.module = fsModule;
+    descriptor.inputState = inputState;
+    descriptor.cAttachmentsState.hasDepthStencilAttachment = true;
+    descriptor.cDepthStencilAttachment.format = dawn::TextureFormat::D32FloatS8Uint;
+    descriptor.cColorAttachments[0]->format = GetPreferredSwapChainTextureFormat();
+    descriptor.cDepthStencilState.depthWriteEnabled = true;
+    descriptor.cDepthStencilState.depthCompare = dawn::CompareFunction::Less;
 
-    pipeline = device.CreateRenderPipelineBuilder()
-        .SetColorAttachmentFormat(0, GetPreferredSwapChainTextureFormat())
-        .SetDepthStencilAttachmentFormat(dawn::TextureFormat::D32FloatS8Uint)
-        .SetLayout(pl)
-        .SetStage(dawn::ShaderStage::Vertex, vsModule, "main")
-        .SetStage(dawn::ShaderStage::Fragment, fsModule, "main")
-        .SetIndexFormat(dawn::IndexFormat::Uint32)
-        .SetInputState(inputState)
-        .SetDepthStencilState(depthStencilState)
-        .GetResult();
+    pipeline = device.CreateRenderPipeline(&descriptor);
 
-    auto planeStencilState = device.CreateDepthStencilStateBuilder()
-        .SetDepthCompareFunction(dawn::CompareFunction::Less)
-        .SetDepthWriteEnabled(false)
-        .SetStencilFunction(dawn::Face::Both, dawn::CompareFunction::Always, dawn::StencilOperation::Keep, dawn::StencilOperation::Keep, dawn::StencilOperation::Replace)
-        .GetResult();
+    utils::ComboRenderPipelineDescriptor pDescriptor(device);
+    pDescriptor.layout = pl;
+    pDescriptor.cVertexStage.module = vsModule;
+    pDescriptor.cFragmentStage.module = fsModule;
+    pDescriptor.inputState = inputState;
+    pDescriptor.cAttachmentsState.hasDepthStencilAttachment = true;
+    pDescriptor.cDepthStencilAttachment.format = dawn::TextureFormat::D32FloatS8Uint;
+    pDescriptor.cColorAttachments[0]->format = GetPreferredSwapChainTextureFormat();
+    pDescriptor.cDepthStencilState.front.passOp = dawn::StencilOperation::Replace;
+    pDescriptor.cDepthStencilState.back.passOp = dawn::StencilOperation::Replace;
+    pDescriptor.cDepthStencilState.depthCompare = dawn::CompareFunction::Less;
 
-    planePipeline = device.CreateRenderPipelineBuilder()
-        .SetColorAttachmentFormat(0, GetPreferredSwapChainTextureFormat())
-        .SetDepthStencilAttachmentFormat(dawn::TextureFormat::D32FloatS8Uint)
-        .SetLayout(pl)
-        .SetStage(dawn::ShaderStage::Vertex, vsModule, "main")
-        .SetStage(dawn::ShaderStage::Fragment, fsModule, "main")
-        .SetInputState(inputState)
-        .SetDepthStencilState(planeStencilState)
-        .GetResult();
+    planePipeline = device.CreateRenderPipeline(&pDescriptor);
 
-    auto reflectionStencilState = device.CreateDepthStencilStateBuilder()
-        .SetDepthCompareFunction(dawn::CompareFunction::Less)
-        .SetDepthWriteEnabled(true)
-        .SetStencilFunction(dawn::Face::Both, dawn::CompareFunction::Equal, dawn::StencilOperation::Keep, dawn::StencilOperation::Keep, dawn::StencilOperation::Replace)
-        .GetResult();
+    utils::ComboRenderPipelineDescriptor rfDescriptor(device);
+    rfDescriptor.layout = pl;
+    rfDescriptor.cVertexStage.module = vsModule;
+    rfDescriptor.cFragmentStage.module = fsReflectionModule;
+    rfDescriptor.inputState = inputState;
+    rfDescriptor.cAttachmentsState.hasDepthStencilAttachment = true;
+    rfDescriptor.cDepthStencilAttachment.format = dawn::TextureFormat::D32FloatS8Uint;
+    rfDescriptor.cColorAttachments[0]->format = GetPreferredSwapChainTextureFormat();
+    pDescriptor.cDepthStencilState.front.compare = dawn::CompareFunction::Equal;
+    pDescriptor.cDepthStencilState.back.compare = dawn::CompareFunction::Equal;
+    pDescriptor.cDepthStencilState.front.passOp = dawn::StencilOperation::Replace;
+    pDescriptor.cDepthStencilState.back.passOp = dawn::StencilOperation::Replace;
+    rfDescriptor.cDepthStencilState.depthWriteEnabled = true;
+    rfDescriptor.cDepthStencilState.depthCompare = dawn::CompareFunction::Less;
 
-    reflectionPipeline = device.CreateRenderPipelineBuilder()
-        .SetColorAttachmentFormat(0, GetPreferredSwapChainTextureFormat())
-        .SetDepthStencilAttachmentFormat(dawn::TextureFormat::D32FloatS8Uint)
-        .SetLayout(pl)
-        .SetStage(dawn::ShaderStage::Vertex, vsModule, "main")
-        .SetStage(dawn::ShaderStage::Fragment, fsReflectionModule, "main")
-        .SetInputState(inputState)
-        .SetDepthStencilState(reflectionStencilState)
-        .GetResult();
+    reflectionPipeline = device.CreateRenderPipeline(&rfDescriptor);
 
     cameraData.proj = glm::perspective(glm::radians(45.0f), 1.f, 1.0f, 100.0f);
 }
@@ -280,22 +262,22 @@ void frame() {
     dawn::CommandBufferBuilder builder = device.CreateCommandBufferBuilder();
     {
         dawn::RenderPassEncoder pass = builder.BeginRenderPass(renderPass);
-        pass.SetRenderPipeline(pipeline);
+        pass.SetPipeline(pipeline);
         pass.SetBindGroup(0, bindGroup[0]);
         pass.SetVertexBuffers(0, 1, &vertexBuffer, vertexBufferOffsets);
         pass.SetIndexBuffer(indexBuffer, 0);
-        pass.DrawElements(36, 1, 0, 0);
+        pass.DrawIndexed(36, 1, 0, 0, 0);
 
         pass.SetStencilReference(0x1);
-        pass.SetRenderPipeline(planePipeline);
+        pass.SetPipeline(planePipeline);
         pass.SetBindGroup(0, bindGroup[0]);
         pass.SetVertexBuffers(0, 1, &planeBuffer, vertexBufferOffsets);
-        pass.DrawElements(6, 1, 0, 0);
+        pass.DrawIndexed(6, 1, 0, 0, 0);
 
-        pass.SetRenderPipeline(reflectionPipeline);
+        pass.SetPipeline(reflectionPipeline);
         pass.SetVertexBuffers(0, 1, &vertexBuffer, vertexBufferOffsets);
         pass.SetBindGroup(0, bindGroup[1]);
-        pass.DrawElements(36, 1, 0, 0);
+        pass.DrawIndexed(36, 1, 0, 0, 0);
 
         pass.EndPass();
     }

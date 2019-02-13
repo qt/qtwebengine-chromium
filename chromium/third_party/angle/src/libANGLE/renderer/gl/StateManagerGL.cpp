@@ -159,6 +159,7 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
       mPathStencilMask(std::numeric_limits<GLuint>::max()),
       mIsSideBySideDrawFramebuffer(false),
       mIsMultiviewEnabled(extensions.multiview),
+      mProvokingVertex(GL_LAST_VERTEX_CONVENTION),
       mLocalDirtyBits()
 {
     ASSERT(mFunctions);
@@ -672,7 +673,7 @@ void StateManagerGL::endQuery(gl::QueryType type, QueryGL *queryObject, GLuint q
 void StateManagerGL::updateDrawIndirectBufferBinding(const gl::Context *context)
 {
     gl::Buffer *drawIndirectBuffer =
-        context->getGLState().getTargetBuffer(gl::BufferBinding::DrawIndirect);
+        context->getState().getTargetBuffer(gl::BufferBinding::DrawIndirect);
     if (drawIndirectBuffer != nullptr)
     {
         const BufferGL *bufferGL = GetImplAs<BufferGL>(drawIndirectBuffer);
@@ -683,7 +684,7 @@ void StateManagerGL::updateDrawIndirectBufferBinding(const gl::Context *context)
 void StateManagerGL::updateDispatchIndirectBufferBinding(const gl::Context *context)
 {
     gl::Buffer *dispatchIndirectBuffer =
-        context->getGLState().getTargetBuffer(gl::BufferBinding::DispatchIndirect);
+        context->getState().getTargetBuffer(gl::BufferBinding::DispatchIndirect);
     if (dispatchIndirectBuffer != nullptr)
     {
         const BufferGL *bufferGL = GetImplAs<BufferGL>(dispatchIndirectBuffer);
@@ -714,7 +715,7 @@ angle::Result StateManagerGL::pauseAllQueries(const gl::Context *context)
         }
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result StateManagerGL::pauseQuery(const gl::Context *context, gl::QueryType type)
@@ -728,7 +729,7 @@ angle::Result StateManagerGL::pauseQuery(const gl::Context *context, gl::QueryTy
         mQueries[type]                = nullptr;
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result StateManagerGL::resumeAllQueries(const gl::Context *context)
@@ -745,7 +746,7 @@ angle::Result StateManagerGL::resumeAllQueries(const gl::Context *context)
         }
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result StateManagerGL::resumeQuery(const gl::Context *context, gl::QueryType type)
@@ -758,23 +759,23 @@ angle::Result StateManagerGL::resumeQuery(const gl::Context *context, gl::QueryT
         mTemporaryPausedQueries[type] = nullptr;
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result StateManagerGL::onMakeCurrent(const gl::Context *context)
 {
-    const gl::State &glState = context->getGLState();
+    const gl::State &glState = context->getState();
 
 #if defined(ANGLE_ENABLE_ASSERTS)
     // Temporarily pausing queries during context switch is not supported
-    for (auto &pausedQuery : mTemporaryPausedQueries)
+    for (QueryGL *pausedQuery : mTemporaryPausedQueries)
     {
         ASSERT(pausedQuery == nullptr);
     }
 #endif
 
     // If the context has changed, pause the previous context's queries
-    auto contextID = context->getContextState().getContextID();
+    auto contextID = context->getState().getContextID();
     if (contextID != mPrevDrawContext)
     {
         for (gl::QueryType type : angle::AllEnums<gl::QueryType>())
@@ -803,12 +804,12 @@ angle::Result StateManagerGL::onMakeCurrent(const gl::Context *context)
     // this state here since MakeCurrent is expected to be called less frequently than draw calls.
     setTextureCubemapSeamlessEnabled(context->getClientMajorVersion() >= 3);
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void StateManagerGL::updateProgramTextureBindings(const gl::Context *context)
 {
-    const gl::State &glState   = context->getGLState();
+    const gl::State &glState   = context->getState();
     const gl::Program *program = glState.getProgram();
 
     // It is possible there is no active program during a path operation.
@@ -844,7 +845,7 @@ void StateManagerGL::updateProgramTextureBindings(const gl::Context *context)
 
 void StateManagerGL::updateProgramStorageBufferBindings(const gl::Context *context)
 {
-    const gl::State &glState   = context->getGLState();
+    const gl::State &glState   = context->getState();
     const gl::Program *program = glState.getProgram();
 
     // It is possible there is no active program during a path operation.
@@ -877,7 +878,7 @@ void StateManagerGL::updateProgramStorageBufferBindings(const gl::Context *conte
 void StateManagerGL::updateProgramUniformBufferBindings(const gl::Context *context)
 {
     // Sync the current program state
-    const gl::State &glState   = context->getGLState();
+    const gl::State &glState   = context->getState();
     const gl::Program *program = glState.getProgram();
 
     // It is possible there is no active program during a path operation.
@@ -909,7 +910,7 @@ void StateManagerGL::updateProgramUniformBufferBindings(const gl::Context *conte
 
 void StateManagerGL::updateProgramAtomicCounterBufferBindings(const gl::Context *context)
 {
-    const gl::State &glState   = context->getGLState();
+    const gl::State &glState   = context->getState();
     const gl::Program *program = glState.getProgram();
 
     // It is possible there is no active program during a path operation.
@@ -940,7 +941,7 @@ void StateManagerGL::updateProgramAtomicCounterBufferBindings(const gl::Context 
 
 void StateManagerGL::updateProgramImageBindings(const gl::Context *context)
 {
-    const gl::State &glState   = context->getGLState();
+    const gl::State &glState   = context->getState();
     const gl::Program *program = glState.getProgram();
 
     // It is possible there is no active program during a path operation.
@@ -974,15 +975,15 @@ void StateManagerGL::setAttributeCurrentData(size_t index,
         mVertexAttribCurrentValues[index] = data;
         switch (mVertexAttribCurrentValues[index].Type)
         {
-            case GL_FLOAT:
+            case gl::VertexAttribType::Float:
                 mFunctions->vertexAttrib4fv(static_cast<GLuint>(index),
                                             mVertexAttribCurrentValues[index].FloatValues);
                 break;
-            case GL_INT:
+            case gl::VertexAttribType::Int:
                 mFunctions->vertexAttribI4iv(static_cast<GLuint>(index),
                                              mVertexAttribCurrentValues[index].IntValues);
                 break;
-            case GL_UNSIGNED_INT:
+            case gl::VertexAttribType::UnsignedInt:
                 mFunctions->vertexAttribI4uiv(static_cast<GLuint>(index),
                                               mVertexAttribCurrentValues[index].UnsignedIntValues);
                 break;
@@ -1576,7 +1577,7 @@ void StateManagerGL::syncState(const gl::Context *context,
                                const gl::State::DirtyBits &glDirtyBits,
                                const gl::State::DirtyBits &bitMask)
 {
-    const gl::State &state = context->getGLState();
+    const gl::State &state = context->getState();
 
     // Changing the draw framebuffer binding sometimes requires resetting srgb blending.
     if (glDirtyBits[gl::State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING])
@@ -1605,8 +1606,7 @@ void StateManagerGL::syncState(const gl::Context *context,
         }
     }
 
-    const gl::State::DirtyBits &glAndLocalDirtyBits = (glDirtyBits | mLocalDirtyBits) & bitMask;
-
+    const gl::State::DirtyBits glAndLocalDirtyBits = (glDirtyBits | mLocalDirtyBits) & bitMask;
     if (!glAndLocalDirtyBits.any())
     {
         return;
@@ -1961,6 +1961,9 @@ void StateManagerGL::syncState(const gl::Context *context,
                 }
                 break;
             }
+            case gl::State::DIRTY_BIT_PROVOKING_VERTEX:
+                setProvokingVertex(ToGLenum(state.getProvokingVertex()));
+                break;
             default:
                 UNREACHABLE();
                 break;
@@ -2107,6 +2110,17 @@ void StateManagerGL::setPathRenderingStencilState(GLenum func, GLint ref, GLuint
     }
 }
 
+void StateManagerGL::setProvokingVertex(GLenum mode)
+{
+    if (mode != mProvokingVertex)
+    {
+        mFunctions->provokingVertex(mode);
+        mProvokingVertex = mode;
+
+        mLocalDirtyBits.set(gl::State::DIRTY_BIT_PROVOKING_VERTEX);
+    }
+}
+
 void StateManagerGL::setTextureCubemapSeamlessEnabled(bool enabled)
 {
     // TODO(jmadill): Also check for seamless extension.
@@ -2204,7 +2218,7 @@ void StateManagerGL::updateMultiviewBaseViewLayerIndexUniformImpl(
 
 void StateManagerGL::syncSamplersState(const gl::Context *context)
 {
-    const gl::State::SamplerBindingVector &samplers = context->getGLState().getSamplers();
+    const gl::State::SamplerBindingVector &samplers = context->getState().getSamplers();
 
     // This could be optimized by using a separate binding dirty bit per sampler.
     for (size_t samplerIndex = 0; samplerIndex < samplers.size(); ++samplerIndex)
@@ -2225,7 +2239,7 @@ void StateManagerGL::syncSamplersState(const gl::Context *context)
 void StateManagerGL::syncTransformFeedbackState(const gl::Context *context)
 {
     // Set the current transform feedback state
-    gl::TransformFeedback *transformFeedback = context->getGLState().getCurrentTransformFeedback();
+    gl::TransformFeedback *transformFeedback = context->getState().getCurrentTransformFeedback();
     if (transformFeedback)
     {
         TransformFeedbackGL *transformFeedbackGL =

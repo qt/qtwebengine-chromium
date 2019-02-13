@@ -26,26 +26,25 @@ namespace trace_processor {
 namespace {
 
 TEST(JsonTraceParserTest, CoerceToUint32) {
-  uint32_t n = 0;
-
-  ASSERT_TRUE(CoerceToUint32(Json::Value(42), &n));
-  EXPECT_EQ(n, 42);
-
-  ASSERT_TRUE(CoerceToUint32(Json::Value("42"), &n));
-  EXPECT_EQ(n, 42);
+  ASSERT_EQ(CoerceToUint32(Json::Value(42)).value_or(0), 42);
+  ASSERT_EQ(CoerceToUint32(Json::Value("42")).value_or(0), 42);
+  ASSERT_EQ(CoerceToInt64(Json::Value(42.1)).value_or(-1), 42);
 }
 
-TEST(JsonTraceParserTest, CoerceToUint64) {
-  uint64_t n = 0;
+TEST(JsonTraceParserTest, CoerceToInt64) {
+  ASSERT_EQ(CoerceToInt64(Json::Value(42)).value_or(-1), 42);
+  ASSERT_EQ(CoerceToInt64(Json::Value("42")).value_or(-1), 42);
+  ASSERT_EQ(CoerceToInt64(Json::Value(42.1)).value_or(-1), 42);
+  ASSERT_FALSE(CoerceToInt64(Json::Value("foo")).has_value());
+  ASSERT_FALSE(CoerceToInt64(Json::Value("1234!")).has_value());
+}
 
-  ASSERT_TRUE(CoerceToUint64(Json::Value(42), &n));
-  EXPECT_EQ(n, 42);
-
-  ASSERT_TRUE(CoerceToUint64(Json::Value("42"), &n));
-  EXPECT_EQ(n, 42);
-
-  ASSERT_FALSE(CoerceToUint64(Json::Value("foo"), &n));
-  ASSERT_FALSE(CoerceToUint64(Json::Value("1234!"), &n));
+TEST(JsonTraceParserTest, CoerceToNs) {
+  ASSERT_EQ(CoerceToNs(Json::Value(42)).value_or(-1), 42000);
+  ASSERT_EQ(CoerceToNs(Json::Value("42")).value_or(-1), 42000);
+  ASSERT_EQ(CoerceToNs(Json::Value(42.1)).value_or(-1), 42100);
+  ASSERT_FALSE(CoerceToNs(Json::Value("foo")).has_value());
+  ASSERT_FALSE(CoerceToNs(Json::Value("1234!")).has_value());
 }
 
 }  // namespace

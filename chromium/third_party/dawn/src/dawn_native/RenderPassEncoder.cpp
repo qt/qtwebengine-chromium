@@ -19,6 +19,8 @@
 #include "dawn_native/Commands.h"
 #include "dawn_native/RenderPipeline.h"
 
+#include <string.h>
+
 namespace dawn_native {
 
     RenderPassEncoderBase::RenderPassEncoderBase(DeviceBase* device,
@@ -27,40 +29,47 @@ namespace dawn_native {
         : ProgrammablePassEncoder(device, topLevelBuilder, allocator) {
     }
 
-    void RenderPassEncoderBase::DrawArrays(uint32_t vertexCount,
-                                           uint32_t instanceCount,
-                                           uint32_t firstVertex,
-                                           uint32_t firstInstance) {
+    void RenderPassEncoderBase::Draw(uint32_t vertexCount,
+                                     uint32_t instanceCount,
+                                     uint32_t firstVertex,
+                                     uint32_t firstInstance) {
         if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
             return;
         }
 
-        DrawArraysCmd* draw = mAllocator->Allocate<DrawArraysCmd>(Command::DrawArrays);
-        new (draw) DrawArraysCmd;
+        DrawCmd* draw = mAllocator->Allocate<DrawCmd>(Command::Draw);
+        new (draw) DrawCmd;
         draw->vertexCount = vertexCount;
         draw->instanceCount = instanceCount;
         draw->firstVertex = firstVertex;
         draw->firstInstance = firstInstance;
     }
 
-    void RenderPassEncoderBase::DrawElements(uint32_t indexCount,
-                                             uint32_t instanceCount,
-                                             uint32_t firstIndex,
-                                             uint32_t firstInstance) {
+    void RenderPassEncoderBase::DrawIndexed(uint32_t indexCount,
+                                            uint32_t instanceCount,
+                                            uint32_t firstIndex,
+                                            uint32_t baseVertex,
+                                            uint32_t firstInstance) {
         if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
             return;
         }
 
-        DrawElementsCmd* draw = mAllocator->Allocate<DrawElementsCmd>(Command::DrawElements);
-        new (draw) DrawElementsCmd;
+        DrawIndexedCmd* draw = mAllocator->Allocate<DrawIndexedCmd>(Command::DrawIndexed);
+        new (draw) DrawIndexedCmd;
         draw->indexCount = indexCount;
         draw->instanceCount = instanceCount;
         draw->firstIndex = firstIndex;
+        draw->baseVertex = baseVertex;
         draw->firstInstance = firstInstance;
     }
 
-    void RenderPassEncoderBase::SetRenderPipeline(RenderPipelineBase* pipeline) {
+    void RenderPassEncoderBase::SetPipeline(RenderPipelineBase* pipeline) {
         if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
+            return;
+        }
+
+        if (pipeline == nullptr) {
+            mTopLevelBuilder->HandleError("Pipeline cannot be null");
             return;
         }
 
@@ -115,6 +124,11 @@ namespace dawn_native {
             return;
         }
 
+        if (buffer == nullptr) {
+            mTopLevelBuilder->HandleError("Buffer cannot be null");
+            return;
+        }
+
         SetIndexBufferCmd* cmd = mAllocator->Allocate<SetIndexBufferCmd>(Command::SetIndexBuffer);
         new (cmd) SetIndexBufferCmd;
         cmd->buffer = buffer;
@@ -127,6 +141,13 @@ namespace dawn_native {
                                                  uint32_t const* offsets) {
         if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
             return;
+        }
+
+        for (size_t i = 0; i < count; ++i) {
+            if (buffers[i] == nullptr) {
+                mTopLevelBuilder->HandleError("Buffers cannot be null");
+                return;
+            }
         }
 
         SetVertexBuffersCmd* cmd =

@@ -26,7 +26,7 @@ class PixelBuffer final : angle::NonCopyable
 
     void release(RendererVk *renderer);
 
-    void removeStagedUpdates(const gl::ImageIndex &index);
+    void removeStagedUpdates(RendererVk *renderer, const gl::ImageIndex &index);
 
     angle::Result stageSubresourceUpdate(ContextVk *contextVk,
                                          const gl::ImageIndex &index,
@@ -52,6 +52,11 @@ class PixelBuffer final : angle::NonCopyable
                                                         const gl::InternalFormat &formatInfo,
                                                         FramebufferVk *framebufferVk);
 
+    void stageSubresourceUpdateFromImage(vk::ImageHelper *image,
+                                         const gl::ImageIndex &index,
+                                         const gl::Offset &destOffset,
+                                         const gl::Extents &extents);
+
     // This will use the underlying dynamic buffer to allocate some memory to be used as a src or
     // dst.
     angle::Result allocate(ContextVk *contextVk,
@@ -73,10 +78,40 @@ class PixelBuffer final : angle::NonCopyable
     {
         SubresourceUpdate();
         SubresourceUpdate(VkBuffer bufferHandle, const VkBufferImageCopy &copyRegion);
+        SubresourceUpdate(vk::ImageHelper *image, const VkImageCopy &copyRegion);
         SubresourceUpdate(const SubresourceUpdate &other);
 
-        VkBuffer bufferHandle;
-        VkBufferImageCopy copyRegion;
+        void release(RendererVk *renderer);
+
+        const VkImageSubresourceLayers &dstSubresource() const
+        {
+            return updateSource == UpdateSource::Buffer ? buffer.copyRegion.imageSubresource
+                                                        : image.copyRegion.dstSubresource;
+        }
+        bool isUpdateToLayerLevel(uint32_t layerIndex, uint32_t levelIndex) const;
+
+        enum class UpdateSource
+        {
+            Buffer,
+            Image,
+        };
+        struct BufferUpdate
+        {
+            VkBuffer bufferHandle;
+            VkBufferImageCopy copyRegion;
+        };
+        struct ImageUpdate
+        {
+            vk::ImageHelper *image;
+            VkImageCopy copyRegion;
+        };
+
+        UpdateSource updateSource;
+        union
+        {
+            BufferUpdate buffer;
+            ImageUpdate image;
+        };
     };
 
     vk::DynamicBuffer mStagingBuffer;
@@ -204,7 +239,11 @@ class TextureVk : public TextureImpl
         return mImage;
     }
 
-    const vk::ImageView &getImageView() const;
+    const vk::ImageView &getReadImageView() const;
+    angle::Result getLayerLevelDrawImageView(vk::Context *context,
+                                             size_t layer,
+                                             size_t level,
+                                             vk::ImageView **imageViewOut);
     const vk::Sampler &getSampler() const;
 
     angle::Result ensureImageInitialized(ContextVk *contextVk);
@@ -251,6 +290,19 @@ class TextureVk : public TextureImpl
                                      bool unpackUnmultiplyAlpha,
                                      TextureVk *source);
 
+    angle::Result copySubImageImplWithDraw(ContextVk *contextVk,
+                                           const gl::ImageIndex &index,
+                                           const gl::Offset &destOffset,
+                                           const vk::Format &destFormat,
+                                           size_t sourceLevel,
+                                           const gl::Rectangle &sourceArea,
+                                           bool isSrcFlipY,
+                                           bool unpackFlipY,
+                                           bool unpackPremultiplyAlpha,
+                                           bool unpackUnmultiplyAlpha,
+                                           vk::ImageHelper *srcImage,
+                                           const vk::ImageView *srcView);
+
     angle::Result initImage(ContextVk *contextVk,
                             const vk::Format &format,
                             const gl::Extents &extents,
@@ -260,13 +312,19 @@ class TextureVk : public TextureImpl
     uint32_t getLevelCount() const;
     angle::Result initCubeMapRenderTargets(ContextVk *contextVk);
 
+    angle::Result ensureImageInitializedImpl(ContextVk *contextVk,
+                                             const gl::Extents &baseLevelExtents,
+                                             uint32_t levelCount,
+                                             const vk::Format &format);
+
     vk::ImageHelper mImage;
-    vk::ImageView mBaseLevelImageView;
-    vk::ImageView mMipmapImageView;
+    vk::ImageView mDrawBaseLevelImageView;
+    vk::ImageView mReadBaseLevelImageView;
+    vk::ImageView mReadMipmapImageView;
+    std::vector<std::vector<vk::ImageView>> mLayerLevelDrawImageViews;
     vk::Sampler mSampler;
 
     RenderTargetVk mRenderTarget;
-    std::vector<vk::ImageView> mCubeMapFaceImageViews;
     std::vector<RenderTargetVk> mCubeMapRenderTargets;
 
     PixelBuffer mPixelBuffer;

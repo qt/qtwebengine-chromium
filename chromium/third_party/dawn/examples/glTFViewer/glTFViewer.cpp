@@ -23,6 +23,7 @@
 #include "common/Assert.h"
 #include "common/Math.h"
 #include "common/Constants.h"
+#include "utils/ComboRenderPipelineDescriptor.h"
 #include "utils/DawnHelpers.h"
 #include "utils/SystemUtils.h"
 
@@ -281,36 +282,38 @@ namespace {
                          dawn::BindingType::SampledTexture},
                     });
 
-        auto depthStencilState = device.CreateDepthStencilStateBuilder()
-            .SetDepthCompareFunction(dawn::CompareFunction::Less)
-            .SetDepthWriteEnabled(true)
-            .GetResult();
-
         auto pipelineLayout = utils::MakeBasicPipelineLayout(device, &bindGroupLayout);
-        auto pipeline = device.CreateRenderPipelineBuilder()
-            .SetColorAttachmentFormat(0, GetPreferredSwapChainTextureFormat())
-            .SetDepthStencilAttachmentFormat(dawn::TextureFormat::D32FloatS8Uint)
-            .SetLayout(pipelineLayout)
-            .SetStage(dawn::ShaderStage::Vertex, oVSModule, "main")
-            .SetStage(dawn::ShaderStage::Fragment, oFSModule, "main")
-            .SetIndexFormat(dawn::IndexFormat::Uint16)
-            .SetInputState(inputState)
-            .SetDepthStencilState(depthStencilState)
-            .GetResult();
 
-        auto bindGroupBuilder = device.CreateBindGroupBuilder();
-        bindGroupBuilder.SetLayout(bindGroupLayout);
+        utils::ComboRenderPipelineDescriptor descriptor(device);
+        descriptor.layout = pipelineLayout;
+        descriptor.cVertexStage.module = oVSModule;
+        descriptor.cFragmentStage.module = oFSModule;
+        descriptor.inputState = inputState;
+        descriptor.indexFormat = dawn::IndexFormat::Uint16;
+        descriptor.cAttachmentsState.hasDepthStencilAttachment = true;
+        descriptor.cDepthStencilAttachment.format = dawn::TextureFormat::D32FloatS8Uint;
+        descriptor.cColorAttachments[0]->format = GetPreferredSwapChainTextureFormat();
+        descriptor.cDepthStencilState.depthWriteEnabled = true;
+        descriptor.cDepthStencilState.depthCompare = dawn::CompareFunction::Less;
+
+        dawn::RenderPipeline pipeline = device.CreateRenderPipeline(&descriptor);
+
+        dawn::BindGroup bindGroup;
 
         if (hasTexture) {
             const auto& textureView = textures[iTextureID];
             const auto& iSamplerID = scene.textures[iTextureID].sampler;
-            bindGroupBuilder.SetSamplers(0, 1, &samplers[iSamplerID]);
-            bindGroupBuilder.SetTextureViews(1, 1, &textureView);
+            bindGroup = utils::MakeBindGroup(device, bindGroupLayout, {
+                {0, samplers[iSamplerID]},
+                {1, textureView}
+            });
+        } else {
+            bindGroup = utils::MakeBindGroup(device, bindGroupLayout, {});
         }
 
         MaterialInfo material = {
-            pipeline.Get(),
-            bindGroupBuilder.GetResult(),
+            pipeline,
+            bindGroup,
             std::map<uint32_t, std::string>(),
         };
         materials[key] = std::move(material);
@@ -387,7 +390,8 @@ namespace {
             descriptor.size.width = iImage.width;
             descriptor.size.height = iImage.height;
             descriptor.size.depth = 1;
-            descriptor.arrayLayer = 1;
+            descriptor.arraySize = 1;
+            descriptor.sampleCount = 1;
             descriptor.format = format;
             descriptor.levelCount = 1;
             descriptor.usage = dawn::TextureUsageBit::TransferDst | dawn::TextureUsageBit::Sampled;
@@ -436,7 +440,7 @@ namespace {
             dawn::BufferCopyView bufferCopyView =
                 utils::CreateBufferCopyView(staging, 0, rowPitch, 0);
             dawn::TextureCopyView textureCopyView =
-                utils::CreateTextureCopyView(oTexture, 0, 0, {0, 0, 0}, dawn::TextureAspect::Color);
+                utils::CreateTextureCopyView(oTexture, 0, 0, {0, 0, 0});
             dawn::Extent3D copySize = {iImage.width, iImage.height, 1};
             auto cmdbuf = device.CreateCommandBufferBuilder()
                               .CopyBufferToTexture(&bufferCopyView, &textureCopyView, &copySize)
@@ -489,7 +493,7 @@ namespace {
                 }
             }
             const MaterialInfo& material = getMaterial(iPrim.material, strides[0], strides[1], strides[2]);
-            pass.SetRenderPipeline(material.pipeline);
+            pass.SetPipeline(material.pipeline);
             pass.SetBindGroup(0, material.bindGroup0);
             pass.SetPushConstants(dawn::ShaderStageBit::Vertex,
                     0, sizeof(u_transform_block) / sizeof(uint32_t),
@@ -528,10 +532,10 @@ namespace {
                 }
                 const auto& oIndicesBuffer = buffers.at(iIndices.bufferView);
                 pass.SetIndexBuffer(oIndicesBuffer, static_cast<uint32_t>(iIndices.byteOffset));
-                pass.DrawElements(static_cast<uint32_t>(iIndices.count), 1, 0, 0);
+                pass.DrawIndexed(static_cast<uint32_t>(iIndices.count), 1, 0, 0, 0);
             } else {
                 // DrawArrays
-                pass.DrawArrays(vertexCount, 1, 0, 0);
+                pass.Draw(vertexCount, 1, 0, 0);
             }
         }
     }

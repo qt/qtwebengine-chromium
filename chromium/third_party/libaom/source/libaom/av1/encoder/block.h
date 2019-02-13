@@ -74,16 +74,16 @@ typedef struct {
 } CB_COEFF_BUFFER;
 
 typedef struct {
-  int16_t mode_context[MODE_CTX_REF_FRAMES];
   // TODO(angiebird): Reduce the buffer size according to sb_type
   tran_low_t *tcoeff[MAX_MB_PLANE];
   uint16_t *eobs[MAX_MB_PLANE];
   uint8_t *txb_skip_ctx[MAX_MB_PLANE];
   int *dc_sign_ctx[MAX_MB_PLANE];
-  uint8_t ref_mv_count[MODE_CTX_REF_FRAMES];
   CANDIDATE_MV ref_mv_stack[MODE_CTX_REF_FRAMES][MAX_REF_MV_STACK_SIZE];
   int_mv global_mvs[REF_FRAMES];
   int16_t compound_mode_context[MODE_CTX_REF_FRAMES];
+  int16_t mode_context[MODE_CTX_REF_FRAMES];
+  uint8_t ref_mv_count[MODE_CTX_REF_FRAMES];
 } MB_MODE_INFO_EXT;
 
 typedef struct {
@@ -401,6 +401,10 @@ struct macroblock {
   int tx_split_prune_flag;  // Flag to skip tx split RD search.
   int recalc_luma_mc_data;  // Flag to indicate recalculation of MC data during
                             // interpolation filter search
+  // The likelihood of an edge existing in the block (using partial Canny edge
+  // detection). For reference, 556 is the value returned for a solid
+  // vertical black/white edge.
+  uint16_t edge_strength;
 };
 
 static INLINE int is_rect_tx_allowed_bsize(BLOCK_SIZE bsize) {

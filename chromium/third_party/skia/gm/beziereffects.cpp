@@ -28,10 +28,9 @@ class BezierTestOp : public GrMeshDrawOp {
 public:
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        auto analysis = fProcessorSet.finalize(fColor, GrProcessorAnalysisCoverage::kSingleChannel,
-                                               clip, false, caps, &fColor);
-        return analysis.requiresDstTexture() ? RequiresDstTexture::kYes : RequiresDstTexture::kNo;
+    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+        return fProcessorSet.finalize(fColor, GrProcessorAnalysisCoverage::kSingleChannel, clip,
+                                      false, caps, &fColor);
     }
 
     void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
@@ -330,7 +329,7 @@ private:
         }
         SkRect rect = this->rect();
         SkPointPriv::SetRectTriStrip(&verts[0].fPosition, rect, sizeof(Vertex));
-        fDevToUV.apply<4, sizeof(Vertex), sizeof(SkPoint)>(verts);
+        fDevToUV.apply(verts, 4, sizeof(Vertex), sizeof(SkPoint));
         auto pipe = this->makePipeline(target);
         helper.recordDraw(target, this->gp(), pipe.fPipeline, pipe.fFixedDynamicState);
     }

@@ -59,8 +59,7 @@ class PERFETTO_EXPORT TracingService {
   // The API for the Producer port of the Service.
   // Subclassed by:
   // 1. The tracing_service_impl.cc business logic when returning it in response
-  // to
-  //    the ConnectProducer() method.
+  //    to the ConnectProducer() method.
   // 2. The transport layer (e.g., src/ipc) when the producer and
   //    the service don't talk locally but via some IPC mechanism.
   class PERFETTO_EXPORT ProducerEndpoint {
@@ -71,6 +70,18 @@ class PERFETTO_EXPORT TracingService {
     // identified by their name (i.e. DataSourceDescriptor.name)
     virtual void RegisterDataSource(const DataSourceDescriptor&) = 0;
     virtual void UnregisterDataSource(const std::string& name) = 0;
+
+    // Associate the trace writer with the given |writer_id| with
+    // |target_buffer|. The service may use this information to retrieve and
+    // copy uncommitted chunks written by the trace writer into its associated
+    // buffer, e.g. when a producer process crashes or when a flush is
+    // necessary.
+    virtual void RegisterTraceWriter(uint32_t writer_id,
+                                     uint32_t target_buffer) = 0;
+
+    // Remove the association of the trace writer previously created via
+    // RegisterTraceWriter.
+    virtual void UnregisterTraceWriter(uint32_t writer_id) = 0;
 
     // Called by the Producer to signal that some pages in the shared memory
     // buffer (shared between Service and Producer) have changed.
@@ -140,6 +151,9 @@ class PERFETTO_EXPORT TracingService {
     // passed callback once all of them have acked the flush (in which case
     // the callback argument |success| will be true) or |timeout_ms| are elapsed
     // (in which case |success| will be false).
+    // If |timeout_ms| is 0 the TraceConfig's flush_timeout_ms is used, or,
+    // if that one is not set (or is set to 0), kDefaultFlushTimeoutMs (5s) is
+    // used.
     using FlushCallback = std::function<void(bool /*success*/)>;
     virtual void Flush(uint32_t timeout_ms, FlushCallback) = 0;
 
@@ -147,6 +161,15 @@ class PERFETTO_EXPORT TracingService {
     virtual void ReadBuffers() = 0;
 
     virtual void FreeBuffers() = 0;
+
+    // Will call OnDetach().
+    virtual void Detach(const std::string& key) = 0;
+
+    // Will call OnAttach().
+    virtual void Attach(const std::string& key) = 0;
+
+    // Will call OnTraceStats().
+    virtual void GetTraceStats() = 0;
   };  // class ConsumerEndpoint.
 
   // Implemented in src/core/tracing_service_impl.cc .
@@ -175,13 +198,24 @@ class PERFETTO_EXPORT TracingService {
       const std::string& name,
       size_t shared_memory_size_hint_bytes = 0) = 0;
 
-  // Coonects a Consumer instance and obtains a ConsumerEndpoint, which is
+  // Connects a Consumer instance and obtains a ConsumerEndpoint, which is
   // essentially a 1:1 channel between one Consumer and the Service.
   // The caller has to guarantee that the passed Consumer will be alive as long
   // as the returned ConsumerEndpoint is alive.
   // To disconnect just destroy the returned ConsumerEndpoint object. It is safe
   // to destroy the Consumer once the Consumer::OnDisconnect() has been invoked.
-  virtual std::unique_ptr<ConsumerEndpoint> ConnectConsumer(Consumer*) = 0;
+  virtual std::unique_ptr<ConsumerEndpoint> ConnectConsumer(Consumer*,
+                                                            uid_t) = 0;
+
+  // Enable/disable scraping of chunks in the shared memory buffer. If enabled,
+  // the service will copy uncommitted but non-empty chunks from the SMB when
+  // flushing (e.g. to handle unresponsive producers or producers unable to
+  // flush their active chunks), on producer disconnect (e.g. to recover data
+  // from crashed producers), and after disabling a tracing session (e.g. to
+  // gather data from producers that didn't stop their data sources in time).
+  //
+  // This feature is currently used by Chrome.
+  virtual void SetSMBScrapingEnabled(bool enabled) = 0;
 };
 
 }  // namespace perfetto

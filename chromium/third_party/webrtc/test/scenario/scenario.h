@@ -14,8 +14,10 @@
 #include <utility>
 #include <vector>
 
-#include "rtc_base/constructormagic.h"
-#include "rtc_base/fakeclock.h"
+#include "absl/memory/memory.h"
+#include "rtc_base/constructor_magic.h"
+#include "rtc_base/fake_clock.h"
+#include "test/logging/log_writer.h"
 #include "test/scenario/audio_stream.h"
 #include "test/scenario/call_client.h"
 #include "test/scenario/column_printer.h"
@@ -63,13 +65,15 @@ class Scenario {
   Scenario();
   explicit Scenario(std::string file_name);
   Scenario(std::string file_name, bool real_time);
+  Scenario(std::unique_ptr<LogWriterFactoryInterface> log_writer_manager,
+           bool real_time);
   RTC_DISALLOW_COPY_AND_ASSIGN(Scenario);
   ~Scenario();
 
   SimulationNode* CreateSimulationNode(NetworkNodeConfig config);
   SimulationNode* CreateSimulationNode(
       std::function<void(NetworkNodeConfig*)> config_modifier);
-  NetworkNode* CreateNetworkNode(
+  EmulatedNetworkNode* CreateNetworkNode(
       NetworkNodeConfig config,
       std::unique_ptr<NetworkBehaviorInterface> behavior);
 
@@ -79,30 +83,30 @@ class Scenario {
       std::function<void(CallClientConfig*)> config_modifier);
 
   CallClientPair* CreateRoutes(CallClient* first,
-                               std::vector<NetworkNode*> send_link,
+                               std::vector<EmulatedNetworkNode*> send_link,
                                CallClient* second,
-                               std::vector<NetworkNode*> return_link);
+                               std::vector<EmulatedNetworkNode*> return_link);
 
   CallClientPair* CreateRoutes(CallClient* first,
-                               std::vector<NetworkNode*> send_link,
+                               std::vector<EmulatedNetworkNode*> send_link,
                                DataSize first_overhead,
                                CallClient* second,
-                               std::vector<NetworkNode*> return_link,
+                               std::vector<EmulatedNetworkNode*> return_link,
                                DataSize second_overhead);
 
   void ChangeRoute(std::pair<CallClient*, CallClient*> clients,
-                   std::vector<NetworkNode*> over_nodes);
+                   std::vector<EmulatedNetworkNode*> over_nodes);
 
   void ChangeRoute(std::pair<CallClient*, CallClient*> clients,
-                   std::vector<NetworkNode*> over_nodes,
+                   std::vector<EmulatedNetworkNode*> over_nodes,
                    DataSize overhead);
 
   SimulatedTimeClient* CreateSimulatedTimeClient(
       std::string name,
       SimulatedTimeClientConfig config,
       std::vector<PacketStreamConfig> stream_configs,
-      std::vector<NetworkNode*> send_link,
-      std::vector<NetworkNode*> return_link);
+      std::vector<EmulatedNetworkNode*> send_link,
+      std::vector<EmulatedNetworkNode*> return_link);
 
   VideoStreamPair* CreateVideoStream(
       std::pair<CallClient*, CallClient*> clients,
@@ -119,10 +123,11 @@ class Scenario {
       AudioStreamConfig config);
 
   CrossTrafficSource* CreateCrossTraffic(
-      std::vector<NetworkNode*> over_nodes,
+      std::vector<EmulatedNetworkNode*> over_nodes,
       std::function<void(CrossTrafficConfig*)> config_modifier);
-  CrossTrafficSource* CreateCrossTraffic(std::vector<NetworkNode*> over_nodes,
-                                         CrossTrafficConfig config);
+  CrossTrafficSource* CreateCrossTraffic(
+      std::vector<EmulatedNetworkNode*> over_nodes,
+      CrossTrafficConfig config);
 
   // Runs the provided function with a fixed interval.
   RepeatedActivity* Every(TimeDelta interval,
@@ -133,7 +138,7 @@ class Scenario {
   void At(TimeDelta offset, std::function<void()> function);
 
   // Sends a packet over the nodes and runs |action| when it has been delivered.
-  void NetworkDelayedAction(std::vector<NetworkNode*> over_nodes,
+  void NetworkDelayedAction(std::vector<EmulatedNetworkNode*> over_nodes,
                             size_t packet_size,
                             std::function<void()> action);
 
@@ -148,7 +153,7 @@ class Scenario {
   void Stop();
 
   // Triggers sending of dummy packets over the given nodes.
-  void TriggerPacketBurst(std::vector<NetworkNode*> over_nodes,
+  void TriggerPacketBurst(std::vector<EmulatedNetworkNode*> over_nodes,
                           size_t num_packets,
                           size_t packet_size);
 
@@ -162,15 +167,22 @@ class Scenario {
   // Return the duration of the current session so far.
   TimeDelta Duration();
 
-  std::string GetFullPathOrEmpty(std::string name) const {
-    if (base_filename_.empty() || name.empty())
-      return std::string();
-    return base_filename_ + "." + name;
+  std::unique_ptr<RtcEventLogOutput> GetLogWriter(std::string name) {
+    if (!log_writer_factory_ || name.empty())
+      return nullptr;
+    return log_writer_factory_->Create(name);
+  }
+  std::unique_ptr<LogWriterFactoryInterface> GetLogWriterFactory(
+      std::string name) {
+    if (!log_writer_factory_ || name.empty())
+      return nullptr;
+    return absl::make_unique<LogWriterFactoryAddPrefix>(
+        log_writer_factory_.get(), name);
   }
 
  private:
   NullReceiver null_receiver_;
-  std::string base_filename_;
+  std::unique_ptr<LogWriterFactoryInterface> log_writer_factory_;
   const bool real_time_mode_;
   SimulatedClock sim_clock_;
   Clock* clock_;
@@ -180,7 +192,7 @@ class Scenario {
 
   std::vector<std::unique_ptr<CallClient>> clients_;
   std::vector<std::unique_ptr<CallClientPair>> client_pairs_;
-  std::vector<std::unique_ptr<NetworkNode>> network_nodes_;
+  std::vector<std::unique_ptr<EmulatedNetworkNode>> network_nodes_;
   std::vector<std::unique_ptr<CrossTrafficSource>> cross_traffic_sources_;
   std::vector<std::unique_ptr<VideoStreamPair>> video_streams_;
   std::vector<std::unique_ptr<AudioStreamPair>> audio_streams_;

@@ -10,10 +10,10 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/cfx_char.h"
 #include "core/fxcrt/css/cfx_css.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
+#include "xfa/fgas/layout/cfx_char.h"
 #include "xfa/fxfa/cxfa_textparser.h"
 
 class CFDE_RenderDevice;
@@ -104,7 +104,7 @@ class CXFA_TextLayout {
                   int32_t iPiece,
                   FXTEXT_CHARPOS* pCharPos,
                   const CFX_Matrix& tmDoc2Device);
-  int32_t GetDisplayPos(const CXFA_TextPiece* pPiece, FXTEXT_CHARPOS* pCharPos);
+  size_t GetDisplayPos(const CXFA_TextPiece* pPiece, FXTEXT_CHARPOS* pCharPos);
   bool ToRun(const CXFA_TextPiece* pPiece, FX_RTFTEXTOBJ* tr);
   void DoTabstops(CFX_CSSComputedStyle* pStyle, CXFA_PieceLine* pPieceLine);
   bool Layout(int32_t iBlock);

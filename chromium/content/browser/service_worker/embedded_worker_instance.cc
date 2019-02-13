@@ -26,7 +26,6 @@
 #include "content/common/content_switches_internal.h"
 #include "content/common/renderer.mojom.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "content/common/url_loader_factory_bundle.mojom.h"
 #include "content/common/url_schemes.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -40,8 +39,8 @@
 #include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
+#include "third_party/blink/public/mojom/loader/url_loader_factory_bundle.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/blink/public/web/web_console_message.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -100,51 +99,21 @@ void NotifyWorkerVersionDoomedOnUI(int worker_process_id, int worker_route_id) {
 // it may also include scheme-specific factories that don't go to network.
 //
 // The network factory does not support reconnection to the network service.
-std::unique_ptr<URLLoaderFactoryBundleInfo> CreateFactoryBundle(
+std::unique_ptr<blink::URLLoaderFactoryBundleInfo> CreateFactoryBundle(
     RenderProcessHost* rph,
     const url::Origin& origin) {
-  auto factory_bundle = std::make_unique<URLLoaderFactoryBundleInfo>();
+  auto factory_bundle = std::make_unique<blink::URLLoaderFactoryBundleInfo>();
   network::mojom::URLLoaderFactoryRequest default_factory_request =
       mojo::MakeRequest(&factory_bundle->default_factory_info());
   network::mojom::TrustedURLLoaderHeaderClientPtrInfo default_header_client;
   bool bypass_redirect_checks = false;
 
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    // Create the default *network* factory. The factory will be used as the
-    // default factory when |factory_bundle| is cloned via
-    // CloneWithoutDefaultFactory(). See comments in URLLoaderFactoryBundle
-    // for more details.
-    network::mojom::URLLoaderFactoryRequest default_network_factory_request =
-        mojo::MakeRequest(&factory_bundle->default_network_factory_info());
-    network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client;
-    GetContentClient()->browser()->WillCreateURLLoaderFactory(
-        rph->GetBrowserContext(), nullptr /* frame_host */, rph->GetID(),
-        false /* is_navigation */, origin, &default_network_factory_request,
-        &header_client, &bypass_redirect_checks);
-
-    if (!GetNetworkFactoryCallbackForTest()) {
-      rph->CreateURLLoaderFactory(origin, std::move(header_client),
-                                  std::move(default_network_factory_request));
-    } else {
-      network::mojom::URLLoaderFactoryPtr original_factory;
-      rph->CreateURLLoaderFactory(origin, std::move(header_client),
-                                  mojo::MakeRequest(&original_factory));
-      GetNetworkFactoryCallbackForTest()->Run(
-          std::move(default_network_factory_request), rph->GetID(),
-          original_factory.PassInterface());
-    }
-
-    // Create the default factory. See comments in URLLoaderFactoryBundle
-    // for more details.
-    bool bypass_redirect_checks_for_default_factory = bypass_redirect_checks;
+    // See if the default factory needs to be tweaked by the embedder.
     GetContentClient()->browser()->WillCreateURLLoaderFactory(
         rph->GetBrowserContext(), nullptr /* frame_host */, rph->GetID(),
         false /* is_navigation */, origin, &default_factory_request,
-        &default_header_client, &bypass_redirect_checks_for_default_factory);
-    DCHECK_EQ(bypass_redirect_checks,
-              bypass_redirect_checks_for_default_factory)
-        << "CreateFactoryBundle doesn't support multiple "
-           "|bypass_redirect_checks| values";
+        &default_header_client, &bypass_redirect_checks);
   }
 
   if (!GetNetworkFactoryCallbackForTest()) {
@@ -192,9 +161,9 @@ using SetupProcessCallback = base::OnceCallback<void(
     std::unique_ptr<ServiceWorkerProcessManager::AllocatedProcessInfo>,
     std::unique_ptr<EmbeddedWorkerInstance::DevToolsProxy>,
     std::unique_ptr<
-        URLLoaderFactoryBundleInfo> /* factory_bundle_for_browser */,
+        blink::URLLoaderFactoryBundleInfo> /* factory_bundle_for_browser */,
     std::unique_ptr<
-        URLLoaderFactoryBundleInfo> /* factory_bundle_for_renderer */,
+        blink::URLLoaderFactoryBundleInfo> /* factory_bundle_for_renderer */,
     blink::mojom::CacheStoragePtrInfo)>;
 
 // Allocates a renderer process for starting a worker and does setup like
@@ -217,8 +186,9 @@ void SetupOnUIThread(base::WeakPtr<ServiceWorkerProcessManager> process_manager,
   auto process_info =
       std::make_unique<ServiceWorkerProcessManager::AllocatedProcessInfo>();
   std::unique_ptr<EmbeddedWorkerInstance::DevToolsProxy> devtools_proxy;
-  std::unique_ptr<URLLoaderFactoryBundleInfo> factory_bundle_for_browser;
-  std::unique_ptr<URLLoaderFactoryBundleInfo> factory_bundle_for_renderer;
+  std::unique_ptr<blink::URLLoaderFactoryBundleInfo> factory_bundle_for_browser;
+  std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
+      factory_bundle_for_renderer;
 
   if (!process_manager) {
     base::PostTaskWithTraits(
@@ -573,8 +543,10 @@ class EmbeddedWorkerInstance::StartTask {
       std::unique_ptr<ServiceWorkerProcessManager::AllocatedProcessInfo>
           process_info,
       std::unique_ptr<EmbeddedWorkerInstance::DevToolsProxy> devtools_proxy,
-      std::unique_ptr<URLLoaderFactoryBundleInfo> factory_bundle_for_browser,
-      std::unique_ptr<URLLoaderFactoryBundleInfo> factory_bundle_for_renderer,
+      std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
+          factory_bundle_for_browser,
+      std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
+          factory_bundle_for_renderer,
       blink::mojom::CacheStoragePtrInfo cache_storage) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
@@ -624,8 +596,9 @@ class EmbeddedWorkerInstance::StartTask {
     scoped_refptr<network::SharedURLLoaderFactory> factory_for_new_scripts;
     if (blink::ServiceWorkerUtils::IsServicificationEnabled()) {
       DCHECK(factory_bundle_for_browser);
-      factory_for_new_scripts = base::MakeRefCounted<URLLoaderFactoryBundle>(
-          std::move(factory_bundle_for_browser));
+      factory_for_new_scripts =
+          base::MakeRefCounted<blink::URLLoaderFactoryBundle>(
+              std::move(factory_bundle_for_browser));
 
       // Send the factory bundle for subresource loading from the service worker
       // (i.e. fetch()).
@@ -741,7 +714,7 @@ void EmbeddedWorkerInstance::StopIfNotAttachedToDevTools() {
       // Check ShouldNotifyWorkerStopIgnored not to show the same message
       // multiple times in DevTools.
       if (devtools_proxy_->ShouldNotifyWorkerStopIgnored()) {
-        AddMessageToConsole(blink::WebConsoleMessage::kLevelVerbose,
+        AddMessageToConsole(blink::mojom::ConsoleMessageLevel::kVerbose,
                             kServiceWorkerTerminationCanceledMesage);
         devtools_proxy_->WorkerStopIgnoredNotified();
       }
@@ -1069,7 +1042,7 @@ void EmbeddedWorkerInstance::OnSetupFailed(
 }
 
 void EmbeddedWorkerInstance::AddMessageToConsole(
-    blink::WebConsoleMessage::Level level,
+    blink::mojom::ConsoleMessageLevel level,
     const std::string& message) {
   if (process_id() == ChildProcessHost::kInvalidUniqueID)
     return;

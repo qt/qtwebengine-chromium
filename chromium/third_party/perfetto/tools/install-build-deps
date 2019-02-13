@@ -170,7 +170,7 @@ BUILD_DEPS_HOST = [
   # These dependencies are for libunwindstack, which is used by src/profiling.
   ('buildtools/android-core',
    'https://android.googlesource.com/platform/system/core.git',
-   'b31badf70f7734d1ef6d1a95ee73dc57ebd2b19d',
+   'ad6a5c565c4908e3ae292f26510a2cc3c8bdf046',
    'all'
   ),
 
@@ -188,8 +188,8 @@ BUILD_DEPS_HOST = [
 
   # Example traces for regression tests.
   ('buildtools/test_data.zip',
-   'https://storage.googleapis.com/perfetto/test-data-20180808.zip',
-   '4adec454b60a943dd58603d4be80d42b2db62cbd',
+   'https://storage.googleapis.com/perfetto/test-data-20190123.zip',
+   '3761a0501669fc070022025678a8651f4a9495ad',
    'all',
   ),
 
@@ -251,6 +251,8 @@ TEST_DEPS_ANDROID = [
 # This variable is updated by tools/roll-catapult-trace-viewer.
 CATAPULT_SHA1 = 'ff5d8fd7244680b4d4456c25d5fdc04c76f9ef66'
 
+TYPEFACES_SHA1 = '756b0a015b8f99f5718f7fdf967d052c1ec55ab3'
+
 UI_DEPS = [
   ('buildtools/nodejs.tgz',
    'https://storage.googleapis.com/perfetto/node-v10.3.0-darwin-x64.tar.gz',
@@ -292,6 +294,11 @@ UI_DEPS = [
     CATAPULT_SHA1,
    'all'
   ),
+  ('buildtools/typefaces.tgz',
+   'https://storage.googleapis.com/perfetto/typefaces-%s.tar.gz' % TYPEFACES_SHA1,
+    TYPEFACES_SHA1,
+   'all'
+  )
 ]
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -363,6 +370,7 @@ def Main():
     deps += BUILD_DEPS_ANDROID + TEST_DEPS_ANDROID
   if args.ui:
     deps += UI_DEPS
+  deps_updated = False
   for rel_path, url, expected_sha1, platform in deps:
     if (platform != 'all' and platform != sys.platform):
       continue
@@ -377,6 +385,7 @@ def Main():
     if ((not is_zip and HashLocalFile(local_path) == expected_sha1) or
         (is_zip and ReadFile(zip_dir_stamp) == expected_sha1)):
       continue
+    deps_updated = True
     MkdirRecursive(os.path.dirname(rel_path))
     if HashLocalFile(local_path) != expected_sha1:
       download_path = local_path + '.tmp'
@@ -426,6 +435,12 @@ def Main():
   if args.ui:
     # Needs to happen after nodejs is installed above.
     InstallNodeModules()
+
+  if deps_updated:
+    # Stale binary files may be compiled against old sysroot headers that aren't
+    # tracked by gn.
+    logging.warn('Remember to run "gn clean <output_directory>" ' +
+                 'to avoid stale binary files.')
 
 if __name__ == '__main__':
   logging.basicConfig(level=logging.INFO)

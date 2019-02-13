@@ -13,6 +13,19 @@
 
 namespace content {
 
+namespace {
+
+// Merges |removed_headers_B| into |removed_headers_A|.
+void MergeRemovedHeaders(std::vector<std::string>* removed_headers_A,
+                         const std::vector<std::string>& removed_headers_B) {
+  for (auto& header : removed_headers_B) {
+    if (!base::ContainsValue(*removed_headers_A, header))
+      removed_headers_A->emplace_back(std::move(header));
+  }
+}
+
+}  // namespace
+
 class ThrottlingURLLoader::ForwardingThrottleDelegate
     : public URLLoaderThrottle::Delegate {
  public:
@@ -198,21 +211,14 @@ ThrottlingURLLoader::~ThrottlingURLLoader() {
 }
 
 void ThrottlingURLLoader::FollowRedirect(
-    const base::Optional<net::HttpRequestHeaders>& modified_headers) {
-  const base::Optional<net::HttpRequestHeaders>* modified_headers_to_send =
-      &modified_headers;
-  if (modified_request_headers_) {
-    if (modified_headers)
-      modified_request_headers_->MergeFrom(*modified_headers);
-    modified_headers_to_send = &modified_request_headers_;
-  }
+    const std::vector<std::string>& removed_headers,
+    const net::HttpRequestHeaders& modified_headers) {
+  MergeRemovedHeaders(&removed_headers_, removed_headers);
+  modified_headers_.MergeFrom(modified_headers);
 
   if (!throttle_will_start_redirect_url_.is_empty()) {
     throttle_will_start_redirect_url_ = GURL();
     // This is a synthesized redirect, so no need to tell the URLLoader.
-    DCHECK(!modified_headers_to_send->has_value())
-        << "ThrottlingURLLoader doesn't support modifying headers for "
-           "synthesized requests.";
     StartNow();
     return;
   }
@@ -221,13 +227,12 @@ void ThrottlingURLLoader::FollowRedirect(
     base::Optional<GURL> new_url;
     if (!throttle_will_redirect_redirect_url_.is_empty())
       new_url = throttle_will_redirect_redirect_url_;
-    url_loader_->FollowRedirect(to_be_removed_request_headers_,
-                                *modified_headers_to_send, new_url);
+    url_loader_->FollowRedirect(removed_headers_, modified_headers_, new_url);
     throttle_will_redirect_redirect_url_ = GURL();
   }
 
-  to_be_removed_request_headers_.reset();
-  modified_request_headers_.reset();
+  removed_headers_.clear();
+  modified_headers_.Clear();
 }
 
 void ThrottlingURLLoader::FollowRedirectForcingRestart() {
@@ -235,16 +240,12 @@ void ThrottlingURLLoader::FollowRedirectForcingRestart() {
   client_binding_.Close();
   CHECK(throttle_will_redirect_redirect_url_.is_empty());
 
-  if (to_be_removed_request_headers_) {
-    for (const std::string& key : *to_be_removed_request_headers_)
-      start_info_->url_request.headers.RemoveHeader(key);
-    to_be_removed_request_headers_.reset();
-  }
+  for (const std::string& header : removed_headers_)
+    start_info_->url_request.headers.RemoveHeader(header);
+  start_info_->url_request.headers.MergeFrom(modified_headers_);
 
-  if (modified_request_headers_) {
-    start_info_->url_request.headers.MergeFrom(*modified_request_headers_);
-    modified_request_headers_.reset();
-  }
+  removed_headers_.clear();
+  modified_headers_.Clear();
 
   StartNow();
 }
@@ -357,6 +358,8 @@ void ThrottlingURLLoader::StartNow() {
     redirect_info.new_method = start_info_->url_request.method;
     redirect_info.new_url = throttle_will_start_redirect_url_;
     redirect_info.new_site_for_cookies = throttle_will_start_redirect_url_;
+    redirect_info.new_top_frame_origin =
+        url::Origin::Create(throttle_will_start_redirect_url_);
 
     network::ResourceResponseHead response_head;
     std::string header_string = base::StringPrintf(
@@ -374,6 +377,10 @@ void ThrottlingURLLoader::StartNow() {
 
   network::mojom::URLLoaderClientPtr client;
   client_binding_.Bind(mojo::MakeRequest(&client), start_info_->task_runner);
+
+  // TODO(https://crbug.com/919736): Remove this call.
+  client_binding_.EnableBatchDispatch();
+
   client_binding_.set_connection_error_handler(base::BindOnce(
       &ThrottlingURLLoader::OnClientConnectionError, base::Unretained(this)));
 
@@ -503,11 +510,11 @@ void ThrottlingURLLoader::OnReceiveRedirect(
       auto* throttle = entry.throttle.get();
       bool throttle_deferred = false;
       auto weak_ptr = weak_factory_.GetWeakPtr();
-      std::vector<std::string> to_be_removed_headers;
+      std::vector<std::string> removed_headers;
       net::HttpRequestHeaders modified_headers;
       net::RedirectInfo redirect_info_copy = redirect_info;
       throttle->WillRedirectRequest(&redirect_info_copy, response_head,
-                                    &throttle_deferred, &to_be_removed_headers,
+                                    &throttle_deferred, &removed_headers,
                                     &modified_headers);
       if (base::FeatureList::IsEnabled(network::features::kNetworkService) &&
           redirect_info_copy.new_url != redirect_info.new_url) {
@@ -537,23 +544,8 @@ void ThrottlingURLLoader::OnReceiveRedirect(
       if (!HandleThrottleResult(throttle, throttle_deferred, &deferred))
         return;
 
-      if (!to_be_removed_headers.empty()) {
-        if (to_be_removed_request_headers_) {
-          for (auto& header : to_be_removed_headers) {
-            if (!base::ContainsValue(*to_be_removed_request_headers_, header))
-              to_be_removed_request_headers_->push_back(std::move(header));
-          }
-        } else {
-          to_be_removed_request_headers_ = std::move(to_be_removed_headers);
-        }
-      }
-
-      if (!modified_headers.IsEmpty()) {
-        if (modified_request_headers_)
-          modified_request_headers_->MergeFrom(modified_headers);
-        else
-          modified_request_headers_ = std::move(modified_headers);
-      }
+      MergeRemovedHeaders(&removed_headers_, removed_headers);
+      modified_headers_.MergeFrom(modified_headers);
     }
 
     if (deferred) {
@@ -571,6 +563,7 @@ void ThrottlingURLLoader::OnReceiveRedirect(
   request.url = redirect_info.new_url;
   request.method = redirect_info.new_method;
   request.site_for_cookies = redirect_info.new_site_for_cookies;
+  request.top_frame_origin = redirect_info.new_top_frame_origin;
   request.referrer = GURL(redirect_info.new_referrer);
   request.referrer_policy = redirect_info.new_referrer_policy;
 

@@ -91,9 +91,7 @@ static bool legacy_shader_can_handle(const SkMatrix& inv) {
     // legacy shader impl should be able to handle these matrices
     return true;
 }
-#endif
 
-#ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
 SkShaderBase::Context* SkImageShader::onMakeContext(const ContextRec& rec,
                                                     SkArenaAlloc* alloc) const {
     if (fImage->alphaType() == kUnpremul_SkAlphaType) {
@@ -106,6 +104,21 @@ SkShaderBase::Context* SkImageShader::onMakeContext(const ContextRec& rec,
         return nullptr;
     }
     if (fTileModeX == kDecal_TileMode || fTileModeY == kDecal_TileMode) {
+        return nullptr;
+    }
+
+    // SkBitmapProcShader stores bitmap coordinates in a 16bit buffer,
+    // so it can't handle bitmaps larger than 65535.
+    //
+    // We back off another bit to 32767 to make small amounts of
+    // intermediate math safe, e.g. in
+    //
+    //     SkFixed fx = ...;
+    //     fx = tile(fx + SK_Fixed1);
+    //
+    // we want to make sure (fx + SK_Fixed1) never overflows.
+    if (fImage-> width() > 32767 ||
+        fImage->height() > 32767) {
         return nullptr;
     }
 
@@ -131,21 +144,11 @@ SkImage* SkImageShader::onIsAImage(SkMatrix* texM, TileMode xy[]) const {
     return const_cast<SkImage*>(fImage.get());
 }
 
-static bool bitmap_is_too_big(int w, int h) {
-    // SkBitmapProcShader stores bitmap coordinates in a 16bit buffer, as it
-    // communicates between its matrix-proc and its sampler-proc. Until we can
-    // widen that, we have to reject bitmaps that are larger.
-    //
-    static const int kMaxSize = 65535;
-
-    return w > kMaxSize || h > kMaxSize;
-}
-
 sk_sp<SkShader> SkImageShader::Make(sk_sp<SkImage> image,
                                     TileMode tx, TileMode ty,
                                     const SkMatrix* localMatrix,
                                     bool clampAsIfUnpremul) {
-    if (!image || bitmap_is_too_big(image->width(), image->height())) {
+    if (!image) {
         return sk_make_sp<SkEmptyShader>();
     }
     return sk_sp<SkShader>{ new SkImageShader(image, tx,ty, localMatrix, clampAsIfUnpremul) };
@@ -171,8 +174,7 @@ static GrSamplerState::WrapMode tile_mode_to_wrap_mode(const SkShader::TileMode 
         case SkShader::TileMode::kMirror_TileMode:
             return GrSamplerState::WrapMode::kMirrorRepeat;
         case SkShader::kDecal_TileMode:
-            // TODO: depending on caps, we should extend WrapMode for decal...
-            return GrSamplerState::WrapMode::kClamp;
+            return GrSamplerState::WrapMode::kClampToBorder;
     }
     SK_ABORT("Unknown tile mode.");
     return GrSamplerState::WrapMode::kClamp;
@@ -188,6 +190,22 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
 
     GrSamplerState::WrapMode wrapModes[] = {tile_mode_to_wrap_mode(fTileModeX),
                                             tile_mode_to_wrap_mode(fTileModeY)};
+
+    // If either domainX or domainY are un-ignored, a texture domain effect has to be used to
+    // implement the decal mode (while leaving non-decal axes alone). The wrap mode originally
+    // clamp-to-border is reset to clamp since the hw cannot implement it directly.
+    GrTextureDomain::Mode domainX = GrTextureDomain::kIgnore_Mode;
+    GrTextureDomain::Mode domainY = GrTextureDomain::kIgnore_Mode;
+    if (!args.fContext->contextPriv().caps()->clampToBorderSupport()) {
+        if (wrapModes[0] == GrSamplerState::WrapMode::kClampToBorder) {
+            domainX = GrTextureDomain::kDecal_Mode;
+            wrapModes[0] = GrSamplerState::WrapMode::kClamp;
+        }
+        if (wrapModes[1] == GrSamplerState::WrapMode::kClampToBorder) {
+            domainY = GrTextureDomain::kDecal_Mode;
+            wrapModes[1] = GrSamplerState::WrapMode::kClamp;
+        }
+    }
 
     // Must set wrap and filter on the sampler before requesting a texture. In two places below
     // we check the matrix scale factors to determine how to interpret the filter quality setting.
@@ -212,9 +230,19 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
 
     std::unique_ptr<GrFragmentProcessor> inner;
     if (doBicubic) {
-        inner = GrBicubicEffect::Make(std::move(proxy), lmInverse, wrapModes);
+        // domainX and domainY will properly apply the decal effect with the texture domain used in
+        // the bicubic filter if clamp to border was unsupported in hardware
+        inner = GrBicubicEffect::Make(std::move(proxy), lmInverse, wrapModes, domainX, domainY);
     } else {
-        inner = GrSimpleTextureEffect::Make(std::move(proxy), lmInverse, samplerState);
+        if (domainX != GrTextureDomain::kIgnore_Mode || domainY != GrTextureDomain::kIgnore_Mode) {
+            SkRect domain = GrTextureDomain::MakeTexelDomain(
+                    SkIRect::MakeWH(proxy->width(), proxy->height()),
+                    domainX, domainY);
+            inner = GrTextureDomainEffect::Make(std::move(proxy), lmInverse, domain,
+                                                domainX, domainY, samplerState);
+        } else {
+            inner = GrSimpleTextureEffect::Make(std::move(proxy), lmInverse, samplerState);
+        }
     }
     inner = GrColorSpaceXformEffect::Make(std::move(inner), fImage->colorSpace(),
                                           fImage->alphaType(),
@@ -237,9 +265,7 @@ sk_sp<SkShader> SkMakeBitmapShader(const SkBitmap& src, SkShader::TileMode tmx,
                                tmx, tmy, localMatrix);
 }
 
-void SkShaderBase::RegisterFlattenables() {
-    SK_REGISTER_FLATTENABLE(SkImageShader)
-}
+void SkShaderBase::RegisterFlattenables() { SK_REGISTER_FLATTENABLE(SkImageShader); }
 
 bool SkImageShader::onAppendStages(const StageRec& rec) const {
     SkRasterPipeline* p = rec.fPipeline;

@@ -50,6 +50,7 @@ public:
                               int srcX, int srcY, CachingHint) const = 0;
 
     virtual GrContext* context() const { return nullptr; }
+    virtual uint32_t contextID() const { return 0; }
 #if SK_SUPPORT_GPU
     virtual GrTextureProxy* peekProxy() const { return nullptr; }
     virtual sk_sp<GrTextureProxy> asTextureProxyRef() const { return nullptr; }
@@ -95,7 +96,7 @@ public:
     virtual bool onPinAsTexture(GrContext*) const { return false; }
     virtual void onUnpinAsTexture(GrContext*) const {}
 
-    virtual sk_sp<SkImage> onMakeColorSpace(sk_sp<SkColorSpace>) const = 0;
+    virtual sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>) const = 0;
 protected:
     SkImage_Base(int width, int height, uint32_t uniqueID);
 

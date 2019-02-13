@@ -88,15 +88,9 @@ class VCMJitterEstimatorMock : public VCMJitterEstimator {
 
 class FrameObjectFake : public EncodedFrame {
  public:
-  bool GetBitstream(uint8_t* destination) const override { return true; }
-
   int64_t ReceivedTime() const override { return 0; }
 
   int64_t RenderTime() const override { return _renderTimeMs; }
-
-  // In EncodedImage |_length| is used to descibe its size and |_size| to
-  // describe its capacity.
-  void SetSize(int size) { _length = size; }
 };
 
 class VCMReceiveStatisticsCallbackMock : public VCMReceiveStatisticsCallback {
@@ -163,13 +157,14 @@ class TestFrameBuffer2 : public ::testing::Test {
     std::unique_ptr<FrameObjectFake> frame(new FrameObjectFake());
     frame->id.picture_id = picture_id;
     frame->id.spatial_layer = spatial_layer;
+    frame->SetSpatialIndex(spatial_layer);
     frame->SetTimestamp(ts_ms * 90);
     frame->num_references = references.size();
     frame->inter_layer_predicted = inter_layer_predicted;
     frame->is_last_spatial_layer = last_spatial_layer;
     // Add some data to buffer.
     frame->VerifyAndAllocate(kFrameSize);
-    frame->SetSize(kFrameSize);
+    frame->set_size(kFrameSize);
     for (size_t r = 0; r < references.size(); ++r)
       frame->references[r] = references[r];
 
@@ -273,7 +268,7 @@ TEST_F(TestFrameBuffer2, OneSuperFrame) {
   InsertFrame(pid, 1, ts, true, true);
   ExtractFrame();
 
-  CheckFrame(0, pid, 0);
+  CheckFrame(0, pid, 1);
 }
 
 TEST_F(TestFrameBuffer2, SetPlayoutDelay) {
@@ -492,7 +487,7 @@ TEST_F(TestFrameBuffer2, StatsCallback) {
   {
     std::unique_ptr<FrameObjectFake> frame(new FrameObjectFake());
     frame->VerifyAndAllocate(kFrameSize);
-    frame->SetSize(kFrameSize);
+    frame->set_size(kFrameSize);
     frame->id.picture_id = pid;
     frame->id.spatial_layer = 0;
     frame->SetTimestamp(ts);
@@ -601,7 +596,7 @@ TEST_F(TestFrameBuffer2, CombineFramesToSuperframe) {
   InsertFrame(pid, 1, ts, true, true);
   ExtractFrame(0);
   ExtractFrame(0);
-  CheckFrame(0, pid, 0);
+  CheckFrame(0, pid, 1);
   CheckNoFrame(1);
   // Two frames should be combined and returned together.
   CheckFrameSize(0, kFrameSize * 2);
@@ -615,7 +610,7 @@ TEST_F(TestFrameBuffer2, HigherSpatialLayerNonDecodable) {
   InsertFrame(pid, 1, ts, true, true);
 
   ExtractFrame(0);
-  CheckFrame(0, pid, 0);
+  CheckFrame(0, pid, 1);
 
   InsertFrame(pid + 1, 1, ts + kFps20, false, true, pid);
   InsertFrame(pid + 2, 0, ts + kFps10, false, false, pid);
@@ -629,7 +624,7 @@ TEST_F(TestFrameBuffer2, HigherSpatialLayerNonDecodable) {
   ExtractFrame();
   ExtractFrame();
   CheckFrame(1, pid + 1, 1);
-  CheckFrame(2, pid + 2, 0);
+  CheckFrame(2, pid + 2, 1);
 }
 
 }  // namespace video_coding

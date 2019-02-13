@@ -23,7 +23,7 @@ struct SkYUVAIndex;
 class SkImage_Gpu : public SkImage_GpuBase {
 public:
     SkImage_Gpu(sk_sp<GrContext>, uint32_t uniqueID, SkAlphaType, sk_sp<GrTextureProxy>,
-                sk_sp<SkColorSpace>, SkBudgeted);
+                sk_sp<SkColorSpace>);
     ~SkImage_Gpu() override;
 
     SkImageInfo onImageInfo() const override;
@@ -36,6 +36,8 @@ public:
     }
 
     virtual bool onIsTextureBacked() const override { return SkToBool(fProxy.get()); }
+
+    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>) const final;
 
     /**
         Create a new SkImage that is very similar to an SkImage created by MakeFromTexture. The main
@@ -76,8 +78,9 @@ public:
         @param colorSpace          range of colors; may be nullptr
         @param textureFulfillProc  function called to get actual gpu texture
         @param textureReleaseProc  function called when texture can be released
-        @param promiseDoneProc     function called when we will no longer call textureFulfillProc
-        @param textureContext      state passed to textureFulfillProc and textureReleaseProc
+        @param textureDoneProc     function called when we will no longer call textureFulfillProc
+        @param textureContext      state passed to textureFulfillProc, textureReleaseProc, and
+                                   promiseDoneProc
         @return                    created SkImage, or nullptr
      */
     static sk_sp<SkImage> MakePromiseTexture(GrContext* context,
@@ -89,30 +92,16 @@ public:
                                              SkColorType colorType,
                                              SkAlphaType alphaType,
                                              sk_sp<SkColorSpace> colorSpace,
-                                             TextureFulfillProc textureFulfillProc,
-                                             TextureReleaseProc textureReleaseProc,
-                                             PromiseDoneProc promiseDoneProc,
-                                             TextureContext textureContext);
+                                             PromiseImageTextureFulfillProc textureFulfillProc,
+                                             PromiseImageTextureReleaseProc textureReleaseProc,
+                                             PromiseImageTextureDoneProc textureDoneProc,
+                                             PromiseImageTextureContext textureContext);
 
-    /** To be deprecated. Use SkImage_GpuYUVA::MakePromiseYUVATexture instead.
-     */
-    static sk_sp<SkImage> MakePromiseYUVATexture(GrContext* context,
-                                                 SkYUVColorSpace yuvColorSpace,
-                                                 const GrBackendFormat yuvaFormats[],
-                                                 const SkYUVAIndex yuvaIndices[4],
-                                                 int imageWidth,
-                                                 int imageHeight,
-                                                 GrSurfaceOrigin imageOrigin,
-                                                 sk_sp<SkColorSpace> imageColorSpace,
-                                                 TextureFulfillProc textureFulfillProc,
-                                                 TextureReleaseProc textureReleaseProc,
-                                                 PromiseDoneProc promiseDoneProc,
-                                                 TextureContext textureContexts[]);
-
-    static sk_sp<SkImage> ConvertYUVATexturesToRGB(
-            GrContext*, SkYUVColorSpace yuvColorSpace, const GrBackendTexture yuvaTextures[],
-            const SkYUVAIndex yuvaIndices[4], SkISize imageSize, GrSurfaceOrigin imageOrigin,
-            SkBudgeted, GrRenderTargetContext*);
+    static sk_sp<SkImage> ConvertYUVATexturesToRGB(GrContext*, SkYUVColorSpace yuvColorSpace,
+                                                   const GrBackendTexture yuvaTextures[],
+                                                   const SkYUVAIndex yuvaIndices[4],
+                                                   SkISize imageSize, GrSurfaceOrigin imageOrigin,
+                                                   GrRenderTargetContext*);
 
 private:
     sk_sp<GrTextureProxy> fProxy;

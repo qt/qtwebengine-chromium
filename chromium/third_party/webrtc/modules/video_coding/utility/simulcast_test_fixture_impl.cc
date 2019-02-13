@@ -15,6 +15,7 @@
 #include <memory>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/video/encoded_image.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
@@ -70,8 +71,8 @@ class SimulcastTestFixtureImpl::TestEncodedImageCallback
   }
 
   ~TestEncodedImageCallback() {
-    delete[] encoded_key_frame_._buffer;
-    delete[] encoded_frame_._buffer;
+    delete[] encoded_key_frame_.data();
+    delete[] encoded_frame_.data();
   }
 
   virtual Result OnEncodedImage(const EncodedImage& encoded_image,
@@ -81,21 +82,21 @@ class SimulcastTestFixtureImpl::TestEncodedImageCallback
     // Only store the base layer.
     if (encoded_image.SpatialIndex().value_or(0) == 0) {
       if (encoded_image._frameType == kVideoFrameKey) {
-        delete[] encoded_key_frame_._buffer;
-        encoded_key_frame_._buffer = new uint8_t[encoded_image._size];
-        encoded_key_frame_._size = encoded_image._size;
-        encoded_key_frame_._length = encoded_image._length;
+        delete[] encoded_key_frame_.data();
+        encoded_key_frame_.set_buffer(new uint8_t[encoded_image.capacity()],
+                                      encoded_image.capacity());
+        encoded_key_frame_.set_size(encoded_image.size());
         encoded_key_frame_._frameType = kVideoFrameKey;
         encoded_key_frame_._completeFrame = encoded_image._completeFrame;
-        memcpy(encoded_key_frame_._buffer, encoded_image._buffer,
-               encoded_image._length);
+        memcpy(encoded_key_frame_.data(), encoded_image.data(),
+               encoded_image.size());
       } else {
-        delete[] encoded_frame_._buffer;
-        encoded_frame_._buffer = new uint8_t[encoded_image._size];
-        encoded_frame_._size = encoded_image._size;
-        encoded_frame_._length = encoded_image._length;
-        memcpy(encoded_frame_._buffer, encoded_image._buffer,
-               encoded_image._length);
+        delete[] encoded_frame_.data();
+        encoded_frame_.set_buffer(new uint8_t[encoded_image.capacity()],
+                                  encoded_image.capacity());
+        encoded_frame_.set_size(encoded_image.size());
+        memcpy(encoded_frame_.data(), encoded_image.data(),
+               encoded_image.size());
       }
     }
     if (is_vp8) {
@@ -211,7 +212,8 @@ void ConfigureStream(int width,
 void SimulcastTestFixtureImpl::DefaultSettings(
     VideoCodec* settings,
     const int* temporal_layer_profile,
-    VideoCodecType codec_type) {
+    VideoCodecType codec_type,
+    bool reverse_layer_order) {
   RTC_CHECK(settings);
   memset(settings, 0, sizeof(VideoCodec));
   settings->codecType = codec_type;
@@ -226,26 +228,34 @@ void SimulcastTestFixtureImpl::DefaultSettings(
   settings->numberOfSimulcastStreams = kNumberOfSimulcastStreams;
   settings->active = true;
   ASSERT_EQ(3, kNumberOfSimulcastStreams);
+  int layer_order[3] = {0, 1, 2};
+  if (reverse_layer_order) {
+    layer_order[0] = 2;
+    layer_order[2] = 0;
+  }
   settings->timing_frame_thresholds = {kDefaultTimingFramesDelayMs,
                                        kDefaultOutlierFrameSizePercent};
   ConfigureStream(kDefaultWidth / 4, kDefaultHeight / 4, kMaxBitrates[0],
                   kMinBitrates[0], kTargetBitrates[0],
-                  &settings->simulcastStream[0], temporal_layer_profile[0]);
+                  &settings->simulcastStream[layer_order[0]],
+                  temporal_layer_profile[0]);
   ConfigureStream(kDefaultWidth / 2, kDefaultHeight / 2, kMaxBitrates[1],
                   kMinBitrates[1], kTargetBitrates[1],
-                  &settings->simulcastStream[1], temporal_layer_profile[1]);
+                  &settings->simulcastStream[layer_order[1]],
+                  temporal_layer_profile[1]);
   ConfigureStream(kDefaultWidth, kDefaultHeight, kMaxBitrates[2],
                   kMinBitrates[2], kTargetBitrates[2],
-                  &settings->simulcastStream[2], temporal_layer_profile[2]);
-    if (codec_type == kVideoCodecVP8) {
-      settings->VP8()->denoisingOn = true;
-      settings->VP8()->automaticResizeOn = false;
-      settings->VP8()->frameDroppingOn = true;
-      settings->VP8()->keyFrameInterval = 3000;
-    } else {
-      settings->H264()->frameDroppingOn = true;
-      settings->H264()->keyFrameInterval = 3000;
-    }
+                  &settings->simulcastStream[layer_order[2]],
+                  temporal_layer_profile[2]);
+  if (codec_type == kVideoCodecVP8) {
+    settings->VP8()->denoisingOn = true;
+    settings->VP8()->automaticResizeOn = false;
+    settings->VP8()->frameDroppingOn = true;
+    settings->VP8()->keyFrameInterval = 3000;
+  } else {
+    settings->H264()->frameDroppingOn = true;
+    settings->H264()->keyFrameInterval = 3000;
+  }
 }
 
 SimulcastTestFixtureImpl::SimulcastTestFixtureImpl(
@@ -273,8 +283,12 @@ void SimulcastTestFixtureImpl::SetUpCodec(const int* temporal_layer_profile) {
   EXPECT_EQ(0, decoder_->InitDecode(&settings_, 1));
   input_buffer_ = I420Buffer::Create(kDefaultWidth, kDefaultHeight);
   input_buffer_->InitializeData();
-  input_frame_.reset(new VideoFrame(input_buffer_, webrtc::kVideoRotation_0,
-                                    0 /* timestamp_us */));
+  input_frame_ = absl::make_unique<webrtc::VideoFrame>(
+      webrtc::VideoFrame::Builder()
+          .set_video_frame_buffer(input_buffer_)
+          .set_rotation(webrtc::kVideoRotation_0)
+          .set_timestamp_us(0)
+          .build());
 }
 
 void SimulcastTestFixtureImpl::SetUpRateAllocator() {
@@ -591,8 +605,12 @@ void SimulcastTestFixtureImpl::SwitchingToOneStream(int width, int height) {
   input_buffer_ = I420Buffer::Create(settings_.width, settings_.height);
   input_buffer_->InitializeData();
 
-  input_frame_.reset(new VideoFrame(input_buffer_, webrtc::kVideoRotation_0,
-                                    0 /* timestamp_us */));
+  input_frame_ = absl::make_unique<webrtc::VideoFrame>(
+      webrtc::VideoFrame::Builder()
+          .set_video_frame_buffer(input_buffer_)
+          .set_rotation(webrtc::kVideoRotation_0)
+          .set_timestamp_us(0)
+          .build());
 
   // The for loop above did not set the bitrate of the highest layer.
   settings_.simulcastStream[settings_.numberOfSimulcastStreams - 1].maxBitrate =
@@ -631,8 +649,12 @@ void SimulcastTestFixtureImpl::SwitchingToOneStream(int width, int height) {
   // Resize |input_frame_| to the new resolution.
   input_buffer_ = I420Buffer::Create(settings_.width, settings_.height);
   input_buffer_->InitializeData();
-  input_frame_.reset(new VideoFrame(input_buffer_, webrtc::kVideoRotation_0,
-                                    0 /* timestamp_us */));
+  input_frame_ = absl::make_unique<webrtc::VideoFrame>(
+      webrtc::VideoFrame::Builder()
+          .set_video_frame_buffer(input_buffer_)
+          .set_rotation(webrtc::kVideoRotation_0)
+          .set_timestamp_us(0)
+          .build());
   EXPECT_EQ(0, encoder_->Encode(*input_frame_, NULL, &frame_types));
 }
 
@@ -791,8 +813,12 @@ void SimulcastTestFixtureImpl::TestStrideEncodeDecode() {
   int stride_uv = ((kDefaultWidth + 1) / 2) + 5;
   input_buffer_ = I420Buffer::Create(kDefaultWidth, kDefaultHeight, stride_y,
                                      stride_uv, stride_uv);
-  input_frame_.reset(new VideoFrame(input_buffer_, webrtc::kVideoRotation_0,
-                                    0 /* timestamp_us */));
+  input_frame_ = absl::make_unique<webrtc::VideoFrame>(
+      webrtc::VideoFrame::Builder()
+          .set_video_frame_buffer(input_buffer_)
+          .set_rotation(webrtc::kVideoRotation_0)
+          .set_timestamp_us(0)
+          .build());
 
   // Set color.
   int plane_offset[kNumOfPlanes];
@@ -838,13 +864,14 @@ void SimulcastTestFixtureImpl::TestDecodeWidthHeightSet() {
             EXPECT_EQ(encoded_image._frameType, kVideoFrameKey);
 
             size_t index = encoded_image.SpatialIndex().value_or(0);
-            encoded_frame[index]._buffer = new uint8_t[encoded_image._size];
-            encoded_frame[index]._size = encoded_image._size;
-            encoded_frame[index]._length = encoded_image._length;
+            encoded_frame[index].set_buffer(
+                new uint8_t[encoded_image.capacity()],
+                encoded_image.capacity());
+            encoded_frame[index].set_size(encoded_image.size());
             encoded_frame[index]._frameType = encoded_image._frameType;
             encoded_frame[index]._completeFrame = encoded_image._completeFrame;
-            memcpy(encoded_frame[index]._buffer, encoded_image._buffer,
-                   encoded_image._length);
+            memcpy(encoded_frame[index].data(), encoded_image.data(),
+                   encoded_image.size());
             return EncodedImageCallback::Result(
                 EncodedImageCallback::Result::OK, 0);
           }));
@@ -878,7 +905,7 @@ void SimulcastTestFixtureImpl::TestDecodeWidthHeightSet() {
   EXPECT_EQ(0, decoder_->Decode(encoded_frame[2], false, NULL, 0));
 
   for (int i = 0; i < 3; ++i) {
-    delete [] encoded_frame[i]._buffer;
+    delete[] encoded_frame[i].data();
   }
 }
 

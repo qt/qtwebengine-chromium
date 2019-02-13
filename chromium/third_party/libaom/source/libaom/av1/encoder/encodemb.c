@@ -116,11 +116,11 @@ int av1_optimize_b(const struct AV1_COMP *cpi, MACROBLOCK *mb, int plane,
                               rate_cost, cpi->oxcf.sharpness);
 }
 
-typedef enum QUANT_FUNC {
+enum {
   QUANT_FUNC_LOWBD = 0,
   QUANT_FUNC_HIGHBD = 1,
   QUANT_FUNC_TYPES = 2
-} QUANT_FUNC;
+} UENUM1BYTE(QUANT_FUNC);
 
 static AV1_QUANT_FACADE
     quant_func_list[AV1_XFORM_QUANT_TYPES][QUANT_FUNC_TYPES] = {
@@ -226,7 +226,7 @@ static void encode_block(int plane, int block, int blk_row, int blk_col,
   if (!is_blk_skip(x, plane, blk_row * bw + blk_col) && !mbmi->skip_mode) {
     TX_TYPE tx_type = av1_get_tx_type(pd->plane_type, xd, blk_row, blk_col,
                                       tx_size, cm->reduced_tx_set_used);
-    if (args->enable_optimize_b) {
+    if (args->enable_optimize_b != NO_TRELLIS_OPT) {
       av1_xform_quant(cm, x, plane, block, blk_row, blk_col, plane_bsize,
                       tx_size, tx_type, AV1_XFORM_QUANT_FP);
       TXB_CTX txb_ctx;
@@ -285,8 +285,8 @@ static void encode_block(int plane, int block, int blk_row, int blk_col,
     int blk_h = block_size_high[bsize];
     mi_to_pixel_loc(&pixel_c, &pixel_r, mi_col, mi_row, blk_col, blk_row,
                     pd->subsampling_x, pd->subsampling_y);
-    mismatch_record_block_tx(dst, pd->dst.stride, cm->frame_offset, plane,
-                             pixel_c, pixel_r, blk_w, blk_h,
+    mismatch_record_block_tx(dst, pd->dst.stride, cm->current_frame.order_hint,
+                             plane, pixel_c, pixel_r, blk_w, blk_h,
                              xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH);
   }
 #endif
@@ -578,7 +578,7 @@ void av1_encode_block_intra(int plane, int block, int blk_row, int blk_col,
 
     const ENTROPY_CONTEXT *a = &args->ta[blk_col];
     const ENTROPY_CONTEXT *l = &args->tl[blk_row];
-    if (args->enable_optimize_b) {
+    if (args->enable_optimize_b != NO_TRELLIS_OPT) {
       av1_xform_quant(cm, x, plane, block, blk_row, blk_col, plane_bsize,
                       tx_size, tx_type, AV1_XFORM_QUANT_FP);
       TXB_CTX txb_ctx;

@@ -11,11 +11,12 @@
 #ifndef API_STATS_RTCSTATS_OBJECTS_H_
 #define API_STATS_RTCSTATS_OBJECTS_H_
 
+#include <stdint.h>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "api/stats/rtcstats.h"
+#include "api/stats/rtc_stats.h"
 #include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
@@ -283,6 +284,7 @@ class RTC_EXPORT RTCMediaStreamTrackStats final : public RTCStats {
   // implemented for audio only).
   // https://crbug.com/webrtc/8318
   RTCStatsMember<double> jitter_buffer_delay;
+  RTCStatsMember<uint64_t> jitter_buffer_emitted_count;
   // Video-only members
   RTCStatsMember<uint32_t> frame_width;
   RTCStatsMember<uint32_t> frame_height;

@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_CONNECTSTRING_H_
 #define FXJS_XFA_CJX_CONNECTSTRING_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_textnode.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_ConnectString;
 
@@ -16,9 +16,6 @@ class CJX_ConnectString final : public CJX_TextNode {
  public:
   explicit CJX_ConnectString(CXFA_ConnectString* node);
   ~CJX_ConnectString() override;
-
-  JSE_PROP(use);
-  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_CONNECTSTRING_H_

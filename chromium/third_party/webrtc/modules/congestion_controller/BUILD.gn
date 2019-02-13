@@ -37,10 +37,16 @@ rtc_static_library("congestion_controller") {
     ":transport_feedback",
     "..:module_api",
     "../..:webrtc_common",
+    "../../api/transport:field_trial_based_config",
     "../../api/transport:network_control",
+    "../../api/transport:webrtc_key_value_config",
+    "../../api/units:data_rate",
+    "../../api/units:timestamp",
     "../../rtc_base:checks",
+    "../../rtc_base:deprecation",
     "../../rtc_base:ptr_util",
     "../../rtc_base:rate_limiter",
+    "../../rtc_base/experiments:rate_control_settings",
     "../../rtc_base/network:sent_packet",
     "../../system_wrappers",
     "../../system_wrappers:field_trial",
@@ -53,6 +59,7 @@ rtc_static_library("congestion_controller") {
     "goog_cc:probe_controller",
     "goog_cc:pushback_controller",
     "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
 
   if (!build_with_mozilla) {
@@ -69,6 +76,7 @@ rtc_static_library("transport_feedback") {
 
   deps = [
     "../../api/transport:network_control",
+    "../../api/units:data_size",
     "../../modules:module_api",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
@@ -91,7 +99,13 @@ if (rtc_include_tests) {
     }
     deps = [
       "../../api/transport:network_control",
+      "../../api/units:data_rate",
+      "../../api/units:data_size",
+      "../../api/units:time_delta",
+      "../../api/units:timestamp",
       "../../rtc_base:checks",
+      "../../test/logging:log_writer",
+      "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
   rtc_source_set("congestion_controller_unittests") {

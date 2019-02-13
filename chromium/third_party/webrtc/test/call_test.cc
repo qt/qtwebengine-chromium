@@ -21,19 +21,13 @@
 #include "call/rtp_transport_controller_send.h"
 #include "call/simulated_network.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
-#include "modules/congestion_controller/bbr/bbr_factory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
-#include "rtc_base/experiments/congestion_controller_experiment.h"
 #include "test/fake_encoder.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 namespace test {
-
-namespace {
-const int kVideoRotationRtpExtensionId = 4;
-}
 
 CallTest::CallTest()
     : clock_(Clock::GetRealTimeClock()),
@@ -43,7 +37,6 @@ CallTest::CallTest()
       audio_send_config_(/*send_transport=*/nullptr,
                          /*media_transport=*/nullptr),
       audio_send_stream_(nullptr),
-      bbr_network_controller_factory_(new BbrNetworkControllerFactory()),
       fake_encoder_factory_([this]() {
         std::unique_ptr<FakeEncoder> fake_encoder;
         if (video_encoder_configs_[0].codec_type == kVideoCodecVP8) {
@@ -67,7 +60,7 @@ CallTest::~CallTest() {
   task_queue_.SendTask([this]() {
     fake_send_audio_device_ = nullptr;
     fake_recv_audio_device_ = nullptr;
-    video_capturers_.clear();
+    video_sources_.clear();
   });
 }
 
@@ -204,14 +197,12 @@ void CallTest::CreateSenderCall() {
 void CallTest::CreateSenderCall(const Call::Config& config) {
   NetworkControllerFactoryInterface* injected_factory =
       config.network_controller_factory;
-  if (!injected_factory) {
-    if (CongestionControllerExperiment::BbrControllerEnabled()) {
-      RTC_LOG(LS_INFO) << "Using BBR network controller factory";
-      injected_factory = bbr_network_controller_factory_.get();
-    } else {
-      RTC_LOG(LS_INFO) << "Using default network controller factory";
-    }
+  if (injected_factory) {
+    RTC_LOG(LS_INFO) << "Using injected network controller factory";
+  } else {
+    RTC_LOG(LS_INFO) << "Using default network controller factory";
   }
+
   std::unique_ptr<RtpTransportControllerSend> controller_send =
       absl::make_unique<RtpTransportControllerSend>(
           Clock::GetRealTimeClock(), config.event_log, injected_factory,
@@ -240,6 +231,7 @@ void CallTest::CreateVideoSendConfig(VideoSendStream::Config* video_config,
       bitrate_allocator_factory_.get();
   video_config->rtp.payload_name = "FAKE";
   video_config->rtp.payload_type = kFakeVideoSendPayloadType;
+  video_config->rtp.extmap_allow_mixed = true;
   video_config->rtp.extensions.push_back(
       RtpExtension(RtpExtension::kTransportSequenceNumberUri,
                    kTransportSequenceNumberExtensionId));
@@ -255,8 +247,10 @@ void CallTest::CreateVideoSendConfig(VideoSendStream::Config* video_config,
 
   for (size_t i = 0; i < num_video_streams; ++i)
     video_config->rtp.ssrcs.push_back(kVideoSendSsrcs[num_used_ssrcs + i]);
-  video_config->rtp.extensions.push_back(RtpExtension(
-      RtpExtension::kVideoRotationUri, kVideoRotationRtpExtensionId));
+  video_config->rtp.extensions.push_back(
+      RtpExtension(RtpExtension::kVideoRotationUri, kVideoRotationExtensionId));
+  video_config->rtp.extensions.push_back(
+      RtpExtension(RtpExtension::kColorSpaceUri, kColorSpaceExtensionId));
 }
 
 void CallTest::CreateAudioAndFecSendConfigs(size_t num_audio_streams,
@@ -455,12 +449,10 @@ void CallTest::CreateFrameGeneratorCapturerWithDrift(Clock* clock,
                                                      int width,
                                                      int height) {
   video_sources_.clear();
-  video_capturers_.clear();
   frame_generator_capturer_ = test::FrameGeneratorCapturer::Create(
       width, height, absl::nullopt, absl::nullopt, framerate * speed, clock);
-  video_capturers_.emplace_back(
+  video_sources_.emplace_back(
       std::unique_ptr<FrameGeneratorCapturer>(frame_generator_capturer_));
-  video_sources_.push_back(video_capturers_.back().get());
   ConnectVideoSourcesToStreams();
 }
 
@@ -468,12 +460,10 @@ void CallTest::CreateFrameGeneratorCapturer(int framerate,
                                             int width,
                                             int height) {
   video_sources_.clear();
-  video_capturers_.clear();
   frame_generator_capturer_ = test::FrameGeneratorCapturer::Create(
       width, height, absl::nullopt, absl::nullopt, framerate, clock_);
-  video_capturers_.emplace_back(
+  video_sources_.emplace_back(
       std::unique_ptr<FrameGeneratorCapturer>(frame_generator_capturer_));
-  video_sources_.push_back(video_capturers_.back().get());
   ConnectVideoSourcesToStreams();
 }
 
@@ -561,7 +551,7 @@ void CallTest::CreateFlexfecStreams() {
 
 void CallTest::ConnectVideoSourcesToStreams() {
   for (size_t i = 0; i < video_sources_.size(); ++i)
-    video_send_streams_[i]->SetSource(video_sources_[i],
+    video_send_streams_[i]->SetSource(video_sources_[i].get(),
                                       degradation_preference_);
 }
 
@@ -589,7 +579,6 @@ void CallTest::Start() {
   }
   for (AudioReceiveStream* audio_recv_stream : audio_receive_streams_)
     audio_recv_stream->Start();
-  StartVideoCapture();
 }
 
 void CallTest::StartVideoStreams() {
@@ -599,24 +588,13 @@ void CallTest::StartVideoStreams() {
     video_recv_stream->Start();
 }
 
-void CallTest::StartVideoCapture() {
-  for (auto& capturer : video_capturers_)
-    capturer->Start();
-}
-
 void CallTest::Stop() {
-  StopVideoCapture();
   for (AudioReceiveStream* audio_recv_stream : audio_receive_streams_)
     audio_recv_stream->Stop();
   if (audio_send_stream_) {
     audio_send_stream_->Stop();
   }
   StopVideoStreams();
-}
-
-void CallTest::StopVideoCapture() {
-  for (auto& capturer : video_capturers_)
-    capturer->Stop();
 }
 
 void CallTest::StopVideoStreams() {

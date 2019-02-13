@@ -91,7 +91,7 @@ void av1_fill_mode_rates(AV1_COMMON *const cm, MACROBLOCK *x,
   for (i = 0; i < PARTITION_CONTEXTS; ++i)
     av1_cost_tokens_from_cdf(x->partition_cost[i], fc->partition_cdf[i], NULL);
 
-  if (cm->skip_mode_flag) {
+  if (cm->current_frame.skip_mode_info.skip_mode_flag) {
     for (i = 0; i < SKIP_CONTEXTS; ++i) {
       av1_cost_tokens_from_cdf(x->skip_mode_cost[i], fc->skip_mode_cdfs[i],
                                NULL);
@@ -370,7 +370,8 @@ int av1_compute_rd_mult_based_on_qindex(const AV1_COMP *cpi, int qindex) {
 
 int av1_compute_rd_mult(const AV1_COMP *cpi, int qindex) {
   int64_t rdmult = av1_compute_rd_mult_based_on_qindex(cpi, qindex);
-  if (cpi->oxcf.pass == 2 && (cpi->common.frame_type != KEY_FRAME)) {
+  if (cpi->oxcf.pass == 2 &&
+      (cpi->common.current_frame.frame_type != KEY_FRAME)) {
     const GF_GROUP *const gf_group = &cpi->twopass.gf_group;
     const FRAME_UPDATE_TYPE frame_type = gf_group->update_type[gf_group->index];
     const int boost_index = AOMMIN(15, (cpi->rc.gfu_boost / 100));
@@ -398,7 +399,8 @@ int av1_get_adaptive_rdmult(const AV1_COMP *cpi, double beta) {
       break;
   }
 
-  if (cpi->oxcf.pass == 2 && (cpi->common.frame_type != KEY_FRAME)) {
+  if (cpi->oxcf.pass == 2 &&
+      (cpi->common.current_frame.frame_type != KEY_FRAME)) {
     const GF_GROUP *const gf_group = &cpi->twopass.gf_group;
     const FRAME_UPDATE_TYPE frame_type = gf_group->update_type[gf_group->index];
     const int boost_index = AOMMIN(15, (cpi->rc.gfu_boost / 100));
@@ -1255,13 +1257,12 @@ int16_t *av1_raster_block_offset_int16(BLOCK_SIZE plane_bsize, int raster_block,
 
 YV12_BUFFER_CONFIG *av1_get_scaled_ref_frame(const AV1_COMP *cpi,
                                              int ref_frame) {
-  const AV1_COMMON *const cm = &cpi->common;
   assert(ref_frame >= LAST_FRAME && ref_frame <= ALTREF_FRAME);
-  const int scaled_idx = cpi->scaled_ref_idx[ref_frame - 1];
-  const int ref_idx = get_ref_frame_buf_idx(cpi, ref_frame);
-  return (scaled_idx != ref_idx && scaled_idx != INVALID_IDX)
-             ? &cm->buffer_pool->frame_bufs[scaled_idx].buf
-             : NULL;
+  RefCntBuffer *const scaled_buf = cpi->scaled_ref_buf[ref_frame - 1];
+  const RefCntBuffer *const ref_buf =
+      get_ref_frame_buf(&cpi->common, ref_frame);
+  return (scaled_buf != ref_buf && scaled_buf != NULL) ? &scaled_buf->buf
+                                                       : NULL;
 }
 
 int av1_get_switchable_rate(const AV1_COMMON *const cm, MACROBLOCK *x,

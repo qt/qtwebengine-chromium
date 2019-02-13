@@ -36,7 +36,7 @@ void ProcessTable::RegisterTable(sqlite3* db, const TraceStorage* storage) {
   Table::Register<ProcessTable>(db, storage, "process");
 }
 
-Table::Schema ProcessTable::CreateSchema(int, const char* const*) {
+base::Optional<Table::Schema> ProcessTable::Init(int, const char* const*) {
   return Schema(
       {
           Table::Column(Column::kUpid, "upid", ColumnType::kInt),
@@ -70,7 +70,7 @@ ProcessTable::Cursor::Cursor(const TraceStorage* storage,
                              sqlite3_value** argv)
     : storage_(storage) {
   min = 0;
-  max = static_cast<uint32_t>(storage_->process_count());
+  max = static_cast<uint32_t>(storage_->process_count()) - 1;
   desc = false;
   current = min;
 
@@ -109,7 +109,7 @@ int ProcessTable::Cursor::Column(sqlite3_context* context, int N) {
       const auto& process = storage_->GetProcess(current);
       const auto& name = storage_->GetString(process.name_id);
       sqlite3_result_text(context, name.c_str(),
-                          static_cast<int>(name.length()), nullptr);
+                          static_cast<int>(name.length()), kSqliteStatic);
       break;
     }
     case Column::kPid: {

@@ -15,19 +15,15 @@
 #include "dawn_native/d3d12/DeviceD3D12.h"
 
 #include "common/Assert.h"
-#include "common/SwapChainUtils.h"
-#include "dawn_native/D3D12Backend.h"
+#include "dawn_native/BackendConnection.h"
 #include "dawn_native/d3d12/BindGroupD3D12.h"
 #include "dawn_native/d3d12/BindGroupLayoutD3D12.h"
-#include "dawn_native/d3d12/BlendStateD3D12.h"
 #include "dawn_native/d3d12/BufferD3D12.h"
 #include "dawn_native/d3d12/CommandAllocatorManager.h"
 #include "dawn_native/d3d12/CommandBufferD3D12.h"
 #include "dawn_native/d3d12/ComputePipelineD3D12.h"
-#include "dawn_native/d3d12/DepthStencilStateD3D12.h"
 #include "dawn_native/d3d12/DescriptorHeapAllocator.h"
 #include "dawn_native/d3d12/InputStateD3D12.h"
-#include "dawn_native/d3d12/NativeSwapChainImplD3D12.h"
 #include "dawn_native/d3d12/PipelineLayoutD3D12.h"
 #include "dawn_native/d3d12/PlatformFunctions.h"
 #include "dawn_native/d3d12/QueueD3D12.h"
@@ -44,28 +40,12 @@
 
 namespace dawn_native { namespace d3d12 {
 
-    dawnDevice CreateDevice() {
-        return reinterpret_cast<dawnDevice>(new Device());
-    }
-
-    dawnSwapChainImplementation CreateNativeSwapChainImpl(dawnDevice device, HWND window) {
-        Device* backendDevice = reinterpret_cast<Device*>(device);
-
-        dawnSwapChainImplementation impl;
-        impl = CreateSwapChainImplementation(new NativeSwapChainImpl(backendDevice, window));
-        impl.textureUsage = DAWN_TEXTURE_USAGE_BIT_PRESENT;
-
-        return impl;
-    }
-
-    dawnTextureFormat GetNativeSwapChainPreferredFormat(
-        const dawnSwapChainImplementation* swapChain) {
-        NativeSwapChainImpl* impl = reinterpret_cast<NativeSwapChainImpl*>(swapChain->userData);
-        return static_cast<dawnTextureFormat>(impl->GetPreferredFormat());
-    }
-
     void ASSERT_SUCCESS(HRESULT hr) {
         ASSERT(SUCCEEDED(hr));
+    }
+
+    BackendConnection* Connect(InstanceBase* instance) {
+        return nullptr;
     }
 
     namespace {
@@ -117,7 +97,7 @@ namespace dawn_native { namespace d3d12 {
 
     }  // anonymous namespace
 
-    Device::Device() {
+    Device::Device() : DeviceBase(nullptr) {
         mFunctions = std::make_unique<PlatformFunctions>();
 
         {
@@ -144,8 +124,8 @@ namespace dawn_native { namespace d3d12 {
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         ASSERT_SUCCESS(mD3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCommandQueue)));
 
-        ASSERT_SUCCESS(
-            mD3d12Device->CreateFence(mSerial, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
+        ASSERT_SUCCESS(mD3d12Device->CreateFence(mLastSubmittedSerial, D3D12_FENCE_FLAG_NONE,
+                                                 IID_PPV_ARGS(&mFence)));
         mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         ASSERT(mFenceEvent != nullptr);
 
@@ -160,9 +140,8 @@ namespace dawn_native { namespace d3d12 {
     }
 
     Device::~Device() {
-        const uint64_t currentSerial = GetSerial();
         NextSerial();
-        WaitForSerial(currentSerial);  // Wait for all in-flight commands to finish executing
+        WaitForSerial(mLastSubmittedSerial);  // Wait for all in-flight commands to finish executing
         TickImpl();                    // Call tick one last time so resources are cleaned up
 
         ASSERT(mUsedComObjectRefs.Empty());
@@ -224,14 +203,26 @@ namespace dawn_native { namespace d3d12 {
         return mPendingCommands.commandList;
     }
 
+    Serial Device::GetCompletedCommandSerial() const {
+        return mCompletedSerial;
+    }
+
+    Serial Device::GetLastSubmittedCommandSerial() const {
+        return mLastSubmittedSerial;
+    }
+
+    Serial Device::GetPendingCommandSerial() const {
+        return mLastSubmittedSerial + 1;
+    }
+
     void Device::TickImpl() {
         // Perform cleanup operations to free unused objects
-        const uint64_t lastCompletedSerial = mFence->GetCompletedValue();
-        mResourceAllocator->Tick(lastCompletedSerial);
-        mCommandAllocatorManager->Tick(lastCompletedSerial);
-        mDescriptorHeapAllocator->Tick(lastCompletedSerial);
-        mMapRequestTracker->Tick(lastCompletedSerial);
-        mUsedComObjectRefs.ClearUpTo(lastCompletedSerial);
+        mCompletedSerial = mFence->GetCompletedValue();
+        mResourceAllocator->Tick(mCompletedSerial);
+        mCommandAllocatorManager->Tick(mCompletedSerial);
+        mDescriptorHeapAllocator->Tick(mCompletedSerial);
+        mMapRequestTracker->Tick(mCompletedSerial);
+        mUsedComObjectRefs.ClearUpTo(mCompletedSerial);
         ExecuteCommandLists({});
         NextSerial();
     }
@@ -240,24 +231,21 @@ namespace dawn_native { namespace d3d12 {
         return mPCIInfo;
     }
 
-    uint64_t Device::GetSerial() const {
-        return mSerial;
-    }
-
     void Device::NextSerial() {
-        ASSERT_SUCCESS(mCommandQueue->Signal(mFence.Get(), mSerial++));
+        mLastSubmittedSerial++;
+        ASSERT_SUCCESS(mCommandQueue->Signal(mFence.Get(), mLastSubmittedSerial));
     }
 
     void Device::WaitForSerial(uint64_t serial) {
-        const uint64_t lastCompletedSerial = mFence->GetCompletedValue();
-        if (lastCompletedSerial < serial) {
+        mCompletedSerial = mFence->GetCompletedValue();
+        if (mCompletedSerial < serial) {
             ASSERT_SUCCESS(mFence->SetEventOnCompletion(serial, mFenceEvent));
             WaitForSingleObject(mFenceEvent, INFINITE);
         }
     }
 
     void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
-        mUsedComObjectRefs.Enqueue(object, mSerial);
+        mUsedComObjectRefs.Enqueue(object, GetPendingCommandSerial());
     }
 
     void Device::ExecuteCommandLists(std::initializer_list<ID3D12CommandList*> commandLists) {
@@ -278,21 +266,16 @@ namespace dawn_native { namespace d3d12 {
         }
     }
 
-    BindGroupBase* Device::CreateBindGroup(BindGroupBuilder* builder) {
-        return new BindGroup(builder);
+    ResultOrError<BindGroupBase*> Device::CreateBindGroupImpl(
+        const BindGroupDescriptor* descriptor) {
+        return new BindGroup(this, descriptor);
     }
     ResultOrError<BindGroupLayoutBase*> Device::CreateBindGroupLayoutImpl(
         const BindGroupLayoutDescriptor* descriptor) {
         return new BindGroupLayout(this, descriptor);
     }
-    BlendStateBase* Device::CreateBlendState(BlendStateBuilder* builder) {
-        return new BlendState(builder);
-    }
     ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return new Buffer(this, descriptor);
-    }
-    BufferViewBase* Device::CreateBufferView(BufferViewBuilder* builder) {
-        return new BufferView(builder);
     }
     CommandBufferBase* Device::CreateCommandBuffer(CommandBufferBuilder* builder) {
         return new CommandBuffer(builder);
@@ -300,9 +283,6 @@ namespace dawn_native { namespace d3d12 {
     ResultOrError<ComputePipelineBase*> Device::CreateComputePipelineImpl(
         const ComputePipelineDescriptor* descriptor) {
         return new ComputePipeline(this, descriptor);
-    }
-    DepthStencilStateBase* Device::CreateDepthStencilState(DepthStencilStateBuilder* builder) {
-        return new DepthStencilState(builder);
     }
     InputStateBase* Device::CreateInputState(InputStateBuilder* builder) {
         return new InputState(builder);
@@ -318,8 +298,9 @@ namespace dawn_native { namespace d3d12 {
         RenderPassDescriptorBuilder* builder) {
         return new RenderPassDescriptor(builder);
     }
-    RenderPipelineBase* Device::CreateRenderPipeline(RenderPipelineBuilder* builder) {
-        return new RenderPipeline(builder);
+    ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
+        const RenderPipelineDescriptor* descriptor) {
+        return new RenderPipeline(this, descriptor);
     }
     ResultOrError<SamplerBase*> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
         return new Sampler(this, descriptor);

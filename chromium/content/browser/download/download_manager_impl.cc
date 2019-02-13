@@ -236,8 +236,10 @@ class DownloadItemFactoryImpl : public download::DownloadItemFactory {
         delegate, guid, download_id, current_path, target_path, url_chain,
         referrer_url, site_url, tab_url, tab_refererr_url, mime_type,
         original_mime_type, start_time, end_time, etag, last_modified,
-        received_bytes, total_bytes, hash, state, danger_type, interrupt_reason,
-        opened, last_access_time, transient, received_slices);
+        received_bytes, total_bytes, 0 /* auto_resume_count */, hash, state,
+        danger_type, interrupt_reason, false /* paused */,
+        false /* allow_metered */, opened, last_access_time, transient,
+        received_slices);
   }
 
   download::DownloadItemImpl* CreateActiveItem(
@@ -1241,7 +1243,7 @@ void DownloadManagerImpl::BeginResourceDownloadOnChecksComplete(
     url_loader_factory_getter =
         base::MakeRefCounted<FileDownloadURLLoaderFactoryGetter>(
             params->url(), browser_context_->GetPath(),
-            BrowserContext::GetSharedCorsOriginAccessList(browser_context_));
+            browser_context_->GetSharedCorsOriginAccessList());
   } else if (params->url().SchemeIs(content::kChromeUIScheme)) {
     url_loader_factory_getter =
         base::MakeRefCounted<WebUIDownloadURLLoaderFactoryGetter>(

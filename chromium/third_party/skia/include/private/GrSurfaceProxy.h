@@ -205,10 +205,10 @@ private:
 class GrSurfaceProxy : public GrIORefProxy {
 public:
     enum class LazyInstantiationType {
-        kSingleUse,         // Instantiation callback is allowed to be called only once
-        kMultipleUse,       // Instantiation callback can be called multiple times.
-        kUninstantiate,     // Instantiation callback can be called multiple times,
-                            // but we will uninstantiate the proxy after every flush
+        kSingleUse,      // Instantiation callback is allowed to be called only once.
+        kMultipleUse,    // Instantiation callback can be called multiple times.
+        kDeinstantiate,  // Instantiation callback can be called multiple times,
+                         // but we will deinstantiate the proxy after every flush.
     };
 
     enum class LazyState {
@@ -267,8 +267,6 @@ public:
 
     const GrBackendFormat& backendFormat() const { return fFormat; }
 
-    GrTextureType textureType() const { return fFormat.textureType(); }
-
     class UniqueID {
     public:
         static UniqueID InvalidID() {
@@ -325,7 +323,7 @@ public:
 
     virtual bool instantiate(GrResourceProvider* resourceProvider) = 0;
 
-    void deInstantiate();
+    void deinstantiate();
 
     /**
      * Proxies that are already instantiated and whose backing surface cannot be recycled to
@@ -365,6 +363,13 @@ public:
      */
     SkBudgeted isBudgeted() const { return fBudgeted; }
 
+    /**
+     * The pixel values of this proxy's surface cannot be modified (e.g. doesn't support write
+     * pixels or MIP map level regen). Read-only proxies also bypass interval tracking and
+     * assignment in GrResourceAllocator.
+     */
+    bool readOnly() const { return fSurfaceFlags & GrInternalSurfaceFlags::kReadOnly; }
+
     void setLastOpList(GrOpList* opList);
     GrOpList* getLastOpList() { return fLastOpList; }
 
@@ -391,14 +396,12 @@ public:
     }
 
     // Helper function that creates a temporary SurfaceContext to perform the copy
-    // It always returns a kExact-backed proxy bc it is used when converting an SkSpecialImage
-    // to an SkImage. The copy is is not a render target and not multisampled.
-    static sk_sp<GrTextureProxy> Copy(GrContext*, GrSurfaceProxy* src, GrMipMapped,
-                                      SkIRect srcRect, SkBudgeted);
+    // The copy is is not a render target and not multisampled.
+    static sk_sp<GrTextureProxy> Copy(GrContext*, GrSurfaceProxy* src, GrMipMapped, SkIRect srcRect,
+                                      SkBackingFit, SkBudgeted);
 
     // Copy the entire 'src'
-    // It always returns a kExact-backed proxy bc it is used in SkGpuDevice::snapSpecial
-    static sk_sp<GrTextureProxy> Copy(GrContext* context, GrSurfaceProxy* src, GrMipMapped,
+    static sk_sp<GrTextureProxy> Copy(GrContext*, GrSurfaceProxy* src, GrMipMapped, SkBackingFit,
                                       SkBudgeted budgeted);
 
     // Test-only entry point - should decrease in use as proxies propagate
@@ -432,7 +435,7 @@ protected:
                    const GrBackendFormat& format, const GrSurfaceDesc&, GrSurfaceOrigin,
                    SkBackingFit, SkBudgeted, GrInternalSurfaceFlags);
 
-    // Wrapped version
+    // Wrapped version.
     GrSurfaceProxy(sk_sp<GrSurface>, GrSurfaceOrigin, SkBackingFit);
 
     virtual ~GrSurfaceProxy();

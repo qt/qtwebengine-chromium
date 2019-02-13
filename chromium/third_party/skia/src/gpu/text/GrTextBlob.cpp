@@ -13,9 +13,7 @@
 #include "GrStyle.h"
 #include "GrTextTarget.h"
 #include "SkColorFilter.h"
-#include "SkGlyphCache.h"
 #include "SkMaskFilterBase.h"
-#include "SkPaintPriv.h"
 #include "SkTextToPathIter.h"
 #include "ops/GrAtlasTextOp.h"
 
@@ -25,7 +23,7 @@ template <size_t N> static size_t sk_align(size_t s) {
     return ((s + (N-1)) / N) * N;
 }
 
-sk_sp<GrTextBlob> GrTextBlob::Make(int glyphCount, int runCount) {
+sk_sp<GrTextBlob> GrTextBlob::Make(int glyphCount, int runCount, GrColor color) {
     // We allocate size for the GrTextBlob itself, plus size for the vertices array,
     // and size for the glyphIds array.
     size_t verticesCount = glyphCount * kVerticesPerGlyph * kMaxVASize;
@@ -52,26 +50,24 @@ sk_sp<GrTextBlob> GrTextBlob::Make(int glyphCount, int runCount) {
 
     // Initialize runs
     for (int i = 0; i < runCount; i++) {
-        new (&blob->fRuns[i]) GrTextBlob::Run{blob.get()};
+        new (&blob->fRuns[i]) GrTextBlob::Run{blob.get(), color};
     }
     blob->fRunCountLimit = runCount;
     return blob;
 }
 
-SkExclusiveStrikePtr GrTextBlob::Run::setupCache(const SkPaint& skPaint,
-                                                 const SkSurfaceProps& props,
-                                                 SkScalerContextFlags scalerContextFlags,
-                                                 const SkMatrix& viewMatrix) {
-
-    // if we have an override descriptor for the run, then we should use that
-    SkAutoDescriptor* desc = fOverrideDescriptor.get() ? fOverrideDescriptor.get() : &fDescriptor;
-    SkScalerContextEffects effects;
-    SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
-        skPaint, props, scalerContextFlags, viewMatrix, desc, &effects);
-    fTypeface = SkPaintPriv::RefTypefaceOrDefault(skPaint);
+void GrTextBlob::Run::setupFont(const SkPaint& skPaint,
+                                const SkFont& skFont,
+                                const SkDescriptor& cacheDescriptor) {
+    fTypeface = skFont.refTypefaceOrDefault();
+    SkScalerContextEffects effects{skPaint};
     fPathEffect = sk_ref_sp(effects.fPathEffect);
     fMaskFilter = sk_ref_sp(effects.fMaskFilter);
-    return SkStrikeCache::FindOrCreateStrikeExclusive(*desc->getDesc(), effects, *fTypeface);
+    // if we have an override descriptor for the run, then we should use that
+    SkAutoDescriptor* desc =
+            fARGBFallbackDescriptor.get() ? fARGBFallbackDescriptor.get() : &fDescriptor;
+    // Set up the descriptor for possible cache lookups during regen.
+    desc->reset(cacheDescriptor);
 }
 
 void GrTextBlob::Run::appendPathGlyph(const SkPath& path, SkPoint position,
@@ -237,7 +233,7 @@ void GrTextBlob::flush(GrTextTarget* target, const SkSurfaceProps& props,
         // first flush any path glyphs
         if (run.fPathGlyphs.count()) {
             SkPaint runPaint{paint};
-            runPaint.setFlags((runPaint.getFlags() & ~Run::kPaintFlagsMask) | run.fPaintFlags);
+            runPaint.setAntiAlias(run.fAntiAlias);
 
             for (int i = 0; i < run.fPathGlyphs.count(); i++) {
                 GrTextBlob::Run::PathGlyph& pathGlyph = run.fPathGlyphs[i];
@@ -415,13 +411,13 @@ void GrTextBlob::AssertEqual(const GrTextBlob& l, const GrTextBlob& r) {
         SkASSERT_RELEASE(rRun.fDescriptor.getDesc());
         SkASSERT_RELEASE(*lRun.fDescriptor.getDesc() == *rRun.fDescriptor.getDesc());
 
-        if (lRun.fOverrideDescriptor.get()) {
-            SkASSERT_RELEASE(lRun.fOverrideDescriptor->getDesc());
-            SkASSERT_RELEASE(rRun.fOverrideDescriptor.get() && rRun.fOverrideDescriptor->getDesc());
-            SkASSERT_RELEASE(*lRun.fOverrideDescriptor->getDesc() ==
-                             *rRun.fOverrideDescriptor->getDesc());
+        if (lRun.fARGBFallbackDescriptor.get()) {
+            SkASSERT_RELEASE(lRun.fARGBFallbackDescriptor->getDesc());
+            SkASSERT_RELEASE(rRun.fARGBFallbackDescriptor.get() && rRun.fARGBFallbackDescriptor->getDesc());
+            SkASSERT_RELEASE(*lRun.fARGBFallbackDescriptor->getDesc() ==
+                             *rRun.fARGBFallbackDescriptor->getDesc());
         } else {
-            SkASSERT_RELEASE(!rRun.fOverrideDescriptor.get());
+            SkASSERT_RELEASE(!rRun.fARGBFallbackDescriptor.get());
         }
 
         // color can be changed
@@ -468,8 +464,9 @@ void GrTextBlob::AssertEqual(const GrTextBlob& l, const GrTextBlob& r) {
 void GrTextBlob::SubRun::computeTranslation(const SkMatrix& viewMatrix,
                                                 SkScalar x, SkScalar y, SkScalar* transX,
                                                 SkScalar* transY) {
-    calculate_translation(!this->drawAsDistanceFields(), viewMatrix, x, y,
-                          fCurrentViewMatrix, fX, fY, transX, transY);
+    // Don't use the matrix to translate on distance field for fallback subruns.
+    calculate_translation(!this->drawAsDistanceFields() && !this->isFallback(), viewMatrix,
+            x, y, fCurrentViewMatrix, fX, fY, transX, transY);
     fCurrentViewMatrix = viewMatrix;
     fX = x;
     fY = y;

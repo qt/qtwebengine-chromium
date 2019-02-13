@@ -960,10 +960,10 @@
           FT_TRACE4(( " unknown op (%d)\n", op1 ));
         else
         {
-          FT_TRACE4(( " closepath" ));
+          FT_TRACE4(( " closepath\n" ));
 
           /* if there is no path, `closepath' is a no-op */
-          ps_builder_close_contour( &decoder->builder );
+          cf2_glyphpath_closeOpenPath( &glyphPath );
 
           haveWidth = TRUE;
         }
@@ -2420,7 +2420,7 @@
           PS_Builder*  builder;
 
 
-          FT_TRACE4(( " hsbw" ));
+          FT_TRACE4(( " hsbw\n" ));
 
           builder = &decoder->builder;
 

@@ -94,10 +94,7 @@ void DataReductionProxyURLLoaderThrottle::BeforeWillProcessResponse(
 
   DataReductionProxyBypassType bypass_type = BYPASS_EVENT_TYPE_MAX;
 
-  // TODO(https://crbug.com/721403): Not logging stats.
-  DataReductionProxyBypassProtocol::Stats* stats = nullptr;
-
-  DataReductionProxyBypassProtocol protocol(stats);
+  DataReductionProxyBypassProtocol protocol;
   pending_restart_ = protocol.MaybeBypassProxyAndPrepareToRetry(
       request_method_, url_chain_, response_head.headers.get(),
       response_head.proxy_server, net_error, proxy_retry_info,
@@ -144,9 +141,6 @@ void DataReductionProxyURLLoaderThrottle::MarkProxiesAsBad(
   for (const auto& proxy : bad_proxies)
     proxy_list.AddProxyServer(proxy);
 
-  // TODO(https://crbug.com/721403): Does this need to handle the case where
-  // |callback| is never invoked (which can happen on a connection error in
-  // |data_reduction_proxy_|).
   auto callback = base::BindOnce(
       &DataReductionProxyURLLoaderThrottle::OnMarkProxiesAsBadComplete,
       weak_factory_.GetWeakPtr());

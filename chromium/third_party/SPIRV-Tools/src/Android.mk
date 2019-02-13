@@ -62,6 +62,7 @@ SPVTOOLS_SRC_FILES := \
 		source/val/validate_interfaces.cpp \
 		source/val/validate_instruction.cpp \
 		source/val/validate_memory.cpp \
+		source/val/validate_memory_semantics.cpp \
 		source/val/validate_mode_setting.cpp \
 		source/val/validate_layout.cpp \
 		source/val/validate_literals.cpp \
@@ -79,6 +80,7 @@ SPVTOOLS_OPT_SRC_FILES := \
 		source/opt/cfg.cpp \
 		source/opt/cfg_cleanup_pass.cpp \
 		source/opt/ccp_pass.cpp \
+		source/opt/code_sink.cpp \
 		source/opt/combine_access_chains.cpp \
 		source/opt/common_uniform_elim_pass.cpp \
 		source/opt/compact_ids_pass.cpp \
@@ -155,6 +157,7 @@ SPVTOOLS_OPT_SRC_FILES := \
 		source/opt/type_manager.cpp \
 		source/opt/types.cpp \
 		source/opt/unify_const_pass.cpp \
+		source/opt/upgrade_memory_model.cpp \
 		source/opt/value_number_table.cpp \
 		source/opt/vector_dce.cpp \
 		source/opt/workaround1209.cpp

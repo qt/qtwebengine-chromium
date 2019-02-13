@@ -29,6 +29,7 @@
 #include "SkottiePriv.h"
 #include "SkottieProperty.h"
 #include "SkottieValue.h"
+#include "SkTraceEvent.h"
 
 #include <cmath>
 
@@ -60,14 +61,14 @@ void AnimationBuilder::log(Logger::Level lvl, const skjson::Value* json,
     fLogger->log(lvl, buff, jsonstr.c_str());
 }
 
-sk_sp<sksg::Matrix> AnimationBuilder::attachMatrix(const skjson::ObjectValue& t,
-                                                   AnimatorScope* ascope,
-                                                   sk_sp<sksg::Matrix> parentMatrix) const {
+sk_sp<sksg::Transform> AnimationBuilder::attachMatrix2D(const skjson::ObjectValue& t,
+                                                        AnimatorScope* ascope,
+                                                        sk_sp<sksg::Transform> parent) const {
     static const VectorValue g_default_vec_0   = {  0,   0},
                              g_default_vec_100 = {100, 100};
 
-    auto matrix = sksg::Matrix::Make(SkMatrix::I(), parentMatrix);
-    auto adapter = sk_make_sp<TransformAdapter>(matrix);
+    auto matrix = sksg::Matrix<SkMatrix>::Make(SkMatrix::I());
+    auto adapter = sk_make_sp<TransformAdapter2D>(matrix);
 
     auto bound = this->bindProperty<VectorValue>(t["a"], ascope,
             [adapter](const VectorValue& a) {
@@ -103,7 +104,63 @@ sk_sp<sksg::Matrix> AnimationBuilder::attachMatrix(const skjson::ObjectValue& t,
 
     const auto dispatched = this->dispatchTransformProperty(adapter);
 
-    return (bound || dispatched) ? matrix : parentMatrix;
+    return (bound || dispatched)
+        ? sksg::Transform::MakeConcat(std::move(parent), std::move(matrix))
+        : parent;
+}
+
+sk_sp<sksg::Transform> AnimationBuilder::attachMatrix3D(const skjson::ObjectValue& t,
+                                                        AnimatorScope* ascope,
+                                                        sk_sp<sksg::Transform> parent) const {
+    static const VectorValue g_default_vec_0   = {  0,   0,   0},
+                             g_default_vec_100 = {100, 100, 100};
+
+    auto matrix = sksg::Matrix<SkMatrix44>::Make(SkMatrix::I());
+    auto adapter = sk_make_sp<TransformAdapter3D>(matrix);
+
+    auto bound = this->bindProperty<VectorValue>(t["a"], ascope,
+            [adapter](const VectorValue& a) {
+                adapter->setAnchorPoint(TransformAdapter3D::Vec3(a));
+            }, g_default_vec_0);
+    bound |= this->bindProperty<VectorValue>(t["p"], ascope,
+            [adapter](const VectorValue& p) {
+                adapter->setPosition(TransformAdapter3D::Vec3(p));
+            }, g_default_vec_0);
+    bound |= this->bindProperty<VectorValue>(t["s"], ascope,
+            [adapter](const VectorValue& s) {
+                adapter->setScale(TransformAdapter3D::Vec3(s));
+            }, g_default_vec_100);
+
+    // Orientation and rx/ry/rz are mapped to the same rotation property -- the difference is
+    // in how they get interpolated (vector vs. scalar/decomposed interpolation).
+    bound |= this->bindProperty<VectorValue>(t["or"], ascope,
+            [adapter](const VectorValue& o) {
+                adapter->setRotation(TransformAdapter3D::Vec3(o));
+            }, g_default_vec_0);
+
+    bound |= this->bindProperty<ScalarValue>(t["rx"], ascope,
+            [adapter](const ScalarValue& rx) {
+                const auto& r = adapter->getRotation();
+                adapter->setRotation(TransformAdapter3D::Vec3({rx, r.fY, r.fZ}));
+            }, 0.0f);
+
+    bound |= this->bindProperty<ScalarValue>(t["ry"], ascope,
+            [adapter](const ScalarValue& ry) {
+                const auto& r = adapter->getRotation();
+                adapter->setRotation(TransformAdapter3D::Vec3({r.fX, ry, r.fZ}));
+            }, 0.0f);
+
+    bound |= this->bindProperty<ScalarValue>(t["rz"], ascope,
+            [adapter](const ScalarValue& rz) {
+                const auto& r = adapter->getRotation();
+                adapter->setRotation(TransformAdapter3D::Vec3({r.fX, r.fY, rz}));
+            }, 0.0f);
+
+    // TODO: dispatch 3D transform properties
+
+    return (bound)
+        ? sksg::Transform::MakeConcat(std::move(parent), std::move(matrix))
+        : parent;
 }
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachOpacity(const skjson::ObjectValue& jtransform,
@@ -155,20 +212,20 @@ sk_sp<sksg::Color> AnimationBuilder::attachColor(const skjson::ObjectValue& jcol
 
 AnimationBuilder::AnimationBuilder(sk_sp<ResourceProvider> rp, sk_sp<SkFontMgr> fontmgr,
                                    sk_sp<PropertyObserver> pobserver, sk_sp<Logger> logger,
-                                   sk_sp<AnnotationObserver> aobserver,
+                                   sk_sp<MarkerObserver> mobserver,
                                    Animation::Builder::Stats* stats,
                                    float duration, float framerate)
     : fResourceProvider(std::move(rp))
     , fLazyFontMgr(std::move(fontmgr))
     , fPropertyObserver(std::move(pobserver))
     , fLogger(std::move(logger))
-    , fAnnotationObserver(std::move(aobserver))
+    , fMarkerObserver(std::move(mobserver))
     , fStats(stats)
     , fDuration(duration)
     , fFrameRate(framerate) {}
 
 std::unique_ptr<sksg::Scene> AnimationBuilder::parse(const skjson::ObjectValue& jroot) {
-    this->dispatchAnnotations(jroot["annotations"]);
+    this->dispatchMarkers(jroot["markers"]);
 
     this->parseAssets(jroot["assets"]);
     this->parseFonts(jroot["fonts"], jroot["chars"]);
@@ -193,16 +250,31 @@ void AnimationBuilder::parseAssets(const skjson::ArrayValue* jassets) {
     }
 }
 
-void AnimationBuilder::dispatchAnnotations(const skjson::ObjectValue* jannotations) const {
-    if (!fAnnotationObserver || !jannotations) {
+void AnimationBuilder::dispatchMarkers(const skjson::ArrayValue* jmarkers) const {
+    if (!fMarkerObserver || !jmarkers) {
         return;
     }
 
-    for (const auto& a : *jannotations) {
-        if (const skjson::StringValue* value = a.fValue) {
-            fAnnotationObserver->onAnnotation(a.fKey.begin(), value->begin());
+    // For frame-number -> t conversions.
+    const auto frameRatio = 1 / (fFrameRate * fDuration);
+
+    for (const skjson::ObjectValue* m : *jmarkers) {
+        if (!m) continue;
+
+        const skjson::StringValue* name = (*m)["cm"];
+        const auto time = ParseDefault((*m)["tm"], -1.0f),
+               duration = ParseDefault((*m)["dr"], -1.0f);
+
+        if (name && time >= 0 && duration >= 0) {
+            fMarkerObserver->onMarker(
+                        name->begin(),
+                        // "tm" is in frames
+                        time * frameRatio,
+                        // ... as is "dr"
+                        (time + duration) * frameRatio
+            );
         } else {
-            this->log(Logger::Level::kWarning, &a.fValue, "Ignoring unexpected annotation value.");
+            this->log(Logger::Level::kWarning, m, "Ignoring unexpected marker.");
         }
     }
 }
@@ -235,7 +307,7 @@ bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>&
     return dispatched;
 }
 
-bool AnimationBuilder::dispatchTransformProperty(const sk_sp<TransformAdapter>& t) const {
+bool AnimationBuilder::dispatchTransformProperty(const sk_sp<TransformAdapter2D>& t) const {
     bool dispatched = false;
 
     if (fPropertyObserver) {
@@ -296,8 +368,8 @@ Animation::Builder& Animation::Builder::setLogger(sk_sp<Logger> logger) {
     return *this;
 }
 
-Animation::Builder& Animation::Builder::setAnnotationObserver(sk_sp<AnnotationObserver> aobserver) {
-    fAnnotationObserver = std::move(aobserver);
+Animation::Builder& Animation::Builder::setMarkerObserver(sk_sp<MarkerObserver> mobserver) {
+    fMarkerObserver = std::move(mobserver);
     return *this;
 }
 
@@ -322,6 +394,8 @@ sk_sp<Animation> Animation::Builder::make(SkStream* stream) {
 }
 
 sk_sp<Animation> Animation::Builder::make(const char* data, size_t data_len) {
+    TRACE_EVENT0("skottie", TRACE_FUNC);
+
     // Sanitize factory args.
     class NullResourceProvider final : public ResourceProvider {
         sk_sp<SkData> load(const char[], const char[]) const override { return nullptr; }
@@ -371,7 +445,7 @@ sk_sp<Animation> Animation::Builder::make(const char* data, size_t data_len) {
     internal::AnimationBuilder builder(std::move(resolvedProvider), fFontMgr,
                                        std::move(fPropertyObserver),
                                        std::move(fLogger),
-                                       std::move(fAnnotationObserver),
+                                       std::move(fMarkerObserver),
                                        &fStats, duration, fps);
     auto scene = builder.parse(json);
 
@@ -416,6 +490,8 @@ void Animation::setShowInval(bool show) {
 }
 
 void Animation::render(SkCanvas* canvas, const SkRect* dstR) const {
+    TRACE_EVENT0("skottie", TRACE_FUNC);
+
     if (!fScene)
         return;
 
@@ -429,6 +505,8 @@ void Animation::render(SkCanvas* canvas, const SkRect* dstR) const {
 }
 
 void Animation::seek(SkScalar t) {
+    TRACE_EVENT0("skottie", TRACE_FUNC);
+
     if (!fScene)
         return;
 

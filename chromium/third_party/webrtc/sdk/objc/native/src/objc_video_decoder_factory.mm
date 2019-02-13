@@ -26,7 +26,7 @@
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "sdk/objc/native/src/objc_frame_buffer.h"
 
 namespace webrtc {
@@ -77,10 +77,13 @@ class ObjCVideoDecoder : public VideoDecoder {
     [decoder_ setCallback:^(RTCVideoFrame *frame) {
       const rtc::scoped_refptr<VideoFrameBuffer> buffer =
           new rtc::RefCountedObject<ObjCFrameBuffer>(frame.buffer);
-      VideoFrame videoFrame(buffer,
-                            (uint32_t)(frame.timeStampNs / rtc::kNumNanosecsPerMicrosec),
-                            0,
-                            (VideoRotation)frame.rotation);
+      VideoFrame videoFrame =
+          VideoFrame::Builder()
+              .set_video_frame_buffer(buffer)
+              .set_timestamp_rtp((uint32_t)(frame.timeStampNs / rtc::kNumNanosecsPerMicrosec))
+              .set_timestamp_ms(0)
+              .set_rotation((VideoRotation)frame.rotation)
+              .build();
       videoFrame.set_timestamp(frame.timeStamp);
 
       callback->Decoded(videoFrame);

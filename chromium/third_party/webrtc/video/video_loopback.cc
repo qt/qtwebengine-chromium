@@ -9,7 +9,17 @@
  */
 
 #include <stdio.h>
+#include <memory>
+#include <string>
+#include <vector>
 
+#include "absl/memory/memory.h"
+#include "absl/types/optional.h"
+#include "api/bitrate_constraints.h"
+#include "api/test/simulated_network.h"
+#include "api/test/video_quality_test_fixture.h"
+#include "api/video_codecs/video_codec.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/flags.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/field_trial.h"
@@ -331,7 +341,7 @@ void Loopback() {
                      0,  // No min transmit bitrate.
                      flags::FLAG_use_ulpfec,
                      flags::FLAG_use_flexfec,
-                     false,
+                     true,  // Automatic quality scaling.
                      flags::Clip(),
                      flags::GetCaptureDevice()};
   params.audio = {flags::FLAG_audio, flags::FLAG_audio_video_sync,

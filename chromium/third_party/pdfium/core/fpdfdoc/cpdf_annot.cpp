@@ -18,7 +18,6 @@
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfdoc/cpvt_generateap.h"
-#include "core/fxcrt/fx_memory.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -234,11 +233,11 @@ CFX_FloatRect CPDF_Annot::BoundingRectFromQuadPoints(
     const CPDF_Dictionary* pAnnotDict) {
   CFX_FloatRect ret;
   const CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
-  if (!pArray)
+  size_t nQuadPointCount = pArray ? QuadPointCount(pArray) : 0;
+  if (nQuadPointCount == 0)
     return ret;
 
   ret = RectFromQuadPointsArray(pArray, 0);
-  size_t nQuadPointCount = QuadPointCount(pArray);
   for (size_t i = 1; i < nQuadPointCount; ++i) {
     CFX_FloatRect rect = RectFromQuadPointsArray(pArray, i);
     ret.Union(rect);
@@ -247,10 +246,11 @@ CFX_FloatRect CPDF_Annot::BoundingRectFromQuadPoints(
 }
 
 // static
-CFX_FloatRect CPDF_Annot::RectFromQuadPoints(CPDF_Dictionary* pAnnotDict,
+CFX_FloatRect CPDF_Annot::RectFromQuadPoints(const CPDF_Dictionary* pAnnotDict,
                                              size_t nIndex) {
-  CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
-  if (!pArray)
+  const CPDF_Array* pArray = pAnnotDict->GetArrayFor("QuadPoints");
+  size_t nQuadPointCount = pArray ? QuadPointCount(pArray) : 0;
+  if (nIndex >= nQuadPointCount)
     return CFX_FloatRect();
   return RectFromQuadPointsArray(pArray, nIndex);
 }
@@ -376,7 +376,7 @@ ByteString CPDF_Annot::AnnotSubtypeToString(CPDF_Annot::Subtype nSubtype) {
     return "RichMedia";
   if (nSubtype == CPDF_Annot::Subtype::XFAWIDGET)
     return "XFAWidget";
-  return "";
+  return ByteString();
 }
 
 // static

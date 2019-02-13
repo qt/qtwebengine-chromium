@@ -35,6 +35,8 @@ namespace sh
 namespace
 {
 
+constexpr const char kImage2DFunctionString[] = "// @@ IMAGE2D DECLARATION FUNCTION STRING @@";
+
 TString ArrayHelperFunctionName(const char *prefix, const TType &type)
 {
     TStringStream fnName;
@@ -110,10 +112,20 @@ const char *GetHLSLAtomicFunctionStringAndLeftParenthesis(TOperator op)
     }
 }
 
-bool IsAtomicFunctionDirectAssign(const TIntermBinary &node)
+bool IsAtomicFunctionForSharedVariableDirectAssign(const TIntermBinary &node)
 {
-    return node.getOp() == EOpAssign && node.getRight()->getAsAggregate() &&
-           IsAtomicFunction(node.getRight()->getAsAggregate()->getOp());
+    TIntermAggregate *aggregateNode = node.getRight()->getAsAggregate();
+    if (aggregateNode == nullptr)
+    {
+        return false;
+    }
+
+    if (node.getOp() == EOpAssign && IsAtomicFunction(aggregateNode->getOp()))
+    {
+        return !IsInShaderStorageBlock((*aggregateNode->getSequence())[0]->getAsTyped());
+    }
+
+    return false;
 }
 
 const char *kZeros       = "_ANGLE_ZEROS_";
@@ -225,7 +237,8 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
                        ShCompileOptions compileOptions,
                        sh::WorkGroupSize workGroupSize,
                        TSymbolTable *symbolTable,
-                       PerformanceDiagnostics *perfDiagnostics)
+                       PerformanceDiagnostics *perfDiagnostics,
+                       const std::vector<InterfaceBlock> &shaderStorageBlocks)
     : TIntermTraverser(true, true, true, symbolTable),
       mShaderType(shaderType),
       mShaderVersion(shaderVersion),
@@ -293,7 +306,8 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
     // Reserve registers for the default uniform block and driver constants
     mResourcesHLSL->reserveUniformBlockRegisters(2);
 
-    mSSBOOutputHLSL = new ShaderStorageBlockOutputHLSL(this, symbolTable, mResourcesHLSL);
+    mSSBOOutputHLSL =
+        new ShaderStorageBlockOutputHLSL(this, symbolTable, mResourcesHLSL, shaderStorageBlocks);
 }
 
 OutputHLSL::~OutputHLSL()
@@ -368,6 +382,21 @@ const std::map<std::string, unsigned int> &OutputHLSL::getUniformBlockRegisterMa
 const std::map<std::string, unsigned int> &OutputHLSL::getUniformRegisterMap() const
 {
     return mResourcesHLSL->getUniformRegisterMap();
+}
+
+unsigned int OutputHLSL::getReadonlyImage2DRegisterIndex() const
+{
+    return mResourcesHLSL->getReadonlyImage2DRegisterIndex();
+}
+
+unsigned int OutputHLSL::getImage2DRegisterIndex() const
+{
+    return mResourcesHLSL->getImage2DRegisterIndex();
+}
+
+const std::set<std::string> &OutputHLSL::getUsedImage2DFunctionNames() const
+{
+    return mImageFunctionHLSL->getUsedImage2DFunctionNames();
 }
 
 TString OutputHLSL::structInitializerString(int indent,
@@ -705,7 +734,7 @@ void OutputHLSL::header(TInfoSinkBase &out,
 
             if (mOutputType == SH_HLSL_4_1_OUTPUT)
             {
-                mResourcesHLSL->samplerMetadataUniforms(out, "c4");
+                mResourcesHLSL->samplerMetadataUniforms(out, 4);
             }
 
             out << "};\n";
@@ -817,7 +846,7 @@ void OutputHLSL::header(TInfoSinkBase &out,
 
             if (mOutputType == SH_HLSL_4_1_OUTPUT)
             {
-                mResourcesHLSL->samplerMetadataUniforms(out, "c4");
+                mResourcesHLSL->samplerMetadataUniforms(out, 4);
             }
 
             out << "};\n"
@@ -853,8 +882,14 @@ void OutputHLSL::header(TInfoSinkBase &out,
             out << "    uint3 gl_NumWorkGroups : packoffset(c0);\n";
         }
         ASSERT(mOutputType == SH_HLSL_4_1_OUTPUT);
-        mResourcesHLSL->samplerMetadataUniforms(out, "c1");
+        unsigned int registerIndex = 1;
+        mResourcesHLSL->samplerMetadataUniforms(out, registerIndex);
+        // Sampler metadata struct must be two 4-vec, 32 bytes.
+        registerIndex += mResourcesHLSL->getSamplerCount() * 2;
+        mResourcesHLSL->imageMetadataUniforms(out, registerIndex);
         out << "};\n";
+
+        out << kImage2DFunctionString << "\n";
 
         std::ostringstream systemValueDeclaration;
         std::ostringstream glBuiltinInitialization;
@@ -1271,7 +1306,7 @@ bool OutputHLSL::visitBinary(Visit visit, TIntermBinary *node)
             // function calls in HLSL.
             // e.g. original_value = atomicAdd(dest, value) should be translated into
             //      InterlockedAdd(dest, value, original_value);
-            else if (IsAtomicFunctionDirectAssign(*node))
+            else if (IsAtomicFunctionForSharedVariableDirectAssign(*node))
             {
                 TIntermAggregate *atomicFunctionNode = node->getRight()->getAsAggregate();
                 TOperator atomicFunctionOp           = atomicFunctionNode->getOp();
@@ -1837,6 +1872,13 @@ bool OutputHLSL::visitUnary(Visit visit, TIntermUnary *node)
             // tested in GLSLTest and results are consistent with GL.
             outputTriplet(out, visit, "firstbithigh(", "", ")");
             break;
+        case EOpArrayLength:
+        {
+            TIntermTyped *operand = node->getOperand();
+            ASSERT(IsInShaderStorageBlock(operand));
+            mSSBOOutputHLSL->outputLengthFunctionCall(operand);
+            return false;
+        }
         default:
             UNREACHABLE();
     }
@@ -2393,20 +2435,60 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
         case EOpAtomicAnd:
         case EOpAtomicOr:
         case EOpAtomicXor:
-            outputTriplet(out, visit, GetHLSLAtomicFunctionStringAndLeftParenthesis(node->getOp()),
-                          ",", ")");
-            break;
-
-        // The parameter 'original_value' of InterlockedExchange(dest, value, original_value) and
-        // InterlockedCompareExchange(dest, compare_value, value, original_value) is not optional.
+        // The parameter 'original_value' of InterlockedExchange(dest, value, original_value)
+        // and InterlockedCompareExchange(dest, compare_value, value, original_value) is not
+        // optional.
         // https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/interlockedexchange
         // https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/interlockedcompareexchange
-        // So all the call of atomicExchange(dest, value) and atomicCompSwap(dest, compare_value,
-        // value) should all be modified into the form of "int temp; temp = atomicExchange(dest,
-        // value);" and "int temp; temp = atomicCompSwap(dest, compare_value, value);" in the
-        // intermediate tree before traversing outputHLSL.
+        // So all the call of atomicExchange(dest, value) and atomicCompSwap(dest,
+        // compare_value, value) should all be modified into the form of "int temp; temp =
+        // atomicExchange(dest, value);" and "int temp; temp = atomicCompSwap(dest,
+        // compare_value, value);" in the intermediate tree before traversing outputHLSL.
         case EOpAtomicExchange:
         case EOpAtomicCompSwap:
+        {
+            ASSERT(node->getChildCount() > 1);
+            TIntermTyped *memNode = (*node->getSequence())[0]->getAsTyped();
+            if (IsInShaderStorageBlock(memNode))
+            {
+                // Atomic memory functions for SSBO.
+                // "_ssbo_atomicXXX_TYPE(RWByteAddressBuffer buffer, uint loc" is written to |out|.
+                mSSBOOutputHLSL->outputAtomicMemoryFunctionCallPrefix(memNode, node->getOp());
+                // Write the rest argument list to |out|.
+                for (size_t i = 1; i < node->getChildCount(); i++)
+                {
+                    out << ", ";
+                    TIntermTyped *argument = (*node->getSequence())[i]->getAsTyped();
+                    if (IsInShaderStorageBlock(argument))
+                    {
+                        mSSBOOutputHLSL->outputLoadFunctionCall(argument);
+                    }
+                    else
+                    {
+                        argument->traverse(this);
+                    }
+                }
+
+                out << ")";
+                return false;
+            }
+            else
+            {
+                // Atomic memory functions for shared variable.
+                if (node->getOp() != EOpAtomicExchange && node->getOp() != EOpAtomicCompSwap)
+                {
+                    outputTriplet(out, visit,
+                                  GetHLSLAtomicFunctionStringAndLeftParenthesis(node->getOp()), ",",
+                                  ")");
+                }
+                else
+                {
+                    UNREACHABLE();
+                }
+            }
+
+            break;
+        }
         default:
             UNREACHABLE();
     }

@@ -10,13 +10,14 @@
 
 #include "call/rampup_tests.h"
 
+#include "absl/memory/memory.h"
 #include "call/fake_network_pipe.h"
 #include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/flags.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/platform_thread.h"
-#include "rtc_base/stringencode.h"
+#include "rtc_base/string_encode.h"
 #include "test/encoder_settings.h"
 #include "test/gtest.h"
 #include "test/testsupport/perf_test.h"

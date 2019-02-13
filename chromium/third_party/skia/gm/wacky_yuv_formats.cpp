@@ -622,43 +622,88 @@ static void draw_col_label(SkCanvas* canvas, int x, int yuvColorSpace, bool opaq
     static const char* kYUVColorSpaceNames[] = { "JPEG", "601", "709" };
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kYUVColorSpaceNames) == kLastEnum_SkYUVColorSpace+1);
 
-    SkPaint textPaint;
-    sk_tool_utils::set_portable_typeface(&textPaint, nullptr, SkFontStyle::Bold());
-    textPaint.setTextSize(16);
+    SkPaint paint;
+    SkFont font(sk_tool_utils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
     SkString colLabel;
 
     colLabel.printf("%s", kYUVColorSpaceNames[yuvColorSpace]);
-    textPaint.measureText(colLabel.c_str(), colLabel.size(), &textRect);
+    font.measureText(colLabel.c_str(), colLabel.size(), kUTF8_SkTextEncoding, &textRect);
     int y = textRect.height();
 
-    SkTextUtils::DrawString(canvas, colLabel, x, y, textPaint, SkTextUtils::kCenter_Align);
+    SkTextUtils::DrawString(canvas, colLabel.c_str(), x, y, font, paint, SkTextUtils::kCenter_Align);
 
     colLabel.printf("%s", opaque ? "Opaque" : "Transparent");
 
-    textPaint.measureText(colLabel.c_str(), colLabel.size(), &textRect);
+    font.measureText(colLabel.c_str(), colLabel.size(), kUTF8_SkTextEncoding, &textRect);
     y += textRect.height();
 
-    SkTextUtils::DrawString(canvas, colLabel, x, y, textPaint, SkTextUtils::kCenter_Align);
+    SkTextUtils::DrawString(canvas, colLabel.c_str(), x, y, font, paint, SkTextUtils::kCenter_Align);
 }
 
 static void draw_row_label(SkCanvas* canvas, int y, int yuvFormat) {
     static const char* kYUVFormatNames[] = { "AYUV", "NV12", "NV21", "I420", "YV12" };
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kYUVFormatNames) == kLast_YUVFormat+1);
 
-    SkPaint textPaint;
-    sk_tool_utils::set_portable_typeface(&textPaint, nullptr, SkFontStyle::Bold());
-    textPaint.setTextSize(16);
+    SkPaint paint;
+    SkFont font(sk_tool_utils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
     SkString rowLabel;
 
     rowLabel.printf("%s", kYUVFormatNames[yuvFormat]);
-    textPaint.measureText(rowLabel.c_str(), rowLabel.size(), &textRect);
+    font.measureText(rowLabel.c_str(), rowLabel.size(), kUTF8_SkTextEncoding, &textRect);
     y += kTileWidthHeight/2 + textRect.height()/2;
 
-    canvas->drawText(rowLabel.c_str(), rowLabel.size(), 0, y, textPaint);
+    canvas->drawString(rowLabel, 0, y, font, paint);
+}
+
+static GrBackendTexture create_yuva_texture(GrGpu* gpu, const SkBitmap& bm,
+                                            SkYUVAIndex yuvaIndices[4], int texIndex) {
+    SkASSERT(texIndex >= 0 && texIndex <= 3);
+    int channelCount = 0;
+    for (int i = 0; i < SkYUVAIndex::kIndexCount; ++i) {
+        if (yuvaIndices[i].fIndex == texIndex) {
+            ++channelCount;
+        }
+    }
+    // Need to create an RG texture for two-channel planes
+    GrBackendTexture tex;
+    if (2 == channelCount) {
+        SkASSERT(kRGBA_8888_SkColorType == bm.colorType());
+        SkAutoTMalloc<char> pixels(2 * bm.width()*bm.height());
+        char* currPixel = pixels;
+        for (int y = 0; y < bm.height(); ++y) {
+            for (int x = 0; x < bm.width(); ++x) {
+                SkColor color = bm.getColor(x, y);
+                currPixel[0] = SkColorGetR(color);
+                currPixel[1] = SkColorGetG(color);
+                currPixel += 2;
+            }
+        }
+        tex = gpu->createTestingOnlyBackendTexture(
+            pixels,
+            bm.width(),
+            bm.height(),
+            GrColorType::kRG_88,
+            false,
+            GrMipMapped::kNo,
+            2*bm.width());
+    }
+    if (!tex.isValid()) {
+        tex = gpu->createTestingOnlyBackendTexture(
+            bm.getPixels(),
+            bm.width(),
+            bm.height(),
+            bm.colorType(),
+            false,
+            GrMipMapped::kNo,
+            bm.rowBytes());
+    }
+    return tex;
 }
 
 namespace skiagm {
@@ -675,14 +720,18 @@ namespace skiagm {
 // YV12
 class WackyYUVFormatsGM : public GM {
 public:
-    WackyYUVFormatsGM() {
+    WackyYUVFormatsGM(bool useTargetColorSpace) : fUseTargetColorSpace(useTargetColorSpace) {
         this->setBGColor(0xFFCCCCCC);
     }
 
 protected:
 
     SkString onShortName() override {
-        return SkString("wacky_yuv_formats");
+        SkString name("wacky_yuv_formats");
+        if (fUseTargetColorSpace) {
+            name += "_cs";
+        }
+        return name;
     }
 
     SkISize onISize() override {
@@ -710,6 +759,10 @@ protected:
             SkPath path = create_splat(origin, innerRadius, outerRadius, 1.0f, 7, &circles);
             fOriginalBMs[1] = make_bitmap(path, circles, true);
         }
+
+        if (fUseTargetColorSpace) {
+            fTargetColorSpace = SkColorSpace::MakeSRGB()->makeColorSpin();
+        }
     }
 
     void createImages(GrContext* context) {
@@ -723,6 +776,10 @@ protected:
                     SkBitmap resultBMs[4];
                     SkYUVAIndex yuvaIndices[4];
                     create_YUV(planes, (YUVFormat) format, resultBMs, yuvaIndices, opaque);
+                    int numTextures;
+                    if (!SkYUVAIndex::AreValidIndices(yuvaIndices, &numTextures)) {
+                        continue;
+                    }
 
                     if (context) {
                         if (context->abandoned()) {
@@ -734,30 +791,12 @@ protected:
                             return;
                         }
 
-                        bool used[4] = { false, false, false, false };
-                        for (int i = 0; i < 4; ++i) {
-                            if (yuvaIndices[i].fIndex >= 0) {
-                                SkASSERT(yuvaIndices[i].fIndex < 4);
-                                used[yuvaIndices[i].fIndex] = true;
-                            }
-                        }
-
                         GrBackendTexture yuvaTextures[4];
                         SkPixmap yuvaPixmaps[4];
 
-                        for (int i = 0; i < 4; ++i) {
-                            if (!used[i]) {
-                                continue;
-                            }
-
-                            yuvaTextures[i] = gpu->createTestingOnlyBackendTexture(
-                                resultBMs[i].getPixels(),
-                                resultBMs[i].width(),
-                                resultBMs[i].height(),
-                                resultBMs[i].colorType(),
-                                false,
-                                GrMipMapped::kNo,
-                                resultBMs[i].rowBytes());
+                        for (int i = 0; i < numTextures; ++i) {
+                            yuvaTextures[i] = create_yuva_texture(gpu, resultBMs[i],
+                                                                  yuvaIndices, i);
                             yuvaPixmaps[i] = resultBMs[i].pixmap();
                         }
 
@@ -820,8 +859,13 @@ protected:
 
                 for (int format = kAYUV_YUVFormat; format <= kLast_YUVFormat; ++format) {
                     draw_row_label(canvas, y, format);
-                    canvas->drawImage(fImages[opaque][cs][format], x, y);
-
+                    if (fUseTargetColorSpace && fImages[opaque][cs][format]) {
+                        sk_sp<SkImage> csImage =
+                            fImages[opaque][cs][format]->makeColorSpace(fTargetColorSpace);
+                        canvas->drawImage(csImage, x, y);
+                    } else {
+                        canvas->drawImage(fImages[opaque][cs][format], x, y);
+                    }
                     y += kTileWidthHeight + kPad;
                 }
 
@@ -833,11 +877,14 @@ protected:
 private:
     SkBitmap       fOriginalBMs[2];
     sk_sp<SkImage> fImages[2][kLastEnum_SkYUVColorSpace+1][kLast_YUVFormat+1];
+    bool           fUseTargetColorSpace;
+    sk_sp<SkColorSpace> fTargetColorSpace;
 
     typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM(return new WackyYUVFormatsGM;)
+DEF_GM(return new WackyYUVFormatsGM(false);)
+DEF_GM(return new WackyYUVFormatsGM(true);)
 }

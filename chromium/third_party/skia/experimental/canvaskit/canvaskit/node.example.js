@@ -1,15 +1,24 @@
-console.log('hello world');
-
 const CanvasKitInit = require('./bin/canvaskit.js');
+const fs = require('fs');
+const path = require('path');
 
 CanvasKitInit({
   locateFile: (file) => __dirname + '/bin/'+file,
-}).then((CK) => {
-  CanvasKit = CK;
+}).ready().then((CanvasKit) => {
   let canvas = CanvasKit.MakeCanvas(300, 300);
 
+  let img = fs.readFileSync(path.join(__dirname, 'test.png'));
+  img = canvas.decodeImage(img);
+
+  let fontData = fs.readFileSync(path.join(__dirname, './Roboto-Regular.woff'));
+  canvas.loadFont(fontData, {
+                                'family': 'Roboto',
+                                'style': 'normal',
+                                'weight': '400',
+                              });
+
   let ctx = canvas.getContext('2d');
-  ctx.font = '30px Impact'
+  ctx.font = '30px Roboto';
   ctx.rotate(.1);
   let text = ctx.measureText('Awesome');
   ctx.fillText('Awesome ', 50, 100);
@@ -18,42 +27,53 @@ CanvasKitInit({
   // Draw line under Awesome
   ctx.strokeStyle = 'rgba(125,0,0,0.5)';
   ctx.beginPath();
-  ctx.lineWidth=6;
+  ctx.lineWidth = 6;
   ctx.lineTo(50, 102);
   ctx.lineTo(50 + text.width, 102);
   ctx.stroke();
 
-  // TODO load an image from file
+  // squished vertically
+  ctx.globalAlpha = 0.7
+  ctx.imageSmoothingQuality = 'medium';
+  ctx.drawImage(img, 150, 150, 150, 100);
+  ctx.rotate(-.2);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 100, 150, 400, 350, 10, 200, 150, 100);
+
   console.log('<img src="' + canvas.toDataURL() + '" />');
+
+  fancyAPI(CanvasKit);
 });
 
-function fancyAPI() {
-  CanvasKit.initFonts();
-  console.log('loaded');
-
+function fancyAPI(CanvasKit) {
   let surface = CanvasKit.MakeSurface(300, 300);
   const canvas = surface.getCanvas();
 
   const paint = new CanvasKit.SkPaint();
 
+  const fontMgr = CanvasKit.SkFontMgr.RefDefault();
+  let robotoData = fs.readFileSync(path.join(__dirname, './Roboto-Regular.woff'));
+  const roboto = fontMgr.MakeTypefaceFromData(robotoData);
+
   const textPaint = new CanvasKit.SkPaint();
   textPaint.setColor(CanvasKit.Color(40, 0, 0));
-  textPaint.setTextSize(30);
   textPaint.setAntiAlias(true);
 
-  const path = starPath(CanvasKit);
+  const textFont = new CanvasKit.SkFont(roboto, 30);
+
+  const skpath = starPath(CanvasKit);
   const dpe = CanvasKit.MakeSkDashPathEffect([15, 5, 5, 10], 1);
 
   paint.setPathEffect(dpe);
-  paint.setStyle(CanvasKit.PaintStyle.STROKE);
+  paint.setStyle(CanvasKit.PaintStyle.Stroke);
   paint.setStrokeWidth(5.0);
   paint.setAntiAlias(true);
   paint.setColor(CanvasKit.Color(66, 129, 164, 1.0));
 
   canvas.clear(CanvasKit.Color(255, 255, 255, 1.0));
 
-  canvas.drawPath(path, paint);
-  canvas.drawText('Try Clicking!', 10, 280, textPaint);
+  canvas.drawPath(skpath, paint);
+  canvas.drawText('Try Clicking!', 10, 280, textFont, textPaint);
 
   surface.flush();
 
@@ -72,11 +92,13 @@ function fancyAPI() {
   let b64encoded = Buffer.from(pngBytes).toString('base64');
   console.log(`<img src="data:image/png;base64,${b64encoded}" />`);
 
+  // These delete calls free up memeory in the C++ WASM memory block.
   dpe.delete();
-  path.delete();
-  canvas.delete();
+  skpath.delete();
   textPaint.delete();
   paint.delete();
+  roboto.delete();
+  textFont.delete();
 
   surface.dispose();
 }

@@ -603,7 +603,7 @@ void aom_highbd_upsampled_pred_sse2(MACROBLOCKD *xd,
     const int ref_num = 0;
     const int is_intrabc = is_intrabc_block(mi);
     const struct scale_factors *const sf =
-        is_intrabc ? &cm->sf_identity : &xd->block_refs[ref_num]->sf;
+        is_intrabc ? &cm->sf_identity : xd->block_ref_scale_factors[ref_num];
     const int is_scaled = av1_is_scaled(sf);
 
     if (is_scaled) {
@@ -734,16 +734,6 @@ void aom_highbd_upsampled_pred_sse2(MACROBLOCKD *xd,
     const int intermediate_height =
         (((height - 1) * 8 + subpel_y_q3) >> 3) + filter_taps;
     assert(intermediate_height <= (MAX_SB_SIZE * 2 + 16) + 16);
-    // TODO(Sachin): Remove the memset below when we have
-    // 4 tap simd for avx2.
-    if (subpel_search <= USE_4_TAPS) {
-      memset(temp_start_vert - 3 * MAX_SB_SIZE, 0, width * sizeof(uint16_t));
-      memset(temp_start_vert - 2 * MAX_SB_SIZE, 0, width * sizeof(uint16_t));
-      memset(temp_start_vert + (height + 2) * MAX_SB_SIZE, 0,
-             width * sizeof(uint16_t));
-      memset(temp_start_vert + (height + 3) * MAX_SB_SIZE, 0,
-             width * sizeof(uint16_t));
-    }
     aom_highbd_convolve8_horiz(
         ref_start, ref_stride, CONVERT_TO_BYTEPTR(temp_start_horiz),
         MAX_SB_SIZE, kernel_x, 16, NULL, -1, width, intermediate_height, bd);
@@ -794,7 +784,7 @@ void aom_highbd_jnt_comp_avg_pred_sse2(uint8_t *comp_pred8,
                                        const uint8_t *pred8, int width,
                                        int height, const uint8_t *ref8,
                                        int ref_stride,
-                                       const JNT_COMP_PARAMS *jcp_param) {
+                                       const DIST_WTD_COMP_PARAMS *jcp_param) {
   int i;
   const uint16_t wt0 = (uint16_t)jcp_param->fwd_offset;
   const uint16_t wt1 = (uint16_t)jcp_param->bck_offset;
@@ -846,7 +836,7 @@ void aom_highbd_jnt_comp_avg_upsampled_pred_sse2(
     MACROBLOCKD *xd, const struct AV1Common *const cm, int mi_row, int mi_col,
     const MV *const mv, uint8_t *comp_pred8, const uint8_t *pred8, int width,
     int height, int subpel_x_q3, int subpel_y_q3, const uint8_t *ref8,
-    int ref_stride, int bd, const JNT_COMP_PARAMS *jcp_param,
+    int ref_stride, int bd, const DIST_WTD_COMP_PARAMS *jcp_param,
     int subpel_search) {
   uint16_t *pred = CONVERT_TO_SHORTPTR(pred8);
   int n;

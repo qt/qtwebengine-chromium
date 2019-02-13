@@ -8,8 +8,6 @@
 #ifndef GrVkBuffer_DEFINED
 #define GrVkBuffer_DEFINED
 
-#include "GrVkVulkan.h"
-
 #include "GrVkResource.h"
 #include "vk/GrVkTypes.h"
 
@@ -71,7 +69,7 @@ protected:
         Type               fType;
 
     private:
-        void freeGPUData(const GrVkGpu* gpu) const override;
+        void freeGPUData(GrVkGpu* gpu) const override;
 
         void onRecycle(GrVkGpu* gpu) const override { this->unref(gpu); }
 

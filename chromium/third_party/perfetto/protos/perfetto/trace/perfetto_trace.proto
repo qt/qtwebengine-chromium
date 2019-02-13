@@ -11,6 +11,33 @@ syntax = "proto2";
 
 package perfetto.protos;
 
+// Begin of protos/perfetto/common/android_log_constants.proto
+
+// Values from NDK's android/log.h.
+enum AndroidLogId {
+  LID_DEFAULT = 0;  // MAIN.
+  LID_RADIO = 1;
+  LID_EVENTS = 2;
+  LID_SYSTEM = 3;
+  LID_CRASH = 4;
+  LID_STATS = 5;
+  LID_SECURITY = 6;
+  LID_KERNEL = 7;
+}
+
+enum AndroidLogPriority {
+  PRIO_UNSPECIFIED = 0;
+  PRIO_UNUSED = 1;  // _DEFAULT, but should never be seen in logs.
+  PRIO_VERBOSE = 2;
+  PRIO_DEBUG = 3;
+  PRIO_INFO = 4;
+  PRIO_WARN = 5;
+  PRIO_ERROR = 6;
+  PRIO_FATAL = 7;
+}
+
+// End of protos/perfetto/common/android_log_constants.proto
+
 // Begin of protos/perfetto/common/sys_stats_counters.proto
 
 // When editing entries here remember also to update "sys_stats_counters.h" with
@@ -151,6 +178,67 @@ enum VmstatCounters {
   VMSTAT_UNEVICTABLE_PGS_STRANDED = 92;
 }
 // End of protos/perfetto/common/sys_stats_counters.proto
+
+// Begin of protos/perfetto/trace/android/android_log.proto
+
+message AndroidLogPacket {
+  message LogEvent {
+    // The log buffer (e.g. MAIN, SYSTEM, RADIO) the event comes from.
+    optional AndroidLogId log_id = 1;
+
+    // PID (TGID), TID and UID of the task that emitted the event.
+    optional int32 pid = 2;
+    optional int32 tid = 3;
+    optional int32 uid = 4;
+
+    // Timestamp [ns]. The clock source is CLOCK_REALTIME, unlike many other
+    // Perfetto trace events that instead use CLOCK_BOOTTIME. The trace
+    // processor will take care of realigning clocks using the ClockSnapshot(s).
+    optional uint64 timestamp = 5;
+
+    // When log_id == LID_EVENTS, |tag| corresponds to the event name defined in
+    // the second column of /system/etc/event-log-tags. For all other events,
+    // |tag| is the app-specified argument passed to __android_log_write().
+    optional string tag = 6;
+
+    // Empty when log_id == LID_EVENTS.
+    optional AndroidLogPriority prio = 7;
+
+    // Empty when log_id == LID_EVENTS.
+    optional string message = 8;
+
+    message Arg {
+      optional string name = 1;
+      oneof value {
+        int64 int_value = 2;
+        float float_value = 3;
+        string string_value = 4;
+      }
+    }
+    // Only populated when log_id == LID_EVENTS.
+    repeated Arg args = 9;
+  }
+
+  repeated LogEvent events = 1;
+
+  // Stats are emitted only upon Flush() and are monotonic (i.e. they are
+  // absolute counters since the beginning of the lifetime of the tracing
+  // session and NOT relative to the previous Stats snapshot).
+  message Stats {
+    // Total number of log events seen, including errors and skipped entries
+    // (num of events stored in the trace = total - failed - skipped).
+    optional uint64 num_total = 1;
+
+    // Parser failures.
+    optional uint64 num_failed = 2;
+
+    // Messages skipped due to filters.
+    optional uint64 num_skipped = 3;
+  }
+  optional Stats stats = 2;
+}
+
+// End of protos/perfetto/trace/android/android_log.proto
 
 // Begin of protos/perfetto/trace/clock_snapshot.proto
 
@@ -1685,6 +1773,7 @@ message FtraceEvent {
     SignalGenerateFtraceEvent signal_generate = 325;
     // removed field with id 326
     GenericFtraceEvent generic = 327;
+    MmEventRecordFtraceEvent mm_event_record = 328;
   }
 }
 
@@ -2022,6 +2111,17 @@ message LowmemoryKillFtraceEvent {
 
 // End of protos/perfetto/trace/ftrace/lowmemorykiller.proto
 
+// Begin of protos/perfetto/trace/ftrace/mm_event.proto
+
+message MmEventRecordFtraceEvent {
+  optional uint32 avg_lat = 1;
+  optional uint32 count = 2;
+  optional uint32 max_lat = 3;
+  optional uint32 type = 4;
+}
+
+// End of protos/perfetto/trace/ftrace/mm_event.proto
+
 // Begin of protos/perfetto/trace/ftrace/power.proto
 
 message CpuFrequencyFtraceEvent {
@@ -2191,15 +2291,36 @@ message MmVmscanKswapdSleepFtraceEvent {
 
 // End of protos/perfetto/trace/ftrace/vmscan.proto
 
+// Begin of protos/perfetto/trace/power/battery_counters.proto
+
+message BatteryCounters {
+  // Battery capacity in microampere-hours(µAh). Also known as Coulomb counter.
+  optional int64 charge_counter_uah = 1;
+
+  // Remaining battery capacity percentage of total capacity
+  optional float capacity_percent = 2;
+
+  // Instantaneous battery current in microamperes(µA).
+  // Positive values indicate net current entering the battery from a charge
+  // source, negative values indicate net current discharging from the battery.
+  optional int64 current_ua = 3;
+
+  // Instantaneous battery current in microamperes(µA).
+  optional int64 current_avg_ua = 4;
+}
+
+// End of protos/perfetto/trace/power/battery_counters.proto
+
 // Begin of protos/perfetto/trace/ps/process_stats.proto
 
 // Per-process periodically sampled stats. These samples are wrapped in a
 // dedicated message (as opposite to be fields in process_tree.proto) because
 // they are dumped at a different rate than cmdline and thread list.
 message ProcessStats {
-  // See /proc/[pid]/stats in `man 5 proc` for a description of these fields.
-  message MemCounters {
+  message Process {
     optional int32 pid = 1;
+
+    // See /proc/[pid]/status in `man 5 proc` for a description of these fields.
     optional uint64 vm_size_kb = 2;
     optional uint64 vm_rss_kb = 3;
     optional uint64 rss_anon_kb = 4;
@@ -2210,8 +2331,10 @@ message ProcessStats {
     optional uint64 vm_hwm_kb = 9;
     // When adding a new field remember to update kProcMemCounterSize in
     // the trace processor.
+
+    optional int64 oom_score_adj = 10;
   }
-  repeated MemCounters mem_counters = 1;
+  repeated Process processes = 1;
 }
 
 // End of protos/perfetto/trace/ps/process_stats.proto
@@ -2336,9 +2459,9 @@ message Trace {
 // The root object emitted by Perfetto. A perfetto trace is just a stream of
 // TracePacket(s).
 //
-// Next id: 10.
+// Next id: 40.
 message TracePacket {
-  // TODO: in future we should add a timestamp_clock_domain field to
+  // TODO(primiano): in future we should add a timestamp_clock_domain field to
   // allow mixing timestamps from different clock domains.
   optional uint64 timestamp = 8;  // Timestamp [ns].
 
@@ -2357,7 +2480,9 @@ message TracePacket {
     // removed field with id 33
     FtraceStats ftrace_stats = 34;
     // removed field with id 35
-    // removed field with id 37
+    ProfilePacket profile_packet = 37;
+    BatteryCounters battery = 38;
+    AndroidLogPacket android_log = 39;
 
     // This field is emitted at periodic intervals (~10s) and
     // contains always the binary representation of the UUID
@@ -2375,3 +2500,64 @@ message TracePacket {
 }
 
 // End of protos/perfetto/trace/trace_packet.proto
+
+// Begin of protos/perfetto/trace/profiling/profile_packet.proto
+
+message ProfilePacket {
+  // either a function or library name.
+  repeated InternedString strings = 1;
+  message InternedString {
+    optional uint64 id = 1;
+    optional string str = 2;
+  }
+
+  repeated Frame frames = 2;
+  message Frame {
+    optional uint64 id = 1;  // Interning key
+    // E.g. "fopen"
+    optional uint64 function_name_id = 2;  // id of string.
+    optional uint64 mapping_id = 3;
+    optional uint64 rel_pc = 4;
+  }
+
+  repeated Callstack callstacks = 3;
+  message Callstack {
+    optional uint64 id = 1;
+    // Frames of this callstack. Bottom frame first.
+    repeated uint64 frame_ids = 2;
+  }
+
+  repeated Mapping mappings = 4;
+  message Mapping {
+    optional uint64 id = 1;  // Interning key.
+    optional uint64 build_id = 2;  // Interning key.
+    optional uint64 offset = 3;
+    optional uint64 start = 4;
+    optional uint64 end = 5;
+    optional uint64 load_bias = 6;
+    // E.g. ["system", "lib64", "libc.so"]
+    repeated uint64 path_string_ids = 7;  // id of string.
+  }
+
+  message HeapSample {
+    optional uint64 callstack_id = 1;
+    // bytes allocated at this frame.
+    optional uint64 self_allocated = 2;
+    // bytes freed at this frame.
+    optional uint64 self_freed = 3;
+    optional uint64 timestamp = 4;  // timestamp [opt]
+    optional uint64 alloc_count = 5;
+    optional uint64 free_count = 6;
+  }
+
+  repeated ProcessHeapSamples process_dumps = 5;
+  message ProcessHeapSamples {
+    optional uint64 pid = 1;
+    repeated HeapSample samples = 2;
+  }
+
+  optional bool continued = 6;
+  optional uint64 index = 7;
+}
+
+// End of protos/perfetto/trace/profiling/profile_packet.proto

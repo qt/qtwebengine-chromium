@@ -26,6 +26,7 @@
 #import "ui/base/clipboard/clipboard_util_mac.h"
 #import "ui/base/cocoa/appkit_utils.h"
 #include "ui/base/cocoa/cocoa_base_utils.h"
+#include "ui/base/cocoa/remote_accessibility_api.h"
 #import "ui/base/cocoa/touch_bar_util.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/display/screen.h"
@@ -62,6 +63,7 @@ class DummyClientHelper : public RenderWidgetHostNSViewClientHelper {
   // RenderWidgetHostNSViewClientHelper implementation.
   id GetRootBrowserAccessibilityElement() override { return nil; }
   id GetFocusedBrowserAccessibilityElement() override { return nil; }
+  void SetAccessibilityWindow(NSWindow* window) override {}
   void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event,
                             const ui::LatencyInfo& latency_info) override {}
   void ForwardKeyboardEventWithCommands(
@@ -1200,6 +1202,7 @@ void ExtractUnderlines(NSAttributedString* string,
                              object:newWindow];
   }
 
+  clientHelper_->SetAccessibilityWindow(newWindow);
   [self sendWindowFrameInScreenToClient];
 }
 
@@ -1347,8 +1350,8 @@ void ExtractUnderlines(NSAttributedString* string,
       return valid;
   }
 
-  bool is_render_view = false;
-  client_->SyncIsRenderViewHost(&is_render_view);
+  bool is_for_main_frame = false;
+  client_->SyncIsWidgetForMainFrame(&is_for_main_frame);
 
   bool is_speaking = false;
   client_->SyncIsSpeaking(&is_speaking);
@@ -1356,10 +1359,10 @@ void ExtractUnderlines(NSAttributedString* string,
   SEL action = [item action];
 
   if (action == @selector(stopSpeaking:))
-    return is_render_view && is_speaking;
+    return is_for_main_frame && is_speaking;
 
   if (action == @selector(startSpeaking:))
-    return is_render_view;
+    return is_for_main_frame;
 
   // For now, these actions are always enabled for render view,
   // this is sub-optimal.
@@ -1368,7 +1371,7 @@ void ExtractUnderlines(NSAttributedString* string,
       action == @selector(cut:) || action == @selector(copy:) ||
       action == @selector(copyToFindPboard:) || action == @selector(paste:) ||
       action == @selector(pasteAndMatchStyle:)) {
-    return is_render_view;
+    return is_for_main_frame;
   }
 
   return editCommandHelper_->IsMenuItemEnabled(action, self);
@@ -1377,6 +1380,11 @@ void ExtractUnderlines(NSAttributedString* string,
 - (RenderWidgetHostNSViewClient*)renderWidgetHostNSViewClient {
   return client_;
 }
+
+// TODO(crbug.com/921109): Migrate from the NSObject accessibility API to the
+// NSAccessibility API, then remove this suppression.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 - (NSArray*)accessibilityArrayAttributeValues:(NSString*)attribute
                                         index:(NSUInteger)index
@@ -1447,6 +1455,8 @@ void ExtractUnderlines(NSAttributedString* string,
 - (id)accessibilityFocusedUIElement {
   return clientHelper_->GetFocusedBrowserAccessibilityElement();
 }
+
+#pragma clang diagnostic pop
 
 // Below is our NSTextInputClient implementation.
 //

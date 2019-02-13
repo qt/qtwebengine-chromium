@@ -21,7 +21,7 @@
 #include "modules/audio_processing/include/audio_processing_statistics.h"
 #include "modules/audio_processing/render_queue_item_verifier.h"
 #include "modules/audio_processing/rms_level.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/function_view.h"
 #include "rtc_base/gtest_prod_util.h"
 #include "rtc_base/ignore_wundef.h"
@@ -181,6 +181,7 @@ class AudioProcessingImpl : public AudioProcessing {
                 bool pre_amplifier_enabled,
                 bool echo_controller_enabled,
                 bool voice_activity_detector_enabled,
+                bool private_voice_detector_enabled,
                 bool level_estimator_enabled,
                 bool transient_suppressor_enabled);
     bool CaptureMultiBandSubModulesActive() const;
@@ -207,6 +208,7 @@ class AudioProcessingImpl : public AudioProcessing {
     bool echo_controller_enabled_ = false;
     bool level_estimator_enabled_ = false;
     bool voice_activity_detector_enabled_ = false;
+    bool private_voice_detector_enabled_ = false;
     bool transient_suppressor_enabled_ = false;
     bool first_update_ = true;
   };

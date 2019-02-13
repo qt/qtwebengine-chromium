@@ -50,21 +50,23 @@ public:
     std::unique_ptr<GrDrawOp> createOp_TestingOnly(GrContext*,
                                                    GrTextContext*,
                                                    GrRenderTargetContext*,
-                                                   const SkPaint&,
+                                                   const SkPaint&, const SkFont&,
                                                    const SkMatrix& viewMatrix,
                                                    const char* text,
                                                    int x,
                                                    int y);
 
     static void SanitizeOptions(Options* options);
-    static bool CanDrawAsDistanceFields(const SkPaint& skPaint, const SkMatrix& viewMatrix,
+    static bool CanDrawAsDistanceFields(const SkPaint&, const SkFont&, const SkMatrix& viewMatrix,
                                         const SkSurfaceProps& props,
                                         bool contextSupportsDistanceFieldText,
                                         const Options& options);
-    static void InitDistanceFieldPaint(GrTextBlob* blob,
-                                       SkPaint* skPaint,
+    static void InitDistanceFieldPaint(SkScalar textSize,
                                        const SkMatrix& viewMatrix,
                                        const Options& options,
+                                       GrTextBlob* blob,
+                                       SkPaint* skPaint,
+                                       SkFont* skFont,
                                        SkScalar* textRatio,
                                        SkScalerContextFlags* flags);
 

@@ -397,20 +397,14 @@ void SkDebugCanvas::onDrawPoints(PointMode mode, size_t count,
     this->addDrawCommand(new SkDrawPointsCommand(mode, count, pts, paint));
 }
 
-void SkDebugCanvas::onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
-                                  const SkPaint& paint) {
-    this->addDrawCommand(new SkDrawPosTextCommand(text, byteLength, pos, paint));
-}
-
-void SkDebugCanvas::onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
-                                   SkScalar constY, const SkPaint& paint) {
-    this->addDrawCommand(
-        new SkDrawPosTextHCommand(text, byteLength, xpos, constY, paint));
-}
-
 void SkDebugCanvas::onDrawRect(const SkRect& rect, const SkPaint& paint) {
     // NOTE(chudy): Messing up when renamed to DrawRect... Why?
     addDrawCommand(new SkDrawRectCommand(rect, paint));
+}
+
+void SkDebugCanvas::onDrawEdgeAARect(const SkRect& rect, SkCanvas::QuadAAFlags aa, SkColor color,
+                                     SkBlendMode mode) {
+    this->addDrawCommand(new SkDrawEdgeAARectCommand(rect, aa, color, mode));
 }
 
 void SkDebugCanvas::onDrawRRect(const SkRRect& rrect, const SkPaint& paint) {
@@ -420,16 +414,6 @@ void SkDebugCanvas::onDrawRRect(const SkRRect& rrect, const SkPaint& paint) {
 void SkDebugCanvas::onDrawDRRect(const SkRRect& outer, const SkRRect& inner,
                                  const SkPaint& paint) {
     this->addDrawCommand(new SkDrawDRRectCommand(outer, inner, paint));
-}
-
-void SkDebugCanvas::onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
-                               const SkPaint& paint) {
-    this->addDrawCommand(new SkDrawTextCommand(text, byteLength, x, y, paint));
-}
-
-void SkDebugCanvas::onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
-                                      const SkRect* cull, const SkPaint& paint) {
-    this->addDrawCommand(new SkDrawTextRSXformCommand(text, byteLength, xform, cull, paint));
 }
 
 void SkDebugCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
@@ -481,6 +465,11 @@ SkCanvas::SaveLayerStrategy SkDebugCanvas::getSaveLayerStrategy(const SaveLayerR
     (void)this->INHERITED::getSaveLayerStrategy(rec);
     // No need for a full layer.
     return kNoLayer_SaveLayerStrategy;
+}
+
+bool SkDebugCanvas::onDoSaveBehind(const SkRect* subset) {
+    // TODO
+    return false;
 }
 
 void SkDebugCanvas::didSetMatrix(const SkMatrix& matrix) {

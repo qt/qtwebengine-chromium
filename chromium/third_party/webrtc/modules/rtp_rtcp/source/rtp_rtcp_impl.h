@@ -32,7 +32,7 @@
 #include "modules/rtp_rtcp/source/rtcp_receiver.h"
 #include "modules/rtp_rtcp/source/rtcp_sender.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/gtest_prod_util.h"
 
 namespace webrtc {
@@ -63,8 +63,11 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   // Sender part.
 
-  int32_t RegisterSendPayload(const CodecInst& voice_codec) override;
-
+  void RegisterAudioSendPayload(int payload_type,
+                                absl::string_view payload_name,
+                                int frequency,
+                                int channels,
+                                int rate) override;
   void RegisterVideoSendPayload(int payload_type,
                                 const char* payload_name) override;
 
@@ -101,6 +104,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   // Configure SSRC, default is a random number.
   void SetSSRC(uint32_t ssrc) override;
+
+  void SetRid(const std::string& rid) override;
 
   void SetMid(const std::string& mid) override;
 
@@ -294,6 +299,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
                    uint32_t* video_rate,
                    uint32_t* fec_rate,
                    uint32_t* nackRate) const override;
+  uint32_t PacketizationOverheadBps() const override;
 
   void RegisterSendChannelRtpStatisticsCallback(
       StreamDataCountersCallback* callback) override;

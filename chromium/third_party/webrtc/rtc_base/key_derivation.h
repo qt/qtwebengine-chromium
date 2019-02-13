@@ -11,12 +11,14 @@
 #ifndef RTC_BASE_KEY_DERIVATION_H_
 #define RTC_BASE_KEY_DERIVATION_H_
 
+#include <stddef.h>
+#include <stdint.h>
 #include <memory>
 
 #include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "rtc_base/buffer.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
 
 namespace rtc {
 

@@ -252,11 +252,20 @@ sk_sp<SkImage> SkImage::MakeFromPicture(sk_sp<SkPicture> picture, const SkISize&
 sk_sp<SkImage> SkImage::makeWithFilter(const SkImageFilter* filter, const SkIRect& subset,
                                        const SkIRect& clipBounds, SkIRect* outSubset,
                                        SkIPoint* offset) const {
+    GrContext* context = as_IB(this)->context();
+
+    return this->makeWithFilter(context, filter, subset, clipBounds, outSubset, offset);
+}
+
+sk_sp<SkImage> SkImage::makeWithFilter(GrContext* grContext,
+                                       const SkImageFilter* filter, const SkIRect& subset,
+                                       const SkIRect& clipBounds, SkIRect* outSubset,
+                                       SkIPoint* offset) const {
     if (!filter || !outSubset || !offset || !this->bounds().contains(subset)) {
         return nullptr;
     }
     sk_sp<SkSpecialImage> srcSpecialImage = SkSpecialImage::MakeFromImage(
-        subset, sk_ref_sp(const_cast<SkImage*>(this)));
+        grContext, subset, sk_ref_sp(const_cast<SkImage*>(this)));
     if (!srcSpecialImage) {
         return nullptr;
     }
@@ -304,12 +313,30 @@ sk_sp<SkImage> SkImage::makeColorSpace(sk_sp<SkColorSpace> target) const {
     if (!colorSpace) {
         colorSpace = sk_srgb_singleton();
     }
-    if (SkColorSpace::Equals(colorSpace, target.get()) ||
-            kAlpha_8_SkColorType == as_IB(this)->onImageInfo().colorType()) {
+    if (SkColorSpace::Equals(colorSpace, target.get()) || this->isAlphaOnly()) {
         return sk_ref_sp(const_cast<SkImage*>(this));
     }
 
-    return as_IB(this)->onMakeColorSpace(std::move(target));
+    return as_IB(this)->onMakeColorTypeAndColorSpace(this->colorType(), std::move(target));
+}
+
+sk_sp<SkImage> SkImage::makeColorTypeAndColorSpace(SkColorType targetColorType,
+                                                   sk_sp<SkColorSpace> targetColorSpace) const {
+    if (kUnknown_SkColorType == targetColorType || !targetColorSpace) {
+        return nullptr;
+    }
+
+    SkColorType colorType = this->colorType();
+    SkColorSpace* colorSpace = this->colorSpace();
+    if (!colorSpace) {
+        colorSpace = sk_srgb_singleton();
+    }
+    if (colorType == targetColorType &&
+        (SkColorSpace::Equals(colorSpace, targetColorSpace.get()) || this->isAlphaOnly())) {
+        return sk_ref_sp(const_cast<SkImage*>(this));
+    }
+
+    return as_IB(this)->onMakeColorTypeAndColorSpace(targetColorType, std::move(targetColorSpace));
 }
 
 sk_sp<SkImage> SkImage::makeNonTextureImage() const {

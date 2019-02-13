@@ -18,19 +18,31 @@
 #include <malloc.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <atomic>
+#include <tuple>
+
+#include <sys/system_properties.h>
 
 #include <private/bionic_malloc_dispatch.h>
 
 #include "perfetto/base/build_config.h"
+#include "perfetto/base/logging.h"
+#include "perfetto/base/unix_socket.h"
+#include "perfetto/base/utils.h"
 #include "src/profiling/memory/client.h"
+#include "src/profiling/memory/proc_utils.h"
 #include "src/profiling/memory/wire_protocol.h"
 
 // The real malloc function pointers we get in initialize.
 static std::atomic<const MallocDispatch*> g_dispatch{nullptr};
 static std::atomic<perfetto::profiling::Client*> g_client{nullptr};
 static constexpr size_t kNumConnections = 2;
+
+static constexpr char kHeapprofdBinPath[] = "/system/bin/heapprofd";
 
 // The only writes are in the initialization function. Because Bionic does a
 // release write after initialization and an acquire read to retrieve the hooked
@@ -101,6 +113,127 @@ void* HEAPPROFD_ADD_PREFIX(_valloc)(size_t size);
 }
 #pragma GCC visibility pop
 
+namespace {
+
+std::string ReadSystemProperty(const char* key) {
+  std::string prop_value;
+  const prop_info* prop = __system_property_find(key);
+  if (!prop) {
+    return prop_value;  // empty
+  }
+  __system_property_read_callback(
+      prop,
+      [](void* cookie, const char* name, const char* value, uint32_t) {
+        std::string* prop_value = reinterpret_cast<std::string*>(cookie);
+        *prop_value = value;
+      },
+      &prop_value);
+  return prop_value;
+}
+
+bool ShouldForkPrivateDaemon() {
+  std::string build_type = ReadSystemProperty("ro.build.type");
+  if (build_type.empty()) {
+    PERFETTO_ELOG(
+        "Cannot determine platform build type, proceeding in fork mode "
+        "profiling.");
+    return true;
+  }
+
+  // On development builds, we support both modes of profiling, depending on a
+  // system property.
+  if (build_type == "userdebug" || build_type == "eng") {
+    std::string mode = ReadSystemProperty("heapprofd.userdebug.mode");
+    return mode == "fork";
+  }
+
+  // User/other builds - always fork private profiler.
+  return true;
+}
+
+std::unique_ptr<perfetto::profiling::Client> CreateClientForCentralDaemon() {
+  PERFETTO_DLOG("Constructing client for central daemon.");
+
+  using perfetto::profiling::Client;
+  return std::unique_ptr<Client>(new (std::nothrow) Client(
+      perfetto::profiling::kHeapprofdSocketFile, kNumConnections));
+}
+
+std::unique_ptr<perfetto::profiling::Client> CreateClientAndPrivateDaemon() {
+  PERFETTO_DLOG("Setting up fork mode profiling.");
+  // TODO(rsavitski): create kNumConnections socketpairs to match central mode
+  // behavior.
+  perfetto::base::UnixSocketRaw parent_sock;
+  perfetto::base::UnixSocketRaw child_sock;
+  std::tie(parent_sock, child_sock) = perfetto::base::UnixSocketRaw::CreatePair(
+      perfetto::base::SockType::kStream);
+
+  if (!parent_sock || !child_sock) {
+    PERFETTO_PLOG("Failed to create socketpair.");
+    return nullptr;
+  }
+
+  child_sock.RetainOnExec();
+
+  // Record own pid and cmdline, to pass down to the forked heapprofd.
+  pid_t target_pid = getpid();
+  std::string target_cmdline;
+  if (!perfetto::profiling::GetCmdlineForPID(target_pid, &target_cmdline)) {
+    PERFETTO_ELOG("Failed to read own cmdline.");
+    return nullptr;
+  }
+
+  pid_t fork_pid = fork();
+  if (fork_pid == -1) {
+    PERFETTO_PLOG("Failed to fork.");
+    return nullptr;
+  }
+  if (fork_pid == 0) {  // child
+    // daemon() forks again, terminating the calling thread (i.e. the direct
+    // child of the original process). So the rest of this codepath will be
+    // executed in a (new) reparented process.
+    if (daemon(/*nochdir=*/0, /*noclose=*/0) == -1) {
+      PERFETTO_PLOG("Daemonization failed.");
+      _exit(1);
+    }
+    std::string pid_arg =
+        std::string("--exclusive-for-pid=") + std::to_string(target_pid);
+    std::string cmd_arg =
+        std::string("--exclusive-for-cmdline=") + target_cmdline;
+    std::string fd_arg =
+        std::string("--inherit-socket-fd=") + std::to_string(child_sock.fd());
+    const char* argv[] = {kHeapprofdBinPath, pid_arg.c_str(), cmd_arg.c_str(),
+                          fd_arg.c_str(), nullptr};
+
+    execv(kHeapprofdBinPath, const_cast<char**>(argv));
+    PERFETTO_PLOG("Failed to execute private heapprofd.");
+    _exit(1);
+  }  // else - parent continuing the client setup
+
+  child_sock.ReleaseFd().reset();  // close child socket's fd
+  if (!parent_sock.SetTxTimeout(perfetto::profiling::kClientSockTxTimeoutMs)) {
+    PERFETTO_PLOG("Failed to set socket transmit timeout.");
+    return nullptr;
+  }
+
+  // Wait on the immediate child to exit (allow for ECHILD in the unlikely case
+  // we're in a process that has made its children unwaitable).
+  siginfo_t unused = {};
+  if (PERFETTO_EINTR(waitid(P_PID, fork_pid, &unused, WEXITED)) == -1 &&
+      errno != ECHILD) {
+    PERFETTO_PLOG("Failed to waitid on immediate child.");
+    return nullptr;
+  }
+
+  using perfetto::profiling::Client;
+  std::vector<perfetto::base::UnixSocketRaw> client_sockets;
+  client_sockets.emplace_back(std::move(parent_sock));
+  return std::unique_ptr<Client>(new (std::nothrow)
+                                     Client(std::move(client_sockets)));
+}
+
+}  // namespace
+
 bool HEAPPROFD_ADD_PREFIX(_initialize)(const MallocDispatch* malloc_dispatch,
                                        int*,
                                        const char*) {
@@ -108,14 +241,17 @@ bool HEAPPROFD_ADD_PREFIX(_initialize)(const MallocDispatch* malloc_dispatch,
   if (old_client)
     old_client->Shutdown();
 
+  // Table of pointers to backing implementation.
   g_dispatch.store(malloc_dispatch, write_order);
-  // This can store a nullptr, so we have to check in the hooks below to avoid
-  // segfaulting in that case.
-  std::unique_ptr<perfetto::profiling::Client> client(
-      new (std::nothrow) perfetto::profiling::Client(
-          perfetto::profiling::kHeapprofdSocketFile, kNumConnections));
-  if (!client || !client->inited())
+
+  std::unique_ptr<perfetto::profiling::Client> client =
+      ShouldForkPrivateDaemon() ? CreateClientAndPrivateDaemon()
+                                : CreateClientForCentralDaemon();
+
+  if (!client || !client->inited()) {
+    PERFETTO_LOG("Client not initialized, not installing hooks.");
     return false;
+  }
 
   g_client.store(client.release());
   return true;

@@ -4,8 +4,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
-# run_code_reneration.py:
-#   Runs  ANGLE format table and other script run_code_renerationgeneration.
+# run_code_generation.py:
+#   Runs ANGLE format table and other script code generation scripts.
 
 import hashlib
 import json
@@ -89,18 +89,15 @@ generators = {
         ],
         'script': 'src/libANGLE/renderer/d3d/d3d11/gen_dxgi_support_tables.py',
     },
+    'GL/EGL/WGL loader':
+        auto_script('scripts/generate_loader.py'),
+    'GL/EGL entry points':
+        auto_script('scripts/generate_entry_points.py'),
     'GL copy conversion table': {
         'inputs': [
             'src/libANGLE/es3_copy_conversion_formats.json',
         ],
         'script': 'src/libANGLE/gen_copy_conversion_table.py',
-    },
-    'GL entry point': {
-        'inputs': [
-            'scripts/entry_point_packed_gl_enums.json',
-            'scripts/gl.xml',
-        ],
-        'script': 'scripts/generate_entry_points.py',
     },
     'GL format map': {
         'inputs': [
@@ -186,6 +183,10 @@ old_hashes = json.load(open(hash_fname))
 new_hashes = {}
 any_dirty = False
 
+verify_only = False
+if len(sys.argv) > 1 and sys.argv[1] == '--verify-no-dirty':
+    verify_only = True
+
 for name, info in sorted(generators.iteritems()):
 
     # Reset the CWD to the root ANGLE directory.
@@ -195,12 +196,16 @@ for name, info in sorted(generators.iteritems()):
     if any_input_dirty(name, info['inputs'] + [script]):
         any_dirty = True
 
-        # Set the CWD to the script directory.
-        os.chdir(get_child_script_dirname(script))
+        if not verify_only:
+            # Set the CWD to the script directory.
+            os.chdir(get_child_script_dirname(script))
 
-        print('Running ' + name + ' code generator')
-        if subprocess.call(['python', os.path.basename(script)]) != 0:
-            sys.exit(1)
+            print('Running ' + name + ' code generator')
+            if subprocess.call(['python', os.path.basename(script)]) != 0:
+                sys.exit(1)
+
+if verify_only:
+    sys.exit(any_dirty)
 
 if any_dirty:
     args = []

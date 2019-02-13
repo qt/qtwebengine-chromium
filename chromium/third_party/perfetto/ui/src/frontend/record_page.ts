@@ -39,6 +39,10 @@ const COUNTER_PRESETS = [
 const CONFIG_PROTO_URL =
     `https://android.googlesource.com/platform/external/perfetto/+/master/protos/perfetto/config/perfetto_config.proto`;
 
+const SET_PROP_CMD = 'adb shell setprop persist.traced.enable 1';
+
+const DEFAULT_FTRACE_BUFFER_KB = 2 * 1024;
+
 const FTRACE_EVENTS = [
   'binder/binder_lock',
   'binder/binder_locked',
@@ -373,7 +377,7 @@ const CONFIG_PRESETS = [
       atraceApps: [],
       atraceCategories: ['sched', 'freq', 'idle'],
       ftraceDrainPeriodMs: null,
-      ftraceBufferSizeKb: null,
+      ftraceBufferSizeKb: DEFAULT_FTRACE_BUFFER_KB,
 
       sysStats: false,
       meminfoPeriodMs: null,
@@ -382,6 +386,10 @@ const CONFIG_PRESETS = [
       vmstatCounters: [],
       statPeriodMs: null,
       statCounters: [],
+
+      power: true,
+      batteryPeriodMs: 1000,
+      batteryCounters: ['BATTERY_COUNTER_CHARGE', 'BATTERY_COUNTER_CURRENT'],
     },
   },
   {
@@ -399,15 +407,19 @@ const CONFIG_PRESETS = [
       ftrace: true,
       ftraceEvents: [
         'print',
-        'sched_switch',
-        'rss_stat',
-        'ion_heap_shrink',
-        'ion_heap_grow',
+        'kmem/rss_stat',
+        'kmem/ion_heap_shrink',
+        'kmem/ion_heap_grow',
+        'oom/oom_score_adj_update',
+        'sched/sched_switch',
+        'sched/sched_process_exit',
+        'task/task_rename',
+        'task/task_newtask',
       ],
       atraceApps: [],
       atraceCategories: ['am', 'dalvik'],
       ftraceDrainPeriodMs: null,
-      ftraceBufferSizeKb: null,
+      ftraceBufferSizeKb: DEFAULT_FTRACE_BUFFER_KB,
 
       sysStats: true,
       meminfoPeriodMs: 50,
@@ -421,6 +433,10 @@ const CONFIG_PRESETS = [
       vmstatCounters: [],
       statPeriodMs: null,
       statCounters: [],
+
+      power: false,
+      batteryPeriodMs: null,
+      batteryCounters: [],
     },
   },
   {
@@ -440,7 +456,7 @@ const CONFIG_PRESETS = [
       atraceApps: [],
       atraceCategories: [],
       ftraceDrainPeriodMs: null,
-      ftraceBufferSizeKb: null,
+      ftraceBufferSizeKb: DEFAULT_FTRACE_BUFFER_KB,
 
       sysStats: false,
       meminfoPeriodMs: null,
@@ -449,6 +465,10 @@ const CONFIG_PRESETS = [
       vmstatCounters: [],
       statPeriodMs: null,
       statCounters: [],
+
+      power: false,
+      batteryPeriodMs: null,
+      batteryCounters: [],
     },
   },
 ];
@@ -465,11 +485,21 @@ const ATRACE_CATERGORIES = [
 ];
 ATRACE_CATERGORIES.sort();
 
+
+const BATTERY_COUNTERS = [
+  'BATTERY_COUNTER_CHARGE',
+  'BATTERY_COUNTER_CAPACITY_PERCENT',
+  'BATTERY_COUNTER_CURRENT',
+  'BATTERY_COUNTER_CURRENT_AVG'
+];
+BATTERY_COUNTERS.sort();
+
 const DURATION_HELP = `Duration to trace for`;
 const BUFFER_SIZE_HELP = `Size of the ring buffer which stores the trace`;
 const PROCESS_METADATA_HELP =
     `Record process names and parent child relationships`;
 const FTRACE_AND_ATRACE_HELP = `Record ftrace & atrace events`;
+const POWER_HELP = `Poll battery counters from the Power Management Unit`;
 const SYS_STATS_HELP = ``;
 
 function toId(label: string): string {
@@ -826,6 +856,7 @@ export const RecordPage = createPage({
               onchange: onChange<number|null>('ftraceBufferSizeKb'),
               presets: [
                 {label: '1mb', value: 1 * 1024},
+                {label: '2mb', value: 2 * 1024},
                 {label: '4mb', value: 4 * 1024},
                 {label: '8mb', value: 8 * 1024},
               ]
@@ -929,6 +960,39 @@ export const RecordPage = createPage({
 
             ),
 
+            m('.heading', m(Toggle, {
+              label: 'Battery and power',
+              help: POWER_HELP,
+              value: config.power,
+              enabled: true,
+              onchange: onChange<boolean|null>('power'),
+            })),
+
+            m('.control-group',
+              m(Numeric, {
+                enabled: config.power,
+                label: 'Polling rate',
+                sublabel: 'ms',
+                help: '',
+                placeholder: 'never',
+                value: config.batteryPeriodMs,
+                onchange: onChange<number|null>('batteryPeriodMs'),
+                presets: [
+                  {label: '1000ms', value: 1000},
+                  {label: '5000ms', value: 5000},
+                  {label: '10000ms', value: 10000},
+                ]
+              }),
+              m(MultiSelect, {
+                label: 'Battery counters',
+                enabled: config.power && isTruthy(config.batteryPeriodMs),
+                selected: config.batteryCounters,
+                options: BATTERY_COUNTERS,
+                onadd: onAdd('batteryCounters'),
+                onsubtract: onSubtract('batteryCounters'),
+              }),
+            ),
+
           m('hr'),
 
           m(Toggle, {
@@ -950,8 +1014,12 @@ export const RecordPage = createPage({
                 `To collect a ${config.durationSeconds}
                 second Perfetto trace from an Android phone run this command:`,
                 m(CodeSample, {text: data.commandline}),
-                'Then click "Open trace file" in the menu to the left and select',
-                ' "/tmp/trace".'),
+                'Then click "Open trace file" in the menu to the left and',
+                ' select "/tmp/trace".',
+                m('p', 'On non-Pixel devices you may need to first enable Perfetto',
+                 ' with:'),
+                m(CodeSample, {text: SET_PROP_CMD}),
+              ),
 
               state.displayConfigAsPbtxt ?
                 m('.pbtxt.text-column',

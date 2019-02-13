@@ -50,6 +50,8 @@ class MockFtraceProcfs : public FtraceProcfs {
 
   MOCK_METHOD2(WriteToFile,
                bool(const std::string& path, const std::string& str));
+  MOCK_METHOD2(AppendToFile,
+               bool(const std::string& path, const std::string& str));
   MOCK_METHOD1(ReadOneCharFromFile, char(const std::string& path));
   MOCK_METHOD1(ClearFile, bool(const std::string& path));
   MOCK_CONST_METHOD1(ReadFileIntoString, std::string(const std::string& path));
@@ -167,8 +169,8 @@ class FtraceConfigMuxerTest : public ::testing::Test {
 
 TEST_F(FtraceConfigMuxerTest, ComputeCpuBufferSizeInPages) {
   static constexpr size_t kMaxBufSizeInPages = 16 * 1024u;
-  // No buffer size given: good default (128 pages = 512kb).
-  EXPECT_EQ(ComputeCpuBufferSizeInPages(0), 128u);
+  // No buffer size given: good default (128 pages = 2mb).
+  EXPECT_EQ(ComputeCpuBufferSizeInPages(0), 512u);
   // Buffer size given way too big: good default.
   EXPECT_EQ(ComputeCpuBufferSizeInPages(10 * 1024 * 1024), kMaxBufSizeInPages);
   // The limit is 64mb per CPU, 512mb is too much.
@@ -195,7 +197,7 @@ TEST_F(FtraceConfigMuxerTest, AddGenericEvent) {
   EXPECT_CALL(ftrace, ReadOneCharFromFile("/root/tracing_on"))
       .Times(2)
       .WillRepeatedly(Return('0'));
-  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", "512"));
+  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", _));
   EXPECT_CALL(ftrace, WriteToFile("/root/trace_clock", "boot"));
   EXPECT_CALL(ftrace, WriteToFile("/root/tracing_on", "1"));
   EXPECT_CALL(ftrace,
@@ -265,7 +267,7 @@ TEST_F(FtraceConfigMuxerTest, AddAllEvents) {
   EXPECT_CALL(ftrace, ReadOneCharFromFile("/root/tracing_on"))
       .Times(2)
       .WillRepeatedly(Return('0'));
-  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", "512"));
+  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", _));
   EXPECT_CALL(ftrace, WriteToFile("/root/trace_clock", "boot"));
   EXPECT_CALL(ftrace, WriteToFile("/root/tracing_on", "1"));
   EXPECT_CALL(ftrace,
@@ -325,7 +327,7 @@ TEST_F(FtraceConfigMuxerTest, TurnFtraceOnOff) {
   EXPECT_CALL(ftrace, ReadOneCharFromFile("/root/tracing_on"))
       .Times(2)
       .WillRepeatedly(Return('0'));
-  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", "512"));
+  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", _));
   EXPECT_CALL(ftrace, WriteToFile("/root/trace_clock", "boot"));
   EXPECT_CALL(ftrace, WriteToFile("/root/tracing_on", "1"));
   EXPECT_CALL(ftrace,
@@ -497,6 +499,56 @@ TEST_F(FtraceConfigMuxerTest, GetFtraceEventsAtraceCategories) {
   EXPECT_THAT(events,
               Contains(GroupAndName("lowmemorykiller", "lowmemory_kill")));
   EXPECT_THAT(events, Contains(GroupAndName("ftrace", "print")));
+}
+
+// Tests the enabling fallback logic that tries to use the "set_event" interface
+// if writing the individual xxx/enable file fails.
+TEST_F(FtraceConfigMuxerTest, FallbackOnSetEvent) {
+  MockFtraceProcfs ftrace;
+  FtraceConfig config =
+      CreateFtraceConfig({"sched/sched_switch", "cgroup/cgroup_mkdir"});
+  FtraceConfigMuxer model(&ftrace, table_.get());
+
+  ON_CALL(ftrace, ReadFileIntoString("/root/trace_clock"))
+      .WillByDefault(Return("[local] global boot"));
+  EXPECT_CALL(ftrace, ReadFileIntoString("/root/trace_clock"))
+      .Times(AnyNumber());
+
+  EXPECT_CALL(ftrace, ReadOneCharFromFile("/root/tracing_on"))
+      .Times(2)
+      .WillRepeatedly(Return('0'));
+  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", _));
+  EXPECT_CALL(ftrace, WriteToFile("/root/trace_clock", "boot"));
+  EXPECT_CALL(ftrace, WriteToFile("/root/tracing_on", "1"));
+  EXPECT_CALL(ftrace,
+              WriteToFile("/root/events/sched/sched_switch/enable", "1"));
+  EXPECT_CALL(ftrace,
+              WriteToFile("/root/events/cgroup/cgroup_mkdir/enable", "1"))
+      .WillOnce(Return(false));
+  EXPECT_CALL(ftrace, AppendToFile("/root/set_event", "cgroup:cgroup_mkdir"))
+      .WillOnce(Return(true));
+  FtraceConfigId id = model.SetupConfig(config);
+  ASSERT_TRUE(id);
+  ASSERT_TRUE(model.ActivateConfig(id));
+
+  const FtraceConfig* actual_config = model.GetConfigForTesting(id);
+  EXPECT_TRUE(actual_config);
+  EXPECT_THAT(actual_config->ftrace_events(), Contains("sched/sched_switch"));
+  EXPECT_THAT(actual_config->ftrace_events(), Contains("cgroup/cgroup_mkdir"));
+
+  EXPECT_CALL(ftrace, WriteToFile("/root/tracing_on", "0"));
+  EXPECT_CALL(ftrace, WriteToFile("/root/buffer_size_kb", "0"));
+  EXPECT_CALL(ftrace, WriteToFile("/root/events/enable", "0"));
+  EXPECT_CALL(ftrace,
+              WriteToFile("/root/events/sched/sched_switch/enable", "0"));
+  EXPECT_CALL(ftrace,
+              WriteToFile("/root/events/cgroup/cgroup_mkdir/enable", "0"))
+      .WillOnce(Return(false));
+  EXPECT_CALL(ftrace, AppendToFile("/root/set_event", "!cgroup:cgroup_mkdir"))
+      .WillOnce(Return(true));
+  EXPECT_CALL(ftrace, ClearFile("/root/trace"));
+  EXPECT_CALL(ftrace, ClearFile(MatchesRegex("/root/per_cpu/cpu[0-9]/trace")));
+  ASSERT_TRUE(model.RemoveConfig(id));
 }
 
 }  // namespace

@@ -53,10 +53,15 @@ export class TrackGroupPanel extends Panel<Attrs> {
 
   view({attrs}: m.CVnode<Attrs>) {
     const collapsed = this.trackGroupState.collapsed;
+    const name = StripPathFromExecutable(this.trackGroupState.name);
     return m(
         `.track-group-panel[collapsed=${collapsed}]`,
         m('.shell',
-          m('h1', `${StripPathFromExecutable(this.trackGroupState.name)}`),
+          m('h1',
+            {
+              title: name,
+            },
+            name),
           m('.fold-button',
             {
               onclick: () =>
@@ -85,7 +90,6 @@ export class TrackGroupPanel extends Panel<Attrs> {
     if (!collapsed) return;
 
     ctx.save();
-    ctx.translate(this.shellWidth, 0);
 
     ctx.fillStyle = this.backgroundColor;
     ctx.fillRect(0, 0, size.width, size.height);
@@ -94,14 +98,11 @@ export class TrackGroupPanel extends Panel<Attrs> {
         ctx,
         globals.frontendLocalState.timeScale,
         globals.frontendLocalState.visibleWindowTime,
+        size.width,
         size.height);
 
-    // Do not show summary view if there are more than 10 track groups.
-    // Too slow now.
-    // TODO(dproy): Fix this.
-    if (Object.keys(globals.state.trackGroups).length < 10) {
-      this.summaryTrack.renderCanvas(ctx);
-    }
+    ctx.translate(this.shellWidth, 0);
+    this.summaryTrack.renderCanvas(ctx);
     ctx.restore();
   }
 }

@@ -24,7 +24,7 @@ constexpr VkClearColorValue kBlackClearColorValue                 = {{0}};
 }  // anonymous namespace
 
 RenderbufferVk::RenderbufferVk(const gl::RenderbufferState &state)
-    : RenderbufferImpl(state), mRenderTarget(&mImage, &mImageView, 0)
+    : RenderbufferImpl(state), mRenderTarget(&mImage, &mImageView, 0, nullptr)
 {}
 
 RenderbufferVk::~RenderbufferVk() {}
@@ -70,13 +70,15 @@ angle::Result RenderbufferVk::setStorage(const gl::Context *context,
             (isDepthOrStencilFormat ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : 0);
 
         gl::Extents extents(static_cast<int>(width), static_cast<int>(height), 1);
-        ANGLE_TRY(mImage.init(contextVk, gl::TextureType::_2D, extents, vkFormat, 1, usage, 1));
+        ANGLE_TRY(mImage.init(contextVk, gl::TextureType::_2D, extents, vkFormat, 1, usage, 1, 1));
 
         VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         ANGLE_TRY(mImage.initMemory(contextVk, renderer->getMemoryProperties(), flags));
 
         VkImageAspectFlags aspect = vk::GetFormatAspectFlags(textureFormat);
 
+        // Note that LUMA textures are not color-renderable, so a read-view with swizzle is not
+        // needed.
         ANGLE_TRY(mImage.initImageView(contextVk, gl::TextureType::_2D, aspect, gl::SwizzleState(),
                                        &mImageView, 1));
 
@@ -94,7 +96,7 @@ angle::Result RenderbufferVk::setStorage(const gl::Context *context,
         }
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result RenderbufferVk::setStorageMultisample(const gl::Context *context,
@@ -104,14 +106,14 @@ angle::Result RenderbufferVk::setStorageMultisample(const gl::Context *context,
                                                     size_t height)
 {
     ANGLE_VK_UNREACHABLE(vk::GetImpl(context));
-    return angle::Result::Stop();
+    return angle::Result::Stop;
 }
 
 angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *context,
                                                        egl::Image *image)
 {
     ANGLE_VK_UNREACHABLE(vk::GetImpl(context));
-    return angle::Result::Stop();
+    return angle::Result::Stop;
 }
 
 angle::Result RenderbufferVk::getAttachmentRenderTarget(const gl::Context *context,
@@ -121,14 +123,14 @@ angle::Result RenderbufferVk::getAttachmentRenderTarget(const gl::Context *conte
 {
     ASSERT(mImage.valid());
     *rtOut = &mRenderTarget;
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result RenderbufferVk::initializeContents(const gl::Context *context,
                                                  const gl::ImageIndex &imageIndex)
 {
     UNIMPLEMENTED();
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 }  // namespace rx

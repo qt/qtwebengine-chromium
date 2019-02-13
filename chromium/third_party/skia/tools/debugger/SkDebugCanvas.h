@@ -113,9 +113,8 @@ public:
 
 protected:
     void willSave() override;
-
     SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec &) override;
-
+    bool onDoSaveBehind(const SkRect*) override;
     void willRestore() override;
 
     void didConcat(const SkMatrix &) override;
@@ -124,14 +123,6 @@ protected:
 
     void onDrawAnnotation(const SkRect&, const char[], SkData*) override;
     void onDrawDRRect(const SkRRect&, const SkRRect&, const SkPaint&) override;
-    void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
-                    const SkPaint&) override;
-    void onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
-                       const SkPaint&) override;
-    void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
-                        SkScalar constY, const SkPaint&) override;
-    void onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform[], const SkRect*,
-                           const SkPaint&) override;
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                         const SkPaint& paint) override;
 
@@ -140,6 +131,7 @@ protected:
     void onDrawPaint(const SkPaint&) override;
 
     void onDrawRect(const SkRect&, const SkPaint&) override;
+    void onDrawEdgeAARect(const SkRect&, SkCanvas::QuadAAFlags, SkColor, SkBlendMode) override;
     void onDrawOval(const SkRect&, const SkPaint&) override;
     void onDrawArc(const SkRect&, SkScalar, SkScalar, bool, const SkPaint&) override;
     void onDrawRRect(const SkRRect&, const SkPaint&) override;

@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "absl/memory/memory.h"
 #include "api/test/simulated_network.h"
 #include "api/test/video/function_video_encoder_factory.h"
 #include "call/fake_network_pipe.h"
@@ -219,7 +220,6 @@ void MultiCodecReceiveTest::RunTestWithCodecs(
   for (size_t i = 1; i < configs.size(); ++i) {
     // Recreate VideoSendStream with new config (codec, temporal layers).
     task_queue_.SendTask([this, i, &configs]() {
-      frame_generator_capturer_->Stop();
       DestroyVideoSendStreams();
       observer_.Reset();
 
@@ -228,7 +228,6 @@ void MultiCodecReceiveTest::RunTestWithCodecs(
       GetVideoSendStream()->Start();
       CreateFrameGeneratorCapturer(kFps, kWidth / 2, kHeight / 2);
       ConnectVideoSourcesToStreams();
-      frame_generator_capturer_->Start();
     });
     EXPECT_TRUE(observer_.Wait()) << "Timed out waiting for frames.";
   }

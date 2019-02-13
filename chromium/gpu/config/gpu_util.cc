@@ -25,7 +25,7 @@
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/config/gpu_switches.h"
 #include "ui/gfx/extension_set.h"
-#include "ui/gl/gl_features.h"
+#include "ui/gl/buildflags.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_ANDROID)
@@ -92,6 +92,10 @@ GpuFeatureStatus GetOopRasterizationFeatureStatus(
   // If we can't create a GrContext for whatever reason, don't enable oop
   // rasterization.
   if (!gpu_info.oop_rasterization_supported)
+    return kGpuFeatureStatusDisabled;
+
+  if (gpu_preferences.use_passthrough_cmd_decoder &&
+      !gpu_preferences.enable_passthrough_raster_decoder)
     return kGpuFeatureStatusDisabled;
 
   if (gpu_preferences.disable_oop_rasterization)

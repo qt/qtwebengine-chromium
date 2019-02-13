@@ -20,14 +20,20 @@ source $EMSDK/emsdk_env.sh
 EMCC=`which emcc`
 EMCXX=`which em++`
 
-RELEASE_CONF="-Oz --closure 1 --llvm-lto 3 -DSK_RELEASE --pre-js $BASE_DIR/release.js"
-EXTRA_CFLAGS="\"-DSK_RELEASE\""
+RELEASE_CONF="-Oz --closure 1 --llvm-lto 3 -DSK_RELEASE --pre-js $BASE_DIR/release.js \
+              -DGR_GL_CHECK_ALLOC_WITH_GET_ERROR=0"
+EXTRA_CFLAGS="\"-DSK_RELEASE\", \"-DGR_GL_CHECK_ALLOC_WITH_GET_ERROR=0\","
 if [[ $@ == *debug* ]]; then
   echo "Building a Debug build"
   EXTRA_CFLAGS="\"-DSK_DEBUG\""
-  RELEASE_CONF="-O0 --js-opts 0 -s DEMANGLE_SUPPORT=1 -s ASSERTIONS=1 -s GL_ASSERTIONS=1 -g3 \
-                -DPATHKIT_TESTING -DSK_DEBUG --pre-js $BASE_DIR/debug.js"
+  RELEASE_CONF="-O0 --js-opts 0 -s DEMANGLE_SUPPORT=1 -s ASSERTIONS=1 -s GL_ASSERTIONS=1 -g4 \
+                --source-map-base /node_modules/canvaskit/bin/ -DSK_DEBUG --pre-js $BASE_DIR/debug.js"
   BUILD_DIR=${BUILD_DIR:="out/canvaskit_wasm_debug"}
+elif [[ $@ == *profiling* ]]; then
+  echo "Building a build for profiling"
+  RELEASE_CONF="-O3 --source-map-base /node_modules/canvaskit/bin/ --profiling -g4 -DSK_RELEASE \
+                --pre-js $BASE_DIR/release.js -DGR_GL_CHECK_ALLOC_WITH_GET_ERROR=0"
+  BUILD_DIR=${BUILD_DIR:="out/canvaskit_wasm_profile"}
 else
   BUILD_DIR=${BUILD_DIR:="out/canvaskit_wasm"}
 fi
@@ -45,7 +51,8 @@ if [[ $@ == *cpu* ]]; then
   WASM_GPU="-DSK_SUPPORT_GPU=0 --pre-js $BASE_DIR/cpu.js"
 fi
 
-WASM_SKOTTIE="-DSK_INCLUDE_SKOTTIE=1 \
+WASM_SKOTTIE=" \
+  $BASE_DIR/skottie_bindings.cpp \
   modules/skottie/src/Skottie.cpp \
   modules/skottie/src/SkottieAdapter.cpp \
   modules/skottie/src/SkottieAnimator.cpp \
@@ -58,6 +65,8 @@ WASM_SKOTTIE="-DSK_INCLUDE_SKOTTIE=1 \
   modules/skottie/src/SkottieTextLayer.cpp \
   modules/skottie/src/SkottieValue.cpp \
   modules/sksg/src/*.cpp \
+  modules/skshaper/src/SkShaper.cpp \
+  modules/skshaper/src/SkShaper_primitive.cpp \
   src/core/SkCubicMap.cpp \
   src/core/SkTime.cpp \
   src/pathops/SkOpBuilder.cpp \
@@ -65,22 +74,45 @@ WASM_SKOTTIE="-DSK_INCLUDE_SKOTTIE=1 \
   src/utils/SkParse.cpp "
 if [[ $@ == *no_skottie* ]]; then
   echo "Omitting Skottie"
-  WASM_SKOTTIE="-DSK_INCLUDE_SKOTTIE=0"
+  WASM_SKOTTIE=""
 fi
 
-GN_NIMA="skia_enable_nima=true"
-WASM_NIMA="-DSK_INCLUDE_NIMA=1 \
-  experimental/nima/NimaActor.cpp"
-if [[ $@ == *no_nima* ]]; then
-  echo "Omitting Nima"
-  GN_NIMA="skia_enable_nima=false"
-  WASM_NIMA="-DSK_INCLUDE_NIMA=0"
+WASM_MANAGED_SKOTTIE="\
+  -DSK_INCLUDE_MANAGED_SKOTTIE=1 \
+  modules/skottie/utils/SkottieUtils.cpp"
+if [[ $@ == *no_managed_skottie* ]]; then
+  echo "Omitting managed Skottie"
+  WASM_MANAGED_SKOTTIE="-DSK_INCLUDE_MANAGED_SKOTTIE=0"
 fi
 
-HTML_CANVAS_API="--pre-js $BASE_DIR/htmlcanvas/canvas2d.js"
+HTML_CANVAS_API="--pre-js $BASE_DIR/htmlcanvas/preamble.js \
+--pre-js $BASE_DIR/htmlcanvas/util.js \
+--pre-js $BASE_DIR/htmlcanvas/color.js \
+--pre-js $BASE_DIR/htmlcanvas/font.js \
+--pre-js $BASE_DIR/htmlcanvas/canvas2dcontext.js \
+--pre-js $BASE_DIR/htmlcanvas/htmlcanvas.js \
+--pre-js $BASE_DIR/htmlcanvas/imagedata.js \
+--pre-js $BASE_DIR/htmlcanvas/lineargradient.js \
+--pre-js $BASE_DIR/htmlcanvas/path2d.js \
+--pre-js $BASE_DIR/htmlcanvas/pattern.js \
+--pre-js $BASE_DIR/htmlcanvas/radialgradient.js \
+--pre-js $BASE_DIR/htmlcanvas/postamble.js "
 if [[ $@ == *no_canvas* ]]; then
   echo "Omitting bindings for HTML Canvas API"
   HTML_CANVAS_API=""
+fi
+
+BUILTIN_FONT="$BASE_DIR/fonts/NotoMono-Regular.ttf.cpp"
+if [[ $@ == *no_font* ]]; then
+  echo "Omitting the built-in font(s)"
+  BUILTIN_FONT=""
+else
+  # Generate the font's binary file (which is covered by .gitignore)
+  python tools/embed_resources.py \
+      --name SK_EMBEDDED_FONTS \
+      --input $BASE_DIR/fonts/NotoMono-Regular.ttf \
+      --output $BASE_DIR/fonts/NotoMono-Regular.ttf.cpp \
+      --align 4
 fi
 
 # Turn off exiting while we check for ninja (which may not be on PATH)
@@ -131,7 +163,6 @@ echo "Compiling bitcode"
   skia_enable_ccpr=false \
   skia_enable_nvpr=false \
   skia_enable_skpicture=false \
-  ${GN_NIMA} \
   ${GN_GPU} \
   skia_enable_fontmgr_empty=false \
   skia_enable_pdf=false"
@@ -161,7 +192,9 @@ ${EMCXX} \
     -Iinclude/private \
     -Iinclude/utils/ \
     -Imodules/skottie/include \
+    -Imodules/skottie/utils \
     -Imodules/sksg/include \
+    -Imodules/skshaper/include \
     -Isrc/core/ \
     -Isrc/gpu/ \
     -Isrc/sfnt/ \
@@ -169,8 +202,6 @@ ${EMCXX} \
     -Isrc/utils/ \
     -Itools \
     -Itools/fonts \
-    -I$BUILD_DIR/gen/third_party/Nima-Cpp/Nima-Cpp \
-    -I$BUILD_DIR/gen/third_party/Nima-Cpp/Nima-Math-Cpp \
     -DSK_DISABLE_READBUFFER \
     -DSK_DISABLE_AAA \
     -DSK_DISABLE_DAA \
@@ -179,12 +210,12 @@ ${EMCXX} \
     --bind \
     --pre-js $BASE_DIR/helper.js \
     --pre-js $BASE_DIR/interface.js \
+    --post-js $BASE_DIR/ready.js \
     $HTML_CANVAS_API \
+    $BUILTIN_FONT \
     $BASE_DIR/canvaskit_bindings.cpp \
-    tools/fonts/SkTestFontMgr.cpp \
-    tools/fonts/SkTestTypeface.cpp \
-    $WASM_NIMA \
     $WASM_SKOTTIE \
+    $WASM_MANAGED_SKOTTIE \
     $BUILD_DIR/libskia.a \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s EXPORT_NAME="CanvasKitInit" \

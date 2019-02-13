@@ -358,6 +358,7 @@ webrtc_fuzzer_test("neteq_rtp_fuzzer") {
   ]
   deps = [
     "../../api:array_view",
+    "../../api/audio_codecs:builtin_audio_decoder_factory",
     "../../modules/audio_coding:neteq",
     "../../modules/audio_coding:neteq_test_tools",
     "../../modules/audio_coding:neteq_tools_minimal",
@@ -373,6 +374,7 @@ webrtc_fuzzer_test("neteq_signal_fuzzer") {
   ]
   deps = [
     "../../api:array_view",
+    "../../api/audio_codecs:builtin_audio_decoder_factory",
     "../../modules/audio_coding:neteq",
     "../../modules/audio_coding:neteq_test_tools",
     "../../modules/audio_coding:neteq_tools_minimal",
@@ -542,5 +544,14 @@ webrtc_fuzzer_test("frame_buffer2_fuzzer") {
   deps = [
     "../../modules/video_coding/",
     "../../system_wrappers:system_wrappers",
+  ]
+}
+
+webrtc_fuzzer_test("url_decode_fuzzer") {
+  sources = [
+    "url_decode_fuzzer.cc",
+  ]
+  deps = [
+    "../../rtc_base:rtc_base_approved",
   ]
 }

@@ -9,8 +9,11 @@
  */
 #ifndef TEST_SCENARIO_CALL_CLIENT_H_
 #define TEST_SCENARIO_CALL_CLIENT_H_
+
+#include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "call/call.h"
@@ -18,8 +21,10 @@
 #include "modules/audio_device/include/test_audio_device.h"
 #include "modules/congestion_controller/test/controller_printer.h"
 #include "modules/rtp_rtcp/include/rtp_header_parser.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
+#include "test/logging/log_writer.h"
 #include "test/scenario/column_printer.h"
+#include "test/scenario/network/network_emulation.h"
 #include "test/scenario/network_node.h"
 #include "test/scenario/scenario_config.h"
 
@@ -29,7 +34,7 @@ namespace test {
 class LoggingNetworkControllerFactory
     : public NetworkControllerFactoryInterface {
  public:
-  LoggingNetworkControllerFactory(std::string filename,
+  LoggingNetworkControllerFactory(LogWriterFactoryInterface* log_writer_factory,
                                   TransportControllerConfig config);
   RTC_DISALLOW_COPY_AND_ASSIGN(LoggingNetworkControllerFactory);
   ~LoggingNetworkControllerFactory();
@@ -42,9 +47,9 @@ class LoggingNetworkControllerFactory
 
  private:
   std::unique_ptr<RtcEventLog> event_log_;
-  std::unique_ptr<NetworkControllerFactoryInterface> cc_factory_;
+  std::unique_ptr<NetworkControllerFactoryInterface> owned_cc_factory_;
+  NetworkControllerFactoryInterface* cc_factory_ = nullptr;
   std::unique_ptr<ControlStatePrinter> cc_printer_;
-  FILE* cc_out_ = nullptr;
 };
 
 struct CallClientFakeAudio {
@@ -55,9 +60,11 @@ struct CallClientFakeAudio {
 // CallClient represents a participant in a call scenario. It is created by the
 // Scenario class and is used as sender and receiver when setting up a media
 // stream session.
-class CallClient : public NetworkReceiverInterface {
+class CallClient : public EmulatedNetworkReceiverInterface {
  public:
-  CallClient(Clock* clock, std::string log_filename, CallClientConfig config);
+  CallClient(Clock* clock,
+             std::unique_ptr<LogWriterFactoryInterface> log_writer_factory,
+             CallClientConfig config);
   RTC_DISALLOW_COPY_AND_ASSIGN(CallClient);
 
   ~CallClient();
@@ -67,9 +74,8 @@ class CallClient : public NetworkReceiverInterface {
     return DataRate::bps(GetStats().send_bandwidth_bps);
   }
 
-  bool TryDeliverPacket(rtc::CopyOnWriteBuffer packet,
-                        uint64_t receiver,
-                        Timestamp at_time) override;
+  void OnPacketReceived(EmulatedIpPacket packet) override;
+  std::unique_ptr<RtcEventLogOutput> GetLogWriter(std::string name);
 
  private:
   friend class Scenario;
@@ -88,6 +94,7 @@ class CallClient : public NetworkReceiverInterface {
   void AddExtensions(std::vector<RtpExtension> extensions);
 
   Clock* clock_;
+  const std::unique_ptr<LogWriterFactoryInterface> log_writer_factory_;
   LoggingNetworkControllerFactory network_controller_factory_;
   CallClientFakeAudio fake_audio_setup_;
   std::unique_ptr<Call> call_;
@@ -95,8 +102,8 @@ class CallClient : public NetworkReceiverInterface {
   RtpHeaderParser* const header_parser_;
 
   std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory_;
-  // Stores the configured overhead per known incomming route. This is used to
-  // subtract the overhead before processing.
+  // Stores the configured overhead per known destination endpoint. This is used
+  // to subtract the overhead before processing.
   std::map<uint64_t, DataSize> route_overhead_;
   int next_video_ssrc_index_ = 0;
   int next_rtx_ssrc_index_ = 0;

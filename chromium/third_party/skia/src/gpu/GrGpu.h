@@ -104,7 +104,7 @@ public:
     /**
      * Implements GrResourceProvider::wrapBackendTexture
      */
-    sk_sp<GrTexture> wrapBackendTexture(const GrBackendTexture&, GrWrapOwnership,
+    sk_sp<GrTexture> wrapBackendTexture(const GrBackendTexture&, GrWrapOwnership, GrIOType,
                                         bool purgeImmediately);
 
     /**
@@ -123,6 +123,12 @@ public:
      */
     sk_sp<GrRenderTarget> wrapBackendTextureAsRenderTarget(const GrBackendTexture&,
                                                            int sampleCnt);
+
+    /**
+     * Implements GrResourceProvider::wrapVulkanSecondaryCBAsRenderTarget
+     */
+    sk_sp<GrRenderTarget> wrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
+                                                              const GrVkDrawableInfo&);
 
     /**
      * Creates a buffer in GPU memory. For a client-side buffer use GrBuffer::CreateCPUBacked.
@@ -267,7 +273,7 @@ public:
     virtual sk_sp<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
                                                     GrResourceProvider::SemaphoreWrapType wrapType,
                                                     GrWrapOwnership ownership) = 0;
-    virtual void insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush = false) = 0;
+    virtual void insertSemaphore(sk_sp<GrSemaphore> semaphore) = 0;
     virtual void waitSemaphore(sk_sp<GrSemaphore> semaphore) = 0;
 
     /**
@@ -294,6 +300,7 @@ public:
             fStencilAttachmentCreates = 0;
             fNumDraws = 0;
             fNumFailedDraws = 0;
+            fNumFinishFlushes = 0;
         }
 
         int renderTargetBinds() const { return fRenderTargetBinds; }
@@ -309,10 +316,12 @@ public:
         void incStencilAttachmentCreates() { fStencilAttachmentCreates++; }
         void incNumDraws() { fNumDraws++; }
         void incNumFailedDraws() { ++fNumFailedDraws; }
+        void incNumFinishFlushes() { ++fNumFinishFlushes; }
         void dump(SkString*);
         void dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values);
         int numDraws() const { return fNumDraws; }
         int numFailedDraws() const { return fNumFailedDraws; }
+        int numFinishFlushes() const { return fNumFinishFlushes; }
     private:
         int fRenderTargetBinds;
         int fShaderCompilations;
@@ -322,6 +331,7 @@ public:
         int fStencilAttachmentCreates;
         int fNumDraws;
         int fNumFailedDraws;
+        int fNumFinishFlushes;
 #else
         void dump(SkString*) {}
         void dumpKeyValuePairs(SkTArray<SkString>*, SkTArray<double>*) {}
@@ -333,6 +343,7 @@ public:
         void incStencilAttachmentCreates() {}
         void incNumDraws() {}
         void incNumFailedDraws() {}
+        void incNumFinishFlushes() {}
 #endif
     };
 
@@ -406,6 +417,20 @@ public:
         }
     }
 
+    /**
+     * Returns a key that represents the sampler that will be created for the passed in parameters.
+     * Currently this key is only used when we are building a vulkan pipeline with immutable
+     * samplers. In that case, we need our cache key to also contain this key.
+     *
+     * A return value of 0 indicates that the program/pipeline we are creating is not affected by
+     * the sampler.
+     */
+    virtual uint32_t getExtraSamplerKeyForProgram(const GrSamplerState&, const GrBackendFormat&) {
+        return 0;
+    }
+
+    virtual void storeVkPipelineCacheData() {}
+
 protected:
     // Handles cases where a surface will be updated without a call to flushRenderTarget.
     void didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const SkIRect* bounds,
@@ -433,13 +458,16 @@ private:
                                              const GrMipLevel texels[], int mipLevelCount) = 0;
 
     virtual sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership,
-                                                  bool purgeImmediately) = 0;
+                                                  GrIOType, bool purgeImmediately) = 0;
     virtual sk_sp<GrTexture> onWrapRenderableBackendTexture(const GrBackendTexture&,
                                                             int sampleCnt,
                                                             GrWrapOwnership) = 0;
     virtual sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) = 0;
     virtual sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
                                                                      int sampleCnt) = 0;
+    virtual sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
+                                                                        const GrVkDrawableInfo&);
+
     virtual GrBuffer* onCreateBuffer(size_t size, GrBufferType intendedType, GrAccessPattern,
                                      const void* data) = 0;
 

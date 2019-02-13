@@ -41,11 +41,11 @@ class WorkerThreadPool;
 
 namespace gl
 {
-class ContextState;
+class CompileTask;
+class Context;
 struct Limitations;
 class ShaderProgramManager;
-class Context;
-class CompileTask;
+class State;
 
 // We defer the compile until link time, or until properties are queried.
 enum class CompileStatus
@@ -131,7 +131,7 @@ class Shader final : angle::NonCopyable, public LabeledObject
 
     void onDestroy(const Context *context);
 
-    void setLabel(const std::string &label) override;
+    void setLabel(const Context *context, const std::string &label) override;
     const std::string &getLabel() const override;
 
     ShaderType getType() const { return mType; }

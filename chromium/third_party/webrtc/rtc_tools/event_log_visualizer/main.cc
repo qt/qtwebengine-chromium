@@ -8,9 +8,19 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <stdio.h>
+#include <string.h>
 #include <iostream>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
 
-#include "logging/rtc_event_log/rtc_event_log_parser_new.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "logging/rtc_event_log/rtc_event_log_parser.h"
+#include "modules/audio_coding/neteq/include/neteq.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/flags.h"
 #include "rtc_tools/event_log_visualizer/analyzer.h"
 #include "rtc_tools/event_log_visualizer/plot_base.h"
@@ -18,7 +28,7 @@
 #include "rtc_tools/event_log_visualizer/plot_python.h"
 #include "system_wrappers/include/field_trial.h"
 #include "test/field_trial.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 WEBRTC_DEFINE_string(
     plot_profile,
@@ -141,6 +151,12 @@ WEBRTC_DEFINE_bool(plot_ice_candidate_pair_config,
 WEBRTC_DEFINE_bool(plot_ice_connectivity_check,
                    false,
                    "Plot the ICE candidate pair connectivity checks.");
+WEBRTC_DEFINE_bool(plot_dtls_transport_state,
+                   false,
+                   "Plot DTLS transport state changes.");
+WEBRTC_DEFINE_bool(plot_dtls_writable_state,
+                   false,
+                   "Plot DTLS writable state changes.");
 
 WEBRTC_DEFINE_string(
     force_fieldtrials,
@@ -242,13 +258,13 @@ int main(int argc, char* argv[]) {
 
   std::string filename = argv[1];
 
-  webrtc::ParsedRtcEventLogNew::UnconfiguredHeaderExtensions header_extensions =
-      webrtc::ParsedRtcEventLogNew::UnconfiguredHeaderExtensions::kDontParse;
+  webrtc::ParsedRtcEventLog::UnconfiguredHeaderExtensions header_extensions =
+      webrtc::ParsedRtcEventLog::UnconfiguredHeaderExtensions::kDontParse;
   if (FLAG_parse_unconfigured_header_extensions) {
-    header_extensions = webrtc::ParsedRtcEventLogNew::
+    header_extensions = webrtc::ParsedRtcEventLog::
         UnconfiguredHeaderExtensions::kAttemptWebrtcDefaultConfig;
   }
-  webrtc::ParsedRtcEventLogNew parsed_log(header_extensions);
+  webrtc::ParsedRtcEventLog parsed_log(header_extensions);
 
   if (!parsed_log.ParseFile(filename)) {
     std::cerr << "Could not parse the entire log file." << std::endl;
@@ -457,6 +473,13 @@ int main(int argc, char* argv[]) {
   }
   if (FLAG_plot_ice_connectivity_check) {
     analyzer.CreateIceConnectivityCheckGraph(collection->AppendNewPlot());
+  }
+
+  if (FLAG_plot_dtls_transport_state) {
+    analyzer.CreateDtlsTransportStateGraph(collection->AppendNewPlot());
+  }
+  if (FLAG_plot_dtls_writable_state) {
+    analyzer.CreateDtlsWritableStateGraph(collection->AppendNewPlot());
   }
 
   collection->Draw();

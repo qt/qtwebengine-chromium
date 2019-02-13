@@ -115,7 +115,7 @@ namespace sw
 		Int4 maxZ = CmpLT(o[pos].w, o[pos].z);
 		Int4 minX = CmpNLE(-o[pos].w, o[pos].x);
 		Int4 minY = CmpNLE(-o[pos].w, o[pos].y);
-		Int4 minZ = symmetricNormalizedDepth ? CmpNLE(-o[pos].w, o[pos].z) : CmpNLE(Float4(0.0f), o[pos].z);
+		Int4 minZ = CmpNLE(Float4(0.0f), o[pos].z);
 
 		clipFlags = *Pointer<Int>(constants + OFFSET(Constants,maxX) + SignMask(maxX) * 4);   // FIXME: Array indexing
 		clipFlags |= *Pointer<Int>(constants + OFFSET(Constants,maxY) + SignMask(maxY) * 4);
@@ -143,7 +143,7 @@ namespace sw
 		Pointer<Byte> source2 = source1 + (!textureSampling ? stride : 0);
 		Pointer<Byte> source3 = source2 + (!textureSampling ? stride : 0);
 
-		bool isNativeFloatAttrib = (stream.attribType == VertexShader::ATTRIBTYPE_FLOAT) || stream.normalized;
+		bool isNativeFloatAttrib = (stream.attribType == SpirvShader::ATTRIBTYPE_FLOAT) || stream.normalized;
 
 		switch(stream.type)
 		{
@@ -174,13 +174,13 @@ namespace sw
 
 					switch(stream.attribType)
 					{
-					case VertexShader::ATTRIBTYPE_INT:
+					case SpirvShader::ATTRIBTYPE_INT:
 						if(stream.count >= 1) v.x = As<Float4>(Int4(v.x));
 						if(stream.count >= 2) v.x = As<Float4>(Int4(v.y));
 						if(stream.count >= 3) v.x = As<Float4>(Int4(v.z));
 						if(stream.count >= 4) v.x = As<Float4>(Int4(v.w));
 						break;
-					case VertexShader::ATTRIBTYPE_UINT:
+					case SpirvShader::ATTRIBTYPE_UINT:
 						if(stream.count >= 1) v.x = As<Float4>(UInt4(v.x));
 						if(stream.count >= 2) v.x = As<Float4>(UInt4(v.y));
 						if(stream.count >= 3) v.x = As<Float4>(UInt4(v.z));
@@ -689,11 +689,6 @@ namespace sw
 		v.y = o[pos].y;
 		v.z = o[pos].z;
 		v.w = o[pos].w;
-
-		if(symmetricNormalizedDepth)
-		{
-			v.z = (v.z + v.w) * Float4(0.5f);   // [-1, 1] -> [0, 1]
-		}
 
 		Float4 w = As<Float4>(As<Int4>(v.w) | (As<Int4>(CmpEQ(v.w, Float4(0.0f))) & As<Int4>(Float4(1.0f))));
 		Float4 rhw = Float4(1.0f) / w;

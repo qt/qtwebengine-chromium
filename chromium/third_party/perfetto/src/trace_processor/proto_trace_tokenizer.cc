@@ -24,8 +24,10 @@
 #include "perfetto/protozero/proto_utils.h"
 #include "src/trace_processor/event_tracker.h"
 #include "src/trace_processor/process_tracker.h"
+#include "src/trace_processor/stats.h"
 #include "src/trace_processor/trace_blob_view.h"
 #include "src/trace_processor/trace_sorter.h"
+#include "src/trace_processor/trace_storage.h"
 
 #include "perfetto/trace/trace.pb.h"
 #include "perfetto/trace/trace_packet.pb.h"
@@ -34,13 +36,12 @@ namespace perfetto {
 namespace trace_processor {
 
 using protozero::ProtoDecoder;
-using protozero::proto_utils::kFieldTypeLengthDelimited;
 using protozero::proto_utils::MakeTagLengthDelimited;
 using protozero::proto_utils::MakeTagVarInt;
 using protozero::proto_utils::ParseVarInt;
 
 ProtoTraceTokenizer::ProtoTraceTokenizer(TraceProcessorContext* ctx)
-    : trace_sorter_(ctx->sorter.get()) {}
+    : trace_sorter_(ctx->sorter.get()), trace_storage_(ctx->storage.get()) {}
 ProtoTraceTokenizer::~ProtoTraceTokenizer() = default;
 
 bool ProtoTraceTokenizer::Parse(std::unique_ptr<uint8_t[]> owned_buf,
@@ -136,7 +137,7 @@ void ProtoTraceTokenizer::ParsePacket(TraceBlobView packet) {
   constexpr auto kTimestampFieldNumber =
       protos::TracePacket::kTimestampFieldNumber;
   ProtoDecoder decoder(packet.data(), packet.length());
-  uint64_t timestamp = 0;
+  uint64_t raw_timestamp = 0;
   bool timestamp_found = false;
 
   // Speculate on the fact that the timestamp is often the 1st field of the
@@ -146,15 +147,18 @@ void ProtoTraceTokenizer::ParsePacket(TraceBlobView packet) {
                       packet.data()[0] == timestampFieldTag)) {
     // Fastpath.
     const uint8_t* next =
-        ParseVarInt(packet.data() + 1, packet.data() + 11, &timestamp);
+        ParseVarInt(packet.data() + 1, packet.data() + 11, &raw_timestamp);
     timestamp_found = next != packet.data() + 1;
     decoder.Reset(next);
   } else {
     // Slowpath.
-    timestamp_found = decoder.FindIntField<kTimestampFieldNumber>(&timestamp);
+    timestamp_found =
+        decoder.FindIntField<kTimestampFieldNumber>(&raw_timestamp);
   }
-  if (timestamp_found)
-    last_timestamp_ = timestamp;
+
+  int64_t timestamp =
+      timestamp_found ? static_cast<int64_t>(raw_timestamp) : latest_timestamp_;
+  latest_timestamp_ = std::max(timestamp, latest_timestamp_);
 
   // TODO(primiano): this can be optimized for the ftrace case.
   for (auto fld = decoder.ReadField(); fld.id != 0; fld = decoder.ReadField()) {
@@ -170,7 +174,7 @@ void ProtoTraceTokenizer::ParsePacket(TraceBlobView packet) {
 
   // Use parent data and length because we want to parse this again
   // later to get the exact type of the packet.
-  trace_sorter_->PushTracePacket(last_timestamp_, std::move(packet));
+  trace_sorter_->PushTracePacket(timestamp, std::move(packet));
   PERFETTO_DCHECK(decoder.IsEndOfBuffer());
 }
 
@@ -194,6 +198,7 @@ void ProtoTraceTokenizer::ParseFtraceBundle(TraceBlobView bundle) {
   } else {
     if (!PERFETTO_LIKELY((decoder.FindIntField<kCpuFieldNumber>(&cpu)))) {
       PERFETTO_ELOG("CPU field not found in FtraceEventBundle");
+      trace_storage_->IncrementStats(stats::ftrace_bundle_tokenizer_errors);
       return;
     }
   }
@@ -220,7 +225,7 @@ void ProtoTraceTokenizer::ParseFtraceEvent(uint32_t cpu, TraceBlobView event) {
   const uint8_t* data = event.data();
   const size_t length = event.length();
   ProtoDecoder decoder(data, length);
-  uint64_t timestamp;
+  uint64_t raw_timestamp = 0;
   bool timestamp_found = false;
 
   // Speculate on the fact that the timestamp is often the 1st field of the
@@ -228,20 +233,23 @@ void ProtoTraceTokenizer::ParseFtraceEvent(uint32_t cpu, TraceBlobView event) {
   constexpr auto timestampFieldTag = MakeTagVarInt(kTimestampFieldNumber);
   if (PERFETTO_LIKELY(length > 10 && data[0] == timestampFieldTag)) {
     // Fastpath.
-    const uint8_t* next = ParseVarInt(data + 1, data + 11, &timestamp);
+    const uint8_t* next = ParseVarInt(data + 1, data + 11, &raw_timestamp);
     timestamp_found = next != data + 1;
     decoder.Reset(next);
   } else {
     // Slowpath.
-    timestamp_found = decoder.FindIntField<kTimestampFieldNumber>(&timestamp);
+    timestamp_found =
+        decoder.FindIntField<kTimestampFieldNumber>(&raw_timestamp);
   }
 
   if (PERFETTO_UNLIKELY(!timestamp_found)) {
     PERFETTO_ELOG("Timestamp field not found in FtraceEvent");
+    trace_storage_->IncrementStats(stats::ftrace_bundle_tokenizer_errors);
     return;
   }
 
-  last_timestamp_ = timestamp;
+  int64_t timestamp = static_cast<int64_t>(raw_timestamp);
+  latest_timestamp_ = std::max(timestamp, latest_timestamp_);
 
   // We don't need to parse this packet, just push it to be sorted with
   // the timestamp.

@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "SkGlyphCache.h"
 #include "SkPaint.h"
 #include "SkScalerContext.h"
 
@@ -14,6 +13,7 @@
 #include "SkColorData.h"
 #include "SkDescriptor.h"
 #include "SkDraw.h"
+#include "SkFontMetrics.h"
 #include "SkFontPriv.h"
 #include "SkGlyph.h"
 #include "SkMakeUnique.h"
@@ -459,14 +459,13 @@ static void generateMask(const SkMask& mask, const SkPath& path,
 
 void SkScalerContext::getImage(const SkGlyph& origGlyph) {
     const SkGlyph*  glyph = &origGlyph;
-    SkGlyph         tmpGlyph;
+    SkGlyph  tmpGlyph{origGlyph.getPackedID()};
 
     // in case we need to call generateImage on a mask-format that is different
     // (i.e. larger) than what our caller allocated by looking at origGlyph.
     SkAutoMalloc tmpGlyphImageStorage;
 
     if (fMaskFilter) {   // restore the prefilter bounds
-        tmpGlyph.initWithGlyphID(origGlyph.getPackedID());
 
         // need the original bounds, sans our maskfilter
         sk_sp<SkMaskFilter> mf = std::move(fMaskFilter);
@@ -555,10 +554,6 @@ void SkScalerContext::getFontMetrics(SkFontMetrics* fm) {
     this->generateFontMetrics(fm);
 }
 
-SkUnichar SkScalerContext::generateGlyphToChar(uint16_t glyph) {
-    return 0;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 bool SkScalerContext::internalGetPath(SkPackedGlyphID glyphID, SkPath* devPath) {
@@ -641,7 +636,7 @@ void SkScalerContextRec::getMatrixFrom2x2(SkMatrix* dst) const {
 }
 
 void SkScalerContextRec::getLocalMatrix(SkMatrix* m) const {
-    SkPaintPriv::MakeTextMatrix(m, fTextSize, fPreScaleX, fPreSkewX);
+    *m = SkFontPriv::MakeTextMatrix(fTextSize, fPreScaleX, fPreSkewX);
 }
 
 void SkScalerContextRec::getSingleMatrix(SkMatrix* m) const {
@@ -909,7 +904,7 @@ void SkScalerContext::MakeRecAndEffects(const SkFont& font, const SkPaint& paint
 
     sk_bzero(rec, sizeof(SkScalerContextRec));
 
-    SkTypeface* typeface = SkFontPriv::GetTypefaceOrDefault(font);
+    SkTypeface* typeface = font.getTypefaceOrDefault();
 
     rec->fFontID = typeface->uniqueID();
     rec->fTextSize = font.getSize();
@@ -1098,7 +1093,7 @@ SkDescriptor* SkScalerContext::MakeDescriptorForPaths(SkFontID typefaceID,
     SkScalerContextRec rec;
     memset(&rec, 0, sizeof(rec));
     rec.fFontID = typefaceID;
-    rec.fTextSize = SkPaint::kCanonicalTextSizeForPaths;
+    rec.fTextSize = SkFontPriv::kCanonicalTextSizeForPaths;
     rec.fPreScaleX = rec.fPost2x2[0][0] = rec.fPost2x2[1][1] = SK_Scalar1;
     return AutoDescriptorGivenRecAndEffects(rec, SkScalerContextEffects(), ad);
 }
@@ -1111,17 +1106,6 @@ SkDescriptor* SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
     SkScalerContextRec rec;
     MakeRecAndEffects(font, paint, surfaceProps, scalerContextFlags, deviceMatrix, &rec, effects);
     return AutoDescriptorGivenRecAndEffects(rec, *effects, ad);
-}
-
-SkDescriptor* SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
-    const SkPaint& paint, const SkSurfaceProps& surfaceProps,
-    SkScalerContextFlags scalerContextFlags,
-    const SkMatrix& deviceMatrix, SkAutoDescriptor* ad,
-    SkScalerContextEffects* effects)
-{
-    return CreateDescriptorAndEffectsUsingPaint(SkFont::LEGACY_ExtractFromPaint(paint), paint,
-                                                surfaceProps, scalerContextFlags,
-                                                deviceMatrix, ad, effects);
 }
 
 static size_t calculate_size_and_flatten(const SkScalerContextRec& rec,

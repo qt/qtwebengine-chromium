@@ -462,6 +462,7 @@ if (rtc_include_tests) {
     ]
     if (is_linux || is_mac || is_win) {
       sources += [ "audio_device_unittest.cc" ]
+      deps += [ "//third_party/abseil-cpp/absl/memory" ]
     }
     if (is_win) {
       sources += [ "win/core_audio_utility_win_unittest.cc" ]
@@ -509,6 +510,7 @@ if (!build_with_chromium && is_android) {
     ]
     deps = [
       "../../rtc_base:base_java",
+      "//third_party/android_deps:android_support_annotations_java",
     ]
   }
 }

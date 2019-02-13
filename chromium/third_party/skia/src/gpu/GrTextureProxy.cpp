@@ -69,7 +69,8 @@ GrTextureProxy::~GrTextureProxy() {
     // proxy provider has gone away. In that case there is noone to send the invalid key
     // message to (Note: in this case we don't want to remove its cached resource).
     if (fUniqueKey.isValid() && fProxyProvider) {
-        fProxyProvider->processInvalidProxyUniqueKey(fUniqueKey, this, false);
+        fProxyProvider->processInvalidUniqueKey(fUniqueKey, this,
+                                                GrProxyProvider::InvalidateGPUResource::kNo);
     } else {
         SkASSERT(!fProxyProvider);
     }
@@ -138,6 +139,13 @@ size_t GrTextureProxy::onUninstantiatedGpuMemorySize() const {
                                   this->proxyMipMapped(), !this->priv().isExact());
 }
 
+bool GrTextureProxy::ProxiesAreCompatibleAsDynamicState(const GrTextureProxy* first,
+                                                        const GrTextureProxy* second) {
+    return first->config() == second->config() &&
+           first->textureType() == second->textureType() &&
+           first->backendFormat() == second->backendFormat();
+}
+
 void GrTextureProxy::setUniqueKey(GrProxyProvider* proxyProvider, const GrUniqueKey& key) {
     SkASSERT(key.isValid());
     SkASSERT(!fUniqueKey.isValid()); // proxies can only ever get one uniqueKey
@@ -166,7 +174,14 @@ void GrTextureProxy::onValidateSurface(const GrSurface* surface) {
     SkASSERT(surface->asTexture());
     SkASSERT(GrMipMapped::kNo == this->proxyMipMapped() ||
              GrMipMapped::kYes == surface->asTexture()->texturePriv().mipMapped());
+
     SkASSERT(surface->asTexture()->texturePriv().textureType() == this->textureType());
+
+    GrInternalSurfaceFlags proxyFlags = fSurfaceFlags;
+    GrInternalSurfaceFlags surfaceFlags = surface->surfacePriv().flags();
+    SkASSERT((proxyFlags & GrInternalSurfaceFlags::kTextureMask) ==
+             (surfaceFlags & GrInternalSurfaceFlags::kTextureMask));
 }
+
 #endif
 

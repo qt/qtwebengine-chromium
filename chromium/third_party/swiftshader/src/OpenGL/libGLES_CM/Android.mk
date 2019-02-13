@@ -20,6 +20,7 @@ COMMON_CFLAGS := \
 	-Wno-unused-parameter \
 	-Wno-unused-variable \
 	-Wno-implicit-exception-spec-mismatch \
+	-Wno-implicit-fallthrough \
 	-Wno-overloaded-virtual \
 	-Wno-attributes \
 	-Wno-unknown-attributes \
@@ -44,7 +45,8 @@ COMMON_SRC_FILES := \
 	ResourceManager.cpp \
 	Texture.cpp \
 	utilities.cpp \
-	VertexDataManager.cpp
+	VertexDataManager.cpp \
+	../../Common/SharedLibrary.cpp
 
 COMMON_C_INCLUDES := \
 	bionic \

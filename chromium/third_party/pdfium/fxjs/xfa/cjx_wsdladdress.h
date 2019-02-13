@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_WSDLADDRESS_H_
 #define FXJS_XFA_CJX_WSDLADDRESS_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_textnode.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_WsdlAddress;
 
@@ -16,9 +16,6 @@ class CJX_WsdlAddress final : public CJX_TextNode {
  public:
   explicit CJX_WsdlAddress(CXFA_WsdlAddress* node);
   ~CJX_WsdlAddress() override;
-
-  JSE_PROP(use);
-  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_WSDLADDRESS_H_

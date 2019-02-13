@@ -29,8 +29,8 @@
 #include "modules/rtp_rtcp/source/rtp_packet_history.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "modules/rtp_rtcp/source/rtp_utility.h"
-#include "rtc_base/constructormagic.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/constructor_magic.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/deprecation.h"
 #include "rtc_base/random.h"
 #include "rtc_base/rate_statistics.h"
@@ -78,6 +78,7 @@ class RTPSender {
   uint32_t VideoBitrateSent() const;
   uint32_t FecOverheadRate() const;
   uint32_t NackOverheadRate() const;
+  uint32_t PacketizationOverheadBps() const;
 
   int32_t RegisterPayload(absl::string_view payload_name,
                           const int8_t payload_type,
@@ -99,6 +100,8 @@ class RTPSender {
   void SetTimestampOffset(uint32_t timestamp);
 
   void SetSSRC(uint32_t ssrc);
+
+  void SetRid(const std::string& rid);
 
   void SetMid(const std::string& mid);
 
@@ -280,7 +283,6 @@ class RTPSender {
   RtpPacketSender* const paced_sender_;
   TransportSequenceNumberAllocator* const transport_sequence_number_allocator_;
   TransportFeedbackObserver* const transport_feedback_observer_;
-  int64_t last_capture_time_ms_sent_;
   rtc::CriticalSection send_critsect_;
 
   Transport* transport_;
@@ -331,6 +333,8 @@ class RTPSender {
   // Must be explicitly set by the application, use of absl::optional
   // only to keep track of correct use.
   absl::optional<uint32_t> ssrc_ RTC_GUARDED_BY(send_critsect_);
+  // RID value to send in the RID or RepairedRID header extension.
+  std::string rid_ RTC_GUARDED_BY(send_critsect_);
   // MID value to send in the MID header extension.
   std::string mid_ RTC_GUARDED_BY(send_critsect_);
   uint32_t last_rtp_timestamp_ RTC_GUARDED_BY(send_critsect_);

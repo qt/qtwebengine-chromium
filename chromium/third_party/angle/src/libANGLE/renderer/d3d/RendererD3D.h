@@ -14,8 +14,8 @@
 #include "common/Color.h"
 #include "common/MemoryBuffer.h"
 #include "common/debug.h"
-#include "libANGLE/ContextState.h"
 #include "libANGLE/Device.h"
+#include "libANGLE/State.h"
 #include "libANGLE/Version.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/formatutils.h"
@@ -98,7 +98,7 @@ class Context : angle::NonCopyable
         if (ANGLE_UNLIKELY(FAILED(ANGLE_LOCAL_VAR)))                                             \
         {                                                                                        \
             CONTEXT->handleResult(ANGLE_LOCAL_VAR, MESSAGE, __FILE__, ANGLE_FUNCTION, __LINE__); \
-            return angle::Result::Stop();                                                        \
+            return angle::Result::Stop;                                                          \
         }                                                                                        \
     }
 
@@ -107,7 +107,7 @@ class Context : angle::NonCopyable
         if (ANGLE_UNLIKELY(!(EXPR)))                                                   \
         {                                                                              \
             CONTEXT->handleResult(ERROR, MESSAGE, __FILE__, ANGLE_FUNCTION, __LINE__); \
-            return angle::Result::Stop();                                              \
+            return angle::Result::Stop;                                                \
         }                                                                              \
     }
 
@@ -155,7 +155,7 @@ class RendererD3D : public BufferFactoryD3D
     virtual egl::ConfigSet generateConfigs()                                            = 0;
     virtual void generateDisplayExtensions(egl::DisplayExtensions *outExtensions) const = 0;
 
-    virtual ContextImpl *createContext(const gl::ContextState &state) = 0;
+    virtual ContextImpl *createContext(const gl::State &state, gl::ErrorSet *errorSet) = 0;
 
     std::string getVendorString() const;
 

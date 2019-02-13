@@ -52,7 +52,7 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/deprecation.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/inline.h"
@@ -73,8 +73,6 @@ namespace rtc {
 
 // Note that the non-standard LoggingSeverity aliases exist because they are
 // still in broad use.  The meanings of the levels are:
-//  LS_SENSITIVE: Information which should only be logged with the consent
-//   of the user, due to privacy concerns.
 //  LS_VERBOSE: This level is for data which we do not want to appear in the
 //   normal debug log, but should appear in diagnostic logs.
 //  LS_INFO: Chatty level used in debugging for all sorts of things, the default
@@ -83,7 +81,6 @@ namespace rtc {
 //  LS_ERROR: Something that should not have occurred.
 //  LS_NONE: Don't log.
 enum LoggingSeverity {
-  LS_SENSITIVE,
   LS_VERBOSE,
   LS_INFO,
   LS_WARNING,
@@ -361,11 +358,6 @@ class LogCall final {
   }
 };
 
-// TODO(bugs.webrtc.org/9278): Remove this once it's no longer used.
-struct LogMessageVoidify {
-  void operator&(std::ostream&) {}  // no-presubmit-check TODO(webrtc:8982)
-};
-
 }  // namespace webrtc_logging_impl
 
 // Direct use of this class is deprecated; please use the logging macros
@@ -511,13 +503,6 @@ class LogMessage {
 //////////////////////////////////////////////////////////////////////
 // Logging Helpers
 //////////////////////////////////////////////////////////////////////
-
-// DEPRECATED.
-// TODO(bugs.webrtc.org/9278): Remove once there are no more users.
-#define RTC_LOG_SEVERITY_PRECONDITION(sev) \
-  (rtc::LogMessage::IsNoop(sev))           \
-      ? static_cast<void>(0)               \
-      : rtc::webrtc_logging_impl::LogMessageVoidify()&
 
 #define RTC_LOG_FILE_LINE(sev, file, line)      \
   rtc::webrtc_logging_impl::LogCall() &         \

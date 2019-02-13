@@ -206,6 +206,7 @@ Extensions::Extensions()
       eglImage(false),
       eglImageExternal(false),
       eglImageExternalEssl3(false),
+      eglSync(false),
       eglStreamConsumerExternal(false),
       unpackSubimage(false),
       packSubimage(false),
@@ -257,6 +258,8 @@ Extensions::Extensions()
       textureMultisample(false),
       multiDraw(false)
 {}
+
+Extensions::Extensions(const Extensions &other) = default;
 
 std::vector<std::string> Extensions::getStrings() const
 {
@@ -750,13 +753,13 @@ void Extensions::setTextureExtensionSupport(const TextureCapsMap &textureCaps)
     textureHalfFloat      = DetermineHalfFloatTextureSupport(textureCaps);
     textureHalfFloatLinear =
         textureHalfFloat && DetermineHalfFloatTextureFilteringSupport(textureCaps);
-    textureFloat       = DetermineFloatTextureSupport(textureCaps);
-    textureFloatLinear = textureFloat && DetermineFloatTextureFilteringSupport(textureCaps);
-    textureRG          = DetermineRGTextureSupport(textureCaps, textureHalfFloat, textureFloat);
-    colorBufferHalfFloat = textureHalfFloat && DetermineColorBufferHalfFloatSupport(textureCaps);
-    textureCompressionDXT1     = DetermineDXT1TextureSupport(textureCaps);
-    textureCompressionDXT3     = DetermineDXT3TextureSupport(textureCaps);
-    textureCompressionDXT5     = DetermineDXT5TextureSupport(textureCaps);
+    textureFloat           = DetermineFloatTextureSupport(textureCaps);
+    textureFloatLinear     = textureFloat && DetermineFloatTextureFilteringSupport(textureCaps);
+    textureRG              = DetermineRGTextureSupport(textureCaps, textureHalfFloat, textureFloat);
+    colorBufferHalfFloat   = textureHalfFloat && DetermineColorBufferHalfFloatSupport(textureCaps);
+    textureCompressionDXT1 = DetermineDXT1TextureSupport(textureCaps);
+    textureCompressionDXT3 = DetermineDXT3TextureSupport(textureCaps);
+    textureCompressionDXT5 = DetermineDXT5TextureSupport(textureCaps);
     textureCompressionS3TCsRGB = DetermineS3TCsRGBTextureSupport(textureCaps);
     textureCompressionASTCHDR  = DetermineASTCTextureSupport(textureCaps);
     textureCompressionASTCLDR  = textureCompressionASTCHDR;
@@ -864,6 +867,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_EGL_image"] = enableableExtension(&Extensions::eglImage);
         map["GL_OES_EGL_image_external"] = enableableExtension(&Extensions::eglImageExternal);
         map["GL_OES_EGL_image_external_essl3"] = enableableExtension(&Extensions::eglImageExternalEssl3);
+        map["GL_OES_EGL_sync"] = esOnlyExtension(&Extensions::eglSync);
         map["GL_NV_EGL_stream_consumer_external"] = enableableExtension(&Extensions::eglStreamConsumerExternal);
         map["GL_EXT_unpack_subimage"] = enableableExtension(&Extensions::unpackSubimage);
         map["GL_NV_pack_subimage"] = enableableExtension(&Extensions::packSubimage);
@@ -905,6 +909,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_blend_func_extended"] = enableableExtension(&Extensions::blendFuncExtended);
         map["GL_ANGLE_texture_multisample"] = enableableExtension(&Extensions::textureMultisample);
         map["GL_ANGLE_multi_draw"] = enableableExtension(&Extensions::multiDraw);
+        map["GL_ANGLE_provoking_vertex"] = enableableExtension(&Extensions::provokingVertex);
         // GLES1 extensinos
         map["GL_OES_point_size_array"] = enableableExtension(&Extensions::pointSizeArray);
         map["GL_OES_texture_cube_map"] = enableableExtension(&Extensions::textureCubeMap);
@@ -1353,6 +1358,8 @@ DisplayExtensions::DisplayExtensions()
       streamConsumerGLTexture(false),
       streamConsumerGLTextureYUV(false),
       streamProducerD3DTexture(false),
+      fenceSync(false),
+      waitSync(false),
       createContextWebGLCompatibility(false),
       createContextBindGeneratesResource(false),
       getSyncValues(false),
@@ -1401,6 +1408,8 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_KHR_stream",                                      stream,                             &extensionStrings);
     InsertExtensionString("EGL_KHR_stream_consumer_gltexture",                   streamConsumerGLTexture,            &extensionStrings);
     InsertExtensionString("EGL_NV_stream_consumer_gltexture_yuv",                streamConsumerGLTextureYUV,         &extensionStrings);
+    InsertExtensionString("EGL_KHR_fence_sync",                                  fenceSync,                          &extensionStrings);
+    InsertExtensionString("EGL_KHR_wait_sync",                                   waitSync,                           &extensionStrings);
     InsertExtensionString("EGL_ANGLE_flexible_surface_compatibility",            flexibleSurfaceCompatibility,       &extensionStrings);
     InsertExtensionString("EGL_ANGLE_stream_producer_d3d_texture",               streamProducerD3DTexture,           &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_webgl_compatibility",        createContextWebGLCompatibility,    &extensionStrings);

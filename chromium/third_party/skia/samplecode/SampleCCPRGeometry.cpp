@@ -90,8 +90,8 @@ public:
 
 private:
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*) override {
-        return RequiresDstTexture::kNo;
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*) override {
+        return GrProcessorSet::EmptySetAnalysis();
     }
     void onPrepare(GrOpFlushState*) override {}
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
@@ -238,11 +238,10 @@ void CCPRGeometryView::onDrawContent(SkCanvas* canvas) {
         canvas->drawPoints(SkCanvas::kPoints_PointMode, 1, fPoints + 3, pointsPaint);
     }
 
+    SkFont font(nullptr, 20);
     SkPaint captionPaint;
-    captionPaint.setTextSize(20);
     captionPaint.setColor(SK_ColorWHITE);
-    captionPaint.setAntiAlias(true);
-    canvas->drawText(caption.c_str(), caption.size(), 10, 30, captionPaint);
+    canvas->drawString(caption, 10, 30, font, captionPaint);
 }
 
 void CCPRGeometryView::updateGpuData() {

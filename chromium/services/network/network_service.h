@@ -5,9 +5,11 @@
 #ifndef SERVICES_NETWORK_NETWORK_SERVICE_H_
 #define SERVICES_NETWORK_NETWORK_SERVICE_H_
 
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/component_export.h"
 #include "base/containers/flat_set.h"
@@ -56,6 +58,7 @@ namespace network {
 
 class CRLSetDistributor;
 class DnsConfigChangeManager;
+class HttpAuthCacheCopier;
 class NetworkContext;
 class NetworkUsageAccumulator;
 class URLRequestContextBuilderMojo;
@@ -169,6 +172,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
       mojom::DnsConfigChangeManagerRequest request) override;
   void GetTotalNetworkUsages(
       mojom::NetworkService::GetTotalNetworkUsagesCallback callback) override;
+  void GetNetworkList(
+      uint32_t policy,
+      mojom::NetworkService::GetNetworkListCallback callback) override;
 #if BUILDFLAG(IS_CT_SUPPORTED)
   void UpdateSignedTreeHead(const net::ct::SignedTreeHead& sth) override;
 #endif  // !BUILDFLAG(IS_CT_SUPPORTED)
@@ -209,6 +215,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   net::HostResolver* host_resolver() { return host_resolver_.get(); }
   NetworkUsageAccumulator* network_usage_accumulator() {
     return network_usage_accumulator_.get();
+  }
+  HttpAuthCacheCopier* http_auth_cache_copier() {
+    return http_auth_cache_copier_.get();
   }
 
 #if BUILDFLAG(IS_CT_SUPPORTED)
@@ -281,6 +290,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
   // Must be above |http_auth_handler_factory_|, since it depends on this.
   net::HttpAuthPreferences http_auth_preferences_;
   std::unique_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory_;
+  std::unique_ptr<HttpAuthCacheCopier> http_auth_cache_copier_;
 
   // NetworkContexts created by CreateNetworkContext(). They call into the
   // NetworkService when their connection is closed so that it can delete

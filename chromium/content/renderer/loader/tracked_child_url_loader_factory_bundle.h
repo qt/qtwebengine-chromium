@@ -29,7 +29,7 @@ class CONTENT_EXPORT TrackedChildURLLoaderFactoryBundleInfo
   TrackedChildURLLoaderFactoryBundleInfo();
   TrackedChildURLLoaderFactoryBundleInfo(
       network::mojom::URLLoaderFactoryPtrInfo default_factory_info,
-      network::mojom::URLLoaderFactoryPtrInfo default_network_factory_info,
+      network::mojom::URLLoaderFactoryPtrInfo appcache_factory_info,
       SchemeMap scheme_specific_factory_infos,
       OriginMap initiator_specific_factory_infos,
       PossiblyAssociatedURLLoaderFactoryPtrInfo direct_network_factory_info,
@@ -122,13 +122,14 @@ class CONTENT_EXPORT HostChildURLLoaderFactoryBundle
   // Returns |std::unique_ptr<TrackedChildURLLoaderFactoryBundleInfo>|.
   std::unique_ptr<network::SharedURLLoaderFactoryInfo> Clone() override;
   std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-  CloneWithoutDefaultFactory() override;
+  CloneWithoutAppCacheFactory() override;
   bool IsHostChildURLLoaderFactoryBundle() const override;
 
   // Update this bundle with |info|, and post cloned |info| to tracked bundles.
   // Note: We don't need to worry about |direct_network_factory_| since it's
   // only used by |RendererBlinkPlatformImpl| and doesn't rely on this codepath.
-  void UpdateThisAndAllClones(std::unique_ptr<URLLoaderFactoryBundleInfo> info);
+  void UpdateThisAndAllClones(
+      std::unique_ptr<blink::URLLoaderFactoryBundleInfo> info);
 
  private:
   friend class TrackedChildURLLoaderFactoryBundle;

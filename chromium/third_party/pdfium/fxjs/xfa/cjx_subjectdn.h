@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_SUBJECTDN_H_
 #define FXJS_XFA_CJX_SUBJECTDN_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_SubjectDN;
 
@@ -16,8 +16,6 @@ class CJX_SubjectDN final : public CJX_Node {
  public:
   explicit CJX_SubjectDN(CXFA_SubjectDN* node);
   ~CJX_SubjectDN() override;
-
-  JSE_PROP(delimiter);
 };
 
 #endif  // FXJS_XFA_CJX_SUBJECTDN_H_

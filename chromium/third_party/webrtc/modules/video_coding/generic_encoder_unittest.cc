@@ -8,12 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <cstddef>
 #include <vector>
 
-#include "modules/video_coding/encoded_frame.h"
+#include "api/video/video_timing.h"
 #include "modules/video_coding/generic_encoder.h"
 #include "modules/video_coding/include/video_coding_defines.h"
-#include "rtc_base/fakeclock.h"
+#include "rtc_base/fake_clock.h"
+#include "rtc_base/time_utils.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -74,12 +76,13 @@ std::vector<std::vector<FrameType>> GetTimingFrames(
     const int num_streams,
     const int num_frames) {
   FakeEncodedImageCallback sink;
-  VCMEncodedFrameCallback callback(&sink, nullptr);
+  VCMEncodedFrameCallback callback(&sink);
   const size_t kFramerate = 30;
   callback.SetTimingFramesThresholds(
       {delay_ms, kDefaultOutlierFrameSizePercent});
   callback.OnFrameRateChanged(kFramerate);
   int s, i;
+  std::vector<uint8_t> frame_data(max_frame_size);
   std::vector<std::vector<FrameType>> result(num_streams);
   for (s = 0; s < num_streams; ++s)
     callback.OnTargetBitrateChanged(average_frame_sizes[s] * kFramerate, s);
@@ -92,7 +95,8 @@ std::vector<std::vector<FrameType>> GetTimingFrames(
 
       EncodedImage image;
       CodecSpecificInfo codec_specific;
-      image._length = FrameSize(min_frame_size, max_frame_size, s, i);
+      image.set_buffer(frame_data.data(), frame_data.size());
+      image.set_size(FrameSize(min_frame_size, max_frame_size, s, i));
       image.capture_time_ms_ = current_timestamp;
       image.SetTimestamp(static_cast<uint32_t>(current_timestamp * 90));
       image.SetSpatialIndex(s);
@@ -185,12 +189,14 @@ TEST(TestVCMEncodedFrameCallback, NoTimingFrameIfNoEncodeStartTime) {
   EncodedImage image;
   CodecSpecificInfo codec_specific;
   int64_t timestamp = 1;
-  image._length = 500;
+  uint8_t frame_data[500];
+  image.set_buffer(frame_data, sizeof(frame_data));
+  image.set_size(sizeof(frame_data));
   image.capture_time_ms_ = timestamp;
   image.SetTimestamp(static_cast<uint32_t>(timestamp * 90));
   codec_specific.codecType = kVideoCodecGeneric;
   FakeEncodedImageCallback sink;
-  VCMEncodedFrameCallback callback(&sink, nullptr);
+  VCMEncodedFrameCallback callback(&sink);
   VideoCodec::TimingFrameTriggerThresholds thresholds;
   thresholds.delay_ms = 1;  // Make all frames timing frames.
   callback.SetTimingFramesThresholds(thresholds);
@@ -216,12 +222,14 @@ TEST(TestVCMEncodedFrameCallback, AdjustsCaptureTimeForInternalSourceEncoder) {
   const int64_t kEncodeStartDelayMs = 2;
   const int64_t kEncodeFinishDelayMs = 10;
   int64_t timestamp = 1;
-  image._length = 500;
+  uint8_t frame_data[500];
+  image.set_buffer(frame_data, sizeof(frame_data));
+  image.set_size(sizeof(frame_data));
   image.capture_time_ms_ = timestamp;
   image.SetTimestamp(static_cast<uint32_t>(timestamp * 90));
   codec_specific.codecType = kVideoCodecGeneric;
   FakeEncodedImageCallback sink;
-  VCMEncodedFrameCallback callback(&sink, nullptr);
+  VCMEncodedFrameCallback callback(&sink);
   callback.SetInternalSource(true);
   VideoCodec::TimingFrameTriggerThresholds thresholds;
   thresholds.delay_ms = 1;  // Make all frames timing frames.
@@ -256,7 +264,7 @@ TEST(TestVCMEncodedFrameCallback, NotifiesAboutDroppedFrames) {
   const int64_t kTimestampMs4 = 47721870;
   codec_specific.codecType = kVideoCodecGeneric;
   FakeEncodedImageCallback sink;
-  VCMEncodedFrameCallback callback(&sink, nullptr);
+  VCMEncodedFrameCallback callback(&sink);
   // Any non-zero bitrate needed to be set before the first frame.
   callback.OnTargetBitrateChanged(500, 0);
   image.capture_time_ms_ = kTimestampMs1;
@@ -291,7 +299,7 @@ TEST(TestVCMEncodedFrameCallback, RestoresCaptureTimestamps) {
   const int64_t kTimestampMs = 123456;
   codec_specific.codecType = kVideoCodecGeneric;
   FakeEncodedImageCallback sink;
-  VCMEncodedFrameCallback callback(&sink, nullptr);
+  VCMEncodedFrameCallback callback(&sink);
   // Any non-zero bitrate needed to be set before the first frame.
   callback.OnTargetBitrateChanged(500, 0);
   image.capture_time_ms_ = kTimestampMs;  // Incorrect timesetamp.

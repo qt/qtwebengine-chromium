@@ -267,6 +267,7 @@ public:
         fShapeCache = shapeCache;
         fShapeList = shapeList;
         fGammaCorrect = gammaCorrect;
+        fWideColor = !SkPMColor4fFitsInBytes(color);
 
     }
 
@@ -296,9 +297,9 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
-                                            &fShapes.front().fColor);
+    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+        return fHelper.finalizeProcessors(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
+                                          &fShapes.front().fColor);
     }
 
 private:
@@ -351,7 +352,7 @@ private:
                 matrix = &SkMatrix::I();
             }
             flushInfo.fGeometryProcessor = GrDistanceFieldPathGeoProc::Make(
-                    *target->caps().shaderCaps(), *matrix, fAtlas->getProxies(),
+                    *target->caps().shaderCaps(), *matrix, fWideColor, fAtlas->getProxies(),
                     fAtlas->numActivePages(), GrSamplerState::ClampBilerp(), flags);
         } else {
             SkMatrix invert;
@@ -362,7 +363,7 @@ private:
             }
 
             flushInfo.fGeometryProcessor = GrBitmapTextGeoProc::Make(
-                    *target->caps().shaderCaps(), this->color(), fAtlas->getProxies(),
+                    *target->caps().shaderCaps(), this->color(), fWideColor, fAtlas->getProxies(),
                     fAtlas->numActivePages(), GrSamplerState::ClampNearest(), kA8_GrMaskFormat,
                     invert, false);
         }
@@ -489,9 +490,8 @@ private:
             auto uploadTarget = target->deferredUploadTarget();
             fAtlas->setLastUseToken(shapeData->fID, uploadTarget->tokenTracker()->nextDrawToken());
 
-            // TODO4F: Preserve float colors
-            this->writePathVertices(fAtlas, vertices, args.fColor.toBytes_RGBA(), args.fViewMatrix,
-                                    shapeData);
+            this->writePathVertices(fAtlas, vertices, GrVertexColor(args.fColor, fWideColor),
+                                    args.fViewMatrix, shapeData);
             flushInfo.fInstancesToFlush++;
         }
 
@@ -745,7 +745,7 @@ private:
 
     void writePathVertices(GrDrawOpAtlas* atlas,
                            GrVertexWriter& vertices,
-                           GrColor color,
+                           const GrVertexColor& color,
                            const SkMatrix& ctm,
                            const ShapeData* shapeData) const {
         SkRect translatedBounds(shapeData->fBounds);
@@ -844,6 +844,7 @@ private:
         }
 
         fShapes.push_back_n(that->fShapes.count(), that->fShapes.begin());
+        fWideColor |= that->fWideColor;
         return CombineResult::kMerged;
     }
 
@@ -861,6 +862,7 @@ private:
     ShapeCache* fShapeCache;
     ShapeDataList* fShapeList;
     bool fGammaCorrect;
+    bool fWideColor;
 
     typedef GrMeshDrawOp INHERITED;
 };
@@ -880,7 +882,7 @@ bool GrSmallPathRenderer::onDrawPath(const DrawPathArgs& args) {
                                      format,
                                      kAlpha_8_GrPixelConfig,
                                      ATLAS_TEXTURE_WIDTH, ATLAS_TEXTURE_HEIGHT,
-                                     NUM_PLOTS_X, NUM_PLOTS_Y,
+                                     PLOT_WIDTH, PLOT_HEIGHT,
                                      GrDrawOpAtlas::AllowMultitexturing::kYes,
                                      &GrSmallPathRenderer::HandleEviction,
                                      (void*)this);
@@ -969,7 +971,7 @@ GR_DRAW_OP_TEST_DEFINE(SmallPathOp) {
         gTestStruct.fAtlas = GrDrawOpAtlas::Make(context->contextPriv().proxyProvider(),
                                                  format, kAlpha_8_GrPixelConfig,
                                                  ATLAS_TEXTURE_WIDTH, ATLAS_TEXTURE_HEIGHT,
-                                                 NUM_PLOTS_X, NUM_PLOTS_Y,
+                                                 PLOT_WIDTH, PLOT_HEIGHT,
                                                  GrDrawOpAtlas::AllowMultitexturing::kYes,
                                                  &PathTestStruct::HandleEviction,
                                                  (void*)&gTestStruct);

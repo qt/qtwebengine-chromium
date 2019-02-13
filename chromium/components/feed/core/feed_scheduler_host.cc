@@ -316,9 +316,21 @@ void FeedSchedulerHost::OnSuggestionsShown() {
   user_classifier_.OnEvent(UserClassifier::Event::kSuggestionsViewed);
 }
 
-void FeedSchedulerHost::OnArticlesCleared(bool suppress_refreshes) {
+bool FeedSchedulerHost::OnArticlesCleared(bool suppress_refreshes) {
+  base::TimeDelta attempt_age =
+      clock_->Now() - profile_prefs_->GetTime(prefs::kLastFetchAttemptTime);
+  UMA_HISTOGRAM_CUSTOM_TIMES(
+      "ContentSuggestions.Feed.Scheduler.TimeSinceLastFetchOnClear",
+      attempt_age, base::TimeDelta::FromSeconds(1),
+      base::TimeDelta::FromDays(7),
+      /*bucket_count=*/50);
+
   // Since there are no stored articles, a refresh will be needed soon.
   profile_prefs_->ClearPref(prefs::kLastFetchAttemptTime);
+
+  // The Feed will try to drop any outstanding refresh request, so we should
+  // stop tracking one as well.
+  tracking_oustanding_request_ = false;
 
   if (suppress_refreshes) {
     // Due to privacy, we should not fetch for a while (unless the user
@@ -328,8 +340,13 @@ void FeedSchedulerHost::OnArticlesCleared(bool suppress_refreshes) {
         clock_->Now() +
         base::TimeDelta::FromMinutes(kSuppressRefreshDurationMinutes.Get());
   } else if (ShouldRefresh(TriggerType::kNtpShown)) {
-    refresh_callback_.Run();
+    // Instead of using |refresh_callback_|, instead return our desire to
+    // refresh back up to our caller. This allows more information to be given
+    // all at once to the Feed which allows it to act more intelligently.
+    return true;
   }
+
+  return false;
 }
 
 void FeedSchedulerHost::OnEulaAccepted() {

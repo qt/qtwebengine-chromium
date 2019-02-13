@@ -1499,8 +1499,11 @@ std::vector<SpvId> SPIRVCodeGenerator::getAccessChain(const Expression& expr, Ou
             chain.push_back(this->writeIntLiteral(index));
             break;
         }
-        default:
-            chain.push_back(this->getLValue(expr, out)->getPointer());
+        default: {
+            SpvId id = this->getLValue(expr, out)->getPointer();
+            SkASSERT(id != 0);
+            chain.push_back(id);
+        }
     }
     return chain;
 }
@@ -1742,7 +1745,7 @@ SpvId SPIRVCodeGenerator::writeVariableReference(const VariableReference& ref, O
             fRTHeightFieldIndex = 0;
         }
         SkASSERT(fRTHeightFieldIndex != (SpvId) -1);
-        // write float4(gl_FragCoord.x, u_skRTHeight - gl_FragCoord.y, 0.0, 1.0)
+        // write float4(gl_FragCoord.x, u_skRTHeight - gl_FragCoord.y, 0.0, gl_FragCoord.w)
         SpvId xId = this->nextId();
         this->writeInstruction(SpvOpCompositeExtract, this->getType(*fContext.fFloat_Type), xId,
                                result, 0, out);
@@ -1766,7 +1769,9 @@ SpvId SPIRVCodeGenerator::writeVariableReference(const VariableReference& ref, O
         FloatLiteral zero(fContext, -1, 0.0);
         SpvId zeroId = writeFloatLiteral(zero);
         FloatLiteral one(fContext, -1, 1.0);
-        SpvId oneId = writeFloatLiteral(one);
+        SpvId wId = this->nextId();
+        this->writeInstruction(SpvOpCompositeExtract, this->getType(*fContext.fFloat_Type), wId,
+                               result, 3, out);
         SpvId flipped = this->nextId();
         this->writeOpCode(SpvOpCompositeConstruct, 7, out);
         this->writeWord(this->getType(*fContext.fFloat4_Type), out);
@@ -1774,7 +1779,7 @@ SpvId SPIRVCodeGenerator::writeVariableReference(const VariableReference& ref, O
         this->writeWord(xId, out);
         this->writeWord(flippedYId, out);
         this->writeWord(zeroId, out);
-        this->writeWord(oneId, out);
+        this->writeWord(wId, out);
         return flipped;
     }
     if (ref.fVariable.fModifiers.fLayout.fBuiltin == SK_CLOCKWISE_BUILTIN &&
@@ -1790,6 +1795,14 @@ SpvId SPIRVCodeGenerator::writeVariableReference(const VariableReference& ref, O
 }
 
 SpvId SPIRVCodeGenerator::writeIndexExpression(const IndexExpression& expr, OutputStream& out) {
+    if (expr.fBase->fType.kind() == Type::Kind::kVector_Kind) {
+        SpvId base = this->writeExpression(*expr.fBase, out);
+        SpvId index = this->writeExpression(*expr.fIndex, out);
+        SpvId result = this->nextId();
+        this->writeInstruction(SpvOpVectorExtractDynamic, this->getType(expr.fType), result, base,
+                               index, out);
+        return result;
+    }
     return getLValue(expr, out)->load(out);
 }
 
@@ -2352,7 +2365,7 @@ SpvId SPIRVCodeGenerator::writePrefixExpression(const PrefixExpression& p, Outpu
             this->writeInstruction(SpvOpSNegate, typeId, result, expr, out);
         } else {
             ABORT("unsupported prefix expression %s", p.description().c_str());
-        };
+        }
         return result;
     }
     switch (p.fOperator) {
@@ -2510,12 +2523,12 @@ SpvId SPIRVCodeGenerator::writeFunction(const FunctionDefinition& f, OutputStrea
     fVariableBuffer.reset();
     SpvId result = this->writeFunctionStart(f.fDeclaration, out);
     this->writeLabel(this->nextId(), out);
-    if (f.fDeclaration.fName == "main") {
-        write_stringstream(fGlobalInitializersBuffer, out);
-    }
     StringStream bodyBuffer;
     this->writeBlock((Block&) *f.fBody, bodyBuffer);
     write_stringstream(fVariableBuffer, out);
+    if (f.fDeclaration.fName == "main") {
+        write_stringstream(fGlobalInitializersBuffer, out);
+    }
     write_stringstream(bodyBuffer, out);
     if (fCurrentBlock) {
         if (f.fDeclaration.fReturnType == *fContext.fVoid_Type) {
@@ -2639,7 +2652,7 @@ SpvId SPIRVCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
     }
     if (intf.fVariable.fModifiers.fFlags & Modifiers::kBuffer_Flag) {
         this->writeInstruction(SpvOpDecorate, typeId, SpvDecorationBufferBlock, fDecorationBuffer);
-    } else {
+    } else if (intf.fVariable.fModifiers.fLayout.fBuiltin == -1) {
         this->writeInstruction(SpvOpDecorate, typeId, SpvDecorationBlock, fDecorationBuffer);
     }
     SpvStorageClass_ storageClass = get_storage_class(intf.fVariable.fModifiers);

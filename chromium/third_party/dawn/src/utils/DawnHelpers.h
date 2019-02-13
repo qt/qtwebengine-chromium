@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef UTILS_DAWNHELPERS_H_
+#define UTILS_DAWNHELPERS_H_
+
 #include <dawn/dawncpp.h>
 
 #include <initializer_list>
@@ -44,8 +47,7 @@ namespace utils {
     dawn::TextureCopyView CreateTextureCopyView(dawn::Texture texture,
                                                 uint32_t level,
                                                 uint32_t slice,
-                                                dawn::Origin3D origin,
-                                                dawn::TextureAspect aspect);
+                                                dawn::Origin3D origin);
 
     struct BasicRenderPass {
         uint32_t width;
@@ -63,6 +65,41 @@ namespace utils {
                                                  const dawn::BindGroupLayout* bindGroupLayout);
     dawn::BindGroupLayout MakeBindGroupLayout(
         const dawn::Device& device,
-        std::initializer_list<dawn::BindGroupBinding> bindingsInitializer);
+        std::initializer_list<dawn::BindGroupLayoutBinding> bindingsInitializer);
+
+    // Helpers to make creating bind groups look nicer:
+    //
+    //   utils::MakeBindGroup(device, layout, {
+    //       {0, mySampler},
+    //       {1, myBuffer, offset, size},
+    //       {3, myTexture}
+    //   });
+
+    // Structure with one constructor per-type of bindings, so that the initializer_list accepts
+    // bindings with the right type and no extra information.
+    struct BindingInitializationHelper {
+        BindingInitializationHelper(uint32_t binding, const dawn::Sampler& sampler);
+        BindingInitializationHelper(uint32_t binding, const dawn::TextureView& textureView);
+        BindingInitializationHelper(uint32_t binding,
+                                    const dawn::Buffer& buffer,
+                                    uint32_t offset,
+                                    uint32_t size);
+
+        dawn::BindGroupBinding GetAsBinding() const;
+
+        uint32_t binding;
+        dawn::Sampler sampler;
+        dawn::TextureView textureView;
+        dawn::Buffer buffer;
+        uint32_t offset = 0;
+        uint32_t size = 0;
+    };
+
+    dawn::BindGroup MakeBindGroup(
+        const dawn::Device& device,
+        const dawn::BindGroupLayout& layout,
+        std::initializer_list<BindingInitializationHelper> bindingsInitializer);
 
 }  // namespace utils
+
+#endif  // UTILS_DAWNHELPERS_H_

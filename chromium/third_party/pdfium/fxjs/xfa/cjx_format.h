@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_FORMAT_H_
 #define FXJS_XFA_CJX_FORMAT_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_Format;
 
@@ -16,9 +16,6 @@ class CJX_Format final : public CJX_Node {
  public:
   explicit CJX_Format(CXFA_Format* node);
   ~CJX_Format() override;
-
-  JSE_PROP(use);
-  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_FORMAT_H_

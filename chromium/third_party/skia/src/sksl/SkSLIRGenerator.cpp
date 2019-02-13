@@ -123,8 +123,8 @@ void IRGenerator::popSymbolTable() {
 
 static void fill_caps(const SKSL_CAPS_CLASS& caps,
                       std::unordered_map<String, Program::Settings::Value>* capsMap) {
-#define CAP(name) capsMap->insert(std::make_pair(String(#name), \
-                                  Program::Settings::Value(caps.name())));
+#define CAP(name) \
+    capsMap->insert(std::make_pair(String(#name), Program::Settings::Value(caps.name())))
     CAP(fbFetchSupport);
     CAP(fbFetchNeedsCustomOutput);
     CAP(dropsTileOnZeroDivide);
@@ -256,6 +256,11 @@ std::unique_ptr<VarDeclarations> IRGenerator::convertVarDeclarations(const ASTVa
     const Type* baseType = this->convertType(*decl.fType);
     if (!baseType) {
         return nullptr;
+    }
+    if (fKind != Program::kFragmentProcessor_Kind &&
+        (decl.fModifiers.fFlags & Modifiers::kIn_Flag) &&
+        baseType->kind() == Type::Kind::kMatrix_Kind) {
+        fErrors.error(decl.fOffset, "'in' variables may not have matrix type");
     }
     for (const auto& varDecl : decl.fVars) {
         if (decl.fModifiers.fLayout.fLocation == 0 && decl.fModifiers.fLayout.fIndex == 0 &&
@@ -817,8 +822,8 @@ std::unique_ptr<InterfaceBlock> IRGenerator::convertInterfaceBlock(const ASTInte
     bool foundRTAdjust = false;
     for (size_t i = 0; i < intf.fDeclarations.size(); i++) {
         std::unique_ptr<VarDeclarations> decl = this->convertVarDeclarations(
-                                                                         *intf.fDeclarations[i],
-                                                                         Variable::kGlobal_Storage);
+                                                                 *intf.fDeclarations[i],
+                                                                 Variable::kInterfaceBlock_Storage);
         if (!decl) {
             return nullptr;
         }
@@ -1180,9 +1185,9 @@ static bool determine_binary_type(const Context& context,
                                           right.componentType(), outLeftType, outRightType,
                                           outResultType, false)) {
                     *outLeftType = &(*outResultType)->toCompound(context, left.columns(),
-                                                                 left.rows());;
+                                                                 left.rows());
                     *outRightType = &(*outResultType)->toCompound(context, right.columns(),
-                                                                  right.rows());;
+                                                                  right.rows());
                     int leftColumns = left.columns();
                     int leftRows = left.rows();
                     int rightColumns;
@@ -1413,7 +1418,7 @@ std::unique_ptr<Expression> IRGenerator::constantFold(const Expression& left,
                 args.emplace_back(new FloatLiteral(fContext, -1, value));              \
             }                                                                          \
             return std::unique_ptr<Expression>(new Constructor(-1, left.fType,         \
-                                                               std::move(args)));
+                                                               std::move(args)))
         switch (op) {
             case Token::EQEQ:
                 return std::unique_ptr<Expression>(new BoolLiteral(fContext, -1,
@@ -1549,37 +1554,6 @@ std::unique_ptr<Expression> IRGenerator::convertTernaryExpression(
                                                              std::move(ifFalse)));
 }
 
-// scales the texture coordinates by the texture size for sampling rectangle textures.
-// For float2coordinates, implements the transformation:
-//     texture(sampler, coord) -> texture(sampler, textureSize(sampler) * coord)
-// For float3coordinates, implements the transformation:
-//     texture(sampler, coord) -> texture(sampler, float3textureSize(sampler), 1.0) * coord))
-void IRGenerator::fixRectSampling(std::vector<std::unique_ptr<Expression>>& arguments) {
-    SkASSERT(arguments.size() == 2);
-    SkASSERT(arguments[0]->fType == *fContext.fSampler2DRect_Type);
-    SkASSERT(arguments[0]->fKind == Expression::kVariableReference_Kind);
-    const Variable& sampler = ((VariableReference&) *arguments[0]).fVariable;
-    const Symbol* textureSizeSymbol = (*fSymbolTable)["textureSize"];
-    SkASSERT(textureSizeSymbol->fKind == Symbol::kFunctionDeclaration_Kind);
-    const FunctionDeclaration& textureSize = (FunctionDeclaration&) *textureSizeSymbol;
-    std::vector<std::unique_ptr<Expression>> sizeArguments;
-    sizeArguments.emplace_back(new VariableReference(-1, sampler));
-    std::unique_ptr<Expression> float2ize = call(-1, textureSize, std::move(sizeArguments));
-    const Type& type = arguments[1]->fType;
-    std::unique_ptr<Expression> scale;
-    if (type == *fContext.fFloat2_Type) {
-        scale = std::move(float2ize);
-    } else {
-        SkASSERT(type == *fContext.fFloat3_Type);
-        std::vector<std::unique_ptr<Expression>> float3rguments;
-        float3rguments.push_back(std::move(float2ize));
-        float3rguments.emplace_back(new FloatLiteral(fContext, -1, 1.0));
-        scale.reset(new Constructor(-1, *fContext.fFloat3_Type, std::move(float3rguments)));
-    }
-    arguments[1].reset(new BinaryExpression(-1, std::move(scale), Token::STAR,
-                                            std::move(arguments[1]), type));
-}
-
 std::unique_ptr<Expression> IRGenerator::call(int offset,
                                               const FunctionDeclaration& function,
                                               std::vector<std::unique_ptr<Expression>> arguments) {
@@ -1619,10 +1593,6 @@ std::unique_ptr<Expression> IRGenerator::call(int offset,
                              VariableReference::kReadWrite_RefKind :
                              VariableReference::kPointer_RefKind);
         }
-    }
-    if (function.fBuiltin && function.fName == "texture" &&
-        arguments[0]->fType == *fContext.fSampler2DRect_Type) {
-        this->fixRectSampling(arguments);
     }
     return std::unique_ptr<FunctionCall>(new FunctionCall(offset, *returnType, function,
                                                           std::move(arguments)));

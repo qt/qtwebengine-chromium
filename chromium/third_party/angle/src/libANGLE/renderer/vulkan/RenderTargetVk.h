@@ -24,18 +24,24 @@ struct Format;
 class FramebufferHelper;
 class ImageHelper;
 class ImageView;
-class RecordableGraphResource;
+class CommandGraphResource;
 class RenderPassDesc;
 }  // namespace vk
 
+class ContextVk;
+class TextureVk;
+
 // This is a very light-weight class that does not own to the resources it points to.
 // It's meant only to copy across some information from a FramebufferAttachment to the
-// business rendering logic. It stores Images and ImageView by pointer for performance.
+// business rendering logic. It stores Images and ImageViews by pointer for performance.
 class RenderTargetVk final : public FramebufferAttachmentRenderTarget
 {
   public:
-    RenderTargetVk(vk::ImageHelper *image, vk::ImageView *imageView, size_t layerIndex);
-    ~RenderTargetVk();
+    RenderTargetVk(vk::ImageHelper *image,
+                   vk::ImageView *imageView,
+                   size_t layerIndex,
+                   TextureVk *ownwer);
+    ~RenderTargetVk() override;
 
     // Used in std::vector initialization.
     RenderTargetVk(RenderTargetVk &&other);
@@ -48,14 +54,17 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
                             vk::CommandBuffer *commandBuffer,
                             vk::RenderPassDesc *renderPassDesc);
 
+    vk::ImageHelper &getImage();
     const vk::ImageHelper &getImage() const;
 
     // getImageForRead will also transition the resource to the given layout.
-    vk::ImageHelper *getImageForRead(vk::RecordableGraphResource *readingResource,
+    vk::ImageHelper *getImageForRead(vk::CommandGraphResource *readingResource,
                                      VkImageLayout layout,
                                      vk::CommandBuffer *commandBuffer);
-    vk::ImageHelper *getImageForWrite(vk::RecordableGraphResource *writingResource) const;
-    vk::ImageView *getImageView() const;
+    vk::ImageHelper *getImageForWrite(vk::CommandGraphResource *writingResource) const;
+
+    vk::ImageView *getDrawImageView() const;
+    vk::ImageView *getReadImageView() const;
 
     const vk::Format &getImageFormat() const;
     const gl::Extents &getImageExtents() const;
@@ -65,10 +74,18 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     // RenderTargetVk pointer.
     void updateSwapchainImage(vk::ImageHelper *image, vk::ImageView *imageView);
 
+    angle::Result ensureImageInitialized(ContextVk *contextVk);
+
   private:
     vk::ImageHelper *mImage;
+    // Note that the draw and read image views are the same, given the requirements of a render
+    // target.
     vk::ImageView *mImageView;
     size_t mLayerIndex;
+
+    // If owned by the texture, this will be non-nullptr, and is used to ensure texture changes
+    // are flushed.
+    TextureVk *mOwner;
 };
 
 }  // namespace rx

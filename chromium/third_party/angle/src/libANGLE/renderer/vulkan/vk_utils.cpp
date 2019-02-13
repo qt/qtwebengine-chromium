@@ -44,7 +44,7 @@ namespace angle
 {
 egl::Error ToEGL(Result result, rx::DisplayVk *displayVk, EGLint errorCode)
 {
-    if (result.isError())
+    if (result != angle::Result::Continue)
     {
         return displayVk->getEGLError(errorCode);
     }
@@ -86,7 +86,7 @@ bool HasStandardValidationLayer(const std::vector<VkLayerProperties> &layerProps
 
 bool HasValidationLayers(const std::vector<VkLayerProperties> &layerProps)
 {
-    for (const auto &layerName : g_VkValidationLayerNames)
+    for (const char *layerName : g_VkValidationLayerNames)
     {
         if (!HasValidationLayer(layerProps, layerName))
         {
@@ -115,7 +115,7 @@ angle::Result FindAndAllocateCompatibleMemory(vk::Context *context,
     allocInfo.allocationSize       = memoryRequirements.size;
 
     ANGLE_VK_TRY(context, deviceMemoryOut->allocate(context->getDevice(), allocInfo));
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 template <typename T>
@@ -135,19 +135,7 @@ angle::Result AllocateBufferOrImageMemory(vk::Context *context,
                                               requestedMemoryPropertyFlags, memoryPropertyFlagsOut,
                                               memoryRequirements, deviceMemoryOut));
     ANGLE_VK_TRY(context, bufferOrImage->bindMemory(context->getDevice(), *deviceMemoryOut));
-    return angle::Result::Continue();
-}
-
-uint32_t GetImageLayerCount(gl::TextureType textureType)
-{
-    if (textureType == gl::TextureType::CubeMap)
-    {
-        return gl::kCubeFaceCount;
-    }
-    else
-    {
-        return 1;
-    }
+    return angle::Result::Continue;
 }
 
 const char *g_VkLoaderLayersPathEnv = "VK_LAYER_PATH";
@@ -474,22 +462,6 @@ void CommandBuffer::endRenderPass()
 {
     ASSERT(mHandle != VK_NULL_HANDLE);
     vkCmdEndRenderPass(mHandle);
-}
-
-void CommandBuffer::bindPipeline(VkPipelineBindPoint pipelineBindPoint,
-                                 const vk::Pipeline &pipeline)
-{
-    ASSERT(valid() && pipeline.valid());
-    vkCmdBindPipeline(mHandle, pipelineBindPoint, pipeline.getHandle());
-}
-
-void CommandBuffer::bindVertexBuffers(uint32_t firstBinding,
-                                      uint32_t bindingCount,
-                                      const VkBuffer *buffers,
-                                      const VkDeviceSize *offsets)
-{
-    ASSERT(valid());
-    vkCmdBindVertexBuffers(mHandle, firstBinding, bindingCount, buffers, offsets);
 }
 
 void CommandBuffer::bindIndexBuffer(const VkBuffer &buffer,
@@ -1095,13 +1067,13 @@ angle::Result MemoryProperties::findCompatibleMemoryIndex(
         {
             *memoryPropertyFlagsOut = mMemoryProperties.memoryTypes[memoryIndex].propertyFlags;
             *typeIndexOut           = static_cast<uint32_t>(memoryIndex);
-            return angle::Result::Continue();
+            return angle::Result::Continue;
         }
     }
 
     // TODO(jmadill): Add error message to error.
     context->handleError(VK_ERROR_INCOMPATIBLE_DRIVER, __FILE__, ANGLE_FUNCTION, __LINE__);
-    return angle::Result::Stop();
+    return angle::Result::Stop;
 }
 
 // StagingBuffer implementation.
@@ -1132,7 +1104,7 @@ angle::Result StagingBuffer::init(Context *context, VkDeviceSize size, StagingUs
     VkMemoryPropertyFlags flagsOut = 0;
     ANGLE_TRY(AllocateBufferMemory(context, flags, &flagsOut, &mBuffer, &mDeviceMemory));
     mSize = static_cast<size_t>(size);
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void StagingBuffer::dumpResources(Serial serial, std::vector<vk::GarbageObject> *garbageQueue)
@@ -1204,7 +1176,7 @@ angle::Result InitShaderAndSerial(Context *context,
 
     ANGLE_VK_TRY(context, shaderAndSerial->get().init(context->getDevice(), createInfo));
     shaderAndSerial->updateSerial(context->getRenderer()->issueShaderSerial());
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 // GarbageObject implementation.
@@ -1250,6 +1222,9 @@ void GarbageObject::destroy(VkDevice device)
         case HandleType::Buffer:
             vkDestroyBuffer(device, reinterpret_cast<VkBuffer>(mHandle), nullptr);
             break;
+        case HandleType::BufferView:
+            vkDestroyBufferView(device, reinterpret_cast<VkBufferView>(mHandle), nullptr);
+            break;
         case HandleType::Image:
             vkDestroyImage(device, reinterpret_cast<VkImage>(mHandle), nullptr);
             break;
@@ -1293,6 +1268,35 @@ void GarbageObject::destroy(VkDevice device)
     }
 }
 }  // namespace vk
+
+// VK_EXT_debug_utils
+PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT   = nullptr;
+PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT = nullptr;
+
+// VK_EXT_debug_report
+PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT   = nullptr;
+PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT = nullptr;
+
+#define GET_FUNC(vkName)                                                                   \
+    do                                                                                     \
+    {                                                                                      \
+        vkName = reinterpret_cast<PFN_##vkName>(vkGetInstanceProcAddr(instance, #vkName)); \
+        ASSERT(vkName);                                                                    \
+    } while (0)
+
+void InitDebugUtilsEXTFunctions(VkInstance instance)
+{
+    GET_FUNC(vkCreateDebugUtilsMessengerEXT);
+    GET_FUNC(vkDestroyDebugUtilsMessengerEXT);
+}
+
+void InitDebugReportEXTFunctions(VkInstance instance)
+{
+    GET_FUNC(vkCreateDebugReportCallbackEXT);
+    GET_FUNC(vkDestroyDebugReportCallbackEXT);
+}
+
+#undef GET_FUNC
 
 namespace gl_vk
 {
@@ -1462,21 +1466,6 @@ VkComponentSwizzle GetSwizzle(const GLenum swizzle)
     }
 }
 
-VkIndexType GetIndexType(GLenum elementType)
-{
-    switch (elementType)
-    {
-        case GL_UNSIGNED_BYTE:
-        case GL_UNSIGNED_SHORT:
-            return VK_INDEX_TYPE_UINT16;
-        case GL_UNSIGNED_INT:
-            return VK_INDEX_TYPE_UINT32;
-        default:
-            UNREACHABLE();
-            return VK_INDEX_TYPE_MAX_ENUM;
-    }
-}
-
 void GetOffset(const gl::Offset &glOffset, VkOffset3D *vkOffset)
 {
     vkOffset->x = glOffset.x;
@@ -1496,9 +1485,13 @@ VkImageType GetImageType(gl::TextureType textureType)
     switch (textureType)
     {
         case gl::TextureType::_2D:
-            return VK_IMAGE_TYPE_2D;
+        case gl::TextureType::_2DArray:
+        case gl::TextureType::_2DMultisample:
+        case gl::TextureType::_2DMultisampleArray:
         case gl::TextureType::CubeMap:
             return VK_IMAGE_TYPE_2D;
+        case gl::TextureType::_3D:
+            return VK_IMAGE_TYPE_3D;
         default:
             // We will need to implement all the texture types for ES3+.
             UNIMPLEMENTED();
@@ -1511,7 +1504,13 @@ VkImageViewType GetImageViewType(gl::TextureType textureType)
     switch (textureType)
     {
         case gl::TextureType::_2D:
+        case gl::TextureType::_2DMultisample:
             return VK_IMAGE_VIEW_TYPE_2D;
+        case gl::TextureType::_2DArray:
+        case gl::TextureType::_2DMultisampleArray:
+            return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        case gl::TextureType::_3D:
+            return VK_IMAGE_VIEW_TYPE_3D;
         case gl::TextureType::CubeMap:
             return VK_IMAGE_VIEW_TYPE_CUBE;
         default:

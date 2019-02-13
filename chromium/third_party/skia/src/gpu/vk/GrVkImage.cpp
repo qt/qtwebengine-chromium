@@ -5,9 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "GrVkGpu.h"
 #include "GrVkImage.h"
+#include "GrGpuResourcePriv.h"
+#include "GrVkGpu.h"
 #include "GrVkMemory.h"
+#include "GrVkTexture.h"
 #include "GrVkUtil.h"
 
 #define VK_CALL(GPU, X) GR_VK_CALL(GPU->vkInterface(), X)
@@ -42,7 +44,7 @@ VkAccessFlags GrVkImage::LayoutToSrcAccessMask(const VkImageLayout layout) {
     // and the image is linear.
     // TODO: Add check for linear here so we are not always adding host to general, and we should
     //       only be in preinitialized if we are linear
-    VkAccessFlags flags = 0;;
+    VkAccessFlags flags = 0;
     if (VK_IMAGE_LAYOUT_GENERAL == layout) {
         flags = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
@@ -207,20 +209,17 @@ void GrVkImage::DestroyImageInfo(const GrVkGpu* gpu, GrVkImageInfo* info) {
     GrVkMemory::FreeImageMemory(gpu, isLinear, info->fAlloc);
 }
 
-void GrVkImage::setNewResource(VkImage image, const GrVkAlloc& alloc, VkImageTiling tiling) {
-    fResource = new Resource(image, alloc, tiling);
-}
-
 GrVkImage::~GrVkImage() {
     // should have been released or abandoned first
     SkASSERT(!fResource);
 }
 
-void GrVkImage::releaseImage(const GrVkGpu* gpu) {
+void GrVkImage::releaseImage(GrVkGpu* gpu) {
     if (fInfo.fCurrentQueueFamily != fInitialQueueFamily) {
         this->setImageLayout(gpu, this->currentLayout(), 0, 0, false, true);
     }
     if (fResource) {
+        fResource->removeOwningTexture();
         fResource->unref(gpu);
         fResource = nullptr;
     }
@@ -228,24 +227,57 @@ void GrVkImage::releaseImage(const GrVkGpu* gpu) {
 
 void GrVkImage::abandonImage() {
     if (fResource) {
+        fResource->removeOwningTexture();
         fResource->unrefAndAbandon();
         fResource = nullptr;
     }
 }
 
 void GrVkImage::setResourceRelease(sk_sp<GrReleaseProcHelper> releaseHelper) {
+    SkASSERT(fResource);
     // Forward the release proc on to GrVkImage::Resource
     fResource->setRelease(std::move(releaseHelper));
 }
 
-void GrVkImage::Resource::freeGPUData(const GrVkGpu* gpu) const {
+void GrVkImage::Resource::freeGPUData(GrVkGpu* gpu) const {
     SkASSERT(!fReleaseHelper);
     VK_CALL(gpu, DestroyImage(gpu->device(), fImage, nullptr));
     bool isLinear = (VK_IMAGE_TILING_LINEAR == fImageTiling);
     GrVkMemory::FreeImageMemory(gpu, isLinear, fAlloc);
 }
 
-void GrVkImage::BorrowedResource::freeGPUData(const GrVkGpu* gpu) const {
+void GrVkImage::Resource::setIdleProc(GrVkTexture* owner, GrTexture::IdleProc proc,
+                                      void* context) const {
+    fOwningTexture = owner;
+    fIdleProc = proc;
+    fIdleProcContext = context;
+}
+
+void GrVkImage::Resource::removeOwningTexture() const { fOwningTexture = nullptr; }
+
+void GrVkImage::Resource::notifyAddedToCommandBuffer() const { ++fNumCommandBufferOwners; }
+
+void GrVkImage::Resource::notifyRemovedFromCommandBuffer() const {
+    SkASSERT(fNumCommandBufferOwners);
+    if (--fNumCommandBufferOwners || !fIdleProc) {
+        return;
+    }
+    if (fOwningTexture && !fOwningTexture->resourcePriv().isPurgeable()) {
+        return;
+    }
+    fIdleProc(fIdleProcContext);
+    if (fOwningTexture) {
+        fOwningTexture->setIdleProc(nullptr, nullptr);
+        // Changing the texture's proc should change ours.
+        SkASSERT(!fIdleProc);
+        SkASSERT(!fIdleProc);
+    } else {
+        fIdleProc = nullptr;
+        fIdleProcContext = nullptr;
+    }
+}
+
+void GrVkImage::BorrowedResource::freeGPUData(GrVkGpu* gpu) const {
     this->invokeReleaseProc();
 }
 

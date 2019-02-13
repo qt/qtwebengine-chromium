@@ -13,7 +13,7 @@
 #include "absl/memory/memory.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/mod_ops.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -272,8 +272,13 @@ void VideoStreamDecoderImpl::Decoded(VideoFrame& decoded_image,
                             frame_timestamps->render_time_us / 1000);
 
     callbacks_->OnDecodedFrame(
-        VideoFrame(decoded_image.video_frame_buffer(), decoded_image.rotation(),
-                   frame_timestamps->render_time_us),
+        VideoFrame::Builder()
+            .set_video_frame_buffer(decoded_image.video_frame_buffer())
+            .set_rotation(decoded_image.rotation())
+            .set_timestamp_us(frame_timestamps->render_time_us)
+            .set_timestamp_rtp(decoded_image.timestamp())
+            .set_id(decoded_image.id())
+            .build(),
         casted_decode_time_ms, casted_qp);
   });
 }

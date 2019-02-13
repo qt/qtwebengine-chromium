@@ -118,15 +118,11 @@ int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed){
     */
     Index *pIndex;
     pIndex = sqlite3FindIndex(db, argv[0], db->aDb[iDb].zDbSName);
-    if( pIndex==0 ){
-      /* This can occur if there exists an index on a TEMP table which
-      ** has the same name as another index on a permanent index.  Since
-      ** the permanent table is hidden by the TEMP table, we can also
-      ** safely ignore the index on the permanent table.
-      */
-      /* Do Nothing */;
-    }else if( sqlite3GetInt32(argv[1], &pIndex->tnum)==0 ){
-      corruptSchema(pData, argv[0], "invalid rootpage");
+    if( pIndex==0
+     || sqlite3GetInt32(argv[1],&pIndex->tnum)==0
+     || pIndex->tnum<2
+    ){
+      corruptSchema(pData, argv[0], pIndex?"invalid rootpage":"orphan index");
     }
   }
   return 0;
@@ -545,6 +541,7 @@ static int sqlite3Prepare(
     sParse.disableLookaside++;
     db->lookaside.bDisable++;
   }
+  sParse.disableVtab = (prepFlags & SQLITE_PREPARE_NO_VTAB)!=0;
 
   /* Check to verify that it is possible to get a read lock on all
   ** database schemas.  The inability to get a read lock indicates that

@@ -47,12 +47,14 @@ group("examples") {
 
   if (is_linux || is_win) {
     deps += [
-      ":peerconnection_client",
       ":peerconnection_server",
       ":relayserver",
       ":stunserver",
       ":turnserver",
     ]
+    if (current_os != "winuwp") {
+      deps += [ ":peerconnection_client" ]
+    }
   }
 
   if (is_android || is_win) {
@@ -151,7 +153,7 @@ if (is_android) {
       "../sdk/android:video_api_java",
       "../sdk/android:video_java",
       "androidapp/third_party/autobanh:autobanh_java",
-      "//third_party/jsr-305:jsr_305_javalib",
+      "//third_party/android_deps:android_support_annotations_java",
     ]
   }
 
@@ -490,8 +492,9 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "objcnativeapi/objc/NADAppDelegate.m",
         "objcnativeapi/objc/NADViewController.h",
         "objcnativeapi/objc/NADViewController.mm",
+        "objcnativeapi/objc/objc_call_client.h",
+        "objcnativeapi/objc/objc_call_client.mm",
         "objcnativeapi/objc/objccallclient.h",
-        "objcnativeapi/objc/objccallclient.mm",
       ]
 
       if (!build_with_chromium && is_clang) {
@@ -576,6 +579,11 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       info_plist = "objc/AppRTCMobile/mac/Info.plist"
 
       libs = [ "AppKit.framework" ]
+
+      ldflags = [
+        "-rpath",
+        "@executable_path/../Frameworks",
+      ]
 
       deps = [
         ":AppRTCMobile_lib",
@@ -681,17 +689,25 @@ if (is_linux || is_win) {
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
     deps = [
+      "../api:audio_options_api",
       "../api:create_peerconnection_factory",
       "../api:libjingle_peerconnection_api",
+      "../api/audio:audio_mixer_api",
+      "../api/audio_codecs:audio_codecs_api",
       "../api/video:video_frame_i420",
+      "../api/video_codecs:video_codecs_api",
+      "../media:rtc_media_base",
+      "../p2p:rtc_p2p",
       "../rtc_base:checks",
-      "../rtc_base:stringutils",
       "../rtc_base/third_party/sigslot",
       "../system_wrappers:field_trial",
       "../test:field_trial",
+      "//third_party/abseil-cpp/absl/memory",
+      "//third_party/abseil-cpp/absl/types:optional",
     ]
     if (is_win) {
       sources += [
+        "peerconnection/client/flag_defs.h",
         "peerconnection/client/flagdefs.h",
         "peerconnection/client/main.cc",
         "peerconnection/client/main_wnd.cc",
@@ -729,9 +745,11 @@ if (is_linux || is_win) {
       "../modules/audio_processing:audio_processing",
       "../modules/video_capture:video_capture_module",
       "../pc:libjingle_peerconnection",
+      "../pc:peerconnection",
       "../rtc_base:rtc_base",
       "../rtc_base:rtc_base_approved",
       "../rtc_base:rtc_json",
+      "../test:video_test_common",
       "//third_party/libyuv",
     ]
   }
@@ -749,7 +767,6 @@ if (is_linux || is_win) {
     ]
     deps = [
       "../rtc_base:rtc_base_approved",
-      "../rtc_base:stringutils",
       "../rtc_tools:command_line_parser",
       "../system_wrappers:field_trial",
       "../test:field_trial",
@@ -765,6 +782,7 @@ if (is_linux || is_win) {
       "relayserver/relayserver_main.cc",
     ]
     deps = [
+      "../p2p:p2p_server_utils",
       "../p2p:rtc_p2p",
       "../pc:rtc_pc",
       "../rtc_base:rtc_base",
@@ -782,6 +800,7 @@ if (is_linux || is_win) {
     ]
     deps = [
       ":read_auth_file",
+      "../p2p:p2p_server_utils",
       "../p2p:rtc_p2p",
       "../pc:rtc_pc",
       "../rtc_base:rtc_base",
@@ -798,6 +817,7 @@ if (is_linux || is_win) {
       "stunserver/stunserver_main.cc",
     ]
     deps = [
+      "../p2p:p2p_server_utils",
       "../p2p:rtc_p2p",
       "../pc:rtc_pc",
       "../rtc_base:rtc_base",
@@ -824,7 +844,8 @@ if (is_win || is_android) {
 
     if (is_android) {
       sources += [
-        "unityplugin/classreferenceholder.cc",
+        "unityplugin/class_reference_holder.cc",
+        "unityplugin/class_reference_holder.h",
         "unityplugin/classreferenceholder.h",
         "unityplugin/jni_onload.cc",
       ]
@@ -853,7 +874,9 @@ if (is_win || is_android) {
       "../modules/audio_processing:audio_processing",
       "../modules/video_capture:video_capture_module",
       "../pc:libjingle_peerconnection",
+      "../pc:peerconnection",
       "../rtc_base:rtc_base",
+      "../test:video_test_common",
       "//third_party/abseil-cpp/absl/memory",
     ]
     if (is_android) {
@@ -870,7 +893,11 @@ if (is_android) {
     java_files = [ "unityplugin/java/src/org/webrtc/UnityUtility.java" ]
     deps = [
       "../rtc_base:base_java",
+      "../sdk/android:camera_java",
       "../sdk/android:libjingle_peerconnection_java",
+      "../sdk/android:peerconnection_java",
+      "../sdk/android:video_java",
+      "//third_party/android_deps:android_support_annotations_java",
     ]
   }
 
@@ -887,6 +914,7 @@ if (is_android) {
       "../rtc_base:base_java",
       "../sdk/android:libjingle_peerconnection_java",
       "../sdk/android:libjingle_peerconnection_metrics_default_java",
+      "//third_party/android_deps:android_support_annotations_java",
     ]
   }
 }
@@ -911,7 +939,6 @@ if (!build_with_chromium) {
       "../rtc_base:checks",
       "../rtc_base:rtc_base",
       "../rtc_base:rtc_base_approved",
-      "../rtc_base:stringutils",
     ]
   }
 }

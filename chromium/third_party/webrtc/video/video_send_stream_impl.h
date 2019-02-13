@@ -10,15 +10,34 @@
 #ifndef VIDEO_VIDEO_SEND_STREAM_IMPL_H_
 #define VIDEO_VIDEO_SEND_STREAM_IMPL_H_
 
+#include <stddef.h>
+#include <stdint.h>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <vector>
 
+#include "absl/types/optional.h"
+#include "api/fec_controller.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_bitrate_allocator.h"
 #include "api/video/video_stream_encoder_interface.h"
+#include "api/video_codecs/video_encoder.h"
+#include "api/video_codecs/video_encoder_config.h"
 #include "call/bitrate_allocator.h"
+#include "call/rtp_config.h"
+#include "call/rtp_transport_controller_send_interface.h"
 #include "call/rtp_video_sender_interface.h"
+#include "logging/rtc_event_log/rtc_event_log.h"
+#include "modules/include/module_common_types.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/utility/include/process_thread.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "rtc_base/critical_section.h"
+#include "rtc_base/task_queue.h"
+#include "rtc_base/task_utils/repeating_task.h"
+#include "rtc_base/thread_annotations.h"
 #include "rtc_base/weak_ptr.h"
 #include "video/call_stats.h"
 #include "video/encoder_rtcp_feedback.h"
@@ -65,7 +84,8 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
       std::map<uint32_t, RtpState> suspended_ssrcs,
       std::map<uint32_t, RtpPayloadState> suspended_payload_states,
       VideoEncoderConfig::ContentType content_type,
-      std::unique_ptr<FecController> fec_controller);
+      std::unique_ptr<FecController> fec_controller,
+      MediaTransportInterface* media_transport);
   ~VideoSendStreamImpl() override;
 
   // RegisterProcessThread register |module_process_thread| with those objects
@@ -89,8 +109,6 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   absl::optional<float> configured_pacing_factor_;
 
  private:
-  class CheckEncoderActivityTask;
-
   // Implements BitrateAllocatorObserver.
   uint32_t OnBitrateUpdated(BitrateAllocationUpdate update) override;
 
@@ -113,7 +131,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   void StartupVideoSendStream();
   // Removes the bitrate observer, stops monitoring and notifies the video
   // encoder of the bitrate update.
-  void StopVideoSendStream();
+  void StopVideoSendStream() RTC_RUN_ON(worker_queue_);
 
   void ConfigureProtection();
   void ConfigureSsrcs();
@@ -128,9 +146,11 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
 
   rtc::TaskQueue* const worker_queue_;
 
-  rtc::CriticalSection encoder_activity_crit_sect_;
-  CheckEncoderActivityTask* check_encoder_activity_task_
-      RTC_GUARDED_BY(encoder_activity_crit_sect_);
+  RepeatingTaskHandle check_encoder_activity_task_
+      RTC_GUARDED_BY(worker_queue_);
+
+  std::atomic_bool activity_;
+  bool timed_out_ RTC_GUARDED_BY(worker_queue_);
 
   CallStats* const call_stats_;
   RtpTransportControllerSendInterface* const transport_;
@@ -168,6 +188,10 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   };
   absl::optional<VbaSendContext> video_bitrate_allocation_context_
       RTC_GUARDED_BY(worker_queue_);
+  MediaTransportInterface* const media_transport_;
+  rtc::CriticalSection media_transport_id_lock_;
+  int64_t media_transport_frame_id_ RTC_GUARDED_BY(media_transport_id_lock_) =
+      0;
 };
 }  // namespace internal
 }  // namespace webrtc

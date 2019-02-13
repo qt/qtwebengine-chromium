@@ -58,7 +58,7 @@ SkPaint::SkPaint() {
     fBitfields.fCapType      = kDefault_Cap;
     fBitfields.fJoinType     = kDefault_Join;
     fBitfields.fStyle        = kFill_Style;
-    fBitfields.fTextEncoding = kUTF8_TextEncoding;
+    fBitfields.fTextEncoding = static_cast<unsigned>(kUTF8_SkTextEncoding);
     fBitfields.fHinting      = static_cast<unsigned>(SkPaintDefaults_Hinting);
 }
 
@@ -200,41 +200,45 @@ void SkPaint::setHinting(SkFontHinting hintingLevel) {
     fBitfields.fHinting = static_cast<unsigned>(hintingLevel);
 }
 
+#ifdef SK_SUPPORT_LEGACY_PAINT_FLAGS
 void SkPaint::setFlags(uint32_t flags) {
     fBitfields.fFlags = flags;
 }
+#endif
 
 void SkPaint::setAntiAlias(bool doAA) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doAA, kAntiAlias_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doAA, kAntiAlias_Flag));
 }
 
 void SkPaint::setDither(bool doDither) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doDither, kDither_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doDither, kDither_Flag));
 }
 
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
 void SkPaint::setSubpixelText(bool doSubpixel) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doSubpixel, kSubpixelText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doSubpixel, kSubpixelText_Flag));
 }
 
 void SkPaint::setLCDRenderText(bool doLCDRender) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doLCDRender, kLCDRenderText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doLCDRender, kLCDRenderText_Flag));
 }
 
 void SkPaint::setEmbeddedBitmapText(bool doEmbeddedBitmapText) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doEmbeddedBitmapText, kEmbeddedBitmapText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doEmbeddedBitmapText, kEmbeddedBitmapText_Flag));
 }
 
 void SkPaint::setAutohinted(bool useAutohinter) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, useAutohinter, kAutoHinting_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, useAutohinter, kAutoHinting_Flag));
 }
 
 void SkPaint::setLinearText(bool doLinearText) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doLinearText, kLinearText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doLinearText, kLinearText_Flag));
 }
 
 void SkPaint::setFakeBoldText(bool doFakeBold) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doFakeBold, kFakeBoldText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doFakeBold, kFakeBoldText_Flag));
 }
+#endif
 
 void SkPaint::setStyle(Style style) {
     if ((unsigned)style < kStyleCount) {
@@ -326,15 +330,17 @@ void SkPaint::setTextSkewX(SkScalar skewX) {
     fTextSkewX = skewX;
 }
 
-void SkPaint::setTextEncoding(TextEncoding encoding) {
-    if ((unsigned)encoding <= kGlyphID_TextEncoding) {
-        fBitfields.fTextEncoding = encoding;
+#ifdef SK_SUPPORT_LEGACY_PAINTTEXTENCODING
+void SkPaint::setTextEncoding(SkTextEncoding encoding) {
+    if ((unsigned)encoding <= (unsigned)kGlyphID_SkTextEncoding) {
+        fBitfields.fTextEncoding = (unsigned)encoding;
     } else {
 #ifdef SK_REPORT_API_RANGE_CHECK
         SkDebugf("SkPaint::setTextEncoding(%d) out of range\n", encoding);
 #endif
     }
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -355,14 +361,6 @@ void SkPaint::setLooper(sk_sp<SkDrawLooper> looper) { fDrawLooper = std::move(lo
 
 static uintptr_t asint(const void* p) {
     return reinterpret_cast<uintptr_t>(p);
-}
-
-static uint32_t pack_4(unsigned a, unsigned b, unsigned c, unsigned d) {
-    SkASSERT(a == (uint8_t)a);
-    SkASSERT(b == (uint8_t)b);
-    SkASSERT(c == (uint8_t)c);
-    SkASSERT(d == (uint8_t)d);
-    return (a << 24) | (b << 16) | (c << 8) | d;
 }
 
 #ifdef SK_DEBUG
@@ -394,37 +392,108 @@ static inline int BPF_Mask(int bits) {
     return (1 << bits) - 1;
 }
 
-static uint32_t pack_paint_flags(unsigned flags, unsigned hint, unsigned filter,
-                                 unsigned flatFlags) {
-    ASSERT_FITS_IN(flags, kFlags_BPF);
-    ASSERT_FITS_IN(hint, kHint_BPF);
-    ASSERT_FITS_IN(filter, kFilter_BPF);
-    ASSERT_FITS_IN(flatFlags, kFlatFlags_BPF);
+// SkPaint originally defined flags, some of which now apply to SkFont. These are renames
+// of those flags, split into categories depending on which objects they (now) apply to.
 
-    unsigned was_align = 0; // used to be textalign [0..2]
+enum PaintFlagsForPaint {
+    kAA_PaintFlagForPaint     = 0x01,
+    kDither_PaintFlagForPaint = 0x04,
+};
 
-    // left-align the fields of "known" size, and right-align the last (flatFlags) so it can easly
-    // add more bits in the future.
-    return (flags << 16) | (hint << 14) | (was_align << 12) | (filter << 10) | flatFlags;
-}
+enum PaintFlagsForFont {
+    kFakeBold_PaintFlagForFont       = 0x20,
+    kLinear_PaintFlagForFont         = 0x40,
+    kSubpixel_PaintFlagForFont       = 0x80,
+    kLCD_PaintFlagForFont            = 0x200,
+    kEmbeddedBitmap_PaintFlagForFont = 0x400,
+    kAutoHinting_PaintFlagForFont    = 0x800,
+};
 
-static FlatFlags unpack_paint_flags(SkPaint* paint, uint32_t packed) {
-    paint->setFlags(packed >> 16);
+static FlatFlags unpack_paint_flags(SkPaint* paint, uint32_t packed, SkFont* font) {
+    uint32_t f = packed >> 16;
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
+    paint->setFlags(f);
+#else
+    paint->setAntiAlias((f & kAA_PaintFlagForPaint) != 0);
+    paint->setDither((f & kDither_PaintFlagForPaint) != 0);
+#endif
+    if (font) {
+        font->setEmbolden((f & kFakeBold_PaintFlagForFont) != 0);
+        font->setLinearMetrics((f & kLinear_PaintFlagForFont) != 0);
+        font->setSubpixel((f & kSubpixel_PaintFlagForFont) != 0);
+        font->setEmbeddedBitmaps((f & kEmbeddedBitmap_PaintFlagForFont) != 0);
+        font->setForceAutoHinting((f & kAutoHinting_PaintFlagForFont) != 0);
+
+        font->setHinting((SkFontHinting)((packed >> 14) & BPF_Mask(kHint_BPF)));
+
+        if (f & kAA_PaintFlagForPaint) {
+            if (f & kLCD_PaintFlagForFont) {
+                font->setEdging(SkFont::Edging::kSubpixelAntiAlias);
+            } else {
+                font->setEdging(SkFont::Edging::kAntiAlias);
+            }
+        } else {
+            font->setEdging(SkFont::Edging::kAlias);
+        }
+    }
+
     paint->setHinting((SkFontHinting)((packed >> 14) & BPF_Mask(kHint_BPF)));
     paint->setFilterQuality((SkFilterQuality)((packed >> 10) & BPF_Mask(kFilter_BPF)));
     return (FlatFlags)(packed & kFlatFlagMask);
+}
+
+template <typename T> uint32_t shift_bits(T value, unsigned shift, unsigned bits) {
+    SkASSERT(shift + bits <= 32);
+    uint32_t v = static_cast<uint32_t>(value);
+    ASSERT_FITS_IN(v, bits);
+    return v << shift;
+}
+
+/*  Packing the paint
+ flags :  8  // 2...
+ blend :  8  // 30+
+ cap   :  2  // 3
+ join  :  2  // 3
+ style :  2  // 3
+ filter:  2  // 4
+ flat  :  8  // 1...
+ total : 32
+ */
+static uint32_t pack_v68(const SkPaint& paint, unsigned flatFlags) {
+    uint32_t packed = 0;
+    packed |= shift_bits(((unsigned)paint.isDither() << 1) |
+                          (unsigned)paint.isAntiAlias(), 0, 8);
+    packed |= shift_bits(paint.getBlendMode(),      8, 8);
+    packed |= shift_bits(paint.getStrokeCap(),     16, 2);
+    packed |= shift_bits(paint.getStrokeJoin(),    18, 2);
+    packed |= shift_bits(paint.getStyle(),         20, 2);
+    packed |= shift_bits(paint.getFilterQuality(), 22, 2);
+    packed |= shift_bits(flatFlags,                24, 8);
+    return packed;
+}
+
+static uint32_t unpack_v68(SkPaint* paint, uint32_t packed, SkSafeRange& safe) {
+    paint->setAntiAlias((packed & 1) != 0);
+    paint->setDither((packed & 2) != 0);
+    packed >>= 8;
+    paint->setBlendMode(safe.checkLE(packed & 0xFF, SkBlendMode::kLastMode));
+    packed >>= 8;
+    paint->setStrokeCap(safe.checkLE(packed & 0x3, SkPaint::kLast_Cap));
+    packed >>= 2;
+    paint->setStrokeJoin(safe.checkLE(packed & 0x3, SkPaint::kLast_Join));
+    packed >>= 2;
+    paint->setStyle(safe.checkLE(packed & 0x3, SkPaint::kStrokeAndFill_Style));
+    packed >>= 2;
+    paint->setFilterQuality(safe.checkLE(packed & 0x3, kLast_SkFilterQuality));
+    packed >>= 2;
+    return packed;
 }
 
 /*  To save space/time, we analyze the paint, and write a truncated version of
     it if there are not tricky elements like shaders, etc.
  */
 void SkPaintPriv::Flatten(const SkPaint& paint, SkWriteBuffer& buffer) {
-    // We force recording our typeface, even if its "default" since the receiver process
-    // may have a different notion of default.
-    SkTypeface* tf = SkPaintPriv::GetTypefaceOrDefault(paint);
-    SkASSERT(tf);
-
-    uint8_t flatFlags = kHasTypeface_FlatFlag;
+    uint8_t flatFlags = 0;
 
     if (asint(paint.getPathEffect()) |
         asint(paint.getShader()) |
@@ -435,38 +504,41 @@ void SkPaintPriv::Flatten(const SkPaint& paint, SkWriteBuffer& buffer) {
         flatFlags |= kHasEffects_FlatFlag;
     }
 
-    buffer.writeScalar(paint.getTextSize());
-    buffer.writeScalar(paint.getTextScaleX());
-    buffer.writeScalar(paint.getTextSkewX());
     buffer.writeScalar(paint.getStrokeWidth());
     buffer.writeScalar(paint.getStrokeMiter());
     buffer.writeColor4f(paint.getColor4f());
 
-    buffer.writeUInt(pack_paint_flags(paint.getFlags(), static_cast<unsigned>(paint.getHinting()),
-                                      paint.getFilterQuality(), flatFlags));
-    buffer.writeUInt(pack_4(paint.getStrokeCap(), paint.getStrokeJoin(),
-                            (paint.getStyle() << 4) | paint.getTextEncoding(),
-                            paint.fBlendMode));
-
-    buffer.writeTypeface(tf);
+    buffer.write32(pack_v68(paint, flatFlags));
 
     if (flatFlags & kHasEffects_FlatFlag) {
         buffer.writeFlattenable(paint.getPathEffect());
         buffer.writeFlattenable(paint.getShader());
         buffer.writeFlattenable(paint.getMaskFilter());
         buffer.writeFlattenable(paint.getColorFilter());
-        buffer.write32(0);  // use to be SkRasterizer
         buffer.writeFlattenable(paint.getLooper());
         buffer.writeFlattenable(paint.getImageFilter());
     }
 }
 
-bool SkPaintPriv::Unflatten(SkPaint* paint, SkReadBuffer& buffer) {
+SkReadPaintResult SkPaintPriv::Unflatten_PreV68(SkPaint* paint, SkReadBuffer& buffer, SkFont* font) {
     SkSafeRange safe;
 
-    paint->setTextSize(buffer.readScalar());
-    paint->setTextScaleX(buffer.readScalar());
-    paint->setTextSkewX(buffer.readScalar());
+    {
+        SkScalar sz = buffer.readScalar();
+        SkScalar sx = buffer.readScalar();
+        SkScalar kx = buffer.readScalar();
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
+        paint->setTextSize(sz);
+        paint->setTextScaleX(sx);
+        paint->setTextSkewX(kx);
+#endif
+        if (font) {
+            font->setSize(sz);
+            font->setScaleX(sx);
+            font->setSkewX(kx);
+        }
+    }
+
     paint->setStrokeWidth(buffer.readScalar());
     paint->setStrokeMiter(buffer.readScalar());
     if (buffer.isVersionLT(SkReadBuffer::kFloat4PaintColor_Version)) {
@@ -477,19 +549,24 @@ bool SkPaintPriv::Unflatten(SkPaint* paint, SkReadBuffer& buffer) {
         paint->setColor4f(color, sk_srgb_singleton());
     }
 
-    unsigned flatFlags = unpack_paint_flags(paint, buffer.readUInt());
+    unsigned flatFlags = unpack_paint_flags(paint, buffer.readUInt(), font);
 
     uint32_t tmp = buffer.readUInt();
     paint->setStrokeCap(safe.checkLE((tmp >> 24) & 0xFF, SkPaint::kLast_Cap));
     paint->setStrokeJoin(safe.checkLE((tmp >> 16) & 0xFF, SkPaint::kLast_Join));
     paint->setStyle(safe.checkLE((tmp >> 12) & 0xF, SkPaint::kStrokeAndFill_Style));
-    paint->setTextEncoding(safe.checkLE((tmp >> 8) & 0xF, SkPaint::kGlyphID_TextEncoding));
+    paint->private_internal_setTextEncoding(safe.checkLE((tmp >> 8) & 0xF, kGlyphID_SkTextEncoding));
     paint->setBlendMode(safe.checkLE(tmp & 0xFF, SkBlendMode::kLastMode));
 
+    sk_sp<SkTypeface> tf;
     if (flatFlags & kHasTypeface_FlatFlag) {
-        paint->setTypeface(buffer.readTypeface());
-    } else {
-        paint->setTypeface(nullptr);
+        tf = buffer.readTypeface();
+    }
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
+    paint->setTypeface(tf);
+#endif
+    if (font) {
+        font->setTypeface(tf);
     }
 
     if (flatFlags & kHasEffects_FlatFlag) {
@@ -511,9 +588,49 @@ bool SkPaintPriv::Unflatten(SkPaint* paint, SkReadBuffer& buffer) {
 
     if (!buffer.validate(safe)) {
         paint->reset();
-        return false;
+        return kFailed_ReadPaint;
     }
-    return true;
+    return kSuccess_PaintAndFont;
+}
+
+SkReadPaintResult SkPaintPriv::Unflatten(SkPaint* paint, SkReadBuffer& buffer, SkFont* font) {
+    if (buffer.isVersionLT(SkReadBuffer::kPaintDoesntSerializeFonts_Version)) {
+        return Unflatten_PreV68(paint, buffer, font);
+    }
+
+    SkSafeRange safe;
+
+    paint->setStrokeWidth(buffer.readScalar());
+    paint->setStrokeMiter(buffer.readScalar());
+    {
+        SkColor4f color;
+        buffer.readColor4f(&color);
+        paint->setColor4f(color, sk_srgb_singleton());
+    }
+
+    unsigned flatFlags = unpack_v68(paint, buffer.readUInt(), safe);
+
+    if (flatFlags & kHasEffects_FlatFlag) {
+        paint->setPathEffect(buffer.readPathEffect());
+        paint->setShader(buffer.readShader());
+        paint->setMaskFilter(buffer.readMaskFilter());
+        paint->setColorFilter(buffer.readColorFilter());
+        paint->setLooper(buffer.readDrawLooper());
+        paint->setImageFilter(buffer.readImageFilter());
+    } else {
+        paint->setPathEffect(nullptr);
+        paint->setShader(nullptr);
+        paint->setMaskFilter(nullptr);
+        paint->setColorFilter(nullptr);
+        paint->setLooper(nullptr);
+        paint->setImageFilter(nullptr);
+    }
+
+    if (!buffer.validate(safe)) {
+        paint->reset();
+        return kFailed_ReadPaint;
+    }
+    return kSuccess_JustPaint;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

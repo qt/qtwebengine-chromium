@@ -18,20 +18,22 @@ import {QueryResponse} from '../common/queries';
 import {TimeSpan} from '../common/time';
 
 import {copyToClipboard} from './clipboard';
+import {DragGestureHandler} from './drag_gesture_handler';
 import {globals} from './globals';
 import {HeaderPanel} from './header_panel';
+import {NotesEditorPanel, NotesPanel} from './notes_panel';
 import {OverviewTimelinePanel} from './overview_timeline_panel';
 import {createPage} from './pages';
 import {PanAndZoomHandler} from './pan_and_zoom_handler';
 import {Panel} from './panel';
 import {AnyAttrsVnode, PanelContainer} from './panel_container';
 import {TimeAxisPanel} from './time_axis_panel';
+import {computeZoom} from './time_scale';
+import {TRACK_SHELL_WIDTH} from './track_constants';
 import {TrackGroupPanel} from './track_group_panel';
-import {TRACK_SHELL_WIDTH} from './track_panel';
 import {TrackPanel} from './track_panel';
 
-
-const MAX_ZOOM_SPAN_SEC = 1e-4;  // 0.1 ms.
+const DRAG_HANDLE_HEIGHT_PX = 12;
 
 class QueryTable extends Panel {
   view() {
@@ -56,11 +58,10 @@ class QueryTable extends Panel {
     return m(
         'div',
         m('header.overview',
-          m('span',
-            `Query result - ${Math.round(resp.durationMs)} ms`,
-            m('span.code', resp.query)),
+          `Query result - ${Math.round(resp.durationMs)} ms`,
+          m('span.code', resp.query),
           resp.error ? null :
-                       m('button.query-copy',
+                       m('button.query-ctrl',
                          {
                            onclick: () => {
                              const lines: string[][] = [];
@@ -76,13 +77,66 @@ class QueryTable extends Panel {
                                  lines.map(line => line.join('\t')).join('\n'));
                            },
                          },
-                         'Copy as .tsv')),
+                         'Copy as .tsv'),
+          m('button.query-ctrl',
+            {
+              onclick: () => {
+                globals.queryResults.delete('command');
+                globals.rafScheduler.scheduleFullRedraw();
+              }
+            },
+            'Close'), ),
         resp.error ?
             m('.query-error', `SQL error: ${resp.error}`) :
             m('table.query-table', m('thead', header), m('tbody', rows)));
   }
 
   renderCanvas() {}
+}
+
+interface DragHandleAttrs {
+  height: number;
+  resize: (height: number) => void;
+}
+
+class DragHandle implements m.ClassComponent<DragHandleAttrs> {
+  private dragStartHeight = 0;
+  private height = 0;
+  private resize: undefined|((height: number) => void);
+
+  oncreate({dom, attrs}: m.CVnodeDOM<DragHandleAttrs>) {
+    this.resize = attrs.resize;
+    this.height = attrs.height;
+    const elem = dom as HTMLElement;
+    new DragGestureHandler(
+        elem,
+        this.onDrag.bind(this),
+        this.onDragStart.bind(this),
+        this.onDragEnd.bind(this));
+  }
+
+  onupdate({attrs}: m.CVnodeDOM<DragHandleAttrs>) {
+    this.resize = attrs.resize;
+    this.height = attrs.height;
+  }
+
+  onDrag(_x: number, y: number) {
+    if (this.resize) {
+      const newHeight = this.dragStartHeight + (DRAG_HANDLE_HEIGHT_PX / 2) - y;
+      this.resize(Math.floor(newHeight));
+    }
+    globals.rafScheduler.scheduleFullRedraw();
+  }
+
+  onDragStart(_x: number, _y: number) {
+    this.dragStartHeight = this.height;
+  }
+
+  onDragEnd() {}
+
+  view() {
+    return m('.handle');
+  }
 }
 
 /**
@@ -92,6 +146,7 @@ class QueryTable extends Panel {
 class TraceViewer implements m.ClassComponent {
   private onResize: () => void = () => {};
   private zoomContent?: PanAndZoomHandler;
+  private detailsHeight = DRAG_HANDLE_HEIGHT_PX;
 
   oncreate(vnode: m.CVnodeDOM) {
     const frontendLocalState = globals.frontendLocalState;
@@ -135,16 +190,15 @@ class TraceViewer implements m.ClassComponent {
         frontendLocalState.updateVisibleTime(new TimeSpan(tStart, tEnd));
         globals.rafScheduler.scheduleRedraw();
       },
-      onZoomed: (_: number, zoomRatio: number) => {
-        const vizTime = frontendLocalState.visibleWindowTime;
-        const curSpanSec = vizTime.duration;
-        const newSpanSec =
-            Math.max(curSpanSec - curSpanSec * zoomRatio, MAX_ZOOM_SPAN_SEC);
-        const deltaSec = (curSpanSec - newSpanSec) / 2;
-        const newStartSec = vizTime.start + deltaSec;
-        const newEndSec = vizTime.end - deltaSec;
-        frontendLocalState.updateVisibleTime(
-            new TimeSpan(newStartSec, newEndSec));
+      onZoomed: (zoomedPositionPx: number, zoomRatio: number) => {
+        // TODO(hjd): Avoid hardcoding TRACK_SHELL_WIDTH.
+        // TODO(hjd): Improve support for zooming in overview timeline.
+        const span = frontendLocalState.visibleWindowTime;
+        const scale = frontendLocalState.timeScale;
+        const zoomPx = zoomedPositionPx - TRACK_SHELL_WIDTH;
+        const newSpan = computeZoom(scale, span, 1 - zoomRatio, zoomPx);
+        frontendLocalState.updateVisibleTime(newSpan);
+        globals.rafScheduler.scheduleRedraw();
       }
     });
   }
@@ -179,6 +233,14 @@ class TraceViewer implements m.ClassComponent {
     }
     scrollingPanels.unshift(m(QueryTable));
 
+    const detailsPanels: AnyAttrsVnode[] = [];
+    if (globals.state.selectedNote) {
+      detailsPanels.push(m(NotesEditorPanel, {
+        key: 'notes',
+        id: globals.state.selectedNote,
+      }));
+    }
+
     return m(
         '.page',
         m('.pan-and-zoom-content',
@@ -187,6 +249,7 @@ class TraceViewer implements m.ClassComponent {
               panels: [
                 m(OverviewTimelinePanel, {key: 'overview'}),
                 m(TimeAxisPanel, {key: 'timeaxis'}),
+                m(NotesPanel, {key: 'notes'}),
                 ...globals.state.pinnedTracks.map(
                     id => m(TrackPanel, {key: id, id})),
               ],
@@ -194,7 +257,16 @@ class TraceViewer implements m.ClassComponent {
           m('.scrolling-panel-container', m(PanelContainer, {
               doesScroll: true,
               panels: scrollingPanels,
-            }))));
+            }))),
+        m('.details-content',
+          {style: {height: `${this.detailsHeight}px`}},
+          m(DragHandle, {
+            resize: (height: number) => {
+              this.detailsHeight = Math.max(height, DRAG_HANDLE_HEIGHT_PX);
+            },
+            height: this.detailsHeight,
+          }),
+          m(PanelContainer, {doesScroll: true, panels: detailsPanels}), ));
   }
 }
 

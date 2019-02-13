@@ -18,16 +18,16 @@
 
 #include "absl/memory/memory.h"
 #include "absl/strings/match.h"
-#include "p2p/base/portallocator.h"
+#include "p2p/base/port_allocator.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/crc32.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/mdns_responder_interface.h"
-#include "rtc_base/messagedigest.h"
+#include "rtc_base/message_digest.h"
 #include "rtc_base/network.h"
 #include "rtc_base/numerics/safe_minmax.h"
-#include "rtc_base/stringencode.h"
+#include "rtc_base/string_encode.h"
 #include "rtc_base/third_party/base64/base64.h"
 
 namespace {
@@ -430,42 +430,50 @@ void Port::AddAddress(const rtc::SocketAddress& address,
   c.set_network_name(network_->name());
   c.set_network_type(network_->type());
   c.set_url(url);
+  c.set_related_address(related_address);
+
+  bool pending = MaybeObfuscateAddress(&c, type, is_final);
+
+  if (!pending) {
+    FinishAddingAddress(c, is_final);
+  }
+}
+
+bool Port::MaybeObfuscateAddress(Candidate* c,
+                                 const std::string& type,
+                                 bool is_final) {
   // TODO(bugs.webrtc.org/9723): Use a config to control the feature of IP
   // handling with mDNS.
-  if (network_->GetMdnsResponder() != nullptr) {
-    // Obfuscate the IP address of a host candidates by an mDNS hostname.
-    if (type == LOCAL_PORT_TYPE) {
-      auto weak_ptr = weak_factory_.GetWeakPtr();
-      auto callback = [weak_ptr, c, is_final](const rtc::IPAddress& addr,
-                                              const std::string& name) mutable {
-        RTC_DCHECK(c.address().ipaddr() == addr);
-        rtc::SocketAddress hostname_address(name, c.address().port());
-        // In Port and Connection, we need the IP address information to
-        // correctly handle the update of candidate type to prflx. The removal
-        // of IP address when signaling this candidate will take place in
-        // BasicPortAllocatorSession::OnCandidateReady, via SanitizeCandidate.
-        hostname_address.SetResolvedIP(addr);
-        c.set_address(hostname_address);
-        RTC_DCHECK(c.related_address() == rtc::SocketAddress());
-        if (weak_ptr != nullptr) {
-          weak_ptr->set_mdns_name_registration_status(
-              MdnsNameRegistrationStatus::kCompleted);
-          weak_ptr->FinishAddingAddress(c, is_final);
-        }
-      };
-      set_mdns_name_registration_status(
-          MdnsNameRegistrationStatus::kInProgress);
-      network_->GetMdnsResponder()->CreateNameForAddress(c.address().ipaddr(),
-                                                         callback);
-      return;
-    }
-    // For other types of candidates, the related address should be set to
-    // 0.0.0.0 or ::0.
-    c.set_related_address(rtc::SocketAddress());
-  } else {
-    c.set_related_address(related_address);
+  if (network_->GetMdnsResponder() == nullptr) {
+    return false;
   }
-  FinishAddingAddress(c, is_final);
+  if (type != LOCAL_PORT_TYPE) {
+    return false;
+  }
+
+  auto copy = *c;
+  auto weak_ptr = weak_factory_.GetWeakPtr();
+  auto callback = [weak_ptr, copy, is_final](const rtc::IPAddress& addr,
+                                             const std::string& name) mutable {
+    RTC_DCHECK(copy.address().ipaddr() == addr);
+    rtc::SocketAddress hostname_address(name, copy.address().port());
+    // In Port and Connection, we need the IP address information to
+    // correctly handle the update of candidate type to prflx. The removal
+    // of IP address when signaling this candidate will take place in
+    // BasicPortAllocatorSession::OnCandidateReady, via SanitizeCandidate.
+    hostname_address.SetResolvedIP(addr);
+    copy.set_address(hostname_address);
+    copy.set_related_address(rtc::SocketAddress());
+    if (weak_ptr != nullptr) {
+      weak_ptr->set_mdns_name_registration_status(
+          MdnsNameRegistrationStatus::kCompleted);
+      weak_ptr->FinishAddingAddress(copy, is_final);
+    }
+  };
+  set_mdns_name_registration_status(MdnsNameRegistrationStatus::kInProgress);
+  network_->GetMdnsResponder()->CreateNameForAddress(copy.address().ipaddr(),
+                                                     callback);
+  return true;
 }
 
 void Port::FinishAddingAddress(const Candidate& c, bool is_final) {
@@ -852,7 +860,8 @@ void Port::SendBindingResponse(StunMessage* request,
 
     conn->stats_.sent_ping_responses++;
     conn->LogCandidatePairEvent(
-        webrtc::IceCandidatePairEventType::kCheckResponseSent);
+        webrtc::IceCandidatePairEventType::kCheckResponseSent,
+        request->reduced_transaction_id());
   }
 }
 
@@ -1222,6 +1231,10 @@ int Connection::unwritable_min_checks() const {
   return unwritable_min_checks_.value_or(CONNECTION_WRITE_CONNECT_FAILURES);
 }
 
+int Connection::inactive_timeout() const {
+  return inactive_timeout_.value_or(CONNECTION_WRITE_TIMEOUT);
+}
+
 int Connection::receiving_timeout() const {
   return receiving_timeout_.value_or(WEAK_CONNECTION_RECEIVE_TIMEOUT);
 }
@@ -1332,7 +1345,8 @@ void Connection::HandleBindingRequest(IceMessage* msg) {
   }
 
   stats_.recv_ping_requests++;
-  LogCandidatePairEvent(webrtc::IceCandidatePairEventType::kCheckReceived);
+  LogCandidatePairEvent(webrtc::IceCandidatePairEventType::kCheckReceived,
+                        msg->reduced_transaction_id());
 
   // This is a validated stun request from remote peer.
   port_->SendBindingResponse(msg, remote_addr);
@@ -1473,8 +1487,8 @@ void Connection::UpdateState(int64_t now) {
   }
   if ((write_state_ == STATE_WRITE_UNRELIABLE ||
        write_state_ == STATE_WRITE_INIT) &&
-      TooLongWithoutResponse(pings_since_last_response_,
-                             CONNECTION_WRITE_TIMEOUT, now)) {
+      TooLongWithoutResponse(pings_since_last_response_, inactive_timeout(),
+                             now)) {
     RTC_LOG(LS_INFO) << ToString() << ": Timed out after "
                      << now - pings_since_last_response_[0].sent_time
                      << " ms without a response, rtt=" << rtt;
@@ -1669,11 +1683,12 @@ void Connection::LogCandidatePairConfig(
   ice_event_log_->LogCandidatePairConfig(type, id(), ToLogDescription());
 }
 
-void Connection::LogCandidatePairEvent(webrtc::IceCandidatePairEventType type) {
+void Connection::LogCandidatePairEvent(webrtc::IceCandidatePairEventType type,
+                                       uint32_t transaction_id) {
   if (ice_event_log_ == nullptr) {
     return;
   }
-  ice_event_log_->LogCandidatePairEvent(type, id());
+  ice_event_log_->LogCandidatePairEvent(type, id(), transaction_id);
 }
 
 void Connection::OnConnectionRequestResponse(ConnectionRequest* request,
@@ -1700,7 +1715,8 @@ void Connection::OnConnectionRequestResponse(ConnectionRequest* request,
 
   stats_.recv_ping_responses++;
   LogCandidatePairEvent(
-      webrtc::IceCandidatePairEventType::kCheckResponseReceived);
+      webrtc::IceCandidatePairEventType::kCheckResponseReceived,
+      response->reduced_transaction_id());
 
   MaybeUpdateLocalCandidate(request, response);
 }
@@ -1746,7 +1762,8 @@ void Connection::OnConnectionRequestSent(ConnectionRequest* request) {
                  << ", use_candidate=" << use_candidate_attr()
                  << ", nomination=" << nomination();
   stats_.sent_ping_requests_total++;
-  LogCandidatePairEvent(webrtc::IceCandidatePairEventType::kCheckSent);
+  LogCandidatePairEvent(webrtc::IceCandidatePairEventType::kCheckSent,
+                        request->reduced_transaction_id());
   if (stats_.recv_ping_responses == 0) {
     stats_.sent_ping_requests_before_first_response++;
   }

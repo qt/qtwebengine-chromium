@@ -141,7 +141,7 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 
   specialize qw/vp9_block_error_fp avx2 sse2/;
 
-  specialize qw/vp9_fdct8x8_quant neon ssse3/;
+  specialize qw/vp9_fdct8x8_quant sse2 ssse3 neon/;
 
   add_proto qw/int64_t vp9_highbd_block_error/, "const tran_low_t *coeff, const tran_low_t *dqcoeff, intptr_t block_size, int64_t *ssz, int bd";
   specialize qw/vp9_highbd_block_error sse2/;
@@ -205,7 +205,7 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
 
   add_proto qw/void vp9_highbd_fwht4x4/, "const int16_t *input, tran_low_t *output, int stride";
 
-  add_proto qw/void vp9_highbd_temporal_filter_apply/, "const uint8_t *frame1, unsigned int stride, const uint8_t *frame2, unsigned int block_width, unsigned int block_height, int strength, int filter_weight, uint32_t *accumulator, uint16_t *count";
+  add_proto qw/void vp9_highbd_temporal_filter_apply/, "const uint8_t *frame1, unsigned int stride, const uint8_t *frame2, unsigned int block_width, unsigned int block_height, int strength, int *blk_fw, int use_32x32, uint32_t *accumulator, uint16_t *count";
 
 }
 # End vp9_high encoder functions

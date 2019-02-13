@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {Actions} from '../common/actions';
+import {FrontendLocalState as FrontendState} from '../common/state';
 import {TimeSpan} from '../common/time';
 
 import {globals} from './globals';
@@ -25,10 +26,11 @@ import {TimeScale} from './time_scale';
 export class FrontendLocalState {
   visibleWindowTime = new TimeSpan(0, 10);
   timeScale = new TimeScale(this.visibleWindowTime, [0, 0]);
-  private _visibleTimeLastUpdate = 0;
+  private _lastUpdate = 0;
   private pendingGlobalTimeUpdate?: TimeSpan;
   perfDebug = false;
-  highlightedUtid = -1;
+  hoveredUtid = -1;
+  hoveredPid = -1;
 
   // TODO: there is some redundancy in the fact that both |visibleWindowTime|
   // and a |timeScale| have a notion of time range. That should live in one
@@ -38,25 +40,31 @@ export class FrontendLocalState {
     const endSec = Math.min(ts.end, globals.state.traceTime.endSec);
     this.visibleWindowTime = new TimeSpan(startSec, endSec);
     this.timeScale.setTimeBounds(this.visibleWindowTime);
-    this._visibleTimeLastUpdate = Date.now() / 1000;
+    this._lastUpdate = Date.now() / 1000;
 
     // Post a delayed update to the controller.
     const alreadyPosted = this.pendingGlobalTimeUpdate !== undefined;
     this.pendingGlobalTimeUpdate = this.visibleWindowTime;
     if (alreadyPosted) return;
     setTimeout(() => {
-      this._visibleTimeLastUpdate = Date.now() / 1000;
+      this._lastUpdate = Date.now() / 1000;
       globals.dispatch(Actions.setVisibleTraceTime({
-        startSec: this.pendingGlobalTimeUpdate!.start,
-        endSec: this.pendingGlobalTimeUpdate!.end,
-        lastUpdate: this._visibleTimeLastUpdate,
+        time: {
+          startSec: this.pendingGlobalTimeUpdate!.start,
+          endSec: this.pendingGlobalTimeUpdate!.end,
+        },
+        lastUpdate: this._lastUpdate,
       }));
       this.pendingGlobalTimeUpdate = undefined;
     }, 100);
   }
 
-  get visibleTimeLastUpdate() {
-    return this._visibleTimeLastUpdate;
+  mergeState(frontendLocalState: FrontendState): void {
+    if (this._lastUpdate >= frontendLocalState.lastUpdate) {
+      return;
+    }
+    const visible = frontendLocalState.visibleTraceTime;
+    this.updateVisibleTime(new TimeSpan(visible.startSec, visible.endSec));
   }
 
   togglePerfDebug() {
@@ -64,8 +72,9 @@ export class FrontendLocalState {
     globals.rafScheduler.scheduleFullRedraw();
   }
 
-  setHighlightedUtid(utid: number) {
-    this.highlightedUtid = utid;
+  setHoveredUtidAndPid(utid: number, pid: number) {
+    this.hoveredUtid = utid;
+    this.hoveredPid = pid;
     globals.rafScheduler.scheduleRedraw();
   }
 }

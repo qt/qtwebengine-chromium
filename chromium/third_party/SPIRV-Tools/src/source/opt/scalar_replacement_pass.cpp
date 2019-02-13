@@ -363,7 +363,7 @@ uint32_t ScalarReplacementPass::GetOrCreatePointerType(uint32_t id) {
       context()->get_type_mgr()->GetTypeAndPointerType(id,
                                                        SpvStorageClassFunction);
   uint32_t ptrId = 0;
-  if (id == context()->get_type_mgr()->GetId(pointeeTy)) {
+  if (pointeeTy->IsUniqueType()) {
     // Non-ambiguous type, just ask the type manager for an id.
     ptrId = context()->get_type_mgr()->GetTypeInstruction(pointerTy.get());
     pointee_to_pointer_[id] = ptrId;
@@ -638,8 +638,8 @@ bool ScalarReplacementPass::CheckUses(const Instruction* inst,
           switch (user->opcode()) {
             case SpvOpAccessChain:
             case SpvOpInBoundsAccessChain:
-              if (index == 2u) {
-                uint32_t id = user->GetSingleWordOperand(3u);
+              if (index == 2u && user->NumInOperands() > 1) {
+                uint32_t id = user->GetSingleWordInOperand(1u);
                 const Instruction* opInst = get_def_use_mgr()->GetDef(id);
                 if (!IsCompileTimeConstantInst(opInst->opcode())) {
                   ok = false;
@@ -751,8 +751,10 @@ ScalarReplacementPass::GetUsedComponents(Instruction* inst) {
           return false;
         }
       }
+      case SpvOpName:
+      case SpvOpMemberName:
       case SpvOpStore:
-        // No components are used.  Things are just stored to.
+        // No components are used.
         return true;
       case SpvOpAccessChain:
       case SpvOpInBoundsAccessChain: {
@@ -780,16 +782,6 @@ ScalarReplacementPass::GetUsedComponents(Instruction* inst) {
           result.reset(nullptr);
           return false;
         }
-      }
-      case SpvOpCopyObject: {
-        // Follow the copy to see which components are used.
-        auto t = GetUsedComponents(use);
-        if (!t) {
-          result.reset(nullptr);
-          return false;
-        }
-        result->insert(t->begin(), t->end());
-        return true;
       }
       default:
         // We do not know what is happening.  Have to assume the worst.

@@ -16,13 +16,14 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/video/video_bitrate_allocation.h"
-#include "common_types.h"  // NOLINT(build/include)
 #include "modules/include/module.h"
 #include "modules/rtp_rtcp/include/flexfec_sender.h"
+#include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-#include "rtc_base/constructormagic.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/deprecation.h"
 
 namespace webrtc {
@@ -135,9 +136,11 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
   // FEC/ULP/RED overhead (when FEC is enabled).
   virtual size_t MaxRtpPacketSize() const = 0;
 
-  // Sets codec name and payload type. Returns -1 on failure else 0.
-  virtual int32_t RegisterSendPayload(const CodecInst& voice_codec) = 0;
-
+  virtual void RegisterAudioSendPayload(int payload_type,
+                                        absl::string_view payload_name,
+                                        int frequency,
+                                        int channels,
+                                        int rate) = 0;
   virtual void RegisterVideoSendPayload(int payload_type,
                                         const char* payload_name) = 0;
 
@@ -182,6 +185,12 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
 
   // Sets SSRC, default is a random number.
   virtual void SetSSRC(uint32_t ssrc) = 0;
+
+  // Sets the value for sending in the RID (and Repaired) RTP header extension.
+  // RIDs are used to identify an RTP stream if SSRCs are not negotiated.
+  // If the RID and Repaired RID extensions are not registered, the RID will
+  // not be sent.
+  virtual void SetRid(const std::string& rid) = 0;
 
   // Sets the value for sending in the MID RTP header extension.
   // The MID RTP header extension should be registered for this to do anything.
@@ -229,11 +238,16 @@ class RtpRtcp : public Module, public RtcpFeedbackSenderInterface {
   // bitrate estimate since the stream participates in the bitrate allocation.
   virtual void SetAsPartOfAllocation(bool part_of_allocation) = 0;
 
-  // Returns current bitrate in Kbit/s.
+  // Fetches the current send bitrates in bits/s.
   virtual void BitrateSent(uint32_t* total_rate,
                            uint32_t* video_rate,
                            uint32_t* fec_rate,
                            uint32_t* nack_rate) const = 0;
+
+  // Returns the current packetization overhead rate, in bps. Note that this is
+  // the payload overhead, eg the VP8 payload headers, not the RTP headers
+  // or extension/
+  virtual uint32_t PacketizationOverheadBps() const = 0;
 
   // Used by the codec module to deliver a video or audio frame for
   // packetization.

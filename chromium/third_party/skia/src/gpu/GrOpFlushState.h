@@ -12,7 +12,7 @@
 #include "GrAppliedClip.h"
 #include "GrBufferAllocPool.h"
 #include "GrDeferredUpload.h"
-#include "GrUninstantiateProxyTracker.h"
+#include "GrDeinstantiateProxyTracker.h"
 #include "SkArenaAlloc.h"
 #include "SkArenaAllocList.h"
 #include "ops/GrMeshDrawOp.h"
@@ -40,7 +40,7 @@ public:
     void doUpload(GrDeferredTextureUploadFn&);
 
     /** Called as ops are executed. Must be called in the same order as the ops were prepared. */
-    void executeDrawsAndUploadsForMeshDrawOp(uint32_t opID, const SkRect& opBounds);
+    void executeDrawsAndUploadsForMeshDrawOp(const GrOp* op, const SkRect& opBounds);
 
     GrGpuCommandBuffer* commandBuffer() { return fCommandBuffer; }
     // Helper function used by Ops that are only called via RenderTargetOpLists
@@ -99,15 +99,13 @@ public:
     const GrCaps& caps() const final;
     GrResourceProvider* resourceProvider() const final { return fResourceProvider; }
 
-    GrGlyphCache* glyphCache() const final;
+    GrStrikeCache* glyphCache() const final;
 
     // At this point we know we're flushing so full access to the GrAtlasManager is required (and
     // permissible).
     GrAtlasManager* atlasManager() const final;
 
-    GrUninstantiateProxyTracker* uninstantiateProxyTracker() {
-        return &fUninstantiateProxyTracker;
-    }
+    GrDeinstantiateProxyTracker* deinstantiateProxyTracker() { return &fDeinstantiateProxyTracker; }
 
 private:
     /** GrMeshDrawOp::Target override. */
@@ -131,8 +129,8 @@ private:
         const GrPipeline::FixedDynamicState* fFixedDynamicState;
         const GrPipeline::DynamicStateArrays* fDynamicStateArrays;
         const GrMesh* fMeshes = nullptr;
+        const GrOp* fOp = nullptr;
         int fMeshCnt = 0;
-        uint32_t fOpID = SK_InvalidUniqueID;
     };
 
     // Storage for ops' pipelines, draws, and inline uploads.
@@ -164,8 +162,8 @@ private:
     SkArenaAllocList<Draw>::Iter fCurrDraw;
     SkArenaAllocList<InlineUpload>::Iter fCurrUpload;
 
-    // Used to track the proxies that need to be uninstantiated after we finish a flush
-    GrUninstantiateProxyTracker fUninstantiateProxyTracker;
+    // Used to track the proxies that need to be deinstantiated after we finish a flush
+    GrDeinstantiateProxyTracker fDeinstantiateProxyTracker;
 };
 
 #endif

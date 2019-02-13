@@ -11,14 +11,12 @@
 #include "test/testsupport/test_artifacts.h"
 
 #include <string.h>
-
 #include <string>
 
 #include "rtc_base/file.h"
 #include "rtc_base/flags.h"
-#include "rtc_base/platform_file.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 WEBRTC_DECLARE_string(test_artifacts_dir);
 

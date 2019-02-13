@@ -72,7 +72,7 @@ bool ValidateClientStateCommon(Context *context, ClientVertexArrayType arrayType
 bool ValidateBuiltinVertexAttributeCommon(Context *context,
                                           ClientVertexArrayType arrayType,
                                           GLint size,
-                                          GLenum type,
+                                          VertexAttribType type,
                                           GLsizei stride,
                                           const void *pointer)
 {
@@ -125,14 +125,14 @@ bool ValidateBuiltinVertexAttributeCommon(Context *context,
 
     switch (type)
     {
-        case GL_BYTE:
+        case VertexAttribType::Byte:
             if (arrayType == ClientVertexArrayType::PointSize)
             {
                 context->validationError(GL_INVALID_ENUM, kInvalidVertexPointerType);
                 return false;
             }
             break;
-        case GL_SHORT:
+        case VertexAttribType::Short:
             if (arrayType == ClientVertexArrayType::PointSize ||
                 arrayType == ClientVertexArrayType::Color)
             {
@@ -140,8 +140,8 @@ bool ValidateBuiltinVertexAttributeCommon(Context *context,
                 return false;
             }
             break;
-        case GL_FIXED:
-        case GL_FLOAT:
+        case VertexAttribType::Fixed:
+        case VertexAttribType::Float:
             break;
         default:
             context->validationError(GL_INVALID_ENUM, kInvalidVertexPointerType);
@@ -695,7 +695,7 @@ bool ValidateColor4x(Context *context, GLfixed red, GLfixed green, GLfixed blue,
 
 bool ValidateColorPointer(Context *context,
                           GLint size,
-                          GLenum type,
+                          VertexAttribType type,
                           GLsizei stride,
                           const void *pointer)
 {
@@ -1075,7 +1075,10 @@ bool ValidateNormal3x(Context *context, GLfixed nx, GLfixed ny, GLfixed nz)
     return true;
 }
 
-bool ValidateNormalPointer(Context *context, GLenum type, GLsizei stride, const void *pointer)
+bool ValidateNormalPointer(Context *context,
+                           VertexAttribType type,
+                           GLsizei stride,
+                           const void *pointer)
 {
     return ValidateBuiltinVertexAttributeCommon(context, ClientVertexArrayType::Normal, 3, type,
                                                 stride, pointer);
@@ -1172,7 +1175,7 @@ bool ValidatePolygonOffsetx(Context *context, GLfixed factor, GLfixed units)
 bool ValidatePopMatrix(Context *context)
 {
     ANGLE_VALIDATE_IS_GLES1(context);
-    const auto &stack = context->getGLState().gles1().currentMatrixStack();
+    const auto &stack = context->getState().gles1().currentMatrixStack();
     if (stack.size() == 1)
     {
         context->validationError(GL_STACK_UNDERFLOW, kMatrixStackUnderflow);
@@ -1184,7 +1187,7 @@ bool ValidatePopMatrix(Context *context)
 bool ValidatePushMatrix(Context *context)
 {
     ANGLE_VALIDATE_IS_GLES1(context);
-    const auto &stack = context->getGLState().gles1().currentMatrixStack();
+    const auto &stack = context->getState().gles1().currentMatrixStack();
     if (stack.size() == stack.max_size())
     {
         context->validationError(GL_STACK_OVERFLOW, kMatrixStackOverflow);
@@ -1239,7 +1242,7 @@ bool ValidateShadeModel(Context *context, ShadingModel mode)
 
 bool ValidateTexCoordPointer(Context *context,
                              GLint size,
-                             GLenum type,
+                             VertexAttribType type,
                              GLsizei stride,
                              const void *pointer)
 {
@@ -1342,7 +1345,7 @@ bool ValidateTranslatex(Context *context, GLfixed x, GLfixed y, GLfixed z)
 
 bool ValidateVertexPointer(Context *context,
                            GLint size,
-                           GLenum type,
+                           VertexAttribType type,
                            GLsizei stride,
                            const void *pointer)
 {
@@ -1441,7 +1444,10 @@ bool ValidateWeightPointerOES(Context *context,
     return true;
 }
 
-bool ValidatePointSizePointerOES(Context *context, GLenum type, GLsizei stride, const void *pointer)
+bool ValidatePointSizePointerOES(Context *context,
+                                 VertexAttribType type,
+                                 GLsizei stride,
+                                 const void *pointer)
 {
     return ValidateBuiltinVertexAttributeCommon(context, ClientVertexArrayType::PointSize, 1, type,
                                                 stride, pointer);

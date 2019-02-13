@@ -8,10 +8,7 @@
 #ifndef GrVkGpu_DEFINED
 #define GrVkGpu_DEFINED
 
-#include "GrVkVulkan.h"
-
 #include "GrGpu.h"
-#include "vk/GrVkBackendContext.h"
 #include "GrVkCaps.h"
 #include "GrVkCopyManager.h"
 #include "GrVkIndexBuffer.h"
@@ -20,10 +17,13 @@
 #include "GrVkSemaphore.h"
 #include "GrVkVertexBuffer.h"
 #include "GrVkUtil.h"
+#include "vk/GrVkBackendContext.h"
+#include "vk/GrVkTypes.h"
 
 class GrPipeline;
 
 class GrVkBufferImpl;
+class GrVkCommandPool;
 class GrVkGpuRTCommandBuffer;
 class GrVkGpuTextureCommandBuffer;
 class GrVkMemoryAllocator;
@@ -56,11 +56,11 @@ public:
     VkDevice device() const { return fDevice; }
     VkQueue  queue() const { return fQueue; }
     uint32_t  queueIndex() const { return fQueueIndex; }
-    VkCommandPool cmdPool() const { return fCmdPool; }
-    VkPhysicalDeviceProperties physicalDeviceProperties() const {
+    GrVkCommandPool* cmdPool() const { return fCmdPool; }
+    const VkPhysicalDeviceProperties& physicalDeviceProperties() const {
         return fPhysDevProps;
     }
-    VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties() const {
+    const VkPhysicalDeviceMemoryProperties& physicalDeviceMemoryProperties() const {
         return fPhysDevMemProps;
     }
 
@@ -119,7 +119,14 @@ public:
 
     bool onRegenerateMipMapLevels(GrTexture* tex) override;
 
+    void resolveRenderTargetNoFlush(GrRenderTarget* target) {
+        this->internalResolveRenderTarget(target, false);
+    }
+
     void onResolveRenderTarget(GrRenderTarget* target) override {
+        // This resolve is called when we are preparing an msaa surface for external I/O. It is
+        // called after flushing, so we need to make sure we submit the command buffer after doing
+        // the resolve so that the resolve actually happens.
         this->internalResolveRenderTarget(target, true);
     }
 
@@ -139,7 +146,7 @@ public:
     sk_sp<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
                                             GrResourceProvider::SemaphoreWrapType wrapType,
                                             GrWrapOwnership ownership) override;
-    void insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override;
+    void insertSemaphore(sk_sp<GrSemaphore> semaphore) override;
     void waitSemaphore(sk_sp<GrSemaphore> semaphore) override;
 
     // These match the definitions in SkDrawable, from whence they came
@@ -156,6 +163,16 @@ public:
                     VkDeviceSize dstOffset, VkDeviceSize size);
     bool updateBuffer(GrVkBuffer* buffer, const void* src, VkDeviceSize offset, VkDeviceSize size);
 
+    uint32_t getExtraSamplerKeyForProgram(const GrSamplerState&,
+                                          const GrBackendFormat& format) override;
+
+    enum PersistentCacheKeyType : uint32_t {
+        kShader_PersistentCacheKeyType = 0,
+        kPipelineCache_PersistentCacheKeyType = 1,
+    };
+
+    void storeVkPipelineCacheData() override;
+
 private:
     GrVkGpu(GrContext*, const GrContextOptions&, const GrVkBackendContext&,
             sk_sp<const GrVkInterface>);
@@ -167,7 +184,7 @@ private:
     sk_sp<GrTexture> onCreateTexture(const GrSurfaceDesc&, SkBudgeted, const GrMipLevel[],
                                      int mipLevelCount) override;
 
-    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership,
+    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership, GrIOType,
                                           bool purgeImmediately) override;
     sk_sp<GrTexture> onWrapRenderableBackendTexture(const GrBackendTexture&,
                                                     int sampleCnt,
@@ -176,6 +193,9 @@ private:
 
     sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
                                                              int sampleCnt) override;
+
+    sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
+                                                                const GrVkDrawableInfo&) override;
 
     GrBuffer* onCreateBuffer(size_t size, GrBufferType type, GrAccessPattern,
                              const void* data) override;
@@ -227,7 +247,9 @@ private:
                              GrColorType colorType, const void* data, size_t rowBytes);
     bool uploadTexDataOptimal(GrVkTexture* tex, int left, int top, int width, int height,
                               GrColorType colorType, const GrMipLevel texels[], int mipLevelCount);
-
+    bool uploadTexDataCompressed(GrVkTexture* tex, int left, int top, int width, int height,
+                                 GrColorType dataColorType, const GrMipLevel texels[],
+                                 int mipLevelCount);
     void resolveImage(GrSurface* dst, GrVkRenderTarget* src, const SkIRect& srcRect,
                       const SkIPoint& dstPoint);
 
@@ -249,8 +271,10 @@ private:
 
     // Created by GrVkGpu
     GrVkResourceProvider                                  fResourceProvider;
-    VkCommandPool                                         fCmdPool;
 
+    GrVkCommandPool*                                      fCmdPool;
+
+    // just a raw pointer; object's lifespan is managed by fCmdPool
     GrVkPrimaryCommandBuffer*                             fCurrentCmdBuffer;
 
     SkSTArray<1, GrVkSemaphore::Resource*>                fSemaphoresToWaitOn;

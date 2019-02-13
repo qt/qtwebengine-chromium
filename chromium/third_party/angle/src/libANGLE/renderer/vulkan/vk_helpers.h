@@ -220,7 +220,7 @@ class DynamicQueryPool final : public DynamicallyGrowingPool<QueryPool>
 {
   public:
     DynamicQueryPool();
-    ~DynamicQueryPool();
+    ~DynamicQueryPool() override;
 
     angle::Result init(Context *context, VkQueryType type, uint32_t poolSize);
     void destroy(VkDevice device);
@@ -251,7 +251,7 @@ class DynamicQueryPool final : public DynamicallyGrowingPool<QueryPool>
 // of a fixed size as needed and allocates indices within those pools.
 //
 // The QueryHelper class below keeps the pool and index pair together.
-class QueryHelper final : public QueryGraphResource
+class QueryHelper final
 {
   public:
     QueryHelper();
@@ -271,10 +271,18 @@ class QueryHelper final : public QueryGraphResource
     // Used only by DynamicQueryPool.
     size_t getQueryPoolIndex() const { return mQueryPoolIndex; }
 
+    void beginQuery(vk::Context *context);
+    void endQuery(vk::Context *context);
+    void writeTimestamp(vk::Context *context);
+
+    Serial getStoredQueueSerial() { return mMostRecentSerial; }
+    bool hasPendingWork(RendererVk *renderer);
+
   private:
     const DynamicQueryPool *mDynamicQueryPool;
     size_t mQueryPoolIndex;
     uint32_t mQuery;
+    Serial mMostRecentSerial;
 };
 
 // DynamicSemaphorePool allocates semaphores as needed.  It uses a std::vector
@@ -290,7 +298,7 @@ class DynamicSemaphorePool final : public DynamicallyGrowingPool<std::vector<Sem
 {
   public:
     DynamicSemaphorePool();
-    ~DynamicSemaphorePool();
+    ~DynamicSemaphorePool() override;
 
     angle::Result init(Context *context, uint32_t poolSize);
     void destroy(VkDevice device);
@@ -346,22 +354,22 @@ class LineLoopHelper final : angle::NonCopyable
     angle::Result getIndexBufferForDrawArrays(ContextVk *contextVk,
                                               uint32_t clampedVertexCount,
                                               GLint firstVertex,
-                                              VkBuffer *bufferHandleOut,
+                                              vk::BufferHelper **bufferOut,
                                               VkDeviceSize *offsetOut);
 
     angle::Result getIndexBufferForElementArrayBuffer(ContextVk *contextVk,
                                                       BufferVk *elementArrayBufferVk,
-                                                      GLenum glIndexType,
+                                                      gl::DrawElementsType glIndexType,
                                                       int indexCount,
                                                       intptr_t elementArrayOffset,
-                                                      VkBuffer *bufferHandleOut,
+                                                      vk::BufferHelper **bufferOut,
                                                       VkDeviceSize *bufferOffsetOut);
 
     angle::Result streamIndices(ContextVk *contextVk,
-                                GLenum glIndexType,
+                                gl::DrawElementsType glIndexType,
                                 GLsizei indexCount,
                                 const uint8_t *srcPtr,
-                                VkBuffer *bufferHandleOut,
+                                vk::BufferHelper **bufferOut,
                                 VkDeviceSize *bufferOffsetOut);
 
     void release(RendererVk *renderer);
@@ -375,11 +383,11 @@ class LineLoopHelper final : angle::NonCopyable
 
 class FramebufferHelper;
 
-class BufferHelper final : public RecordableGraphResource
+class BufferHelper final : public CommandGraphResource
 {
   public:
     BufferHelper();
-    ~BufferHelper();
+    ~BufferHelper() override;
 
     angle::Result init(Context *context,
                        const VkBufferCreateInfo &createInfo,
@@ -391,25 +399,39 @@ class BufferHelper final : public RecordableGraphResource
     const Buffer &getBuffer() const { return mBuffer; }
     const DeviceMemory &getDeviceMemory() const { return mDeviceMemory; }
 
-    // Helper for setting the graph dependencies *and* setting the appropriate barrier.
-    void onFramebufferRead(FramebufferHelper *framebuffer, VkAccessFlagBits accessType);
+    // Helpers for setting the graph dependencies *and* setting the appropriate barrier.
+    ANGLE_INLINE void onRead(CommandGraphResource *reader, VkAccessFlagBits readAccessType)
+    {
+        addReadDependency(reader);
+
+        if (mCurrentWriteAccess != 0 && (mCurrentReadAccess & readAccessType) == 0)
+        {
+            reader->addGlobalMemoryBarrier(mCurrentWriteAccess, readAccessType);
+            mCurrentReadAccess |= readAccessType;
+        }
+    }
+
+    void onWrite(VkAccessFlagBits writeAccessType);
 
     // Also implicitly sets up the correct barriers.
     angle::Result copyFromBuffer(Context *context,
                                  const Buffer &buffer,
                                  const VkBufferCopy &copyRegion);
 
-    angle::Result getBufferView(Context *context, const Format &format, BufferView **bufferViewOut)
-    {
-        // Note: currently only one view is allowed.  If needs be, multiple views can be created
-        // based on format.
-        if (!mBufferView.valid())
-        {
-            ANGLE_TRY(initBufferView(context, format));
-        }
+    // Note: currently only one view is allowed.  If needs be, multiple views can be created
+    // based on format.
+    angle::Result initBufferView(Context *context, const Format &format);
 
-        *bufferViewOut = &mBufferView;
-        return angle::Result::Continue();
+    const BufferView &getBufferView() const
+    {
+        ASSERT(mBufferView.valid());
+        return mBufferView;
+    }
+
+    const Format &getViewFormat() const
+    {
+        ASSERT(mViewFormat);
+        return *mViewFormat;
     }
 
     angle::Result map(Context *context, uint8_t **ptrOut)
@@ -419,7 +441,7 @@ class BufferHelper final : public RecordableGraphResource
             ANGLE_TRY(mapImpl(context));
         }
         *ptrOut = mMappedMemory;
-        return angle::Result::Continue();
+        return angle::Result::Continue;
     }
     void unmap(VkDevice device);
 
@@ -431,7 +453,6 @@ class BufferHelper final : public RecordableGraphResource
 
   private:
     angle::Result mapImpl(Context *context);
-    angle::Result initBufferView(Context *context, const Format &format);
 
     // Vulkan objects.
     Buffer mBuffer;
@@ -442,18 +463,19 @@ class BufferHelper final : public RecordableGraphResource
     VkMemoryPropertyFlags mMemoryPropertyFlags;
     VkDeviceSize mSize;
     uint8_t *mMappedMemory;
+    const Format *mViewFormat;
 
     // For memory barriers.
     VkFlags mCurrentWriteAccess;
     VkFlags mCurrentReadAccess;
 };
 
-class ImageHelper final : public RecordableGraphResource
+class ImageHelper final : public CommandGraphResource
 {
   public:
     ImageHelper();
     ImageHelper(ImageHelper &&other);
-    ~ImageHelper();
+    ~ImageHelper() override;
 
     angle::Result init(Context *context,
                        gl::TextureType textureType,
@@ -461,7 +483,8 @@ class ImageHelper final : public RecordableGraphResource
                        const Format &format,
                        GLint samples,
                        VkImageUsageFlags usage,
-                       uint32_t mipLevels);
+                       uint32_t mipLevels,
+                       uint32_t layerCount);
     angle::Result initMemory(Context *context,
                              const MemoryProperties &memoryProperties,
                              VkMemoryPropertyFlags flags);
@@ -470,6 +493,7 @@ class ImageHelper final : public RecordableGraphResource
                                      VkImageAspectFlags aspectMask,
                                      const gl::SwizzleState &swizzleMap,
                                      ImageView *imageViewOut,
+                                     uint32_t baseMipLevel,
                                      uint32_t levelCount,
                                      uint32_t baseArrayLayer,
                                      uint32_t layerCount);
@@ -479,11 +503,16 @@ class ImageHelper final : public RecordableGraphResource
                                 const gl::SwizzleState &swizzleMap,
                                 ImageView *imageViewOut,
                                 uint32_t levelCount);
+    // Create a 2D[Array] for staging purposes.  Used by:
+    //
+    // - TextureVk::copySubImageImplWithDraw
+    //
     angle::Result init2DStaging(Context *context,
                                 const MemoryProperties &memoryProperties,
-                                const Format &format,
                                 const gl::Extents &extent,
-                                StagingUsage usage);
+                                const Format &format,
+                                VkImageUsageFlags usage,
+                                uint32_t layerCount);
 
     void release(RendererVk *renderer);
 
@@ -503,6 +532,8 @@ class ImageHelper final : public RecordableGraphResource
     const DeviceMemory &getDeviceMemory() const;
 
     const gl::Extents &getExtents() const;
+    uint32_t getLayerCount() const { return mLayerCount; }
+    uint32_t getLevelCount() const { return mLevelCount; }
     const Format &getFormat() const;
     GLint getSamples() const;
 
@@ -557,13 +588,14 @@ class ImageHelper final : public RecordableGraphResource
 
     // Cached properties.
     uint32_t mLayerCount;
+    uint32_t mLevelCount;
 };
 
-class FramebufferHelper : public RecordableGraphResource
+class FramebufferHelper : public CommandGraphResource
 {
   public:
     FramebufferHelper();
-    ~FramebufferHelper();
+    ~FramebufferHelper() override;
 
     angle::Result init(ContextVk *contextVk, const VkFramebufferCreateInfo &createInfo);
     void release(RendererVk *renderer);
@@ -609,11 +641,28 @@ class ShaderProgramHelper : angle::NonCopyable
     void setShader(gl::ShaderType shaderType, RefCounted<ShaderAndSerial> *shader);
 
     // For getting a vk::Pipeline and from the pipeline cache.
-    angle::Result getGraphicsPipeline(Context *context,
-                                      const PipelineLayout &pipelineLayout,
-                                      const GraphicsPipelineDesc &pipelineDesc,
-                                      const gl::AttributesMask &activeAttribLocationsMask,
-                                      PipelineAndSerial **pipelineOut);
+    ANGLE_INLINE angle::Result getGraphicsPipeline(
+        Context *context,
+        RenderPassCache *renderPassCache,
+        const PipelineCache &pipelineCache,
+        Serial currentQueueSerial,
+        const PipelineLayout &pipelineLayout,
+        const GraphicsPipelineDesc &pipelineDesc,
+        const gl::AttributesMask &activeAttribLocationsMask,
+        const vk::GraphicsPipelineDesc **descPtrOut,
+        PipelineHelper **pipelineOut)
+    {
+        // Pull in a compatible RenderPass.
+        vk::RenderPass *compatibleRenderPass = nullptr;
+        ANGLE_TRY(renderPassCache->getCompatibleRenderPass(
+            context, currentQueueSerial, pipelineDesc.getRenderPassDesc(), &compatibleRenderPass));
+
+        return mGraphicsPipelines.getPipeline(
+            context, pipelineCache, *compatibleRenderPass, pipelineLayout,
+            activeAttribLocationsMask, mShaders[gl::ShaderType::Vertex].get().get(),
+            mShaders[gl::ShaderType::Fragment].get().get(), pipelineDesc, descPtrOut, pipelineOut);
+    }
+
     angle::Result getComputePipeline(Context *context,
                                      const PipelineLayout &pipelineLayout,
                                      PipelineAndSerial **pipelineOut);
@@ -621,6 +670,8 @@ class ShaderProgramHelper : angle::NonCopyable
   private:
     gl::ShaderMap<BindingPointer<ShaderAndSerial>> mShaders;
     GraphicsPipelineCache mGraphicsPipelines;
+
+    // We should probably use PipelineHelper here so we can remove PipelineAndSerial.
     PipelineAndSerial mComputePipeline;
 };
 }  // namespace vk

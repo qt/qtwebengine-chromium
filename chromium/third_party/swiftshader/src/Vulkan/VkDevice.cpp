@@ -58,6 +58,11 @@ Device::Device(const Device::CreateInfo* info, void* mem)
 
 void Device::destroy(const VkAllocationCallbacks* pAllocator)
 {
+	for(uint32_t i = 0; i < queueCount; i++)
+	{
+		queues[i].destroy();
+	}
+
 	vk::deallocate(queues, pAllocator);
 }
 
@@ -77,6 +82,11 @@ VkQueue Device::getQueue(uint32_t queueFamilyIndex, uint32_t queueIndex) const
 	ASSERT(queueFamilyIndex == 0);
 
 	return queues[queueIndex];
+}
+
+void Device::waitForFences(uint32_t fenceCount, const VkFence* pFences, VkBool32 waitAll, uint64_t timeout)
+{
+	// FIXME(b/117835459) : noop
 }
 
 void Device::getDescriptorSetLayoutSupport(const VkDescriptorSetLayoutCreateInfo* pCreateInfo,

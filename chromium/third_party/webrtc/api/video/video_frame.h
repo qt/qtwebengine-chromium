@@ -41,8 +41,10 @@ class RTC_EXPORT VideoFrame {
     Builder& set_rotation(VideoRotation rotation);
     Builder& set_color_space(const ColorSpace& color_space);
     Builder& set_color_space(const ColorSpace* color_space);
+    Builder& set_id(uint16_t id);
 
    private:
+    uint16_t id_ = 0;
     rtc::scoped_refptr<webrtc::VideoFrameBuffer> video_frame_buffer_;
     int64_t timestamp_us_ = 0;
     uint32_t timestamp_rtp_ = 0;
@@ -74,6 +76,15 @@ class RTC_EXPORT VideoFrame {
   int height() const;
   // Get frame size in pixels.
   uint32_t size() const;
+
+  // Get frame ID. Returns 0 if ID is not set. Not guarantee to be transferred
+  // from the sender to the receiver, but preserved on single side. The id
+  // should be propagated between all frame modifications during its lifetime
+  // from capturing to sending as encoded image. It is intended to be unique
+  // over a time window of a few minutes for peer connection, to which
+  // corresponding video stream belongs to.
+  uint16_t id() const { return id_; }
+  void set_id(uint16_t id) { id_ = id; }
 
   // System monotonic clock, same timebase as rtc::TimeMicros().
   int64_t timestamp_us() const { return timestamp_us_; }
@@ -118,6 +129,10 @@ class RTC_EXPORT VideoFrame {
   const ColorSpace* color_space() const {
     return color_space_ ? &*color_space_ : nullptr;
   }
+  void set_color_space(ColorSpace* color_space) {
+    color_space_ =
+        color_space ? absl::make_optional(*color_space) : absl::nullopt;
+  }
 
   // Get render time in milliseconds.
   // TODO(nisse): Deprecated. Migrate all users to timestamp_us().
@@ -134,13 +149,15 @@ class RTC_EXPORT VideoFrame {
   }
 
  private:
-  VideoFrame(const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
+  VideoFrame(uint16_t id,
+             const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
              int64_t timestamp_us,
              uint32_t timestamp_rtp,
              int64_t ntp_time_ms,
              VideoRotation rotation,
              const absl::optional<ColorSpace>& color_space);
 
+  uint16_t id_;
   // An opaque reference counted handle that stores the pixel data.
   rtc::scoped_refptr<webrtc::VideoFrameBuffer> video_frame_buffer_;
   uint32_t timestamp_rtp_;

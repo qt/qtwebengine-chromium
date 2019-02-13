@@ -1,7 +1,7 @@
 //
 // Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
 // Copyright (C) 2013-2016 LunarG, Inc.
-// Copyright (C) 2015-2017 Google, Inc.
+// Copyright (C) 2015-2018 Google, Inc.
 //
 // All rights reserved.
 //
@@ -360,6 +360,8 @@ bool InitializeSymbolTables(TInfoSink& infoSink, TSymbolTable** commonTable,  TS
             infoSink, commonTable, symbolTables);
         InitializeStageSymbolTable(*builtInParseables, version, profile, spvVersion, EShLangMissNV, source,
             infoSink, commonTable, symbolTables);
+        InitializeStageSymbolTable(*builtInParseables, version, profile, spvVersion, EShLangCallableNV, source,
+            infoSink, commonTable, symbolTables);
     }
 
     // check for mesh
@@ -607,7 +609,7 @@ bool DeduceVersionProfile(TInfoSink& infoSink, EShLanguage stage, bool versionNo
     case EShLangCallableNV:
         if (profile == EEsProfile || version < 460) {
             correct = false;
-            infoSink.info.message(EPrefixError, "#version: raytracing shaders require non-es profile with version 460 or above");
+            infoSink.info.message(EPrefixError, "#version: ray tracing shaders require non-es profile with version 460 or above");
             version = 460;
         }
         break;
@@ -877,8 +879,11 @@ bool ProcessDeferred(
         intermediate.setHlslOffsets();
     if (messages & EShMsgDebugInfo) {
         intermediate.setSourceFile(names[numPre]);
-        for (int s = 0; s < numStrings; ++s)
-            intermediate.addSourceText(strings[numPre + s]);
+        for (int s = 0; s < numStrings; ++s) {
+            // The string may not be null-terminated, so make sure we provide
+            // the length along with the string.
+            intermediate.addSourceText(strings[numPre + s], lengths[numPre + s]);
+        }
     }
     SetupBuiltinSymbolTable(version, profile, spvVersion, source);
 

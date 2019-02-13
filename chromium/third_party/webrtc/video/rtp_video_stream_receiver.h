@@ -19,7 +19,8 @@
 
 #include "absl/types/optional.h"
 
-#include "api/crypto/framedecryptorinterface.h"
+#include "api/crypto/frame_decryptor_interface.h"
+#include "api/video/color_space.h"
 #include "api/video_codecs/video_codec.h"
 #include "call/rtp_packet_sink_interface.h"
 #include "call/syncable.h"
@@ -34,10 +35,13 @@
 #include "modules/video_coding/include/video_coding_defines.h"
 #include "modules/video_coding/packet_buffer.h"
 #include "modules/video_coding/rtp_frame_reference_finder.h"
-#include "rtc_base/constructormagic.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/constructor_magic.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/numerics/sequence_number_util.h"
 #include "rtc_base/sequenced_task_checker.h"
+#include "rtc_base/thread_annotations.h"
+#include "rtc_base/thread_checker.h"
+#include "video/buffered_frame_decryptor.h"
 
 namespace webrtc {
 
@@ -56,7 +60,8 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
                                public VCMFrameTypeCallback,
                                public VCMPacketRequestCallback,
                                public video_coding::OnReceivedFrameCallback,
-                               public video_coding::OnCompleteFrameCallback {
+                               public video_coding::OnCompleteFrameCallback,
+                               public OnDecryptedFrameCallback {
  public:
   RtpVideoStreamReceiver(
       Transport* transport,
@@ -129,6 +134,10 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
   // Implements OnCompleteFrameCallback.
   void OnCompleteFrame(
       std::unique_ptr<video_coding::EncodedFrame> frame) override;
+
+  // Implements OnDecryptedFrameCallback.
+  void OnDecryptedFrame(
+      std::unique_ptr<video_coding::RtpFrameObject> frame) override;
 
   // Called by VideoReceiveStream when stats are updated.
   void UpdateRtt(int64_t max_rtt_ms);
@@ -207,10 +216,14 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
   absl::optional<int64_t> last_received_rtp_system_time_ms_
       RTC_GUARDED_BY(rtp_sources_lock_);
 
-  // E2EE Video Frame Decryptor (Optional)
-  rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor_;
-  // Set to true on the first successsfully decrypted frame.
-  bool has_received_decrypted_frame_ = false;
+  // Used to validate the buffered frame decryptor is always run on the correct
+  // thread.
+  rtc::ThreadChecker network_tc_;
+  // Handles incoming encrypted frames and forwards them to the
+  // rtp_reference_finder if they are decryptable.
+  std::unique_ptr<BufferedFrameDecryptor> buffered_frame_decryptor_
+      RTC_PT_GUARDED_BY(network_tc_);
+  absl::optional<ColorSpace> last_color_space_;
 };
 
 }  // namespace webrtc

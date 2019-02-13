@@ -128,6 +128,23 @@ See the [CHANGES](CHANGES) file for reports on completed work, and the [General
 sub-project](https://github.com/KhronosGroup/SPIRV-Tools/projects/2) for
 planned and in-progress work.
 
+
+### Reducer
+
+*Note:* The reducer is still under development.
+
+The reducer simplifies and shrinks a SPIR-V module with respect to a
+user-supplied *interestingness function*.  For example, given a large
+SPIR-V module that cause some SPIR-V compiler to fail with a given
+fatal error message, the reducer could be used to look for a smaller
+version of the module that causes the compiler to fail with the same
+fatal error message.
+
+To suggest an additional capability for the reducer, [file an
+issue](https://github.com/KhronosGroup/SPIRV-Tools/issues]) with
+"Reducer:" as the start of its title.
+
+
 ### Extras
 
 * [Utility filters](#utility-filters)
@@ -273,7 +290,7 @@ The following CMake options are supported:
   See [`CMakeLists.txt`](CMakeLists.txt) for details.
 * `SPIRV_WERROR={ON|OFF}`, default `ON` - Forces a compilation error on any
   warnings encountered by enabling the compiler-specific compiler front-end
-  option.
+  option.  No compiler front-end options are enabled when this option is OFF.
 
 Additionally, you can pass additional C preprocessor definitions to SPIRV-Tools
 via setting `SPIRV_TOOLS_EXTRA_DEFINITIONS`. For example, by setting it to

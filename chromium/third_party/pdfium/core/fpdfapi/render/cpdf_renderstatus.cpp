@@ -343,8 +343,8 @@ void DrawFuncShading(const RetainPtr<CFX_DIBitmap>& pBitmap,
     ymax = pDomain->GetNumberAt(3);
   }
   CFX_Matrix mtDomain2Target = pDict->GetMatrixFor("Matrix");
-  CFX_Matrix matrix = mtObject2Bitmap.GetInverse();
-  matrix.Concat(mtDomain2Target.GetInverse());
+  CFX_Matrix matrix =
+      mtObject2Bitmap.GetInverse() * mtDomain2Target.GetInverse();
   int width = pBitmap->GetWidth();
   int height = pBitmap->GetHeight();
   int pitch = pBitmap->GetPitch();
@@ -944,8 +944,7 @@ RetainPtr<CFX_DIBitmap> DrawPatternBitmap(
   CFX_Matrix mtAdjust;
   mtAdjust.MatchRect(bitmap_rect, cell_bbox);
 
-  CFX_Matrix mtPattern2Bitmap = mtObject2Device;
-  mtPattern2Bitmap.Concat(mtAdjust);
+  CFX_Matrix mtPattern2Bitmap = mtObject2Device * mtAdjust;
   CPDF_RenderOptions options;
   if (!pPattern->colored())
     options.SetColorMode(CPDF_RenderOptions::kAlpha);
@@ -1110,7 +1109,7 @@ bool CPDF_RenderStatus::ContinueSingleObject(CPDF_PageObject* pObj,
   }
 
   m_pImageRenderer = pdfium::MakeUnique<CPDF_ImageRenderer>();
-  if (!m_pImageRenderer->Start(this, pObj->AsImage(), &mtObj2Device, false,
+  if (!m_pImageRenderer->Start(this, pObj->AsImage(), mtObj2Device, false,
                                BlendMode::kNormal)) {
     if (!m_pImageRenderer->GetResult())
       DrawObjWithBackground(pObj, mtObj2Device);
@@ -1188,8 +1187,7 @@ void CPDF_RenderStatus::DrawObjWithBackground(CPDF_PageObject* pObj,
                          res)) {
     return;
   }
-  CFX_Matrix matrix = mtObj2Device;
-  matrix.Concat(*buffer.GetMatrix());
+  CFX_Matrix matrix = mtObj2Device * buffer.GetMatrix();
   const CPDF_Dictionary* pFormResource = nullptr;
   const CPDF_FormObject* pFormObj = pObj->AsForm();
   if (pFormObj) {
@@ -1199,7 +1197,7 @@ void CPDF_RenderStatus::DrawObjWithBackground(CPDF_PageObject* pObj,
   }
   CPDF_RenderStatus status(m_pContext.Get(), buffer.GetDevice());
   status.SetOptions(m_Options);
-  status.SetDeviceMatrix(*buffer.GetMatrix());
+  status.SetDeviceMatrix(buffer.GetMatrix());
   status.SetTransparency(m_Transparency);
   status.SetDropObjects(m_bDropObjects);
   status.SetFormResource(pFormResource);
@@ -1218,8 +1216,7 @@ bool CPDF_RenderStatus::ProcessForm(const CPDF_FormObject* pFormObj,
       !m_Options.GetOCContext()->CheckOCGVisible(pOC)) {
     return true;
   }
-  CFX_Matrix matrix = pFormObj->form_matrix();
-  matrix.Concat(mtObj2Device);
+  CFX_Matrix matrix = pFormObj->form_matrix() * mtObj2Device;
   const CPDF_Dictionary* pFormDict = pFormObj->form()->GetDict();
   const CPDF_Dictionary* pResources =
       pFormDict ? pFormDict->GetDictFor("Resources") : nullptr;
@@ -1252,8 +1249,7 @@ bool CPDF_RenderStatus::ProcessPath(CPDF_PathObject* pPathObj,
 
   uint32_t fill_argb = FillType ? GetFillArgb(pPathObj) : 0;
   uint32_t stroke_argb = bStroke ? GetStrokeArgb(pPathObj) : 0;
-  CFX_Matrix path_matrix = pPathObj->matrix();
-  path_matrix.Concat(mtObj2Device);
+  CFX_Matrix path_matrix = pPathObj->matrix() * mtObj2Device;
   if (!IsAvailableMatrix(path_matrix))
     return true;
 
@@ -1416,8 +1412,7 @@ bool CPDF_RenderStatus::ClipPattern(const CPDF_PageObject* pPageObj,
 bool CPDF_RenderStatus::SelectClipPath(const CPDF_PathObject* pPathObj,
                                        const CFX_Matrix& mtObj2Device,
                                        bool bStroke) {
-  CFX_Matrix path_matrix = pPathObj->matrix();
-  path_matrix.Concat(mtObj2Device);
+  CFX_Matrix path_matrix = pPathObj->matrix() * mtObj2Device;
   if (bStroke) {
     CFX_GraphState graphState = pPathObj->m_GraphState;
     if (m_Options.GetOptions().bThinLine)
@@ -1574,8 +1569,8 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
 #endif
   m_bStopped = bitmap_render.m_bStopped;
   if (pSMaskDict) {
-    CFX_Matrix smask_matrix = *pPageObj->m_GeneralState.GetSMaskMatrix();
-    smask_matrix.Concat(mtObj2Device);
+    CFX_Matrix smask_matrix =
+        *pPageObj->m_GeneralState.GetSMaskMatrix() * mtObj2Device;
     RetainPtr<CFX_DIBBase> pSMaskSource =
         LoadSMask(pSMaskDict, &rect, &smask_matrix);
     if (pSMaskSource)
@@ -1754,9 +1749,8 @@ bool CPDF_RenderStatus::ProcessText(CPDF_TextObject* textobj,
       const float* pCTM = textobj->m_TextState.GetCTM();
       if (pCTM[0] != 1.0f || pCTM[3] != 1.0f) {
         CFX_Matrix ctm(pCTM[0], pCTM[1], pCTM[2], pCTM[3], 0, 0);
-        text_matrix.ConcatInverse(ctm);
-        device_matrix = ctm;
-        device_matrix.Concat(mtObj2Device);
+        text_matrix *= ctm.GetInverse();
+        device_matrix = ctm * mtObj2Device;
         pDeviceMatrix = &device_matrix;
       }
     }
@@ -1906,11 +1900,10 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
           glyphs[iChar].m_Origin = origin;
         }
       } else {
-        CFX_Matrix image_matrix = pType3Char->matrix();
-        image_matrix.Concat(matrix);
+        CFX_Matrix image_matrix = pType3Char->matrix() * matrix;
         CPDF_ImageRenderer renderer;
         if (renderer.Start(this, pType3Char->GetBitmap(), fill_argb, 255,
-                           &image_matrix, FXDIB_ResampleOptions(), false,
+                           image_matrix, FXDIB_ResampleOptions(), false,
                            BlendMode::kNormal)) {
           renderer.Continue(nullptr);
         }
@@ -2014,7 +2007,7 @@ void CPDF_RenderStatus::DrawTextPathWithPattern(const CPDF_TextObject* textobj,
 }
 
 void CPDF_RenderStatus::DrawShading(const CPDF_ShadingPattern* pPattern,
-                                    const CFX_Matrix* pMatrix,
+                                    const CFX_Matrix& mtMatrix,
                                     const FX_RECT& clip_rect,
                                     int alpha,
                                     bool bAlphaMode) {
@@ -2042,18 +2035,17 @@ void CPDF_RenderStatus::DrawShading(const CPDF_ShadingPattern* pPattern,
   FX_RECT clip_rect_bbox = clip_rect;
   if (pDict->KeyExist("BBox")) {
     clip_rect_bbox.Intersect(
-        pMatrix->TransformRect(pDict->GetRectFor("BBox")).GetOuterRect());
+        mtMatrix.TransformRect(pDict->GetRectFor("BBox")).GetOuterRect());
   }
   if (m_pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SHADING &&
       m_pDevice->GetDeviceDriver()->DrawShading(
-          pPattern, pMatrix, clip_rect_bbox, alpha, bAlphaMode)) {
+          pPattern, &mtMatrix, clip_rect_bbox, alpha, bAlphaMode)) {
     return;
   }
   CPDF_DeviceBuffer buffer;
   buffer.Initialize(m_pContext.Get(), m_pDevice, clip_rect_bbox,
                     m_pCurObj.Get(), 150);
-  CFX_Matrix FinalMatrix = *pMatrix;
-  FinalMatrix.Concat(*buffer.GetMatrix());
+  CFX_Matrix FinalMatrix = mtMatrix * buffer.GetMatrix();
   RetainPtr<CFX_DIBitmap> pBitmap = buffer.GetBitmap();
   if (!pBitmap->GetBuffer())
     return;
@@ -2122,12 +2114,11 @@ void CPDF_RenderStatus::DrawShadingPattern(CPDF_ShadingPattern* pattern,
   if (rect.IsEmpty())
     return;
 
-  CFX_Matrix matrix = *pattern->pattern_to_form();
-  matrix.Concat(mtObj2Device);
+  CFX_Matrix matrix = *pattern->pattern_to_form() * mtObj2Device;
   int alpha =
       FXSYS_round(255 * (bStroke ? pPageObj->m_GeneralState.GetStrokeAlpha()
                                  : pPageObj->m_GeneralState.GetFillAlpha()));
-  DrawShading(pattern, &matrix, rect, alpha,
+  DrawShading(pattern, matrix, rect, alpha,
               m_Options.ColorModeIs(CPDF_RenderOptions::kAlpha));
 }
 
@@ -2139,9 +2130,8 @@ void CPDF_RenderStatus::ProcessShading(const CPDF_ShadingObject* pShadingObj,
   if (rect.IsEmpty())
     return;
 
-  CFX_Matrix matrix = pShadingObj->matrix();
-  matrix.Concat(mtObj2Device);
-  DrawShading(pShadingObj->pattern(), &matrix, rect,
+  CFX_Matrix matrix = pShadingObj->matrix() * mtObj2Device;
+  DrawShading(pShadingObj->pattern(), matrix, rect,
               FXSYS_round(255 * pShadingObj->m_GeneralState.GetFillAlpha()),
               m_Options.ColorModeIs(CPDF_RenderOptions::kAlpha));
 }
@@ -2161,8 +2151,7 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
   if (clip_box.IsEmpty())
     return;
 
-  CFX_Matrix mtPattern2Device = *pPattern->pattern_to_form();
-  mtPattern2Device.Concat(mtObj2Device);
+  CFX_Matrix mtPattern2Device = *pPattern->pattern_to_form() * mtObj2Device;
 
   bool bAligned =
       pPattern->bbox().left == 0 && pPattern->bbox().bottom == 0 &&
@@ -2371,7 +2360,7 @@ void CPDF_RenderStatus::ProcessPathPattern(CPDF_PathObject* pPathObj,
 bool CPDF_RenderStatus::ProcessImage(CPDF_ImageObject* pImageObj,
                                      const CFX_Matrix& mtObj2Device) {
   CPDF_ImageRenderer render;
-  if (render.Start(this, pImageObj, &mtObj2Device, m_bStdCS, m_curBlend))
+  if (render.Start(this, pImageObj, mtObj2Device, m_bStdCS, m_curBlend))
     render.Continue(nullptr);
   return render.GetResult();
 }

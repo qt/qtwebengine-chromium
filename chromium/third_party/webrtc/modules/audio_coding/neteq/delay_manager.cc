@@ -34,6 +34,8 @@ constexpr int kCumulativeSumDrift = 2;  // Drift term for cumulative sum
 // Steady-state forgetting factor for |iat_vector_|, 0.9993 in Q15.
 constexpr int kIatFactor_ = 32745;
 constexpr int kMaxIat = 64;  // Max inter-arrival time to register.
+constexpr int kMaxReorderedPackets =
+    10;  // Max number of consecutive reordered packets.
 
 absl::optional<int> GetForcedLimitProbability() {
   constexpr char kForceTargetDelayPercentileFieldTrial[] =
@@ -63,6 +65,7 @@ namespace webrtc {
 
 DelayManager::DelayManager(size_t max_packets_in_buffer,
                            int base_min_target_delay_ms,
+                           bool enable_rtx_handling,
                            DelayPeakDetector* peak_detector,
                            const TickTimer* tick_timer)
     : first_packet_received_(false),
@@ -85,7 +88,8 @@ DelayManager::DelayManager(size_t max_packets_in_buffer,
       last_pack_cng_or_dtmf_(1),
       frame_length_change_experiment_(
           field_trial::IsEnabled("WebRTC-Audio-NetEqFramelengthExperiment")),
-      forced_limit_probability_(GetForcedLimitProbability()) {
+      forced_limit_probability_(GetForcedLimitProbability()),
+      enable_rtx_handling_(enable_rtx_handling) {
   assert(peak_detector);  // Should never be NULL.
   RTC_DCHECK_GE(base_min_target_delay_ms_, 0);
   RTC_DCHECK_LE(minimum_delay_ms_, maximum_delay_ms_);
@@ -146,6 +150,7 @@ int DelayManager::Update(uint16_t sequence_number,
         rtc::saturated_cast<int>(1000 * packet_len_samp / sample_rate_hz);
   }
 
+  bool reordered = false;
   if (packet_len_ms > 0) {
     // Cannot update statistics unless |packet_len_ms| is valid.
     // Calculate inter-arrival time (IAT) in integer "packet times"
@@ -166,6 +171,7 @@ int DelayManager::Update(uint16_t sequence_number,
       iat_packets = std::max(iat_packets, 0);
     } else if (!IsNewerSequenceNumber(sequence_number, last_seq_no_)) {
       iat_packets += static_cast<uint16_t>(last_seq_no_ + 1 - sequence_number);
+      reordered = true;
     }
 
     // Saturate IAT at maximum value.
@@ -173,7 +179,7 @@ int DelayManager::Update(uint16_t sequence_number,
     iat_packets = std::min(iat_packets, max_iat);
     UpdateHistogram(iat_packets);
     // Calculate new |target_level_| based on updated statistics.
-    target_level_ = CalculateTargetLevel(iat_packets);
+    target_level_ = CalculateTargetLevel(iat_packets, reordered);
     if (streaming_mode_) {
       target_level_ = std::max(target_level_, max_iat_cumulative_sum_);
     }
@@ -181,6 +187,12 @@ int DelayManager::Update(uint16_t sequence_number,
     LimitTargetLevel();
   }  // End if (packet_len_ms > 0).
 
+  if (enable_rtx_handling_ && reordered &&
+      num_reordered_packets_ < kMaxReorderedPackets) {
+    ++num_reordered_packets_;
+    return 0;
+  }
+  num_reordered_packets_ = 0;
   // Prepare for next packet arrival.
   packet_iat_stopwatch_ = tick_timer_->GetNewStopwatch();
   last_seq_no_ = sequence_number;
@@ -294,7 +306,7 @@ void DelayManager::LimitTargetLevel() {
   target_level_ = std::max(target_level_, 1 << 8);
 }
 
-int DelayManager::CalculateTargetLevel(int iat_packets) {
+int DelayManager::CalculateTargetLevel(int iat_packets, bool reordered) {
   int limit_probability = forced_limit_probability_.value_or(kLimitProbability);
   if (streaming_mode_) {
     limit_probability = kLimitProbabilityStreaming;
@@ -325,7 +337,8 @@ int DelayManager::CalculateTargetLevel(int iat_packets) {
   base_target_level_ = static_cast<int>(index);
 
   // Update detector for delay peaks.
-  bool delay_peak_found = peak_detector_.Update(iat_packets, target_level);
+  bool delay_peak_found =
+      peak_detector_.Update(iat_packets, reordered, target_level);
   if (delay_peak_found) {
     target_level = std::max(target_level, peak_detector_.MaxPeakHeight());
   }

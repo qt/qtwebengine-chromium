@@ -1629,6 +1629,7 @@ void GenerateCaps(ID3D11Device *device,
     extensions->copyTexture3d      = true;
     extensions->textureBorderClamp = true;
     extensions->textureMultisample = true;
+    extensions->provokingVertex    = true;
 
     // D3D11 Feature Level 10_0+ uses SV_IsFrontFace in HLSL to emulate gl_FrontFacing.
     // D3D11 Feature Level 9_3 doesn't support SV_IsFrontFace, and has no equivalent, so can't
@@ -2152,7 +2153,7 @@ angle::Result GenerateInitialTextureData(
         outSubresourceData->at(i).SysMemSlicePitch = mipDepthPitch;
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 UINT GetPrimitiveRestartIndex()
@@ -2267,7 +2268,7 @@ angle::Result LazyResource<ResourceT>::resolveImpl(d3d::Context *context,
         ANGLE_TRY(renderer->allocateResource(context, desc, initData, &mResource));
         mResource.setDebugName(name);
     }
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 template angle::Result LazyResource<ResourceType::BlendState>::resolveImpl(
@@ -2503,17 +2504,18 @@ bool UsePresentPathFast(const Renderer11 *renderer,
             renderer->presentPathFastEnabled());
 }
 
-bool UsePrimitiveRestartWorkaround(bool primitiveRestartFixedIndexEnabled, GLenum type)
+bool UsePrimitiveRestartWorkaround(bool primitiveRestartFixedIndexEnabled,
+                                   gl::DrawElementsType type)
 {
     // We should never have to deal with primitive restart workaround issue with GL_UNSIGNED_INT
     // indices, since we restrict it via MAX_ELEMENT_INDEX.
-    return (!primitiveRestartFixedIndexEnabled && type == GL_UNSIGNED_SHORT);
+    return (!primitiveRestartFixedIndexEnabled && type == gl::DrawElementsType::UnsignedShort);
 }
 
 IndexStorageType ClassifyIndexStorage(const gl::State &glState,
                                       const gl::Buffer *elementArrayBuffer,
-                                      GLenum elementType,
-                                      GLenum destElementType,
+                                      gl::DrawElementsType elementType,
+                                      gl::DrawElementsType destElementType,
                                       unsigned int offset)
 {
     // No buffer bound means we are streaming from a client pointer.

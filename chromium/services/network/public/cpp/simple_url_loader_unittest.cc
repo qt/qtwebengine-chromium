@@ -1730,7 +1730,7 @@ class MockURLLoader : public network::mojom::URLLoader {
         weak_factory_for_data_pipe_callbacks_(this) {
     if (request_body && request_body->elements()->size() == 1 &&
         (*request_body->elements())[0].type() ==
-            network::DataElement::TYPE_DATA_PIPE) {
+            network::mojom::DataElementType::kDataPipe) {
       data_pipe_getter_ = (*request_body->elements())[0].CloneDataPipeGetter();
       DCHECK(data_pipe_getter_);
     }
@@ -1925,11 +1925,9 @@ class MockURLLoader : public network::mojom::URLLoader {
   ~MockURLLoader() override {}
 
   // network::mojom::URLLoader implementation:
-  void FollowRedirect(
-      const base::Optional<std::vector<std::string>>&
-          to_be_removed_request_headers,
-      const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
-      const base::Optional<GURL>& new_url) override {}
+  void FollowRedirect(const std::vector<std::string>& removed_headers,
+                      const net::HttpRequestHeaders& modified_headers,
+                      const base::Optional<GURL>& new_url) override {}
   void ProceedWithResponse() override {}
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override {

@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_FILL_H_
 #define FXJS_XFA_CJX_FILL_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_Fill;
 
@@ -16,10 +16,6 @@ class CJX_Fill final : public CJX_Node {
  public:
   explicit CJX_Fill(CXFA_Fill* node);
   ~CJX_Fill() override;
-
-  JSE_PROP(presence);
-  JSE_PROP(use);
-  JSE_PROP(usehref);
 };
 
 #endif  // FXJS_XFA_CJX_FILL_H_

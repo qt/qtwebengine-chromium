@@ -131,13 +131,6 @@ size_t NearHeapLimitCallbackOnMainThread(void* data,
                                          size_t current_heap_limit,
                                          size_t initial_heap_limit) {
   v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(data);
-  V8PerIsolateData* per_isolate_data = V8PerIsolateData::From(isolate);
-  if (per_isolate_data->IsNearV8HeapLimitHandled()) {
-    // Ignore all calls after the first one.
-    return current_heap_limit;
-  }
-  per_isolate_data->HandledNearV8HeapLimit();
-
   // Find the main document for UKM recording.
   Document* document = nullptr;
   int pages = 0;
@@ -174,12 +167,6 @@ size_t NearHeapLimitCallbackOnWorkerThread(void* data,
                                            size_t current_heap_limit,
                                            size_t initial_heap_limit) {
   v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(data);
-  V8PerIsolateData* per_isolate_data = V8PerIsolateData::From(isolate);
-  if (per_isolate_data->IsNearV8HeapLimitHandled()) {
-    // Ignore all calls after the first one.
-    return current_heap_limit;
-  }
-  per_isolate_data->HandledNearV8HeapLimit();
   // Do not record UKM on worker thread.
   Record(NearV8HeapLimitHandling::kIgnoredDueToWorker, isolate,
          current_heap_limit, nullptr, 0);
@@ -198,7 +185,7 @@ static String ExtractMessageForConsole(v8::Isolate* isolate,
   if (V8DOMWrapper::IsWrapper(isolate, data)) {
     v8::Local<v8::Object> obj = v8::Local<v8::Object>::Cast(data);
     const WrapperTypeInfo* type = ToWrapperTypeInfo(obj);
-    if (V8DOMException::wrapper_type_info.IsSubclass(type)) {
+    if (V8DOMException::GetWrapperTypeInfo()->IsSubclass(type)) {
       DOMException* exception = V8DOMException::ToImpl(obj);
       if (exception && !exception->MessageForConsole().IsEmpty())
         return exception->ToStringForConsole();
@@ -552,9 +539,9 @@ static bool WasmInstanceOverride(
   if (!source->IsWebAssemblyCompiledModule())
     return false;
 
-  v8::Local<v8::WasmCompiledModule> module =
-      v8::Local<v8::WasmCompiledModule>::Cast(source);
-  if (module->GetWasmWireBytesRef().size > kWasmWireBytesLimit) {
+  v8::CompiledWasmModule compiled_module =
+      v8::Local<v8::WasmModuleObject>::Cast(source)->GetCompiledModule();
+  if (compiled_module.GetWireBytesRef().size() > kWasmWireBytesLimit) {
     ThrowRangeException(
         args.GetIsolate(),
         "WebAssembly.Instance is disallowed on the main thread, "
@@ -691,12 +678,8 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
   WTF::ArrayBufferContents::Initialize(AdjustAmountOfExternalAllocatedMemory);
 
   DEFINE_STATIC_LOCAL(ArrayBufferAllocator, array_buffer_allocator, ());
-  auto v8_extras_mode = RuntimeEnabledFeatures::ExperimentalV8ExtrasEnabled()
-                            ? gin::IsolateHolder::kStableAndExperimentalV8Extras
-                            : gin::IsolateHolder::kStableV8Extras;
   gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode,
-                                 v8_extras_mode, &array_buffer_allocator,
-                                 reference_table);
+                                 &array_buffer_allocator, reference_table);
 
   ThreadScheduler* scheduler = ThreadScheduler::Current();
 
@@ -705,12 +688,6 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
       Platform::Current()->IsTakingV8ContextSnapshot()
           ? V8PerIsolateData::V8ContextSnapshotMode::kTakeSnapshot
           : V8PerIsolateData::V8ContextSnapshotMode::kUseSnapshot;
-  if (v8_context_snapshot_mode ==
-          V8PerIsolateData::V8ContextSnapshotMode::kUseSnapshot &&
-      !RuntimeEnabledFeatures::V8ContextSnapshotEnabled()) {
-    v8_context_snapshot_mode =
-        V8PerIsolateData::V8ContextSnapshotMode::kDontUseSnapshot;
-  }
 #else
   V8PerIsolateData::V8ContextSnapshotMode v8_context_snapshot_mode =
       V8PerIsolateData::V8ContextSnapshotMode::kDontUseSnapshot;
@@ -741,6 +718,7 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
     DCHECK(g_near_heap_limit_on_main_thread_callback_);
     isolate->AddNearHeapLimitCallback(NearHeapLimitCallbackOnMainThread,
                                       isolate);
+    isolate->AutomaticallyRestoreInitialHeapLimit();
   }
   isolate->SetFatalErrorHandler(ReportFatalErrorInMainThread);
   isolate->AddMessageListenerWithErrorLevel(

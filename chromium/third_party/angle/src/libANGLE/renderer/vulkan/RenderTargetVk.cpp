@@ -10,19 +10,26 @@
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
 
 #include "libANGLE/renderer/vulkan/CommandGraph.h"
+#include "libANGLE/renderer/vulkan/TextureVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
 #include "libANGLE/renderer/vulkan/vk_helpers.h"
 
 namespace rx
 {
-RenderTargetVk::RenderTargetVk(vk::ImageHelper *image, vk::ImageView *imageView, size_t layerIndex)
-    : mImage(image), mImageView(imageView), mLayerIndex(layerIndex)
+RenderTargetVk::RenderTargetVk(vk::ImageHelper *image,
+                               vk::ImageView *imageView,
+                               size_t layerIndex,
+                               TextureVk *owner)
+    : mImage(image), mImageView(imageView), mLayerIndex(layerIndex), mOwner(owner)
 {}
 
 RenderTargetVk::~RenderTargetVk() {}
 
 RenderTargetVk::RenderTargetVk(RenderTargetVk &&other)
-    : mImage(other.mImage), mImageView(other.mImageView), mLayerIndex(other.mLayerIndex)
+    : mImage(other.mImage),
+      mImageView(other.mImageView),
+      mLayerIndex(other.mLayerIndex),
+      mOwner(other.mOwner)
 {}
 
 void RenderTargetVk::onColorDraw(vk::FramebufferHelper *framebufferVk,
@@ -67,16 +74,27 @@ void RenderTargetVk::onDepthStencilDraw(vk::FramebufferHelper *framebufferVk,
     mImage->addWriteDependency(framebufferVk);
 }
 
+vk::ImageHelper &RenderTargetVk::getImage()
+{
+    ASSERT(mImage && mImage->valid());
+    return *mImage;
+}
+
 const vk::ImageHelper &RenderTargetVk::getImage() const
 {
     ASSERT(mImage && mImage->valid());
     return *mImage;
 }
 
-vk::ImageView *RenderTargetVk::getImageView() const
+vk::ImageView *RenderTargetVk::getDrawImageView() const
 {
     ASSERT(mImageView && mImageView->valid());
     return mImageView;
+}
+
+vk::ImageView *RenderTargetVk::getReadImageView() const
+{
+    return getDrawImageView();
 }
 
 const vk::Format &RenderTargetVk::getImageFormat() const
@@ -96,9 +114,10 @@ void RenderTargetVk::updateSwapchainImage(vk::ImageHelper *image, vk::ImageView 
     ASSERT(image && image->valid() && imageView && imageView->valid());
     mImage     = image;
     mImageView = imageView;
+    mOwner     = nullptr;
 }
 
-vk::ImageHelper *RenderTargetVk::getImageForRead(vk::RecordableGraphResource *readingResource,
+vk::ImageHelper *RenderTargetVk::getImageForRead(vk::CommandGraphResource *readingResource,
                                                  VkImageLayout layout,
                                                  vk::CommandBuffer *commandBuffer)
 {
@@ -114,12 +133,20 @@ vk::ImageHelper *RenderTargetVk::getImageForRead(vk::RecordableGraphResource *re
     return mImage;
 }
 
-vk::ImageHelper *RenderTargetVk::getImageForWrite(
-    vk::RecordableGraphResource *writingResource) const
+vk::ImageHelper *RenderTargetVk::getImageForWrite(vk::CommandGraphResource *writingResource) const
 {
     ASSERT(mImage && mImage->valid());
     mImage->addWriteDependency(writingResource);
     return mImage;
+}
+
+angle::Result RenderTargetVk::ensureImageInitialized(ContextVk *contextVk)
+{
+    if (mOwner)
+    {
+        return mOwner->ensureImageInitialized(contextVk);
+    }
+    return angle::Result::Continue;
 }
 
 }  // namespace rx

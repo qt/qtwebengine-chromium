@@ -129,6 +129,16 @@ void SkBaseDevice::drawDRRect(const SkRRect& outer,
     this->drawPath(path, paint, true);
 }
 
+void SkBaseDevice::drawEdgeAARect(const SkRect& r, SkCanvas::QuadAAFlags aa, SkColor color,
+                                  SkBlendMode mode) {
+    SkPaint paint;
+    paint.setColor(color);
+    paint.setBlendMode(mode);
+    paint.setAntiAlias(aa == SkCanvas::kAll_QuadAAFlags);
+
+    this->drawRect(r, paint);
+}
+
 void SkBaseDevice::drawPatch(const SkPoint cubics[12], const SkColor colors[4],
                              const SkPoint texCoords[4], SkBlendMode bmode, const SkPaint& paint) {
     SkISize lod = SkPatchUtils::GetLevelOfDetail(cubics, &this->ctm());
@@ -326,23 +336,37 @@ bool SkBaseDevice::peekPixels(SkPixmap* pmap) {
 
 #include "SkUtils.h"
 
-void SkBaseDevice::drawGlyphRunRSXform(
-        SkGlyphRun* run, const SkRSXform* xform) {
+void SkBaseDevice::drawGlyphRunRSXform(const SkFont& font, const SkGlyphID glyphs[],
+                                       const SkRSXform xform[], int count, SkPoint origin,
+                                       const SkPaint& paint) {
     const SkMatrix originalCTM = this->ctm();
-    if (!originalCTM.isFinite() || !SkScalarIsFinite(run->paint().getTextSize()) ||
-        !SkScalarIsFinite(run->paint().getTextScaleX()) ||
-        !SkScalarIsFinite(run->paint().getTextSkewX())) {
+    if (!originalCTM.isFinite() || !SkScalarIsFinite(font.getSize()) ||
+        !SkScalarIsFinite(font.getScaleX()) ||
+        !SkScalarIsFinite(font.getSkewX())) {
         return;
     }
 
-    auto perGlyph = [this, &xform, &originalCTM] (const SkGlyphRun& glyphRun) {
+    SkPoint sharedPos{0, 0};    // we're at the origin
+    SkGlyphID glyphID;
+    SkGlyphRun glyphRun{
+        font,
+        SkSpan<const SkPoint>{&sharedPos, 1},
+        SkSpan<const SkGlyphID>{&glyphID, 1},
+        SkSpan<const char>{},
+        SkSpan<const uint32_t>{}
+    };
+
+    for (int i = 0; i < count; i++) {
+        glyphID = glyphs[i];
+        // now "glyphRun" is pointing at the current glyphID
+
         SkMatrix ctm;
-        ctm.setRSXform(*xform++);
+        ctm.setRSXform(xform[i]).postTranslate(origin.fX, origin.fY);
 
         // We want to rotate each glyph by the rsxform, but we don't want to rotate "space"
         // (i.e. the shader that cares about the ctm) so we have to undo our little ctm trick
         // with a localmatrixshader so that the shader draws as if there was no change to the ctm.
-        SkPaint transformingPaint = glyphRun.paint();
+        SkPaint transformingPaint{paint};
         auto shader = transformingPaint.getShader();
         if (shader) {
             SkMatrix inverse;
@@ -356,16 +380,18 @@ void SkBaseDevice::drawGlyphRunRSXform(
         ctm.setConcat(originalCTM, ctm);
         this->setCTM(ctm);
 
-        SkGlyphRun transformedGlyphRun{glyphRun, transformingPaint};
-        this->drawGlyphRunList(SkGlyphRunList{transformedGlyphRun});
-    };
-    run->eachGlyphToGlyphRun(perGlyph);
+        this->drawGlyphRunList(SkGlyphRunList{glyphRun, transformingPaint});
+    }
     this->setCTM(originalCTM);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkSurface> SkBaseDevice::makeSurface(SkImageInfo const&, SkSurfaceProps const&) {
+    return nullptr;
+}
+
+sk_sp<SkSpecialImage> SkBaseDevice::snapBackImage(const SkIRect&) {
     return nullptr;
 }
 

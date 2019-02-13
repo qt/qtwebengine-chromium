@@ -176,6 +176,25 @@ public:
     */
     static sk_sp<SkImage> MakeFromEncoded(sk_sp<SkData> encoded, const SkIRect* subset = nullptr);
 
+    enum CompressionType {
+        kETC1_CompressionType, //!< compressed data uses ETC1 compression
+    };
+
+    /** Creates a GPU-backed SkImage from compressed data.
+
+        SkImage is returned if format of the compressed data is supported.
+        Supported formats vary by platform.
+
+        @param context  GPU context
+        @param data     compressed data to store in SkImage
+        @param width    width of full SkImage
+        @param height   height of full SkImage
+        @param type     type of compression used
+        @return         created SkImage, or nullptr
+    */
+    static sk_sp<SkImage> MakeFromCompressed(GrContext* context, sk_sp<SkData> data,
+                                             int width, int height, CompressionType type);
+
     /** User function called when supplied texture may be deleted.
     */
     typedef void (*TextureReleaseProc)(ReleaseContext releaseContext);
@@ -932,12 +951,20 @@ public:
         of GPU texture returned. offset translates the returned SkImage to keep subsequent
         animation frames aligned with respect to each other.
 
+        @param context     the GrContext in play - if it exists
         @param filter      how SkImage is sampled when transformed
         @param subset      bounds of SkImage processed by filter
         @param clipBounds  expected bounds of filtered SkImage
         @param outSubset   storage for returned SkImage bounds
         @param offset      storage for returned SkImage translation
         @return            filtered SkImage, or nullptr
+    */
+    sk_sp<SkImage> makeWithFilter(GrContext* context,
+                                  const SkImageFilter* filter, const SkIRect& subset,
+                                  const SkIRect& clipBounds, SkIRect* outSubset,
+                                  SkIPoint* offset) const;
+
+    /** To be deprecated.
     */
     sk_sp<SkImage> makeWithFilter(const SkImageFilter* filter, const SkIRect& subset,
                                   const SkIRect& clipBounds, SkIRect* outSubset,
@@ -1011,6 +1038,19 @@ public:
         @return        created SkImage in target SkColorSpace
     */
     sk_sp<SkImage> makeColorSpace(sk_sp<SkColorSpace> target) const;
+
+    /** Experimental.
+        Creates SkImage in target SkColorType and SkColorSpace.
+        Returns nullptr if SkImage could not be created.
+
+        Returns original SkImage if it is in target SkColorType and SkColorSpace.
+
+        @param targetColorType  SkColorType of returned SkImage
+        @param targetColorSpace SkColorSpace of returned SkImage
+        @return                 created SkImage in target SkColorType and SkColorSpace
+    */
+    sk_sp<SkImage> makeColorTypeAndColorSpace(SkColorType targetColorType,
+                                              sk_sp<SkColorSpace> targetColorSpace) const;
 
 private:
     SkImage(int width, int height, uint32_t uniqueID);

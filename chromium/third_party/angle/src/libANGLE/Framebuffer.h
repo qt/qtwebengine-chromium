@@ -38,17 +38,16 @@ class Surface;
 
 namespace gl
 {
+struct Caps;
 class Context;
-class ContextState;
+struct Extensions;
 class Framebuffer;
 class ImageIndex;
+struct Rectangle;
 class Renderbuffer;
 class State;
 class Texture;
 class TextureCapsMap;
-struct Caps;
-struct Extensions;
-struct Rectangle;
 
 class FramebufferState final : angle::NonCopyable
 {
@@ -164,7 +163,7 @@ class Framebuffer final : public angle::ObserverInterface,
     ~Framebuffer() override;
     void onDestroy(const Context *context);
 
-    void setLabel(const std::string &label) override;
+    void setLabel(const Context *context, const std::string &label) override;
     const std::string &getLabel() const override;
 
     rx::FramebufferImpl *getImplementation() const { return mImpl; }
@@ -218,7 +217,7 @@ class Framebuffer final : public angle::ObserverInterface,
     const std::vector<GLenum> &getDrawBufferStates() const;
     void setDrawBuffers(size_t count, const GLenum *buffers);
     const FramebufferAttachment *getDrawBuffer(size_t drawBuffer) const;
-    GLenum getDrawbufferWriteType(size_t drawBuffer) const;
+    ComponentType getDrawbufferWriteType(size_t drawBuffer) const;
     ComponentTypeMask getDrawBufferTypeMask() const;
     DrawBufferMask getDrawBufferMask() const;
     bool hasEnabledDrawBuffer() const;
@@ -337,6 +336,8 @@ class Framebuffer final : public angle::ObserverInterface,
 
     using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }
+
+    bool hasResourceThatNeedsInit() const { return mState.mResourceNeedsInit.any(); }
 
     angle::Result syncState(const Context *context);
 

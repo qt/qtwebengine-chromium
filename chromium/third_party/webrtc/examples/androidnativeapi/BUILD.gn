@@ -18,6 +18,7 @@ if (is_android) {
       "//sdk/android:surfaceviewrenderer_java",
       "//sdk/android:video_api_java",
       "//sdk/android:video_java",
+      "//third_party/android_deps:android_support_annotations_java",
     ]
 
     shared_libraries = [ ":examples_androidnativeapi_jni" ]
@@ -36,7 +37,8 @@ if (is_android) {
   rtc_shared_library("examples_androidnativeapi_jni") {
     testonly = true
     sources = [
-      "jni/androidcallclient.cc",
+      "jni/android_call_client.cc",
+      "jni/android_call_client.h",
       "jni/androidcallclient.h",
       "jni/onload.cc",
     ]

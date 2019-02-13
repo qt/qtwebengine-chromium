@@ -1,5 +1,5 @@
 /*
- *  Copyright 2018 The WebRTC Project Authors. All rights reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -11,22 +11,9 @@
 #ifndef API_ASYNCRESOLVERFACTORY_H_
 #define API_ASYNCRESOLVERFACTORY_H_
 
-#include "rtc_base/asyncresolverinterface.h"
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
 
-namespace webrtc {
-
-// An abstract factory for creating AsyncResolverInterfaces. This allows
-// client applications to provide WebRTC with their own mechanism for
-// performing DNS resolution.
-class AsyncResolverFactory {
- public:
-  AsyncResolverFactory() = default;
-  virtual ~AsyncResolverFactory() = default;
-
-  // The caller should call Destroy on the returned object to delete it.
-  virtual rtc::AsyncResolverInterface* Create() = 0;
-};
-
-}  // namespace webrtc
+#include "api/async_resolver_factory.h"
 
 #endif  // API_ASYNCRESOLVERFACTORY_H_

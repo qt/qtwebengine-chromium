@@ -83,26 +83,27 @@ static const struct {
     { "angle_gl_es2_msaa8",    "gpu", "api=angle_gl_es2,samples=8" },
     { "angle_gl_es3_msaa8",    "gpu", "api=angle_gl_es3,samples=8" },
     { "commandbuffer",         "gpu", "api=commandbuffer" },
-    { "mock",                  "gpu", "api=mock" }
+    { "mock",                  "gpu", "api=mock" },
 #ifdef SK_VULKAN
-    ,{ "vk",                   "gpu", "api=vulkan" }
-    ,{ "vknostencils",         "gpu", "api=vulkan,stencils=false" }
-    ,{ "vk1010102",            "gpu", "api=vulkan,color=1010102" }
-    ,{ "vksrgb",               "gpu", "api=vulkan,color=srgb" }
-    ,{ "vkesrgb",              "gpu", "api=vulkan,color=esrgb" }
-    ,{ "vknarrow",             "gpu", "api=vulkan,color=narrow" }
-    ,{ "vkenarrow",            "gpu", "api=vulkan,color=enarrow" }
-    ,{ "vkf16",                "gpu", "api=vulkan,color=f16" }
-    ,{ "vkmsaa4",              "gpu", "api=vulkan,samples=4" }
-    ,{ "vkmsaa8",              "gpu", "api=vulkan,samples=8" }
-    ,{ "vkbetex",              "gpu", "api=vulkan,surf=betex" }
-    ,{ "vkbert",               "gpu", "api=vulkan,surf=bert" }
+    { "vk",                    "gpu", "api=vulkan" },
+    { "vknostencils",          "gpu", "api=vulkan,stencils=false" },
+    { "vk1010102",             "gpu", "api=vulkan,color=1010102" },
+    { "vksrgb",                "gpu", "api=vulkan,color=srgb" },
+    { "vkesrgb",               "gpu", "api=vulkan,color=esrgb" },
+    { "vknarrow",              "gpu", "api=vulkan,color=narrow" },
+    { "vkenarrow",             "gpu", "api=vulkan,color=enarrow" },
+    { "vkf16",                 "gpu", "api=vulkan,color=f16" },
+    { "vkmsaa4",               "gpu", "api=vulkan,samples=4" },
+    { "vkmsaa8",               "gpu", "api=vulkan,samples=8" },
+    { "vkbetex",               "gpu", "api=vulkan,surf=betex" },
+    { "vkbert",                "gpu", "api=vulkan,surf=bert" },
+    { "vktestpersistentcache", "gpu", "api=vulkan,testPersistentCache=true" },
 #endif
 #ifdef SK_METAL
-    ,{ "mtl",                   "gpu", "api=metal" }
-    ,{ "mtl1010102",            "gpu", "api=metal,color=1010102" }
-    ,{ "mtlmsaa4",              "gpu", "api=metal,samples=4" }
-    ,{ "mtlmsaa8",              "gpu", "api=metal,samples=8" }
+    { "mtl",                   "gpu", "api=metal" },
+    { "mtl1010102",            "gpu", "api=metal,color=1010102" },
+    { "mtlmsaa4",              "gpu", "api=metal,samples=4" },
+    { "mtlmsaa8",              "gpu", "api=metal,samples=8" },
 #endif
 };
 // clang-format on
@@ -308,16 +309,13 @@ static bool parse_option_gpu_color(const SkString& value,
         *outColorSpace = SkColorSpace::MakeSRGB();
     } else if (value.equals("p3")) {
         *outColorType = kRGBA_8888_SkColorType;
-        *outColorSpace = SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                               SkColorSpace::kDCIP3_D65_Gamut);
+        *outColorSpace = SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDCIP3);
     } else if (value.equals("esrgb")) {
         *outColorType = kRGBA_F16_SkColorType;
         *outColorSpace = SkColorSpace::MakeSRGB();
     } else if (value.equals("narrow") || value.equals("enarrow")) {
-        SkMatrix44 narrow_gamut;
-        narrow_gamut.set3x3RowMajorf(gNarrow_toXYZD50);
         *outColorType = value.equals("narrow") ? kRGBA_8888_SkColorType : kRGBA_F16_SkColorType;
-        *outColorSpace = SkColorSpace::MakeRGB(k2Dot2Curve_SkGammaNamed, narrow_gamut);
+        *outColorSpace = SkColorSpace::MakeRGB(SkNamedTransferFn::k2Dot2, gNarrow_toXYZD50);
     } else if (value.equals("f16")) {
         *outColorType = kRGBA_F16_SkColorType;
         *outColorSpace = SkColorSpace::MakeSRGBLinear();

@@ -39,6 +39,7 @@ GrProcessorSet::GrProcessorSet(GrPaint&& paint) : fXP(paint.getXPFactory()) {
         SkDebugf("Insane number of color fragment processors in paint. Dropping all processors.");
         fColorFragmentProcessorCnt = 0;
     }
+    SkDEBUGCODE(paint.fAlive = false;)
 }
 
 GrProcessorSet::GrProcessorSet(SkBlendMode mode)
@@ -123,7 +124,7 @@ SkString GrProcessorSet::dumpProcessors() const {
             result.append("SrcOver\n");
         }
     } else {
-        result.append("XP Factory dumping not implemented.\n");
+        result.appendf("XP Factory: %s\n", GrXPFactory::GetDescription(this->xpFactory()).c_str());
     }
     return result;
 }
@@ -211,19 +212,13 @@ GrProcessorSet::Analysis GrProcessorSet::finalize(const GrProcessorAnalysisColor
             this->xpFactory(), colorAnalysis.outputColor(), outputCoverage, caps);
     if (!this->numCoverageFragmentProcessors() &&
         GrProcessorAnalysisCoverage::kNone == coverageInput) {
-        analysis.fCanCombineOverlappedStencilAndCover = SkToBool(
-                props & GrXPFactory::AnalysisProperties::kCanCombineOverlappedStencilAndCover);
-    } else {
-        // If we have non-clipping coverage processors we don't try to merge stencil steps as its
-        // unclear whether it will be correct. We don't expect this to happen in practice.
-        analysis.fCanCombineOverlappedStencilAndCover = false;
     }
     analysis.fRequiresDstTexture =
             SkToBool(props & GrXPFactory::AnalysisProperties::kRequiresDstTexture);
     analysis.fCompatibleWithCoverageAsAlpha &=
             SkToBool(props & GrXPFactory::AnalysisProperties::kCompatibleWithAlphaAsCoverage);
-    analysis.fRequiresBarrierBetweenOverlappingDraws = SkToBool(
-            props & GrXPFactory::AnalysisProperties::kRequiresBarrierBetweenOverlappingDraws);
+    analysis.fRequiresNonOverlappingDraws = SkToBool(
+            props & GrXPFactory::AnalysisProperties::kRequiresNonOverlappingDraws);
     if (props & GrXPFactory::AnalysisProperties::kIgnoresInputColor) {
         colorFPsToEliminate = this->numColorFragmentProcessors();
         analysis.fInputColorType =
@@ -247,5 +242,12 @@ GrProcessorSet::Analysis GrProcessorSet::finalize(const GrProcessorAnalysisColor
 
     fFlags |= kFinalized_Flag;
     analysis.fIsInitialized = true;
+#ifdef SK_DEBUG
+    bool hasXferBarrier =
+            fXP.fProcessor &&
+            GrXferBarrierType::kNone_GrXferBarrierType != fXP.fProcessor->xferBarrierType(caps);
+    bool needsNonOverlappingDraws = analysis.fRequiresDstTexture || hasXferBarrier;
+    SkASSERT(analysis.fRequiresNonOverlappingDraws == needsNonOverlappingDraws);
+#endif
     return analysis;
 }

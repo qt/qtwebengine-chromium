@@ -3734,6 +3734,13 @@ void sqlite3VdbeRecordUnpack(
     pMem++;
     if( (++u)>=p->nField ) break;
   }
+  if( d>nKey && u ){
+    assert( CORRUPT_DB );
+    /* In a corrupt record entry, the last pMem might have been set up using
+    ** uninitialized memory. Overwrite its value with NULL, to prevent
+    ** warnings from MSAN. */
+    sqlite3VdbeMemSetNull(pMem-1);
+  }
   assert( u<=pKeyInfo->nKeyField + 1 );
   p->nField = u;
 }
@@ -3799,8 +3806,8 @@ static int vdbeRecordCompareDebug(
     ** Use that approximation to avoid the more expensive call to
     ** sqlite3VdbeSerialTypeLen() in the common case.
     */
-    if( d1+serial_type1+2>(u32)nKey1
-     && d1+sqlite3VdbeSerialTypeLen(serial_type1)>(u32)nKey1
+    if( d1+(u64)serial_type1+2>(u64)nKey1
+     && d1+(u64)sqlite3VdbeSerialTypeLen(serial_type1)>(u64)nKey1
     ){
       break;
     }
@@ -3811,7 +3818,8 @@ static int vdbeRecordCompareDebug(
 
     /* Do the comparison
     */
-    rc = sqlite3MemCompare(&mem1, &pPKey2->aMem[i], pKeyInfo->aColl[i]);
+    rc = sqlite3MemCompare(&mem1, &pPKey2->aMem[i],
+                           pKeyInfo->nAllField>i ? pKeyInfo->aColl[i] : 0);
     if( rc!=0 ){
       assert( mem1.szMalloc==0 );  /* See comment below */
       if( pKeyInfo->aSortOrder[i] ){
@@ -4242,10 +4250,12 @@ int sqlite3VdbeRecordCompareWithSkip(
         mem1.n = (serial_type - 12) / 2;
         testcase( (d1+mem1.n)==(unsigned)nKey1 );
         testcase( (d1+mem1.n+1)==(unsigned)nKey1 );
-        if( (d1+mem1.n) > (unsigned)nKey1 ){
+        if( (d1+mem1.n) > (unsigned)nKey1
+         || (pKeyInfo = pPKey2->pKeyInfo)->nAllField<=i
+        ){
           pPKey2->errCode = (u8)SQLITE_CORRUPT_BKPT;
           return 0;                /* Corruption */
-        }else if( (pKeyInfo = pPKey2->pKeyInfo)->aColl[i] ){
+        }else if( pKeyInfo->aColl[i] ){
           mem1.enc = pKeyInfo->enc;
           mem1.db = pKeyInfo->db;
           mem1.flags = MEM_Str;

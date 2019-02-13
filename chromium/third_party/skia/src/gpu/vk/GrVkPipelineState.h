@@ -9,11 +9,10 @@
 #ifndef GrVkPipelineState_DEFINED
 #define GrVkPipelineState_DEFINED
 
-#include "GrVkVulkan.h"
-
 #include "GrVkDescriptorSetManager.h"
 #include "GrVkPipelineStateDataManager.h"
 #include "glsl/GrGLSLProgramBuilder.h"
+#include "vk/GrVkTypes.h"
 
 class GrPipeline;
 class GrStencilSettings;
@@ -49,7 +48,7 @@ public:
             const UniformInfoArray& uniforms,
             uint32_t geometryUniformSize,
             uint32_t fragmentUniformSize,
-            uint32_t numSamplers,
+            const UniformInfoArray& samplers,
             std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
             std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
             std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors,
@@ -71,7 +70,7 @@ public:
 
     void addUniformResources(GrVkCommandBuffer&, GrVkSampler*[], GrVkTexture*[], int numTextures);
 
-    void freeGPUResources(const GrVkGpu* gpu);
+    void freeGPUResources(GrVkGpu* gpu);
 
     void abandonGPUResources();
 
@@ -135,6 +134,8 @@ private:
     const GrVkDescriptorSet* fSamplerDescriptorSet;
 
     const GrVkDescriptorSetManager::Handle fSamplerDSHandle;
+
+    SkSTArray<4, const GrVkSampler*>   fImmutableSamplers;
 
     std::unique_ptr<GrVkUniformBuffer> fGeometryUniformBuffer;
     std::unique_ptr<GrVkUniformBuffer> fFragmentUniformBuffer;

@@ -25,10 +25,11 @@
 
 #include "absl/types/optional.h"
 #include "api/array_view.h"
-#include "api/rtcerror.h"
+#include "api/rtc_error.h"
 #include "api/video/encoded_image.h"
-#include "rtc_base/copyonwritebuffer.h"
-#include "rtc_base/networkroute.h"
+#include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/deprecation.h"
+#include "rtc_base/network_route.h"
 
 namespace rtc {
 class PacketTransportInternal;
@@ -36,6 +37,17 @@ class Thread;
 }  // namespace rtc
 
 namespace webrtc {
+
+class RtcEventLog;
+
+class AudioPacketReceivedObserver {
+ public:
+  virtual ~AudioPacketReceivedObserver() = default;
+
+  // Invoked for the first received audio packet on a given channel id.
+  // It will be invoked once for each channel id.
+  virtual void OnFirstAudioPacketReceived(int64_t channel_id) = 0;
+};
 
 // A collection of settings for creation of media transport.
 struct MediaTransportSettings final {
@@ -52,6 +64,11 @@ struct MediaTransportSettings final {
   // TODO(bugs.webrtc.org/9944): This should become zero buffer in the distant
   // future.
   absl::optional<std::string> pre_shared_key;
+
+  // If present, provides the event log that media transport should use.
+  // Media transport does not own it. The lifetime of |event_log| will exceed
+  // the lifetime of the instance of MediaTransportInterface instance.
+  RtcEventLog* event_log = nullptr;
 };
 
 // Represents encoded audio frame in any encoding (type of encoding is opaque).
@@ -97,7 +114,7 @@ class MediaTransportEncodedAudioFrame final {
       // Opaque payload type. In RTP codepath payload type is stored in RTP
       // header. In other implementations it should be simply passed through the
       // wire -- it's needed for decoder.
-      uint8_t payload_type,
+      int payload_type,
 
       // Vector with opaque encoded data.
       std::vector<uint8_t> encoded_data);
@@ -116,7 +133,7 @@ class MediaTransportEncodedAudioFrame final {
   int samples_per_channel() const { return samples_per_channel_; }
   int sequence_number() const { return sequence_number_; }
 
-  uint8_t payload_type() const { return payload_type_; }
+  int payload_type() const { return payload_type_; }
   FrameType frame_type() const { return frame_type_; }
 
   rtc::ArrayView<const uint8_t> encoded_data() const { return encoded_data_; }
@@ -132,9 +149,7 @@ class MediaTransportEncodedAudioFrame final {
 
   FrameType frame_type_;
 
-  // TODO(sukhanov): Consider enumerating allowed encodings and store enum
-  // instead of uint payload_type.
-  uint8_t payload_type_;
+  int payload_type_;
 
   std::vector<uint8_t> encoded_data_;
 };
@@ -163,9 +178,15 @@ class MediaTransportAudioSinkInterface {
 // Represents encoded video frame, along with the codec information.
 class MediaTransportEncodedVideoFrame final {
  public:
+  // TODO(bugs.webrtc.org/9719): Switch to payload_type
+  RTC_DEPRECATED MediaTransportEncodedVideoFrame(
+      int64_t frame_id,
+      std::vector<int64_t> referenced_frame_ids,
+      VideoCodecType codec_type,
+      const webrtc::EncodedImage& encoded_image);
   MediaTransportEncodedVideoFrame(int64_t frame_id,
                                   std::vector<int64_t> referenced_frame_ids,
-                                  VideoCodecType codec_type,
+                                  int payload_type,
                                   const webrtc::EncodedImage& encoded_image);
   ~MediaTransportEncodedVideoFrame();
   MediaTransportEncodedVideoFrame(const MediaTransportEncodedVideoFrame&);
@@ -175,7 +196,9 @@ class MediaTransportEncodedVideoFrame final {
       MediaTransportEncodedVideoFrame&& other);
   MediaTransportEncodedVideoFrame(MediaTransportEncodedVideoFrame&&);
 
-  VideoCodecType codec_type() const { return codec_type_; }
+  // TODO(bugs.webrtc.org/9719): Switch to payload_type
+  RTC_DEPRECATED VideoCodecType codec_type() const { return codec_type_; }
+  int payload_type() const { return payload_type_; }
   const webrtc::EncodedImage& encoded_image() const { return encoded_image_; }
 
   int64_t frame_id() const { return frame_id_; }
@@ -183,13 +206,23 @@ class MediaTransportEncodedVideoFrame final {
     return referenced_frame_ids_;
   }
 
- private:
-  VideoCodecType codec_type_;
+  // Hack to workaround lack of ownership of the encoded_image_._buffer. If we
+  // don't already own the underlying data, make a copy.
+  void Retain();
 
-  // The buffer is not owned by the encoded image by default. On the sender it
-  // means that it will need to make a copy of it if it wants to deliver it
-  // asynchronously.
+ private:
+  MediaTransportEncodedVideoFrame();
+
+  VideoCodecType codec_type_;
+  int payload_type_;
+
+  // The buffer is not owned by the encoded image. On the sender it means that
+  // it will need to make a copy using the Retain() method, if it wants to
+  // deliver it asynchronously.
   webrtc::EncodedImage encoded_image_;
+
+  // If non-empty, this is the data for the encoded image.
+  std::vector<uint8_t> encoded_data_;
 
   // Frame id uniquely identifies a frame in a stream. It needs to be unique in
   // a given time window (i.e. technically unique identifier for the lifetime of
@@ -218,7 +251,16 @@ class MediaTransportVideoSinkInterface {
   virtual void OnData(uint64_t channel_id,
                       MediaTransportEncodedVideoFrame frame) = 0;
 
-  // Called when the request for keyframe is received.
+  // TODO(bugs.webrtc.org/9719): Belongs on send side, not receive side.
+  RTC_DEPRECATED virtual void OnKeyFrameRequested(uint64_t channel_id) {}
+};
+
+// Interface for video sender to be notified of received key frame request.
+class MediaTransportKeyFrameRequestCallback {
+ public:
+  virtual ~MediaTransportKeyFrameRequestCallback() = default;
+
+  // Called when a key frame request is received on the transport.
   virtual void OnKeyFrameRequested(uint64_t channel_id) = 0;
 };
 
@@ -241,6 +283,19 @@ class MediaTransportStateCallback {
   virtual void OnStateChanged(MediaTransportState state) = 0;
 };
 
+// Callback for RTT measurements on the receive side.
+// TODO(nisse): Related interfaces: CallStatsObserver and RtcpRttStats. It's
+// somewhat unclear what type of measurement is needed. It's used to configure
+// NACK generation and playout buffer. Either raw measurement values or recent
+// maximum would make sense for this use. Need consolidation of RTT signalling.
+class MediaTransportRttObserver {
+ public:
+  virtual ~MediaTransportRttObserver() = default;
+
+  // Invoked when a new RTT measurement is available, typically once per ACK.
+  virtual void OnRttUpdated(int64_t rtt_ms) = 0;
+};
+
 // Supported types of application data messages.
 enum class DataMessageType {
   // Application data buffer with the binary bit unset.
@@ -259,6 +314,7 @@ enum class DataMessageType {
 // unreliable delivery.
 struct SendDataParams {
   SendDataParams();
+  SendDataParams(const SendDataParams&);
 
   DataMessageType type = DataMessageType::kText;
 
@@ -305,7 +361,8 @@ class DataChannelSink {
 // and receiving bandwidth estimate update from congestion control.
 class MediaTransportInterface {
  public:
-  virtual ~MediaTransportInterface() = default;
+  MediaTransportInterface();
+  virtual ~MediaTransportInterface();
 
   // Start asynchronous send of audio frame. The status returned by this method
   // only pertains to the synchronous operations (e.g.
@@ -320,6 +377,10 @@ class MediaTransportInterface {
   virtual RTCError SendVideoFrame(
       uint64_t channel_id,
       const MediaTransportEncodedVideoFrame& frame) = 0;
+
+  // Used by video sender to be notified on key frame requests.
+  virtual void SetKeyFrameRequestCallback(
+      MediaTransportKeyFrameRequestCallback* callback);
 
   // Requests a keyframe for the particular channel (stream). The caller should
   // check that the keyframe is not present in a jitter buffer already (i.e.
@@ -341,12 +402,27 @@ class MediaTransportInterface {
   // A newly registered observer will be called back with the latest recorded
   // target rate, if available.
   virtual void AddTargetTransferRateObserver(
-      webrtc::TargetTransferRateObserver* observer);
+      TargetTransferRateObserver* observer);
 
   // Removes an existing |observer| from observers. If observer was never
   // registered, an error is logged and method does nothing.
   virtual void RemoveTargetTransferRateObserver(
-      webrtc::TargetTransferRateObserver* observer);
+      TargetTransferRateObserver* observer);
+
+  // Sets audio packets observer, which gets informed about incoming audio
+  // packets. Before destruction, the observer must be unregistered by setting
+  // nullptr.
+  //
+  // This method may be temporary, when the multiplexer is implemented (or
+  // multiplexer may use it to demultiplex channel ids).
+  virtual void SetFirstAudioPacketReceivedObserver(
+      AudioPacketReceivedObserver* observer);
+
+  // Intended for receive side. AddRttObserver registers an observer to be
+  // called for each RTT measurement, typically once per ACK. Before media
+  // transport is destructed the observer must be unregistered.
+  virtual void AddRttObserver(MediaTransportRttObserver* observer);
+  virtual void RemoveRttObserver(MediaTransportRttObserver* observer);
 
   // Returns the last known target transfer rate as reported to the above
   // observers.

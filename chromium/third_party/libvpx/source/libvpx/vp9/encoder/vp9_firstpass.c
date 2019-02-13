@@ -820,6 +820,8 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
   VP9_COMMON *const cm = &cpi->common;
   MACROBLOCKD *const xd = &x->e_mbd;
   TileInfo tile = tile_data->tile_info;
+  const int mb_col_start = ROUND_POWER_OF_TWO(tile.mi_col_start, 1);
+  const int mb_col_end = ROUND_POWER_OF_TWO(tile.mi_col_end, 1);
   struct macroblock_plane *const p = x->plane;
   struct macroblockd_plane *const pd = xd->plane;
   const PICK_MODE_CONTEXT *ctx = &td->pc_root->none;
@@ -846,9 +848,8 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
   assert(new_yv12 != NULL);
   assert(frame_is_intra_only(cm) || (lst_yv12 != NULL));
 
-  xd->mi = cm->mi_grid_visible + xd->mi_stride * (mb_row << 1) +
-           (tile.mi_col_start >> 1);
-  xd->mi[0] = cm->mi + xd->mi_stride * (mb_row << 1) + (tile.mi_col_start >> 1);
+  xd->mi = cm->mi_grid_visible + xd->mi_stride * (mb_row << 1) + mb_col_start;
+  xd->mi[0] = cm->mi + xd->mi_stride * (mb_row << 1) + mb_col_start;
 
   for (i = 0; i < MAX_MB_PLANE; ++i) {
     p[i].coeff = ctx->coeff_pbuf[i][1];
@@ -862,10 +863,9 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
   uv_mb_height = 16 >> (new_yv12->y_height > new_yv12->uv_height);
 
   // Reset above block coeffs.
-  recon_yoffset =
-      (mb_row * recon_y_stride * 16) + (tile.mi_col_start >> 1) * 16;
-  recon_uvoffset = (mb_row * recon_uv_stride * uv_mb_height) +
-                   (tile.mi_col_start >> 1) * uv_mb_height;
+  recon_yoffset = (mb_row * recon_y_stride * 16) + mb_col_start * 16;
+  recon_uvoffset =
+      (mb_row * recon_uv_stride * uv_mb_height) + mb_col_start * uv_mb_height;
 
   // Set up limit values for motion vectors to prevent them extending
   // outside the UMV borders.
@@ -873,8 +873,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
   x->mv_limits.row_max =
       ((cm->mb_rows - 1 - mb_row) * 16) + BORDER_MV_PIXELS_B16;
 
-  for (mb_col = tile.mi_col_start >> 1, c = 0; mb_col < (tile.mi_col_end >> 1);
-       ++mb_col, c++) {
+  for (mb_col = mb_col_start, c = 0; mb_col < mb_col_end; ++mb_col, c++) {
     int this_error;
     int this_intra_error;
     const int use_dc_pred = (mb_col || mb_row) && (!mb_col || !mb_row);
@@ -920,7 +919,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     x->skip_encode = 0;
     x->fp_src_pred = 0;
     // Do intra prediction based on source pixels for tile boundaries
-    if ((mb_col == (tile.mi_col_start >> 1)) && mb_col != 0) {
+    if (mb_col == mb_col_start && mb_col != 0) {
       xd->left_mi = &mi_left;
       x->fp_src_pred = 1;
     }
@@ -1037,23 +1036,28 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
 
     // Other than for the first frame do a motion search.
     if (cm->current_video_frame > 0) {
-      int tmp_err, motion_error, raw_motion_error;
+      int tmp_err, motion_error, this_motion_error, raw_motion_error;
       // Assume 0,0 motion with no mv overhead.
       MV mv = { 0, 0 }, tmp_mv = { 0, 0 };
       struct buf_2d unscaled_last_source_buf_2d;
+      vp9_variance_fn_ptr_t v_fn_ptr = cpi->fn_ptr[bsize];
 
       xd->plane[0].pre[0].buf = first_ref_buf->y_buffer + recon_yoffset;
 #if CONFIG_VP9_HIGHBITDEPTH
       if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
         motion_error = highbd_get_prediction_error(
             bsize, &x->plane[0].src, &xd->plane[0].pre[0], xd->bd);
+        this_motion_error = highbd_get_prediction_error(
+            bsize, &x->plane[0].src, &xd->plane[0].pre[0], 8);
       } else {
         motion_error =
             get_prediction_error(bsize, &x->plane[0].src, &xd->plane[0].pre[0]);
+        this_motion_error = motion_error;
       }
 #else
       motion_error =
           get_prediction_error(bsize, &x->plane[0].src, &xd->plane[0].pre[0]);
+      this_motion_error = motion_error;
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
       // Compute the motion error of the 0,0 motion using the last source
@@ -1080,6 +1084,15 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
         // starting point (best reference) for the search.
         first_pass_motion_search(cpi, x, best_ref_mv, &mv, &motion_error);
 
+        v_fn_ptr.vf = get_block_variance_fn(bsize);
+#if CONFIG_VP9_HIGHBITDEPTH
+        if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+          v_fn_ptr.vf = highbd_get_block_variance_fn(bsize, 8);
+        }
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+        this_motion_error =
+            vp9_get_mvpred_var(x, &mv, best_ref_mv, &v_fn_ptr, 0);
+
         // If the current best reference mv is not centered on 0,0 then do a
         // 0,0 based search as well.
         if (!is_zero_mv(best_ref_mv)) {
@@ -1089,6 +1102,8 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
           if (tmp_err < motion_error) {
             motion_error = tmp_err;
             mv = tmp_mv;
+            this_motion_error =
+                vp9_get_mvpred_var(x, &tmp_mv, &zero_mv, &v_fn_ptr, 0);
           }
         }
 
@@ -1275,7 +1290,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
         int scaled_low_intra_thresh = scale_sse_threshold(cm, LOW_I_THRESH);
         if (this_intra_error < scaled_low_intra_thresh) {
           fp_acc_data->frame_noise_energy += fp_estimate_block_noise(x, bsize);
-          if (motion_error < scaled_low_intra_thresh) {
+          if (this_motion_error < scaled_low_intra_thresh) {
             fp_acc_data->intra_count_low += 1.0;
           } else {
             fp_acc_data->intra_count_high += 1.0;
@@ -1294,7 +1309,7 @@ void vp9_first_pass_encode_tile_mb_row(VP9_COMP *cpi, ThreadData *td,
     recon_uvoffset += uv_mb_height;
 
     // Accumulate row level stats to the corresponding tile stats
-    if (cpi->row_mt && mb_col == (tile.mi_col_end >> 1) - 1)
+    if (cpi->row_mt && mb_col == mb_col_end - 1)
       accumulate_fp_mb_row_stat(tile_data, fp_acc_data);
 
     (*(cpi->row_mt_sync_write_ptr))(&tile_data->row_mt_sync, mb_row, c,
@@ -2301,9 +2316,9 @@ static void allocate_gf_group_bits(VP9_COMP *cpi, int64_t gf_group_bits,
 
     for (idx = 2; idx < MAX_ARF_LAYERS; ++idx) {
       if (arf_depth_boost[idx] == 0) break;
-      arf_depth_bits[idx] =
-          calculate_boost_bits(rc->baseline_gf_interval - total_arfs,
-                               arf_depth_boost[idx], total_group_bits);
+      arf_depth_bits[idx] = calculate_boost_bits(
+          rc->baseline_gf_interval - total_arfs - arf_depth_count[idx],
+          arf_depth_boost[idx], total_group_bits);
 
       total_group_bits -= arf_depth_bits[idx];
       total_arfs += arf_depth_count[idx];
@@ -2675,8 +2690,8 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   }
 
   // Calculate the extra bits to be used for boosted frame(s)
-  gf_arf_bits = calculate_boost_bits(rc->baseline_gf_interval, rc->gfu_boost,
-                                     gf_group_bits);
+  gf_arf_bits = calculate_boost_bits((rc->baseline_gf_interval - 1),
+                                     rc->gfu_boost, gf_group_bits);
 
   // Adjust KF group bits and error remaining.
   twopass->kf_group_error_left -= gf_group_err;

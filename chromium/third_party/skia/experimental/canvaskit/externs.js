@@ -27,33 +27,47 @@ var CanvasKit = {
 	Color: function() {},
 	/** @return {CanvasKit.SkRect} */
 	LTRBRect: function() {},
+	/** @return {CanvasKit.SkRect} */
+	XYWHRect: function() {},
+	/** @return {ImageData} */
+	ImageData: function() {},
 	MakeBlurMaskFilter: function() {},
 	MakeCanvas: function() {},
 	MakeCanvasSurface: function() {},
 	MakeImageShader: function() {},
+	/** @return {CanvasKit.SkImage} */
+	MakeImageFromEncoded: function() {},
+	/** @return {LinearCanvasGradient} */
 	MakeLinearGradientShader: function() {},
-	MakeNimaActor: function() {},
+	MakePathFromCmds: function() {},
+	MakePathFromOp: function() {},
+	MakePathFromSVGString: function() {},
 	MakeRadialGradientShader: function() {},
 	MakeSWCanvasSurface: function() {},
 	MakeSkDashPathEffect: function() {},
 	MakeSkVertices: function() {},
 	MakeSurface: function() {},
+	/** @return {RadialCanvasGradient} */
+	MakeTwoPointConicalGradientShader: function() {},
 	MakeWebGLCanvasSurface: function() {},
 	currentContext: function() {},
 	getColorComponents: function() {},
 	getSkDataBytes: function() {},
-	initFonts: function() {},
 	multiplyByAlpha: function() {},
 	setCurrentContext: function() {},
 
 	// private API (i.e. things declared in the bindings that we use
 	// in the pre-js file)
+	_MakeImage: function() {},
 	_MakeImageShader: function() {},
 	_MakeLinearGradientShader: function() {},
-	_MakeNimaActor: function() {},
+	_MakePathFromCmds: function() {},
 	_MakeRadialGradientShader: function() {},
 	_MakeSkDashPathEffect: function() {},
 	_MakeSkVertices: function() {},
+	_MakeTwoPointConicalGradientShader: function() {},
+	_decodeImage: function() {},
+	_getRasterDirectSurface: function() {},
 	_getRasterN32PremulSurface: function() {},
 	_getWebGLSurface: function() {},
 
@@ -63,40 +77,67 @@ var CanvasKit = {
 
 	// Objects and properties on CanvasKit
 
-	NimaActor: {
-		// public API (from C++ bindings)
-		duration: function() {},
-		getAnimationNames: function() {},
-		render: function() {},
-		seek: function() {},
-		setAnimationByIndex: function() {},
-		setAnimationByName: function() {},
-
-		// private API
-	},
-
 	SkCanvas: {
 		// public API (from C++ bindings)
 		clear: function() {},
+		clipPath: function() {},
+		clipRect: function() {},
+		concat: function() {},
+		drawArc: function() {},
+		drawImage: function() {},
+		drawImageRect: function() {},
+		drawLine: function() {},
+		drawOval: function() {},
 		drawPaint: function() {},
 		drawPath: function() {},
 		drawRect: function() {},
+		drawRoundRect: function() {},
 		drawShadow: function() {},
 		drawText: function() {},
+		drawTextBlob: function() {},
 		drawVertices: function() {},
 		flush: function() {},
+		getTotalMatrix: function() {},
+		restore: function() {},
 		rotate: function() {},
 		save: function() {},
 		scale: function() {},
-		setMatrix: function() {},
 		skew: function() {},
 		translate: function() {},
 
 		// private API
+		_drawSimpleText: function() {},
+		_readPixels: function() {},
+		_writePixels: function() {},
 		delete: function() {},
 	},
 
+	SkFont: {
+		// public API (from C++ bindings)
+		getScaleX: function() {},
+		getSize: function() {},
+		getSkewX: function() {},
+		getTypeface: function() {},
+		measureText: function() {},
+		setScaleX: function() {},
+		setSize: function() {},
+		setSkewX: function() {},
+		setTypeface: function() {},
+	},
+
+	SkFontMgr: {
+		// public API (from C++ bindings)
+		RefDefault: function() {},
+		countFamilies: function() {},
+
+		// private API
+		_makeTypefaceFromData: function() {},
+	},
+
 	SkImage: {
+		// public API (from C++ bindings)
+		height: function() {},
+		width: function() {},
 		// private API
 		_encodeToData: function() {},
 		_encodeToDataWithFormat: function() {},
@@ -118,15 +159,15 @@ var CanvasKit = {
 		copy: function() {},
 		getBlendMode: function() {},
 		getColor: function() {},
+		getFilterQuality: function() {},
 		getStrokeCap: function() {},
 		getStrokeJoin: function() {},
 		getStrokeMiter: function() {},
 		getStrokeWidth: function() {},
-		getTextSize: function() {},
-		measureText: function() {},
 		setAntiAlias: function() {},
 		setBlendMode: function() {},
 		setColor: function() {},
+		setFilterQuality: function() {},
 		setMaskFilter: function() {},
 		setPathEffect: function() {},
 		setShader: function() {},
@@ -135,7 +176,6 @@ var CanvasKit = {
 		setStrokeMiter: function() {},
 		setStrokeWidth: function() {},
 		setStyle: function() {},
-		setTextSize: function() {},
 
 		//private API
 		delete: function() {},
@@ -144,6 +184,7 @@ var CanvasKit = {
 	SkPath: {
 		// public API (from C++ bindings)
 		computeTightBounds: function() {},
+		contains: function() {},
 		/** @return {CanvasKit.SkPath} */
 		copy: function() {},
 		countPoints: function() {},
@@ -151,13 +192,19 @@ var CanvasKit = {
 		getBounds: function() {},
 		getFillType: function() {},
 		getPoint: function() {},
+		isEmpty: function() {},
+		isVolatile: function() {},
+		reset: function() {},
+		rewind: function() {},
 		setFillType: function() {},
+		setIsVolatile: function() {},
 		toSVGString: function() {},
 
 		// private API
 		_addArc: function() {},
 		_addPath: function() {},
 		_addRect: function() {},
+		_addRoundRect: function() {},
 		_arc: function() {},
 		_arcTo: function() {},
 		_close: function() {},
@@ -195,8 +242,12 @@ var CanvasKit = {
 		// private API
 		_flush: function() {},
 		_getRasterN32PremulSurface: function() {},
-		_readPixels: function() {},
 		delete: function() {},
+	},
+
+	SkTextBlob: {
+		MakeFromText: function() {},
+		_MakeFromText: function() {},
 	},
 
 	SkVertices: {
@@ -221,6 +272,20 @@ var CanvasKit = {
 	YELLOW: {},
 	CYAN: {},
 	BLACK: {},
+	WHITE: {},
+
+	MOVE_VERB: {},
+	LINE_VERB: {},
+	QUAD_VERB: {},
+	CONIC_VERB: {},
+	CUBIC_VERB: {},
+	CLOSE_VERB: {},
+
+	AlphaType: {
+		Opaque: {},
+		Premul: {},
+		Unpremul: {},
+	},
 
 	BlendMode: {
 		Clear: {},
@@ -261,11 +326,37 @@ var CanvasKit = {
 		Inner: {},
 	},
 
+	ClipOp: {
+		Difference: {},
+		Intersect: {},
+	},
+
+	ColorType: {
+		Alpha_8: {},
+		RGB_565: {},
+		ARGB_4444: {},
+		RGBA_8888: {},
+		RGB_888x: {},
+		BGRA_8888: {},
+		RGBA_1010102: {},
+		RGB_101010x: {},
+		Gray_8: {},
+		RGBA_F16: {},
+		RGBA_F32: {},
+	},
+
 	FillType: {
 		Winding: {},
 		EvenOdd: {},
 		InverseWinding: {},
 		InverseEvenOdd: {},
+	},
+
+	FilterQuality: {
+		None: {},
+		Low: {},
+		Medium: {},
+		High: {},
 	},
 
 	ImageFormat: {
@@ -279,6 +370,14 @@ var CanvasKit = {
 		StrokeAndFill: {},
 	},
 
+	PathOp: {
+		Difference: {},
+		Intersect: {},
+		Union: {},
+		XOR: {},
+		ReverseDifference: {},
+	},
+
 	StrokeCap: {
 		Butt: {},
 		Round: {},
@@ -289,6 +388,26 @@ var CanvasKit = {
 		Miter: {},
 		Round: {},
 		Bevel: {},
+	},
+
+	TextEncoding: {
+		UTF8: {},
+		UTF16: {},
+		UTF32: {},
+		GlyphID: {},
+	},
+
+	TileMode: {
+		Clamp: {},
+		Repeat: {},
+		Mirror: {},
+		Decal: {},
+	},
+
+	VertexMode: {
+		Triangles: {},
+		TrianglesStrip: {},
+		TriangleFan: {},
 	},
 
 	// Things Enscriptem adds for us
@@ -325,6 +444,7 @@ var CanvasKit = {
 CanvasKit.SkPath.prototype.addArc = function() {};
 CanvasKit.SkPath.prototype.addPath = function() {};
 CanvasKit.SkPath.prototype.addRect = function() {};
+CanvasKit.SkPath.prototype.addRoundRect = function() {};
 CanvasKit.SkPath.prototype.arc = function() {};
 CanvasKit.SkPath.prototype.arcTo = function() {};
 CanvasKit.SkPath.prototype.close = function() {};
@@ -349,17 +469,29 @@ CanvasKit.SkVertices.prototype.applyBones = function() {};
 
 CanvasKit.SkImage.prototype.encodeToData = function() {};
 
+CanvasKit.SkCanvas.prototype.drawText = function() {};
+/** @return {Uint8Array} */
+CanvasKit.SkCanvas.prototype.readPixels = function() {};
+CanvasKit.SkCanvas.prototype.writePixels = function() {};
+
+CanvasKit.SkFontMgr.prototype.MakeTypefaceFromData = function() {};
+
 // Define StrokeOpts object
 var StrokeOpts = {};
 StrokeOpts.prototype.width;
 StrokeOpts.prototype.miter_limit;
 StrokeOpts.prototype.cap;
 StrokeOpts.prototype.join;
+StrokeOpts.prototype.precision;
 
+// Define everything created in the canvas2d spec here
 var HTMLCanvas = {};
-HTMLCanvas.prototype.getContext = function() {};
-HTMLCanvas.prototype.toDataURL = function() {};
+HTMLCanvas.prototype.decodeImage = function() {};
 HTMLCanvas.prototype.dispose = function() {};
+HTMLCanvas.prototype.getContext = function() {};
+HTMLCanvas.prototype.loadFont = function() {};
+HTMLCanvas.prototype.makePath2D = function() {};
+HTMLCanvas.prototype.toDataURL = function() {};
 
 var CanvasRenderingContext2D = {};
 CanvasRenderingContext2D.prototype.addHitRegion = function() {};
@@ -369,16 +501,26 @@ CanvasRenderingContext2D.prototype.beginPath = function() {};
 CanvasRenderingContext2D.prototype.bezierCurveTo = function() {};
 CanvasRenderingContext2D.prototype.clearHitRegions = function() {};
 CanvasRenderingContext2D.prototype.clearRect = function() {};
+CanvasRenderingContext2D.prototype.clip = function() {};
 CanvasRenderingContext2D.prototype.closePath = function() {};
+CanvasRenderingContext2D.prototype.createImageData = function() {};
+CanvasRenderingContext2D.prototype.createLinearGradient = function() {};
+CanvasRenderingContext2D.prototype.createPattern = function() {};
+CanvasRenderingContext2D.prototype.createRadialGradient = function() {};
 CanvasRenderingContext2D.prototype.drawFocusIfNeeded = function() {};
+CanvasRenderingContext2D.prototype.drawImage = function() {};
 CanvasRenderingContext2D.prototype.ellipse = function() {};
 CanvasRenderingContext2D.prototype.fill = function() {};
 CanvasRenderingContext2D.prototype.fillRect = function() {};
 CanvasRenderingContext2D.prototype.fillText = function() {};
+CanvasRenderingContext2D.prototype.getImageData = function() {};
 CanvasRenderingContext2D.prototype.getLineDash = function() {};
+CanvasRenderingContext2D.prototype.isPointInPath = function() {};
+CanvasRenderingContext2D.prototype.isPointInStroke = function() {};
 CanvasRenderingContext2D.prototype.lineTo = function() {};
 CanvasRenderingContext2D.prototype.measureText = function() {};
 CanvasRenderingContext2D.prototype.moveTo = function() {};
+CanvasRenderingContext2D.prototype.putImageData = function() {};
 CanvasRenderingContext2D.prototype.quadraticCurveTo = function() {};
 CanvasRenderingContext2D.prototype.rect = function() {};
 CanvasRenderingContext2D.prototype.removeHitRegion = function() {};
@@ -395,6 +537,43 @@ CanvasRenderingContext2D.prototype.strokeRect = function() {};
 CanvasRenderingContext2D.prototype.strokeText = function() {};
 CanvasRenderingContext2D.prototype.transform = function() {};
 CanvasRenderingContext2D.prototype.translate = function() {};
+
+var Path2D = {};
+Path2D.prototype.addPath = function() {};
+Path2D.prototype.arc = function() {};
+Path2D.prototype.arcTo = function() {};
+Path2D.prototype.bezierCurveTo = function() {};
+Path2D.prototype.closePath = function() {};
+Path2D.prototype.ellipse = function() {};
+Path2D.prototype.lineTo = function() {};
+Path2D.prototype.moveTo = function() {};
+Path2D.prototype.quadraticCurveTo = function() {};
+Path2D.prototype.rect = function() {};
+
+var LinearCanvasGradient = {};
+LinearCanvasGradient.prototype.addColorStop = function() {};
+var RadialCanvasGradient = {};
+RadialCanvasGradient.prototype.addColorStop = function() {};
+var CanvasPattern = {};
+CanvasPattern.prototype.setTransform = function() {};
+
+var ImageData = {
+	/**
+	 * @type {Uint8ClampedArray}
+	 */
+	data: {},
+	height: {},
+	width: {},
+};
+
+var DOMMatrix = {
+	a: {},
+	b: {},
+	c: {},
+	d: {},
+	e: {},
+	f: {},
+};
 
 // Not sure why this is needed - might be a bug in emsdk that this isn't properly declared.
 function loadWebAssemblyModule() {};

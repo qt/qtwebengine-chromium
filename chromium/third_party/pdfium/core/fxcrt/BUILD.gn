@@ -52,8 +52,6 @@ jumbo_source_set("fxcrt") {
     "fx_string.h",
     "fx_system.cpp",
     "fx_system.h",
-    "fx_ucddata.cpp",
-    "fx_ucddata.h",
     "fx_unicode.cpp",
     "fx_unicode.h",
     "maybe_owned.h",
@@ -118,17 +116,6 @@ jumbo_source_set("fxcrt") {
       "cfx_fileaccess_windows.h",
     ]
   }
-  if (pdf_enable_xfa) {
-    sources += [
-      "cfx_char.cpp",
-      "cfx_char.h",
-      "cfx_decimal.cpp",
-      "cfx_decimal.h",
-      "fx_arabic.cpp",
-      "fx_arabic.h",
-      "locale_iface.h",
-    ]
-  }
 }
 
 if (pdf_enable_xfa) {
@@ -151,6 +138,8 @@ pdfium_unittest_source_set("unittests") {
     "autorestorer_unittest.cpp",
     "bytestring_unittest.cpp",
     "cfx_bitstream_unittest.cpp",
+    "cfx_memorystream_unittest.cpp",
+    "cfx_widetextbuf_unittest.cpp",
     "fx_bidi_unittest.cpp",
     "fx_coordinates_unittest.cpp",
     "fx_extension_unittest.cpp",

@@ -25,14 +25,12 @@ namespace {
 
 namespace dawn_native { namespace metal {
 
+    class Adapter;
     using BindGroup = BindGroupBase;
     using BindGroupLayout = BindGroupLayoutBase;
-    class BlendState;
     class Buffer;
-    class BufferView;
     class CommandBuffer;
     class ComputePipeline;
-    class DepthStencilState;
     class Device;
     class Framebuffer;
     class InputState;
@@ -47,14 +45,12 @@ namespace dawn_native { namespace metal {
     class TextureView;
 
     struct MetalBackendTraits {
+        using AdapterType = Adapter;
         using BindGroupType = BindGroup;
         using BindGroupLayoutType = BindGroupLayout;
-        using BlendStateType = BlendState;
         using BufferType = Buffer;
-        using BufferViewType = BufferView;
         using CommandBufferType = CommandBuffer;
         using ComputePipelineType = ComputePipeline;
-        using DepthStencilStateType = DepthStencilState;
         using DeviceType = Device;
         using InputStateType = InputState;
         using PipelineLayoutType = PipelineLayout;

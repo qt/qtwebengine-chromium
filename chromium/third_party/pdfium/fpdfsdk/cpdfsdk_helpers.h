@@ -206,7 +206,9 @@ CPDFSDKFormFillEnvironmentFromFPDFFormHandle(FPDF_FORMHANDLE handle) {
   return reinterpret_cast<CPDFSDK_FormFillEnvironment*>(handle);
 }
 
-ByteString CFXByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
+ByteString ByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
+
+WideString WideStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
 
 #ifdef PDF_ENABLE_XFA
 inline FPDF_WIDGET FPDFWidgetFromCXFAFFWidget(CXFA_FFWidget* widget) {
@@ -232,6 +234,8 @@ bool GetQuadPointsAtIndex(const CPDF_Array* array,
 
 CFX_FloatRect CFXFloatRectFromFSRECTF(const FS_RECTF& rect);
 void FSRECTFFromCFXFloatRect(const CFX_FloatRect& rect, FS_RECTF* out_rect);
+
+CFX_Matrix CFXMatrixFromFSMatrix(const FS_MATRIX& matrix);
 
 unsigned long Utf16EncodeMaybeCopyAndReturnLength(const WideString& text,
                                                   void* buffer,

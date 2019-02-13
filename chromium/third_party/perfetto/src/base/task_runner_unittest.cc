@@ -21,7 +21,7 @@
 #include "perfetto/base/scoped_file.h"
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) && \
-    !PERFETTO_BUILDFLAG(PERFETTO_CHROMIUM_BUILD)
+    !PERFETTO_BUILDFLAG(PERFETTO_EMBEDDER_BUILD)
 #include "perfetto/base/android_task_runner.h"
 #endif
 
@@ -41,7 +41,7 @@ class TaskRunnerTest : public ::testing::Test {
 };
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) && \
-    !PERFETTO_BUILDFLAG(PERFETTO_CHROMIUM_BUILD)
+    !PERFETTO_BUILDFLAG(PERFETTO_EMBEDDER_BUILD)
 using TaskRunnerTypes = ::testing::Types<AndroidTaskRunner, UnixTaskRunner>;
 #else
 using TaskRunnerTypes = ::testing::Types<UnixTaskRunner>;
@@ -56,12 +56,14 @@ struct TestPipe : Pipe {
 
   void Read() {
     char b;
-    PERFETTO_DCHECK(read(*this->rd, &b, 1) == 1);
+    ssize_t rd = read(*this->rd, &b, 1);
+    PERFETTO_DCHECK(rd == 1);
   }
 
   void Write() {
     const char b = '?';
-    PERFETTO_DCHECK(WriteAll(*this->wr, &b, 1) == 1);
+    ssize_t wr = WriteAll(*this->wr, &b, 1);
+    PERFETTO_DCHECK(wr == 1);
   }
 };
 

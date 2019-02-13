@@ -13,9 +13,9 @@
 #include "base/optional.h"
 #include "content/common/content_export.h"
 #include "content/common/possibly_associated_interface_ptr.h"
-#include "content/common/url_loader_factory_bundle.h"
 #include "content/public/common/transferrable_url_loader.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
 
 namespace content {
 
@@ -28,7 +28,7 @@ namespace content {
 // flag is enabled. TODO(crbug/803776): deprecate this once SXG specific code is
 // moved into Network Service unless we see huge memory benefit for doing this.
 class CONTENT_EXPORT ChildURLLoaderFactoryBundleInfo
-    : public URLLoaderFactoryBundleInfo {
+    : public blink::URLLoaderFactoryBundleInfo {
  public:
   using PossiblyAssociatedURLLoaderFactoryPtrInfo =
       PossiblyAssociatedInterfacePtrInfo<network::mojom::URLLoaderFactory>;
@@ -68,7 +68,7 @@ class CONTENT_EXPORT ChildURLLoaderFactoryBundleInfo
 // Besides, it also supports using callbacks to lazily initialize the direct
 // network loader factory.
 class CONTENT_EXPORT ChildURLLoaderFactoryBundle
-    : public URLLoaderFactoryBundle {
+    : public blink::URLLoaderFactoryBundle {
  public:
   using PossiblyAssociatedURLLoaderFactoryPtr =
       PossiblyAssociatedInterfacePtr<network::mojom::URLLoaderFactory>;
@@ -97,12 +97,12 @@ class CONTENT_EXPORT ChildURLLoaderFactoryBundle
                                 traffic_annotation) override;
   std::unique_ptr<network::SharedURLLoaderFactoryInfo> Clone() override;
 
-  // Returns an info that omits this bundle's default factory, if any. This is
-  // useful to make a clone that bypasses AppCache, for example. The clone's
-  // default factory is cloned from this bundle's |default_network_factory_|, if
-  // any.
+  // Does the same as Clone(), but without cloning the appcache_factory_.
+  // This is used for creating a bundle for network fallback loading with
+  // Service Workers (where AppCache must be skipped), and only when
+  // claim() is called.
   virtual std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-  CloneWithoutDefaultFactory();
+  CloneWithoutAppCacheFactory();
 
   std::unique_ptr<ChildURLLoaderFactoryBundleInfo> PassInterface();
 
@@ -124,7 +124,7 @@ class CONTENT_EXPORT ChildURLLoaderFactoryBundle
  private:
   void InitDirectNetworkFactoryIfNecessary();
   std::unique_ptr<network::SharedURLLoaderFactoryInfo> CloneInternal(
-      bool include_default);
+      bool include_appcache);
 
   PossiblyAssociatedFactoryGetterCallback direct_network_factory_getter_;
   PossiblyAssociatedURLLoaderFactoryPtr direct_network_factory_;

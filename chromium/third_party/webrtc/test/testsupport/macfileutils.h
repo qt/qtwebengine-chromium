@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2018 The WebRTC project authors. All Rights Reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -11,14 +11,9 @@
 #ifndef TEST_TESTSUPPORT_MACFILEUTILS_H_
 #define TEST_TESTSUPPORT_MACFILEUTILS_H_
 
-#include <string>
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
 
-namespace webrtc {
-namespace test {
-
-void GetNSExecutablePath(std::string* path);
-
-}  // namespace test
-}  // namespace webrtc
+#include "test/testsupport/mac_file_utils.h"
 
 #endif  // TEST_TESTSUPPORT_MACFILEUTILS_H_

@@ -20,24 +20,25 @@
 
 #include "api/call/audio_sink.h"
 #include "api/jsep.h"
-#include "api/rtpreceiverinterface.h"
+#include "api/media_transport_interface.h"
+#include "api/rtp_receiver_interface.h"
 #include "api/video/video_sink_interface.h"
 #include "api/video/video_source_interface.h"
 #include "call/rtp_packet_sink_interface.h"
-#include "media/base/mediachannel.h"
-#include "media/base/mediaengine.h"
-#include "media/base/streamparams.h"
-#include "p2p/base/dtlstransportinternal.h"
-#include "p2p/base/packettransportinternal.h"
-#include "pc/channelinterface.h"
-#include "pc/dtlssrtptransport.h"
-#include "pc/mediasession.h"
-#include "pc/rtptransport.h"
-#include "pc/srtpfilter.h"
-#include "pc/srtptransport.h"
-#include "rtc_base/asyncinvoker.h"
-#include "rtc_base/asyncudpsocket.h"
-#include "rtc_base/criticalsection.h"
+#include "media/base/media_channel.h"
+#include "media/base/media_engine.h"
+#include "media/base/stream_params.h"
+#include "p2p/base/dtls_transport_internal.h"
+#include "p2p/base/packet_transport_internal.h"
+#include "pc/channel_interface.h"
+#include "pc/dtls_srtp_transport.h"
+#include "pc/media_session.h"
+#include "pc/rtp_transport.h"
+#include "pc/srtp_filter.h"
+#include "pc/srtp_transport.h"
+#include "rtc_base/async_invoker.h"
+#include "rtc_base/async_udp_socket.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/network.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 
@@ -87,8 +88,8 @@ class BaseChannel : public ChannelInterface,
               bool srtp_required,
               webrtc::CryptoOptions crypto_options);
   virtual ~BaseChannel();
-  void Init_w(webrtc::RtpTransportInternal* rtp_transport,
-              webrtc::MediaTransportInterface* media_transport);
+  virtual void Init_w(webrtc::RtpTransportInternal* rtp_transport,
+                      webrtc::MediaTransportInterface* media_transport);
 
   // Deinit may be called multiple times and is simply ignored if it's already
   // done.
@@ -123,12 +124,6 @@ class BaseChannel : public ChannelInterface,
                         std::string* error_desc) override;
 
   bool Enable(bool enable) override;
-
-  // TODO(zhihuang): These methods are used for testing and can be removed.
-  bool AddRecvStream(const StreamParams& sp);
-  bool RemoveRecvStream(uint32_t ssrc);
-  bool AddSendStream(const StreamParams& sp);
-  bool RemoveSendStream(uint32_t ssrc);
 
   const std::vector<StreamParams>& local_streams() const {
     return local_streams_;
@@ -298,6 +293,8 @@ class BaseChannel : public ChannelInterface,
 
   bool RegisterRtpDemuxerSink();
 
+  bool has_received_packet_ = false;
+
  private:
   bool ConnectToRtpTransport();
   void DisconnectFromRtpTransport();
@@ -307,6 +304,7 @@ class BaseChannel : public ChannelInterface,
 
   // MediaTransportNetworkChangeCallback override.
   void OnNetworkRouteChanged(const rtc::NetworkRoute& network_route) override;
+
   rtc::Thread* const worker_thread_;
   rtc::Thread* const network_thread_;
   rtc::Thread* const signaling_thread_;
@@ -329,7 +327,6 @@ class BaseChannel : public ChannelInterface,
   std::vector<std::pair<rtc::Socket::Option, int> > rtcp_socket_options_;
   bool writable_ = false;
   bool was_ever_writable_ = false;
-  bool has_received_packet_ = false;
   const bool srtp_required_ = true;
   webrtc::CryptoOptions crypto_options_;
 
@@ -352,7 +349,8 @@ class BaseChannel : public ChannelInterface,
 
 // VoiceChannel is a specialization that adds support for early media, DTMF,
 // and input/output level monitoring.
-class VoiceChannel : public BaseChannel {
+class VoiceChannel : public BaseChannel,
+                     public webrtc::AudioPacketReceivedObserver {
  public:
   VoiceChannel(rtc::Thread* worker_thread,
                rtc::Thread* network_thread,
@@ -372,6 +370,8 @@ class VoiceChannel : public BaseChannel {
   cricket::MediaType media_type() const override {
     return cricket::MEDIA_TYPE_AUDIO;
   }
+  void Init_w(webrtc::RtpTransportInternal* rtp_transport,
+              webrtc::MediaTransportInterface* media_transport) override;
 
  private:
   // overrides from BaseChannel
@@ -382,6 +382,8 @@ class VoiceChannel : public BaseChannel {
   bool SetRemoteContent_w(const MediaContentDescription* content,
                           webrtc::SdpType type,
                           std::string* error_desc) override;
+
+  void OnFirstAudioPacketReceived(int64_t channel_id) override;
 
   // Last AudioSendParameters sent down to the media_channel() via
   // SetSendParameters.
@@ -449,7 +451,9 @@ class RtpDataChannel : public BaseChannel {
               DtlsTransportInternal* rtcp_dtls_transport,
               rtc::PacketTransportInternal* rtp_packet_transport,
               rtc::PacketTransportInternal* rtcp_packet_transport);
-  void Init_w(webrtc::RtpTransportInternal* rtp_transport);
+  void Init_w(
+      webrtc::RtpTransportInternal* rtp_transport,
+      webrtc::MediaTransportInterface* media_transport = nullptr) override;
 
   virtual bool SendData(const SendDataParams& params,
                         const rtc::CopyOnWriteBuffer& payload,

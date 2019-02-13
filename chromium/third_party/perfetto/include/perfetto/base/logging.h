@@ -22,16 +22,16 @@
 #include <stdlib.h>
 #include <string.h>  // For strerror.
 
-#if defined(NDEBUG)
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
 #define PERFETTO_DCHECK_IS_ON() 0
 #else
 #define PERFETTO_DCHECK_IS_ON() 1
 #endif
 
-#if defined(PERFETTO_ENABLE_DLOG)
+#if !defined(PERFETTO_FORCE_DLOG)
 #define PERFETTO_DLOG_IS_ON() PERFETTO_DCHECK_IS_ON()
 #else
-#define PERFETTO_DLOG_IS_ON() 0
+#define PERFETTO_DLOG_IS_ON() PERFETTO_FORCE_DLOG
 #endif
 
 #include "perfetto/base/build_config.h"
@@ -136,12 +136,12 @@ constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
 
 #if PERFETTO_DCHECK_IS_ON()
 
-#define PERFETTO_DCHECK(x)                            \
-  do {                                                \
-    if (PERFETTO_UNLIKELY(!(x))) {                    \
-      PERFETTO_DPLOG("%s", "PERFETTO_CHECK(" #x ")"); \
-      PERFETTO_IMMEDIATE_CRASH();                     \
-    }                                                 \
+#define PERFETTO_DCHECK(x)                           \
+  do {                                               \
+    if (PERFETTO_UNLIKELY(!(x))) {                   \
+      PERFETTO_PLOG("%s", "PERFETTO_CHECK(" #x ")"); \
+      PERFETTO_IMMEDIATE_CRASH();                    \
+    }                                                \
   } while (0)
 
 #define PERFETTO_DFATAL(fmt, ...)      \
@@ -152,7 +152,10 @@ constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
 
 #else
 
-#define PERFETTO_DCHECK(x) ::perfetto::base::ignore_result(x)
+#define PERFETTO_DCHECK(x) \
+  do {                     \
+  } while (false && (x))
+
 #define PERFETTO_DFATAL(...) ::perfetto::base::ignore_result(__VA_ARGS__)
 
 #endif  // PERFETTO_DCHECK_IS_ON()

@@ -10,6 +10,13 @@
 
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_legacy.h"
 
+#include <string.h>
+#include <vector>
+
+#include "absl/types/optional.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_parameters.h"
+#include "api/transport/network_types.h"
 #include "logging/rtc_event_log/events/rtc_event_alr_state.h"
 #include "logging/rtc_event_log/events/rtc_event_audio_network_adaptation.h"
 #include "logging/rtc_event_log/events/rtc_event_audio_playout.h"
@@ -288,6 +295,14 @@ std::string RtcEventLogEncoderLegacy::Encode(const RtcEvent& event) {
     case RtcEvent::Type::BweUpdateLossBased: {
       auto& rtc_event = static_cast<const RtcEventBweUpdateLossBased&>(event);
       return EncodeBweUpdateLossBased(rtc_event);
+    }
+
+    case RtcEvent::Type::DtlsTransportState: {
+      return "";
+    }
+
+    case RtcEvent::Type::DtlsWritableState: {
+      return "";
     }
 
     case RtcEvent::Type::IceCandidatePairConfig: {

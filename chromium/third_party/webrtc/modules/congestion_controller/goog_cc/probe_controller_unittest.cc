@@ -9,9 +9,11 @@
  */
 #include <memory>
 
+#include "api/transport/field_trial_based_config.h"
 #include "api/transport/network_types.h"
+#include "api/units/data_rate.h"
+#include "api/units/timestamp.h"
 #include "modules/congestion_controller/goog_cc/probe_controller.h"
-#include "rtc_base/logging.h"
 #include "system_wrappers/include/clock.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -42,7 +44,7 @@ constexpr int kBitrateDropTimeoutMs = 5000;
 class ProbeControllerTest : public ::testing::Test {
  protected:
   ProbeControllerTest() : clock_(100000000L) {
-    probe_controller_.reset(new ProbeController());
+    probe_controller_.reset(new ProbeController(&field_trial_config_));
   }
   ~ProbeControllerTest() override {}
 
@@ -55,6 +57,7 @@ class ProbeControllerTest : public ::testing::Test {
 
   int64_t NowMs() { return clock_.TimeInMilliseconds(); }
 
+  FieldTrialBasedConfig field_trial_config_;
   SimulatedClock clock_;
   std::unique_ptr<ProbeController> probe_controller_;
 };
@@ -222,7 +225,7 @@ TEST_F(ProbeControllerTest, PeriodicProbing) {
 }
 
 TEST_F(ProbeControllerTest, PeriodicProbingAfterReset) {
-  probe_controller_.reset(new ProbeController());
+  probe_controller_.reset(new ProbeController(&field_trial_config_));
   int64_t alr_start_time = clock_.TimeInMilliseconds();
 
   probe_controller_->SetAlrStartTimeMs(alr_start_time);
@@ -260,6 +263,40 @@ TEST_F(ProbeControllerTest, TestExponentialProbingOverflow) {
   probes =
       probe_controller_->SetEstimatedBitrate(100 * kMbpsMultiplier, NowMs());
   EXPECT_EQ(probes.size(), 0u);
+}
+
+TEST_F(ProbeControllerTest, TestAllocatedBitrateCap) {
+  const int64_t kMbpsMultiplier = 1000000;
+  const int64_t kMaxBitrateBps = 100 * kMbpsMultiplier;
+  auto probes = probe_controller_->SetBitrates(
+      kMinBitrateBps, 10 * kMbpsMultiplier, kMaxBitrateBps, NowMs());
+
+  // Configure ALR for periodic probing.
+  probe_controller_->EnablePeriodicAlrProbing(true);
+  int64_t alr_start_time = clock_.TimeInMilliseconds();
+  probe_controller_->SetAlrStartTimeMs(alr_start_time);
+
+  int64_t estimated_bitrate_bps = kMaxBitrateBps / 10;
+  probes =
+      probe_controller_->SetEstimatedBitrate(estimated_bitrate_bps, NowMs());
+
+  // Set a max allocated bitrate below the current estimate.
+  int64_t max_allocated_bps = estimated_bitrate_bps - 1 * kMbpsMultiplier;
+  probes =
+      probe_controller_->OnMaxTotalAllocatedBitrate(max_allocated_bps, NowMs());
+  EXPECT_TRUE(probes.empty());  // No probe since lower than current max.
+
+  // Probes such as ALR capped at 2x the max allocation limit.
+  clock_.AdvanceTimeMilliseconds(5000);
+  probes = probe_controller_->Process(NowMs());
+  EXPECT_EQ(probes[0].target_data_rate.bps(), 2 * max_allocated_bps);
+
+  // Remove allocation limit.
+  EXPECT_TRUE(
+      probe_controller_->OnMaxTotalAllocatedBitrate(0, NowMs()).empty());
+  clock_.AdvanceTimeMilliseconds(5000);
+  probes = probe_controller_->Process(NowMs());
+  EXPECT_EQ(probes[0].target_data_rate.bps(), estimated_bitrate_bps * 2);
 }
 
 }  // namespace test

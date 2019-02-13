@@ -7,10 +7,11 @@
 
 #include "SkDraw.h"
 #include "SkFontPriv.h"
-#include "SkGlyphCache.h"
 #include "SkPaint.h"
+#include "SkPaintDefaults.h"
 #include "SkPath.h"
 #include "SkScalerContext.h"
+#include "SkStrike.h"
 #include "SkStrikeCache.h"
 #include "SkTo.h"
 #include "SkTLazy.h"
@@ -18,17 +19,17 @@
 #include "SkUTF.h"
 #include "SkUtils.h"
 
-#define kDefault_Size       12
+#define kDefault_Size       SkPaintDefaults_TextSize
 #define kDefault_Flags      0
 #define kDefault_Edging     SkFont::Edging::kAntiAlias
-#define kDefault_Hinting    kNormal_SkFontHinting
+#define kDefault_Hinting    SkPaintDefaults_Hinting
 
 static inline SkScalar valid_size(SkScalar size) {
     return SkTMax<SkScalar>(0, size);
 }
 
 SkFont::SkFont(sk_sp<SkTypeface> face, SkScalar size, SkScalar scaleX, SkScalar skewX)
-    : fTypeface(face ? std::move(face) : SkTypeface::MakeDefault())
+    : fTypeface(std::move(face))
     , fSize(valid_size(size))
     , fScaleX(scaleX)
     , fSkewX(skewX)
@@ -38,6 +39,8 @@ SkFont::SkFont(sk_sp<SkTypeface> face, SkScalar size, SkScalar scaleX, SkScalar 
 {}
 
 SkFont::SkFont(sk_sp<SkTypeface> face, SkScalar size) : SkFont(std::move(face), size, 1, 0) {}
+
+SkFont::SkFont(sk_sp<SkTypeface> face) : SkFont(std::move(face), kDefault_Size, 1, 0) {}
 
 SkFont::SkFont() : SkFont(nullptr, kDefault_Size) {}
 
@@ -49,6 +52,16 @@ bool SkFont::operator==(const SkFont& b) const {
             fFlags          == b.fFlags &&
             fEdging         == b.fEdging &&
             fHinting        == b.fHinting;
+}
+
+void SkFont::dump() const {
+    SkDebugf("typeface %p\n", fTypeface.get());
+    SkDebugf("size %g\n", fSize);
+    SkDebugf("skewx %g\n", fSkewX);
+    SkDebugf("scalex %g\n", fScaleX);
+    SkDebugf("flags 0x%X\n", fFlags);
+    SkDebugf("edging %d\n", (unsigned)fEdging);
+    SkDebugf("hinting %d\n", (unsigned)fHinting);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -116,29 +129,41 @@ SkScalar SkFont::setupForAsPaths(SkPaint* paint) {
         paint->setPathEffect(nullptr);
     }
     SkScalar textSize = fSize;
-    this->setSize(SkIntToScalar(SkPaint::kCanonicalTextSizeForPaths));
-    return textSize / SkPaint::kCanonicalTextSizeForPaths;
+    this->setSize(SkIntToScalar(SkFontPriv::kCanonicalTextSizeForPaths));
+    return textSize / SkFontPriv::kCanonicalTextSizeForPaths;
+}
+
+bool SkFont::hasSomeAntiAliasing() const {
+    Edging edging = this->getEdging();
+    return edging == SkFont::Edging::kAntiAlias
+        || edging == SkFont::Edging::kSubpixelAntiAlias;
 }
 
 class SkCanonicalizeFont {
 public:
-    SkCanonicalizeFont(const SkFont& font) : fFont(&font), fScale(0) {
+    SkCanonicalizeFont(const SkFont& font, const SkPaint* paint) : fFont(&font) {
+        if (paint) {
+            fPaint = *paint;
+        }
         if (font.isLinearMetrics() ||
-            SkDraw::ShouldDrawTextAsPaths(font, SkPaint(), SkMatrix::I()))
+            SkDraw::ShouldDrawTextAsPaths(font, fPaint, SkMatrix::I()))
         {
-            SkFont* f = fLazy.set(font);
+            SkFont* f = fLazyFont.set(font);
             fScale = f->setupForAsPaths(nullptr);
             fFont = f;
+            fPaint.reset();
         }
     }
 
     const SkFont& getFont() const { return *fFont; }
+    const SkPaint& getPaint() const { return fPaint; }
     SkScalar getScale() const { return fScale; }
 
 private:
-    const SkFont*   fFont;
-    SkTLazy<SkFont> fLazy;
-    SkScalar        fScale;
+    const SkFont*    fFont;
+    SkTLazy<SkFont>  fLazyFont;
+    SkPaint          fPaint;
+    SkScalar         fScale = 0;
 };
 
 
@@ -150,22 +175,7 @@ int SkFont::textToGlyphs(const void* text, size_t byteLength, SkTextEncoding enc
 
     SkASSERT(text);
 
-    int count = 0;  // fix uninitialized warning (even though the switch is complete!)
-
-    switch (encoding) {
-        case kUTF8_SkTextEncoding:
-            count = SkUTF::CountUTF8((const char*)text, byteLength);
-            break;
-        case kUTF16_SkTextEncoding:
-            count = SkUTF::CountUTF16((const uint16_t*)text, byteLength);
-            break;
-        case kUTF32_SkTextEncoding:
-            count = SkToInt(byteLength >> 2);
-            break;
-        case kGlyphID_SkTextEncoding:
-            count = SkToInt(byteLength >> 1);
-            break;
-    }
+    int count = SkFontPriv::CountTextElements(text, byteLength, encoding);
     if (!glyphs || count > maxGlyphCount) {
         return count;
     }
@@ -189,9 +199,24 @@ int SkFont::textToGlyphs(const void* text, size_t byteLength, SkTextEncoding enc
             return count;
     }
 
-    (void)SkFontPriv::GetTypefaceOrDefault(*this)->charsToGlyphs(text, typefaceEncoding, glyphs,
-                                                                 count);
+    (void) this->getTypefaceOrDefault()->charsToGlyphs(text, typefaceEncoding, glyphs,count);
     return count;
+}
+
+void SkFont::glyphsToUnichars(const SkGlyphID glyphs[], int count, SkUnichar text[]) const {
+    if (count <= 0) {
+        return;
+    }
+
+    auto typeface = this->getTypefaceOrDefault();
+    const unsigned numGlyphsInTypeface = typeface->countGlyphs();
+    SkAutoTArray<SkUnichar> unichars(numGlyphsInTypeface);
+    typeface->getGlyphToUnicodeMap(unichars.get());
+
+    for (int i = 0; i < count; ++i) {
+        unsigned id = glyphs[i];
+        text[i] = (id < numGlyphsInTypeface) ? unichars[id] : 0xFFFD;
+    }
 }
 
 static SkTypeface::Encoding to_encoding(SkTextEncoding e) {
@@ -231,6 +256,55 @@ bool SkFont::containsText(const void* textData, size_t byteLength, SkTextEncodin
     return true;
 }
 
+size_t SkFont::breakText(const void* textD, size_t length, SkTextEncoding encoding,
+                         SkScalar maxWidth, SkScalar* measuredWidth) const {
+    if (0 == length || !(maxWidth > 0)) {
+        if (measuredWidth) {
+            *measuredWidth = 0;
+        }
+        return 0;
+    }
+    if (0 == fSize) {
+        if (measuredWidth) {
+            *measuredWidth = 0;
+        }
+        return length;
+    }
+
+    SkCanonicalizeFont canon(*this, nullptr);
+    const SkFont& font = canon.getFont();
+    SkScalar scale = canon.getScale();
+
+    auto cache = SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(font);
+
+    const char* text = static_cast<const char*>(textD);
+    const char* stop = text + length;
+    auto glyphCacheProc = SkFontPriv::GetGlyphCacheProc(encoding, false);
+
+    if (scale) {
+        maxWidth /= scale;
+    }
+
+    SkScalar width = 0;
+    while (text < stop) {
+        const char* curr = text;
+        SkScalar x = glyphCacheProc(cache.get(), &text, stop).fAdvanceX;
+        if ((width += x) > maxWidth) {
+            width -= x;
+            text = curr;
+            break;
+        }
+    }
+
+    if (measuredWidth) {
+        if (scale) {
+            width *= scale;
+        }
+        *measuredWidth = width;
+    }
+    return text - stop + length;
+}
+
 static void set_bounds(const SkGlyph& g, SkRect* bounds) {
     bounds->set(SkIntToScalar(g.fLeft),
                 SkIntToScalar(g.fTop),
@@ -246,7 +320,7 @@ static void join_bounds_x(const SkGlyph& g, SkRect* bounds, SkScalar dx) {
 }
 
 SkScalar SkFont::measureText(const void* textD, size_t length, SkTextEncoding encoding,
-                             SkRect* bounds) const {
+                             SkRect* bounds, const SkPaint* paint) const {
     if (length == 0) {
         if (bounds) {
             bounds->setEmpty();
@@ -254,11 +328,11 @@ SkScalar SkFont::measureText(const void* textD, size_t length, SkTextEncoding en
         return 0;
     }
 
-    SkCanonicalizeFont canon(*this);
+    SkCanonicalizeFont canon(*this, paint);
     const SkFont& font = canon.getFont();
     SkScalar scale = canon.getScale();
 
-    auto cache = SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(font);
+    auto cache = SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(font, canon.getPaint());
 
     const char* text = static_cast<const char*>(textD);
     const char* stop = text + length;
@@ -308,22 +382,21 @@ void VisitGlyphs(const SkFont& origFont, const SkPaint* paint, const uint16_t gl
         return;
     }
 
-    SkCanonicalizeFont canon(origFont);
+    SkCanonicalizeFont canon(origFont, paint);
     const SkFont& font = canon.getFont();
     SkScalar scale = canon.getScale();
     if (!scale) {
         scale = 1;
     }
 
-    auto cache = SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(font,
-                                                                        paint ? *paint : SkPaint());
+    auto cache = SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(font, canon.getPaint());
     handler(cache.get(), glyphs, count, scale);
 }
 
 void SkFont::getWidthsBounds(const uint16_t glyphs[], int count, SkScalar widths[], SkRect bounds[],
                              const SkPaint* paint) const {
     VisitGlyphs(*this, paint, glyphs, count, [widths, bounds]
-                (SkGlyphCache* cache, const uint16_t glyphs[], int count, SkScalar scale) {
+                (SkStrike* cache, const uint16_t glyphs[], int count, SkScalar scale) {
         for (int i = 0; i < count; ++i) {
             const SkGlyph* g;
             if (bounds) {
@@ -341,7 +414,7 @@ void SkFont::getWidthsBounds(const uint16_t glyphs[], int count, SkScalar widths
 
 void SkFont::getPos(const uint16_t glyphs[], int count, SkPoint pos[], SkPoint origin) const {
     VisitGlyphs(*this, nullptr, glyphs, count, [pos, origin]
-                      (SkGlyphCache* cache, const uint16_t glyphs[], int count, SkScalar scale) {
+                      (SkStrike* cache, const uint16_t glyphs[], int count, SkScalar scale) {
         SkPoint loc = origin;
         for (int i = 0; i < count; ++i) {
             pos[i] = loc;
@@ -352,7 +425,7 @@ void SkFont::getPos(const uint16_t glyphs[], int count, SkPoint pos[], SkPoint o
 
 void SkFont::getXPos(const uint16_t glyphs[], int count, SkScalar xpos[], SkScalar origin) const {
     VisitGlyphs(*this, nullptr, glyphs, count, [xpos, origin]
-                      (SkGlyphCache* cache, const uint16_t glyphs[], int count, SkScalar scale) {
+                      (SkStrike* cache, const uint16_t glyphs[], int count, SkScalar scale) {
         SkScalar x = origin;
         for (int i = 0; i < count; ++i) {
             xpos[i] = x;
@@ -395,7 +468,7 @@ bool SkFont::getPath(uint16_t glyphID, SkPath* path) const {
 }
 
 SkScalar SkFont::getMetrics(SkFontMetrics* metrics) const {
-    SkCanonicalizeFont canon(*this);
+    SkCanonicalizeFont canon(*this, nullptr);
     const SkFont& font = canon.getFont();
     SkScalar scale = canon.getScale();
 
@@ -408,15 +481,24 @@ SkScalar SkFont::getMetrics(SkFontMetrics* metrics) const {
     *metrics = cache->getFontMetrics();
 
     if (scale) {
-        SkPaintPriv::ScaleFontMetrics(metrics, scale);
+        SkFontPriv::ScaleFontMetrics(metrics, scale);
     }
     return metrics->fDescent - metrics->fAscent + metrics->fLeading;
+}
+
+SkTypeface* SkFont::getTypefaceOrDefault() const {
+    return fTypeface ? fTypeface.get() : SkTypeface::GetDefaultTypeface();
+}
+
+sk_sp<SkTypeface> SkFont::refTypefaceOrDefault() const {
+    return fTypeface ? fTypeface : SkTypeface::MakeDefault();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "SkPaint.h"
 
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
 void SkFont::LEGACY_applyToPaint(SkPaint* paint) const {
     paint->setTypeface(fTypeface);
     paint->setTextSize(fSize);
@@ -477,4 +559,179 @@ void SkFont::LEGACY_applyPaintFlags(uint32_t paintFlags) {
         }
     }
     this->setEdging(edging);
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+int SkFontPriv::ValidCountText(const void* text, size_t length, SkTextEncoding encoding) {
+    switch (encoding) {
+        case kUTF8_SkTextEncoding: return SkUTF::CountUTF8((const char*)text, length);
+        case kUTF16_SkTextEncoding: return SkUTF::CountUTF16((const uint16_t*)text, length);
+        case kUTF32_SkTextEncoding: return SkUTF::CountUTF32((const int32_t*)text, length);
+        case kGlyphID_SkTextEncoding:
+            if (!SkIsAlign2(intptr_t(text)) || !SkIsAlign2(length)) {
+                return -1;
+            }
+            return length >> 1;
+    }
+    return -1;
+}
+
+void SkFontPriv::ScaleFontMetrics(SkFontMetrics* metrics, SkScalar scale) {
+    metrics->fTop *= scale;
+    metrics->fAscent *= scale;
+    metrics->fDescent *= scale;
+    metrics->fBottom *= scale;
+    metrics->fLeading *= scale;
+    metrics->fAvgCharWidth *= scale;
+    metrics->fMaxCharWidth *= scale;
+    metrics->fXMin *= scale;
+    metrics->fXMax *= scale;
+    metrics->fXHeight *= scale;
+    metrics->fCapHeight *= scale;
+    metrics->fUnderlineThickness *= scale;
+    metrics->fUnderlinePosition *= scale;
+    metrics->fStrikeoutThickness *= scale;
+    metrics->fStrikeoutPosition *= scale;
+}
+
+SkRect SkFontPriv::GetFontBounds(const SkFont& font) {
+    SkMatrix m;
+    m.setScale(font.getSize() * font.getScaleX(), font.getSize());
+    m.postSkew(font.getSkewX(), 0);
+
+    SkTypeface* typeface = font.getTypefaceOrDefault();
+
+    SkRect bounds;
+    m.mapRect(&bounds, typeface->getBounds());
+    return bounds;
+}
+
+int SkFontPriv::CountTextElements(const void* text, size_t byteLength, SkTextEncoding encoding) {
+    switch (encoding) {
+        case kUTF8_SkTextEncoding:
+            return SkUTF::CountUTF8(reinterpret_cast<const char*>(text), byteLength);
+        case kUTF16_SkTextEncoding:
+            return SkUTF::CountUTF16(reinterpret_cast<const uint16_t*>(text), byteLength);
+        case kUTF32_SkTextEncoding:
+            return byteLength >> 2;
+        case kGlyphID_SkTextEncoding:
+            return byteLength >> 1;
+    }
+    SkASSERT(false);
+    return 0;
+}
+
+void SkFontPriv::GlyphsToUnichars(const SkFont& font, const uint16_t glyphs[], int count,
+                                  SkUnichar uni[]) {
+    font.glyphsToUnichars(glyphs, count, uni);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
+
+// packed int at the beginning of the serialized font:
+//
+//  control_bits:8 size_as_byte:8 flags:12 edging:2 hinting:2
+
+enum {
+    kSize_Is_Byte_Bit   = 1 << 31,
+    kHas_ScaleX_Bit     = 1 << 30,
+    kHas_SkewX_Bit      = 1 << 29,
+    kHas_Typeface_Bit   = 1 << 28,
+
+    kShift_for_Size     = 16,
+    kMask_For_Size      = 0xFF,
+
+    kShift_For_Flags    = 4,
+    kMask_For_Flags     = 0xFFF,
+
+    kShift_For_Edging   = 2,
+    kMask_For_Edging    = 0x3,
+
+    kShift_For_Hinting  = 0,
+    kMask_For_Hinting   = 0x3
+};
+
+static bool scalar_is_byte(SkScalar x) {
+    int ix = (int)x;
+    return ix == x && ix >= 0 && ix <= kMask_For_Size;
+}
+
+void SkFontPriv::Flatten(const SkFont& font, SkWriteBuffer& buffer) {
+    SkASSERT((font.fFlags & ~kMask_For_Flags) == 0);
+    SkASSERT((font.fEdging & ~kMask_For_Edging) == 0);
+    SkASSERT((font.fHinting & ~kMask_For_Hinting) == 0);
+
+    uint32_t packed = 0;
+    packed |= font.fFlags << kShift_For_Flags;
+    packed |= font.fEdging << kShift_For_Edging;
+    packed |= font.fHinting << kShift_For_Hinting;
+
+    if (scalar_is_byte(font.fSize)) {
+        packed |= kSize_Is_Byte_Bit;
+        packed |= (int)font.fSize << kShift_for_Size;
+    }
+    if (font.fScaleX != 1) {
+        packed |= kHas_ScaleX_Bit;
+    }
+    if (font.fSkewX != 0) {
+        packed |= kHas_SkewX_Bit;
+    }
+    if (font.fTypeface) {
+        packed |= kHas_Typeface_Bit;
+    }
+
+    buffer.write32(packed);
+    if (!(packed & kSize_Is_Byte_Bit)) {
+        buffer.writeScalar(font.fSize);
+    }
+    if (packed & kHas_ScaleX_Bit) {
+        buffer.writeScalar(font.fScaleX);
+    }
+    if (packed & kHas_SkewX_Bit) {
+        buffer.writeScalar(font.fSkewX);
+    }
+    if (packed & kHas_Typeface_Bit) {
+        buffer.writeTypeface(font.fTypeface.get());
+    }
+}
+
+bool SkFontPriv::Unflatten(SkFont* font, SkReadBuffer& buffer) {
+    const uint32_t packed = buffer.read32();
+
+    if (packed & kSize_Is_Byte_Bit) {
+        font->fSize = (packed >> kShift_for_Size) & kMask_For_Size;
+    } else {
+        font->fSize = buffer.readScalar();
+    }
+    if (packed & kHas_ScaleX_Bit) {
+        font->fScaleX = buffer.readScalar();
+    }
+    if (packed & kHas_SkewX_Bit) {
+        font->fSkewX = buffer.readScalar();
+    }
+    if (packed & kHas_Typeface_Bit) {
+        font->fTypeface = buffer.readTypeface();
+    }
+
+    SkASSERT(SkFont::kAllFlags <= kMask_For_Flags);
+    // we & with kAllFlags, to clear out any unknown flag bits
+    font->fFlags = SkToU8((packed >> kShift_For_Flags) & SkFont::kAllFlags);
+
+    unsigned edging = (packed >> kShift_For_Edging) & kMask_For_Edging;
+    if (edging > (unsigned)SkFont::Edging::kSubpixelAntiAlias) {
+        edging = 0;
+    }
+    font->fEdging = SkToU8(edging);
+
+    unsigned hinting = (packed >> kShift_For_Hinting) & kMask_For_Hinting;
+    if (hinting > (unsigned)kFull_SkFontHinting) {
+        hinting = 0;
+    }
+    font->fHinting = SkToU8(hinting);
+
+    return buffer.isValid();
 }

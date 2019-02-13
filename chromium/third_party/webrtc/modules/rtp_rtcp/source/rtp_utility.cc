@@ -24,7 +24,6 @@
 #include "modules/video_coding/codecs/interface/common_constants.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/stringutils.h"
 
 namespace webrtc {
 
@@ -507,9 +506,9 @@ void RtpHeaderParser::ParseOneByteExtensionHeader(
           RTC_LOG(WARNING)
               << "RtpGenericFrameDescriptor unsupported by rtp header parser.";
           break;
-        case kRtpExtensionHdrMetadata:
+        case kRtpExtensionColorSpace:
           RTC_LOG(WARNING)
-              << "RtpExtensionHdrMetadata unsupported by rtp header parser.";
+              << "RtpExtensionColorSpace unsupported by rtp header parser.";
           break;
         case kRtpExtensionNone:
         case kRtpExtensionNumberOfExtensions: {

@@ -20,7 +20,7 @@ class Renderer9;
 class Context9 : public ContextD3D
 {
   public:
-    Context9(const gl::ContextState &state, Renderer9 *renderer);
+    Context9(const gl::State &state, gl::ErrorSet *errorSet, Renderer9 *renderer);
     ~Context9() override;
 
     angle::Result initialize() override;
@@ -82,12 +82,12 @@ class Context9 : public ContextD3D
     angle::Result drawElements(const gl::Context *context,
                                gl::PrimitiveMode mode,
                                GLsizei count,
-                               GLenum type,
+                               gl::DrawElementsType type,
                                const void *indices) override;
     angle::Result drawElementsInstanced(const gl::Context *context,
                                         gl::PrimitiveMode mode,
                                         GLsizei count,
-                                        GLenum type,
+                                        gl::DrawElementsType type,
                                         const void *indices,
                                         GLsizei instances) override;
     angle::Result drawRangeElements(const gl::Context *context,
@@ -95,14 +95,14 @@ class Context9 : public ContextD3D
                                     GLuint start,
                                     GLuint end,
                                     GLsizei count,
-                                    GLenum type,
+                                    gl::DrawElementsType type,
                                     const void *indices) override;
     angle::Result drawArraysIndirect(const gl::Context *context,
                                      gl::PrimitiveMode mode,
                                      const void *indirect) override;
     angle::Result drawElementsIndirect(const gl::Context *context,
                                        gl::PrimitiveMode mode,
-                                       GLenum type,
+                                       gl::DrawElementsType type,
                                        const void *indirect) override;
 
     // Device loss

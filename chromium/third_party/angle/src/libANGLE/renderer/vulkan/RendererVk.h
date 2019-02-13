@@ -18,6 +18,7 @@
 #include "libANGLE/Caps.h"
 #include "libANGLE/renderer/vulkan/CommandGraph.h"
 #include "libANGLE/renderer/vulkan/QueryVk.h"
+#include "libANGLE/renderer/vulkan/UtilsVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
 #include "libANGLE/renderer/vulkan/vk_helpers.h"
 #include "libANGLE/renderer/vulkan/vk_internal_shaders_autogen.h"
@@ -160,9 +161,13 @@ class RendererVk : angle::NonCopyable
     // Issues a new serial for linked shader modules. Used in the pipeline cache.
     Serial issueShaderSerial();
 
-    angle::Result getFullScreenClearShaderProgram(vk::Context *context,
-                                                  vk::ShaderProgramHelper **programOut);
-    const angle::FeaturesVk &getFeatures() const { return mFeatures; }
+    vk::ShaderLibrary &getShaderLibrary() { return mShaderLibrary; }
+    UtilsVk &getUtils() { return mUtils; }
+    const angle::FeaturesVk &getFeatures() const
+    {
+        ASSERT(mFeaturesInitialized);
+        return mFeatures;
+    }
 
     angle::Result getTimestamp(vk::Context *context, uint64_t *timestampOut);
 
@@ -176,12 +181,20 @@ class RendererVk : angle::NonCopyable
     {
         if (mGpuEventsEnabled)
             return traceGpuEventImpl(context, commandBuffer, phase, name);
-        return angle::Result::Continue();
+        return angle::Result::Continue;
     }
 
     bool isMockICDEnabled() const { return mEnableMockICD; }
 
+    RenderPassCache &getRenderPassCache() { return mRenderPassCache; }
     const vk::PipelineCache &getPipelineCache() const { return mPipelineCache; }
+
+    // Query the format properties for select bits (linearTilingFeatures, optimalTilingFeatures and
+    // bufferFeatures).  Looks through mandatory features first, and falls back to querying the
+    // device (first time only).
+    bool hasLinearTextureFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
+    bool hasTextureFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
+    bool hasBufferFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
 
   private:
     // Number of semaphores for external entities to renderer to issue a wait, such as surface's
@@ -202,7 +215,7 @@ class RendererVk : angle::NonCopyable
                               vk::CommandBuffer &&commandBuffer);
     void freeAllInFlightResources();
     angle::Result flushCommandGraph(vk::Context *context, vk::CommandBuffer *commandBatch);
-    void initFeatures();
+    void initFeatures(const std::vector<VkExtensionProperties> &deviceExtensionProps);
     void initPipelineCacheVkKey();
     angle::Result initPipelineCache(DisplayVk *display);
 
@@ -214,6 +227,11 @@ class RendererVk : angle::NonCopyable
     angle::Result checkCompletedGpuEvents(vk::Context *context);
     void flushGpuEvents(double nextSyncGpuTimestampS, double nextSyncCpuTimestampS);
 
+    template <VkFormatFeatureFlags VkFormatProperties::*features>
+    bool hasFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
+
+    void nextSerial();
+
     egl::Display *mDisplay;
 
     mutable bool mCapsInitialized;
@@ -221,11 +239,13 @@ class RendererVk : angle::NonCopyable
     mutable gl::TextureCapsMap mNativeTextureCaps;
     mutable gl::Extensions mNativeExtensions;
     mutable gl::Limitations mNativeLimitations;
+    mutable bool mFeaturesInitialized;
     mutable angle::FeaturesVk mFeatures;
 
     VkInstance mInstance;
     bool mEnableValidationLayers;
     bool mEnableMockICD;
+    VkDebugUtilsMessengerEXT mDebugUtilsMessenger;
     VkDebugReportCallbackEXT mDebugReportCallback;
     VkPhysicalDevice mPhysicalDevice;
     VkPhysicalDeviceProperties mPhysicalDeviceProperties;
@@ -268,6 +288,9 @@ class RendererVk : angle::NonCopyable
     egl::BlobCache::Key mPipelineCacheVkBlobKey;
     uint32_t mPipelineCacheVkUpdateTimeout;
 
+    // A cache of VkFormatProperties as queried from the device over time.
+    std::array<VkFormatProperties, vk::kNumVkFormats> mFormatProperties;
+
     // mSubmitWaitSemaphores is a list of specifically requested semaphores to be waited on before a
     // command buffer submission, for example, semaphores signaled by vkAcquireNextImageKHR.
     // After first use, the list is automatically cleared.  This is a vector to support concurrent
@@ -299,7 +322,7 @@ class RendererVk : angle::NonCopyable
 
     // Internal shader library.
     vk::ShaderLibrary mShaderLibrary;
-    vk::ShaderProgramHelper mFullScreenClearShaderProgram;
+    UtilsVk mUtils;
 
     // The GpuEventQuery struct holds together a timestamp query and enough data to create a
     // trace event based on that. Use traceGpuEvent to insert such queries.  They will be readback

@@ -227,18 +227,26 @@ void PrintQueryResultInteractively(base::TimeNanos t_start,
       printf("\n");
     }
 
+    using ColumnDesc = protos::RawQueryResult::ColumnDesc;
     for (int c = 0; c < res.columns_size(); c++) {
-      switch (res.column_descriptors(c).type()) {
-        case protos::RawQueryResult_ColumnDesc_Type_STRING:
-          printf("%-20.20s", res.columns(c).string_values(r).c_str());
-          break;
-        case protos::RawQueryResult_ColumnDesc_Type_DOUBLE:
-          printf("%20f", res.columns(c).double_values(r));
-          break;
-        case protos::RawQueryResult_ColumnDesc_Type_LONG: {
-          auto value = res.columns(c).long_values(r);
-          printf("%20lld", value);
-          break;
+      if (res.columns(c).is_nulls(r)) {
+        printf("%-20.20s", "[NULL]");
+      } else {
+        switch (res.column_descriptors(c).type()) {
+          case ColumnDesc::STRING:
+            printf("%-20.20s", res.columns(c).string_values(r).c_str());
+            break;
+          case ColumnDesc::DOUBLE:
+            printf("%20f", res.columns(c).double_values(r));
+            break;
+          case ColumnDesc::LONG: {
+            auto value = res.columns(c).long_values(r);
+            printf("%20lld", value);
+            break;
+          }
+          case ColumnDesc::UNKNOWN:
+            PERFETTO_FATAL("Row should be null so handled above");
+            break;
         }
       }
       printf(" ");
@@ -310,21 +318,30 @@ void PrintQueryResultAsCsv(const protos::RawQueryResult& res, FILE* output) {
     for (int c = 0; c < res.columns_size(); c++) {
       if (c > 0)
         fprintf(output, ",");
-      switch (res.column_descriptors(c).type()) {
-        case protos::RawQueryResult_ColumnDesc_Type_STRING:
-          fprintf(output, "\"%s\"", res.columns(c).string_values(r).c_str());
-          break;
-        case protos::RawQueryResult_ColumnDesc_Type_DOUBLE:
-          fprintf(output, "%f", res.columns(c).double_values(r));
-          break;
-        case protos::RawQueryResult_ColumnDesc_Type_LONG: {
-          auto value = res.columns(c).long_values(r);
-          fprintf(output, "%lld", value);
-          break;
+
+      using ColumnDesc = protos::RawQueryResult::ColumnDesc;
+      if (res.columns(c).is_nulls(r)) {
+        fprintf(output, "\"%s\"", "[NULL]");
+      } else {
+        switch (res.column_descriptors(c).type()) {
+          case ColumnDesc::STRING:
+            fprintf(output, "\"%s\"", res.columns(c).string_values(r).c_str());
+            break;
+          case ColumnDesc::DOUBLE:
+            fprintf(output, "%f", res.columns(c).double_values(r));
+            break;
+          case ColumnDesc::LONG: {
+            auto value = res.columns(c).long_values(r);
+            fprintf(output, "%lld", value);
+            break;
+          }
+          case ColumnDesc::UNKNOWN:
+            PERFETTO_FATAL("Row should be null so handled above");
+            break;
         }
       }
     }
-    printf("\n");
+    fprintf(output, "\n");
   }
 }
 
@@ -347,6 +364,13 @@ int RunQueryAndPrintResult(FILE* input, FILE* output) {
     }
     if (sql_query.back() == '\n')
       sql_query.resize(sql_query.size() - 1);
+
+    // If we have a new line at the end of the file or an extra new line
+    // somewhere in the file, we'll end up with an empty query which we should
+    // just ignore.
+    if (sql_query.empty())
+      continue;
+
     PERFETTO_ILOG("Executing query: %s", sql_query.c_str());
 
     protos::RawQueryArgs query;
@@ -370,7 +394,10 @@ int RunQueryAndPrintResult(FILE* input, FILE* output) {
       PrintQueryResultAsCsv(res, output);
     });
   }
-  return is_query_error ? 1 : 0;
+  if (ferror(input)) {
+    PERFETTO_ELOG("Error reading query file");
+  }
+  return ferror(input) || is_query_error ? 1 : 0;
 }
 
 void PrintUsage(char** argv) {
@@ -431,7 +458,10 @@ int TraceProcessorMain(int argc, char** argv) {
   config.optimization_mode = OptimizationMode::kMaxBandwidth;
   std::unique_ptr<TraceProcessor> tp = TraceProcessor::CreateInstance(config);
   base::ScopedFile fd(base::OpenFile(trace_file_path, O_RDONLY));
-  PERFETTO_CHECK(fd);
+  if (!fd) {
+    PERFETTO_ELOG("Could not open trace file (path: %s)", trace_file_path);
+    return 1;
+  }
 
   // Load the trace in chunks using async IO. We create a simple pipeline where,
   // at each iteration, we parse the current chunk and asynchronously start
@@ -488,6 +518,10 @@ int TraceProcessorMain(int argc, char** argv) {
   // If we were given a query file, first load and execute it.
   if (query_file_path) {
     base::ScopedFstream file(fopen(query_file_path, "r"));
+    if (!file) {
+      PERFETTO_ELOG("Could not open query file (path: %s)", query_file_path);
+      return 1;
+    }
     ret = RunQueryAndPrintResult(file.get(), stdout);
   }
 

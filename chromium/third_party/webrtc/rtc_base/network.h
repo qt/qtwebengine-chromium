@@ -19,10 +19,10 @@
 #include <string>
 #include <vector>
 
-#include "rtc_base/ipaddress.h"
+#include "rtc_base/ip_address.h"
 #include "rtc_base/mdns_responder_interface.h"
-#include "rtc_base/messagehandler.h"
-#include "rtc_base/networkmonitor.h"
+#include "rtc_base/message_handler.h"
+#include "rtc_base/network_monitor.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 
 #if defined(WEBRTC_POSIX)
@@ -153,12 +153,6 @@ class NetworkManagerBase : public NetworkManager {
   void GetNetworks(NetworkList* networks) const override;
   void GetAnyAddressNetworks(NetworkList* networks) override;
 
-  // Defaults to true.
-  // TODO(deadbeef): Remove this. Nothing but tests use this; IPv6 is enabled
-  // by default everywhere else.
-  bool ipv6_enabled() const { return ipv6_enabled_; }
-  void set_ipv6_enabled(bool enabled) { ipv6_enabled_ = enabled; }
-
   EnumerationPermission enumeration_permission() const override;
 
   bool GetDefaultLocalAddress(int family, IPAddress* ipaddr) const override;
@@ -194,7 +188,6 @@ class NetworkManagerBase : public NetworkManager {
   NetworkList networks_;
 
   NetworkMap networks_map_;
-  bool ipv6_enabled_;
 
   std::unique_ptr<rtc::Network> ipv4_any_address_network_;
   std::unique_ptr<rtc::Network> ipv6_any_address_network_;

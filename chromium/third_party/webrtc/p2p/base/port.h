@@ -19,24 +19,24 @@
 
 #include "absl/types/optional.h"
 #include "api/candidate.h"
-#include "api/rtcerror.h"
+#include "api/rtc_error.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
-#include "logging/rtc_event_log/icelogger.h"
-#include "p2p/base/candidatepairinterface.h"
-#include "p2p/base/p2pconstants.h"
-#include "p2p/base/packetlossestimator.h"
-#include "p2p/base/packetsocketfactory.h"
-#include "p2p/base/portinterface.h"
+#include "logging/rtc_event_log/ice_logger.h"
+#include "p2p/base/candidate_pair_interface.h"
+#include "p2p/base/p2p_constants.h"
+#include "p2p/base/packet_loss_estimator.h"
+#include "p2p/base/packet_socket_factory.h"
+#include "p2p/base/port_interface.h"
 #include "p2p/base/stun.h"
-#include "p2p/base/stunrequest.h"
-#include "rtc_base/asyncpacketsocket.h"
+#include "p2p/base/stun_request.h"
+#include "rtc_base/async_packet_socket.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/nethelper.h"
+#include "rtc_base/net_helper.h"
 #include "rtc_base/network.h"
-#include "rtc_base/proxyinfo.h"
-#include "rtc_base/ratetracker.h"
-#include "rtc_base/socketaddress.h"
+#include "rtc_base/proxy_info.h"
+#include "rtc_base/rate_tracker.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
@@ -514,6 +514,10 @@ class Port : public PortInterface,
 
   rtc::WeakPtrFactory<Port> weak_factory_;
 
+  bool MaybeObfuscateAddress(Candidate* c,
+                             const std::string& type,
+                             bool is_final);
+
   friend class Connection;
 };
 
@@ -580,6 +584,10 @@ class Connection : public CandidatePairInterface,
   int unwritable_min_checks() const;
   void set_unwritable_min_checks(const absl::optional<int>& value) {
     unwritable_min_checks_ = value;
+  }
+  int inactive_timeout() const;
+  void set_inactive_timeout(const absl::optional<int>& value) {
+    inactive_timeout_ = value;
   }
 
   // Gets the |ConnectionInfo| stats, where |best_connection| has not been
@@ -787,7 +795,8 @@ class Connection : public CandidatePairInterface,
   void CopyCandidatesToStatsAndSanitizeIfNecessary();
 
   void LogCandidatePairConfig(webrtc::IceCandidatePairConfigType type);
-  void LogCandidatePairEvent(webrtc::IceCandidatePairEventType type);
+  void LogCandidatePairEvent(webrtc::IceCandidatePairEventType type,
+                             uint32_t transaction_id);
 
   WriteState write_state_;
   bool receiving_;
@@ -832,6 +841,7 @@ class Connection : public CandidatePairInterface,
 
   absl::optional<int> unwritable_timeout_;
   absl::optional<int> unwritable_min_checks_;
+  absl::optional<int> inactive_timeout_;
 
   bool reported_;
   IceCandidatePairState state_;

@@ -10,7 +10,6 @@
 
 #include "third_party/base/ptr_util.h"
 #include "xfa/fwl/cfwl_app.h"
-#include "xfa/fwl/cfwl_form.h"
 #include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_fwladapterwidgetmgr.h"
@@ -355,15 +354,7 @@ void CFWL_WidgetMgr::OnProcessMessageToForm(CFWL_Message* pMessage) {
   if (!pDstWidget)
     return;
 
-  const CFWL_App* pApp = pDstWidget->GetOwnerApp();
-  if (!pApp)
-    return;
-
-  CFWL_NoteDriver* pNoteDriver =
-      static_cast<CFWL_NoteDriver*>(pApp->GetNoteDriver());
-  if (!pNoteDriver)
-    return;
-
+  CFWL_NoteDriver* pNoteDriver = pDstWidget->GetOwnerApp()->GetNoteDriver();
   pNoteDriver->ProcessMessage(pMessage->Clone());
 
 #if (_FX_OS_ == _FX_OS_MACOSX_)

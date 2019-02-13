@@ -10,15 +10,16 @@
 
 #include "test/fake_vp8_encoder.h"
 
+#include <algorithm>
+
+#include "absl/types/optional.h"
 #include "api/video_codecs/create_vp8_temporal_layers.h"
 #include "api/video_codecs/vp8_temporal_layers.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "modules/video_coding/utility/simulcast_utility.h"
-#include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
-#include "rtc_base/random.h"
-#include "rtc_base/timeutils.h"
 
 namespace {
 
@@ -120,13 +121,13 @@ EncodedImageCallback::Result FakeVP8Encoder::OnEncodedImage(
   uint8_t stream_idx = encoded_image.SpatialIndex().value_or(0);
   CodecSpecificInfo overrided_specific_info;
   temporal_layers_[stream_idx]->UpdateLayerConfig(encoded_image.Timestamp());
-  PopulateCodecSpecific(&overrided_specific_info, encoded_image._length,
+  PopulateCodecSpecific(&overrided_specific_info, encoded_image.size(),
                         encoded_image._frameType, stream_idx,
                         encoded_image.Timestamp());
 
   // Write width and height to the payload the same way as the real encoder
   // does.
-  WriteFakeVp8(encoded_image._buffer, encoded_image._encodedWidth,
+  WriteFakeVp8(encoded_image.data(), encoded_image._encodedWidth,
                encoded_image._encodedHeight,
                encoded_image._frameType == kVideoFrameKey);
   return callback_->OnEncodedImage(encoded_image, &overrided_specific_info,

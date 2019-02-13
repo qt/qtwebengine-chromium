@@ -131,6 +131,8 @@ if(${ARCH} STREQUAL "x86_64")
     chacha/chacha-x86_64.${ASM_EXT}
     cipher_extra/aes128gcmsiv-x86_64.${ASM_EXT}
     cipher_extra/chacha20_poly1305_x86_64.${ASM_EXT}
+    hrss/asm/poly_rq_mul.S
+    test/trampoline-x86_64.${ASM_EXT}
   )
 endif()
 
@@ -140,6 +142,7 @@ perlasm(chacha/chacha-x86.${ASM_EXT} chacha/asm/chacha-x86.pl)
 perlasm(chacha/chacha-x86_64.${ASM_EXT} chacha/asm/chacha-x86_64.pl)
 perlasm(cipher_extra/aes128gcmsiv-x86_64.${ASM_EXT} cipher_extra/asm/aes128gcmsiv-x86_64.pl)
 perlasm(cipher_extra/chacha20_poly1305_x86_64.${ASM_EXT} cipher_extra/asm/chacha20_poly1305_x86_64.pl)
+perlasm(test/trampoline-x86_64.${ASM_EXT} test/asm/trampoline-x86_64.pl)
 
 add_custom_command(
   OUTPUT err_data.c
@@ -275,6 +278,7 @@ add_library(
   evp/sign.c
   ex_data.c
   hkdf/hkdf.c
+  hrss/hrss.c
   lhash/lhash.c
   mem.c
   obj/obj.c
@@ -422,6 +426,7 @@ endif()
 add_executable(
   crypto_test
 
+  abi_self_test.cc
   asn1/asn1_test.cc
   base64/base64_test.cc
   buf/buf_test.cc
@@ -455,6 +460,7 @@ add_executable(
   fipsmodule/rand/ctrdrbg_test.cc
   hkdf/hkdf_test.cc
   hmac_extra/hmac_test.cc
+  hrss/hrss_test.cc
   lhash/lhash_test.cc
   obj/obj_test.cc
   pem/pem_test.cc

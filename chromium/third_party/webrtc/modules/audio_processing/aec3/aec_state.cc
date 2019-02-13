@@ -19,7 +19,7 @@
 #include "api/array_view.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
-#include "rtc_base/atomicops.h"
+#include "rtc_base/atomic_ops.h"
 #include "rtc_base/checks.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -261,6 +261,7 @@ void AecState::Update(
   reverb_model_estimator_.Dump(data_dumper_.get());
   data_dumper_->DumpRaw("aec3_erl", Erl());
   data_dumper_->DumpRaw("aec3_erl_time_domain", ErlTimeDomain());
+  data_dumper_->DumpRaw("aec3_erle", Erle());
   data_dumper_->DumpRaw("aec3_usable_linear_estimate", UsableLinearEstimate());
   data_dumper_->DumpRaw("aec3_transparent_mode", TransparentMode());
   data_dumper_->DumpRaw("aec3_filter_delay", filter_analyzer_.DelayBlocks());

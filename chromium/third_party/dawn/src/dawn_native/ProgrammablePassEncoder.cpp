@@ -18,6 +18,8 @@
 #include "dawn_native/CommandBuffer.h"
 #include "dawn_native/Commands.h"
 
+#include <string.h>
+
 namespace dawn_native {
 
     ProgrammablePassEncoder::ProgrammablePassEncoder(DeviceBase* device,
@@ -27,12 +29,21 @@ namespace dawn_native {
     }
 
     void ProgrammablePassEncoder::EndPass() {
+        if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
+            return;
+        }
+
         mTopLevelBuilder->PassEnded();
         mAllocator = nullptr;
     }
 
     void ProgrammablePassEncoder::SetBindGroup(uint32_t groupIndex, BindGroupBase* group) {
         if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
+            return;
+        }
+
+        if (group == nullptr) {
+            mTopLevelBuilder->HandleError("BindGroup cannot be null");
             return;
         }
 

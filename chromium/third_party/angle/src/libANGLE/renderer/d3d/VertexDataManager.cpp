@@ -94,12 +94,12 @@ bool DirectStoragePossible(const gl::Context *context,
         return false;
     }
 
-    if (attrib.type != GL_FLOAT)
+    if (attrib.type != gl::VertexAttribType::Float)
     {
         unsigned int elementSize = 0;
         angle::Result error =
             factory->getVertexSpaceRequired(context, attrib, binding, 1, 0, &elementSize);
-        ASSERT(!error.isError());
+        ASSERT(error == angle::Result::Continue);
         alignment = std::min<size_t>(elementSize, 4);
     }
 
@@ -114,7 +114,7 @@ TranslatedAttribute::TranslatedAttribute()
     : active(false),
       attribute(nullptr),
       binding(nullptr),
-      currentValueType(GL_NONE),
+      currentValueType(gl::VertexAttribType::InvalidEnum),
       baseOffset(0),
       usesFirstVertexOffset(false),
       stride(0),
@@ -133,7 +133,7 @@ angle::Result TranslatedAttribute::computeOffset(const gl::Context *context,
     if (!usesFirstVertexOffset)
     {
         *offsetOut = baseOffset;
-        return angle::Result::Continue();
+        return angle::Result::Continue;
     }
 
     CheckedNumeric<unsigned int> offset(baseOffset);
@@ -142,7 +142,7 @@ angle::Result TranslatedAttribute::computeOffset(const gl::Context *context,
     offset += checkedStride * static_cast<unsigned int>(startVertex);
     ANGLE_CHECK_GL_MATH(GetImplAs<ContextD3D>(context), offset.IsValid());
     *offsetOut = offset.ValueOrDie();
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 // Warning: you should ensure binding really matches attrib.bindingIndex before using this function.
@@ -191,7 +191,7 @@ VertexDataManager::CurrentValueState::CurrentValueState(BufferFactoryD3D *factor
     data.FloatValues[1] = std::numeric_limits<float>::quiet_NaN();
     data.FloatValues[2] = std::numeric_limits<float>::quiet_NaN();
     data.FloatValues[3] = std::numeric_limits<float>::quiet_NaN();
-    data.Type           = GL_FLOAT;
+    data.Type           = gl::VertexAttribType::Float;
 }
 
 VertexDataManager::CurrentValueState::CurrentValueState(CurrentValueState &&other)
@@ -232,7 +232,7 @@ angle::Result VertexDataManager::prepareVertexData(
     std::vector<TranslatedAttribute> *translatedAttribs,
     GLsizei instances)
 {
-    const gl::State &state             = context->getGLState();
+    const gl::State &state             = context->getState();
     const gl::VertexArray *vertexArray = state.getVertexArray();
     const auto &vertexAttributes       = vertexArray->getVertexAttributes();
     const auto &vertexBindings         = vertexArray->getVertexBindings();
@@ -293,7 +293,7 @@ angle::Result VertexDataManager::prepareVertexData(
 
     if (mDynamicAttribsMaskCache.none())
     {
-        return angle::Result::Continue();
+        return angle::Result::Continue;
     }
 
     ANGLE_TRY(storeDynamicAttribs(context, translatedAttribs, mDynamicAttribsMaskCache, start,
@@ -301,7 +301,7 @@ angle::Result VertexDataManager::prepareVertexData(
 
     PromoteDynamicAttribs(context, *translatedAttribs, mDynamicAttribsMaskCache, count);
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 // static
@@ -386,7 +386,7 @@ angle::Result VertexDataManager::StoreStaticAttrib(const gl::Context *context,
     // Instanced vertices do not apply the 'start' offset
     translated->usesFirstVertexOffset = (binding.getDivisor() == 0);
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result VertexDataManager::storeDynamicAttribs(
@@ -429,7 +429,7 @@ angle::Result VertexDataManager::storeDynamicAttribs(
         ANGLE_TRY(storeDynamicAttrib(context, dynamicAttrib, start, count, instances));
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void VertexDataManager::PromoteDynamicAttribs(
@@ -545,7 +545,7 @@ angle::Result VertexDataManager::storeDynamicAttrib(const gl::Context *context,
     translated->baseOffset            = streamOffset;
     translated->usesFirstVertexOffset = false;
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result VertexDataManager::storeCurrentValue(
@@ -590,7 +590,7 @@ angle::Result VertexDataManager::storeCurrentValue(
     translated->baseOffset            = static_cast<unsigned int>(cachedState->offset);
     translated->usesFirstVertexOffset = false;
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 // VertexBufferBinding implementation

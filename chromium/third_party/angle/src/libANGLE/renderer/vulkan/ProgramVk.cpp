@@ -10,7 +10,6 @@
 #include "libANGLE/renderer/vulkan/ProgramVk.h"
 
 #include "common/debug.h"
-#include "common/utilities.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/renderer/renderer_utils.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
@@ -40,7 +39,7 @@ void InitDefaultUniformBlock(const std::vector<sh::Uniform> &uniforms,
     sh::Std140BlockEncoder blockEncoder;
     sh::GetUniformBlockInfo(uniforms, "", &blockEncoder, blockLayoutMapOut);
 
-    size_t blockSize = blockEncoder.getBlockSize();
+    size_t blockSize = blockEncoder.getCurrentOffset();
 
     // TODO(jmadill): I think we still need a valid block for the pipeline even if zero sized.
     if (blockSize == 0)
@@ -130,12 +129,7 @@ angle::Result SyncDefaultUniformBlock(ContextVk *contextVk,
     *outOffset = static_cast<uint32_t>(offset);
     memcpy(data, bufferData.data(), bufferData.size());
     ANGLE_TRY(dynamicBuffer->flush(contextVk));
-    return angle::Result::Continue();
-}
-
-bool UseLineRaster(const ContextVk *contextVk, gl::PrimitiveMode mode)
-{
-    return contextVk->getFeatures().basicGLLineRasterization && gl::IsLineMode(mode);
+    return angle::Result::Continue;
 }
 }  // anonymous namespace
 
@@ -149,25 +143,23 @@ angle::Result ProgramVk::ShaderInfo::initShaders(ContextVk *contextVk,
                                                  const std::string &fragmentSource,
                                                  bool enableLineRasterEmulation)
 {
-    if (!valid())
-    {
-        std::vector<uint32_t> vertexCode;
-        std::vector<uint32_t> fragmentCode;
-        ANGLE_TRY(GlslangWrapper::GetShaderCode(contextVk, contextVk->getCaps(),
-                                                enableLineRasterEmulation, vertexSource,
-                                                fragmentSource, &vertexCode, &fragmentCode));
+    ASSERT(!valid());
 
-        ANGLE_TRY(vk::InitShaderAndSerial(contextVk, &mShaders[gl::ShaderType::Vertex].get(),
-                                          vertexCode.data(), vertexCode.size() * sizeof(uint32_t)));
-        ANGLE_TRY(vk::InitShaderAndSerial(contextVk, &mShaders[gl::ShaderType::Fragment].get(),
-                                          fragmentCode.data(),
-                                          fragmentCode.size() * sizeof(uint32_t)));
+    std::vector<uint32_t> vertexCode;
+    std::vector<uint32_t> fragmentCode;
+    ANGLE_TRY(GlslangWrapper::GetShaderCode(contextVk, contextVk->getCaps(),
+                                            enableLineRasterEmulation, vertexSource, fragmentSource,
+                                            &vertexCode, &fragmentCode));
 
-        mProgramHelper.setShader(gl::ShaderType::Vertex, &mShaders[gl::ShaderType::Vertex]);
-        mProgramHelper.setShader(gl::ShaderType::Fragment, &mShaders[gl::ShaderType::Fragment]);
-    }
+    ANGLE_TRY(vk::InitShaderAndSerial(contextVk, &mShaders[gl::ShaderType::Vertex].get(),
+                                      vertexCode.data(), vertexCode.size() * sizeof(uint32_t)));
+    ANGLE_TRY(vk::InitShaderAndSerial(contextVk, &mShaders[gl::ShaderType::Fragment].get(),
+                                      fragmentCode.data(), fragmentCode.size() * sizeof(uint32_t)));
 
-    return angle::Result::Continue();
+    mProgramHelper.setShader(gl::ShaderType::Vertex, &mShaders[gl::ShaderType::Vertex]);
+    mProgramHelper.setShader(gl::ShaderType::Fragment, &mShaders[gl::ShaderType::Fragment]);
+
+    return angle::Result::Continue;
 }
 
 void ProgramVk::ShaderInfo::release(RendererVk *renderer)
@@ -178,11 +170,6 @@ void ProgramVk::ShaderInfo::release(RendererVk *renderer)
     {
         shader.get().destroy(renderer->getDevice());
     }
-}
-
-bool ProgramVk::ShaderInfo::valid() const
-{
-    return mShaders[gl::ShaderType::Vertex].get().valid();
 }
 
 // ProgramVk implementation.
@@ -239,7 +226,7 @@ angle::Result ProgramVk::load(const gl::Context *context,
                               gl::BinaryInputStream *stream)
 {
     UNIMPLEMENTED();
-    return angle::Result::Stop();
+    return angle::Result::Stop;
 }
 
 void ProgramVk::save(const gl::Context *context, gl::BinaryOutputStream *stream)
@@ -343,7 +330,7 @@ angle::Result ProgramVk::linkImpl(const gl::Context *glContext,
         }
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result ProgramVk::initDefaultUniformBlocks(const gl::Context *glContext)
@@ -445,7 +432,7 @@ angle::Result ProgramVk::initDefaultUniformBlocks(const gl::Context *glContext)
         }
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 GLboolean ProgramVk::validate(const gl::Caps &caps, gl::InfoLog *infoLog)
@@ -727,27 +714,6 @@ void ProgramVk::setPathFragmentInputGen(const std::string &inputName,
     UNIMPLEMENTED();
 }
 
-angle::Result ProgramVk::initShaders(ContextVk *contextVk,
-                                     gl::PrimitiveMode mode,
-                                     vk::ShaderProgramHelper **programOut)
-{
-    if (UseLineRaster(contextVk, mode))
-    {
-        ANGLE_TRY(
-            mLineRasterShaderInfo.initShaders(contextVk, mVertexSource, mFragmentSource, true));
-        ASSERT(mLineRasterShaderInfo.valid());
-        *programOut = &mLineRasterShaderInfo.getShaderProgram();
-    }
-    else
-    {
-        ANGLE_TRY(mDefaultShaderInfo.initShaders(contextVk, mVertexSource, mFragmentSource, false));
-        ASSERT(mDefaultShaderInfo.valid());
-        *programOut = &mDefaultShaderInfo.getShaderProgram();
-    }
-
-    return angle::Result::Continue();
-}
-
 angle::Result ProgramVk::allocateDescriptorSet(ContextVk *contextVk, uint32_t descriptorSetIndex)
 {
     // Write out to a new a descriptor set.
@@ -765,7 +731,7 @@ angle::Result ProgramVk::allocateDescriptorSet(ContextVk *contextVk, uint32_t de
     ANGLE_TRY(dynamicDescriptorPool->allocateSets(contextVk, descriptorSetLayout.ptr(), 1,
                                                   &mDescriptorPoolBindings[descriptorSetIndex],
                                                   &mDescriptorSets[descriptorSetIndex]));
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void ProgramVk::getUniformfv(const gl::Context *context, GLint location, GLfloat *params) const
@@ -816,7 +782,7 @@ angle::Result ProgramVk::updateUniforms(ContextVk *contextVk)
         ANGLE_TRY(updateDefaultUniformsDescriptorSet(contextVk));
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result ProgramVk::updateDefaultUniformsDescriptorSet(ContextVk *contextVk)
@@ -858,10 +824,11 @@ angle::Result ProgramVk::updateDefaultUniformsDescriptorSet(ContextVk *contextVk
 
     vkUpdateDescriptorSets(device, 2, writeDescriptorInfo.data(), 0, nullptr);
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
-angle::Result ProgramVk::updateTexturesDescriptorSet(ContextVk *contextVk)
+angle::Result ProgramVk::updateTexturesDescriptorSet(ContextVk *contextVk,
+                                                     vk::FramebufferHelper *framebuffer)
 {
     ASSERT(hasTextures());
     ANGLE_TRY(allocateDescriptorSet(contextVk, kTextureDescriptorSetIndex));
@@ -885,14 +852,31 @@ angle::Result ProgramVk::updateTexturesDescriptorSet(ContextVk *contextVk)
         for (uint32_t arrayElement = 0; arrayElement < samplerBinding.boundTextureUnits.size();
              ++arrayElement)
         {
-            GLuint textureUnit           = samplerBinding.boundTextureUnits[arrayElement];
-            TextureVk *textureVk         = activeTextures[textureUnit];
-            const vk::ImageHelper &image = textureVk->getImage();
+            GLuint textureUnit   = samplerBinding.boundTextureUnits[arrayElement];
+            TextureVk *textureVk = activeTextures[textureUnit];
+
+            // Ensure any writes to the textures are flushed before we read from them.
+            ANGLE_TRY(textureVk->ensureImageInitialized(contextVk));
+            vk::ImageHelper &image = textureVk->getImage();
+
+            // Ensure the image is in read-only layout
+            if (image.getCurrentLayout() != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+            {
+                vk::CommandBuffer *srcLayoutChange;
+                ANGLE_TRY(image.recordCommands(contextVk, &srcLayoutChange));
+
+                image.changeLayoutWithStages(
+                    VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    srcLayoutChange);
+            }
+
+            image.addReadDependency(framebuffer);
 
             VkDescriptorImageInfo &imageInfo = descriptorImageInfo[writeCount];
 
             imageInfo.sampler     = textureVk->getSampler().getHandle();
-            imageInfo.imageView   = textureVk->getImageView().getHandle();
+            imageInfo.imageView   = textureVk->getReadImageView().getHandle();
             imageInfo.imageLayout = image.getCurrentLayout();
 
             VkWriteDescriptorSet &writeInfo = writeDescriptorInfo[writeCount];
@@ -917,7 +901,7 @@ angle::Result ProgramVk::updateTexturesDescriptorSet(ContextVk *contextVk)
     ASSERT(writeCount > 0);
     vkUpdateDescriptorSets(device, writeCount, writeDescriptorInfo.data(), 0, nullptr);
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void ProgramVk::setDefaultUniformBlocksMinSizeForTesting(size_t minSize)
@@ -934,7 +918,7 @@ angle::Result ProgramVk::updateDescriptorSets(ContextVk *contextVk,
     // Can probably use better dirty bits here.
 
     if (mUsedDescriptorSetRange.empty())
-        return angle::Result::Continue();
+        return angle::Result::Continue;
 
     ASSERT(!mDescriptorSets.empty());
 
@@ -957,6 +941,6 @@ angle::Result ProgramVk::updateDescriptorSets(ContextVk *contextVk,
                                           &mDescriptorSets[low], 0, nullptr);
     }
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 }  // namespace rx

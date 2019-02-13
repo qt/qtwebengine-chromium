@@ -30,7 +30,9 @@ struct WorkaroundsGL;
 class ContextGL : public ContextImpl
 {
   public:
-    ContextGL(const gl::ContextState &state, const std::shared_ptr<RendererGL> &renderer);
+    ContextGL(const gl::State &state,
+              gl::ErrorSet *errorSet,
+              const std::shared_ptr<RendererGL> &renderer);
     ~ContextGL() override;
 
     angle::Result initialize() override;
@@ -91,12 +93,12 @@ class ContextGL : public ContextImpl
     angle::Result drawElements(const gl::Context *context,
                                gl::PrimitiveMode mode,
                                GLsizei count,
-                               GLenum type,
+                               gl::DrawElementsType type,
                                const void *indices) override;
     angle::Result drawElementsInstanced(const gl::Context *context,
                                         gl::PrimitiveMode mode,
                                         GLsizei count,
-                                        GLenum type,
+                                        gl::DrawElementsType type,
                                         const void *indices,
                                         GLsizei instances) override;
     angle::Result drawRangeElements(const gl::Context *context,
@@ -104,14 +106,14 @@ class ContextGL : public ContextImpl
                                     GLuint start,
                                     GLuint end,
                                     GLsizei count,
-                                    GLenum type,
+                                    gl::DrawElementsType type,
                                     const void *indices) override;
     angle::Result drawArraysIndirect(const gl::Context *context,
                                      gl::PrimitiveMode mode,
                                      const void *indirect) override;
     angle::Result drawElementsIndirect(const gl::Context *context,
                                        gl::PrimitiveMode mode,
-                                       GLenum type,
+                                       gl::DrawElementsType type,
                                        const void *indirect) override;
 
     // CHROMIUM_path_rendering implementation
@@ -219,13 +221,14 @@ class ContextGL : public ContextImpl
 
     angle::Result setDrawElementsState(const gl::Context *context,
                                        GLsizei count,
-                                       GLenum type,
+                                       gl::DrawElementsType type,
                                        const void *indices,
                                        GLsizei instanceCount,
                                        const void **outIndices);
 
     angle::Result setDrawIndirectState(const gl::Context *context);
 
+  protected:
     std::shared_ptr<RendererGL> mRenderer;
 };
 

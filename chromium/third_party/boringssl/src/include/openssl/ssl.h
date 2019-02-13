@@ -394,6 +394,26 @@ OPENSSL_EXPORT int SSL_pending(const SSL *ssl);
 // https://crbug.com/466303.
 OPENSSL_EXPORT int SSL_write(SSL *ssl, const void *buf, int num);
 
+// SSL_KEY_UPDATE_REQUESTED indicates that the peer should reply to a KeyUpdate
+// message with its own, thus updating traffic secrets for both directions on
+// the connection.
+#define SSL_KEY_UPDATE_REQUESTED 1
+
+// SSL_KEY_UPDATE_NOT_REQUESTED indicates that the peer should not reply with
+// it's own KeyUpdate message.
+#define SSL_KEY_UPDATE_NOT_REQUESTED 0
+
+// SSL_key_update queues a TLS 1.3 KeyUpdate message to be sent on |ssl|
+// if one is not already queued. The |request_type| argument must one of the
+// |SSL_KEY_UPDATE_*| values. This function requires that |ssl| have completed a
+// TLS >= 1.3 handshake. It returns one on success or zero on error.
+//
+// Note that this function does not _send_ the message itself. The next call to
+// |SSL_write| will cause the message to be sent. |SSL_write| may be called with
+// a zero length to flush a KeyUpdate message when no application data is
+// pending.
+OPENSSL_EXPORT int SSL_key_update(SSL *ssl, int request_type);
+
 // SSL_shutdown shuts down |ssl|. It runs in two stages. First, it sends
 // close_notify and returns zero or one on success or -1 on failure. Zero
 // indicates that close_notify was sent, but not received, and one additionally
@@ -2177,6 +2197,7 @@ OPENSSL_EXPORT int SSL_set1_curves_list(SSL *ssl, const char *curves);
 #define SSL_CURVE_SECP384R1 24
 #define SSL_CURVE_SECP521R1 25
 #define SSL_CURVE_X25519 29
+#define SSL_CURVE_CECPQ2 16696
 
 // SSL_get_curve_id returns the ID of the curve used by |ssl|'s most recently
 // completed handshake or 0 if not applicable.
@@ -4714,6 +4735,14 @@ OPENSSL_EXPORT bool SSL_decline_handoff(SSL *ssl);
 OPENSSL_EXPORT bool SSL_apply_handoff(SSL *ssl, Span<const uint8_t> handoff);
 OPENSSL_EXPORT bool SSL_serialize_handback(const SSL *ssl, CBB *out);
 OPENSSL_EXPORT bool SSL_apply_handback(SSL *ssl, Span<const uint8_t> handback);
+
+// SSL_get_traffic_secrets sets |*out_read_traffic_secret| and
+// |*out_write_traffic_secret| to reference the TLS 1.3 traffic secrets for
+// |ssl|. This function is only valid on TLS 1.3 connections that have
+// completed the handshake. It returns true on success and false on error.
+OPENSSL_EXPORT bool SSL_get_traffic_secrets(
+    const SSL *ssl, Span<const uint8_t> *out_read_traffic_secret,
+    Span<const uint8_t> *out_write_traffic_secret);
 
 BSSL_NAMESPACE_END
 

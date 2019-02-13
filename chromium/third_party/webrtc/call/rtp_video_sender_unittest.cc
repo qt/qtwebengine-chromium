@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 
+#include "absl/memory/memory.h"
 #include "call/rtp_transport_controller_send.h"
 #include "call/rtp_video_sender.h"
 #include "modules/video_coding/fec_controller_default.h"
@@ -45,15 +46,6 @@ const int64_t kRetransmitWindowSizeMs = 500;
 class MockRtcpIntraFrameObserver : public RtcpIntraFrameObserver {
  public:
   MOCK_METHOD1(OnReceivedIntraFrameRequest, void(uint32_t));
-};
-
-class MockCongestionObserver : public NetworkChangedObserver {
- public:
-  MOCK_METHOD4(OnNetworkChanged,
-               void(uint32_t bitrate_bps,
-                    uint8_t fraction_loss,
-                    int64_t rtt_ms,
-                    int64_t probing_interval_ms));
 };
 
 RtpSenderObservers CreateObservers(
@@ -101,8 +93,8 @@ class RtpVideoSenderTestFixture {
     config_.rtp.payload_type = payload_type;
     std::map<uint32_t, RtpState> suspended_ssrcs;
     router_ = absl::make_unique<RtpVideoSender>(
-        config_.rtp.ssrcs, suspended_ssrcs, suspended_payload_states,
-        config_.rtp, config_.rtcp_report_interval_ms, &transport_,
+        suspended_ssrcs, suspended_payload_states, config_.rtp,
+        config_.rtcp_report_interval_ms, &transport_,
         CreateObservers(&call_stats_, &encoder_feedback_, &stats_proxy_,
                         &stats_proxy_, &stats_proxy_, &stats_proxy_,
                         &stats_proxy_, &stats_proxy_, &send_delay_stats_),
@@ -115,7 +107,6 @@ class RtpVideoSenderTestFixture {
 
  private:
   NiceMock<MockTransport> transport_;
-  NiceMock<MockCongestionObserver> congestion_observer_;
   NiceMock<MockRtcpIntraFrameObserver> encoder_feedback_;
   SimulatedClock clock_;
   RtcEventLogNullImpl event_log_;
@@ -153,8 +144,8 @@ TEST_P(RtpVideoSenderTest, SendOnOneModule) {
   encoded_image.SetTimestamp(1);
   encoded_image.capture_time_ms_ = 2;
   encoded_image._frameType = kVideoFrameKey;
-  encoded_image._buffer = &payload;
-  encoded_image._length = 1;
+  encoded_image.set_buffer(&payload, 1);
+  encoded_image.set_size(1);
 
   RtpVideoSenderTestFixture test({kSsrc1}, kPayloadType, {});
   EXPECT_NE(
@@ -183,8 +174,8 @@ TEST_P(RtpVideoSenderTest, SendSimulcastSetActive) {
   encoded_image_1.SetTimestamp(1);
   encoded_image_1.capture_time_ms_ = 2;
   encoded_image_1._frameType = kVideoFrameKey;
-  encoded_image_1._buffer = &payload;
-  encoded_image_1._length = 1;
+  encoded_image_1.set_buffer(&payload, 1);
+  encoded_image_1.set_size(1);
 
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, kPayloadType, {});
 
@@ -227,8 +218,9 @@ TEST_P(RtpVideoSenderTest, SendSimulcastSetActiveModules) {
   encoded_image_1.SetTimestamp(1);
   encoded_image_1.capture_time_ms_ = 2;
   encoded_image_1._frameType = kVideoFrameKey;
-  encoded_image_1._buffer = &payload;
-  encoded_image_1._length = 1;
+  encoded_image_1.set_buffer(&payload, 1);
+  encoded_image_1.set_size(1);
+
   EncodedImage encoded_image_2(encoded_image_1);
   encoded_image_2.SetSpatialIndex(1);
 

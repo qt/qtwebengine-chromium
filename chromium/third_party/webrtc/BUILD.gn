@@ -131,6 +131,14 @@ config("common_inherited_config") {
       # Allow includes to be prefixed with webrtc/ in case it is not an
       # immediate subdirectory of the top-level.
       ".",
+
+      # Just like the root WebRTC directory is added to include path, the
+      # corresponding directory tree with generated files needs to be added too.
+      # Note: this path does not change depending on the current target, e.g.
+      # it is always "//gen/third_party/webrtc" when building with Chromium.
+      # See also: http://cs.chromium.org/?q=%5C"default_include_dirs
+      # https://gn.googlesource.com/gn/+/master/docs/reference.md#target_gen_dir
+      target_gen_dir,
     ]
   }
   if (is_posix || is_fuchsia) {
@@ -232,10 +240,6 @@ config("common_config") {
 
   if (rtc_enable_external_auth) {
     defines += [ "ENABLE_EXTERNAL_AUTH" ]
-  }
-
-  if (rtc_use_builtin_sw_codecs) {
-    defines += [ "USE_BUILTIN_SW_CODECS" ]
   }
 
   if (build_with_chromium) {
@@ -513,6 +517,7 @@ if (rtc_include_tests) {
     testonly = true
     deps = [
       "modules/congestion_controller/goog_cc:goog_cc_slow_tests",
+      "rtc_base/task_utils:repeating_task_unittests",
       "test:test_main",
     ]
   }
@@ -603,7 +608,7 @@ if (rtc_include_tests) {
     data = webrtc_perf_tests_resources
     if (is_android) {
       deps += [ "//testing/android/native_test:native_test_native_code" ]
-      shard_timeout = 2700
+      shard_timeout = 4500
     }
     if (is_ios) {
       deps += [ ":webrtc_perf_tests_bundle_data" ]
@@ -643,6 +648,11 @@ if (rtc_include_tests) {
         "//base:base_java_test_support",
         "//third_party/google-truth:google_truth_java",
       ]
+
+      additional_jar_files = [ [
+            "sdk/android/tests/resources/robolectric.properties",
+            "robolectric.properties",
+          ] ]
     }
   }
 }

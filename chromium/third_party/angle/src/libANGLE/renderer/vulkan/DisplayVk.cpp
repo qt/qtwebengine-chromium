@@ -140,12 +140,13 @@ ImageImpl *DisplayVk::createImage(const egl::ImageState &state,
     return static_cast<ImageImpl *>(0);
 }
 
-ContextImpl *DisplayVk::createContext(const gl::ContextState &state,
-                                      const egl::Config *configuration,
-                                      const gl::Context *shareContext,
-                                      const egl::AttributeMap &attribs)
+rx::ContextImpl *DisplayVk::createContext(const gl::State &state,
+                                          gl::ErrorSet *errorSet,
+                                          const egl::Config *configuration,
+                                          const gl::Context *shareContext,
+                                          const egl::AttributeMap &attribs)
 {
-    return new ContextVk(state, mRenderer);
+    return new ContextVk(state, errorSet, mRenderer);
 }
 
 StreamProducerImpl *DisplayVk::createStreamProducerD3DTexture(
@@ -171,7 +172,9 @@ void DisplayVk::generateExtensions(egl::DisplayExtensions *outExtensions) const
     // backend can be tested in Chrome. http://anglebug.com/2722
     outExtensions->robustResourceInitialization = true;
 
-    // Vulkan implementation will use regular swap for swapBuffersWithDamage.
+    // The Vulkan implementation will always say that EGL_KHR_swap_buffers_with_damage is supported.
+    // When the Vulkan driver supports VK_KHR_incremental_present, it will use it.  Otherwise, it
+    // will ignore the hint and do a regular swap.
     outExtensions->swapBuffersWithDamage = true;
 }
 
@@ -205,7 +208,7 @@ void DisplayVk::handleError(VkResult result,
     }
 }
 
-// TODO(jmadill): Remove this. http://anglebug.com/2491
+// TODO(jmadill): Remove this. http://anglebug.com/3041
 egl::Error DisplayVk::getEGLError(EGLint errorCode)
 {
     return egl::Error(errorCode, 0, std::move(mStoredErrorString));

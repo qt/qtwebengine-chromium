@@ -50,6 +50,9 @@ void GenerateCaps(const VkPhysicalDeviceProperties &physicalDeviceProperties,
     outExtensions->textureBorderClamp     = false;  // not implemented yet
     outExtensions->translatedShaderSource = true;
 
+    // Only expose robust buffer access if the physical device supports it.
+    outExtensions->robustBufferAccessBehavior = physicalDeviceFeatures.robustBufferAccess;
+
     // We use secondary command buffers almost everywhere and they require a feature to be
     // able to execute in the presence of queries.  As a result, we won't support queries
     // unless that feature is available.
@@ -250,7 +253,7 @@ egl::Config GenerateDefaultConfig(const RendererVk *renderer,
     config.renderableType     = es2Support | es3Support;
     config.sampleBuffers      = (sampleCount > 0) ? 1 : 0;
     config.samples            = sampleCount;
-    config.surfaceType        = EGL_WINDOW_BIT | EGL_PBUFFER_BIT | EGL_SWAP_BEHAVIOR_PRESERVED_BIT;
+    config.surfaceType        = EGL_WINDOW_BIT | EGL_PBUFFER_BIT;
     // Vulkan surfaces use a different origin than OpenGL, always prefer to be flipped vertically if
     // possible.
     config.optimalOrientation    = EGL_SURFACE_ORIENTATION_INVERT_Y_ANGLE;

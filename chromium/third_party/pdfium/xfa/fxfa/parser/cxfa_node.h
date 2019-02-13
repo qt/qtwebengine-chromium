@@ -30,6 +30,7 @@ class CXFA_FFDoc;
 class CXFA_FFDocView;
 class CXFA_FFWidget;
 class CXFA_Font;
+class CXFA_Keep;
 class CXFA_Margin;
 class CXFA_Occur;
 class CXFA_Para;
@@ -83,16 +84,6 @@ class CXFA_Node : public CXFA_Object {
     void* default_value;
   };
 
-#ifndef NDEBUG
-  static WideString ElementToName(XFA_Element elem);
-#endif  // NDEBUG
-
-  static WideString AttributeEnumToName(XFA_AttributeEnum item);
-  static Optional<XFA_AttributeEnum> NameToAttributeEnum(
-      const WideStringView& name);
-  static XFA_Attribute NameToAttribute(const WideStringView& name);
-  static WideString AttributeToName(XFA_Attribute attr);
-  static XFA_Element NameToElement(const WideString& name);
   static std::unique_ptr<CXFA_Node> Create(CXFA_Document* doc,
                                            XFA_Element element,
                                            XFA_PacketType packet);
@@ -202,9 +193,9 @@ class CXFA_Node : public CXFA_Object {
   CXFA_Node* GetContainerNode();
   LocaleIface* GetLocale();
   Optional<WideString> GetLocaleName();
-  XFA_AttributeEnum GetIntact();
+  XFA_AttributeValue GetIntact();
 
-  CXFA_Node* GetFirstChildByName(const WideStringView& wsNodeName) const;
+  CXFA_Node* GetFirstChildByName(WideStringView wsNodeName) const;
   CXFA_Node* GetFirstChildByName(uint32_t dwNodeNameHash) const;
   template <typename T>
   T* GetFirstChildByClass(XFA_Element eType) const {
@@ -212,7 +203,7 @@ class CXFA_Node : public CXFA_Object {
   }
   CXFA_Node* GetNextSameNameSibling(uint32_t dwNodeNameHash) const;
   template <typename T>
-  T* GetNextSameNameSibling(const WideStringView& wsNodeName) const {
+  T* GetNextSameNameSibling(WideStringView wsNodeName) const {
     return static_cast<T*>(GetNextSameNameSiblingInternal(wsNodeName));
   }
   template <typename T>
@@ -226,7 +217,7 @@ class CXFA_Node : public CXFA_Object {
   Optional<int32_t> GetDefaultInteger(XFA_Attribute attr) const;
   Optional<CXFA_Measurement> GetDefaultMeasurement(XFA_Attribute attr) const;
   Optional<WideString> GetDefaultCData(XFA_Attribute attr) const;
-  Optional<XFA_AttributeEnum> GetDefaultEnum(XFA_Attribute attr) const;
+  Optional<XFA_AttributeValue> GetDefaultEnum(XFA_Attribute attr) const;
 
   bool IsOpenAccess();
 
@@ -256,7 +247,7 @@ class CXFA_Node : public CXFA_Object {
   CXFA_Node* GetExclGroupIfExists();
 
   int32_t ProcessEvent(CXFA_FFDocView* docView,
-                       XFA_AttributeEnum iActivity,
+                       XFA_AttributeValue iActivity,
                        CXFA_EventParam* pEventParam);
   int32_t ProcessCalculate(CXFA_FFDocView* docView);
   int32_t ProcessValidate(CXFA_FFDocView* docView, int32_t iFlags);
@@ -279,7 +270,7 @@ class CXFA_Node : public CXFA_Object {
 
   void SetWidgetReady() { is_widget_ready_ = true; }
   bool IsWidgetReady() const { return is_widget_ready_; }
-  std::vector<CXFA_Event*> GetEventByActivity(XFA_AttributeEnum iActivity,
+  std::vector<CXFA_Event*> GetEventByActivity(XFA_AttributeValue iActivity,
                                               bool bIsFormReady);
 
   void ResetData();
@@ -322,8 +313,8 @@ class CXFA_Node : public CXFA_Object {
   void SetCheckState(XFA_CHECKSTATE eCheckState, bool bNotify);
 
   CXFA_Node* GetSelectedMember();
-  CXFA_Node* SetSelectedMember(const WideStringView& wsName, bool bNotify);
-  void SetSelectedMemberByValue(const WideStringView& wsValue,
+  CXFA_Node* SetSelectedMember(WideStringView wsName, bool bNotify);
+  void SetSelectedMemberByValue(WideStringView wsValue,
                                 bool bNotify,
                                 bool bScriptModify,
                                 bool bSyncData);
@@ -359,7 +350,7 @@ class CXFA_Node : public CXFA_Object {
                     bool bScriptModify,
                     bool bSyncData);
 
-  WideString GetItemValue(const WideStringView& wsLabel);
+  WideString GetItemValue(WideStringView wsLabel);
 
   bool IsHorizontalScrollPolicyOff();
   bool IsVerticalScrollPolicyOff();
@@ -390,7 +381,6 @@ class CXFA_Node : public CXFA_Object {
             XFA_Element eType,
             const PropertyData* properties,
             const AttributeData* attributes,
-            const WideStringView& elementName,
             std::unique_ptr<CJX_Object> js_node);
   CXFA_Node(CXFA_Document* pDoc,
             XFA_PacketType ePacket,
@@ -398,8 +388,7 @@ class CXFA_Node : public CXFA_Object {
             XFA_ObjectType oType,
             XFA_Element eType,
             const PropertyData* properties,
-            const AttributeData* attributes,
-            const WideStringView& elementName);
+            const AttributeData* attributes);
 
  private:
   void ProcessScriptTestValidate(CXFA_FFDocView* docView,
@@ -427,8 +416,7 @@ class CXFA_Node : public CXFA_Object {
                                   XFA_AttributeType eType) const;
   CXFA_Node* GetChildInternal(size_t index, XFA_Element eType, bool bOnlyChild);
   CXFA_Node* GetFirstChildByClassInternal(XFA_Element eType) const;
-  CXFA_Node* GetNextSameNameSiblingInternal(
-      const WideStringView& wsNodeName) const;
+  CXFA_Node* GetNextSameNameSiblingInternal(WideStringView wsNodeName) const;
   CXFA_Node* GetNextSameClassSiblingInternal(XFA_Element eType) const;
   void CalcCaptionSize(CXFA_FFDoc* doc, CFX_SizeF* pszCap);
   bool CalculateFieldAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize);
@@ -453,7 +441,7 @@ class CXFA_Node : public CXFA_Object {
   void InsertListTextItem(CXFA_Node* pItems,
                           const WideString& wsText,
                           int32_t nIndex);
-  WideString GetItemLabel(const WideStringView& wsValue) const;
+  WideString GetItemLabel(WideStringView wsValue) const;
 
   std::pair<XFA_FFWidgetType, CXFA_Ui*> CreateChildUIAndValueNodesIfNeeded();
   void CreateValueNodeIfNeeded(CXFA_Value* value, CXFA_Node* pUIChild);
@@ -472,6 +460,9 @@ class CXFA_Node : public CXFA_Object {
   void SyncValue(const WideString& wsValue, bool bNotify);
   CXFA_Value* GetDefaultValueIfExists();
   CXFA_Bind* GetBindIfExists() const;
+  Optional<XFA_AttributeValue> GetIntactFromKeep(
+      const CXFA_Keep* pKeep,
+      XFA_AttributeValue eLayoutType) const;
 
   Optional<float> TryHeight();
   Optional<float> TryMinWidth();

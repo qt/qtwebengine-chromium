@@ -62,7 +62,7 @@ static bool can_use_hw_blend_equation(GrBlendEquation equation,
     if (GrProcessorAnalysisCoverage::kLCD == coverage) {
         return false; // LCD coverage must be applied after the blend equation.
     }
-    if (caps.canUseAdvancedBlendEquation(equation)) {
+    if (caps.isAdvancedBlendEquationBlacklisted(equation)) {
         return false;
     }
     return true;
@@ -217,6 +217,10 @@ public:
             : fMode(mode), fHWBlendEquation(hw_blend_equation(mode)) {}
 
 private:
+    SkString description() const override {
+        return SkStringPrintf("CustomXPFactory (%s)", SkBlendMode_Name(fMode));
+    }
+
     sk_sp<const GrXferProcessor> makeXferProcessor(const GrProcessorAnalysisColor&,
                                                    GrProcessorAnalysisCoverage,
                                                    bool hasMixedSamples,
@@ -355,7 +359,7 @@ GrXPFactory::AnalysisProperties CustomXPFactory::analysisProperties(
             return AnalysisProperties::kCompatibleWithAlphaAsCoverage;
         } else {
             return AnalysisProperties::kCompatibleWithAlphaAsCoverage |
-                   AnalysisProperties::kRequiresBarrierBetweenOverlappingDraws;
+                   AnalysisProperties::kRequiresNonOverlappingDraws;
         }
     }
     return AnalysisProperties::kCompatibleWithAlphaAsCoverage |

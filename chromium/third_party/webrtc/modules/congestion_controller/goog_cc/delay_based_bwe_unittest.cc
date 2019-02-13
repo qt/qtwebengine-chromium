@@ -9,12 +9,11 @@
  */
 
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
+
+#include "api/transport/network_types.h"
+#include "modules/congestion_controller/goog_cc/acknowledged_bitrate_estimator.h"
 #include "modules/congestion_controller/goog_cc/delay_based_bwe_unittest_helper.h"
-#include "modules/pacing/paced_sender.h"
-#include "rtc_base/constructormagic.h"
 #include "system_wrappers/include/clock.h"
-#include "system_wrappers/include/field_trial.h"
-#include "test/field_trial.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -30,8 +29,9 @@ constexpr Timestamp kDummyTimestamp = Timestamp::Seconds<1000>();
 
 TEST_F(DelayBasedBweTest, NoCrashEmptyFeedback) {
   std::vector<PacketFeedback> packet_feedback_vector;
-  bitrate_estimator_->IncomingPacketFeedbackVector(
-      packet_feedback_vector, absl::nullopt, absl::nullopt, kDummyTimestamp);
+  bitrate_estimator_->IncomingPacketFeedbackVector(packet_feedback_vector,
+                                                   absl::nullopt, absl::nullopt,
+                                                   false, kDummyTimestamp);
 }
 
 TEST_F(DelayBasedBweTest, NoCrashOnlyLostFeedback) {
@@ -42,8 +42,9 @@ TEST_F(DelayBasedBweTest, NoCrashOnlyLostFeedback) {
   packet_feedback_vector.push_back(PacketFeedback(PacketFeedback::kNotReceived,
                                                   PacketFeedback::kNoSendTime,
                                                   1, 1500, PacedPacketInfo()));
-  bitrate_estimator_->IncomingPacketFeedbackVector(
-      packet_feedback_vector, absl::nullopt, absl::nullopt, kDummyTimestamp);
+  bitrate_estimator_->IncomingPacketFeedbackVector(packet_feedback_vector,
+                                                   absl::nullopt, absl::nullopt,
+                                                   false, kDummyTimestamp);
 }
 
 TEST_F(DelayBasedBweTest, ProbeDetection) {

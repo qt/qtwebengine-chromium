@@ -16,6 +16,7 @@
 #define DAWNNATIVE_VULKAN_VULKANINFO_H_
 
 #include "common/vulkan_platform.h"
+#include "dawn_native/Error.h"
 
 #include <vector>
 
@@ -28,8 +29,13 @@ namespace dawn_native { namespace vulkan {
     extern const char kLayerNameRenderDocCapture[];
 
     extern const char kExtensionNameExtDebugReport[];
+    extern const char kExtensionNameMvkMacosSurface[];
     extern const char kExtensionNameKhrSurface[];
     extern const char kExtensionNameKhrSwapchain[];
+    extern const char kExtensionNameKhrWaylandSurface[];
+    extern const char kExtensionNameKhrWin32Surface[];
+    extern const char kExtensionNameKhrXcbSurface[];
+    extern const char kExtensionNameKhrXlibSurface[];
 
     // Global information - gathered before the instance is created
     struct VulkanGlobalKnobs {
@@ -40,7 +46,12 @@ namespace dawn_native { namespace vulkan {
 
         // Extensions
         bool debugReport = false;
+        bool macosSurface = false;
         bool surface = false;
+        bool waylandSurface = false;
+        bool win32Surface = false;
+        bool xcbSurface = false;
+        bool xlibSurface = false;
     };
 
     struct VulkanGlobalInfo : VulkanGlobalKnobs {
@@ -76,13 +87,13 @@ namespace dawn_native { namespace vulkan {
         std::vector<bool> supportedQueueFamilies;
     };
 
-    bool GatherGlobalInfo(const Device& device, VulkanGlobalInfo* info);
-    bool GetPhysicalDevices(const Device& device, std::vector<VkPhysicalDevice>* physicalDevices);
-    bool GatherDeviceInfo(const Device& device,
-                          VkPhysicalDevice physicalDevice,
-                          VulkanDeviceInfo* info);
-    bool GatherSurfaceInfo(const Device& device, VkSurfaceKHR surface, VulkanSurfaceInfo* info);
-
+    ResultOrError<VulkanGlobalInfo> GatherGlobalInfo(const Device& device);
+    ResultOrError<std::vector<VkPhysicalDevice>> GetPhysicalDevices(const Device& device);
+    ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const Device& device,
+                                                     VkPhysicalDevice physicalDevice);
+    MaybeError GatherSurfaceInfo(const Device& device,
+                                 VkSurfaceKHR surface,
+                                 VulkanSurfaceInfo* info);
 }}  // namespace dawn_native::vulkan
 
 #endif  // DAWNNATIVE_VULKAN_VULKANINFO_H_

@@ -30,8 +30,7 @@
 #include "src/trace_processor/slice_tracker.h"
 #include "src/trace_processor/trace_processor_context.h"
 
-#if PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD) || \
-    PERFETTO_BUILDFLAG(PERFETTO_CHROMIUM_BUILD)
+#if !PERFETTO_BUILDFLAG(PERFETTO_STANDALONE_BUILD)
 #error The JSON trace parser is supported only in the standalone build for now.
 #endif
 
@@ -82,29 +81,55 @@ ReadDictRes ReadOneJsonDict(const char* start,
 
 }  // namespace
 
-bool CoerceToUint64(const Json::Value& value, uint64_t* integer_ptr) {
+// Json trace event timestamps are in us.
+// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/edit#heading=h.nso4gcezn7n1
+base::Optional<int64_t> CoerceToNs(const Json::Value& value) {
   switch (static_cast<size_t>(value.type())) {
+    case Json::realValue:
+      return static_cast<int64_t>(value.asDouble() * 1000);
     case Json::uintValue:
     case Json::intValue:
-      *integer_ptr = value.asUInt64();
-      return true;
+      return value.asInt64() * 1000;
     case Json::stringValue: {
       std::string s = value.asString();
       char* end;
-      *integer_ptr = strtoull(s.c_str(), &end, 10);
-      return end == s.data() + s.size();
+      int64_t n = strtoll(s.c_str(), &end, 10);
+      if (end != s.data() + s.size())
+        return base::nullopt;
+      return n * 1000;
     }
     default:
-      return false;
+      return base::nullopt;
   }
 }
 
-bool CoerceToUint32(const Json::Value& value, uint32_t* integer_ptr) {
-  uint64_t n = 0;
-  if (!CoerceToUint64(value, &n))
-    return false;
-  *integer_ptr = static_cast<uint32_t>(n);
-  return true;
+base::Optional<int64_t> CoerceToInt64(const Json::Value& value) {
+  switch (static_cast<size_t>(value.type())) {
+    case Json::realValue:
+    case Json::uintValue:
+    case Json::intValue:
+      return value.asInt64();
+    case Json::stringValue: {
+      std::string s = value.asString();
+      char* end;
+      int64_t n = strtoll(s.c_str(), &end, 10);
+      if (end != s.data() + s.size())
+        return base::nullopt;
+      return n;
+    }
+    default:
+      return base::nullopt;
+  }
+}
+
+base::Optional<uint32_t> CoerceToUint32(const Json::Value& value) {
+  base::Optional<int64_t> result = CoerceToInt64(value);
+  if (!result.has_value())
+    return base::nullopt;
+  int64_t n = result.value();
+  if (n < 0 || n > std::numeric_limits<uint32_t>::max())
+    return base::nullopt;
+  return static_cast<uint32_t>(n);
 }
 
 JsonTraceParser::JsonTraceParser(TraceProcessorContext* context)
@@ -149,13 +174,22 @@ bool JsonTraceParser::Parse(std::unique_ptr<uint8_t[]> data, size_t size) {
     if (!ph.isString())
       continue;
     char phase = *ph.asCString();
-    uint32_t tid = 0;
-    PERFETTO_CHECK(CoerceToUint32(value["tid"], &tid));
-    uint32_t pid = 0;
-    PERFETTO_CHECK(CoerceToUint32(value["pid"], &pid));
-    uint64_t ts = 0;
-    PERFETTO_CHECK(CoerceToUint64(value["ts"], &ts));
-    ts *= 1000;
+
+    base::Optional<uint32_t> opt_pid;
+    base::Optional<uint32_t> opt_tid;
+
+    if (value.isMember("pid"))
+      opt_pid = CoerceToUint32(value["pid"]);
+    if (value.isMember("tid"))
+      opt_pid = CoerceToUint32(value["tid"]);
+
+    uint32_t pid = opt_pid.value_or(0);
+    uint32_t tid = opt_tid.value_or(pid);
+
+    base::Optional<int64_t> opt_ts = CoerceToNs(value["ts"]);
+    PERFETTO_CHECK(opt_ts.has_value());
+    int64_t ts = opt_ts.value();
+
     const char* cat = value.isMember("cat") ? value["cat"].asCString() : "";
     const char* name = value.isMember("name") ? value["name"].asCString() : "";
     StringId cat_id = storage->InternString(cat);
@@ -172,12 +206,10 @@ bool JsonTraceParser::Parse(std::unique_ptr<uint8_t[]> data, size_t size) {
         break;
       }
       case 'X': {  // TRACE_EVENT (scoped event).
-        uint64_t duration = 0;
-        // Ignore this event if invalid.
-        if (!CoerceToUint64(value["dur"], &duration))
+        base::Optional<int64_t> opt_dur = CoerceToNs(value["dur"]);
+        if (!opt_dur.has_value())
           continue;
-        duration *= 1000;
-        slice_tracker->Scoped(ts, utid, cat_id, name_id, duration);
+        slice_tracker->Scoped(ts, utid, cat_id, name_id, opt_dur.value());
         break;
       }
       case 'M': {  // Metadata events (process and thread names).

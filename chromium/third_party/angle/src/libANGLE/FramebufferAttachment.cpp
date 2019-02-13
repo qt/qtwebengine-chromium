@@ -316,7 +316,7 @@ angle::Result FramebufferAttachment::initializeContents(const Context *context)
     ASSERT(mResource);
     ANGLE_TRY(mResource->initializeContents(context, mTarget.textureIndex()));
     setInitState(InitState::Initialized);
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void FramebufferAttachment::setInitState(InitState initState) const
@@ -338,11 +338,6 @@ angle::Result FramebufferAttachmentObject::getAttachmentRenderTarget(
     rx::FramebufferAttachmentRenderTarget **rtOut) const
 {
     return getAttachmentImpl()->getAttachmentRenderTarget(context, binding, imageIndex, rtOut);
-}
-
-void FramebufferAttachmentObject::onStorageChange(const gl::Context *context) const
-{
-    return getAttachmentImpl()->onStateChange(context, angle::SubjectMessage::STORAGE_CHANGED);
 }
 
 angle::Result FramebufferAttachmentObject::initializeContents(const Context *context,

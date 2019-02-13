@@ -17,15 +17,17 @@
 #include <vector>
 
 #include "api/call/transport.h"
-#include "api/crypto/cryptooptions.h"
+#include "api/crypto/crypto_options.h"
+#include "api/media_transport_interface.h"
 #include "api/rtp_headers.h"
-#include "api/rtpparameters.h"
-#include "api/rtpreceiverinterface.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_receiver_interface.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_sink_interface.h"
 #include "api/video/video_timing.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "call/rtp_config.h"
+#include "modules/rtp_rtcp/include/rtcp_statistics.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 
 namespace webrtc {
@@ -77,6 +79,7 @@ class VideoReceiveStream {
     int render_delay_ms = 10;
     int64_t interframe_delay_max_ms = -1;
     uint32_t frames_decoded = 0;
+    int64_t first_frame_received_to_decoded_ms = -1;
     absl::optional<uint64_t> qp_sum;
 
     int current_payload_type = -1;
@@ -111,6 +114,8 @@ class VideoReceiveStream {
    public:
     Config() = delete;
     Config(Config&&);
+    Config(Transport* rtcp_send_transport,
+           MediaTransportInterface* media_transport);
     explicit Config(Transport* rtcp_send_transport);
     Config& operator=(Config&&);
     Config& operator=(const Config&) = delete;
@@ -178,11 +183,6 @@ class VideoReceiveStream {
       // Map from rtx payload type -> media payload type.
       // For RTX to be enabled, both an SSRC and this mapping are needed.
       std::map<int, int> rtx_associated_payload_types;
-      // TODO(nisse): This is a temporary accessor function to enable
-      // reversing and renaming of the rtx_payload_types mapping.
-      void AddRtxBinding(int rtx_payload_type, int media_payload_type) {
-        rtx_associated_payload_types[rtx_payload_type] = media_payload_type;
-      }
 
       // RTP header extensions used for the received stream.
       std::vector<RtpExtension> extensions;
@@ -190,6 +190,8 @@ class VideoReceiveStream {
 
     // Transport for outgoing packets (RTCP).
     Transport* rtcp_send_transport = nullptr;
+
+    MediaTransportInterface* media_transport = nullptr;
 
     // Must not be 'nullptr' when the stream is started.
     rtc::VideoSinkInterface<VideoFrame>* renderer = nullptr;

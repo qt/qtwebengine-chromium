@@ -10,6 +10,7 @@
 
 #include <string>
 
+#include "absl/memory/memory.h"
 #include "call/rtp_video_sender.h"
 #include "call/test/mock_bitrate_allocator.h"
 #include "call/test/mock_rtp_transport_controller_send.h"
@@ -17,7 +18,7 @@
 #include "modules/utility/include/process_thread.h"
 #include "modules/video_coding/fec_controller_default.h"
 #include "rtc_base/experiments/alr_experiment.h"
-#include "rtc_base/fakeclock.h"
+#include "rtc_base/fake_clock.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "test/field_trial.h"
 #include "test/gmock.h"
@@ -99,7 +100,7 @@ class VideoSendStreamImplTest : public ::testing::Test {
     EXPECT_CALL(transport_controller_, packet_router())
         .WillRepeatedly(Return(&packet_router_));
     EXPECT_CALL(transport_controller_,
-                CreateRtpVideoSender(_, _, _, _, _, _, _, _, _, _))
+                CreateRtpVideoSender(_, _, _, _, _, _, _, _, _))
         .WillRepeatedly(Return(&rtp_video_sender_));
     EXPECT_CALL(rtp_video_sender_, SetActive(_))
         .WillRepeatedly(testing::Invoke(
@@ -124,7 +125,8 @@ class VideoSendStreamImplTest : public ::testing::Test {
         &event_log_, &config_, initial_encoder_max_bitrate,
         initial_encoder_bitrate_priority, suspended_ssrcs,
         suspended_payload_states, content_type,
-        absl::make_unique<FecControllerDefault>(&clock_));
+        absl::make_unique<FecControllerDefault>(&clock_),
+        /*media_transport=*/nullptr);
   }
 
  protected:
@@ -164,7 +166,6 @@ TEST_F(VideoSendStreamImplTest, RegistersAsBitrateObserverOnStart) {
               EXPECT_EQ(config.enforce_min_bitrate, !kSuspend);
               EXPECT_EQ(config.track_id, "test");
               EXPECT_EQ(config.bitrate_priority, kDefaultBitratePriority);
-              EXPECT_EQ(config.has_packet_feedback, false);
             }));
     vss_impl->Start();
     EXPECT_CALL(bitrate_allocator_, RemoveObserver(vss_impl.get())).Times(1);
@@ -222,7 +223,6 @@ TEST_F(VideoSendStreamImplTest, UpdatesObserverOnConfigurationChange) {
                         static_cast<uint32_t>(qvga_stream.target_bitrate_bps +
                                               vga_stream.min_bitrate_bps));
               EXPECT_EQ(config.enforce_min_bitrate, !kSuspend);
-              EXPECT_EQ(config.has_packet_feedback, true);
             }));
 
     static_cast<VideoStreamEncoderInterface::EncoderSink*>(vss_impl.get())
@@ -287,33 +287,12 @@ TEST_F(VideoSendStreamImplTest, UpdatesObserverOnConfigurationChangeWithAlr) {
               EXPECT_EQ(config.pad_up_bitrate_bps,
                         static_cast<uint32_t>(min_transmit_bitrate_bps));
               EXPECT_EQ(config.enforce_min_bitrate, !kSuspend);
-              EXPECT_EQ(config.has_packet_feedback, true);
             }));
 
     static_cast<VideoStreamEncoderInterface::EncoderSink*>(vss_impl.get())
         ->OnEncoderConfigurationChanged(
             std::vector<VideoStream>{low_stream, high_stream},
             min_transmit_bitrate_bps);
-    vss_impl->Stop();
-  });
-}
-
-TEST_F(VideoSendStreamImplTest, ReportFeedbackAvailability) {
-  test_queue_.SendTask([this] {
-    config_.rtp.extensions.emplace_back(
-        RtpExtension::kTransportSequenceNumberUri,
-        RtpExtension::kTransportSequenceNumberDefaultId);
-
-    auto vss_impl = CreateVideoSendStreamImpl(
-        kDefaultInitialBitrateBps, kDefaultBitratePriority,
-        VideoEncoderConfig::ContentType::kRealtimeVideo);
-    EXPECT_CALL(bitrate_allocator_, AddObserver(vss_impl.get(), _))
-        .WillOnce(Invoke(
-            [&](BitrateAllocatorObserver*, MediaStreamAllocationConfig config) {
-              EXPECT_EQ(config.has_packet_feedback, true);
-            }));
-    vss_impl->Start();
-    EXPECT_CALL(bitrate_allocator_, RemoveObserver(vss_impl.get())).Times(1);
     vss_impl->Stop();
   });
 }

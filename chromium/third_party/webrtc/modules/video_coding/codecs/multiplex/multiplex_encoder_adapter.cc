@@ -116,6 +116,18 @@ int MultiplexEncoderAdapter::InitEncode(const VideoCodec* inst,
     if (i != kAlphaCodecStreams - 1) {
       encoder_info_.implementation_name += ", ";
     }
+    // Uses hardware support if any of the encoders uses it.
+    // For example, if we are having issues with down-scaling due to
+    // pipelining delay in HW encoders we need higher encoder usage
+    // thresholds in CPU adaptation.
+    if (i == 0) {
+      encoder_info_.is_hardware_accelerated =
+          encoder_impl_info.is_hardware_accelerated;
+    } else {
+      encoder_info_.is_hardware_accelerated |=
+          encoder_impl_info.is_hardware_accelerated;
+    }
+    encoder_info_.has_internal_source = false;
 
     encoders_.emplace_back(std::move(encoder));
   }
@@ -189,8 +201,13 @@ int MultiplexEncoderAdapter::Encode(
                      multiplex_dummy_planes_.data(), yuva_buffer->StrideU(),
                      multiplex_dummy_planes_.data(), yuva_buffer->StrideV(),
                      rtc::KeepRefUntilDone(input_image.video_frame_buffer()));
-  VideoFrame alpha_image(alpha_buffer, input_image.timestamp(),
-                         input_image.render_time_ms(), input_image.rotation());
+  VideoFrame alpha_image = VideoFrame::Builder()
+                               .set_video_frame_buffer(alpha_buffer)
+                               .set_timestamp_rtp(input_image.timestamp())
+                               .set_timestamp_ms(input_image.render_time_ms())
+                               .set_rotation(input_image.rotation())
+                               .set_id(input_image.id())
+                               .build();
   rv = encoders_[kAXXStream]->Encode(alpha_image, codec_specific_info,
                                      &adjusted_frame_types);
   return rv;
@@ -232,13 +249,13 @@ int MultiplexEncoderAdapter::Release() {
   rtc::CritScope cs(&crit_);
   for (auto& stashed_image : stashed_images_) {
     for (auto& image_component : stashed_image.second.image_components) {
-      delete[] image_component.encoded_image._buffer;
+      delete[] image_component.encoded_image.data();
     }
   }
   stashed_images_.clear();
-  if (combined_image_._buffer) {
-    delete[] combined_image_._buffer;
-    combined_image_._buffer = nullptr;
+  if (combined_image_.data()) {
+    delete[] combined_image_.data();
+    combined_image_.set_buffer(nullptr, 0);
   }
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -258,9 +275,11 @@ EncodedImageCallback::Result MultiplexEncoderAdapter::OnEncodedImage(
   image_component.codec_type =
       PayloadStringToCodecType(associated_format_.name);
   image_component.encoded_image = encodedImage;
-  image_component.encoded_image._buffer = new uint8_t[encodedImage._length];
-  std::memcpy(image_component.encoded_image._buffer, encodedImage._buffer,
-              encodedImage._length);
+  image_component.encoded_image.set_buffer(new uint8_t[encodedImage.size()],
+                                           encodedImage.size());
+  image_component.encoded_image.set_size(encodedImage.size());
+  std::memcpy(image_component.encoded_image.data(), encodedImage.data(),
+              encodedImage.size());
 
   rtc::CritScope cs(&crit_);
   const auto& stashed_image_itr =
@@ -283,8 +302,8 @@ EncodedImageCallback::Result MultiplexEncoderAdapter::OnEncodedImage(
 
       // We have to send out those stashed frames, otherwise the delta frame
       // dependency chain is broken.
-      if (combined_image_._buffer)
-        delete[] combined_image_._buffer;
+      if (combined_image_.data())
+        delete[] combined_image_.data();
       combined_image_ =
           MultiplexEncodedImagePacker::PackAndRelease(iter->second);
 

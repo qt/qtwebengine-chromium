@@ -9,6 +9,7 @@
  */
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -23,6 +24,8 @@
 #include "logging/rtc_event_log/events/rtc_event_audio_send_stream_config.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
+#include "logging/rtc_event_log/events/rtc_event_dtls_transport_state.h"
+#include "logging/rtc_event_log/events/rtc_event_dtls_writable_state.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_cluster_created.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_result_failure.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_result_success.h"
@@ -34,16 +37,16 @@
 #include "logging/rtc_event_log/events/rtc_event_video_send_stream_config.h"
 #include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
-#include "logging/rtc_event_log/rtc_event_log_parser_new.h"
+#include "logging/rtc_event_log/rtc_event_log_parser.h"
 #include "logging/rtc_event_log/rtc_event_log_unittest_helper.h"
 #include "logging/rtc_event_log/rtc_stream_config.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/fakeclock.h"
+#include "rtc_base/fake_clock.h"
 #include "rtc_base/random.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 namespace webrtc {
 
@@ -73,6 +76,8 @@ struct EventCounts {
   size_t ana_configs = 0;
   size_t bwe_loss_events = 0;
   size_t bwe_delay_events = 0;
+  size_t dtls_transport_states = 0;
+  size_t dtls_writable_states = 0;
   size_t probe_creations = 0;
   size_t probe_successes = 0;
   size_t probe_failures = 0;
@@ -85,9 +90,10 @@ struct EventCounts {
 
   size_t total_nonconfig_events() const {
     return alr_states + audio_playouts + ana_configs + bwe_loss_events +
-           bwe_delay_events + probe_creations + probe_successes +
-           probe_failures + ice_configs + ice_events + incoming_rtp_packets +
-           outgoing_rtp_packets + incoming_rtcp_packets + outgoing_rtcp_packets;
+           bwe_delay_events + dtls_transport_states + dtls_writable_states +
+           probe_creations + probe_successes + probe_failures + ice_configs +
+           ice_events + incoming_rtp_packets + outgoing_rtp_packets +
+           incoming_rtcp_packets + outgoing_rtcp_packets;
   }
 
   size_t total_config_events() const {
@@ -155,6 +161,10 @@ class RtcEventLogSession
       ana_configs_list_;
   std::vector<std::unique_ptr<RtcEventBweUpdateLossBased>> bwe_loss_list_;
   std::vector<std::unique_ptr<RtcEventBweUpdateDelayBased>> bwe_delay_list_;
+  std::vector<std::unique_ptr<RtcEventDtlsTransportState>>
+      dtls_transport_state_list_;
+  std::vector<std::unique_ptr<RtcEventDtlsWritableState>>
+      dtls_writable_state_list_;
   std::vector<std::unique_ptr<RtcEventProbeClusterCreated>>
       probe_creation_list_;
   std::vector<std::unique_ptr<RtcEventProbeResultSuccess>> probe_success_list_;
@@ -171,6 +181,9 @@ class RtcEventLogSession
   int64_t start_time_us_;
   int64_t utc_start_time_us_;
   int64_t stop_time_us_;
+
+  int64_t first_timestamp_ms_ = std::numeric_limits<int64_t>::max();
+  int64_t last_timestamp_ms_ = std::numeric_limits<int64_t>::min();
 
   const uint64_t seed_;
   Random prng_;
@@ -316,6 +329,8 @@ void RtcEventLogSession::WriteLog(EventCounts count,
 
     clock_.AdvanceTimeMicros(prng_.Rand(20) * 1000);
     size_t selection = prng_.Rand(remaining_events - 1);
+    first_timestamp_ms_ = std::min(first_timestamp_ms_, rtc::TimeMillis());
+    last_timestamp_ms_ = std::max(last_timestamp_ms_, rtc::TimeMillis());
 
     if (selection < count.alr_states) {
       auto event = gen_.NewAlrState();
@@ -392,6 +407,24 @@ void RtcEventLogSession::WriteLog(EventCounts count,
     }
     selection -= count.probe_failures;
 
+    if (selection < count.dtls_transport_states) {
+      auto event = gen_.NewDtlsTransportState();
+      event_log->Log(event->Copy());
+      dtls_transport_state_list_.push_back(std::move(event));
+      count.dtls_transport_states--;
+      continue;
+    }
+    selection -= count.dtls_transport_states;
+
+    if (selection < count.dtls_writable_states) {
+      auto event = gen_.NewDtlsWritableState();
+      event_log->Log(event->Copy());
+      dtls_writable_state_list_.push_back(std::move(event));
+      count.dtls_writable_states--;
+      continue;
+    }
+    selection -= count.dtls_writable_states;
+
     if (selection < count.ice_configs) {
       auto event = gen_.NewIceCandidatePairConfig();
       event_log->Log(event->Copy());
@@ -465,7 +498,7 @@ void RtcEventLogSession::WriteLog(EventCounts count,
 // same as what we wrote down.
 void RtcEventLogSession::ReadAndVerifyLog() {
   // Read the generated file from disk.
-  ParsedRtcEventLogNew parsed_log;
+  ParsedRtcEventLog parsed_log;
   ASSERT_TRUE(parsed_log.ParseFile(temp_filename_));
 
   // Start and stop events.
@@ -629,6 +662,9 @@ void RtcEventLogSession::ReadAndVerifyLog() {
                                           parsed_video_send_configs[i]);
   }
 
+  EXPECT_EQ(first_timestamp_ms_, parsed_log.first_timestamp() / 1000);
+  EXPECT_EQ(last_timestamp_ms_, parsed_log.last_timestamp() / 1000);
+
   // Clean up temporary file - can be pretty slow.
   remove(temp_filename_.c_str());
 }
@@ -646,6 +682,8 @@ TEST_P(RtcEventLogSession, StartLoggingFromBeginning) {
   count.ana_configs = 3;
   count.bwe_loss_events = 20;
   count.bwe_delay_events = 20;
+  count.dtls_transport_states = 4;
+  count.dtls_writable_states = 2;
   count.probe_creations = 4;
   count.probe_successes = 2;
   count.probe_failures = 2;
@@ -671,6 +709,8 @@ TEST_P(RtcEventLogSession, StartLoggingInTheMiddle) {
   count.ana_configs = 10;
   count.bwe_loss_events = 50;
   count.bwe_delay_events = 50;
+  count.dtls_transport_states = 4;
+  count.dtls_writable_states = 5;
   count.probe_creations = 10;
   count.probe_successes = 5;
   count.probe_failures = 5;
@@ -745,7 +785,7 @@ TEST_P(RtcEventLogCircularBufferTest, KeepsMostRecentEvents) {
   log_dumper->StopLogging();
 
   // Read the generated file from disk.
-  ParsedRtcEventLogNew parsed_log;
+  ParsedRtcEventLog parsed_log;
   ASSERT_TRUE(parsed_log.ParseFile(temp_filename));
 
   const auto& start_log_events = parsed_log.start_log_events();

@@ -17,6 +17,8 @@
 
 #include "common/Result.h"
 
+#include <string>
+
 namespace dawn_native {
 
     // This is the content of an error value for MaybeError or ResultOrError, split off to its own
@@ -59,7 +61,7 @@ namespace dawn_native {
         if (DAWN_UNLIKELY(DAWN_LOCAL_VAR.IsError())) {            \
             ErrorData* error = DAWN_LOCAL_VAR.AcquireError();     \
             AppendBacktrace(error, __FILE__, __func__, __LINE__); \
-            return {error};                                       \
+            return {std::move(error)};                            \
         }                                                         \
     }                                                             \
     for (;;)                                                      \
@@ -73,7 +75,7 @@ namespace dawn_native {
         if (DAWN_UNLIKELY(DAWN_LOCAL_VAR.IsError())) {            \
             ErrorData* error = DAWN_LOCAL_VAR.AcquireError();     \
             AppendBacktrace(error, __FILE__, __func__, __LINE__); \
-            return {error};                                       \
+            return {std::move(error)};                            \
         }                                                         \
         VAR = DAWN_LOCAL_VAR.AcquireSuccess();                    \
     }                                                             \
@@ -85,7 +87,7 @@ namespace dawn_native {
 
     // Implementation detail of DAWN_MAKE_ERROR
     ErrorData* MakeError(ErrorType type,
-                         const char* message,
+                         std::string message,
                          const char* file,
                          const char* function,
                          int line);

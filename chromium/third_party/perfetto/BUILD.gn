@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import("gn/perfetto.gni")
+import("gn/test.gni")
 
 if (perfetto_build_standalone || perfetto_build_with_android) {
   import("//gn/standalone/android.gni")
@@ -72,10 +73,7 @@ group("all") {
       if (is_linux || is_android) {
         deps += [ "tools/skippy" ]
       }
-      if (is_linux) {
-        deps += [ "tools:pipestats" ]
-      }
-      if (use_libfuzzer) {
+      if (is_fuzzer) {
         deps += [ ":fuzzers" ]
       }
     }
@@ -108,8 +106,7 @@ if (perfetto_build_standalone) {
   }
 }
 
-executable("perfetto_unittests") {
-  testonly = true
+test("perfetto_unittests") {
   deps = [
     "gn:default_deps",
     "gn:gtest_main",
@@ -140,8 +137,7 @@ executable("perfetto_unittests") {
 }
 
 if (perfetto_build_standalone || perfetto_build_with_android) {
-  executable("perfetto_integrationtests") {
-    testonly = true
+  test("perfetto_integrationtests") {
     deps = [
       "gn:default_deps",
       "gn:gtest_main",
@@ -151,8 +147,10 @@ if (perfetto_build_standalone || perfetto_build_with_android) {
     if (perfetto_build_standalone && !is_android) {
       deps += [ "src/trace_processor:integrationtests" ]
     }
-    if (perfetto_build_with_android) {
-      cflags = [ "-DPERFETTO_BUILD_WITH_ANDROID" ]
+
+    # TODO(fmayer): Fix in process daemons.
+    if (should_build_heapprofd && is_android && !start_daemons_for_testing) {
+      deps += [ "src/profiling/memory:end_to_end_tests" ]
     }
   }
 
@@ -208,17 +206,6 @@ if (perfetto_build_standalone || perfetto_build_with_android) {
     sources = [
       "src/perfetto_cmd/main.cc",
     ]
-    if (is_android) {
-      deps += [ "src/base:android_task_runner" ]
-    }
-    if (perfetto_build_with_android) {
-      cflags = [ "-DPERFETTO_BUILD_WITH_ANDROID" ]
-      libs = [
-        "binder",
-        "services",
-        "utils",
-      ]
-    }
   }
 
   if (perfetto_build_with_android) {
@@ -238,7 +225,14 @@ if (perfetto_build_standalone || perfetto_build_with_android) {
         "protos/perfetto/trace:lite",
       ]
     }
-  }
+
+    shared_library("libperfetto_android_internal") {
+      deps = [
+        "gn:default_deps",
+        "src/android_internal",
+      ]
+    }
+  }  # if (perfetto_build_with_android)
 }  # if (perfetto_build_standalone || perfetto_build_with_android)
 
 if (perfetto_build_with_embedder) {

@@ -30,16 +30,17 @@ namespace dawn_native {
                               CommandBufferBuilder* topLevelBuilder,
                               CommandAllocator* allocator);
 
-        void DrawArrays(uint32_t vertexCount,
-                        uint32_t instanceCount,
-                        uint32_t firstVertex,
-                        uint32_t firstInstance);
-        void DrawElements(uint32_t vertexCount,
-                          uint32_t instanceCount,
-                          uint32_t firstIndex,
-                          uint32_t firstInstance);
+        void Draw(uint32_t vertexCount,
+                  uint32_t instanceCount,
+                  uint32_t firstVertex,
+                  uint32_t firstInstance);
+        void DrawIndexed(uint32_t vertexCount,
+                         uint32_t instanceCount,
+                         uint32_t firstIndex,
+                         uint32_t baseVertex,
+                         uint32_t firstInstance);
 
-        void SetRenderPipeline(RenderPipelineBase* pipeline);
+        void SetPipeline(RenderPipelineBase* pipeline);
 
         void SetStencilReference(uint32_t reference);
         void SetBlendColor(float r, float g, float b, float a);

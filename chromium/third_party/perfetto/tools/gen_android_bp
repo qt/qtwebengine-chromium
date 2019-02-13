@@ -37,6 +37,7 @@ import sys
 # Default targets to translate to the blueprint file.
 default_targets = [
     '//:libperfetto',
+    '//:libperfetto_android_internal',
     '//:perfetto_integrationtests',
     '//:perfetto_trace_protos',
     '//:perfetto_unittests',
@@ -71,8 +72,13 @@ module_prefix = 'perfetto_'
 
 # Shared libraries which are directly translated to Android system equivalents.
 library_whitelist = [
+    'android.hardware.health@2.0',
     'android',
+    'base',
     'binder',
+    'hidlbase',
+    'hidltransport',
+    'hwbinder',
     'log',
     'services',
     'utils',
@@ -89,7 +95,7 @@ tree_path = 'external/perfetto'
 cflag_whitelist = r'^-DPERFETTO.*$'
 
 # Compiler defines which are passed through to the blueprint.
-define_whitelist = r'^GOOGLE_PROTO.*$'
+define_whitelist = r'^(GOOGLE_PROTO.*)|(PERFETTO_BUILD_WITH_ANDROID)$'
 
 # Shared libraries which are not in PDK.
 library_not_in_pdk = {
@@ -99,8 +105,14 @@ library_not_in_pdk = {
 
 # Additional arguments to apply to Android.bp rules.
 additional_args = {
-    "heapprofd_client": [
-        ("include_dirs", ["bionic/libc"]),
+    'heapprofd_client': [
+        ('include_dirs', ['bionic/libc']),
+    ],
+    'traced_probes': [
+      ('required', ['libperfetto_android_internal']),
+    ],
+    'libperfetto_android_internal': [
+      ('static_libs', ['libhealthhalutils']),
     ],
 }
 
@@ -335,7 +347,9 @@ def apply_module_dependency(blueprint, desc, module, dep_name):
     # equivalents.
     target = desc[dep_name]
     for lib in target.get('libs', []):
-        android_lib = 'lib' + lib
+        # Generally library names sould be mangled as 'libXXX', unless they are
+        # HAL libraries (e.g., android.hardware.health@2.0).
+        android_lib = lib if '@' in lib else 'lib' + lib
         if lib in library_whitelist and not android_lib in module.shared_libs:
             module.shared_libs.append(android_lib)
 
@@ -575,7 +589,7 @@ def resolve_dependencies(desc, target_name):
     return resolved_deps
 
 
-def create_blueprint_for_targets(desc, targets):
+def create_blueprint_for_targets(desc, force_debug, targets):
     """Generate a blueprint for a list of GN targets."""
     blueprint = Blueprint()
 
@@ -590,6 +604,8 @@ def create_blueprint_for_targets(desc, targets):
         '-fvisibility=hidden',
         '-Oz',
     ]
+    if force_debug:
+      defaults.cflags.extend(['-UNDEBUG'])
     defaults.user_debug_flag = True
 
     blueprint.add_module(defaults)
@@ -644,6 +660,12 @@ def main():
         default=os.path.join(repo_root(), 'Android.bp'),
     )
     parser.add_argument(
+        '-d',
+        '--force_debug',
+        action='store_true',
+        help='Add flags to enable DCHECK/DLOG/etc, even in release builds.'
+    )
+    parser.add_argument(
         'targets',
         nargs=argparse.REMAINDER,
         help='Targets to include in the blueprint (e.g., "//:perfetto_tests")')
@@ -655,8 +677,8 @@ def main():
     else:
         desc = create_build_description()
 
-    blueprint = create_blueprint_for_targets(desc, args.targets
-                                             or default_targets)
+    blueprint = create_blueprint_for_targets(desc, args.force_debug,
+                                             args.targets or default_targets)
     output = [
         """// Copyright (C) 2017 The Android Open Source Project
 //

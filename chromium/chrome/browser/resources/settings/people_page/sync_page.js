@@ -118,6 +118,13 @@ Polymer({
     },
 
     /** @private */
+    syncDisabledByAdmin_: {
+      type: Boolean,
+      value: false,
+      computed: 'computeSyncDisabledByAdmin_(syncStatus.managed)',
+    },
+
+    /** @private */
     syncSectionDisabled_: {
       type: Boolean,
       value: false,
@@ -126,19 +133,20 @@ Polymer({
           'syncStatus.hasError, syncStatus.statusAction)',
     },
 
-    /** @private */
-    driveSuggestAvailable_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('driveSuggestAvailable');
-      }
-    },
-
     // <if expr="not chromeos">
     diceEnabled: Boolean,
     // </if>
 
-    unifiedConsentEnabled: Boolean,
+    unifiedConsentEnabled: {
+      type: Boolean,
+      observer: 'initializeDidAbort_',
+    },
+
+    /** @private */
+    showSetupCancelDialog_: {
+      type: Boolean,
+      value: false,
+    },
   },
 
   /** @private {?settings.SyncBrowserProxy} */
@@ -149,8 +157,8 @@ Polymer({
    * if the user has closed the tab with the sync settings. This property is
    * non-null if the user is currently navigated on the sync settings route.
    *
-   * TODO(scottchen): We had to change from unload to beforeunload due to
-   *     crbug.com/501292. Change back to unload once it's fixed.
+   * TODO(crbug.com/862983): When unified consent is rolled out to 100% this
+   * should be removed.
    *
    * @private {?Function}
    */
@@ -164,10 +172,17 @@ Polymer({
   collapsibleSectionsInitialized_: false,
 
   /**
-   * Whether the user decided to abort sync.
+   * Whether the user decided to abort sync. When unified consent is enabled,
+   * this is initialized to true.
    * @private {boolean}
    */
   didAbort_: false,
+
+  /**
+   * Whether the user clicked the confirm button on the "Cancel sync?" dialog.
+   * @private {boolean}
+   */
+  setupCancelDialogConfirmed_: false,
 
   /** @override */
   created: function() {
@@ -181,22 +196,16 @@ Polymer({
     this.addWebUIListener(
         'sync-prefs-changed', this.handleSyncPrefsChanged_.bind(this));
 
-    if (settings.getCurrentRoute() == settings.routes.SYNC)
+    if (settings.getCurrentRoute() == settings.routes.SYNC) {
       this.onNavigateToPage_();
-  },
-  /**
-   * Can be called from subpages to notify this page (=main sync page) that sync
-   * setup was cancelled.
-   */
-  cancelSyncSetup: function() {
-    this.didAbort_ = true;
-    settings.navigateTo(settings.routes.BASIC);
+    }
   },
 
   /** @override */
   detached: function() {
-    if (settings.routes.SYNC.contains(settings.getCurrentRoute()))
+    if (settings.routes.SYNC.contains(settings.getCurrentRoute())) {
       this.onNavigateAwayFromPage_();
+    }
 
     if (this.beforeunloadCallback_) {
       window.removeEventListener('beforeunload', this.beforeunloadCallback_);
@@ -224,12 +233,61 @@ Polymer({
               settings.StatusAction.ENTER_PASSPHRASE));
   },
 
+  /**
+   * @return {boolean}
+   * @private
+   */
+  computeSyncDisabledByAdmin_: function() {
+    return this.syncStatus != undefined && !!this.syncStatus.managed;
+  },
+
+  /** @private */
+  onSetupCancelDialogBack_: function() {
+    this.$$('#setupCancelDialog').cancel();
+    chrome.metricsPrivate.recordUserAction(
+        'Signin_Signin_CancelCancelAdvancedSyncSettings');
+  },
+
+  /** @private */
+  onSetupCancelDialogConfirm_: function() {
+    this.setupCancelDialogConfirmed_ = true;
+    this.$$('#setupCancelDialog').close();
+    settings.navigateTo(settings.routes.BASIC);
+    chrome.metricsPrivate.recordUserAction(
+        'Signin_Signin_ConfirmCancelAdvancedSyncSettings');
+  },
+
+  /** @private */
+  onSetupCancelDialogClose_: function() {
+    this.showSetupCancelDialog_ = false;
+  },
+
   /** @protected */
   currentRouteChanged: function() {
-    if (settings.getCurrentRoute() == settings.routes.SYNC)
+    if (settings.getCurrentRoute() == settings.routes.SYNC) {
       this.onNavigateToPage_();
-    else if (!settings.routes.SYNC.contains(settings.getCurrentRoute()))
-      this.onNavigateAwayFromPage_();
+    } else if (!settings.routes.SYNC.contains(settings.getCurrentRoute())) {
+      // When the user wants to cancel the sync setup, but hasn't confirmed
+      // the cancel dialog, navigate back and show the dialog.
+      if (this.unifiedConsentEnabled && this.syncStatus &&
+          !!this.syncStatus.setupInProgress && this.didAbort_ &&
+          !this.setupCancelDialogConfirmed_) {
+        // Yield so that other |currentRouteChanged| observers are called,
+        // before triggering another navigation (and another round of observers
+        // firing). Triggering navigation from within an observer leads to some
+        // undefined behavior and runtime errors.
+        requestAnimationFrame(() => {
+          settings.navigateTo(settings.routes.SYNC);
+          this.showSetupCancelDialog_ = true;
+          // Flush to make sure that the setup cancel dialog is attached.
+          Polymer.dom.flush();
+          this.$$('#setupCancelDialog').showModal();
+        });
+      } else {
+        this.setupCancelDialogConfirmed_ = false;
+        this.onNavigateAwayFromPage_();
+      }
+    }
   },
 
   /**
@@ -245,8 +303,9 @@ Polymer({
   onNavigateToPage_: function() {
     assert(settings.getCurrentRoute() == settings.routes.SYNC);
 
-    if (this.beforeunloadCallback_)
+    if (this.beforeunloadCallback_) {
       return;
+    }
 
     this.collapsibleSectionsInitialized_ = false;
 
@@ -261,15 +320,16 @@ Polymer({
 
   /** @private */
   onNavigateAwayFromPage_: function() {
-    if (!this.beforeunloadCallback_)
+    if (!this.beforeunloadCallback_) {
       return;
+    }
 
     // Reset the status to CONFIGURE such that the searching algorithm can
     // search useful content when the page is not visible to the user.
     this.pageStatus_ = settings.PageStatus.CONFIGURE;
 
     this.browserProxy_.didNavigateAwayFromSyncPage(this.didAbort_);
-    this.didAbort_ = false;
+    this.initializeDidAbort_();
 
     window.removeEventListener('beforeunload', this.beforeunloadCallback_);
     this.beforeunloadCallback_ = null;
@@ -284,8 +344,9 @@ Polymer({
     this.pageStatus_ = settings.PageStatus.CONFIGURE;
 
     // Hide the new passphrase box if the sync data has been encrypted.
-    if (this.syncPrefs.encryptAllData)
+    if (this.syncPrefs.encryptAllData) {
       this.creatingNewPassphrase_ = false;
+    }
 
     // Focus the password input box if password is needed to start sync.
     if (this.syncPrefs.passphraseRequired) {
@@ -293,8 +354,9 @@ Polymer({
       listenOnce(document, 'show-container', () => {
         const input = /** @type {!CrInputElement} */ (
             this.$$('#existingPassphraseInput'));
-        if (!input.matches(':focus-within'))
+        if (!input.matches(':focus-within')) {
           input.focus();
+        }
       });
     }
   },
@@ -323,15 +385,18 @@ Polymer({
     assert(this.creatingNewPassphrase_);
 
     // Ignore events on irrelevant elements or with irrelevant keys.
-    if (e.target.tagName != 'PAPER-BUTTON' && e.target.tagName != 'CR-INPUT')
+    if (e.target.tagName != 'PAPER-BUTTON' && e.target.tagName != 'CR-INPUT') {
       return;
-    if (e.type == 'keypress' && e.key != 'Enter')
+    }
+    if (e.type == 'keypress' && e.key != 'Enter') {
       return;
+    }
 
     // If a new password has been entered but it is invalid, do not send the
     // sync state to the API.
-    if (!this.validateCreatedPassphrases_())
+    if (!this.validateCreatedPassphrases_()) {
       return;
+    }
 
     this.syncPrefs.encryptAllData = true;
     this.syncPrefs.setNewPassphrase = true;
@@ -347,8 +412,9 @@ Polymer({
    * @param {!Event} e
    */
   onSubmitExistingPassphraseTap_: function(e) {
-    if (e.type == 'keypress' && e.key != 'Enter')
+    if (e.type == 'keypress' && e.key != 'Enter') {
       return;
+    }
 
     assert(!this.creatingNewPassphrase_);
 
@@ -374,8 +440,9 @@ Polymer({
         this.pageStatus_ = pageStatus;
         return;
       case settings.PageStatus.DONE:
-        if (settings.getCurrentRoute() == settings.routes.SYNC)
+        if (settings.getCurrentRoute() == settings.routes.SYNC) {
           settings.navigateTo(settings.routes.PEOPLE);
+        }
         return;
       case settings.PageStatus.PASSPHRASE_FAILED:
         if (this.pageStatus_ == this.pages_.CONFIGURE && this.syncPrefs &&
@@ -413,8 +480,9 @@ Polymer({
    * @private
    */
   enterPassphrasePrompt_: function() {
-    if (this.syncPrefs && this.syncPrefs.passphraseTypeIsCustom)
+    if (this.syncPrefs && this.syncPrefs.passphraseTypeIsCustom) {
       return this.syncPrefs.enterPassphraseBody;
+    }
 
     return this.syncPrefs.enterGooglePassphraseBody;
   },
@@ -513,6 +581,46 @@ Polymer({
   /** @private */
   onSyncAdvancedTap_: function() {
     settings.navigateTo(settings.routes.SYNC_ADVANCED);
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  shouldShowDriveSuggest_: function() {
+    return loadTimeData.getBoolean('driveSuggestAvailable') &&
+        !this.unifiedConsentEnabled;
+  },
+
+  /**
+   * Used when unified consent is disabled.
+   * @private
+   */
+  onSyncSetupCancel_: function() {
+    this.didAbort_ = true;
+    settings.navigateTo(settings.routes.BASIC);
+  },
+
+  /** @private */
+  initializeDidAbort_: function() {
+    this.didAbort_ = !!this.unifiedConsentEnabled;
+  },
+
+  /**
+   * @param {!CustomEvent<boolean>} e The event passed from
+   *     settings-sync-account-control.
+   * @private
+   */
+  onSyncSetupDone_: function(e) {
+    if (e.detail) {
+      this.didAbort_ = false;
+      chrome.metricsPrivate.recordUserAction(
+          'Signin_Signin_ConfirmAdvancedSyncSettings');
+    } else {
+      chrome.metricsPrivate.recordUserAction(
+          'Signin_Signin_CancelAdvancedSyncSettings');
+    }
+    settings.navigateTo(settings.routes.BASIC);
   },
 });
 

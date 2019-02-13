@@ -175,7 +175,7 @@ void BufferD3D::promoteStaticUsage(const gl::Context *context, size_t dataSize)
 }
 
 angle::Result BufferD3D::getIndexRange(const gl::Context *context,
-                                       GLenum type,
+                                       gl::DrawElementsType type,
                                        size_t offset,
                                        size_t count,
                                        bool primitiveRestartEnabled,
@@ -185,7 +185,7 @@ angle::Result BufferD3D::getIndexRange(const gl::Context *context,
     ANGLE_TRY(getData(context, &data));
 
     *outRange = gl::ComputeIndexRange(type, data + offset, count, primitiveRestartEnabled);
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 }  // namespace rx

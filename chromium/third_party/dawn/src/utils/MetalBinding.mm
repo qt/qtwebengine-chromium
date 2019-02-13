@@ -41,7 +41,7 @@ namespace utils {
         }
 
         dawnSwapChainError Configure(dawnTextureFormat format,
-                                     dawnTextureUsageBit,
+                                     dawnTextureUsageBit usage,
                                      uint32_t width,
                                      uint32_t height) {
             if (format != DAWN_TEXTURE_FORMAT_B8_G8_R8_A8_UNORM) {
@@ -60,8 +60,14 @@ namespace utils {
             mLayer = [CAMetalLayer layer];
             [mLayer setDevice:mMtlDevice];
             [mLayer setPixelFormat:MTLPixelFormatBGRA8Unorm];
-            [mLayer setFramebufferOnly:YES];
             [mLayer setDrawableSize:size];
+
+            constexpr uint32_t kFramebufferOnlyTextureUsages =
+                DAWN_TEXTURE_USAGE_BIT_OUTPUT_ATTACHMENT | DAWN_TEXTURE_USAGE_BIT_PRESENT;
+            bool hasOnlyFramebufferUsages = !(usage & (~kFramebufferOnlyTextureUsages));
+            if (hasOnlyFramebufferUsages) {
+                [mLayer setFramebufferOnly:YES];
+            }
 
             [contentView setLayer:mLayer];
 
@@ -105,9 +111,11 @@ namespace utils {
         void SetupGLFWWindowHints() override {
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         }
+
         dawnDevice CreateDevice() override {
-            mMetalDevice = MTLCreateSystemDefaultDevice();
-            return dawn_native::metal::CreateDevice(mMetalDevice);
+            dawnDevice device = dawn_native::metal::CreateDevice();
+            mMetalDevice = dawn_native::metal::GetMetalDevice(device);
+            return device;
         }
 
         uint64_t GetSwapChainImplementation() override {

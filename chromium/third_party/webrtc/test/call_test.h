@@ -10,7 +10,9 @@
 #ifndef TEST_CALL_TEST_H_
 #define TEST_CALL_TEST_H_
 
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "api/test/video/function_video_decoder_factory.h"
@@ -154,9 +156,7 @@ class CallTest : public ::testing::Test {
 
   void Start();
   void StartVideoStreams();
-  void StartVideoCapture();
   void Stop();
-  void StopVideoCapture();
   void StopVideoStreams();
   void DestroyStreams();
   void DestroyVideoSendStreams();
@@ -194,14 +194,12 @@ class CallTest : public ::testing::Test {
   std::vector<FlexfecReceiveStream*> flexfec_receive_streams_;
 
   test::FrameGeneratorCapturer* frame_generator_capturer_;
-  std::vector<rtc::VideoSourceInterface<VideoFrame>*> video_sources_;
-  std::vector<std::unique_ptr<TestVideoCapturer>> video_capturers_;
+  std::vector<std::unique_ptr<rtc::VideoSourceInterface<VideoFrame>>>
+      video_sources_;
   DegradationPreference degradation_preference_ =
       DegradationPreference::MAINTAIN_FRAMERATE;
 
   std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory_;
-  std::unique_ptr<NetworkControllerFactoryInterface>
-      bbr_network_controller_factory_;
 
   test::FunctionVideoEncoderFactory fake_encoder_factory_;
   int fake_encoder_max_bitrate_ = -1;

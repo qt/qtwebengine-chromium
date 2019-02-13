@@ -81,12 +81,7 @@ public:
         bool isInitialized() const { return fIsInitialized; }
         bool usesLocalCoords() const { return fUsesLocalCoords; }
         bool requiresDstTexture() const { return fRequiresDstTexture; }
-        bool canCombineOverlappedStencilAndCover() const {
-            return fCanCombineOverlappedStencilAndCover;
-        }
-        bool requiresBarrierBetweenOverlappingDraws() const {
-            return fRequiresBarrierBetweenOverlappingDraws;
-        }
+        bool requiresNonOverlappingDraws() const { return fRequiresNonOverlappingDraws; }
         bool isCompatibleWithCoverageAsAlpha() const { return fCompatibleWithCoverageAsAlpha; }
 
         bool inputColorIsIgnored() const { return fInputColorType == kIgnored_InputColorType; }
@@ -99,8 +94,7 @@ public:
                 : fUsesLocalCoords(false)
                 , fCompatibleWithCoverageAsAlpha(true)
                 , fRequiresDstTexture(false)
-                , fCanCombineOverlappedStencilAndCover(true)
-                , fRequiresBarrierBetweenOverlappingDraws(false)
+                , fRequiresNonOverlappingDraws(false)
                 , fIsInitialized(true)
                 , fInputColorType(kOriginal_InputColorType) {}
         enum InputColorType : uint32_t {
@@ -116,8 +110,7 @@ public:
         PackedBool fUsesLocalCoords : 1;
         PackedBool fCompatibleWithCoverageAsAlpha : 1;
         PackedBool fRequiresDstTexture : 1;
-        PackedBool fCanCombineOverlappedStencilAndCover : 1;
-        PackedBool fRequiresBarrierBetweenOverlappingDraws : 1;
+        PackedBool fRequiresNonOverlappingDraws : 1;
         PackedBool fIsInitialized : 1;
         PackedInputColorType fInputColorType : 2;
 

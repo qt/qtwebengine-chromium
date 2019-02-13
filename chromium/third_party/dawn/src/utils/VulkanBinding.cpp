@@ -22,45 +22,13 @@
 
 namespace utils {
 
-    class SwapChainImplVulkan {
-      public:
-        using WSIContext = dawnWSIContextVulkan;
-
-        SwapChainImplVulkan(GLFWwindow* /*window*/) {
-        }
-
-        ~SwapChainImplVulkan() {
-        }
-
-        void Init(dawnWSIContextVulkan*) {
-        }
-
-        dawnSwapChainError Configure(dawnTextureFormat, dawnTextureUsageBit, uint32_t, uint32_t) {
-            return DAWN_SWAP_CHAIN_NO_ERROR;
-        }
-
-        dawnSwapChainError GetNextTexture(dawnSwapChainNextTexture*) {
-            return DAWN_SWAP_CHAIN_NO_ERROR;
-        }
-
-        dawnSwapChainError Present() {
-            return DAWN_SWAP_CHAIN_NO_ERROR;
-        }
-    };
-
     class VulkanBinding : public BackendBinding {
       public:
         void SetupGLFWWindowHints() override {
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         }
         dawnDevice CreateDevice() override {
-            uint32_t extensionCount = 0;
-            const char** glfwInstanceExtensions =
-                glfwGetRequiredInstanceExtensions(&extensionCount);
-            std::vector<const char*> requiredExtensions(glfwInstanceExtensions,
-                                                        glfwInstanceExtensions + extensionCount);
-
-            mDevice = dawn_native::vulkan::CreateDevice(requiredExtensions);
+            mDevice = dawn_native::vulkan::CreateDevice();
             return mDevice;
         }
         uint64_t GetSwapChainImplementation() override {

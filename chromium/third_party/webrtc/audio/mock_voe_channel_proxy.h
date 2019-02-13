@@ -14,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "api/test/mock_frame_encryptor.h"
@@ -52,7 +53,8 @@ class MockChannelReceive : public voe::ChannelReceiveInterface {
   MOCK_CONST_METHOD0(GetPlayoutTimestamp, uint32_t());
   MOCK_CONST_METHOD0(GetSyncInfo, absl::optional<Syncable::Info>());
   MOCK_METHOD1(SetMinimumPlayoutDelay, void(int delay_ms));
-  MOCK_CONST_METHOD1(GetRecCodec, bool(CodecInst* codec_inst));
+  MOCK_CONST_METHOD0(GetReceiveCodec,
+                     absl::optional<std::pair<int, SdpAudioFormat>>());
   MOCK_METHOD1(SetReceiveCodecs,
                void(const std::map<int, SdpAudioFormat>& codecs));
   MOCK_CONST_METHOD0(GetSources, std::vector<RtpSource>());
@@ -72,6 +74,10 @@ class MockChannelSend : public voe::ChannelSendInterface {
   MOCK_METHOD1(
       ModifyEncoder,
       void(rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier));
+  MOCK_METHOD3(SetRid,
+               void(const std::string& rid,
+                    int extension_id,
+                    int repaired_extension_id));
   MOCK_METHOD2(SetMid, void(const std::string& mid, int extension_id));
   MOCK_METHOD1(SetLocalSSRC, void(uint32_t ssrc));
   MOCK_METHOD1(SetRTCP_CNAME, void(absl::string_view c_name));

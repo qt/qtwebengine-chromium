@@ -77,6 +77,9 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
+        SkPaint textPaint;
+        SkFont font(sk_tool_utils::create_portable_typeface(), 12);
+
         float scale = 32.f/kPOTSize;
 
         int size = fPowerOfTwoSize ? kPOTSize : kNPOTSize;
@@ -101,13 +104,10 @@ protected:
 
         for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {
             for (size_t ky = 0; ky < SK_ARRAY_COUNT(gModes); ky++) {
-                SkPaint p;
                 SkString str;
-                p.setAntiAlias(true);
-                sk_tool_utils::set_portable_typeface(&p);
                 str.printf("[%s,%s]", gModeNames[kx], gModeNames[ky]);
 
-                SkTextUtils::DrawString(canvas, str, scale*(x + r.width()/2), y, p,
+                SkTextUtils::DrawString(canvas, str.c_str(), scale*(x + r.width()/2), y, font, SkPaint(),
                                         SkTextUtils::kCenter_Align);
 
                 x += r.width() * 4 / 3;
@@ -140,14 +140,8 @@ protected:
                         x += r.width() * 4 / 3;
                     }
                 }
-                {
-                    SkPaint p;
-                    SkString str;
-                    p.setAntiAlias(true);
-                    sk_tool_utils::set_portable_typeface(&p);
-                    str.printf("%s, %s", gColorTypeNames[i], gFilterNames[j]);
-                    canvas->drawString(str, scale*x, scale*(y + r.height() * 2 / 3), p);
-                }
+                canvas->drawString(SkStringPrintf("%s, %s", gColorTypeNames[i], gFilterNames[j]),
+                                   scale * x, scale * (y + r.height() * 2 / 3), font, textPaint);
 
                 y += r.height() * 4 / 3;
             }
@@ -222,13 +216,12 @@ protected:
         SkScalar y = SkIntToScalar(24);
         SkScalar x = SkIntToScalar(66);
 
-        SkPaint p;
-        p.setAntiAlias(true);
-        sk_tool_utils::set_portable_typeface(&p);
+        SkFont font(sk_tool_utils::create_portable_typeface());
 
         for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {
             SkString str(gModeNames[kx]);
-            SkTextUtils::DrawString(canvas, str, x + r.width()/2, y, p, SkTextUtils::kCenter_Align);
+            SkTextUtils::DrawString(canvas, str.c_str(), x + r.width()/2, y, font, SkPaint(),
+                                    SkTextUtils::kCenter_Align);
             x += r.width() * 4 / 3;
         }
 
@@ -238,7 +231,7 @@ protected:
             x = SkIntToScalar(16) + w;
 
             SkString str(gModeNames[ky]);
-            SkTextUtils::DrawString(canvas, str, x, y + h/2, p, SkTextUtils::kRight_Align);
+            SkTextUtils::DrawString(canvas, str.c_str(), x, y + h/2, font, SkPaint(), SkTextUtils::kRight_Align);
 
             x += SkIntToScalar(50);
             for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {

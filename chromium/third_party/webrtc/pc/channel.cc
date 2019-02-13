@@ -16,24 +16,24 @@
 
 #include "absl/memory/memory.h"
 #include "api/call/audio_sink.h"
-#include "media/base/mediaconstants.h"
-#include "media/base/rtputils.h"
+#include "media/base/media_constants.h"
+#include "media/base/rtp_utils.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/bind.h"
-#include "rtc_base/byteorder.h"
+#include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/copyonwritebuffer.h"
+#include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/dscp.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/networkroute.h"
+#include "rtc_base/network_route.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/trace_event.h"
 // Adding 'nogncheck' to disable the gn include headers check to support modular
 // WebRTC build targets.
-#include "media/engine/webrtcvoiceengine.h"  // nogncheck
-#include "p2p/base/packettransportinternal.h"
-#include "pc/channelmanager.h"
-#include "pc/rtpmediautils.h"
+#include "media/engine/webrtc_voice_engine.h"  // nogncheck
+#include "p2p/base/packet_transport_internal.h"
+#include "pc/channel_manager.h"
+#include "pc/rtp_media_utils.h"
 
 namespace cricket {
 using rtc::Bind;
@@ -256,35 +256,6 @@ bool BaseChannel::Enable(bool enable) {
   return true;
 }
 
-bool BaseChannel::AddRecvStream(const StreamParams& sp) {
-  demuxer_criteria_.ssrcs.insert(sp.first_ssrc());
-  if (!RegisterRtpDemuxerSink()) {
-    return false;
-  }
-  return InvokeOnWorker<bool>(RTC_FROM_HERE,
-                              Bind(&BaseChannel::AddRecvStream_w, this, sp));
-}
-
-bool BaseChannel::RemoveRecvStream(uint32_t ssrc) {
-  demuxer_criteria_.ssrcs.erase(ssrc);
-  if (!RegisterRtpDemuxerSink()) {
-    return false;
-  }
-  return InvokeOnWorker<bool>(
-      RTC_FROM_HERE, Bind(&BaseChannel::RemoveRecvStream_w, this, ssrc));
-}
-
-bool BaseChannel::AddSendStream(const StreamParams& sp) {
-  return InvokeOnWorker<bool>(
-      RTC_FROM_HERE, Bind(&MediaChannel::AddSendStream, media_channel(), sp));
-}
-
-bool BaseChannel::RemoveSendStream(uint32_t ssrc) {
-  return InvokeOnWorker<bool>(
-      RTC_FROM_HERE,
-      Bind(&MediaChannel::RemoveSendStream, media_channel(), ssrc));
-}
-
 bool BaseChannel::SetLocalContent(const MediaContentDescription* content,
                                   SdpType type,
                                   std::string* error_desc) {
@@ -460,10 +431,8 @@ bool BaseChannel::SendPacket(bool rtcp,
 }
 
 void BaseChannel::OnRtpPacket(const webrtc::RtpPacketReceived& parsed_packet) {
-  // Reconstruct the PacketTime from the |parsed_packet|.
-  // RtpPacketReceived.arrival_time_ms = (PacketTime + 500) / 1000;
-  // Note: The |not_before| field is always 0 here. This field is not currently
-  // used, so it should be fine.
+  // Take packet time from the |parsed_packet|.
+  // RtpPacketReceived.arrival_time_ms = (timestamp_us + 500) / 1000;
   int64_t timestamp_us = -1;
   if (parsed_packet.arrival_time_ms() > 0) {
     timestamp_us = parsed_packet.arrival_time_ms() * 1000;
@@ -614,27 +583,27 @@ bool BaseChannel::UpdateLocalStreams_w(const std::vector<StreamParams>& streams,
                                        std::string* error_desc) {
   // Check for streams that have been removed.
   bool ret = true;
-  for (StreamParamsVec::const_iterator it = local_streams_.begin();
-       it != local_streams_.end(); ++it) {
-    if (it->has_ssrcs() && !GetStreamBySsrc(streams, it->first_ssrc())) {
-      if (!media_channel()->RemoveSendStream(it->first_ssrc())) {
+  for (const StreamParams& old_stream : local_streams_) {
+    if (old_stream.has_ssrcs() &&
+        !GetStreamBySsrc(streams, old_stream.first_ssrc())) {
+      if (!media_channel()->RemoveSendStream(old_stream.first_ssrc())) {
         rtc::StringBuilder desc;
-        desc << "Failed to remove send stream with ssrc " << it->first_ssrc()
-             << ".";
+        desc << "Failed to remove send stream with ssrc "
+             << old_stream.first_ssrc() << ".";
         SafeSetError(desc.str(), error_desc);
         ret = false;
       }
     }
   }
   // Check for new streams.
-  for (StreamParamsVec::const_iterator it = streams.begin();
-       it != streams.end(); ++it) {
-    if (it->has_ssrcs() && !GetStreamBySsrc(local_streams_, it->first_ssrc())) {
-      if (media_channel()->AddSendStream(*it)) {
-        RTC_LOG(LS_INFO) << "Add send stream ssrc: " << it->ssrcs[0];
+  for (const StreamParams& new_stream : streams) {
+    if (new_stream.has_ssrcs() &&
+        !GetStreamBySsrc(local_streams_, new_stream.first_ssrc())) {
+      if (media_channel()->AddSendStream(new_stream)) {
+        RTC_LOG(LS_INFO) << "Add send stream ssrc: " << new_stream.ssrcs[0];
       } else {
         rtc::StringBuilder desc;
-        desc << "Failed to add send stream ssrc: " << it->first_ssrc();
+        desc << "Failed to add send stream ssrc: " << new_stream.first_ssrc();
         SafeSetError(desc.str(), error_desc);
         ret = false;
       }
@@ -650,18 +619,17 @@ bool BaseChannel::UpdateRemoteStreams_w(
     std::string* error_desc) {
   // Check for streams that have been removed.
   bool ret = true;
-  for (StreamParamsVec::const_iterator it = remote_streams_.begin();
-       it != remote_streams_.end(); ++it) {
+  for (const StreamParams& old_stream : remote_streams_) {
     // If we no longer have an unsignaled stream, we would like to remove
     // the unsignaled stream params that are cached.
-    if ((!it->has_ssrcs() && !HasStreamWithNoSsrcs(streams)) ||
-        !GetStreamBySsrc(streams, it->first_ssrc())) {
-      if (RemoveRecvStream_w(it->first_ssrc())) {
-        RTC_LOG(LS_INFO) << "Remove remote ssrc: " << it->first_ssrc();
+    if ((!old_stream.has_ssrcs() && !HasStreamWithNoSsrcs(streams)) ||
+        !GetStreamBySsrc(streams, old_stream.first_ssrc())) {
+      if (RemoveRecvStream_w(old_stream.first_ssrc())) {
+        RTC_LOG(LS_INFO) << "Remove remote ssrc: " << old_stream.first_ssrc();
       } else {
         rtc::StringBuilder desc;
-        desc << "Failed to remove remote stream with ssrc " << it->first_ssrc()
-             << ".";
+        desc << "Failed to remove remote stream with ssrc "
+             << old_stream.first_ssrc() << ".";
         SafeSetError(desc.str(), error_desc);
         ret = false;
       }
@@ -669,24 +637,24 @@ bool BaseChannel::UpdateRemoteStreams_w(
   }
   demuxer_criteria_.ssrcs.clear();
   // Check for new streams.
-  for (StreamParamsVec::const_iterator it = streams.begin();
-       it != streams.end(); ++it) {
+  for (const StreamParams& new_stream : streams) {
     // We allow a StreamParams with an empty list of SSRCs, in which case the
     // MediaChannel will cache the parameters and use them for any unsignaled
     // stream received later.
-    if ((!it->has_ssrcs() && !HasStreamWithNoSsrcs(remote_streams_)) ||
-        !GetStreamBySsrc(remote_streams_, it->first_ssrc())) {
-      if (AddRecvStream_w(*it)) {
-        RTC_LOG(LS_INFO) << "Add remote ssrc: " << it->first_ssrc();
+    if ((!new_stream.has_ssrcs() && !HasStreamWithNoSsrcs(remote_streams_)) ||
+        !GetStreamBySsrc(remote_streams_, new_stream.first_ssrc())) {
+      if (AddRecvStream_w(new_stream)) {
+        RTC_LOG(LS_INFO) << "Add remote ssrc: " << new_stream.first_ssrc();
       } else {
         rtc::StringBuilder desc;
-        desc << "Failed to add remote stream ssrc: " << it->first_ssrc();
+        desc << "Failed to add remote stream ssrc: " << new_stream.first_ssrc();
         SafeSetError(desc.str(), error_desc);
         ret = false;
       }
     }
     // Update the receiving SSRCs.
-    demuxer_criteria_.ssrcs.insert(it->ssrcs.begin(), it->ssrcs.end());
+    demuxer_criteria_.ssrcs.insert(new_stream.ssrcs.begin(),
+                                   new_stream.ssrcs.end());
   }
   // Re-register the sink to update the receiving ssrcs.
   RegisterRtpDemuxerSink();
@@ -776,6 +744,9 @@ VoiceChannel::VoiceChannel(rtc::Thread* worker_thread,
                   crypto_options) {}
 
 VoiceChannel::~VoiceChannel() {
+  if (media_transport()) {
+    media_transport()->SetFirstAudioPacketReceivedObserver(nullptr);
+  }
   TRACE_EVENT0("webrtc", "VoiceChannel::~VoiceChannel");
   // this can't be done in the base class, since it calls a virtual
   DisableMedia_w();
@@ -792,6 +763,19 @@ void BaseChannel::UpdateMediaSendRecvState() {
 void BaseChannel::OnNetworkRouteChanged(
     const rtc::NetworkRoute& network_route) {
   OnNetworkRouteChanged(absl::make_optional(network_route));
+}
+
+void VoiceChannel::Init_w(webrtc::RtpTransportInternal* rtp_transport,
+                          webrtc::MediaTransportInterface* media_transport) {
+  BaseChannel::Init_w(rtp_transport, media_transport);
+  if (BaseChannel::media_transport()) {
+    this->media_transport()->SetFirstAudioPacketReceivedObserver(this);
+  }
+}
+
+void VoiceChannel::OnFirstAudioPacketReceived(int64_t channel_id) {
+  has_received_packet_ = true;
+  signaling_thread()->Post(RTC_FROM_HERE, this, MSG_FIRSTPACKETRECEIVED);
 }
 
 void VoiceChannel::UpdateMediaSendRecvState_w() {
@@ -1066,7 +1050,8 @@ RtpDataChannel::~RtpDataChannel() {
   Deinit();
 }
 
-void RtpDataChannel::Init_w(webrtc::RtpTransportInternal* rtp_transport) {
+void RtpDataChannel::Init_w(webrtc::RtpTransportInternal* rtp_transport,
+                            webrtc::MediaTransportInterface* media_transport) {
   BaseChannel::Init_w(rtp_transport, /*media_transport=*/nullptr);
   media_channel()->SignalDataReceived.connect(this,
                                               &RtpDataChannel::OnDataReceived);

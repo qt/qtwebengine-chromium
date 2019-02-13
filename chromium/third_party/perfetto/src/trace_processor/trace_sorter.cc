@@ -28,12 +28,12 @@ constexpr uint32_t TraceSorter::TimestampedTracePiece::kNoCpu;
 
 TraceSorter::TraceSorter(TraceProcessorContext* context,
                          OptimizationMode optimization,
-                         uint64_t window_size_ns)
+                         int64_t window_size_ns)
     : context_(context),
       optimization_(optimization),
       window_size_ns_(window_size_ns) {}
 
-void TraceSorter::SortAndFlushEventsBeyondWindow(uint64_t window_size_ns) {
+void TraceSorter::SortAndFlushEventsBeyondWindow(int64_t window_size_ns) {
   // First check if any sorting is needed.
   if (sort_start_idx_ > 0) {
     PERFETTO_DCHECK(sort_start_idx_ < events_.size());
@@ -51,7 +51,7 @@ void TraceSorter::SortAndFlushEventsBeyondWindow(uint64_t window_size_ns) {
     sort_min_ts_ = 0;
   }
 
-  // At this point |events_| musr be fully sorted.
+  // At this point |events_| must be fully sorted.
   PERFETTO_DCHECK(std::is_sorted(events_.begin(), events_.end()));
 
   if (PERFETTO_UNLIKELY(latest_timestamp_ < window_size_ns))
@@ -82,7 +82,7 @@ void TraceSorter::SortAndFlushEventsBeyondWindow(uint64_t window_size_ns) {
     earliest_timestamp_ = events_.front().timestamp;
     latest_timestamp_ = events_.back().timestamp;
   } else {
-    earliest_timestamp_ = std::numeric_limits<uint64_t>::max();
+    earliest_timestamp_ = std::numeric_limits<int64_t>::max();
     latest_timestamp_ = 0;
   }
 }

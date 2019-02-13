@@ -11,8 +11,8 @@
 #include "logging/rtc_event_log/rtc_event_log_unittest_helper.h"
 
 #include <string.h>  // memcmp
-
-#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <numeric>
@@ -20,14 +20,21 @@
 #include <utility>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "absl/types/optional.h"
-#include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor.h"
+#include "api/array_view.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_parameters.h"
+#include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor_config.h"
 #include "modules/remote_bitrate_estimator/include/bwe_defines.h"
 #include "modules/rtp_rtcp/include/rtp_cvo.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/checks.h"
+#include "system_wrappers/include/ntp_time.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -123,6 +130,20 @@ EventGenerator::NewBweUpdateLossBased() {
       bitrate_bps, fraction_lost, total_packets);
 }
 
+std::unique_ptr<RtcEventDtlsTransportState>
+EventGenerator::NewDtlsTransportState() {
+  DtlsTransportState state = static_cast<DtlsTransportState>(
+      prng_.Rand(static_cast<uint32_t>(DtlsTransportState::kNumValues) - 1));
+
+  return absl::make_unique<RtcEventDtlsTransportState>(state);
+}
+
+std::unique_ptr<RtcEventDtlsWritableState>
+EventGenerator::NewDtlsWritableState() {
+  bool writable = prng_.Rand<bool>();
+  return absl::make_unique<RtcEventDtlsWritableState>(writable);
+}
+
 std::unique_ptr<RtcEventProbeClusterCreated>
 EventGenerator::NewProbeClusterCreated() {
   constexpr int kMaxBweBps = 20000000;
@@ -199,8 +220,10 @@ EventGenerator::NewIceCandidatePair() {
       static_cast<IceCandidatePairEventType>(prng_.Rand(
           static_cast<uint32_t>(IceCandidatePairEventType::kNumValues) - 1));
   uint32_t pair_id = prng_.Rand<uint32_t>();
+  uint32_t transaction_id = prng_.Rand<uint32_t>();
 
-  return absl::make_unique<RtcEventIceCandidatePair>(type, pair_id);
+  return absl::make_unique<RtcEventIceCandidatePair>(type, pair_id,
+                                                     transaction_id);
 }
 
 rtcp::ReportBlock EventGenerator::NewReportBlock() {
@@ -221,7 +244,9 @@ rtcp::SenderReport EventGenerator::NewSenderReport() {
   rtcp::SenderReport sender_report;
   sender_report.SetSenderSsrc(prng_.Rand<uint32_t>());
   sender_report.SetNtp(NtpTime(prng_.Rand<uint32_t>(), prng_.Rand<uint32_t>()));
+  sender_report.SetRtpTimestamp(prng_.Rand<uint32_t>());
   sender_report.SetPacketCount(prng_.Rand<uint32_t>());
+  sender_report.SetOctetCount(prng_.Rand<uint32_t>());
   sender_report.AddReportBlock(NewReportBlock());
   return sender_report;
 }
@@ -233,18 +258,80 @@ rtcp::ReceiverReport EventGenerator::NewReceiverReport() {
   return receiver_report;
 }
 
+rtcp::Nack EventGenerator::NewNack() {
+  rtcp::Nack nack;
+  uint16_t base_seq_no = prng_.Rand<uint16_t>();
+  std::vector<uint16_t> nack_list;
+  nack_list.push_back(base_seq_no);
+  for (uint16_t i = 1u; i < 10u; i++) {
+    if (prng_.Rand<bool>())
+      nack_list.push_back(base_seq_no + i);
+  }
+  nack.SetPacketIds(nack_list);
+  return nack;
+}
+
+rtcp::TransportFeedback EventGenerator::NewTransportFeedback() {
+  rtcp::TransportFeedback transport_feedback;
+  uint16_t base_seq_no = prng_.Rand<uint16_t>();
+  int64_t base_time_us = prng_.Rand<uint32_t>();
+  transport_feedback.SetBase(base_seq_no, base_time_us);
+  int64_t time_us = base_time_us;
+  for (uint16_t i = 1u; i < 10u; i++) {
+    time_us += prng_.Rand(0, 100000);
+    if (prng_.Rand<bool>()) {
+      transport_feedback.AddReceivedPacket(base_seq_no + i, time_us);
+    }
+  }
+  return transport_feedback;
+}
+
+rtcp::Remb EventGenerator::NewRemb() {
+  rtcp::Remb remb;
+  // The remb bitrate is transported as a 16-bit mantissa and an 8-bit exponent.
+  uint64_t bitrate_bps = prng_.Rand(0, (1 << 16) - 1) << prng_.Rand(7);
+  std::vector<uint32_t> ssrcs{prng_.Rand<uint32_t>(), prng_.Rand<uint32_t>()};
+  remb.SetSsrcs(ssrcs);
+  remb.SetBitrateBps(bitrate_bps);
+  return remb;
+}
+
 std::unique_ptr<RtcEventRtcpPacketIncoming>
 EventGenerator::NewRtcpPacketIncoming() {
-  // TODO(terelius): Test the other RTCP types too.
-  switch (prng_.Rand(0, 1)) {
-    case 0: {
+  enum class SupportedRtcpTypes {
+    kSenderReport = 0,
+    kReceiverReport,
+    kNack,
+    kRemb,
+    kTransportFeedback,
+    kNumValues
+  };
+  SupportedRtcpTypes type = static_cast<SupportedRtcpTypes>(
+      prng_.Rand(0, static_cast<int>(SupportedRtcpTypes::kNumValues) - 1));
+  switch (type) {
+    case SupportedRtcpTypes::kSenderReport: {
       rtcp::SenderReport sender_report = NewSenderReport();
       rtc::Buffer buffer = sender_report.Build();
       return absl::make_unique<RtcEventRtcpPacketIncoming>(buffer);
     }
-    case 1: {
+    case SupportedRtcpTypes::kReceiverReport: {
       rtcp::ReceiverReport receiver_report = NewReceiverReport();
       rtc::Buffer buffer = receiver_report.Build();
+      return absl::make_unique<RtcEventRtcpPacketIncoming>(buffer);
+    }
+    case SupportedRtcpTypes::kNack: {
+      rtcp::Nack nack = NewNack();
+      rtc::Buffer buffer = nack.Build();
+      return absl::make_unique<RtcEventRtcpPacketIncoming>(buffer);
+    }
+    case SupportedRtcpTypes::kRemb: {
+      rtcp::Remb remb = NewRemb();
+      rtc::Buffer buffer = remb.Build();
+      return absl::make_unique<RtcEventRtcpPacketIncoming>(buffer);
+    }
+    case SupportedRtcpTypes::kTransportFeedback: {
+      rtcp::TransportFeedback transport_feedback = NewTransportFeedback();
+      rtc::Buffer buffer = transport_feedback.Build();
       return absl::make_unique<RtcEventRtcpPacketIncoming>(buffer);
     }
     default:
@@ -256,16 +343,40 @@ EventGenerator::NewRtcpPacketIncoming() {
 
 std::unique_ptr<RtcEventRtcpPacketOutgoing>
 EventGenerator::NewRtcpPacketOutgoing() {
-  // TODO(terelius): Test the other RTCP types too.
-  switch (prng_.Rand(0, 1)) {
-    case 0: {
+  enum class SupportedRtcpTypes {
+    kSenderReport = 0,
+    kReceiverReport,
+    kNack,
+    kRemb,
+    kTransportFeedback,
+    kNumValues
+  };
+  SupportedRtcpTypes type = static_cast<SupportedRtcpTypes>(
+      prng_.Rand(0, static_cast<int>(SupportedRtcpTypes::kNumValues) - 1));
+  switch (type) {
+    case SupportedRtcpTypes::kSenderReport: {
       rtcp::SenderReport sender_report = NewSenderReport();
       rtc::Buffer buffer = sender_report.Build();
       return absl::make_unique<RtcEventRtcpPacketOutgoing>(buffer);
     }
-    case 1: {
+    case SupportedRtcpTypes::kReceiverReport: {
       rtcp::ReceiverReport receiver_report = NewReceiverReport();
       rtc::Buffer buffer = receiver_report.Build();
+      return absl::make_unique<RtcEventRtcpPacketOutgoing>(buffer);
+    }
+    case SupportedRtcpTypes::kNack: {
+      rtcp::Nack nack = NewNack();
+      rtc::Buffer buffer = nack.Build();
+      return absl::make_unique<RtcEventRtcpPacketOutgoing>(buffer);
+    }
+    case SupportedRtcpTypes::kRemb: {
+      rtcp::Remb remb = NewRemb();
+      rtc::Buffer buffer = remb.Build();
+      return absl::make_unique<RtcEventRtcpPacketOutgoing>(buffer);
+    }
+    case SupportedRtcpTypes::kTransportFeedback: {
+      rtcp::TransportFeedback transport_feedback = NewTransportFeedback();
+      rtc::Buffer buffer = transport_feedback.Build();
       return absl::make_unique<RtcEventRtcpPacketOutgoing>(buffer);
     }
     default:
@@ -585,6 +696,21 @@ void EventVerifier::VerifyLoggedBweProbeSuccessEvent(
   EXPECT_EQ(original_event.bitrate_bps(), logged_event.bitrate_bps);
 }
 
+void EventVerifier::VerifyLoggedDtlsTransportState(
+    const RtcEventDtlsTransportState& original_event,
+    const LoggedDtlsTransportState& logged_event) const {
+  EXPECT_EQ(original_event.timestamp_ms(), logged_event.log_time_ms());
+  EXPECT_EQ(original_event.dtls_transport_state(),
+            logged_event.dtls_transport_state);
+}
+
+void EventVerifier::VerifyLoggedDtlsWritableState(
+    const RtcEventDtlsWritableState& original_event,
+    const LoggedDtlsWritableState& logged_event) const {
+  EXPECT_EQ(original_event.timestamp_ms(), logged_event.log_time_ms());
+  EXPECT_EQ(original_event.writable(), logged_event.writable);
+}
+
 void EventVerifier::VerifyLoggedIceCandidatePairConfig(
     const RtcEventIceCandidatePairConfig& original_event,
     const LoggedIceCandidatePairConfig& logged_event) const {
@@ -615,6 +741,9 @@ void EventVerifier::VerifyLoggedIceCandidatePairEvent(
 
   EXPECT_EQ(original_event.type(), logged_event.type);
   EXPECT_EQ(original_event.candidate_pair_id(), logged_event.candidate_pair_id);
+  if (encoding_type_ == RtcEventLog::EncodingType::NewFormat) {
+    EXPECT_EQ(original_event.transaction_id(), logged_event.transaction_id);
+  }
 }
 
 void VerifyLoggedRtpHeader(const RtpPacket& original_header,
@@ -741,6 +870,93 @@ void EventVerifier::VerifyLoggedRtcpPacketOutgoing(
       0);
 }
 
+void EventVerifier::VerifyReportBlock(
+    const rtcp::ReportBlock& original_report_block,
+    const rtcp::ReportBlock& logged_report_block) {
+  EXPECT_EQ(original_report_block.source_ssrc(),
+            logged_report_block.source_ssrc());
+  EXPECT_EQ(original_report_block.fraction_lost(),
+            logged_report_block.fraction_lost());
+  EXPECT_EQ(original_report_block.cumulative_lost_signed(),
+            logged_report_block.cumulative_lost_signed());
+  EXPECT_EQ(original_report_block.extended_high_seq_num(),
+            logged_report_block.extended_high_seq_num());
+  EXPECT_EQ(original_report_block.jitter(), logged_report_block.jitter());
+  EXPECT_EQ(original_report_block.last_sr(), logged_report_block.last_sr());
+  EXPECT_EQ(original_report_block.delay_since_last_sr(),
+            logged_report_block.delay_since_last_sr());
+}
+
+void EventVerifier::VerifyLoggedSenderReport(
+    int64_t log_time_us,
+    const rtcp::SenderReport& original_sr,
+    const LoggedRtcpPacketSenderReport& logged_sr) {
+  EXPECT_EQ(log_time_us, logged_sr.log_time_us());
+  EXPECT_EQ(original_sr.sender_ssrc(), logged_sr.sr.sender_ssrc());
+  EXPECT_EQ(original_sr.ntp(), logged_sr.sr.ntp());
+  EXPECT_EQ(original_sr.rtp_timestamp(), logged_sr.sr.rtp_timestamp());
+  EXPECT_EQ(original_sr.sender_packet_count(),
+            logged_sr.sr.sender_packet_count());
+  EXPECT_EQ(original_sr.sender_octet_count(),
+            logged_sr.sr.sender_octet_count());
+  ASSERT_EQ(original_sr.report_blocks().size(),
+            logged_sr.sr.report_blocks().size());
+  for (size_t i = 0; i < original_sr.report_blocks().size(); i++) {
+    VerifyReportBlock(original_sr.report_blocks()[i],
+                      logged_sr.sr.report_blocks()[i]);
+  }
+}
+
+void EventVerifier::VerifyLoggedReceiverReport(
+    int64_t log_time_us,
+    const rtcp::ReceiverReport& original_rr,
+    const LoggedRtcpPacketReceiverReport& logged_rr) {
+  EXPECT_EQ(log_time_us, logged_rr.log_time_us());
+  EXPECT_EQ(original_rr.sender_ssrc(), logged_rr.rr.sender_ssrc());
+  ASSERT_EQ(original_rr.report_blocks().size(),
+            logged_rr.rr.report_blocks().size());
+  for (size_t i = 0; i < original_rr.report_blocks().size(); i++) {
+    VerifyReportBlock(original_rr.report_blocks()[i],
+                      logged_rr.rr.report_blocks()[i]);
+  }
+}
+
+void EventVerifier::VerifyLoggedNack(int64_t log_time_us,
+                                     const rtcp::Nack& original_nack,
+                                     const LoggedRtcpPacketNack& logged_nack) {
+  EXPECT_EQ(log_time_us, logged_nack.log_time_us());
+  EXPECT_EQ(original_nack.packet_ids(), logged_nack.nack.packet_ids());
+}
+
+void EventVerifier::VerifyLoggedTransportFeedback(
+    int64_t log_time_us,
+    const rtcp::TransportFeedback& original_transport_feedback,
+    const LoggedRtcpPacketTransportFeedback& logged_transport_feedback) {
+  EXPECT_EQ(log_time_us, logged_transport_feedback.log_time_us());
+  ASSERT_EQ(
+      original_transport_feedback.GetReceivedPackets().size(),
+      logged_transport_feedback.transport_feedback.GetReceivedPackets().size());
+  for (size_t i = 0;
+       i < original_transport_feedback.GetReceivedPackets().size(); i++) {
+    EXPECT_EQ(
+        original_transport_feedback.GetReceivedPackets()[i].sequence_number(),
+        logged_transport_feedback.transport_feedback.GetReceivedPackets()[i]
+            .sequence_number());
+    EXPECT_EQ(
+        original_transport_feedback.GetReceivedPackets()[i].delta_us(),
+        logged_transport_feedback.transport_feedback.GetReceivedPackets()[i]
+            .delta_us());
+  }
+}
+
+void EventVerifier::VerifyLoggedRemb(int64_t log_time_us,
+                                     const rtcp::Remb& original_remb,
+                                     const LoggedRtcpPacketRemb& logged_remb) {
+  EXPECT_EQ(log_time_us, logged_remb.log_time_us());
+  EXPECT_EQ(original_remb.ssrcs(), logged_remb.remb.ssrcs());
+  EXPECT_EQ(original_remb.bitrate_bps(), logged_remb.remb.bitrate_bps());
+}
+
 void EventVerifier::VerifyLoggedStartEvent(
     int64_t start_time_us,
     int64_t utc_start_time_us,
@@ -807,11 +1023,7 @@ void EventVerifier::VerifyLoggedVideoSendConfig(
     const RtcEventVideoSendStreamConfig& original_event,
     const LoggedVideoSendConfig& logged_event) const {
   EXPECT_EQ(original_event.timestamp_ms(), logged_event.log_time_ms());
-  // TODO(terelius): In the past, we allowed storing multiple RtcStreamConfigs
-  // in the same RtcEventVideoSendStreamConfig. Look into whether we should drop
-  // backwards compatibility in the parser.
-  ASSERT_EQ(logged_event.configs.size(), 1u);
-  VerifyLoggedStreamConfig(original_event.config(), logged_event.configs[0]);
+  VerifyLoggedStreamConfig(original_event.config(), logged_event.config);
 }
 
 }  // namespace test

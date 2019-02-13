@@ -31,6 +31,9 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
         , fTextureView(view) {
     SkASSERT((GrMipMapsStatus::kNotAllocated == mipMapsStatus) == (1 == info.fLevelCount));
     this->registerWithCache(budgeted);
+    if (GrPixelConfigIsCompressed(desc.fConfig)) {
+        this->setReadOnly();
+    }
 }
 
 GrVkTexture::GrVkTexture(GrVkGpu* gpu,
@@ -41,12 +44,16 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
                          const GrVkImageView* view,
                          GrMipMapsStatus mipMapsStatus,
                          GrBackendObjectOwnership ownership,
+                         GrIOType ioType,
                          bool purgeImmediately)
         : GrSurface(gpu, desc)
         , GrVkImage(info, std::move(layout), ownership)
         , INHERITED(gpu, desc, GrTextureType::k2D, mipMapsStatus)
         , fTextureView(view) {
     SkASSERT((GrMipMapsStatus::kNotAllocated == mipMapsStatus) == (1 == info.fLevelCount));
+    if (ioType == kRead_GrIOType) {
+        this->setReadOnly();
+    }
     this->registerWithCacheWrapped(purgeImmediately);
 }
 
@@ -76,9 +83,9 @@ sk_sp<GrVkTexture> GrVkTexture::MakeNewTexture(GrVkGpu* gpu, SkBudgeted budgeted
         return nullptr;
     }
 
-    const GrVkImageView* imageView = GrVkImageView::Create(gpu, info.fImage, info.fFormat,
-                                                           GrVkImageView::kColor_Type,
-                                                           info.fLevelCount);
+    const GrVkImageView* imageView = GrVkImageView::Create(
+            gpu, info.fImage, info.fFormat, GrVkImageView::kColor_Type, info.fLevelCount,
+            info.fYcbcrConversionInfo);
     if (!imageView) {
         GrVkImage::DestroyImageInfo(gpu, &info);
         return nullptr;
@@ -92,15 +99,16 @@ sk_sp<GrVkTexture> GrVkTexture::MakeNewTexture(GrVkGpu* gpu, SkBudgeted budgeted
 sk_sp<GrVkTexture> GrVkTexture::MakeWrappedTexture(GrVkGpu* gpu,
                                                    const GrSurfaceDesc& desc,
                                                    GrWrapOwnership wrapOwnership,
+                                                   GrIOType ioType,
                                                    bool purgeImmediately,
                                                    const GrVkImageInfo& info,
                                                    sk_sp<GrVkImageLayout> layout) {
     // Wrapped textures require both image and allocation (because they can be mapped)
     SkASSERT(VK_NULL_HANDLE != info.fImage && VK_NULL_HANDLE != info.fAlloc.fMemory);
 
-    const GrVkImageView* imageView = GrVkImageView::Create(gpu, info.fImage, info.fFormat,
-                                                           GrVkImageView::kColor_Type,
-                                                           info.fLevelCount);
+    const GrVkImageView* imageView = GrVkImageView::Create(
+            gpu, info.fImage, info.fFormat, GrVkImageView::kColor_Type, info.fLevelCount,
+            info.fYcbcrConversionInfo);
     if (!imageView) {
         return nullptr;
     }
@@ -111,7 +119,7 @@ sk_sp<GrVkTexture> GrVkTexture::MakeWrappedTexture(GrVkGpu* gpu,
     GrBackendObjectOwnership ownership = kBorrow_GrWrapOwnership == wrapOwnership
             ? GrBackendObjectOwnership::kBorrowed : GrBackendObjectOwnership::kOwned;
     return sk_sp<GrVkTexture>(new GrVkTexture(gpu, kWrapped, desc, info, std::move(layout),
-                                              imageView, mipMapsStatus, ownership,
+                                              imageView, mipMapsStatus, ownership, ioType,
                                               purgeImmediately));
 }
 
@@ -121,6 +129,11 @@ GrVkTexture::~GrVkTexture() {
 }
 
 void GrVkTexture::onRelease() {
+    // When there is an idle proc, the Resource will call the proc in releaseImage() so
+    // we clear it here.
+    fIdleProc = nullptr;
+    fIdleProcContext = nullptr;
+
     // we create this and don't hand it off, so we should always destroy it
     if (fTextureView) {
         fTextureView->unref(this->getVkGpu());
@@ -133,6 +146,11 @@ void GrVkTexture::onRelease() {
 }
 
 void GrVkTexture::onAbandon() {
+    // When there is an idle proc, the Resource will call the proc in abandonImage() so
+    // we clear it here.
+    fIdleProc = nullptr;
+    fIdleProcContext = nullptr;
+    // we create this and don't hand it off, so we should always destroy it
     if (fTextureView) {
         fTextureView->unrefAndAbandon();
         fTextureView = nullptr;
@@ -155,3 +173,27 @@ const GrVkImageView* GrVkTexture::textureView() {
     return fTextureView;
 }
 
+void GrVkTexture::setIdleProc(IdleProc proc, void* context) {
+    fIdleProc = proc;
+    fIdleProcContext = context;
+    if (auto* resource = this->resource()) {
+        resource->setIdleProc(proc ? this : nullptr, proc, context);
+    }
+}
+
+void GrVkTexture::becamePurgeable() {
+    if (!fIdleProc) {
+        return;
+    }
+    // This is called when the GrTexture is purgeable. However, we need to check whether the
+    // Resource is still owned by any command buffers. If it is then it will call the proc.
+    auto* resource = this->resource();
+    SkASSERT(resource);
+    if (resource->isOwnedByCommandBuffer()) {
+        return;
+    }
+    fIdleProc(fIdleProcContext);
+    fIdleProc = nullptr;
+    fIdleProcContext = nullptr;
+    resource->setIdleProc(nullptr, nullptr, nullptr);
+}

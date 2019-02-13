@@ -14,11 +14,11 @@
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_device/include/mock_audio_transport.h"
 #include "rtc_base/arraysize.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "rtc_base/format_macros.h"
 #include "rtc_base/scoped_ref_ptr.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "sdk/android/generated_native_unittests_jni/jni/ApplicationContextProvider_jni.h"
 #include "sdk/android/generated_native_unittests_jni/jni/BuildInfo_jni.h"
 #include "sdk/android/native_api/audio_device_module/audio_device_android.h"
@@ -28,7 +28,7 @@
 #include "sdk/android/src/jni/jni_helpers.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 using std::cout;
 using std::endl;
@@ -746,13 +746,13 @@ TEST_F(AudioDeviceTest,
 // verifies that the audio device reports correct delay estimate given the
 // selected audio layer. Note that, this delay estimate will only be utilized
 // if the HW AEC is disabled.
+// Delay should be 75 ms in high latency and 25 ms in low latency.
 TEST_F(AudioDeviceTest, UsesCorrectDelayEstimateForHighLatencyOutputPath) {
-  EXPECT_EQ(kHighLatencyModeDelayEstimateInMilliseconds,
-            TestDelayOnAudioLayer(AudioDeviceModule::kAndroidJavaAudio));
+  EXPECT_EQ(75, TestDelayOnAudioLayer(AudioDeviceModule::kAndroidJavaAudio));
 }
 
 TEST_F(AudioDeviceTest, UsesCorrectDelayEstimateForLowLatencyOutputPath) {
-  EXPECT_EQ(kLowLatencyModeDelayEstimateInMilliseconds,
+  EXPECT_EQ(25,
             TestDelayOnAudioLayer(
                 AudioDeviceModule::kAndroidJavaInputAndOpenSLESOutputAudio));
 }

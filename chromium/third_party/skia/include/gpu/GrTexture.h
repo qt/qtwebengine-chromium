@@ -19,7 +19,7 @@
 
 class GrTexturePriv;
 
-class GrTexture : virtual public GrSurface {
+class SK_API GrTexture : virtual public GrSurface {
 public:
     GrTexture* asTexture() override { return this; }
     const GrTexture* asTexture() const override { return this; }
@@ -59,6 +59,18 @@ public:
         sk_sp<GrReleaseProcHelper> helper(new GrReleaseProcHelper(proc, ctx));
         this->setRelease(std::move(helper));
     }
+
+    /**
+     * Installs a proc on this texture. It will be called when the texture becomes "idle". Idle is
+     * defined to mean that the texture has no refs or pending IOs and that GPU I/O operations on
+     * the texture are completed if the backend API disallows deletion of a texture before such
+     * operations occur (e.g. Vulkan). After the idle proc is called it is removed. The idle proc
+     * will always be called before the texture is destroyed, even in unusual shutdown scenarios
+     * (e.g. GrContext::abandonContext()).
+     */
+    using IdleProc = void(void*);
+    virtual void setIdleProc(IdleProc, void* context) = 0;
+    virtual void* idleContext() const = 0;
 
     /** Access methods that are only to be used within Skia code. */
     inline GrTexturePriv texturePriv();

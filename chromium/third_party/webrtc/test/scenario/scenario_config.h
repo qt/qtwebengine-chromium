@@ -10,16 +10,18 @@
 #ifndef TEST_SCENARIO_SCENARIO_CONFIG_H_
 #define TEST_SCENARIO_SCENARIO_CONFIG_H_
 
-#include <memory>
+#include <stddef.h>
 #include <string>
-#include <vector>
 
 #include "absl/types/optional.h"
-#include "api/rtpparameters.h"
+#include "api/rtp_parameters.h"
+#include "api/transport/network_control.h"
 #include "api/units/data_rate.h"
+#include "api/units/data_size.h"
 #include "api/units/time_delta.h"
-#include "api/video_codecs/video_codec.h"
+#include "common_types.h"  // NOLINT(build/include)
 #include "test/frame_generator.h"
+#include "test/scenario/quality_info.h"
 
 namespace webrtc {
 namespace test {
@@ -44,8 +46,14 @@ struct TransportControllerConfig {
     DataRate min_rate = DataRate::kbps(30);
     DataRate max_rate = DataRate::kbps(3000);
     DataRate start_rate = DataRate::kbps(300);
+    DataRate max_padding_rate = DataRate::Zero();
   } rates;
-  enum CongestionController { kBbr, kGoogCc, kGoogCcFeedback } cc = kGoogCc;
+  enum CongestionController {
+    kGoogCc,
+    kGoogCcFeedback,
+    kInjected
+  } cc = kGoogCc;
+  NetworkControllerFactoryInterface* cc_factory = nullptr;
   TimeDelta state_log_interval = TimeDelta::ms(100);
 };
 
@@ -131,6 +139,10 @@ struct VideoStreamConfig {
   struct Renderer {
     enum Type { kFake } type = kFake;
   };
+  struct analyzer {
+    bool log_to_file = false;
+    std::function<void(const VideoFrameQualityInfo&)> frame_quality_handler;
+  } analyzer;
 };
 
 struct AudioStreamConfig {
@@ -157,6 +169,7 @@ struct AudioStreamConfig {
     Encoder(const Encoder&);
     ~Encoder();
     bool allocate_bitrate = false;
+    bool enable_dtx = false;
     absl::optional<DataRate> fixed_rate;
     absl::optional<DataRate> min_rate;
     absl::optional<DataRate> max_rate;

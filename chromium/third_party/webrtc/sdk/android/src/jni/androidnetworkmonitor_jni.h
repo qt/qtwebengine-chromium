@@ -1,5 +1,5 @@
 /*
- *  Copyright 2017 The WebRTC project authors. All Rights Reserved.
+ *  Copyright 2019 The WebRTC project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -8,7 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-// TODO(deadbeef): Remove this file when clients are updated to new include
-// path.
+#ifndef SDK_ANDROID_SRC_JNI_ANDROIDNETWORKMONITOR_JNI_H_
+#define SDK_ANDROID_SRC_JNI_ANDROIDNETWORKMONITOR_JNI_H_
 
-#include "sdk/android/src/jni/pc/androidnetworkmonitor.h"
+// TODO(bugs.webrtc.org/10159): Remove this files once downstream projects have
+// been updated to include the new path.
+
+#include "sdk/android/src/jni/android_network_monitor_jni.h"
+
+#endif  // SDK_ANDROID_SRC_JNI_ANDROIDNETWORKMONITOR_JNI_H_

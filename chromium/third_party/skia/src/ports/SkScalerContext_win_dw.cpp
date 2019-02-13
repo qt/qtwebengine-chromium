@@ -16,6 +16,7 @@
 #include "SkDWriteGeometrySink.h"
 #include "SkDraw.h"
 #include "SkEndian.h"
+#include "SkFontMetrics.h"
 #include "SkGlyph.h"
 #include "SkHRESULT.h"
 #include "SkMaskGamma.h"
@@ -719,6 +720,7 @@ void SkScalerContext_DW::generateMetrics(SkGlyph* glyph) {
              "Fallback bounding box could not be determined.");
         if (glyph_check_and_set_bounds(glyph, bbox)) {
             glyph->fForceBW = 1;
+            glyph->fMaskFormat = SkMask::kBW_Format;
         }
     }
     // TODO: handle the case where a request for DWRITE_TEXTURE_ALIASED_1x1
@@ -1002,9 +1004,7 @@ void SkScalerContext_DW::generateColorGlyphImage(const SkGlyph& glyph) {
     draw.fRC = &rc;
 
     SkPaint paint;
-    if (fRenderingMode != DWRITE_RENDERING_MODE_ALIASED) {
-        paint.setFlags(SkPaint::Flags::kAntiAlias_Flag);
-    }
+    paint.setAntiAlias(fRenderingMode != DWRITE_RENDERING_MODE_ALIASED);
 
     BOOL hasNextRun = FALSE;
     while (SUCCEEDED(colorLayers->MoveNext(&hasNextRun)) && hasNextRun) {
@@ -1122,8 +1122,9 @@ void SkScalerContext_DW::generateImage(const SkGlyph& glyph) {
     //Copy the mask into the glyph.
     const uint8_t* src = (const uint8_t*)bits;
     if (DWRITE_RENDERING_MODE_ALIASED == renderingMode) {
+        SkASSERT(SkMask::kBW_Format == glyph.fMaskFormat);
+        SkASSERT(DWRITE_TEXTURE_ALIASED_1x1 == textureType);
         bilevel_to_bw(src, glyph);
-        const_cast<SkGlyph&>(glyph).fMaskFormat = SkMask::kBW_Format;
     } else if (!isLCD(fRec)) {
         if (textureType == DWRITE_TEXTURE_ALIASED_1x1) {
             if (fPreBlend.isApplicable()) {

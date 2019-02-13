@@ -8,12 +8,13 @@
 #ifndef SkRemoteGlyphCacheImpl_DEFINED
 #define SkRemoteGlyphCacheImpl_DEFINED
 
+#include "SkArenaAlloc.h"
 #include "SkDescriptor.h"
 #include "SkGlyphRun.h"
 #include "SkGlyphRunPainter.h"
 #include "SkRemoteGlyphCache.h"
 
-class SkStrikeServer::SkGlyphCacheState : public SkGlyphCacheInterface {
+class SkStrikeServer::SkGlyphCacheState : public SkStrikeInterface {
 public:
     // N.B. SkGlyphCacheState is not valid until ensureScalerContext is called.
     SkGlyphCacheState(const SkDescriptor& keyDescriptor,
@@ -38,7 +39,7 @@ public:
 
     const SkGlyph& findGlyph(SkPackedGlyphID);
 
-    void setPaint(const SkPaint& paint);
+    void setFontAndEffects(const SkFont& font, SkScalerContextEffects effects);
 
     SkVector rounding() const override;
 
@@ -55,6 +56,7 @@ private:
     void writeGlyphPath(const SkPackedGlyphID& glyphID, Serializer* serializer) const;
 
     void ensureScalerContext();
+    void resetScalerContext();
 
     // The set of glyphs cached on the remote client.
     SkTHashSet<SkPackedGlyphID> fCachedGlyphImages;
@@ -80,13 +82,24 @@ private:
     // The context built using fDeviceDescriptor
     std::unique_ptr<SkScalerContext> fContext;
 
-    // This field is set everytime getOrCreateCache. This allows the code to maintain the fContext
-    // as lazy as possible.
-    const SkPaint* fPaint{nullptr};
+    // These fields are set everytime getOrCreateCache. This allows the code to maintain the
+    // fContext as lazy as possible.
+    const SkFont* fFont{nullptr};
+    SkScalerContextEffects fEffects;
+
+    class GlyphMapHashTraits {
+    public:
+        static SkPackedGlyphID GetKey(const SkGlyph* glyph) {
+            return glyph->getPackedID();
+        }
+        static uint32_t Hash(SkPackedGlyphID glyphId) {
+            return glyphId.hash();
+        }
+    };
 
     // FallbackTextHelper cases require glyph metrics when analyzing a glyph run, in which case
     // we cache them here.
-    SkTHashMap<SkPackedGlyphID, SkGlyph> fGlyphMap;
+    SkTHashTable<SkGlyph*, SkPackedGlyphID, GlyphMapHashTraits> fGlyphMap;
 
     SkArenaAlloc fAlloc{256};
 };
@@ -102,17 +115,21 @@ protected:
     void drawGlyphRunList(const SkGlyphRunList& glyphRunList) override;
 
 private:
-    void processGlyphRun(const SkPoint& origin, const SkGlyphRun& glyphRun);
+    void processGlyphRun(
+            const SkPoint& origin, const SkGlyphRun& glyphRun, const SkPaint& runPaint);
 
     void processGlyphRunForMask(
-            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix, SkPoint origin);
+            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix,
+            SkPoint origin, const SkPaint& paint);
 
     void processGlyphRunForPaths(
-            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix, SkPoint origin);
+            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix,
+            SkPoint origin, const SkPaint& paint);
 
 #if SK_SUPPORT_GPU
     bool maybeProcessGlyphRunForDFT(
-            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix, SkPoint origin);
+            const SkGlyphRun& glyphRun, const SkMatrix& runMatrix,
+            SkPoint origin, const SkPaint& paint);
 #endif
 
     SkStrikeServer* const fStrikeServer;

@@ -9,13 +9,17 @@
  */
 
 #include "rtc_base/logging.h"
+
+#include <string.h>
+#include <algorithm>
+
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
-#include "rtc_base/gunit.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/stream.h"
-#include "test/testsupport/fileutils.h"
+#include "rtc_base/time_utils.h"
+#include "test/gtest.h"
 
 namespace rtc {
 
@@ -36,10 +40,6 @@ class StringStream : public StreamInterface {
                      size_t* written,
                      int* error) override;
   void Close() override;
-  bool SetPosition(size_t position) override;
-  bool GetPosition(size_t* position) const override;
-  bool GetSize(size_t* size) const override;
-  bool ReserveSize(size_t size) override;
 
  private:
   std::string& str_;
@@ -89,32 +89,6 @@ StreamResult StringStream::Write(const void* data,
 }
 
 void StringStream::Close() {}
-
-bool StringStream::SetPosition(size_t position) {
-  if (position > str_.size())
-    return false;
-  read_pos_ = position;
-  return true;
-}
-
-bool StringStream::GetPosition(size_t* position) const {
-  if (position)
-    *position = read_pos_;
-  return true;
-}
-
-bool StringStream::GetSize(size_t* size) const {
-  if (size)
-    *size = str_.size();
-  return true;
-}
-
-bool StringStream::ReserveSize(size_t size) {
-  if (read_only_)
-    return false;
-  str_.reserve(size);
-  return true;
-}
 
 }  // namespace
 
@@ -284,10 +258,7 @@ class LogThread {
   void Start() { thread_.Start(); }
 
  private:
-  void Run() {
-    // LS_SENSITIVE by default to avoid cluttering up any real logging going on.
-    RTC_LOG(LS_SENSITIVE) << "RTC_LOG";
-  }
+  void Run() { RTC_LOG(LS_VERBOSE) << "RTC_LOG"; }
 
   static void ThreadEntry(void* p) { static_cast<LogThread*>(p)->Run(); }
 
@@ -308,9 +279,9 @@ TEST(LogTest, MultipleThreads) {
   std::string s1, s2, s3;
   LogSinkImpl<StringStream> stream1(&s1), stream2(&s2), stream3(&s3);
   for (int i = 0; i < 1000; ++i) {
-    LogMessage::AddLogToStream(&stream1, LS_INFO);
-    LogMessage::AddLogToStream(&stream2, LS_VERBOSE);
-    LogMessage::AddLogToStream(&stream3, LS_SENSITIVE);
+    LogMessage::AddLogToStream(&stream1, LS_WARNING);
+    LogMessage::AddLogToStream(&stream2, LS_INFO);
+    LogMessage::AddLogToStream(&stream3, LS_VERBOSE);
     LogMessage::RemoveLogToStream(&stream1);
     LogMessage::RemoveLogToStream(&stream2);
     LogMessage::RemoveLogToStream(&stream3);
@@ -367,12 +338,10 @@ TEST(LogTest, CheckTagAddedToStringInDefaultOnLogMessageAndroid) {
 TEST(LogTest, Perf) {
   std::string str;
   LogSinkImpl<StringStream> stream(&str);
-  LogMessage::AddLogToStream(&stream, LS_SENSITIVE);
+  LogMessage::AddLogToStream(&stream, LS_VERBOSE);
 
   const std::string message(80, 'X');
-  {
-    LogMessageForTesting sanity_check_msg(__FILE__, __LINE__, LS_SENSITIVE);
-  }
+  { LogMessageForTesting sanity_check_msg(__FILE__, __LINE__, LS_VERBOSE); }
 
   // We now know how many bytes the logging framework will tag onto every msg.
   const size_t logging_overhead = str.size();
@@ -383,7 +352,7 @@ TEST(LogTest, Perf) {
 
   int64_t start = TimeMillis(), finish;
   for (int i = 0; i < kRepetitions; ++i) {
-    LogMessageForTesting(__FILE__, __LINE__, LS_SENSITIVE).stream() << message;
+    LogMessageForTesting(__FILE__, __LINE__, LS_VERBOSE).stream() << message;
   }
   finish = TimeMillis();
 

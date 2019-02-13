@@ -24,8 +24,8 @@
 #include "modules/audio_coding/neteq/random_vector.h"
 #include "modules/audio_coding/neteq/statistics_calculator.h"
 #include "modules/audio_coding/neteq/tick_timer.h"
-#include "rtc_base/constructormagic.h"
-#include "rtc_base/criticalsection.h"
+#include "rtc_base/constructor_magic.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -137,15 +137,6 @@ class NetEqImpl : public webrtc::NetEq {
 
   void SetCodecs(const std::map<int, SdpAudioFormat>& codecs) override;
 
-  int RegisterPayloadType(NetEqDecoder codec,
-                          const std::string& codec_name,
-                          uint8_t rtp_payload_type) override;
-
-  int RegisterExternalDecoder(AudioDecoder* decoder,
-                              NetEqDecoder codec,
-                              const std::string& codec_name,
-                              uint8_t rtp_payload_type) override;
-
   bool RegisterPayloadType(int rtp_payload_type,
                            const SdpAudioFormat& audio_format) override;
 
@@ -160,8 +151,6 @@ class NetEqImpl : public webrtc::NetEq {
   bool SetMaximumDelay(int delay_ms) override;
 
   int TargetDelayMs() const override;
-
-  int CurrentDelayMs() const override;
 
   int FilteredCurrentDelayMs() const override;
 
@@ -183,8 +172,6 @@ class NetEqImpl : public webrtc::NetEq {
   absl::optional<uint32_t> GetPlayoutTimestamp() const override;
 
   int last_output_sample_rate_hz() const override;
-
-  absl::optional<CodecInst> GetDecoder(int payload_type) const override;
 
   absl::optional<SdpAudioFormat> GetDecoderFormat(
       int payload_type) const override;
@@ -401,7 +388,6 @@ class NetEqImpl : public webrtc::NetEq {
   absl::optional<uint8_t> current_rtp_payload_type_ RTC_GUARDED_BY(crit_sect_);
   absl::optional<uint8_t> current_cng_rtp_payload_type_
       RTC_GUARDED_BY(crit_sect_);
-  uint32_t ssrc_ RTC_GUARDED_BY(crit_sect_);
   bool first_packet_ RTC_GUARDED_BY(crit_sect_);
   bool enable_fast_accelerate_ RTC_GUARDED_BY(crit_sect_);
   std::unique_ptr<NackTracker> nack_ RTC_GUARDED_BY(crit_sect_);
@@ -416,6 +402,7 @@ class NetEqImpl : public webrtc::NetEq {
   ExpandUmaLogger speech_expand_uma_logger_ RTC_GUARDED_BY(crit_sect_);
   bool no_time_stretching_ RTC_GUARDED_BY(crit_sect_);  // Only used for test.
   rtc::BufferT<int16_t> concealment_audio_ RTC_GUARDED_BY(crit_sect_);
+  const bool enable_rtx_handling_ RTC_GUARDED_BY(crit_sect_);
 
  private:
   RTC_DISALLOW_COPY_AND_ASSIGN(NetEqImpl);

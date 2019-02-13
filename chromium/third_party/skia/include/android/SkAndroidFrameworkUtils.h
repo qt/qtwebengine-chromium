@@ -9,10 +9,13 @@
 #define SkAndroidFrameworkUtils_DEFINED
 
 #include "SkTypes.h"
+#include "SkRefCnt.h"
 
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
 
 class SkCanvas;
+struct SkRect;
+class SkSurface;
 
 /**
  *  SkAndroidFrameworkUtils expose private APIs used only by Android framework.
@@ -33,6 +36,10 @@ public:
 #endif //SK_SUPPORT_GPU
 
     static void SafetyNetLog(const char*);
+
+    static sk_sp<SkSurface> getSurfaceFromCanvas(SkCanvas* canvas);
+
+    static int SaveBehind(SkCanvas* canvas, const SkRect* subset);
 };
 
 #endif // SK_BUILD_FOR_ANDROID_ANDROID

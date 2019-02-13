@@ -151,8 +151,8 @@ public:
         return FixedFunctionFlags::kNone;
     }
 
-    RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*) override {
-        return RequiresDstTexture::kNo;
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*) override {
+        return GrProcessorSet::EmptySetAnalysis();
     }
 
 private:
@@ -257,8 +257,8 @@ public:
 
         GrOpMemoryPool* pool = context->contextPriv().opMemoryPool();
 
-        auto p3 = SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma,
-                                        SkColorSpace::kDCIP3_D65_Gamut);
+        auto p3 = SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB,
+                                        SkNamedGamut::kDCIP3);
         auto xform = GrColorSpaceXform::Make(sk_srgb_singleton(), kUnpremul_SkAlphaType,
                                              p3.get(),            kUnpremul_SkAlphaType);
 

@@ -6,7 +6,6 @@
  */
 
 #include "GrContext.h"
-#include <unordered_map>
 #include "GrBackendSemaphore.h"
 #include "GrClip.h"
 #include "GrContextOptions.h"
@@ -39,6 +38,8 @@
 #include "effects/GrSkSLFP.h"
 #include "ccpr/GrCoverageCountingPathRenderer.h"
 #include "text/GrTextBlobCache.h"
+#include <atomic>
+#include <unordered_map>
 
 #define ASSERT_OWNED_PROXY(P) \
     SkASSERT(!(P) || !((P)->peekTexture()) || (P)->peekTexture()->getContext() == this)
@@ -58,11 +59,11 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static int32_t gNextID = 1;
 static int32_t next_id() {
+    static std::atomic<int32_t> nextID{1};
     int32_t id;
     do {
-        id = sk_atomic_inc(&gNextID);
+        id = nextID++;
     } while (id == SK_InvalidGenID);
     return id;
 }
@@ -138,7 +139,7 @@ bool GrContext::initCommon(const GrContextOptions& options) {
                                                options.fSortRenderTargets,
                                                options.fReduceOpListSplitting));
 
-    fGlyphCache = new GrGlyphCache(fCaps.get(), options.fGlyphCacheTextureMaximumBytes);
+    fGlyphCache = new GrStrikeCache(fCaps.get(), options.fGlyphCacheTextureMaximumBytes);
 
     fTextBlobCache.reset(new GrTextBlobCache(TextBlobCacheOverBudgetCB,
                                              this, this->uniqueID()));
@@ -203,8 +204,8 @@ SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
         isMipMapped = false;
     }
 
-    GrPixelConfig config = kUnknown_GrPixelConfig;
-    if (!fCaps->getConfigFromBackendFormat(backendFormat, ii.colorType(), &config)) {
+    GrPixelConfig config = fCaps->getConfigFromBackendFormat(backendFormat, ii.colorType());
+    if (config == kUnknown_GrPixelConfig) {
         return SkSurfaceCharacterization(); // return an invalid characterization
     }
 
@@ -234,6 +235,7 @@ SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
                                      SkSurfaceCharacterization::Textureable(true),
                                      SkSurfaceCharacterization::MipMapped(isMipMapped),
                                      SkSurfaceCharacterization::UsesGLFBO0(willUseGLFBO0),
+                                     SkSurfaceCharacterization::VulkanSecondaryCBCompatible(false),
                                      surfaceProps);
 }
 
@@ -265,6 +267,9 @@ bool GrContext::abandoned() const {
 void GrContext::releaseResourcesAndAbandonContext() {
     ASSERT_SINGLE_OWNER
 
+    if (this->abandoned()) {
+        return;
+    }
     fProxyProvider->abandon();
     fResourceProvider->abandon();
 
@@ -312,7 +317,7 @@ void GrContext::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
     fResourceCache->purgeResourcesNotUsedSince(purgeTime);
 
     if (auto ccpr = fDrawingManager->getCoverageCountingPathRenderer()) {
-        ccpr->purgeCacheEntriesOlderThan(purgeTime);
+        ccpr->purgeCacheEntriesOlderThan(fProxyProvider, purgeTime);
     }
 
     fTextBlobCache->purgeStaleBlobs();
@@ -392,6 +397,16 @@ void GrContextPriv::flush(GrSurfaceProxy* proxy) {
     fContext->fDrawingManager->flush(proxy);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+void GrContext::storeVkPipelineCacheData() {
+    if (fGpu) {
+        fGpu->storeVkPipelineCacheData();
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // TODO: This will be removed when GrSurfaceContexts are aware of their color types.
 // (skbug.com/6718)
 static bool valid_premul_config(GrPixelConfig config) {
@@ -403,6 +418,7 @@ static bool valid_premul_config(GrPixelConfig config) {
         case kRGBA_4444_GrPixelConfig:          return true;
         case kRGBA_8888_GrPixelConfig:          return true;
         case kRGB_888_GrPixelConfig:            return false;
+        case kRG_88_GrPixelConfig:              return false;
         case kBGRA_8888_GrPixelConfig:          return true;
         case kSRGBA_8888_GrPixelConfig:         return true;
         case kSBGRA_8888_GrPixelConfig:         return true;
@@ -411,6 +427,7 @@ static bool valid_premul_config(GrPixelConfig config) {
         case kRG_float_GrPixelConfig:           return false;
         case kAlpha_half_GrPixelConfig:         return false;
         case kRGBA_half_GrPixelConfig:          return true;
+        case kRGB_ETC1_GrPixelConfig:           return false;
         case kAlpha_8_as_Alpha_GrPixelConfig:   return false;
         case kAlpha_8_as_Red_GrPixelConfig:     return false;
         case kAlpha_half_as_Red_GrPixelConfig:  return false;
@@ -429,6 +446,7 @@ static bool valid_premul_color_type(GrColorType ct) {
         case GrColorType::kABGR_4444:    return true;
         case GrColorType::kRGBA_8888:    return true;
         case GrColorType::kRGB_888x:     return false;
+        case GrColorType::kRG_88:        return false;
         case GrColorType::kBGRA_8888:    return true;
         case GrColorType::kRGBA_1010102: return true;
         case GrColorType::kGray_8:       return false;
@@ -436,6 +454,7 @@ static bool valid_premul_color_type(GrColorType ct) {
         case GrColorType::kRGBA_F16:     return true;
         case GrColorType::kRG_F32:       return false;
         case GrColorType::kRGBA_F32:     return true;
+        case GrColorType::kRGB_ETC1:     return false;
     }
     SK_ABORT("Invalid GrColorType");
     return false;
@@ -927,7 +946,8 @@ sk_sp<GrTextureContext> GrContextPriv::makeBackendTextureContext(const GrBackend
                                                                  sk_sp<SkColorSpace> colorSpace) {
     ASSERT_SINGLE_OWNER_PRIV
 
-    sk_sp<GrSurfaceProxy> proxy = this->proxyProvider()->wrapBackendTexture(tex, origin);
+    sk_sp<GrSurfaceProxy> proxy = this->proxyProvider()->wrapBackendTexture(
+            tex, origin, kBorrow_GrWrapOwnership, kRW_GrIOType);
     if (!proxy) {
         return nullptr;
     }
@@ -987,6 +1007,20 @@ sk_sp<GrRenderTargetContext> GrContextPriv::makeBackendTextureAsRenderTargetRend
 
     return this->drawingManager()->makeRenderTargetContext(std::move(proxy),
                                                            std::move(colorSpace),
+                                                           props);
+}
+
+sk_sp<GrRenderTargetContext> GrContextPriv::makeVulkanSecondaryCBRenderTargetContext(
+        const SkImageInfo& imageInfo, const GrVkDrawableInfo& vkInfo, const SkSurfaceProps* props) {
+    ASSERT_SINGLE_OWNER_PRIV
+    sk_sp<GrSurfaceProxy> proxy(
+            this->proxyProvider()->wrapVulkanSecondaryCBAsRenderTarget(imageInfo, vkInfo));
+    if (!proxy) {
+        return nullptr;
+    }
+
+    return this->drawingManager()->makeRenderTargetContext(std::move(proxy),
+                                                           imageInfo.refColorSpace(),
                                                            props);
 }
 

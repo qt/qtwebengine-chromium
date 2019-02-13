@@ -107,7 +107,7 @@ angle::Result HLSLCompiler::ensureInitialized(d3d::Context *context)
 {
     if (mInitialized)
     {
-        return angle::Result::Continue();
+        return angle::Result::Continue;
     }
 
     TRACE_EVENT0("gpu.angle", "HLSLCompiler::initialize");
@@ -130,14 +130,17 @@ angle::Result HLSLCompiler::ensureInitialized(d3d::Context *context)
     {
         // Load the version of the D3DCompiler DLL associated with the Direct3D version ANGLE was
         // built with.
-        mD3DCompilerModule = LoadLibrary(D3DCOMPILER_DLL);
+        mD3DCompilerModule = LoadLibraryA(D3DCOMPILER_DLL_A);
+
+        if (!mD3DCompilerModule)
+        {
+            DWORD lastError = GetLastError();
+            ERR() << "LoadLibrary(" << D3DCOMPILER_DLL_A << ") failed. GetLastError=" << lastError;
+            ANGLE_TRY_HR(context, E_OUTOFMEMORY, "LoadLibrary failed to load D3D Compiler DLL.");
+        }
     }
 
-    if (!mD3DCompilerModule)
-    {
-        ERR() << "D3D compiler module not found.";
-        ANGLE_TRY_HR(context, E_OUTOFMEMORY, "D3D compiler module not found.");
-    }
+    ASSERT(mD3DCompilerModule);
 
     mD3DCompileFunc =
         reinterpret_cast<pD3DCompile>(GetProcAddress(mD3DCompilerModule, "D3DCompile"));
@@ -159,7 +162,7 @@ angle::Result HLSLCompiler::ensureInitialized(d3d::Context *context)
                    E_OUTOFMEMORY);
 
     mInitialized = true;
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 void HLSLCompiler::release()
@@ -284,7 +287,7 @@ angle::Result HLSLCompiler::compileToBinary(d3d::Context *context,
             ANGLE_TRY(disassembleBinary(context, binary, &disassembly));
             (*outDebugInfo) += "\n" + disassembly + "\n// ASSEMBLY END\n";
 #endif  // ANGLE_APPEND_ASSEMBLY_TO_SHADER_DEBUG_INFO == ANGLE_ENABLED
-            return angle::Result::Continue();
+            return angle::Result::Continue;
         }
 
         if (result == E_OUTOFMEMORY)
@@ -305,7 +308,7 @@ angle::Result HLSLCompiler::compileToBinary(d3d::Context *context,
     // None of the configurations succeeded in compiling this shader but the compiler is still
     // intact
     *outCompiledBlob = nullptr;
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 angle::Result HLSLCompiler::disassembleBinary(d3d::Context *context,
@@ -333,7 +336,7 @@ angle::Result HLSLCompiler::disassembleBinary(d3d::Context *context,
 
     SafeRelease(disassembly);
 
-    return angle::Result::Continue();
+    return angle::Result::Continue;
 }
 
 }  // namespace rx

@@ -18,7 +18,7 @@
 
 #include "api/bitrate_constraints.h"
 #include "api/fec_controller.h"
-#include "api/mediatypes.h"
+#include "api/media_types.h"
 #include "api/test/simulated_network.h"
 #include "api/video_codecs/video_encoder_config.h"
 
@@ -66,6 +66,7 @@ class VideoQualityTestFixtureInterface {
       bool sync_video;
       bool dtx;
       bool use_real_adm;
+      absl::optional<std::string> ana_config;
     } audio;
     struct Screenshare {
       bool enabled;

@@ -34,20 +34,17 @@ namespace dawn_native { namespace metal {
 
     class Device : public DeviceBase {
       public:
-        Device(id<MTLDevice> mtlDevice);
+        Device();
         ~Device();
 
-        BindGroupBase* CreateBindGroup(BindGroupBuilder* builder) override;
-        BlendStateBase* CreateBlendState(BlendStateBuilder* builder) override;
-        BufferViewBase* CreateBufferView(BufferViewBuilder* builder) override;
         CommandBufferBase* CreateCommandBuffer(CommandBufferBuilder* builder) override;
-        DepthStencilStateBase* CreateDepthStencilState(DepthStencilStateBuilder* builder) override;
         InputStateBase* CreateInputState(InputStateBuilder* builder) override;
         RenderPassDescriptorBase* CreateRenderPassDescriptor(
             RenderPassDescriptorBuilder* builder) override;
-        RenderPipelineBase* CreateRenderPipeline(RenderPipelineBuilder* builder) override;
         SwapChainBase* CreateSwapChain(SwapChainBuilder* builder) override;
 
+        Serial GetCompletedCommandSerial() const final override;
+        Serial GetLastSubmittedCommandSerial() const final override;
         void TickImpl() override;
 
         const dawn_native::PCIInfo& GetPCIInfo() const override;
@@ -55,13 +52,15 @@ namespace dawn_native { namespace metal {
         id<MTLDevice> GetMTLDevice();
 
         id<MTLCommandBuffer> GetPendingCommandBuffer();
+        Serial GetPendingCommandSerial() const;
         void SubmitPendingCommandBuffer();
-        Serial GetPendingCommandSerial();
 
         MapRequestTracker* GetMapTracker() const;
         ResourceUploader* GetResourceUploader() const;
 
       private:
+        ResultOrError<BindGroupBase*> CreateBindGroupImpl(
+            const BindGroupDescriptor* descriptor) override;
         ResultOrError<BindGroupLayoutBase*> CreateBindGroupLayoutImpl(
             const BindGroupLayoutDescriptor* descriptor) override;
         ResultOrError<BufferBase*> CreateBufferImpl(const BufferDescriptor* descriptor) override;
@@ -70,6 +69,8 @@ namespace dawn_native { namespace metal {
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
         ResultOrError<QueueBase*> CreateQueueImpl() override;
+        ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
+            const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
         ResultOrError<ShaderModuleBase*> CreateShaderModuleImpl(
             const ShaderModuleDescriptor* descriptor) override;
@@ -86,8 +87,8 @@ namespace dawn_native { namespace metal {
         std::unique_ptr<MapRequestTracker> mMapTracker;
         std::unique_ptr<ResourceUploader> mResourceUploader;
 
-        Serial mFinishedCommandSerial = 0;
-        Serial mPendingCommandSerial = 1;
+        Serial mCompletedSerial = 0;
+        Serial mLastSubmittedSerial = 0;
         id<MTLCommandBuffer> mPendingCommands = nil;
 
         dawn_native::PCIInfo mPCIInfo;

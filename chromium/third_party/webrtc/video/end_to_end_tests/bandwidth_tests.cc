@@ -8,8 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "absl/memory/memory.h"
 #include "api/test/simulated_network.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
+#include "api/video/video_bitrate_allocation.h"
 #include "call/fake_network_pipe.h"
 #include "call/simulated_network.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
@@ -264,6 +266,12 @@ TEST_F(BandwidthEndToEndTest, RembWithSendSideBwe) {
 }
 
 TEST_F(BandwidthEndToEndTest, ReportsSetEncoderRates) {
+  // If these fields trial are on, we get lower bitrates than expected by this
+  // test, due to the packetization overhead and encoder pushback.
+  webrtc::test::ScopedFieldTrials field_trials(
+      std::string(field_trial::GetFieldTrialString()) +
+      "WebRTC-SubtractPacketizationOverhead/Disabled/"
+      "WebRTC-VideoRateControl/bitrate_adjuster:false/");
   class EncoderRateStatsTest : public test::EndToEndTest,
                                public test::FakeEncoder {
    public:

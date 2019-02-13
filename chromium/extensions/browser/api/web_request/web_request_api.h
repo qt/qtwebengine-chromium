@@ -289,8 +289,11 @@ class ExtensionWebRequestEventRouter {
   // filter what network events an extension cares about.
   struct RequestFilter {
     RequestFilter();
-    RequestFilter(const RequestFilter& other);
     ~RequestFilter();
+
+    // TODO(devlin): Make these a move constructor/operator.
+    RequestFilter(const RequestFilter& other);
+    RequestFilter& operator=(const RequestFilter& other);
 
     // Returns false if there was an error initializing. If it is a user error,
     // an error message is provided, otherwise the error is internal (and
@@ -324,7 +327,7 @@ class ExtensionWebRequestEventRouter {
     std::unique_ptr<extension_web_request_api_helpers::ResponseHeaders>
         response_headers;
 
-    std::unique_ptr<net::AuthCredentials> auth_credentials;
+    base::Optional<net::AuthCredentials> auth_credentials;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(EventResponse);
@@ -476,9 +479,14 @@ class ExtensionWebRequestEventRouter {
 
   // Whether there is a listener matching the request that has
   // ExtraInfoSpec::EXTRA_HEADERS set.
-  bool HasExtraHeadersListener(void* browser_context,
-                               const extensions::InfoMap* extension_info_map,
-                               const WebRequestInfo* request);
+  bool HasExtraHeadersListenerForRequest(
+      void* browser_context,
+      const extensions::InfoMap* extension_info_map,
+      const WebRequestInfo* request);
+
+  // Whether there are any listeners for this context that have
+  // ExtraInfoSpec::EXTRA_HEADERS set.
+  bool HasAnyExtraHeadersListener(void* browser_context);
 
  private:
   friend class WebRequestAPI;
@@ -686,6 +694,9 @@ class ExtensionWebRequestEventRouter {
 
   // Returns true if |request| was already signaled to some event handlers.
   bool WasSignaled(const WebRequestInfo& request) const;
+
+  // Helper for |HasAnyExtraHeadersListener()|.
+  bool HasAnyExtraHeadersListenerImpl(void* browser_context);
 
   // Get the number of listeners - for testing only.
   size_t GetListenerCountForTesting(void* browser_context,

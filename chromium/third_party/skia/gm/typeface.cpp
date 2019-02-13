@@ -14,16 +14,15 @@
 #include "SkMaskFilter.h"
 #include "SkString.h"
 #include "SkSurfaceProps.h"
+#include "SkTextBlob.h"
 #include "SkTypeface.h"
 #include "SkTypes.h"
 
-static void getGlyphPositions(const SkPaint& paint, const uint16_t glyphs[],
+static void getGlyphPositions(const SkFont& font, const uint16_t glyphs[],
                              int count, SkScalar x, SkScalar y, SkPoint pos[]) {
-    SkASSERT(SkPaint::kGlyphID_TextEncoding == paint.getTextEncoding());
-
     SkAutoSTMalloc<128, SkScalar> widthStorage(count);
     SkScalar* widths = widthStorage.get();
-    paint.getTextWidths(glyphs, count * sizeof(uint16_t), widths);
+    font.getWidths(glyphs, count, widths);
 
     for (int i = 0; i < count; ++i) {
         pos[i].set(x, y);
@@ -32,8 +31,8 @@ static void getGlyphPositions(const SkPaint& paint, const uint16_t glyphs[],
 }
 
 static void applyKerning(SkPoint pos[], const int32_t adjustments[], int count,
-                         const SkPaint& paint) {
-    SkScalar scale = paint.getTextSize() / paint.getTypeface()->getUnitsPerEm();
+                         const SkFont& font) {
+    SkScalar scale = font.getSize() / font.getTypefaceOrDefault()->getUnitsPerEm();
 
     SkScalar globalAdj = 0;
     for (int i = 0; i < count - 1; ++i) {
@@ -43,16 +42,16 @@ static void applyKerning(SkPoint pos[], const int32_t adjustments[], int count,
 }
 
 static void drawKernText(SkCanvas* canvas, const void* text, size_t len,
-                         SkScalar x, SkScalar y, const SkPaint& paint) {
-    SkTypeface* face = paint.getTypeface();
+                         SkScalar x, SkScalar y, const SkFont& font, const SkPaint& paint) {
+    SkTypeface* face = font.getTypefaceOrDefault();
     if (!face) {
-        canvas->drawText(text, len, x, y, paint);
+        canvas->drawSimpleText(text, len, kUTF8_SkTextEncoding, x, y, font, paint);
         return;
     }
 
     SkAutoSTMalloc<128, uint16_t> glyphStorage(len);
     uint16_t* glyphs = glyphStorage.get();
-    int glyphCount = paint.textToGlyphs(text, len, glyphs);
+    int glyphCount = font.textToGlyphs(text, len, kUTF8_SkTextEncoding, glyphs, len);
     if (glyphCount < 1) {
         return;
     }
@@ -60,19 +59,18 @@ static void drawKernText(SkCanvas* canvas, const void* text, size_t len,
     SkAutoSTMalloc<128, int32_t> adjustmentStorage(glyphCount - 1);
     int32_t* adjustments = adjustmentStorage.get();
     if (!face->getKerningPairAdjustments(glyphs, glyphCount, adjustments)) {
-        canvas->drawText(text, len, x, y, paint);
+        canvas->drawSimpleText(text, len, kUTF8_SkTextEncoding, x, y, font, paint);
         return;
     }
 
-    SkPaint glyphPaint(paint);
-    glyphPaint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
-    SkAutoSTMalloc<128, SkPoint> posStorage(glyphCount);
-    SkPoint* pos = posStorage.get();
-    getGlyphPositions(glyphPaint, glyphs, glyphCount, x, y, pos);
+    SkTextBlobBuilder builder;
+    auto rec = builder.allocRunPos(font, glyphCount);
+    memcpy(rec.glyphs, glyphs, glyphCount * sizeof(SkGlyphID));
+    getGlyphPositions(font, glyphs, glyphCount, x, y, rec.points());
+    applyKerning(rec.points(), adjustments, glyphCount, font);
 
-    applyKerning(pos, adjustments, glyphCount, glyphPaint);
-    canvas->drawPosText(glyphs, glyphCount * sizeof(uint16_t), pos, glyphPaint);
+    canvas->drawTextBlob(builder.make(), 0, 0, paint);
 }
 
 static constexpr SkFontStyle gStyles[] = {
@@ -112,27 +110,28 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        SkPaint paint;
-        paint.setAntiAlias(true);
-        paint.setTextSize(SkIntToScalar(30));
+        SkFont font;
+        font.setSize(30);
 
         const char* text = fApplyKerning ? "Type AWAY" : "Hamburgefons";
         const size_t textLen = strlen(text);
 
         SkScalar x = SkIntToScalar(10);
-        SkScalar dy = paint.getFontMetrics(nullptr);
+        SkScalar dy = font.getMetrics(nullptr);
         SkScalar y = dy;
 
         if (fApplyKerning) {
-            paint.setSubpixelText(true);
+            font.setSubpixel(true);
         } else {
-            paint.setLinearText(true);
+            font.setLinearMetrics(true);
         }
+
+        SkPaint paint;
         for (int i = 0; i < gStylesCount; i++) {
-            paint.setTypeface(fFaces[i]);
-            canvas->drawText(text, textLen, x, y, paint);
+            font.setTypeface(fFaces[i]);
+            canvas->drawSimpleText(text, textLen, kUTF8_SkTextEncoding, x, y, font, paint);
             if (fApplyKerning) {
-                drawKernText(canvas, text, textLen, x + 240, y, paint);
+                drawKernText(canvas, text, textLen, x + 240, y, font, paint);
             }
             y += dy;
         }
@@ -173,6 +172,18 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
         { true,  true , true  },  // subpixel anti-aliased in layer (flat pixel geometry)
     };
 
+    auto compute_edging = [](AliasType at) {
+        if (at.antiAlias) {
+            if (at.subpixelAntitalias) {
+                return SkFont::Edging::kSubpixelAntiAlias;
+            } else {
+                return SkFont::Edging::kAntiAlias;
+            }
+        } else {
+            return SkFont::Edging::kAlias;
+        }
+    };
+
     // The hintgasp.ttf is designed for the following sizes to be different.
     // GASP_DOGRAY                                      0x0002   0<=ppem<=10
     // GASP_SYMMETRIC_SMOOTHING                         0x0008   0<=ppem<=10
@@ -206,19 +217,19 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
     SkScalar y = 0;  // The baseline of the previous output
     {
         SkPaint paint;
-        paint.setTypeface(face);
-        paint.setEmbeddedBitmapText(true);
+
+        SkFont font(face);
+        font.setEmbeddedBitmaps(true);
 
         SkScalar x = 0;
         SkScalar xMax = x;
         SkScalar xBase = 0;
         for (const SubpixelType subpixel : subpixelTypes) {
             y = 0;
-            paint.setSubpixelText(subpixel.requested);
+            font.setSubpixel(subpixel.requested);
 
             for (const AliasType& alias : aliasTypes) {
-                paint.setAntiAlias(alias.antiAlias);
-                paint.setLCDRenderText(alias.subpixelAntitalias);
+                font.setEdging(compute_edging(alias));
                 SkAutoCanvasRestore acr(canvas, false);
                 if (alias.inLayer) {
                     canvas->saveLayer(nullptr, &paint);
@@ -226,12 +237,12 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
 
                 for (const SkScalar& textSize : textSizes) {
                     x = xBase + 5;
-                    paint.setTextSize(textSize);
+                    font.setSize(textSize);
 
-                    SkScalar dy = SkScalarCeilToScalar(paint.getFontMetrics(nullptr));
+                    SkScalar dy = SkScalarCeilToScalar(font.getMetrics(nullptr));
                     y += dy;
                     for (const SkFontHinting& hinting : hintingTypes) {
-                        paint.setHinting(hinting);
+                        font.setHinting(hinting);
 
                         for (const bool& rotateABit : rotateABitTypes) {
                             SkAutoCanvasRestore acr(canvas, true);
@@ -239,11 +250,12 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
                                 canvas->rotate(2, x + subpixel.offset.x(),
                                                   y + subpixel.offset.y());
                             }
-                            canvas->drawText(&character, 1, x + subpixel.offset.x(),
-                                                            y + subpixel.offset.y(), paint);
+                            canvas->drawSimpleText(&character, 1, kUTF8_SkTextEncoding,
+                                                   x + subpixel.offset.x(),
+                                                   y + subpixel.offset.y(), font, paint);
 
                             SkScalar dx = SkScalarCeilToScalar(
-                                    paint.measureText(&character, 1)) + 5;
+                                    font.measureText(&character, 1, kUTF8_SkTextEncoding)) + 5;
                             x += dx;
                             xMax = SkTMax(x, xMax);
                         }
@@ -269,19 +281,18 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
 
     {
         SkPaint paint;
-        paint.setTypeface(face);
-        paint.setTextSize(16);
+
+        SkFont font(face, 16);
 
         SkScalar x = 0;
         for (const bool& fakeBold : fakeBoldTypes) {
-            SkScalar dy = SkScalarCeilToScalar(paint.getFontMetrics(nullptr));
+            SkScalar dy = SkScalarCeilToScalar(font.getMetrics(nullptr));
             y += dy;
             x = 5;
 
-            paint.setFakeBoldText(fakeBold);
+            font.setEmbolden(fakeBold);
             for (const AliasType& alias : aliasTypes) {
-                paint.setAntiAlias(alias.antiAlias);
-                paint.setLCDRenderText(alias.subpixelAntitalias);
+                font.setEdging(compute_edging(alias));
                 SkAutoCanvasRestore acr(canvas, false);
                 if (alias.inLayer) {
                     canvas->saveLayer(nullptr, &paint);
@@ -289,9 +300,10 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
                 for (const StyleTests& style : styleTypes) {
                     paint.setStyle(style.style);
                     paint.setStrokeWidth(style.strokeWidth);
-                    canvas->drawText(&character, 1, x, y, paint);
+                    canvas->drawSimpleText(&character, 1, kUTF8_SkTextEncoding, x, y, font, paint);
 
-                    SkScalar dx = SkScalarCeilToScalar(paint.measureText(&character, 1)) + 5;
+                    SkScalar dx = SkScalarCeilToScalar(font.measureText(&character, 1,
+                                                                        kUTF8_SkTextEncoding)) + 5;
                     x += dx;
                 }
             }
@@ -321,27 +333,27 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
 
     {
         SkPaint paint;
-        paint.setTypeface(face);
-        paint.setTextSize(16);
+
+        SkFont font(face, 16);
 
         SkScalar x = 0;
         {
             for (const AliasType& alias : aliasTypes) {
-                SkScalar dy = SkScalarCeilToScalar(paint.getFontMetrics(nullptr));
+                SkScalar dy = SkScalarCeilToScalar(font.getMetrics(nullptr));
                 y += dy;
                 x = 5;
 
-                paint.setAntiAlias(alias.antiAlias);
-                paint.setLCDRenderText(alias.subpixelAntitalias);
+                font.setEdging(compute_edging(alias));
                 SkAutoCanvasRestore acr(canvas, false);
                 if (alias.inLayer) {
                     canvas->saveLayer(nullptr, &paint);
                 }
                 for (const MaskTests& mask : maskTypes) {
                     paint.setMaskFilter(SkMaskFilter::MakeBlur(mask.style, mask.sigma));
-                    canvas->drawText(&character, 1, x, y, paint);
+                    canvas->drawSimpleText(&character, 1, kUTF8_SkTextEncoding, x, y, font, paint);
 
-                    SkScalar dx = SkScalarCeilToScalar(paint.measureText(&character, 1)) + 5;
+                    SkScalar dx = SkScalarCeilToScalar(font.measureText(&character, 1,
+                                                                        kUTF8_SkTextEncoding)) + 5;
                     x += dx;
                 }
                 paint.setMaskFilter(nullptr);

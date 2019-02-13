@@ -8,23 +8,34 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "api/array_view.h"
-#include "media/base/fakemediaengine.h"
-#include "media/base/fakertp.h"
-#include "media/base/mediachannel.h"
-#include "p2p/base/fakecandidatepair.h"
-#include "p2p/base/fakedtlstransport.h"
-#include "p2p/base/fakepackettransport.h"
+#include "api/audio_options.h"
+#include "api/rtp_parameters.h"
+#include "media/base/codec.h"
+#include "media/base/fake_media_engine.h"
+#include "media/base/fake_rtp.h"
+#include "media/base/media_channel.h"
+#include "p2p/base/candidate_pair_interface.h"
+#include "p2p/base/fake_dtls_transport.h"
+#include "p2p/base/fake_packet_transport.h"
+#include "p2p/base/ice_transport_internal.h"
+#include "p2p/base/p2p_constants.h"
 #include "pc/channel.h"
+#include "pc/dtls_srtp_transport.h"
+#include "pc/jsep_transport.h"
+#include "pc/rtp_transport.h"
+#include "rtc_base/arraysize.h"
 #include "rtc_base/buffer.h"
+#include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/fakeclock.h"
-#include "rtc_base/gunit.h"
-#include "rtc_base/logging.h"
-#include "rtc_base/sslstreamadapter.h"
+#include "rtc_base/rtc_certificate.h"
+#include "rtc_base/ssl_identity.h"
+#include "test/gtest.h"
 
 using cricket::DtlsTransportInternal;
 using cricket::FakeVoiceMediaChannel;
@@ -396,11 +407,6 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     return true;
   }
 
-  bool AddStream1(int id) {
-    return channel1_->AddRecvStream(cricket::StreamParams::CreateLegacy(id));
-  }
-  bool RemoveStream1(int id) { return channel1_->RemoveRecvStream(id); }
-
   void SendRtp1() {
     media_channel1_->SendRtp(rtp_packet_.data(), rtp_packet_.size(),
                              rtc::PacketOptions());
@@ -509,9 +515,10 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
   class ScopedCallThread {
    public:
     template <class FunctorT>
-    explicit ScopedCallThread(const FunctorT& functor)
+    explicit ScopedCallThread(FunctorT&& functor)
         : thread_(rtc::Thread::Create()),
-          task_(new rtc::FunctorMessageHandler<void, FunctorT>(functor)) {
+          task_(new rtc::FunctorMessageHandler<void, FunctorT>(
+              std::forward<FunctorT>(functor))) {
       thread_->Start();
       thread_->Post(RTC_FROM_HERE, task_.get());
     }
@@ -658,18 +665,6 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
         channel2_->SetRemoteContent(&content, SdpType::kPrAnswer, NULL));
     EXPECT_TRUE(channel2_->SetRemoteContent(&content, SdpType::kAnswer, NULL));
     EXPECT_EQ(0, rtcp_mux_activated_callbacks2_);
-  }
-
-  // Test that Add/RemoveStream properly forward to the media channel.
-  void TestStreams() {
-    CreateChannels(0, 0);
-    EXPECT_TRUE(AddStream1(1));
-    EXPECT_TRUE(AddStream1(2));
-    EXPECT_EQ(2U, media_channel1_->recv_streams().size());
-    EXPECT_TRUE(RemoveStream1(2));
-    EXPECT_EQ(1U, media_channel1_->recv_streams().size());
-    EXPECT_TRUE(RemoveStream1(1));
-    EXPECT_EQ(0U, media_channel1_->recv_streams().size());
   }
 
   // Test that SetLocalContent and SetRemoteContent properly
@@ -914,12 +909,11 @@ class ChannelTest : public testing::Test, public sigslot::has_slots<> {
     });
     WaitForThreads();
     EXPECT_EQ(1, media_channel1->num_network_route_changes());
-    rtc::NetworkRoute expected_network_route;
-    expected_network_route.connected = true;
-    expected_network_route.local_network_id = kLocalNetId;
-    expected_network_route.remote_network_id = kRemoteNetId;
-    expected_network_route.last_sent_packet_id = kLastPacketId;
-    EXPECT_EQ(expected_network_route, media_channel1->last_network_route());
+    EXPECT_TRUE(media_channel1->last_network_route().connected);
+    EXPECT_EQ(kLocalNetId,
+              media_channel1->last_network_route().local_network_id);
+    EXPECT_EQ(kRemoteNetId,
+              media_channel1->last_network_route().remote_network_id);
     EXPECT_EQ(kLastPacketId,
               media_channel1->last_network_route().last_sent_packet_id);
     EXPECT_EQ(kTransportOverheadPerPacket + kSrtpOverheadPerPacket,
@@ -1580,12 +1574,6 @@ std::unique_ptr<cricket::VideoChannel> ChannelTest<VideoTraits>::CreateChannel(
   return channel;
 }
 
-// override to add 0 parameter
-template <>
-bool ChannelTest<VideoTraits>::AddStream1(int id) {
-  return channel1_->AddRecvStream(cricket::StreamParams::CreateLegacy(id));
-}
-
 template <>
 void ChannelTest<VideoTraits>::CreateContent(
     int flags,
@@ -1673,10 +1661,6 @@ TEST_F(VoiceChannelSingleThreadTest, TestSetContentsRtcpMux) {
 
 TEST_F(VoiceChannelSingleThreadTest, TestSetContentsRtcpMuxWithPrAnswer) {
   Base::TestSetContentsRtcpMux();
-}
-
-TEST_F(VoiceChannelSingleThreadTest, TestStreams) {
-  Base::TestStreams();
 }
 
 TEST_F(VoiceChannelSingleThreadTest, TestChangeStreamParamsInContent) {
@@ -1828,10 +1812,6 @@ TEST_F(VoiceChannelDoubleThreadTest, TestSetContentsRtcpMuxWithPrAnswer) {
   Base::TestSetContentsRtcpMux();
 }
 
-TEST_F(VoiceChannelDoubleThreadTest, TestStreams) {
-  Base::TestStreams();
-}
-
 TEST_F(VoiceChannelDoubleThreadTest, TestChangeStreamParamsInContent) {
   Base::TestChangeStreamParamsInContent();
 }
@@ -1979,10 +1959,6 @@ TEST_F(VideoChannelSingleThreadTest, TestSetContentsRtcpMuxWithPrAnswer) {
   Base::TestSetContentsRtcpMux();
 }
 
-TEST_F(VideoChannelSingleThreadTest, TestStreams) {
-  Base::TestStreams();
-}
-
 TEST_F(VideoChannelSingleThreadTest, TestChangeStreamParamsInContent) {
   Base::TestChangeStreamParamsInContent();
 }
@@ -2128,10 +2104,6 @@ TEST_F(VideoChannelDoubleThreadTest, TestSetContentsRtcpMux) {
 
 TEST_F(VideoChannelDoubleThreadTest, TestSetContentsRtcpMuxWithPrAnswer) {
   Base::TestSetContentsRtcpMux();
-}
-
-TEST_F(VideoChannelDoubleThreadTest, TestStreams) {
-  Base::TestStreams();
 }
 
 TEST_F(VideoChannelDoubleThreadTest, TestChangeStreamParamsInContent) {
@@ -2323,10 +2295,6 @@ TEST_F(RtpDataChannelSingleThreadTest, TestSetContentsRtcpMux) {
   Base::TestSetContentsRtcpMux();
 }
 
-TEST_F(RtpDataChannelSingleThreadTest, TestStreams) {
-  Base::TestStreams();
-}
-
 TEST_F(RtpDataChannelSingleThreadTest, TestChangeStreamParamsInContent) {
   Base::TestChangeStreamParamsInContent();
 }
@@ -2405,10 +2373,6 @@ TEST_F(RtpDataChannelDoubleThreadTest, TestSetContentsNullOffer) {
 
 TEST_F(RtpDataChannelDoubleThreadTest, TestSetContentsRtcpMux) {
   Base::TestSetContentsRtcpMux();
-}
-
-TEST_F(RtpDataChannelDoubleThreadTest, TestStreams) {
-  Base::TestStreams();
 }
 
 TEST_F(RtpDataChannelDoubleThreadTest, TestChangeStreamParamsInContent) {

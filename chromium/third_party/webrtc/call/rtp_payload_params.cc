@@ -10,12 +10,22 @@
 
 #include "call/rtp_payload_params.h"
 
-#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include <stddef.h>
+
+#include "absl/container/inlined_vector.h"
+#include "absl/types/optional.h"
+#include "absl/types/variant.h"
+#include "api/video/video_timing.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/video_coding/codecs/h264/include/h264_globals.h"
+#include "modules/video_coding/codecs/interface/common_constants.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
+#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/random.h"
-#include "rtc_base/timeutils.h"
+#include "rtc_base/time_utils.h"
 #include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
@@ -146,7 +156,9 @@ RTPVideoHeader RtpPayloadParams::GetRtpVideoHeader(
   rtp_video_header.playout_delay = image.playout_delay_;
   rtp_video_header.width = image._encodedWidth;
   rtp_video_header.height = image._encodedHeight;
-
+  rtp_video_header.color_space = image.ColorSpace()
+                                     ? absl::make_optional(*image.ColorSpace())
+                                     : absl::nullopt;
   SetVideoTiming(image, &rtp_video_header.video_timing);
 
   const bool is_keyframe = image._frameType == kVideoFrameKey;

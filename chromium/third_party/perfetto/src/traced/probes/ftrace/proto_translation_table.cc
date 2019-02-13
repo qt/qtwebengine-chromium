@@ -21,6 +21,7 @@
 #include <algorithm>
 
 #include "perfetto/base/string_utils.h"
+#include "perfetto/protozero/proto_utils.h"
 #include "src/traced/probes/ftrace/event_info.h"
 #include "src/traced/probes/ftrace/ftrace_procfs.h"
 
@@ -32,6 +33,7 @@ namespace perfetto {
 
 namespace {
 
+using protozero::proto_utils::ProtoSchemaType;
 using protos::pbzero::GenericFtraceEvent;
 
 ProtoTranslationTable::FtracePageHeaderSpec MakeFtracePageHeaderSpec(
@@ -74,7 +76,7 @@ bool MergeFieldInfo(const FtraceEvent::Field& ftrace_field,
                     const char* event_name_for_debug) {
   PERFETTO_DCHECK(field->ftrace_name);
   PERFETTO_DCHECK(field->proto_field_id);
-  PERFETTO_DCHECK(field->proto_field_type);
+  PERFETTO_DCHECK(static_cast<int>(field->proto_field_type));
   PERFETTO_DCHECK(!field->ftrace_offset);
   PERFETTO_DCHECK(!field->ftrace_size);
   PERFETTO_DCHECK(!field->ftrace_type);
@@ -100,9 +102,9 @@ bool MergeFieldInfo(const FtraceEvent::Field& ftrace_field,
         "Failed to find translation strategy for ftrace field \"%s.%s\" (%s -> "
         "%s)",
         event_name_for_debug, field->ftrace_name, ToString(field->ftrace_type),
-        ToString(field->proto_field_type));
+        protozero::proto_utils::ProtoSchemaToString(field->proto_field_type));
     // TODO(hjd): Uncomment DCHECK when proto generation is fixed.
-    // PERFETTO_DCHECK(false);
+    // PERFETTO_DFATAL("Failed to find translation strategy");
     return false;
   }
 
@@ -168,14 +170,14 @@ bool Match(const char* string, const char* pattern) {
 
 // Set proto field type and id based on the ftrace type.
 void SetProtoType(FtraceFieldType ftrace_type,
-                  ProtoFieldType* proto_type,
+                  ProtoSchemaType* proto_type,
                   uint32_t* proto_field_id) {
   switch (ftrace_type) {
     case kFtraceCString:
     case kFtraceFixedCString:
     case kFtraceStringPtr:
     case kFtraceDataLoc:
-      *proto_type = kProtoString;
+      *proto_type = ProtoSchemaType::kString;
       *proto_field_id = GenericFtraceEvent::Field::kStrValueFieldNumber;
       break;
     case kFtraceInt8:
@@ -184,7 +186,7 @@ void SetProtoType(FtraceFieldType ftrace_type,
     case kFtracePid32:
     case kFtraceCommonPid32:
     case kFtraceInt64:
-      *proto_type = kProtoInt64;
+      *proto_type = ProtoSchemaType::kInt64;
       *proto_field_id = GenericFtraceEvent::Field::kIntValueFieldNumber;
       break;
     case kFtraceUint8:
@@ -196,7 +198,7 @@ void SetProtoType(FtraceFieldType ftrace_type,
     case kFtraceUint64:
     case kFtraceInode32:
     case kFtraceInode64:
-      *proto_type = kProtoUint64;
+      *proto_type = ProtoSchemaType::kUint64;
       *proto_field_id = GenericFtraceEvent::Field::kUintValueFieldNumber;
       break;
   }
@@ -340,9 +342,15 @@ std::unique_ptr<ProtoTranslationTable> ProtoTranslationTable::Create(
 
   std::vector<FtraceEvent::Field> page_header_fields;
   std::string page_header = ftrace_procfs->ReadPageHeaderFormat();
-  PERFETTO_CHECK(!page_header.empty());
-  PERFETTO_CHECK(ParseFtraceEventBody(std::move(page_header), nullptr,
-                                      &page_header_fields));
+  if (page_header.empty()) {
+    PERFETTO_DFATAL("Empty page header.");
+    return nullptr;
+  }
+  if (!ParseFtraceEventBody(std::move(page_header), nullptr,
+                            &page_header_fields)) {
+    PERFETTO_DFATAL("Failed to parse page header.");
+    return nullptr;
+  }
 
   for (Event& event : events) {
     if (event.proto_field_id ==
@@ -485,8 +493,9 @@ uint16_t ProtoTranslationTable::CreateGenericEventField(
   field->ftrace_size = ftrace_field.size;
   // Proto type is set based on ftrace type so all fields should have a
   // translation strategy.
-  PERFETTO_DCHECK(SetTranslationStrategy(
-      field->ftrace_type, field->proto_field_type, &field->strategy));
+  bool success = SetTranslationStrategy(
+      field->ftrace_type, field->proto_field_type, &field->strategy);
+  PERFETTO_DCHECK(success);
   return field_end;
 }
 

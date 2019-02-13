@@ -377,6 +377,7 @@ void LoopUnrollerUtilsImpl::Init(Loop* loop) {
 // number of bodies.
 void LoopUnrollerUtilsImpl::PartiallyUnrollResidualFactor(Loop* loop,
                                                           size_t factor) {
+  // TODO(1841): Handle id overflow.
   std::unique_ptr<Instruction> new_label{new Instruction(
       context_, SpvOp::SpvOpLabel, 0, context_->TakeNextId(), {})};
   std::unique_ptr<BasicBlock> new_exit_bb{new BasicBlock(std::move(new_label))};
@@ -393,12 +394,12 @@ void LoopUnrollerUtilsImpl::PartiallyUnrollResidualFactor(Loop* loop,
   // This is a naked new due to the VS2013 requirement of not having unique
   // pointers in vectors, as it will be inserted into a vector with
   // loop_descriptor.AddLoop.
-  Loop* new_loop = new Loop(*loop);
+  std::unique_ptr<Loop> new_loop = MakeUnique<Loop>(*loop);
 
   // Clear the basic blocks of the new loop.
   new_loop->ClearBlocks();
 
-  DuplicateLoop(loop, new_loop);
+  DuplicateLoop(loop, new_loop.get());
 
   // Add the blocks to the function.
   AddBlocksToFunction(loop->GetMergeBlock());
@@ -413,10 +414,10 @@ void LoopUnrollerUtilsImpl::PartiallyUnrollResidualFactor(Loop* loop,
   loop_induction_variable_ = state_.new_phi;
   // Unroll the new loop by the factor with the usual -1 to account for the
   // existing block iteration.
-  Unroll(new_loop, factor);
+  Unroll(new_loop.get(), factor);
 
-  LinkLastPhisToStart(new_loop);
-  AddBlocksToLoop(new_loop);
+  LinkLastPhisToStart(new_loop.get());
+  AddBlocksToLoop(new_loop.get());
 
   // Add the new merge block to the back of the list of blocks to be added. It
   // needs to be the last block added to maintain dominator order in the binary.
@@ -506,7 +507,7 @@ void LoopUnrollerUtilsImpl::PartiallyUnrollResidualFactor(Loop* loop,
 
   LoopDescriptor& loop_descriptor = *context_->GetLoopDescriptor(&function_);
 
-  loop_descriptor.AddLoop(new_loop, loop->GetParent());
+  loop_descriptor.AddLoop(std::move(new_loop), loop->GetParent());
 
   RemoveDeadInstructions();
 }
@@ -834,6 +835,7 @@ void LoopUnrollerUtilsImpl::AssignNewResultIds(BasicBlock* basic_block) {
 
   // Label instructions aren't covered by normal traversal of the
   // instructions.
+  // TODO(1841): Handle id overflow.
   uint32_t new_label_id = context_->TakeNextId();
 
   // Assign a new id to the label.
@@ -850,6 +852,7 @@ void LoopUnrollerUtilsImpl::AssignNewResultIds(BasicBlock* basic_block) {
     }
 
     // Give the instruction a new id.
+    // TODO(1841): Handle id overflow.
     inst.SetResultId(context_->TakeNextId());
     def_use_mgr->AnalyzeInstDef(&inst);
 

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <source/spirv_optimizer_options.h>
+#include "code_sink.h"
 #include "source/opt/build_module.h"
 #include "source/opt/log.h"
 #include "source/opt/pass_manager.h"
@@ -56,7 +57,7 @@ Optimizer::PassToken::~PassToken() {}
 struct Optimizer::Impl {
   explicit Impl(spv_target_env env) : target_env(env), pass_manager() {}
 
-  const spv_target_env target_env;  // Target environment.
+  spv_target_env target_env;        // Target environment.
   opt::PassManager pass_manager;    // Internal implementation pass manager.
 };
 
@@ -181,7 +182,8 @@ Optimizer& Optimizer::RegisterPerformancePasses() {
       .RegisterPass(CreateRedundancyEliminationPass())
       .RegisterPass(CreateDeadBranchElimPass())
       .RegisterPass(CreateBlockMergePass())
-      .RegisterPass(CreateSimplificationPass());
+      .RegisterPass(CreateSimplificationPass())
+      .RegisterPass(CreateCodeSinkingPass());
   // Currently exposing driver bugs resulting in crashes (#946)
   // .RegisterPass(CreateCommonUniformElimPass())
 }
@@ -214,6 +216,11 @@ Optimizer& Optimizer::RegisterSizePasses() {
       // Currently exposing driver bugs resulting in crashes (#946)
       // .RegisterPass(CreateCommonUniformElimPass())
       .RegisterPass(CreateAggressiveDCEPass());
+}
+
+Optimizer& Optimizer::RegisterWebGPUPasses() {
+  return RegisterPass(CreateAggressiveDCEPass())
+      .RegisterPass(CreateDeadBranchElimPass());
 }
 
 bool Optimizer::RegisterPassesFromFlags(const std::vector<std::string>& flags) {
@@ -408,6 +415,8 @@ bool Optimizer::RegisterPassFromFlag(const std::string& flag) {
     }
   } else if (pass_name == "loop-unroll") {
     RegisterPass(CreateLoopUnrollPass(true));
+  } else if (pass_name == "upgrade-memory-model") {
+    RegisterPass(CreateUpgradeMemoryModelPass());
   } else if (pass_name == "vector-dce") {
     RegisterPass(CreateVectorDCEPass());
   } else if (pass_name == "loop-unroll-partial") {
@@ -432,6 +441,8 @@ bool Optimizer::RegisterPassFromFlag(const std::string& flag) {
     }
   } else if (pass_name == "ccp") {
     RegisterPass(CreateCCPPass());
+  } else if (pass_name == "code-sink") {
+    RegisterPass(CreateCodeSinkingPass());
   } else if (pass_name == "O") {
     RegisterPerformancePasses();
   } else if (pass_name == "Os") {
@@ -446,6 +457,10 @@ bool Optimizer::RegisterPassFromFlag(const std::string& flag) {
   }
 
   return true;
+}
+
+void Optimizer::SetTargetEnv(const spv_target_env env) {
+  impl_->target_env = env;
 }
 
 bool Optimizer::Run(const uint32_t* original_binary,
@@ -768,10 +783,20 @@ Optimizer::PassToken CreateCombineAccessChainsPass() {
       MakeUnique<opt::CombineAccessChains>());
 }
 
+Optimizer::PassToken CreateUpgradeMemoryModelPass() {
+  return MakeUnique<Optimizer::PassToken::Impl>(
+      MakeUnique<opt::UpgradeMemoryModel>());
+}
+
 Optimizer::PassToken CreateInstBindlessCheckPass(uint32_t desc_set,
                                                  uint32_t shader_id) {
   return MakeUnique<Optimizer::PassToken::Impl>(
       MakeUnique<opt::InstBindlessCheckPass>(desc_set, shader_id));
+}
+
+Optimizer::PassToken CreateCodeSinkingPass() {
+  return MakeUnique<Optimizer::PassToken::Impl>(
+      MakeUnique<opt::CodeSinkingPass>());
 }
 
 }  // namespace spvtools

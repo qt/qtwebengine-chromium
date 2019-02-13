@@ -9,9 +9,9 @@
 #include <algorithm>
 #include <vector>
 
-#include "fxjs/cfxjse_engine.h"
-#include "fxjs/cfxjse_value.h"
 #include "fxjs/js_resources.h"
+#include "fxjs/xfa/cfxjse_engine.h"
+#include "fxjs/xfa/cfxjse_value.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -32,6 +32,10 @@ CJX_InstanceManager::CJX_InstanceManager(CXFA_InstanceManager* mgr)
 }
 
 CJX_InstanceManager::~CJX_InstanceManager() {}
+
+bool CJX_InstanceManager::DynamicTypeIs(TypeTag eType) const {
+  return eType == static_type__ || ParentType__::DynamicTypeIs(eType);
+}
 
 int32_t CJX_InstanceManager::SetInstances(int32_t iDesired) {
   CXFA_Occur* occur = GetXFANode()->GetOccurIfExists();

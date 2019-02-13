@@ -22,22 +22,24 @@
 
 #include "api/audio/audio_frame.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
-#include "common_types.h"  // NOLINT(build/include)
 #include "modules/audio_coding/codecs/pcm16b/pcm16b.h"
 #include "modules/audio_coding/neteq/tools/audio_loop.h"
 #include "modules/audio_coding/neteq/tools/neteq_packet_source_input.h"
 #include "modules/audio_coding/neteq/tools/neteq_test.h"
 #include "modules/audio_coding/neteq/tools/rtp_file_source.h"
+#include "modules/include/module_common_types_public.h"
+#include "modules/rtp_rtcp/include/rtcp_statistics.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "rtc_base/ignore_wundef.h"
-#include "rtc_base/messagedigest.h"
+#include "rtc_base/message_digest.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/protobuf_utils.h"
-#include "rtc_base/stringencode.h"
+#include "rtc_base/string_encode.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/arch.h"
 #include "test/field_trial.h"
 #include "test/gtest.h"
-#include "test/testsupport/fileutils.h"
+#include "test/testsupport/file_utils.h"
 
 // This must come after test/gtest.h
 #include "rtc_base/flags.h"  // NOLINT(build/include)
@@ -129,10 +131,8 @@ void AddMessage(FILE* file,
 void LoadDecoders(webrtc::NetEq* neteq) {
   ASSERT_EQ(true,
             neteq->RegisterPayloadType(0, SdpAudioFormat("pcmu", 8000, 1)));
-  // Use non-SdpAudioFormat argument when registering PCMa, so that we get test
-  // coverage for that as well.
-  ASSERT_EQ(0, neteq->RegisterPayloadType(webrtc::NetEqDecoder::kDecoderPCMa,
-                                          "pcma", 8));
+  ASSERT_EQ(true,
+            neteq->RegisterPayloadType(8, SdpAudioFormat("pcma", 8000, 1)));
 #ifdef WEBRTC_CODEC_ILBC
   ASSERT_EQ(true,
             neteq->RegisterPayloadType(102, SdpAudioFormat("ilbc", 8000, 1)));
@@ -258,7 +258,6 @@ class NetEqDecodingTest : public ::testing::Test {
   NetEqDecodingTest();
   virtual void SetUp();
   virtual void TearDown();
-  void SelectDecoders(NetEqDecoder* used_codec);
   void OpenInputFile(const std::string& rtp_file);
   void Process();
 
@@ -401,10 +400,6 @@ void NetEqDecodingTest::DecodeAndCompare(
       NetEqNetworkStatistics current_network_stats;
       ASSERT_EQ(0, neteq_->NetworkStatistics(&current_network_stats));
       ASSERT_NO_FATAL_FAILURE(network_stats.AddResult(current_network_stats));
-
-      // Compare with CurrentDelay, which should be identical.
-      EXPECT_EQ(current_network_stats.current_buffer_size_ms,
-                neteq_->CurrentDelayMs());
 
       // Verify that liftime stats and network stats report similar loss
       // concealment rates.
@@ -1661,6 +1656,7 @@ void NetEqDecodingTestFaxMode::TestJitterBufferDelay(bool apply_packet_loss) {
   int packets_sent = 0;
   int packets_received = 0;
   int expected_delay = 0;
+  uint64_t expected_emitted_count = 0;
   while (packets_received < kNumPackets) {
     // Insert packet.
     if (packets_sent < kNumPackets) {
@@ -1684,6 +1680,7 @@ void NetEqDecodingTestFaxMode::TestJitterBufferDelay(bool apply_packet_loss) {
       // number of samples that are sent for play out.
       int current_delay_ms = packets_delay * kPacketLenMs;
       expected_delay += current_delay_ms * kSamples;
+      expected_emitted_count += kSamples;
     }
   }
 
@@ -1695,6 +1692,7 @@ void NetEqDecodingTestFaxMode::TestJitterBufferDelay(bool apply_packet_loss) {
   // Check jitter buffer delay.
   NetEqLifetimeStatistics stats = neteq_->GetLifetimeStatistics();
   EXPECT_EQ(expected_delay, static_cast<int>(stats.jitter_buffer_delay_ms));
+  EXPECT_EQ(expected_emitted_count, stats.jitter_buffer_emitted_count);
 }
 
 TEST_F(NetEqDecodingTestFaxMode, TestJitterBufferDelayWithoutLoss) {
@@ -1710,7 +1708,6 @@ TEST(NetEqNoTimeStretchingMode, RunTest) {
   NetEq::Config config;
   config.for_test_no_time_stretching = true;
   auto codecs = NetEqTest::StandardDecoderMap();
-  NetEqTest::ExtDecoderMap ext_codecs;
   NetEqPacketSourceInput::RtpHeaderExtensionMap rtp_ext_map = {
       {1, kRtpExtensionAudioLevel},
       {3, kRtpExtensionAbsoluteSendTime},
@@ -1724,8 +1721,8 @@ TEST(NetEqNoTimeStretchingMode, RunTest) {
       new TimeLimitedNetEqInput(std::move(input), 20000));
   std::unique_ptr<AudioSink> output(new VoidAudioSink);
   NetEqTest::Callbacks callbacks;
-  NetEqTest test(config, codecs, ext_codecs, std::move(input_time_limit),
-                 std::move(output), callbacks);
+  NetEqTest test(config, CreateBuiltinAudioDecoderFactory(), codecs, nullptr,
+                 std::move(input_time_limit), std::move(output), callbacks);
   test.Run();
   const auto stats = test.SimulationStats();
   EXPECT_EQ(0, stats.accelerate_rate);

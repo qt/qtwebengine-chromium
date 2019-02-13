@@ -71,15 +71,17 @@ TEST_F(ProcessTrackerTest, AddProcessEntry_CorrectName) {
 
 TEST_F(ProcessTrackerTest, UpdateThreadMatch) {
   uint32_t cpu = 3;
-  uint64_t timestamp = 100;
-  uint32_t prev_state = 32;
+  int64_t timestamp = 100;
+  int64_t prev_state = 32;
   static const char kCommProc1[] = "process1";
   static const char kCommProc2[] = "process2";
+  int32_t next_prio = 1024;
 
   context.event_tracker->PushSchedSwitch(cpu, timestamp, /*tid=*/1, prev_state,
-                                         /*tid=*/4, kCommProc1);
+                                         /*tid=*/4, kCommProc1, next_prio);
   context.event_tracker->PushSchedSwitch(cpu, timestamp + 1, /*tid=*/4,
-                                         prev_state, /*tid=*/1, kCommProc2);
+                                         prev_state, /*tid=*/1, kCommProc2,
+                                         next_prio);
 
   context.process_tracker->UpdateProcess(2, "test");
   context.process_tracker->UpdateThread(4, 2);
@@ -98,13 +100,13 @@ TEST_F(ProcessTrackerTest, UpdateThreadCreate) {
 
   TraceStorage::Thread thread = context.storage->GetThread(1);
 
-  ASSERT_EQ(context.storage->thread_count(), 1);
+  ASSERT_EQ(context.storage->thread_count(), 2);
   auto tid_it = context.process_tracker->UtidsForTid(12);
   ASSERT_NE(tid_it.first, tid_it.second);
   ASSERT_EQ(thread.upid.value(), 1);
   auto pid_it = context.process_tracker->UpidsForPid(2);
   ASSERT_NE(pid_it.first, pid_it.second);
-  ASSERT_EQ(context.storage->process_count(), 1);
+  ASSERT_EQ(context.storage->process_count(), 2);
 }
 
 }  // namespace

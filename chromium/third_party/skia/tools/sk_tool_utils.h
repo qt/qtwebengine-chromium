@@ -11,7 +11,9 @@
 #include "SkColor.h"
 #include "SkData.h"
 #include "SkEncodedImageFormat.h"
+#include "SkFont.h"
 #include "SkFontStyle.h"
+#include "SkFontTypes.h"
 #include "SkImageEncoder.h"
 #include "SkImageInfo.h"
 #include "SkRandom.h"
@@ -28,7 +30,6 @@ class SkBitmap;
 class SkCanvas;
 class SkFontStyle;
 class SkImage;
-class SkPaint;
 class SkPath;
 class SkPixmap;
 class SkRRect;
@@ -64,12 +65,6 @@ namespace sk_tool_utils {
     const char* platform_font_manager();
 
     /**
-     * Sets the paint to use a platform-independent text renderer
-     */
-    void set_portable_typeface(SkPaint* paint, const char* name = nullptr,
-                               SkFontStyle style = SkFontStyle());
-
-    /**
      * Returns a platform-independent text renderer.
      */
     sk_sp<SkTypeface> create_portable_typeface(const char* name, SkFontStyle style);
@@ -77,6 +72,9 @@ namespace sk_tool_utils {
     static inline sk_sp<SkTypeface> create_portable_typeface() {
         return create_portable_typeface(nullptr, SkFontStyle());
     }
+
+    void get_text_path(const SkFont&, const void* text, size_t length, SkTextEncoding, SkPath*,
+                       const SkPoint* positions = nullptr);
 
     /**
      *  Call writePixels() by using the pixels from bitmap, but with an info that claims
@@ -121,11 +119,11 @@ namespace sk_tool_utils {
     sk_sp<SkSurface> makeSurface(SkCanvas*, const SkImageInfo&, const SkSurfaceProps* = nullptr);
 
     // A helper for inserting a drawtext call into a SkTextBlobBuilder
-    void add_to_text_blob_w_len(SkTextBlobBuilder* builder, const char* text, size_t len,
-                                const SkPaint& origPaint, SkScalar x, SkScalar y);
+    void add_to_text_blob_w_len(SkTextBlobBuilder*, const char* text, size_t len, SkTextEncoding,
+                                const SkFont&, SkScalar x, SkScalar y);
 
-    void add_to_text_blob(SkTextBlobBuilder* builder, const char* text,
-                          const SkPaint& origPaint, SkScalar x, SkScalar y);
+    void add_to_text_blob(SkTextBlobBuilder*, const char* text, const SkFont&,
+                          SkScalar x, SkScalar y);
 
     // Constructs a star by walking a 'numPts'-sided regular polygon with even/odd fill:
     //

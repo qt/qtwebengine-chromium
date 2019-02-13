@@ -15,8 +15,6 @@
 #ifndef DAWNNATIVE_RENDERPIPELINE_H_
 #define DAWNNATIVE_RENDERPIPELINE_H_
 
-#include "dawn_native/BlendState.h"
-#include "dawn_native/DepthStencilState.h"
 #include "dawn_native/InputState.h"
 #include "dawn_native/Pipeline.h"
 
@@ -27,12 +25,18 @@
 
 namespace dawn_native {
 
+    class DeviceBase;
+
+    MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
+                                                const RenderPipelineDescriptor* descriptor);
+    bool StencilTestEnabled(const DepthStencilStateDescriptor* mDepthStencilState);
+
     class RenderPipelineBase : public PipelineBase {
       public:
-        RenderPipelineBase(RenderPipelineBuilder* builder);
+        RenderPipelineBase(DeviceBase* device, const RenderPipelineDescriptor* descriptor);
 
-        BlendStateBase* GetBlendState(uint32_t attachmentSlot);
-        DepthStencilStateBase* GetDepthStencilState();
+        const BlendStateDescriptor* GetBlendStateDescriptor(uint32_t attachmentSlot);
+        const DepthStencilStateDescriptor* GetDepthStencilStateDescriptor();
         dawn::IndexFormat GetIndexFormat() const;
         InputStateBase* GetInputState();
         dawn::PrimitiveTopology GetPrimitiveTopology() const;
@@ -47,47 +51,15 @@ namespace dawn_native {
         bool IsCompatibleWith(const RenderPassDescriptorBase* renderPass) const;
 
       private:
-        Ref<DepthStencilStateBase> mDepthStencilState;
+        DepthStencilStateDescriptor mDepthStencilState;
         dawn::IndexFormat mIndexFormat;
         Ref<InputStateBase> mInputState;
         dawn::PrimitiveTopology mPrimitiveTopology;
-        std::array<Ref<BlendStateBase>, kMaxColorAttachments> mBlendStates;
+        std::array<BlendStateDescriptor, kMaxColorAttachments> mBlendStates;
 
         std::bitset<kMaxColorAttachments> mColorAttachmentsSet;
         std::array<dawn::TextureFormat, kMaxColorAttachments> mColorAttachmentFormats;
-        bool mDepthStencilFormatSet = false;
-        dawn::TextureFormat mDepthStencilFormat;
-    };
-
-    class RenderPipelineBuilder : public Builder<RenderPipelineBase>, public PipelineBuilder {
-      public:
-        RenderPipelineBuilder(DeviceBase* device);
-
-        // Dawn API
-        void SetColorAttachmentFormat(uint32_t attachmentSlot, dawn::TextureFormat format);
-        void SetColorAttachmentBlendState(uint32_t attachmentSlot, BlendStateBase* blendState);
-        void SetDepthStencilAttachmentFormat(dawn::TextureFormat format);
-        void SetDepthStencilState(DepthStencilStateBase* depthStencilState);
-        void SetPrimitiveTopology(dawn::PrimitiveTopology primitiveTopology);
-        void SetIndexFormat(dawn::IndexFormat format);
-        void SetInputState(InputStateBase* inputState);
-
-      private:
-        friend class RenderPipelineBase;
-
-        RenderPipelineBase* GetResultImpl() override;
-
-        Ref<DepthStencilStateBase> mDepthStencilState;
-        Ref<InputStateBase> mInputState;
-        // TODO(enga@google.com): Remove default when we validate that all required properties are
-        // set
-        dawn::PrimitiveTopology mPrimitiveTopology = dawn::PrimitiveTopology::TriangleList;
-        dawn::IndexFormat mIndexFormat = dawn::IndexFormat::Uint32;
-        std::bitset<kMaxColorAttachments> mBlendStatesSet;
-        std::array<Ref<BlendStateBase>, kMaxColorAttachments> mBlendStates;
-        std::bitset<kMaxColorAttachments> mColorAttachmentsSet;
-        std::array<dawn::TextureFormat, kMaxColorAttachments> mColorAttachmentFormats;
-        bool mDepthStencilFormatSet = false;
+        bool mHasDepthStencilAttachment = false;
         dawn::TextureFormat mDepthStencilFormat;
     };
 

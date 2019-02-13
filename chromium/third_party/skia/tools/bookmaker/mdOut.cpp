@@ -309,33 +309,28 @@ void MdOut::DefinedState::setLink() {
     fLink = "";
     fPriorDef = nullptr;
     // TODO: operators have complicated parsing possibilities; handle the easiest for now
-    if (fMethod && "operator" == fPriorWord && '(' == fSeparator.back()) {
-        TextParser parser(fMethod->fFileName, fSeparatorStart, fRefEnd, fMethod->fLineCount);
-        parser.skipToEndBracket('(');
-        const char* parenStart = parser.fChar;
-        parser.skipToBalancedEndBracket('(', ')');
-        parser.skipExact("_const");
-        // consume whether we find it or not
-        fWord = fPriorWord + fSeparator + string(parenStart + 1, parser.fChar - parenStart - 1);
-        fEnd = parser.fChar;
-        this->backup();
-    }
     // TODO: constructors also have complicated parsing possibilities; handle the easiest
-    else if (fMethod && fRoot && fRoot->isStructOrClass() && fRoot->fName == fPriorWord
+    bool isOperator = "operator" == fPriorWord;
+    if (((fRoot && fRoot->isStructOrClass() && fRoot->fName == fPriorWord) || isOperator)
             && '(' == fSeparator.back()) {
-        TextParser parser(fMethod->fFileName, fSeparatorStart, fRefEnd, fMethod->fLineCount);
+        SkASSERT(fSubtopic);
+        TextParser parser(fSubtopic->fFileName, fSeparatorStart, fRefEnd, fSubtopic->fLineCount);
         parser.skipToEndBracket('(');
         const char* parenStart = parser.fChar;
         parser.skipToBalancedEndBracket('(', ')');
-        string testWord = fPriorWord + fSeparator
+        (void) parser.skipExact(" const");
+        string methodName = fPriorWord + fSeparator
                 + string(parenStart + 1, parser.fChar - parenStart - 1);
         string testLink;
-        if (this->findLink(testWord, &testLink, false)) {
+        if (this->findLink(methodName, &testLink, false)) {
             // consume only if we find it
-            fWord = testWord;
-            fLink = testLink;
-            fEnd = parser.fChar;
-            this->backup();
+            if (isOperator) {
+                fPriorWord += fSeparator.substr(0, fSeparator.length() - 1);  // strip paren
+                fPriorSeparator = "(";
+            }
+            fWord = "";
+            fPriorLink = testLink;
+            fEnd = parenStart + 1;
             return;
         }
     }
@@ -452,14 +447,15 @@ void MdOut::DefinedState::setLink() {
     }
     // look in parent fNames and above for match
     if (fNames) {
-        if (this->findLink(fWord, &fLink, Resolvable::kClone == fResolvable && fAddParens)) {
+        if (this->findLink(fWord, &fLink, (Resolvable::kClone == fResolvable && fAddParens)
+                || (Resolvable::kCode == fResolvable && '(' == fEnd[0]))) {
             return;
         }
     }
     // example : sqrt as in "sqrt(x * x + y * y)"
     // example : erase in seeAlso
     if (Resolvable::kClone == fResolvable || (fEnd + 1 < fRefEnd && '(' == fEnd[0])) {
-        if (fAddParens && this->findLink(fWord + "()", &fLink, false)) {
+        if ((fAddParens || '~' == fWord.front()) && this->findLink(fWord + "()", &fLink, false)) {
             return;
         }
     }
@@ -565,11 +561,13 @@ void MdOut::DefinedState::setLink() {
             && "</" == fSeparator.substr(fSeparator.size() - 2)))) {
         return;
     }
+    bool paramName = islower(fWord[0]) && (Resolvable::kCode == fResolvable
+            || Resolvable::kClone == fResolvable);
     // TODO: can probably resolve formulae, but need a way for formula to define new reference
     // for example: Given: #Formula # Sa ## as source Alpha,
     // for example: where #Formula # m = Da > 0 ? Dc / Da : 0 ##;
     if (!fInProgress && Resolvable::kSimple != fResolvable
-            && Resolvable::kCode != fResolvable && Resolvable::kFormula != fResolvable) {
+            && !paramName && Resolvable::kFormula != fResolvable) {
         // example: Coons as in "Coons patch"
         bool withSpace = fEnd + 1 < fRefEnd && ' ' == fEnd[0]
                 && fGlobals->fRefMap.end() != fGlobals->fRefMap.find(fWord + ' ');
@@ -590,7 +588,11 @@ string MdOut::addReferences(const char* refStart, const char* refEnd, Resolvable
         s.fSeparatorStart = start;
         start = s.skipWhiteSpace();
         s.skipParens();
-        result += s.nextSeparator(start);
+        string separator = s.nextSeparator(start);
+        if (fDebugWriteCodeBlock) {
+            SkDebugf("%s", separator.c_str());
+        }
+        result += separator;
         if (s.findEnd(start)) {
             break;
         }
@@ -606,10 +608,23 @@ string MdOut::addReferences(const char* refStart, const char* refEnd, Resolvable
             continue;
         }
         s.setLink();
-        result += "" == s.fPriorLink ? s.fPriorWord : this->anchorRef(s.fPriorLink, s.fPriorWord);
+        string link = "" == s.fPriorLink ? s.fPriorWord :
+                this->anchorRef(s.fPriorLink, s.fPriorWord);
+        if (fDebugWriteCodeBlock) {
+            SkDebugf("%s", link.c_str());
+        }
+        result += link;
         start = s.nextWord();
     } while (true);
-    result += "" == s.fPriorLink ? s.fPriorWord : this->anchorRef(s.fPriorLink, s.fPriorWord);
+    string finalLink = "" == s.fPriorLink ? s.fPriorWord :
+            this->anchorRef(s.fPriorLink, s.fPriorWord);
+    if (fDebugWriteCodeBlock) {
+        SkDebugf("%s", finalLink.c_str());
+    }
+    result += finalLink;
+    if (fDebugWriteCodeBlock) {
+        SkDebugf("%s", s.fPriorSeparator.c_str());
+    }
     result += s.fPriorSeparator;
     return result;
 }
@@ -1185,14 +1200,13 @@ void MdOut::addCodeBlock(const Definition* def, string& result) const {
                     member->fLineCount);
             this->stringAppend(result,
                     fIncludeParser.writeCodeBlock(function, MarkType::kFunction, 0));
-            this->stringAppend(result, '\n');
+            this->stringAppend(result, ";\n");
             wroteFunction = true;
             continue;
         }
         if (KeyWord::kTypedef == member->fKeyWord) {
             this->stringAppend(result, member);
-            this->stringAppend(result, ';');
-            this->stringAppend(result, '\n');
+            this->stringAppend(result, ";\n");
             continue;
         }
         if (KeyWord::kDefine == member->fKeyWord) {
@@ -1654,7 +1668,10 @@ void MdOut::markTypeOut(Definition* def, const Definition** prior) {
                 SkASSERT(MarkType::kMethod == parent->fMarkType);
                 // retrieve parameters, return, description from include
                 Definition* iMethod = fIncludeParser.findMethod(*parent);
-                SkASSERT(iMethod);  // deprecated or 'in progress' functions should not include populate
+                if (!iMethod) {  // deprecated or 'in progress' functions should not include populate
+                    SkDebugf("#Populate found in deprecated or missing method %s\n", def->fName.c_str());
+                    def->fParent->reportError<void>("Remove #Method");
+                }
                 bool wroteParam = false;
                 SkASSERT(fMethod == iMethod);
                 for (auto& entry : iMethod->fTokens) {

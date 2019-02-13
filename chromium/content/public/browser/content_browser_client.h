@@ -26,9 +26,9 @@
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/overlay_window.h"
+#include "content/public/browser/page_visibility_state.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/media_stream_request.h"
 #include "content/public/common/previews_state.h"
 #include "content/public/common/renderer_preference_watcher.mojom.h"
 #include "content/public/common/resource_type.h"
@@ -44,13 +44,14 @@
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/websocket.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
-#include "services/service_manager/public/cpp/embedded_service_info.h"
+#include "services/service_manager/public/cpp/manifest.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
-#include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
+#include "third_party/blink/public/platform/web_feature.mojom.h"
 #include "third_party/blink/public/web/window_features.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -176,6 +177,7 @@ class SpeechRecognitionManagerDelegate;
 class StoragePartition;
 class TracingDelegate;
 class TtsControllerDelegate;
+class TtsPlatform;
 class URLLoaderRequestInterceptor;
 class URLLoaderThrottle;
 class VpnServiceProxy;
@@ -548,21 +550,26 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       RendererPreferences* out_prefs);
 
+  // DEPRECATED, Please use the NavigationHandle to modify headers.
+  // See https://crbug.com/919432.
+  //
   // Allow the embedder to return additional headers that should be sent when
   // fetching |url| as well as add extra load flags.
-  virtual void NavigationRequestStarted(
-      int frame_tree_node_id,
-      const GURL& url,
-      std::unique_ptr<net::HttpRequestHeaders>* extra_headers,
-      int* extra_load_flags) {}
+  virtual void NavigationRequestStarted(int frame_tree_node_id,
+                                        const GURL& url,
+                                        net::HttpRequestHeaders* extra_headers,
+                                        int* extra_load_flags) {}
 
+  // DEPRECATED. Please use the NavigationHandle to modify headers.
+  // See https://crbug.com/919432.
+  //
   // Allow the embedder to modify headers for a redirect. If non-nullopt,
-  // |*modified_request_headers| are applied to the request headers after
-  // updating them for the redirect.
+  // |*modified_headers| is applied to the request headers after updating them
+  // for the redirect.
   virtual void NavigationRequestRedirected(
       int frame_tree_node_id,
       const GURL& url,
-      base::Optional<net::HttpRequestHeaders>* modified_request_headers) {}
+      net::HttpRequestHeaders* modified_headers) {}
 
   // Allow the embedder to control if the given cookie can be read.
   // This is called on the IO thread.
@@ -774,7 +781,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       RenderFrameHost* opener,
       const GURL& opener_url,
       const GURL& opener_top_level_frame_url,
-      const GURL& source_origin,
+      const url::Origin& source_origin,
       content::mojom::WindowContainerType container_type,
       const GURL& target_url,
       const Referrer& referrer,
@@ -796,6 +803,9 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Allows the embedder to return a delegate for the TtsController.
   virtual TtsControllerDelegate* GetTtsControllerDelegate();
+
+  // Allows the embedder to return a TTS platform implementation.
+  virtual TtsPlatform* GetTtsPlatform();
 
   // Getter for the net logging object. This can be called on any thread.
   virtual net::NetLog* GetNetLog();
@@ -951,15 +961,16 @@ class CONTENT_EXPORT ContentBrowserClient {
       const std::string& interface_name,
       mojo::ScopedMessagePipeHandle* interface_pipe) {}
 
-  using StaticServiceMap =
-      std::map<std::string, service_manager::EmbeddedServiceInfo>;
-
-  // Registers services to be loaded in the browser process by the Service
-  // Manager. |connection| is the ServiceManagerConnection service are
-  // registered with.
-  virtual void RegisterInProcessServices(StaticServiceMap* services,
-                                         ServiceManagerConnection* connection) {
-  }
+  // Registers services to be run in the browser process. |connection| is the
+  // ServiceManagerConnection service are registered with. Use
+  // |ServiceManagerConnection::AddServiceRequestHandler| to register each
+  // service.
+  //
+  // NOTE: This should ONLY be overridden to register services which MUST run on
+  // the IO thread. For other in-process services, use |HandleServiceRequest|
+  // below.
+  virtual void RegisterIOThreadServiceHandlers(
+      ServiceManagerConnection* connection) {}
 
   virtual void OverrideOnBindInterface(
       const service_manager::BindSourceInfo& remote_info,
@@ -993,7 +1004,10 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Handles a Service request for the service named |service_name|. If the
   // client knows how to run |service_name|, it should bind |request|
-  // accordingly.
+  // accordingly. Note that this runs on the main thread, so if a service may
+  // need to start and run on the IO thread while the main thread is blocking on
+  // something, the service should instead by registered in
+  // |RegisterIOThreadServiceHandlers| above.
   virtual void HandleServiceRequest(
       const std::string& service_name,
       service_manager::mojom::ServiceRequest request);
@@ -1003,24 +1017,19 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldTerminateOnServiceQuit(
       const service_manager::Identity& id);
 
-  // Allow the embedder to provide a dictionary loaded from a JSON file
-  // resembling a service manifest whose capabilities section will be merged
-  // with content's own for |name|. Additional entries will be appended to their
-  // respective sections.
-  virtual std::unique_ptr<base::Value> GetServiceManifestOverlay(
+  // Allows the embedder to amend service manifests for existing services.
+  // Specifically, the sets of exposed and required capabilities, interface
+  // filter capabilities (deprecated), packaged services, and preloaded files
+  // will be taken from the returned Manifest and appended to those of the
+  // existing Manifest for the service named |name|.
+  //
+  // If no overlay is provided for the service, this returns |base::nullopt|.
+  virtual base::Optional<service_manager::Manifest> GetServiceManifestOverlay(
       base::StringPiece name);
-
-  struct ServiceManifestInfo {
-    // The name of the service.
-    std::string name;
-
-    // The resource ID of the manifest.
-    int resource_id;
-  };
 
   // Allows the embedder to provide extra service manifests to be registered
   // with the service manager context.
-  virtual std::vector<ServiceManifestInfo> GetExtraServiceManifests();
+  virtual std::vector<service_manager::Manifest> GetExtraServiceManifests();
 
   // Allows the embedder to have a list of services started after the
   // in-process Service Manager has been initialized.
@@ -1030,7 +1039,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // |visibility_state| should not be null. It will only be set if needed.
   virtual void OverridePageVisibilityState(
       RenderFrameHost* render_frame_host,
-      blink::mojom::PageVisibilityState* visibility_state) {}
+      PageVisibilityState* visibility_state) {}
 
   // Allows an embedder to provide its own ControllerPresentationServiceDelegate
   // implementation. Returns nullptr if unavailable.
@@ -1261,7 +1270,16 @@ class CONTENT_EXPORT ContentBrowserClient {
       bool in_memory,
       const base::FilePath& relative_partition_path);
 
+  // Returns the parent paths that contain all the network service's
+  // BrowserContexts' storage. Multiple paths can be returned, e.g. in case the
+  // persistent storage location differs from the cache storage location.
+  virtual std::vector<base::FilePath> GetNetworkContextsParentDirectory();
+
 #if defined(OS_ANDROID)
+  // Configures whether StoragePartition needs to create a
+  // net::URLRequestContext in the browser when the network service is enabled.
+  virtual bool NeedURLRequestContext();
+
   // Only used by Android WebView.
   // Returns:
   //   true  - The check was successfully performed without throwing a
@@ -1430,6 +1448,31 @@ class CONTENT_EXPORT ContentBrowserClient {
       content::PreviewsState initial_state,
       content::NavigationHandle* navigation_handle,
       const net::HttpResponseHeaders* response_headers);
+
+  // Browser-side API to log blink UseCounters for events that don't occur in
+  // the renderer.
+  virtual void LogWebFeatureForCurrentPage(
+      content::RenderFrameHost* render_frame_host,
+      blink::mojom::WebFeature feature) {}
+
+  // Returns a string describing the embedder product name and version,
+  // of the form "productname/version", with no other slashes.
+  // Used as part of the user agent string.
+  virtual std::string GetProduct() const;
+
+  // Returns the user agent.  Content may cache this value.
+  virtual std::string GetUserAgent() const;
+
+  // Returns whether |origin| should be considered a integral component similar
+  // to native code, and as such whether its log messages should be recorded.
+  virtual bool IsBuiltinComponent(BrowserContext* browser_context,
+                                  const url::Origin& origin);
+
+  // Returns whether given |url| has to be blocked. It's used only for renderer
+  // debug URLs, as other requests are handled via NavigationThrottlers and
+  // blacklist policies are applied there.
+  virtual bool IsRendererDebugURLBlacklisted(const GURL& url,
+                                             BrowserContext* context);
 };
 
 }  // namespace content

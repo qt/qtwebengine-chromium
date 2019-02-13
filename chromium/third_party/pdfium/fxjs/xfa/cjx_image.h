@@ -7,8 +7,8 @@
 #ifndef FXJS_XFA_CJX_IMAGE_H_
 #define FXJS_XFA_CJX_IMAGE_H_
 
-#include "fxjs/jse_define.h"
 #include "fxjs/xfa/cjx_node.h"
+#include "fxjs/xfa/jse_define.h"
 
 class CXFA_Image;
 
@@ -17,14 +17,17 @@ class CJX_Image final : public CJX_Node {
   explicit CJX_Image(CXFA_Image* node);
   ~CJX_Image() override;
 
+  // CJX_Object:
+  bool DynamicTypeIs(TypeTag eType) const override;
+
   JSE_PROP(defaultValue); /* {default} */
-  JSE_PROP(aspect);
-  JSE_PROP(contentType);
-  JSE_PROP(href);
-  JSE_PROP(transferEncoding);
-  JSE_PROP(use);
-  JSE_PROP(usehref);
   JSE_PROP(value);
+
+ private:
+  using Type__ = CJX_Image;
+  using ParentType__ = CJX_Node;
+
+  static const TypeTag static_type__ = TypeTag::Image;
 };
 
 #endif  // FXJS_XFA_CJX_IMAGE_H_

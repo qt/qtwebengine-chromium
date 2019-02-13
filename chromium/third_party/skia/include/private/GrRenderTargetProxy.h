@@ -54,6 +54,8 @@ public:
 
     int maxWindowRectangles(const GrCaps& caps) const;
 
+    bool wrapsVkSecondaryCB() const { return fWrapsVkSecondaryCB == WrapsVkSecondaryCB::kYes; }
+
     // TODO: move this to a priv class!
     bool refsWrappedObjects() const;
 
@@ -84,7 +86,9 @@ protected:
                         SkBackingFit, SkBudgeted, GrInternalSurfaceFlags);
 
     // Wrapped version
-    GrRenderTargetProxy(sk_sp<GrSurface>, GrSurfaceOrigin);
+    enum class WrapsVkSecondaryCB : bool { kNo = false, kYes = true };
+    GrRenderTargetProxy(sk_sp<GrSurface>, GrSurfaceOrigin,
+                        WrapsVkSecondaryCB wrapsVkSecondaryCB = WrapsVkSecondaryCB::kNo);
 
     sk_sp<GrSurface> createSurface(GrResourceProvider*) const override;
 
@@ -93,13 +97,6 @@ private:
         fSurfaceFlags |= GrInternalSurfaceFlags::kMixedSampled;
     }
     bool hasMixedSamples() const { return fSurfaceFlags & GrInternalSurfaceFlags::kMixedSampled; }
-
-    void setSupportsWindowRects() {
-        fSurfaceFlags |= GrInternalSurfaceFlags::kWindowRectsSupport;
-    }
-    bool supportsWindowRects() const {
-        return fSurfaceFlags & GrInternalSurfaceFlags::kWindowRectsSupport;
-    }
 
     void setGLRTFBOIDIs0() {
         fSurfaceFlags |= GrInternalSurfaceFlags::kGLRTFBOIDIs0;
@@ -120,8 +117,9 @@ private:
     // that particular class don't require it. Changing the size of this object can move the start
     // address of other types, leading to this problem.
 
-    int                 fSampleCnt;
-    bool                fNeedsStencil;
+    int                fSampleCnt;
+    bool               fNeedsStencil;
+    WrapsVkSecondaryCB fWrapsVkSecondaryCB;
 
     // For wrapped render targets the actual GrRenderTarget is stored in the GrIORefProxy class.
     // For deferred proxies that pointer is filled in when we need to instantiate the

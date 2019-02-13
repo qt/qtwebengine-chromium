@@ -12,7 +12,7 @@
 
 #include "api/bitrate_constraints.h"
 #include "api/fec_controller.h"
-#include "api/rtcerror.h"
+#include "api/rtc_error.h"
 #include "api/transport/network_control.h"
 #include "call/audio_state.h"
 
@@ -33,11 +33,9 @@ struct CallConfig {
   BitrateConstraints bitrate_config;
 
   // AudioState which is possibly shared between multiple calls.
-  // TODO(solenberg): Change this to a shared_ptr once we can use C++11.
   rtc::scoped_refptr<AudioState> audio_state;
 
   // Audio Processing Module to be used in this call.
-  // TODO(solenberg): Change this to a shared_ptr once we can use C++11.
   AudioProcessing* audio_processing = nullptr;
 
   // RtcEventLog to use for this call. Required.

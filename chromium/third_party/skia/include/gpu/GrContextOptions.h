@@ -133,19 +133,6 @@ struct GrContextOptions {
     bool fAvoidStencilBuffers = false;
 
     /**
-     * When specifing new data for a vertex/index buffer that replaces old data Ganesh can give
-     * a hint to the driver that the previous data will not be used in future draws like this:
-     *  glBufferData(GL_..._BUFFER, size, NULL, usage);       //<--hint, NULL means
-     *  glBufferSubData(GL_..._BUFFER, 0, lessThanSize, data) //   old data can't be
-     *                                                        //   used again.
-     * However, this can be an unoptimization on some platforms, esp. Chrome.
-     * Chrome's cmd buffer will create a new allocation and memset the whole thing
-     * to zero (for security reasons).
-     * Defaults to the value of GR_GL_USE_BUFFER_DATA_NULL_HINT #define (which is, by default, 1).
-     */
-    Enable fUseGLBufferDataNullHint = Enable::kDefault;
-
-    /**
      * If true, texture fetches from mip-mapped textures will be biased to read larger MIP levels.
      * This has the effect of sharpening those textures, at the cost of some aliasing, and possible
      * performance impact.
@@ -153,10 +140,9 @@ struct GrContextOptions {
     bool fSharpenMipmappedTextures = false;
 
     /**
-     * Enables driver workaround to use draws instead of glClear. This only applies to
-     * GrBackendApi::kOpenGL.
+     * Enables driver workaround to use draws instead of HW clears, e.g. glClear on the GL backend.
      */
-    Enable fUseDrawInsteadOfGLClear = Enable::kDefault;
+    Enable fUseDrawInsteadOfClear = Enable::kDefault;
 
     /**
      * Allow Ganesh to explicitly allocate resources at flush time rather than incrementally while

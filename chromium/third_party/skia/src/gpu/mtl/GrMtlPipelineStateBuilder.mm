@@ -18,10 +18,11 @@
 
 GrMtlPipelineState* GrMtlPipelineStateBuilder::CreatePipelineState(
         const GrPrimitiveProcessor& primProc,
+        const GrTextureProxy* const primProcProxies[],
         const GrPipeline& pipeline,
         GrProgramDesc* desc,
         GrMtlGpu* gpu) {
-    GrMtlPipelineStateBuilder builder(primProc, pipeline, desc, gpu);
+    GrMtlPipelineStateBuilder builder(primProc, primProcProxies, pipeline, desc, gpu);
 
     if (!builder.emitAndInstallProcs()) {
         return nullptr;
@@ -30,10 +31,11 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::CreatePipelineState(
 }
 
 GrMtlPipelineStateBuilder::GrMtlPipelineStateBuilder(const GrPrimitiveProcessor& primProc,
+                                                     const GrTextureProxy* const primProcProxies[],
                                                      const GrPipeline& pipeline,
                                                      GrProgramDesc* desc,
                                                      GrMtlGpu* gpu)
-        : INHERITED(primProc, pipeline, desc)
+        : INHERITED(primProc, primProcProxies, pipeline, desc)
         , fGpu(gpu)
         , fUniformHandler(this)
         , fVaryingHandler(this) {
@@ -76,7 +78,6 @@ id<MTLLibrary> GrMtlPipelineStateBuilder::createMtlShaderLibrary(
     if (inputs.fFlipY) {
         desc->setSurfaceOriginKey(GrGLSLFragmentShaderBuilder::KeyForSurfaceOrigin(
                                                                this->pipeline().proxy()->origin()));
-        desc->finalize();
     }
     return shaderLibrary;
 }

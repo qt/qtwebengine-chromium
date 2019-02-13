@@ -15,7 +15,6 @@
 #include "SkColorFilter.h"
 #include "SkDraw.h"
 #include "SkDrawLooper.h"
-#include "SkGlyphCache.h"
 #include "SkGlyphRun.h"
 #include "SkImage.h"
 #include "SkImageFilter.h"
@@ -208,6 +207,14 @@ struct DeviceCM {
     }
 };
 
+namespace {
+// Encapsulate state needed to restore from saveBehind()
+struct BackImage {
+    sk_sp<SkSpecialImage> fImage;
+    SkIPoint              fLoc;
+};
+}
+
 /*  This is the record we keep for each save/restore level in the stack.
     Since a level optionally copies the matrix and/or stack, we have pointers
     for these fields. If the value is copied for this level, the copy is
@@ -217,17 +224,18 @@ struct DeviceCM {
 */
 class SkCanvas::MCRec {
 public:
-    DeviceCM*       fLayer;
+    DeviceCM* fLayer;
     /*  If there are any layers in the stack, this points to the top-most
         one that is at or below this level in the stack (so we know what
         bitmap/device to draw into from this level. This value is NOT
         reference counted, since the real owner is either our fLayer field,
         or a previous one in a lower level.)
     */
-    DeviceCM*           fTopLayer;
-    SkConservativeClip  fRasterClip;
-    SkMatrix            fMatrix;
-    int                 fDeferredSaveCount;
+    DeviceCM* fTopLayer;
+    std::unique_ptr<BackImage> fBackImage;
+    SkConservativeClip fRasterClip;
+    SkMatrix fMatrix;
+    int fDeferredSaveCount;
 
     MCRec() {
         fLayer      = nullptr;
@@ -901,10 +909,6 @@ int SkCanvas::saveLayer(const SkRect* bounds, const SkPaint* paint) {
     return this->saveLayer(SaveLayerRec(bounds, paint, 0));
 }
 
-int SkCanvas::saveLayerPreserveLCDTextRequests(const SkRect* bounds, const SkPaint* paint) {
-    return this->saveLayer(SaveLayerRec(bounds, paint, kPreserveLCDText_SaveLayerFlag));
-}
-
 int SkCanvas::saveLayer(const SaveLayerRec& rec) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (rec.fPaint && rec.fPaint->nothingToDraw()) {
@@ -915,6 +919,22 @@ int SkCanvas::saveLayer(const SaveLayerRec& rec) {
         SaveLayerStrategy strategy = this->getSaveLayerStrategy(rec);
         fSaveCount += 1;
         this->internalSaveLayer(rec, strategy);
+    }
+    return this->getSaveCount() - 1;
+}
+
+int SkCanvas::only_axis_aligned_saveBehind(const SkRect* bounds) {
+    if (bounds && !this->getLocalClipBounds().intersects(*bounds)) {
+        // Assuming clips never expand, if the request bounds is outside of the current clip
+        // there is no need to copy/restore the area, so just devolve back to a regular save.
+        this->save();
+    } else {
+        bool doTheWork = this->onDoSaveBehind(bounds);
+        fSaveCount += 1;
+        this->internalSave();
+        if (doTheWork) {
+            this->internalSaveBehind(bounds);
+        }
     }
     return this->getSaveCount() - 1;
 }
@@ -1040,8 +1060,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
 
     sk_sp<SkBaseDevice> newDevice;
     {
-        const bool preserveLCDText = kOpaque_SkAlphaType == info.alphaType() ||
-                                     (saveLayerFlags & kPreserveLCDText_SaveLayerFlag);
+        const bool preserveLCDText = kOpaque_SkAlphaType == info.alphaType();
         const SkBaseDevice::TileUsage usage = SkBaseDevice::kNever_TileUsage;
         const bool trackCoverage =
                 SkToBool(saveLayerFlags & kMaskAgainstCoverage_EXPERIMENTAL_DONT_USE_SaveLayerFlag);
@@ -1090,6 +1109,48 @@ int SkCanvas::saveLayerAlpha(const SkRect* bounds, U8CPU alpha) {
     }
 }
 
+void SkCanvas::internalSaveBehind(const SkRect* localBounds) {
+    SkIRect devBounds;
+    if (localBounds) {
+        SkRect tmp;
+        fMCRec->fMatrix.mapRect(&tmp, *localBounds);
+        if (!devBounds.intersect(tmp.round(), this->getDeviceClipBounds())) {
+            devBounds.setEmpty();
+        }
+    } else {
+        devBounds = this->getDeviceClipBounds();
+    }
+    if (devBounds.isEmpty()) {
+        return;
+    }
+
+    SkBaseDevice* device = this->getTopDevice();
+    if (nullptr == device) {   // Do we still need this check???
+        return;
+    }
+
+    // need the bounds relative to the device itself
+    devBounds.offset(-device->fOrigin.fX, -device->fOrigin.fY);
+
+    auto backImage = device->snapBackImage(devBounds);
+    if (!backImage) {
+        return;
+    }
+
+    // we really need the save, so we can wack the fMCRec
+    this->checkForDeferredSave();
+
+    fMCRec->fBackImage.reset(new BackImage{std::move(backImage), devBounds.topLeft()});
+
+    SkPaint paint;
+    paint.setBlendMode(SkBlendMode::kClear);
+    if (localBounds) {
+        this->drawRect(*localBounds, paint);
+    } else {
+        this->drawPaint(paint);
+    }
+}
+
 void SkCanvas::internalRestore() {
     SkASSERT(fMCStack.count() != 0);
 
@@ -1098,6 +1159,9 @@ void SkCanvas::internalRestore() {
     // now detach it from fMCRec so we can pop(). Gets freed after its drawn
     fMCRec->fLayer = nullptr;
 
+    // move this out before we do the actual restore
+    auto backImage = std::move(fMCRec->fBackImage);
+
     // now do the normal restore()
     fMCRec->~MCRec();       // balanced in save()
     fMCStack.pop_back();
@@ -1105,6 +1169,15 @@ void SkCanvas::internalRestore() {
 
     if (fMCRec) {
         FOR_EACH_TOP_DEVICE(device->restore(fMCRec->fMatrix));
+    }
+
+    if (backImage) {
+        SkPaint paint;
+        paint.setBlendMode(SkBlendMode::kDstOver);
+        const int x = backImage->fLoc.x();
+        const int y = backImage->fLoc.y();
+        this->getTopDevice()->drawSpecial(backImage->fImage.get(), x, y, paint,
+                                          nullptr, SkMatrix::I());
     }
 
     /*  Time to draw the layer's offscreen. We can't call the public drawSprite,
@@ -1803,6 +1876,14 @@ void SkCanvas::experimental_DrawImageSetV1(const ImageSetEntry imageSet[], int c
     this->onDrawImageSet(imageSet, cnt, filterQuality, mode);
 }
 
+void SkCanvas::experimental_DrawEdgeAARectV1(const SkRect& r, QuadAAFlags edgeAA, SkColor color,
+                                             SkBlendMode mode) {
+    TRACE_EVENT0("skia", TRACE_FUNC);
+    // To avoid redundant logic in our culling code and various backends, we always sort rects
+    // before passing them along.
+    this->onDrawEdgeAARect(r.makeSorted(), edgeAA, color, mode);
+}
+
 void SkCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar dx, SkScalar dy, const SkPaint* paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (bitmap.drawsNothing()) {
@@ -2011,6 +2092,20 @@ void SkCanvas::onDrawRect(const SkRect& r, const SkPaint& paint) {
             iter.fDevice->drawRect(r, paint);
         }
     }
+}
+
+void SkCanvas::onDrawEdgeAARect(const SkRect& r, QuadAAFlags edgeAA, SkColor color,
+                                SkBlendMode mode) {
+    SkASSERT(r.isSorted());
+
+    SkPaint paint;
+    LOOPER_BEGIN(paint, nullptr)
+
+    while (iter.next()) {
+        iter.fDevice->drawEdgeAARect(r, edgeAA, color, mode);
+    }
+
+    LOOPER_END
 }
 
 void SkCanvas::onDrawRegion(const SkRegion& region, const SkPaint& paint) {
@@ -2407,7 +2502,7 @@ void SkCanvas::onDrawImageLattice(const SkImage* image, const Lattice& lattice, 
 void SkCanvas::onDrawImageSet(const ImageSetEntry imageSet[], int count,
                               SkFilterQuality filterQuality, SkBlendMode mode) {
     SkPaint paint;
-    LOOPER_BEGIN(paint, nullptr);
+    LOOPER_BEGIN(paint, nullptr)
     while (iter.next()) {
         iter.fDevice->drawImageSet(imageSet, count, filterQuality, mode);
     }
@@ -2436,70 +2531,6 @@ void SkCanvas::onDrawBitmapLattice(const SkBitmap& bitmap, const Lattice& lattic
     LOOPER_END
 }
 
-void SkCanvas::onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
-                          const SkPaint& paint) {
-
-    LOOPER_BEGIN(paint, nullptr)
-
-    while (iter.next()) {
-        fScratchGlyphRunBuilder->drawText(
-                looper.paint(), text, byteLength, SkPoint::Make(x, y));
-        auto glyphRunList = fScratchGlyphRunBuilder->useGlyphRunList();
-        iter.fDevice->drawGlyphRunList(glyphRunList);
-    }
-
-    LOOPER_END
-}
-
-void SkCanvas::onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
-                             const SkPaint& paint) {
-
-    LOOPER_BEGIN(paint, nullptr)
-
-    while (iter.next()) {
-        fScratchGlyphRunBuilder->drawPosText(looper.paint(), text, byteLength, pos);
-        auto glyphRunList = fScratchGlyphRunBuilder->useGlyphRunList();
-        iter.fDevice->drawGlyphRunList(glyphRunList);
-    }
-
-    LOOPER_END
-}
-
-void SkCanvas::onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
-                              SkScalar constY, const SkPaint& paint) {
-
-    LOOPER_BEGIN(paint, nullptr)
-
-    while (iter.next()) {
-        fScratchGlyphRunBuilder->drawPosTextH(
-                looper.paint(), text, byteLength, xpos, constY);
-        auto glyphRunList = fScratchGlyphRunBuilder->useGlyphRunList();
-        iter.fDevice->drawGlyphRunList(glyphRunList);
-    }
-
-    LOOPER_END
-}
-
-void SkCanvas::onDrawTextRSXform(const void* text, size_t len, const SkRSXform xform[],
-                                 const SkRect* cullRect, const SkPaint& paint) {
-    if (cullRect && this->quickReject(*cullRect)) {
-        return;
-    }
-
-    LOOPER_BEGIN(paint, nullptr)
-
-    while (iter.next()) {
-        fScratchGlyphRunBuilder->drawTextAtOrigin(paint, text, len);
-        auto list = fScratchGlyphRunBuilder->useGlyphRunList();
-        if (!list.empty()) {
-            auto glyphRun = list[0];
-            iter.fDevice->drawGlyphRunRSXform(&glyphRun, xform);
-        }
-    }
-
-    LOOPER_END
-}
-
 void SkCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                               const SkPaint& paint) {
     SkRect storage;
@@ -2518,61 +2549,22 @@ void SkCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
     LOOPER_BEGIN(paint, bounds)
 
     while (iter.next()) {
-        fScratchGlyphRunBuilder->drawTextBlob(looper.paint(), *blob, SkPoint::Make(x, y));
-        iter.fDevice->drawGlyphRunList(fScratchGlyphRunBuilder->useGlyphRunList());
+        fScratchGlyphRunBuilder->drawTextBlob(looper.paint(), *blob, {x, y}, iter.fDevice);
     }
 
     LOOPER_END
 }
 
-void SkCanvas::drawString(const SkString& string, SkScalar x, SkScalar y, const SkPaint& paint) {
-    this->drawText(string.c_str(), string.size(), x, y, paint);
-}
-
 // These call the (virtual) onDraw... method
-void SkCanvas::drawSimpleText(const void* text, size_t byteLength, SkTextEncoding,
+void SkCanvas::drawSimpleText(const void* text, size_t byteLength, SkTextEncoding encoding,
                               SkScalar x, SkScalar y, const SkFont& font, const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (byteLength) {
         sk_msan_assert_initialized(text, SkTAddOffset<const void>(text, byteLength));
-        SkPaint tmp(paint);
-        font.LEGACY_applyToPaint(&tmp);
-        this->onDrawText(text, byteLength, x, y, tmp);
-    }
-}
-void SkCanvas::drawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
-                        const SkPaint& paint) {
-    TRACE_EVENT0("skia", TRACE_FUNC);
-    if (byteLength) {
-        sk_msan_assert_initialized(text, SkTAddOffset<const void>(text, byteLength));
-        this->onDrawText(text, byteLength, x, y, paint);
-    }
-}
-void SkCanvas::drawPosText(const void* text, size_t byteLength, const SkPoint pos[],
-                           const SkPaint& paint) {
-    TRACE_EVENT0("skia", TRACE_FUNC);
-    if (byteLength) {
-        sk_msan_assert_initialized(text, SkTAddOffset<const void>(text, byteLength));
-        this->onDrawPosText(text, byteLength, pos, paint);
-    }
-}
-void SkCanvas::drawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
-                            SkScalar constY, const SkPaint& paint) {
-    TRACE_EVENT0("skia", TRACE_FUNC);
-    if (byteLength) {
-        sk_msan_assert_initialized(text, SkTAddOffset<const void>(text, byteLength));
-        this->onDrawPosTextH(text, byteLength, xpos, constY, paint);
+        this->drawTextBlob(SkTextBlob::MakeFromText(text, byteLength, font, encoding), x, y, paint);
     }
 }
 
-void SkCanvas::drawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
-                               const SkRect* cullRect, const SkPaint& paint) {
-    TRACE_EVENT0("skia", TRACE_FUNC);
-    if (byteLength) {
-        sk_msan_assert_initialized(text, SkTAddOffset<const void>(text, byteLength));
-        this->onDrawTextRSXform(text, byteLength, xform, cullRect, paint);
-    }
-}
 void SkCanvas::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                             const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
@@ -2866,6 +2858,10 @@ SkNoDrawCanvas::SkNoDrawCanvas(sk_sp<SkBaseDevice> device)
 SkCanvas::SaveLayerStrategy SkNoDrawCanvas::getSaveLayerStrategy(const SaveLayerRec& rec) {
     (void)this->INHERITED::getSaveLayerStrategy(rec);
     return kNoLayer_SaveLayerStrategy;
+}
+
+bool SkNoDrawCanvas::onDoSaveBehind(const SkRect*) {
+    return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

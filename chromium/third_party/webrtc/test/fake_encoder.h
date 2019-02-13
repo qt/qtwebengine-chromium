@@ -11,13 +11,23 @@
 #ifndef TEST_FAKE_ENCODER_H_
 #define TEST_FAKE_ENCODER_H_
 
+#include <stddef.h>
+#include <stdint.h>
 #include <memory>
 #include <vector>
 
+#include "api/video/encoded_image.h"
+#include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_frame.h"
+#include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
-#include "rtc_base/criticalsection.h"
+#include "common_types.h"  // NOLINT(build/include)
+#include "modules/include/module_common_types.h"
+#include "modules/video_coding/include/video_codec_interface.h"
+#include "rtc_base/critical_section.h"
 #include "rtc_base/sequenced_task_checker.h"
 #include "rtc_base/task_queue.h"
+#include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -26,6 +36,7 @@ namespace test {
 class FakeEncoder : public VideoEncoder {
  public:
   explicit FakeEncoder(Clock* clock);
+  FakeEncoder(Clock* clock, size_t buffer_size);
   virtual ~FakeEncoder() = default;
 
   // Sets max bitrate. Not thread-safe, call before registering the encoder.
@@ -81,7 +92,7 @@ class FakeEncoder : public VideoEncoder {
   uint32_t counter_ RTC_GUARDED_BY(crit_sect_);
   rtc::CriticalSection crit_sect_;
 
-  uint8_t encoded_buffer_[100000];
+  std::vector<uint8_t> encoded_buffer_;
   bool used_layers_[kMaxSimulcastStreams];
 
   // Current byte debt to be payed over a number of frames.

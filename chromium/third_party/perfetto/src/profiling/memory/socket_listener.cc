@@ -15,54 +15,115 @@
  */
 
 #include "src/profiling/memory/socket_listener.h"
+
 #include "perfetto/base/utils.h"
+#include "src/profiling/memory/proc_utils.h"
 
 namespace perfetto {
 namespace profiling {
+namespace {
 
-void SocketListener::OnDisconnect(base::UnixSocket* self) {
-  bookkeeping_thread_->NotifyClientDisconnected(self->peer_pid());
-  auto it = process_info_.find(self->peer_pid());
-  if (it != process_info_.end()) {
-    ProcessInfo& process_info = it->second;
-    process_info.sockets.erase(self);
-    if (process_info.sockets.empty())
-      process_info_.erase(it);
-  } else {
-    PERFETTO_DFATAL("Disconnect from socket without ProcessInfo.");
+ClientConfiguration MergeProcessSetSpecs(
+    const std::vector<const ProcessSetSpec*>& process_sets) {
+  ClientConfiguration result{};
+  for (const ProcessSetSpec* process_set : process_sets) {
+    const ClientConfiguration& cfg = process_set->client_configuration;
+    if (result.interval == 0 || result.interval > cfg.interval)
+      result.interval = cfg.interval;
   }
-  sockets_.erase(self);
+  PERFETTO_DCHECK(result.interval > 0);
+  if (result.interval < 1)
+    result.interval = 1;
+  return result;
 }
 
+}  // namespace
+
+SocketListener::ProcessInfo::ProcessInfo(Process p) : process(std::move(p)) {}
+
+void SocketListener::ProcessInfo::Connected(
+    ProcessMatcher* process_matcher,
+    BookkeepingThread* bookkeeping_thread) {
+  if (!connected) {
+    matcher_handle = process_matcher->ProcessConnected(process);
+    bookkeeping_handle =
+        bookkeeping_thread->NotifyProcessConnected(process.pid);
+  }
+  connected = true;
+}
+
+void SocketListener::OnDisconnect(base::UnixSocket* self) {
+  pid_t peer_pid = self->peer_pid();
+  Disconnect(peer_pid);
+}
+
+void SocketListener::Disconnect(pid_t pid) {
+  process_info_.erase(pid);
+}
+
+void SocketListener::Match(
+    const Process& process,
+    const std::vector<const ProcessSetSpec*>& process_sets) {
+  pid_t pid = process.pid;
+  auto process_info_it = process_info_.find(pid);
+  if (process_info_it == process_info_.end()) {
+    PERFETTO_DFATAL("This should not happen.");
+    return;
+  }
+
+  ProcessInfo& process_info = process_info_it->second;
+  if (process_info.set_up) {
+    // TODO(fmayer): Allow to change sampling rate.
+    return;
+  }
+
+  ClientConfiguration cfg = MergeProcessSetSpecs(process_sets);
+  for (auto& raw_sock_and_sockinfo : process_info.sockets) {
+    SocketInfo& sock_info = raw_sock_and_sockinfo.second;
+    // TODO(fmayer): Send on one and poll(2) on the other end.
+    sock_info.sock->Send(&cfg, sizeof(cfg), -1,
+                         base::UnixSocket::BlockingMode::kBlocking);
+  }
+  process_info.client_config = std::move(cfg);
+  process_info.set_up = true;
+}
+
+// Implementation warning: if adding a use for the first argument, consider that
+// HeapprofdProducer can supply a pre-connected socket (for which there is no
+// "listening" socket to give a pointer to).
 void SocketListener::OnNewIncomingConnection(
     base::UnixSocket*,
     std::unique_ptr<base::UnixSocket> new_connection) {
+  Process peer_process;
+  peer_process.pid = new_connection->peer_pid();
+  if (!GetCmdlineForPID(peer_process.pid, &peer_process.cmdline))
+    PERFETTO_ELOG("Failed to get cmdline for %d", peer_process.pid);
+
+  HandleClientConnection(std::move(new_connection), peer_process);
+}
+
+void SocketListener::HandleClientConnection(
+    std::unique_ptr<base::UnixSocket> new_connection,
+    Process peer_process) {
+  PERFETTO_DCHECK(peer_process.pid == new_connection->peer_pid());
+
   base::UnixSocket* new_connection_raw = new_connection.get();
-  pid_t pid = new_connection_raw->peer_pid();
 
-  auto it = process_info_.find(pid);
-  if (it == process_info_.end()) {
-    PERFETTO_DFATAL("Unexpected connection.");
-    return;
-  }
+  decltype(process_info_)::iterator it;
+  std::tie(it, std::ignore) =
+      process_info_.emplace(peer_process.pid, peer_process);
   ProcessInfo& process_info = it->second;
-
-  sockets_.emplace(new_connection_raw, std::move(new_connection));
-  process_info.sockets.emplace(new_connection_raw);
-  // TODO(fmayer): Move destruction of bookkeeping data to
-  // HeapprofdProducer.
-  bookkeeping_thread_->NotifyClientConnected(pid);
+  process_info.Connected(&process_matcher_, bookkeeping_thread_);
+  process_info.sockets.emplace(new_connection_raw, std::move(new_connection));
+  if (process_info.set_up) {
+    new_connection_raw->Send(&process_info.client_config,
+                             sizeof(process_info.client_config), -1,
+                             base::UnixSocket::BlockingMode::kBlocking);
+  }
 }
 
 void SocketListener::OnDataAvailable(base::UnixSocket* self) {
-  auto socket_it = sockets_.find(self);
-  if (socket_it == sockets_.end())
-    return;
-
   pid_t peer_pid = self->peer_pid();
-
-  Entry& entry = socket_it->second;
-  RecordReader::ReceiveBuffer buf = entry.record_reader.BeginReceive();
 
   auto process_info_it = process_info_.find(peer_pid);
   if (process_info_it == process_info_.end()) {
@@ -71,39 +132,34 @@ void SocketListener::OnDataAvailable(base::UnixSocket* self) {
   }
   ProcessInfo& process_info = process_info_it->second;
 
+  auto socket_it = process_info.sockets.find(self);
+  if (socket_it == process_info.sockets.end()) {
+    PERFETTO_DFATAL("Unexpected data received.");
+    return;
+  }
+  SocketInfo& socket_info = socket_it->second;
+
+  RecordReader::ReceiveBuffer buf = socket_info.record_reader.BeginReceive();
+
   size_t rd;
-  if (PERFETTO_LIKELY(entry.recv_fds)) {
+  if (PERFETTO_LIKELY(process_info.unwinding_metadata)) {
     rd = self->Receive(buf.data, buf.size);
   } else {
-    auto it = unwinding_metadata_.find(peer_pid);
-    if (it != unwinding_metadata_.end() && !it->second.expired()) {
-      entry.recv_fds = true;
-      // If the process already has metadata, this is an additional socket for
-      // an existing process. Reuse existing metadata and close the received
-      // file descriptors.
-      entry.unwinding_metadata = std::shared_ptr<UnwindingMetadata>(it->second);
-      rd = self->Receive(buf.data, buf.size);
+    base::ScopedFile fds[2];
+    rd = self->Receive(buf.data, buf.size, fds, base::ArraySize(fds));
+    if (fds[0] && fds[1]) {
+      PERFETTO_DLOG("%d: Received FDs.", peer_pid);
+      process_info.unwinding_metadata = std::make_shared<UnwindingMetadata>(
+          peer_pid, std::move(fds[0]), std::move(fds[1]));
+    } else if (fds[0] || fds[1]) {
+      PERFETTO_DLOG("%d: Received partial FDs.", peer_pid);
     } else {
-      base::ScopedFile fds[2];
-      rd = self->Receive(buf.data, buf.size, fds, base::ArraySize(fds));
-      if (fds[0] && fds[1]) {
-        PERFETTO_DLOG("%d: Received FDs.", peer_pid);
-        entry.recv_fds = true;
-        entry.unwinding_metadata = std::make_shared<UnwindingMetadata>(
-            peer_pid, std::move(fds[0]), std::move(fds[1]));
-        unwinding_metadata_[peer_pid] = entry.unwinding_metadata;
-        self->Send(&process_info.client_config,
-                   sizeof(process_info.client_config), -1,
-                   base::UnixSocket::BlockingMode::kBlocking);
-      } else if (fds[0] || fds[1]) {
-        PERFETTO_DLOG("%d: Received partial FDs.", peer_pid);
-      } else {
-        PERFETTO_DLOG("%d: Received no FDs.", peer_pid);
-      }
+      PERFETTO_DLOG("%d: Received no FDs.", peer_pid);
     }
   }
+
   RecordReader::Record record;
-  auto status = entry.record_reader.EndReceive(rd, &record);
+  auto status = socket_info.record_reader.EndReceive(rd, &record);
   switch (status) {
     case (RecordReader::Result::Noop):
       break;
@@ -117,58 +173,31 @@ void SocketListener::OnDataAvailable(base::UnixSocket* self) {
   }
 }
 
-SocketListener::ProfilingSession SocketListener::ExpectPID(
-    pid_t pid,
-    ClientConfiguration cfg) {
-  PERFETTO_DLOG("Expecting connection from %d", pid);
-  decltype(process_info_)::iterator it;
-  std::tie(it, std::ignore) =
-      process_info_.emplace(pid, ProcessInfo{pid, std::move(cfg)});
-  ProcessInfo* process_info = &(it->second);
-  AddProfilingSession(process_info);
-  return ProfilingSession(process_info, this);
-}
-
 void SocketListener::RecordReceived(base::UnixSocket* self,
                                     size_t size,
                                     std::unique_ptr<uint8_t[]> buf) {
-  auto it = sockets_.find(self);
-  if (it == sockets_.end()) {
-    // This happens for zero-length records, because the callback gets called
-    // in the first call to Read. Because zero length records are useless,
-    // this is not a problem.
-    return;
-  }
-  Entry& entry = it->second;
-  if (!entry.unwinding_metadata) {
-    PERFETTO_DLOG("Received record without process metadata.");
-    return;
-  }
+  pid_t peer_pid = self->peer_pid();
 
   if (size == 0) {
     PERFETTO_DLOG("Dropping empty record.");
     return;
   }
+
+  auto it = process_info_.find(peer_pid);
+  if (it == process_info_.end()) {
+    return;
+  }
+  ProcessInfo& process_info = it->second;
+
   // This needs to be a weak_ptr for two reasons:
   // 1) most importantly, the weak_ptr in unwinding_metadata_ should expire as
   // soon as the last socket for a process goes away. Otherwise, a recycled
   // PID might reuse incorrect metadata.
   // 2) it is a waste to unwind for a process that had already gone away.
-  std::weak_ptr<UnwindingMetadata> weak_metadata(entry.unwinding_metadata);
-  callback_function_({entry.unwinding_metadata->pid, size, std::move(buf),
-                      std::move(weak_metadata)});
-}
-
-void SocketListener::AddProfilingSession(ProcessInfo* process_info) {
-  ++process_info->active_profile_sessions;
-}
-
-void SocketListener::RemoveProfilingSession(ProcessInfo* process_info) {
-  if (--process_info->active_profile_sessions == 0) {
-    for (base::UnixSocket* socket : process_info->sockets)
-      socket->Shutdown(true);
-    process_info_.erase(process_info->pid);
-  }
+  std::weak_ptr<UnwindingMetadata> weak_metadata(
+      process_info.unwinding_metadata);
+  callback_function_(
+      {peer_pid, size, std::move(buf), std::move(weak_metadata)});
 }
 
 }  // namespace profiling
