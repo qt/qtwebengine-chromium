@@ -537,9 +537,10 @@ ContentBrowserClient::GetReceiverPresentationServiceDelegate(
 }
 
 void ContentBrowserClient::OpenURL(
-    content::BrowserContext* browser_context,
+    content::SiteInstance* site_instance,
     const content::OpenURLParams& params,
     const base::Callback<void(content::WebContents*)>& callback) {
+  DCHECK(site_instance);
   callback.Run(nullptr);
 }
 

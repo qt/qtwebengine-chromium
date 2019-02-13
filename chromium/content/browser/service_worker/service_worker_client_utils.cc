@@ -12,6 +12,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -197,19 +198,12 @@ void DidOpenURLOnUI(WindowType type,
 void OpenWindowOnUI(
     const GURL& url,
     const GURL& script_url,
+    int worker_id,
     int worker_process_id,
     const scoped_refptr<ServiceWorkerContextWrapper>& context_wrapper,
     WindowType type,
     OpenURLCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  BrowserContext* browser_context =
-      context_wrapper->storage_partition()
-          ? context_wrapper->storage_partition()->browser_context()
-          : nullptr;
-  // We are shutting down.
-  if (!browser_context)
-    return;
 
   RenderProcessHost* render_process_host =
       RenderProcessHost::FromID(worker_process_id);
@@ -221,18 +215,44 @@ void OpenWindowOnUI(
     return;
   }
 
+  SiteInstance* site_instance =
+      context_wrapper->process_manager()->GetSiteInstanceForWorker(worker_id);
+  if (!site_instance) {
+    // Worker isn't running anymore. Fail.
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::BindOnce(std::move(callback), ChildProcessHost::kInvalidUniqueID,
+                       MSG_ROUTING_NONE));
+    return;
+  }
+
+  // The following code is a rough copy of NavigatorImpl::RequestOpenURL. That
+  // function can't be used directly since there is no render frame host yet
+  // that the navigation will occur in.
+
+  GURL dest_url(url);
+  if (!GetContentClient()->browser()->ShouldAllowOpenURL(site_instance, url))
+    dest_url = GURL(url::kAboutBlankURL);
+
   OpenURLParams params(
-      url,
+      dest_url,
       Referrer::SanitizeForRequest(
-          url, Referrer(script_url, blink::kWebReferrerPolicyDefault)),
+          dest_url,
+          Referrer(script_url, blink::kWebReferrerPolicyDefault)),
       type == WindowType::PAYMENT_HANDLER_WINDOW
           ? WindowOpenDisposition::NEW_POPUP
           : WindowOpenDisposition::NEW_FOREGROUND_TAB,
       ui::PAGE_TRANSITION_AUTO_TOPLEVEL, true /* is_renderer_initiated */);
   params.open_app_window_if_possible = type == WindowType::NEW_TAB_WINDOW;
 
+  GetContentClient()->browser()->OverrideNavigationParams(
+      site_instance, &params.transition, &params.is_renderer_initiated,
+      &params.referrer);
+
+  // End of RequestOpenURL copy.
+
   GetContentClient()->browser()->OpenURL(
-      browser_context, params,
+      site_instance, params,
       base::AdaptCallbackForRepeating(
           base::BindOnce(&DidOpenURLOnUI, type, std::move(callback))));
 }
@@ -255,18 +275,18 @@ void NavigateClientOnUI(const GURL& url,
     return;
   }
 
-  ui::PageTransition transition = rfhi->GetParent()
-                                      ? ui::PAGE_TRANSITION_AUTO_SUBFRAME
-                                      : ui::PAGE_TRANSITION_AUTO_TOPLEVEL;
   int frame_tree_node_id = rfhi->frame_tree_node()->frame_tree_node_id();
 
-  OpenURLParams params(
-      url,
+  Navigator* navigator = rfhi->frame_tree_node()->navigator();
+  navigator->RequestOpenURL(
+      rfhi, url, false /* uses_post */, nullptr /* body */,
+      std::string() /* extra_headers */,
       Referrer::SanitizeForRequest(
           url, Referrer(script_url, blink::kWebReferrerPolicyDefault)),
-      frame_tree_node_id, WindowOpenDisposition::CURRENT_TAB, transition,
-      true /* is_renderer_initiated */);
-  web_contents->OpenURL(params);
+      WindowOpenDisposition::CURRENT_TAB,
+      false /* should_replace_current_entry */, false /* user_gesture */,
+      blink::WebTriggeringEventInfo::kUnknown,
+      nullptr /* blob_url_loader_factory */);
   new OpenURLObserver(web_contents, frame_tree_node_id, std::move(callback));
 }
 
@@ -458,6 +478,7 @@ void FocusWindowClient(ServiceWorkerProviderHost* provider_host,
 
 void OpenWindow(const GURL& url,
                 const GURL& script_url,
+                int worker_id,
                 int worker_process_id,
                 const base::WeakPtr<ServiceWorkerContextCore>& context,
                 WindowType type,
@@ -466,7 +487,7 @@ void OpenWindow(const GURL& url,
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(
-          &OpenWindowOnUI, url, script_url, worker_process_id,
+          &OpenWindowOnUI, url, script_url, worker_id, worker_process_id,
           base::WrapRefCounted(context->wrapper()), type,
           base::BindOnce(&DidNavigate, context, script_url.GetOrigin(),
                          std::move(callback))));
