@@ -52,13 +52,29 @@ config("chromium_sqlite3_compile_options") {
     # TODO(pwnall): Figure out if exceeding this is costly.
     "SQLITE_MAX_MMAP_SIZE=268435456",
 
+    # The default POSIX permissions for a newly created SQLite database.
+    #
+    # If unspecified, this defaults to 0644. All the data stored by Chrome is
+    # private, so our databases use stricter settings.
+    "SQLITE_DEFAULT_FILE_PERMISSIONS=0600",
+
     # SQLite uses a lookaside buffer to improve performance of small mallocs.
     # Chrome already depends on small mallocs being efficient, so we disable
     # this to avoid the extra memory overhead.
     "SQLITE_DEFAULT_LOOKASIDE=0,0",
 
+    # Needed by the SQL MemoryDumpProvider.
+    #
+    # Setting this to 1 is needed to collect the information reported by
+    # sqlite3_status64(SQLITE_STATUS_MEMORY_USED). Without this setting, the API
+    # still exists, but does not work as promised.
+    "SQLITE_DEFAULT_MEMSTATUS=1",
+
+    # Must match sql::Database::kDefaultPageSize.
+    "SQLITE_DEFAULT_PAGE_SIZE=4096",
+
     # By default SQLite pre-allocates 100 pages of pcache data, which will not
-    # be released until the handle is closed.  This is contrary to Chromium's
+    # be released until the handle is closed.  This is contrary to Chrome's
     # memory-usage goals.
     "SQLITE_DEFAULT_PCACHE_INITSZ=0",
 
@@ -72,37 +88,43 @@ config("chromium_sqlite3_compile_options") {
     #   src/tool/mkkeywordhash.c
 
     # The flags below are recommended in the SQLite documentation, and disable
-    # features Chromium doesn't use.
+    # features Chrome doesn't use.
     "SQLITE_LIKE_DOESNT_MATCH_BLOBS",
     "SQLITE_OMIT_DEPRECATED",
     "SQLITE_OMIT_PROGRESS_CALLBACK",
     "SQLITE_OMIT_SHARED_CACHE",
     "SQLITE_USE_ALLOCA",
 
-    # Chromium initializes SQLite manually in //sql/connection.cc.
+    # Chrome initializes SQLite manually in //sql/connection.cc.
     "SQLITE_OMIT_AUTOINIT",
 
-    # Chromium calls sqlite3_reset() correctly to reset prepared statements.
+    # Chrome calls sqlite3_reset() correctly to reset prepared statements.
     "SQLITE_OMIT_AUTORESET",
 
     # Chromium does not use sqlite3_{get,free}_table().
     # Chrome doesn't use sqlite3_compileoption_{used,get}().
     "SQLITE_OMIT_COMPILEOPTION_DIAGS",
 
-    # Chromium does not use sqlite3_{get,free}_table().
+    # Chrome doesn't ship the SQLite shell, so command auto-completion is not
+    # needed. Chrome developers who build the SQLite shell living at
+    # //third_party/sqlite:sqlite_shell for diagnostic purposes will have to
+    # live without auto-completion.
+    "SQLITE_OMIT_COMPLETE",
+
+    # Chrome does not use sqlite3_{get,free}_table().
     "SQLITE_OMIT_GET_TABLE",
 
-    # Chromium does not use sqlite3_{enable_}load_extension().
+    # Chrome does not use sqlite3_{enable_}load_extension().
     # Asides from giving us fairly minor code savings, this option disables code
     # that breaks our method for renaming SQLite's exported symbols. Last,
     # there's a tiny security benefit to knowing that WebSQL can't possibly
     # reach extension loading code.
     "SQLITE_OMIT_LOAD_EXTENSION",
 
-    # Chromium doesn't use TCL variables.
+    # Chrome doesn't use TCL variables.
     "SQLITE_OMIT_TCL_VARIABLE",
 
-    # Chromium doesn't use sqlite3_{profile,trace}().
+    # Chrome doesn't use sqlite3_{profile,trace}().
     "SQLITE_OMIT_TRACE",
 
     # Chrome doesn't use UPSERT.
@@ -111,8 +133,8 @@ config("chromium_sqlite3_compile_options") {
     # Chrome doesn't use window functions in SQL.
     "SQLITE_OMIT_WINDOWFUNC",
 
-    # TODO(pwnall): Add SQLITE_OMIT_COMPLETE when we import a SQLite release
-    #               including https://www.sqlite.org/src/info/c3e816cca4ddf096
+    # Uses isnan() in the C99 standard library.
+    "SQLITE_HAVE_ISNAN",
   ]
 
   # On OSX, SQLite has extra logic for detecting the use of network
@@ -214,18 +236,23 @@ config("sqlite_warnings") {
 # Naming the library "sqlite3" can cause conflicts with the system library.
 component("chromium_sqlite3") {
   visibility = [ ":*" ]
+
+  public = [
+    "sqlite3.h",
+    "src/src/recover.h",
+  ]
+
   sources = [
     "amalgamation/sqlite3.h",
     "sqlite3_shim.c",
     "src/src/recover.c",
-    "src/src/recover.h",
     "src/src/recover_varint.c",
   ]
 
   inputs = [
-   # This file is #included into sqlite3_shim.c, which injects Chrome-specific
-   # definitions into the SQLite amalgamation code.
-   "amalgamation/sqlite3.c",
+    # This file is #included into sqlite3_shim.c, which injects Chrome-specific
+    # definitions into the SQLite amalgamation code.
+    "amalgamation/sqlite3.c",
   ]
 
   cflags = []
@@ -274,9 +301,7 @@ component("chromium_sqlite3") {
     ":sqlite_warnings",
   ]
 
-  if (is_linux) {
-    libs = [ "dl" ]
-  } else if (is_mac || is_ios) {
+  if (is_mac || is_ios) {
     libs = [ "CoreFoundation.framework" ]
     if (!is_ios) {
       libs += [ "CoreServices.framework" ]
@@ -286,8 +311,6 @@ component("chromium_sqlite3") {
       "SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT=1048576",
       "SQLITE_DEFAULT_AUTOVACUUM=1",
       "SQLITE_TEMP_STORE=3",
-      "SQLITE_ENABLE_FTS3_BACKWARDS",
-      "DSQLITE_DEFAULT_FILE_FORMAT=4",
     ]
   }
 
