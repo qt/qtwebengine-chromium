@@ -223,8 +223,8 @@ v8::Local<v8::Value> DetectTextLanguage(v8::Local<v8::Context> context,
   // Populate LanguageDetectionResult with prediction reliability, languages,
   // and the corresponding percentages.
   InitDetectedLanguages(lang_results, &result);
-  return result.ToV8(context);
 #endif // !defined(TOOLKIT_QT)
+  return result.ToV8(context);
 }
 
 }  // namespace i18n_hooks
