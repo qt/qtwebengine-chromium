@@ -183,6 +183,15 @@ def main(argv):
                           'library, or \'-l<name>\' on POSIX systems. Can be ' +
                           'used multiple times. Useful to link custom malloc ' +
                           'or cpu profiling libraries.'))
+  args_list.add('--cc',
+                    help='The path to cc compiler.')
+  args_list.add('--cxx',
+                    help='The path to cxx compiler.')
+  args_list.add('--ld',
+                    help='The path to ld.')
+  args_list.add('--ar',
+                    help='The path to ar.')
+
   if sys.platform == 'zos':
     args_list.add('--zoslib-dir',
                       action='store',
@@ -357,24 +366,25 @@ def WriteGenericNinja(path, static_libraries, executables,
 
 
 def WriteGNNinja(path, platform, host, options, args_list):
-  if platform.is_msvc():
-    cxx = os.environ.get('CXX', 'cl.exe')
-    ld = os.environ.get('LD', 'link.exe')
-    ar = os.environ.get('AR', 'lib.exe')
-  elif platform.is_aix():
-    cxx = os.environ.get('CXX', 'g++')
-    ld = os.environ.get('LD', 'g++')
-    ar = os.environ.get('AR', 'ar -X64')
-  elif platform.is_msys() or platform.is_mingw():
-    cxx = os.environ.get('CXX', 'g++')
-    ld = os.environ.get('LD', 'g++')
-    ar = os.environ.get('AR', 'ar')
-  else:
-    cxx = os.environ.get('CXX', 'c++')
-    ld = cxx
-    ar = os.environ.get('AR', 'ar')
-
   # QTBUG-64759
+  # if platform.is_msvc():
+  #   cxx = os.environ.get('CXX', 'cl.exe')
+  #   ld = os.environ.get('LD', 'link.exe')
+  #   ar = os.environ.get('AR', 'lib.exe')
+  # elif platform.is_aix():
+  #   cxx = os.environ.get('CXX', 'g++')
+  #   ld = os.environ.get('LD', 'g++')
+  #   ar = os.environ.get('AR', 'ar -X64')
+  # elif platform.is_msys() or platform.is_mingw():
+  #   cxx = os.environ.get('CXX', 'g++')
+  #   ld = os.environ.get('LD', 'g++')
+  #   ar = os.environ.get('AR', 'ar')
+  # else:
+  #   cxx = os.environ.get('CXX', 'c++')
+  #  ld = cxx
+  #  ar = os.environ.get('AR', 'ar')
+
+
   # cflags = os.environ.get('CFLAGS', '').split()
   # cflags += os.environ.get('CXXFLAGS', '').split()
   # ldflags = os.environ.get('LDFLAGS', '').split()
@@ -384,6 +394,17 @@ def WriteGNNinja(path, platform, host, options, args_list):
   cflags_cc = []
   ldflags = []
   libflags = []
+
+  cc = options.cc
+  cxx = options.cxx
+  ld = options.ld
+  ar = options.ar
+
+  if not ar:
+     if platform.is_msvc():
+        ar = os.environ.get('AR', 'lib.exe')
+     else:
+        ar = os.environ.get('AR', 'ar')
 
   include_dirs = [
       os.path.relpath(os.path.join(REPO_ROOT, 'src'), os.path.dirname(path)),
