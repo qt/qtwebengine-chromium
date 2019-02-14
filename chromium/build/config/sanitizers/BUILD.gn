@@ -5,6 +5,7 @@
 import("//build/config/chrome_build.gni")
 import("//build/config/chromecast_build.gni")
 import("//build/config/clang/clang.gni")
+import("//build/config/features.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/toolchain/toolchain.gni")
 import("//build_overrides/build.gni")
@@ -297,7 +298,7 @@ config("asan_flags") {
                           root_build_dir)
         }
         cflags += [ "-fsanitize-blacklist=$asan_win_blacklist_path" ]
-      } else {
+      } else if(!use_qt) {
         # TODO(rnk): Remove this as discussed in http://crbug.com/427202.
         if (!defined(asan_blacklist_path)) {
           asan_blacklist_path =
