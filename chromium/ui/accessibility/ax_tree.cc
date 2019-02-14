@@ -469,6 +469,7 @@ AXTableInfo* AXTree::GetTableInfo(AXNode* table_node) {
         // If Update() returned false, this is no longer a valid table.
         // Remove it from the map.
         delete table_info;
+        table_info = nullptr;
         table_info_map_.erase(table_node->id());
       }
       if (delegate_)
