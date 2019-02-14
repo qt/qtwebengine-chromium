@@ -244,7 +244,7 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
       if (!skia_image->colorSpace()) {
         skia_image->peekPixels(&src_data_);
         src_data_.setColorSpace(SkColorSpace::MakeSRGB());
-        skia_image = SkImage::MakeFromRaster(src_data_, nullptr, nullptr);
+        skia_image = SkImage::MakeRasterCopy(src_data_);
       }
       DCHECK(skia_image->colorSpace());
       skia_image = skia_image->makeColorSpace(blob_color_space);
