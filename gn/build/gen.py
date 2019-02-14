@@ -93,6 +93,15 @@ def main(argv):
                     help='Do not generate last_commit_position.h.')
   parser.add_option('--out-path',
                     help='The path to generate the build files in.')
+  parser.add_option('--cc',
+                    help='The path to cc compiler.')
+  parser.add_option('--cxx',
+                    help='The path to cxx compiler.')
+  parser.add_option('--ld',
+                    help='The path to ld.')
+  parser.add_option('--ar',
+                    help='The path to ar.')
+
   options, args = parser.parse_args(argv)
 
   if args:
@@ -299,27 +308,34 @@ def WriteGenericNinja(path, static_libraries, executables,
 
 
 def WriteGNNinja(path, platform, host, options, linux_sysroot):
-  if platform.is_msvc():
-    cc = os.environ.get('CC', 'cl.exe')
-    cxx = os.environ.get('CXX', 'cl.exe')
-    ld = os.environ.get('LD', 'link.exe')
-    ar = os.environ.get('AR', 'lib.exe')
-  elif platform.is_aix():
-    cc = os.environ.get('CC', 'gcc')
-    cxx = os.environ.get('CXX', 'g++')
-    ld = os.environ.get('LD', 'g++')
-    ar = os.environ.get('AR', 'ar -X64')
-  else:
-    cc = os.environ.get('CC', 'cc')
-    cxx = os.environ.get('CXX', 'c++')
-    ld = cxx
-    ar = os.environ.get('AR', 'ar')
 
   # QTBUG-64759
+  #iif platform.is_msvc():
+  #  cc = os.environ.get('CC', 'cl.exe')
+  #  cxx = os.environ.get('CXX', 'cl.exe')
+  #  ld = os.environ.get('LD', 'link.exe')
+  #  ar = os.environ.get('AR', 'lib.exe')
+  #elif platform.is_aix():
+  #  cc = os.environ.get('CC', 'gcc')
+  #  cxx = os.environ.get('CXX', 'g++')
+  #  ld = os.environ.get('LD', 'g++')
+  #  ar = os.environ.get('AR', 'ar -X64')
+  #else:
+  #  cc = os.environ.get('CC', 'cc')
+  #  cxx = os.environ.get('CXX', 'c++')
+  #  ld = cxx
+  #  ar = os.environ.get('AR', 'ar')
+
   # cflags = os.environ.get('CFLAGS', '').split()
   # cflags_cc = os.environ.get('CXXFLAGS', '').split()
   # ldflags = os.environ.get('LDFLAGS', '').split()
   # libflags = os.environ.get('LIBFLAGS', '').split()
+
+  cc = options.cc
+  cxx = options.cxx
+  ld = options.ld
+  ar = options.ar
+
   cflags = []
   cflags_cc = []
   ldflags = []
