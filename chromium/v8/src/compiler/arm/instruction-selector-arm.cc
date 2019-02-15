@@ -725,6 +725,7 @@ void EmitBic(InstructionSelector* selector, Node* node, Node* left,
 
 void EmitUbfx(InstructionSelector* selector, Node* node, Node* left,
               uint32_t lsb, uint32_t width) {
+  DCHECK_LE(lsb, 31u);
   DCHECK_LE(1u, width);
   DCHECK_LE(width, 32u - lsb);
   ArmOperandGenerator g(selector);
@@ -917,7 +918,7 @@ void InstructionSelector::VisitWord32Shr(Node* node) {
       uint32_t value = (mleft.right().Value() >> lsb) << lsb;
       uint32_t width = base::bits::CountPopulation32(value);
       uint32_t msb = base::bits::CountLeadingZeros32(value);
-      if (msb + width + lsb == 32) {
+      if ((width != 0) && (msb + width + lsb == 32)) {
         DCHECK_EQ(lsb, base::bits::CountTrailingZeros32(value));
         return EmitUbfx(this, node, mleft.left().node(), lsb, width);
       }
