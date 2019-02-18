@@ -253,6 +253,7 @@
           title="$i18n{tooltipAnnotate}"></cr-icon-button>
     </template>
   </if>
+<!-- to do (mibrunin): Check if we can enable these buttons for Qt WebEngine
     <viewer-download-controls id="downloads"
         has-edits="[[hasEdits]]"
         has-entered-annotation-mode="[[hasEnteredAnnotationMode]]"
@@ -262,6 +263,7 @@
         hidden="[[!printingEnabled]]" title="$i18n{tooltipPrint}"
         aria-label="$i18n{tooltipPrint}" on-click="onPrintClick_">
     </cr-icon-button>
+-->
     <cr-icon-button id="more" iron-icon="cr:more-vert"
         title="$i18n{moreActions}" aria-label="$i18n{moreActions}"
         on-click="onMoreClick_"></cr-icon-button>
