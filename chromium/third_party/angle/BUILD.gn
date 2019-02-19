@@ -943,7 +943,7 @@ angle_shared_library("libfeature_support${angle_libs_suffix}") {
 
   public_configs += [
     ":angle_feature_support_config",
-    "third_party/jsoncpp:jsoncpp_config",
+    "//third_party/jsoncpp:jsoncpp_config",
   ]
 
   sources = [
@@ -953,7 +953,7 @@ angle_shared_library("libfeature_support${angle_libs_suffix}") {
 
   deps = [
     ":angle_gpu_info_util",
-    "third_party/jsoncpp:jsoncpp",
+    "//third_party/jsoncpp:jsoncpp",
   ]
 }
 

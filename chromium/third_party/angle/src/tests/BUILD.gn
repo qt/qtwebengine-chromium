@@ -237,7 +237,6 @@ if (is_win || is_linux || is_android || is_mac) {
       angle_root + ":libANGLE",
       angle_root + ":libEGL_static",
       angle_root + ":libGLESv2_static",
-      angle_root + "/third_party/jsoncpp:jsoncpp",
       ":angle_perftests_main",
     ]
 
@@ -267,7 +266,6 @@ if (is_win || is_linux || is_android || is_mac) {
     sources = angle_perf_tests_sources
 
     deps = [
-      angle_root + "/third_party/jsoncpp:jsoncpp",
       angle_root + ":angle_common",
       angle_root + ":angle_system_utils",
       angle_root + ":angle_util",
