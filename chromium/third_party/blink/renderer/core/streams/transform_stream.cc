@@ -86,8 +86,11 @@ class TransformStream::Algorithm : public ScriptFunction {
 };
 
 class TransformStream::FlushAlgorithm : public TransformStream::Algorithm {
- protected:
-  using Algorithm::Algorithm;
+ public:
+  FlushAlgorithm(TransformStreamTransformer* transformer,
+                 ScriptState* script_state,
+                 ExceptionState& exception_state)
+        : Algorithm(transformer, script_state, exception_state) {}
 
  private:
   void CallRaw(const v8::FunctionCallbackInfo<v8::Value>& info) override {
@@ -104,8 +107,11 @@ class TransformStream::FlushAlgorithm : public TransformStream::Algorithm {
 };
 
 class TransformStream::TransformAlgorithm : public TransformStream::Algorithm {
- protected:
-  using Algorithm::Algorithm;
+ public:
+  TransformAlgorithm(TransformStreamTransformer* transformer,
+                     ScriptState* script_state,
+                     ExceptionState& exception_state)
+        : Algorithm(transformer, script_state, exception_state) {}
 
  private:
   void CallRaw(const v8::FunctionCallbackInfo<v8::Value>& info) override {

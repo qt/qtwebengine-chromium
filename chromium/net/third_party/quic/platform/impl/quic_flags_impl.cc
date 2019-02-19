@@ -159,9 +159,9 @@ std::string QuicFlagRegistry::GetHelp() const {
 template <>
 bool TypedQuicFlagHelper<bool>::SetFlag(const std::string& s) const {
   static const base::NoDestructor<std::set<std::string>> kTrueValues(
-      {"", "1", "t", "true", "y", "yes"});
+      std::set<std::string>{"", "1", "t", "true", "y", "yes"});
   static const base::NoDestructor<std::set<std::string>> kFalseValues(
-      {"0", "f", "false", "n", "no"});
+      std::set<std::string>{"0", "f", "false", "n", "no"});
   if (kTrueValues->find(base::ToLowerASCII(s)) != kTrueValues->end()) {
     *flag_ = true;
     return true;
