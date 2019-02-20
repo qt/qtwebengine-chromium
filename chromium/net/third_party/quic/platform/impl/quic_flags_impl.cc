@@ -23,18 +23,24 @@
 #include "net/quic/quic_flags_list.h"
 #undef QUIC_FLAG
 
+#ifdef __GNUC__
+#define DECL_UNUSED __attribute__((unused))
+#else
+#define DECL_UNUSED
+#endif
+
 namespace quic {
 
 namespace {
 
 // Overload for platforms where base::CommandLine::StringType == std::string.
-std::vector<QuicString> __attribute__((unused))
+std::vector<QuicString> DECL_UNUSED
 ToQuicStringVector(const std::vector<std::string>& v) {
   return v;
 }
 
 // Overload for platforms where base::CommandLine::StringType == base::string16.
-std::vector<QuicString> __attribute__((unused))
+std::vector<QuicString> DECL_UNUSED
 ToQuicStringVector(const std::vector<base::string16>& v) {
   std::vector<QuicString> qsv;
   for (const auto& s : v) {
