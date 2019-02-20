@@ -27,7 +27,7 @@ CreateSubsampleMappingBlock(const std::vector<SubsampleEntry>& from) {
   std::vector<D3D11_VIDEO_DECODER_SUB_SAMPLE_MAPPING_BLOCK> to(from.size());
   for (const auto& entry : from) {
     D3D11_VIDEO_DECODER_SUB_SAMPLE_MAPPING_BLOCK subsample = {
-        .ClearSize = entry.clear_bytes, .EncryptedSize = entry.cypher_bytes};
+        entry.clear_bytes, entry.cypher_bytes};
     to.push_back(subsample);
   }
   return to;

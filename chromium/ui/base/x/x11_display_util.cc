@@ -139,9 +139,12 @@ int DefaultBitsPerComponent() {
 std::vector<uint8_t> GetEDIDProperty(x11::RandR* randr,
                                      x11::RandR::Output output) {
   auto future = randr->GetOutputProperty({
-      .output = output,
-      .property = gfx::GetAtom(kRandrEdidProperty),
-      .long_length = 128,
+      /*.output =*/ output,
+      /*.property =*/ gfx::GetAtom(kRandrEdidProperty),
+      x11::Atom{},
+      0,
+      /*.long_length =*/ 128,
+      0, 0
   });
   auto response = future.Sync();
   std::vector<uint8_t> edid;

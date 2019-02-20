@@ -149,9 +149,10 @@ void VulkanImage::Destroy() {
 base::ScopedFD VulkanImage::GetMemoryFd(
     VkExternalMemoryHandleTypeFlagBits handle_type) {
   VkMemoryGetFdInfoKHR get_fd_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
-      .memory = device_memory_,
-      .handleType = handle_type,
+      VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+      nullptr,
+      device_memory_,
+      handle_type,
 
   };
 
@@ -188,21 +189,21 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
   image_tiling_ = image_tiling;
 
   VkImageCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-      .pNext = vk_image_create_info_next,
-      .flags = flags_,
-      .imageType = VK_IMAGE_TYPE_2D,
-      .format = format_,
-      .extent = {size.width(), size.height(), 1},
-      .mipLevels = 1,
-      .arrayLayers = 1,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .tiling = image_tiling_,
-      .usage = usage,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-      .queueFamilyIndexCount = 0,
-      .pQueueFamilyIndices = nullptr,
-      .initialLayout = image_layout_,
+      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      vk_image_create_info_next,
+      flags_,
+      VK_IMAGE_TYPE_2D,
+      format_,
+      {size.width(), size.height(), 1},
+      1,
+      1,
+      VK_SAMPLE_COUNT_1_BIT,
+      image_tiling_,
+      usage,
+      VK_SHARING_MODE_EXCLUSIVE,
+      0,
+      nullptr,
+      image_layout_,
   };
   VkDevice vk_device = device_queue->GetVulkanDevice();
   VkResult result =
@@ -229,9 +230,9 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
   // Some vulkan implementations require dedicated memory for sharing memory
   // object between vulkan instances.
   VkMemoryDedicatedAllocateInfoKHR dedicated_memory_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR,
-      .pNext = vk_memory_allocation_info_next,
-      .image = image_,
+      VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR,
+      vk_memory_allocation_info_next,
+      image_,
   };
 
   auto index =
@@ -245,10 +246,10 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
 
   memory_type_index_ = index.value();
   VkMemoryAllocateInfo memory_allocate_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-      .pNext = &dedicated_memory_info,
-      .allocationSize = device_size_,
-      .memoryTypeIndex = memory_type_index_,
+      VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      &dedicated_memory_info,
+      device_size_,
+      memory_type_index_,
   };
 
   result = vkAllocateMemory(vk_device, &memory_allocate_info,
@@ -286,24 +287,26 @@ bool VulkanImage::InitializeWithExternalMemory(VulkanDeviceQueue* device_queue,
 #endif
 
   VkPhysicalDeviceImageFormatInfo2 format_info_2 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-      .format = format,
-      .type = VK_IMAGE_TYPE_2D,
-      .tiling = image_tiling,
-      .usage = usage,
-      .flags = flags,
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+      nullptr,
+      format,
+      VK_IMAGE_TYPE_2D,
+      image_tiling,
+      usage,
+      flags,
   };
   VkPhysicalDeviceExternalImageFormatInfo external_info = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
-      .handleType = kHandleType,
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+      nullptr,
+      kHandleType,
   };
   format_info_2.pNext = &external_info;
 
   VkImageFormatProperties2 image_format_properties_2 = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+      VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
   };
   VkExternalImageFormatProperties external_image_format_properties = {
-      .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+      VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
   };
   image_format_properties_2.pNext = &external_image_format_properties;
 
@@ -331,13 +334,15 @@ bool VulkanImage::InitializeWithExternalMemory(VulkanDeviceQueue* device_queue,
   DCHECK(handle_types_ & kHandleType);
 
   VkExternalMemoryImageCreateInfoKHR external_image_create_info = {
-      .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
-      .handleTypes = handle_types_,
+      VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
+      nullptr,
+      handle_types_,
   };
 
   VkExportMemoryAllocateInfoKHR external_memory_allocate_info = {
-      .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR,
-      .handleTypes = handle_types_,
+      VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR,
+      nullptr,
+      handle_types_,
   };
 
   return Initialize(device_queue, size, format, usage, flags, image_tiling,
