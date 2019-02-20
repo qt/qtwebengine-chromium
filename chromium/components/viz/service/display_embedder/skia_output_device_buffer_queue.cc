@@ -129,9 +129,9 @@ SkSurface* SkiaOutputDeviceBufferQueue::Image::BeginWriteSkia() {
 void SkiaOutputDeviceBufferQueue::Image::EndWriteSkia() {
   DCHECK(scoped_write_access_);
   GrFlushInfo flush_info = {
-      .fFlags = kNone_GrFlushFlags,
-      .fNumSemaphores = end_semaphores_.size(),
-      .fSignalSemaphores = end_semaphores_.data(),
+      /*.fFlags =*/ kNone_GrFlushFlags,
+      /*.fNumSemaphores =*/ end_semaphores_.size(),
+      /*.fSignalSemaphores =*/ end_semaphores_.data(),
   };
   scoped_write_access_->surface()->flush(
       SkSurface::BackendSurfaceAccess::kNoAccess, flush_info);
