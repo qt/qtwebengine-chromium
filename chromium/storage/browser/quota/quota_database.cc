@@ -743,11 +743,11 @@ QuotaError QuotaDatabase::EnsureOpened(EnsureOpenedMode mode) {
     return QuotaError::kNotFound;
   }
 
-  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
-      .exclusive_locking = true,
-      .page_size = 4096,
-      .cache_size = 500,
-  });
+  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions(
+      /*.exclusive_locking =*/ true,
+      /*.page_size =*/ 4096,
+      /*.cache_size =*/ 500
+  ));
   meta_table_ = std::make_unique<sql::MetaTable>();
 
   db_->set_histogram_tag("Quota");
@@ -913,10 +913,10 @@ QuotaError QuotaDatabase::DumpQuotaTable(const QuotaTableCallback& callback) {
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
 
   while (statement.Step()) {
-    QuotaTableEntry entry = {
-        .host = statement.ColumnString(0),
-        .type = static_cast<StorageType>(statement.ColumnInt(1)),
-        .quota = statement.ColumnInt64(2)};
+    QuotaTableEntry entry{};
+        entry.host = statement.ColumnString(0);
+        entry.type = static_cast<StorageType>(statement.ColumnInt(1));
+        entry.quota = statement.ColumnInt64(2);
 
     if (!callback.Run(entry))
       return QuotaError::kNone;

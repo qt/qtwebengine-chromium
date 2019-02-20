@@ -49,13 +49,13 @@ VerifyResult VerifyAndStoreImpression(StorableSource::SourceType source_type,
           ContentBrowserClient::ConversionMeasurementOperation::kImpression,
           &impression_origin, /*conversion_origin=*/nullptr, &reporting_origin);
   if (!allowed)
-    return VerifyResult{.allowed = false, .stored = false};
+    return VerifyResult{/*.allowed =*/ false, /*.stored = */false};
 
   // Conversion measurement is only allowed in secure contexts.
   if (!IsOriginTrustworthyForAttributions(impression_origin) ||
       !IsOriginTrustworthyForAttributions(reporting_origin) ||
       !IsOriginTrustworthyForAttributions(impression.conversion_destination)) {
-    return VerifyResult{.allowed = true, .stored = false};
+    return VerifyResult{/*.allowed =*/ true, /*.stored =*/ false};
   }
 
   const AttributionPolicy& policy = attribution_manager.GetAttributionPolicy();
@@ -70,7 +70,7 @@ VerifyResult VerifyAndStoreImpression(StorableSource::SourceType source_type,
       /*impression_id=*/absl::nullopt);
 
   attribution_manager.HandleSource(std::move(storable_impression));
-  return VerifyResult{.allowed = true, .stored = true};
+  return VerifyResult{/*.allowed =*/ true, /*.stored =*/ true};
 }
 
 absl::optional<blink::Impression> ParseImpressionFromApp(

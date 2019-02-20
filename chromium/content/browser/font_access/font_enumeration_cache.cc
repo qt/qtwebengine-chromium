@@ -63,7 +63,7 @@ FontEnumerationData FontEnumerationCache::GetFontEnumerationData() {
   }
 
   DCHECK(initialized_);
-  return {.status = data_.status, .font_data = data_.font_data.Duplicate()};
+  return {/*.status =*/ data_.status, /*.font_data =*/ data_.font_data.Duplicate()};
 }
 
 void FontEnumerationCache::BuildEnumerationCache(

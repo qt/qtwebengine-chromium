@@ -194,7 +194,9 @@ void ComputePressureHost::ResetObserverState() {
   last_report_time_ = base::Time::Now();
 
   // Setting to an invalid value, so any state is considered an update.
-  last_report_sample_ = {.cpu_utilization = -1, .cpu_speed = -1};
+//  last_report_sample_ = {.cpu_utilization = -1, .cpu_speed = -1};
+  last_report_sample_.cpu_utilization = -1;
+  last_report_sample_.cpu_speed = -1;
 }
 
 }  // namespace content

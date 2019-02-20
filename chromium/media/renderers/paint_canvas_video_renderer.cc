@@ -351,13 +351,13 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
           // Note: Unlike |data|, stride does not need to be adjusted by the
           // visible rect and sample size. Adding the full frame stride to a
           // pixel on row N and column M will wrap to column M on row N + 1.
-          .stride = video_frame->stride(plane),
+          /*.stride = */video_frame->stride(plane),
 
-          .data = video_frame->visible_data(plane) +
+          /*.data = */video_frame->visible_data(plane) +
                   video_frame->stride(plane) * (chunk_start * rows_per_chunk) /
                       VideoFrame::SampleSize(format, plane).height()};
     } else {
-      plane_meta[plane] = {.stride = 0, .data = nullptr};
+      plane_meta[plane] = {/*.stride =*/ 0, /*.data =*/ nullptr};
     }
   }
 

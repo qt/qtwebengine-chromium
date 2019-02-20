@@ -165,16 +165,15 @@ mojom::ResultCode PrintingContext::UpdatePrintSettings(
     return mojom::ResultCode::kSuccess;
   }
 
-  PrinterSettings printer_settings {
+  PrinterSettings printer_settings {};
 #if defined(OS_MAC)
-    .external_preview = open_in_external_preview,
+    printer_settings.external_preview = open_in_external_preview;
 #endif
-    .show_system_dialog =
-        job_settings.FindBoolKey(kSettingShowSystemDialog).value_or(false),
+    printer_settings.show_system_dialog =
+        job_settings.FindBoolKey(kSettingShowSystemDialog).value_or(false);
 #if defined(OS_WIN)
-    .page_count = job_settings.FindIntKey(kSettingPreviewPageCount).value_or(0)
+    printer_settings.page_count = job_settings.FindIntKey(kSettingPreviewPageCount).value_or(0);
 #endif
-  };
   return UpdatePrinterSettings(printer_settings);
 }
 

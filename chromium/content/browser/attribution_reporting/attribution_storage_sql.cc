@@ -228,11 +228,11 @@ WARN_UNUSED_RESULT absl::optional<SourceToAttribute> ReadSourceToAttribute(
   base::Time expiry_time = statement.ColumnTime(8);
 
   return SourceToAttribute{
-      .source = StorableSource(source_event_id, std::move(impression_origin),
+      /*.source =*/ StorableSource(source_event_id, std::move(impression_origin),
                                std::move(conversion_origin), reporting_origin,
                                impression_time, expiry_time, *source_type,
                                priority, *attribution_logic, source_id),
-      .num_conversions = num_conversions,
+      /*.num_conversions =*/ num_conversions,
   };
 }
 
@@ -1395,7 +1395,7 @@ bool AttributionStorageSql::LazyInit(DbCreationPolicy creation_policy) {
   }
 
   db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
-      .exclusive_locking = true, .page_size = 4096, .cache_size = 32});
+      /*.exclusive_locking =*/ true, /*.page_size =*/ 4096, /*.cache_size =*/ 32});
   db_->set_histogram_tag("Conversions");
 
   // Supply this callback with a weak_ptr to avoid calling the error callback
@@ -1693,8 +1693,8 @@ bool AttributionStorageSql::EnsureCapacityForPendingDestinationLimit(
 
   while (statement.Step()) {
     SourceData impression_data = {
-        .source_id = StorableSource::Id(statement.ColumnInt64(0)),
-        .conversion_destination = statement.ColumnString(1),
+        /*.source_id = */StorableSource::Id(statement.ColumnInt64(0)),
+        /*.conversion_destination =*/ statement.ColumnString(1),
     };
 
     // If there's already a source matching the to-be-stored

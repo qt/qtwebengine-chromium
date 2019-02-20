@@ -194,12 +194,12 @@ std::unique_ptr<VulkanSurfaceWin32> VulkanSurfaceWin32::Create(
   event.Wait();
 
   VkSurfaceKHR surface;
-  VkWin32SurfaceCreateInfoKHR surface_create_info = {
-      .sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-      .hinstance = reinterpret_cast<HINSTANCE>(
-          GetWindowLongPtr(window->hwnd(), GWLP_HINSTANCE)),
-      .hwnd = window->hwnd(),
-  };
+  VkWin32SurfaceCreateInfoKHR surface_create_info{};
+  surface_create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+  surface_create_info.hinstance = reinterpret_cast<HINSTANCE>(
+          GetWindowLongPtr(window->hwnd(), GWLP_HINSTANCE));
+  surface_create_info.hwnd = window->hwnd();
+
   VkResult result = vkCreateWin32SurfaceKHR(vk_instance, &surface_create_info,
                                             nullptr, &surface);
   if (VK_SUCCESS != result) {

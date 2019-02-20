@@ -34,8 +34,8 @@ net::WebTransportParameters CreateParameters(
 
   for (const auto& fingerprint : fingerprints) {
     params.server_certificate_fingerprints.push_back(
-        quic::CertificateFingerprint{.algorithm = fingerprint->algorithm,
-                                     .fingerprint = fingerprint->fingerprint});
+        quic::CertificateFingerprint{/*.algorithm =*/ fingerprint->algorithm,
+                                     /*.fingerprint =*/ fingerprint->fingerprint});
   }
   return params;
 }

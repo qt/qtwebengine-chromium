@@ -247,7 +247,7 @@ static_assert(DatabaseOptions::kDefaultPageSize == SQLITE_DEFAULT_PAGE_SIZE,
 
 // DatabaseOptions::explicit_locking needs to be set to false for historical
 // reasons.
-Database::Database() : Database({.exclusive_locking = false}) {}
+Database::Database() : Database(DatabaseOptions(/*.exclusive_locking =*/ false)) {}
 
 Database::Database(DatabaseOptions options)
     : options_(options), mmap_disabled_(!enable_mmap_by_default_) {
@@ -796,14 +796,17 @@ bool Database::Raze() {
     return false;
   }
 
-  sql::Database null_db(sql::DatabaseOptions{
-      .exclusive_locking = true,
-      .page_size = options_.page_size,
-      .cache_size = 0,
-      .enable_views_discouraged = options_.enable_views_discouraged,
-      .enable_virtual_tables_discouraged =
-          options_.enable_virtual_tables_discouraged,
-  });
+  sql::DatabaseOptions options(
+      /*.exclusive_locking =*/ true,
+      /*.page_size =*/ options_.page_size,
+      /*.cache_size =*/ 0,
+      false,
+      /*.enable_views_discouraged =*/
+          options_.enable_views_discouraged);
+      options.enable_virtual_tables_discouraged =
+          options_.enable_virtual_tables_discouraged;
+
+  sql::Database null_db(std::move(options));
   if (!null_db.OpenInMemory()) {
     DLOG(DCHECK) << "Unable to open in-memory database.";
     return false;
