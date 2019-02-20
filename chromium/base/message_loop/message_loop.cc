@@ -220,8 +220,7 @@ std::unique_ptr<MessageLoopBase> MessageLoop::CreateSequenceManager(
     MessageLoop::Type type) {
   std::unique_ptr<sequence_manager::internal::SequenceManagerImpl> manager =
       sequence_manager::internal::SequenceManagerImpl::CreateUnboundWithPump(
-          sequence_manager::SequenceManager::Settings{.message_loop_type =
-                                                          type});
+          sequence_manager::SequenceManager::Settings{type});
   // std::move() for nacl, it doesn't properly handle returning unique_ptr
   // for subtypes.
   return std::move(manager);

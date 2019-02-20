@@ -28,7 +28,7 @@ CreateSubsampleMappingBlock(const std::vector<SubsampleEntry>& from) {
   std::vector<D3D11_VIDEO_DECODER_SUB_SAMPLE_MAPPING_BLOCK> to(from.size());
   for (const auto& entry : from) {
     D3D11_VIDEO_DECODER_SUB_SAMPLE_MAPPING_BLOCK subsample = {
-        .ClearSize = entry.clear_bytes, .EncryptedSize = entry.cypher_bytes};
+        entry.clear_bytes, entry.cypher_bytes};
     to.push_back(subsample);
   }
   return to;
@@ -73,9 +73,9 @@ scoped_refptr<VP9Picture> D3D11VP9Accelerator::CreateVP9Picture() {
 bool D3D11VP9Accelerator::BeginFrame(D3D11VP9Picture* pic) {
   Microsoft::WRL::ComPtr<ID3D11VideoDecoderOutputView> output_view;
   D3D11_VIDEO_DECODER_OUTPUT_VIEW_DESC view_desc = {
-      .DecodeProfile = D3D11_DECODER_PROFILE_VP9_VLD_PROFILE0,
-      .ViewDimension = D3D11_VDOV_DIMENSION_TEXTURE2D,
-      .Texture2D = {.ArraySlice = (UINT)pic->level()}};
+      D3D11_DECODER_PROFILE_VP9_VLD_PROFILE0,
+      D3D11_VDOV_DIMENSION_TEXTURE2D,
+      {(UINT)pic->level()}};
 
   RETURN_ON_HR_FAILURE(CreateVideoDecoderOutputView,
                        video_device_->CreateVideoDecoderOutputView(
