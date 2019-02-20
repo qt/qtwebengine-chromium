@@ -199,7 +199,7 @@ base::Value::Dict AttributionReport::ReportBody() const {
     }
   };
 
-  return absl::visit(Visitor{.report = this}, data_);
+  return absl::visit(Visitor{/*.report =*/ this}, data_);
 }
 
 AttributionReport::Id AttributionReport::ReportId() const {

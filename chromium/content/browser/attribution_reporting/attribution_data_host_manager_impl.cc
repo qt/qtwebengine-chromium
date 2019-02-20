@@ -227,10 +227,14 @@ void AttributionDataHostManagerImpl::RegisterDataHost(
     url::Origin context_origin) {
   DCHECK(network::IsOriginPotentiallyTrustworthy(context_origin));
 
+
+  FrozenContext tmp = {};
+  tmp.context_origin = std::move(context_origin);
+  tmp.source_type = AttributionSourceType::kEvent;
+  tmp.register_time = base::TimeTicks::Now();
+
   receivers_.Add(this, std::move(data_host),
-                 FrozenContext{.context_origin = std::move(context_origin),
-                               .source_type = AttributionSourceType::kEvent,
-                               .register_time = base::TimeTicks::Now()});
+                 std::move(tmp));
   data_hosts_in_source_mode_++;
 }
 
@@ -239,8 +243,8 @@ bool AttributionDataHostManagerImpl::RegisterNavigationDataHost(
     const blink::AttributionSrcToken& attribution_src_token) {
   auto [it, inserted] = navigation_data_host_map_.try_emplace(
       attribution_src_token,
-      NavigationDataHost{.data_host = std::move(data_host),
-                         .register_time = base::TimeTicks::Now()});
+      NavigationDataHost{/*.data_host =*/ std::move(data_host),
+                         /*.register_time =*/ base::TimeTicks::Now()});
   // Should only be possible with a misbehaving renderer.
   if (!inserted)
     return false;
@@ -591,8 +595,8 @@ void AttributionDataHostManagerImpl::TriggerDataAvailable(
   const base::TimeDelta delay = kTriggerDelay.Get();
 
   delayed_triggers_.emplace_back(DelayedTrigger{
-      .delay_until = base::TimeTicks::Now() + delay,
-      .trigger = std::move(trigger),
+      /*.delay_until =*/ base::TimeTicks::Now() + delay,
+      /*.trigger =*/ std::move(trigger),
   });
   RecordTriggerQueueEvent(TriggerQueueEvent::kEnqueued);
 

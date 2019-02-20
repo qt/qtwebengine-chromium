@@ -34,9 +34,9 @@ void VulkanFenceHelper::Destroy() {
 // TODO(ericrk): Handle recycling fences.
 VkResult VulkanFenceHelper::GetFence(VkFence* fence) {
   VkFenceCreateInfo create_info{
-      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = 0,
+      VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      nullptr,
+      0,
   };
   return vkCreateFence(device_queue_->GetVulkanDevice(), &create_info,
                        nullptr /* pAllocator */, fence);

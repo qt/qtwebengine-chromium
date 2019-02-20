@@ -556,7 +556,7 @@ void AttributionManagerImpl::ProcessNextEvent(bool is_debug_cookie_set) {
   pending_events_.pop_front();
 
   absl::visit(
-      EventStorer{.manager = this, .is_debug_cookie_set = is_debug_cookie_set},
+      EventStorer{/*.manager =*/ this, /*.is_debug_cookie_set =*/ is_debug_cookie_set},
       std::move(event));
 }
 

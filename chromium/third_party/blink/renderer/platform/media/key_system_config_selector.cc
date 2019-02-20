@@ -77,9 +77,13 @@ EmeConfig::Rule GetDistinctiveIdentifierConfigRule(
   }
   if (support == EmeFeatureSupport::NOT_SUPPORTED ||
       requirement == EmeFeatureRequirement::kNotAllowed) {
-    return EmeConfig{.identifier = EmeConfigRuleState::kNotAllowed};
+    EmeConfig tmp = {};
+    tmp.identifier = EmeConfigRuleState::kNotAllowed;
+    return tmp;
   }
-  return EmeConfig{.identifier = EmeConfigRuleState::kRequired};
+  EmeConfig tmp = {};
+  tmp.identifier = EmeConfigRuleState::kRequired;
+  return tmp;
 }
 
 EmeConfig::Rule GetPersistentStateConfigRule(
@@ -121,9 +125,13 @@ EmeConfig::Rule GetPersistentStateConfigRule(
   }
   if (support == EmeFeatureSupport::NOT_SUPPORTED ||
       requirement == EmeFeatureRequirement::kNotAllowed) {
-    return EmeConfig{.persistence = EmeConfigRuleState::kNotAllowed};
+    EmeConfig tmp = {};
+    tmp.persistence = EmeConfigRuleState::kNotAllowed;
+    return tmp;
   }
-  return EmeConfig{.persistence = EmeConfigRuleState::kRequired};
+  EmeConfig tmp = {};
+  tmp.persistence = EmeConfigRuleState::kRequired;
+  return tmp;
 }
 
 bool IsPersistentSessionType(WebEncryptedMediaSessionType sessionType) {
@@ -643,8 +651,10 @@ KeySystemConfigSelector::GetSupportedConfiguration(
   //    Identifiers are not allowed according to restrictions, set distinctive
   //    identifier requirement to "not-allowed".
 
+  EmeConfig tmp = {};
+  tmp.identifier = EmeConfigRuleState::kRequired;
   EmeConfig::Rule identifier_required =
-      EmeConfig{.identifier = EmeConfigRuleState::kRequired};
+      std::move(tmp);
   if (distinctive_identifier == EmeFeatureRequirement::kOptional &&
       !config_state->IsRuleSupported(identifier_required)) {
     distinctive_identifier = EmeFeatureRequirement::kNotAllowed;
@@ -696,8 +706,10 @@ KeySystemConfigSelector::GetSupportedConfiguration(
   // 9. If persistent state requirement is "optional" and persisting state is
   //    not allowed according to restrictions, set persistent state requirement
   //    to "not-allowed".
+  EmeConfig tmp2 = {};
+  tmp2.persistence = EmeConfigRuleState::kRequired;
   EmeConfig::Rule persistence_required =
-      EmeConfig{.persistence = EmeConfigRuleState::kRequired};
+      std::move(tmp2);
   if (persistent_state == EmeFeatureRequirement::kOptional &&
       !config_state->IsRuleSupported(persistence_required)) {
     persistent_state = EmeFeatureRequirement::kNotAllowed;

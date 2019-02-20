@@ -292,40 +292,36 @@ HRESULT FakeWinWebAuthnApi::GetPlatformCredentialList(
       credential.user_icon =
           base::UTF8ToUTF16(registration.second.user->icon_url->spec());
     }
-    credential.rp = {
-        .dwVersion = WEBAUTHN_RP_ENTITY_INFORMATION_CURRENT_VERSION,
-        .pwszId = base::as_wcstr(credential.rp_id),
-        .pwszName = base::as_wcstr(credential.rp_name),
-        .pwszIcon =
-            credential.rp_icon ? base::as_wcstr(*credential.rp_icon) : nullptr,
-    };
-    credential.user = {
-        .dwVersion = WEBAUTHN_USER_ENTITY_INFORMATION_CURRENT_VERSION,
-        .cbId = static_cast<DWORD>(credential.user_id.size()),
-        .pbId = credential.user_id.data(),
-        .pwszName = base::as_wcstr(credential.user_name),
-        .pwszIcon = credential.user_icon ? base::as_wcstr(*credential.user_icon)
-                                         : nullptr,
-        .pwszDisplayName = base::as_wcstr(credential.user_display_name),
-    };
-    credential.details = {
-        .dwVersion = WEBAUTHN_CREDENTIAL_DETAILS_VERSION_1,
-        .cbCredentialID = static_cast<DWORD>(credential.credential_id.size()),
-        .pbCredentialID = credential.credential_id.data(),
-        .pRpInformation = &credential.rp,
-        .pUserInformation = &credential.user,
-        .bRemovable = true,
-    };
+    credential.rp = {};
+        credential.rp.dwVersion = WEBAUTHN_RP_ENTITY_INFORMATION_CURRENT_VERSION;
+        credential.rp.pwszId = base::as_wcstr(credential.rp_id);
+        credential.rp.pwszName = base::as_wcstr(credential.rp_name);
+        credential.rp.pwszIcon =
+            credential.rp_icon ? base::as_wcstr(*credential.rp_icon) : nullptr;
+    credential.user = {};
+        credential.user.dwVersion = WEBAUTHN_USER_ENTITY_INFORMATION_CURRENT_VERSION;
+        credential.user.cbId = static_cast<DWORD>(credential.user_id.size());
+        credential.user.pbId = credential.user_id.data();
+        credential.user.pwszName = base::as_wcstr(credential.user_name);
+        credential.user.pwszIcon = credential.user_icon ? base::as_wcstr(*credential.user_icon)
+                                         : nullptr;
+        credential.user.pwszDisplayName = base::as_wcstr(credential.user_display_name);
+    credential.details = {};
+        credential.details.dwVersion = WEBAUTHN_CREDENTIAL_DETAILS_VERSION_1;
+        credential.details.cbCredentialID = static_cast<DWORD>(credential.credential_id.size());
+        credential.details.pbCredentialID = credential.credential_id.data();
+        credential.details.pRpInformation = &credential.rp;
+        credential.details.pUserInformation = &credential.user;
+        credential.details.bRemovable = true;
   }
 
   for (auto& credential : credential_list.credentials) {
     credential_list.win_credentials.push_back(&credential->details);
   }
-  credential_list.credential_details_list = {
-      .cCredentialDetails =
-          static_cast<DWORD>(credential_list.win_credentials.size()),
-      .ppCredentialDetails = credential_list.win_credentials.data(),
-  };
+  credential_list.credential_details_list = {};
+      credential_list.credential_details_list.cCredentialDetails =
+          static_cast<DWORD>(credential_list.win_credentials.size());
+      credential_list.credential_details_list.ppCredentialDetails = credential_list.win_credentials.data();
   *credentials = &credential_list.credential_details_list;
   return credential_list.credentials.empty() ? NTE_NOT_FOUND : S_OK;
 }

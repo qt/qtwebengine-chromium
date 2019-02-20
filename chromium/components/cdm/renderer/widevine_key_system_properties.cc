@@ -125,9 +125,13 @@ EmeConfig::Rule WidevineKeySystemProperties::GetEncryptionSchemeConfigRule(
   if (is_supported && is_hw_secure_supported) {
     return EmeConfig::SupportedRule();
   } else if (is_supported && !is_hw_secure_supported) {
-    return EmeConfig{.hw_secure_codecs = EmeConfigRuleState::kNotAllowed};
+    EmeConfig tmp = {};
+    tmp.hw_secure_codecs = EmeConfigRuleState::kNotAllowed;
+    return tmp;
   } else if (!is_supported && is_hw_secure_supported) {
-    return EmeConfig{.hw_secure_codecs = EmeConfigRuleState::kRequired};
+    EmeConfig tmp = {};
+    tmp.hw_secure_codecs = EmeConfigRuleState::kRequired;
+    return tmp;
   } else {
     return media::EmeConfig::UnsupportedRule();
   }
@@ -215,9 +219,11 @@ EmeConfig::Rule WidevineKeySystemProperties::GetRobustnessConfigRule(
     // requires identifier and persistent state.
 
     if (IsHardwareSecurityEnabledForKeySystem(key_system)) {
-      return EmeConfig{.identifier = EmeConfigRuleState::kRequired,
-                       .persistence = EmeConfigRuleState::kRequired,
-                       .hw_secure_codecs = EmeConfigRuleState::kRequired};
+      EmeConfig tmp = {};
+      tmp.identifier = EmeConfigRuleState::kRequired;
+      tmp.persistence = EmeConfigRuleState::kRequired;
+      tmp.hw_secure_codecs = EmeConfigRuleState::kRequired};
+      return tmp;
     } else {
       return media::EmeConfig::UnsupportedRule();
     }
@@ -225,7 +231,9 @@ EmeConfig::Rule WidevineKeySystemProperties::GetRobustnessConfigRule(
     // On Windows, when software security is queried, explicitly not allow
     // hardware secure codecs to prevent robustness level upgrade, for stability
     // and compatibility reasons. See https://crbug.com/1327043.
-    return EmeConfig{.hw_secure_codecs = EmeConfigRuleState::kNotAllowed};
+    EmeConfig config = {};
+        config.hw_secure_codecs = EmeConfigRuleState::kNotAllowed;
+    return config;
   }
 #else
   // On other platforms, require hardware secure codecs for HW_SECURE_CRYPTO and
@@ -268,9 +276,13 @@ WidevineKeySystemProperties::GetPersistentLicenseSessionSupport() const {
   if (is_supported && is_hw_secure_supported) {
     return EmeConfig::SupportedRule();
   } else if (is_supported && !is_hw_secure_supported) {
-    return EmeConfig{.hw_secure_codecs = EmeConfigRuleState::kNotAllowed};
+    EmeConfig config = {};
+    config.hw_secure_codecs = EmeConfigRuleState::kNotAllowed;
+    return config;
   } else if (!is_supported && is_hw_secure_supported) {
-    return EmeConfig{.hw_secure_codecs = EmeConfigRuleState::kRequired};
+    EmeConfig config = {};
+    config.hw_secure_codecs = EmeConfigRuleState::kRequired;
+    return config;
   } else {
     return media::EmeConfig::UnsupportedRule();
   }

@@ -224,7 +224,8 @@ absl::optional<std::wstring> GetParentInstanceId(
     HDEVINFO device_info_set,
     SP_DEVICE_INTERFACE_DATA& device_interface_data) {
   // Get device info for |device_interface_data|.
-  SP_DEVINFO_DATA device_info_data = {.cbSize = sizeof(device_info_data)};
+  SP_DEVINFO_DATA device_info_data{};
+    device_info_data.cbSize = sizeof(device_info_data);
   std::wstring device_path;
   if (!GetDeviceInfoAndPathFromInterface(device_info_set, device_interface_data,
                                          &device_info_data, &device_path)) {
@@ -535,13 +536,14 @@ void HidServiceWin::EnumerateBlocking(
       /*hwndParent=*/nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE));
 
   if (device_info_set.is_valid()) {
-    SP_DEVICE_INTERFACE_DATA device_interface_data = {
-        .cbSize = sizeof(device_interface_data)};
+    SP_DEVICE_INTERFACE_DATA device_interface_data{};
+        device_interface_data.cbSize = sizeof(device_interface_data);
     for (int device_index = 0; SetupDiEnumDeviceInterfaces(
              device_info_set.get(), /*DeviceInfoData=*/nullptr,
              &GUID_DEVINTERFACE_HID, device_index, &device_interface_data);
          ++device_index) {
-      SP_DEVINFO_DATA device_info_data = {.cbSize = sizeof(device_info_data)};
+      SP_DEVINFO_DATA device_info_data{};
+        device_info_data.cbSize = sizeof(device_info_data);
       std::wstring device_path;
       if (!GetDeviceInfoAndPathFromInterface(device_info_set.get(),
                                              device_interface_data,
@@ -585,7 +587,8 @@ void HidServiceWin::AddDeviceBlocking(
   if (!preparsed_data)
     return;
 
-  HIDD_ATTRIBUTES attrib = {.Size = sizeof(attrib)};
+  HIDD_ATTRIBUTES attrib{};
+    attrib.Size = sizeof(attrib);
   if (!HidD_GetAttributes(device_handle.Get(), &attrib)) {
     HID_LOG(DEBUG) << "Failed to get device attributes.";
     return;
@@ -622,7 +625,8 @@ void HidServiceWin::AddDeviceBlocking(
 
 void HidServiceWin::OnDeviceAdded(const GUID& class_guid,
                                   const std::wstring& device_path) {
-  SP_DEVINFO_DATA device_info_data = {.cbSize = sizeof(device_info_data)};
+  SP_DEVINFO_DATA device_info_data{};
+      device_info_data.cbSize = sizeof(device_info_data);
   auto device_info_set =
       GetDeviceInfoSetFromDevicePath(device_path, &device_info_data);
   if (!device_info_set.is_valid())

@@ -332,7 +332,7 @@ ParseStatus::Or<AttributeListIterator::Item> AttributeListIterator::Next() {
   }
 
   remaining_content_ = content;
-  return Item{.name = name.value(), .value = value.value()};
+  return Item{/*.name =*/ name.value(), /*.value =*/ value.value()};
 }
 
 AttributeMap::AttributeMap(base::span<Item> sorted_items)

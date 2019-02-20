@@ -322,12 +322,12 @@ ParseStatus::Or<M3uTag> M3uTag::Parse(TagItem tag) {
 // static
 XDefineTag XDefineTag::CreateDefinition(types::VariableName name,
                                         base::StringPiece value) {
-  return XDefineTag{.name = name, .value = value};
+  return XDefineTag{/*.name =*/ name, /*.value =*/ value};
 }
 
 // static
 XDefineTag XDefineTag::CreateImport(types::VariableName name) {
-  return XDefineTag{.name = name, .value = absl::nullopt};
+  return XDefineTag{/*.name =*/ name, /*.value =*/ absl::nullopt};
 }
 
 // static

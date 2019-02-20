@@ -32,7 +32,7 @@ namespace device {
 class CpuProbe {
  public:
   // LastSample() return value when the implementation fails to get a result.
-  static constexpr PressureSample kUnsupportedValue = {.cpu_utilization = 0.0};
+  static constexpr PressureSample kUnsupportedValue = {/*.cpu_utilization = */0.0};
 
   // Instantiates the CpuProbe subclass most suitable for the current platform.
   //

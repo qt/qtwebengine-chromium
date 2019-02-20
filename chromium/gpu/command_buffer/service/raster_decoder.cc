@@ -815,10 +815,9 @@ class RasterDecoderImpl final : public RasterDecoder,
     // This will ensure that vulkan memory allocated on gpu main thread will be
     // cleaned up.
     if (!signal_semaphores.empty() || is_drdc_enabled_) {
-      GrFlushInfo flush_info = {
-          .fNumSemaphores = signal_semaphores.size(),
-          .fSignalSemaphores = signal_semaphores.data(),
-      };
+      GrFlushInfo flush_info = {};
+          flush_info.fNumSemaphores = signal_semaphores.size();
+          flush_info.fSignalSemaphores = signal_semaphores.data();
       gpu::AddVulkanCleanupTaskForSkiaFlush(
           shared_context_state_->vk_context_provider(), &flush_info);
 
@@ -1189,8 +1188,8 @@ void RasterDecoderImpl::Destroy(bool have_context) {
     // Make sure we flush any pending skia work on this context.
     if (sk_surface_) {
       GrFlushInfo flush_info = {
-          .fNumSemaphores = end_semaphores_.size(),
-          .fSignalSemaphores = end_semaphores_.data(),
+          end_semaphores_.size(),
+          end_semaphores_.data(),
       };
       AddVulkanCleanupTaskForSkiaFlush(
           shared_context_state_->vk_context_provider(), &flush_info);
@@ -2870,10 +2869,10 @@ void RasterDecoderImpl::DoReadbackYUVImagePixelsINTERNAL(
   }
 
   if (!end_semaphores.empty()) {
-    GrFlushInfo flush_info = {
-        .fNumSemaphores = end_semaphores.size(),
-        .fSignalSemaphores = end_semaphores.data(),
-    };
+    GrFlushInfo flush_info = {};
+        flush_info.fNumSemaphores = end_semaphores.size();
+        flush_info.fSignalSemaphores = end_semaphores.data();
+
     AddVulkanCleanupTaskForSkiaFlush(
         shared_context_state_->vk_context_provider(), &flush_info);
     auto flush_result = shared_context_state_->gr_context()->flush(flush_info);

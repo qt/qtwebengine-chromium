@@ -53,8 +53,8 @@ FrameDecodeTiming::OnFrameBufferUpdated(uint32_t next_temporal_unit_rtp,
                        << " with a max wait of " << max_wait_for_frame
                        << " clamped to " << max_wait;
   Timestamp latest_decode_time = now + max_wait;
-  return FrameSchedule{.latest_decode_time = latest_decode_time,
-                       .render_time = render_time};
+  return FrameSchedule{/*.latest_decode_time =*/ latest_decode_time,
+                       /*.render_time =*/ render_time};
 }
 
 }  // namespace webrtc
