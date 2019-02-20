@@ -96,29 +96,30 @@ absl::optional<WebRtcHybridAgcParams> GetWebRtcHybridAgcParams() {
   if (!base::FeatureList::IsEnabled(::features::kWebRtcHybridAgc)) {
     return absl::nullopt;
   }
-  return WebRtcHybridAgcParams{
-      .dry_run = base::GetFieldTrialParamByFeatureAsBool(
-          ::features::kWebRtcHybridAgc, "dry_run", false),
-      .vad_reset_period_ms = base::GetFieldTrialParamByFeatureAsInt(
-          ::features::kWebRtcHybridAgc, "vad_reset_period_ms", 1500),
-      .adjacent_speech_frames_threshold =
+  WebRtcHybridAgcParams out;
+      out.dry_run = base::GetFieldTrialParamByFeatureAsBool(
+          ::features::kWebRtcHybridAgc, "dry_run", false);
+      out.vad_reset_period_ms = base::GetFieldTrialParamByFeatureAsInt(
+          ::features::kWebRtcHybridAgc, "vad_reset_period_ms", 1500);
+      out.adjacent_speech_frames_threshold =
           base::GetFieldTrialParamByFeatureAsInt(
               ::features::kWebRtcHybridAgc, "adjacent_speech_frames_threshold",
-              12),
-      .max_gain_change_db_per_second =
+              12);
+      out.max_gain_change_db_per_second =
           static_cast<float>(base::GetFieldTrialParamByFeatureAsDouble(
               ::features::kWebRtcHybridAgc, "max_gain_change_db_per_second",
-              3)),
-      .max_output_noise_level_dbfs =
+              3));
+      out.max_output_noise_level_dbfs =
           static_cast<float>(base::GetFieldTrialParamByFeatureAsDouble(
               ::features::kWebRtcHybridAgc, "max_output_noise_level_dbfs",
-              -50)),
-      .sse2_allowed = base::GetFieldTrialParamByFeatureAsBool(
-          ::features::kWebRtcHybridAgc, "sse2_allowed", true),
-      .avx2_allowed = base::GetFieldTrialParamByFeatureAsBool(
-          ::features::kWebRtcHybridAgc, "avx2_allowed", true),
-      .neon_allowed = base::GetFieldTrialParamByFeatureAsBool(
-          ::features::kWebRtcHybridAgc, "neon_allowed", true)};
+              -50));
+      out.sse2_allowed = base::GetFieldTrialParamByFeatureAsBool(
+          ::features::kWebRtcHybridAgc, "sse2_allowed", true);
+      out.avx2_allowed = base::GetFieldTrialParamByFeatureAsBool(
+          ::features::kWebRtcHybridAgc, "avx2_allowed", true);
+      out.neon_allowed = base::GetFieldTrialParamByFeatureAsBool(
+          ::features::kWebRtcHybridAgc, "neon_allowed", true);
+  return out;
 }
 
 absl::optional<WebRtcAnalogAgcClippingControlParams>
@@ -127,38 +128,39 @@ GetWebRtcAnalogAgcClippingControlParams() {
           ::features::kWebRtcAnalogAgcClippingControl)) {
     return absl::nullopt;
   }
-  return WebRtcAnalogAgcClippingControlParams{
-      .mode = base::GetFieldTrialParamByFeatureAsInt(
-          ::features::kWebRtcAnalogAgcClippingControl, "mode", 0),
-      .window_length = base::GetFieldTrialParamByFeatureAsInt(
-          ::features::kWebRtcAnalogAgcClippingControl, "window_length", 5),
-      .reference_window_length = base::GetFieldTrialParamByFeatureAsInt(
+  WebRtcAnalogAgcClippingControlParams out;
+      out.mode = base::GetFieldTrialParamByFeatureAsInt(
+          ::features::kWebRtcAnalogAgcClippingControl, "mode", 0);
+      out.window_length = base::GetFieldTrialParamByFeatureAsInt(
+          ::features::kWebRtcAnalogAgcClippingControl, "window_length", 5);
+      out.reference_window_length = base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl,
-          "reference_window_length", 5),
-      .reference_window_delay = base::GetFieldTrialParamByFeatureAsInt(
+          "reference_window_length", 5);
+      out.reference_window_delay = base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "reference_window_delay",
-          5),
-      .clipping_threshold =
+          5);
+      out.clipping_threshold =
           static_cast<float>(base::GetFieldTrialParamByFeatureAsDouble(
               ::features::kWebRtcAnalogAgcClippingControl, "clipping_threshold",
-              -1.0)),
-      .crest_factor_margin =
+              -1.0));
+      out.crest_factor_margin =
           static_cast<float>(base::GetFieldTrialParamByFeatureAsDouble(
               ::features::kWebRtcAnalogAgcClippingControl,
-              "crest_factor_margin", 3.0)),
-      .clipped_level_step = base::GetFieldTrialParamByFeatureAsInt(
+              "crest_factor_margin", 3.0));
+      out.clipped_level_step = base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "clipped_level_step",
-          15),
-      .clipped_ratio_threshold =
+          15);
+      out.clipped_ratio_threshold =
           static_cast<float>(base::GetFieldTrialParamByFeatureAsDouble(
               ::features::kWebRtcAnalogAgcClippingControl,
-              "clipped_ratio_threshold", 0.1)),
-      .clipped_wait_frames = base::GetFieldTrialParamByFeatureAsInt(
+              "clipped_ratio_threshold", 0.1));
+      out.clipped_wait_frames = base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "clipped_wait_frames",
-          300),
-      .use_predicted_step = base::GetFieldTrialParamByFeatureAsBool(
+          300);
+      out.use_predicted_step = base::GetFieldTrialParamByFeatureAsBool(
           ::features::kWebRtcAnalogAgcClippingControl, "use_predicted_step",
-          true)};
+          true);
+  return out;
 }
 
 }  // namespace

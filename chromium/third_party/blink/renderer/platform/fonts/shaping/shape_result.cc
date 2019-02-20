@@ -892,8 +892,9 @@ void ShapeResult::ApplySpacingImpl(
       }
 
       typename ShapeResultSpacing<TextContainerType>::ComputeSpacingParameters
-          parameters{.index = run_start_index + glyph_data.character_index,
-                     .original_advance = glyph_data.advance};
+          parameters;
+                parameters.index = run_start_index + glyph_data.character_index;
+                parameters.original_advance = glyph_data.advance;
       space = spacing.ComputeSpacing(parameters, offset);
       glyph_data.advance += space;
       total_space_for_run += space;

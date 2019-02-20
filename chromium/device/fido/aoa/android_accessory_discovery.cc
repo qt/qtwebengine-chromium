@@ -149,11 +149,11 @@ FindAccessoryInterface(const device::mojom::UsbDeviceInfoPtr& device_info) {
         }
 
         return AndroidAccessoryDiscovery::InterfaceInfo{
-            .configuration = config->configuration_value,
-            .interface = interface->interface_number,
-            .in_endpoint = *in_endpoint_num,
-            .out_endpoint = *out_endpoint_num,
-            .guid = device_info->guid,
+            /* .configuration = */ config->configuration_value,
+            /* .interface = */ interface->interface_number,
+            /* .in_endpoint = */ *in_endpoint_num,
+            /* .out_endpoint = */ *out_endpoint_num,
+            /* .guid = */ device_info->guid,
         };
       }
     }

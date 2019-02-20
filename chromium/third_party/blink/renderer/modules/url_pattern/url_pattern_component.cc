@@ -98,10 +98,10 @@ const liburlpattern::Options& GetOptions(Component::Type type) {
   // default to strict mode and case sensitivity.  In addition, most
   // components have no concept of a delimiter or prefix character.
   DEFINE_THREAD_SAFE_STATIC_LOCAL(Options, default_options,
-                                  ({.delimiter_list = "",
-                                    .prefix_list = "",
-                                    .sensitive = true,
-                                    .strict = true}));
+                                  ({/*.delimiter_list =*/ "",
+                                    /*.prefix_list =*/ "",
+                                    /*.sensitive =*/ true,
+                                    /*.strict =*/ true}));
 
   // The liburlpattern::Options to use for hostname patterns.  This uses a
   // "." delimiter controlling how far a named group like ":bar" will match
@@ -109,20 +109,20 @@ const liburlpattern::Options& GetOptions(Component::Type type) {
   // sensitivity here.  This assumes that the hostname values have already
   // been normalized to lower case as in URL().
   DEFINE_THREAD_SAFE_STATIC_LOCAL(Options, hostname_options,
-                                  ({.delimiter_list = ".",
-                                    .prefix_list = "",
-                                    .sensitive = true,
-                                    .strict = true}));
+                                  ({/*.delimiter_list =*/ ".",
+                                    /*.prefix_list =*/ "",
+                                    /*.sensitive =*/ true,
+                                    /*.strict =*/ true}));
 
   // The liburlpattern::Options to use for pathname patterns.  This uses a
   // "/" delimiter controlling how far a named group like ":bar" will match
   // by default.  It also configures "/" to be treated as an automatic
   // prefix before groups.
   DEFINE_THREAD_SAFE_STATIC_LOCAL(Options, pathname_options,
-                                  ({.delimiter_list = "/",
-                                    .prefix_list = "/",
-                                    .sensitive = true,
-                                    .strict = true}));
+                                  ({/*.delimiter_list =*/ "/",
+                                    /*.prefix_list =*/ "/",
+                                    /*.sensitive =*/ true,
+                                    /*.strict =*/ true}));
 
   switch (type) {
     case Component::Type::kHostname:

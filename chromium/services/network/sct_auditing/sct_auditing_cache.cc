@@ -98,23 +98,23 @@ void ReportSCTAuditingCompletionStatusMetrics(
 const net::BackoffEntry::Policy SCTAuditingReporter::kDefaultBackoffPolicy = {
     // Don't ignore initial errors; begin exponential back-off rules immediately
     // if the first attempt fails.
-    .num_errors_to_ignore = 0,
+    /*.num_errors_to_ignore =*/ 0,
     // Start with a 30s delay, including for the first attempt (due to setting
     // `always_use_initial_delay = true` below).
-    .initial_delay_ms = 30 * 1000,
+    /*.initial_delay_ms =*/ 30 * 1000,
     // Double the backoff delay each retry.
-    .multiply_factor = 2.0,
+    /*.multiply_factor =*/ 2.0,
     // Spread requests randomly between 80-100% of the calculated backoff time.
-    .jitter_factor = 0.2,
+    /*.jitter_factor =*/ 0.2,
     // Max retry delay is 1 day.
-    .maximum_backoff_ms = 24 * 60 * 60 * 1000,
+    /*.maximum_backoff_ms =*/ 24 * 60 * 60 * 1000,
     // Never discard the entry.
-    .entry_lifetime_ms = -1,
+    /*.entry_lifetime_ms =*/ -1,
     // Initial attempt will be delayed (and jittered). This reduces the risk of
     // a "thundering herd" of reports on startup if a user has many reports
     // persisted (once pending reports are persisted and recreated at startup
     // with a new BackoffEntry).
-    .always_use_initial_delay = true,
+    /*.always_use_initial_delay =*/ true,
 };
 
 // How many times an SCTAuditingReporter should retry sending an audit report.

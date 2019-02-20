@@ -153,9 +153,10 @@ void VulkanImage::Destroy() {
 base::ScopedFD VulkanImage::GetMemoryFd(
     VkExternalMemoryHandleTypeFlagBits handle_type) {
   VkMemoryGetFdInfoKHR get_fd_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
-      .memory = device_memory_,
-      .handleType = handle_type,
+      VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+      nullptr,
+      device_memory_,
+      handle_type,
 
   };
 
@@ -191,24 +192,23 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
   flags_ = flags;
   image_tiling_ = image_tiling;
 
-  VkImageCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-      .pNext = vk_image_create_info_next,
-      .flags = flags_,
-      .imageType = VK_IMAGE_TYPE_2D,
-      .format = format_,
-      .extent = {static_cast<uint32_t>(size.width()),
-                 static_cast<uint32_t>(size.height()), 1},
-      .mipLevels = 1,
-      .arrayLayers = 1,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .tiling = image_tiling_,
-      .usage = usage,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-      .queueFamilyIndexCount = 0,
-      .pQueueFamilyIndices = nullptr,
-      .initialLayout = image_layout_,
-  };
+  VkImageCreateInfo create_info;
+      create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+      create_info.pNext = vk_image_create_info_next;
+      create_info.flags = flags_;
+      create_info.imageType = VK_IMAGE_TYPE_2D;
+      create_info.format = format_;
+      create_info.extent = {static_cast<uint32_t>(size.width()),
+                            static_cast<uint32_t>(size.height()), 1};
+      create_info.mipLevels = 1;
+      create_info.arrayLayers = 1;
+      create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+      create_info.tiling = image_tiling_;
+      create_info.usage = usage;
+      create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+      create_info.queueFamilyIndexCount = 0;
+      create_info.pQueueFamilyIndices = nullptr;
+      create_info.initialLayout = image_layout_;
   VkDevice vk_device = device_queue->GetVulkanDevice();
   VkResult result =
       vkCreateImage(vk_device, &create_info, nullptr /* pAllocator */, &image_);
@@ -234,9 +234,9 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
   // Some vulkan implementations require dedicated memory for sharing memory
   // object between vulkan instances.
   VkMemoryDedicatedAllocateInfoKHR dedicated_memory_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR,
-      .pNext = vk_memory_allocation_info_next,
-      .image = image_,
+      VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR,
+      vk_memory_allocation_info_next,
+      image_,
   };
 
   auto index =
@@ -250,10 +250,10 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
 
   memory_type_index_ = index.value();
   VkMemoryAllocateInfo memory_allocate_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-      .pNext = &dedicated_memory_info,
-      .allocationSize = device_size_,
-      .memoryTypeIndex = memory_type_index_,
+      VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      &dedicated_memory_info,
+      device_size_,
+      memory_type_index_,
   };
 
   result = vkAllocateMemory(vk_device, &memory_allocate_info,
@@ -280,11 +280,11 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
   if (image_tiling_ != VK_IMAGE_TILING_LINEAR)
     return true;
 
-  const VkImageSubresource image_subresource = {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .mipLevel = 0,
-      .arrayLayer = 0,
-  };
+  VkImageSubresource image_subresource;
+      image_subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      image_subresource.mipLevel = 0;
+      image_subresource.arrayLayer = 0;
+
   vkGetImageSubresourceLayout(device_queue_->GetVulkanDevice(), image_,
                               &image_subresource, &layouts_[0]);
 
@@ -310,17 +310,19 @@ bool VulkanImage::InitializeWithExternalMemory(
 #endif
 
   VkPhysicalDeviceImageFormatInfo2 format_info_2 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-      .format = format,
-      .type = VK_IMAGE_TYPE_2D,
-      .tiling = image_tiling,
-      .usage = usage,
-      .flags = flags,
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+      nullptr,
+      format,
+      VK_IMAGE_TYPE_2D,
+      image_tiling,
+      usage,
+      flags,
   };
 
   VkPhysicalDeviceExternalImageFormatInfo external_info = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
-      .handleType = kHandleType,
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+      nullptr,
+      kHandleType,
   };
   format_info_2.pNext = &external_info;
 
@@ -339,10 +341,10 @@ bool VulkanImage::InitializeWithExternalMemory(
 #endif
 
   VkImageFormatProperties2 image_format_properties_2 = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+      VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
   };
   VkExternalImageFormatProperties external_image_format_properties = {
-      .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+      VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
   };
   image_format_properties_2.pNext = &external_image_format_properties;
 
@@ -370,15 +372,15 @@ bool VulkanImage::InitializeWithExternalMemory(
   DCHECK(handle_types_ & kHandleType);
 
   VkExternalMemoryImageCreateInfoKHR external_image_create_info = {
-      .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
-      .pNext = image_create_info_next,
-      .handleTypes = handle_types_,
+      VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
+      image_create_info_next,
+      handle_types_,
   };
 
   VkExportMemoryAllocateInfoKHR external_memory_allocate_info = {
-      .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR,
-      .pNext = memory_allocation_info_next,
-      .handleTypes = handle_types_,
+      VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR,
+      memory_allocation_info_next,
+      handle_types_,
   };
 
   return Initialize(device_queue, size, format, usage, flags, image_tiling,

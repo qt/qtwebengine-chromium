@@ -109,11 +109,11 @@ DatabaseTracker::DatabaseTracker(
       db_dir_(is_incognito_
                   ? profile_path_.Append(kIncognitoDatabaseDirectoryName)
                   : profile_path_.Append(kDatabaseDirectoryName)),
-      db_(std::make_unique<sql::Database>(sql::DatabaseOptions{
-          .exclusive_locking = true,
-          .page_size = 4096,
-          .cache_size = 500,
-      })),
+      db_(std::make_unique<sql::Database>(sql::DatabaseOptions(
+          /*.exclusive_locking =*/ true,
+          /*.page_size =*/ 4096,
+          /*.cache_size =*/ 500
+                                ))),
       special_storage_policy_(std::move(special_storage_policy)),
       quota_manager_proxy_(std::move(quota_manager_proxy)),
       task_runner_(base::ThreadPool::CreateSequencedTaskRunner(

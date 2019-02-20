@@ -198,12 +198,12 @@ ReadImpressionToAttribute(sql::Database* db,
   base::Time expiry_time = statement.ColumnTime(8);
 
   return ImpressionToAttribute{
-      .impression = StorableImpression(
+      /*.impression =*/ StorableImpression(
           impression_data, std::move(impression_origin),
           std::move(conversion_origin), reporting_origin, impression_time,
           expiry_time, *source_type, priority, impression_id),
-      .attribution_logic = *attribution_logic,
-      .num_conversions = num_conversions,
+      /*.attribution_logic =*/ *attribution_logic,
+      /*.num_conversions =*/ num_conversions,
   };
 }
 
@@ -1166,8 +1166,9 @@ bool ConversionStorageSql::LazyInit(DbCreationPolicy creation_policy) {
       return true;
   }
 
-  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
-      .exclusive_locking = true, .page_size = 4096, .cache_size = 32});
+  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions(
+      /*.exclusive_locking =*/ true,
+      /*.page_size =*/ 4096, /*.cache_size =*/ 32));
   db_->set_histogram_tag("Conversions");
 
   // Supply this callback with a weak_ptr to avoid calling the error callback
@@ -1450,8 +1451,8 @@ bool ConversionStorageSql::EnsureCapacityForPendingDestinationLimit(
 
   while (statement.Step()) {
     ImpressionData impression_data = {
-        .impression_id = statement.ColumnInt64(0),
-        .conversion_destination = statement.ColumnString(1),
+        /*.impression_id =*/ statement.ColumnInt64(0),
+        /*.conversion_destination =*/ statement.ColumnString(1),
     };
 
     // If there's already an impression matching the to-be-stored

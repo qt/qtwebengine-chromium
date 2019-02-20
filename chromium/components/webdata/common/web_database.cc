@@ -48,17 +48,17 @@ sql::InitStatus FailedMigrationTo(int version_num) {
 }  // namespace
 
 WebDatabase::WebDatabase()
-    : db_({// Run the database in exclusive mode. Nobody else should be
+    : db_(sql::DatabaseOptions(// Run the database in exclusive mode. Nobody else should be
            // accessing the database while we're running, and this will give
            // somewhat improved perf.
-           .exclusive_locking = true,
+           /* .exclusive_locking = */ true,
            // We don't store that much data in the tables so use a small page
            // size. This provides a large benefit for empty tables (which is
            // very likely with the tables we create).
-           .page_size = 2048,
+           /* .page_size = */ 2048,
            // We shouldn't have much data and what access we currently have is
            // quite infrequent. So we go with a small cache size.
-           .cache_size = 32}) {}
+           /* .cache_size = */ 32)) {}
 
 WebDatabase::~WebDatabase() {}
 

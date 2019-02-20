@@ -34,7 +34,7 @@ using WholeSentenceExtractor = FeatureExtractor<Sentence>;
 // for clang's -Wundefined-var-template.  However, MSVC has a bug which treats
 // this declaration as a definition, leading to multiple definition errors, so
 // omit this on MSVC.
-#if !defined(COMPILER_MSVC)
+#if !defined(_MSC_VER)
 template <>
 WholeSentenceFeature::Registry
     *RegisterableClass<WholeSentenceFeature>::registry_;

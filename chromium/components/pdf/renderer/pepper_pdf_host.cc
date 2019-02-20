@@ -503,32 +503,32 @@ namespace {
 PP_PdfPageCharacterIndex ToPdfPageCharacterIndex(
     const chrome_pdf::PageCharacterIndex& page_char_index) {
   return {
-      .page_index = page_char_index.page_index,
-      .char_index = page_char_index.char_index,
+      /*.page_index =*/ page_char_index.page_index,
+      /*.char_index =*/ page_char_index.char_index,
   };
 }
 
 PP_PdfAccessibilityActionData ToPdfAccessibilityActionData(
     const chrome_pdf::AccessibilityActionData& action_data) {
-  return {
-      .action = static_cast<PP_PdfAccessibilityAction>(action_data.action),
-      .annotation_type = static_cast<PP_PdfAccessibilityAnnotationType>(
-          action_data.annotation_type),
-      .target_point = content::PP_FromGfxPoint(action_data.target_point),
-      .target_rect = content::PP_FromGfxRect(action_data.target_rect),
-      .annotation_index = action_data.annotation_index,
-      .page_index = action_data.page_index,
-      .horizontal_scroll_alignment =
+  PP_PdfAccessibilityActionData data;
+      data.action = static_cast<PP_PdfAccessibilityAction>(action_data.action);
+      data.annotation_type = static_cast<PP_PdfAccessibilityAnnotationType>(
+          action_data.annotation_type);
+      data.target_point = content::PP_FromGfxPoint(action_data.target_point);
+      data.target_rect = content::PP_FromGfxRect(action_data.target_rect);
+      data.annotation_index = action_data.annotation_index;
+      data.page_index = action_data.page_index;
+      data.horizontal_scroll_alignment =
           static_cast<PP_PdfAccessibilityScrollAlignment>(
-              action_data.horizontal_scroll_alignment),
-      .vertical_scroll_alignment =
+              action_data.horizontal_scroll_alignment);
+      data.vertical_scroll_alignment =
           static_cast<PP_PdfAccessibilityScrollAlignment>(
-              action_data.vertical_scroll_alignment),
-      .selection_start_index =
-          ToPdfPageCharacterIndex(action_data.selection_start_index),
-      .selection_end_index =
-          ToPdfPageCharacterIndex(action_data.selection_end_index),
-  };
+              action_data.vertical_scroll_alignment);
+      data.selection_start_index =
+          ToPdfPageCharacterIndex(action_data.selection_start_index);
+      data.selection_end_index =
+          ToPdfPageCharacterIndex(action_data.selection_end_index);
+  return data;
 }
 
 }  // namespace

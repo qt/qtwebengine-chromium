@@ -212,10 +212,10 @@ Version OSInfo::Kernel32Version() const {
 OSInfo::VersionNumber OSInfo::Kernel32VersionNumber() const {
   DCHECK(Kernel32BaseVersion().components().size() == 4);
   static const VersionNumber version = {
-      .major = Kernel32BaseVersion().components()[0],
-      .minor = Kernel32BaseVersion().components()[1],
-      .build = Kernel32BaseVersion().components()[2],
-      .patch = Kernel32BaseVersion().components()[3]};
+      /*.major =*/ Kernel32BaseVersion().components()[0],
+      /*.minor =*/ Kernel32BaseVersion().components()[1],
+      /*.build =*/ Kernel32BaseVersion().components()[2],
+      /*.patch =*/ Kernel32BaseVersion().components()[3]};
   return version;
 }
 

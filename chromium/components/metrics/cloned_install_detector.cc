@@ -122,12 +122,13 @@ void ClonedInstallDetector::RegisterPrefs(PrefRegistrySimple* registry) {
 
 ClonedInstallInfo ClonedInstallDetector::ReadClonedInstallInfo(
     PrefService* local_state) {
-  return ClonedInstallInfo{
-      .last_reset_timestamp =
-          local_state->GetInt64(prefs::kLastClonedResetTimestamp),
-      .first_reset_timestamp =
-          local_state->GetInt64(prefs::kFirstClonedResetTimestamp),
-      .reset_count = local_state->GetInteger(prefs::kClonedResetCount)};
+  ClonedInstallInfo out;
+      out.last_reset_timestamp =
+          local_state->GetInt64(prefs::kLastClonedResetTimestamp);
+      out.first_reset_timestamp =
+          local_state->GetInt64(prefs::kFirstClonedResetTimestamp);
+      out.reset_count = local_state->GetInteger(prefs::kClonedResetCount);
+  return out;
 }
 
 void ClonedInstallDetector::ClearClonedInstallInfo(PrefService* local_state) {

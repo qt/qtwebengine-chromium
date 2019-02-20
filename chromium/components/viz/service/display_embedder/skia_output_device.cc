@@ -326,10 +326,9 @@ GrSemaphoresSubmitted SkiaOutputDevice::Flush(
     VulkanContextProvider* vulkan_context_provider,
     std::vector<GrBackendSemaphore> end_semaphores,
     base::OnceClosure on_finished) {
-  GrFlushInfo flush_info = {
-      .fNumSemaphores = end_semaphores.size(),
-      .fSignalSemaphores = end_semaphores.data(),
-  };
+  GrFlushInfo flush_info;
+      flush_info.fNumSemaphores = end_semaphores.size();
+      flush_info.fSignalSemaphores = end_semaphores.data();
   gpu::AddVulkanCleanupTaskForSkiaFlush(vulkan_context_provider, &flush_info);
   if (on_finished)
     gpu::AddCleanupTaskForSkiaFlush(std::move(on_finished), &flush_info);

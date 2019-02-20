@@ -63,8 +63,8 @@ void FontAccessManagerImpl::BindReceiver(
 
   receivers_.Add(this, std::move(receiver),
                  {
-                     .origin = std::move(origin),
-                     .frame_id = frame_id,
+                     /*.origin =*/ std::move(origin),
+                     /*.frame_id =*/ frame_id,
                  });
 }
 
