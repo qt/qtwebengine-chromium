@@ -1042,8 +1042,10 @@ int BrowserMainLoop::PreMainMessageLoopRun() {
   // responsiveness::Watcher to catch jank induced by any blocking tasks not
   // instrumented with ScopedBlockingCall's assert.
   base::DisallowUnresponsiveTasks();
+#if !defined(TOOLKIT_QT)
   responsiveness_watcher_ = new responsiveness::Watcher;
   responsiveness_watcher_->SetUp();
+#endif
   return result_code_;
 }
 
