@@ -862,11 +862,12 @@ void ShapeResult::ApplySpacingImpl(
       }
 
       typename ShapeResultSpacing<TextContainerType>::ComputeSpacingParameters
-          parameters{.index = run_start_index + glyph_data.character_index,
-                     .advance_override = run->font_data_->GetAdvanceOverride(),
-                     .original_advance = glyph_data.advance,
-                     .advance_proportional_override =
-                         run->font_data_->GetAdvanceProportionalOverride()};
+          parameters;
+                    parameters.index = run_start_index + glyph_data.character_index;
+                    parameters.advance_override = run->font_data_->GetAdvanceOverride();
+                    parameters.original_advance = glyph_data.advance;
+                    parameters.advance_proportional_override =
+                         run->font_data_->GetAdvanceProportionalOverride();
       space = spacing.ComputeSpacing(parameters, offset);
       glyph_data.advance += space;
       total_space_for_run += space;

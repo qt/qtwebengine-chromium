@@ -157,7 +157,7 @@ void AggregatingSampleCollector::TryAcceptSingleSample(
 
     per_surface_samples_.emplace(
         new_sample.surface,
-        Samples{.samples = {{new_sample.value}}, .total_value_count = 1});
+        Samples{/*.samples =*/ {{new_sample.value}}, false, /*.total_value_count =*/ 1});
   } else {
     Samples& sample_set = samples_for_surface_it->second;
     ++sample_set.total_value_count;

@@ -237,7 +237,7 @@ static_assert(DatabaseOptions::kDefaultPageSize == SQLITE_DEFAULT_PAGE_SIZE,
               "DatabaseOptions::kDefaultPageSize must match the value "
               "configured into SQLite");
 
-Database::Database() : Database({.exclusive_locking = false}) {}
+Database::Database() : Database({/*.exclusive_locking =*/ false}) {}
 
 Database::Database(DatabaseOptions options)
     : options_(options), mmap_disabled_(!enable_mmap_by_default_) {

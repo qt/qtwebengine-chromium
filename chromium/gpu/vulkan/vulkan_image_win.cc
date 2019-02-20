@@ -24,11 +24,10 @@ bool VulkanImage::InitializeFromGpuMemoryBufferHandle(
 
 base::win::ScopedHandle VulkanImage::GetMemoryHandle(
     VkExternalMemoryHandleTypeFlagBits handle_type) {
-  VkMemoryGetWin32HandleInfoKHR get_handle_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR,
-      .memory = device_memory_,
-      .handleType = handle_type,
-  };
+  VkMemoryGetWin32HandleInfoKHR get_handle_info;
+  get_handle_info.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+  get_handle_info.memory = device_memory_;
+  get_handle_info.handleType = handle_type;
 
   VkDevice device = device_queue_->GetVulkanDevice();
 
