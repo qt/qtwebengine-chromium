@@ -767,10 +767,12 @@ bool ExternalVkImageBacking::WritePixels(size_t data_size,
                                          FillBufferCallback callback) {
   DCHECK(stride == 0 || size().height() * stride <= data_size);
   VkBufferCreateInfo buffer_create_info = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .size = data_size,
-      .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      nullptr,
+      0,
+      data_size,
+      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+      VK_SHARING_MODE_EXCLUSIVE,
   };
   VkBuffer stage_buffer = VK_NULL_HANDLE;
   // TODO: Consider reusing stage_buffer and stage_memory, if allocation causes
@@ -786,12 +788,12 @@ bool ExternalVkImageBacking::WritePixels(size_t data_size,
   vkGetBufferMemoryRequirements(device(), stage_buffer, &memory_requirements);
 
   VkMemoryAllocateInfo memory_allocate_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-      .allocationSize = memory_requirements.size,
-      .memoryTypeIndex =
-          FindMemoryTypeIndex(context_state_, memory_requirements,
-                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+      VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      nullptr,
+      memory_requirements.size,
+      FindMemoryTypeIndex(context_state_, memory_requirements,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
 
   };
   VkDeviceMemory stage_memory = VK_NULL_HANDLE;

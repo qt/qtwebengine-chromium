@@ -134,9 +134,9 @@ class SkiaOutputDeviceBufferQueue::Image {
     DCHECK(scoped_skia_write_access_);
     if (!end_semaphores_.empty()) {
       GrFlushInfo flush_info = {
-          .fFlags = kNone_GrFlushFlags,
-          .fNumSemaphores = end_semaphores_.size(),
-          .fSignalSemaphores = end_semaphores_.data(),
+          kNone_GrFlushFlags,
+          end_semaphores_.size(),
+          end_semaphores_.data(),
       };
       scoped_skia_write_access_->surface()->flush(
           SkSurface::BackendSurfaceAccess::kNoAccess, flush_info);

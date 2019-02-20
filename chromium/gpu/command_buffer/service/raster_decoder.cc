@@ -818,9 +818,9 @@ void RasterDecoderImpl::Destroy(bool have_context) {
     // Make sure we flush any pending skia work on this context.
     if (sk_surface_) {
       GrFlushInfo flush_info = {
-          .fFlags = kNone_GrFlushFlags,
-          .fNumSemaphores = end_semaphores_.size(),
-          .fSignalSemaphores = end_semaphores_.data(),
+          kNone_GrFlushFlags,
+          end_semaphores_.size(),
+          end_semaphores_.data(),
       };
       AddVulkanCleanupTaskForSkiaFlush(
           shared_context_state_->vk_context_provider(), &flush_info);
@@ -2224,9 +2224,9 @@ void RasterDecoderImpl::DoCopySubTextureINTERNALSkia(
   // so the begin_semaphores can be released, and end_semaphores can be
   // signalled.
   GrFlushInfo flush_info = {
-      .fFlags = kNone_GrFlushFlags,
-      .fNumSemaphores = end_semaphores.size(),
-      .fSignalSemaphores = end_semaphores.data(),
+      /*.fFlags =*/ kNone_GrFlushFlags,
+      /*.fNumSemaphores =*/ int(end_semaphores.size()),
+      /*.fSignalSemaphores =*/ end_semaphores.data(),
   };
   gpu::AddVulkanCleanupTaskForSkiaFlush(
       shared_context_state_->vk_context_provider(), &flush_info);
@@ -2533,9 +2533,9 @@ void RasterDecoderImpl::DoEndRasterCHROMIUM() {
     gl::ScopedProgressReporter report_progress(
         shared_context_state_->progress_reporter());
     GrFlushInfo flush_info = {
-        .fFlags = kNone_GrFlushFlags,
-        .fNumSemaphores = end_semaphores_.size(),
-        .fSignalSemaphores = end_semaphores_.data(),
+        kNone_GrFlushFlags,
+        end_semaphores_.size(),
+        end_semaphores_.data(),
     };
     AddVulkanCleanupTaskForSkiaFlush(
         shared_context_state_->vk_context_provider(), &flush_info);
