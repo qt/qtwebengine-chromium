@@ -185,7 +185,8 @@ void Recovery::Rollback(std::unique_ptr<Recovery> r) {
 
 Recovery::Recovery(Database* connection)
     : db_(connection),
-      recover_db_({.exclusive_locking = false, .page_size = db_->page_size()}) {
+      recover_db_({/*.exclusive_locking =*/ false,
+                  /*.page_size =*/ db_->page_size()}) {
   // Files with I/O errors cannot be safely memory-mapped.
   recover_db_.set_mmap_disabled();
 

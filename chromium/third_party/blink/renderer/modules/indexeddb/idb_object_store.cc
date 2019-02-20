@@ -535,8 +535,8 @@ IDBRequest* IDBObjectStore::DoPutAll(ScriptState* script_state,
     Vector<IDBIndexKeys> keys_for_value;
     for (const auto& it : Metadata().indexes) {
       keys_for_value.emplace_back(IDBIndexKeys{
-          .id = it.key,
-          .keys = GenerateIndexKeysForValue(script_state->GetIsolate(),
+          /* .id = */ it.key,
+          /* .keys = */ GenerateIndexKeysForValue(script_state->GetIsolate(),
                                             Metadata(), *it.value, clones[i])});
     }
     puts[i]->index_keys = std::move(keys_for_value);
@@ -794,9 +794,9 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
     if (clone.IsEmpty())
       value_wrapper.Clone(script_state, &clone);
     index_keys.emplace_back(IDBIndexKeys{
-        .id = it.key,
-        .keys = GenerateIndexKeysForValue(script_state->GetIsolate(),
-                                          Metadata(), *it.value, clone)});
+        it.key,
+        GenerateIndexKeysForValue(script_state->GetIsolate(),
+                                  Metadata(), *it.value, clone)});
   }
   // Records 1KB to 1GB.
   UMA_HISTOGRAM_COUNTS_1M(
@@ -991,10 +991,10 @@ class IndexPopulator final : public NativeEventListener {
       Vector<IDBIndexKeys> index_keys;
       index_keys.ReserveInitialCapacity(1);
       index_keys.emplace_back(IDBIndexKeys{
-          .id = IndexMetadata().id,
-          .keys = GenerateIndexKeysForValue(script_state_->GetIsolate(),
-                                            ObjectStoreMetadata(),
-                                            IndexMetadata(), value)});
+          IndexMetadata().id,
+          GenerateIndexKeysForValue(script_state_->GetIsolate(),
+                                    ObjectStoreMetadata(),
+                                    IndexMetadata(), value)});
 
       database_->Backend()->SetIndexKeys(transaction_id_, object_store_id_,
                                          IDBKey::Clone(primary_key),

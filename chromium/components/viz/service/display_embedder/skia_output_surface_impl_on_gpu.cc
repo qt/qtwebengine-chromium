@@ -827,9 +827,10 @@ void SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass(
     destroy_after_swap_.emplace_back(std::move(ddl));
 
     GrFlushInfo flush_info = {
-        .fNumSemaphores = end_semaphores.size(),
-        .fSignalSemaphores = end_semaphores.data(),
+        /*.fNumSemaphores =*/ end_semaphores.size(),
+        /*.fSignalSemaphores =*/ end_semaphores.data(),
     };
+
     gpu::AddVulkanCleanupTaskForSkiaFlush(vulkan_context_provider_,
                                           &flush_info);
     if (on_finished)

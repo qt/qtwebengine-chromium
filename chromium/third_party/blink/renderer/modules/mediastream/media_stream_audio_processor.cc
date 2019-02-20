@@ -75,23 +75,23 @@ absl::optional<WebRtcHybridAgcParams> GetWebRtcHybridAgcParams() {
     return absl::nullopt;
   }
   return WebRtcHybridAgcParams{
-      .dry_run = base::GetFieldTrialParamByFeatureAsBool(
+      /*.dry_run =*/ base::GetFieldTrialParamByFeatureAsBool(
           ::features::kWebRtcHybridAgc, "dry_run", false),
-      .vad_reset_period_ms = base::GetFieldTrialParamByFeatureAsInt(
+      /*.vad_reset_period_ms =*/ base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcHybridAgc, "vad_reset_period_ms", 1500),
-      .adjacent_speech_frames_threshold =
+//      .adjacent_speech_frames_threshold =
           base::GetFieldTrialParamByFeatureAsInt(
               ::features::kWebRtcHybridAgc, "adjacent_speech_frames_threshold",
               12),
-      .max_gain_change_db_per_second = base::GetFieldTrialParamByFeatureAsInt(
+      /*.max_gain_change_db_per_second =*/ (float)base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcHybridAgc, "max_gain_change_db_per_second", 3),
-      .max_output_noise_level_dbfs = base::GetFieldTrialParamByFeatureAsInt(
+      /*.max_output_noise_level_dbfs =*/ (float)base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcHybridAgc, "max_output_noise_level_dbfs", -50),
-      .sse2_allowed = base::GetFieldTrialParamByFeatureAsBool(
+      /*.sse2_allowed =*/ base::GetFieldTrialParamByFeatureAsBool(
           ::features::kWebRtcHybridAgc, "sse2_allowed", true),
-      .avx2_allowed = base::GetFieldTrialParamByFeatureAsBool(
+      /*.avx2_allowed =*/ base::GetFieldTrialParamByFeatureAsBool(
           ::features::kWebRtcHybridAgc, "avx2_allowed", true),
-      .neon_allowed = base::GetFieldTrialParamByFeatureAsBool(
+      /*.neon_allowed =*/ base::GetFieldTrialParamByFeatureAsBool(
           ::features::kWebRtcHybridAgc, "neon_allowed", true)};
 }
 
@@ -102,29 +102,29 @@ GetWebRtcAnalogAgcClippingControlParams() {
     return absl::nullopt;
   }
   return WebRtcAnalogAgcClippingControlParams{
-      .mode = base::GetFieldTrialParamByFeatureAsInt(
+      /*.mode =*/ base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "mode", 0),
-      .window_length = base::GetFieldTrialParamByFeatureAsInt(
+      /*.window_length =*/ base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "window_length", 5),
-      .reference_window_length = base::GetFieldTrialParamByFeatureAsInt(
+      /*.reference_window_length =*/ base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl,
           "reference_window_length", 5),
-      .reference_window_delay = base::GetFieldTrialParamByFeatureAsInt(
+      /*.reference_window_delay =*/ base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "reference_window_delay",
           5),
-      .clipping_threshold = base::GetFieldTrialParamByFeatureAsDouble(
+      /*.clipping_threshold =*/ (float)base::GetFieldTrialParamByFeatureAsDouble(
           ::features::kWebRtcAnalogAgcClippingControl, "clipping_threshold",
           -1.0),
-      .crest_factor_margin = base::GetFieldTrialParamByFeatureAsDouble(
+      /*.crest_factor_margin =*/ (float)base::GetFieldTrialParamByFeatureAsDouble(
           ::features::kWebRtcAnalogAgcClippingControl, "crest_factor_margin",
           3.0),
-      .clipped_level_step = base::GetFieldTrialParamByFeatureAsInt(
+      /*.clipped_level_step =*/ base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "clipped_level_step",
           15),
-      .clipped_ratio_threshold = base::GetFieldTrialParamByFeatureAsDouble(
+      /*.clipped_ratio_threshold =*/ (float)base::GetFieldTrialParamByFeatureAsDouble(
           ::features::kWebRtcAnalogAgcClippingControl,
           "clipped_ratio_threshold", 0.1),
-      .clipped_wait_frames = base::GetFieldTrialParamByFeatureAsInt(
+      /*.clipped_wait_frames =*/ base::GetFieldTrialParamByFeatureAsInt(
           ::features::kWebRtcAnalogAgcClippingControl, "clipped_wait_frames",
           300)};
 }

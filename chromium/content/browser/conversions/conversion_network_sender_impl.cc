@@ -201,11 +201,10 @@ void ConversionNetworkSenderImpl::OnReportSent(
     scoped_refptr<net::HttpResponseHeaders> headers) {
   network::SimpleURLLoader* loader = it->get();
 
-  SentReportInfo sent_report_info = {
-      .report_url = std::move(report_url),
-      .report_body = std::move(report_body),
-      .http_response_code = headers ? headers->response_code() : 0,
-  };
+  SentReportInfo sent_report_info;
+      sent_report_info.report_url = std::move(report_url);
+      sent_report_info.report_body = std::move(report_body);
+      sent_report_info.http_response_code = headers ? headers->response_code() : 0;
 
   // Consider a non-200 HTTP code as a non-internal error.
   int net_error = loader->NetError();

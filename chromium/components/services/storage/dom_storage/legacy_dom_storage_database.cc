@@ -154,12 +154,12 @@ bool LegacyDomStorageDatabase::LazyOpen(bool create_if_needed) {
     return false;
   }
 
-  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
+  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions(
       // This database should only be accessed from the process hosting the
       // storage service, so exclusive locking is appropriate.
-      .exclusive_locking = true,
-      .page_size = 4096,
-      .cache_size = 500});
+      /*.exclusive_locking =*/ true,
+      /*.page_size =*/ 4096,
+      /*.cache_size =*/ 500));
   db_->set_histogram_tag("DOMStorageDatabase");
 
   // This database is only opened to migrate DOMStorage data to a new backend.

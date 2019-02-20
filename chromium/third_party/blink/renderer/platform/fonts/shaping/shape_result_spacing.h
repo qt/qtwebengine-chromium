@@ -68,7 +68,7 @@ class PLATFORM_EXPORT ShapeResultSpacing final {
     float advance_override = 1.0;
   };
   float ComputeSpacing(unsigned index, float& offset) {
-    return ComputeSpacing(ComputeSpacingParameters{.index = index}, offset);
+    return ComputeSpacing(ComputeSpacingParameters{/*.index =*/ index}, offset);
   }
   float ComputeSpacing(const ComputeSpacingParameters& parameters,
                        float& offset);

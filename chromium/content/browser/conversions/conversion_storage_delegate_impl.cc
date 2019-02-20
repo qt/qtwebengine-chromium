@@ -65,8 +65,8 @@ ConversionStorage::Delegate::RateLimitConfig
 ConversionStorageDelegateImpl::GetRateLimits() const {
   // TODO(csharrison): Finalize max_attributions_per_window value.
   return {
-      .time_window = base::TimeDelta::FromDays(30),
-      .max_attributions_per_window = 100,
+      /*.time_window =*/ base::TimeDelta::FromDays(30),
+      /*.max_attributions_per_window =*/ 100,
   };
 }
 

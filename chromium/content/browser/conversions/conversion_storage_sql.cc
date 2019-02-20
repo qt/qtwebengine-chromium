@@ -816,8 +816,9 @@ bool ConversionStorageSql::LazyInit(DbCreationPolicy creation_policy) {
       return true;
   }
 
-  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
-      .exclusive_locking = true, .page_size = 4096, .cache_size = 32});
+  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions(
+      /*.exclusive_locking =*/ true,
+      /*.page_size =*/ 4096, /*.cache_size =*/ 32));
   db_->set_histogram_tag("Conversions");
 
   // Supply this callback with a weak_ptr to avoid calling the error callback

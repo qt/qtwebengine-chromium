@@ -105,7 +105,7 @@ std::ostream& operator<<(std::ostream& out, const Progress& progress) {
 
 bool Zip(const ZipParams& params) {
   DirectFileAccessor default_accessor;
-  FileAccessor* const file_accessor = params.file_accessor ?: &default_accessor;
+  FileAccessor* const file_accessor = params.file_accessor ? nullptr : &default_accessor;
 
   Paths files_to_add = params.src_files;
 
@@ -230,9 +230,11 @@ bool ZipWithFilterCallback(const base::FilePath& src_dir,
                            const base::FilePath& dest_file,
                            FilterCallback filter_cb) {
   DCHECK(base::DirectoryExists(src_dir));
-  return Zip({.src_dir = src_dir,
-              .dest_file = dest_file,
-              .filter_callback = std::move(filter_cb)});
+  ZipParams params;
+  params.src_dir = src_dir;
+  params.dest_file = dest_file;
+  params.filter_callback = std::move(filter_cb);
+  return Zip(std::move(params));
 }
 
 bool Zip(const base::FilePath& src_dir,
