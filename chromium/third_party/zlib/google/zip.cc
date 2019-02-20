@@ -123,7 +123,7 @@ std::ostream& operator<<(std::ostream& out, const Progress& progress) {
 
 bool Zip(const ZipParams& params) {
   DirectFileAccessor default_accessor(params.src_dir);
-  FileAccessor* const file_accessor = params.file_accessor ?: &default_accessor;
+  FileAccessor* const file_accessor = params.file_accessor ? nullptr : &default_accessor;
 
   std::unique_ptr<internal::ZipWriter> zip_writer;
 
@@ -244,17 +244,21 @@ bool ZipWithFilterCallback(const base::FilePath& src_dir,
                            const base::FilePath& dest_file,
                            FilterCallback filter) {
   DCHECK(base::DirectoryExists(src_dir));
-  return Zip({.src_dir = src_dir,
-              .dest_file = dest_file,
-              .filter_callback = std::move(filter)});
+  ZipParams params;
+  params.src_dir = src_dir;
+  params.dest_file = dest_file;
+  params.filter_callback = std::move(filter);
+  return Zip(std::move(params));
 }
 
 bool Zip(const base::FilePath& src_dir,
          const base::FilePath& dest_file,
          bool include_hidden_files) {
-  return Zip({.src_dir = src_dir,
-              .dest_file = dest_file,
-              .include_hidden_files = include_hidden_files});
+  ZipParams params;
+	params.src_dir = src_dir;
+	params.dest_file = dest_file;
+	params.include_hidden_files = include_hidden_files;
+  return Zip(params);
 }
 
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
@@ -262,9 +266,11 @@ bool ZipFiles(const base::FilePath& src_dir,
               Paths src_relative_paths,
               int dest_fd) {
   DCHECK(base::DirectoryExists(src_dir));
-  return Zip({.src_dir = src_dir,
-              .dest_fd = dest_fd,
-              .src_files = src_relative_paths});
+  ZipParams params;
+	params.src_dir = src_dir;
+	params.dest_fd = dest_fd;
+	params.src_files = src_relative_paths;
+  return Zip(params);
 }
 #endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
 

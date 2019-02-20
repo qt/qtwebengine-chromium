@@ -836,10 +836,12 @@ bool ExternalVkImageBacking::WritePixelsWithCallback(
   DCHECK(stride == 0 || size().height() * stride <= data_size);
 
   VkBufferCreateInfo buffer_create_info = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .size = data_size,
-      .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      nullptr,
+      0,
+      data_size,
+      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+      VK_SHARING_MODE_EXCLUSIVE,
   };
 
   VmaAllocator allocator =
@@ -937,12 +939,11 @@ bool ExternalVkImageBacking::ReadPixelsWithCallback(
     ReadBufferCallback callback) {
   DCHECK(stride == 0 || size().height() * stride <= data_size);
 
-  VkBufferCreateInfo buffer_create_info = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .size = data_size,
-      .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-  };
+  VkBufferCreateInfo buffer_create_info = {};
+      buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+      buffer_create_info.size = data_size;
+      buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+      buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
   VmaAllocator allocator =
       context_state()->vk_context_provider()->GetDeviceQueue()->vma_allocator();
@@ -1046,8 +1047,8 @@ bool ExternalVkImageBacking::WritePixelsWithData(
   GrBackendSemaphore end_access_backend_semaphore;
   end_access_backend_semaphore.initVulkan(vk_end_access_semaphore);
   GrFlushInfo flush_info = {
-      .fNumSemaphores = 1,
-      .fSignalSemaphores = &end_access_backend_semaphore,
+      /* .fNumSemaphores = */ 1,
+      /* .fSignalSemaphores = */ &end_access_backend_semaphore,
   };
   gr_context->flush(flush_info);
 

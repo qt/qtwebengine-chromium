@@ -1580,15 +1580,15 @@ HRESULT MediaFoundationVideoEncodeAccelerator::InitializeD3DVideoProcessing(
   }
 
   // Input/output framerates are dummy values for passthrough.
-  D3D11_VIDEO_PROCESSOR_CONTENT_DESC vp_desc = {
-      .InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE,
-      .InputFrameRate = {60, 1},
-      .InputWidth = input_desc.Width,
-      .InputHeight = input_desc.Height,
-      .OutputFrameRate = {60, 1},
-      .OutputWidth = static_cast<UINT>(input_visible_size_.width()),
-      .OutputHeight = static_cast<UINT>(input_visible_size_.height()),
-      .Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL};
+  D3D11_VIDEO_PROCESSOR_CONTENT_DESC vp_desc{};
+      vp_desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+      vp_desc.InputFrameRate = {60, 1};
+      vp_desc.InputWidth = input_desc.Width;
+      vp_desc.InputHeight = input_desc.Height;
+      vp_desc.OutputFrameRate = {60, 1};
+      vp_desc.OutputWidth = static_cast<UINT>(input_visible_size_.width());
+      vp_desc.OutputHeight = static_cast<UINT>(input_visible_size_.height());
+      vp_desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
 
   Microsoft::WRL::ComPtr<ID3D11Device> texture_device;
   input_texture->GetDevice(&texture_device);
@@ -1617,17 +1617,17 @@ HRESULT MediaFoundationVideoEncodeAccelerator::InitializeD3DVideoProcessing(
   video_context->VideoProcessorSetStreamAutoProcessingMode(
       video_processor.Get(), 0, FALSE);
 
-  D3D11_TEXTURE2D_DESC scaled_desc = {
-      .Width = static_cast<UINT>(input_visible_size_.width()),
-      .Height = static_cast<UINT>(input_visible_size_.height()),
-      .MipLevels = 1,
-      .ArraySize = 1,
-      .Format = DXGI_FORMAT_NV12,
-      .SampleDesc = {1, 0},
-      .Usage = D3D11_USAGE_DEFAULT,
-      .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
-      .CPUAccessFlags = 0,
-      .MiscFlags = 0};
+  D3D11_TEXTURE2D_DESC scaled_desc{};
+      scaled_desc.Width = static_cast<UINT>(input_visible_size_.width());
+      scaled_desc.Height = static_cast<UINT>(input_visible_size_.height());
+      scaled_desc.MipLevels = 1;
+      scaled_desc.ArraySize = 1;
+      scaled_desc.Format = DXGI_FORMAT_NV12;
+      scaled_desc.SampleDesc = {1, 0};
+      scaled_desc.Usage = D3D11_USAGE_DEFAULT;
+      scaled_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+      scaled_desc.CPUAccessFlags = 0;
+      scaled_desc.MiscFlags = 0;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> scaled_d3d11_texture;
   hr = texture_device->CreateTexture2D(&scaled_desc, nullptr,
                                        &scaled_d3d11_texture);
@@ -1700,12 +1700,13 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PerformD3DScaling(
         &input_view);
     RETURN_ON_HR_FAILURE(hr, "CreateVideoProcessorInputView failed", hr);
 
-    D3D11_VIDEO_PROCESSOR_STREAM stream = {.Enable = true,
-                                           .OutputIndex = 0,
-                                           .InputFrameOrField = 0,
-                                           .PastFrames = 0,
-                                           .FutureFrames = 0,
-                                           .pInputSurface = input_view.Get()};
+    D3D11_VIDEO_PROCESSOR_STREAM stream{};
+        stream.Enable = true;
+        stream.OutputIndex = 0;
+        stream.InputFrameOrField = 0;
+        stream.PastFrames = 0;
+        stream.FutureFrames = 0;
+        stream.pInputSurface = input_view.Get();
 
     D3D11_TEXTURE2D_DESC input_texture_desc = {};
     input_texture->GetDesc(&input_texture_desc);

@@ -36,7 +36,7 @@ bool ReadSelectOption(base::PickleIterator* iter, SelectOption* option) {
   std::u16string content;
   if (!iter->ReadString16(&value) || !iter->ReadString16(&content))
     return false;
-  *option = {.value = value, .content = content};
+  *option = { /* .value = */ value, /* .content  =*/ content};
   return true;
 }
 
@@ -133,8 +133,8 @@ bool DeserializeSection3(base::PickleIterator* iter,
     return false;
   }
   for (size_t i = 0; i < option_values.size(); ++i) {
-    field_data->options.push_back({.value = std::move(option_values[i]),
-                                   .content = std::move(option_contents[i])});
+    field_data->options.push_back({/*.value =*/ std::move(option_values[i]),
+                                   /*.content =*/ std::move(option_contents[i])});
   }
   return true;
 }

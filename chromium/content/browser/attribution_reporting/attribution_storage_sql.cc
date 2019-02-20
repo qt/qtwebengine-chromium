@@ -310,7 +310,7 @@ absl::optional<StoredSourceData> ReadSourceFromStatement(
     return absl::nullopt;
 
   return StoredSourceData{
-      .source = StoredSource(
+      /*.source =*/ StoredSource(
           CommonSourceInfo(source_event_id, std::move(impression_origin),
                            std::move(conversion_origin),
                            std::move(reporting_origin), impression_time,
@@ -318,8 +318,8 @@ absl::optional<StoredSourceData> ReadSourceFromStatement(
                            std::move(*filter_data), debug_key,
                            std::move(*aggregatable_source)),
           *attribution_logic, *active_state, source_id),
-      .num_conversions = num_conversions,
-      .aggregatable_budget_consumed = aggregatable_budget_consumed};
+      /*.num_conversions =*/ num_conversions,
+      /*.aggregatable_budget_consumed =*/ aggregatable_budget_consumed};
 }
 
 absl::optional<StoredSourceData> ReadSourceToAttribute(
@@ -1910,7 +1910,7 @@ bool AttributionStorageSql::LazyInit(DbCreationPolicy creation_policy) {
   }
 
   db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
-      .exclusive_locking = true, .page_size = 4096, .cache_size = 32});
+      /*.exclusive_locking =*/ true, /*.page_size =*/ 4096, /*.cache_size =*/ 32});
   db_->set_histogram_tag("Conversions");
 
   // Supply this callback with a weak_ptr to avoid calling the error callback

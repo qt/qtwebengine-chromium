@@ -800,15 +800,9 @@ QuotaError QuotaDatabase::EnsureOpened() {
   if (is_disabled_)
     return QuotaError::kDatabaseError;
 
-  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
-      .exclusive_locking = true,
-      // The quota database is a critical storage component. If it's corrupted,
-      // all client-side storage APIs fail, because they don't know where their
-      // data is stored.
-      .flush_to_media = true,
-      .page_size = 4096,
-      .cache_size = 500,
-  });
+  sql::DatabaseOptions options(true, 4096, 500);
+      options.flush_to_media = true;
+  db_ = std::make_unique<sql::Database>(std::move(options));
   meta_table_ = std::make_unique<sql::MetaTable>();
 
   db_->set_histogram_tag("Quota");

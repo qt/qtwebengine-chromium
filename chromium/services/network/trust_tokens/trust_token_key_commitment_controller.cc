@@ -108,7 +108,7 @@ void TrustTokenKeyCommitmentController::HandleRedirect(
   // delay before the client deletes this object.
   url_loader_.reset();
   std::move(completion_callback_)
-      .Run({.value = Status::Value::kGotRedirected}, /*result=*/nullptr);
+      .Run({Status::Value::kGotRedirected}, /*result=*/nullptr);
 
   // |this| may be deleted here.
 }
@@ -130,12 +130,12 @@ void TrustTokenKeyCommitmentController::HandleResponseBody(
 
   if (!result) {
     std::move(completion_callback_)
-        .Run({.value = Status::Value::kCouldntParse}, /*result=*/nullptr);
+        .Run({Status::Value::kCouldntParse}, /*result=*/nullptr);
     return;
   }
 
   std::move(completion_callback_)
-      .Run({.value = Status::Value::kOk}, std::move(result));
+      .Run({Status::Value::kOk}, std::move(result));
 
   // |this| may be deleted here.
 }

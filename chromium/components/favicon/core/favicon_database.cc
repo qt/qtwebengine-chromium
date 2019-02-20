@@ -247,14 +247,14 @@ bool FaviconDatabase::IconMappingEnumerator::GetNextIconMapping(
 }
 
 FaviconDatabase::FaviconDatabase()
-    : db_({// Run the database in exclusive mode. Nobody else should be
+    : db_(sql::DatabaseOptions(// Run the database in exclusive mode. Nobody else should be
            // accessing the database while we're running, and this will give
            // somewhat improved perf.
-           .exclusive_locking = true,
+           /*.exclusive_locking =*/ true,
            // Favicons db only stores favicons, so we don't need that big a page
            // size or cache.
-           .page_size = 2048,
-           .cache_size = 32}) {}
+           /*.page_size =*/ 2048,
+           /*.cache_size =*/ 32)) {}
 
 FaviconDatabase::~FaviconDatabase() {
   // The DBCloseScoper will delete the DB and the cache.

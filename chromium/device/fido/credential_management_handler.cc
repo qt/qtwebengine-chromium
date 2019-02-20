@@ -106,9 +106,9 @@ void CredentialManagementHandler::OnRetriesResponse(
   }
   state_ = State::kWaitingForPIN;
   get_pin_callback_.Run(
-      {.min_pin_length = authenticator_->CurrentMinPINLength(),
-       .pin_retries = response->retries,
-       .supports_update_user_information =
+      {/*.min_pin_length =*/ authenticator_->CurrentMinPINLength(),
+       /*.pin_retries =*/ response->retries,
+//       .supports_update_user_information =
            authenticator_->SupportsUpdateUserInformation()},
       base::BindOnce(&CredentialManagementHandler::OnHavePIN,
                      weak_factory_.GetWeakPtr()));

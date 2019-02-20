@@ -260,7 +260,7 @@ GetSlotStartInSuperPage(uintptr_t maybe_inner_address) {
   const uintptr_t slot_start = slot_span_start + (slot_number * slot_size);
   PA_SCAN_DCHECK(slot_start <= maybe_inner_address &&
                  maybe_inner_address < slot_start + slot_size);
-  return {.slot_start = slot_start, .slot_size = slot_size};
+  return {/*.slot_start =*/ slot_start, /*.slot_size =*/ slot_size};
 }
 
 #if PA_SCAN_DCHECK_IS_ON()

@@ -293,33 +293,31 @@ bool GPUSwapChain::CopyTextureToResourceProvider(
                            reservation.id, reservation.generation,
                            WGPUTextureUsage_CopyDst,
                            reinterpret_cast<const GLbyte*>(&dst_mailbox));
-  WGPUImageCopyTexture source = {
-      .nextInChain = nullptr,
-      .texture = texture,
-      .mipLevel = 0,
-      .origin = WGPUOrigin3D{0},
-      .aspect = WGPUTextureAspect_All,
-  };
-  WGPUImageCopyTexture destination = {
-      .nextInChain = nullptr,
-      .texture = reservation.texture,
-      .mipLevel = 0,
-      .origin = WGPUOrigin3D{0},
-      .aspect = WGPUTextureAspect_All,
-  };
-  WGPUExtent3D copy_size = {
-      .width = static_cast<uint32_t>(size.width()),
-      .height = static_cast<uint32_t>(size.height()),
-      .depthOrArrayLayers = 1,
-  };
+  WGPUImageCopyTexture source = {};
+      source.nextInChain = nullptr;
+      source.texture = texture;
+      source.mipLevel = 0;
+      source.origin = WGPUOrigin3D{0};
+      source.aspect = WGPUTextureAspect_All;
+  WGPUImageCopyTexture destination = {};
+      destination.nextInChain = nullptr;
+      destination.texture = reservation.texture;
+      destination.mipLevel = 0;
+      destination.origin = WGPUOrigin3D{0};
+      destination.aspect = WGPUTextureAspect_All;
+  WGPUExtent3D copy_size = {};
+      copy_size.width = static_cast<uint32_t>(size.width());
+      copy_size.height = static_cast<uint32_t>(size.height());
+      copy_size.depthOrArrayLayers = 1;
 
-  WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {
-      .chain = {.sType = WGPUSType_DawnEncoderInternalUsageDescriptor},
-      .useInternalUsages = true,
-  };
-  WGPUCommandEncoderDescriptor command_encoder_desc = {
-      .nextInChain = &internal_usage_desc.chain,
-  };
+  WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {};
+      internal_usage_desc.chain = {};
+      internal_usage_desc.chain.sType = WGPUSType_DawnEncoderInternalUsageDescriptor;
+      internal_usage_desc.useInternalUsages = true;
+
+  WGPUCommandEncoderDescriptor command_encoder_desc = {};
+      command_encoder_desc.nextInChain = &internal_usage_desc.chain;
+
   WGPUCommandEncoder command_encoder = GetProcs().deviceCreateCommandEncoder(
       device_->GetHandle(), &command_encoder_desc);
   GetProcs().commandEncoderCopyTextureToTexture(command_encoder, &source,

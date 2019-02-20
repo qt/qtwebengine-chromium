@@ -277,7 +277,7 @@ void SerialDeviceEnumeratorWin::DoInitialEnumeration() {
     if (!dev_info.is_valid())
       return;
 
-    SP_DEVINFO_DATA dev_info_data = {.cbSize = sizeof(dev_info_data)};
+    SP_DEVINFO_DATA dev_info_data = {/*.cbSize =*/ sizeof(dev_info_data)};
     for (DWORD i = 0; SetupDiEnumDeviceInfo(dev_info.get(), i, &dev_info_data);
          i++) {
       EnumeratePort(dev_info.get(), &dev_info_data, /*check_port_name=*/false);
@@ -296,7 +296,7 @@ void SerialDeviceEnumeratorWin::DoInitialEnumeration() {
     if (!dev_info.is_valid())
       return;
 
-    SP_DEVINFO_DATA dev_info_data = {.cbSize = sizeof(dev_info_data)};
+    SP_DEVINFO_DATA dev_info_data = {/*.cbSize =*/ sizeof(dev_info_data)};
     for (DWORD i = 0; SetupDiEnumDeviceInfo(dev_info.get(), i, &dev_info_data);
          i++) {
       EnumeratePort(dev_info.get(), &dev_info_data, /*check_port_name=*/true);

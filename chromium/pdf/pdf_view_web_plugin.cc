@@ -807,7 +807,7 @@ PdfViewWebPlugin::SearchString(const char16_t* string,
   int match_index;
   int match_length;
   while (searcher.NextMatchResult(match_index, match_length))
-    results.push_back({.start_index = match_index, .length = match_length});
+    results.push_back({/*.start_index =*/ match_index, /*.length =*/ match_length});
   return results;
 }
 

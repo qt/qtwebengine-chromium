@@ -75,9 +75,9 @@ AggregationServiceStorageSql::AggregationServiceStorageSql(
                             ? base::FilePath()
                             : path_to_database.Append(kDatabasePath)),
       clock_(*clock),
-      db_(sql::DatabaseOptions{.exclusive_locking = true,
-                               .page_size = 4096,
-                               .cache_size = 32}) {
+      db_(sql::DatabaseOptions{/*.exclusive_locking =*/ true,
+                               /*.page_size =*/ 4096,
+                               /*.cache_size =*/ 32}) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
   DCHECK(clock);
 
