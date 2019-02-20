@@ -18,15 +18,15 @@
 namespace cc {
 
 constexpr const char* FrameSequenceTracker::kFrameSequenceTrackerTypeNames[] = {
-    [FrameSequenceTrackerType::kCompositorAnimation] = "CompositorAnimation",
-    [FrameSequenceTrackerType::kMainThreadAnimation] = "MainThreadAnimation",
-    [FrameSequenceTrackerType::kPinchZoom] = "PinchZoom",
-    [FrameSequenceTrackerType::kRAF] = "RAF",
-    [FrameSequenceTrackerType::kTouchScroll] = "TouchScroll",
-    [FrameSequenceTrackerType::kUniversal] = "Universal",
-    [FrameSequenceTrackerType::kVideo] = "Video",
-    [FrameSequenceTrackerType::kWheelScroll] = "WheelScroll",
-    [FrameSequenceTrackerType::kMaxType] = "",
+    /*[FrameSequenceTrackerType::kCompositorAnimation] =*/ "CompositorAnimation",
+    /*[FrameSequenceTrackerType::kMainThreadAnimation] =*/ "MainThreadAnimation",
+    /*[FrameSequenceTrackerType::kPinchZoom] =*/ "PinchZoom",
+    /*[FrameSequenceTrackerType::kRAF] =*/ "RAF",
+    /*[FrameSequenceTrackerType::kTouchScroll] =*/ "TouchScroll",
+    /*[FrameSequenceTrackerType::kUniversal] =*/ "Universal",
+    /*[FrameSequenceTrackerType::kVideo] =*/ "Video",
+    /*[FrameSequenceTrackerType::kWheelScroll] =*/ "WheelScroll",
+    /*[FrameSequenceTrackerType::kMaxType] =*/ "",
 };
 
 namespace {

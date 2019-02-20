@@ -32,32 +32,35 @@ constexpr int kFrameSequenceTrackerTypeCount =
 // Names for CompositorFrameReporter::StageType, which should be updated in case
 // of changes to the enum.
 constexpr const char* kStageNames[] = {
-    [static_cast<int>(StageType::kBeginImplFrameToSendBeginMainFrame)] =
+//    [static_cast<int>(StageType::kBeginImplFrameToSendBeginMainFrame)] =
         "BeginImplFrameToSendBeginMainFrame",
-    [static_cast<int>(StageType::kSendBeginMainFrameToCommit)] =
+//    [static_cast<int>(StageType::kSendBeginMainFrameToCommit)] =
         "SendBeginMainFrameToCommit",
-    [static_cast<int>(StageType::kCommit)] = "Commit",
-    [static_cast<int>(StageType::kEndCommitToActivation)] =
+//    [static_cast<int>(StageType::kCommit)] =
+        "Commit",
+//    [static_cast<int>(StageType::kEndCommitToActivation)] =
         "EndCommitToActivation",
-    [static_cast<int>(StageType::kActivation)] = "Activation",
-    [static_cast<int>(StageType::kEndActivateToSubmitCompositorFrame)] =
+//    [static_cast<int>(StageType::kActivation)] =
+        "Activation",
+//    [static_cast<int>(StageType::kEndActivateToSubmitCompositorFrame)] =
         "EndActivateToSubmitCompositorFrame",
-    [static_cast<int>(
-        StageType::kSubmitCompositorFrameToPresentationCompositorFrame)] =
+//    [static_cast<int>(
+//        StageType::kSubmitCompositorFrameToPresentationCompositorFrame)] =
         "SubmitCompositorFrameToPresentationCompositorFrame",
-    [static_cast<int>(StageType::kTotalLatency)] = "TotalLatency",
-    [static_cast<int>(VizBreakdown::kSubmitToReceiveCompositorFrame) +
-        kStageTypeCount] =
+//    [static_cast<int>(StageType::kTotalLatency)] =
+        "TotalLatency",
+//    [static_cast<int>(VizBreakdown::kSubmitToReceiveCompositorFrame) +
+//        kStageTypeCount] =
         "SubmitCompositorFrameToPresentationCompositorFrame."
         "SubmitToReceiveCompositorFrame",
-    [static_cast<int>(VizBreakdown::kReceivedCompositorFrameToStartDraw) +
-        kStageTypeCount] =
+//    [static_cast<int>(VizBreakdown::kReceivedCompositorFrameToStartDraw) +
+//        kStageTypeCount] =
         "SubmitCompositorFrameToPresentationCompositorFrame."
         "ReceivedCompositorFrameToStartDraw",
-    [static_cast<int>(VizBreakdown::kStartDrawToSwapEnd) + kStageTypeCount] =
+//    [static_cast<int>(VizBreakdown::kStartDrawToSwapEnd) + kStageTypeCount] =
         "SubmitCompositorFrameToPresentationCompositorFrame.StartDrawToSwapEnd",
-    [static_cast<int>(VizBreakdown::kSwapEndToPresentationCompositorFrame) +
-        kStageTypeCount] =
+//    [static_cast<int>(VizBreakdown::kSwapEndToPresentationCompositorFrame) +
+//        kStageTypeCount] =
         "SubmitCompositorFrameToPresentationCompositorFrame."
         "SwapEndToPresentationCompositorFrame"};
 static_assert(sizeof(kStageNames) / sizeof(kStageNames[0]) ==

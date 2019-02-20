@@ -94,10 +94,11 @@ VkResult CreateVkImage(SharedContextState* context_state,
                        bool use_protected_memory,
                        VkImage* image) {
   VkExternalMemoryImageCreateInfoKHR external_info = {
-      .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
-      .handleTypes = context_state->vk_context_provider()
-                         ->GetVulkanImplementation()
-                         ->GetExternalImageHandleType(),
+      VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
+      nullptr,
+      context_state->vk_context_provider()
+                      ->GetVulkanImplementation()
+                      ->GetExternalImageHandleType(),
   };
 
   auto usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -105,21 +106,21 @@ VkResult CreateVkImage(SharedContextState* context_state,
     usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
   VkImageCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-      .pNext = is_external ? &external_info : nullptr,
-      .flags = use_protected_memory ? VK_IMAGE_CREATE_PROTECTED_BIT : 0,
-      .imageType = VK_IMAGE_TYPE_2D,
-      .format = format,
-      .extent = {size.width(), size.height(), 1},
-      .mipLevels = 1,
-      .arrayLayers = 1,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
-      .tiling = VK_IMAGE_TILING_OPTIMAL,
-      .usage = usage,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-      .queueFamilyIndexCount = 0,
-      .pQueueFamilyIndices = nullptr,
-      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      is_external ? &external_info : nullptr,
+      use_protected_memory ? VK_IMAGE_CREATE_PROTECTED_BIT : 0,
+      VK_IMAGE_TYPE_2D,
+      format,
+      {size.width(), size.height(), 1},
+      1,
+      1,
+      VK_SAMPLE_COUNT_1_BIT,
+      VK_IMAGE_TILING_OPTIMAL,
+      usage,
+      VK_SHARING_MODE_EXCLUSIVE,
+      0,
+      nullptr,
+      VK_IMAGE_LAYOUT_UNDEFINED,
   };
 
   VkDevice device =
@@ -229,17 +230,18 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::Create(
   }
 
   VkExportMemoryAllocateInfoKHR external_info = {
-      .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR,
-      .handleTypes = context_state->vk_context_provider()
-                         ->GetVulkanImplementation()
-                         ->GetExternalImageHandleType(),
+      VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_KHR,
+      nullptr,
+      context_state->vk_context_provider()
+                      ->GetVulkanImplementation()
+                      ->GetExternalImageHandleType(),
   };
 
   VkMemoryAllocateInfo mem_alloc_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-      .pNext = is_external ? &external_info : nullptr,
-      .allocationSize = requirements.size,
-      .memoryTypeIndex = FindMemoryTypeIndex(
+      VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      is_external ? &external_info : nullptr,
+      requirements.size,
+      FindMemoryTypeIndex(
           context_state, requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
   };
 
@@ -743,10 +745,12 @@ bool ExternalVkImageBacking::WritePixels(size_t data_size,
                                          FillBufferCallback callback) {
   DCHECK(stride == 0 || size().height() * stride <= data_size);
   VkBufferCreateInfo buffer_create_info = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .size = data_size,
-      .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      nullptr,
+      0,
+      data_size,
+      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+      VK_SHARING_MODE_EXCLUSIVE,
   };
   VkBuffer stage_buffer = VK_NULL_HANDLE;
   // TODO: Consider reusing stage_buffer and stage_memory, if allocation causes
@@ -762,12 +766,12 @@ bool ExternalVkImageBacking::WritePixels(size_t data_size,
   vkGetBufferMemoryRequirements(device(), stage_buffer, &memory_requirements);
 
   VkMemoryAllocateInfo memory_allocate_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-      .allocationSize = memory_requirements.size,
-      .memoryTypeIndex =
-          FindMemoryTypeIndex(context_state_, memory_requirements,
-                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+      VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      nullptr,
+      memory_requirements.size,
+      FindMemoryTypeIndex(context_state_, memory_requirements,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
 
   };
   VkDeviceMemory stage_memory = VK_NULL_HANDLE;
