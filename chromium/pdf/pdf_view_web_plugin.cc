@@ -1057,7 +1057,7 @@ PdfViewWebPlugin::SearchString(const char16_t* string,
   int match_index;
   int match_length;
   while (searcher.NextMatchResult(match_index, match_length))
-    results.push_back({.start_index = match_index, .length = match_length});
+    results.push_back({/*.start_index =*/ match_index, /*.length =*/ match_length});
   return results;
 }
 
@@ -2285,7 +2285,7 @@ void PdfViewWebPlugin::HandleLoadPreviewPageMessage(
   int src_page_index = ExtractPrintPreviewPageIndex(url);
   DCHECK_GE(src_page_index, 0);
 
-  preview_pages_info_.push({.url = url, .dest_page_index = dest_page_index});
+  preview_pages_info_.push({/*.url =*/ url, /*.dest_page_index =*/ dest_page_index});
   LoadAvailablePreviewPage();
 }
 

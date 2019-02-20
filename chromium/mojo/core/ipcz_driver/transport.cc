@@ -181,9 +181,9 @@ scoped_refptr<Transport> Transport::Create(EndpointTypes endpoint_types,
 std::pair<scoped_refptr<Transport>, scoped_refptr<Transport>>
 Transport::CreatePair(EndpointType first_type, EndpointType second_type) {
   PlatformChannel channel;
-  auto one = Create({.source = first_type, .destination = second_type},
+  auto one = Create({/*.source =*/ first_type, /*.destination =*/ second_type},
                     channel.TakeLocalEndpoint());
-  auto two = Create({.source = second_type, .destination = first_type},
+  auto two = Create({/*.source =*/ second_type, /*.destination =*/ first_type},
                     channel.TakeRemoteEndpoint());
   return {one, two};
 }
@@ -191,10 +191,10 @@ Transport::CreatePair(EndpointType first_type, EndpointType second_type) {
 Transport::~Transport() {
   if (error_handler_) {
     const MojoProcessErrorDetails details{
-        .struct_size = sizeof(details),
-        .error_message_length = 0,
-        .error_message = nullptr,
-        .flags = MOJO_PROCESS_ERROR_FLAG_DISCONNECTED,
+        /*.struct_size =*/ sizeof(details),
+        /*.error_message_length =*/ 0,
+        /*.error_message =*/ nullptr,
+        /*.flags =*/ MOJO_PROCESS_ERROR_FLAG_DISCONNECTED,
     };
     error_handler_(error_handler_context_, &details);
   }
@@ -219,11 +219,11 @@ void Transport::ReportBadActivity(const std::string& error_message) {
   }
 
   const MojoProcessErrorDetails details{
-      .struct_size = sizeof(details),
-      .error_message_length =
+      /*.struct_size =*/ sizeof(details),
+//      .error_message_length =
           base::checked_cast<uint32_t>(error_message.size()),
-      .error_message = error_message.c_str(),
-      .flags = MOJO_PROCESS_ERROR_FLAG_NONE,
+      /*.error_message =*/ error_message.c_str(),
+      /*.flags =*/ MOJO_PROCESS_ERROR_FLAG_NONE,
   };
   error_handler_(error_handler_context_, &details);
 }
@@ -571,8 +571,8 @@ scoped_refptr<Transport> Transport::Deserialize(
       from_transport.remote_process().IsValid()) {
     process = from_transport.remote_process().Duplicate();
   }
-  return Create({.source = from_transport.source_type(),
-                 .destination = header.destination_type},
+  return Create({/*.source =*/ from_transport.source_type(),
+                 /*.destination =*/ header.destination_type},
                 PlatformChannelEndpoint(std::move(handles[0])),
                 std::move(process));
 }

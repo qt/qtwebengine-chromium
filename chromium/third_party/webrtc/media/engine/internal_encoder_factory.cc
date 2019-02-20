@@ -84,7 +84,7 @@ VideoEncoderFactory::CodecSupport InternalEncoderFactory::QueryCodecSupport(
   auto original_format = MatchOriginalFormat(format);
   return original_format
              ? Factory().QueryCodecSupport(*original_format, scalability_mode)
-             : VideoEncoderFactory::CodecSupport{.is_supported = false};
+             : VideoEncoderFactory::CodecSupport{/*.is_supported =*/ false};
 }
 
 }  // namespace webrtc

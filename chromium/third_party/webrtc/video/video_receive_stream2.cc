@@ -918,9 +918,9 @@ VideoReceiveStream2::HandleEncodedFrameOnDecodeQueue(
   }
 
   return DecodeFrameResult{
-      .force_request_key_frame = force_request_key_frame,
-      .decoded_frame_picture_id = std::move(decoded_frame_picture_id),
-      .keyframe_required = keyframe_required,
+      /*.force_request_key_frame =*/ force_request_key_frame,
+      /*.decoded_frame_picture_id =*/ std::move(decoded_frame_picture_id),
+      /*.keyframe_required =*/ keyframe_required,
   };
 }
 

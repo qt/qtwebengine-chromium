@@ -116,10 +116,10 @@ void Invitation::InvokeDefaultProcessErrorHandler(const std::string& error) {
   }
 
   const MojoProcessErrorDetails details{
-      .struct_size = sizeof(details),
-      .error_message_length = base::checked_cast<uint32_t>(error.size()),
-      .error_message = error.c_str(),
-      .flags = MOJO_PROCESS_ERROR_FLAG_NONE,
+      /*.struct_size =*/ sizeof(details),
+      /*.error_message_length = */base::checked_cast<uint32_t>(error.size()),
+      /*.error_message =*/ error.c_str(),
+      /*.flags =*/ MOJO_PROCESS_ERROR_FLAG_NONE,
   };
   g_default_process_error_handler(&details);
 }
@@ -203,8 +203,8 @@ MojoResult Invitation::Send(
   }
 
   IpczDriverHandle transport = CreateTransportForMojoEndpoint(
-      {.source = config.is_broker ? Transport::kBroker : Transport::kNonBroker,
-       .destination = is_isolated ? Transport::kBroker : Transport::kNonBroker},
+      {/*.source =*/ config.is_broker ? Transport::kBroker : Transport::kNonBroker,
+       /*.destination =*/ is_isolated ? Transport::kBroker : Transport::kNonBroker},
       *transport_endpoint,
       /*leak_channel_on_shutdown=*/false, std::move(remote_process),
       error_handler, error_handler_context);
@@ -294,8 +294,8 @@ MojoHandle Invitation::Accept(
   // application-provided attachments begin at index 1.
   IpczHandle portals[kMaxAttachments + 1];
   IpczDriverHandle transport = CreateTransportForMojoEndpoint(
-      {.source = is_isolated ? Transport::kBroker : Transport::kNonBroker,
-       .destination = Transport::kBroker},
+      {/*.source =*/ is_isolated ? Transport::kBroker : Transport::kNonBroker,
+       /*.destination =*/ Transport::kBroker},
       *transport_endpoint, leak_transport);
   if (transport == IPCZ_INVALID_DRIVER_HANDLE) {
     return IPCZ_INVALID_DRIVER_HANDLE;

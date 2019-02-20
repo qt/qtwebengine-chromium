@@ -433,8 +433,8 @@ MojoResult MojoCreateDataPipeIpcz(const MojoCreateDataPipeOptions* options,
   // Mojo Core defaults to 64 kB capacity and 1-byte elements, and many callers
   // assume these defaults.
   constexpr uint32_t kDefaultCapacity = 64 * 1024;
-  DataPipe::Config config = {.element_size = 1,
-                             .byte_capacity = kDefaultCapacity};
+  DataPipe::Config config = {/*.element_size =*/ 1,
+                             /*.byte_capacity =*/ kDefaultCapacity};
   if (options) {
     config.element_size = options->element_num_bytes;
     if (options->capacity_num_bytes) {
@@ -858,7 +858,7 @@ MojoResult MojoQueryQuotaIpcz(MojoHandle handle,
                               const MojoQueryQuotaOptions* options,
                               uint64_t* current_limit,
                               uint64_t* current_usage) {
-  IpczPortalStatus status = {.size = sizeof(status)};
+  IpczPortalStatus status = {/*.size =*/ sizeof(status)};
   const IpczResult result =
       GetIpczAPI().QueryPortalStatus(handle, IPCZ_NO_FLAGS, nullptr, &status);
   DCHECK_EQ(result, IPCZ_RESULT_OK);

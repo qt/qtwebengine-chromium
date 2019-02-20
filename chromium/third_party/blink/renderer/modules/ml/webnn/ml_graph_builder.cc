@@ -167,7 +167,7 @@ absl::optional<PaddingSizes> CalculatePaddingForAutoPad(
       !checked_padding_end.AssignIfValid(&padding_end)) {
     return absl::nullopt;
   }
-  return PaddingSizes({.begin = padding_begin, .end = padding_end});
+  return PaddingSizes({/*.begin =*/ padding_begin, /*.end =*/ padding_end});
 }
 
 // Calculate the output size for conv2d based on WebNN spec:
@@ -353,8 +353,8 @@ absl::optional<FloatSize2D> ValidateAndCalculateConv2dOutputSizes(
     return absl::nullopt;
   }
 
-  return FloatSize2D({.height = float_output_height.value(),
-                      .width = float_output_width.value()});
+  return FloatSize2D({/*.height =*/ float_output_height.value(),
+                      /*.width =*/ float_output_width.value()});
 }
 
 MLOperand* BuildPool2d(MLGraphBuilder* builder,

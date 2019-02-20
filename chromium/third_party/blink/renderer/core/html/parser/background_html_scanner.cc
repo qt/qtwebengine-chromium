@@ -194,12 +194,12 @@ BackgroundHTMLScanner::ScriptTokenScanner::Create(
 
   return std::make_unique<ScriptTokenScanner>(
       parser,
-      OptimizationParams{.task_runner = GetCompileTaskRunner(),
-                         .min_size = GetMinimumScriptSize(),
-                         .enabled = precompile_scripts},
-      OptimizationParams{.task_runner = GetTokenizeTaskRunner(),
-                         .min_size = GetMinimumCSSSize(),
-                         .enabled = pretokenize_css});
+      OptimizationParams{/*.task_runner =*/ GetCompileTaskRunner(),
+                         /*.min_size =*/ GetMinimumScriptSize(),
+                         /*.enabled =*/ precompile_scripts},
+      OptimizationParams{/*.task_runner =*/ GetTokenizeTaskRunner(),
+                         /*.min_size =*/ GetMinimumCSSSize(),
+                         /*.enabled =*/ pretokenize_css});
 }
 
 BackgroundHTMLScanner::ScriptTokenScanner::ScriptTokenScanner(

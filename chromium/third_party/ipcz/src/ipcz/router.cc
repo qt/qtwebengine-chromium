@@ -61,7 +61,7 @@ void CollectParcelsToFlush(ParcelQueue& queue,
       return;
     }
 
-    ParcelToFlush& parcel = parcels.emplace_back(ParcelToFlush{.link = link});
+    ParcelToFlush& parcel = parcels.emplace_back(ParcelToFlush{/*.link =*/ link});
     const bool popped = queue.Pop(parcel.parcel);
     ABSL_ASSERT(popped);
   }
@@ -101,7 +101,7 @@ void Router::QueryStatus(IpczPortalStatus& status) {
   absl::MutexLock lock(&mutex_);
   AtomicQueueState::QueryResult result;
   if (auto* state = GetPeerQueueState()) {
-    result = state->Query({.monitor_parcels = false, .monitor_bytes = false});
+    result = state->Query({/*.monitor_parcels =*/ false, /*.monitor_bytes =*/ false});
   }
 
   UpdateStatusForPeerQueueState(result);
@@ -406,7 +406,7 @@ void Router::SnapshotPeerQueueState(const OperationContext& context) {
 
   // Start with a cheaper snapshot, which may be good enough.
   const AtomicQueueState::QueryResult state =
-      peer_state->Query({.monitor_parcels = false, .monitor_bytes = false});
+      peer_state->Query({/*.monitor_parcels =*/ false, /*.monitor_bytes =*/ false});
   UpdateStatusForPeerQueueState(state);
   traps_.UpdatePortalStatus(context, status_,
                             TrapSet::UpdateReason::kRemoteActivity, dispatcher);
@@ -426,8 +426,8 @@ void Router::SnapshotPeerQueueState(const OperationContext& context) {
   // requested monitoring, and the state isn't currently being monitored. Take
   // another snapshot, this time flipping any appropriate monitor bits.
   UpdateStatusForPeerQueueState(peer_state->Query({
-      .monitor_parcels = traps_.need_remote_parcels(),
-      .monitor_bytes = traps_.need_remote_bytes(),
+      /*.monitor_parcels =*/ traps_.need_remote_parcels(),
+      /*.monitor_bytes =*/ traps_.need_remote_bytes(),
   }));
   traps_.UpdatePortalStatus(context, status_,
                             TrapSet::UpdateReason::kRemoteActivity, dispatcher);
@@ -606,7 +606,7 @@ IpczResult Router::Trap(const IpczTrapConditions& conditions,
   if (need_remote_parcels || need_remote_bytes) {
     if (AtomicQueueState* peer_state = GetPeerQueueState()) {
       const AtomicQueueState::QueryResult state =
-          peer_state->Query({.monitor_parcels = false, .monitor_bytes = false});
+          peer_state->Query({/*.monitor_parcels =*/ false, /*.monitor_bytes =*/ false});
       UpdateStatusForPeerQueueState(state);
 
       // If the status already meets some conditions and would block trap
@@ -620,8 +620,8 @@ IpczResult Router::Trap(const IpczTrapConditions& conditions,
       if (!TrapSet::GetSatisfiedConditions(conditions, status_) &&
           (monitor_parcels || monitor_bytes)) {
         UpdateStatusForPeerQueueState(
-            peer_state->Query({.monitor_parcels = need_remote_parcels,
-                               .monitor_bytes = need_remote_bytes}));
+            peer_state->Query({/*.monitor_parcels =*/ need_remote_parcels,
+                               /*.monitor_bytes =*/ need_remote_bytes}));
       }
     } else {
       status_.num_remote_parcels =
@@ -1621,8 +1621,8 @@ bool Router::RefreshLocalQueueState() {
   }
 
   last_queue_update_ = AtomicQueueState::UpdateValue{
-      .num_parcels_consumed = num_parcels_consumed,
-      .num_bytes_consumed = num_bytes_consumed,
+      /*.num_parcels_consumed =*/ num_parcels_consumed,
+      /*.num_bytes_consumed =*/ num_bytes_consumed,
   };
   return state->Update(*last_queue_update_);
 }

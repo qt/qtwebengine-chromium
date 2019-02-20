@@ -116,8 +116,8 @@ ThrobberSpinningState CalculateThrobberSpinningStateWithStartAngle(
   const int64_t rot_keyframe = (sweep_frame / 2) % 4;
   start_angle = start_angle + rot_keyframe * kMaxArcSize;
   return ThrobberSpinningState{
-      .start_angle = static_cast<SkScalar>(start_angle),
-      .sweep_angle = static_cast<SkScalar>(sweep)};
+      /*.start_angle =*/ static_cast<SkScalar>(start_angle),
+      /*.sweep_angle =*/ static_cast<SkScalar>(sweep)};
 }
 
 void PaintThrobberSpinningWithState(Canvas* canvas,

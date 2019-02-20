@@ -253,8 +253,8 @@ TimeDelta VCMTiming::TargetDelayInternal() const {
 
 VideoFrame::RenderParameters VCMTiming::RenderParameters() const {
   MutexLock lock(&mutex_);
-  return {.use_low_latency_rendering = UseLowLatencyRendering(),
-          .max_composition_delay_in_frames = max_composition_delay_in_frames_};
+  return {/*.use_low_latency_rendering =*/ UseLowLatencyRendering(),
+          /*.max_composition_delay_in_frames =*/ max_composition_delay_in_frames_};
 }
 
 bool VCMTiming::UseLowLatencyRendering() const {
@@ -268,14 +268,14 @@ bool VCMTiming::UseLowLatencyRendering() const {
 
 VCMTiming::VideoDelayTimings VCMTiming::GetTimings() const {
   MutexLock lock(&mutex_);
-  return VideoDelayTimings{.max_decode_duration = RequiredDecodeTime(),
-                           .current_delay = current_delay_,
-                           .target_delay = TargetDelayInternal(),
-                           .jitter_buffer_delay = jitter_delay_,
-                           .min_playout_delay = min_playout_delay_,
-                           .max_playout_delay = max_playout_delay_,
-                           .render_delay = render_delay_,
-                           .num_decoded_frames = num_decoded_frames_};
+  return VideoDelayTimings{/*.max_decode_duration =*/ RequiredDecodeTime(),
+                           /*.current_delay =*/ current_delay_,
+                           /*.target_delay =*/ TargetDelayInternal(),
+                           /*.jitter_buffer_delay =*/ jitter_delay_,
+                           /*.min_playout_delay =*/ min_playout_delay_,
+                           /*.max_playout_delay =*/ max_playout_delay_,
+                           /*.render_delay =*/ render_delay_,
+                           /*.num_decoded_frames =*/ num_decoded_frames_};
 }
 
 void VCMTiming::SetTimingFrameInfo(const TimingFrameInfo& info) {

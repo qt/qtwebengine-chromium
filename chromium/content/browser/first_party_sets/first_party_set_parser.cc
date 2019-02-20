@@ -301,15 +301,15 @@ base::expected<SetsAndAliases, ParseError> ParseSet(
 
   for (const SubsetDescriptor& descriptor : {
            SubsetDescriptor{
-               .field_name = kFirstPartySetAssociatedSitesField,
-              .site_type = net::SiteType::kAssociated,
-              .size_limit = absl::make_optional(
+               /*.field_name =*/ kFirstPartySetAssociatedSitesField,
+              /*.site_type =*/ net::SiteType::kAssociated,
+              /*.size_limit =*/ absl::make_optional(
                   features::kFirstPartySetsMaxAssociatedSites.Get()),
            },
            {
-               .field_name = kFirstPartySetServiceSitesField,
-              .site_type = net::SiteType::kService,
-              .size_limit = absl::nullopt,
+               /*.field_name =*/ kFirstPartySetServiceSitesField,
+              /*.site_type =*/ net::SiteType::kService,
+              /*.size_limit =*/ absl::nullopt,
            },
        }) {
     if (absl::optional<ParseError> error =

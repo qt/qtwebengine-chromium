@@ -68,14 +68,14 @@ class CONTENT_EXPORT PrefetchCanaryChecker {
     // Backoff policy to use to compute how long we should wait between the end
     // of last retry and start of next retry.
     net::BackoffEntry::Policy backoff_policy = {
-        .num_errors_to_ignore = 0,
-        .initial_delay_ms = 100,
-        .multiply_factor = 2,
-        .jitter_factor = 0.2,
+        /*.num_errors_to_ignore =*/ 0,
+        /*.initial_delay_ms =*/ 100,
+        /*.multiply_factor =*/ 2,
+        /*.jitter_factor =*/ 0.2,
         // No maximum backoff.
-        .maximum_backoff_ms = -1,
-        .entry_lifetime_ms = -1,
-        .always_use_initial_delay = false,
+        /*.maximum_backoff_ms =*/ -1,
+        /*.entry_lifetime_ms =*/ -1,
+        /*.always_use_initial_delay =*/ false,
     };
   };
 

@@ -248,12 +248,12 @@ class NavigationBodyLoader::OffThreadBodyReader : public BodyReader {
       // will consume the data, so no need to post another one.
       post_task = data_chunks_.empty();
       data_chunks_.push_back(
-          DataChunk{.decoded_data = decoded_data,
-                    .has_seen_end_of_data = has_seen_end_of_data_,
-                    .has_error = has_error,
-                    .encoded_data = std::move(encoded_data_copy),
-                    .encoded_data_size = size,
-                    .encoding_data = decoder_->GetEncodingData()});
+          DataChunk{/*.decoded_data =*/ decoded_data,
+                    /*.has_seen_end_of_data =*/ has_seen_end_of_data_,
+                    /*.has_error =*/ has_error,
+                    /*.encoded_data =*/ std::move(encoded_data_copy),
+                    /*.encoded_data_size =*/ size,
+                    /*.encoding_data =*/ decoder_->GetEncodingData()});
     }
     if (post_task) {
       PostCrossThreadTask(

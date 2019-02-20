@@ -170,10 +170,8 @@ void VariationsSeedStore::StoreSeedData(
     base::OnceCallback<void(bool, VariationsSeed)> done_callback) {
   UMA_HISTOGRAM_COUNTS_1000("Variations.StoreSeed.DataSize",
                             data.length() / 1024);
-  InstanceManipulations im = {
-      .gzip_compressed = is_gzip_compressed,
-      .delta_compressed = is_delta_compressed,
-  };
+  InstanceManipulations im{is_gzip_compressed, is_delta_compressed};
+
   RecordSeedInstanceManipulations(im);
   std::string seed_bytes;
   StoreSeedResult im_result =

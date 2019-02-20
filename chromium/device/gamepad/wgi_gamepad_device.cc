@@ -17,10 +17,10 @@ WgiGamepadDevice::~WgiGamepadDevice() = default;
 
 void WgiGamepadDevice::SetVibration(mojom::GamepadEffectParametersPtr params) {
   ABI::Windows::Gaming::Input::GamepadVibration vibration = {
-      .LeftMotor = params->strong_magnitude,
-      .RightMotor = params->weak_magnitude,
-      .LeftTrigger = params->left_trigger,
-      .RightTrigger = params->right_trigger};
+      /*.LeftMotor =*/ params->strong_magnitude,
+      /*.RightMotor =*/ params->weak_magnitude,
+      /*.LeftTrigger =*/ params->left_trigger,
+      /*.RightTrigger =*/ params->right_trigger};
   HRESULT hr = gamepad_->put_Vibration(vibration);
   DCHECK(SUCCEEDED(hr));
 }

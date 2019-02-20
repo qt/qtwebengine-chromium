@@ -65,8 +65,8 @@ SharedStorageURNMappingResult CalculateSharedStorageURNMappingResult(
 
   return SharedStorageURNMappingResult(
       mapped_url,
-      SharedStorageBudgetMetadata{.origin = shared_storage_origin,
-                                  .budget_to_charge = budget_to_charge},
+      SharedStorageBudgetMetadata{/*.origin =*/ shared_storage_origin,
+                                  /*.budget_to_charge =*/ budget_to_charge},
       urls_with_metadata[index]->reporting_metadata);
 }
 

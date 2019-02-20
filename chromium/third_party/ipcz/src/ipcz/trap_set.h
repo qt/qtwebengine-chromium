@@ -112,7 +112,7 @@ class TrapSet {
   TrapList traps_;
   size_t num_traps_monitoring_remote_parcels_ = 0;
   size_t num_traps_monitoring_remote_bytes_ = 0;
-  IpczPortalStatus last_known_status_ = {.size = sizeof(last_known_status_)};
+  IpczPortalStatus last_known_status_ = {/*.size =*/ sizeof(last_known_status_)};
 };
 
 }  // namespace ipcz

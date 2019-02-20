@@ -154,9 +154,9 @@ AggregationServiceStorageSql::AggregationServiceStorageSql(
       clock_(*clock),
       max_stored_requests_per_reporting_origin_(
           max_stored_requests_per_reporting_origin),
-      db_(sql::DatabaseOptions{.exclusive_locking = true,
-                               .page_size = 4096,
-                               .cache_size = 32}) {
+      db_(sql::DatabaseOptions(/*.exclusive_locking =*/ true,
+                               /*.page_size =*/ 4096,
+                               /*.cache_size =*/ 32)) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
   DCHECK(clock);
 
@@ -628,8 +628,8 @@ AggregationServiceStorageSql::GetRequestsReportingOnOrBefore(
       return {};
 
     result.push_back(AggregationServiceStorage::RequestAndId{
-        .request = std::move(parsed_request.value()),
-        .id = AggregationServiceStorage::RequestId(
+        /*.request =*/ std::move(parsed_request.value()),
+        /*.id =*/ AggregationServiceStorage::RequestId(
             get_requests_statement.ColumnInt64(0))});
   }
 
@@ -664,8 +664,8 @@ AggregationServiceStorageSql::GetRequests(
     if (!parsed_request)
       continue;
     result.push_back(AggregationServiceStorage::RequestAndId{
-        .request = std::move(*parsed_request),
-        .id = id,
+        /*.request =*/ std::move(*parsed_request),
+        /*.id =*/ id,
     });
   }
   return result;

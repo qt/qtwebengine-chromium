@@ -54,7 +54,7 @@ TransferredMediaStreamTrack::TransferredMediaStreamTrack(
     const TransferredValues& data)
     : transferred_component_(
           MakeGarbageCollected<TransferredMediaStreamComponent>(
-              TransferredMediaStreamComponent::TransferredValues{.id =
+              TransferredMediaStreamComponent::TransferredValues{/*.id =*/
                                                                      data.id})),
       execution_context_(execution_context),
       data_(data) {}

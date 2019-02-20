@@ -79,9 +79,9 @@ bool PrivateAggregationHost::BindNewReceiver(
   }
   receiver_set_.Add(
       this, std::move(pending_receiver),
-      ReceiverContext{.worklet_origin = std::move(worklet_origin),
-                      .top_frame_origin = std::move(top_frame_origin),
-                      .api_for_budgeting = api_for_budgeting});
+      ReceiverContext{/*.worklet_origin =*/ std::move(worklet_origin),
+                      /*.top_frame_origin =*/ std::move(top_frame_origin),
+                      /*.api_for_budgeting =*/ api_for_budgeting});
   return true;
 }
 

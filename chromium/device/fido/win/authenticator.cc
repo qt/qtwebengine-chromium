@@ -97,10 +97,10 @@ void WinWebAuthnApiAuthenticator::EnumeratePlatformCredentials(
               return {};
             }
 
-            WEBAUTHN_GET_CREDENTIALS_OPTIONS options{
-                .dwVersion = WEBAUTHN_GET_CREDENTIALS_OPTIONS_VERSION_1,
-                .pwszRpId = nullptr,
-                .bBrowserInPrivateMode = false};
+            WEBAUTHN_GET_CREDENTIALS_OPTIONS options{};
+                options.dwVersion = WEBAUTHN_GET_CREDENTIALS_OPTIONS_VERSION_1;
+                options.pwszRpId = nullptr;
+                options.bBrowserInPrivateMode = false;
 
             PWEBAUTHN_CREDENTIAL_DETAILS_LIST credentials = nullptr;
             HRESULT hresult =
@@ -266,11 +266,11 @@ void WinWebAuthnApiAuthenticator::GetCredentialInformationForRequest(
   }
   FIDO_LOG(DEBUG) << "Silently discovering credentials for " << request.rp_id;
   std::u16string rp_id = base::UTF8ToUTF16(request.rp_id);
-  WEBAUTHN_GET_CREDENTIALS_OPTIONS options{
-      .dwVersion = WEBAUTHN_GET_CREDENTIALS_OPTIONS_VERSION_1,
-      .pwszRpId = base::as_wcstr(rp_id),
+  WEBAUTHN_GET_CREDENTIALS_OPTIONS options{};
+      options.dwVersion = WEBAUTHN_GET_CREDENTIALS_OPTIONS_VERSION_1;
+      options.pwszRpId = base::as_wcstr(rp_id);
       // TODO(nsatragno): plumb browser private mode status in.
-      .bBrowserInPrivateMode = false};
+      options.bBrowserInPrivateMode = false;
   PWEBAUTHN_CREDENTIAL_DETAILS_LIST credentials = nullptr;
   HRESULT hresult = win_api_->GetPlatformCredentialList(&options, &credentials);
   std::unique_ptr<WEBAUTHN_CREDENTIAL_DETAILS_LIST,

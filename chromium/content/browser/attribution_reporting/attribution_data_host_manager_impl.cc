@@ -231,10 +231,14 @@ void AttributionDataHostManagerImpl::RegisterDataHost(
     url::Origin context_origin) {
   DCHECK(network::IsOriginPotentiallyTrustworthy(context_origin));
 
+
+  FrozenContext tmp = {};
+  tmp.context_origin = std::move(context_origin);
+  tmp.source_type = AttributionSourceType::kEvent;
+  tmp.register_time = base::TimeTicks::Now();
+
   receivers_.Add(this, std::move(data_host),
-                 FrozenContext{.context_origin = std::move(context_origin),
-                               .source_type = AttributionSourceType::kEvent,
-                               .register_time = base::TimeTicks::Now()});
+                 std::move(tmp));
   data_hosts_in_source_mode_++;
 }
 
@@ -243,8 +247,8 @@ bool AttributionDataHostManagerImpl::RegisterNavigationDataHost(
     const blink::AttributionSrcToken& attribution_src_token) {
   auto [it, inserted] = navigation_data_host_map_.try_emplace(
       attribution_src_token,
-      NavigationDataHost{.data_host = std::move(data_host),
-                         .register_time = base::TimeTicks::Now()});
+      NavigationDataHost{/*.data_host =*/ std::move(data_host),
+                         /*.register_time =*/ base::TimeTicks::Now()});
   // Should only be possible with a misbehaving renderer.
   if (!inserted)
     return false;
@@ -275,8 +279,9 @@ void AttributionDataHostManagerImpl::NotifyNavigationRedirectRegistration(
 
   auto [it, inserted] = redirect_registrations_.try_emplace(
       attribution_src_token, NavigationRedirectSourceRegistrations{
-                                 .source_origin = source_origin,
-                                 .register_time = base::TimeTicks::Now()});
+                                 /*.source_origin =*/ source_origin,
+                                0, {}, {},
+                                 /*.register_time =*/ base::TimeTicks::Now()});
 
   // Redirect data may not be registered if the navigation is already finished.
   DCHECK(it->second.destination.opaque());
@@ -312,10 +317,11 @@ void AttributionDataHostManagerImpl::NotifyNavigationForDataHost(
   if (it != navigation_data_host_map_.end()) {
     receivers_.Add(
         this, std::move(it->second.data_host),
-        FrozenContext{.context_origin = source_origin,
-                      .source_type = AttributionSourceType::kNavigation,
-                      .destination = net::SchemefulSite(destination_origin),
-                      .register_time = it->second.register_time});
+        FrozenContext{/*.context_origin =*/ source_origin,
+                      /*.source_type =*/ AttributionSourceType::kNavigation,
+                      /*.destination =*/ net::SchemefulSite(destination_origin),
+                      RegistrationType::kNone, 0,
+                      /*.register_time =*/ it->second.register_time});
 
     navigation_data_host_map_.erase(it);
     RecordNavigationDataHostStatus(NavigationDataHostStatus::kProcessed);
@@ -600,8 +606,8 @@ void AttributionDataHostManagerImpl::TriggerDataAvailable(
   const base::TimeDelta delay = kTriggerDelay.Get();
 
   delayed_triggers_.emplace_back(DelayedTrigger{
-      .delay_until = base::TimeTicks::Now() + delay,
-      .trigger = std::move(trigger),
+      /*.delay_until =*/ base::TimeTicks::Now() + delay,
+      /*.trigger =*/ std::move(trigger),
   });
   RecordTriggerQueueEvent(TriggerQueueEvent::kEnqueued);
 

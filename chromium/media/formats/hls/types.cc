@@ -201,8 +201,8 @@ ParseStatus::Or<DecimalResolution> DecimalResolution::Parse(
     }
   }
 
-  return DecimalResolution{.width = std::move(width).value(),
-                           .height = std::move(height).value()};
+  return DecimalResolution{/*.width =*/ std::move(width).value(),
+                           /*.height =*/ std::move(height).value()};
 }
 
 // static
@@ -231,8 +231,8 @@ ParseStatus::Or<ByteRangeExpression> ByteRangeExpression::Parse(
     offset = std::move(offset_result).value();
   }
 
-  return ByteRangeExpression{.length = std::move(length).value(),
-                             .offset = offset};
+  return ByteRangeExpression{/*.length =*/ std::move(length).value(),
+                             /*.offset =*/ offset};
 }
 
 // static
@@ -343,7 +343,7 @@ ParseStatus::Or<AttributeListIterator::Item> AttributeListIterator::Next() {
   }
 
   remaining_content_ = content;
-  return Item{.name = name.value(), .value = value.value()};
+  return Item{/*.name =*/ name.value(), /*.value =*/ value.value()};
 }
 
 AttributeMap::AttributeMap(base::span<Item> sorted_items)

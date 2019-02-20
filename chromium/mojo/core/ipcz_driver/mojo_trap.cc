@@ -172,7 +172,7 @@ struct MojoTrap::Trigger : public base::RefCountedThreadSafe<Trigger> {
   const scoped_refptr<DataPipe> data_pipe;
   const MojoHandleSignals signals;
   const uintptr_t trigger_context;
-  IpczTrapConditions conditions = {.size = sizeof(conditions), .flags = 0};
+  IpczTrapConditions conditions = {/*.size =*/ sizeof(conditions), /*.flags =*/ 0};
 
   // Access to all fields below is effectively guarded by the owning MojoTrap's
   // `lock_`.
@@ -243,8 +243,8 @@ MojoResult MojoTrap::AddTrigger(MojoHandle handle,
     // added here.
     trigger->AddRef();
     IpczTrapConditions removal_conditions = {
-        .size = sizeof(removal_conditions),
-        .flags = IPCZ_TRAP_REMOVED,
+        /*.size =*/ sizeof(removal_conditions),
+        /*.flags =*/ IPCZ_TRAP_REMOVED,
     };
     IpczResult result = GetIpczAPI().Trap(
         handle, &removal_conditions, &TrapRemovalEventHandler,
@@ -266,7 +266,7 @@ MojoResult MojoTrap::AddTrigger(MojoHandle handle,
     armed_ = false;
 
     pending_mojo_events_->emplace_back(
-        MojoTrapEvent{.struct_size = sizeof(MojoTrapEvent)});
+        MojoTrapEvent{/*.struct_size =*/ sizeof(MojoTrapEvent)});
     MojoTrapEvent& event = pending_mojo_events_->back();
     TranslateIpczToMojoEvent(signals, trigger_context, data_pipe, flags, status,
                              &event);
@@ -439,7 +439,7 @@ void MojoTrap::HandleEvent(const IpczTrapEvent& event) {
     armed_ = false;
 
     pending_mojo_events_->emplace_back(
-        MojoTrapEvent{.struct_size = sizeof(MojoTrapEvent)});
+        MojoTrapEvent{/*.struct_size =*/ sizeof(MojoTrapEvent)});
     MojoTrapEvent& mojo_event = pending_mojo_events_->back();
     TranslateIpczToMojoEvent(trigger->signals, trigger->trigger_context,
                              trigger->data_pipe.get(), event.condition_flags,
@@ -531,11 +531,11 @@ void MojoTrap::MaybeEnqueueTriggerRemoval(Trigger& trigger) {
   }
   trigger.removed = true;
   pending_mojo_events_->push_back(MojoTrapEvent{
-      .struct_size = sizeof(MojoTrapEvent),
-      .flags = MOJO_TRAP_EVENT_FLAG_WITHIN_API_CALL,
-      .trigger_context = trigger.trigger_context,
-      .result = MOJO_RESULT_CANCELLED,
-      .signals_state = {.satisfied_signals = 0, .satisfiable_signals = 0},
+      /*.struct_size =*/ sizeof(MojoTrapEvent),
+      /*.flags =*/ MOJO_TRAP_EVENT_FLAG_WITHIN_API_CALL,
+      /*.trigger_context =*/ trigger.trigger_context,
+      /*.result =*/ MOJO_RESULT_CANCELLED,
+      /*.signals_state =*/ {/*.satisfied_signals =*/ 0, /*.satisfiable_signals =*/ 0},
   });
 }
 

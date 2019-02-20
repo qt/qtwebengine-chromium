@@ -363,9 +363,9 @@ void SpeculationHostImpl::ProcessCandidatesForPrerender(
     // have the same URL but its `target_browsing_context_name_hint` is
     // different. In the current implementation, only the first rule is
     // triggered.
-    started_prerenders_.insert(end, {.url = it->url,
-                                     .referrer = referrer,
-                                     .prerender_host_id = prerender_host_id});
+    started_prerenders_.insert(end, {/*.url =*/ it->url,
+                                     /*.referrer =*/ referrer,
+                                     /*.prerender_host_id =*/ prerender_host_id});
 
     // Start to observe PrerenderHost to get the information about FinalStatus.
     observers_.push_back(std::make_unique<PrerenderHostObserver>(

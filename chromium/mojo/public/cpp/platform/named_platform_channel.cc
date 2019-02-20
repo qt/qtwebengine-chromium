@@ -46,7 +46,7 @@ void NamedPlatformChannel::PassServerNameOnCommandLine(
 PlatformChannelEndpoint NamedPlatformChannel::ConnectToServer(
     const ServerName& server_name) {
   DCHECK(!server_name.empty());
-  Options options = {.server_name = server_name};
+  Options options = {/*.server_name =*/ server_name};
   return CreateClientEndpoint(options);
 }
 

@@ -513,10 +513,10 @@ void Thread::PostDelayedHighPrecisionTask(absl::AnyInvocable<void() &&> task,
   int64_t run_time_ms = TimeAfter(delay_ms);
   {
     MutexLock lock(&mutex_);
-    delayed_messages_.push({.delay_ms = delay_ms,
-                            .run_time_ms = run_time_ms,
-                            .message_number = delayed_next_num_,
-                            .functor = std::move(task)});
+    delayed_messages_.push({/*.delay_ms =*/ delay_ms,
+                            /*.run_time_ms =*/ run_time_ms,
+                            /*.message_number =*/ delayed_next_num_,
+                            /*.functor =*/ std::move(task)});
     // If this message queue processes 1 message every millisecond for 50 days,
     // we will wrap this number.  Even then, only messages with identical times
     // will be misordered, and then only briefly.  This is probably ok.

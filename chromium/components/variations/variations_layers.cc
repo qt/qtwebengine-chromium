@@ -64,8 +64,8 @@ void VariationsLayers::ConstructLayer(const EntropyProviders& entropy_providers,
   if (!chosen_member)
     return;
   active_member_for_layer_.emplace(
-      layer_proto.id(), LayerInfo{.active_member_id = chosen_member->id(),
-                                  .entropy_mode = layer_proto.entropy_mode()});
+      layer_proto.id(), LayerInfo{/*.active_member_id =*/ chosen_member->id(),
+                                 /* .entropy_mode =*/ layer_proto.entropy_mode()});
 }
 
 bool VariationsLayers::IsLayerMemberActive(uint32_t layer_id,

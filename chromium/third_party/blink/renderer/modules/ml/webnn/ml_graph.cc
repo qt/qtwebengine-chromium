@@ -77,8 +77,8 @@ bool MLGraph::ValidateAndInitializeResourcesInfo(
     }
     // Setup resource info for this output operand.
     output_resources_info_.insert(
-        name, ResourceInfo({.type = operand->Type(),
-                            .byte_length = operand->ByteLength()}));
+        name, ResourceInfo({/*.type =*/ operand->Type(),
+                            /*.byte_length =*/ operand->ByteLength()}));
     // Mark its dependent operator is visited.
     visited_operators.insert(operand->Operator());
     // Enqueue its dependent operator.
@@ -113,8 +113,8 @@ bool MLGraph::ValidateAndInitializeResourcesInfo(
           // Setup resource info for this input operand.
           input_resources_info_.insert(
               operand->Name(),
-              ResourceInfo({.type = operand->Type(),
-                            .byte_length = operand->ByteLength()}));
+              ResourceInfo({/*.type =*/ operand->Type(),
+                            /*.byte_length =*/ operand->ByteLength()}));
           break;
         case MLOperand::OperandKind::kConstant:
           // If the operand is a constant operand, there is no check needed.

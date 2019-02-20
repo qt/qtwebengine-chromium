@@ -363,8 +363,8 @@ void Node::AcceptIntroduction(NodeLink& from_node_link,
     auto [connection_it, inserted] =
         connections_.insert({name,
                              {
-                                 .link = new_link,
-                                 .broker = WrapRefCounted(&from_node_link),
+                                 /*.link =*/ new_link,
+                                 /*.broker =*/ WrapRefCounted(&from_node_link),
                              }});
     if (!inserted) {
       // If both nodes race to request an introduction to each other, the

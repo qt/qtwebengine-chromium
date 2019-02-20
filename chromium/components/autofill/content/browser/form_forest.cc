@@ -480,7 +480,7 @@ void FormForest::UpdateTreeOfRendererForm(FormData* form,
 
         // Pushes the right-sibling field range of |n| onto the stack.
         frontier.push(
-            {.frame = n.frame, .form = n.form, .next_frame = n.next_frame + 1});
+            {/*.frame =*/ n.frame, /*.form =*/ n.form, /*.next_frame =*/ n.next_frame + 1});
 
         // Pushes the child field ranges of |n| onto the stack. To ensure DOM
         // order, we do so in reverse order and after the right sibling.
@@ -503,9 +503,9 @@ void FormForest::UpdateTreeOfRendererForm(FormData* form,
           } else {
             child_frame->parent_form = n.form->global_id();
             for (size_t i = child_frame->child_forms.size(); i > 0; --i) {
-              frontier.push({.frame = child_frame,
-                             .form = &child_frame->child_forms[i - 1],
-                             .next_frame = 0});
+              frontier.push({/*.frame =*/ child_frame,
+                             /*.form =*/ &child_frame->child_forms[i - 1],
+                             /*.next_frame =*/ 0});
             }
           }
         }

@@ -95,8 +95,8 @@ void Init(const Configuration& configuration) {
   internal::g_configuration = configuration;
   if (IsMojoIpczEnabled()) {
     CHECK(InitializeIpczNodeForProcess({
-        .is_broker = configuration.is_broker_process,
-        .use_local_shared_memory_allocation =
+        /*.is_broker =*/ configuration.is_broker_process,
+//        .use_local_shared_memory_allocation =
             configuration.is_broker_process ||
             configuration.force_direct_shared_memory_allocation,
     }));

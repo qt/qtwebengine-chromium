@@ -119,14 +119,14 @@ class VideoEncoderFactoryTemplate : public VideoEncoderFactory {
       const SdpVideoFormat& format,
       const absl::optional<std::string>& scalability_mode) const {
     if (IsFormatInList(format, V::SupportedFormats())) {
-      return {.is_supported = IsScalabilityModeSupported<V>(scalability_mode)};
+      return {/*.is_supported =*/ IsScalabilityModeSupported<V>(scalability_mode)};
     }
 
     if constexpr (sizeof...(Vs) > 0) {
       return QueryCodecSupportInternal<Vs...>(format, scalability_mode);
     }
 
-    return {.is_supported = false};
+    return {/*.is_supported =*/ false};
   }
 };
 

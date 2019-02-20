@@ -16,10 +16,10 @@ AtomicQueueState::AtomicQueueState() noexcept = default;
 AtomicQueueState::QueryResult AtomicQueueState::Query(
     const MonitorSelection& monitors) {
   return {
-      .num_parcels_consumed =
-          num_parcels_consumed_.Query({.monitor = monitors.monitor_parcels}),
-      .num_bytes_consumed =
-          num_bytes_consumed_.Query({.monitor = monitors.monitor_bytes}),
+//      .num_parcels_consumed =
+          num_parcels_consumed_.Query({/*.monitor =*/ monitors.monitor_parcels}),
+//      .num_bytes_consumed =
+          num_bytes_consumed_.Query({/*.monitor =*/ monitors.monitor_bytes}),
   };
 }
 

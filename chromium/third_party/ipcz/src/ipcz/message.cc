@@ -172,8 +172,8 @@ uint32_t Message::AppendDriverObject(DriverObject object) {
 internal::DriverObjectArrayData Message::AppendDriverObjects(
     absl::Span<DriverObject> objects) {
   const internal::DriverObjectArrayData data = {
-      .first_object_index = checked_cast<uint32_t>(driver_objects_.size()),
-      .num_objects = checked_cast<uint32_t>(objects.size()),
+      /*.first_object_index =*/ checked_cast<uint32_t>(driver_objects_.size()),
+      /*.num_objects =*/ checked_cast<uint32_t>(objects.size()),
   };
   driver_objects_.reserve(driver_objects_.size() + objects.size());
   for (auto& object : objects) {

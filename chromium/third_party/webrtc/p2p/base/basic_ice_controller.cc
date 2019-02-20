@@ -464,8 +464,8 @@ BasicIceController::HandleInitialSelectDampening(
   }
 
   RTC_LOG(LS_INFO) << "delay initial selection up to " << min_delay << "ms";
-  return {.connection = absl::nullopt,
-          .recheck_event = IceRecheckEvent(
+  return {/*.connection =*/ absl::nullopt,
+          /*.recheck_event =*/ IceRecheckEvent(
               IceSwitchReason::ICE_CONTROLLER_RECHECK, min_delay)};
 }
 

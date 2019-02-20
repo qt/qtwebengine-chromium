@@ -237,7 +237,7 @@ ScriptPromise MediaDevices::enumerateDevices(ScriptState* script_state,
   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
   enumerate_device_requests_.Set(
-      resolver, RequestMetadata{.start_time = base::TimeTicks::Now()});
+      resolver, RequestMetadata{/*.start_time =*/ base::TimeTicks::Now()});
 
   LocalFrame* frame = LocalDOMWindow::From(script_state)->GetFrame();
   GetDispatcherHost(frame).EnumerateDevices(

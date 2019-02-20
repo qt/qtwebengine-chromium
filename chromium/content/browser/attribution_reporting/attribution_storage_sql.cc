@@ -347,7 +347,7 @@ absl::optional<StoredSourceData> ReadSourceFromStatement(
     return absl::nullopt;
 
   return StoredSourceData{
-      .source = StoredSource(
+      /*.source =*/ StoredSource(
           CommonSourceInfo(
               source_event_id, std::move(source_origin),
               std::move(destination_origin), std::move(reporting_origin),
@@ -355,7 +355,7 @@ absl::optional<StoredSourceData> ReadSourceFromStatement(
               std::move(*filter_data), debug_key, std::move(*aggregation_keys)),
           *attribution_logic, *active_state, source_id,
           aggregatable_budget_consumed),
-      .num_conversions = num_conversions};
+      /*.num_conversions =*/ num_conversions};
 }
 
 absl::optional<StoredSourceData> ReadSourceToAttribute(
@@ -1953,7 +1953,7 @@ bool AttributionStorageSql::LazyInit(DbCreationPolicy creation_policy) {
   }
 
   db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{
-      .exclusive_locking = true, .page_size = 4096, .cache_size = 32});
+      /*.exclusive_locking =*/ true, /*.page_size =*/ 4096, /*.cache_size =*/ 32});
   db_->set_histogram_tag("Conversions");
 
   // `base::Unretained()` is safe because the callback will only be called

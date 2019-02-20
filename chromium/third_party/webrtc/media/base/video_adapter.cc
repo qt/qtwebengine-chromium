@@ -313,12 +313,12 @@ void VideoAdapter::OnOutputFormatRequest(
     const absl::optional<int>& max_fps) {
   webrtc::MutexLock lock(&mutex_);
 
-  OutputFormatRequest request = {
-      .target_landscape_aspect_ratio = target_landscape_aspect_ratio,
-      .max_landscape_pixel_count = max_landscape_pixel_count,
-      .target_portrait_aspect_ratio = target_portrait_aspect_ratio,
-      .max_portrait_pixel_count = max_portrait_pixel_count,
-      .max_fps = max_fps};
+  OutputFormatRequest request = {};
+      request.target_landscape_aspect_ratio = target_landscape_aspect_ratio;
+      request.max_landscape_pixel_count = max_landscape_pixel_count;
+      request.target_portrait_aspect_ratio = target_portrait_aspect_ratio;
+      request.max_portrait_pixel_count = max_portrait_pixel_count;
+      request.max_fps = max_fps;
 
   if (stashed_output_format_request_) {
     // Save the output format request for later use in case the encoder making

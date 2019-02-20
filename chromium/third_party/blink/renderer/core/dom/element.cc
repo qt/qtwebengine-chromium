@@ -2739,7 +2739,7 @@ void Element::HidePopUpInternal(HidePopupFocusBehavior focus_behavior,
   HeapVector<Member<Animation>> previous_animations;
   if (!force_hide) {
     previous_animations = GetAnimationsInternal(
-        GetAnimationsOptionsResolved{.use_subtree = true});
+        GetAnimationsOptionsResolved{/*.use_subtree =*/ true});
   }
 
   GetPopupData()->setInvoker(nullptr);
@@ -2775,7 +2775,7 @@ void Element::HidePopUpInternal(HidePopupFocusBehavior focus_behavior,
   // can start.
   HeapHashSet<Member<EventTarget>> animations;
   for (const auto& animation : GetAnimationsInternal(
-           GetAnimationsOptionsResolved{.use_subtree = true})) {
+           GetAnimationsOptionsResolved{/*.use_subtree =*/ true})) {
     animations.insert(animation);
   }
   animations.RemoveAll(previous_animations);

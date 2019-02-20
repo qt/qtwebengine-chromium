@@ -65,7 +65,9 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
   //
   // Guaranteed to match SQLITE_DEFAULT_PAGE_SIZE.
   static constexpr int kDefaultPageSize = 4096;
-
+  DatabaseOptions(bool el, int ps = kDefaultPageSize, int cs = 0, bool mastd = false, bool evd = false, bool evtd = false) noexcept :
+      exclusive_locking(el), page_size(ps), cache_size(cs), mmap_alt_status_discouraged(mastd),
+      enable_views_discouraged(evd), enable_virtual_tables_discouraged(evtd) {}
   // If true, the database can only be opened by one process at a time.
   //
   // SQLite supports a locking protocol that allows multiple processes to safely

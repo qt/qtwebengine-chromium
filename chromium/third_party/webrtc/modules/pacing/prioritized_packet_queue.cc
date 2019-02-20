@@ -118,9 +118,9 @@ void PrioritizedPacketQueue::Push(Timestamp enqueue_time,
   int prio_level = GetPriorityForType(packet_type);
   RTC_DCHECK_GE(prio_level, 0);
   RTC_DCHECK_LT(prio_level, kNumPriorityLevels);
-  QueuedPacket queued_packed = {.packet = std::move(packet),
-                                .enqueue_time = enqueue_time,
-                                .enqueue_time_iterator = enqueue_time_iterator};
+  QueuedPacket queued_packed = {/*.packet =*/ std::move(packet),
+                                /*.enqueue_time =*/ enqueue_time,
+                                /*.enqueue_time_iterator =*/ enqueue_time_iterator};
   // In order to figure out how much time a packet has spent in the queue
   // while not in a paused state, we subtract the total amount of time the
   // queue has been paused so far, and when the packet is popped we subtract

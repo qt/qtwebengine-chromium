@@ -332,9 +332,9 @@ bool HTMLFormControlElement::IsSuccessfulSubmitButton() const {
 //     values match, the behavior is to toggle.
 HTMLFormControlElement::PopupTargetElement
 HTMLFormControlElement::popupTargetElement() const {
-  const PopupTargetElement no_element{.element = nullptr,
-                                      .action = PopupTriggerAction::kNone,
-                                      .attribute_name = g_null_name};
+  const PopupTargetElement no_element{/*.element =*/ nullptr,
+                                      /*.action =*/ PopupTriggerAction::kNone,
+                                      /*.attribute_name =*/ g_null_name};
   if (!RuntimeEnabledFeatures::HTMLPopupAttributeEnabled(
           GetDocument().GetExecutionContext()) ||
       !IsInTreeScope() ||
@@ -367,9 +367,9 @@ HTMLFormControlElement::popupTargetElement() const {
   Element* popup_element = GetTreeScope().getElementById(idref);
   if (!popup_element || !popup_element->HasPopupAttribute())
     return no_element;
-  return PopupTargetElement{.element = popup_element,
-                            .action = action,
-                            .attribute_name = attribute_name};
+  return PopupTargetElement{/*.element =*/ popup_element,
+                            /*.action =*/ action,
+                            /*.attribute_name =*/ attribute_name};
 }
 
 void HTMLFormControlElement::DefaultEventHandler(Event& event) {

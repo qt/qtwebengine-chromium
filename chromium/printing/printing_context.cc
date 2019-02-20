@@ -178,16 +178,14 @@ mojom::ResultCode PrintingContext::UpdatePrintSettings(
   DCHECK(open_in_external_preview ||
          printer_type == mojom::PrinterType::kLocal);
 
-  PrinterSettings printer_settings {
+  PrinterSettings printer_settings {};
 #if BUILDFLAG(IS_MAC)
-    .external_preview = open_in_external_preview,
+    printer_settings.external_preview = open_in_external_preview;
 #endif
-    .show_system_dialog =
-        job_settings.FindBool(kSettingShowSystemDialog).value_or(false),
+    printer_settings.show_system_dialog = job_settings.FindBool(kSettingShowSystemDialog).value_or(false);
 #if BUILDFLAG(IS_WIN)
-    .page_count = job_settings.FindInt(kSettingPreviewPageCount).value_or(0)
+    printer_settings.page_count = job_settings.FindInt(kSettingPreviewPageCount).value_or(0);
 #endif
-  };
   return UpdatePrinterSettings(printer_settings);
 }
 

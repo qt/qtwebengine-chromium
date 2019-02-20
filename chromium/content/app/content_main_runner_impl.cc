@@ -1135,7 +1135,7 @@ int ContentMainRunnerImpl::RunBrowser(MainFunctionParams main_params,
 
   if (!mojo_ipc_support_) {
     const ContentMainDelegate::InvokedInBrowserProcess invoked_in_browser{
-        .is_running_test = !main_params.ui_task.is_null()};
+        /*.is_running_test =*/ !main_params.ui_task.is_null()};
     if (delegate_->ShouldCreateFeatureList(invoked_in_browser)) {
       // This is intentionally leaked since it needs to live for the duration
       // of the process and there's no benefit in cleaning it up at exit.

@@ -49,7 +49,7 @@ class MonitoredAtomic {
                                          std::memory_order_release,
                                          std::memory_order_relaxed)) {
     }
-    return {.value = Unmonitored(value), .monitored = IsMonitored(value)};
+    return {/*.value =*/ Unmonitored(value), /*.monitored =*/ IsMonitored(value)};
   }
 
   // Stores a new underlying value, resetting the monitor bit if it was set.

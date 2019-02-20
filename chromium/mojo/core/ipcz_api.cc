@@ -22,8 +22,8 @@ class IpczAPIInitializer {
 };
 
 IpczHandle g_node = IPCZ_INVALID_HANDLE;
-IpczNodeOptions g_options = {.is_broker = false,
-                             .use_local_shared_memory_allocation = false};
+IpczNodeOptions g_options = {/*.is_broker =*/ false,
+                             /*.use_local_shared_memory_allocation =*/ false};
 
 }  // namespace
 

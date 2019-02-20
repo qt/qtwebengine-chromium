@@ -128,10 +128,11 @@ const liburlpattern::Options GetOptions(
   // The liburlpattern::Options to use for most component patterns.  We
   // default to strict mode and most components have no concept of a delimiter
   // or prefix character.  Case sensitivity is set via the external options.
-  Options value = {.delimiter_list = "",
-                   .prefix_list = "",
-                   .sensitive = !external_options.ignoreCase(),
-                   .strict = true};
+  Options value = {};
+                   value.delimiter_list = "";
+                   value.prefix_list = "";
+                   value.sensitive = !external_options.ignoreCase();
+                   value.strict = true;
 
   if (type == Component::Type::kHostname) {
     // Hostname patterns use a "." delimiter controlling how far a named group

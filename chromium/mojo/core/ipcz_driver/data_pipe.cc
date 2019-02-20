@@ -76,9 +76,9 @@ DataPipe::PortalWrapper::~PortalWrapper() {
 DataPipe::DataPipe(const Config& config)
     : element_size_(config.element_size),
       limits_({
-          .size = sizeof(IpczPutLimits),
-          .max_queued_parcels = std::numeric_limits<size_t>::max(),
-          .max_queued_bytes = config.byte_capacity,
+          /*.size =*/ sizeof(IpczPutLimits),
+          /*.max_queued_parcels =*/ std::numeric_limits<size_t>::max(),
+          /*.max_queued_bytes =*/ config.byte_capacity,
       }) {
   DCHECK_GT(element_size_, 0u);
   DCHECK_LE(element_size_, std::numeric_limits<uint32_t>::max());
@@ -99,7 +99,7 @@ DataPipe::Pair DataPipe::CreatePair(const Config& config) {
 
   Pair pair;
   pair.consumer = base::MakeRefCounted<DataPipe>(
-      Config{.element_size = config.element_size, .byte_capacity = 0});
+      Config{/*.element_size =*/ config.element_size, /*.byte_capacity =*/ 0});
   pair.consumer->AdoptPortal(consumer);
 
   pair.producer = base::MakeRefCounted<DataPipe>(config);
@@ -123,7 +123,7 @@ void DataPipe::AdoptPortal(IpczHandle portal) {
     // If there are any parcels ready to read now, treat them as if they're new
     // data. If we're wrong the only side effect is that an observer may attempt
     // a single redundant read of the pipe.
-    IpczPortalStatus status = {.size = sizeof(status)};
+    IpczPortalStatus status = {/*.size =*/ sizeof(status)};
     GetIpczAPI().QueryPortalStatus(wrapper->handle(), IPCZ_NO_FLAGS, nullptr,
                                    &status);
     if (status.num_local_bytes > 0) {
@@ -196,8 +196,8 @@ IpczResult DataPipe::BeginWriteData(void*& data,
       allow_partial ? IPCZ_BEGIN_PUT_ALLOW_PARTIAL : IPCZ_NO_FLAGS;
 
   const IpczBeginPutOptions begin_put_options = {
-      .size = sizeof(begin_put_options),
-      .limits = &limits_,
+      /*.size =*/ sizeof(begin_put_options),
+      /*.limits =*/ &limits_,
   };
 
   // Several MojoBeginWriteData() callers supply an input size of zero and
@@ -279,7 +279,7 @@ IpczResult DataPipe::ReadData(void* elements,
   }
 
   IpczHandle portal;
-  IpczPortalStatus status = {.size = sizeof(status)};
+  IpczPortalStatus status = {/*.size =*/ sizeof(status)};
   {
     base::AutoLock lock(lock_);
     if (!portal_) {
@@ -449,8 +449,8 @@ scoped_refptr<DataPipe> DataPipe::Deserialize(
   }
 
   return base::MakeRefCounted<DataPipe>(
-      Config{.element_size = header.element_size,
-             .byte_capacity = header.byte_capacity});
+      Config{/*.element_size =*/ header.element_size,
+             /*.byte_capacity =*/ header.byte_capacity});
 }
 
 void DataPipe::WatchForNewData() {
@@ -477,8 +477,8 @@ void DataPipe::WatchForNewData() {
   AddRef();
 
   const IpczTrapConditions conditions = {
-      .size = sizeof(conditions),
-      .flags = IPCZ_TRAP_NEW_LOCAL_PARCEL,
+      /*.size =*/ sizeof(conditions),
+      /*.flags =*/ IPCZ_TRAP_NEW_LOCAL_PARCEL,
   };
   const uintptr_t context = reinterpret_cast<uintptr_t>(this);
   const IpczResult result =

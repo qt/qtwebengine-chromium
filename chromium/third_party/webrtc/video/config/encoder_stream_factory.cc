@@ -459,7 +459,7 @@ EncoderStreamFactory::GetLayerResolutionFromRequestedResolution(
                                     &out_height)) {
     RTC_LOG(LS_ERROR) << "AdaptFrameResolution returned false!";
   }
-  return {.width = out_width, .height = out_height};
+  return {/*.width =*/ out_width, /*.height =*/ out_height};
 }
 
 }  // namespace cricket

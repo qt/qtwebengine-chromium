@@ -262,9 +262,9 @@ void FrameBuffer::FindNextAndLastDecodableTemporalUnit() {
 
   if (next_decodable_temporal_unit_) {
     decodable_temporal_units_info_ = {
-        .next_rtp_timestamp =
+//        .next_rtp_timestamp =
             GetTimestamp(next_decodable_temporal_unit_->first_frame),
-        .last_rtp_timestamp = last_decodable_temporal_unit_timestamp};
+        /*.last_rtp_timestamp =*/ last_decodable_temporal_unit_timestamp};
   }
 }
 

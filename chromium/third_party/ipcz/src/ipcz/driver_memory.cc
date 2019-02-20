@@ -18,7 +18,7 @@ DriverMemory::DriverMemory() = default;
 
 DriverMemory::DriverMemory(DriverObject memory) : memory_(std::move(memory)) {
   if (memory_.is_valid()) {
-    IpczSharedMemoryInfo info = {.size = sizeof(info)};
+    IpczSharedMemoryInfo info = {/*.size =*/ sizeof(info)};
     IpczResult result = memory_.driver()->GetSharedMemoryInfo(
         memory_.handle(), IPCZ_NO_FLAGS, nullptr, &info);
     ABSL_ASSERT(result == IPCZ_RESULT_OK);

@@ -355,13 +355,13 @@ MediaStreamDispatcherHost::GenerateStreamsChecksOnUIThread(
   // TODO(crbug.com/1342071): Add tests for |request_all_screens| being true.
   if (request_all_screens &&
       !CheckRequestAllScreensAllowed(render_process_id, render_frame_id)) {
-    return {.request_allowed = false,
-            .salt_and_origin = MediaDeviceSaltAndOrigin()};
+    return {/*.request_allowed =*/ false,
+            /*.salt_and_origin =*/ MediaDeviceSaltAndOrigin()};
   }
 
   return {
-      .request_allowed = true,
-      .salt_and_origin = std::move(generate_salt_and_origin_callback).Run()};
+      /*.request_allowed =*/ true,
+      /*.salt_and_origin =*/ std::move(generate_salt_and_origin_callback).Run()};
 }
 
 const mojo::Remote<blink::mojom::MediaStreamDeviceObserver>&

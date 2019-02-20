@@ -327,12 +327,12 @@ ParseStatus::Or<M3uTag> M3uTag::Parse(TagItem tag) {
 // static
 XDefineTag XDefineTag::CreateDefinition(types::VariableName name,
                                         base::StringPiece value) {
-  return XDefineTag{.name = name, .value = value};
+  return XDefineTag{/*.name =*/ name, /*.value =*/ value};
 }
 
 // static
 XDefineTag XDefineTag::CreateImport(types::VariableName name) {
-  return XDefineTag{.name = name, .value = absl::nullopt};
+  return XDefineTag{/*.name =*/ name, /*.value =*/ absl::nullopt};
 }
 
 // static
@@ -700,19 +700,19 @@ ParseStatus::Or<XMediaTag> XMediaTag::Parse(
   }
 
   return XMediaTag(XMediaTag::CtorArgs{
-      .type = type,
-      .uri = uri,
-      .instream_id = instream_id,
-      .group_id = group_id.value(),
-      .language = language,
-      .associated_language = assoc_language,
-      .name = name.value(),
-      .stable_rendition_id = std::move(stable_rendition_id),
-      .is_default = is_default,
-      .autoselect = autoselect,
-      .forced = forced,
-      .characteristics = std::move(characteristics),
-      .channels = std::move(channels),
+      /*.type =*/ type,
+      /*.uri =*/ uri,
+      /*.instream_id =*/ instream_id,
+      /*.group_id =*/ group_id.value(),
+      /*.language =*/ language,
+      /*.associated_language =*/ assoc_language,
+      /*.name =*/ name.value(),
+      /*.stable_rendition_id =*/ std::move(stable_rendition_id),
+      /*.is_default = */is_default,
+      /*.autoselect =*/ autoselect,
+      /*.forced =*/ forced,
+      /*.characteristics =*/ std::move(characteristics),
+      /*.channels =*/ std::move(channels),
   });
 }
 
@@ -880,7 +880,7 @@ ParseStatus::Or<InfTag> InfTag::Parse(TagItem tag) {
     return ParseStatusCode::kValueOverflowsTimeDelta;
   }
 
-  return InfTag{.duration = duration, .title = title_str};
+  return InfTag{/*.duration =*/ duration, /*.title =*/ title_str};
 }
 
 // static
@@ -902,7 +902,7 @@ ParseStatus::Or<XByteRangeTag> XByteRangeTag::Parse(TagItem tag) {
         .AddCause(std::move(range).error());
   }
 
-  return XByteRangeTag{.range = std::move(range).value()};
+  return XByteRangeTag{/*.range =*/ std::move(range).value()};
 }
 
 // static
@@ -979,7 +979,7 @@ ParseStatus::Or<XMapTag> XMapTag::Parse(
     byte_range = std::move(result).value();
   }
 
-  return XMapTag{.uri = uri.value(), .byte_range = byte_range};
+  return XMapTag{/*.uri =*/ uri.value(), /*.byte_range =*/ byte_range};
 }
 
 // static
@@ -1070,11 +1070,11 @@ ParseStatus::Or<XPartTag> XPartTag::Parse(
     }
   }
 
-  return XPartTag{.uri = uri.value(),
-                  .duration = duration,
-                  .byte_range = byte_range,
-                  .independent = independent,
-                  .gap = gap};
+  return XPartTag{/*.uri =*/ uri.value(),
+                  /*.duration =*/ duration,
+                  /*.byte_range =*/ byte_range,
+                  /*.independent =*/ independent,
+                  /*.gap =*/ gap};
 }
 
 // static
@@ -1115,7 +1115,7 @@ ParseStatus::Or<XPartInfTag> XPartInfTag::Parse(TagItem tag) {
     return ParseStatusCode::kMalformedTag;
   }
 
-  return XPartInfTag{.target_duration = part_target};
+  return XPartInfTag{/*.target_duration =*/ part_target};
 }
 
 // static
@@ -1128,10 +1128,10 @@ ParseStatus::Or<XPlaylistTypeTag> XPlaylistTypeTag::Parse(TagItem tag) {
   }
 
   if (tag.GetContent()->Str() == "EVENT") {
-    return XPlaylistTypeTag{.type = PlaylistType::kEvent};
+    return XPlaylistTypeTag{/*.type =*/ PlaylistType::kEvent};
   }
   if (tag.GetContent()->Str() == "VOD") {
-    return XPlaylistTypeTag{.type = PlaylistType::kVOD};
+    return XPlaylistTypeTag{/*.type =*/ PlaylistType::kVOD};
   }
 
   return ParseStatusCode::kUnknownPlaylistType;
@@ -1236,11 +1236,11 @@ ParseStatus::Or<XServerControlTag> XServerControlTag::Parse(TagItem tag) {
   }
 
   return XServerControlTag{
-      .skip_boundary = can_skip_until,
-      .can_skip_dateranges = can_skip_dateranges,
-      .hold_back = hold_back,
-      .part_hold_back = part_hold_back,
-      .can_block_reload = can_block_reload,
+      /*.skip_boundary =*/ can_skip_until,
+      /*.can_skip_dateranges =*/ can_skip_dateranges,
+      /*.hold_back =*/ hold_back,
+      /*.part_hold_back =*/ part_hold_back,
+      /*.can_block_reload =*/ can_block_reload,
   };
 }
 
@@ -1263,7 +1263,7 @@ ParseStatus::Or<XTargetDurationTag> XTargetDurationTag::Parse(TagItem tag) {
     return ParseStatusCode::kValueOverflowsTimeDelta;
   }
 
-  return XTargetDurationTag{.duration = duration};
+  return XTargetDurationTag{/*.duration =*/ duration};
 }
 
 }  // namespace media::hls

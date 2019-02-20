@@ -169,8 +169,8 @@ void BackgroundHTMLTokenProducer::RunTokenizeLoopOnTaskRunner() {
 
     if (!in_progress_token_data_.has_value()) {
       in_progress_token_data_.emplace(InProgressTokenData{
-          .string_length_at_start_of_token = input_.length(),
-          .line_count_at_start_of_token = input_.CurrentLine().ZeroBasedInt()});
+          /*.string_length_at_start_of_token =*/ input_.length(),
+          /*.line_count_at_start_of_token =*/ input_.CurrentLine().ZeroBasedInt()});
     }
     if (!tokenizer_->NextToken(input_, *token_)) {
       // Let main thread know reached end of current input.

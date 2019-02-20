@@ -553,17 +553,17 @@ void MobileFriendlinessChecker::MaybeRecompute() {
 
 void MobileFriendlinessChecker::ComputeNow() {
   frame_view_->DidChangeMobileFriendliness(MobileFriendliness{
-      .viewport_device_width = viewport_device_width_,
-      .viewport_initial_scale_x10 = viewport_initial_scale_x10_,
-      .viewport_hardcoded_width = viewport_hardcoded_width_,
-      .allow_user_zoom = allow_user_zoom_,
-      .small_text_ratio = area_sizes_.SmallTextRatio(),
-      .text_content_outside_viewport_percentage =
+      /*.viewport_device_width =*/ viewport_device_width_,
+      /*.viewport_initial_scale_x10 =*/ viewport_initial_scale_x10_,
+      /*.viewport_hardcoded_width =*/ viewport_hardcoded_width_,
+      /*.allow_user_zoom =*/ allow_user_zoom_,
+      /*.small_text_ratio =*/ area_sizes_.SmallTextRatio(),
+      /*.text_content_outside_viewport_percentage =*/
           area_sizes_.TextContentsOutsideViewportPercentage(
               // Use SizeF when computing the area to avoid integer overflow.
               gfx::SizeF(frame_view_->GetPage()->GetVisualViewport().Size())
                   .GetArea()),
-      .bad_tap_targets_ratio = ComputeBadTapTargetsRatio()});
+      /*.bad_tap_targets_ratio = */ComputeBadTapTargetsRatio()});
 
   last_evaluated_ = base::TimeTicks::Now();
 }

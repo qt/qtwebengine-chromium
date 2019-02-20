@@ -358,7 +358,7 @@ scoped_refptr<const CalculationExpressionAnchorQueryNode>
 CalculationExpressionAnchorQueryNode::CreateAnchor(const AtomicString& name,
                                                    AnchorValue side,
                                                    const Length& fallback) {
-  AnchorQueryValue value = {.anchor_side = side};
+  AnchorQueryValue value = {/*.anchor_side =*/ side};
   return base::MakeRefCounted<CalculationExpressionAnchorQueryNode>(
       AnchorQueryType::kAnchor, name, value, /* percentage */ 0, fallback);
 }
@@ -369,7 +369,7 @@ CalculationExpressionAnchorQueryNode::CreateAnchorPercentage(
     const AtomicString& name,
     float percentage,
     const Length& fallback) {
-  AnchorQueryValue value = {.anchor_side = AnchorValue::kPercentage};
+  AnchorQueryValue value = {/*.anchor_side =*/ AnchorValue::kPercentage};
   return base::MakeRefCounted<CalculationExpressionAnchorQueryNode>(
       AnchorQueryType::kAnchor, name, value, percentage, fallback);
 }
@@ -379,7 +379,8 @@ scoped_refptr<const CalculationExpressionAnchorQueryNode>
 CalculationExpressionAnchorQueryNode::CreateAnchorSize(const AtomicString& name,
                                                        AnchorSizeValue size,
                                                        const Length& fallback) {
-  AnchorQueryValue value = {.anchor_size = size};
+  AnchorQueryValue value = {};
+  value.anchor_size = size;
   return base::MakeRefCounted<CalculationExpressionAnchorQueryNode>(
       AnchorQueryType::kAnchorSize, name, value, /* percentage */ 0, fallback);
 }
