@@ -553,10 +553,10 @@ void MakeCredentialRequestHandler::CollectPIN(
     int attempts,
     ProvidePINCallback provide_pin_cb) {
   DCHECK_EQ(state_, State::kWaitingForToken);
-  observer()->CollectPIN({.reason = reason,
-                          .error = error,
-                          .min_pin_length = min_pin_length,
-                          .attempts = attempts},
+  observer()->CollectPIN({/*.reason =*/ reason,
+                          /*.error =*/ error,
+                          /*.min_pin_length =*/ min_pin_length,
+                          /*.attempts =*/ attempts},
                          std::move(provide_pin_cb));
 }
 

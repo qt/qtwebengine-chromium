@@ -79,20 +79,21 @@ HistoryDatabase::HistoryDatabase(
     DownloadInterruptReason download_interrupt_reason_crash)
     : DownloadDatabase(download_interrupt_reason_none,
                        download_interrupt_reason_crash),
-      db_({// Note that we don't set exclusive locking here. That's done by
+      db_(sql::DatabaseOptions(
+           // Note that we don't set exclusive locking here. That's done by
            // BeginExclusiveMode below which is called later (we have to be in
            // shared mode to start out for the in-memory backend to read the
            // data).
            // TODO(1153459) Remove this dependency on normal locking mode. 
-           .exclusive_locking = false,
+           /*.exclusive_locking =*/ false,
            // Set the database page size to something a little larger to give us
            // better performance (we're typically seek rather than bandwidth
            // limited). Must be a power of 2 and a max of 65536.
-           .page_size = 4096,
+           /*.page_size =*/ 4096,
            // Set the cache size. The page size, plus a little extra, times this
            // value, tells us how much memory the cache will use maximum.
            // 1000 * 4kB = 4MB
-           .cache_size = 1000}) {}
+           /*.cache_size =*/ 1000)) {}
 
 HistoryDatabase::~HistoryDatabase() = default;
 

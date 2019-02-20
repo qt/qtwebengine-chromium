@@ -20,18 +20,18 @@ namespace {
 base::win::ScopedHandle CreateNV12Texture(ID3D11Device* d3d11_device,
                                           const gfx::Size& size) {
   const DXGI_FORMAT dxgi_format = DXGI_FORMAT_NV12;
-  D3D11_TEXTURE2D_DESC desc = {
-      .Width = size.width(),
-      .Height = size.height(),
-      .MipLevels = 1,
-      .ArraySize = 1,
-      .Format = dxgi_format,
-      .SampleDesc = {1, 0},
-      .Usage = D3D11_USAGE_DEFAULT,
-      .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
-      .CPUAccessFlags = 0,
-      .MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE |
-                   D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX};
+  D3D11_TEXTURE2D_DESC desc;
+      desc.Width = size.width();
+      desc.Height = size.height();
+      desc.MipLevels = 1;
+      desc.ArraySize = 1;
+      desc.Format = dxgi_format;
+      desc.SampleDesc = {1, 0};
+      desc.Usage = D3D11_USAGE_DEFAULT;
+      desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+      desc.CPUAccessFlags = 0;
+      desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE |
+                   D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
 
   Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture;
 

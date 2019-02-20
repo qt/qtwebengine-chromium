@@ -375,31 +375,29 @@ bool VulkanSwapChain::PresentBuffer(const gfx::Rect& rect) {
   DCHECK(current_image_data.present_semaphore != VK_NULL_HANDLE);
 
   VkRectLayerKHR rect_layer = {
-      .offset = {rect.x(), rect.y()},
-      .extent = {rect.width(), rect.height()},
-      .layer = 0,
+      /* .offset = */ {rect.x(), rect.y()},
+      /* .extent = */ {rect.width(), rect.height()},
+      /* .layer = */ 0,
   };
 
   VkPresentRegionKHR present_region = {
-      .rectangleCount = 1,
-      .pRectangles = &rect_layer,
+      /* .rectangleCount = */ 1,
+      /* .pRectangles = */ &rect_layer,
   };
 
-  VkPresentRegionsKHR present_regions = {
-      .sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR,
-      .swapchainCount = 1,
-      .pRegions = &present_region,
-  };
+  VkPresentRegionsKHR present_regions;
+      present_regions.sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR;
+      present_regions.swapchainCount = 1;
+      present_regions.pRegions = &present_region;
 
-  VkPresentInfoKHR present_info = {
-      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-      .pNext = is_incremental_present_supported_ ? &present_regions : nullptr,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &current_image_data.present_semaphore,
-      .swapchainCount = 1,
-      .pSwapchains = &swap_chain_,
-      .pImageIndices = &acquired_image_.value(),
-  };
+  VkPresentInfoKHR present_info;
+      present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+      present_info.pNext = is_incremental_present_supported_ ? &present_regions : nullptr;
+      present_info.waitSemaphoreCount = 1;
+      present_info.pWaitSemaphores = &current_image_data.present_semaphore;
+      present_info.swapchainCount = 1;
+      present_info.pSwapchains = &swap_chain_;
+      present_info.pImageIndices = &acquired_image_.value();
 
   VkQueue queue = device_queue_->GetVulkanQueue();
   auto result = vkQueuePresentKHR(queue, &present_info);
@@ -440,12 +438,13 @@ bool VulkanSwapChain::AcquireNextImage() {
   VkSemaphore acquire_semaphore = fence_and_semaphores.semaphores[0];
   VkSemaphore present_semaphore = fence_and_semaphores.semaphores[1];
   uint32_t next_image;
-  auto result = ({
+  VkResult result;
+  {
     base::ScopedBlockingCall scoped_blocking_call(
         FROM_HERE, base::BlockingType::MAY_BLOCK);
-    vkAcquireNextImageKHR(device, swap_chain_, acquire_next_image_timeout_ns_,
-                          acquire_semaphore, acquire_fence, &next_image);
-  });
+    result = vkAcquireNextImageKHR(device, swap_chain_, acquire_next_image_timeout_ns_,
+                                   acquire_semaphore, acquire_fence, &next_image);
+  }
 
   if (UNLIKELY(result == VK_TIMEOUT)) {
     LOG(ERROR) << "vkAcquireNextImageKHR() hangs.";
@@ -519,7 +518,7 @@ VulkanSwapChain::GetOrCreateFenceAndSemaphores() {
 
     if (UNLIKELY(fence_and_semaphores.fence == VK_NULL_HANDLE)) {
       constexpr VkFenceCreateInfo fence_create_info = {
-          .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+          /* .sType = */ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
       };
       auto result =
           vkCreateFence(device, &fence_create_info,

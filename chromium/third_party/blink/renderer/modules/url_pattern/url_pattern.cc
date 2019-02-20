@@ -50,10 +50,10 @@ namespace {
 // components have no concept of a delimiter or prefix character.
 const liburlpattern::Options& DefaultOptions() {
   DEFINE_THREAD_SAFE_STATIC_LOCAL(liburlpattern::Options, options,
-                                  ({.delimiter_list = "",
-                                    .prefix_list = "",
-                                    .sensitive = true,
-                                    .strict = true}));
+                                  ({/*.delimiter_list =*/ "",
+                                    /*.prefix_list =*/ "",
+                                    /*.sensitive =*/ true,
+                                    /*.strict =*/ true}));
   return options;
 }
 
@@ -64,10 +64,10 @@ const liburlpattern::Options& DefaultOptions() {
 // been normalized to lower case as in URL().
 const liburlpattern::Options& HostnameOptions() {
   DEFINE_STATIC_LOCAL(liburlpattern::Options, options,
-                      ({.delimiter_list = ".",
-                        .prefix_list = "",
-                        .sensitive = true,
-                        .strict = true}));
+                      ({/*.delimiter_list =*/ ".",
+                        /*.prefix_list =*/ "",
+                        /*.sensitive =*/ true,
+                        /*.strict =*/ true}));
   return options;
 }
 
@@ -77,10 +77,10 @@ const liburlpattern::Options& HostnameOptions() {
 // prefix before groups.
 const liburlpattern::Options& PathnameOptions() {
   DEFINE_STATIC_LOCAL(liburlpattern::Options, options,
-                      ({.delimiter_list = "/",
-                        .prefix_list = "/",
-                        .sensitive = true,
-                        .strict = true}));
+                      ({/*.delimiter_list =*/ "/",
+                        /*.prefix_list =*/ "/",
+                        /*.sensitive =*/ true,
+                        /*.strict =*/ true}));
   return options;
 }
 
