@@ -1445,8 +1445,10 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   ThemeHelperMac::GetInstance();
 #endif  // defined(OS_MACOSX)
 
+#if !defined(TOOLKIT_QT)
   responsiveness_watcher_ = new responsiveness::Watcher;
   responsiveness_watcher_->SetUp();
+#endif
 
 #if defined(OS_ANDROID)
   media::SetMediaDrmBridgeClient(GetContentClient()->GetMediaDrmBridgeClient());
