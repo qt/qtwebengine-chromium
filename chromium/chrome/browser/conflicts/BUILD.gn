@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//chrome/common/features.gni")
+
 source_set("module_info") {
   sources = [
     "module_info_util_win.cc",
@@ -13,6 +15,10 @@ source_set("module_info") {
   deps = [
     "//base",
     "//base:i18n",
-    "//chrome/common/safe_browsing:binary_feature_extractor",
   ]
+  if (safe_browsing_mode == 1) {
+    deps += [
+      "//chrome/common/safe_browsing:binary_feature_extractor",
+    ]
+  }
 }

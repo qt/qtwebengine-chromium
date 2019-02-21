@@ -587,7 +587,7 @@ if ((is_android && current_cpu == "arm" && arm_use_neon && ffmpeg_branding == "C
 }
 
 if (is_win && current_cpu == "x64") {
-  ffmpeg_yasm_sources += [
+  ffmpeg_asm_sources += [
     "libavutil/x86/emms.asm",
   ]
 }
