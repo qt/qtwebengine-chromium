@@ -310,7 +310,7 @@ def WriteGenericNinja(path, static_libraries, executables,
 def WriteGNNinja(path, platform, host, options, linux_sysroot):
 
   # QTBUG-64759
-  #iif platform.is_msvc():
+  #if platform.is_msvc():
   #  cc = os.environ.get('CC', 'cl.exe')
   #  cxx = os.environ.get('CXX', 'cl.exe')
   #  ld = os.environ.get('LD', 'link.exe')
@@ -335,6 +335,12 @@ def WriteGNNinja(path, platform, host, options, linux_sysroot):
   cxx = options.cxx
   ld = options.ld
   ar = options.ar
+
+  if not ar:
+     if platform.is_msvc():
+        ar = os.environ.get('AR', 'lib.exe')
+     else:
+        ar = os.environ.get('AR', 'ar')
 
   cflags = []
   cflags_cc = []
