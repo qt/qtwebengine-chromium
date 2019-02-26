@@ -150,6 +150,7 @@ static void EnterNamespaceSandbox(sandbox::policy::SandboxLinux* linux_sandbox,
 
 static void EnterLayerOneSandbox(sandbox::policy::SandboxLinux* linux_sandbox,
                                  const bool using_layer1_sandbox,
+                                 const bool using_layer2_sandbox,
                                  base::OnceClosure post_fork_parent_callback) {
   DCHECK(linux_sandbox);
 
@@ -159,6 +160,7 @@ static void EnterLayerOneSandbox(sandbox::policy::SandboxLinux* linux_sandbox,
 // It's not just our code which may do so - some system-installed libraries
 // are known to be culprits, e.g. lttng.
 #if !defined(THREAD_SANITIZER)
+  if (using_layer1_sandbox || using_layer2_sandbox)
   CHECK(sandbox::ThreadHelpers::IsSingleThreaded());
 #endif
 
@@ -183,12 +185,13 @@ bool ZygoteMain(
 
   // Skip pre-initializing sandbox when sandbox is disabled for
   // https://crbug.com/444900.
+  bool using_layer2_sandbox = false;
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           sandbox::policy::switches::kNoSandbox) &&
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
           sandbox::policy::switches::kNoZygoteSandbox)) {
     // This will pre-initialize the various sandboxes that need it.
-    linux_sandbox->PreinitializeSandbox();
+    using_layer2_sandbox = linux_sandbox->PreinitializeSandbox();
   }
 
   const bool using_setuid_sandbox =
@@ -223,7 +226,7 @@ bool ZygoteMain(
 
   // Turn on the first layer of the sandbox if the configuration warrants it.
   EnterLayerOneSandbox(
-      linux_sandbox, using_layer1_sandbox,
+      linux_sandbox, using_layer1_sandbox, using_layer2_sandbox,
       base::BindOnce(CloseFds, linux_sandbox->GetFileDescriptorsToClose()));
 
   const int sandbox_flags = linux_sandbox->GetStatus();
