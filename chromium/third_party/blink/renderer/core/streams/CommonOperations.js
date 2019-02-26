@@ -64,12 +64,27 @@
     throw new RangeError('Stream API Internal Error');
   }
 
+  // For safety, this must always be used in place of calling v8.createPromise()
+  // directly.
+  function createPromise() {
+    const p = v8.createPromise();
+    p[_isSettled] = false;
+    return p;
+  }
+
+  // Calling v8.rejectPromise() directly is very dangerous. Always use this
+  // wrapper.
   function rejectPromise(p, reason) {
     if (!v8.isPromise(p)) {
       streamInternalError();
     }
 
-    if (p[_isSettled]) {
+    // assert(typeof p[_isSettled] === 'boolean',
+    //        'Type(p.[[isSettled]]) is `"boolean"`');
+
+    // Note that this makes the function a no-op for promises that were not
+    // created via createPromise(). This is critical for security.
+    if (p[_isSettled] !== false) {
       return;
     }
     p[_isSettled] = true;
@@ -77,17 +92,46 @@
     v8.rejectPromise(p, reason);
   }
 
+  // This must always be used instead of Promise.reject().
+  function createRejectedPromise(reason) {
+    const p = createPromise();
+    rejectPromise(p, reason);
+    return p;
+  }
+
+  // Calling v8.resolvePromise() directly is very dangerous. Always use this
+  // wrapper. If |value| is an object this will look up Object.prototype.then
+  // and so may be re-entrant.
   function resolvePromise(p, value) {
     if (!v8.isPromise(p)) {
       streamInternalError();
     }
 
-    if (p[_isSettled]) {
+    // assert(typeof p[_isSettled] === 'boolean',
+    //        'Type(p.[[isSettled]]) is `"boolean"`');
+
+    // Note that this makes the function a no-op for promises that were not
+    // created via createPromise(). This is critical for security.
+    if (p[_isSettled] !== false) {
       return;
     }
     p[_isSettled] = true;
 
     v8.resolvePromise(p, value);
+  }
+
+  // This must always be used instead of Promise.resolve(). If |value| is an
+  // object this will look up Object.prototype.then and so may be re-entrant.
+  function createResolvedPromise(value) {
+    if (v8.isPromise(value)) {
+      // This case applies when an underlying method returns a promise. Promises
+      // that are passed through in this way are not used with resolvePromise()
+      // or rejectPromise().
+      return value;
+    }
+    const p = createPromise();
+    resolvePromise(p, value);
+    return p;
   }
 
   function markPromiseAsHandled(p) {
@@ -198,8 +242,6 @@
   const callFunction = v8.uncurryThis(global.Function.prototype.call);
   const errTmplMustBeFunctionOrUndefined = name =>
       `${name} must be a function or undefined`;
-  const Promise_resolve = Promise.resolve.bind(Promise);
-  const Promise_reject = Promise.reject.bind(Promise);
   const Function_bind = v8.uncurryThis(global.Function.prototype.bind);
 
   function resolveMethod(O, P, nameForError) {
@@ -228,7 +270,7 @@
     // The implementation uses bound functions rather than lambdas where
     // possible to give the compiler the maximum opportunity to optimise.
     if (method === undefined) {
-      return () => Promise_resolve();
+      return () => createResolvedPromise();
     }
 
     if (algoArgCount === 0) {
@@ -254,7 +296,7 @@
     const method =
         resolveMethod(underlyingObject, methodName, methodNameForError);
     if (method === undefined) {
-      return () => Promise_resolve();
+      return () => createResolvedPromise();
     }
 
     if (algoArgCount === 0) {
@@ -279,9 +321,9 @@
     // assert(typeof F === 'function', 'IsCallable(F) is true.');
     // assert(V !== undefined, 'V is not undefined.');
     try {
-      return Promise_resolve(callFunction(F, V));
+      return createResolvedPromise(callFunction(F, V));
     } catch (e) {
-      return Promise_reject(e);
+      return createRejectedPromise(e);
     }
   }
 
@@ -289,9 +331,9 @@
     // assert(typeof F === 'function', 'IsCallable(F) is true.');
     // assert(V !== undefined, 'V is not undefined.');
     try {
-      return Promise_resolve(callFunction(F, V, arg0));
+      return createResolvedPromise(callFunction(F, V, arg0));
     } catch (e) {
-      return Promise_reject(e);
+      return createRejectedPromise(e);
     }
   }
 
@@ -299,15 +341,18 @@
     // assert(typeof F === 'function', 'IsCallable(F) is true.');
     // assert(V !== undefined, 'V is not undefined.');
     try {
-      return Promise_resolve(callFunction(F, V, arg0, arg1));
+      return createResolvedPromise(callFunction(F, V, arg0, arg1));
     } catch (e) {
-      return Promise_reject(e);
+      return createRejectedPromise(e);
     }
   }
 
   binding.streamOperations = {
     _queue,
     _queueTotalSize,
+    createPromise,
+    createRejectedPromise,
+    createResolvedPromise,
     hasOwnPropertyNoThrow,
     rejectPromise,
     resolvePromise,

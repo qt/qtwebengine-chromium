@@ -63,13 +63,14 @@
 
   const Promise = global.Promise;
   const thenPromise = v8.uncurryThis(Promise.prototype.then);
-  const Promise_resolve = Promise.resolve.bind(Promise);
-  const Promise_reject = Promise.reject.bind(Promise);
 
   // From CommonOperations.js
   const {
     _queue,
     _queueTotalSize,
+    createPromise,
+    createRejectedPromise,
+    createResolvedPromise,
     hasOwnPropertyNoThrow,
     rejectPromise,
     resolvePromise,
@@ -181,11 +182,11 @@
 
     cancel(reason) {
       if (IsReadableStream(this) === false) {
-        return Promise_reject(new TypeError(streamErrors.illegalInvocation));
+        return createRejectedPromise(new TypeError(streamErrors.illegalInvocation));
       }
 
       if (IsReadableStreamLocked(this) === true) {
-        return Promise_reject(new TypeError(errCancelLockedStream));
+        return createRejectedPromise(new TypeError(errCancelLockedStream));
       }
 
       return ReadableStreamCancel(this, reason);
@@ -228,12 +229,12 @@
 
     pipeTo(dest, {preventClose, preventAbort, preventCancel} = {}) {
       if (!IsReadableStream(this)) {
-        return Promise_reject(new TypeError(streamErrors.illegalInvocation));
+        return createRejectedPromise(new TypeError(streamErrors.illegalInvocation));
       }
 
       if (!binding.IsWritableStream(dest)) {
         // TODO(ricea): Think about having a better error message.
-        return Promise_reject(new TypeError(streamErrors.illegalInvocation));
+        return createRejectedPromise(new TypeError(streamErrors.illegalInvocation));
       }
 
       preventClose = Boolean(preventClose);
@@ -241,11 +242,11 @@
       preventCancel = Boolean(preventCancel);
 
       if (IsReadableStreamLocked(this)) {
-        return Promise_reject(new TypeError(errCannotPipeLockedStream));
+        return createRejectedPromise(new TypeError(errCannotPipeLockedStream));
       }
 
       if (binding.IsWritableStreamLocked(dest)) {
-        return Promise_reject(new TypeError(errCannotPipeToALockedStream));
+        return createRejectedPromise(new TypeError(errCannotPipeToALockedStream));
       }
 
       return ReadableStreamPipeTo(
@@ -275,7 +276,7 @@
     const reader = AcquireReadableStreamDefaultReader(readable);
     const writer = binding.AcquireWritableStreamDefaultWriter(dest);
     let shuttingDown = false;
-    const promise = v8.createPromise();
+    const promise = createPromise();
     let reading = false;
 
     if (checkInitialState()) {
@@ -506,7 +507,7 @@
     let canceled2 = false;
     let reason1;
     let reason2;
-    const cancelPromise = v8.createPromise();
+    const cancelPromise = createPromise();
 
     function pullAlgorithm() {
       return thenPromise(
@@ -591,7 +592,7 @@
   //
 
   function ReadableStreamAddReadRequest(stream) {
-    const promise = v8.createPromise();
+    const promise = createPromise();
     stream[_reader][_readRequests].push(promise);
     return promise;
   }
@@ -601,10 +602,10 @@
 
     const state = ReadableStreamGetState(stream);
     if (state === STATE_CLOSED) {
-      return Promise_resolve(undefined);
+      return createResolvedPromise(undefined);
     }
     if (state === STATE_ERRORED) {
-      return Promise_reject(stream[_storedError]);
+      return createRejectedPromise(stream[_storedError]);
     }
 
     ReadableStreamClose(stream);
@@ -681,7 +682,8 @@
 
     get closed() {
       if (IsReadableStreamDefaultReader(this) === false) {
-        return Promise_reject(new TypeError(streamErrors.illegalInvocation));
+        return createRejectedPromise(
+            new TypeError(streamErrors.illegalInvocation));
       }
 
       return this[_closedPromise];
@@ -689,11 +691,12 @@
 
     cancel(reason) {
       if (IsReadableStreamDefaultReader(this) === false) {
-        return Promise_reject(new TypeError(streamErrors.illegalInvocation));
+        return createRejectedPromise(
+            new TypeError(streamErrors.illegalInvocation));
       }
 
       if (this[_ownerReadableStream] === undefined) {
-        return Promise_reject(new TypeError(errCancelReleasedReader));
+        return createRejectedPromise(new TypeError(errCancelReleasedReader));
       }
 
       return ReadableStreamReaderGenericCancel(this, reason);
@@ -701,11 +704,11 @@
 
     read() {
       if (IsReadableStreamDefaultReader(this) === false) {
-        return Promise_reject(new TypeError(streamErrors.illegalInvocation));
+        return createRejectedPromise(new TypeError(streamErrors.illegalInvocation));
       }
 
       if (this[_ownerReadableStream] === undefined) {
-        return Promise_reject(new TypeError(errReadReleasedReader));
+        return createRejectedPromise(new TypeError(errReadReleasedReader));
       }
 
       return ReadableStreamDefaultReaderRead(this);
@@ -757,13 +760,13 @@
 
     switch (ReadableStreamGetState(stream)) {
       case STATE_READABLE:
-        reader[_closedPromise] = v8.createPromise();
+        reader[_closedPromise] = createPromise();
         break;
       case STATE_CLOSED:
-        reader[_closedPromise] = Promise_resolve(undefined);
+        reader[_closedPromise] = createResolvedPromise(undefined);
         break;
       case STATE_ERRORED:
-        reader[_closedPromise] = Promise_reject(stream[_storedError]);
+        reader[_closedPromise] = createRejectedPromise(stream[_storedError]);
         markPromiseAsHandled(reader[_closedPromise]);
         break;
     }
@@ -788,7 +791,7 @@
           new TypeError(errReleasedReaderClosedPromise));
     } else {
       reader[_closedPromise] =
-          Promise_reject(new TypeError(errReleasedReaderClosedPromise));
+          createRejectedPromise(new TypeError(errReleasedReaderClosedPromise));
     }
     markPromiseAsHandled(reader[_closedPromise]);
 
@@ -802,10 +805,10 @@
 
     switch (ReadableStreamGetState(stream)) {
       case STATE_CLOSED:
-        return Promise_resolve(CreateIterResultObject(undefined, true));
+        return createResolvedPromise(CreateIterResultObject(undefined, true));
 
       case STATE_ERRORED:
-        return Promise_reject(stream[_storedError]);
+        return createRejectedPromise(stream[_storedError]);
 
       default:
         return ReadableStreamDefaultControllerPull(stream[_controller]);
@@ -902,7 +905,7 @@
         ReadableStreamDefaultControllerCallPullIfNeeded(controller);
       }
 
-      return Promise_resolve(CreateIterResultObject(chunk, false));
+      return createResolvedPromise(CreateIterResultObject(chunk, false));
     }
 
     const pendingPromise = ReadableStreamAddReadRequest(stream);
@@ -1054,7 +1057,7 @@
     controller[_cancelAlgorithm] = cancelAlgorithm;
     stream[_controller] = controller;
 
-    thenPromise(Promise_resolve(startAlgorithm()), () => {
+    thenPromise(createResolvedPromise(startAlgorithm()), () => {
       controller[_readableStreamDefaultControllerBits] |= STARTED;
       ReadableStreamDefaultControllerCallPullIfNeeded(controller);
     }, r =>  ReadableStreamDefaultControllerError(controller, r));

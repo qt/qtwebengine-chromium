@@ -38,11 +38,12 @@
 
   const Promise = global.Promise;
   const thenPromise = v8.uncurryThis(Promise.prototype.then);
-  const Promise_resolve = Promise.resolve.bind(Promise);
-  const Promise_reject = Promise.reject.bind(Promise);
 
   // From CommonOperations.js
   const {
+    createPromise,
+    createRejectedPromise,
+    createResolvedPromise,
     hasOwnPropertyNoThrow,
     resolvePromise,
     CreateAlgorithmFromUnderlyingMethodPassingController,
@@ -97,7 +98,7 @@
       readableHighWaterMark =
           ValidateAndNormalizeHighWaterMark(readableHighWaterMark);
 
-      const startPromise = v8.createPromise();
+      const startPromise = createPromise();
       InitializeTransformStream(
           this, startPromise, writableHighWaterMark, writableSizeAlgorithm,
           readableHighWaterMark, readableSizeAlgorithm);
@@ -151,7 +152,7 @@
     //     readableHighWaterMark >= 0,
     //     '! IsNonNegativeNumber(_readableHighWaterMark_) is true');
     const stream = ObjectCreate(TransformStream_prototype);
-    const startPromise = v8.createPromise();
+    const startPromise = createPromise();
     InitializeTransformStream(
         stream, startPromise, writableHighWaterMark, writableSizeAlgorithm,
         readableHighWaterMark, readableSizeAlgorithm);
@@ -180,7 +181,7 @@
           TransformStreamDefaultSourcePullAlgorithm(stream);
     const cancelAlgorithm = reason => {
       TransformStreamErrorWritableAndUnblockWrite(stream, reason);
-      return Promise_resolve(undefined);
+      return createResolvedPromise(undefined);
     };
     stream[_readable] = binding.CreateReadableStream(
         startAlgorithm, pullAlgorithm, cancelAlgorithm, readableHighWaterMark,
@@ -224,7 +225,7 @@
       resolvePromise(stream[_backpressureChangePromise], undefined);
     }
 
-    stream[_backpressureChangePromise] = v8.createPromise();
+    stream[_backpressureChangePromise] = createPromise();
     stream[_backpressure] = backpressure;
   }
 
@@ -312,9 +313,9 @@
       transformAlgorithm = chunk => {
         try {
           TransformStreamDefaultControllerEnqueue(controller, chunk);
-          return Promise_resolve();
+          return createResolvedPromise();
         } catch (resultValue) {
-          return Promise_reject(resultValue);
+          return createRejectedPromise(resultValue);
         }
       };
     }
@@ -397,7 +398,7 @@
 
   function TransformStreamDefaultSinkAbortAlgorithm(stream, reason) {
     TransformStreamError(stream, reason);
-    return Promise_resolve();
+    return createResolvedPromise();
   }
 
   function TransformStreamDefaultSinkCloseAlgorithm(stream) {
