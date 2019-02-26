@@ -129,7 +129,7 @@ class SERVICE_MANAGER_SANDBOX_EXPORT SandboxLinux {
   // Otherwise file descriptors that bypass the security of the setuid sandbox
   // would be kept open. One must be particularly careful if a process performs
   // a fork().
-  void PreinitializeSandbox();
+  bool PreinitializeSandbox();
 
   // Check that the current process is the init process of a new PID
   // namespace and then proceed to drop access to the file system by using
