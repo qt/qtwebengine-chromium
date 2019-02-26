@@ -164,7 +164,7 @@ SandboxLinux* SandboxLinux::GetInstance() {
   return instance;
 }
 
-void SandboxLinux::PreinitializeSandbox() {
+bool SandboxLinux::PreinitializeSandbox() {
   CHECK(!pre_initialized_);
   seccomp_bpf_supported_ = false;
 #if BUILDFLAG(USING_SANITIZER)
@@ -199,6 +199,7 @@ void SandboxLinux::PreinitializeSandbox() {
   yama_is_enforcing_ = (yama_status & Yama::STATUS_PRESENT) &&
                        (yama_status & Yama::STATUS_ENFORCING);
   pre_initialized_ = true;
+  return seccomp_bpf_supported_;
 }
 
 void SandboxLinux::EngageNamespaceSandbox(bool from_zygote) {
