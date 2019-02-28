@@ -38,16 +38,16 @@ struct CONTENT_EXPORT DesktopMediaID {
   static gfx::NativeWindow GetNativeWindowById(const DesktopMediaID& id);
 #endif  // USE_AURA || OS_MACOSX
 
-  constexpr DesktopMediaID() = default;
+  DesktopMediaID() = default;
 
-  constexpr DesktopMediaID(Type type, Id id) : type(type), id(id) {}
+  DesktopMediaID(Type type, Id id) : type(type), id(id) {}
 
-  constexpr DesktopMediaID(Type type,
+  DesktopMediaID(Type type,
                            Id id,
                            WebContentsMediaCaptureId web_contents_id)
       : type(type), id(id), web_contents_id(web_contents_id) {}
 
-  constexpr DesktopMediaID(Type type, Id id, bool audio_share)
+  DesktopMediaID(Type type, Id id, bool audio_share)
       : type(type), id(id), audio_share(audio_share) {}
 
   // Operators so that DesktopMediaID can be used with STL containers.
