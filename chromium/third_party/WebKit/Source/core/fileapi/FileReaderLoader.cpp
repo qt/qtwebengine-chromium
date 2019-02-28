@@ -325,11 +325,13 @@ DOMArrayBuffer* FileReaderLoader::arrayBufferResult() {
   if (m_arrayBufferResult)
     return m_arrayBufferResult;
 
-  DOMArrayBuffer* result = DOMArrayBuffer::create(m_rawData->toArrayBuffer());
-  if (m_finishedLoading) {
-    m_arrayBufferResult = result;
+  if (!m_finishedLoading) {
+    return DOMArrayBuffer::create(
+        ArrayBuffer::create(m_rawData->data(), m_rawData->byteLength()));
   }
-  return result;
+
+  m_arrayBufferResult = DOMArrayBuffer::create(m_rawData->toArrayBuffer());
+  return m_arrayBufferResult;
 }
 
 String FileReaderLoader::stringResult() {
