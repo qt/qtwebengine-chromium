@@ -137,7 +137,8 @@ def main(argv):
                     help='The path to ld.')
   parser.add_option('--ar',
                     help='The path to ar.')
-
+  parser.add_option('--isysroot',
+                    help='The path to the macOS SDK sysroot to be used.')
   options, args = parser.parse_args(argv)
 
   if args:
@@ -357,6 +358,8 @@ def WriteGNNinja(path, platform, host, options):
       if options.no_strip:
         cflags.append('-g')
       ldflags.append('-O3')
+      if platform.is_darwin() and options.isysroot:
+        cflags.append('-isysroot ' +  options.isysroot)
       # Use -fdata-sections and -ffunction-sections to place each function
       # or data item into its own section so --gc-sections can eliminate any
       # unused functions and data items.
