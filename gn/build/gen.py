@@ -191,6 +191,8 @@ def main(argv):
                     help='The path to ld.')
   args_list.add('--ar',
                     help='The path to ar.')
+  args_list.add('--isysroot',
+                    help='The path to the macOS SDK sysroot to be used.')
 
   if sys.platform == 'zos':
     args_list.add('--zoslib-dir',
@@ -201,7 +203,6 @@ def main(argv):
                             'with <ZOSLIB_DIR>/install/lib/libzoslib.a, and ' +
                             'add -I<ZOSLIB_DIR>/install/include to the compile ' +
                             'commands. See README.md for details.'))
-
   args_list.add_to_parser(parser)
   options = parser.parse_args(argv)
 
@@ -424,6 +425,8 @@ def WriteGNNinja(path, platform, host, options, args_list):
       if options.no_strip:
         cflags.append('-g')
       ldflags.append('-O3')
+      if platform.is_darwin() and options.isysroot:
+        cflags.append('-isysroot ' +  options.isysroot)
       # Use -fdata-sections and -ffunction-sections to place each function
       # or data item into its own section so --gc-sections can eliminate any
       # unused functions and data items.
