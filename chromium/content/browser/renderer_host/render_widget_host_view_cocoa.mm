@@ -92,9 +92,7 @@ NSString* const kWebContentTouchBarId = @"web-content";
 
 // Whether a keyboard event has been reserved by OSX.
 BOOL EventIsReservedBySystem(NSEvent* event) {
-  content::SystemHotkeyHelperMac* helper =
-      content::SystemHotkeyHelperMac::GetInstance();
-  return helper->map()->IsEventReserved(event);
+  return content::GetSystemHotkeyMap()->IsEventReserved(event);
 }
 
 // TODO(suzhe): Upstream this function.
@@ -302,6 +300,8 @@ void ExtractUnderlines(NSAttributedString* string,
   replacementRange.location += textSelectionOffset_;
   [self insertText:selectedResult.replacementString
       replacementRange:replacementRange];
+
+  ui::LogTouchBarUMA(ui::TouchBarAction::TEXT_SUGGESTION);
 }
 
 - (void)candidateListTouchBarItem:(NSCandidateListTouchBarItem*)anItem

@@ -655,6 +655,21 @@ class DetachMessageFilter : public BrowserMessageFilter {
   DISALLOW_COPY_AND_ASSIGN(DetachMessageFilter);
 };
 
+// Observes navigation start.
+class DidStartNavigationObserver : public WebContentsObserver {
+ public:
+  explicit DidStartNavigationObserver(WebContents* web_contents)
+      : WebContentsObserver(web_contents) {}
+  void DidStartNavigation(NavigationHandle* navigation_handle) override {
+    observed_ = true;
+  }
+  bool observed() { return observed_; }
+
+ private:
+  bool observed_ = false;
+  DISALLOW_COPY_AND_ASSIGN(DidStartNavigationObserver);
+};
+
 }  // namespace
 
 //
@@ -15088,6 +15103,105 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   rfh_c->OnDetach();
   EXPECT_TRUE(delete_b.deleted());
   EXPECT_TRUE(delete_c.deleted());
+}
+
+// An history navigation from the renderer process is received while the
+// RenderFrameHost is pending deletion.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       HistoryNavigationWhilePendingDeletion) {
+  GURL url_ab(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  GURL url_c(embedded_test_server()->GetURL("c.com", "/title1.html"));
+
+  EXPECT_TRUE(NavigateToURL(shell(), url_ab));
+  RenderFrameHostImpl* rfh_a = web_contents()->GetMainFrame();
+  RenderFrameHostImpl* rfh_b = rfh_a->child_at(0)->current_frame_host();
+  NavigateFrameToURL(rfh_b->frame_tree_node(), url_c);
+  RenderFrameHostImpl* rfh_c = rfh_a->child_at(0)->current_frame_host();
+
+  // Frame C has a unload handler. The browser process needs to wait before
+  // deleting it.
+  EXPECT_TRUE(ExecJs(rfh_c, "onunload=function(){}"));
+
+  RenderFrameDeletedObserver deleted_observer(rfh_c);
+  TestNavigationManager navigation_observer(web_contents(), url_ab);
+
+  // History navigation on C.
+  ExecuteScriptAsync(rfh_c, "history.back();");
+
+  // Simulate A deleting C.
+  // It starts before receiving the history navigation. The detach ACK is
+  // received after.
+  rfh_c->DetachFromProxy();
+  deleted_observer.WaitUntilDeleted();
+
+  // The NavigationController won't be able to find the subframe to navigate
+  // since it was just detached, so it should fall back to navigating the main
+  // frame
+  navigation_observer.WaitForNavigationFinished();
+  EXPECT_TRUE(navigation_observer.was_successful());
+}
+
+// A same document commit from the renderer process is received while the
+// RenderFrameHost is pending deletion.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       SameDocumentCommitWhilePendingDeletion) {
+  GURL url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+  RenderFrameHostImpl* rfh_a = web_contents()->GetMainFrame();
+  RenderFrameHostImpl* rfh_b = rfh_a->child_at(0)->current_frame_host();
+
+  // Frame B has a unload handler. The browser process needs to wait before
+  // deleting it.
+  EXPECT_TRUE(ExecJs(rfh_b, "onunload=function(){}"));
+
+  RenderFrameDeletedObserver deleted_observer(rfh_b);
+  DidStartNavigationObserver did_start_navigation_observer(web_contents());
+
+  // Start a same-document navigation on B.
+  ExecuteScriptAsync(rfh_b, "location.href='#fragment'");
+
+  // Simulate A deleting B.
+  // It starts before receiving the same-document navigation. The detach ACK is
+  // received after.
+  rfh_b->DetachFromProxy();
+  deleted_observer.WaitUntilDeleted();
+
+  // The navigation was ignored.
+  EXPECT_FALSE(did_start_navigation_observer.observed());
+}
+
+// One frame navigates using window.open while it is pending deletion. The two
+// frames lives in different processes.
+// See https://crbug.com/932087.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       OpenUrlToRemoteFramePendingDeletion) {
+  GURL url_ab(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  GURL url_c(embedded_test_server()->GetURL("c.com", "/title1.html"));
+
+  EXPECT_TRUE(NavigateToURL(shell(), url_ab));
+  RenderFrameHostImpl* rfh_a = web_contents()->GetMainFrame();
+  RenderFrameHostImpl* rfh_b = rfh_a->child_at(0)->current_frame_host();
+
+  // Frame B has a unload handler. The browser process needs to wait before
+  // deleting it.
+  EXPECT_TRUE(ExecJs(rfh_b, "onunload=function(){}"));
+  RenderFrameDeletedObserver deleted_observer(rfh_b);
+
+  // window.open from A in B to url_c.
+  DidStartNavigationObserver did_start_navigation_observer(web_contents());
+  EXPECT_TRUE(ExecuteScript(rfh_b, "window.name = 'name';"));
+  ExecuteScriptAsync(rfh_a, JsReplace("window.open($1, 'name');", url_c));
+
+  // Simulate A deleting C.
+  // It starts before receiving the navigation. The detach ACK is
+  // received after.
+  rfh_b->DetachFromProxy();
+  deleted_observer.WaitUntilDeleted();
+
+  EXPECT_FALSE(did_start_navigation_observer.observed());
 }
 
 }  // namespace content

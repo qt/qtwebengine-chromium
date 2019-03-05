@@ -4805,6 +4805,11 @@ uploading your change for review.  These are checked by presubmit scripts.
   <int value="1" label="Expired"/>
 </enum>
 
+<enum name="BooleanFocused">
+  <int value="0" label="Unfocused"/>
+  <int value="1" label="Focused"/>
+</enum>
+
 <enum name="BooleanForced">
   <int value="0" label="Not forced"/>
   <int value="1" label="Forced"/>
@@ -7602,7 +7607,7 @@ Called by update_net_error_codes.py.-->
   <int value="-143" label="SPDY_SESSION_ALREADY_EXISTS"/>
   <int value="-142" label="MSG_TOO_BIG"/>
   <int value="-141" label="SSL_CLIENT_AUTH_SIGNATURE_FAILED"/>
-  <int value="-140" label="HTTPS_PROXY_TUNNEL_RESPONSE"/>
+  <int value="-140" label="HTTPS_PROXY_TUNNEL_RESPONSE_REDIRECT"/>
   <int value="-139" label="TEMPORARILY_THROTTLED"/>
   <int value="-138" label="NETWORK_ACCESS_DENIED"/>
   <int value="-137" label="NAME_RESOLUTION_FAILED"/>
@@ -28287,6 +28292,15 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
   <int value="5" label="Third Party Unsafe Headers"/>
 </enum>
 
+<enum name="InterceptionType">
+  <int value="0" label="Not intercepted"/>
+  <int value="1" label="Other"/>
+  <int value="2" label="Http scheme"/>
+  <int value="3" label="Https scheme"/>
+  <int value="4" label="File scheme"/>
+  <int value="5" label="Data scheme"/>
+</enum>
+
 <enum name="InternalErrorLoadEvent">
   <summary>Internal Errors in the page_load_metrics system</summary>
   <int value="0" label="Invalid timing IPC sent from renderer (deprecated)"/>
@@ -30727,6 +30741,8 @@ from previous Chrome versions.
   <int value="-1720653947" label="WebRtcHybridAgc:disabled"/>
   <int value="-1719833926" label="disable-answers-in-suggest"/>
   <int value="-1716654100" label="tab-capture-downscale-quality"/>
+  <int value="-1715180530"
+      label="OmniboxUIExperimentShowSuffixOnAllSearchSuggestions:disabled"/>
   <int value="-1714128884" label="disable-launcher-search-provider-api"/>
   <int value="-1713564656" label="ProtectSyncCredentialOnReauth:enabled"/>
   <int value="-1711751318" label="enable-data-reduction-proxy-lo-fi-preview"/>
@@ -31018,6 +31034,8 @@ from previous Chrome versions.
   <int value="-1261263046"
       label="RemoveUsageOfDeprecatedGaiaSigninEndpoint:disabled"/>
   <int value="-1259901957" label="VrBrowserKeyboard:disabled"/>
+  <int value="-1256747007"
+      label="OminboxUIExperimentUseGenericSearchEngineIcon:disabled"/>
   <int value="-1255427595" label="HomePageButtonForceEnabled:enabled"/>
   <int value="-1254070521" label="enable-slimming-paint-invalidation"/>
   <int value="-1253608371" label="IncognitoStrings:disabled"/>
@@ -31361,6 +31379,8 @@ from previous Chrome versions.
   <int value="-671992446" label="TranslateRankerEnforcement:disabled"/>
   <int value="-670188266" label="enable-zip-archiver-unpacker"/>
   <int value="-667517406" label="overscroll-history-navigation"/>
+  <int value="-667018797"
+      label="OmniboxUIExperimentBlueTitlesAndGrayUrlsOnPageSuggestions:disabled"/>
   <int value="-666508951" label="CrOSContainer:enabled"/>
   <int value="-663476391" label="enable-pixel-canvas-recording:enabled"/>
   <int value="-662064703" label="MediaSessionService:enabled"/>
@@ -31376,6 +31396,8 @@ from previous Chrome versions.
   <int value="-641719457" label="disable-compositor-touch-hit-testing"/>
   <int value="-639026783" label="disable-gpu-appcontainer"/>
   <int value="-638952203" label="RendererSideResourceScheduler:disabled"/>
+  <int value="-634116286"
+      label="OmniboxUIExperimentUnboldSuggestionText:enabled"/>
   <int value="-633274640" label="WebRTCPipeWireCapturer:enabled"/>
   <int value="-632030508" label="NativeWindowNavButtons:disabled"/>
   <int value="-631740127" label="inert-visual-viewport"/>
@@ -31398,6 +31420,8 @@ from previous Chrome versions.
   <int value="-599932554" label="DoodlesOnLocalNtp:disabled"/>
   <int value="-598050737" label="disable-es3-apis"/>
   <int value="-596337171" label="disable-ash-sidebar"/>
+  <int value="-595819071"
+      label="OmniboxUIExperimentBlueTitlesOnPageSuggestions:disabled"/>
   <int value="-593536514" label="ExperimentalTabController:enabled"/>
   <int value="-592331266" label="ForegroundNotificationManager:enabled"/>
   <int value="-589096918" label="ash-enable-fullscreen-app-list"/>
@@ -31469,6 +31493,8 @@ from previous Chrome versions.
   <int value="-470247915"
       label="AutofillUpstreamEditableExpirationDate:enabled"/>
   <int value="-468697885" label="ArcInputMethod:enabled"/>
+  <int value="-462554210"
+      label="OminboxUIExperimentUseGenericSearchEngineIcon:enabled"/>
   <int value="-462205750" label="enable-service-worker-sync"/>
   <int value="-461292699" label="ContentSuggestionsCategoryOrder:enabled"/>
   <int value="-460313418" label="ProgressBarThrottle:enabled"/>
@@ -31490,6 +31516,8 @@ from previous Chrome versions.
   <int value="-410852857" label="ImprovedA2HS:disabled"/>
   <int value="-406850932" label="EnableEmojiContextMenu:enabled"/>
   <int value="-405380243" label="enable-encryption-migration"/>
+  <int value="-402038055"
+      label="OmniboxUIExperimentBlueTitlesAndGrayUrlsOnPageSuggestions:enabled"/>
   <int value="-401170566"
       label="OmniboxUIExperimentHideSuggestionUrlPath:disabled"/>
   <int value="-400584764" label="ChromeHomeNtpRedesign:enabled"/>
@@ -31610,6 +31638,8 @@ from previous Chrome versions.
   <int value="-192389983" label="NoStatePrefetch:enabled"/>
   <int value="-191256027" label="AvoidFlashBetweenNavigation:disabled"/>
   <int value="-185162926" label="IncreaseInputAudioBufferSize:enabled"/>
+  <int value="-184091779"
+      label="OmniboxUIExperimentWhiteBackgroundOnBlur:enabled"/>
   <int value="-183246373" label="enable-multilingual-spellchecker"/>
   <int value="-181590721"
       label="AutofillEnforceMinRequiredFieldsForHeuristics:enabled"/>
@@ -31640,6 +31670,8 @@ from previous Chrome versions.
   <int value="-138773929" label="PassiveDocumentEventListeners:enabled"/>
   <int value="-138760381" label="AutofillManualFallbackAndroid:enabled"/>
   <int value="-137303226" label="enable-chromevox-developer-option"/>
+  <int value="-135584721"
+      label="OmniboxUIExperimentBoldUserTextOnSearchSuggestions:disabled"/>
   <int value="-135223364" label="AutofillShowTypePredictions:disabled"/>
   <int value="-133098377" label="SyncPseudoUSSSearchEngines:disabled"/>
   <int value="-128687277"
@@ -31715,6 +31747,8 @@ from previous Chrome versions.
   <int value="-18464041" label="AutofillPrefilledFields:disabled"/>
   <int value="-17698200" label="DoubleTapToZoomInTabletMode:disabled"/>
   <int value="-16824589" label="ash-shelf-color"/>
+  <int value="-15879016"
+      label="OmniboxUIExperimentUnboldSuggestionText:disabled"/>
   <int value="-13918890" label="disable-download-notification"/>
   <int value="-11260186" label="enable-offline-pages-as-saved-pages"/>
   <int value="-10709540"
@@ -31733,7 +31767,6 @@ from previous Chrome versions.
   <int value="11698808" label="enable-dom-distiller-button-animation"/>
   <int value="19815558" label="EnableSettingsShortcutSearch:disabled"/>
   <int value="23556595" label="MarkHttpAs:enabled"/>
-  <int value="26875005" label="disable-explicit-dma-fences"/>
   <int value="27507364" label="apps-keep-chrome-alive"/>
   <int value="29212695" label="OfflineIndicator:enabled"/>
   <int value="31848187" label="ViewsTaskManager:disabled"/>
@@ -31829,6 +31862,8 @@ from previous Chrome versions.
   <int value="201343576" label="enable-password-change-support:enabled"/>
   <int value="203239167" label="ImprovedGeoLanguageData:enabled"/>
   <int value="203776499" label="enable-virtual-keyboard-overscroll"/>
+  <int value="207907053"
+      label="OmniboxUIExperimentBlueSearchLoopAndSearchQuery:enabled"/>
   <int value="215328738" label="ImprovedGeoLanguageData:disabled"/>
   <int value="217455219" label="SyncStandaloneTransport:enabled"/>
   <int value="218890378" label="ManualSaving:disabled"/>
@@ -32067,6 +32102,8 @@ from previous Chrome versions.
   <int value="636425179" label="mhtml-generator-option"/>
   <int value="637396292" label="AllBookmarks:enabled"/>
   <int value="637452937" label="ChromeHomeSurvey:enabled"/>
+  <int value="638845342"
+      label="OmniboxUIExperimentShowSuffixOnAllSearchSuggestions:enabled"/>
   <int value="642037198" label="SoleIntegration:disabled"/>
   <int value="643725031" label="disable-touch-feedback"/>
   <int value="644084236" label="CloseButtonsInactiveTabs:enabled"/>
@@ -32298,6 +32335,8 @@ from previous Chrome versions.
   <int value="1049885154" label="OfflinePagesPrefetching:disabled"/>
   <int value="1050048304" label="enable-font-cache-scaling"/>
   <int value="1050321458" label="new-profile-management"/>
+  <int value="1050442356"
+      label="OmniboxUIExperimentBlueTitlesOnPageSuggestions:enabled"/>
   <int value="1050664817" label="CSSFragmentIdentifiers:enabled"/>
   <int value="1053743655" label="NewOverviewAnimations:enabled"/>
   <int value="1054910800" label="enable-timezone-tracking-option"/>
@@ -32614,6 +32653,7 @@ from previous Chrome versions.
   <int value="1577205328"
       label="DataReductionProxyEnabledWithNetworkService:enabled"/>
   <int value="1579461102" label="MemoryCoordinator:disabled"/>
+  <int value="1581002467" label="enable-explicit-dma-fences"/>
   <int value="1586022426" label="AutofillCreditCardAssist:enabled"/>
   <int value="1587521886" label="SSLCommittedInterstitials:enabled"/>
   <int value="1589341623" label="disable-easy-unlock"/>
@@ -32635,6 +32675,8 @@ from previous Chrome versions.
   <int value="1614309501" label="DataSaverLiteModeRebranding:enabled"/>
   <int value="1614596813" label="CloseButtonsInactiveTabs:disabled"/>
   <int value="1615988672" label="GrantNotificationsToDSE:enabled"/>
+  <int value="1616938915"
+      label="OmniboxUIExperimentWhiteBackgroundOnBlur:disabled"/>
   <int value="1617187093" label="enable-improved-a2hs"/>
   <int value="1618633341" label="MashOopViz:enabled"/>
   <int value="1621298798" label="VrBrowserKeyboard:enabled"/>
@@ -32709,6 +32751,8 @@ from previous Chrome versions.
   <int value="1735934914" label="OverlayScrollbarFlashWhenMouseEnter:disabled"/>
   <int value="1736698988" label="FsNosymfollow:disabled"/>
   <int value="1739456903" label="PWAFullCodeCache:enabled"/>
+  <int value="1742398600"
+      label="OmniboxUIExperimentBoldUserTextOnSearchSuggestions:enabled"/>
   <int value="1747279677" label="disable-delegated-renderer"/>
   <int value="1750822869" label="CrostiniBackup:disabled"/>
   <int value="1752168018" label="enable-stale-while-revalidate"/>
@@ -32811,6 +32855,8 @@ from previous Chrome versions.
   <int value="1913298816" label="OverlayScrollbar:enabled"/>
   <int value="1913926782" label="ChromeModernAlternateCardLayout:disabled"/>
   <int value="1915178511" label="disable-blink-features"/>
+  <int value="1918984253"
+      label="OmniboxUIExperimentBlueSearchLoopAndSearchQuery:disabled"/>
   <int value="1919917329" label="ImplicitRootScroller:disabled"/>
   <int value="1924192543" label="ProactiveTabFreezeAndDiscard:enabled"/>
   <int value="1925627218" label="FullscreenToolbarReveal:disabled"/>
@@ -36298,7 +36344,7 @@ Called by update_net_error_codes.py.-->
   <int value="137" label="NAME_RESOLUTION_FAILED"/>
   <int value="138" label="NETWORK_ACCESS_DENIED"/>
   <int value="139" label="TEMPORARILY_THROTTLED"/>
-  <int value="140" label="HTTPS_PROXY_TUNNEL_RESPONSE"/>
+  <int value="140" label="HTTPS_PROXY_TUNNEL_RESPONSE_REDIRECT"/>
   <int value="141" label="SSL_CLIENT_AUTH_SIGNATURE_FAILED"/>
   <int value="142" label="MSG_TOO_BIG"/>
   <int value="143" label="SPDY_SESSION_ALREADY_EXISTS"/>
@@ -40144,6 +40190,7 @@ Called by update_net_trust_anchors.py.-->
   <int value="3" label="NSTemporaryDirectory"/>
   <int value="4" label="TMPDIR"/>
   <int value="5" label="/tmp"/>
+  <int value="6" label="/tmp, different volume"/>
 </enum>
 
 <enum name="OtherPossibleUsernamesUsage">
@@ -43453,7 +43500,9 @@ Called by update_net_trust_anchors.py.-->
   <int value="0" label="Preview Allowed."/>
   <int value="1" label="Blacklist not created."/>
   <int value="2" label="Blacklist data not loaded yet from disk."/>
-  <int value="3" label="User opted out of a preview recently."/>
+  <int value="3"
+      label="User opted out of a preview recently or reloaded on a preview
+             page recently."/>
   <int value="4" label="User is blacklisted for all hosts."/>
   <int value="5" label="User is blacklisted for the specific host."/>
   <int value="6" label="The network quality estimate is not available."/>
@@ -43474,6 +43523,9 @@ Called by update_net_trust_anchors.py.-->
   </int>
   <int value="14" label="Network is not slow per session threshold."/>
   <int value="15" label="Device was reported as offline."/>
+  <int value="16"
+      label="URL contained Basic Authentication, i.e.: a username or
+             password."/>
 </enum>
 
 <enum name="PreviewsHintCacheLevelDBStoreLoadMetadataResult">
@@ -43577,6 +43629,7 @@ Called by update_net_trust_anchors.py.-->
   <int value="9"
       label="Exceeded maximum number of navigation restarts or a redirect
              loop was detected"/>
+  <int value="10" label="Disallowed by PreviewsState"/>
 </enum>
 
 <enum name="PreviewsServerLitePageServerResponse">
@@ -43657,6 +43710,8 @@ Called by update_net_trust_anchors.py.-->
   <int value="11" label="PPD Rejected by cupstestppd"/>
   <int value="12" label="Could not find PPD"/>
   <int value="13" label="Failed to download PPD"/>
+  <int value="64" label="No reply from debugd over D-Bus"/>
+  <int value="65" label="Generic D-Bus timeout"/>
 </enum>
 
 <enum name="PrintJobResult">
@@ -52652,6 +52707,13 @@ Full version information for the fingerprint enum values:
   <int value="1" label="Fallback icon mot provided"/>
   <int value="2" label="Fallback for Status Bar"/>
   <int value="3" label="Fallback for Status Bar and content"/>
+</enum>
+
+<enum name="TunnelRedirectHistogramValue">
+  <int value="0" label="Subresource fetched using an explicit proxy"/>
+  <int value="1" label="Mainframe fetched using an explicit proxy"/>
+  <int value="2" label="Subresource fetched using an auto-detected proxy"/>
+  <int value="3" label="Mainframe fetched using an auto-detected proxy"/>
 </enum>
 
 <enum name="UIEventType">

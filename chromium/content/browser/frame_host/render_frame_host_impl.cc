@@ -1974,6 +1974,24 @@ void RenderFrameHostImpl::SetLastCommittedOriginForTesting(
   SetLastCommittedOrigin(origin);
 }
 
+void RenderFrameHostImpl::SetOriginOfNewFrame(
+    const url::Origin& new_frame_creator) {
+  // This method should only be called for *new* frames, that haven't committed
+  // a navigation yet.
+  DCHECK(!has_committed_any_navigation_);
+  DCHECK(GetLastCommittedOrigin().opaque());
+
+  // Calculate and set |new_frame_origin|.
+  bool new_frame_should_be_sandboxed =
+      blink::WebSandboxFlags::kOrigin ==
+      (frame_tree_node()->active_sandbox_flags() &
+       blink::WebSandboxFlags::kOrigin);
+  url::Origin new_frame_origin = new_frame_should_be_sandboxed
+                                     ? new_frame_creator.DeriveNewOpaqueOrigin()
+                                     : new_frame_creator;
+  SetLastCommittedOrigin(new_frame_origin);
+}
+
 FrameTreeNode* RenderFrameHostImpl::AddChild(
     std::unique_ptr<FrameTreeNode> child,
     int process_id,
@@ -1994,8 +2012,12 @@ FrameTreeNode* RenderFrameHostImpl::AddChild(
   // in a frame tree should have the same set of proxies.
   frame_tree_node_->render_manager()->CreateProxiesForChildFrame(child.get());
 
-  children_.push_back(std::move(child));
+  // When the child is added, it hasn't committed any navigation yet - its
+  // initial empty document should inherit the origin of its parent (the origin
+  // may change after the first commit).  See also https://crbug.com/932067.
+  child->current_frame_host()->SetOriginOfNewFrame(GetLastCommittedOrigin());
 
+  children_.push_back(std::move(child));
   return children_.back().get();
 }
 
@@ -2303,16 +2325,15 @@ void RenderFrameHostImpl::DidCommitSameDocumentNavigation(
       frame_tree_node()->frame_tree()->root()->current_origin());
   ScopedCommitStateResetter commit_state_resetter(this);
 
-  // If we're waiting for an unload ack from this frame and we receive a commit
-  // message, then the frame was navigating before it received the unload
-  // request.  It will either respond to the unload request soon or our timer
-  // will expire.  Either way, we should ignore this message, because we have
-  // already committed to destroying this RenderFrameHost.  Note that we
-  // intentionally do not ignore commits that happen while the current tab is
-  // being closed - see https://crbug.com/805705.
+  // When the frame is pending deletion, the browser is waiting for it to unload
+  // properly. In the meantime, because of race conditions, it might tries to
+  // commit a same-document navigation before unloading. Similarly to what is
+  // done with cross-document navigations, such navigation are ignored. The
+  // browser already committed to destroying this RenderFrameHost.
+  // See https://crbug.com/805705 and https://crbug.com/930132.
   // TODO(ahemery): Investigate to see if this can be removed when the
   // NavigationClient interface is implemented.
-  if (is_waiting_for_swapout_ack_)
+  if (!is_active())
     return;
 
   TRACE_EVENT2("navigation",
@@ -3728,10 +3749,11 @@ void RenderFrameHostImpl::CreateNewWindow(
           effective_transient_activation_state, params->opener_suppressed,
           &no_javascript_access);
 
+  bool was_consumed = false;
   if (can_create_window) {
     // Consume activation even w/o User Activation v2, to sync other renderers
     // with calling renderer.
-    frame_tree_node_->UpdateUserActivationState(
+    was_consumed = frame_tree_node_->UpdateUserActivationState(
         blink::UserActivationUpdateType::kConsumeTransientActivation);
   }
 
@@ -3800,9 +3822,13 @@ void RenderFrameHostImpl::CreateNewWindow(
 
   DCHECK(IsRenderFrameLive());
 
+  bool opened_by_user_activation = params->mimic_user_gesture;
+  if (base::FeatureList::IsEnabled(features::kUserActivationV2))
+    opened_by_user_activation = was_consumed;
+
   delegate_->CreateNewWindow(this, render_view_route_id, main_frame_route_id,
                              main_frame_widget_route_id, *params,
-                             cloned_namespace.get());
+                             opened_by_user_activation, cloned_namespace.get());
 
   if (main_frame_route_id == MSG_ROUTING_NONE) {
     // Opener suppressed or Javascript access disabled. Never tell the renderer
@@ -3829,6 +3855,16 @@ void RenderFrameHostImpl::CreateNewWindow(
   RenderFrameHostImpl* rfh =
       RenderFrameHostImpl::FromID(GetProcess()->GetID(), main_frame_route_id);
   DCHECK(rfh);
+
+  // When the popup is created, it hasn't committed any navigation yet - its
+  // initial empty document should inherit the origin of its opener (the origin
+  // may change after the first commit).  See also https://crbug.com/932067.
+  //
+  // Note that that origin of the new frame might depend on sandbox flags.
+  // Checking sandbox flags of the new frame should be safe at this point,
+  // because the flags should be already inherited by the CreateNewWindow call
+  // above.
+  rfh->SetOriginOfNewFrame(GetLastCommittedOrigin());
 
   if (base::FeatureList::IsEnabled(network::features::kNetworkService) &&
       rfh->waiting_for_init_) {

@@ -22,6 +22,8 @@ Polymer({
 
     activeUser: String,
 
+    currentDestinationAccount: String,
+
     /** @type {!Array<string>} */
     users: Array,
 
@@ -46,7 +48,6 @@ Polymer({
     /** @private {!Array<!print_preview.Destination>} */
     destinations_: {
       type: Array,
-      notify: true,
       value: [],
     },
 
@@ -158,8 +159,7 @@ Polymer({
     }
 
     this.updateList(
-        'destinations_',
-        destination => destination.origin + '/' + destination.id,
+        'destinations_', destination => destination.key,
         this.destinationStore.destinations(this.activeUser));
 
     this.loadingDestinations_ =
@@ -171,12 +171,15 @@ Polymer({
     if (this.searchQuery_) {
       this.$.searchBox.setValue('');
     }
-    if (this.$.dialog.getNative().returnValue == 'success') {
-      this.metrics_.record(print_preview.Metrics.DestinationSearchBucket
-                               .DESTINATION_CLOSED_CHANGED);
-    } else {
-      this.metrics_.record(print_preview.Metrics.DestinationSearchBucket
-                               .DESTINATION_CLOSED_UNCHANGED);
+    const cancelled = this.$.dialog.getNative().returnValue !== 'success';
+    this.metrics_.record(
+        cancelled ? print_preview.Metrics.DestinationSearchBucket
+                        .DESTINATION_CLOSED_UNCHANGED :
+                    print_preview.Metrics.DestinationSearchBucket
+                        .DESTINATION_CLOSED_CHANGED);
+    if (cancelled && this.currentDestinationAccount &&
+        this.currentDestinationAccount !== this.activeUser) {
+      this.fire('account-change', this.currentDestinationAccount);
     }
   },
 
@@ -366,6 +369,8 @@ Polymer({
     const account = select.value;
     if (account) {
       this.showCloudPrintPromo = false;
+      this.loadingDestinations_ = true;
+      this.destinations_ = [];
       this.fire('account-change', account);
       this.metrics_.record(
           print_preview.Metrics.DestinationSearchBucket.ACCOUNT_CHANGED);

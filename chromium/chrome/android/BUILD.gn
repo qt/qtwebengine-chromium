@@ -5,6 +5,7 @@
 import("//build/config/android/chrome_version.gni")
 import("//build/config/android/config.gni")
 import("//build/config/android/rules.gni")
+import("//build/config/python.gni")
 import("//build/util/process_version.gni")
 import("//chrome/android/chrome_common_shared_library.gni")
 import("//chrome/android/chrome_public_apk_tmpl.gni")
@@ -116,6 +117,9 @@ jinja_template("monochrome_public_bundle_android_manifest") {
                 "target_sdk_version=$android_sdk_version",
                 "webview_library=libmonochrome${bundle_library_suffix}.so",
               ]
+
+  # Override include_arcore_manifest_flag to true for bundles.
+  variables += [ "include_arcore_manifest_flag=true" ]
 }
 
 jinja_template("trichrome_library_android_manifest") {
@@ -1813,7 +1817,7 @@ if (enable_arcore && package_arcore) {
 }
 
 if (defined(expected_static_initializer_count)) {
-  action("monochrome_static_initializers") {
+  action_with_pydeps("monochrome_static_initializers") {
     script = "//build/android/gyp/assert_static_initializers.py"
     inputs = [
       "$root_build_dir/apks/MonochromePublic.apk",
@@ -1870,6 +1874,7 @@ if (modularize_vr) {
 android_app_bundle("chrome_public_bundle") {
   bundle_name = "ChromePublic"
   base_module_target = ":chrome_public_base_bundle_module"
+  command_line_flags_file = "chrome-command-line"
   if (!is_java_debug) {
     proguard_enabled = true
   }
@@ -1884,6 +1889,7 @@ android_app_bundle("chrome_public_bundle") {
 android_app_bundle("chrome_modern_public_bundle") {
   bundle_name = "ChromeModernPublic"
   base_module_target = ":chrome_modern_public_base_bundle_module"
+  command_line_flags_file = "chrome-command-line"
   if (!is_java_debug) {
     proguard_enabled = true
   }
@@ -1899,9 +1905,20 @@ android_app_bundle("chrome_modern_public_bundle") {
   }
 }
 
+if (is_official_build) {
+  # Used for binary size monitoring.
+  create_app_bundle_minimal_apks("chrome_modern_public_minimal_apks") {
+    deps = [
+      ":chrome_modern_public_bundle",
+    ]
+    bundle_path = "$root_build_dir/apks/ChromeModernPublic.aab"
+  }
+}
+
 android_app_bundle("monochrome_public_bundle") {
   bundle_name = "MonochromePublic"
   base_module_target = ":monochrome_public_base_bundle_module"
+  command_line_flags_file = "chrome-command-line"
   if (!is_java_debug) {
     proguard_enabled = true
     proguard_android_sdk_dep = webview_framework_dep
@@ -1923,5 +1940,15 @@ android_app_bundle("monochrome_public_bundle") {
         module_target = ":vr_monochrome_public_bundle_module"
       },
     ]
+  }
+}
+
+if (is_official_build) {
+  # Used for binary size monitoring.
+  create_app_bundle_minimal_apks("monochrome_public_minimal_apks") {
+    deps = [
+      ":monochrome_public_bundle",
+    ]
+    bundle_path = "$root_build_dir/apks/MonochromePublic.aab"
   }
 }

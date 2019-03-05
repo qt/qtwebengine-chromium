@@ -2643,21 +2643,29 @@ if (enable_java_templates) {
                                [ _native_libs_file_arg_dep ]
     }
 
-    # Generate .apk.jar.info files if needed.
-    if (defined(invoker.name)) {
-      _apk_jar_info_target = "${target_name}__apk_jar_info"
-      create_apk_jar_info(_apk_jar_info_target) {
-        output = "$root_build_dir/size-info/${invoker.name}.apk.jar.info"
-        apk_build_config = _build_config
-        deps = [
-          ":$_build_config_target",
-          ":$_java_target",
-        ]
-      }
-      _deps += [ ":$_apk_jar_info_target" ]
-    }
-
     if (!_is_bundle_module) {
+      # Generate size-info/*.jar.info files.
+      if (defined(invoker.name)) {
+        # Create size info files for targets that care about size
+        # (have proguard enabled).
+        if (_proguard_enabled) {
+          _size_info_target = "${target_name}__size_info"
+          create_size_info_files(_size_info_target) {
+            name = "${invoker.name}.apk"
+            build_config = _build_config
+            packaged_resources_path = _packaged_resources_path
+            deps = _deps + [
+                     ":$_build_config_target",
+                     ":$_compile_resources_target",
+                     ":$_java_target",
+                   ]
+          }
+          _final_deps += [ ":$_size_info_target" ]
+        } else {
+          not_needed(invoker, [ "name" ])
+        }
+      }
+
       _keystore_path = android_keystore_path
       _keystore_name = android_keystore_name
       _keystore_password = android_keystore_password
@@ -2685,9 +2693,6 @@ if (enable_java_templates) {
         assets_build_config = _build_config
         dex_path = _final_dex_path
         load_library_from_apk = _load_library_from_apk
-
-        # This is used to generate *.apk.pak.info files.
-        apk_name = invoker.name
 
         keystore_name = _keystore_name
         keystore_path = _keystore_path
@@ -3922,10 +3927,8 @@ if (enable_java_templates) {
 
     # Make build config, which is required for synchronized proguarding.
     _module_targets = []
-    _module_build_config_targets = []
     foreach(_module, _all_modules) {
       _module_targets += [ _module.module_target ]
-      _module_build_config_targets += [ _module.build_config_target ]
     }
     _build_config = "$target_gen_dir/${target_name}.build_config"
     _rebased_build_config = rebase_path(_build_config, root_build_dir)
@@ -3939,6 +3942,7 @@ if (enable_java_templates) {
       type = "android_app_bundle"
       possible_config_deps = _module_targets + [ proguard_android_sdk_dep_ ]
       build_config = _build_config
+      proguard_enabled = _proguard_enabled
     }
 
     if (_proguard_enabled) {
@@ -3953,8 +3957,7 @@ if (enable_java_templates) {
         forward_variables_from(invoker, [ "proguard_jar_path" ])
         build_config = _build_config
 
-        deps = _module_targets + _module_build_config_targets +
-               [ ":$_build_config_target" ]
+        deps = _module_targets + [ ":$_build_config_target" ]
         output = _unsplit_dex_zip
       }
 
@@ -4092,6 +4095,17 @@ if (enable_java_templates) {
       }
     }
 
+    # Create size info files for targets that care about size
+    # (have proguard enabled).
+    if (_proguard_enabled) {
+      _size_info_target = "${target_name}__size_info"
+      create_size_info_files(_size_info_target) {
+        name = "$_bundle_name.aab"
+        deps = _module_targets + [ ":$_build_config_target" ]
+        module_build_configs = _all_module_build_configs
+      }
+    }
+
     # Generate a wrapper script for the bundle.
     _android_aapt2_path = android_sdk_tools_bundle_aapt2
 
@@ -4102,7 +4116,6 @@ if (enable_java_templates) {
     action_with_pydeps("${target_name}__wrapper_script") {
       script = "//build/android/gyp/create_bundle_wrapper_script.py"
       inputs = [
-        "//build/android/gyp/bundletool.py",
         _base_module_build_config,
       ]
       outputs = [
@@ -4145,9 +4158,60 @@ if (enable_java_templates) {
     }
 
     group(target_name) {
-      deps = [
+      public_deps = [
         ":${target_name}__bundle",
         ":${target_name}__wrapper_script",
+      ]
+      if (defined(_size_info_target)) {
+        public_deps += [ ":$_size_info_target" ]
+      }
+    }
+  }
+
+  # Create an .apks file from an .aab file. The .apks file will contain the
+  # minimal set of .apk files needed for tracking binary size.
+  # The file will be created at "$bundle_path_without_extension.minimal.apks".
+  #
+  # Variables:
+  #   bundle_path: Path to the input .aab file.
+  #
+  # Example:
+  #   create_app_bundle_minimal_apks("minimal_apks") {
+  #     deps = [
+  #       ":bundle_target",
+  #     ]
+  #     bundle_path = "$root_build_dir/apks/Bundle.aab"
+  #   }
+  template("create_app_bundle_minimal_apks") {
+    action_with_pydeps(target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "testonly",
+                             ])
+      script = "//build/android/gyp/create_app_bundle_minimal_apks.py"
+      _dir = get_path_info(invoker.bundle_path, "dir")
+      _name = get_path_info(invoker.bundle_path, "name")
+      _output_path = "$_dir/$_name.minimal.apks"
+      outputs = [
+        _output_path,
+      ]
+      inputs = [
+        invoker.bundle_path,
+      ]
+      args = [
+        "--bundle",
+        rebase_path(invoker.bundle_path, root_build_dir),
+        "--output",
+        rebase_path(_output_path, root_build_dir),
+        "--aapt2-path",
+        rebase_path(android_sdk_tools_bundle_aapt2, root_build_dir),
+        "--keystore-path",
+        rebase_path(android_keystore_path, root_build_dir),
+        "--keystore-name",
+        android_keystore_name,
+        "--keystore-password",
+        android_keystore_password,
       ]
     }
   }
