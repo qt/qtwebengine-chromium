@@ -95,7 +95,7 @@ ScopedBlockingCallWithBaseSyncPrimitives::
   tls_construction_in_progress.Get().Set(true);
 #endif
 
-  internal::AssertBaseSyncPrimitivesAllowed();
+  //internal::AssertBaseSyncPrimitivesAllowed();
   TRACE_EVENT_BEGIN1("base", "ScopedBlockingCallWithBaseSyncPrimitives",
                      "blocking_type", static_cast<int>(blocking_type));
 
