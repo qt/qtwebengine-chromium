@@ -842,9 +842,15 @@ void URLLoader::OnResponseStarted(net::URLRequest* url_request, int net_error) {
       corb_analyzer_->LogAllowedResponse();
     }
   }
-  if ((options_ & mojom::kURLLoadOptionSniffMimeType) &&
-      ShouldSniffContent(url_request_.get(), response_.get())) {
-    is_more_mime_sniffing_needed_ = true;
+  if ((options_ & mojom::kURLLoadOptionSniffMimeType)) {
+    if (ShouldSniffContent(url_request_.get(), response_.get())) {
+      is_more_mime_sniffing_needed_ = true;
+    } else if (response_->head.mime_type.empty()) {
+      // Ugg.  The server told us not to sniff the content but didn't give us
+      // a mime type.  What's a browser to do?  Turns out, we're supposed to
+      // treat the response as "text/plain".  This is the most secure option.
+      response_->head.mime_type.assign("text/plain");
+    }
   }
   if (!is_more_mime_sniffing_needed_ && !is_more_corb_sniffing_needed_) {
     // Treat feed types as text/plain.
@@ -1128,6 +1134,7 @@ void URLLoader::NotifyCompleted(int error_code) {
     status.encoded_data_length = url_request_->GetTotalReceivedBytes();
     status.encoded_body_length = url_request_->GetRawBodyBytes();
     status.decoded_body_length = total_written_bytes_;
+    status.proxy_server = url_request_->proxy_server();
 
     if ((options_ & mojom::kURLLoadOptionSendSSLInfoForCertificateError) &&
         net::IsCertStatusError(url_request_->ssl_info().cert_status) &&

@@ -553,8 +553,8 @@
     "expiry_milestone": 76
   },
   {
-    "name": "disable-explicit-dma-fences",
-    // "owners": [ "your-team" ],
+    "name": "enable-explicit-dma-fences",
+    "owners": [ "chromeos-gfx" ],
     "expiry_milestone": 76
   },
   {
@@ -2774,9 +2774,54 @@
     "expiry_milestone": 76
   },
   {
+    "name": "omnibox-ui-show-suggestion-favicons",
+    "owners": [ "chrome-omnibox-team" ],
+    "expiry_milestone": 80
+  },
+  {
     "name": "omnibox-ui-swap-title-and-url",
     // "owners": [ "your-team" ],
-    "expiry_milestone": 76
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-blue-search-loop-and-search-query",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-blue-titles-and-gray-urls-on-page-suggestions",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-blue-titles-on-page-suggestions",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-show-suffix-on-all-search-suggestions",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-white-background-on-blur",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-use-generic-search-engine-icon",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-bold-user-text-on-search-suggestions",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
+  },
+  {
+    "name": "omnibox-ui-unbold-suggestion-text",
+    "owners": [ "tommycli", "chrome-omnibox-team@google.com" ],
+    "expiry_milestone": 80
   },
   {
     "name": "only-new-password-form-parsing",

@@ -1294,12 +1294,6 @@ class NetworkChangeTest : public testing::Test {
 
  private:
   base::test::ScopedTaskEnvironment scoped_task_environment_;
-#if defined(OS_ANDROID)
-  // On Android, NetworkChangeNotifier setup is more involved and needs to
-  // to be split between UI thread and network thread. Use a mock
-  // NetworkChangeNotifier in tests, so the test setup is simpler.
-  net::test::MockNetworkChangeNotifier network_change_notifier_;
-#endif
   std::unique_ptr<NetworkService> service_;
 };
 
@@ -1342,12 +1336,6 @@ class NetworkServiceNetworkChangeTest : public testing::Test {
   std::unique_ptr<NetworkService> service_;
 
   mojom::NetworkServicePtr network_service_;
-#if defined(OS_ANDROID)
-  // On Android, NetworkChangeNotifier setup is more involved and needs
-  // to be split between UI thread and network thread. Use a mock
-  // NetworkChangeNotifier in tests, so the test setup is simpler.
-  net::test::MockNetworkChangeNotifier network_change_notifier_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(NetworkServiceNetworkChangeTest);
 };
@@ -1525,7 +1513,8 @@ TEST_F(NetworkServiceNetworkDelegateTest, ClearSiteDataNetworkServiceCient) {
   mojom::NetworkServiceClientPtr client_ptr;
   auto client_impl = std::make_unique<ClearSiteDataNetworkServiceClient>(
       mojo::MakeRequest(&client_ptr));
-  service()->SetClient(std::move(client_ptr));
+  service()->SetClient(std::move(client_ptr),
+                       network::mojom::NetworkServiceParams::New());
   url = https_server()->GetURL("/bar");
   url = AddQuery(url, "header", kClearCookiesHeader);
   EXPECT_EQ(0, client_impl->on_clear_site_data_counter());
@@ -1543,7 +1532,8 @@ TEST_F(NetworkServiceNetworkDelegateTest, HandleClearSiteDataHeaders) {
   mojom::NetworkServiceClientPtr client_ptr;
   auto client_impl = std::make_unique<ClearSiteDataNetworkServiceClient>(
       mojo::MakeRequest(&client_ptr));
-  service()->SetClient(std::move(client_ptr));
+  service()->SetClient(std::move(client_ptr),
+                       network::mojom::NetworkServiceParams::New());
 
   // |passed_header_value| are only checked if |should_call_client| is true.
   const struct TestCase {

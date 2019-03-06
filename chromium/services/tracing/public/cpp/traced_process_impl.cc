@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/no_destructor.h"
+#include "base/task/task_scheduler/task_scheduler.h"
 #include "services/tracing/public/cpp/base_agent.h"
 #include "services/tracing/public/cpp/trace_event_agent.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
@@ -78,6 +79,12 @@ void TracedProcessImpl::UnregisterAgent(BaseAgent* agent) {
 void TracedProcessImpl::ConnectToTracingService(
     mojom::ConnectToTracingRequestPtr request) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  // Tracing requires a running TaskScheduler; disable tracing
+  // for processes without it.
+  if (!base::TaskScheduler::GetInstance()) {
+    return;
+  }
 
   // Ensure the TraceEventAgent has been created.
   TraceEventAgent::GetInstance();

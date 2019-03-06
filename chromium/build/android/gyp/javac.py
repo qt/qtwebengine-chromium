@@ -266,9 +266,6 @@ def _CreateInfoFile(java_files, jar_path, chromium_code, srcjar_files,
 
   This maps fully qualified names for classes to either the java file that they
   are defined in or the path of the srcjar that they came from.
-
-  For apks this also produces a coalesced .apk.jar.info file combining all the
-  .jar.info files of its transitive dependencies.
   """
   output_path = jar_path + '.info'
   logging.info('Start creating info file: %s', output_path)
@@ -290,7 +287,7 @@ def _CreateInfoFile(java_files, jar_path, chromium_code, srcjar_files,
       all_info_data[fully_qualified_name] = java_file
   logging.info('Writing info file: %s', output_path)
   with build_utils.AtomicOutput(output_path) as f:
-    jar_info_utils.WriteJarInfoFile(f.name, all_info_data, srcjar_files)
+    jar_info_utils.WriteJarInfoFile(f, all_info_data, srcjar_files)
   logging.info('Completed info file: %s', output_path)
 
 
@@ -471,13 +468,6 @@ def _OnStaleMd5(changes, options, javac_cmd, java_files, classpath_inputs,
     logging.info('Completed all steps in _OnStaleMd5')
 
 
-def _ParseAndFlattenGnLists(gn_lists):
-  ret = []
-  for arg in gn_lists:
-    ret.extend(build_utils.ParseGnList(arg))
-  return ret
-
-
 def _ParseOptions(argv):
   parser = optparse.OptionParser()
   build_utils.AddDepfileOption(parser)
@@ -561,13 +551,13 @@ def _ParseOptions(argv):
   options, args = parser.parse_args(argv)
   build_utils.CheckOptions(options, parser, required=('jar_path',))
 
-  options.bootclasspath = _ParseAndFlattenGnLists(options.bootclasspath)
-  options.full_classpath = _ParseAndFlattenGnLists(options.full_classpath)
-  options.interface_classpath = _ParseAndFlattenGnLists(
+  options.bootclasspath = build_utils.ParseGnList(options.bootclasspath)
+  options.full_classpath = build_utils.ParseGnList(options.full_classpath)
+  options.interface_classpath = build_utils.ParseGnList(
       options.interface_classpath)
-  options.processorpath = _ParseAndFlattenGnLists(options.processorpath)
-  options.processors = _ParseAndFlattenGnLists(options.processors)
-  options.java_srcjars = _ParseAndFlattenGnLists(options.java_srcjars)
+  options.processorpath = build_utils.ParseGnList(options.processorpath)
+  options.processors = build_utils.ParseGnList(options.processors)
+  options.java_srcjars = build_utils.ParseGnList(options.java_srcjars)
 
   if options.java_version == '1.8' and options.bootclasspath:
     # Android's boot jar doesn't contain all java 8 classes.

@@ -147,22 +147,43 @@ Polymer({
       type: Boolean,
       value: false,
     },
+
+    disableEncryptionOptions_: {
+      type: Boolean,
+      computed: 'computeDisableEncryptionOptions_(' +
+          'syncPrefs, syncStatus)',
+    },
   },
 
   /** @private {?settings.SyncBrowserProxy} */
   browserProxy_: null,
 
   /**
-   * The unload callback is needed because the sign-in flow needs to know
-   * if the user has closed the tab with the sync settings. This property is
-   * non-null if the user is currently navigated on the sync settings route.
+   * If unified consent is enabled, the beforeunload callback is used to
+   * show the 'Leave site' dialog. This makes sure that the user has the chance
+   * to go back and confirm the sync opt-in before leaving.
    *
-   * TODO(crbug.com/862983): When unified consent is rolled out to 100% this
-   * should be removed.
+   * If unified consent is disabled, the beforeunload callback is used
+   * to confirm the sync setup before leaving the opt-in flow.
+   *
+   * This property is non-null if the user is currently navigated on the sync
+   * settings route.
    *
    * @private {?Function}
    */
   beforeunloadCallback_: null,
+
+  /**
+   * If unified consent is enabled, the unload callback is used to cancel the
+   * sync setup when the user hits the browser back button after arriving on the
+   * page.
+   * Note: Cases like closing the tab or reloading don't need to be handled,
+   * because they are already caught in |PeopleHandler::~PeopleHandler|
+   * from the C++ code.
+   *
+   * @private {?Function}
+   */
+  unloadCallback_: null,
 
   /**
    * Whether the initial layout for collapsible sections has been computed. It
@@ -179,10 +200,10 @@ Polymer({
   didAbort_: false,
 
   /**
-   * Whether the user clicked the confirm button on the "Cancel sync?" dialog.
+   * Whether the user confirmed the cancellation of sync.
    * @private {boolean}
    */
-  setupCancelDialogConfirmed_: false,
+  setupCancelConfirmed_: false,
 
   /** @override */
   created: function() {
@@ -210,6 +231,10 @@ Polymer({
     if (this.beforeunloadCallback_) {
       window.removeEventListener('beforeunload', this.beforeunloadCallback_);
       this.beforeunloadCallback_ = null;
+    }
+    if (this.unloadCallback_) {
+      window.removeEventListener('unload', this.unloadCallback_);
+      this.unloadCallback_ = null;
     }
   },
 
@@ -250,7 +275,7 @@ Polymer({
 
   /** @private */
   onSetupCancelDialogConfirm_: function() {
-    this.setupCancelDialogConfirmed_ = true;
+    this.setupCancelConfirmed_ = true;
     this.$$('#setupCancelDialog').close();
     settings.navigateTo(settings.routes.BASIC);
     chrome.metricsPrivate.recordUserAction(
@@ -267,11 +292,13 @@ Polymer({
     if (settings.getCurrentRoute() == settings.routes.SYNC) {
       this.onNavigateToPage_();
     } else if (!settings.routes.SYNC.contains(settings.getCurrentRoute())) {
-      // When the user wants to cancel the sync setup, but hasn't confirmed
-      // the cancel dialog, navigate back and show the dialog.
+      // When the user is about to cancel the sync setup, but hasn't confirmed
+      // the cancellation, navigate back and show the 'Cancel sync?' dialog.
       if (this.unifiedConsentEnabled && this.syncStatus &&
           !!this.syncStatus.setupInProgress && this.didAbort_ &&
-          !this.setupCancelDialogConfirmed_) {
+          !this.setupCancelConfirmed_) {
+        chrome.metricsPrivate.recordUserAction(
+            'Signin_Signin_BackOnAdvancedSyncSettings');
         // Yield so that other |currentRouteChanged| observers are called,
         // before triggering another navigation (and another round of observers
         // firing). Triggering navigation from within an observer leads to some
@@ -284,7 +311,7 @@ Polymer({
           this.$$('#setupCancelDialog').showModal();
         });
       } else {
-        this.setupCancelDialogConfirmed_ = false;
+        this.setupCancelConfirmed_ = false;
         this.onNavigateAwayFromPage_();
       }
     }
@@ -314,8 +341,27 @@ Polymer({
 
     this.browserProxy_.didNavigateToSyncPage();
 
-    this.beforeunloadCallback_ = this.onNavigateAwayFromPage_.bind(this);
-    window.addEventListener('beforeunload', this.beforeunloadCallback_);
+    if (this.unifiedConsentEnabled) {
+      this.beforeunloadCallback_ = event => {
+        // When the user tries to leave the sync setup, show the 'Leave site'
+        // dialog.
+        if (this.unifiedConsentEnabled && this.syncStatus &&
+            !!this.syncStatus.setupInProgress) {
+          event.preventDefault();
+          event.returnValue = '';
+
+          chrome.metricsPrivate.recordUserAction(
+              'Signin_Signin_AbortAdvancedSyncSettings');
+        }
+      };
+      window.addEventListener('beforeunload', this.beforeunloadCallback_);
+
+      this.unloadCallback_ = this.onNavigateAwayFromPage_.bind(this);
+      window.addEventListener('unload', this.unloadCallback_);
+    } else {
+      this.beforeunloadCallback_ = this.onNavigateAwayFromPage_.bind(this);
+      window.addEventListener('beforeunload', this.beforeunloadCallback_);
+    }
   },
 
   /** @private */
@@ -333,6 +379,11 @@ Polymer({
 
     window.removeEventListener('beforeunload', this.beforeunloadCallback_);
     this.beforeunloadCallback_ = null;
+
+    if (this.unloadCallback_) {
+      window.removeEventListener('unload', this.unloadCallback_);
+      this.unloadCallback_ = null;
+    }
   },
 
   /**
@@ -343,8 +394,12 @@ Polymer({
     this.syncPrefs = syncPrefs;
     this.pageStatus_ = settings.PageStatus.CONFIGURE;
 
-    // Hide the new passphrase box if the sync data has been encrypted.
-    if (this.syncPrefs.encryptAllData) {
+    // Hide the new passphrase box if (a) full data encryption is enabled,
+    // (b) encrypting all data is not allowed (so far, only applies to
+    // supervised accounts), or (c) the user is a supervised account.
+    if (this.syncPrefs.encryptAllData ||
+        !this.syncPrefs.encryptAllDataAllowed ||
+        (this.syncStatus && this.syncStatus.supervisedUser)) {
       this.creatingNewPassphrase_ = false;
     }
 
@@ -578,6 +633,25 @@ Polymer({
         !!this.syncPrefs.passphraseRequired;
   },
 
+  /**
+   * Whether we should disable the radio buttons that allow choosing the
+   * encryption options for Sync.
+   * We disable the buttons if:
+   * (a) full data encryption is enabled, or,
+   * (b) full data encryption is not allowed (so far, only applies to
+   * supervised accounts), or,
+   * (c) the user is a supervised account.
+   * @return {boolean}
+   * @private
+   */
+  computeDisableEncryptionOptions_: function() {
+    return !!(
+        (this.syncPrefs &&
+         (this.syncPrefs.encryptAllData ||
+          !this.syncPrefs.encryptAllDataAllowed)) ||
+        (this.syncStatus && this.syncStatus.supervisedUser));
+  },
+
   /** @private */
   onSyncAdvancedTap_: function() {
     settings.navigateTo(settings.routes.SYNC_ADVANCED);
@@ -617,6 +691,7 @@ Polymer({
       chrome.metricsPrivate.recordUserAction(
           'Signin_Signin_ConfirmAdvancedSyncSettings');
     } else {
+      this.setupCancelConfirmed_ = true;
       chrome.metricsPrivate.recordUserAction(
           'Signin_Signin_CancelAdvancedSyncSettings');
     }

@@ -177,7 +177,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/memory/memory_pressure_monitor_mac.h"
-#include "content/browser/cocoa/system_hotkey_helper_mac.h"
 #include "content/browser/mach_broker_mac.h"
 #include "content/browser/renderer_host/browser_compositor_view_mac.h"
 #include "content/browser/theme_helper_mac.h"
@@ -1467,7 +1466,6 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
-  SystemHotkeyHelperMac::GetInstance()->DeferredLoadSystemHotkeys();
 #endif  // defined(OS_MACOSX)
 
 #if !defined(TOOLKIT_QT)
