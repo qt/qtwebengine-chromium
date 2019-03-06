@@ -1301,4 +1301,12 @@ void ChildProcessSecurityPolicyImpl::RemoveIsolatedOriginForTesting(
   isolated_origins_.erase(origin);
 }
 
+bool ChildProcessSecurityPolicyImpl::HasSecurityState(int child_id) {
+  base::AutoLock lock(lock_);
+  auto itr = security_state_.find(child_id);
+  if (itr != security_state_.end())
+    return itr->second.get();
+  return false;
+}
+
 }  // namespace content
