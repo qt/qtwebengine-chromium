@@ -40,7 +40,9 @@ void TrustTokenKeyCommitments::Set(
                           std::move(kv.second));
   }
 
-  map_.replace(std::move(filtered));
+  for (auto& t: filtered)
+    map_.emplace(t.first, std::move(t.second));
+//  map_.replace(std::move(filtered));
 }
 
 void TrustTokenKeyCommitments::Get(

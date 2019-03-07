@@ -84,10 +84,12 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::internalPrepare(
     const SkGlyph** cursor = results;
     size_t delta = 0;
     for (auto glyphID : glyphIDs) {
-        auto [glyph, size] = this->glyph(SkPackedGlyphID{glyphID});
+        auto t = this->glyph(SkPackedGlyphID{glyphID});
+        auto glyph = std::get<0>(t);
+        auto size = std::get<1>(t);
         delta += size;
         if (pathDetail == kMetricsAndPath) {
-            auto [_, pathSize] = this->preparePath(glyph);
+            auto pathSize = std::get<1>(this->preparePath(glyph));
             delta += pathSize;
         }
         *cursor++ = glyph;
@@ -111,7 +113,9 @@ std::tuple<SkGlyph*, size_t> SkScalerCache::mergeGlyphAndImage(
     size_t imageDelta = 0;
     SkGlyph* glyph = fGlyphMap.findOrNull(toID);
     if (glyph == nullptr) {
-        std::tie(glyph, delta) = this->makeGlyph(toID);
+        auto t = this->makeGlyph(toID);
+        glyph = std::get<0>(t);
+        delta = std::get<1>(t);
     }
     if (glyph->setMetricsAndImage(&fAlloc, from)) {
         imageDelta= glyph->imageSize();
@@ -122,14 +126,18 @@ std::tuple<SkGlyph*, size_t> SkScalerCache::mergeGlyphAndImage(
 std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::metrics(
         SkSpan<const SkGlyphID> glyphIDs, const SkGlyph* results[]) {
     SkAutoMutexExclusive lock{fMu};
-    auto [glyphs, delta] = this->internalPrepare(glyphIDs, kMetricsOnly, results);
+    auto t = this->internalPrepare(glyphIDs, kMetricsOnly, results);
+    auto glyphs = std::get<0>(t);
+    auto delta = std::get<1>(t);
     return {glyphs, delta};
 }
 
 std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::preparePaths(
         SkSpan<const SkGlyphID> glyphIDs, const SkGlyph* results[]) {
     SkAutoMutexExclusive lock{fMu};
-    auto [glyphs, delta] = this->internalPrepare(glyphIDs, kMetricsAndPath, results);
+    auto t = this->internalPrepare(glyphIDs, kMetricsAndPath, results);
+    auto glyphs = std::get<0>(t);
+    auto delta = std::get<1>(t);
     return {glyphs, delta};
 }
 
@@ -139,8 +147,10 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::prepareImages(
     SkAutoMutexExclusive lock{fMu};
     size_t delta = 0;
     for (auto glyphID : glyphIDs) {
-        auto[glyph, glyphSize] = this->glyph(glyphID);
-        auto[_, imageSize] = this->prepareImage(glyph);
+        auto t = this->glyph(glyphID);
+        auto glyph = std::get<0>(t);
+        auto glyphSize = std::get<1>(t);
+        auto imageSize = std::get<1>(this->prepareImage(glyph));
         delta += glyphSize + imageSize;
         *cursor++ = glyph;
     }
@@ -151,9 +161,14 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::prepareImages(
 template <typename Fn>
 size_t SkScalerCache::commonFilterLoop(SkDrawableGlyphBuffer* drawables, Fn&& fn) {
     size_t total = 0;
-    for (auto [i, packedID, pos] : SkMakeEnumerate(drawables->input())) {
+    for (auto t : SkMakeEnumerate(drawables->input())) {
+        auto i = std::get<0>(t);
+        auto packedID = std::get<0>(std::get<1>(t));
+        auto pos = std::get<1>(std::get<1>(t));
         if (SkScalarsAreFinite(pos.x(), pos.y())) {
-            auto [glyph, size] = this->glyph(packedID);
+            auto t = this->glyph(packedID);
+            auto glyph = std::get<0>(t);
+            auto size = std::get<1>(t);
             total += size;
             if (!glyph->isEmpty()) {
                 fn(i, glyph, pos);
@@ -169,7 +184,9 @@ size_t SkScalerCache::prepareForDrawingMasksCPU(SkDrawableGlyphBuffer* drawables
     size_t delta = this->commonFilterLoop(drawables,
         [&](size_t i, SkGlyph* glyph, SkPoint pos) SK_REQUIRES(fMu) {
             // If the glyph is too large, then no image is created.
-            auto [image, imageSize] = this->prepareImage(glyph);
+            auto t = this->prepareImage(glyph);
+            auto image = std::get<0>(t);
+            auto imageSize = std::get<1>(t);
             if (image != nullptr) {
                 drawables->push_back(glyph, i);
                 imageDelta += imageSize;
@@ -217,7 +234,9 @@ size_t SkScalerCache::prepareForPathDrawing(
     size_t delta = this->commonFilterLoop(drawables,
         [&](size_t i, SkGlyph* glyph, SkPoint pos) SK_REQUIRES(fMu) {
             if (!glyph->isColor()) {
-                auto [path, pathSize] = this->preparePath(glyph);
+                auto t = this->preparePath(glyph);
+                auto path = std::get<0>(t);
+                auto pathSize = std::get<1>(t);
                 pathDelta += pathSize;
                 if (path != nullptr) {
                     // Save off the path to draw later.

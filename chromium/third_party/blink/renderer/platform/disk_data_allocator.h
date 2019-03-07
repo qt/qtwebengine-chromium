@@ -35,11 +35,11 @@ class PLATFORM_EXPORT DiskDataAllocator {
    public:
     int64_t start_offset() const { return start_offset_; }
     size_t size() const { return size_; }
-    Metadata(Metadata&& other) = delete;
 
    private:
     Metadata(int64_t start_offset, size_t size)
         : start_offset_(start_offset), size_(size) {}
+    Metadata(Metadata&& other) = default;
     Metadata(const Metadata& other) = default;
     Metadata& operator=(const Metadata& other) = default;
 

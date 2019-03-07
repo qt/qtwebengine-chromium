@@ -99,6 +99,9 @@ public:
         SkDebugf(msg);
     }
 
+    GrRecordingContextPriv(GrRecordingContextPriv&&) = default;
+    GrRecordingContextPriv& operator=(GrRecordingContextPriv&&) = default;
+
 private:
     explicit GrRecordingContextPriv(GrRecordingContext* context) : fContext(context) {}
     GrRecordingContextPriv(const GrRecordingContextPriv&); // unimpl

@@ -18,6 +18,8 @@
 using Mode = GrSamplerState::WrapMode;
 using Filter = GrSamplerState::Filter;
 
+constexpr float GrTextureEffect::kDefaultBorder[4];
+
 struct GrTextureEffect::Sampling {
     GrSamplerState fHWSampler;
     ShaderMode fShaderModes[2] = {ShaderMode::kNone, ShaderMode::kNone};

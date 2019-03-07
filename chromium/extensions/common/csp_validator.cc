@@ -675,10 +675,10 @@ bool DoesCSPDisallowRemoteCode(const std::string& content_security_policy,
     const CSPParser::Directive* directive = nullptr;
   };
 
-  DirectiveMapping script_src_mapping({DirectiveStatus({kScriptSrc})});
-  DirectiveMapping object_src_mapping({DirectiveStatus({kObjectSrc})});
-  DirectiveMapping worker_src_mapping({DirectiveStatus({kWorkerSrc})});
-  DirectiveMapping default_src_mapping({DirectiveStatus({kDefaultSrc})});
+  DirectiveMapping script_src_mapping(DirectiveStatus({kScriptSrc}));
+  DirectiveMapping object_src_mapping(DirectiveStatus({kObjectSrc}));
+  DirectiveMapping worker_src_mapping(DirectiveStatus({kWorkerSrc}));
+  DirectiveMapping default_src_mapping(DirectiveStatus({kDefaultSrc}));
 
   DirectiveMapping* directive_mappings[] = {
       &script_src_mapping,

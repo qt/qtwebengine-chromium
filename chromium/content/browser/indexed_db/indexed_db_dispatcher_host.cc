@@ -395,7 +395,7 @@ void IndexedDBDispatcherHost::BindFileReader(
       this, path, expected_modification_time, std::move(release_callback),
       file_task_runner_, indexed_db_context_->IOTaskRunner(),
       std::move(receiver));
-  file_reader_map_.insert({path, std::move(reader)});
+  file_reader_map_.insert(std::make_pair(path, std::move(reader)));
 }
 
 void IndexedDBDispatcherHost::RemoveBoundReaders(const base::FilePath& path) {

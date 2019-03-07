@@ -90,8 +90,30 @@ class CONTENT_EXPORT ServiceVideoCaptureProvider
   int stashed_retry_count_;
 #endif
 
+  class ServiceProcessObserver
+      : public ServiceProcessHost::Observer {
+   public:
+    ServiceProcessObserver(base::RepeatingClosure start_callback,
+                           base::RepeatingClosure stop_callback);
+
+    ~ServiceProcessObserver() override;
+
+   private:
+    // ServiceProcessHost::Observer implementation.
+    void OnServiceProcessLaunched(const ServiceProcessInfo& info) override;
+
+    void OnServiceProcessTerminatedNormally(
+        const ServiceProcessInfo& info) override;
+
+    void OnServiceProcessCrashed(const ServiceProcessInfo& info) override;
+
+    const scoped_refptr<base::TaskRunner> io_task_runner_;
+    const base::RepeatingClosure start_callback_;
+    const base::RepeatingClosure stop_callback_;
+
+    DISALLOW_COPY_AND_ASSIGN(ServiceProcessObserver);
+  };
   // We own this but it must operate on the UI thread.
-  class ServiceProcessObserver;
   base::Optional<base::SequenceBound<ServiceProcessObserver>>
       service_process_observer_;
 

@@ -329,7 +329,9 @@ bool SkRuntimeEffect::toPipelineStage(const void* inputs, const GrShaderCaps* sh
         return false;
     }
 
-    auto [specialized, errorText] = this->specialize(*baseProgram, inputs, compiler);
+    auto t = this->specialize(*baseProgram, inputs, compiler);
+    const auto& specialized = std::get<0>(t);
+    auto errorText = std::get<1>(t);
     if (!specialized) {
         errorHandler->compileError(fSkSL.c_str(), errorText.c_str());
         return false;
@@ -347,7 +349,9 @@ bool SkRuntimeEffect::toPipelineStage(const void* inputs, const GrShaderCaps* sh
 SkRuntimeEffect::ByteCodeResult SkRuntimeEffect::toByteCode(const void* inputs) {
     SkSL::SharedCompiler compiler;
 
-    auto [specialized, errorText] = this->specialize(*fBaseProgram, inputs, compiler);
+    auto t = this->specialize(*fBaseProgram, inputs, compiler);
+    const auto& specialized = std::get<0>(t);
+    auto errorText = std::get<1>(t);
     if (!specialized) {
         return ByteCodeResult{nullptr, errorText};
     }
@@ -392,7 +396,9 @@ public:
 
         SkAutoMutexExclusive ama(fInterpreterMutex);
         if (!fInterpreter) {
-            auto [byteCode, errorText] = fEffect->toByteCode(fInputs->data());
+            auto t = fEffect->toByteCode(fInputs->data());
+            auto &byteCode = std::get<0>(t);
+            auto errorText = std::get<1>(t);
             if (!byteCode) {
                 SkDebugf("%s\n", errorText.c_str());
                 return false;
@@ -513,7 +519,9 @@ public:
 
         SkAutoMutexExclusive ama(fInterpreterMutex);
         if (!fInterpreter) {
-            auto[byteCode, errorText] = fEffect->toByteCode(fInputs->data());
+            auto t = fEffect->toByteCode(fInputs->data());
+            auto& byteCode = std::get<0>(t);
+            auto errorText = std::get<1>(t);
             if (!byteCode) {
                 SkDebugf("%s\n", errorText.c_str());
                 return false;

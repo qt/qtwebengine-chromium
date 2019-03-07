@@ -1365,7 +1365,9 @@ SkPath& SkPath::addPath(const SkPath& srcPath, const SkMatrix& matrix, AddPathMo
             fLastMoveToIndex = this->countPoints() + src->fLastMoveToIndex;
         }
         SkPathRef::Editor ed(&fPathRef);
-        auto [newPts, newWeights] = ed.growForVerbsInPath(*src->fPathRef);
+        auto t = ed.growForVerbsInPath(*src->fPathRef);
+        auto newPts = std::get<0>(t);
+        auto newWeights = std::get<1>(t);
         matrix.mapPoints(newPts, src->fPathRef->points(), src->countPoints());
         if (int numWeights = src->fPathRef->countWeights()) {
             memcpy(newWeights, src->fPathRef->conicWeights(), numWeights * sizeof(newWeights[0]));

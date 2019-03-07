@@ -314,7 +314,7 @@ base::Optional<RequestAction> RulesetMatcherBase::CreateUpgradeAction(
   RequestAction upgrade_action =
       CreateRequestAction(RequestAction::Type::UPGRADE, rule);
   upgrade_action.redirect_url = GetUpgradedUrl(*params.url);
-  return upgrade_action;
+  return std::move(upgrade_action);
 }
 
 base::Optional<RequestAction>
@@ -362,7 +362,7 @@ base::Optional<RequestAction> RulesetMatcherBase::CreateRedirectAction(
   RequestAction redirect_action =
       CreateRequestAction(RequestAction::Type::REDIRECT, rule);
   redirect_action.redirect_url = std::move(redirect_url);
-  return redirect_action;
+  return std::move(redirect_action);
 }
 
 RequestAction RulesetMatcherBase::GetRemoveHeadersActionForMask(

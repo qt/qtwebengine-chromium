@@ -338,7 +338,8 @@ namespace {
         src = blend(params.blendMode, src, dst);
 
         // Lerp with coverage post-blend if needed.
-        if (skvm::Color cov; lerp_coverage_post_blend && load_coverage(&cov)) {
+        skvm::Color cov;
+        if (lerp_coverage_post_blend && load_coverage(&cov)) {
             src.r = lerp(dst.r, src.r, cov.r);
             src.g = lerp(dst.g, src.g, cov.g);
             src.b = lerp(dst.b, src.b, cov.b);

@@ -760,6 +760,8 @@ public:
     };
 };
 
+constexpr const FT_Outline_Funcs SkFTGeometrySink::Funcs;
+
 }  // namespace
 
 bool SkScalerContext_FreeType_Base::generateGlyphPath(FT_Face face, SkPath* path) {

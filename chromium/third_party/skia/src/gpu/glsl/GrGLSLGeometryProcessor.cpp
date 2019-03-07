@@ -82,7 +82,9 @@ void GrGLSLGeometryProcessor::emitTransforms(GrGLSLVertexBuilder* vb,
 
     GrShaderVar transformVar;
     for (int i = 0; *handler; ++*handler, ++i) {
-        auto [coordTransform, fp] = handler->get();
+        auto t = handler->get();
+        const GrCoordTransform& coordTransform = t.first;
+        const GrFragmentProcessor& fp = t.second;
         // Add uniform for coord transform matrix.
         const char* matrixName;
         if (!fp.isSampledWithExplicitCoords() || !coordTransform.isNoOp()) {
@@ -109,7 +111,9 @@ void GrGLSLGeometryProcessor::emitTransforms(GrGLSLVertexBuilder* vb,
         GrShaderVar fsVar;
         // Add varying if required and register varying and matrix uniform.
         if (!fp.isSampledWithExplicitCoords()) {
-            auto [localCoordsStr, localCoordLength] = getLocalCoords();
+            auto t = getLocalCoords();
+            auto localCoordsStr = std::get<0>(t);
+            auto localCoordLength = std::get<1>(t);
             GrGLSLVarying v(kFloat2_GrSLType);
             if (localMatrix.hasPerspective() || coordTransform.matrix().hasPerspective() ||
                 localCoordLength == 3) {

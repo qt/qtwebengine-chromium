@@ -155,22 +155,22 @@ namespace skvm {
 
         o->writeText("digraph {\n");
         for (Val id = 0; id < (Val)optimized.size(); id++) {
-            auto [op, x,y,z, immy,immz, death,can_hoist,used_in_loop] = optimized[id];
+            const OptimizedInstruction& i = optimized[id];
 
-            switch (op) {
+            switch (i.op) {
                 default:
-                    write(o, "\t", V{id}, " [label = \"", V{id}, op);
+                    write(o, "\t", V{id}, " [label = \"", V{id}, i.op);
                     // Not a perfect heuristic; sometimes y/z == NA and there is no immy/z.
                     // On the other hand, sometimes immy/z=0 is meaningful and should be printed.
-                    if (y == NA) { write(o, "", Hex{immy}); }
-                    if (z == NA) { write(o, "", Hex{immz}); }
+                    if (i.y == NA) { write(o, "", Hex{i.immy}); }
+                    if (i.z == NA) { write(o, "", Hex{i.immz}); }
                     write(o, "\"]\n");
 
                     write(o, "\t", V{id}, " -> {");
                     // In contrast to the heuristic imm labels, these dependences are exact.
-                    if (x != NA) { write(o, "", V{x}); }
-                    if (y != NA) { write(o, "", V{y}); }
-                    if (z != NA) { write(o, "", V{z}); }
+                    if (i.x != NA) { write(o, "", V{i.x}); }
+                    if (i.y != NA) { write(o, "", V{i.y}); }
+                    if (i.z != NA) { write(o, "", V{i.z}); }
                     write(o, " }\n");
 
                     break;
@@ -179,7 +179,7 @@ namespace skvm {
                 // but some are nicer to see with a specialized label.
 
                 case Op::splat:
-                    write(o, "\t", V{id}, " [label = \"", V{id}, op, Splat{immy}, "\"]\n");
+                    write(o, "\t", V{id}, " [label = \"", V{id}, i.op, Splat{i.immy}, "\"]\n");
                     break;
             }
         }
@@ -434,7 +434,9 @@ namespace skvm {
                 return  (*program)[id].op == Op::splat;
             };
 
-            switch (Op imm_op; inst.op) {
+            Op imm_op;
+            int bits;
+            switch (inst.op) {
                 default: break;
 
                 case Op::add_f32: imm_op = Op::add_f32_imm; goto try_imm_x_and_y;
@@ -446,26 +448,26 @@ namespace skvm {
                 case Op::bit_xor: imm_op = Op::bit_xor_imm; goto try_imm_x_and_y;
 
                 try_imm_x_and_y:
-                    if (int bits; is_imm(inst.x, &bits)) {
+                    if (is_imm(inst.x, &bits)) {
                         inst.op   = imm_op;
                         inst.x    = inst.y;
                         inst.y    = NA;
                         inst.immy = bits;
-                    } else if (int bits; is_imm(inst.y, &bits)) {
+                    } else if (is_imm(inst.y, &bits)) {
                         inst.op   = imm_op;
                         inst.y    = NA;
                         inst.immy = bits;
                     } break;
 
                 case Op::sub_f32:
-                    if (int bits; is_imm(inst.y, &bits)) {
+                    if (is_imm(inst.y, &bits)) {
                         inst.op   = Op::sub_f32_imm;
                         inst.y    = NA;
                         inst.immy = bits;
                     } break;
 
                 case Op::bit_clear:
-                    if (int bits; is_imm(inst.y, &bits)) {
+                    if (is_imm(inst.y, &bits)) {
                         inst.op   = Op::bit_and_imm;
                         inst.y    = NA;
                         inst.immy = ~bits;
@@ -1121,7 +1123,9 @@ namespace skvm {
     Color Builder::to_rgba(HSLA c) {
         // See GrRGBToHSLFilterEffect.fp
 
-        auto [h,s,l,a] = c;
+        auto h = c.h;
+        auto s = c.s;
+        auto l = c.l;
         F32 x = mul(sub(1.0f, abs(sub(add(l,l), 1.0f))), s);
 
         auto hue_to_rgb = [&,l=l](auto hue) {

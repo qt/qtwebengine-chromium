@@ -31,13 +31,14 @@ void GrProgramInfo::validate(bool flushTime) const {
 }
 
 void GrProgramInfo::checkAllInstantiated() const {
-    for (auto [sampler, fp] : GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline())) {
-        SkASSERT(sampler.proxy()->isInstantiated());
+    for (auto t : GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline())) {
+        SkASSERT(std::get<0>(t).proxy()->isInstantiated());
     }
 }
 
 void GrProgramInfo::checkMSAAAndMIPSAreResolved() const {
-    for (auto [sampler, fp] : GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline())) {
+    for (const auto& t : GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline())) {
+        const auto& sampler = std::get<0>(t);
         GrTexture* tex = sampler.peekTexture();
         SkASSERT(tex);
 

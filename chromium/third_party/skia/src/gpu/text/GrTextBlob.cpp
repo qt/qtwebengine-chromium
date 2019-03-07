@@ -113,7 +113,9 @@ void GrTextBlob::SubRun::appendGlyphs(const SkZip<SkGlyphVariant, SkPoint>& draw
     // overwritten. Similarly, we always write the color and the blob will later overwrite it
     // with texture coords if it is unused.
     size_t colorOffset = this->colorOffset();
-    for (auto [variant, pos] : drawables) {
+    for (auto t : drawables) {
+        auto variant = std::get<0>(t);
+        auto pos = std::get<1>(t);
         SkGlyph* skGlyph = variant;
         GrGlyph* grGlyph = grStrike->getGlyph(*skGlyph);
         // Only floor the device coordinates.
@@ -771,7 +773,9 @@ void GrTextBlob::processSourcePaths(const SkZip<SkGlyphVariant, SkPoint>& drawab
     this->setHasBitmap();
     SubRun* subRun = fAlloc.make<SubRun>(this, strikeSpec);
     subRun->setAntiAliased(runFont.hasSomeAntiAliasing());
-    for (auto [variant, pos] : drawables) {
+    for (auto t : drawables) {
+        auto variant = std::get<0>(t);
+        auto pos = std::get<1>(t);
         subRun->fPaths.emplace_back(*variant.path(), pos);
     }
 }
@@ -850,8 +854,9 @@ std::tuple<bool, int> GrTextBlob::VertexRegenerator::regenerate(int begin, int e
         // Calculate the texture coordinates for the vertexes during first use (fAtlasGeneration
         // is set to kInvalidAtlasGeneration) or the atlas has changed in subsequent calls..
         fSubRun->resetBulkUseToken();
-        auto [success, glyphsPlacedInAtlas] = this->updateTextureCoordinates(begin, end);
-
+        auto t = this->updateTextureCoordinates(begin, end);
+        auto success = std::get<0>(t);
+        auto glyphsPlacedInAtlas = std::get<1>(t);
         // Update atlas generation if there are no more glyphs to put in the atlas.
         if (success && begin + glyphsPlacedInAtlas == fSubRun->fGlyphs.count()) {
             // Need to get the freshest value of the atlas' generation because

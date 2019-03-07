@@ -55,8 +55,8 @@ void NativeIOContext::BindReceiver(
 
     bool insert_succeeded;
     std::tie(it, insert_succeeded) =
-        hosts_.insert({origin, std::make_unique<NativeIOHost>(
-                                   this, origin, std::move(origin_root_path))});
+        hosts_.emplace(origin, std::make_unique<NativeIOHost>(
+                                   this, origin, std::move(origin_root_path)));
   }
 
   it->second->BindReceiver(std::move(receiver));

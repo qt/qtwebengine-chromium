@@ -376,7 +376,9 @@ void GrAtlasTextOp::onPrepareDraws(Target* target) {
             int drawBegin = totalGlyphsRegened - subRunBegin;
             // drawEnd is either the end of the subRun or the end of the current quad buffer.
             int drawEnd = std::min(subRunEnd, quadBufferEnd) - subRunBegin;
-            auto[ok, glyphsRegenerated] = regenerator.regenerate(drawBegin, drawEnd);
+            auto t = regenerator.regenerate(drawBegin, drawEnd);
+            auto ok = std::get<0>(t);
+            auto glyphsRegenerated = std::get<1>(t);
 
             // There was a problem allocating the glyph in the atlas. Bail.
             if (!ok) {

@@ -61,7 +61,9 @@ public:
                         GrGLSLUniformHandler* uniformHandler,
                         FPCoordTransformHandler* transformHandler) {
         for (int i = 0; *transformHandler; ++*transformHandler, ++i) {
-            auto [coordTransform, fp] = transformHandler->get();
+            auto t = transformHandler->get();
+            const GrCoordTransform& coordTransform = t.first;
+            const GrFragmentProcessor& fp = t.second;
 
             SkString matrix;
             GrShaderVar fragmentVar;
@@ -120,6 +122,7 @@ public:
         int v = 0, u = 0;
         const auto& rng = transformRange;
         for (auto it = rng.begin(); it != rng.end(); ++it) {
+            const auto& tup = *it;
             const GrCoordTransform& transform = tup.first;
             const GrFragmentProcessor& fp = tup.second;
             if (fp.isSampledWithExplicitCoords()) {
