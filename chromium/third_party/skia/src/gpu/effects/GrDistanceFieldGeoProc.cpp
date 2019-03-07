@@ -22,6 +22,12 @@
 // Assuming a radius of a little less than the diagonal of the fragment
 #define SK_DistanceFieldAAFactor     "0.65"
 
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 7
+constexpr int GrDistanceFieldA8TextGeoProc::kMaxTextures;
+constexpr int GrDistanceFieldPathGeoProc::kMaxTextures;
+constexpr int GrDistanceFieldLCDTextGeoProc::kMaxTextures;
+#endif
+
 class GrGLDistanceFieldA8TextGeoProc : public GrGLSLGeometryProcessor {
 public:
     GrGLDistanceFieldA8TextGeoProc() = default;

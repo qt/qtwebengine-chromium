@@ -530,9 +530,11 @@ public:
     operator bool() const { return !fFPStack.empty(); }
     bool operator!=(const EndIter&) { return (bool)*this; }
 
+#if !defined(__GNUC__) || defined(__clang__) || __GNUC__ > 6
     // Because each iterator carries a stack we want to avoid copies.
     IterBase(const IterBase&) = delete;
     IterBase& operator=(const IterBase&) = delete;
+#endif
 
 protected:
     void increment();
@@ -603,8 +605,10 @@ public:
     operator bool() const { return fFPIter; }
     bool operator!=(const FPItemEndIter&) { return (bool)*this; }
 
+#if !defined(__GNUC__) || defined(__clang__) || __GNUC__ > 6
     FPItemIter(const FPItemIter&) = delete;
     FPItemIter& operator=(const FPItemIter&) = delete;
+#endif
 
 private:
     typename std::conditional<std::is_const<Item>::value, CIter, Iter>::type fFPIter;

@@ -522,8 +522,10 @@ void GrTextBlob::SubRun::appendGlyphs(const SkZip<SkGlyphVariant, SkPoint>& draw
     // overwritten. Similarly, we always write the color and the blob will later overwrite it
     // with texture coords if it is unused.
     size_t colorOffset = hasW ? sizeof(SkPoint3) : sizeof(SkPoint);
-    for (auto [variant, pos] : drawables) {
-        SkGlyph* skGlyph = variant;
+    for (auto t : drawables) {
+        SkGlyph* skGlyph = std::get<0>(t);
+        SkPoint pos = std::get<1>(t);
+
         GrGlyph* grGlyph = grStrike->getGlyph(*skGlyph);
         // Only floor the device coordinates.
         SkRect dstRect;
@@ -621,8 +623,11 @@ void GrTextBlob::processSourcePaths(const SkZip<SkGlyphVariant, SkPoint>& drawab
     this->setHasBitmap();
     SubRun& subRun = fSubRuns.emplace_back(this, strikeSpec);
     subRun.setAntiAliased(runFont.hasSomeAntiAliasing());
-    for (auto [variant, pos] : drawables) {
-        subRun.fPaths.emplace_back(*variant.path(), pos);
+    for (auto t : drawables) {
+        const SkGlyphVariant& variant = std::get<0>(t);
+        const SkPoint& pos = std::get<1>(t);
+        const SkPath* path = variant;
+        subRun.fPaths.emplace_back(*path, pos);
     }
 }
 

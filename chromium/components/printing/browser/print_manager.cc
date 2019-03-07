@@ -123,7 +123,7 @@ PrintManager::GetPrintRenderFrame(content::RenderFrameHost* rfh) {
   if (it == print_render_frames_.end()) {
     mojo::AssociatedRemote<printing::mojom::PrintRenderFrame> remote;
     rfh->GetRemoteAssociatedInterfaces()->GetInterface(&remote);
-    it = print_render_frames_.insert({rfh, std::move(remote)}).first;
+    it = print_render_frames_.insert(std::make_pair(rfh, std::move(remote))).first;
   } else if (it->second.is_bound() && !it->second.is_connected()) {
     // When print preview is closed, the remote is disconnected from the
     // receiver. Reset and bind the remote before using it again.

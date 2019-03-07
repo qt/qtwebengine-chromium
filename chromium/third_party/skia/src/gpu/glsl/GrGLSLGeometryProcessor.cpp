@@ -68,7 +68,9 @@ void GrGLSLGeometryProcessor::emitTransforms(GrGLSLVertexBuilder* vb,
         localCoords.printf("float3(%s, 1)", localCoordsVar.c_str());
     }
     for (int i = 0; *handler; ++*handler, ++i) {
-        auto [coordTransform, fp] = handler->get();
+        auto t = handler->get();
+        const GrCoordTransform& coordTransform = t.first;
+        const GrFragmentProcessor& fp = t.second;
         if (coordTransform.isNoOp() && !fp.coordTransformsApplyToLocalCoords()) {
             handler->omitCoordsForCurrCoordTransform();
             fInstalledTransforms.push_back();

@@ -93,7 +93,7 @@ base::Optional<RequestAction> RulesetMatcher::GetAllowAction(
       url_pattern_index_matcher_.GetAllowAction(params);
   if (!action)
     action = regex_matcher_.GetAllowAction(params);
-  return action;
+  return std::move(action);
 }
 
 base::Optional<RequestAction> RulesetMatcher::GetRedirectAction(

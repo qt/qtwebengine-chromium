@@ -53,48 +53,37 @@ static const int kMaxRetriesForGetDeviceInfos = 1;
 
 namespace content {
 
-class ServiceVideoCaptureProvider::ServiceProcessObserver
-    : public ServiceProcessHost::Observer {
- public:
-  ServiceProcessObserver(base::RepeatingClosure start_callback,
-                         base::RepeatingClosure stop_callback)
+ServiceVideoCaptureProvider::ServiceProcessObserver::ServiceProcessObserver(
+        base::RepeatingClosure start_callback,
+        base::RepeatingClosure stop_callback)
       : io_task_runner_(
             base::CreateSingleThreadTaskRunner({BrowserThread::IO})),
         start_callback_(std::move(start_callback)),
         stop_callback_(std::move(stop_callback)) {
-    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    ServiceProcessHost::AddObserver(this);
-  }
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  ServiceProcessHost::AddObserver(this);
+}
 
-  ~ServiceProcessObserver() override {
-    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    ServiceProcessHost::RemoveObserver(this);
-  }
+ServiceVideoCaptureProvider::ServiceProcessObserver::~ServiceProcessObserver() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  ServiceProcessHost::RemoveObserver(this);
+}
 
- private:
-  // ServiceProcessHost::Observer implementation.
-  void OnServiceProcessLaunched(const ServiceProcessInfo& info) override {
-    if (info.IsService<video_capture::mojom::VideoCaptureService>())
-      io_task_runner_->PostTask(FROM_HERE, base::BindOnce(start_callback_));
-  }
+void ServiceVideoCaptureProvider::ServiceProcessObserver::OnServiceProcessLaunched(const ServiceProcessInfo& info) {
+  if (info.IsService<video_capture::mojom::VideoCaptureService>())
+    io_task_runner_->PostTask(FROM_HERE, base::BindOnce(start_callback_));
+}
 
-  void OnServiceProcessTerminatedNormally(
-      const ServiceProcessInfo& info) override {
-    if (info.IsService<video_capture::mojom::VideoCaptureService>())
-      io_task_runner_->PostTask(FROM_HERE, base::BindOnce(stop_callback_));
-  }
+void ServiceVideoCaptureProvider::ServiceProcessObserver::OnServiceProcessTerminatedNormally(
+    const ServiceProcessInfo& info) {
+  if (info.IsService<video_capture::mojom::VideoCaptureService>())
+    io_task_runner_->PostTask(FROM_HERE, base::BindOnce(stop_callback_));
+}
 
-  void OnServiceProcessCrashed(const ServiceProcessInfo& info) override {
-    if (info.IsService<video_capture::mojom::VideoCaptureService>())
-      io_task_runner_->PostTask(FROM_HERE, base::BindOnce(stop_callback_));
-  }
-
-  const scoped_refptr<base::TaskRunner> io_task_runner_;
-  const base::RepeatingClosure start_callback_;
-  const base::RepeatingClosure stop_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(ServiceProcessObserver);
-};
+void ServiceVideoCaptureProvider::ServiceProcessObserver::OnServiceProcessCrashed(const ServiceProcessInfo& info) {
+  if (info.IsService<video_capture::mojom::VideoCaptureService>())
+    io_task_runner_->PostTask(FROM_HERE, base::BindOnce(stop_callback_));
+}
 
 #if defined(OS_CHROMEOS)
 ServiceVideoCaptureProvider::ServiceVideoCaptureProvider(

@@ -59,7 +59,9 @@ public:
     void emitTransforms(GrGLSLVaryingHandler* varyingHandler,
                         FPCoordTransformHandler* transformHandler) {
         for (int i = 0; *transformHandler; ++*transformHandler, ++i) {
-            auto [coordTransform, fp] = transformHandler->get();
+            auto t = transformHandler->get();
+            const GrCoordTransform& coordTransform = t.first;
+            const GrFragmentProcessor& fp = t.second;
             GrSLType varyingType =
                     coordTransform.matrix().hasPerspective() ? kHalf3_GrSLType : kHalf2_GrSLType;
 

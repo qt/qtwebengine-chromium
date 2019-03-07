@@ -34,7 +34,9 @@ public:
         if (!this->sourceIsRejectBuffers()) {
             // Need to expand the buffers for first use. All other reject sets will be fewer than
             // this one.
-            auto [glyphID, pos] = fSource[index];
+            auto t = fSource[index];
+            const SkGlyphID& glyphID = std::get<0>(t);
+            const SkPoint& pos = std::get<1>(t);
             fRejectedGlyphIDs.push_back(glyphID);
             fRejectedPositions.push_back(pos);
             fRejectSize++;

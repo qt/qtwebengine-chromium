@@ -675,7 +675,7 @@ ManifestParser::ParseFileHandler(const JSONObject* file_handler) {
     return base::nullopt;
   }
 
-  return entry;
+  return std::move(entry);
 }
 
 HashMap<String, Vector<String>> ManifestParser::ParseFileHandlerAccept(

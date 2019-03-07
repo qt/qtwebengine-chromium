@@ -358,7 +358,7 @@ base::Optional<RequestAction> RulesetManager::GetBlockOrCollapseAction(
     base::Optional<RequestAction> action =
         ruleset->matcher->GetBlockOrCollapseAction(params);
     if (action)
-      return action;
+      return std::move(action);
   }
   return base::nullopt;
 }

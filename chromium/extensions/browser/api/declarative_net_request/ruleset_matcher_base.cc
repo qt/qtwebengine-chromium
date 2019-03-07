@@ -271,7 +271,7 @@ base::Optional<RequestAction> RulesetMatcherBase::CreateRedirectAction(
   RequestAction redirect_action(RequestAction::Type::REDIRECT, rule.id(),
                                 rule.priority(), source_type(), extension_id());
   redirect_action.redirect_url = std::move(redirect_url);
-  return redirect_action;
+  return std::move(redirect_action);
 }
 
 RequestAction RulesetMatcherBase::GetRemoveHeadersActionForMask(
