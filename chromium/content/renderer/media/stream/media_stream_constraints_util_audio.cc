@@ -307,7 +307,7 @@ class EchoCancellationContainer {
                             bool is_device_capture,
                             media::AudioParameters device_parameters,
                             AudioProcessingProperties properties)
-      : ec_mode_allowed_values_(EchoCancellationTypeSet({allowed_values})),
+      : ec_mode_allowed_values_(EchoCancellationTypeSet(allowed_values)),
         device_parameters_(device_parameters),
         is_device_capture_(is_device_capture) {
     if (!has_active_source) {
