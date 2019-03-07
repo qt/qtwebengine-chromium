@@ -377,7 +377,8 @@ jumbo_source_set("renderer") {
   }
   if (use_qt) {
     deps -= [
-      "//chrome:resources"
+      "//chrome:resources",
+      "//third_party/cld_3/src/src:cld_3",
     ]
   }
 }
