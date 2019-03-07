@@ -17,11 +17,15 @@ class QUIC_EXPORT_PRIVATE Bbr2ProbeRttMode final : public Bbr2ModeBase {
  public:
   using Bbr2ModeBase::Bbr2ModeBase;
 
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 7
+  Bbr2ProbeRttMode(const Bbr2Sender* sender, Bbr2NetworkModel* model)
+      : Bbr2ModeBase(sender, model) {}
+#endif
+
   void Enter(QuicTime now,
              const Bbr2CongestionEvent* congestion_event) override;
   void Leave(QuicTime /*now*/,
              const Bbr2CongestionEvent* /*congestion_event*/) override {}
-
   Bbr2Mode OnCongestionEvent(
       QuicByteCount prior_in_flight,
       QuicTime event_time,

@@ -113,6 +113,9 @@ public:
      */
     static sk_sp<GrRecordingContext> MakeDDL(sk_sp<GrContextThreadSafeProxy>);
 
+    GrRecordingContextPriv(GrRecordingContextPriv&&) = default;
+    GrRecordingContextPriv& operator=(GrRecordingContextPriv&&) = default;
+
 private:
     explicit GrRecordingContextPriv(GrRecordingContext* context) : fContext(context) {}
     GrRecordingContextPriv(const GrRecordingContextPriv&) = delete;

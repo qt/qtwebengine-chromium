@@ -61,9 +61,9 @@ const base::Value* FindDictionaryWithValue(const base::Value& list,
   return nullptr;
 }
 
-const char kUMAVerifiedContentsInitResult[] =
+constexpr char kUMAVerifiedContentsInitResult[] =
     "Extensions.ContentVerification.VerifiedContentsInitResult";
-const char kUMAVerifiedContentsInitTime[] =
+constexpr char kUMAVerifiedContentsInitTime[] =
     "Extensions.ContentVerification.VerifiedContentsInitTime";
 
 }  // namespace

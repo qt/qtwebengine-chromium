@@ -443,6 +443,14 @@ public:
     explicit CIter(const GrPaint&);
     explicit CIter(const GrPipeline&);
 
+// #if !defined(__GNUC__) || defined(__clang__) || __GNUC__ > 6
+//     // Hopefully this does not actually get called because of RVO.
+//     CIter(const CIter&) = default;
+//
+//     // Because each iterator carries a stack we want to avoid copies.
+//     CIter& operator=(const CIter&) = delete;
+// #endif
+
     const GrFragmentProcessor& operator*() const  { return *fFPStack.back(); }
     const GrFragmentProcessor* operator->() const { return fFPStack.back(); }
 

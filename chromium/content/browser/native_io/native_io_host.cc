@@ -338,9 +338,9 @@ void NativeIOHost::DidOpenFile(
     return;
   }
 
-  open_file_hosts_.insert(
-      {name, std::make_unique<NativeIOFileHost>(std::move(file_host_receiver),
-                                                this, name)});
+  open_file_hosts_.emplace(
+      name, std::make_unique<NativeIOFileHost>(std::move(file_host_receiver),
+                                                this, name));
 
   std::move(callback).Run(std::move(file));
   return;

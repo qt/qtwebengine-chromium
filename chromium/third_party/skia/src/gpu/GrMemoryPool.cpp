@@ -15,6 +15,9 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+constexpr size_t GrMemoryPool::kAlignment;
+constexpr size_t GrMemoryPool::kMinAllocationSize;
+
 std::unique_ptr<GrMemoryPool> GrMemoryPool::Make(size_t preallocSize, size_t minAllocSize) {
     static_assert(sizeof(GrMemoryPool) < GrMemoryPool::kMinAllocationSize);
 

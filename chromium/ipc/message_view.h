@@ -12,7 +12,11 @@
 #include "base/macros.h"
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+#if !defined(__GNUC__) || defined(__clang__) || __GNUC__ > 6
 #include "mojo/public/interfaces/bindings/native_struct.mojom-forward.h"
+#else
+#include "mojo/public/interfaces/bindings/native_struct.mojom.h"
+#endif
 
 namespace IPC {
 

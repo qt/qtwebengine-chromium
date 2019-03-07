@@ -716,7 +716,9 @@ public:
     const SkSL::ByteCode* byteCode() const {
         SkAutoMutexExclusive ama(fByteCodeMutex);
         if (!fByteCode) {
-            auto [byteCode, errorText] = fEffect->toByteCode();
+            auto t = fEffect->toByteCode();
+            auto &byteCode = std::get<0>(t);
+            auto errorText = std::get<1>(t);
             if (!byteCode) {
                 SkDebugf("%s\n", errorText.c_str());
                 return nullptr;

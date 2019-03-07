@@ -91,7 +91,9 @@ void TrustTokenKeyCommitments::Set(
                           std::move(kv.second));
   }
 
-  commitments_.replace(std::move(filtered));
+//   commitments_.replace(std::move(filtered));
+  for (auto& t: filtered)
+    commitments_.emplace(t.first, std::move(t.second));
 }
 
 void TrustTokenKeyCommitments::ParseAndSet(base::StringPiece raw_commitments) {

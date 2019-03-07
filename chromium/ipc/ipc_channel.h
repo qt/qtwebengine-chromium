@@ -27,6 +27,7 @@
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
 #include "mojo/public/cpp/bindings/thread_safe_interface_ptr.h"
+#include "mojo/public/interfaces/bindings/native_struct.mojom.h"
 
 #if defined(OS_POSIX)
 #include <sys/types.h>

@@ -53,7 +53,9 @@ void SkDraw::paintMasks(SkDrawableGlyphBuffer* drawables, const SkPaint& paint) 
     bool useRegion = fRC->isBW() && !fRC->isRect();
 
     if (useRegion) {
-        for (auto [variant, pos] : drawables->drawable()) {
+        for (auto t : drawables->drawable()) {
+            const SkGlyphVariant& variant = std::get<0>(t);
+            const SkPoint& pos = std::get<1>(t);
             SkGlyph* glyph = variant.glyph();
             if (check_glyph_position(pos)) {
                 SkMask mask = glyph->mask(pos);
@@ -80,7 +82,9 @@ void SkDraw::paintMasks(SkDrawableGlyphBuffer* drawables, const SkPaint& paint) 
     } else {
         SkIRect clipBounds = fRC->isBW() ? fRC->bwRgn().getBounds()
                                          : fRC->aaRgn().getBounds();
-        for (auto [variant, pos] : drawables->drawable()) {
+        for (auto t : drawables->drawable()) {
+            const SkGlyphVariant& variant = std::get<0>(t);
+            const SkPoint& pos = std::get<1>(t);
             SkGlyph* glyph = variant.glyph();
             if (check_glyph_position(pos)) {
                 SkMask mask = glyph->mask(pos);
@@ -114,7 +118,9 @@ void SkDraw::paintPaths(SkDrawableGlyphBuffer* drawables,
                         SkScalar scale,
                         SkPoint origin,
                         const SkPaint& paint) const {
-    for (auto [variant, pos] : drawables->drawable()) {
+    for (auto t : drawables->drawable()) {
+        const SkGlyphVariant& variant = std::get<0>(t);
+        const SkPoint& pos = std::get<1>(t);
         const SkPath* path = variant.path();
         SkMatrix m;
         SkPoint translate = origin + pos;

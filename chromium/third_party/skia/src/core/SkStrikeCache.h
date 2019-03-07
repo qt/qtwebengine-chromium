@@ -54,15 +54,15 @@ public:
                 , fPinner{std::move(pinner)} {}
 
         SkGlyph* mergeGlyphAndImage(SkPackedGlyphID toID, const SkGlyph& from) {
-            auto [glyph, increase] = fScalerCache.mergeGlyphAndImage(toID, from);
-            this->updateDelta(increase);
-            return glyph;
+            auto t = fScalerCache.mergeGlyphAndImage(toID, from);
+            this->updateDelta(std::get<1>(t));
+            return std::get<0>(t);
         }
 
         const SkPath* mergePath(SkGlyph* glyph, const SkPath* path) {
-            auto [glyphPath, increase] = fScalerCache.mergePath(glyph, path);
-            this->updateDelta(increase);
-            return glyphPath;
+            auto t = fScalerCache.mergePath(glyph, path);
+            this->updateDelta(std::get<1>(t));
+            return std::get<0>(t);
         }
 
         SkScalerContext* getScalerContext() const {
@@ -80,23 +80,23 @@ public:
 
         SkSpan<const SkGlyph*> metrics(SkSpan<const SkGlyphID> glyphIDs,
                                        const SkGlyph* results[]) {
-            auto [glyphs, increase] = fScalerCache.metrics(glyphIDs, results);
-            this->updateDelta(increase);
-            return glyphs;
+            auto t = fScalerCache.metrics(glyphIDs, results);
+            this->updateDelta(std::get<1>(t));
+            return std::get<0>(t);
         }
 
         SkSpan<const SkGlyph*> preparePaths(SkSpan<const SkGlyphID> glyphIDs,
                                             const SkGlyph* results[]) {
-            auto [glyphs, increase] = fScalerCache.preparePaths(glyphIDs, results);
-            this->updateDelta(increase);
-            return glyphs;
+            auto t = fScalerCache.preparePaths(glyphIDs, results);
+            this->updateDelta(std::get<1>(t));
+            return std::get<0>(t);
         }
 
         SkSpan<const SkGlyph*> prepareImages(SkSpan<const SkPackedGlyphID> glyphIDs,
                                              const SkGlyph* results[]) {
-            auto [glyphs, increase] = fScalerCache.prepareImages(glyphIDs, results);
-            this->updateDelta(increase);
-            return glyphs;
+            auto t = fScalerCache.prepareImages(glyphIDs, results);
+            this->updateDelta(std::get<1>(t));
+            return std::get<0>(t);
         }
 
         void prepareForDrawingMasksCPU(SkDrawableGlyphBuffer* drawables) {

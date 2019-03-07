@@ -1244,7 +1244,31 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // bound to a mojo receiver callback using a base::Unretained.  This is
   // necessary to ensure those objects stop receiving mojo messages before their
   // destruction.
-  class IOThreadHostImpl;
+  class IOThreadHostImpl
+      : public mojom::ChildProcessHost {
+   public:
+    IOThreadHostImpl(int render_process_id,
+                     base::WeakPtr<RenderProcessHostImpl> weak_host,
+                     std::unique_ptr<service_manager::BinderRegistry> binders,
+                     mojo::PendingReceiver<mojom::ChildProcessHost>
+                         host_receiver);
+    ~IOThreadHostImpl() override;
+
+   private:
+    // mojom::ChildProcessHost implementation:
+    void BindHostReceiver(mojo::GenericPendingReceiver receiver) override;
+
+    static void BindHostReceiverOnUIThread(
+        base::WeakPtr<RenderProcessHostImpl> weak_host,
+        mojo::GenericPendingReceiver receiver);
+
+    const int render_process_id_;
+    const base::WeakPtr<RenderProcessHostImpl> weak_host_;
+    std::unique_ptr<service_manager::BinderRegistry> binders_;
+    mojo::Receiver<mojom::ChildProcessHost> receiver_{this};
+
+    DISALLOW_COPY_AND_ASSIGN(IOThreadHostImpl);
+  };
   friend class IOThreadHostImpl;
   base::Optional<base::SequenceBound<IOThreadHostImpl>> io_thread_host_impl_;
 

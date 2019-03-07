@@ -38,9 +38,9 @@ namespace {
 
 using SortedFilePathSet = std::set<base::FilePath>;
 
-const char kUMAComputedHashesReadResult[] =
+constexpr char kUMAComputedHashesReadResult[] =
     "Extensions.ContentVerification.ComputedHashesReadResult";
-const char kUMAComputedHashesInitTime[] =
+constexpr char kUMAComputedHashesInitTime[] =
     "Extensions.ContentVerification.ComputedHashesInitTime";
 
 }  // namespace
@@ -231,7 +231,7 @@ base::Optional<ComputedHashes::Data> ComputedHashes::Compute(
       data.Add(relative_path, block_size, std::move(hashes.value()));
   }
 
-  return data;
+  return std::move(data);
 }
 
 bool ComputedHashes::GetHashes(const base::FilePath& relative_path,

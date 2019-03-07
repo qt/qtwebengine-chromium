@@ -44,10 +44,12 @@ bool VulkanImage::InitializeFromGpuMemoryBufferHandle(
 
   VkExternalMemoryImageCreateInfoKHR external_image_create_info = {
       .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
+      .pNext = nullptr,
       .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
   };
   VkImageDrmFormatModifierListCreateInfoEXT modifier_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT,
+      .pNext = nullptr,
       .drmFormatModifierCount = 1,
       .pDrmFormatModifiers = &native_pixmap_handle.modifier,
   };
@@ -56,6 +58,7 @@ bool VulkanImage::InitializeFromGpuMemoryBufferHandle(
 
   VkImportMemoryFdInfoKHR import_memory_fd_info = {
       .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+      .pNext = nullptr,
       .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
       .fd = scoped_fd.get(),
   };

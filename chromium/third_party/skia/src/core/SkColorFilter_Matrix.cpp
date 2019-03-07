@@ -84,7 +84,7 @@ bool SkColorFilter_Matrix::onAppendStages(const SkStageRec& rec, bool shaderIsOp
 skvm::Color SkColorFilter_Matrix::onProgram(skvm::Builder* p, skvm::Color c,
                                             SkColorSpace* /*dstCS*/,
                                             skvm::Uniforms* uniforms, SkArenaAlloc*) const {
-    auto apply_matrix = [&](auto xyzw) {
+    auto apply_matrix_hsla = [&](auto xyzw) {
         auto dot = [&](int j) {
             auto custom_mad = [&](float f, skvm::F32 m, skvm::F32 a) {
                 // skvm::Builder won't fold f*0 == 0, but we shouldn't encounter NaN here.
@@ -100,23 +100,45 @@ skvm::Color SkColorFilter_Matrix::onProgram(skvm::Builder* p, skvm::Color c,
             skvm::F32 bias = b == 0.0f ? p->splat(0.0f)
                                        : p->uniformF(uniforms->pushF(b));
 
-            auto [x,y,z,w] = xyzw;
-            return custom_mad(fMatrix[0+j*5], x,
-                   custom_mad(fMatrix[1+j*5], y,
-                   custom_mad(fMatrix[2+j*5], z,
-                   custom_mad(fMatrix[3+j*5], w, bias))));
+            return custom_mad(fMatrix[0+j*5], xyzw.h,
+                   custom_mad(fMatrix[1+j*5], xyzw.s,
+                   custom_mad(fMatrix[2+j*5], xyzw.l,
+                   custom_mad(fMatrix[3+j*5], xyzw.a, bias))));
         };
-        return std::make_tuple(dot(0), dot(1), dot(2), dot(3));
+        return skvm::HSLA{dot(0), dot(1), dot(2), dot(3)};
+    };
+    auto apply_matrix_rgba = [&](auto xyzw) {
+        auto dot = [&](int j) {
+            auto custom_mad = [&](float f, skvm::F32 m, skvm::F32 a) {
+                // skvm::Builder won't fold f*0 == 0, but we shouldn't encounter NaN here.
+                // While looking, also simplify f == ±1.  Anything else becomes a uniform.
+                return f ==  0.0f ? a
+                     : f == +1.0f ? a + m
+                     : f == -1.0f ? a - m
+                     : m * p->uniformF(uniforms->pushF(f)) + a;
+            };
+
+            // Similarly, let skvm::Builder fold away the additive bias when zero.
+            const float b = fMatrix[4+j*5];
+            skvm::F32 bias = b == 0.0f ? p->splat(0.0f)
+                                       : p->uniformF(uniforms->pushF(b));
+
+            return custom_mad(fMatrix[0+j*5], xyzw.r,
+                   custom_mad(fMatrix[1+j*5], xyzw.g,
+                   custom_mad(fMatrix[2+j*5], xyzw.b,
+                   custom_mad(fMatrix[3+j*5], xyzw.a, bias))));
+        };
+        return skvm::Color{dot(0), dot(1), dot(2), dot(3)};
     };
 
     c = unpremul(c);
 
     if (fDomain == Domain::kHSLA) {
-        auto [h,s,l,a] = apply_matrix(p->to_hsla(c));
-        c = p->to_rgba({h,s,l,a});
+        auto t = apply_matrix_hsla(p->to_hsla(c));
+        c = p->to_rgba(t);
     } else {
-        auto [r,g,b,a] = apply_matrix(c);
-        c = {r,g,b,a};
+        auto t = apply_matrix_rgba(c);
+        c = t;
     }
 
     return premul(clamp01(c));

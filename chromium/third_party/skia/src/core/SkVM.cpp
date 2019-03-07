@@ -222,22 +222,22 @@ namespace skvm {
 
         o->writeText("digraph {\n");
         for (Val id = 0; id < (Val)optimized.size(); id++) {
-            auto [op, x,y,z, immy,immz, death,can_hoist] = optimized[id];
+            const OptimizedInstruction& i = optimized[id];
 
-            switch (op) {
+            switch (i.op) {
                 default:
-                    write(o, "\t", V{id}, " [label = \"", V{id}, op);
+                    write(o, "\t", V{id}, " [label = \"", V{id}, i.op);
                     // Not a perfect heuristic; sometimes y/z == NA and there is no immy/z.
                     // On the other hand, sometimes immy/z=0 is meaningful and should be printed.
-                    if (y == NA) { write(o, "", Hex{immy}); }
-                    if (z == NA) { write(o, "", Hex{immz}); }
+                    if (i.y == NA) { write(o, "", Hex{i.immy}); }
+                    if (i.z == NA) { write(o, "", Hex{i.immz}); }
                     write(o, "\"]\n");
 
                     write(o, "\t", V{id}, " -> {");
                     // In contrast to the heuristic imm labels, these dependences are exact.
-                    if (x != NA) { write(o, "", V{x}); }
-                    if (y != NA) { write(o, "", V{y}); }
-                    if (z != NA) { write(o, "", V{z}); }
+                    if (i.x != NA) { write(o, "", V{i.x}); }
+                    if (i.y != NA) { write(o, "", V{i.y}); }
+                    if (i.z != NA) { write(o, "", V{i.z}); }
                     write(o, " }\n");
 
                     break;
@@ -246,7 +246,7 @@ namespace skvm {
                 // but some are nicer to see with a specialized label.
 
                 case Op::splat:
-                    write(o, "\t", V{id}, " [label = \"", V{id}, op, Splat{immy}, "\"]\n");
+                    write(o, "\t", V{id}, " [label = \"", V{id}, i.op, Splat{i.immy}, "\"]\n");
                     break;
             }
         }
@@ -1523,7 +1523,10 @@ namespace skvm {
     Color Builder::to_rgba(HSLA c) {
         // See GrRGBToHSLFilterEffect.fp
 
-        auto [h,s,l,a] = c;
+        auto h = c.h;
+        auto s = c.s;
+        auto l = c.l;
+        auto a = c.a;
         F32 x = s * (1.0f - abs(l + l - 1.0f));
 
         auto hue_to_rgb = [&,l=l](auto hue) {

@@ -18,6 +18,10 @@
 #include "src/gpu/glsl/GrGLSLVarying.h"
 #include "src/gpu/glsl/GrGLSLVertexGeoBuilder.h"
 
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 7
+constexpr int GrBitmapTextGeoProc::kMaxTextures;
+#endif
+
 class GrGLBitmapTextGeoProc : public GrGLSLGeometryProcessor {
 public:
     GrGLBitmapTextGeoProc()

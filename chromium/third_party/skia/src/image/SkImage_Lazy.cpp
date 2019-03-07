@@ -542,7 +542,8 @@ GrSurfaceProxyView SkImage_Lazy::lockTextureProxyView(GrRecordingContext* rConte
     // 4. Ask the generator to return a bitmap, which the GPU can convert.
     auto hint = texGenPolicy == GrImageTexGenPolicy::kDraw ? CachingHint::kAllow_CachingHint
                                                            : CachingHint::kDisallow_CachingHint;
-    if (SkBitmap bitmap; this->getROPixels(nullptr, &bitmap, hint)) {
+    SkBitmap bitmap;
+    if (this->getROPixels(nullptr, &bitmap, hint)) {
         // We always pass uncached here because we will cache it external to the maker based on
         // *our* cache policy. We're just using the maker to generate the texture.
         auto makerPolicy = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
