@@ -1037,7 +1037,37 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // IOThreadHostImpl owns some IO-thread state associated with this
   // RenderProcessHostImpl. This is mainly to allow various IPCs from the
   // renderer to be handled on the IO thread without a hop to the UI thread.
-  class IOThreadHostImpl;
+  class IOThreadHostImpl
+      : public mojom::ChildProcessHostBootstrap,
+        public mojom::ChildProcessHost {
+   public:
+    IOThreadHostImpl(int render_process_id,
+                     base::WeakPtr<RenderProcessHostImpl> weak_host,
+                     std::unique_ptr<service_manager::BinderRegistry> binders,
+                     mojo::PendingReceiver<mojom::ChildProcessHostBootstrap>
+                         bootstrap_receiver);
+    ~IOThreadHostImpl() override;
+
+   private:
+    // mojom::ChildProcessHostBootstrap implementation:
+    void BindProcessHost(
+        mojo::PendingReceiver<mojom::ChildProcessHost> receiver) override;
+
+    // mojom::ChildProcessHost implementation:
+    void BindHostReceiver(mojo::GenericPendingReceiver receiver) override;
+
+    static void BindHostReceiverOnUIThread(
+        base::WeakPtr<RenderProcessHostImpl> weak_host,
+        mojo::GenericPendingReceiver receiver);
+
+    const int render_process_id_;
+    const base::WeakPtr<RenderProcessHostImpl> weak_host_;
+    std::unique_ptr<service_manager::BinderRegistry> binders_;
+    mojo::Receiver<mojom::ChildProcessHostBootstrap> bootstrap_receiver_;
+    mojo::Receiver<mojom::ChildProcessHost> receiver_{this};
+
+    DISALLOW_COPY_AND_ASSIGN(IOThreadHostImpl);
+  };
   friend class IOThreadHostImpl;
   base::Optional<base::SequenceBound<IOThreadHostImpl>> io_thread_host_impl_;
 

@@ -379,7 +379,7 @@ base::Optional<RequestAction> RulesetMatcher::GetBlockOrCollapseAction(
                              : RequestAction(RequestAction::Type::BLOCK);
 
   action.extension_id = extension_id_;
-  return action;
+  return std::move(action);
 }
 
 base::Optional<RequestAction> RulesetMatcher::GetRedirectAction(
@@ -395,7 +395,7 @@ base::Optional<RequestAction> RulesetMatcher::GetRedirectAction(
   redirect_action.extension_id = extension_id_;
   redirect_action.redirect_url = std::move(redirect_rule_url);
 
-  return redirect_action;
+  return std::move(redirect_action);
 }
 
 base::Optional<RequestAction> RulesetMatcher::GetUpgradeAction(
@@ -409,7 +409,7 @@ base::Optional<RequestAction> RulesetMatcher::GetUpgradeAction(
   upgrade_action.extension_id = extension_id_;
   upgrade_action.redirect_url = GetUpgradedUrl(*params.url);
 
-  return upgrade_action;
+  return std::move(upgrade_action);
 }
 
 base::Optional<RequestAction>
@@ -438,7 +438,7 @@ RulesetMatcher::GetRedirectOrUpgradeActionByPriority(
   action.extension_id = extension_id_;
   action.redirect_url = std::move(highest_priority_url);
 
-  return action;
+  return std::move(action);
 }
 
 uint8_t RulesetMatcher::GetRemoveHeadersMask(const RequestParams& params,

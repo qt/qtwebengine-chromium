@@ -11,7 +11,7 @@
 namespace blink {
 
 const unsigned NGBaselineRequest::kTypeIdCount;
-const LayoutUnit NGBaselineList::kEmptyOffset;
+constexpr LayoutUnit NGBaselineList::kEmptyOffset;
 
 bool NGBaselineRequest::operator==(const NGBaselineRequest& other) const {
   return algorithm_type_ == other.algorithm_type_ &&

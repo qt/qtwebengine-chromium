@@ -1193,11 +1193,7 @@ GetBindHostReceiverInterceptor() {
 // |mojom::ChildProcessHost| interface. This exists to allow the process host
 // to bind incoming receivers on the IO-thread without a main-thread hop if
 // necessary. Also owns the RPHI's |mojom::ChildProcess| remote.
-class RenderProcessHostImpl::IOThreadHostImpl
-    : public mojom::ChildProcessHostBootstrap,
-      public mojom::ChildProcessHost {
- public:
-  IOThreadHostImpl(int render_process_id,
+RenderProcessHostImpl::IOThreadHostImpl::IOThreadHostImpl(int render_process_id,
                    base::WeakPtr<RenderProcessHostImpl> weak_host,
                    std::unique_ptr<service_manager::BinderRegistry> binders,
                    mojo::PendingReceiver<mojom::ChildProcessHostBootstrap>
@@ -1206,84 +1202,74 @@ class RenderProcessHostImpl::IOThreadHostImpl
         weak_host_(std::move(weak_host)),
         binders_(std::move(binders)),
         bootstrap_receiver_(this, std::move(bootstrap_receiver)) {}
-  ~IOThreadHostImpl() override = default;
 
- private:
-  // mojom::ChildProcessHostBootstrap implementation:
-  void BindProcessHost(
-      mojo::PendingReceiver<mojom::ChildProcessHost> receiver) override {
-    receiver_.Bind(std::move(receiver));
+RenderProcessHostImpl::IOThreadHostImpl::~IOThreadHostImpl() = default;
+
+void RenderProcessHostImpl::IOThreadHostImpl::BindProcessHost(
+    mojo::PendingReceiver<mojom::ChildProcessHost> receiver) {
+  receiver_.Bind(std::move(receiver));
+}
+
+void RenderProcessHostImpl::IOThreadHostImpl::BindHostReceiver(mojo::GenericPendingReceiver receiver) {
+  const auto& interceptor = GetBindHostReceiverInterceptor();
+  if (interceptor) {
+    interceptor.Run(render_process_id_, &receiver);
+    if (!receiver)
+      return;
   }
 
-  // mojom::ChildProcessHost implementation:
-  void BindHostReceiver(mojo::GenericPendingReceiver receiver) override {
-    const auto& interceptor = GetBindHostReceiverInterceptor();
-    if (interceptor) {
-      interceptor.Run(render_process_id_, &receiver);
-      if (!receiver)
-        return;
-    }
-
 #if defined(OS_LINUX)
-    if (auto font_receiver = receiver.As<font_service::mojom::FontService>()) {
-      ConnectToFontService(std::move(font_receiver));
-      return;
-    }
+  if (auto font_receiver = receiver.As<font_service::mojom::FontService>()) {
+    ConnectToFontService(std::move(font_receiver));
+    return;
+   }
 #endif
 
 #if defined(OS_WIN)
-    if (auto r = receiver.As<mojom::FontCacheWin>()) {
-      FontCacheDispatcher::Create(std::move(r));
-      return;
-    }
+  if (auto r = receiver.As<mojom::FontCacheWin>()) {
+    FontCacheDispatcher::Create(std::move(r));
+    return;
+  }
 #endif
 
 #if defined(OS_MACOSX)
-    if (auto r = receiver.As<mojom::SandboxSupportMac>()) {
-      static base::NoDestructor<SandboxSupportMacImpl> sandbox_support;
-      sandbox_support->BindReceiver(std::move(r));
-      return;
-    }
+  if (auto r = receiver.As<mojom::SandboxSupportMac>()) {
+    static base::NoDestructor<SandboxSupportMacImpl> sandbox_support;
+    sandbox_support->BindReceiver(std::move(r));
+    return;
+  }
 #endif
 
-    if (auto r = receiver.As<
-                 discardable_memory::mojom::DiscardableSharedMemoryManager>()) {
-      discardable_memory::DiscardableSharedMemoryManager::Get()->Bind(
-          std::move(r));
-      return;
-    }
-
-    std::string interface_name = *receiver.interface_name();
-    mojo::ScopedMessagePipeHandle pipe = receiver.PassPipe();
-    if (binders_->TryBindInterface(interface_name, &pipe))
-      return;
-
-    receiver = mojo::GenericPendingReceiver(interface_name, std::move(pipe));
-    GetContentClient()->browser()->BindHostReceiverForRendererOnIOThread(
-        render_process_id_, &receiver);
-    if (!receiver)
-      return;
-
-    base::PostTask(FROM_HERE, {BrowserThread::UI},
-                   base::BindOnce(&IOThreadHostImpl::BindHostReceiverOnUIThread,
-                                  weak_host_, std::move(receiver)));
+  if (auto r = receiver.As<
+               discardable_memory::mojom::DiscardableSharedMemoryManager>()) {
+    discardable_memory::DiscardableSharedMemoryManager::Get()->Bind(
+        std::move(r));
+    return;
   }
 
-  static void BindHostReceiverOnUIThread(
-      base::WeakPtr<RenderProcessHostImpl> weak_host,
-      mojo::GenericPendingReceiver receiver) {
-    if (weak_host)
-      weak_host->OnBindHostReceiver(std::move(receiver));
-  }
+  std::string interface_name = *receiver.interface_name();
+  mojo::ScopedMessagePipeHandle pipe = receiver.PassPipe();
+  if (binders_->TryBindInterface(interface_name, &pipe))
+    return;
 
-  const int render_process_id_;
-  const base::WeakPtr<RenderProcessHostImpl> weak_host_;
-  std::unique_ptr<service_manager::BinderRegistry> binders_;
-  mojo::Receiver<mojom::ChildProcessHostBootstrap> bootstrap_receiver_;
-  mojo::Receiver<mojom::ChildProcessHost> receiver_{this};
+  receiver = mojo::GenericPendingReceiver(interface_name, std::move(pipe));
+  GetContentClient()->browser()->BindHostReceiverForRendererOnIOThread(
+      render_process_id_, &receiver);
+  if (!receiver)
+    return;
 
-  DISALLOW_COPY_AND_ASSIGN(IOThreadHostImpl);
-};
+  base::PostTask(FROM_HERE, {BrowserThread::UI},
+                 base::BindOnce(&IOThreadHostImpl::BindHostReceiverOnUIThread,
+                                weak_host_, std::move(receiver)));
+}
+
+// static
+void RenderProcessHostImpl::IOThreadHostImpl::BindHostReceiverOnUIThread(
+    base::WeakPtr<RenderProcessHostImpl> weak_host,
+    mojo::GenericPendingReceiver receiver) {
+  if (weak_host)
+    weak_host->OnBindHostReceiver(std::move(receiver));
+}
 
 scoped_refptr<base::SingleThreadTaskRunner>
 RenderProcessHostImpl::GetInProcessRendererThreadTaskRunnerForTesting() {

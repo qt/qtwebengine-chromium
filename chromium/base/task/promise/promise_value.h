@@ -226,7 +226,7 @@ struct BASE_EXPORT PromiseValueInternal {
 
 // static
 template <typename T>
-const PromiseValueInternal::TypeOps
+constexpr PromiseValueInternal::TypeOps
     PromiseValueInternal::TypeOpsHelper<T>::type_ops;
 
 template <typename T>

@@ -34,9 +34,9 @@ const int kVersion = 2;
 
 namespace {
 
-const char kUMAComputedHashesReadResult[] =
+constexpr char kUMAComputedHashesReadResult[] =
     "Extensions.ContentVerification.ComputedHashesReadResult";
-const char kUMAComputedHashesInitTime[] =
+constexpr char kUMAComputedHashesInitTime[] =
     "Extensions.ContentVerification.ComputedHashesInitTime";
 
 }  // namespace
