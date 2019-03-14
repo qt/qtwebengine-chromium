@@ -1317,6 +1317,8 @@ BytecodeArrayBuilder& BytecodeArrayBuilder::MarkHandler(
 
 BytecodeArrayBuilder& BytecodeArrayBuilder::MarkTryBegin(int handler_id,
                                                          Register context) {
+  // TODO(leszeks): Do we need to start a new basic block here? Could we simply
+  // get the current bytecode offset from the array writer instead?
   BytecodeLabel try_begin;
   Bind(&try_begin);
   handler_table_builder()->SetTryRegionStart(handler_id, try_begin.offset());

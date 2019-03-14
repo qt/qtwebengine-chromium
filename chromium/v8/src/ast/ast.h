@@ -177,7 +177,6 @@ class AstNode: public ZoneObject {
 class Statement : public AstNode {
  public:
   bool IsEmpty() { return AsEmptyStatement() != nullptr; }
-  bool IsJump() const;
 
  protected:
   Statement(int position, NodeType type) : AstNode(position, type) {}
@@ -285,11 +284,6 @@ class Block : public BreakableStatement {
   }
 
   inline ZonePtrList<const AstRawString>* labels() const;
-
-  bool IsJump() const {
-    return !statements_.is_empty() && statements_.last()->IsJump() &&
-           labels() == nullptr;  // Good enough as an approximation...
-  }
 
   Scope* scope() const { return scope_; }
   void set_scope(Scope* scope) { scope_ = scope; }
@@ -653,7 +647,6 @@ class ExpressionStatement final : public Statement {
  public:
   void set_expression(Expression* e) { expression_ = e; }
   Expression* expression() const { return expression_; }
-  bool IsJump() const { return expression_->IsThrow(); }
 
  private:
   friend class AstNodeFactory;
@@ -666,9 +659,6 @@ class ExpressionStatement final : public Statement {
 
 
 class JumpStatement : public Statement {
- public:
-  bool IsJump() const { return true; }
-
  protected:
   JumpStatement(int pos, NodeType type) : Statement(pos, type) {}
 };
@@ -812,11 +802,6 @@ class IfStatement final : public Statement {
 
   void set_then_statement(Statement* s) { then_statement_ = s; }
   void set_else_statement(Statement* s) { else_statement_ = s; }
-
-  bool IsJump() const {
-    return HasThenStatement() && then_statement()->IsJump()
-        && HasElseStatement() && else_statement()->IsJump();
-  }
 
  private:
   friend class AstNodeFactory;
@@ -2697,7 +2682,6 @@ class AstVisitor BASE_EMBEDDED {
     for (int i = 0; i < statements->length(); i++) {
       Statement* stmt = statements->at(i);
       Visit(stmt);
-      if (stmt->IsJump()) break;
     }
   }
 
