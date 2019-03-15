@@ -629,12 +629,12 @@ void RendererBlinkPlatformImpl::SandboxSupport::GetWebFontRenderStyleForStrike(
 
 //------------------------------------------------------------------------------
 
-Platform::FileHandle RendererBlinkPlatformImpl::DatabaseOpenFile(
+base::File RendererBlinkPlatformImpl::DatabaseOpenFile(
     const WebString& vfs_file_name,
     int desired_flags) {
   base::File file;
   GetWebDatabaseHost().OpenFile(vfs_file_name.Utf16(), desired_flags, &file);
-  return file.TakePlatformFile();
+  return file;
 }
 
 int RendererBlinkPlatformImpl::DatabaseDeleteFile(

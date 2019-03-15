@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "base/compiler_specific.h"
+#include "base/files/file.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/timer/timer.h"
@@ -57,9 +58,8 @@ class CONTENT_EXPORT BlinkPlatformImpl : public blink::Platform {
 
   // Platform methods (partial implementation):
   blink::WebThemeEngine* ThemeEngine() override;
-  blink::Platform::FileHandle DatabaseOpenFile(
-      const blink::WebString& vfs_file_name,
-      int desired_flags) override;
+  base::File DatabaseOpenFile(const blink::WebString& vfs_file_name,
+                              int desired_flags) override;
   int DatabaseDeleteFile(const blink::WebString& vfs_file_name,
                          bool sync_dir) override;
   long DatabaseGetFileAttributes(
