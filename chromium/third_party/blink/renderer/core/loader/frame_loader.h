@@ -43,6 +43,7 @@
 #include "third_party/blink/public/web/web_navigation_type.h"
 #include "third_party/blink/public/web/web_triggering_event_info.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/dom/icon_url.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
@@ -242,6 +243,10 @@ class CORE_EXPORT FrameLoader final {
 
   void ClientDroppedNavigation();
 
+  ContentSecurityPolicy* GetLastOriginDocumentCSP() {
+    return last_origin_document_csp_.Get();
+  }
+
  private:
   bool PrepareRequestForThisFrame(FrameLoadRequest&);
   WebFrameLoadType DetermineFrameLoadType(const FrameLoadRequest&);
@@ -321,6 +326,8 @@ class CORE_EXPORT FrameLoader final {
   bool dispatching_did_clear_window_object_in_main_world_;
   bool protect_provisional_loader_;
   bool detached_;
+
+  Member<ContentSecurityPolicy> last_origin_document_csp_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameLoader);
 };

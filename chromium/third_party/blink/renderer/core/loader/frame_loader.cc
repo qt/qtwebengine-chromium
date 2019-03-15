@@ -206,6 +206,7 @@ void FrameLoader::Trace(blink::Visitor* visitor) {
   visitor->Trace(progress_tracker_);
   visitor->Trace(document_loader_);
   visitor->Trace(provisional_document_loader_);
+  visitor->Trace(last_origin_document_csp_);
 }
 
 void FrameLoader::Init() {
@@ -1431,6 +1432,14 @@ void FrameLoader::StartLoad(
         origin_document->GetContentSecurityPolicy()
             ->ExposeForNavigationalChecks();
     resource_request.SetInitiatorCSP(initiator_csp);
+  }
+
+  if (origin_document && origin_document->GetContentSecurityPolicy()) {
+    last_origin_document_csp_ = ContentSecurityPolicy::Create();
+    last_origin_document_csp_->CopyStateFrom(
+        origin_document->GetContentSecurityPolicy());
+    last_origin_document_csp_->CopyPluginTypesFrom(
+        origin_document->GetContentSecurityPolicy());
   }
 
   // Record the latest requiredCSP value that will be used when sending this
