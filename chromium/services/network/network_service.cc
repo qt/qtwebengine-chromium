@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -261,6 +262,9 @@ void NetworkService::Initialize(mojom::NetworkServiceParamsPtr params) {
                         CRYPTO_needs_hwcap2_workaround());
 #endif
 
+  if (!params->environment.empty())
+    SetEnvironment(std::move(params->environment));
+
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   // Set-up the global port overrides.
@@ -323,7 +327,9 @@ NetworkService::~NetworkService() {
     file_net_log_observer_->StopObserving(nullptr /*polled_data*/,
                                           base::OnceClosure());
   }
-  trace_net_log_observer_.StopWatchForTraceStart();
+
+  if (initialized_)
+    trace_net_log_observer_.StopWatchForTraceStart();
 }
 
 void NetworkService::set_os_crypt_is_configured() {
@@ -644,6 +650,13 @@ void NetworkService::OnApplicationStateChange(
 }
 #endif
 
+void NetworkService::SetEnvironment(
+    std::vector<mojom::EnvironmentVariablePtr> environment) {
+  std::unique_ptr<base::Environment> env(base::Environment::Create());
+  for (const auto& variable : environment)
+    env->SetVar(variable->name, variable->value);
+}
+
 net::HttpAuthHandlerFactory* NetworkService::GetHttpAuthHandlerFactory() {
   if (!http_auth_handler_factory_) {
     http_auth_handler_factory_ = net::HttpAuthHandlerFactory::CreateDefault(
@@ -692,8 +705,10 @@ void NetworkService::DestroyNetworkContexts() {
   // The SetDnsConfigOverrides() call will will fail any in-progress DNS
   // lookups, but only if there are current config overrides (which there will
   // be if DNS over HTTPS is currently enabled).
-  host_resolver_->SetDnsConfigOverrides(net::DnsConfigOverrides());
-  host_resolver_->SetRequestContext(nullptr);
+  if (host_resolver_) {
+    host_resolver_->SetDnsConfigOverrides(net::DnsConfigOverrides());
+    host_resolver_->SetRequestContext(nullptr);
+  }
 
   DCHECK_LE(owned_network_contexts_.size(), 1u);
   owned_network_contexts_.clear();

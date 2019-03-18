@@ -1171,9 +1171,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allows the embedder to register per-scheme URLLoaderFactory implementations
   // to handle subresource URL requests for schemes not handled by the Network
   // Service. This function can also be used to make a factory for other
-  // non-subresource requests, such as for the service worker script when
-  // starting a service worker. In that case, the frame id will be
-  // MSG_ROUTING_NONE.
+  // non-subresource requests, such as:
+  //   -downloads
+  //   -service worker script when starting a service worker. In that case, the
+  //    frame id will be MSG_ROUTING_NONE
   virtual void RegisterNonNetworkSubresourceURLLoaderFactories(
       int render_process_id,
       int render_frame_id,
@@ -1217,6 +1218,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       RenderFrameHost* frame,
       int render_process_id,
       bool is_navigation,
+      bool is_download,
       const url::Origin& request_initiator,
       network::mojom::URLLoaderFactoryRequest* factory_request,
       network::mojom::TrustedURLLoaderHeaderClientPtrInfo* header_client,
@@ -1265,6 +1267,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   //
   // If |relative_partition_path| is the empty string, it means this needs to
   // create the default NetworkContext for the BrowserContext.
+  //
+  // For NetworkContexts returned from the Network Service, some requirements:
+  //   -enable data URL support (or else data URLs will fail)
+  //   -disable file URL support (for security)
   virtual network::mojom::NetworkContextPtr CreateNetworkContext(
       BrowserContext* context,
       bool in_memory,
