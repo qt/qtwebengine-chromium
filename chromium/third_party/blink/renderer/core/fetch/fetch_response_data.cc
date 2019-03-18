@@ -15,7 +15,6 @@
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 
 using Type = network::mojom::FetchResponseType;
-using ResponseSource = network::mojom::FetchResponseSource;
 
 namespace blink {
 
@@ -47,7 +46,7 @@ FetchResponseData* FetchResponseData::Create() {
   // message is the empty byte sequence, header list is an empty header list,
   // and body is null."
   return MakeGarbageCollected<FetchResponseData>(
-      Type::kDefault, ResponseSource::kUnspecified, 200, g_empty_atom);
+      Type::kDefault, network::mojom::FetchResponseSource::kUnspecified, 200, g_empty_atom);
 }
 
 FetchResponseData* FetchResponseData::CreateNetworkErrorResponse() {
@@ -55,7 +54,7 @@ FetchResponseData* FetchResponseData::CreateNetworkErrorResponse() {
   // is always the empty byte sequence, header list is aways an empty list,
   // and body is always null."
   return MakeGarbageCollected<FetchResponseData>(
-      Type::kError, ResponseSource::kUnspecified, 0, g_empty_atom);
+      Type::kError, network::mojom::FetchResponseSource::kUnspecified, 0, g_empty_atom);
 }
 
 FetchResponseData* FetchResponseData::CreateWithBuffer(

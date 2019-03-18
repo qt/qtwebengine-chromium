@@ -26,8 +26,8 @@ struct WebMediaCapabilitiesKeySystemConfiguration {
 
   // Robustness properties are optional and will contain the empty string if not
   // set. These values are not verified.
-  WebString audio_robustness = "";
-  WebString video_robustness = "";
+  WebString audio_robustness = WebString::FromASCII("");
+  WebString video_robustness = WebString::FromASCII("");
 
   // These two properties are optional and will be set to
   // WebMediaKeySystemConfiguration::Requirement::kOptional if invalid or not
