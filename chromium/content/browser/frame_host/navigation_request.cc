@@ -68,6 +68,7 @@
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
 #include "third_party/blink/public/platform/resource_request_blocked_reason.h"
+#include "third_party/blink/public/platform/web_feature.mojom.h"
 #include "third_party/blink/public/platform/web_mixed_content_context_type.h"
 #include "url/url_constants.h"
 
@@ -895,8 +896,21 @@ void NavigationRequest::OnResponseStarted(
     std::unique_ptr<NavigationData> navigation_data,
     const GlobalRequestID& request_id,
     bool is_download,
+    NavigationDownloadPolicy download_policy,
     bool is_stream,
     base::Optional<SubresourceLoaderParams> subresource_loader_params) {
+  is_download_ = is_download && IsNavigationDownloadAllowed(download_policy);
+
+  // Log UseCounters for opener navigations.
+  if (is_download &&
+      download_policy ==
+          NavigationDownloadPolicy::kAllowOpenerCrossOriginNoGesture) {
+    GetContentClient()->browser()->LogWebFeatureForCurrentPage(
+        frame_tree_node_->current_frame_host(),
+        blink::mojom::WebFeature::
+            kOpenerNavigationDownloadCrossOriginNoGesture);
+  }
+
   DCHECK(state_ == STARTED);
   DCHECK(response);
   TRACE_EVENT_ASYNC_STEP_INTO0("navigation", "NavigationRequest", this,
@@ -905,7 +919,7 @@ void NavigationRequest::OnResponseStarted(
 
   // Check if the response should be sent to a renderer.
   response_should_be_rendered_ =
-      !is_download && (!response->head.headers.get() ||
+      !is_download_ && (!response->head.headers.get() ||
                        (response->head.headers->response_code() != 204 &&
                         response->head.headers->response_code() != 205));
 
@@ -1003,7 +1017,6 @@ void NavigationRequest::OnResponseStarted(
   url_loader_client_endpoints_ = std::move(url_loader_client_endpoints);
   ssl_info_ = response->head.ssl_info.has_value() ? *response->head.ssl_info
                                                   : net::SSLInfo();
-  is_download_ = is_download;
 
   subresource_loader_params_ = std::move(subresource_loader_params);
 
@@ -1042,7 +1055,7 @@ void NavigationRequest::OnResponseStarted(
   // know how to display the content.  We follow Firefox here and show our
   // own error page instead of intercepting the request as a stream or a
   // download.
-  if (is_download && (response->head.headers.get() &&
+  if (is_download_ && (response->head.headers.get() &&
                       (response->head.headers->response_code() / 100 != 2))) {
     navigation_handle_->set_net_error_code(net::ERR_INVALID_RESPONSE);
     frame_tree_node_->ResetNavigationRequest(false, true);
@@ -1070,7 +1083,7 @@ void NavigationRequest::OnResponseStarted(
   navigation_handle_->WillProcessResponse(
       render_frame_host, response->head.headers.get(),
       response->head.connection_info, response->head.socket_address, ssl_info_,
-      request_id, common_params_.should_replace_current_entry, is_download,
+      request_id, common_params_.should_replace_current_entry, is_download,_
       is_stream,
       base::Bind(&NavigationRequest::OnWillProcessResponseChecksComplete,
                  base::Unretained(this)));

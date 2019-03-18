@@ -1284,6 +1284,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // default implementation provides nullptr OverlayWindow.
   virtual std::unique_ptr<OverlayWindow> CreateWindowForPictureInPicture(
       PictureInPictureWindowController* controller);
+
+  // Browser-side API to log blink UseCounters for events that don't occur in
+  // the renderer.
+  virtual void LogWebFeatureForCurrentPage(
+      content::RenderFrameHost* render_frame_host,
+      blink::mojom::WebFeature feature) {}
 };
 
 }  // namespace content
