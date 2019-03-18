@@ -1301,7 +1301,7 @@ NavigationURLLoaderImpl::NavigationURLLoaderImpl(
     std::vector<std::unique_ptr<NavigationLoaderInterceptor>>
         initial_interceptors)
     : delegate_(delegate),
-      allow_download_(request_info->common_params.allow_download),
+      download_policy_(request_info->common_params.download_policy),
       weak_factory_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   int frame_tree_node_id = request_info->frame_tree_node_id;
@@ -1319,8 +1319,10 @@ NavigationURLLoaderImpl::NavigationURLLoaderImpl(
   AppCacheNavigationHandleCore* appcache_handle_core =
       appcache_handle ? appcache_handle->core() : nullptr;
 
-  std::unique_ptr<network::ResourceRequest> new_request = CreateResourceRequest(
-      request_info.get(), frame_tree_node_id, allow_download_);
+  std::unique_ptr<network::ResourceRequest> new_request =
+      CreateResourceRequest(request_info.get(), frame_tree_node_id,
+                            IsNavigationDownloadAllowed(download_policy_));
+
   new_request->transition_type = request_info->common_params.transition;
 
   if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
@@ -1453,13 +1455,17 @@ void NavigationURLLoaderImpl::OnReceiveResponse(
   TRACE_EVENT_ASYNC_END2("navigation", "Navigation timeToResponseStarted", this,
                          "&NavigationURLLoaderImpl", this, "success", true);
 
+  if (is_download) {
+    UMA_HISTOGRAM_ENUMERATION("Navigation.DownloadPolicy", download_policy_);
+  }
+
   // TODO(scottmg): This needs to do more of what
   // NavigationResourceHandler::OnResponseStarted() does.
 
   delegate_->OnResponseStarted(
       std::move(response), std::move(url_loader_client_endpoints),
       std::move(navigation_data), global_request_id,
-      allow_download_ && is_download, is_stream,
+      is_download && IsNavigationDownloadAllowed(download_policy_), is_stream,
       request_controller_->TakeSubresourceLoaderParams());
 }
 

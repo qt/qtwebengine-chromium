@@ -3599,8 +3599,9 @@ void RenderFrameHostImpl::NavigateToInterstitialURL(const GURL& data_url) {
   DCHECK(data_url.SchemeIs(url::kDataScheme));
   CommonNavigationParams common_params(
       data_url, Referrer(), ui::PAGE_TRANSITION_LINK,
-      FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT, false, false,
-      GURL(), GURL(), PREVIEWS_OFF, base::TimeTicks::Now(), "GET", nullptr,
+      FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT,
+      NavigationDownloadPolicy::kDisallowInterstitial, false, GURL(), GURL(),
+      PREVIEWS_OFF, base::TimeTicks::Now(), "GET", nullptr,
       base::Optional<SourceLocation>(),
       CSPDisposition::CHECK /* should_check_main_world_csp */,
       false /* started_from_context_menu */, false /* has_user_gesture */,
