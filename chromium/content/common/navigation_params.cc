@@ -26,11 +26,11 @@ SourceLocation::~SourceLocation() = default;
 
 bool IsNavigationDownloadAllowed(NavigationDownloadPolicy policy) {
   switch (policy) {
-    case NavigationDownloadPolicy::kAllow:
-      return true;
     case NavigationDownloadPolicy::kDisallowViewSource:
     case NavigationDownloadPolicy::kDisallowInterstitial:
+    case NavigationDownloadPolicy::kDisallowSandbox:
       return false;
+    case NavigationDownloadPolicy::kAllow:
     case NavigationDownloadPolicy::kAllowOpener:
     case NavigationDownloadPolicy::kAllowOpenerNoGesture:
     case NavigationDownloadPolicy::kAllowOpenerCrossOrigin:

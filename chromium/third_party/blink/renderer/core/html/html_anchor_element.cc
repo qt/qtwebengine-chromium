@@ -43,6 +43,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/network/network_hints.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 
 namespace blink {
@@ -360,6 +361,8 @@ void HTMLAnchorElement::HandleClick(Event* event) {
 
   if (hasAttribute(downloadAttr)) {
     if (GetDocument().IsSandboxed(kSandboxDownloads)) {
+      if (RuntimeEnabledFeatures::BlockingDownloadsInSandboxEnabled())
+        return;
       // TODO(jochen): Also measure navigations resulting in downloads.
       UseCounter::Count(
           GetDocument(),

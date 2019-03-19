@@ -518,6 +518,8 @@ NavigationPolicy LocalFrameClientImpl::DecidePolicyForNavigation(
       web_document_loader ? web_document_loader->GetExtraData() : nullptr;
   navigation_info.replaces_current_history_item = replaces_current_history_item;
   navigation_info.is_client_redirect = is_client_redirect;
+  navigation_info.blocking_downloads_in_sandbox_enabled =
+      RuntimeEnabledFeatures::BlockingDownloadsInSandboxEnabled()
   navigation_info.triggering_event_info = triggering_event_info;
   navigation_info.should_check_main_world_content_security_policy =
       should_check_main_world_content_security_policy ==

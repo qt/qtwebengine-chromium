@@ -491,9 +491,12 @@ WebURLRequest CreateURLRequestForNavigation(
 }
 
 NavigationDownloadPolicy GetDownloadPolicy(
+    bool prevent_sandboxed_download,
     bool is_opener_navigation,
     const blink::WebURLRequest& request,
     const WebSecurityOrigin& current_origin) {
+  if (prevent_sandboxed_download)
+    return NavigationDownloadPolicy::kDisallowSandbox;
   if (!is_opener_navigation)
     return NavigationDownloadPolicy::kAllow;
   bool gesture = request.HasUserGesture();
@@ -510,7 +513,8 @@ NavigationDownloadPolicy GetDownloadPolicy(
 CommonNavigationParams MakeCommonNavigationParams(
     const WebSecurityOrigin& current_origin,
     const blink::WebLocalFrameClient::NavigationPolicyInfo& info,
-    int load_flags) {
+    int load_flags,
+    bool prevent_sandboxed_download) {
   Referrer referrer(
       GURL(info.url_request.HttpHeaderField(WebString::FromUTF8("Referer"))
                .Latin1()),
@@ -546,8 +550,9 @@ CommonNavigationParams MakeCommonNavigationParams(
   const RequestExtraData* extra_data =
       static_cast<RequestExtraData*>(info.url_request.GetExtraData());
   DCHECK(extra_data);
-  NavigationDownloadPolicy download_policy = GetDownloadPolicy(
-      info.is_opener_navigation, info.url_request, current_origin);
+  NavigationDownloadPolicy download_policy =
+      GetDownloadPolicy(prevent_sandboxed_download, info.is_opener_navigation,
+                        info.url_request, current_origin);
   return CommonNavigationParams(
       info.url_request.Url(), referrer, extra_data->transition_type(),
       navigation_type, download_policy, info.replaces_current_history_item, GURL(), GURL(),
@@ -6947,7 +6952,12 @@ void RenderFrameImpl::BeginNavigation(const NavigationPolicyInfo& info) {
     BindNavigationClient(mojo::MakeRequest(&navigation_client_info));
     navigation_state->set_navigation_client(std::move(navigation_client_impl_));
   }
-  GetFrameHost()->BeginNavigation(MakeCommonNavigationParams(info, load_flags),
+  bool prevent_sandboxed_download =
+      (frame_->EffectiveSandboxFlags() & blink::WebSandboxFlags::kDownloads) !=
+          blink::WebSandboxFlags::kNone &&
+      info.blocking_downloads_in_sandbox_enabled;
+
+  GetFrameHost()->BeginNavigation(MakeCommonNavigationParams(frame_->GetSecurityOrigin(), info, load_flags, prevent_sandboxed_download),
                                   std::move(begin_navigation_params),
                                   std::move(blob_url_token),
                                   std::move(navigation_client_info));

@@ -346,6 +346,7 @@ class BLINK_EXPORT WebLocalFrameClient {
     bool is_history_navigation_in_new_child_frame;
     bool is_client_redirect;
     bool is_opener_navigation;
+    bool blocking_downloads_in_sandbox_enabled;
     WebTriggeringEventInfo triggering_event_info;
     WebFormElement form;
     WebSourceLocation source_location;
@@ -368,6 +369,7 @@ class BLINK_EXPORT WebLocalFrameClient {
           is_history_navigation_in_new_child_frame(false),
           is_client_redirect(false),
           is_opener_navigation(false),
+          blocking_downloads_in_sandbox_enabled(false),
           triggering_event_info(WebTriggeringEventInfo::kUnknown),
           should_check_main_world_content_security_policy(
               kWebContentSecurityPolicyDispositionCheck),
