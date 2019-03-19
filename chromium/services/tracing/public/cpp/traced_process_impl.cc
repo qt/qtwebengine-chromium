@@ -111,4 +111,10 @@ void TracedProcessImpl::ConnectToTracingService(
 #endif
 }
 
+void TracedProcessImpl::GetCategories(std::set<std::string>* category_set) {
+  for (auto* agent : agents_) {
+    agent->GetCategories(category_set);
+  }
+}
+
 }  // namespace tracing
