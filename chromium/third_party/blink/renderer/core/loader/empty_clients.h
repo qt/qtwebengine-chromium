@@ -413,6 +413,7 @@ class CORE_EXPORT EmptyRemoteFrameClient : public RemoteFrameClient {
   // RemoteFrameClient implementation.
   void Navigate(const ResourceRequest&,
                 bool should_replace_current_entry,
+                bool is_opener_navigation,
                 mojom::blink::BlobURLTokenPtr) override {}
   void Reload(WebFrameLoadType, ClientRedirectPolicy) override {}
   unsigned BackForwardLength() override { return 0; }

@@ -86,10 +86,12 @@ void RemoteFrame::Navigate(const FrameLoadRequest& passed_request) {
   FrameLoader::SetReferrerForFrameRequest(frame_request);
   FrameLoader::UpgradeInsecureRequest(frame_request.GetResourceRequest(),
                                       frame_request.OriginDocument());
-
+  Document* document = frame_request.OriginDocument();
+  bool is_opener_navigation = document && document->GetFrame() &&
+                              document->GetFrame()->Client()->Opener() == this;
   Client()->Navigate(frame_request.GetResourceRequest(),
                      frame_request.ReplacesCurrentItem(),
-                     frame_request.GetBlobURLToken());
+                     is_opener_navigation, frame_request.GetBlobURLToken());
 }
 
 void RemoteFrame::Reload(WebFrameLoadType frame_load_type,

@@ -769,6 +769,7 @@ void RenderFrameProxy::ForwardPostMessage(
 
 void RenderFrameProxy::Navigate(const blink::WebURLRequest& request,
                                 bool should_replace_current_entry,
+                                bool is_opener_navigation,
                                 mojo::ScopedMessagePipeHandle blob_url_token) {
   FrameHostMsg_OpenURL_Params params;
   params.url = request.Url();
@@ -783,6 +784,8 @@ void RenderFrameProxy::Navigate(const blink::WebURLRequest& request,
   params.user_gesture = request.HasUserGesture();
   params.triggering_event_info = blink::WebTriggeringEventInfo::kUnknown;
   params.blob_url_token = blob_url_token.release();
+  params.download_policy = RenderFrameImpl::GetOpenerDownloadPolicy(
+      is_opener_navigation, request, web_frame_->GetSecurityOrigin());
 
   Send(new FrameHostMsg_OpenURL(routing_id_, params));
 }

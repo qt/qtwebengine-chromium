@@ -353,7 +353,8 @@ void RenderFrameProxyHost::OnOpenURL(
   // to PAGE_TRANSITION_FORM_SUBMIT. See https://crbug.com/829827.
   frame_tree_node_->navigator()->NavigateFromFrameProxy(
       current_rfh, validated_url, site_instance_.get(), params.referrer,
-      ui::PAGE_TRANSITION_LINK, params.should_replace_current_entry,
+      ui::PAGE_TRANSITION_LINK,
+      params.should_replace_current_entry, params.download_policy,
       params.uses_post ? "POST" : "GET", params.resource_request_body,
       params.extra_headers, std::move(blob_url_loader_factory));
 }
