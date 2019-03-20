@@ -3481,7 +3481,7 @@ void GLES2Implementation::GetActiveUniformBlockiv(
 bool GLES2Implementation::GetActiveUniformsivHelper(
     GLuint program, GLsizei count, const GLuint* indices,
     GLenum pname, GLint* params) {
-  base::CheckedNumeric<size_t> bytes = static_cast<size_t>(count);
+  base::CheckedNumeric<uint32_t> bytes = count;
   bytes *= sizeof(GLuint);
   if (!bytes.IsValid()) {
     SetGLError(GL_INVALID_VALUE, "glGetActiveUniformsiv", "count overflow");
