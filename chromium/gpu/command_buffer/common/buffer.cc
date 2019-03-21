@@ -30,6 +30,7 @@ SharedMemoryBufferBacking::SharedMemoryBufferBacking(
     : shared_memory_region_(std::move(shared_memory_region)),
       shared_memory_mapping_(std::move(shared_memory_mapping)) {
   DCHECK_EQ(shared_memory_region_.GetGUID(), shared_memory_mapping_.guid());
+  DCHECK_EQ(shared_memory_mapping_.size(), static_cast<size_t>(UINT32_MAX));
 }
 
 SharedMemoryBufferBacking::~SharedMemoryBufferBacking() = default;
@@ -47,8 +48,8 @@ void* SharedMemoryBufferBacking::GetMemory() const {
   return shared_memory_mapping_.memory();
 }
 
-size_t SharedMemoryBufferBacking::GetSize() const {
-  return shared_memory_mapping_.size();
+uint32_t SharedMemoryBufferBacking::GetSize() const {
+  return static_cast<uint32_t>(shared_memory_mapping_.size());
 }
 
 Buffer::Buffer(std::unique_ptr<BufferBacking> backing)

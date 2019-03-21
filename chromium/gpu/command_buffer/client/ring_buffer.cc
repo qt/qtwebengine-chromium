@@ -16,14 +16,14 @@
 
 namespace gpu {
 
-RingBuffer::RingBuffer(unsigned int alignment,
+RingBuffer::RingBuffer(uint32_t alignment,
                        Offset base_offset,
-                       size_t size,
+                       uint32_t size,
                        CommandBufferHelper* helper,
                        void* base)
     : helper_(helper),
       base_offset_(base_offset),
-      size_(base::checked_cast<unsigned int>(size)),
+      size_(size),
       free_offset_(0),
       in_use_offset_(0),
       alignment_(alignment),
@@ -54,7 +54,7 @@ void RingBuffer::FreeOldestBlock() {
   blocks_.pop_front();
 }
 
-void* RingBuffer::Alloc(unsigned int size) {
+void* RingBuffer::Alloc(uint32_t size) {
   DCHECK_LE(size, size_) << "attempt to allocate more than maximum memory";
   DCHECK(blocks_.empty() || blocks_.back().state != IN_USE)
       << "Attempt to alloc another block before freeing the previous.";
@@ -88,7 +88,7 @@ void* RingBuffer::Alloc(unsigned int size) {
 }
 
 void RingBuffer::FreePendingToken(void* pointer,
-                                  unsigned int token) {
+                                  uint32_t token) {
   Offset offset = GetOffset(pointer);
   offset -= base_offset_;
   DCHECK(!blocks_.empty()) << "no allocations to free";
@@ -146,13 +146,13 @@ void RingBuffer::DiscardBlock(void* pointer) {
   NOTREACHED() << "attempt to discard non-existant block";
 }
 
-unsigned int RingBuffer::GetLargestFreeSizeNoWaiting() {
-  unsigned int size = GetLargestFreeSizeNoWaitingInternal();
+uint32_t RingBuffer::GetLargestFreeSizeNoWaiting() {
+  uint32_t size = GetLargestFreeSizeNoWaitingInternal();
   DCHECK_EQ(size, RoundToAlignment(size));
   return size;
 }
 
-unsigned int RingBuffer::GetLargestFreeSizeNoWaitingInternal() {
+uint32_t RingBuffer::GetLargestFreeSizeNoWaitingInternal() {
   while (!blocks_.empty()) {
     Block& block = blocks_.front();
     if (!helper_->HasTokenPassed(block.token) || block.state == IN_USE) break;
@@ -176,8 +176,8 @@ unsigned int RingBuffer::GetLargestFreeSizeNoWaitingInternal() {
   }
 }
 
-unsigned int RingBuffer::GetTotalFreeSizeNoWaiting() {
-  unsigned int largest_free_size = GetLargestFreeSizeNoWaitingInternal();
+uint32_t RingBuffer::GetTotalFreeSizeNoWaiting() {
+  uint32_t largest_free_size = GetLargestFreeSizeNoWaitingInternal();
   if (free_offset_ > in_use_offset_) {
     // It's free from free_offset_ to size_ and from 0 to in_use_offset_.
     return size_ - free_offset_ + in_use_offset_;
@@ -186,7 +186,7 @@ unsigned int RingBuffer::GetTotalFreeSizeNoWaiting() {
   }
 }
 
-void RingBuffer::ShrinkLastBlock(unsigned int new_size) {
+void RingBuffer::ShrinkLastBlock(uint32_t new_size) {
   if (blocks_.empty())
     return;
   auto& block = blocks_.back();

@@ -24,7 +24,7 @@ class GPU_EXPORT BufferBacking {
   virtual const base::UnsafeSharedMemoryRegion& shared_memory_region() const;
   virtual base::UnguessableToken GetGUID() const;
   virtual void* GetMemory() const = 0;
-  virtual size_t GetSize() const = 0;
+  virtual uint32_t GetSize() const = 0;
 };
 
 class GPU_EXPORT SharedMemoryBufferBacking : public BufferBacking {
@@ -36,7 +36,7 @@ class GPU_EXPORT SharedMemoryBufferBacking : public BufferBacking {
   const base::UnsafeSharedMemoryRegion& shared_memory_region() const override;
   base::UnguessableToken GetGUID() const override;
   void* GetMemory() const override;
-  size_t GetSize() const override;
+  uint32_t GetSize() const override;
 
  private:
   base::UnsafeSharedMemoryRegion shared_memory_region_;
@@ -51,7 +51,7 @@ class GPU_EXPORT Buffer : public base::RefCountedThreadSafe<Buffer> {
 
   BufferBacking* backing() const { return backing_.get(); }
   void* memory() const { return memory_; }
-  size_t size() const { return size_; }
+  uint32t_t size() const { return size_; }
 
   // Returns NULL if the address overflows the memory.
   void* GetDataAddress(uint32_t data_offset, uint32_t data_size) const;
@@ -68,7 +68,7 @@ class GPU_EXPORT Buffer : public base::RefCountedThreadSafe<Buffer> {
 
   std::unique_ptr<BufferBacking> backing_;
   void* memory_;
-  size_t size_;
+  uint32_t size_;
 
   DISALLOW_COPY_AND_ASSIGN(Buffer);
 };
