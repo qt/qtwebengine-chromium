@@ -59,7 +59,7 @@ class GLES2_IMPL_EXPORT ClientTransferCache {
   explicit ClientTransferCache(Client* client);
   ~ClientTransferCache();
 
-  void* MapEntry(MappedMemoryManager* mapped_memory, size_t size);
+  void* MapEntry(MappedMemoryManager* mapped_memory, uint32_t size);
   void UnmapAndCreateEntry(uint32_t type, uint32_t id);
   bool LockEntry(uint32_t type, uint32_t id);
   void UnlockEntries(const std::vector<std::pair<uint32_t, uint32_t>>& entries);

@@ -10,7 +10,10 @@ namespace cc {
 
 ClientRawMemoryTransferCacheEntry::ClientRawMemoryTransferCacheEntry(
     std::vector<uint8_t> data)
-    : id_(s_next_id_.GetNext()), data_(std::move(data)) {}
+    : id_(s_next_id_.GetNext()), data_(std::move(data)) {
+  DCHECK_LE(data_.size(), UINT32_MAX);
+}
+
 ClientRawMemoryTransferCacheEntry::~ClientRawMemoryTransferCacheEntry() =
     default;
 
@@ -39,8 +42,8 @@ ServiceRawMemoryTransferCacheEntry::ServiceRawMemoryTransferCacheEntry() =
 ServiceRawMemoryTransferCacheEntry::~ServiceRawMemoryTransferCacheEntry() =
     default;
 
-size_t ServiceRawMemoryTransferCacheEntry::CachedSize() const {
-  return data_.size();
+uint32_t ClientRawMemoryTransferCacheEntry::SerializedSize() const {
+  return static_cast<uint32_t>(data_.size());
 }
 
 bool ServiceRawMemoryTransferCacheEntry::Deserialize(

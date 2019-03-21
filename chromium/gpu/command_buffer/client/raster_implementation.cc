@@ -101,7 +101,7 @@ class TransferCacheSerializeHelperImpl
   }
 
   void CreateEntryInternal(const cc::ClientTransferCacheEntry& entry) final {
-    size_t size = entry.SerializedSize();
+    uint32_t size = entry.SerializedSize();
     void* data = support_->MapTransferCacheEntry(size);
     if (!data)
       return;
@@ -401,7 +401,7 @@ bool RasterImplementation::ThreadsafeDiscardableTextureIsDeletedForTracing(
   return false;
 }
 
-void* RasterImplementation::MapTransferCacheEntry(size_t serialized_size) {
+void* RasterImplementation::MapTransferCacheEntry(uint32_t serialized_size) {
   return transfer_cache_.MapEntry(mapped_memory_.get(), serialized_size);
 }
 

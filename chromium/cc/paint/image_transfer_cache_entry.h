@@ -31,7 +31,7 @@ class CC_PAINT_EXPORT ClientImageTransferCacheEntry
   uint32_t Id() const final;
 
   // ClientTransferCacheEntry implementation:
-  size_t SerializedSize() const final;
+  uint32_t SerializedSize() const final;
   bool Serialize(base::span<uint8_t> data) const final;
 
  private:
@@ -67,7 +67,7 @@ class CC_PAINT_EXPORT ServiceImageTransferCacheEntry
   GrContext* context_;
   sk_sp<SkImage> image_;
   bool has_mips_ = false;
-  size_t size_ = 0;
+  uint32_t size_ = 0;
   bool fits_on_gpu_ = false;
 };
 

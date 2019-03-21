@@ -11,7 +11,7 @@ ClientTransferCache::ClientTransferCache(Client* client) : client_(client) {}
 ClientTransferCache::~ClientTransferCache() = default;
 
 void* ClientTransferCache::MapEntry(MappedMemoryManager* mapped_memory,
-                                    size_t size) {
+                                    uint32_t size) {
   DCHECK(!mapped_ptr_);
   mapped_ptr_.emplace(size, client_->cmd_buffer_helper(), mapped_memory);
   if (!mapped_ptr_->valid()) {
