@@ -163,7 +163,7 @@ void CommandBufferService::SetReleaseCount(uint64_t release_count) {
   UpdateState();
 }
 
-scoped_refptr<Buffer> CommandBufferService::CreateTransferBuffer(size_t size,
+scoped_refptr<Buffer> CommandBufferService::CreateTransferBuffer(uint32_t size,
                                                                  int32_t* id) {
   static int32_t next_id = 1;
   *id = next_id++;
@@ -189,7 +189,7 @@ bool CommandBufferService::RegisterTransferBuffer(
 }
 
 scoped_refptr<Buffer> CommandBufferService::CreateTransferBufferWithId(
-    size_t size,
+    uint32_t size,
     int32_t id) {
   if (!RegisterTransferBuffer(id,
                               std::make_unique<MemoryBufferBacking>(size))) {

@@ -112,7 +112,7 @@ void CommandBufferDirect::SetGetBuffer(int32_t transfer_buffer_id) {
   service_.SetGetBuffer(transfer_buffer_id);
 }
 
-scoped_refptr<Buffer> CommandBufferDirect::CreateTransferBuffer(size_t size,
+scoped_refptr<Buffer> CommandBufferDirect::CreateTransferBuffer(uint32_t size,
                                                                 int32_t* id) {
   return service_.CreateTransferBuffer(size, id);
 }
@@ -188,7 +188,7 @@ void CommandBufferDirect::SignalSyncToken(const gpu::SyncToken& sync_token,
 }
 
 scoped_refptr<Buffer> CommandBufferDirect::CreateTransferBufferWithId(
-    size_t size,
+    uint32_t size,
     int32_t id) {
   return service_.CreateTransferBufferWithId(size, id);
 }
