@@ -493,7 +493,7 @@ int GLES2Util::GLGetNumValuesReturned(int id) const {
 namespace {
 
 // Return the number of bytes per element, based on the element type.
-int BytesPerElement(int type) {
+uint32_t BytesPerElement(int type) {
   switch (type) {
     case GL_FLOAT_32_UNSIGNED_INT_24_8_REV:
       return 8;
@@ -524,7 +524,7 @@ int BytesPerElement(int type) {
 }  // anonymous namespace
 
 // Return the number of elements per group of a specified format.
-int GLES2Util::ElementsPerGroup(int format, int type) {
+uint32_t GLES2Util::ElementsPerGroup(int format, int type) {
   switch (type) {
     case GL_UNSIGNED_SHORT_5_6_5:
     case GL_UNSIGNED_SHORT_4_4_4_4:
@@ -570,10 +570,10 @@ int GLES2Util::ElementsPerGroup(int format, int type) {
 }
 
 uint32_t GLES2Util::ComputeImageGroupSize(int format, int type) {
-  int bytes_per_element = BytesPerElement(type);
-  DCHECK_GE(8, bytes_per_element);
-  int elements_per_group = ElementsPerGroup(format, type);
-  DCHECK_GE(4, elements_per_group);
+  uint32_t bytes_per_element = BytesPerElement(type);
+  DCHECK_GE(8u, bytes_per_element);
+  uint32_t elements_per_group = ElementsPerGroup(format, type);
+  DCHECK_GE(4u, elements_per_group);
   return  bytes_per_element * elements_per_group;
 }
 
@@ -722,7 +722,7 @@ bool GLES2Util::ComputeImageDataSizesES3(
   return true;
 }
 
-size_t GLES2Util::RenderbufferBytesPerPixel(int format) {
+uint32_t GLES2Util::RenderbufferBytesPerPixel(int format) {
   switch (format) {
     case GL_STENCIL_INDEX8:
       return 1;
@@ -875,11 +875,11 @@ uint32_t GLES2Util::GetElementCountForUniformType(int type) {
   }
 }
 
-size_t GLES2Util::GetGLTypeSizeForTextures(uint32_t type) {
-  return static_cast<size_t>(BytesPerElement(type));
+uint32_t GLES2Util::GetGLTypeSizeForTextures(uint32_t type) {
+  return BytesPerElement(type);
 }
 
-size_t GLES2Util::GetGLTypeSizeForBuffers(uint32_t type) {
+uint32_t GLES2Util::GetGLTypeSizeForBuffers(uint32_t type) {
   switch (type) {
     case GL_BYTE:
       return sizeof(GLbyte);  // NOLINT
@@ -908,8 +908,9 @@ size_t GLES2Util::GetGLTypeSizeForBuffers(uint32_t type) {
   }
 }
 
-size_t GLES2Util::GetGroupSizeForBufferType(uint32_t count, uint32_t type) {
-  size_t type_size = GetGLTypeSizeForBuffers(type);
+uint32_t GLES2Util::GetGroupSizeForBufferType(uint32_t count, uint32_t type) {
+  DCHECK_LE(count, 4u);
+  uint32_t type_size = GetGLTypeSizeForBuffers(type);
   // For packed types, group size equals to the type size.
   if (type == GL_INT_2_10_10_10_REV || type == GL_UNSIGNED_INT_2_10_10_10_REV) {
     DCHECK_EQ(4u, count);
@@ -917,7 +918,8 @@ size_t GLES2Util::GetGroupSizeForBufferType(uint32_t count, uint32_t type) {
   }
   return type_size * count;
 }
-size_t GLES2Util::GetComponentCountForGLTransformType(uint32_t type) {
+
+uint32_t GLES2Util::GetComponentCountForGLTransformType(uint32_t type) {
   switch (type) {
     case GL_TRANSLATE_X_CHROMIUM:
     case GL_TRANSLATE_Y_CHROMIUM:
@@ -936,7 +938,8 @@ size_t GLES2Util::GetComponentCountForGLTransformType(uint32_t type) {
       return 0;
   }
 }
-size_t GLES2Util::GetCoefficientCountForGLPathFragmentInputGenMode(
+
+uint32_t GLES2Util::GetCoefficientCountForGLPathFragmentInputGenMode(
     uint32_t gen_mode) {
   switch (gen_mode) {
     case GL_EYE_LINEAR_CHROMIUM:
@@ -951,7 +954,7 @@ size_t GLES2Util::GetCoefficientCountForGLPathFragmentInputGenMode(
   }
 }
 
-size_t GLES2Util::GetGLTypeSizeForPathCoordType(uint32_t type) {
+uint32_t GLES2Util::GetGLTypeSizeForPathCoordType(uint32_t type) {
   switch (type) {
     case GL_BYTE:
       return sizeof(GLbyte);  // NOLINT
@@ -968,7 +971,7 @@ size_t GLES2Util::GetGLTypeSizeForPathCoordType(uint32_t type) {
   }
 }
 
-size_t GLES2Util::GetGLTypeSizeForGLPathNameType(uint32_t type) {
+uint32_t GLES2Util::GetGLTypeSizeForGLPathNameType(uint32_t type) {
   switch (type) {
     case GL_BYTE:
       return sizeof(GLbyte);  // NOLINT
@@ -1605,7 +1608,7 @@ GLSLArrayName::GLSLArrayName(const std::string& name) : element_index_(-1) {
   base_name_ = name.substr(0, open_pos);
 }
 
-size_t GLES2Util::CalcClearBufferivDataCount(int buffer) {
+uint32_t GLES2Util::CalcClearBufferivDataCount(int buffer) {
   switch (buffer) {
     case GL_COLOR:
       return 4;
@@ -1616,7 +1619,7 @@ size_t GLES2Util::CalcClearBufferivDataCount(int buffer) {
   }
 }
 
-size_t GLES2Util::CalcClearBufferfvDataCount(int buffer) {
+uint32_t GLES2Util::CalcClearBufferfvDataCount(int buffer) {
   switch (buffer) {
     case GL_COLOR:
       return 4;
@@ -1627,7 +1630,7 @@ size_t GLES2Util::CalcClearBufferfvDataCount(int buffer) {
   }
 }
 
-size_t GLES2Util::CalcClearBufferuivDataCount(int buffer) {
+uint32_t GLES2Util::CalcClearBufferuivDataCount(int buffer) {
   switch (buffer) {
     case GL_COLOR:
       return 4;
