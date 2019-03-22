@@ -1011,7 +1011,7 @@ void* RasterImplementation::MapRasterCHROMIUM(GLsizeiptr size) {
   return raster_mapped_buffer_->address();
 }
 
-void* RasterImplementation::MapFontBuffer(size_t size) {
+void* RasterImplementation::MapFontBuffer(uint32_t size) {
   if (size < 0) {
     SetGLError(GL_INVALID_VALUE, "glMapFontBufferCHROMIUM", "negative size");
     return nullptr;
@@ -1024,11 +1024,6 @@ void* RasterImplementation::MapFontBuffer(size_t size) {
   if (!raster_mapped_buffer_) {
     SetGLError(GL_INVALID_OPERATION, "glMapFontBufferCHROMIUM",
                "mapped font buffer with no raster buffer");
-    return nullptr;
-  }
-  if (size > std::numeric_limits<uint32_t>::max()) {
-    SetGLError(GL_INVALID_OPERATION, "glMapFontBufferCHROMIUM",
-               "trying to map too large font buffer");
     return nullptr;
   }
 

@@ -167,7 +167,7 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   void UnmapRasterCHROMIUM(uint32_t written_size);
 
   // ClientFontManager::Client implementation.
-  void* MapFontBuffer(size_t size) override;
+  void* MapFontBuffer(uint32_t size) override;
 
  private:
   friend class RasterImplementationTest;
