@@ -420,8 +420,7 @@ Response InspectorLayerTreeAgent::makeSnapshot(const String& layer_id,
   if (!layer->DrawsContent())
     return Response::Error("Layer does not draw content");
 
-  suppress_layer_paint_events_ = true;
-
+  scoped_refptr<const cc::Layer> layerRef(layer);
   // If we hit a devtool break point in the middle of document lifecycle, for
   // example, https://crbug.com/788219, this will prevent crash when clicking
   // the "layer" panel.
@@ -431,10 +430,14 @@ Response InspectorLayerTreeAgent::makeSnapshot(const String& layer_id,
                                                       .LifecyclePostponed())
     return Response::Error("Layer does not draw content");
 
+  suppress_layer_paint_events_ = true;
+
   inspected_frames_->Root()->View()->UpdateAllLifecyclePhases(
       DocumentLifecycle::LifecycleUpdateReason::kOther);
 
   suppress_layer_paint_events_ = false;
+  if (layer->HasOneRef())
+    return Response::Error("Layer was deleted");
 
   auto picture = layer->GetPicture();
   if (!picture)
