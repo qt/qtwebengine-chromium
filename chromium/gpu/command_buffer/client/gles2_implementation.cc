@@ -2069,7 +2069,8 @@ void GLES2Implementation::BufferSubDataHelper(
 
     int32_t end = 0;
     int32_t buffer_size = buffer->size();
-    if (!SafeAddInt32(offset, size, &end) || end > buffer_size) {
+    if (!base::CheckAdd(offset, size).AssignIfValid(&end) ||
+        end > buffer_size) {
       SetGLError(GL_INVALID_VALUE, "glBufferSubData", "out of range");
       return;
     }
@@ -4559,7 +4560,10 @@ void GLES2Implementation::DrawArrays(GLenum mode, GLint first, GLsizei count) {
   bool simulated = false;
   if (vertex_array_object_manager_->SupportsClientSideBuffers()) {
     GLsizei num_elements;
-    SafeAddInt32(first, count, &num_elements);
+    if (!base::CheckAdd(first, count).AssignIfValid(&num_elements)) {
+      SetGLError(GL_INVALID_VALUE, "glDrawArrays", "first+count overflow");
+      return;
+    }
     if (!vertex_array_object_manager_->SetupSimulatedClientSideBuffers(
             "glDrawArrays", this, helper_, num_elements, 0, &simulated)) {
       return;
@@ -5805,7 +5809,11 @@ void GLES2Implementation::DrawArraysInstancedANGLE(
   bool simulated = false;
   if (vertex_array_object_manager_->SupportsClientSideBuffers()) {
     GLsizei num_elements;
-    SafeAddInt32(first, count, &num_elements);
+    if (!base::CheckAdd(first, count).AssignIfValid(&num_elements)) {
+      SetGLError(GL_INVALID_VALUE, "glDrawArraysInstancedANGLE",
+                 "first+count overflow");
+      return;
+    }
     if (!vertex_array_object_manager_->SetupSimulatedClientSideBuffers(
             "glDrawArraysInstancedANGLE", this, helper_, num_elements,
             primcount, &simulated)) {
@@ -6550,7 +6558,8 @@ void GLES2Implementation::DeletePathsCHROMIUM(GLuint first_client_id,
     return;
 
   GLuint last_client_id;
-  if (!SafeAddUint32(first_client_id, range - 1, &last_client_id)) {
+  if (!base::CheckAdd(first_client_id, range - 1)
+           .AssignIfValid(&last_client_id)) {
     SetGLError(GL_INVALID_OPERATION, kFunctionName, "overflow");
     return;
   }
@@ -6615,13 +6624,15 @@ void GLES2Implementation::PathCommandsCHROMIUM(GLuint path,
   }
 
   uint32_t coords_size;
-  if (!SafeMultiplyUint32(num_coords, coord_type_size, &coords_size)) {
+  if (!base::CheckMul(num_coords, coord_type_size)
+           .AssignIfValid(&coords_size)) {
     SetGLError(GL_INVALID_OPERATION, kFunctionName, "overflow");
     return;
   }
 
   uint32_t required_buffer_size;
-  if (!SafeAddUint32(coords_size, num_commands, &required_buffer_size)) {
+  if (!base::CheckAdd(coords_size, num_commands)
+           .AssignIfValid(&required_buffer_size)) {
     SetGLError(GL_INVALID_OPERATION, kFunctionName, "overflow");
     return;
   }
@@ -6711,7 +6722,7 @@ bool GLES2Implementation::PrepareInstancedPathCommand(
   }
 
   uint32_t paths_size;
-  if (!SafeMultiplyUint32(path_name_size, num_paths, &paths_size)) {
+  if (!base::CheckMul(path_name_size, num_paths).AssignIfValid(&paths_size)) {
     SetGLError(GL_INVALID_OPERATION, function_name, "overflow");
     return false;
   }
@@ -6721,13 +6732,15 @@ bool GLES2Implementation::PrepareInstancedPathCommand(
   uint32_t one_transform_size = sizeof(GLfloat) * transforms_component_count;
 
   uint32_t transforms_size;
-  if (!SafeMultiplyUint32(one_transform_size, num_paths, &transforms_size)) {
+  if (!base::CheckMul(one_transform_size, num_paths)
+           .AssignIfValid(&transforms_size)) {
     SetGLError(GL_INVALID_OPERATION, function_name, "overflow");
     return false;
   }
 
   uint32_t required_buffer_size;
-  if (!SafeAddUint32(transforms_size, paths_size, &required_buffer_size)) {
+  if (!base::CheckAdd(transforms_size, paths_size)
+           .AssignIfValid(&required_buffer_size)) {
     SetGLError(GL_INVALID_OPERATION, function_name, "overflow");
     return false;
   }
