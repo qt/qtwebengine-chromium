@@ -163,7 +163,9 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                                  GLenum pname,
                                  GLuint64* params);
 
-  void* MapRasterCHROMIUM(GLsizeiptr size);
+  // Try to map a transfer buffer of |size|.  Will return a pointer to a
+  // buffer of |size_allocated|, which will be equal to or lesser than |size|.
+  void* MapRasterCHROMIUM(uint32_t size, uint32_t* size_allocated);
   void UnmapRasterCHROMIUM(uint32_t written_size);
 
   // ClientFontManager::Client implementation.

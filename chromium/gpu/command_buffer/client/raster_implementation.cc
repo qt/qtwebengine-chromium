@@ -134,12 +134,12 @@ class PaintOpSerializer {
                     cc::TransferCacheSerializeHelper* transfer_cache_helper,
                     ClientFontManager* font_manager)
       : ri_(ri),
-        buffer_(static_cast<char*>(ri_->MapRasterCHROMIUM(initial_size))),
         stashing_image_provider_(stashing_image_provider),
         transfer_cache_helper_(transfer_cache_helper),
-        font_manager_(font_manager),
-        free_bytes_(buffer_ ? initial_size : 0) {}
-
+        font_manager_(font_manager) {
+    buffer_ =
+        static_cast<char*>(ri_->MapRasterCHROMIUM(initial_size, &free_bytes_));
+  }
   ~PaintOpSerializer() {
     // Need to call SendSerializedData;
     DCHECK(!written_bytes_);
@@ -152,12 +152,11 @@ class PaintOpSerializer {
     size_t size = op->Serialize(buffer_ + written_bytes_, free_bytes_, options);
     if (!size) {
       SendSerializedData();
-      buffer_ = static_cast<char*>(ri_->MapRasterCHROMIUM(kBlockAlloc));
+      buffer_ =
+          static_cast<char*>(ri_->MapRasterCHROMIUM(initial_size, &free_bytes_));
       if (!buffer_) {
-        free_bytes_ = 0;
         return 0;
       }
-      free_bytes_ = kBlockAlloc;
       size = op->Serialize(buffer_ + written_bytes_, free_bytes_, options);
     }
     DCHECK_LE(size, free_bytes_);
@@ -993,7 +992,9 @@ void RasterImplementation::DestroyImageCHROMIUM(GLuint image_id) {
   CheckGLError();
 }
 
-void* RasterImplementation::MapRasterCHROMIUM(GLsizeiptr size) {
+void* RasterImplementation::MapRasterCHROMIUM(uint32_t size,
+                                              uint32_t* size_allocated) {
+  *size_allocated = 0u;
   if (size < 0) {
     SetGLError(GL_INVALID_VALUE, "glMapRasterCHROMIUM", "negative size");
     return nullptr;
@@ -1008,6 +1009,7 @@ void* RasterImplementation::MapRasterCHROMIUM(GLsizeiptr size) {
     raster_mapped_buffer_ = base::nullopt;
     return nullptr;
   }
+  *size_allocated = raster_mapped_buffer_->size();
   return raster_mapped_buffer_->address();
 }
 
