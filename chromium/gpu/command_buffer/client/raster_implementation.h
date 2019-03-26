@@ -164,7 +164,7 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                                  GLuint64* params);
 
   void* MapRasterCHROMIUM(GLsizeiptr size);
-  void UnmapRasterCHROMIUM(GLsizeiptr written_size);
+  void UnmapRasterCHROMIUM(uint32_t written_size);
 
   // ClientFontManager::Client implementation.
   void* MapFontBuffer(size_t size) override;

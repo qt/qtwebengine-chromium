@@ -128,7 +128,7 @@ class TransferCacheSerializeHelperImpl
 // Helper to copy PaintOps to the GPU service over the transfer buffer.
 class PaintOpSerializer {
  public:
-  PaintOpSerializer(size_t initial_size,
+  PaintOpSerializer(uint32_t initial_size,
                     RasterImplementation* ri,
                     cc::DecodeStashingImageProvider* stashing_image_provider,
                     cc::TransferCacheSerializeHelper* transfer_cache_helper,
@@ -161,6 +161,7 @@ class PaintOpSerializer {
       size = op->Serialize(buffer_ + written_bytes_, free_bytes_, options);
     }
     DCHECK_LE(size, free_bytes_);
+    DCHECK(base::CheckAdd<uint32_t>(written_bytes_, size).IsValid());
 
     written_bytes_ += size;
     free_bytes_ -= size;
@@ -193,8 +194,8 @@ class PaintOpSerializer {
   cc::TransferCacheSerializeHelper* const transfer_cache_helper_;
   ClientFontManager* font_manager_;
 
-  size_t written_bytes_ = 0;
-  size_t free_bytes_ = 0;
+  uint32_t written_bytes_ = 0;
+  uint32_t free_bytes_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(PaintOpSerializer);
 };
@@ -1040,7 +1041,7 @@ void* RasterImplementation::MapFontBuffer(size_t size) {
   return font_mapped_buffer_->address();
 }
 
-void RasterImplementation::UnmapRasterCHROMIUM(GLsizeiptr written_size) {
+void RasterImplementation::UnmapRasterCHROMIUM(uint32_t written_size) {
   if (written_size < 0) {
     SetGLError(GL_INVALID_VALUE, "glUnmapRasterCHROMIUM",
                "negative written_size");
@@ -1058,9 +1059,9 @@ void RasterImplementation::UnmapRasterCHROMIUM(GLsizeiptr written_size) {
   }
   raster_mapped_buffer_->Shrink(written_size);
 
-  GLuint font_shm_id = 0u;
-  GLuint font_shm_offset = 0u;
-  GLsizeiptr font_shm_size = 0u;
+  uint32_t font_shm_id = 0u;
+  uint32_t font_shm_offset = 0u;
+  uint32_t font_shm_size = 0u;
   if (font_mapped_buffer_) {
     font_shm_id = font_mapped_buffer_->shm_id();
     font_shm_offset = font_mapped_buffer_->offset();
@@ -1187,8 +1188,8 @@ void RasterImplementation::RasterCHROMIUM(const cc::DisplayItemList* list,
 
   // TODO(enne): Tune these numbers
   // TODO(enne): Convert these types here and in transfer buffer to be size_t.
-  static constexpr unsigned int kMinAlloc = 16 * 1024;
-  unsigned int free_size = std::max(GetTransferBufferFreeSize(), kMinAlloc);
+  static constexpr uint32_t kMinAlloc = 16 * 1024;
+  uint32_t free_size = std::max(GetTransferBufferFreeSize(), kMinAlloc);
 
   // This section duplicates RasterSource::PlaybackToCanvas setup preamble.
   cc::PaintOpBufferSerializer::Preamble preamble;
