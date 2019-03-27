@@ -15,18 +15,18 @@
 
 if {![info exists testdir]} {
   set testdir [file join [file dirname [info script]] .. .. test]
-} 
+}
 source [file join [file dirname [info script]] rtree_util.tcl]
 source $testdir/tester.tcl
 source $testdir/lock_common.tcl
-ifcapable !rtree {
+ifcapable !rtree||!builtin_test {
   finish_test
   return
 }
 set testprefix rtreeD
 
 #-------------------------------------------------------------------------
-# Test that if an SQLITE_BUSY is encountered within the vtable 
+# Test that if an SQLITE_BUSY is encountered within the vtable
 # constructor, a relevant error message is returned.
 #
 do_multiclient_test tn {
@@ -53,5 +53,3 @@ do_multiclient_test tn {
 }
 
 finish_test
-
-

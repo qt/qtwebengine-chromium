@@ -27,7 +27,11 @@
 
 #include "sqliteInt.h"
 #include <string.h>
-#include <tcl.h>
+#if defined(INCLUDE_SQLITE_TCL_H)
+#  include "sqlite_tcl.h"
+#else
+#  include "tcl.h"
+#endif
 
 static struct Wrapped {
   sqlite3_pcache_methods2 pcache;
@@ -125,33 +129,33 @@ static void wrPCacheShutdown(void *pArg){
 
 static sqlite3_pcache *wrPCacheCreate(int a, int b, int c){
   return wrapped.pcache.xCreate(a, b, c);
-}  
+}
 static void wrPCacheCachesize(sqlite3_pcache *p, int n){
   wrapped.pcache.xCachesize(p, n);
-}  
+}
 static int wrPCachePagecount(sqlite3_pcache *p){
   return wrapped.pcache.xPagecount(p);
-}  
+}
 static sqlite3_pcache_page *wrPCacheFetch(sqlite3_pcache *p, unsigned a, int b){
   return wrapped.pcache.xFetch(p, a, b);
-}  
+}
 static void wrPCacheUnpin(sqlite3_pcache *p, sqlite3_pcache_page *a, int b){
   wrapped.pcache.xUnpin(p, a, b);
-}  
+}
 static void wrPCacheRekey(
-  sqlite3_pcache *p, 
-  sqlite3_pcache_page *a, 
-  unsigned b, 
+  sqlite3_pcache *p,
+  sqlite3_pcache_page *a,
+  unsigned b,
   unsigned c
 ){
   wrapped.pcache.xRekey(p, a, b, c);
-}  
+}
 static void wrPCacheTruncate(sqlite3_pcache *p, unsigned a){
   wrapped.pcache.xTruncate(p, a);
-}  
+}
 static void wrPCacheDestroy(sqlite3_pcache *p){
   wrapped.pcache.xDestroy(p);
-}  
+}
 
 static void installInitWrappers(void){
   sqlite3_mutex_methods mutexmethods = {
@@ -161,9 +165,9 @@ static void installInitWrappers(void){
   };
   sqlite3_pcache_methods2 pcachemethods = {
     1, 0,
-    wrPCacheInit,      wrPCacheShutdown,  wrPCacheCreate, 
+    wrPCacheInit,      wrPCacheShutdown,  wrPCacheCreate,
     wrPCacheCachesize, wrPCachePagecount, wrPCacheFetch,
-    wrPCacheUnpin,     wrPCacheRekey,     wrPCacheTruncate,  
+    wrPCacheUnpin,     wrPCacheRekey,     wrPCacheTruncate,
     wrPCacheDestroy
   };
   sqlite3_mem_methods memmethods = {
@@ -184,7 +188,7 @@ static void installInitWrappers(void){
   sqlite3_config(SQLITE_CONFIG_PCACHE2, &pcachemethods);
 }
 
-static int init_wrapper_install(
+static int SQLITE_TCLAPI init_wrapper_install(
   ClientData clientData, /* Unused */
   Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
   int objc,              /* Number of arguments */
@@ -208,7 +212,7 @@ static int init_wrapper_install(
   return TCL_OK;
 }
 
-static int init_wrapper_uninstall(
+static int SQLITE_TCLAPI init_wrapper_uninstall(
   ClientData clientData, /* Unused */
   Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
   int objc,              /* Number of arguments */
@@ -226,7 +230,7 @@ static int init_wrapper_uninstall(
   return TCL_OK;
 }
 
-static int init_wrapper_clear(
+static int SQLITE_TCLAPI init_wrapper_clear(
   ClientData clientData, /* Unused */
   Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
   int objc,              /* Number of arguments */
@@ -243,7 +247,7 @@ static int init_wrapper_clear(
   return TCL_OK;
 }
 
-static int init_wrapper_query(
+static int SQLITE_TCLAPI init_wrapper_query(
   ClientData clientData, /* Unused */
   Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
   int objc,              /* Number of arguments */

@@ -18,6 +18,12 @@
 SQLITE_EXTENSION_INIT1
 
 #ifndef SQLITE_AMALGAMATION
+# if !defined(NDEBUG) && !defined(SQLITE_DEBUG)
+#  define NDEBUG 1
+# endif
+# if defined(NDEBUG) && defined(SQLITE_DEBUG)
+#  undef NDEBUG
+# endif
 # include <string.h>
 # include <stdio.h>
 # include <stdlib.h>
@@ -109,9 +115,9 @@ static const unsigned char midClass[] = {
  /* u */ CCLASS_VOWEL,    /* v */ CCLASS_B,       /* w */ CCLASS_B,
  /* x */ CCLASS_C,        /* y */ CCLASS_VOWEL,   /* z */ CCLASS_C,
  /* { */ CCLASS_OTHER,    /* | */ CCLASS_OTHER,   /* } */ CCLASS_OTHER,
- /* ~ */ CCLASS_OTHER,    /*   */ CCLASS_OTHER,   
+ /* ~ */ CCLASS_OTHER,    /*   */ CCLASS_OTHER,
 };
-/* 
+/*
 ** This tables gives the character class for ASCII characters that form the
 ** initial character of a word.  The only difference from midClass is with
 ** the letters H, W, and Y.
@@ -159,7 +165,7 @@ static const unsigned char initClass[] = {
  /* u */ CCLASS_VOWEL,    /* v */ CCLASS_B,       /* w */ CCLASS_B,
  /* x */ CCLASS_C,        /* y */ CCLASS_Y,       /* z */ CCLASS_C,
  /* { */ CCLASS_OTHER,    /* | */ CCLASS_OTHER,   /* } */ CCLASS_OTHER,
- /* ~ */ CCLASS_OTHER,    /*   */ CCLASS_OTHER,   
+ /* ~ */ CCLASS_OTHER,    /*   */ CCLASS_OTHER,
 };
 
 /*
@@ -183,10 +189,10 @@ static const unsigned char className[] = ".ABCDHLRMY9 ?";
 **
 ** Space to hold the result is obtained from sqlite3_malloc()
 **
-** Return NULL if memory allocation fails.  
+** Return NULL if memory allocation fails.
 */
 static unsigned char *phoneticHash(const unsigned char *zIn, int nIn){
-  unsigned char *zOut = sqlite3_malloc( nIn + 1 );
+  unsigned char *zOut = sqlite3_malloc64( nIn + 1 );
   int i;
   int nOut = 0;
   char cPrev = 0x77;
@@ -196,7 +202,7 @@ static unsigned char *phoneticHash(const unsigned char *zIn, int nIn){
   if( zOut==0 ) return 0;
   if( nIn>2 ){
     switch( zIn[0] ){
-      case 'g': 
+      case 'g':
       case 'k': {
         if( zIn[1]=='n' ){ zIn++; nIn--; }
         break;
@@ -217,7 +223,7 @@ static unsigned char *phoneticHash(const unsigned char *zIn, int nIn){
     if( c==CCLASS_OTHER && cPrev!=CCLASS_DIGIT ) continue;
     aClass = midClass;
     if( c==CCLASS_VOWEL && (cPrevX==CCLASS_R || cPrevX==CCLASS_L) ){
-       continue; /* No vowels beside L or R */ 
+       continue; /* No vowels beside L or R */
     }
     if( (c==CCLASS_R || c==CCLASS_L) && cPrevX==CCLASS_VOWEL ){
        nOut--;   /* No vowels beside L or R */
@@ -345,7 +351,7 @@ static int substituteCost(char cPrev, char cFrom, char cTo){
 ** Negative values indicate an error:
 **    -1  One of the inputs is NULL
 **    -2  Non-ASCII characters on input
-**    -3  Unable to allocate memory 
+**    -3  Unable to allocate memory
 **
 ** If pnMatch is not NULL, then *pnMatch is set to the number of bytes
 ** of zB that matched the pattern in zA. If zA does not end with a '*',
@@ -365,8 +371,8 @@ static int editdist1(const char *zA, const char *zB, int *pnMatch){
   int *m;                /* The cost matrix */
   char *cx;              /* Corresponding character values */
   int *toFree = 0;       /* Malloced space */
-  int mStack[60+15];     /* Stack space to use if not too much is needed */
   int nMatch = 0;
+  int mStack[60+15];     /* Stack space to use if not too much is needed */
 
   /* Early out if either input is NULL */
   if( zA==0 || zB==0 ) return -1;
@@ -390,7 +396,7 @@ static int editdist1(const char *zA, const char *zB, int *pnMatch){
 
   /* Special processing if either string is empty */
   if( nA==0 ){
-    cBprev = dc;
+    cBprev = (char)dc;
     for(xB=res=0; (cB = zB[xB])!=0; xB++){
       res += insertOrDeleteCost(cBprev, cB, zB[xB+1])/FINAL_INS_COST_DIV;
       cBprev = cB;
@@ -398,7 +404,7 @@ static int editdist1(const char *zA, const char *zB, int *pnMatch){
     return res;
   }
   if( nB==0 ){
-    cAprev = dc;
+    cAprev = (char)dc;
     for(xA=res=0; (cA = zA[xA])!=0; xA++){
       res += insertOrDeleteCost(cAprev, cA, zA[xA+1]);
       cAprev = cA;
@@ -413,15 +419,15 @@ static int editdist1(const char *zA, const char *zB, int *pnMatch){
   if( nB<(sizeof(mStack)*4)/(sizeof(mStack[0])*5) ){
     m = mStack;
   }else{
-    m = toFree = sqlite3_malloc( (nB+1)*5*sizeof(m[0])/4 );
+    m = toFree = sqlite3_malloc64( (nB+1)*5*sizeof(m[0])/4 );
     if( m==0 ) return -3;
   }
   cx = (char*)&m[nB+1];
 
   /* Compute the Wagner edit distance */
   m[0] = 0;
-  cx[0] = dc;
-  cBprev = dc;
+  cx[0] = (char)dc;
+  cBprev = (char)dc;
   for(xB=1; xB<=nB; xB++){
     cBnext = zB[xB];
     cB = zB[xB-1];
@@ -429,7 +435,7 @@ static int editdist1(const char *zA, const char *zB, int *pnMatch){
     m[xB] = m[xB-1] + insertOrDeleteCost(cBprev, cB, cBnext);
     cBprev = cB;
   }
-  cAprev = dc;
+  cAprev = (char)dc;
   for(xA=1; xA<=nA; xA++){
     int lastA = (xA==nA);
     cA = zA[xA-1];
@@ -476,7 +482,7 @@ static int editdist1(const char *zA, const char *zB, int *pnMatch){
       d = m[xB];
       dc = cx[xB];
       m[xB] = totalCost;
-      cx[xB] = ncx;
+      cx[xB] = (char)ncx;
       cBprev = cB;
     }
     cAprev = cA;
@@ -526,7 +532,7 @@ static void editdistSqlFunc(
     }else{
       sqlite3_result_error(context, "NULL input to editdist()", -1);
     }
-  }else{ 
+  }else{
     sqlite3_result_int(context, res);
   }
 }
@@ -560,7 +566,7 @@ struct EditDist3Cost {
 };
 
 /*
-** Edit costs for a particular language ID 
+** Edit costs for a particular language ID
 */
 struct EditDist3Lang {
   int iLang;             /* Language ID */
@@ -652,6 +658,79 @@ static void editDist3ConfigDelete(void *pIn){
   sqlite3_free(p);
 }
 
+/* Compare the FROM values of two EditDist3Cost objects, for sorting.
+** Return negative, zero, or positive if the A is less than, equal to,
+** or greater than B.
+*/
+static int editDist3CostCompare(EditDist3Cost *pA, EditDist3Cost *pB){
+  int n = pA->nFrom;
+  int rc;
+  if( n>pB->nFrom ) n = pB->nFrom;
+  rc = strncmp(pA->a, pB->a, n);
+  if( rc==0 ) rc = pA->nFrom - pB->nFrom;
+  return rc;
+}
+
+/*
+** Merge together two sorted lists of EditDist3Cost objects, in order
+** of increasing FROM.
+*/
+static EditDist3Cost *editDist3CostMerge(
+  EditDist3Cost *pA,
+  EditDist3Cost *pB
+){
+  EditDist3Cost *pHead = 0;
+  EditDist3Cost **ppTail = &pHead;
+  EditDist3Cost *p;
+  while( pA && pB ){
+    if( editDist3CostCompare(pA,pB)<=0 ){
+      p = pA;
+      pA = pA->pNext;
+    }else{
+      p = pB;
+      pB = pB->pNext;
+    }
+    *ppTail = p;
+    ppTail =  &p->pNext;
+  }
+  if( pA ){
+    *ppTail = pA;
+  }else{
+    *ppTail = pB;
+  }
+  return pHead;
+}
+
+/*
+** Sort a list of EditDist3Cost objects into order of increasing FROM
+*/
+static EditDist3Cost *editDist3CostSort(EditDist3Cost *pList){
+  EditDist3Cost *ap[60], *p;
+  int i;
+  int mx = 0;
+  ap[0] = 0;
+  ap[1] = 0;
+  while( pList ){
+    p = pList;
+    pList = p->pNext;
+    p->pNext = 0;
+    for(i=0; ap[i]; i++){
+      p = editDist3CostMerge(ap[i],p);
+      ap[i] = 0;
+    }
+    ap[i] = p;
+    if( i>mx ){
+      mx = i;
+      ap[i+1] = 0;
+    }
+  }
+  p = 0;
+  for(i=0; i<=mx; i++){
+    if( ap[i] ) p = editDist3CostMerge(p,ap[i]);
+  }
+  return p;
+}
+
 /*
 ** Load all edit-distance weights from a table.
 */
@@ -685,9 +764,10 @@ static int editDist3ConfigLoad(
     assert( zTo!=0 || nTo==0 );
     if( nFrom>100 || nTo>100 ) continue;
     if( iCost<0 ) continue;
+    if( iCost>=10000 ) continue;  /* Costs above 10K are considered infinite */
     if( pLang==0 || iLang!=iLangPrev ){
       EditDist3Lang *pNew;
-      pNew = sqlite3_realloc(p->a, (p->nLang+1)*sizeof(p->a[0]));
+      pNew = sqlite3_realloc64(p->a, (p->nLang+1)*sizeof(p->a[0]));
       if( pNew==0 ){ rc = SQLITE_NOMEM; break; }
       p->a = pNew;
       pLang = &p->a[p->nLang];
@@ -709,19 +789,25 @@ static int editDist3ConfigLoad(
       EditDist3Cost *pCost;
       int nExtra = nFrom + nTo - 4;
       if( nExtra<0 ) nExtra = 0;
-      pCost = sqlite3_malloc( sizeof(*pCost) + nExtra );
+      pCost = sqlite3_malloc64( sizeof(*pCost) + nExtra );
       if( pCost==0 ){ rc = SQLITE_NOMEM; break; }
-      pCost->nFrom = nFrom;
-      pCost->nTo = nTo;
-      pCost->iCost = iCost;
+      pCost->nFrom = (u8)nFrom;
+      pCost->nTo = (u8)nTo;
+      pCost->iCost = (u16)iCost;
       memcpy(pCost->a, zFrom, nFrom);
       memcpy(pCost->a + nFrom, zTo, nTo);
       pCost->pNext = pLang->pCost;
-      pLang->pCost = pCost; 
+      pLang->pCost = pCost;
     }
   }
   rc2 = sqlite3_finalize(pStmt);
   if( rc==SQLITE_OK ) rc = rc2;
+  if( rc==SQLITE_OK ){
+    int iLang;
+    for(iLang=0; iLang<p->nLang; iLang++){
+      p->a[iLang].pCost = editDist3CostSort(p->a[iLang].pCost);
+    }
+  }
   return rc;
 }
 
@@ -749,6 +835,8 @@ static int utf8Len(unsigned char c, int N){
 ** the given string.
 */
 static int matchTo(EditDist3Cost *p, const char *z, int n){
+  assert( n>0 );
+  if( p->a[p->nFrom]!=z[0] ) return 0;
   if( p->nTo>n ) return 0;
   if( strncmp(p->a+p->nFrom, z, p->nTo)!=0 ) return 0;
   return 1;
@@ -760,7 +848,10 @@ static int matchTo(EditDist3Cost *p, const char *z, int n){
 */
 static int matchFrom(EditDist3Cost *p, const char *z, int n){
   assert( p->nFrom<=n );
-  if( strncmp(p->a, z, p->nFrom)!=0 ) return 0;
+  if( p->nFrom ){
+    if( p->a[0]!=z[0] ) return 0;
+    if( strncmp(p->a, z, p->nFrom)!=0 ) return 0;
+  }
   return 1;
 }
 
@@ -776,7 +867,9 @@ static int matchFromTo(
 ){
   int b1 = pStr->a[n1].nByte;
   if( b1>n2 ) return 0;
-  if( memcmp(pStr->z+n1, z2, b1)!=0 ) return 0;
+  assert( b1>0 );
+  if( pStr->z[n1]!=z2[0] ) return 0;
+  if( strncmp(pStr->z+n1, z2, b1)!=0 ) return 0;
   return 1;
 }
 
@@ -808,7 +901,7 @@ static EditDist3FromString *editDist3FromStringNew(
 
   if( z==0 ) return 0;
   if( n<0 ) n = (int)strlen(z);
-  pStr = sqlite3_malloc( sizeof(*pStr) + sizeof(pStr->a[0])*n + n + 1 );
+  pStr = sqlite3_malloc64( sizeof(*pStr) + sizeof(pStr->a[0])*n + n + 1 );
   if( pStr==0 ) return 0;
   pStr->a = (EditDist3From*)&pStr[1];
   memset(pStr->a, 0, sizeof(pStr->a[0])*n);
@@ -833,13 +926,13 @@ static EditDist3FromString *editDist3FromStringNew(
       if( i+p->nFrom>n ) continue;
       if( matchFrom(p, z+i, n-i)==0 ) continue;
       if( p->nTo==0 ){
-        apNew = sqlite3_realloc(pFrom->apDel,
+        apNew = sqlite3_realloc64(pFrom->apDel,
                                 sizeof(*apNew)*(pFrom->nDel+1));
         if( apNew==0 ) break;
         pFrom->apDel = apNew;
         apNew[pFrom->nDel++] = p;
       }else{
-        apNew = sqlite3_realloc(pFrom->apSubst,
+        apNew = sqlite3_realloc64(pFrom->apSubst,
                                 sizeof(*apNew)*(pFrom->nSubst+1));
         if( apNew==0 ) break;
         pFrom->apSubst = apNew;
@@ -858,9 +951,6 @@ static EditDist3FromString *editDist3FromStringNew(
 /*
 ** Update entry m[i] such that it is the minimum of its current value
 ** and m[j]+iCost.
-**
-** If the iCost is 1,000,000 or greater, then consider the cost to be
-** infinite and skip the update.
 */
 static void updateCost(
   unsigned int *m,
@@ -868,12 +958,23 @@ static void updateCost(
   int j,
   int iCost
 ){
+  unsigned int b;
   assert( iCost>=0 );
-  if( iCost<10000 ){
-    unsigned int b = m[j] + iCost;
-    if( b<m[i] ) m[i] = b;
-  }
+  assert( iCost<10000 );
+  b = m[j] + iCost;
+  if( b<m[i] ) m[i] = b;
 }
+
+/*
+** How much stack space (int bytes) to use for Wagner matrix in
+** editDist3Core().  If more space than this is required, the entire
+** matrix is taken from the heap.  To reduce the load on the memory
+** allocator, make this value as large as practical for the
+** architecture in use.
+*/
+#ifndef SQLITE_SPELLFIX_STACKALLOC_SZ
+# define SQLITE_SPELLFIX_STACKALLOC_SZ  (1024)
+#endif
 
 /* Compute the edit distance between two strings.
 **
@@ -883,7 +984,7 @@ static void updateCost(
 ** (not bytes) in z2 that matched the search pattern in *pFrom. If pFrom does
 ** not contain the pattern for a prefix-search, then this is always the number
 ** of characters in z2. If pFrom does contain a prefix search pattern, then
-** it is the number of characters in the prefix of z2 that was deemed to 
+** it is the number of characters in the prefix of z2 that was deemed to
 ** match pFrom.
 */
 static int editDist3Core(
@@ -899,15 +1000,24 @@ static int editDist3Core(
   EditDist3FromString f = *pFrom;
   EditDist3To *a2;
   unsigned int *m;
+  unsigned int *pToFree;
   int szRow;
   EditDist3Cost *p;
   int res;
+  sqlite3_uint64 nByte;
+  unsigned int stackSpace[SQLITE_SPELLFIX_STACKALLOC_SZ/sizeof(unsigned int)];
 
   /* allocate the Wagner matrix and the aTo[] array for the TO string */
   n = (f.n+1)*(n2+1);
   n = (n+1)&~1;
-  m = sqlite3_malloc( n*sizeof(m[0]) + sizeof(a2[0])*n2 );
-  if( m==0 ) return -1;            /* Out of memory */
+  nByte = n*sizeof(m[0]) + sizeof(a2[0])*n2;
+  if( nByte<=sizeof(stackSpace) ){
+    m = stackSpace;
+    pToFree = 0;
+  }else{
+    m = pToFree = sqlite3_malloc64( nByte );
+    if( m==0 ) return -1;            /* Out of memory */
+  }
   a2 = (EditDist3To*)&m[n];
   memset(a2, 0, sizeof(a2[0])*n2);
 
@@ -916,11 +1026,12 @@ static int editDist3Core(
     a2[i2].nByte = utf8Len((unsigned char)z2[i2], n2-i2);
     for(p=pLang->pCost; p; p=p->pNext){
       EditDist3Cost **apNew;
-      if( p->nFrom>0 ) continue;
+      if( p->nFrom>0 ) break;
       if( i2+p->nTo>n2 ) continue;
+      if( p->a[0]>z2[i2] ) break;
       if( matchTo(p, z2+i2, n2-i2)==0 ) continue;
       a2[i2].nIns++;
-      apNew = sqlite3_realloc(a2[i2].apIns, sizeof(*apNew)*a2[i2].nIns);
+      apNew = sqlite3_realloc64(a2[i2].apIns, sizeof(*apNew)*a2[i2].nIns);
       if( apNew==0 ){
         res = -1;  /* Out of memory */
         goto editDist3Abort;
@@ -1013,7 +1124,7 @@ static int editDist3Core(
   if( f.isPrefix ){
     for(i2=1; i2<=n2; i2++){
       int b = m[szRow*i2-1];
-      if( b<=res ){ 
+      if( b<=res ){
         res = b;
         n = i2 - 1;
       }
@@ -1029,7 +1140,7 @@ static int editDist3Core(
 
 editDist3Abort:
   for(i2=0; i2<n2; i2++) sqlite3_free(a2[i2].apIns);
-  sqlite3_free(m);
+  sqlite3_free(pToFree);
   return res;
 }
 
@@ -1090,7 +1201,7 @@ static void editDist3SqlFunc(
     }else{
       sqlite3_result_int(context, dist);
     }
-  } 
+  }
 }
 
 /*
@@ -1098,19 +1209,21 @@ static void editDist3SqlFunc(
 */
 static int editDist3Install(sqlite3 *db){
   int rc;
-  EditDist3Config *pConfig = sqlite3_malloc( sizeof(*pConfig) );
+  EditDist3Config *pConfig = sqlite3_malloc64( sizeof(*pConfig) );
   if( pConfig==0 ) return SQLITE_NOMEM;
   memset(pConfig, 0, sizeof(*pConfig));
   rc = sqlite3_create_function_v2(db, "editdist3",
-              2, SQLITE_UTF8, pConfig, editDist3SqlFunc, 0, 0, 0);
+              2, SQLITE_UTF8|SQLITE_DETERMINISTIC, pConfig,
+              editDist3SqlFunc, 0, 0, 0);
   if( rc==SQLITE_OK ){
     rc = sqlite3_create_function_v2(db, "editdist3",
-                3, SQLITE_UTF8, pConfig, editDist3SqlFunc, 0, 0, 0);
+                3, SQLITE_UTF8|SQLITE_DETERMINISTIC, pConfig,
+                editDist3SqlFunc, 0, 0, 0);
   }
   if( rc==SQLITE_OK ){
     rc = sqlite3_create_function_v2(db, "editdist3",
-                1, SQLITE_UTF8, pConfig, editDist3SqlFunc, 0, 0,
-                editDist3ConfigDelete);
+                1, SQLITE_UTF8|SQLITE_DETERMINISTIC, pConfig,
+                editDist3SqlFunc, 0, 0, editDist3ConfigDelete);
   }else{
     sqlite3_free(pConfig);
   }
@@ -1178,403 +1291,414 @@ static int utf8Charlen(const char *zIn, int nIn){
   return nChar;
 }
 
+typedef struct Transliteration Transliteration;
+struct Transliteration {
+ unsigned short int cFrom;
+ unsigned char cTo0, cTo1, cTo2, cTo3;
+#ifdef SQLITE_SPELLFIX_5BYTE_MAPPINGS
+ unsigned char cTo4;
+#endif
+};
+
 /*
 ** Table of translations from unicode characters into ASCII.
 */
-static const struct {
- unsigned short int cFrom;
- unsigned char cTo0, cTo1;
-} translit[] = {
-  { 0x00A0,  0x20, 0x00 },  /*   to   */
-  { 0x00B5,  0x75, 0x00 },  /* µ to u */
-  { 0x00C0,  0x41, 0x00 },  /* À to A */
-  { 0x00C1,  0x41, 0x00 },  /* Á to A */
-  { 0x00C2,  0x41, 0x00 },  /* Â to A */
-  { 0x00C3,  0x41, 0x00 },  /* Ã to A */
-  { 0x00C4,  0x41, 0x65 },  /* Ä to Ae */
-  { 0x00C5,  0x41, 0x61 },  /* Å to Aa */
-  { 0x00C6,  0x41, 0x45 },  /* Æ to AE */
-  { 0x00C7,  0x43, 0x00 },  /* Ç to C */
-  { 0x00C8,  0x45, 0x00 },  /* È to E */
-  { 0x00C9,  0x45, 0x00 },  /* É to E */
-  { 0x00CA,  0x45, 0x00 },  /* Ê to E */
-  { 0x00CB,  0x45, 0x00 },  /* Ë to E */
-  { 0x00CC,  0x49, 0x00 },  /* Ì to I */
-  { 0x00CD,  0x49, 0x00 },  /* Í to I */
-  { 0x00CE,  0x49, 0x00 },  /* Î to I */
-  { 0x00CF,  0x49, 0x00 },  /* Ï to I */
-  { 0x00D0,  0x44, 0x00 },  /* Ð to D */
-  { 0x00D1,  0x4E, 0x00 },  /* Ñ to N */
-  { 0x00D2,  0x4F, 0x00 },  /* Ò to O */
-  { 0x00D3,  0x4F, 0x00 },  /* Ó to O */
-  { 0x00D4,  0x4F, 0x00 },  /* Ô to O */
-  { 0x00D5,  0x4F, 0x00 },  /* Õ to O */
-  { 0x00D6,  0x4F, 0x65 },  /* Ö to Oe */
-  { 0x00D7,  0x78, 0x00 },  /* × to x */
-  { 0x00D8,  0x4F, 0x00 },  /* Ø to O */
-  { 0x00D9,  0x55, 0x00 },  /* Ù to U */
-  { 0x00DA,  0x55, 0x00 },  /* Ú to U */
-  { 0x00DB,  0x55, 0x00 },  /* Û to U */
-  { 0x00DC,  0x55, 0x65 },  /* Ü to Ue */
-  { 0x00DD,  0x59, 0x00 },  /* Ý to Y */
-  { 0x00DE,  0x54, 0x68 },  /* Þ to Th */
-  { 0x00DF,  0x73, 0x73 },  /* ß to ss */
-  { 0x00E0,  0x61, 0x00 },  /* à to a */
-  { 0x00E1,  0x61, 0x00 },  /* á to a */
-  { 0x00E2,  0x61, 0x00 },  /* â to a */
-  { 0x00E3,  0x61, 0x00 },  /* ã to a */
-  { 0x00E4,  0x61, 0x65 },  /* ä to ae */
-  { 0x00E5,  0x61, 0x61 },  /* å to aa */
-  { 0x00E6,  0x61, 0x65 },  /* æ to ae */
-  { 0x00E7,  0x63, 0x00 },  /* ç to c */
-  { 0x00E8,  0x65, 0x00 },  /* è to e */
-  { 0x00E9,  0x65, 0x00 },  /* é to e */
-  { 0x00EA,  0x65, 0x00 },  /* ê to e */
-  { 0x00EB,  0x65, 0x00 },  /* ë to e */
-  { 0x00EC,  0x69, 0x00 },  /* ì to i */
-  { 0x00ED,  0x69, 0x00 },  /* í to i */
-  { 0x00EE,  0x69, 0x00 },  /* î to i */
-  { 0x00EF,  0x69, 0x00 },  /* ï to i */
-  { 0x00F0,  0x64, 0x00 },  /* ð to d */
-  { 0x00F1,  0x6E, 0x00 },  /* ñ to n */
-  { 0x00F2,  0x6F, 0x00 },  /* ò to o */
-  { 0x00F3,  0x6F, 0x00 },  /* ó to o */
-  { 0x00F4,  0x6F, 0x00 },  /* ô to o */
-  { 0x00F5,  0x6F, 0x00 },  /* õ to o */
-  { 0x00F6,  0x6F, 0x65 },  /* ö to oe */
-  { 0x00F7,  0x3A, 0x00 },  /* ÷ to : */
-  { 0x00F8,  0x6F, 0x00 },  /* ø to o */
-  { 0x00F9,  0x75, 0x00 },  /* ù to u */
-  { 0x00FA,  0x75, 0x00 },  /* ú to u */
-  { 0x00FB,  0x75, 0x00 },  /* û to u */
-  { 0x00FC,  0x75, 0x65 },  /* ü to ue */
-  { 0x00FD,  0x79, 0x00 },  /* ý to y */
-  { 0x00FE,  0x74, 0x68 },  /* þ to th */
-  { 0x00FF,  0x79, 0x00 },  /* ÿ to y */
-  { 0x0100,  0x41, 0x00 },  /* Ā to A */
-  { 0x0101,  0x61, 0x00 },  /* ā to a */
-  { 0x0102,  0x41, 0x00 },  /* Ă to A */
-  { 0x0103,  0x61, 0x00 },  /* ă to a */
-  { 0x0104,  0x41, 0x00 },  /* Ą to A */
-  { 0x0105,  0x61, 0x00 },  /* ą to a */
-  { 0x0106,  0x43, 0x00 },  /* Ć to C */
-  { 0x0107,  0x63, 0x00 },  /* ć to c */
-  { 0x0108,  0x43, 0x68 },  /* Ĉ to Ch */
-  { 0x0109,  0x63, 0x68 },  /* ĉ to ch */
-  { 0x010A,  0x43, 0x00 },  /* Ċ to C */
-  { 0x010B,  0x63, 0x00 },  /* ċ to c */
-  { 0x010C,  0x43, 0x00 },  /* Č to C */
-  { 0x010D,  0x63, 0x00 },  /* č to c */
-  { 0x010E,  0x44, 0x00 },  /* Ď to D */
-  { 0x010F,  0x64, 0x00 },  /* ď to d */
-  { 0x0110,  0x44, 0x00 },  /* Đ to D */
-  { 0x0111,  0x64, 0x00 },  /* đ to d */
-  { 0x0112,  0x45, 0x00 },  /* Ē to E */
-  { 0x0113,  0x65, 0x00 },  /* ē to e */
-  { 0x0114,  0x45, 0x00 },  /* Ĕ to E */
-  { 0x0115,  0x65, 0x00 },  /* ĕ to e */
-  { 0x0116,  0x45, 0x00 },  /* Ė to E */
-  { 0x0117,  0x65, 0x00 },  /* ė to e */
-  { 0x0118,  0x45, 0x00 },  /* Ę to E */
-  { 0x0119,  0x65, 0x00 },  /* ę to e */
-  { 0x011A,  0x45, 0x00 },  /* Ě to E */
-  { 0x011B,  0x65, 0x00 },  /* ě to e */
-  { 0x011C,  0x47, 0x68 },  /* Ĝ to Gh */
-  { 0x011D,  0x67, 0x68 },  /* ĝ to gh */
-  { 0x011E,  0x47, 0x00 },  /* Ğ to G */
-  { 0x011F,  0x67, 0x00 },  /* ğ to g */
-  { 0x0120,  0x47, 0x00 },  /* Ġ to G */
-  { 0x0121,  0x67, 0x00 },  /* ġ to g */
-  { 0x0122,  0x47, 0x00 },  /* Ģ to G */
-  { 0x0123,  0x67, 0x00 },  /* ģ to g */
-  { 0x0124,  0x48, 0x68 },  /* Ĥ to Hh */
-  { 0x0125,  0x68, 0x68 },  /* ĥ to hh */
-  { 0x0126,  0x48, 0x00 },  /* Ħ to H */
-  { 0x0127,  0x68, 0x00 },  /* ħ to h */
-  { 0x0128,  0x49, 0x00 },  /* Ĩ to I */
-  { 0x0129,  0x69, 0x00 },  /* ĩ to i */
-  { 0x012A,  0x49, 0x00 },  /* Ī to I */
-  { 0x012B,  0x69, 0x00 },  /* ī to i */
-  { 0x012C,  0x49, 0x00 },  /* Ĭ to I */
-  { 0x012D,  0x69, 0x00 },  /* ĭ to i */
-  { 0x012E,  0x49, 0x00 },  /* Į to I */
-  { 0x012F,  0x69, 0x00 },  /* į to i */
-  { 0x0130,  0x49, 0x00 },  /* İ to I */
-  { 0x0131,  0x69, 0x00 },  /* ı to i */
-  { 0x0132,  0x49, 0x4A },  /* Ĳ to IJ */
-  { 0x0133,  0x69, 0x6A },  /* ĳ to ij */
-  { 0x0134,  0x4A, 0x68 },  /* Ĵ to Jh */
-  { 0x0135,  0x6A, 0x68 },  /* ĵ to jh */
-  { 0x0136,  0x4B, 0x00 },  /* Ķ to K */
-  { 0x0137,  0x6B, 0x00 },  /* ķ to k */
-  { 0x0138,  0x6B, 0x00 },  /* ĸ to k */
-  { 0x0139,  0x4C, 0x00 },  /* Ĺ to L */
-  { 0x013A,  0x6C, 0x00 },  /* ĺ to l */
-  { 0x013B,  0x4C, 0x00 },  /* Ļ to L */
-  { 0x013C,  0x6C, 0x00 },  /* ļ to l */
-  { 0x013D,  0x4C, 0x00 },  /* Ľ to L */
-  { 0x013E,  0x6C, 0x00 },  /* ľ to l */
-  { 0x013F,  0x4C, 0x2E },  /* Ŀ to L. */
-  { 0x0140,  0x6C, 0x2E },  /* ŀ to l. */
-  { 0x0141,  0x4C, 0x00 },  /* Ł to L */
-  { 0x0142,  0x6C, 0x00 },  /* ł to l */
-  { 0x0143,  0x4E, 0x00 },  /* Ń to N */
-  { 0x0144,  0x6E, 0x00 },  /* ń to n */
-  { 0x0145,  0x4E, 0x00 },  /* Ņ to N */
-  { 0x0146,  0x6E, 0x00 },  /* ņ to n */
-  { 0x0147,  0x4E, 0x00 },  /* Ň to N */
-  { 0x0148,  0x6E, 0x00 },  /* ň to n */
-  { 0x0149,  0x27, 0x6E },  /* ŉ to 'n */
-  { 0x014A,  0x4E, 0x47 },  /* Ŋ to NG */
-  { 0x014B,  0x6E, 0x67 },  /* ŋ to ng */
-  { 0x014C,  0x4F, 0x00 },  /* Ō to O */
-  { 0x014D,  0x6F, 0x00 },  /* ō to o */
-  { 0x014E,  0x4F, 0x00 },  /* Ŏ to O */
-  { 0x014F,  0x6F, 0x00 },  /* ŏ to o */
-  { 0x0150,  0x4F, 0x00 },  /* Ő to O */
-  { 0x0151,  0x6F, 0x00 },  /* ő to o */
-  { 0x0152,  0x4F, 0x45 },  /* Œ to OE */
-  { 0x0153,  0x6F, 0x65 },  /* œ to oe */
-  { 0x0154,  0x52, 0x00 },  /* Ŕ to R */
-  { 0x0155,  0x72, 0x00 },  /* ŕ to r */
-  { 0x0156,  0x52, 0x00 },  /* Ŗ to R */
-  { 0x0157,  0x72, 0x00 },  /* ŗ to r */
-  { 0x0158,  0x52, 0x00 },  /* Ř to R */
-  { 0x0159,  0x72, 0x00 },  /* ř to r */
-  { 0x015A,  0x53, 0x00 },  /* Ś to S */
-  { 0x015B,  0x73, 0x00 },  /* ś to s */
-  { 0x015C,  0x53, 0x68 },  /* Ŝ to Sh */
-  { 0x015D,  0x73, 0x68 },  /* ŝ to sh */
-  { 0x015E,  0x53, 0x00 },  /* Ş to S */
-  { 0x015F,  0x73, 0x00 },  /* ş to s */
-  { 0x0160,  0x53, 0x00 },  /* Š to S */
-  { 0x0161,  0x73, 0x00 },  /* š to s */
-  { 0x0162,  0x54, 0x00 },  /* Ţ to T */
-  { 0x0163,  0x74, 0x00 },  /* ţ to t */
-  { 0x0164,  0x54, 0x00 },  /* Ť to T */
-  { 0x0165,  0x74, 0x00 },  /* ť to t */
-  { 0x0166,  0x54, 0x00 },  /* Ŧ to T */
-  { 0x0167,  0x74, 0x00 },  /* ŧ to t */
-  { 0x0168,  0x55, 0x00 },  /* Ũ to U */
-  { 0x0169,  0x75, 0x00 },  /* ũ to u */
-  { 0x016A,  0x55, 0x00 },  /* Ū to U */
-  { 0x016B,  0x75, 0x00 },  /* ū to u */
-  { 0x016C,  0x55, 0x00 },  /* Ŭ to U */
-  { 0x016D,  0x75, 0x00 },  /* ŭ to u */
-  { 0x016E,  0x55, 0x00 },  /* Ů to U */
-  { 0x016F,  0x75, 0x00 },  /* ů to u */
-  { 0x0170,  0x55, 0x00 },  /* Ű to U */
-  { 0x0171,  0x75, 0x00 },  /* ű to u */
-  { 0x0172,  0x55, 0x00 },  /* Ų to U */
-  { 0x0173,  0x75, 0x00 },  /* ų to u */
-  { 0x0174,  0x57, 0x00 },  /* Ŵ to W */
-  { 0x0175,  0x77, 0x00 },  /* ŵ to w */
-  { 0x0176,  0x59, 0x00 },  /* Ŷ to Y */
-  { 0x0177,  0x79, 0x00 },  /* ŷ to y */
-  { 0x0178,  0x59, 0x00 },  /* Ÿ to Y */
-  { 0x0179,  0x5A, 0x00 },  /* Ź to Z */
-  { 0x017A,  0x7A, 0x00 },  /* ź to z */
-  { 0x017B,  0x5A, 0x00 },  /* Ż to Z */
-  { 0x017C,  0x7A, 0x00 },  /* ż to z */
-  { 0x017D,  0x5A, 0x00 },  /* Ž to Z */
-  { 0x017E,  0x7A, 0x00 },  /* ž to z */
-  { 0x017F,  0x73, 0x00 },  /* ſ to s */
-  { 0x0192,  0x66, 0x00 },  /* ƒ to f */
-  { 0x0218,  0x53, 0x00 },  /* Ș to S */
-  { 0x0219,  0x73, 0x00 },  /* ș to s */
-  { 0x021A,  0x54, 0x00 },  /* Ț to T */
-  { 0x021B,  0x74, 0x00 },  /* ț to t */
-  { 0x0386,  0x41, 0x00 },  /* Ά to A */
-  { 0x0388,  0x45, 0x00 },  /* Έ to E */
-  { 0x0389,  0x49, 0x00 },  /* Ή to I */
-  { 0x038A,  0x49, 0x00 },  /* Ί to I */
-  { 0x038C,  0x4f, 0x00 },  /* Ό to O */
-  { 0x038E,  0x59, 0x00 },  /* Ύ to Y */
-  { 0x038F,  0x4f, 0x00 },  /* Ώ to O */
-  { 0x0390,  0x69, 0x00 },  /* ΐ to i */
-  { 0x0391,  0x41, 0x00 },  /* Α to A */
-  { 0x0392,  0x42, 0x00 },  /* Β to B */
-  { 0x0393,  0x47, 0x00 },  /* Γ to G */
-  { 0x0394,  0x44, 0x00 },  /* Δ to D */
-  { 0x0395,  0x45, 0x00 },  /* Ε to E */
-  { 0x0396,  0x5a, 0x00 },  /* Ζ to Z */
-  { 0x0397,  0x49, 0x00 },  /* Η to I */
-  { 0x0398,  0x54, 0x68 },  /* Θ to Th */
-  { 0x0399,  0x49, 0x00 },  /* Ι to I */
-  { 0x039A,  0x4b, 0x00 },  /* Κ to K */
-  { 0x039B,  0x4c, 0x00 },  /* Λ to L */
-  { 0x039C,  0x4d, 0x00 },  /* Μ to M */
-  { 0x039D,  0x4e, 0x00 },  /* Ν to N */
-  { 0x039E,  0x58, 0x00 },  /* Ξ to X */
-  { 0x039F,  0x4f, 0x00 },  /* Ο to O */
-  { 0x03A0,  0x50, 0x00 },  /* Π to P */
-  { 0x03A1,  0x52, 0x00 },  /* Ρ to R */
-  { 0x03A3,  0x53, 0x00 },  /* Σ to S */
-  { 0x03A4,  0x54, 0x00 },  /* Τ to T */
-  { 0x03A5,  0x59, 0x00 },  /* Υ to Y */
-  { 0x03A6,  0x46, 0x00 },  /* Φ to F */
-  { 0x03A7,  0x43, 0x68 },  /* Χ to Ch */
-  { 0x03A8,  0x50, 0x73 },  /* Ψ to Ps */
-  { 0x03A9,  0x4f, 0x00 },  /* Ω to O */
-  { 0x03AA,  0x49, 0x00 },  /* Ϊ to I */
-  { 0x03AB,  0x59, 0x00 },  /* Ϋ to Y */
-  { 0x03AC,  0x61, 0x00 },  /* ά to a */
-  { 0x03AD,  0x65, 0x00 },  /* έ to e */
-  { 0x03AE,  0x69, 0x00 },  /* ή to i */
-  { 0x03AF,  0x69, 0x00 },  /* ί to i */
-  { 0x03B1,  0x61, 0x00 },  /* α to a */
-  { 0x03B2,  0x62, 0x00 },  /* β to b */
-  { 0x03B3,  0x67, 0x00 },  /* γ to g */
-  { 0x03B4,  0x64, 0x00 },  /* δ to d */
-  { 0x03B5,  0x65, 0x00 },  /* ε to e */
-  { 0x03B6,  0x7a, 0x00 },  /* ζ to z */
-  { 0x03B7,  0x69, 0x00 },  /* η to i */
-  { 0x03B8,  0x74, 0x68 },  /* θ to th */
-  { 0x03B9,  0x69, 0x00 },  /* ι to i */
-  { 0x03BA,  0x6b, 0x00 },  /* κ to k */
-  { 0x03BB,  0x6c, 0x00 },  /* λ to l */
-  { 0x03BC,  0x6d, 0x00 },  /* μ to m */
-  { 0x03BD,  0x6e, 0x00 },  /* ν to n */
-  { 0x03BE,  0x78, 0x00 },  /* ξ to x */
-  { 0x03BF,  0x6f, 0x00 },  /* ο to o */
-  { 0x03C0,  0x70, 0x00 },  /* π to p */
-  { 0x03C1,  0x72, 0x00 },  /* ρ to r */
-  { 0x03C3,  0x73, 0x00 },  /* σ to s */
-  { 0x03C4,  0x74, 0x00 },  /* τ to t */
-  { 0x03C5,  0x79, 0x00 },  /* υ to y */
-  { 0x03C6,  0x66, 0x00 },  /* φ to f */
-  { 0x03C7,  0x63, 0x68 },  /* χ to ch */
-  { 0x03C8,  0x70, 0x73 },  /* ψ to ps */
-  { 0x03C9,  0x6f, 0x00 },  /* ω to o */
-  { 0x03CA,  0x69, 0x00 },  /* ϊ to i */
-  { 0x03CB,  0x79, 0x00 },  /* ϋ to y */
-  { 0x03CC,  0x6f, 0x00 },  /* ό to o */
-  { 0x03CD,  0x79, 0x00 },  /* ύ to y */
-  { 0x03CE,  0x69, 0x00 },  /* ώ to i */
-  { 0x0400,  0x45, 0x00 },  /* Ѐ to E */
-  { 0x0401,  0x45, 0x00 },  /* Ё to E */
-  { 0x0402,  0x44, 0x00 },  /* Ђ to D */
-  { 0x0403,  0x47, 0x00 },  /* Ѓ to G */
-  { 0x0404,  0x45, 0x00 },  /* Є to E */
-  { 0x0405,  0x5a, 0x00 },  /* Ѕ to Z */
-  { 0x0406,  0x49, 0x00 },  /* І to I */
-  { 0x0407,  0x49, 0x00 },  /* Ї to I */
-  { 0x0408,  0x4a, 0x00 },  /* Ј to J */
-  { 0x0409,  0x49, 0x00 },  /* Љ to I */
-  { 0x040A,  0x4e, 0x00 },  /* Њ to N */
-  { 0x040B,  0x44, 0x00 },  /* Ћ to D */
-  { 0x040C,  0x4b, 0x00 },  /* Ќ to K */
-  { 0x040D,  0x49, 0x00 },  /* Ѝ to I */
-  { 0x040E,  0x55, 0x00 },  /* Ў to U */
-  { 0x040F,  0x44, 0x00 },  /* Џ to D */
-  { 0x0410,  0x41, 0x00 },  /* А to A */
-  { 0x0411,  0x42, 0x00 },  /* Б to B */
-  { 0x0412,  0x56, 0x00 },  /* В to V */
-  { 0x0413,  0x47, 0x00 },  /* Г to G */
-  { 0x0414,  0x44, 0x00 },  /* Д to D */
-  { 0x0415,  0x45, 0x00 },  /* Е to E */
-  { 0x0416,  0x5a, 0x68 },  /* Ж to Zh */
-  { 0x0417,  0x5a, 0x00 },  /* З to Z */
-  { 0x0418,  0x49, 0x00 },  /* И to I */
-  { 0x0419,  0x49, 0x00 },  /* Й to I */
-  { 0x041A,  0x4b, 0x00 },  /* К to K */
-  { 0x041B,  0x4c, 0x00 },  /* Л to L */
-  { 0x041C,  0x4d, 0x00 },  /* М to M */
-  { 0x041D,  0x4e, 0x00 },  /* Н to N */
-  { 0x041E,  0x4f, 0x00 },  /* О to O */
-  { 0x041F,  0x50, 0x00 },  /* П to P */
-  { 0x0420,  0x52, 0x00 },  /* Р to R */
-  { 0x0421,  0x53, 0x00 },  /* С to S */
-  { 0x0422,  0x54, 0x00 },  /* Т to T */
-  { 0x0423,  0x55, 0x00 },  /* У to U */
-  { 0x0424,  0x46, 0x00 },  /* Ф to F */
-  { 0x0425,  0x4b, 0x68 },  /* Х to Kh */
-  { 0x0426,  0x54, 0x63 },  /* Ц to Tc */
-  { 0x0427,  0x43, 0x68 },  /* Ч to Ch */
-  { 0x0428,  0x53, 0x68 },  /* Ш to Sh */
-  { 0x0429,  0x53, 0x68 },  /* Щ to Shch */
-  { 0x042A,  0x61, 0x00 },  /*  to A */
-  { 0x042B,  0x59, 0x00 },  /* Ы to Y */
-  { 0x042C,  0x59, 0x00 },  /*  to Y */
-  { 0x042D,  0x45, 0x00 },  /* Э to E */
-  { 0x042E,  0x49, 0x75 },  /* Ю to Iu */
-  { 0x042F,  0x49, 0x61 },  /* Я to Ia */
-  { 0x0430,  0x61, 0x00 },  /* а to a */
-  { 0x0431,  0x62, 0x00 },  /* б to b */
-  { 0x0432,  0x76, 0x00 },  /* в to v */
-  { 0x0433,  0x67, 0x00 },  /* г to g */
-  { 0x0434,  0x64, 0x00 },  /* д to d */
-  { 0x0435,  0x65, 0x00 },  /* е to e */
-  { 0x0436,  0x7a, 0x68 },  /* ж to zh */
-  { 0x0437,  0x7a, 0x00 },  /* з to z */
-  { 0x0438,  0x69, 0x00 },  /* и to i */
-  { 0x0439,  0x69, 0x00 },  /* й to i */
-  { 0x043A,  0x6b, 0x00 },  /* к to k */
-  { 0x043B,  0x6c, 0x00 },  /* л to l */
-  { 0x043C,  0x6d, 0x00 },  /* м to m */
-  { 0x043D,  0x6e, 0x00 },  /* н to n */
-  { 0x043E,  0x6f, 0x00 },  /* о to o */
-  { 0x043F,  0x70, 0x00 },  /* п to p */
-  { 0x0440,  0x72, 0x00 },  /* р to r */
-  { 0x0441,  0x73, 0x00 },  /* с to s */
-  { 0x0442,  0x74, 0x00 },  /* т to t */
-  { 0x0443,  0x75, 0x00 },  /* у to u */
-  { 0x0444,  0x66, 0x00 },  /* ф to f */
-  { 0x0445,  0x6b, 0x68 },  /* х to kh */
-  { 0x0446,  0x74, 0x63 },  /* ц to tc */
-  { 0x0447,  0x63, 0x68 },  /* ч to ch */
-  { 0x0448,  0x73, 0x68 },  /* ш to sh */
-  { 0x0449,  0x73, 0x68 },  /* щ to shch */
-  { 0x044A,  0x61, 0x00 },  /*  to a */
-  { 0x044B,  0x79, 0x00 },  /* ы to y */
-  { 0x044C,  0x79, 0x00 },  /*  to y */
-  { 0x044D,  0x65, 0x00 },  /* э to e */
-  { 0x044E,  0x69, 0x75 },  /* ю to iu */
-  { 0x044F,  0x69, 0x61 },  /* я to ia */
-  { 0x0450,  0x65, 0x00 },  /* ѐ to e */
-  { 0x0451,  0x65, 0x00 },  /* ё to e */
-  { 0x0452,  0x64, 0x00 },  /* ђ to d */
-  { 0x0453,  0x67, 0x00 },  /* ѓ to g */
-  { 0x0454,  0x65, 0x00 },  /* є to e */
-  { 0x0455,  0x7a, 0x00 },  /* ѕ to z */
-  { 0x0456,  0x69, 0x00 },  /* і to i */
-  { 0x0457,  0x69, 0x00 },  /* ї to i */
-  { 0x0458,  0x6a, 0x00 },  /* ј to j */
-  { 0x0459,  0x69, 0x00 },  /* љ to i */
-  { 0x045A,  0x6e, 0x00 },  /* њ to n */
-  { 0x045B,  0x64, 0x00 },  /* ћ to d */
-  { 0x045C,  0x6b, 0x00 },  /* ќ to k */
-  { 0x045D,  0x69, 0x00 },  /* ѝ to i */
-  { 0x045E,  0x75, 0x00 },  /* ў to u */
-  { 0x045F,  0x64, 0x00 },  /* џ to d */
-  { 0x1E02,  0x42, 0x00 },  /* Ḃ to B */
-  { 0x1E03,  0x62, 0x00 },  /* ḃ to b */
-  { 0x1E0A,  0x44, 0x00 },  /* Ḋ to D */
-  { 0x1E0B,  0x64, 0x00 },  /* ḋ to d */
-  { 0x1E1E,  0x46, 0x00 },  /* Ḟ to F */
-  { 0x1E1F,  0x66, 0x00 },  /* ḟ to f */
-  { 0x1E40,  0x4D, 0x00 },  /* Ṁ to M */
-  { 0x1E41,  0x6D, 0x00 },  /* ṁ to m */
-  { 0x1E56,  0x50, 0x00 },  /* Ṗ to P */
-  { 0x1E57,  0x70, 0x00 },  /* ṗ to p */
-  { 0x1E60,  0x53, 0x00 },  /* Ṡ to S */
-  { 0x1E61,  0x73, 0x00 },  /* ṡ to s */
-  { 0x1E6A,  0x54, 0x00 },  /* Ṫ to T */
-  { 0x1E6B,  0x74, 0x00 },  /* ṫ to t */
-  { 0x1E80,  0x57, 0x00 },  /* Ẁ to W */
-  { 0x1E81,  0x77, 0x00 },  /* ẁ to w */
-  { 0x1E82,  0x57, 0x00 },  /* Ẃ to W */
-  { 0x1E83,  0x77, 0x00 },  /* ẃ to w */
-  { 0x1E84,  0x57, 0x00 },  /* Ẅ to W */
-  { 0x1E85,  0x77, 0x00 },  /* ẅ to w */
-  { 0x1EF2,  0x59, 0x00 },  /* Ỳ to Y */
-  { 0x1EF3,  0x79, 0x00 },  /* ỳ to y */
-  { 0xFB00,  0x66, 0x66 },  /* ﬀ to ff */
-  { 0xFB01,  0x66, 0x69 },  /* ﬁ to fi */
-  { 0xFB02,  0x66, 0x6C },  /* ﬂ to fl */
-  { 0xFB05,  0x73, 0x74 },  /* ﬅ to st */
-  { 0xFB06,  0x73, 0x74 },  /* ﬆ to st */
+static const Transliteration translit[] = {
+  { 0x00A0,  0x20, 0x00, 0x00, 0x00 },  /*   to   */
+  { 0x00B5,  0x75, 0x00, 0x00, 0x00 },  /* µ to u */
+  { 0x00C0,  0x41, 0x00, 0x00, 0x00 },  /* À to A */
+  { 0x00C1,  0x41, 0x00, 0x00, 0x00 },  /* Á to A */
+  { 0x00C2,  0x41, 0x00, 0x00, 0x00 },  /* Â to A */
+  { 0x00C3,  0x41, 0x00, 0x00, 0x00 },  /* Ã to A */
+  { 0x00C4,  0x41, 0x65, 0x00, 0x00 },  /* Ä to Ae */
+  { 0x00C5,  0x41, 0x61, 0x00, 0x00 },  /* Å to Aa */
+  { 0x00C6,  0x41, 0x45, 0x00, 0x00 },  /* Æ to AE */
+  { 0x00C7,  0x43, 0x00, 0x00, 0x00 },  /* Ç to C */
+  { 0x00C8,  0x45, 0x00, 0x00, 0x00 },  /* È to E */
+  { 0x00C9,  0x45, 0x00, 0x00, 0x00 },  /* É to E */
+  { 0x00CA,  0x45, 0x00, 0x00, 0x00 },  /* Ê to E */
+  { 0x00CB,  0x45, 0x00, 0x00, 0x00 },  /* Ë to E */
+  { 0x00CC,  0x49, 0x00, 0x00, 0x00 },  /* Ì to I */
+  { 0x00CD,  0x49, 0x00, 0x00, 0x00 },  /* Í to I */
+  { 0x00CE,  0x49, 0x00, 0x00, 0x00 },  /* Î to I */
+  { 0x00CF,  0x49, 0x00, 0x00, 0x00 },  /* Ï to I */
+  { 0x00D0,  0x44, 0x00, 0x00, 0x00 },  /* Ð to D */
+  { 0x00D1,  0x4E, 0x00, 0x00, 0x00 },  /* Ñ to N */
+  { 0x00D2,  0x4F, 0x00, 0x00, 0x00 },  /* Ò to O */
+  { 0x00D3,  0x4F, 0x00, 0x00, 0x00 },  /* Ó to O */
+  { 0x00D4,  0x4F, 0x00, 0x00, 0x00 },  /* Ô to O */
+  { 0x00D5,  0x4F, 0x00, 0x00, 0x00 },  /* Õ to O */
+  { 0x00D6,  0x4F, 0x65, 0x00, 0x00 },  /* Ö to Oe */
+  { 0x00D7,  0x78, 0x00, 0x00, 0x00 },  /* × to x */
+  { 0x00D8,  0x4F, 0x00, 0x00, 0x00 },  /* Ø to O */
+  { 0x00D9,  0x55, 0x00, 0x00, 0x00 },  /* Ù to U */
+  { 0x00DA,  0x55, 0x00, 0x00, 0x00 },  /* Ú to U */
+  { 0x00DB,  0x55, 0x00, 0x00, 0x00 },  /* Û to U */
+  { 0x00DC,  0x55, 0x65, 0x00, 0x00 },  /* Ü to Ue */
+  { 0x00DD,  0x59, 0x00, 0x00, 0x00 },  /* Ý to Y */
+  { 0x00DE,  0x54, 0x68, 0x00, 0x00 },  /* Þ to Th */
+  { 0x00DF,  0x73, 0x73, 0x00, 0x00 },  /* ß to ss */
+  { 0x00E0,  0x61, 0x00, 0x00, 0x00 },  /* à to a */
+  { 0x00E1,  0x61, 0x00, 0x00, 0x00 },  /* á to a */
+  { 0x00E2,  0x61, 0x00, 0x00, 0x00 },  /* â to a */
+  { 0x00E3,  0x61, 0x00, 0x00, 0x00 },  /* ã to a */
+  { 0x00E4,  0x61, 0x65, 0x00, 0x00 },  /* ä to ae */
+  { 0x00E5,  0x61, 0x61, 0x00, 0x00 },  /* å to aa */
+  { 0x00E6,  0x61, 0x65, 0x00, 0x00 },  /* æ to ae */
+  { 0x00E7,  0x63, 0x00, 0x00, 0x00 },  /* ç to c */
+  { 0x00E8,  0x65, 0x00, 0x00, 0x00 },  /* è to e */
+  { 0x00E9,  0x65, 0x00, 0x00, 0x00 },  /* é to e */
+  { 0x00EA,  0x65, 0x00, 0x00, 0x00 },  /* ê to e */
+  { 0x00EB,  0x65, 0x00, 0x00, 0x00 },  /* ë to e */
+  { 0x00EC,  0x69, 0x00, 0x00, 0x00 },  /* ì to i */
+  { 0x00ED,  0x69, 0x00, 0x00, 0x00 },  /* í to i */
+  { 0x00EE,  0x69, 0x00, 0x00, 0x00 },  /* î to i */
+  { 0x00EF,  0x69, 0x00, 0x00, 0x00 },  /* ï to i */
+  { 0x00F0,  0x64, 0x00, 0x00, 0x00 },  /* ð to d */
+  { 0x00F1,  0x6E, 0x00, 0x00, 0x00 },  /* ñ to n */
+  { 0x00F2,  0x6F, 0x00, 0x00, 0x00 },  /* ò to o */
+  { 0x00F3,  0x6F, 0x00, 0x00, 0x00 },  /* ó to o */
+  { 0x00F4,  0x6F, 0x00, 0x00, 0x00 },  /* ô to o */
+  { 0x00F5,  0x6F, 0x00, 0x00, 0x00 },  /* õ to o */
+  { 0x00F6,  0x6F, 0x65, 0x00, 0x00 },  /* ö to oe */
+  { 0x00F7,  0x3A, 0x00, 0x00, 0x00 },  /* ÷ to : */
+  { 0x00F8,  0x6F, 0x00, 0x00, 0x00 },  /* ø to o */
+  { 0x00F9,  0x75, 0x00, 0x00, 0x00 },  /* ù to u */
+  { 0x00FA,  0x75, 0x00, 0x00, 0x00 },  /* ú to u */
+  { 0x00FB,  0x75, 0x00, 0x00, 0x00 },  /* û to u */
+  { 0x00FC,  0x75, 0x65, 0x00, 0x00 },  /* ü to ue */
+  { 0x00FD,  0x79, 0x00, 0x00, 0x00 },  /* ý to y */
+  { 0x00FE,  0x74, 0x68, 0x00, 0x00 },  /* þ to th */
+  { 0x00FF,  0x79, 0x00, 0x00, 0x00 },  /* ÿ to y */
+  { 0x0100,  0x41, 0x00, 0x00, 0x00 },  /* Ā to A */
+  { 0x0101,  0x61, 0x00, 0x00, 0x00 },  /* ā to a */
+  { 0x0102,  0x41, 0x00, 0x00, 0x00 },  /* Ă to A */
+  { 0x0103,  0x61, 0x00, 0x00, 0x00 },  /* ă to a */
+  { 0x0104,  0x41, 0x00, 0x00, 0x00 },  /* Ą to A */
+  { 0x0105,  0x61, 0x00, 0x00, 0x00 },  /* ą to a */
+  { 0x0106,  0x43, 0x00, 0x00, 0x00 },  /* Ć to C */
+  { 0x0107,  0x63, 0x00, 0x00, 0x00 },  /* ć to c */
+  { 0x0108,  0x43, 0x68, 0x00, 0x00 },  /* Ĉ to Ch */
+  { 0x0109,  0x63, 0x68, 0x00, 0x00 },  /* ĉ to ch */
+  { 0x010A,  0x43, 0x00, 0x00, 0x00 },  /* Ċ to C */
+  { 0x010B,  0x63, 0x00, 0x00, 0x00 },  /* ċ to c */
+  { 0x010C,  0x43, 0x00, 0x00, 0x00 },  /* Č to C */
+  { 0x010D,  0x63, 0x00, 0x00, 0x00 },  /* č to c */
+  { 0x010E,  0x44, 0x00, 0x00, 0x00 },  /* Ď to D */
+  { 0x010F,  0x64, 0x00, 0x00, 0x00 },  /* ď to d */
+  { 0x0110,  0x44, 0x00, 0x00, 0x00 },  /* Đ to D */
+  { 0x0111,  0x64, 0x00, 0x00, 0x00 },  /* đ to d */
+  { 0x0112,  0x45, 0x00, 0x00, 0x00 },  /* Ē to E */
+  { 0x0113,  0x65, 0x00, 0x00, 0x00 },  /* ē to e */
+  { 0x0114,  0x45, 0x00, 0x00, 0x00 },  /* Ĕ to E */
+  { 0x0115,  0x65, 0x00, 0x00, 0x00 },  /* ĕ to e */
+  { 0x0116,  0x45, 0x00, 0x00, 0x00 },  /* Ė to E */
+  { 0x0117,  0x65, 0x00, 0x00, 0x00 },  /* ė to e */
+  { 0x0118,  0x45, 0x00, 0x00, 0x00 },  /* Ę to E */
+  { 0x0119,  0x65, 0x00, 0x00, 0x00 },  /* ę to e */
+  { 0x011A,  0x45, 0x00, 0x00, 0x00 },  /* Ě to E */
+  { 0x011B,  0x65, 0x00, 0x00, 0x00 },  /* ě to e */
+  { 0x011C,  0x47, 0x68, 0x00, 0x00 },  /* Ĝ to Gh */
+  { 0x011D,  0x67, 0x68, 0x00, 0x00 },  /* ĝ to gh */
+  { 0x011E,  0x47, 0x00, 0x00, 0x00 },  /* Ğ to G */
+  { 0x011F,  0x67, 0x00, 0x00, 0x00 },  /* ğ to g */
+  { 0x0120,  0x47, 0x00, 0x00, 0x00 },  /* Ġ to G */
+  { 0x0121,  0x67, 0x00, 0x00, 0x00 },  /* ġ to g */
+  { 0x0122,  0x47, 0x00, 0x00, 0x00 },  /* Ģ to G */
+  { 0x0123,  0x67, 0x00, 0x00, 0x00 },  /* ģ to g */
+  { 0x0124,  0x48, 0x68, 0x00, 0x00 },  /* Ĥ to Hh */
+  { 0x0125,  0x68, 0x68, 0x00, 0x00 },  /* ĥ to hh */
+  { 0x0126,  0x48, 0x00, 0x00, 0x00 },  /* Ħ to H */
+  { 0x0127,  0x68, 0x00, 0x00, 0x00 },  /* ħ to h */
+  { 0x0128,  0x49, 0x00, 0x00, 0x00 },  /* Ĩ to I */
+  { 0x0129,  0x69, 0x00, 0x00, 0x00 },  /* ĩ to i */
+  { 0x012A,  0x49, 0x00, 0x00, 0x00 },  /* Ī to I */
+  { 0x012B,  0x69, 0x00, 0x00, 0x00 },  /* ī to i */
+  { 0x012C,  0x49, 0x00, 0x00, 0x00 },  /* Ĭ to I */
+  { 0x012D,  0x69, 0x00, 0x00, 0x00 },  /* ĭ to i */
+  { 0x012E,  0x49, 0x00, 0x00, 0x00 },  /* Į to I */
+  { 0x012F,  0x69, 0x00, 0x00, 0x00 },  /* į to i */
+  { 0x0130,  0x49, 0x00, 0x00, 0x00 },  /* İ to I */
+  { 0x0131,  0x69, 0x00, 0x00, 0x00 },  /* ı to i */
+  { 0x0132,  0x49, 0x4A, 0x00, 0x00 },  /* Ĳ to IJ */
+  { 0x0133,  0x69, 0x6A, 0x00, 0x00 },  /* ĳ to ij */
+  { 0x0134,  0x4A, 0x68, 0x00, 0x00 },  /* Ĵ to Jh */
+  { 0x0135,  0x6A, 0x68, 0x00, 0x00 },  /* ĵ to jh */
+  { 0x0136,  0x4B, 0x00, 0x00, 0x00 },  /* Ķ to K */
+  { 0x0137,  0x6B, 0x00, 0x00, 0x00 },  /* ķ to k */
+  { 0x0138,  0x6B, 0x00, 0x00, 0x00 },  /* ĸ to k */
+  { 0x0139,  0x4C, 0x00, 0x00, 0x00 },  /* Ĺ to L */
+  { 0x013A,  0x6C, 0x00, 0x00, 0x00 },  /* ĺ to l */
+  { 0x013B,  0x4C, 0x00, 0x00, 0x00 },  /* Ļ to L */
+  { 0x013C,  0x6C, 0x00, 0x00, 0x00 },  /* ļ to l */
+  { 0x013D,  0x4C, 0x00, 0x00, 0x00 },  /* Ľ to L */
+  { 0x013E,  0x6C, 0x00, 0x00, 0x00 },  /* ľ to l */
+  { 0x013F,  0x4C, 0x2E, 0x00, 0x00 },  /* Ŀ to L. */
+  { 0x0140,  0x6C, 0x2E, 0x00, 0x00 },  /* ŀ to l. */
+  { 0x0141,  0x4C, 0x00, 0x00, 0x00 },  /* Ł to L */
+  { 0x0142,  0x6C, 0x00, 0x00, 0x00 },  /* ł to l */
+  { 0x0143,  0x4E, 0x00, 0x00, 0x00 },  /* Ń to N */
+  { 0x0144,  0x6E, 0x00, 0x00, 0x00 },  /* ń to n */
+  { 0x0145,  0x4E, 0x00, 0x00, 0x00 },  /* Ņ to N */
+  { 0x0146,  0x6E, 0x00, 0x00, 0x00 },  /* ņ to n */
+  { 0x0147,  0x4E, 0x00, 0x00, 0x00 },  /* Ň to N */
+  { 0x0148,  0x6E, 0x00, 0x00, 0x00 },  /* ň to n */
+  { 0x0149,  0x27, 0x6E, 0x00, 0x00 },  /* ŉ to 'n */
+  { 0x014A,  0x4E, 0x47, 0x00, 0x00 },  /* Ŋ to NG */
+  { 0x014B,  0x6E, 0x67, 0x00, 0x00 },  /* ŋ to ng */
+  { 0x014C,  0x4F, 0x00, 0x00, 0x00 },  /* Ō to O */
+  { 0x014D,  0x6F, 0x00, 0x00, 0x00 },  /* ō to o */
+  { 0x014E,  0x4F, 0x00, 0x00, 0x00 },  /* Ŏ to O */
+  { 0x014F,  0x6F, 0x00, 0x00, 0x00 },  /* ŏ to o */
+  { 0x0150,  0x4F, 0x00, 0x00, 0x00 },  /* Ő to O */
+  { 0x0151,  0x6F, 0x00, 0x00, 0x00 },  /* ő to o */
+  { 0x0152,  0x4F, 0x45, 0x00, 0x00 },  /* Œ to OE */
+  { 0x0153,  0x6F, 0x65, 0x00, 0x00 },  /* œ to oe */
+  { 0x0154,  0x52, 0x00, 0x00, 0x00 },  /* Ŕ to R */
+  { 0x0155,  0x72, 0x00, 0x00, 0x00 },  /* ŕ to r */
+  { 0x0156,  0x52, 0x00, 0x00, 0x00 },  /* Ŗ to R */
+  { 0x0157,  0x72, 0x00, 0x00, 0x00 },  /* ŗ to r */
+  { 0x0158,  0x52, 0x00, 0x00, 0x00 },  /* Ř to R */
+  { 0x0159,  0x72, 0x00, 0x00, 0x00 },  /* ř to r */
+  { 0x015A,  0x53, 0x00, 0x00, 0x00 },  /* Ś to S */
+  { 0x015B,  0x73, 0x00, 0x00, 0x00 },  /* ś to s */
+  { 0x015C,  0x53, 0x68, 0x00, 0x00 },  /* Ŝ to Sh */
+  { 0x015D,  0x73, 0x68, 0x00, 0x00 },  /* ŝ to sh */
+  { 0x015E,  0x53, 0x00, 0x00, 0x00 },  /* Ş to S */
+  { 0x015F,  0x73, 0x00, 0x00, 0x00 },  /* ş to s */
+  { 0x0160,  0x53, 0x00, 0x00, 0x00 },  /* Š to S */
+  { 0x0161,  0x73, 0x00, 0x00, 0x00 },  /* š to s */
+  { 0x0162,  0x54, 0x00, 0x00, 0x00 },  /* Ţ to T */
+  { 0x0163,  0x74, 0x00, 0x00, 0x00 },  /* ţ to t */
+  { 0x0164,  0x54, 0x00, 0x00, 0x00 },  /* Ť to T */
+  { 0x0165,  0x74, 0x00, 0x00, 0x00 },  /* ť to t */
+  { 0x0166,  0x54, 0x00, 0x00, 0x00 },  /* Ŧ to T */
+  { 0x0167,  0x74, 0x00, 0x00, 0x00 },  /* ŧ to t */
+  { 0x0168,  0x55, 0x00, 0x00, 0x00 },  /* Ũ to U */
+  { 0x0169,  0x75, 0x00, 0x00, 0x00 },  /* ũ to u */
+  { 0x016A,  0x55, 0x00, 0x00, 0x00 },  /* Ū to U */
+  { 0x016B,  0x75, 0x00, 0x00, 0x00 },  /* ū to u */
+  { 0x016C,  0x55, 0x00, 0x00, 0x00 },  /* Ŭ to U */
+  { 0x016D,  0x75, 0x00, 0x00, 0x00 },  /* ŭ to u */
+  { 0x016E,  0x55, 0x00, 0x00, 0x00 },  /* Ů to U */
+  { 0x016F,  0x75, 0x00, 0x00, 0x00 },  /* ů to u */
+  { 0x0170,  0x55, 0x00, 0x00, 0x00 },  /* Ű to U */
+  { 0x0171,  0x75, 0x00, 0x00, 0x00 },  /* ű to u */
+  { 0x0172,  0x55, 0x00, 0x00, 0x00 },  /* Ų to U */
+  { 0x0173,  0x75, 0x00, 0x00, 0x00 },  /* ų to u */
+  { 0x0174,  0x57, 0x00, 0x00, 0x00 },  /* Ŵ to W */
+  { 0x0175,  0x77, 0x00, 0x00, 0x00 },  /* ŵ to w */
+  { 0x0176,  0x59, 0x00, 0x00, 0x00 },  /* Ŷ to Y */
+  { 0x0177,  0x79, 0x00, 0x00, 0x00 },  /* ŷ to y */
+  { 0x0178,  0x59, 0x00, 0x00, 0x00 },  /* Ÿ to Y */
+  { 0x0179,  0x5A, 0x00, 0x00, 0x00 },  /* Ź to Z */
+  { 0x017A,  0x7A, 0x00, 0x00, 0x00 },  /* ź to z */
+  { 0x017B,  0x5A, 0x00, 0x00, 0x00 },  /* Ż to Z */
+  { 0x017C,  0x7A, 0x00, 0x00, 0x00 },  /* ż to z */
+  { 0x017D,  0x5A, 0x00, 0x00, 0x00 },  /* Ž to Z */
+  { 0x017E,  0x7A, 0x00, 0x00, 0x00 },  /* ž to z */
+  { 0x017F,  0x73, 0x00, 0x00, 0x00 },  /* ſ to s */
+  { 0x0192,  0x66, 0x00, 0x00, 0x00 },  /* ƒ to f */
+  { 0x0218,  0x53, 0x00, 0x00, 0x00 },  /* Ș to S */
+  { 0x0219,  0x73, 0x00, 0x00, 0x00 },  /* ș to s */
+  { 0x021A,  0x54, 0x00, 0x00, 0x00 },  /* Ț to T */
+  { 0x021B,  0x74, 0x00, 0x00, 0x00 },  /* ț to t */
+  { 0x0386,  0x41, 0x00, 0x00, 0x00 },  /* Ά to A */
+  { 0x0388,  0x45, 0x00, 0x00, 0x00 },  /* Έ to E */
+  { 0x0389,  0x49, 0x00, 0x00, 0x00 },  /* Ή to I */
+  { 0x038A,  0x49, 0x00, 0x00, 0x00 },  /* Ί to I */
+  { 0x038C,  0x4f, 0x00, 0x00, 0x00 },  /* Ό to O */
+  { 0x038E,  0x59, 0x00, 0x00, 0x00 },  /* Ύ to Y */
+  { 0x038F,  0x4f, 0x00, 0x00, 0x00 },  /* Ώ to O */
+  { 0x0390,  0x69, 0x00, 0x00, 0x00 },  /* ΐ to i */
+  { 0x0391,  0x41, 0x00, 0x00, 0x00 },  /* Α to A */
+  { 0x0392,  0x42, 0x00, 0x00, 0x00 },  /* Β to B */
+  { 0x0393,  0x47, 0x00, 0x00, 0x00 },  /* Γ to G */
+  { 0x0394,  0x44, 0x00, 0x00, 0x00 },  /* Δ to D */
+  { 0x0395,  0x45, 0x00, 0x00, 0x00 },  /* Ε to E */
+  { 0x0396,  0x5a, 0x00, 0x00, 0x00 },  /* Ζ to Z */
+  { 0x0397,  0x49, 0x00, 0x00, 0x00 },  /* Η to I */
+  { 0x0398,  0x54, 0x68, 0x00, 0x00 },  /* Θ to Th */
+  { 0x0399,  0x49, 0x00, 0x00, 0x00 },  /* Ι to I */
+  { 0x039A,  0x4b, 0x00, 0x00, 0x00 },  /* Κ to K */
+  { 0x039B,  0x4c, 0x00, 0x00, 0x00 },  /* Λ to L */
+  { 0x039C,  0x4d, 0x00, 0x00, 0x00 },  /* Μ to M */
+  { 0x039D,  0x4e, 0x00, 0x00, 0x00 },  /* Ν to N */
+  { 0x039E,  0x58, 0x00, 0x00, 0x00 },  /* Ξ to X */
+  { 0x039F,  0x4f, 0x00, 0x00, 0x00 },  /* Ο to O */
+  { 0x03A0,  0x50, 0x00, 0x00, 0x00 },  /* Π to P */
+  { 0x03A1,  0x52, 0x00, 0x00, 0x00 },  /* Ρ to R */
+  { 0x03A3,  0x53, 0x00, 0x00, 0x00 },  /* Σ to S */
+  { 0x03A4,  0x54, 0x00, 0x00, 0x00 },  /* Τ to T */
+  { 0x03A5,  0x59, 0x00, 0x00, 0x00 },  /* Υ to Y */
+  { 0x03A6,  0x46, 0x00, 0x00, 0x00 },  /* Φ to F */
+  { 0x03A7,  0x43, 0x68, 0x00, 0x00 },  /* Χ to Ch */
+  { 0x03A8,  0x50, 0x73, 0x00, 0x00 },  /* Ψ to Ps */
+  { 0x03A9,  0x4f, 0x00, 0x00, 0x00 },  /* Ω to O */
+  { 0x03AA,  0x49, 0x00, 0x00, 0x00 },  /* Ϊ to I */
+  { 0x03AB,  0x59, 0x00, 0x00, 0x00 },  /* Ϋ to Y */
+  { 0x03AC,  0x61, 0x00, 0x00, 0x00 },  /* ά to a */
+  { 0x03AD,  0x65, 0x00, 0x00, 0x00 },  /* έ to e */
+  { 0x03AE,  0x69, 0x00, 0x00, 0x00 },  /* ή to i */
+  { 0x03AF,  0x69, 0x00, 0x00, 0x00 },  /* ί to i */
+  { 0x03B1,  0x61, 0x00, 0x00, 0x00 },  /* α to a */
+  { 0x03B2,  0x62, 0x00, 0x00, 0x00 },  /* β to b */
+  { 0x03B3,  0x67, 0x00, 0x00, 0x00 },  /* γ to g */
+  { 0x03B4,  0x64, 0x00, 0x00, 0x00 },  /* δ to d */
+  { 0x03B5,  0x65, 0x00, 0x00, 0x00 },  /* ε to e */
+  { 0x03B6,  0x7a, 0x00, 0x00, 0x00 },  /* ζ to z */
+  { 0x03B7,  0x69, 0x00, 0x00, 0x00 },  /* η to i */
+  { 0x03B8,  0x74, 0x68, 0x00, 0x00 },  /* θ to th */
+  { 0x03B9,  0x69, 0x00, 0x00, 0x00 },  /* ι to i */
+  { 0x03BA,  0x6b, 0x00, 0x00, 0x00 },  /* κ to k */
+  { 0x03BB,  0x6c, 0x00, 0x00, 0x00 },  /* λ to l */
+  { 0x03BC,  0x6d, 0x00, 0x00, 0x00 },  /* μ to m */
+  { 0x03BD,  0x6e, 0x00, 0x00, 0x00 },  /* ν to n */
+  { 0x03BE,  0x78, 0x00, 0x00, 0x00 },  /* ξ to x */
+  { 0x03BF,  0x6f, 0x00, 0x00, 0x00 },  /* ο to o */
+  { 0x03C0,  0x70, 0x00, 0x00, 0x00 },  /* π to p */
+  { 0x03C1,  0x72, 0x00, 0x00, 0x00 },  /* ρ to r */
+  { 0x03C3,  0x73, 0x00, 0x00, 0x00 },  /* σ to s */
+  { 0x03C4,  0x74, 0x00, 0x00, 0x00 },  /* τ to t */
+  { 0x03C5,  0x79, 0x00, 0x00, 0x00 },  /* υ to y */
+  { 0x03C6,  0x66, 0x00, 0x00, 0x00 },  /* φ to f */
+  { 0x03C7,  0x63, 0x68, 0x00, 0x00 },  /* χ to ch */
+  { 0x03C8,  0x70, 0x73, 0x00, 0x00 },  /* ψ to ps */
+  { 0x03C9,  0x6f, 0x00, 0x00, 0x00 },  /* ω to o */
+  { 0x03CA,  0x69, 0x00, 0x00, 0x00 },  /* ϊ to i */
+  { 0x03CB,  0x79, 0x00, 0x00, 0x00 },  /* ϋ to y */
+  { 0x03CC,  0x6f, 0x00, 0x00, 0x00 },  /* ό to o */
+  { 0x03CD,  0x79, 0x00, 0x00, 0x00 },  /* ύ to y */
+  { 0x03CE,  0x69, 0x00, 0x00, 0x00 },  /* ώ to i */
+  { 0x0400,  0x45, 0x00, 0x00, 0x00 },  /* Ѐ to E */
+  { 0x0401,  0x45, 0x00, 0x00, 0x00 },  /* Ё to E */
+  { 0x0402,  0x44, 0x00, 0x00, 0x00 },  /* Ђ to D */
+  { 0x0403,  0x47, 0x00, 0x00, 0x00 },  /* Ѓ to G */
+  { 0x0404,  0x45, 0x00, 0x00, 0x00 },  /* Є to E */
+  { 0x0405,  0x5a, 0x00, 0x00, 0x00 },  /* Ѕ to Z */
+  { 0x0406,  0x49, 0x00, 0x00, 0x00 },  /* І to I */
+  { 0x0407,  0x49, 0x00, 0x00, 0x00 },  /* Ї to I */
+  { 0x0408,  0x4a, 0x00, 0x00, 0x00 },  /* Ј to J */
+  { 0x0409,  0x49, 0x00, 0x00, 0x00 },  /* Љ to I */
+  { 0x040A,  0x4e, 0x00, 0x00, 0x00 },  /* Њ to N */
+  { 0x040B,  0x44, 0x00, 0x00, 0x00 },  /* Ћ to D */
+  { 0x040C,  0x4b, 0x00, 0x00, 0x00 },  /* Ќ to K */
+  { 0x040D,  0x49, 0x00, 0x00, 0x00 },  /* Ѝ to I */
+  { 0x040E,  0x55, 0x00, 0x00, 0x00 },  /* Ў to U */
+  { 0x040F,  0x44, 0x00, 0x00, 0x00 },  /* Џ to D */
+  { 0x0410,  0x41, 0x00, 0x00, 0x00 },  /* А to A */
+  { 0x0411,  0x42, 0x00, 0x00, 0x00 },  /* Б to B */
+  { 0x0412,  0x56, 0x00, 0x00, 0x00 },  /* В to V */
+  { 0x0413,  0x47, 0x00, 0x00, 0x00 },  /* Г to G */
+  { 0x0414,  0x44, 0x00, 0x00, 0x00 },  /* Д to D */
+  { 0x0415,  0x45, 0x00, 0x00, 0x00 },  /* Е to E */
+  { 0x0416,  0x5a, 0x68, 0x00, 0x00 },  /* Ж to Zh */
+  { 0x0417,  0x5a, 0x00, 0x00, 0x00 },  /* З to Z */
+  { 0x0418,  0x49, 0x00, 0x00, 0x00 },  /* И to I */
+  { 0x0419,  0x49, 0x00, 0x00, 0x00 },  /* Й to I */
+  { 0x041A,  0x4b, 0x00, 0x00, 0x00 },  /* К to K */
+  { 0x041B,  0x4c, 0x00, 0x00, 0x00 },  /* Л to L */
+  { 0x041C,  0x4d, 0x00, 0x00, 0x00 },  /* М to M */
+  { 0x041D,  0x4e, 0x00, 0x00, 0x00 },  /* Н to N */
+  { 0x041E,  0x4f, 0x00, 0x00, 0x00 },  /* О to O */
+  { 0x041F,  0x50, 0x00, 0x00, 0x00 },  /* П to P */
+  { 0x0420,  0x52, 0x00, 0x00, 0x00 },  /* Р to R */
+  { 0x0421,  0x53, 0x00, 0x00, 0x00 },  /* С to S */
+  { 0x0422,  0x54, 0x00, 0x00, 0x00 },  /* Т to T */
+  { 0x0423,  0x55, 0x00, 0x00, 0x00 },  /* У to U */
+  { 0x0424,  0x46, 0x00, 0x00, 0x00 },  /* Ф to F */
+  { 0x0425,  0x4b, 0x68, 0x00, 0x00 },  /* Х to Kh */
+  { 0x0426,  0x54, 0x63, 0x00, 0x00 },  /* Ц to Tc */
+  { 0x0427,  0x43, 0x68, 0x00, 0x00 },  /* Ч to Ch */
+  { 0x0428,  0x53, 0x68, 0x00, 0x00 },  /* Ш to Sh */
+  { 0x0429,  0x53, 0x68, 0x63, 0x68 },  /* Щ to Shch */
+  { 0x042A,  0x61, 0x00, 0x00, 0x00 },  /*  to A */
+  { 0x042B,  0x59, 0x00, 0x00, 0x00 },  /* Ы to Y */
+  { 0x042C,  0x59, 0x00, 0x00, 0x00 },  /*  to Y */
+  { 0x042D,  0x45, 0x00, 0x00, 0x00 },  /* Э to E */
+  { 0x042E,  0x49, 0x75, 0x00, 0x00 },  /* Ю to Iu */
+  { 0x042F,  0x49, 0x61, 0x00, 0x00 },  /* Я to Ia */
+  { 0x0430,  0x61, 0x00, 0x00, 0x00 },  /* а to a */
+  { 0x0431,  0x62, 0x00, 0x00, 0x00 },  /* б to b */
+  { 0x0432,  0x76, 0x00, 0x00, 0x00 },  /* в to v */
+  { 0x0433,  0x67, 0x00, 0x00, 0x00 },  /* г to g */
+  { 0x0434,  0x64, 0x00, 0x00, 0x00 },  /* д to d */
+  { 0x0435,  0x65, 0x00, 0x00, 0x00 },  /* е to e */
+  { 0x0436,  0x7a, 0x68, 0x00, 0x00 },  /* ж to zh */
+  { 0x0437,  0x7a, 0x00, 0x00, 0x00 },  /* з to z */
+  { 0x0438,  0x69, 0x00, 0x00, 0x00 },  /* и to i */
+  { 0x0439,  0x69, 0x00, 0x00, 0x00 },  /* й to i */
+  { 0x043A,  0x6b, 0x00, 0x00, 0x00 },  /* к to k */
+  { 0x043B,  0x6c, 0x00, 0x00, 0x00 },  /* л to l */
+  { 0x043C,  0x6d, 0x00, 0x00, 0x00 },  /* м to m */
+  { 0x043D,  0x6e, 0x00, 0x00, 0x00 },  /* н to n */
+  { 0x043E,  0x6f, 0x00, 0x00, 0x00 },  /* о to o */
+  { 0x043F,  0x70, 0x00, 0x00, 0x00 },  /* п to p */
+  { 0x0440,  0x72, 0x00, 0x00, 0x00 },  /* р to r */
+  { 0x0441,  0x73, 0x00, 0x00, 0x00 },  /* с to s */
+  { 0x0442,  0x74, 0x00, 0x00, 0x00 },  /* т to t */
+  { 0x0443,  0x75, 0x00, 0x00, 0x00 },  /* у to u */
+  { 0x0444,  0x66, 0x00, 0x00, 0x00 },  /* ф to f */
+  { 0x0445,  0x6b, 0x68, 0x00, 0x00 },  /* х to kh */
+  { 0x0446,  0x74, 0x63, 0x00, 0x00 },  /* ц to tc */
+  { 0x0447,  0x63, 0x68, 0x00, 0x00 },  /* ч to ch */
+  { 0x0448,  0x73, 0x68, 0x00, 0x00 },  /* ш to sh */
+  { 0x0449,  0x73, 0x68, 0x63, 0x68 },  /* щ to shch */
+  { 0x044A,  0x61, 0x00, 0x00, 0x00 },  /*  to a */
+  { 0x044B,  0x79, 0x00, 0x00, 0x00 },  /* ы to y */
+  { 0x044C,  0x79, 0x00, 0x00, 0x00 },  /*  to y */
+  { 0x044D,  0x65, 0x00, 0x00, 0x00 },  /* э to e */
+  { 0x044E,  0x69, 0x75, 0x00, 0x00 },  /* ю to iu */
+  { 0x044F,  0x69, 0x61, 0x00, 0x00 },  /* я to ia */
+  { 0x0450,  0x65, 0x00, 0x00, 0x00 },  /* ѐ to e */
+  { 0x0451,  0x65, 0x00, 0x00, 0x00 },  /* ё to e */
+  { 0x0452,  0x64, 0x00, 0x00, 0x00 },  /* ђ to d */
+  { 0x0453,  0x67, 0x00, 0x00, 0x00 },  /* ѓ to g */
+  { 0x0454,  0x65, 0x00, 0x00, 0x00 },  /* є to e */
+  { 0x0455,  0x7a, 0x00, 0x00, 0x00 },  /* ѕ to z */
+  { 0x0456,  0x69, 0x00, 0x00, 0x00 },  /* і to i */
+  { 0x0457,  0x69, 0x00, 0x00, 0x00 },  /* ї to i */
+  { 0x0458,  0x6a, 0x00, 0x00, 0x00 },  /* ј to j */
+  { 0x0459,  0x69, 0x00, 0x00, 0x00 },  /* љ to i */
+  { 0x045A,  0x6e, 0x00, 0x00, 0x00 },  /* њ to n */
+  { 0x045B,  0x64, 0x00, 0x00, 0x00 },  /* ћ to d */
+  { 0x045C,  0x6b, 0x00, 0x00, 0x00 },  /* ќ to k */
+  { 0x045D,  0x69, 0x00, 0x00, 0x00 },  /* ѝ to i */
+  { 0x045E,  0x75, 0x00, 0x00, 0x00 },  /* ў to u */
+  { 0x045F,  0x64, 0x00, 0x00, 0x00 },  /* џ to d */
+  { 0x1E02,  0x42, 0x00, 0x00, 0x00 },  /* Ḃ to B */
+  { 0x1E03,  0x62, 0x00, 0x00, 0x00 },  /* ḃ to b */
+  { 0x1E0A,  0x44, 0x00, 0x00, 0x00 },  /* Ḋ to D */
+  { 0x1E0B,  0x64, 0x00, 0x00, 0x00 },  /* ḋ to d */
+  { 0x1E1E,  0x46, 0x00, 0x00, 0x00 },  /* Ḟ to F */
+  { 0x1E1F,  0x66, 0x00, 0x00, 0x00 },  /* ḟ to f */
+  { 0x1E40,  0x4D, 0x00, 0x00, 0x00 },  /* Ṁ to M */
+  { 0x1E41,  0x6D, 0x00, 0x00, 0x00 },  /* ṁ to m */
+  { 0x1E56,  0x50, 0x00, 0x00, 0x00 },  /* Ṗ to P */
+  { 0x1E57,  0x70, 0x00, 0x00, 0x00 },  /* ṗ to p */
+  { 0x1E60,  0x53, 0x00, 0x00, 0x00 },  /* Ṡ to S */
+  { 0x1E61,  0x73, 0x00, 0x00, 0x00 },  /* ṡ to s */
+  { 0x1E6A,  0x54, 0x00, 0x00, 0x00 },  /* Ṫ to T */
+  { 0x1E6B,  0x74, 0x00, 0x00, 0x00 },  /* ṫ to t */
+  { 0x1E80,  0x57, 0x00, 0x00, 0x00 },  /* Ẁ to W */
+  { 0x1E81,  0x77, 0x00, 0x00, 0x00 },  /* ẁ to w */
+  { 0x1E82,  0x57, 0x00, 0x00, 0x00 },  /* Ẃ to W */
+  { 0x1E83,  0x77, 0x00, 0x00, 0x00 },  /* ẃ to w */
+  { 0x1E84,  0x57, 0x00, 0x00, 0x00 },  /* Ẅ to W */
+  { 0x1E85,  0x77, 0x00, 0x00, 0x00 },  /* ẅ to w */
+  { 0x1EF2,  0x59, 0x00, 0x00, 0x00 },  /* Ỳ to Y */
+  { 0x1EF3,  0x79, 0x00, 0x00, 0x00 },  /* ỳ to y */
+  { 0xFB00,  0x66, 0x66, 0x00, 0x00 },  /* ﬀ to ff */
+  { 0xFB01,  0x66, 0x69, 0x00, 0x00 },  /* ﬁ to fi */
+  { 0xFB02,  0x66, 0x6C, 0x00, 0x00 },  /* ﬂ to fl */
+  { 0xFB05,  0x73, 0x74, 0x00, 0x00 },  /* ﬅ to st */
+  { 0xFB06,  0x73, 0x74, 0x00, 0x00 },  /* ﬆ to st */
 };
+
+static const Transliteration *spellfixFindTranslit(int c, int *pxTop){
+  *pxTop = (sizeof(translit)/sizeof(translit[0])) - 1;
+  return translit;
+}
 
 /*
 ** Convert the input string from UTF-8 into pure ASCII by converting
@@ -1587,7 +1711,11 @@ static const struct {
 ** should be freed by the caller.
 */
 static unsigned char *transliterate(const unsigned char *zIn, int nIn){
-  unsigned char *zOut = sqlite3_malloc( nIn*4 + 1 );
+#ifdef SQLITE_SPELLFIX_5BYTE_MAPPINGS
+  unsigned char *zOut = sqlite3_malloc64( nIn*5 + 1 );
+#else
+  unsigned char *zOut = sqlite3_malloc64( nIn*4 + 1 );
+#endif
   int c, sz, nOut;
   if( zOut==0 ) return 0;
   nOut = 0;
@@ -1596,26 +1724,32 @@ static unsigned char *transliterate(const unsigned char *zIn, int nIn){
     zIn += sz;
     nIn -= sz;
     if( c<=127 ){
-      zOut[nOut++] = c;
+      zOut[nOut++] = (unsigned char)c;
     }else{
       int xTop, xBtm, x;
-      xTop = sizeof(translit)/sizeof(translit[0]) - 1;
+      const Transliteration *tbl = spellfixFindTranslit(c, &xTop);
       xBtm = 0;
       while( xTop>=xBtm ){
         x = (xTop + xBtm)/2;
-        if( translit[x].cFrom==c ){
-          zOut[nOut++] = translit[x].cTo0;
-          if( translit[x].cTo1 ){
-            zOut[nOut++] = translit[x].cTo1;
-            /* Add an extra "ch" after the "sh" for Щ and щ */
-            if( c==0x0429 || c== 0x0449 ){
-              zOut[nOut++] = 'c';
-              zOut[nOut++] = 'h';
+        if( tbl[x].cFrom==c ){
+          zOut[nOut++] = tbl[x].cTo0;
+          if( tbl[x].cTo1 ){
+            zOut[nOut++] = tbl[x].cTo1;
+            if( tbl[x].cTo2 ){
+              zOut[nOut++] = tbl[x].cTo2;
+              if( tbl[x].cTo3 ){
+                zOut[nOut++] = tbl[x].cTo3;
+#ifdef SQLITE_SPELLFIX_5BYTE_MAPPINGS
+                if( tbl[x].cTo4 ){
+                  zOut[nOut++] = tbl[x].cTo4;
+                }
+#endif /* SQLITE_SPELLFIX_5BYTE_MAPPINGS */
+              }
             }
           }
           c = 0;
           break;
-        }else if( translit[x].cFrom>c ){
+        }else if( tbl[x].cFrom>c ){
           xTop = x-1;
         }else{
           xBtm = x+1;
@@ -1646,15 +1780,22 @@ static int translen_to_charlen(const char *zIn, int nIn, int nTrans){
     nOut++;
     if( c>=128 ){
       int xTop, xBtm, x;
-      xTop = sizeof(translit)/sizeof(translit[0]) - 1;
+      const Transliteration *tbl = spellfixFindTranslit(c, &xTop);
       xBtm = 0;
       while( xTop>=xBtm ){
         x = (xTop + xBtm)/2;
-        if( translit[x].cFrom==c ){
-          if( translit[x].cTo1 ) nOut++;
-          if( c==0x0429 || c== 0x0449 ) nOut += 2;
+        if( tbl[x].cFrom==c ){
+          if( tbl[x].cTo1 ){
+            nOut++;
+            if( tbl[x].cTo2 ){
+              nOut++;
+              if( tbl[x].cTo3 ){
+                nOut++;
+              }
+            }
+          }
           break;
-        }else if( translit[x].cFrom>c ){
+        }else if( tbl[x].cFrom>c ){
           xTop = x-1;
         }else{
           xBtm = x+1;
@@ -1670,7 +1811,7 @@ static int translen_to_charlen(const char *zIn, int nIn, int nTrans){
 /*
 **    spellfix1_translit(X)
 **
-** Convert a string that contains non-ASCII Roman characters into 
+** Convert a string that contains non-ASCII Roman characters into
 ** pure ASCII.
 */
 static void transliterateSqlFunc(
@@ -1714,6 +1855,7 @@ static void scriptCodeSqlFunc(
   int c, sz;
   int scriptMask = 0;
   int res;
+  int seenDigit = 0;
 # define SCRIPT_LATIN       0x0001
 # define SCRIPT_CYRILLIC    0x0002
 # define SCRIPT_GREEK       0x0004
@@ -1724,8 +1866,12 @@ static void scriptCodeSqlFunc(
     c = utf8Read(zIn, nIn, &sz);
     zIn += sz;
     nIn -= sz;
-    if( c<0x02af && (c>=0x80 || midClass[c&0x7f]<CCLASS_DIGIT) ){
-      scriptMask |= SCRIPT_LATIN;
+    if( c<0x02af ){
+      if( c>=0x80 || midClass[c&0x7f]<CCLASS_DIGIT ){
+        scriptMask |= SCRIPT_LATIN;
+      }else if( c>='0' && c<='9' ){
+        seenDigit = 1;
+      }
     }else if( c>=0x0400 && c<=0x04ff ){
       scriptMask |= SCRIPT_CYRILLIC;
     }else if( c>=0x0386 && c<=0x03ce ){
@@ -1736,6 +1882,7 @@ static void scriptCodeSqlFunc(
       scriptMask |= SCRIPT_ARABIC;
     }
   }
+  if( scriptMask==0 && seenDigit ) scriptMask = SCRIPT_LATIN;
   switch( scriptMask ){
     case 0:                res = 999; break;
     case SCRIPT_LATIN:     res = 215; break;
@@ -1755,7 +1902,7 @@ static void scriptCodeSqlFunc(
 */
 
 /* Maximum length of a phonehash used for querying the shadow table */
-#define SPELLFIX_MX_HASH  8
+#define SPELLFIX_MX_HASH  32
 
 /* Maximum number of hash strings to examine per query */
 #define SPELLFIX_MX_RUN   1
@@ -1795,7 +1942,7 @@ struct spellfix1_cursor {
     int iScore;                   /* Score for sorting */
     int iMatchlen;                /* Value of matchlen column (or -1) */
     char zHash[SPELLFIX_MX_HASH]; /* the phonehash used for this match */
-  } *a; 
+  } *a;
 };
 
 /*
@@ -1910,7 +2057,7 @@ static int spellfix1Init(
   int i;
 
   nDbName = (int)strlen(zDbName);
-  pNew = sqlite3_malloc( sizeof(*pNew) + nDbName + 1);
+  pNew = sqlite3_malloc64( sizeof(*pNew) + nDbName + 1);
   if( pNew==0 ){
     rc = SQLITE_NOMEM;
   }else{
@@ -1922,7 +2069,7 @@ static int spellfix1Init(
     if( pNew->zTableName==0 ){
       rc = SQLITE_NOMEM;
     }else{
-      rc = sqlite3_declare_vtab(db, 
+      rc = sqlite3_declare_vtab(db,
            "CREATE TABLE x(word,rank,distance,langid, "
            "score, matchlen, phonehash HIDDEN, "
            "top HIDDEN, scope HIDDEN, srchcnt HIDDEN, "
@@ -1966,7 +2113,7 @@ static int spellfix1Init(
         continue;
       }
       *pzErr = sqlite3_mprintf("bad argument to spellfix1(): \"%s\"", argv[i]);
-      rc = SQLITE_ERROR; 
+      rc = SQLITE_ERROR;
     }
   }
 
@@ -2024,7 +2171,7 @@ static void spellfix1ResetCursor(spellfix1_cursor *pCur){
 static void spellfix1ResizeCursor(spellfix1_cursor *pCur, int N){
   struct spellfix1_row *aNew;
   assert( N>=pCur->nRow );
-  aNew = sqlite3_realloc(pCur->a, sizeof(pCur->a[0])*N);
+  aNew = sqlite3_realloc64(pCur->a, sizeof(pCur->a[0])*N);
   if( aNew==0 && N>0 ){
     spellfix1ResetCursor(pCur);
     sqlite3_free(pCur->a);
@@ -2080,7 +2227,7 @@ static int spellfix1BestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo){
     if( pConstraint->usable==0 ) continue;
 
     /* Terms of the form:  word MATCH $str */
-    if( (iPlan & SPELLFIX_IDXNUM_MATCH)==0 
+    if( (iPlan & SPELLFIX_IDXNUM_MATCH)==0
      && pConstraint->iColumn==SPELLFIX_COL_WORD
      && pConstraint->op==SQLITE_INDEX_CONSTRAINT_MATCH
     ){
@@ -2183,7 +2330,7 @@ static int spellfix1BestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo){
 static int spellfix1Open(sqlite3_vtab *pVTab, sqlite3_vtab_cursor **ppCursor){
   spellfix1_vtab *p = (spellfix1_vtab*)pVTab;
   spellfix1_cursor *pCur;
-  pCur = sqlite3_malloc( sizeof(*pCur) );
+  pCur = sqlite3_malloc64( sizeof(*pCur) );
   if( pCur==0 ) return SQLITE_NOMEM;
   memset(pCur, 0, sizeof(*pCur));
   pCur->pVTab = p;
@@ -2205,7 +2352,7 @@ static int spellfix1Score(int iDistance, int iRank){
 ** Compare two spellfix1_row objects for sorting purposes in qsort() such
 ** that they sort in order of increasing distance.
 */
-static int spellfix1RowCompare(const void *A, const void *B){
+static int SQLITE_CDECL spellfix1RowCompare(const void *A, const void *B){
   const struct spellfix1_row *a = (const struct spellfix1_row*)A;
   const struct spellfix1_row *b = (const struct spellfix1_row*)B;
   return a->iScore - b->iScore;
@@ -2317,7 +2464,7 @@ static void spellfix1RunQuery(MatchQuery *p, const char *zQuery, int nQuery){
       break;
     }
     pCur->nSearch++;
-    
+
     /* If there is a "distance < $dist" or "distance <= $dist" constraint,
     ** check if this row meets it. If not, jump back up to the top of the
     ** loop to process the next row. Otherwise, if the row does match the
@@ -2397,7 +2544,7 @@ static int spellfix1FilterForMatch(
 
   /* Load the cost table if we have not already done so */
   if( p->zCostTable!=0 && p->pConfig3==0 ){
-    p->pConfig3 = sqlite3_malloc( sizeof(p->pConfig3[0]) );
+    p->pConfig3 = sqlite3_malloc64( sizeof(p->pConfig3[0]) );
     if( p->pConfig3==0 ) return SQLITE_NOMEM;
     memset(p->pConfig3, 0, sizeof(p->pConfig3[0]));
     rc = editDist3ConfigLoad(p->pConfig3, p->db, p->zCostTable);
@@ -2448,7 +2595,7 @@ static int spellfix1FilterForMatch(
   nPattern = (int)strlen(zPattern);
   if( zPattern[nPattern-1]=='*' ) nPattern--;
   zSql = sqlite3_mprintf(
-     "SELECT id, word, rank, k1"
+     "SELECT id, word, rank, coalesce(k1,word)"
      "  FROM \"%w\".\"%w_vocab\""
      " WHERE langid=%d AND k2>=?1 AND k2<?2",
      p->zDbName, p->zTableName, iLang
@@ -2531,7 +2678,7 @@ static int spellfix1FilterForFullScan(
 ** prior to any spellfix1Column, spellfix1Rowid, or spellfix1Eof call.
 */
 static int spellfix1Filter(
-  sqlite3_vtab_cursor *cur, 
+  sqlite3_vtab_cursor *cur,
   int idxNum, const char *idxStr,
   int argc, sqlite3_value **argv
 ){
@@ -2734,7 +2881,7 @@ static int spellfix1Update(
       /* Inserts of the form:  INSERT INTO table(command) VALUES('xyzzy');
       ** cause zWord to be NULL, so we look at the "command" column to see
       ** what special actions to take */
-      const char *zCmd = 
+      const char *zCmd =
          (const char*)sqlite3_value_text(argv[SPELLFIX_COL_COMMAND+2]);
       if( zCmd==0 ){
         pVTab->zErrMsg = sqlite3_mprintf("NOT NULL constraint failed: %s.word",
@@ -2782,17 +2929,17 @@ static int spellfix1Update(
       if( sqlite3_value_type(argv[1])==SQLITE_NULL ){
         spellfix1DbExec(&rc, db,
                "INSERT INTO \"%w\".\"%w_vocab\"(rank,langid,word,k1,k2) "
-               "VALUES(%d,%d,%Q,%Q,%Q)",
+               "VALUES(%d,%d,%Q,nullif(%Q,%Q),%Q)",
                p->zDbName, p->zTableName,
-               iRank, iLang, zWord, zK1, zK2
+               iRank, iLang, zWord, zK1, zWord, zK2
         );
       }else{
         newRowid = sqlite3_value_int64(argv[1]);
         spellfix1DbExec(&rc, db,
             "INSERT OR %s INTO \"%w\".\"%w_vocab\"(id,rank,langid,word,k1,k2) "
-            "VALUES(%lld,%d,%d,%Q,%Q,%Q)",
+            "VALUES(%lld,%d,%d,%Q,nullif(%Q,%Q),%Q)",
             zConflict, p->zDbName, p->zTableName,
-            newRowid, iRank, iLang, zWord, zK1, zK2
+            newRowid, iRank, iLang, zWord, zK1, zWord, zK2
         );
       }
       *pRowid = sqlite3_last_insert_rowid(db);
@@ -2801,9 +2948,9 @@ static int spellfix1Update(
       newRowid = *pRowid = sqlite3_value_int64(argv[1]);
       spellfix1DbExec(&rc, db,
              "UPDATE OR %s \"%w\".\"%w_vocab\" SET id=%lld, rank=%d, langid=%d,"
-             " word=%Q, k1=%Q, k2=%Q WHERE id=%lld",
+             " word=%Q, k1=nullif(%Q,%Q), k2=%Q WHERE id=%lld",
              zConflict, p->zDbName, p->zTableName, newRowid, iRank, iLang,
-             zWord, zK1, zK2, rowid
+             zWord, zK1, zWord, zK2, rowid
       );
     }
     sqlite3_free(zK1);
@@ -2823,7 +2970,7 @@ static int spellfix1Rename(sqlite3_vtab *pVTab, const char *zNew){
   if( zNewName==0 ){
     return SQLITE_NOMEM;
   }
-  spellfix1DbExec(&rc, db, 
+  spellfix1DbExec(&rc, db,
      "ALTER TABLE \"%w\".\"%w_vocab\" RENAME TO \"%w_vocab\"",
      p->zDbName, p->zTableName, zNewName
   );
@@ -2869,18 +3016,22 @@ static sqlite3_module spellfix1Module = {
 static int spellfix1Register(sqlite3 *db){
   int rc = SQLITE_OK;
   int i;
-  rc = sqlite3_create_function(db, "spellfix1_translit", 1, SQLITE_UTF8, 0,
-                                  transliterateSqlFunc, 0, 0);
+  rc = sqlite3_create_function(db, "spellfix1_translit", 1,
+                               SQLITE_UTF8|SQLITE_DETERMINISTIC, 0,
+                                transliterateSqlFunc, 0, 0);
   if( rc==SQLITE_OK ){
-    rc = sqlite3_create_function(db, "spellfix1_editdist", 2, SQLITE_UTF8, 0,
+    rc = sqlite3_create_function(db, "spellfix1_editdist", 2,
+                                 SQLITE_UTF8|SQLITE_DETERMINISTIC, 0,
                                   editdistSqlFunc, 0, 0);
   }
   if( rc==SQLITE_OK ){
-    rc = sqlite3_create_function(db, "spellfix1_phonehash", 1, SQLITE_UTF8, 0,
+    rc = sqlite3_create_function(db, "spellfix1_phonehash", 1,
+                                 SQLITE_UTF8|SQLITE_DETERMINISTIC, 0,
                                   phoneticHashSqlFunc, 0, 0);
   }
   if( rc==SQLITE_OK ){
-    rc = sqlite3_create_function(db, "spellfix1_scriptcode", 1, SQLITE_UTF8, 0,
+    rc = sqlite3_create_function(db, "spellfix1_scriptcode", 1,
+                                  SQLITE_UTF8|SQLITE_DETERMINISTIC, 0,
                                   scriptCodeSqlFunc, 0, 0);
   }
   if( rc==SQLITE_OK ){
@@ -2907,8 +3058,8 @@ static int spellfix1Register(sqlite3 *db){
 __declspec(dllexport)
 #endif
 int sqlite3_spellfix_init(
-  sqlite3 *db, 
-  char **pzErrMsg, 
+  sqlite3 *db,
+  char **pzErrMsg,
   const sqlite3_api_routines *pApi
 ){
   SQLITE_EXTENSION_INIT2(pApi);

@@ -66,7 +66,7 @@ extern const char sqlite3IsEbcdicIdChar[];
 **   (2) NORMAL    We are in the middle of statement which ends with a single
 **                 semicolon.
 **
-**   (3) EXPLAIN   The keyword EXPLAIN has been seen at the beginning of 
+**   (3) EXPLAIN   The keyword EXPLAIN has been seen at the beginning of
 **                 a statement.
 **
 **   (4) CREATE    The keyword CREATE has been seen at the beginning of a
@@ -281,7 +281,7 @@ int sqlite3_complete16(const void *zSql){
   if( zSql8 ){
     rc = sqlite3_complete(zSql8);
   }else{
-    rc = SQLITE_NOMEM;
+    rc = SQLITE_NOMEM_BKPT;
   }
   sqlite3ValueFree(pVal);
   return rc & 0xff;

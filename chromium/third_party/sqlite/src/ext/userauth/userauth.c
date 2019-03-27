@@ -22,7 +22,7 @@
 ** directory as this file for additional information.
 */
 #ifdef SQLITE_USER_AUTHENTICATION
-#ifndef _SQLITEINT_H_
+#ifndef SQLITEINT_H
 # include "sqliteInt.h"
 #endif
 
@@ -210,7 +210,7 @@ int sqlite3_user_authenticate(
   db->auth.nAuthPW = nPW;
   rc = sqlite3UserAuthCheckLogin(db, "main", &authLevel);
   db->auth.authLevel = authLevel;
-  sqlite3ExpirePreparedStatements(db);
+  sqlite3ExpirePreparedStatements(db, 0);
   if( rc ){
     return rc;           /* OOM error, I/O error, etc. */
   }
@@ -243,7 +243,7 @@ int sqlite3_user_add(
   if( db->auth.authLevel<UAUTH_Admin ) return SQLITE_AUTH;
   if( !userTableExists(db, "main") ){
     if( !isAdmin ) return SQLITE_AUTH;
-    pStmt = sqlite3UserAuthPrepare(db, 
+    pStmt = sqlite3UserAuthPrepare(db,
               "CREATE TABLE sqlite_user(\n"
               "  uname TEXT PRIMARY KEY,\n"
               "  isAdmin BOOLEAN,\n"
@@ -254,7 +254,7 @@ int sqlite3_user_add(
     rc = sqlite3_finalize(pStmt);
     if( rc ) return rc;
   }
-  pStmt = sqlite3UserAuthPrepare(db, 
+  pStmt = sqlite3UserAuthPrepare(db,
             "INSERT INTO sqlite_user(uname,isAdmin,pw)"
             " VALUES(%Q,%d,sqlite_crypt(?1,NULL))",
             zUsername, isAdmin!=0);
@@ -274,7 +274,7 @@ int sqlite3_user_add(
 ** The sqlite3_user_change() interface can be used to change a users
 ** login credentials or admin privilege.  Any user can change their own
 ** login credentials.  Only an admin user can change another users login
-** credentials or admin privilege setting.  No user may change their own 
+** credentials or admin privilege setting.  No user may change their own
 ** admin privilege setting.
 */
 int sqlite3_user_change(

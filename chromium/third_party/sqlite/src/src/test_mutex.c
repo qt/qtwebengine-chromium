@@ -12,7 +12,11 @@
 ** This file contains test logic for the sqlite3_mutex interfaces.
 */
 
-#include "tcl.h"
+#if defined(INCLUDE_SQLITE_TCL_H)
+#  include "sqlite_tcl.h"
+#else
+#  include "tcl.h"
+#endif
 #include "sqlite3.h"
 #include "sqliteInt.h"
 #include <stdlib.h>
@@ -64,7 +68,7 @@ static int counterMutexNotheld(sqlite3_mutex *p){
 ** return the value of g.disableInit as the result code.  This can be used
 ** to simulate an initialization failure.
 */
-static int counterMutexInit(void){ 
+static int counterMutexInit(void){
   int rc;
   if( g.disableInit ) return g.disableInit;
   rc = g.m.xMutexInit();
@@ -75,7 +79,7 @@ static int counterMutexInit(void){
 /*
 ** Uninitialize the mutex subsystem
 */
-static int counterMutexEnd(void){ 
+static int counterMutexEnd(void){
   g.isInit = 0;
   return g.m.xMutexEnd();
 }
@@ -152,7 +156,7 @@ static void counterMutexLeave(sqlite3_mutex *p){
 /*
 ** sqlite3_shutdown
 */
-static int test_shutdown(
+static int SQLITE_TCLAPI test_shutdown(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -173,7 +177,7 @@ static int test_shutdown(
 /*
 ** sqlite3_initialize
 */
-static int test_initialize(
+static int SQLITE_TCLAPI test_initialize(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -194,7 +198,7 @@ static int test_initialize(
 /*
 ** install_mutex_counters BOOLEAN
 */
-static int test_install_mutex_counters(
+static int SQLITE_TCLAPI test_install_mutex_counters(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -255,7 +259,7 @@ static int test_install_mutex_counters(
 /*
 ** read_mutex_counters
 */
-static int test_read_mutex_counters(
+static int SQLITE_TCLAPI test_read_mutex_counters(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -284,7 +288,7 @@ static int test_read_mutex_counters(
 /*
 ** clear_mutex_counters
 */
-static int test_clear_mutex_counters(
+static int SQLITE_TCLAPI test_clear_mutex_counters(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -308,7 +312,7 @@ static int test_clear_mutex_counters(
 ** will be invalid since the mutex has already been freed.  The
 ** return pointer just checks to see if the mutex really was allocated.
 */
-static int test_alloc_mutex(
+static int SQLITE_TCLAPI test_alloc_mutex(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -335,7 +339,7 @@ static int test_alloc_mutex(
 **
 ** Or OPTION can be an raw integer.
 */
-static int test_config(
+static int SQLITE_TCLAPI test_config(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -397,7 +401,7 @@ static sqlite3_mutex *getStaticMutexPointer(
   return counterMutexAlloc(iMutex);
 }
 
-static int test_enter_static_mutex(
+static int SQLITE_TCLAPI test_enter_static_mutex(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -416,7 +420,7 @@ static int test_enter_static_mutex(
   return TCL_OK;
 }
 
-static int test_leave_static_mutex(
+static int SQLITE_TCLAPI test_leave_static_mutex(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -435,7 +439,7 @@ static int test_leave_static_mutex(
   return TCL_OK;
 }
 
-static int test_enter_db_mutex(
+static int SQLITE_TCLAPI test_enter_db_mutex(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -454,7 +458,7 @@ static int test_enter_db_mutex(
   return TCL_OK;
 }
 
-static int test_leave_db_mutex(
+static int SQLITE_TCLAPI test_leave_db_mutex(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -498,9 +502,9 @@ int Sqlitetest_mutex_Init(Tcl_Interp *interp){
     Tcl_CreateObjCommand(interp, aCmd[i].zName, aCmd[i].xProc, 0, 0);
   }
 
-  Tcl_LinkVar(interp, "disable_mutex_init", 
+  Tcl_LinkVar(interp, "disable_mutex_init",
               (char*)&g.disableInit, TCL_LINK_INT);
-  Tcl_LinkVar(interp, "disable_mutex_try", 
+  Tcl_LinkVar(interp, "disable_mutex_try",
               (char*)&g.disableTry, TCL_LINK_INT);
   return SQLITE_OK;
 }

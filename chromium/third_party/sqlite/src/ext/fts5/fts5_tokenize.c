@@ -20,7 +20,7 @@
 
 /*
 ** For tokenizers with no "unicode" modifier, the set of token characters
-** is the same as the set of ASCII range alphanumeric characters. 
+** is the same as the set of ASCII range alphanumeric characters.
 */
 static unsigned char aAsciiTokenChar[128] = {
   0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,   /* 0x00..0x0F */
@@ -39,8 +39,8 @@ struct AsciiTokenizer {
 };
 
 static void fts5AsciiAddExceptions(
-  AsciiTokenizer *p, 
-  const char *zArg, 
+  AsciiTokenizer *p,
+  const char *zArg,
   int bTokenChars
 ){
   int i;
@@ -62,12 +62,13 @@ static void fts5AsciiDelete(Fts5Tokenizer *p){
 ** Create an "ascii" tokenizer.
 */
 static int fts5AsciiCreate(
-  void *pCtx, 
+  void *pUnused,
   const char **azArg, int nArg,
   Fts5Tokenizer **ppOut
 ){
   int rc = SQLITE_OK;
   AsciiTokenizer *p = 0;
+  UNUSED_PARAM(pUnused);
   if( nArg%2 ){
     rc = SQLITE_ERROR;
   }else{
@@ -116,7 +117,7 @@ static void asciiFold(char *aOut, const char *aIn, int nByte){
 static int fts5AsciiTokenize(
   Fts5Tokenizer *pTokenizer,
   void *pCtx,
-  int flags,
+  int iUnused,
   const char *pText, int nText,
   int (*xToken)(void*, int, const char*, int nToken, int iStart, int iEnd)
 ){
@@ -129,6 +130,8 @@ static int fts5AsciiTokenize(
   int nFold = sizeof(aFold);
   char *pFold = aFold;
   unsigned char *a = p->aTokenChar;
+
+  UNUSED_PARAM(iUnused);
 
   while( is<nText && rc==SQLITE_OK ){
     int nByte;
@@ -162,7 +165,7 @@ static int fts5AsciiTokenize(
     rc = xToken(pCtx, 0, pFold, nByte, is, ie);
     is = ie+1;
   }
-  
+
   if( pFold!=aFold ) sqlite3_free(pFold);
   if( rc==SQLITE_DONE ) rc = SQLITE_OK;
   return rc;
@@ -234,6 +237,8 @@ struct Unicode61Tokenizer {
   int bRemoveDiacritic;           /* True if remove_diacritics=1 is set */
   int nException;
   int *aiException;
+
+  unsigned char aCategory[32];    /* True for token char categories */
 };
 
 static int fts5UnicodeAddExceptions(
@@ -258,8 +263,8 @@ static int fts5UnicodeAddExceptions(
         if( iCode<128 ){
           p->aTokenChar[iCode] = (unsigned char)bTokenChars;
         }else{
-          bToken = sqlite3Fts5UnicodeIsalnum(iCode);
-          assert( (bToken==0 || bToken==1) ); 
+          bToken = p->aCategory[sqlite3Fts5UnicodeCategory(iCode)];
+          assert( (bToken==0 || bToken==1) );
           assert( (bTokenChars==0 || bTokenChars==1) );
           if( bToken!=bTokenChars && sqlite3Fts5UnicodeIsdiacritic(iCode)==0 ){
             int i;
@@ -319,31 +324,61 @@ static void fts5UnicodeDelete(Fts5Tokenizer *pTok){
   return;
 }
 
+static int unicodeSetCategories(Unicode61Tokenizer *p, const char *zCat){
+  const char *z = zCat;
+
+  while( *z ){
+    while( *z==' ' || *z=='\t' ) z++;
+    if( *z && sqlite3Fts5UnicodeCatParse(z, p->aCategory) ){
+      return SQLITE_ERROR;
+    }
+    while( *z!=' ' && *z!='\t' && *z!='\0' ) z++;
+  }
+
+  sqlite3Fts5UnicodeAscii(p->aCategory, p->aTokenChar);
+  return SQLITE_OK;
+}
+
 /*
 ** Create a "unicode61" tokenizer.
 */
 static int fts5UnicodeCreate(
-  void *pCtx, 
+  void *pUnused,
   const char **azArg, int nArg,
   Fts5Tokenizer **ppOut
 ){
   int rc = SQLITE_OK;             /* Return code */
-  Unicode61Tokenizer *p = 0;      /* New tokenizer object */ 
+  Unicode61Tokenizer *p = 0;      /* New tokenizer object */
+
+  UNUSED_PARAM(pUnused);
 
   if( nArg%2 ){
     rc = SQLITE_ERROR;
   }else{
     p = (Unicode61Tokenizer*)sqlite3_malloc(sizeof(Unicode61Tokenizer));
     if( p ){
+      const char *zCat = "L* N* Co";
       int i;
       memset(p, 0, sizeof(Unicode61Tokenizer));
-      memcpy(p->aTokenChar, aAsciiTokenChar, sizeof(aAsciiTokenChar));
+
       p->bRemoveDiacritic = 1;
       p->nFold = 64;
       p->aFold = sqlite3_malloc(p->nFold * sizeof(char));
       if( p->aFold==0 ){
         rc = SQLITE_NOMEM;
       }
+
+      /* Search for a "categories" argument */
+      for(i=0; rc==SQLITE_OK && i<nArg; i+=2){
+        if( 0==sqlite3_stricmp(azArg[i], "categories") ){
+          zCat = azArg[i+1];
+        }
+      }
+
+      if( rc==SQLITE_OK ){
+        rc = unicodeSetCategories(p, zCat);
+      }
+
       for(i=0; rc==SQLITE_OK && i<nArg; i+=2){
         const char *zArg = azArg[i+1];
         if( 0==sqlite3_stricmp(azArg[i], "remove_diacritics") ){
@@ -357,10 +392,14 @@ static int fts5UnicodeCreate(
         }else
         if( 0==sqlite3_stricmp(azArg[i], "separators") ){
           rc = fts5UnicodeAddExceptions(p, zArg, 0);
+        }else
+        if( 0==sqlite3_stricmp(azArg[i], "categories") ){
+          /* no-op */
         }else{
           rc = SQLITE_ERROR;
         }
       }
+
     }else{
       rc = SQLITE_NOMEM;
     }
@@ -375,18 +414,20 @@ static int fts5UnicodeCreate(
 
 /*
 ** Return true if, for the purposes of tokenizing with the tokenizer
-** passed as the first argument, codepoint iCode is considered a token 
+** passed as the first argument, codepoint iCode is considered a token
 ** character (not a separator).
 */
 static int fts5UnicodeIsAlnum(Unicode61Tokenizer *p, int iCode){
-  assert( (sqlite3Fts5UnicodeIsalnum(iCode) & 0xFFFFFFFE)==0 );
-  return sqlite3Fts5UnicodeIsalnum(iCode) ^ fts5UnicodeIsException(p, iCode);
+  return (
+    p->aCategory[sqlite3Fts5UnicodeCategory(iCode)]
+    ^ fts5UnicodeIsException(p, iCode)
+  );
 }
 
 static int fts5UnicodeTokenize(
   Fts5Tokenizer *pTokenizer,
   void *pCtx,
-  int flags,
+  int iUnused,
   const char *pText, int nText,
   int (*xToken)(void*, int, const char*, int nToken, int iStart, int iEnd)
 ){
@@ -401,6 +442,8 @@ static int fts5UnicodeTokenize(
   char *aFold = p->aFold;
   int nFold = p->nFold;
   const char *pEnd = &aFold[nFold-6];
+
+  UNUSED_PARAM(iUnused);
 
   /* Each iteration of this loop gobbles up a contiguous run of separators,
   ** then the next token.  */
@@ -463,7 +506,7 @@ static int fts5UnicodeTokenize(
         }
       }else if( a[*zCsr]==0 ){
         /* An ascii-range separator character. End of token. */
-        break; 
+        break;
       }else{
  ascii_tokenchar:
         if( *zCsr>='A' && *zCsr<='Z' ){
@@ -477,9 +520,9 @@ static int fts5UnicodeTokenize(
     }
 
     /* Invoke the token callback */
-    rc = xToken(pCtx, 0, aFold, zOut-aFold, is, ie); 
+    rc = xToken(pCtx, 0, aFold, zOut-aFold, is, ie);
   }
-  
+
  tokenize_done:
   if( rc==SQLITE_DONE ) rc = SQLITE_OK;
   return rc;
@@ -517,7 +560,7 @@ static void fts5PorterDelete(Fts5Tokenizer *pTok){
 ** Create a "porter" tokenizer.
 */
 static int fts5PorterCreate(
-  void *pCtx, 
+  void *pCtx,
   const char **azArg, int nArg,
   Fts5Tokenizer **ppOut
 ){
@@ -661,7 +704,7 @@ static int fts5Porter_Ostar(char *zStem, int nStem){
 /* porter rule condition: (m > 1 and (*S or *T)) */
 static int fts5Porter_MGt1_and_S_or_T(char *zStem, int nStem){
   assert( nStem>0 );
-  return (zStem[nStem-1]=='s' || zStem[nStem-1]=='t') 
+  return (zStem[nStem-1]=='s' || zStem[nStem-1]=='t')
       && fts5Porter_MGt1(zStem, nStem);
 }
 
@@ -686,16 +729,16 @@ static int fts5PorterStep4(char *aBuf, int *pnBuf){
   int ret = 0;
   int nBuf = *pnBuf;
   switch( aBuf[nBuf-2] ){
-    
-    case 'a': 
+
+    case 'a':
       if( nBuf>2 && 0==memcmp("al", &aBuf[nBuf-2], 2) ){
         if( fts5Porter_MGt1(aBuf, nBuf-2) ){
           *pnBuf = nBuf - 2;
         }
       }
       break;
-  
-    case 'c': 
+
+    case 'c':
       if( nBuf>4 && 0==memcmp("ance", &aBuf[nBuf-4], 4) ){
         if( fts5Porter_MGt1(aBuf, nBuf-4) ){
           *pnBuf = nBuf - 4;
@@ -706,24 +749,24 @@ static int fts5PorterStep4(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'e': 
+
+    case 'e':
       if( nBuf>2 && 0==memcmp("er", &aBuf[nBuf-2], 2) ){
         if( fts5Porter_MGt1(aBuf, nBuf-2) ){
           *pnBuf = nBuf - 2;
         }
       }
       break;
-  
-    case 'i': 
+
+    case 'i':
       if( nBuf>2 && 0==memcmp("ic", &aBuf[nBuf-2], 2) ){
         if( fts5Porter_MGt1(aBuf, nBuf-2) ){
           *pnBuf = nBuf - 2;
         }
       }
       break;
-  
-    case 'l': 
+
+    case 'l':
       if( nBuf>4 && 0==memcmp("able", &aBuf[nBuf-4], 4) ){
         if( fts5Porter_MGt1(aBuf, nBuf-4) ){
           *pnBuf = nBuf - 4;
@@ -734,8 +777,8 @@ static int fts5PorterStep4(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'n': 
+
+    case 'n':
       if( nBuf>3 && 0==memcmp("ant", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt1(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
@@ -754,8 +797,8 @@ static int fts5PorterStep4(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'o': 
+
+    case 'o':
       if( nBuf>3 && 0==memcmp("ion", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt1_and_S_or_T(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
@@ -766,16 +809,16 @@ static int fts5PorterStep4(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 's': 
+
+    case 's':
       if( nBuf>3 && 0==memcmp("ism", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt1(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
         }
       }
       break;
-  
-    case 't': 
+
+    case 't':
       if( nBuf>3 && 0==memcmp("ate", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt1(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
@@ -786,76 +829,76 @@ static int fts5PorterStep4(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'u': 
+
+    case 'u':
       if( nBuf>3 && 0==memcmp("ous", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt1(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
         }
       }
       break;
-  
-    case 'v': 
+
+    case 'v':
       if( nBuf>3 && 0==memcmp("ive", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt1(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
         }
       }
       break;
-  
-    case 'z': 
+
+    case 'z':
       if( nBuf>3 && 0==memcmp("ize", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt1(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
         }
       }
       break;
-  
+
   }
   return ret;
 }
-  
+
 
 static int fts5PorterStep1B2(char *aBuf, int *pnBuf){
   int ret = 0;
   int nBuf = *pnBuf;
   switch( aBuf[nBuf-2] ){
-    
-    case 'a': 
+
+    case 'a':
       if( nBuf>2 && 0==memcmp("at", &aBuf[nBuf-2], 2) ){
         memcpy(&aBuf[nBuf-2], "ate", 3);
         *pnBuf = nBuf - 2 + 3;
         ret = 1;
       }
       break;
-  
-    case 'b': 
+
+    case 'b':
       if( nBuf>2 && 0==memcmp("bl", &aBuf[nBuf-2], 2) ){
         memcpy(&aBuf[nBuf-2], "ble", 3);
         *pnBuf = nBuf - 2 + 3;
         ret = 1;
       }
       break;
-  
-    case 'i': 
+
+    case 'i':
       if( nBuf>2 && 0==memcmp("iz", &aBuf[nBuf-2], 2) ){
         memcpy(&aBuf[nBuf-2], "ize", 3);
         *pnBuf = nBuf - 2 + 3;
         ret = 1;
       }
       break;
-  
+
   }
   return ret;
 }
-  
+
 
 static int fts5PorterStep2(char *aBuf, int *pnBuf){
   int ret = 0;
   int nBuf = *pnBuf;
   switch( aBuf[nBuf-2] ){
-    
-    case 'a': 
+
+    case 'a':
       if( nBuf>7 && 0==memcmp("ational", &aBuf[nBuf-7], 7) ){
         if( fts5Porter_MGt0(aBuf, nBuf-7) ){
           memcpy(&aBuf[nBuf-7], "ate", 3);
@@ -868,8 +911,8 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'c': 
+
+    case 'c':
       if( nBuf>4 && 0==memcmp("enci", &aBuf[nBuf-4], 4) ){
         if( fts5Porter_MGt0(aBuf, nBuf-4) ){
           memcpy(&aBuf[nBuf-4], "ence", 4);
@@ -882,8 +925,8 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'e': 
+
+    case 'e':
       if( nBuf>4 && 0==memcmp("izer", &aBuf[nBuf-4], 4) ){
         if( fts5Porter_MGt0(aBuf, nBuf-4) ){
           memcpy(&aBuf[nBuf-4], "ize", 3);
@@ -891,8 +934,8 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'g': 
+
+    case 'g':
       if( nBuf>4 && 0==memcmp("logi", &aBuf[nBuf-4], 4) ){
         if( fts5Porter_MGt0(aBuf, nBuf-4) ){
           memcpy(&aBuf[nBuf-4], "log", 3);
@@ -900,8 +943,8 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'l': 
+
+    case 'l':
       if( nBuf>3 && 0==memcmp("bli", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt0(aBuf, nBuf-3) ){
           memcpy(&aBuf[nBuf-3], "ble", 3);
@@ -929,8 +972,8 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'o': 
+
+    case 'o':
       if( nBuf>7 && 0==memcmp("ization", &aBuf[nBuf-7], 7) ){
         if( fts5Porter_MGt0(aBuf, nBuf-7) ){
           memcpy(&aBuf[nBuf-7], "ize", 3);
@@ -948,8 +991,8 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 's': 
+
+    case 's':
       if( nBuf>5 && 0==memcmp("alism", &aBuf[nBuf-5], 5) ){
         if( fts5Porter_MGt0(aBuf, nBuf-5) ){
           memcpy(&aBuf[nBuf-5], "al", 2);
@@ -972,8 +1015,8 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 't': 
+
+    case 't':
       if( nBuf>5 && 0==memcmp("aliti", &aBuf[nBuf-5], 5) ){
         if( fts5Porter_MGt0(aBuf, nBuf-5) ){
           memcpy(&aBuf[nBuf-5], "al", 2);
@@ -991,18 +1034,18 @@ static int fts5PorterStep2(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
+
   }
   return ret;
 }
-  
+
 
 static int fts5PorterStep3(char *aBuf, int *pnBuf){
   int ret = 0;
   int nBuf = *pnBuf;
   switch( aBuf[nBuf-2] ){
-    
-    case 'a': 
+
+    case 'a':
       if( nBuf>4 && 0==memcmp("ical", &aBuf[nBuf-4], 4) ){
         if( fts5Porter_MGt0(aBuf, nBuf-4) ){
           memcpy(&aBuf[nBuf-4], "ic", 2);
@@ -1010,16 +1053,16 @@ static int fts5PorterStep3(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 's': 
+
+    case 's':
       if( nBuf>4 && 0==memcmp("ness", &aBuf[nBuf-4], 4) ){
         if( fts5Porter_MGt0(aBuf, nBuf-4) ){
           *pnBuf = nBuf - 4;
         }
       }
       break;
-  
-    case 't': 
+
+    case 't':
       if( nBuf>5 && 0==memcmp("icate", &aBuf[nBuf-5], 5) ){
         if( fts5Porter_MGt0(aBuf, nBuf-5) ){
           memcpy(&aBuf[nBuf-5], "ic", 2);
@@ -1032,24 +1075,24 @@ static int fts5PorterStep3(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'u': 
+
+    case 'u':
       if( nBuf>3 && 0==memcmp("ful", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt0(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
         }
       }
       break;
-  
-    case 'v': 
+
+    case 'v':
       if( nBuf>5 && 0==memcmp("ative", &aBuf[nBuf-5], 5) ){
         if( fts5Porter_MGt0(aBuf, nBuf-5) ){
           *pnBuf = nBuf - 5;
         }
       }
       break;
-  
-    case 'z': 
+
+    case 'z':
       if( nBuf>5 && 0==memcmp("alize", &aBuf[nBuf-5], 5) ){
         if( fts5Porter_MGt0(aBuf, nBuf-5) ){
           memcpy(&aBuf[nBuf-5], "al", 2);
@@ -1057,18 +1100,18 @@ static int fts5PorterStep3(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
+
   }
   return ret;
 }
-  
+
 
 static int fts5PorterStep1B(char *aBuf, int *pnBuf){
   int ret = 0;
   int nBuf = *pnBuf;
   switch( aBuf[nBuf-2] ){
-    
-    case 'e': 
+
+    case 'e':
       if( nBuf>3 && 0==memcmp("eed", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_MGt0(aBuf, nBuf-3) ){
           memcpy(&aBuf[nBuf-3], "ee", 2);
@@ -1081,8 +1124,8 @@ static int fts5PorterStep1B(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
-    case 'n': 
+
+    case 'n':
       if( nBuf>3 && 0==memcmp("ing", &aBuf[nBuf-3], 3) ){
         if( fts5Porter_Vowel(aBuf, nBuf-3) ){
           *pnBuf = nBuf - 3;
@@ -1090,12 +1133,12 @@ static int fts5PorterStep1B(char *aBuf, int *pnBuf){
         }
       }
       break;
-  
+
   }
   return ret;
 }
-  
-/* 
+
+/*
 ** GENERATED CODE ENDS HERE (mkportersteps.tcl)
 ***************************************************************************
 **************************************************************************/
@@ -1104,7 +1147,7 @@ static void fts5PorterStep1A(char *aBuf, int *pnBuf){
   int nBuf = *pnBuf;
   if( aBuf[nBuf-1]=='s' ){
     if( aBuf[nBuf-2]=='e' ){
-      if( (nBuf>4 && aBuf[nBuf-4]=='s' && aBuf[nBuf-3]=='s') 
+      if( (nBuf>4 && aBuf[nBuf-4]=='s' && aBuf[nBuf-3]=='s')
        || (nBuf>3 && aBuf[nBuf-3]=='i' )
       ){
         *pnBuf = nBuf-2;
@@ -1119,11 +1162,11 @@ static void fts5PorterStep1A(char *aBuf, int *pnBuf){
 }
 
 static int fts5PorterCb(
-  void *pCtx, 
+  void *pCtx,
   int tflags,
-  const char *pToken, 
-  int nToken, 
-  int iStart, 
+  const char *pToken,
+  int nToken,
+  int iStart,
   int iEnd
 ){
   PorterContext *p = (PorterContext*)pCtx;
@@ -1141,8 +1184,8 @@ static int fts5PorterCb(
   if( fts5PorterStep1B(aBuf, &nBuf) ){
     if( fts5PorterStep1B2(aBuf, &nBuf)==0 ){
       char c = aBuf[nBuf-1];
-      if( fts5PorterIsVowel(c, 0)==0 
-       && c!='l' && c!='s' && c!='z' && c==aBuf[nBuf-2] 
+      if( fts5PorterIsVowel(c, 0)==0
+       && c!='l' && c!='s' && c!='z' && c==aBuf[nBuf-2]
       ){
         nBuf--;
       }else if( fts5Porter_MEq1(aBuf, nBuf) && fts5Porter_Ostar(aBuf, nBuf) ){
@@ -1164,7 +1207,7 @@ static int fts5PorterCb(
   /* Step 5a. */
   assert( nBuf>0 );
   if( aBuf[nBuf-1]=='e' ){
-    if( fts5Porter_MGt1(aBuf, nBuf-1) 
+    if( fts5Porter_MGt1(aBuf, nBuf-1)
      || (fts5Porter_MEq1(aBuf, nBuf-1) && !fts5Porter_Ostar(aBuf, nBuf-1))
     ){
       nBuf--;
@@ -1172,8 +1215,8 @@ static int fts5PorterCb(
   }
 
   /* Step 5b. */
-  if( nBuf>1 && aBuf[nBuf-1]=='l' 
-   && aBuf[nBuf-2]=='l' && fts5Porter_MGt1(aBuf, nBuf-1) 
+  if( nBuf>1 && aBuf[nBuf-1]=='l'
+   && aBuf[nBuf-2]=='l' && fts5Porter_MGt1(aBuf, nBuf-1)
   ){
     nBuf--;
   }
@@ -1216,11 +1259,11 @@ int sqlite3Fts5TokenizerInit(fts5_api *pApi){
     { "ascii",     {fts5AsciiCreate, fts5AsciiDelete, fts5AsciiTokenize }},
     { "porter",    {fts5PorterCreate, fts5PorterDelete, fts5PorterTokenize }},
   };
-  
+
   int rc = SQLITE_OK;             /* Return code */
   int i;                          /* To iterate through builtin functions */
 
-  for(i=0; rc==SQLITE_OK && i<(int)ArraySize(aBuiltin); i++){
+  for(i=0; rc==SQLITE_OK && i<ArraySize(aBuiltin); i++){
     rc = pApi->xCreateTokenizer(pApi,
         aBuiltin[i].zName,
         (void*)pApi,

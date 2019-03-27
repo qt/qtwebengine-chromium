@@ -10,6 +10,16 @@
 # new pragma in ../src/pragma.c.
 #
 
+# Flag meanings:
+set flagMeaning(NeedSchema) {Force schema load before running}
+set flagMeaning(ReadOnly)   {Read-only HEADER_VALUE}
+set flagMeaning(Result0)    {Acts as query when no argument}
+set flagMeaning(Result1)    {Acts as query when has one argument}
+set flagMeaning(SchemaReq)  {Schema required - "main" is default}
+set flagMeaning(SchemaOpt)  {Schema restricts name search if present}
+set flagMeaning(NoColumns)  {OP_ResultRow called with zero columns}
+set flagMeaning(NoColumns1) {zero columns if RHS argument is present}
+
 set pragma_def {
   NAME: full_column_names
   TYPE: FLAG
@@ -47,6 +57,7 @@ set pragma_def {
   IF:   !defined(SQLITE_OMIT_FLAG_PRAGMAS)
 
   NAME: cache_spill
+  FLAG: Result0 SchemaReq NoColumns1
   IF:   !defined(SQLITE_OMIT_FLAG_PRAGMAS)
 
   NAME: reverse_unordered_selects
@@ -109,12 +120,12 @@ set pragma_def {
 
   NAME: writable_schema
   TYPE: FLAG
-  ARG:  SQLITE_WriteSchema|SQLITE_RecoveryMode
+  ARG:  SQLITE_WriteSchema|SQLITE_NoSchemaError
   IF:   !defined(SQLITE_OMIT_FLAG_PRAGMAS)
 
   NAME: read_uncommitted
   TYPE: FLAG
-  ARG:  SQLITE_ReadUncommitted
+  ARG:  SQLITE_ReadUncommit
   IF:   !defined(SQLITE_OMIT_FLAG_PRAGMAS)
 
   NAME: recursive_triggers
@@ -139,184 +150,272 @@ set pragma_def {
   ARG:  SQLITE_CellSizeCk
 
   NAME: default_cache_size
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 SchemaReq NoColumns1
+  COLS: cache_size
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS) && !defined(SQLITE_OMIT_DEPRECATED)
 
   NAME: page_size
+  FLAG: Result0 SchemaReq NoColumns1
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: secure_delete
+  FLAG: Result0
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: page_count
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 SchemaReq
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: max_page_count
   TYPE: PAGE_COUNT
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 SchemaReq
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: locking_mode
+  FLAG: Result0 SchemaReq
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: journal_mode
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 SchemaReq
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: journal_size_limit
+  FLAG: Result0 SchemaReq
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: cache_size
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 SchemaReq NoColumns1
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: mmap_size
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: auto_vacuum
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 SchemaReq NoColumns1
   IF:   !defined(SQLITE_OMIT_AUTOVACUUM)
 
   NAME: incremental_vacuum
-  FLAG: NeedSchema
+  FLAG: NeedSchema NoColumns
   IF:   !defined(SQLITE_OMIT_AUTOVACUUM)
 
   NAME: temp_store
+  FLAG: Result0 NoColumns1
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: temp_store_directory
+  FLAG: NoColumns1
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: data_store_directory
+  FLAG: NoColumns1
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS) && SQLITE_OS_WIN
 
   NAME: lock_proxy_file
+  FLAG: NoColumns1
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS) && SQLITE_ENABLE_LOCKING_STYLE
 
   NAME: synchronous
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 SchemaReq NoColumns1
   IF:   !defined(SQLITE_OMIT_PAGER_PRAGMAS)
 
   NAME: table_info
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result1 SchemaOpt
+  ARG:  0
+  COLS: cid name type notnull dflt_value pk
+  IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
+
+  NAME: table_xinfo
+  TYPE: TABLE_INFO
+  FLAG: NeedSchema Result1 SchemaOpt
+  ARG:  1
+  COLS: cid name type notnull dflt_value pk hidden
   IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
 
   NAME: stats
-  FLAG: NeedSchema
-  IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
+  FLAG: NeedSchema Result0 SchemaReq
+  COLS: tbl idx wdth hght flgs
+  IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS) && defined(SQLITE_DEBUG)
 
   NAME: index_info
   TYPE: INDEX_INFO
   ARG:  0
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result1 SchemaOpt
+  COLS: seqno cid name
   IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
 
   NAME: index_xinfo
   TYPE: INDEX_INFO
   ARG:  1
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result1 SchemaOpt
+  COLS: seqno cid name desc coll key
   IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
 
   NAME: index_list
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result1 SchemaOpt
+  COLS: seq name unique origin partial
   IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
 
   NAME: database_list
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0
+  COLS: seq name file
   IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
 
+  NAME: function_list
+  FLAG: Result0
+  COLS: name builtin
+  IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
+  IF:   defined(SQLITE_INTROSPECTION_PRAGMAS)
+
+  NAME: module_list
+  FLAG: Result0
+  COLS: name
+  IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
+  IF:   !defined(SQLITE_OMIT_VIRTUALTABLE)
+  IF:   defined(SQLITE_INTROSPECTION_PRAGMAS)
+
+  NAME: pragma_list
+  FLAG: Result0
+  COLS: name
+  IF:   defined(SQLITE_INTROSPECTION_PRAGMAS)
+
   NAME: collation_list
+  FLAG: Result0
+  COLS: seq name
   IF:   !defined(SQLITE_OMIT_SCHEMA_PRAGMAS)
 
   NAME: foreign_key_list
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result1 SchemaOpt
+  COLS: id seq table from to on_update on_delete match
   IF:   !defined(SQLITE_OMIT_FOREIGN_KEY)
 
   NAME: foreign_key_check
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0
+  COLS: table rowid parent fkid
   IF:   !defined(SQLITE_OMIT_FOREIGN_KEY) && !defined(SQLITE_OMIT_TRIGGER)
 
   NAME: parser_trace
   IF:   defined(SQLITE_DEBUG) && !defined(SQLITE_OMIT_PARSER_TRACE)
 
   NAME: case_sensitive_like
+  FLAG: NoColumns
 
   NAME: integrity_check
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 Result1
   IF:   !defined(SQLITE_OMIT_INTEGRITY_CHECK)
 
   NAME: quick_check
   TYPE: INTEGRITY_CHECK
-  FLAG: NeedSchema
+  FLAG: NeedSchema Result0 Result1
   IF:   !defined(SQLITE_OMIT_INTEGRITY_CHECK)
 
   NAME: encoding
+  FLAG: Result0 NoColumns1
   IF:   !defined(SQLITE_OMIT_UTF16)
 
   NAME: schema_version
   TYPE: HEADER_VALUE
   ARG:  BTREE_SCHEMA_VERSION
+  FLAG: NoColumns1 Result0
   IF:   !defined(SQLITE_OMIT_SCHEMA_VERSION_PRAGMAS)
 
   NAME: user_version
   TYPE: HEADER_VALUE
   ARG:  BTREE_USER_VERSION
+  FLAG: NoColumns1 Result0
   IF:   !defined(SQLITE_OMIT_SCHEMA_VERSION_PRAGMAS)
 
   NAME: data_version
   TYPE: HEADER_VALUE
   ARG:  BTREE_DATA_VERSION
-  FLAG: ReadOnly
+  FLAG: ReadOnly Result0
   IF:   !defined(SQLITE_OMIT_SCHEMA_VERSION_PRAGMAS)
 
   NAME: freelist_count
   TYPE: HEADER_VALUE
   ARG:  BTREE_FREE_PAGE_COUNT
-  FLAG: ReadOnly
+  FLAG: ReadOnly Result0
   IF:   !defined(SQLITE_OMIT_SCHEMA_VERSION_PRAGMAS)
 
   NAME: application_id
   TYPE: HEADER_VALUE
   ARG:  BTREE_APPLICATION_ID
+  FLAG: NoColumns1 Result0
   IF:   !defined(SQLITE_OMIT_SCHEMA_VERSION_PRAGMAS)
 
   NAME: compile_options
+  FLAG: Result0
   IF:   !defined(SQLITE_OMIT_COMPILEOPTION_DIAGS)
 
   NAME: wal_checkpoint
   FLAG: NeedSchema
+  COLS: busy log checkpointed
   IF:   !defined(SQLITE_OMIT_WAL)
 
   NAME: wal_autocheckpoint
   IF:   !defined(SQLITE_OMIT_WAL)
 
   NAME: shrink_memory
+  FLAG: NoColumns
 
   NAME: busy_timeout
+  FLAG: Result0
+  COLS: timeout
 
   NAME: lock_status
+  FLAG: Result0
+  COLS: database status
   IF:   defined(SQLITE_DEBUG) || defined(SQLITE_TEST)
 
   NAME: key
+  TYPE: KEY
+  ARG:  0
   IF:   defined(SQLITE_HAS_CODEC)
 
   NAME: rekey
+  TYPE: KEY
+  ARG:  1
   IF:   defined(SQLITE_HAS_CODEC)
 
   NAME: hexkey
+  TYPE: HEXKEY
+  ARG:  2
   IF:   defined(SQLITE_HAS_CODEC)
 
   NAME: hexrekey
   TYPE: HEXKEY
+  ARG:  3
+  IF:   defined(SQLITE_HAS_CODEC)
+
+  NAME: textkey
+  TYPE: KEY
+  ARG:  4
+  IF:   defined(SQLITE_HAS_CODEC)
+
+  NAME: textrekey
+  TYPE: KEY
+  ARG:  5
   IF:   defined(SQLITE_HAS_CODEC)
 
   NAME: activate_extensions
   IF:   defined(SQLITE_HAS_CODEC) || defined(SQLITE_ENABLE_CEROD)
 
   NAME: soft_heap_limit
+  FLAG: Result0
 
   NAME: threads
+  FLAG: Result0
+
+  NAME: optimize
+  FLAG: Result1 NeedSchema
+
+  NAME: legacy_alter_table
+  TYPE: FLAG
+  ARG:  SQLITE_LegacyAlter
+  IF:   !defined(SQLITE_OMIT_FLAG_PRAGMAS)
+
+  NAME: auto_vacuum_slack_pages
+  FLAG: NeedSchema Result0 SchemaReq NoColumns1
+  IF:   !defined(SQLITE_OMIT_AUTOVACUUM)
 }
 
 # Open the output file
@@ -336,15 +435,29 @@ set name {}
 set type {}
 set if {}
 set flags {}
+set cols {}
+set cols_list {}
 set arg 0
 proc record_one {} {
-  global name type if arg allbyname typebyif flags
+  global name type if arg allbyname typebyif flags cols all_cols
+  global cols_list colUsedBy
   if {$name==""} return
-  set allbyname($name) [list $type $arg $if $flags]
+  if {$cols!=""} {
+    if {![info exists all_cols($cols)]} {
+      set all_cols($cols) 1
+      lappend cols_list $cols
+    }
+    set cx $cols
+    lappend colUsedBy($cols) $name
+  } else {
+    set cx 0
+  }
+  set allbyname($name) [list $type $arg $if $flags $cols]
   set name {}
   set type {}
   set if {}
   set flags {}
+  set cols {}
   set arg 0
 }
 foreach line [split $pragma_def \n] {
@@ -353,13 +466,18 @@ foreach line [split $pragma_def \n] {
   foreach {id val} [split $line :] break
   set val [string trim $val]
   if {$id=="NAME"} {
-    record_one    
+    record_one
     set name $val
     set type [string toupper $val]
   } elseif {$id=="TYPE"} {
     set type $val
+    if {$type=="FLAG"} {
+      lappend flags Result0 NoColumns1
+    }
   } elseif {$id=="ARG"} {
     set arg $val
+  } elseif {$id=="COLS"} {
+    set cols $val
   } elseif {$id=="IF"} {
     lappend if $val
   } elseif {$id=="FLAG"} {
@@ -378,6 +496,7 @@ set allnames [lsort [array names allbyname]]
 # omit in default builds (defined(SQLITE_DEBUG) and defined(SQLITE_HAS_CODEC))
 # at the end.
 #
+puts $fd "\n/* The various pragma types */"
 set pnum 0
 foreach name $allnames {
   set type [lindex $allbyname($name) 0]
@@ -407,25 +526,78 @@ foreach name $allnames {
 
 # Generate #defines for flags
 #
+puts $fd "\n/* Property flags associated with various pragma. */"
 set fv 1
 foreach f [lsort [array names allflags]] {
-  puts $fd [format {#define PragFlag_%-20s 0x%02x} $f $fv]
+  puts $fd [format {#define PragFlg_%-10s 0x%02x /* %s */} \
+             $f $fv $flagMeaning($f)]
   set fv [expr {$fv*2}]
 }
 
+# Sort the column lists so that longer column lists occur first
+#
+proc colscmp {a b} {
+  return [expr {[llength $b] - [llength $a]}]
+}
+set cols_list [lsort -command colscmp $cols_list]
+
+# Generate the array of column names used by pragmas that act like
+# queries.
+#
+puts $fd "\n/* Names of columns for pragmas that return multi-column result"
+puts $fd "** or that return single-column results where the name of the"
+puts $fd "** result column is different from the name of the pragma\n*/"
+puts $fd "static const char *const pragCName\[\] = {"
+set offset 0
+set allcollist {}
+foreach cols $cols_list {
+  set n [llength $cols]
+  set limit [expr {[llength $allcollist] - $n}]
+  for {set i 0} {$i<$limit} {incr i} {
+    set sublist [lrange $allcollist $i [expr {$i+$n-1}]]
+    if {$sublist==$cols} {
+      puts $fd [format "%27s/* $colUsedBy($cols) reuses $i */" ""]
+      set cols_offset($cols) $i
+      break
+    }
+  }
+  if {$i<$limit} continue
+  set cols_offset($cols) $offset
+  set ub " /* Used by: $colUsedBy($cols) */"
+  foreach c $cols {
+    lappend allcollist $c
+    puts $fd [format "  /* %3d */ %-14s%s" $offset \"$c\", $ub]
+    set ub ""
+    incr offset
+  }
+}
+puts $fd "\175;"
+
 # Generate the lookup table
 #
-puts $fd "static const struct sPragmaNames \173"
-puts $fd "  const char *const zName;  /* Name of pragma */"
-puts $fd "  u8 ePragTyp;              /* PragTyp_XXX value */"
-puts $fd "  u8 mPragFlag;             /* Zero or more PragFlag_XXX values */"
-puts $fd "  u32 iArg;                 /* Extra argument */"
-puts $fd "\175 aPragmaNames\[\] = \173"
+puts $fd "\n/* Definitions of all built-in pragmas */"
+puts $fd "typedef struct PragmaName \173"
+puts $fd "  const char *const zName; /* Name of pragma */"
+puts $fd "  u8 ePragTyp;             /* PragTyp_XXX value */"
+puts $fd "  u8 mPragFlg;             /* Zero or more PragFlg_XXX values */"
+puts $fd {  u8 iPragCName;           /* Start of column names in pragCName[] */}
+puts $fd "  u8 nPragCName;          \
+/* Num of col names. 0 means use pragma name */"
+puts $fd "  u64 iArg;                /* Extra argument */"
+puts $fd "\175 PragmaName;"
+puts $fd "static const PragmaName aPragmaName\[\] = \173"
 
 set current_if {}
 set spacer [format {    %26s } {}]
 foreach name $allnames {
-  foreach {type arg if flag} $allbyname($name) break
+  foreach {type arg if flag cx} $allbyname($name) break
+  if {$cx==0 || $cx==""} {
+    set cy 0
+    set nx 0
+  } else {
+    set cy $cols_offset($cx)
+    set nx [llength $cx]
+  }
   if {$if!=$current_if} {
     if {$current_if!=""} {
       foreach this_if $current_if {
@@ -443,12 +615,13 @@ foreach name $allnames {
   if {$flag==""} {
     set flagx "0"
   } else {
-    set flagx PragFlag_[join $flag {|PragFlag_}]
+    set flagx PragFlg_[join $flag {|PragFlg_}]
   }
-  puts $fd "  \173 /* zName:     */ \"$name\","
-  puts $fd "    /* ePragTyp:  */ PragTyp_$type,"
-  puts $fd "    /* ePragFlag: */ $flagx,"
-  puts $fd "    /* iArg:      */ $arg \175,"
+  puts $fd " \173/* zName:     */ \"$name\","
+  puts $fd "  /* ePragTyp:  */ PragTyp_$type,"
+  puts $fd "  /* ePragFlg:  */ $flagx,"
+  puts $fd "  /* ColNames:  */ $cy, $nx,"
+  puts $fd "  /* iArg:      */ $arg \175,"
 }
 if {$current_if!=""} {
   foreach this_if $current_if {

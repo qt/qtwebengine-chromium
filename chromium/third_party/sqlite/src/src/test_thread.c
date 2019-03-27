@@ -11,12 +11,16 @@
 *************************************************************************
 **
 ** This file contains the implementation of some Tcl commands used to
-** test that sqlite3 database handles may be concurrently accessed by 
+** test that sqlite3 database handles may be concurrently accessed by
 ** multiple threads. Right now this only works on unix.
 */
 
 #include "sqliteInt.h"
-#include <tcl.h>
+#if defined(INCLUDE_SQLITE_TCL_H)
+#  include "sqlite_tcl.h"
+#else
+#  include "tcl.h"
+#endif
 
 #if SQLITE_THREADSAFE
 
@@ -72,7 +76,7 @@ extern int sqlite3TestErrCode(Tcl_Interp *, sqlite3 *, int);
 /*
 ** Handler for events of type EvalEvent.
 */
-static int tclScriptEvent(Tcl_Event *evPtr, int flags){
+static int SQLITE_TCLAPI tclScriptEvent(Tcl_Event *evPtr, int flags){
   int rc;
   EvalEvent *p = (EvalEvent *)evPtr;
   rc = Tcl_Eval(p->interp, p->zScript);
@@ -92,7 +96,7 @@ static void postToParent(SqlThread *p, Tcl_Obj *pScript){
   char *zMsg;
   int nMsg;
 
-  zMsg = Tcl_GetStringFromObj(pScript, &nMsg); 
+  zMsg = Tcl_GetStringFromObj(pScript, &nMsg);
   pEvent = (EvalEvent *)ckalloc(sizeof(EvalEvent)+nMsg+1);
   pEvent->base.nextPtr = 0;
   pEvent->base.proc = tclScriptEvent;
@@ -120,9 +124,9 @@ static Tcl_ThreadCreateType tclScriptThread(ClientData pSqlThread){
   Tcl_CreateObjCommand(interp, "sqlthread", sqlthread_proc, pSqlThread, 0);
 #if SQLITE_OS_UNIX && defined(SQLITE_ENABLE_UNLOCK_NOTIFY)
   Tcl_CreateObjCommand(interp, "sqlite3_blocking_step", blocking_step_proc,0,0);
-  Tcl_CreateObjCommand(interp, 
+  Tcl_CreateObjCommand(interp,
       "sqlite3_blocking_prepare_v2", blocking_prepare_v2_proc, (void *)1, 0);
-  Tcl_CreateObjCommand(interp, 
+  Tcl_CreateObjCommand(interp,
       "sqlite3_nonblocking_prepare_v2", blocking_prepare_v2_proc, 0, 0);
 #endif
   Sqlitetest1_Init(interp);
@@ -167,7 +171,7 @@ static Tcl_ThreadCreateType tclScriptThread(ClientData pSqlThread){
 **
 **     The caller can wait for the script to terminate using [vwait VARNAME].
 */
-static int sqlthread_spawn(
+static int SQLITE_TCLAPI sqlthread_spawn(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -220,7 +224,7 @@ static int sqlthread_spawn(
 **
 **     NOTE: At the moment, this doesn't work. FIXME.
 */
-static int sqlthread_parent(
+static int SQLITE_TCLAPI sqlthread_parent(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -265,7 +269,7 @@ static int xBusy(void *pArg, int nBusy){
 **     Open a database handle and return the string representation of
 **     the pointer value.
 */
-static int sqlthread_open(
+static int SQLITE_TCLAPI sqlthread_open(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -276,7 +280,7 @@ static int sqlthread_open(
   const char *zFilename;
   sqlite3 *db;
   char zBuf[100];
-  extern void Md5_Register(sqlite3*);
+  extern int Md5_Register(sqlite3*,char**,const sqlite3_api_routines*);
 
   UNUSED_PARAMETER(clientData);
   UNUSED_PARAMETER(objc);
@@ -299,9 +303,9 @@ static int sqlthread_open(
     }
   }
 #endif
-  Md5_Register(db);
+  Md5_Register(db, 0, 0);
   sqlite3_busy_handler(db, xBusy, 0);
-  
+
   if( sqlite3TestMakePointerStr(interp, zBuf, db) ) return TCL_ERROR;
   Tcl_AppendResult(interp, zBuf, 0);
 
@@ -315,7 +319,7 @@ static int sqlthread_open(
 **     Return the current thread-id (Tcl_GetCurrentThread()) cast to
 **     an integer.
 */
-static int sqlthread_id(
+static int SQLITE_TCLAPI sqlthread_id(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -333,7 +337,7 @@ static int sqlthread_id(
 /*
 ** Dispatch routine for the sub-commands of [sqlthread].
 */
-static int sqlthread_proc(
+static int SQLITE_TCLAPI sqlthread_proc(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -380,8 +384,8 @@ static int sqlthread_proc(
 ** when linked against both Tcl 8.4 and 8.5. Because [clock seconds] is
 ** implemented as a script in Tcl 8.5, it is not usually available to
 ** testfixture.
-*/ 
-static int clock_seconds_proc(
+*/
+static int SQLITE_TCLAPI clock_seconds_proc(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -406,9 +410,9 @@ static int clock_seconds_proc(
 ** blocking_step_notify() and the structure UnlockNotification is
 ** automatically extracted from this file and used as part of the
 ** documentation for the sqlite3_unlock_notify() API function. This
-** should be considered if these functions are to be extended (i.e. to 
+** should be considered if these functions are to be extended (i.e. to
 ** support windows) in the future.
-*/ 
+*/
 #if SQLITE_OS_UNIX && defined(SQLITE_ENABLE_UNLOCK_NOTIFY)
 
 /* BEGIN_SQLITE_BLOCKING_STEP */
@@ -441,17 +445,17 @@ static void unlock_notify_cb(void **apArg, int nArg){
 }
 
 /*
-** This function assumes that an SQLite API call (either sqlite3_prepare_v2() 
+** This function assumes that an SQLite API call (either sqlite3_prepare_v2()
 ** or sqlite3_step()) has just returned SQLITE_LOCKED. The argument is the
 ** associated database connection.
 **
-** This function calls sqlite3_unlock_notify() to register for an 
-** unlock-notify callback, then blocks until that callback is delivered 
+** This function calls sqlite3_unlock_notify() to register for an
+** unlock-notify callback, then blocks until that callback is delivered
 ** and returns SQLITE_OK. The caller should then retry the failed operation.
 **
-** Or, if sqlite3_unlock_notify() indicates that to block would deadlock 
-** the system, then this function returns SQLITE_LOCKED immediately. In 
-** this case the caller should not retry the operation and should roll 
+** Or, if sqlite3_unlock_notify() indicates that to block would deadlock
+** the system, then this function returns SQLITE_LOCKED immediately. In
+** this case the caller should not retry the operation and should roll
 ** back the current transaction (if any).
 */
 static int wait_for_unlock_notify(sqlite3 *db){
@@ -467,11 +471,11 @@ static int wait_for_unlock_notify(sqlite3 *db){
   rc = sqlite3_unlock_notify(db, unlock_notify_cb, (void *)&un);
   assert( rc==SQLITE_LOCKED || rc==SQLITE_OK );
 
-  /* The call to sqlite3_unlock_notify() always returns either SQLITE_LOCKED 
-  ** or SQLITE_OK. 
+  /* The call to sqlite3_unlock_notify() always returns either SQLITE_LOCKED
+  ** or SQLITE_OK.
   **
   ** If SQLITE_LOCKED was returned, then the system is deadlocked. In this
-  ** case this function needs to return SQLITE_LOCKED to the caller so 
+  ** case this function needs to return SQLITE_LOCKED to the caller so
   ** that the current transaction can be rolled back. Otherwise, block
   ** until the unlock-notify callback is invoked, then return SQLITE_OK.
   */
@@ -543,7 +547,7 @@ int sqlite3_blocking_prepare_v2(
 **
 ** Advance the statement to the next row.
 */
-static int blocking_step_proc(
+static int SQLITE_TCLAPI blocking_step_proc(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -569,7 +573,7 @@ static int blocking_step_proc(
 ** Usage: sqlite3_blocking_prepare_v2 DB sql bytes ?tailvar?
 ** Usage: sqlite3_nonblocking_prepare_v2 DB sql bytes ?tailvar?
 */
-static int blocking_prepare_v2_proc(
+static int SQLITE_TCLAPI blocking_prepare_v2_proc(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -585,7 +589,7 @@ static int blocking_prepare_v2_proc(
   int isBlocking = !(clientData==0);
 
   if( objc!=5 && objc!=4 ){
-    Tcl_AppendResult(interp, "wrong # args: should be \"", 
+    Tcl_AppendResult(interp, "wrong # args: should be \"",
        Tcl_GetString(objv[0]), " DB sql bytes tailvar", 0);
     return TCL_ERROR;
   }
@@ -633,9 +637,9 @@ int SqlitetestThread_Init(Tcl_Interp *interp){
   Tcl_CreateObjCommand(interp, "clock_seconds", clock_seconds_proc, 0, 0);
 #if SQLITE_OS_UNIX && defined(SQLITE_ENABLE_UNLOCK_NOTIFY)
   Tcl_CreateObjCommand(interp, "sqlite3_blocking_step", blocking_step_proc,0,0);
-  Tcl_CreateObjCommand(interp, 
+  Tcl_CreateObjCommand(interp,
       "sqlite3_blocking_prepare_v2", blocking_prepare_v2_proc, (void *)1, 0);
-  Tcl_CreateObjCommand(interp, 
+  Tcl_CreateObjCommand(interp,
       "sqlite3_nonblocking_prepare_v2", blocking_prepare_v2_proc, 0, 0);
 #endif
   return TCL_OK;

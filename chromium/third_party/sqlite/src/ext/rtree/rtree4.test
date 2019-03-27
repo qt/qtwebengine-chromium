@@ -14,7 +14,8 @@
 
 if {![info exists testdir]} {
   set testdir [file join [file dirname [info script]] .. .. test]
-} 
+}
+source [file join [file dirname [info script]] rtree_util.tcl]
 source $testdir/tester.tcl
 
 ifcapable !rtree {
@@ -29,11 +30,11 @@ if {[info exists G(isquick)] && $G(isquick)} {
 
 ifcapable !rtree_int_only {
   # Return a floating point number between -X and X.
-  # 
+  #
   proc rand {X} {
     return [expr {int((rand()-0.5)*1024.0*$X)/512.0}]
   }
-  
+
   # Return a positive floating point number less than or equal to X
   #
   proc randincr {X} {
@@ -44,11 +45,11 @@ ifcapable !rtree_int_only {
   }
 } else {
   # For rtree_int_only, return an number between -X and X.
-  # 
+  #
   proc rand {X} {
     return [expr {int((rand()-0.5)*2*$X)}]
   }
-  
+
   # Return a positive integer less than or equal to X
   #
   proc randincr {X} {
@@ -58,7 +59,7 @@ ifcapable !rtree_int_only {
     }
   }
 }
-  
+
 # Scramble the $inlist into a random order.
 #
 proc scramble {inlist} {
@@ -213,7 +214,7 @@ for {set nDim 1} {$nDim<=5} {incr nDim} {
       list $where [db eval "SELECT id FROM rx $where ORDER BY id"]
     } [list $where [db eval "SELECT id FROM bx $where ORDER BY id"]]
 
-    # Do a contained-in query with surplus contraints where the 
+    # Do a contained-in query with surplus contraints where the
     # constraints appear in a random order.
     #
     set where {}
@@ -246,6 +247,8 @@ for {set nDim 1} {$nDim<=5} {incr nDim} {
     } [list $where [db eval "SELECT id FROM bx $where ORDER BY id"]]
   }
 
+  do_rtree_integrity_test rtree4-$nDim.3 rx
 }
 
+expand_all_sql db
 finish_test

@@ -77,7 +77,7 @@
 # command prompt:
 #
 #                         CD /D C:\dev\sqlite\core
-#                         tclsh85 tool\mkvsix.tcl C:\Temp
+#                         tclsh tool\mkvsix.tcl C:\Temp
 #
 # In the example above, "C:\dev\sqlite\core" represents the root of the source
 # tree for SQLite and "C:\Temp" represents the top-level directory containing
@@ -94,7 +94,7 @@
 # resulting files are packaged into the final VSIX file.
 #
 package require Tcl 8.4
-
+
 proc fail { {error ""} {usage false} } {
   if {[string length $error] > 0} then {
     puts stdout $error
@@ -108,7 +108,7 @@ proc fail { {error ""} {usage false} } {
 
   exit 1
 }
-
+
 proc getEnvironmentVariable { name } {
   #
   # NOTE: Returns the value of the specified environment variable or an empty
@@ -117,7 +117,7 @@ proc getEnvironmentVariable { name } {
   #
   return [expr {[info exists ::env($name)] ? $::env($name) : ""}]
 }
-
+
 proc getTemporaryPath {} {
   #
   # NOTE: Returns the normalized path to the first temporary directory found
@@ -141,7 +141,7 @@ proc getTemporaryPath {} {
 
   return ""
 }
-
+
 proc appendArgs { args } {
   #
   # NOTE: Returns all passed arguments joined together as a single string with
@@ -149,7 +149,7 @@ proc appendArgs { args } {
   #
   eval append result $args
 }
-
+
 proc readFile { fileName } {
   #
   # NOTE: Reads and returns the entire contents of the specified file, which
@@ -161,7 +161,7 @@ proc readFile { fileName } {
   close $file_id
   return $result
 }
-
+
 proc writeFile { fileName data } {
   #
   # NOTE: Writes the entire contents of the specified file, which may contain
@@ -173,7 +173,7 @@ proc writeFile { fileName data } {
   close $file_id
   return ""
 }
-
+
 #
 # TODO: Modify this procedure when a new version of Visual Studio is released.
 #
@@ -196,7 +196,7 @@ proc getMinVsVersionXmlChunk { vsVersion } {
     }
   }
 }
-
+
 #
 # TODO: Modify this procedure when a new version of Visual Studio is released.
 #
@@ -232,7 +232,7 @@ proc getMaxPlatformVersionXmlChunk { packageFlavor vsVersion } {
     }
   }
 }
-
+
 #
 # TODO: Modify this procedure when a new version of Visual Studio is released.
 #
@@ -270,7 +270,7 @@ proc getExtraFileListXmlChunk { packageFlavor vsVersion } {
     }
   }
 }
-
+
 proc replaceFileNameTokens { fileName name buildName platformName } {
   #
   # NOTE: Returns the specified file name containing the platform name instead
@@ -279,7 +279,7 @@ proc replaceFileNameTokens { fileName name buildName platformName } {
   return [string map [list <build> $buildName <platform> $platformName \
       <name> $name] $fileName]
 }
-
+
 proc substFile { fileName } {
   #
   # NOTE: Performs all Tcl command, variable, and backslash substitutions in
@@ -288,7 +288,7 @@ proc substFile { fileName } {
   #
   return [writeFile $fileName [uplevel 1 [list subst [readFile $fileName]]]]
 }
-
+
 #
 # NOTE: This is the entry point for this script.
 #
@@ -389,7 +389,7 @@ set shortNames(WP80,2013) SQLite.WP80.2013
 set shortNames(WP81,2013) SQLite.WP81
 set shortNames(Win32,2012) SQLite.Win32
 set shortNames(Win32,2013) SQLite.Win32.2013
-set shortNames(UAP,2015) SQLite.UAP.2015
+set shortNames(UWP,2015) SQLite.UWP.2015
 
 set displayNames(WinRT,2012) "SQLite for Windows Runtime"
 set displayNames(WinRT,2013) "SQLite for Windows Runtime"
@@ -399,7 +399,7 @@ set displayNames(WP80,2013) "SQLite for Windows Phone"
 set displayNames(WP81,2013) "SQLite for Windows Phone 8.1"
 set displayNames(Win32,2012) "SQLite for Windows"
 set displayNames(Win32,2013) "SQLite for Windows"
-set displayNames(UAP,2015) "SQLite for Universal App Platform"
+set displayNames(UWP,2015) "SQLite for Universal Windows Platform"
 
 if {[string equal $packageFlavor WinRT]} then {
   set shortName $shortNames($packageFlavor,$vsVersion)
@@ -455,7 +455,7 @@ if {[string equal $packageFlavor WinRT]} then {
   set extraSdkPath "\\..\\$targetPlatformIdentifier"
   set extraFileListAttributes \
       [getExtraFileListXmlChunk $packageFlavor $vsVersion]
-} elseif {[string equal $packageFlavor UAP]} then {
+} elseif {[string equal $packageFlavor UWP]} then {
   if {$vsVersion ne "2015"} then {
     fail [appendArgs \
         "unsupported combination, package flavor " $packageFlavor \
@@ -463,7 +463,7 @@ if {[string equal $packageFlavor WinRT]} then {
   }
   set shortName $shortNames($packageFlavor,$vsVersion)
   set displayName $displayNames($packageFlavor,$vsVersion)
-  set targetPlatformIdentifier UAP
+  set targetPlatformIdentifier UAP; # NOTE: Not "UWP".
   set targetPlatformVersion v0.8.0.0
   set minVsVersion [getMinVsVersionXmlChunk $vsVersion]
   set maxPlatformVersion \
@@ -485,7 +485,7 @@ if {[string equal $packageFlavor WinRT]} then {
 } else {
   fail [appendArgs \
       "unsupported package flavor, must be one of: " \
-      [list WinRT WinRT81 WP80 WP81 UAP Win32]]
+      [list WinRT WinRT81 WP80 WP81 UWP Win32]]
 }
 
 ###############################################################################

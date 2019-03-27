@@ -18,7 +18,14 @@
 ** that the sqlite3_tokenizer_module.xLanguage() method is invoked correctly.
 */
 
-#include <tcl.h>
+#if defined(INCLUDE_SQLITE_TCL_H)
+#  include "sqlite_tcl.h"
+#else
+#  include "tcl.h"
+#  ifndef SQLITE_TCLAPI
+#    define SQLITE_TCLAPI
+#  endif
+#endif
 #include <string.h>
 #include <assert.h>
 
@@ -135,7 +142,7 @@ static int nm_match_count(
       /* This is a real match. Increment the counter. */
       nOcc++;
     }
-  } 
+  }
 
   return nOcc;
 }
@@ -143,7 +150,7 @@ static int nm_match_count(
 /*
 ** Tclcmd: fts3_near_match DOCUMENT EXPR ?OPTIONS?
 */
-static int fts3_near_match_cmd(
+static int SQLITE_TCLAPI fts3_near_match_cmd(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -158,7 +165,7 @@ static int fts3_near_match_cmd(
   Tcl_Obj **apDocToken;
   Tcl_Obj *pRet;
   Tcl_Obj *pPhrasecount = 0;
-  
+
   Tcl_Obj **apExprToken;
   int nExprToken;
 
@@ -182,7 +189,7 @@ static int fts3_near_match_cmd(
     };
     int iOpt;
     if( Tcl_GetIndexFromObjStruct(
-        interp, objv[ii], aOpt, sizeof(aOpt[0]), "option", 0, &iOpt) 
+        interp, objv[ii], aOpt, sizeof(aOpt[0]), "option", 0, &iOpt)
     ){
       return TCL_ERROR;
     }
@@ -247,7 +254,7 @@ static int fts3_near_match_cmd(
   Tcl_DecrRefCount(pRet);
   Tcl_SetObjResult(interp, Tcl_NewBooleanObj(nTotal>0));
 
- near_match_out: 
+ near_match_out:
   ckfree((char *)aPhrase);
   ckfree((char *)doc.aToken);
   return rc;
@@ -278,7 +285,7 @@ static int fts3_near_match_cmd(
 **    # Restore initial incr-load settings:
 **    eval fts3_configure_incr_load $cfg
 */
-static int fts3_configure_incr_load_cmd(
+static int SQLITE_TCLAPI fts3_configure_incr_load_cmd(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -325,10 +332,10 @@ static int fts3_configure_incr_load_cmd(
 /**************************************************************************
 ** Beginning of test tokenizer code.
 **
-** For language 0, this tokenizer is similar to the default 'simple' 
+** For language 0, this tokenizer is similar to the default 'simple'
 ** tokenizer. For other languages L, the following:
 **
-**   * Odd numbered languages are case-sensitive. Even numbered 
+**   * Odd numbered languages are case-sensitive. Even numbered
 **     languages are not.
 **
 **   * Language ids 100 or greater are considered an error.
@@ -458,7 +465,7 @@ static int testTokenizerNext(
       if( pCsr->iLangid & 0x00000001 ){
         for(i=0; i<nToken; i++) pCsr->aBuffer[i] = pToken[i];
       }else{
-        for(i=0; i<nToken; i++) pCsr->aBuffer[i] = testTolower(pToken[i]);
+        for(i=0; i<nToken; i++) pCsr->aBuffer[i] = (char)testTolower(pToken[i]);
       }
       pCsr->iToken++;
       pCsr->iInput = (int)(p - pCsr->aInput);
@@ -488,7 +495,7 @@ static int testTokenizerLanguage(
 }
 #endif
 
-static int fts3_test_tokenizer_cmd(
+static int SQLITE_TCLAPI fts3_test_tokenizer_cmd(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -517,7 +524,7 @@ static int fts3_test_tokenizer_cmd(
   return TCL_OK;
 }
 
-static int fts3_test_varint_cmd(
+static int SQLITE_TCLAPI fts3_test_varint_cmd(
   ClientData clientData,
   Tcl_Interp *interp,
   int objc,
@@ -526,7 +533,8 @@ static int fts3_test_varint_cmd(
 #ifdef SQLITE_ENABLE_FTS3
   char aBuf[24];
   int rc;
-  Tcl_WideInt w, w2;
+  Tcl_WideInt w;
+  sqlite3_int64 w2;
   int nByte, nByte2;
 
   if( objc!=2 ){
@@ -562,13 +570,13 @@ static int fts3_test_varint_cmd(
   return TCL_OK;
 }
 
-/* 
+/*
 ** End of tokenizer code.
-**************************************************************************/ 
+**************************************************************************/
 
 int Sqlitetestfts3_Init(Tcl_Interp *interp){
   Tcl_CreateObjCommand(interp, "fts3_near_match", fts3_near_match_cmd, 0, 0);
-  Tcl_CreateObjCommand(interp, 
+  Tcl_CreateObjCommand(interp,
       "fts3_configure_incr_load", fts3_configure_incr_load_cmd, 0, 0
   );
   Tcl_CreateObjCommand(

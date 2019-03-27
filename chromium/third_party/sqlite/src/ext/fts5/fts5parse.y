@@ -28,12 +28,13 @@
 // This code runs whenever there is a syntax error
 //
 %syntax_error {
+  UNUSED_PARAM(yymajor); /* Silence a compiler warning */
   sqlite3Fts5ParseError(
     pParse, "fts5: syntax error near \"%.*s\"",TOKEN.n,TOKEN.p
   );
 }
 %stack_overflow {
-  assert( 0 );
+  sqlite3Fts5ParseError(pParse, "fts5: parser stack overflow");
 }
 
 // The name of the generated procedure that implements the parser
@@ -88,6 +89,29 @@ input ::= expr(X). { sqlite3Fts5ParseFinished(pParse, X); }
 %destructor expr     { sqlite3Fts5ParseNodeFree($$); }
 %destructor exprlist { sqlite3Fts5ParseNodeFree($$); }
 
+%type colset {Fts5Colset*}
+%destructor colset { sqlite3_free($$); }
+%type colsetlist {Fts5Colset*}
+%destructor colsetlist { sqlite3_free($$); }
+
+colset(A) ::= MINUS LCP colsetlist(X) RCP. {
+    A = sqlite3Fts5ParseColsetInvert(pParse, X);
+}
+colset(A) ::= LCP colsetlist(X) RCP. { A = X; }
+colset(A) ::= STRING(X). {
+  A = sqlite3Fts5ParseColset(pParse, 0, &X);
+}
+colset(A) ::= MINUS STRING(X). {
+  A = sqlite3Fts5ParseColset(pParse, 0, &X);
+  A = sqlite3Fts5ParseColsetInvert(pParse, A);
+}
+
+colsetlist(A) ::= colsetlist(Y) STRING(X). {
+  A = sqlite3Fts5ParseColset(pParse, Y, &X); }
+colsetlist(A) ::= STRING(X). {
+  A = sqlite3Fts5ParseColset(pParse, 0, &X);
+}
+
 expr(A) ::= expr(X) AND expr(Y). {
   A = sqlite3Fts5ParseNode(pParse, FTS5_AND, X, Y, 0);
 }
@@ -98,36 +122,24 @@ expr(A) ::= expr(X) NOT expr(Y). {
   A = sqlite3Fts5ParseNode(pParse, FTS5_NOT, X, Y, 0);
 }
 
+expr(A) ::= colset(X) COLON LP expr(Y) RP. {
+  sqlite3Fts5ParseSetColset(pParse, Y, X);
+  A = Y;
+}
 expr(A) ::= LP expr(X) RP. {A = X;}
 expr(A) ::= exprlist(X).   {A = X;}
 
 exprlist(A) ::= cnearset(X). {A = X;}
 exprlist(A) ::= exprlist(X) cnearset(Y). {
-  A = sqlite3Fts5ParseNode(pParse, FTS5_AND, X, Y, 0);
+  A = sqlite3Fts5ParseImplicitAnd(pParse, X, Y);
 }
 
-cnearset(A) ::= nearset(X). { 
-  A = sqlite3Fts5ParseNode(pParse, FTS5_STRING, 0, 0, X); 
+cnearset(A) ::= nearset(X). {
+  A = sqlite3Fts5ParseNode(pParse, FTS5_STRING, 0, 0, X);
 }
-cnearset(A) ::= colset(X) COLON nearset(Y). { 
-  sqlite3Fts5ParseSetColset(pParse, Y, X);
-  A = sqlite3Fts5ParseNode(pParse, FTS5_STRING, 0, 0, Y); 
-}
-
-%type colset {Fts5Colset*}
-%destructor colset { sqlite3_free($$); }
-%type colsetlist {Fts5Colset*}
-%destructor colsetlist { sqlite3_free($$); }
-
-colset(A) ::= LCP colsetlist(X) RCP. { A = X; }
-colset(A) ::= STRING(X). {
-  A = sqlite3Fts5ParseColset(pParse, 0, &X);
-}
-
-colsetlist(A) ::= colsetlist(Y) STRING(X). { 
-  A = sqlite3Fts5ParseColset(pParse, Y, &X); }
-colsetlist(A) ::= STRING(X). { 
-  A = sqlite3Fts5ParseColset(pParse, 0, &X); 
+cnearset(A) ::= colset(X) COLON nearset(Y). {
+  A = sqlite3Fts5ParseNode(pParse, FTS5_STRING, 0, 0, Y);
+  sqlite3Fts5ParseSetColset(pParse, A, X);
 }
 
 
@@ -136,15 +148,19 @@ colsetlist(A) ::= STRING(X). {
 %destructor nearset { sqlite3Fts5ParseNearsetFree($$); }
 %destructor nearphrases { sqlite3Fts5ParseNearsetFree($$); }
 
-nearset(A) ::= phrase(X). { A = sqlite3Fts5ParseNearset(pParse, 0, X); }
+nearset(A) ::= phrase(Y). { A = sqlite3Fts5ParseNearset(pParse, 0, Y); }
+nearset(A) ::= CARET phrase(Y). {
+  sqlite3Fts5ParseSetCaret(Y);
+  A = sqlite3Fts5ParseNearset(pParse, 0, Y);
+}
 nearset(A) ::= STRING(X) LP nearphrases(Y) neardist_opt(Z) RP. {
   sqlite3Fts5ParseNear(pParse, &X);
   sqlite3Fts5ParseSetDistance(pParse, Y, &Z);
   A = Y;
 }
 
-nearphrases(A) ::= phrase(X). { 
-  A = sqlite3Fts5ParseNearset(pParse, 0, X); 
+nearphrases(A) ::= phrase(X). {
+  A = sqlite3Fts5ParseNearset(pParse, 0, X);
 }
 nearphrases(A) ::= nearphrases(X) phrase(Y). {
   A = sqlite3Fts5ParseNearset(pParse, X, Y);
@@ -166,10 +182,10 @@ neardist_opt(A) ::= COMMA STRING(X). { A = X; }
 %type phrase {Fts5ExprPhrase*}
 %destructor phrase { sqlite3Fts5ParsePhraseFree($$); }
 
-phrase(A) ::= phrase(X) PLUS STRING(Y) star_opt(Z). { 
+phrase(A) ::= phrase(X) PLUS STRING(Y) star_opt(Z). {
   A = sqlite3Fts5ParseTerm(pParse, X, &Y, Z);
 }
-phrase(A) ::= STRING(Y) star_opt(Z). { 
+phrase(A) ::= STRING(Y) star_opt(Z). {
   A = sqlite3Fts5ParseTerm(pParse, 0, &Y, Z);
 }
 
@@ -177,6 +193,5 @@ phrase(A) ::= STRING(Y) star_opt(Z). {
 ** Optional "*" character.
 */
 %type star_opt {int}
-
 star_opt(A) ::= STAR. { A = 1; }
 star_opt(A) ::= . { A = 0; }

@@ -35,7 +35,7 @@ static unsigned char rot13(unsigned char c){
 /*
 ** Implementation of the rot13() function.
 **
-** Rotate ASCII alphabetic characters by 13 character positions.  
+** Rotate ASCII alphabetic characters by 13 character positions.
 ** Non-ASCII characters are unchanged.  rot13(rot13(X)) should always
 ** equal X.
 */
@@ -47,9 +47,9 @@ static void rot13func(
   const unsigned char *zIn;
   int nIn;
   unsigned char *zOut;
-  char *zToFree = 0;
+  unsigned char *zToFree = 0;
   int i;
-  char zTemp[100];
+  unsigned char zTemp[100];
   assert( argc==1 );
   if( sqlite3_value_type(argv[0])==SQLITE_NULL ) return;
   zIn = (const unsigned char*)sqlite3_value_text(argv[0]);
@@ -57,7 +57,7 @@ static void rot13func(
   if( nIn<sizeof(zTemp)-1 ){
     zOut = zTemp;
   }else{
-    zOut = zToFree = sqlite3_malloc( nIn+1 );
+    zOut = zToFree = (unsigned char*)sqlite3_malloc64( nIn+1 );
     if( zOut==0 ){
       sqlite3_result_error_nomem(context);
       return;
@@ -74,7 +74,7 @@ static void rot13func(
 **
 **      x=y COLLATE rot13
 **
-** Then 
+** Then
 **
 **      rot13(x)=rot13(y) COLLATE binary
 */
@@ -98,8 +98,8 @@ static int rot13CollFunc(
 __declspec(dllexport)
 #endif
 int sqlite3_rot_init(
-  sqlite3 *db, 
-  char **pzErrMsg, 
+  sqlite3 *db,
+  char **pzErrMsg,
   const sqlite3_api_routines *pApi
 ){
   int rc = SQLITE_OK;

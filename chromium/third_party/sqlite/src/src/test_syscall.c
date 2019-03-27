@@ -12,7 +12,7 @@
 **
 ** The code in this file implements a Tcl interface used to test error
 ** handling in the os_unix.c module. Wrapper functions that support fault
-** injection are registered as the low-level OS functions using the 
+** injection are registered as the low-level OS functions using the
 ** xSetSystemCall() method of the VFS. The Tcl interface is as follows:
 **
 **
@@ -21,7 +21,7 @@
 **     LIST must be a list consisting of zero or more of the following
 **     literal values:
 **
-**         open        close      access   getcwd   stat      fstat    
+**         open        close      access   getcwd   stat      fstat
 **         ftruncate   fcntl      read     pread    pread64   write
 **         pwrite      pwrite64   fchmod   fallocate mmap
 **
@@ -33,8 +33,8 @@
 **     injection is disabled. Otherwise, fault injection is configured to
 **     cause a failure on the COUNT'th next call to a system call with a
 **     wrapper function installed. A COUNT value of 1 means fail the next
-**     system call. 
-** 
+**     system call.
+**
 **     Argument PERSIST is interpreted as a boolean. If true, the all
 **     system calls following the initial failure also fail. Otherwise, only
 **     the single transient failure is injected.
@@ -44,7 +44,7 @@
 **     in call CALL. Argument CALL must be one of the system call names
 **     listed above (under [test_syscall install]). ERRNO is a symbolic
 **     name (i.e. "EACCES"). Not all errno codes are supported. Add extra
-**     to the aErrno table in function test_syscall_errno() below as 
+**     to the aErrno table in function test_syscall_errno() below as
 **     required.
 **
 **   test_syscall reset ?SYSTEM-CALL?
@@ -76,7 +76,11 @@
 
 #include "sqliteInt.h"
 #include "sqlite3.h"
-#include "tcl.h"
+#if defined(INCLUDE_SQLITE_TCL_H)
+#  include "sqlite_tcl.h"
+#else
+#  include "tcl.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -108,10 +112,13 @@ static int ts_ftruncate(int fd, off_t n);
 static int ts_fcntl(int fd, int cmd, ... );
 static int ts_read(int fd, void *aBuf, size_t nBuf);
 static int ts_pread(int fd, void *aBuf, size_t nBuf, off_t off);
-static int ts_pread64(int fd, void *aBuf, size_t nBuf, off_t off);
+/* Note:  pread64() and pwrite64() actually use off64_t as the type on their
+** last parameter.  But that datatype is not defined on many systems
+** (ex: Mac, OpenBSD).  So substitute a likely equivalent: sqlite3_uint64 */
+static int ts_pread64(int fd, void *aBuf, size_t nBuf, sqlite3_uint64 off);
 static int ts_write(int fd, const void *aBuf, size_t nBuf);
 static int ts_pwrite(int fd, const void *aBuf, size_t nBuf, off_t off);
-static int ts_pwrite64(int fd, const void *aBuf, size_t nBuf, off_t off);
+static int ts_pwrite64(int fd, const void *aBuf, size_t nBuf, sqlite3_uint64 off);
 static int ts_fchmod(int fd, mode_t mode);
 static int ts_fallocate(int fd, off_t off, off_t len);
 static void *ts_mmap(void *, size_t, int, int, int, off_t);
@@ -155,11 +162,11 @@ struct TestSyscallArray {
 #define orig_fcntl     ((int(*)(int,int,...))aSyscall[7].xOrig)
 #define orig_read      ((ssize_t(*)(int,void*,size_t))aSyscall[8].xOrig)
 #define orig_pread     ((ssize_t(*)(int,void*,size_t,off_t))aSyscall[9].xOrig)
-#define orig_pread64   ((ssize_t(*)(int,void*,size_t,off_t))aSyscall[10].xOrig)
+#define orig_pread64   ((ssize_t(*)(int,void*,size_t,sqlite3_uint64))aSyscall[10].xOrig)
 #define orig_write     ((ssize_t(*)(int,const void*,size_t))aSyscall[11].xOrig)
 #define orig_pwrite    ((ssize_t(*)(int,const void*,size_t,off_t))\
                        aSyscall[12].xOrig)
-#define orig_pwrite64  ((ssize_t(*)(int,const void*,size_t,off_t))\
+#define orig_pwrite64  ((ssize_t(*)(int,const void*,size_t,sqlite3_uint64))\
                        aSyscall[13].xOrig)
 #define orig_fchmod    ((int(*)(int,mode_t))aSyscall[14].xOrig)
 #define orig_fallocate ((int(*)(int,off_t,off_t))aSyscall[15].xOrig)
@@ -185,7 +192,7 @@ static int tsIsFail(void){
 ** the name of a system call in the aSyscall[] table.
 **
 ** Usually, the current error-number is the value that errno should be set
-** to if the named system call fails. The exception is "fallocate". See 
+** to if the named system call fails. The exception is "fallocate". See
 ** comments above the implementation of ts_fallocate() for details.
 */
 static int tsErrno(const char *zFunc){
@@ -204,7 +211,7 @@ static int tsErrno(const char *zFunc){
 /*
 ** A wrapper around tsIsFail(). If tsIsFail() returns non-zero, set the
 ** value of errno before returning.
-*/ 
+*/
 static int tsIsFailErrno(const char *zFunc){
   if( tsIsFail() ){
     errno = tsErrno(zFunc);
@@ -228,7 +235,7 @@ static int ts_open(const char *zFile, int flags, int mode){
 */
 static int ts_close(int fd){
   if( tsIsFail() ){
-    /* Even if simulating an error, close the original file-descriptor. 
+    /* Even if simulating an error, close the original file-descriptor.
     ** This is to stop the test process from running out of file-descriptors
     ** when running a long test. If a call to close() appears to fail, SQLite
     ** never attempts to use the file-descriptor afterwards (or even to close
@@ -326,7 +333,7 @@ static int ts_pread(int fd, void *aBuf, size_t nBuf, off_t off){
 /*
 ** A wrapper around pread64().
 */
-static int ts_pread64(int fd, void *aBuf, size_t nBuf, off_t off){
+static int ts_pread64(int fd, void *aBuf, size_t nBuf, sqlite3_uint64 off){
   if( tsIsFailErrno("pread64") ){
     return -1;
   }
@@ -357,7 +364,7 @@ static int ts_pwrite(int fd, const void *aBuf, size_t nBuf, off_t off){
 /*
 ** A wrapper around pwrite64().
 */
-static int ts_pwrite64(int fd, const void *aBuf, size_t nBuf, off_t off){
+static int ts_pwrite64(int fd, const void *aBuf, size_t nBuf, sqlite3_uint64 off){
   if( tsIsFailErrno("pwrite64") ){
     return -1;
   }
@@ -391,11 +398,11 @@ static int ts_fallocate(int fd, off_t off, off_t len){
 }
 
 static void *ts_mmap(
-  void *pAddr, 
-  size_t nByte, 
-  int prot, 
-  int flags, 
-  int fd, 
+  void *pAddr,
+  size_t nByte,
+  int prot,
+  int flags,
+  int fd,
   off_t iOff
 ){
   if( tsIsFailErrno("mmap") ){
@@ -415,13 +422,13 @@ static void *ts_mremap(void *a, size_t b, size_t c, int d, ...){
   return orig_mremap(a, b, c, d, pArg);
 }
 
-static int test_syscall_install(
+static int SQLITE_TCLAPI test_syscall_install(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
   Tcl_Obj *CONST objv[]
 ){
-  sqlite3_vfs *pVfs; 
+  sqlite3_vfs *pVfs;
   int nElem;
   int i;
   Tcl_Obj **apElem;
@@ -437,7 +444,7 @@ static int test_syscall_install(
 
   for(i=0; i<nElem; i++){
     int iCall;
-    int rc = Tcl_GetIndexFromObjStruct(interp, 
+    int rc = Tcl_GetIndexFromObjStruct(interp,
         apElem[i], aSyscall, sizeof(aSyscall[0]), "system-call", 0, &iCall
     );
     if( rc ) return rc;
@@ -451,13 +458,13 @@ static int test_syscall_install(
   return TCL_OK;
 }
 
-static int test_syscall_uninstall(
+static int SQLITE_TCLAPI test_syscall_uninstall(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
   Tcl_Obj *CONST objv[]
 ){
-  sqlite3_vfs *pVfs; 
+  sqlite3_vfs *pVfs;
   int i;
 
   if( objc!=2 ){
@@ -475,13 +482,13 @@ static int test_syscall_uninstall(
   return TCL_OK;
 }
 
-static int test_syscall_reset(
+static int SQLITE_TCLAPI test_syscall_reset(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
   Tcl_Obj *CONST objv[]
 ){
-  sqlite3_vfs *pVfs; 
+  sqlite3_vfs *pVfs;
   int i;
   int rc;
 
@@ -513,13 +520,13 @@ static int test_syscall_reset(
   return TCL_OK;
 }
 
-static int test_syscall_exists(
+static int SQLITE_TCLAPI test_syscall_exists(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
   Tcl_Obj *CONST objv[]
 ){
-  sqlite3_vfs *pVfs; 
+  sqlite3_vfs *pVfs;
   sqlite3_syscall_ptr x;
 
   if( objc!=3 ){
@@ -534,7 +541,7 @@ static int test_syscall_exists(
   return TCL_OK;
 }
 
-static int test_syscall_fault(
+static int SQLITE_TCLAPI test_syscall_fault(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -563,7 +570,7 @@ static int test_syscall_fault(
   return TCL_OK;
 }
 
-static int test_syscall_errno(
+static int SQLITE_TCLAPI test_syscall_errno(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -596,11 +603,11 @@ static int test_syscall_errno(
     return TCL_ERROR;
   }
 
-  rc = Tcl_GetIndexFromObjStruct(interp, 
+  rc = Tcl_GetIndexFromObjStruct(interp,
       objv[2], aSyscall, sizeof(aSyscall[0]), "system-call", 0, &iCall
   );
   if( rc!=TCL_OK ) return rc;
-  rc = Tcl_GetIndexFromObjStruct(interp, 
+  rc = Tcl_GetIndexFromObjStruct(interp,
       objv[3], aErrno, sizeof(aErrno[0]), "errno", 0, &iErrno
   );
   if( rc!=TCL_OK ) return rc;
@@ -609,14 +616,14 @@ static int test_syscall_errno(
   return TCL_OK;
 }
 
-static int test_syscall_list(
+static int SQLITE_TCLAPI test_syscall_list(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
   Tcl_Obj *CONST objv[]
 ){
   const char *zSys;
-  sqlite3_vfs *pVfs; 
+  sqlite3_vfs *pVfs;
   Tcl_Obj *pList;
 
   if( objc!=2 ){
@@ -627,7 +634,7 @@ static int test_syscall_list(
   pVfs = sqlite3_vfs_find(0);
   pList = Tcl_NewObj();
   Tcl_IncrRefCount(pList);
-  for(zSys = pVfs->xNextSystemCall(pVfs, 0); 
+  for(zSys = pVfs->xNextSystemCall(pVfs, 0);
       zSys!=0;
       zSys = pVfs->xNextSystemCall(pVfs, zSys)
   ){
@@ -639,13 +646,13 @@ static int test_syscall_list(
   return TCL_OK;
 }
 
-static int test_syscall_defaultvfs(
+static int SQLITE_TCLAPI test_syscall_defaultvfs(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
   Tcl_Obj *CONST objv[]
 ){
-  sqlite3_vfs *pVfs; 
+  sqlite3_vfs *pVfs;
 
   if( objc!=2 ){
     Tcl_WrongNumArgs(interp, 2, objv, "");
@@ -661,7 +668,7 @@ static int ts_getpagesize(void){
   return gSyscall.pgsz;
 }
 
-static int test_syscall_pagesize(
+static int SQLITE_TCLAPI test_syscall_pagesize(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -696,7 +703,7 @@ static int test_syscall_pagesize(
   return TCL_OK;
 }
 
-static int test_syscall(
+static int SQLITE_TCLAPI test_syscall(
   void * clientData,
   Tcl_Interp *interp,
   int objc,
@@ -719,14 +726,20 @@ static int test_syscall(
   };
   int iCmd;
   int rc;
+  sqlite3_vfs *pVfs = sqlite3_vfs_find(0);
 
   if( objc<2 ){
     Tcl_WrongNumArgs(interp, 1, objv, "SUB-COMMAND ...");
     return TCL_ERROR;
   }
-  rc = Tcl_GetIndexFromObjStruct(interp, 
-      objv[1], aCmd, sizeof(aCmd[0]), "sub-command", 0, &iCmd
-  );
+  if( pVfs->iVersion<3 || pVfs->xSetSystemCall==0 ){
+    Tcl_AppendResult(interp, "VFS does not support xSetSystemCall", 0);
+    rc = TCL_ERROR;
+  }else{
+    rc = Tcl_GetIndexFromObjStruct(interp,
+        objv[1], aCmd, sizeof(aCmd[0]), "sub-command", 0, &iCmd
+    );
+  }
   if( rc!=TCL_OK ) return rc;
   return aCmd[iCmd].xCmd(clientData, interp, objc, objv);
 }

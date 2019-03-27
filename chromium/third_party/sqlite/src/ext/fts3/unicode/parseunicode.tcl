@@ -4,7 +4,7 @@
 # reads the file and returns a list of mappings required to remove all
 # diacritical marks from a unicode string. Each mapping is itself a list
 # consisting of two elements - the unicode codepoint and the single ASCII
-# character that it should be replaced with, or an empty string if the 
+# character that it should be replaced with, or an empty string if the
 # codepoint should simply be removed from the input. Examples:
 #
 #   { 224 a  }     (replace codepoint 224 to "a")
@@ -141,6 +141,42 @@ proc tl_load_casefolding_txt {zName} {
 
     if {$b=="C" || $b=="S"} { set tl_lookup_table($a2) $c2 }
   }
+}
+
+proc cc_load_unicodedata_text {zName} {
+  set fd [open $zName]
+  set lField {
+    code
+    character_name
+    general_category
+    canonical_combining_classes
+    bidirectional_category
+    character_decomposition_mapping
+    decimal_digit_value
+    digit_value
+    numeric_value
+    mirrored
+    unicode_1_name
+    iso10646_comment_field
+    uppercase_mapping
+    lowercase_mapping
+    titlecase_mapping
+  }
+  set lRet [list]
+
+  while { ![eof $fd] } {
+    set line [gets $fd]
+    if {$line == ""} continue
+
+    set fields [split $line ";"]
+    if {[llength $fields] != [llength $lField]} { error "parse error: $line" }
+    foreach $lField $fields {}
+
+    lappend lRet [list $code $general_category]
+  }
+
+  close $fd
+  set lRet
 }
 
 

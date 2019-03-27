@@ -15,7 +15,7 @@
 
 if {![info exists testdir]} {
   set testdir [file join [file dirname [info script]] .. .. test]
-} 
+}
 source $testdir/tester.tcl
 source $testdir/malloc_common.tcl
 ifcapable !rtree {
@@ -25,7 +25,7 @@ ifcapable !rtree {
 
 # Test summary:
 #
-#   rtree3-1: Test OOM in simple CREATE TABLE, INSERT, DELETE and SELECT 
+#   rtree3-1: Test OOM in simple CREATE TABLE, INSERT, DELETE and SELECT
 #             commands on an almost empty table.
 #
 #   rtree3-2: Test OOM in a DROP TABLE command.
@@ -47,7 +47,8 @@ ifcapable !rtree {
 #
 #   rtree3-8: Test OOM while registering the r-tree module with sqlite.
 #
-
+#   rtree3-11: OOM following a constraint failure
+#
 do_faultsim_test rtree3-1 -faults oom* -prep {
   faultsim_delete_and_reopen
 } -body {
@@ -74,13 +75,13 @@ do_test rtree3-2.prep {
 do_faultsim_test rtree3-2 -faults oom* -prep {
   faultsim_restore_and_reopen
 } -body {
-  execsql { DROP TABLE rt } 
+  execsql { DROP TABLE rt }
 }
 
 do_malloc_test rtree3-3.prep {
   faultsim_delete_and_reopen
   execsql {
-    CREATE VIRTUAL TABLE rt USING rtree(ii, x1, x2, y1, y2);
+    CREATE VIRTUAL TABLE rt USING rtree(ii, x1, x2, y1, y2, +a1, +a2);
     INSERT INTO rt VALUES(NULL, 3, 5, 7, 9);
   }
   faultsim_save_and_close
@@ -107,7 +108,7 @@ do_faultsim_test rtree3-3b -faults oom* -prep {
     db eval { DELETE FROM rt WHERE x1<($f*10.0) AND x1>($f*10.5) }
   }
   db eval COMMIT
-} 
+}
 
 do_test rtree3-4.prep {
   faultsim_delete_and_reopen
@@ -204,7 +205,7 @@ do_faultsim_test rtree3-8 -faults oom-* -prep {
   catch { db close }
 } -body {
   sqlite3 db test.db
-} 
+}
 
 do_faultsim_test rtree3-9 -faults oom-* -prep {
   sqlite3 db :memory:
@@ -217,7 +218,7 @@ do_faultsim_test rtree3-9 -faults oom-* -prep {
 
 do_test rtree3-10.prep {
   faultsim_delete_and_reopen
-  execsql { 
+  execsql {
     CREATE VIRTUAL TABLE rt USING rtree(ii, x1, x2, y1, y2, z1, z2);
     INSERT INTO rt VALUES(1,  10, 10, 10, 11, 11, 11);
     INSERT INTO rt VALUES(2,  5, 6, 6, 7, 7, 8);
@@ -232,6 +233,34 @@ do_faultsim_test rtree3-10 -faults oom-* -prep {
   execsql { SELECT ii FROM rt WHERE ii MATCH cube(4.5, 5.5, 6.5, 1, 1, 1) }
 } -test {
   faultsim_test_result {0 2}
+}
+
+
+do_test rtree3-11.prep {
+  faultsim_delete_and_reopen
+  execsql {
+    CREATE VIRTUAL TABLE rt USING rtree(ii, x1, x2, y1, y2);
+    INSERT INTO rt VALUES(1, 2, 3, 4, 5);
+  }
+  faultsim_save_and_close
+} {}
+do_faultsim_test rtree3-10.1 -faults oom-* -prep {
+  faultsim_restore_and_reopen
+  execsql { SELECT * FROM rt }
+} -body {
+  execsql { INSERT INTO rt VALUES(1, 2, 3, 4, 5) }
+} -test {
+  faultsim_test_result {1 {UNIQUE constraint failed: rt.ii}} \
+                       {1 {constraint failed}}
+}
+do_faultsim_test rtree3-10.2 -faults oom-* -prep {
+  faultsim_restore_and_reopen
+  execsql { SELECT * FROM rt }
+} -body {
+  execsql { INSERT INTO rt VALUES(2, 2, 3, 5, 4) }
+} -test {
+  faultsim_test_result {1 {rtree constraint failed: rt.(y1<=y2)}} \
+                       {1 {constraint failed}}
 }
 
 finish_test

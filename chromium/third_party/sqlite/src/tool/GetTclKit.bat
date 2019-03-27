@@ -29,6 +29,8 @@ IF DEFINED PROCESSOR (
   GOTO usage
 )
 
+SET PROCESSOR=%PROCESSOR:AMD64=x64%
+
 %_VECHO% Processor = '%PROCESSOR%'
 
 SET DUMMY2=%2
@@ -77,6 +79,7 @@ IF /I "%PROCESSOR%" == "x86" (
 
 %_VECHO% TclKitVersion = '%TCLKIT_VERSION%'
 %_VECHO% TclKitPatchLevel = '%TCLKIT_PATCHLEVEL%'
+%_VECHO% TclKitNoEnv = '%TCLKIT_NOENV%'
 %_VECHO% TclKitNoSdk = '%TCLKIT_NOSDK%'
 %_VECHO% TclKitExe = '%TCLKIT_EXE%'
 %_VECHO% TclKitLib = '%TCLKIT_LIB%'
@@ -123,7 +126,7 @@ IF NOT EXIST "%FRAMEWORKDIR%\csc.exe" (
   GOTO errors
 )
 
-SET PATH=%FRAMEWORKDIR%;%PATH%
+CALL :fn_PrependToPath FRAMEWORKDIR
 
 :skip_addToPath
 
@@ -147,6 +150,7 @@ FOR %%F IN (%TCLKIT_FILES%) DO (
   )
 )
 
+IF DEFINED TCLKIT_NOENV GOTO skip_sdkUnZip
 IF DEFINED TCLKIT_NOSDK GOTO skip_sdkUnZip
 
 IF NOT EXIST "%TEMP%\%TCLKIT_SDK%" (
@@ -167,6 +171,8 @@ IF ERRORLEVEL 1 (
 
 :skip_sdkUnZip
 
+IF DEFINED TCLKIT_NOENV GOTO skip_sdkEnvironment
+
 %__ECHO% ECHO SET TCLSH_CMD=%TEMP%\%TCLKIT_EXE%%OVERWRITE%"%ROOT%\SetTclKitEnv.bat"
 
 IF DEFINED TCLKIT_NOSDK GOTO skip_sdkVariables
@@ -184,46 +190,54 @@ ECHO Wrote "%ROOT%\SetTclKitEnv.bat".
 ECHO Please run it to set the necessary Tcl environment variables.
 ECHO.
 
+:skip_sdkEnvironment
+
 GOTO no_errors
 
 :fn_TclKitX86Variables
+  REM
+  REM NOTE: By default, use latest available version of the TclKit SDK
+  REM       for x86.  However, the "default" TclKit executable for x86
+  REM       is still used here because it is the only one "well-known"
+  REM       to be available for download.
+  REM
   IF NOT DEFINED TCLKIT_PATCHLEVEL (
-    SET TCLKIT_PATCHLEVEL=8.6.4
+    SET TCLKIT_PATCHLEVEL=8.6.6
   )
   SET TCLKIT_VERSION=%TCLKIT_PATCHLEVEL:.=%
   SET TCLKIT_VERSION=%TCLKIT_VERSION:~0,2%
-  SET TCLKIT_EXE=tclkit-%TCLKIT_PATCHLEVEL%.exe
+  REM SET TCLKIT_EXE=tclkit-%TCLKIT_PATCHLEVEL%.exe
+  SET TCLKIT_EXE=tclkit-8.6.4.exe
   SET TCLKIT_LIB=libtclkit%TCLKIT_PATCHLEVEL:.=%.lib
   SET TCLKIT_LIB_STUB=libtclstub%TCLKIT_VERSION:.=%.a
   SET TCLKIT_SDK=libtclkit-sdk-x86-%TCLKIT_PATCHLEVEL%
   SET TCLKIT_SDK_ZIP=%TCLKIT_SDK%.zip
   SET TCLKIT_FILES=%TCLKIT_EXE%
-  IF NOT DEFINED TCLKIT_NOSDK (
+  IF NOT DEFINED TCLKIT_NOENV IF NOT DEFINED TCLKIT_NOSDK (
     SET TCLKIT_FILES=%TCLKIT_FILES% unzip.exe %TCLKIT_SDK_ZIP%
   )
   GOTO :EOF
 
 :fn_TclKitX64Variables
+  REM
+  REM NOTE: By default, use latest available version of the TclKit SDK
+  REM       for x64.  However, the "default" TclKit executable for x86
+  REM       is still used here because it is the only one "well-known"
+  REM       to be available for download.
+  REM
   IF NOT DEFINED TCLKIT_PATCHLEVEL (
-    REM
-    REM NOTE: By default, use latest available version of the TclKit SDK
-    REM       for x64.  However, the "default" TclKit executable for x86
-    REM       is still used here because it is the only one "well-known"
-    REM       to be available for download.
-    REM
-    SET TCLKIT_PATCHLEVEL=8.6.3
-    SET TCLKIT_EXE=tclkit-8.6.4.exe
-  ) ELSE (
-    SET TCLKIT_EXE=tclkit-%TCLKIT_PATCHLEVEL%.exe
+    SET TCLKIT_PATCHLEVEL=8.6.6
   )
   SET TCLKIT_VERSION=%TCLKIT_PATCHLEVEL:.=%
   SET TCLKIT_VERSION=%TCLKIT_VERSION:~0,2%
+  REM SET TCLKIT_EXE=tclkit-%TCLKIT_PATCHLEVEL%.exe
+  SET TCLKIT_EXE=tclkit-8.6.4.exe
   SET TCLKIT_LIB=libtclkit%TCLKIT_PATCHLEVEL:.=%.lib
   SET TCLKIT_LIB_STUB=libtclstub%TCLKIT_VERSION:.=%.a
   SET TCLKIT_SDK=libtclkit-sdk-x64-%TCLKIT_PATCHLEVEL%
   SET TCLKIT_SDK_ZIP=%TCLKIT_SDK%.zip
   SET TCLKIT_FILES=%TCLKIT_EXE%
-  IF NOT DEFINED TCLKIT_NOSDK (
+  IF NOT DEFINED TCLKIT_NOENV IF NOT DEFINED TCLKIT_NOSDK (
     SET TCLKIT_FILES=%TCLKIT_FILES% unzip.exe %TCLKIT_SDK_ZIP%
   )
   GOTO :EOF
@@ -238,6 +252,18 @@ GOTO no_errors
   SET VALUE=%VALUE:"=%
   REM "
   ENDLOCAL && SET %1=%VALUE%
+  GOTO :EOF
+
+:fn_PrependToPath
+  IF NOT DEFINED %1 GOTO :EOF
+  SETLOCAL
+  SET __ECHO_CMD=ECHO %%%1%%
+  FOR /F "delims=" %%V IN ('%__ECHO_CMD%') DO (
+    SET VALUE=%%V
+  )
+  SET VALUE=%VALUE:"=%
+  REM "
+  ENDLOCAL && SET PATH=%VALUE%;%PATH%
   GOTO :EOF
 
 :fn_ResetErrorLevel

@@ -17,8 +17,8 @@
 ** property.  Usually only a few pages are meet either condition.
 ** So the bitmap is usually sparse and has low cardinality.
 ** But sometimes (for example when during a DROP of a large table) most
-** or all of the pages in a database can get journalled.  In those cases, 
-** the bitmap becomes dense with high cardinality.  The algorithm needs 
+** or all of the pages in a database can get journalled.  In those cases,
+** the bitmap becomes dense with high cardinality.  The algorithm needs
 ** to handle both cases well.
 **
 ** The size of the bitmap is fixed when the object is created.
@@ -39,13 +39,13 @@
 /* Size of the Bitvec structure in bytes. */
 #define BITVEC_SZ        512
 
-/* Round the union size down to the nearest pointer boundary, since that's how 
+/* Round the union size down to the nearest pointer boundary, since that's how
 ** it will be aligned within the Bitvec struct. */
 #define BITVEC_USIZE \
     (((BITVEC_SZ-(3*sizeof(u32)))/sizeof(Bitvec*))*sizeof(Bitvec*))
 
-/* Type of the array "element" for the bitmap representation. 
-** Should be a power of 2, and ideally, evenly divide into BITVEC_USIZE. 
+/* Type of the array "element" for the bitmap representation.
+** Should be a power of 2, and ideally, evenly divide into BITVEC_USIZE.
 ** Setting this to the "natural word" size of your CPU may improve
 ** performance. */
 #define BITVEC_TELEM     u8
@@ -58,12 +58,12 @@
 
 /* Number of u32 values in hash table. */
 #define BITVEC_NINT      (BITVEC_USIZE/sizeof(u32))
-/* Maximum number of entries in hash table before 
+/* Maximum number of entries in hash table before
 ** sub-dividing and re-hashing. */
 #define BITVEC_MXHASH    (BITVEC_NINT/2)
 /* Hashing function for the aHash representation.
-** Empirical testing showed that the *37 multiplier 
-** (an arbitrary prime)in the hash function provided 
+** Empirical testing showed that the *37 multiplier
+** (an arbitrary prime)in the hash function provided
 ** no fewer collisions than the no-op *1. */
 #define BITVEC_HASH(X)   (((X)*1)%BITVEC_NINT)
 
@@ -109,7 +109,7 @@ struct Bitvec {
 
 /*
 ** Create a new bitmap object able to handle bits between 0 and iSize,
-** inclusive.  Return a pointer to the new object.  Return NULL if 
+** inclusive.  Return a pointer to the new object.  Return NULL if
 ** malloc fails.
 */
 Bitvec *sqlite3BitvecCreate(u32 iSize){
@@ -177,7 +177,7 @@ int sqlite3BitvecSet(Bitvec *p, u32 i){
     i = i%p->iDivisor;
     if( p->u.apSub[bin]==0 ){
       p->u.apSub[bin] = sqlite3BitvecCreate( p->iDivisor );
-      if( p->u.apSub[bin]==0 ) return SQLITE_NOMEM;
+      if( p->u.apSub[bin]==0 ) return SQLITE_NOMEM_BKPT;
     }
     p = p->u.apSub[bin];
   }
@@ -212,7 +212,7 @@ bitvec_set_rehash:
     int rc;
     u32 *aiValues = sqlite3StackAllocRaw(0, sizeof(p->u.aHash));
     if( aiValues==0 ){
-      return SQLITE_NOMEM;
+      return SQLITE_NOMEM_BKPT;
     }else{
       memcpy(aiValues, p->u.aHash, sizeof(p->u.aHash));
       memset(p->u.apSub, 0, sizeof(p->u.apSub));
@@ -293,7 +293,7 @@ u32 sqlite3BitvecSize(Bitvec *p){
   return p->iSize;
 }
 
-#ifndef SQLITE_OMIT_BUILTIN_TEST
+#ifndef SQLITE_UNTESTABLE
 /*
 ** Let V[] be an array of unsigned characters sufficient to hold
 ** up to N bits.  Let I be an integer between 0 and N.  0<=I<N.
@@ -365,7 +365,7 @@ int sqlite3BitvecBuiltinTest(int sz, int *aOp){
         break;
       }
       case 3:
-      case 4: 
+      case 4:
       default: {
         nx = 2;
         sqlite3_randomness(sizeof(i), &i);
@@ -408,4 +408,4 @@ bitvec_end:
   sqlite3BitvecDestroy(pBitvec);
   return rc;
 }
-#endif /* SQLITE_OMIT_BUILTIN_TEST */
+#endif /* SQLITE_UNTESTABLE */

@@ -21,19 +21,19 @@ struct Fts5Storage {
   Fts5Index *pIndex;
   int bTotalsValid;               /* True if nTotalRow/aTotalSize[] are valid */
   i64 nTotalRow;                  /* Total number of rows in FTS table */
-  i64 *aTotalSize;                /* Total sizes of each column */ 
+  i64 *aTotalSize;                /* Total sizes of each column */
   sqlite3_stmt *aStmt[11];
 };
 
 
-#if FTS5_STMT_SCAN_ASC!=0 
-# error "FTS5_STMT_SCAN_ASC mismatch" 
+#if FTS5_STMT_SCAN_ASC!=0
+# error "FTS5_STMT_SCAN_ASC mismatch"
 #endif
-#if FTS5_STMT_SCAN_DESC!=1 
-# error "FTS5_STMT_SCAN_DESC mismatch" 
+#if FTS5_STMT_SCAN_DESC!=1
+# error "FTS5_STMT_SCAN_DESC mismatch"
 #endif
 #if FTS5_STMT_LOOKUP!=2
-# error "FTS5_STMT_LOOKUP mismatch" 
+# error "FTS5_STMT_LOOKUP mismatch"
 #endif
 
 #define FTS5_STMT_INSERT_CONTENT  3
@@ -59,12 +59,12 @@ static int fts5StorageGetStmt(
 ){
   int rc = SQLITE_OK;
 
-  /* If there is no %_docsize table, there should be no requests for 
+  /* If there is no %_docsize table, there should be no requests for
   ** statements to operate on it.  */
   assert( p->pConfig->bColumnsize || (
-        eStmt!=FTS5_STMT_REPLACE_DOCSIZE 
-     && eStmt!=FTS5_STMT_DELETE_DOCSIZE 
-     && eStmt!=FTS5_STMT_LOOKUP_DOCSIZE 
+        eStmt!=FTS5_STMT_REPLACE_DOCSIZE
+     && eStmt!=FTS5_STMT_DELETE_DOCSIZE
+     && eStmt!=FTS5_STMT_LOOKUP_DOCSIZE
   ));
 
   assert( eStmt>=0 && eStmt<ArraySize(p->aStmt) );
@@ -90,26 +90,26 @@ static int fts5StorageGetStmt(
 
     switch( eStmt ){
       case FTS5_STMT_SCAN:
-        zSql = sqlite3_mprintf(azStmt[eStmt], 
+        zSql = sqlite3_mprintf(azStmt[eStmt],
             pC->zContentExprlist, pC->zContent
         );
         break;
 
       case FTS5_STMT_SCAN_ASC:
       case FTS5_STMT_SCAN_DESC:
-        zSql = sqlite3_mprintf(azStmt[eStmt], pC->zContentExprlist, 
+        zSql = sqlite3_mprintf(azStmt[eStmt], pC->zContentExprlist,
             pC->zContent, pC->zContentRowid, pC->zContentRowid,
             pC->zContentRowid
         );
         break;
 
       case FTS5_STMT_LOOKUP:
-        zSql = sqlite3_mprintf(azStmt[eStmt], 
+        zSql = sqlite3_mprintf(azStmt[eStmt],
             pC->zContentExprlist, pC->zContent, pC->zContentRowid
         );
         break;
 
-      case FTS5_STMT_INSERT_CONTENT: 
+      case FTS5_STMT_INSERT_CONTENT:
       case FTS5_STMT_REPLACE_CONTENT: {
         int nCol = pC->nCol + 1;
         char *zBind;
@@ -136,7 +136,8 @@ static int fts5StorageGetStmt(
     if( zSql==0 ){
       rc = SQLITE_NOMEM;
     }else{
-      rc = sqlite3_prepare_v2(pC->db, zSql, -1, &p->aStmt[eStmt], 0);
+      rc = sqlite3_prepare_v3(pC->db, zSql, -1,
+                              SQLITE_PREPARE_PERSISTENT, &p->aStmt[eStmt], 0);
       sqlite3_free(zSql);
       if( rc!=SQLITE_OK && pzErrMsg ){
         *pzErrMsg = sqlite3_mprintf("%s", sqlite3_errmsg(pC->db));
@@ -145,6 +146,7 @@ static int fts5StorageGetStmt(
   }
 
   *ppStmt = p->aStmt[eStmt];
+  sqlite3_reset(*ppStmt);
   return rc;
 }
 
@@ -178,7 +180,7 @@ static int fts5ExecPrintf(
 ** code otherwise.
 */
 int sqlite3Fts5DropAll(Fts5Config *pConfig){
-  int rc = fts5ExecPrintf(pConfig->db, 0, 
+  int rc = fts5ExecPrintf(pConfig->db, 0,
       "DROP TABLE IF EXISTS %Q.'%q_data';"
       "DROP TABLE IF EXISTS %Q.'%q_idx';"
       "DROP TABLE IF EXISTS %Q.'%q_config';",
@@ -187,13 +189,13 @@ int sqlite3Fts5DropAll(Fts5Config *pConfig){
       pConfig->zDb, pConfig->zName
   );
   if( rc==SQLITE_OK && pConfig->bColumnsize ){
-    rc = fts5ExecPrintf(pConfig->db, 0, 
+    rc = fts5ExecPrintf(pConfig->db, 0,
         "DROP TABLE IF EXISTS %Q.'%q_docsize';",
         pConfig->zDb, pConfig->zName
     );
   }
   if( rc==SQLITE_OK && pConfig->eContent==FTS5_CONTENT_NORMAL ){
-    rc = fts5ExecPrintf(pConfig->db, 0, 
+    rc = fts5ExecPrintf(pConfig->db, 0,
         "DROP TABLE IF EXISTS %Q.'%q_content';",
         pConfig->zDb, pConfig->zName
     );
@@ -208,7 +210,7 @@ static void fts5StorageRenameOne(
   const char *zName               /* New name of FTS5 table */
 ){
   if( *pRc==SQLITE_OK ){
-    *pRc = fts5ExecPrintf(pConfig->db, 0, 
+    *pRc = fts5ExecPrintf(pConfig->db, 0,
         "ALTER TABLE %Q.'%q_%s' RENAME TO '%q_%s';",
         pConfig->zDb, pConfig->zName, zTail, zName, zTail
     );
@@ -217,7 +219,7 @@ static void fts5StorageRenameOne(
 
 int sqlite3Fts5StorageRename(Fts5Storage *pStorage, const char *zName){
   Fts5Config *pConfig = pStorage->pConfig;
-  int rc = sqlite3Fts5StorageSync(pStorage, 1);
+  int rc = sqlite3Fts5StorageSync(pStorage);
 
   fts5StorageRenameOne(pConfig, &rc, "data", zName);
   fts5StorageRenameOne(pConfig, &rc, "idx", zName);
@@ -246,11 +248,15 @@ int sqlite3Fts5CreateTable(
   char *zErr = 0;
 
   rc = fts5ExecPrintf(pConfig->db, &zErr, "CREATE TABLE %Q.'%q_%q'(%s)%s",
-      pConfig->zDb, pConfig->zName, zPost, zDefn, bWithout?" WITHOUT ROWID":""
+      pConfig->zDb, pConfig->zName, zPost, zDefn,
+#ifndef SQLITE_FTS5_NO_WITHOUT_ROWID
+      bWithout?" WITHOUT ROWID":
+#endif
+      ""
   );
   if( zErr ){
     *pzErr = sqlite3_mprintf(
-        "fts5: error creating shadow table %q_%s: %s", 
+        "fts5: error creating shadow table %q_%s: %s",
         pConfig->zName, zPost, zErr
     );
     sqlite3_free(zErr);
@@ -261,15 +267,15 @@ int sqlite3Fts5CreateTable(
 
 /*
 ** Open a new Fts5Index handle. If the bCreate argument is true, create
-** and initialize the underlying tables 
+** and initialize the underlying tables
 **
 ** If successful, set *pp to point to the new object and return SQLITE_OK.
 ** Otherwise, set *pp to NULL and return an SQLite error code.
 */
 int sqlite3Fts5StorageOpen(
-  Fts5Config *pConfig, 
-  Fts5Index *pIndex, 
-  int bCreate, 
+  Fts5Config *pConfig,
+  Fts5Index *pIndex,
+  int bCreate,
   Fts5Storage **pp,
   char **pzErr                    /* OUT: Error message */
 ){
@@ -338,7 +344,7 @@ int sqlite3Fts5StorageClose(Fts5Storage *p){
     int i;
 
     /* Finalize all SQL statements */
-    for(i=0; i<(int)ArraySize(p->aStmt); i++){
+    for(i=0; i<ArraySize(p->aStmt); i++){
       sqlite3_finalize(p->aStmt[i]);
     }
 
@@ -362,11 +368,13 @@ static int fts5StorageInsertCallback(
   int tflags,
   const char *pToken,             /* Buffer containing token */
   int nToken,                     /* Size of token in bytes */
-  int iStart,                     /* Start offset of token */
-  int iEnd                        /* End offset of token */
+  int iUnused1,                   /* Start offset of token */
+  int iUnused2                    /* End offset of token */
 ){
   Fts5InsertCtx *pCtx = (Fts5InsertCtx*)pContext;
   Fts5Index *pIdx = pCtx->pStorage->pIndex;
+  UNUSED_PARAM2(iUnused1, iUnused2);
+  if( nToken>FTS5_MAX_TOKEN_SIZE ) nToken = FTS5_MAX_TOKEN_SIZE;
   if( (tflags & FTS5_TOKEN_COLOCATED)==0 || pCtx->szCol==0 ){
     pCtx->szCol++;
   }
@@ -378,39 +386,52 @@ static int fts5StorageInsertCallback(
 ** delete-markers to the FTS index necessary to delete it. Do not actually
 ** remove the %_content row at this time though.
 */
-static int fts5StorageDeleteFromIndex(Fts5Storage *p, i64 iDel){
+static int fts5StorageDeleteFromIndex(
+  Fts5Storage *p,
+  i64 iDel,
+  sqlite3_value **apVal
+){
   Fts5Config *pConfig = p->pConfig;
-  sqlite3_stmt *pSeek;            /* SELECT to read row iDel from %_data */
+  sqlite3_stmt *pSeek = 0;        /* SELECT to read row iDel from %_data */
   int rc;                         /* Return code */
+  int rc2;                        /* sqlite3_reset() return code */
+  int iCol;
+  Fts5InsertCtx ctx;
 
-  rc = fts5StorageGetStmt(p, FTS5_STMT_LOOKUP, &pSeek, 0);
-  if( rc==SQLITE_OK ){
-    int rc2;
+  if( apVal==0 ){
+    rc = fts5StorageGetStmt(p, FTS5_STMT_LOOKUP, &pSeek, 0);
+    if( rc!=SQLITE_OK ) return rc;
     sqlite3_bind_int64(pSeek, 1, iDel);
-    if( sqlite3_step(pSeek)==SQLITE_ROW ){
-      int iCol;
-      Fts5InsertCtx ctx;
-      ctx.pStorage = p;
-      ctx.iCol = -1;
-      rc = sqlite3Fts5IndexBeginWrite(p->pIndex, 1, iDel);
-      for(iCol=1; rc==SQLITE_OK && iCol<=pConfig->nCol; iCol++){
-        if( pConfig->abUnindexed[iCol-1] ) continue;
-        ctx.szCol = 0;
-        rc = sqlite3Fts5Tokenize(pConfig, 
-            FTS5_TOKENIZE_DOCUMENT,
-            (const char*)sqlite3_column_text(pSeek, iCol),
-            sqlite3_column_bytes(pSeek, iCol),
-            (void*)&ctx,
-            fts5StorageInsertCallback
-        );
-        p->aTotalSize[iCol-1] -= (i64)ctx.szCol;
-      }
-      p->nTotalRow--;
+    if( sqlite3_step(pSeek)!=SQLITE_ROW ){
+      return sqlite3_reset(pSeek);
     }
-    rc2 = sqlite3_reset(pSeek);
-    if( rc==SQLITE_OK ) rc = rc2;
   }
 
+  ctx.pStorage = p;
+  ctx.iCol = -1;
+  rc = sqlite3Fts5IndexBeginWrite(p->pIndex, 1, iDel);
+  for(iCol=1; rc==SQLITE_OK && iCol<=pConfig->nCol; iCol++){
+    if( pConfig->abUnindexed[iCol-1]==0 ){
+      const char *zText;
+      int nText;
+      if( pSeek ){
+        zText = (const char*)sqlite3_column_text(pSeek, iCol);
+        nText = sqlite3_column_bytes(pSeek, iCol);
+      }else{
+        zText = (const char*)sqlite3_value_text(apVal[iCol-1]);
+        nText = sqlite3_value_bytes(apVal[iCol-1]);
+      }
+      ctx.szCol = 0;
+      rc = sqlite3Fts5Tokenize(pConfig, FTS5_TOKENIZE_DOCUMENT,
+          zText, nText, (void*)&ctx, fts5StorageInsertCallback
+      );
+      p->aTotalSize[iCol-1] -= (i64)ctx.szCol;
+    }
+  }
+  p->nTotalRow--;
+
+  rc2 = sqlite3_reset(pSeek);
+  if( rc==SQLITE_OK ) rc = rc2;
   return rc;
 }
 
@@ -437,13 +458,14 @@ static int fts5StorageInsertDocsize(
       sqlite3_bind_blob(pReplace, 2, pBuf->p, pBuf->n, SQLITE_STATIC);
       sqlite3_step(pReplace);
       rc = sqlite3_reset(pReplace);
+      sqlite3_bind_null(pReplace, 2);
     }
   }
   return rc;
 }
 
 /*
-** Load the contents of the "averages" record from disk into the 
+** Load the contents of the "averages" record from disk into the
 ** p->nTotalRow and p->aTotalSize[] variables. If successful, and if
 ** argument bCache is true, set the p->bTotalsValid flag to indicate
 ** that the contents of aTotalSize[] and nTotalRow are valid until
@@ -462,7 +484,7 @@ static int fts5StorageLoadTotals(Fts5Storage *p, int bCache){
 }
 
 /*
-** Store the current contents of the p->nTotalRow and p->aTotalSize[] 
+** Store the current contents of the p->nTotalRow and p->aTotalSize[]
 ** variables in the "averages" record on disk.
 **
 ** Return SQLITE_OK if successful, or an SQLite error code if an error
@@ -490,16 +512,17 @@ static int fts5StorageSaveTotals(Fts5Storage *p){
 /*
 ** Remove a row from the FTS table.
 */
-int sqlite3Fts5StorageDelete(Fts5Storage *p, i64 iDel){
+int sqlite3Fts5StorageDelete(Fts5Storage *p, i64 iDel, sqlite3_value **apVal){
   Fts5Config *pConfig = p->pConfig;
   int rc;
   sqlite3_stmt *pDel = 0;
 
+  assert( pConfig->eContent!=FTS5_CONTENT_NORMAL || apVal==0 );
   rc = fts5StorageLoadTotals(p, 1);
 
   /* Delete the index records */
   if( rc==SQLITE_OK ){
-    rc = fts5StorageDeleteFromIndex(p, iDel);
+    rc = fts5StorageDeleteFromIndex(p, iDel, apVal);
   }
 
   /* Delete the %_docsize record */
@@ -524,66 +547,6 @@ int sqlite3Fts5StorageDelete(Fts5Storage *p, i64 iDel){
     }
   }
 
-  /* Write the averages record */
-  if( rc==SQLITE_OK ){
-    rc = fts5StorageSaveTotals(p);
-  }
-
-  return rc;
-}
-
-int sqlite3Fts5StorageSpecialDelete(
-  Fts5Storage *p, 
-  i64 iDel, 
-  sqlite3_value **apVal
-){
-  Fts5Config *pConfig = p->pConfig;
-  int rc;
-  sqlite3_stmt *pDel = 0;
-
-  assert( pConfig->eContent!=FTS5_CONTENT_NORMAL );
-  rc = fts5StorageLoadTotals(p, 1);
-
-  /* Delete the index records */
-  if( rc==SQLITE_OK ){
-    int iCol;
-    Fts5InsertCtx ctx;
-    ctx.pStorage = p;
-    ctx.iCol = -1;
-
-    rc = sqlite3Fts5IndexBeginWrite(p->pIndex, 1, iDel);
-    for(iCol=0; rc==SQLITE_OK && iCol<pConfig->nCol; iCol++){
-      if( pConfig->abUnindexed[iCol] ) continue;
-      ctx.szCol = 0;
-      rc = sqlite3Fts5Tokenize(pConfig, 
-        FTS5_TOKENIZE_DOCUMENT,
-        (const char*)sqlite3_value_text(apVal[iCol]),
-        sqlite3_value_bytes(apVal[iCol]),
-        (void*)&ctx,
-        fts5StorageInsertCallback
-      );
-      p->aTotalSize[iCol] -= (i64)ctx.szCol;
-    }
-    p->nTotalRow--;
-  }
-
-  /* Delete the %_docsize record */
-  if( pConfig->bColumnsize ){
-    if( rc==SQLITE_OK ){
-      rc = fts5StorageGetStmt(p, FTS5_STMT_DELETE_DOCSIZE, &pDel, 0);
-    }
-    if( rc==SQLITE_OK ){
-      sqlite3_bind_int64(pDel, 1, iDel);
-      sqlite3_step(pDel);
-      rc = sqlite3_reset(pDel);
-    }
-  }
-
-  /* Write the averages record */
-  if( rc==SQLITE_OK ){
-    rc = fts5StorageSaveTotals(p);
-  }
-
   return rc;
 }
 
@@ -596,7 +559,7 @@ int sqlite3Fts5StorageDeleteAll(Fts5Storage *p){
 
   /* Delete the contents of the %_data and %_docsize tables. */
   rc = fts5ExecPrintf(pConfig->db, 0,
-      "DELETE FROM %Q.'%q_data';" 
+      "DELETE FROM %Q.'%q_data';"
       "DELETE FROM %Q.'%q_idx';",
       pConfig->zDb, pConfig->zName,
       pConfig->zDb, pConfig->zName
@@ -645,7 +608,7 @@ int sqlite3Fts5StorageRebuild(Fts5Storage *p){
     for(ctx.iCol=0; rc==SQLITE_OK && ctx.iCol<pConfig->nCol; ctx.iCol++){
       ctx.szCol = 0;
       if( pConfig->abUnindexed[ctx.iCol]==0 ){
-        rc = sqlite3Fts5Tokenize(pConfig, 
+        rc = sqlite3Fts5Tokenize(pConfig,
             FTS5_TOKENIZE_DOCUMENT,
             (const char*)sqlite3_column_text(pScan, ctx.iCol+1),
             sqlite3_column_bytes(pScan, ctx.iCol+1),
@@ -679,6 +642,10 @@ int sqlite3Fts5StorageMerge(Fts5Storage *p, int nMerge){
   return sqlite3Fts5IndexMerge(p->pIndex, nMerge);
 }
 
+int sqlite3Fts5StorageReset(Fts5Storage *p){
+  return sqlite3Fts5IndexReset(p->pIndex);
+}
+
 /*
 ** Allocate a new rowid. This is used for "external content" tables when
 ** a NULL value is inserted into the rowid column. The new rowid is allocated
@@ -710,8 +677,8 @@ static int fts5StorageNewRowid(Fts5Storage *p, i64 *piRowid){
 ** Insert a new row into the FTS content table.
 */
 int sqlite3Fts5StorageContentInsert(
-  Fts5Storage *p, 
-  sqlite3_value **apVal, 
+  Fts5Storage *p,
+  sqlite3_value **apVal,
   i64 *piRowid
 ){
   Fts5Config *pConfig = p->pConfig;
@@ -745,8 +712,8 @@ int sqlite3Fts5StorageContentInsert(
 ** Insert new entries into the FTS index and %_docsize table.
 */
 int sqlite3Fts5StorageIndexInsert(
-  Fts5Storage *p, 
-  sqlite3_value **apVal, 
+  Fts5Storage *p,
+  sqlite3_value **apVal,
   i64 iRowid
 ){
   Fts5Config *pConfig = p->pConfig;
@@ -764,7 +731,7 @@ int sqlite3Fts5StorageIndexInsert(
   for(ctx.iCol=0; rc==SQLITE_OK && ctx.iCol<pConfig->nCol; ctx.iCol++){
     ctx.szCol = 0;
     if( pConfig->abUnindexed[ctx.iCol]==0 ){
-      rc = sqlite3Fts5Tokenize(pConfig, 
+      rc = sqlite3Fts5Tokenize(pConfig,
           FTS5_TOKENIZE_DOCUMENT,
           (const char*)sqlite3_value_text(apVal[ctx.iCol+2]),
           sqlite3_value_bytes(apVal[ctx.iCol+2]),
@@ -783,11 +750,6 @@ int sqlite3Fts5StorageIndexInsert(
   }
   sqlite3_free(buf.p);
 
-  /* Write the averages record */
-  if( rc==SQLITE_OK ){
-    rc = fts5StorageSaveTotals(p);
-  }
-
   return rc;
 }
 
@@ -796,7 +758,7 @@ static int fts5StorageCount(Fts5Storage *p, const char *zSuffix, i64 *pnRow){
   char *zSql;
   int rc;
 
-  zSql = sqlite3_mprintf("SELECT count(*) FROM %Q.'%q_%s'", 
+  zSql = sqlite3_mprintf("SELECT count(*) FROM %Q.'%q_%s'",
       pConfig->zDb, pConfig->zName, zSuffix
   );
   if( zSql==0 ){
@@ -825,28 +787,76 @@ struct Fts5IntegrityCtx {
   int iCol;
   int szCol;
   u64 cksum;
+  Fts5Termset *pTermset;
   Fts5Config *pConfig;
 };
+
 
 /*
 ** Tokenization callback used by integrity check.
 */
 static int fts5StorageIntegrityCallback(
-  void *pContext,                 /* Pointer to Fts5InsertCtx object */
+  void *pContext,                 /* Pointer to Fts5IntegrityCtx object */
   int tflags,
   const char *pToken,             /* Buffer containing token */
   int nToken,                     /* Size of token in bytes */
-  int iStart,                     /* Start offset of token */
-  int iEnd                        /* End offset of token */
+  int iUnused1,                   /* Start offset of token */
+  int iUnused2                    /* End offset of token */
 ){
   Fts5IntegrityCtx *pCtx = (Fts5IntegrityCtx*)pContext;
+  Fts5Termset *pTermset = pCtx->pTermset;
+  int bPresent;
+  int ii;
+  int rc = SQLITE_OK;
+  int iPos;
+  int iCol;
+
+  UNUSED_PARAM2(iUnused1, iUnused2);
+  if( nToken>FTS5_MAX_TOKEN_SIZE ) nToken = FTS5_MAX_TOKEN_SIZE;
+
   if( (tflags & FTS5_TOKEN_COLOCATED)==0 || pCtx->szCol==0 ){
     pCtx->szCol++;
   }
-  pCtx->cksum ^= sqlite3Fts5IndexCksum(
-      pCtx->pConfig, pCtx->iRowid, pCtx->iCol, pCtx->szCol-1, pToken, nToken
-  );
-  return SQLITE_OK;
+
+  switch( pCtx->pConfig->eDetail ){
+    case FTS5_DETAIL_FULL:
+      iPos = pCtx->szCol-1;
+      iCol = pCtx->iCol;
+      break;
+
+    case FTS5_DETAIL_COLUMNS:
+      iPos = pCtx->iCol;
+      iCol = 0;
+      break;
+
+    default:
+      assert( pCtx->pConfig->eDetail==FTS5_DETAIL_NONE );
+      iPos = 0;
+      iCol = 0;
+      break;
+  }
+
+  rc = sqlite3Fts5TermsetAdd(pTermset, 0, pToken, nToken, &bPresent);
+  if( rc==SQLITE_OK && bPresent==0 ){
+    pCtx->cksum ^= sqlite3Fts5IndexEntryCksum(
+        pCtx->iRowid, iCol, iPos, 0, pToken, nToken
+    );
+  }
+
+  for(ii=0; rc==SQLITE_OK && ii<pCtx->pConfig->nPrefix; ii++){
+    const int nChar = pCtx->pConfig->aPrefix[ii];
+    int nByte = sqlite3Fts5IndexCharlenToBytelen(pToken, nToken, nChar);
+    if( nByte ){
+      rc = sqlite3Fts5TermsetAdd(pTermset, ii+1, pToken, nByte, &bPresent);
+      if( bPresent==0 ){
+        pCtx->cksum ^= sqlite3Fts5IndexEntryCksum(
+            pCtx->iRowid, iCol, iPos, ii+1, pToken, nByte
+        );
+      }
+    }
+  }
+
+  return rc;
 }
 
 /*
@@ -882,22 +892,37 @@ int sqlite3Fts5StorageIntegrity(Fts5Storage *p){
       if( pConfig->bColumnsize ){
         rc = sqlite3Fts5StorageDocsize(p, ctx.iRowid, aColSize);
       }
+      if( rc==SQLITE_OK && pConfig->eDetail==FTS5_DETAIL_NONE ){
+        rc = sqlite3Fts5TermsetNew(&ctx.pTermset);
+      }
       for(i=0; rc==SQLITE_OK && i<pConfig->nCol; i++){
         if( pConfig->abUnindexed[i] ) continue;
         ctx.iCol = i;
         ctx.szCol = 0;
-        rc = sqlite3Fts5Tokenize(pConfig, 
-            FTS5_TOKENIZE_DOCUMENT,
-            (const char*)sqlite3_column_text(pScan, i+1),
-            sqlite3_column_bytes(pScan, i+1),
-            (void*)&ctx,
-            fts5StorageIntegrityCallback
-        );
-        if( pConfig->bColumnsize && ctx.szCol!=aColSize[i] ){
+        if( pConfig->eDetail==FTS5_DETAIL_COLUMNS ){
+          rc = sqlite3Fts5TermsetNew(&ctx.pTermset);
+        }
+        if( rc==SQLITE_OK ){
+          rc = sqlite3Fts5Tokenize(pConfig,
+              FTS5_TOKENIZE_DOCUMENT,
+              (const char*)sqlite3_column_text(pScan, i+1),
+              sqlite3_column_bytes(pScan, i+1),
+              (void*)&ctx,
+              fts5StorageIntegrityCallback
+          );
+        }
+        if( rc==SQLITE_OK && pConfig->bColumnsize && ctx.szCol!=aColSize[i] ){
           rc = FTS5_CORRUPT;
         }
         aTotalSize[i] += ctx.szCol;
+        if( pConfig->eDetail==FTS5_DETAIL_COLUMNS ){
+          sqlite3Fts5TermsetFree(ctx.pTermset);
+          ctx.pTermset = 0;
+        }
       }
+      sqlite3Fts5TermsetFree(ctx.pTermset);
+      ctx.pTermset = 0;
+
       if( rc!=SQLITE_OK ) break;
     }
     rc2 = sqlite3_reset(pScan);
@@ -942,13 +967,13 @@ int sqlite3Fts5StorageIntegrity(Fts5Storage *p){
 ** %_content table.
 */
 int sqlite3Fts5StorageStmt(
-  Fts5Storage *p, 
-  int eStmt, 
-  sqlite3_stmt **pp, 
+  Fts5Storage *p,
+  int eStmt,
+  sqlite3_stmt **pp,
   char **pzErrMsg
 ){
   int rc;
-  assert( eStmt==FTS5_STMT_SCAN_ASC 
+  assert( eStmt==FTS5_STMT_SCAN_ASC
        || eStmt==FTS5_STMT_SCAN_DESC
        || eStmt==FTS5_STMT_LOOKUP
   );
@@ -966,8 +991,8 @@ int sqlite3Fts5StorageStmt(
 ** must match that passed to the sqlite3Fts5StorageStmt() call.
 */
 void sqlite3Fts5StorageStmtRelease(
-  Fts5Storage *p, 
-  int eStmt, 
+  Fts5Storage *p,
+  int eStmt,
   sqlite3_stmt *pStmt
 ){
   assert( eStmt==FTS5_STMT_SCAN_ASC
@@ -1058,13 +1083,18 @@ int sqlite3Fts5StorageRowCount(Fts5Storage *p, i64 *pnRow){
 /*
 ** Flush any data currently held in-memory to disk.
 */
-int sqlite3Fts5StorageSync(Fts5Storage *p, int bCommit){
-  if( bCommit && p->bTotalsValid ){
-    int rc = fts5StorageSaveTotals(p);
+int sqlite3Fts5StorageSync(Fts5Storage *p){
+  int rc = SQLITE_OK;
+  i64 iLastRowid = sqlite3_last_insert_rowid(p->pConfig->db);
+  if( p->bTotalsValid ){
+    rc = fts5StorageSaveTotals(p);
     p->bTotalsValid = 0;
-    if( rc!=SQLITE_OK ) return rc;
   }
-  return sqlite3Fts5IndexSync(p->pIndex, bCommit);
+  if( rc==SQLITE_OK ){
+    rc = sqlite3Fts5IndexSync(p->pIndex);
+  }
+  sqlite3_set_last_insert_rowid(p->pConfig->db, iLastRowid);
+  return rc;
 }
 
 int sqlite3Fts5StorageRollback(Fts5Storage *p){
@@ -1073,7 +1103,7 @@ int sqlite3Fts5StorageRollback(Fts5Storage *p){
 }
 
 int sqlite3Fts5StorageConfigValue(
-  Fts5Storage *p, 
+  Fts5Storage *p,
   const char *z,
   sqlite3_value *pVal,
   int iVal
@@ -1089,6 +1119,7 @@ int sqlite3Fts5StorageConfigValue(
     }
     sqlite3_step(pReplace);
     rc = sqlite3_reset(pReplace);
+    sqlite3_bind_null(pReplace, 1);
   }
   if( rc==SQLITE_OK && pVal ){
     int iNew = p->pConfig->iCookie + 1;
@@ -1099,5 +1130,3 @@ int sqlite3Fts5StorageConfigValue(
   }
   return rc;
 }
-
-

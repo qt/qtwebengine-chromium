@@ -13,6 +13,10 @@
 ** This is the C-language interface definition for the "intarray" or
 ** integer array virtual table for SQLite.
 **
+** This virtual table is used for internal testing of SQLite only.  It is
+** not recommended for use in production.  For a similar virtual table that
+** is production-ready, see the "carray" virtual table over in ext/misc.
+**
 ** The intarray virtual table is designed to facilitate using an
 ** array of integers as the right-hand side of an IN operator.  So
 ** instead of doing a prepared statement like this:
@@ -72,11 +76,14 @@
 ** virtual table is dropped.  Since the virtual tables are created in the
 ** TEMP database, they are automatically dropped when the database connection
 ** closes so the application does not normally need to take any special
-** action to free the intarray objects.
+** action to free the intarray objects.  Because of the way virtual tables
+** work and the (somewhat goofy) way that the intarray virtual table is
+** implemented, it is not allowed to invoke sqlite3_intarray_create(D,N,P)
+** more than once with the same D and N values.
 */
 #include "sqlite3.h"
-#ifndef _INTARRAY_H_
-#define _INTARRAY_H_
+#ifndef SQLITE_INTARRAY_H
+#define SQLITE_INTARRAY_H
 
 /*
 ** Make sure we can call this stuff from C++.
@@ -125,4 +132,4 @@ SQLITE_API int sqlite3_intarray_bind(
 #ifdef __cplusplus
 }  /* End of the 'extern "C"' block */
 #endif
-#endif /* _INTARRAY_H_ */
+#endif /* SQLITE_INTARRAY_H */

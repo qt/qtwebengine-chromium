@@ -1,7 +1,7 @@
 #
 # The build process allows for using a cross-compiler.  But the default
 # action is to target the same platform that we are running on.  The
-# configure script needs to discover the following properties of the 
+# configure script needs to discover the following properties of the
 # build and target systems:
 #
 #    srcdir
@@ -61,7 +61,7 @@
 #    TARGET_READLINE_INC
 #
 #        This variables define the directory that contain header
-#        files for the readline library.  If the compiler is able 
+#        files for the readline library.  If the compiler is able
 #        to find <readline.h> on its own, then this can be blank.
 #
 #    TARGET_EXEEXT
@@ -108,7 +108,7 @@ AC_CHECK_HEADERS([sys/types.h stdlib.h stdint.h inttypes.h malloc.h])
 #########
 # Figure out whether or not we have these functions
 #
-AC_CHECK_FUNCS([fdatasync gmtime_r isnan localtime_r localtime_s malloc_usable_size strchrnul usleep utime])
+AC_CHECK_FUNCS([fdatasync gmtime_r isnan localtime_r localtime_s malloc_usable_size strchrnul usleep utime pread pread64 pwrite pwrite64])
 
 #########
 # By default, we use the amalgamation (this may be changed below...)
@@ -119,8 +119,8 @@ USE_AMALGAMATION=1
 # See whether we can run specific tclsh versions known to work well;
 # if not, then we fall back to plain tclsh.
 # TODO: try other versions before falling back?
-# 
-AC_CHECK_PROGS(TCLSH_CMD, [tclsh8.6 tclsh8.5 tclsh], none)
+#
+AC_CHECK_PROGS(TCLSH_CMD, [tclsh8.7 tclsh8.6 tclsh8.5 tclsh], none)
 if test "$TCLSH_CMD" = "none"; then
   # If we can't find a local tclsh, then building the amalgamation will fail.
   # We act as though --disable-amalgamation has been used.
@@ -181,8 +181,8 @@ AC_SUBST(BUILD_CC)
 ##########
 # Do we want to support multithreaded use of sqlite
 #
-AC_ARG_ENABLE(threadsafe, 
-AC_HELP_STRING([--disable-threadsafe],[Disable mutexing]),,enable_threadsafe=yes)
+AC_ARG_ENABLE(threadsafe,
+AC_HELP_STRING([--disable-threadsafe],[Disable mutexing]))
 AC_MSG_CHECKING([whether to support threadsafe operation])
 if test "$enable_threadsafe" = "no"; then
   SQLITE_THREADSAFE=0
@@ -195,12 +195,13 @@ AC_SUBST(SQLITE_THREADSAFE)
 
 if test "$SQLITE_THREADSAFE" = "1"; then
   AC_SEARCH_LIBS(pthread_create, pthread)
+  AC_SEARCH_LIBS(pthread_mutexattr_init, pthread)
 fi
 
 ##########
 # Do we want to support release
 #
-AC_ARG_ENABLE(releasemode, 
+AC_ARG_ENABLE(releasemode,
 AC_HELP_STRING([--enable-releasemode],[Support libtool link to release mode]),,enable_releasemode=no)
 AC_MSG_CHECKING([whether to support shared library linked as release mode or not])
 if test "$enable_releasemode" = "no"; then
@@ -215,27 +216,27 @@ AC_SUBST(ALLOWRELEASE)
 ##########
 # Do we want temporary databases in memory
 #
-AC_ARG_ENABLE(tempstore, 
+AC_ARG_ENABLE(tempstore,
 AC_HELP_STRING([--enable-tempstore],[Use an in-ram database for temporary tables (never,no,yes,always)]),,enable_tempstore=no)
 AC_MSG_CHECKING([whether to use an in-ram database for temporary tables])
 case "$enable_tempstore" in
-  never ) 
+  never )
     TEMP_STORE=0
     AC_MSG_RESULT([never])
   ;;
-  no ) 
+  no )
     TEMP_STORE=1
     AC_MSG_RESULT([no])
   ;;
-  yes ) 
+  yes )
      TEMP_STORE=2
     AC_MSG_RESULT([yes])
   ;;
-  always ) 
+  always )
      TEMP_STORE=3
     AC_MSG_RESULT([always])
   ;;
-  * ) 
+  * )
     TEMP_STORE=1
     AC_MSG_RESULT([no])
   ;;
@@ -333,6 +334,20 @@ if test "${use_tcl}" = "yes" ; then
       fi
     fi
 
+    # Recent versions of Xcode on Macs hid the tclConfig.sh file
+    # in a strange place.
+    if test x"${ac_cv_c_tclconfig}" = x ; then
+      if test x"$cross_compiling" = xno; then
+        for i in /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX*.sdk/usr/lib
+        do
+          if test -f "$i/tclConfig.sh" ; then
+            ac_cv_c_tclconfig="$i"
+            break
+          fi
+        done
+      fi
+    fi
+
     # then check for a private Tcl installation
     if test x"${ac_cv_c_tclconfig}" = x ; then
       for i in \
@@ -403,7 +418,7 @@ if test "${use_tcl}" = "yes" ; then
     else
       AC_MSG_RESULT([file not found])
     fi
-    
+
     #
     # If the TCL_BIN_DIR is the build directory (not the install directory),
     # then set the common variable name to the value of the build variables.
@@ -412,34 +427,34 @@ if test "${use_tcl}" = "yes" ; then
     # instead of TCL_BUILD_LIB_SPEC since it will work with both an
     # installed and uninstalled version of Tcl.
     #
-    
+
     if test -f $TCL_BIN_DIR/Makefile ; then
       TCL_LIB_SPEC=${TCL_BUILD_LIB_SPEC}
       TCL_STUB_LIB_SPEC=${TCL_BUILD_STUB_LIB_SPEC}
       TCL_STUB_LIB_PATH=${TCL_BUILD_STUB_LIB_PATH}
     fi
-    
+
     #
     # eval is required to do the TCL_DBGX substitution
     #
-    
+
     eval "TCL_LIB_FILE=\"${TCL_LIB_FILE}\""
     eval "TCL_LIB_FLAG=\"${TCL_LIB_FLAG}\""
     eval "TCL_LIB_SPEC=\"${TCL_LIB_SPEC}\""
-    
+
     eval "TCL_STUB_LIB_FILE=\"${TCL_STUB_LIB_FILE}\""
     eval "TCL_STUB_LIB_FLAG=\"${TCL_STUB_LIB_FLAG}\""
     eval "TCL_STUB_LIB_SPEC=\"${TCL_STUB_LIB_SPEC}\""
-    
+
     AC_SUBST(TCL_VERSION)
     AC_SUBST(TCL_BIN_DIR)
     AC_SUBST(TCL_SRC_DIR)
     AC_SUBST(TCL_INCLUDE_SPEC)
-    
+
     AC_SUBST(TCL_LIB_FILE)
     AC_SUBST(TCL_LIB_FLAG)
     AC_SUBST(TCL_LIB_SPEC)
-    
+
     AC_SUBST(TCL_STUB_LIB_FILE)
     AC_SUBST(TCL_STUB_LIB_FLAG)
     AC_SUBST(TCL_STUB_LIB_SPEC)
@@ -542,10 +557,9 @@ AC_SEARCH_LIBS(fdatasync, [rt])
 
 #########
 # check for debug enabled
-AC_ARG_ENABLE(debug, AC_HELP_STRING([--enable-debug],[enable debugging & verbose explain]),
-      [use_debug=$enableval],[use_debug=no])
-if test "${use_debug}" = "yes" ; then
-  TARGET_DEBUG="-DSQLITE_DEBUG=1"
+AC_ARG_ENABLE(debug, AC_HELP_STRING([--enable-debug],[enable debugging & verbose explain]))
+if test "${enable_debug}" = "yes" ; then
+  TARGET_DEBUG="-DSQLITE_DEBUG=1 -DSQLITE_ENABLE_SELECTTRACE -DSQLITE_ENABLE_WHERETRACE -O0"
 else
   TARGET_DEBUG="-DNDEBUG"
 fi
@@ -554,68 +568,116 @@ AC_SUBST(TARGET_DEBUG)
 #########
 # See whether we should use the amalgamation to build
 AC_ARG_ENABLE(amalgamation, AC_HELP_STRING([--disable-amalgamation],
-      [Disable the amalgamation and instead build all files separately]),
-      [use_amalgamation=$enableval],[use_amalgamation=yes])
-if test "${use_amalgamation}" != "yes" ; then
+      [Disable the amalgamation and instead build all files separately]))
+if test "${enable_amalgamation}" == "no" ; then
   USE_AMALGAMATION=0
 fi
 AC_SUBST(USE_AMALGAMATION)
 
 #########
+# Look for zlib.  Only needed by extensions and by the sqlite3.exe shell
+AC_CHECK_HEADERS(zlib.h)
+AC_SEARCH_LIBS(deflate, z, [HAVE_ZLIB="-DSQLITE_HAVE_ZLIB=1"], [HAVE_ZLIB=""])
+AC_SUBST(HAVE_ZLIB)
+
+#########
 # See whether we should allow loadable extensions
 AC_ARG_ENABLE(load-extension, AC_HELP_STRING([--disable-load-extension],
-      [Disable loading of external extensions]),
-      [use_loadextension=$enableval],[use_loadextension=yes])
-if test "${use_loadextension}" = "yes" ; then
+      [Disable loading of external extensions]),,[enable_load_extension=yes])
+if test "${enable_load_extension}" = "yes" ; then
   OPT_FEATURE_FLAGS=""
   AC_SEARCH_LIBS(dlopen, dl)
 else
   OPT_FEATURE_FLAGS="-DSQLITE_OMIT_LOAD_EXTENSION=1"
 fi
 
+##########
+# Do we want to support memsys3 and/or memsys5
+#
+AC_ARG_ENABLE(memsys5,
+  AC_HELP_STRING([--enable-memsys5],[Enable MEMSYS5]))
+AC_MSG_CHECKING([whether to support MEMSYS5])
+if test "${enable_memsys5}" = "yes"; then
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_MEMSYS5"
+  AC_MSG_RESULT([yes])
+else
+  AC_MSG_RESULT([no])
+fi
+AC_ARG_ENABLE(memsys3,
+  AC_HELP_STRING([--enable-memsys3],[Enable MEMSYS3]))
+AC_MSG_CHECKING([whether to support MEMSYS3])
+if test "${enable_memsys3}" = "yes" -a "${enable_memsys5}" = "no"; then
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_MEMSYS3"
+  AC_MSG_RESULT([yes])
+else
+  AC_MSG_RESULT([no])
+fi
+
 #########
 # See whether we should enable Full Text Search extensions
 AC_ARG_ENABLE(fts3, AC_HELP_STRING([--enable-fts3],
-      [Enable the FTS3 extension]),
-      [enable_fts3=yes],[enable_fts3=no])
+      [Enable the FTS3 extension]))
 if test "${enable_fts3}" = "yes" ; then
-  OPT_FEATURE_FLAGS+=" -DSQLITE_ENABLE_FTS3"
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_FTS3"
 fi
 AC_ARG_ENABLE(fts4, AC_HELP_STRING([--enable-fts4],
-      [Enable the FTS4 extension]),
-      [enable_fts4=yes],[enable_fts4=no])
+      [Enable the FTS4 extension]))
 if test "${enable_fts4}" = "yes" ; then
-  OPT_FEATURE_FLAGS+=" -DSQLITE_ENABLE_FTS4"
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_FTS4"
   AC_SEARCH_LIBS([log],[m])
 fi
 AC_ARG_ENABLE(fts5, AC_HELP_STRING([--enable-fts5],
-      [Enable the FTS5 extension]),
-      [enable_fts5=yes],[enable_fts5=no])
+      [Enable the FTS5 extension]))
 if test "${enable_fts5}" = "yes" ; then
-  OPT_FEATURE_FLAGS+=" -DSQLITE_ENABLE_FTS5"
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_FTS5"
   AC_SEARCH_LIBS([log],[m])
 fi
 
 #########
 # See whether we should enable JSON1
-AC_ARG_ENABLE(json1, AC_HELP_STRING([--enable-json1],
-      [Enable the JSON1 extension]),
-      [enable_json1=yes],[enable_json1=no])
+AC_ARG_ENABLE(json1, AC_HELP_STRING([--enable-json1],[Enable the JSON1 extension]))
 if test "${enable_json1}" = "yes" ; then
-  OPT_FEATURE_FLAGS+=" -DSQLITE_ENABLE_JSON1"
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_JSON1"
+fi
+
+#########
+# See whether we should enable the LIMIT clause on UPDATE and DELETE
+# statements.
+AC_ARG_ENABLE(update-limit, AC_HELP_STRING([--enable-update-limit],
+      [Enable the UPDATE/DELETE LIMIT clause]))
+if test "${enable_udlimit}" = "yes" ; then
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT"
+fi
+
+#########
+# See whether we should enable GEOPOLY
+AC_ARG_ENABLE(geopoly, AC_HELP_STRING([--enable-geopoly],
+      [Enable the GEOPOLY extension]),
+      [enable_geopoly=yes],[enable_geopoly=no])
+if test "${enable_geopoly}" = "yes" ; then
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_GEOPOLY"
+  enable_rtree=yes
 fi
 
 #########
 # See whether we should enable RTREE
 AC_ARG_ENABLE(rtree, AC_HELP_STRING([--enable-rtree],
-      [Enable the RTREE extension]),
-      [enable_rtree=yes],[enable_rtree=no])
+      [Enable the RTREE extension]))
 if test "${enable_rtree}" = "yes" ; then
-  OPT_FEATURE_FLAGS+=" -DSQLITE_ENABLE_RTREE"
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_RTREE"
 fi
 
 #########
-# attempt to duplicate any OMITS and ENABLES into the $(OPT_FEATURE_FLAGS) parameter
+# See whether we should enable the SESSION extension
+AC_ARG_ENABLE(session, AC_HELP_STRING([--enable-session],
+      [Enable the SESSION extension]))
+if test "${enable_session}" = "yes" ; then
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_SESSION"
+  OPT_FEATURE_FLAGS="${OPT_FEATURE_FLAGS} -DSQLITE_ENABLE_PREUPDATE_HOOK"
+fi
+
+#########
+# attempt to duplicate any OMITS and ENABLES into the ${OPT_FEATURE_FLAGS} parameter
 for option in $CFLAGS $CPPFLAGS
 do
   case $option in
@@ -668,8 +730,7 @@ BUILD_CFLAGS=$ac_temp_BUILD_CFLAGS
 #########
 # See whether we should use GCOV
 AC_ARG_ENABLE(gcov, AC_HELP_STRING([--enable-gcov],
-      [Enable coverage testing using gcov]),
-      [use_gcov=$enableval],[use_gcov=no])
+      [Enable coverage testing using gcov]))
 if test "${use_gcov}" = "yes" ; then
   USE_GCOV=1
 else

@@ -4,7 +4,7 @@
 #
 # This TCL script scans a concatenation of the parse.h output file from the
 # parser and the vdbe.c source file in order to generate the opcodes numbers
-# for all opcodes.  
+# for all opcodes.
 #
 # The lines of the vdbe.c that we are interested in are of the form:
 #
@@ -20,12 +20,11 @@
 # during code generation, we need to generate corresponding opcodes like
 # OP_Add and OP_Divide.  By making TK_ADD==OP_Add and TK_DIVIDE==OP_Divide,
 # code to translate from one to the other is avoided.  This makes the
-# code generator run (infinitesimally) faster and more importantly it makes
-# the library footprint smaller.
+# code generator smaller and faster.
 #
 # This script also scans for lines of the form:
 #
-#       case OP_aaaa:       /* jump, in1, in2, in3, out2-prerelease, out3 */
+#       case OP_aaaa:       /* jump, in1, in2, in3, out2, out3 */
 #
 # When such comments are found on an opcode, it means that certain
 # properties apply to that opcode.  Set corresponding flags using the
@@ -34,11 +33,13 @@
 
 set in stdin
 set currentOp {}
+set prevName {}
 set nOp 0
+set nGroup 0
 while {![eof $in]} {
   set line [gets $in]
 
-  # Remember the TK_ values from the parse.h file. 
+  # Remember the TK_ values from the parse.h file.
   # NB:  The "TK_" prefix stands for "ToKen", not the graphical Tk toolkit
   # commonly associated with TCL.
   #
@@ -76,13 +77,15 @@ while {![eof $in]} {
   if {[regexp {^case OP_} $line]} {
     set line [split $line]
     set name [string trim [lindex $line 1] :]
+    if {$name=="OP_Abortable"} continue;  # put OP_Abortable last
     set op($name) -1
+    set group($name) 0
     set jump($name) 0
     set in1($name) 0
     set in2($name) 0
     set in3($name) 0
-    set out1($name) 0
     set out2($name) 0
+    set out3($name) 0
     for {set i 3} {$i<[llength $line]-1} {incr i} {
        switch [string trim [lindex $line $i] ,] {
          same {
@@ -97,31 +100,50 @@ while {![eof $in]} {
              set def($val) $name
            }
          }
-         jump {set jump($name) 1}
-         in1  {set in1($name) 1}
-         in2  {set in2($name) 1}
-         in3  {set in3($name) 1}
-         out2 {set out2($name) 1}
-         out3 {set out3($name) 1}
+         group {set group($name) 1}
+         jump  {set jump($name) 1}
+         in1   {set in1($name) 1}
+         in2   {set in2($name) 1}
+         in3   {set in3($name) 1}
+         out2  {set out2($name) 1}
+         out3  {set out3($name) 1}
        }
     }
+    if {$group($name)} {
+      set newGroup 0
+      if {[info exists groups($nGroup)]} {
+        if {$prevName=="" || !$group($prevName)} {
+          set newGroup 1
+        }
+      }
+      lappend groups($nGroup) $name
+      if {$newGroup} {incr nGroup}
+    } else {
+      if {$prevName!="" && $group($prevName)} {
+        incr nGroup
+      }
+    }
     set order($nOp) $name
+    set prevName $name
     incr nOp
   }
 }
 
 # Assign numbers to all opcodes and output the result.
 #
-set cnt 0
-set max 0
 puts "/* Automatically generated.  Do not edit */"
 puts "/* See the tool/mkopcodeh.tcl script for details */"
-set op(OP_Noop) -1
-set order($nOp) OP_Noop
-incr nOp
-set op(OP_Explain) -1
-set order($nOp) OP_Explain
-incr nOp
+foreach name {OP_Noop OP_Explain OP_Abortable} {
+  set jump($name) 0
+  set in1($name) 0
+  set in2($name) 0
+  set in3($name) 0
+  set out2($name) 0
+  set out3($name) 0
+  set op($name) -1
+  set order($nOp) $name
+  incr nOp
+}
 
 # The following are the opcodes that are processed by resolveP2Values()
 #
@@ -144,7 +166,7 @@ set rp2v_ops {
 # Assign small values to opcodes that are processed by resolveP2Values()
 # to make code generation for the switch() statement smaller and faster.
 #
-set cnt 0
+set cnt -1
 for {set i 0} {$i<$nOp} {incr i} {
   set name $order($i)
   if {[lsearch $rp2v_ops $name]>=0} {
@@ -156,8 +178,61 @@ for {set i 0} {$i<$nOp} {incr i} {
   }
 }
 
-# Generate the numeric values for remaining opcodes
+# Assign the next group of values to JUMP opcodes
 #
+for {set i 0} {$i<$nOp} {incr i} {
+  set name $order($i)
+  if {$op($name)>=0} continue
+  if {!$jump($name)} continue
+  incr cnt
+  while {[info exists used($cnt)]} {incr cnt}
+  set op($name) $cnt
+  set used($cnt) 1
+  set def($cnt) $name
+}
+
+# Find the numeric value for the largest JUMP opcode
+#
+set mxJump -1
+for {set i 0} {$i<$nOp} {incr i} {
+  set name $order($i)
+  if {$jump($name) && $op($name)>$mxJump} {set mxJump $op($name)}
+}
+
+
+# Generate the numeric values for all remaining opcodes, while
+# preserving any groupings of opcodes (i.e. those that must be
+# together).
+#
+for {set g 0} {$g<$nGroup} {incr g} {
+  set gLen [llength $groups($g)]
+  set ok 0; set start -1
+  while {!$ok} {
+    set seek $cnt; incr seek
+    while {[info exists used($seek)]} {incr seek}
+    set ok 1; set start $seek
+    for {set j 0} {$j<$gLen} {incr j} {
+      incr seek
+      if {[info exists used($seek)]} {
+        set ok 0; break
+      }
+    }
+  }
+  if {$ok} {
+    set next $start
+    for {set j 0} {$j<$gLen} {incr j} {
+      set name [lindex $groups($g) $j]
+      if {$op($name)>=0} continue
+      set op($name) $next
+      set used($next) 1
+      set def($next) $name
+      incr next
+    }
+  } else {
+    error "cannot find opcodes for group: $groups($g)"
+  }
+}
+
 for {set i 0} {$i<$nOp} {incr i} {
   set name $order($i)
   if {$op($name)<0} {
@@ -168,55 +243,62 @@ for {set i 0} {$i<$nOp} {incr i} {
     set def($cnt) $name
   }
 }
-set max $cnt
-for {set i 1} {$i<=$nOp} {incr i} {
+
+set max [lindex [lsort -decr -integer [array names used]] 0]
+for {set i 0} {$i<=$max} {incr i} {
   if {![info exists used($i)]} {
     set def($i) "OP_NotUsed_$i"
   }
+  if {$i>$max} {set max $i}
   set name $def($i)
   puts -nonewline [format {#define %-16s %3d} $name $i]
   set com {}
+  if {[info exists jump($name)] && $jump($name)} {
+    lappend com "jump"
+  }
   if {[info exists sameas($i)]} {
-    set com "same as $sameas($i)"
+    lappend com "same as $sameas($i)"
   }
   if {[info exists synopsis($name)]} {
-    set x $synopsis($name)
-    if {$com==""} {
-      set com "synopsis: $x"
-    } else {
-      append com ", synopsis: $x"
-    }
+    lappend com "synopsis: $synopsis($name)"
   }
-  if {$com!=""} {
-    puts -nonewline [format " /* %-42s */" $com]
+  if {[llength $com]} {
+    puts -nonewline [format " /* %-42s */" [join $com {, }]]
   }
   puts ""
+}
+
+if {$max>255} {
+  error "More than 255 opcodes - VdbeOp.opcode is of type u8!"
 }
 
 # Generate the bitvectors:
 #
 set bv(0) 0
-for {set i 1} {$i<=$max} {incr i} {
+for {set i 0} {$i<=$max} {incr i} {
+  set x 0
   set name $def($i)
-  if {[info exists jump($name)] && $jump($name)} {set a0 1}  {set a0 0}
-  if {[info exists in1($name)] && $in1($name)}   {set a1 2}  {set a1 0}
-  if {[info exists in2($name)] && $in2($name)}   {set a2 4}  {set a2 0}
-  if {[info exists in3($name)] && $in3($name)}   {set a3 8}  {set a3 0}
-  if {[info exists out2($name)] && $out2($name)} {set a4 16} {set a4 0}
-  if {[info exists out3($name)] && $out3($name)} {set a5 32} {set a5 0}
-  set bv($i) [expr {$a0+$a1+$a2+$a3+$a4+$a5}]
+  if {[string match OP_NotUsed* $name]==0} {
+    if {$jump($name)}  {incr x 1}
+    if {$in1($name)}   {incr x 2}
+    if {$in2($name)}   {incr x 4}
+    if {$in3($name)}   {incr x 8}
+    if {$out2($name)}  {incr x 16}
+    if {$out3($name)}  {incr x 32}
+  }
+  set bv($i) $x
 }
 puts ""
 puts "/* Properties such as \"out2\" or \"jump\" that are specified in"
 puts "** comments following the \"case\" for each opcode in the vdbe.c"
 puts "** are encoded into bitvectors as follows:"
 puts "*/"
-puts "#define OPFLG_JUMP            0x0001  /* jump:  P2 holds jmp target */"
-puts "#define OPFLG_IN1             0x0002  /* in1:   P1 is an input */"
-puts "#define OPFLG_IN2             0x0004  /* in2:   P2 is an input */"
-puts "#define OPFLG_IN3             0x0008  /* in3:   P3 is an input */"
-puts "#define OPFLG_OUT2            0x0010  /* out2:  P2 is an output */"
-puts "#define OPFLG_OUT3            0x0020  /* out3:  P3 is an output */"
+puts "#define OPFLG_JUMP        0x01  /* jump:  P2 holds jmp target */"
+puts "#define OPFLG_IN1         0x02  /* in1:   P1 is an input */"
+puts "#define OPFLG_IN2         0x04  /* in2:   P2 is an input */"
+puts "#define OPFLG_IN3         0x08  /* in3:   P3 is an input */"
+puts "#define OPFLG_OUT2        0x10  /* out2:  P2 is an output */"
+puts "#define OPFLG_OUT3        0x20  /* out3:  P3 is an output */"
 puts "#define OPFLG_INITIALIZER \173\\"
 for {set i 0} {$i<=$max} {incr i} {
   if {$i%8==0} {
@@ -228,3 +310,11 @@ for {set i 0} {$i<=$max} {incr i} {
   }
 }
 puts "\175"
+puts ""
+puts "/* The sqlite3P2Values() routine is able to run faster if it knows"
+puts "** the value of the largest JUMP opcode.  The smaller the maximum"
+puts "** JUMP opcode the better, so the mkopcodeh.tcl script that"
+puts "** generated this include file strives to group all JUMP opcodes"
+puts "** together near the beginning of the list."
+puts "*/"
+puts "#define SQLITE_MX_JUMP_OPCODE  $mxJump  /* Maximum JUMP opcode */"

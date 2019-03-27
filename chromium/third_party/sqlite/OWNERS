@@ -1,5 +1,8 @@
-# Reviewers:
-shess@chromium.org
+# Primary:
+pwnall@chromium.org
 
-# Owners:
-michaeln@chromium.org
+# Secondary:
+cmumford@chromium.org
+
+# TEAM: storage-dev@chromium.org
+# COMPONENT: Internals>Storage

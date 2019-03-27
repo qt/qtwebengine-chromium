@@ -15,9 +15,32 @@
 **
 ** The emphasis of this file is a virtual table that provides
 ** access to TCL variables.
+**
+** The TCLVAR eponymous virtual table has a schema like this:
+**
+**    CREATE TABLE tclvar(
+**       name TEXT,       -- base name of the variable:  "x" in "$x(y)"
+**       arrayname TEXT,  -- array index name: "y" in "$x(y)"
+**       value TEXT,      -- the value of the variable
+**       fullname TEXT,   -- the full name of the variable
+**       PRIMARY KEY(fullname)
+**    ) WITHOUT ROWID;
+**
+** DELETE, INSERT, and UPDATE operations use the "fullname" field to
+** determine the variable to be modified.  Changing "value" to NULL
+** deletes the variable.
+**
+** For SELECT operations, the "name" and "arrayname" fields will always
+** match the "fullname" field.  For DELETE, INSERT, and UPDATE, the
+** "name" and "arrayname" fields are ignored and the variable is modified
+** according to "fullname" and "value" only.
 */
 #include "sqliteInt.h"
-#include "tcl.h"
+#if defined(INCLUDE_SQLITE_TCL_H)
+#  include "sqlite_tcl.h"
+#else
+#  include "tcl.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -35,8 +58,8 @@
 typedef struct tclvar_vtab tclvar_vtab;
 typedef struct tclvar_cursor tclvar_cursor;
 
-/* 
-** A tclvar virtual-table object 
+/*
+** A tclvar virtual-table object
 */
 struct tclvar_vtab {
   sqlite3_vtab base;
@@ -62,8 +85,13 @@ static int tclvarConnect(
   char **pzErr
 ){
   tclvar_vtab *pVtab;
-  static const char zSchema[] = 
-     "CREATE TABLE whatever(name TEXT, arrayname TEXT, value TEXT)";
+  static const char zSchema[] =
+     "CREATE TABLE x("
+     "  name TEXT,"                       /* Base name */
+     "  arrayname TEXT,"                  /* Array index */
+     "  value TEXT,"                      /* Value */
+     "  fullname TEXT PRIMARY KEY"        /* base(index) name */
+     ") WITHOUT ROWID";
   pVtab = sqlite3MallocZero( sizeof(*pVtab) );
   if( pVtab==0 ) return SQLITE_NOMEM;
   *ppVtab = &pVtab->base;
@@ -158,7 +186,7 @@ static int tclvarNext(sqlite3_vtab_cursor *cur){
 }
 
 static int tclvarFilter(
-  sqlite3_vtab_cursor *pVtabCursor, 
+  sqlite3_vtab_cursor *pVtabCursor,
   int idxNum, const char *idxStr,
   int argc, sqlite3_value **argv
 ){
@@ -222,7 +250,7 @@ static int tclvarFilter(
 static int tclvarColumn(sqlite3_vtab_cursor *cur, sqlite3_context *ctx, int i){
   Tcl_Obj *p1;
   Tcl_Obj *p2;
-  const char *z1; 
+  const char *z1;
   const char *z2 = "";
   tclvar_cursor *pCur = (tclvar_cursor*)cur;
   Tcl_Interp *interp = ((tclvar_vtab *)cur->pVtab)->interp;
@@ -247,6 +275,16 @@ static int tclvarColumn(sqlite3_vtab_cursor *cur, sqlite3_context *ctx, int i){
       sqlite3_result_text(ctx, Tcl_GetString(pVal), -1, SQLITE_TRANSIENT);
       break;
     }
+    case 3: {
+      char *z3;
+      if( p2 ){
+        z3 = sqlite3_mprintf("%s(%s)", z1, z2);
+        sqlite3_result_text(ctx, z3, -1, sqlite3_free);
+      }else{
+        sqlite3_result_text(ctx, z1, -1, SQLITE_TRANSIENT);
+      }
+      break;
+    }
   }
   return SQLITE_OK;
 }
@@ -262,7 +300,7 @@ static int tclvarEof(sqlite3_vtab_cursor *cur){
 }
 
 /*
-** If nul-terminated string zStr does not already contain the character 
+** If nul-terminated string zStr does not already contain the character
 ** passed as the second argument, append it and return 0. Or, if there is
 ** already an instance of x in zStr, do nothing return 1;
 **
@@ -308,7 +346,7 @@ static int tclvarSetOmit(Tcl_Interp *interp){
 **     value LIKE ?                (omit flag set iff $::tclvar_set_omit)
 **
 ** For each constraint present, the corresponding TCLVAR_XXX character is
-** appended to the idxStr value. 
+** appended to the idxStr value.
 */
 static int tclvarBestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo){
   tclvar_vtab *pTab = (tclvar_vtab*)tab;
@@ -322,7 +360,7 @@ static int tclvarBestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo){
   for(ii=0; ii<pIdxInfo->nConstraint; ii++){
     struct sqlite3_index_constraint const *pCons = &pIdxInfo->aConstraint[ii];
     struct sqlite3_index_constraint_usage *pUsage;
-    
+
     pUsage = &pIdxInfo->aConstraintUsage[ii];
     if( pCons->usable ){
       /* name = ? */
@@ -373,6 +411,58 @@ static int tclvarBestIndex(sqlite3_vtab *tab, sqlite3_index_info *pIdxInfo){
 }
 
 /*
+** Invoked for any UPDATE, INSERT, or DELETE against a tclvar table
+*/
+static int tclvarUpdate(
+  sqlite3_vtab *tab,
+  int argc,
+  sqlite3_value **argv,
+  sqlite_int64 *pRowid
+){
+  tclvar_vtab *pTab = (tclvar_vtab*)tab;
+  if( argc==1 ){
+    /* A DELETE operation.  The variable to be deleted is stored in argv[0] */
+    const char *zVar = (const char*)sqlite3_value_text(argv[0]);
+    Tcl_UnsetVar(pTab->interp, zVar, TCL_GLOBAL_ONLY);
+    return SQLITE_OK;
+  }
+  if( sqlite3_value_type(argv[0])==SQLITE_NULL ){
+    /* An INSERT operation */
+    const char *zValue = (const char*)sqlite3_value_text(argv[4]);
+    const char *zName;
+    if( sqlite3_value_type(argv[5])!=SQLITE_TEXT ){
+      tab->zErrMsg = sqlite3_mprintf("the 'fullname' column must be TEXT");
+      return SQLITE_ERROR;
+    }
+    zName = (const char*)sqlite3_value_text(argv[5]);
+    if( zValue ){
+      Tcl_SetVar(pTab->interp, zName, zValue, TCL_GLOBAL_ONLY);
+    }else{
+      Tcl_UnsetVar(pTab->interp, zName, TCL_GLOBAL_ONLY);
+    }
+    return SQLITE_OK;
+  }
+  if( sqlite3_value_type(argv[0])==SQLITE_TEXT
+   && sqlite3_value_type(argv[1])==SQLITE_TEXT
+  ){
+    /* An UPDATE operation */
+    const char *zOldName = (const char*)sqlite3_value_text(argv[0]);
+    const char *zNewName = (const char*)sqlite3_value_text(argv[1]);
+    const char *zValue = (const char*)sqlite3_value_text(argv[4]);
+
+    if( strcmp(zOldName, zNewName)!=0 || zValue==0 ){
+      Tcl_UnsetVar(pTab->interp, zOldName, TCL_GLOBAL_ONLY);
+    }
+    if( zValue!=0 ){
+      Tcl_SetVar(pTab->interp, zNewName, zValue, TCL_GLOBAL_ONLY);
+    }
+    return SQLITE_OK;
+  }
+  tab->zErrMsg = sqlite3_mprintf("prohibited TCL variable change");
+  return SQLITE_ERROR;
+}
+
+/*
 ** A virtual table module that provides read-only access to a
 ** Tcl global variable namespace.
 */
@@ -381,7 +471,7 @@ static sqlite3_module tclvarModule = {
   tclvarConnect,
   tclvarConnect,
   tclvarBestIndex,
-  tclvarDisconnect, 
+  tclvarDisconnect,
   tclvarDisconnect,
   tclvarOpen,                  /* xOpen - open a cursor */
   tclvarClose,                 /* xClose - close a cursor */
@@ -390,7 +480,7 @@ static sqlite3_module tclvarModule = {
   tclvarEof,                   /* xEof - check for end of scan */
   tclvarColumn,                /* xColumn - read data */
   tclvarRowid,                 /* xRowid - read data */
-  0,                           /* xUpdate */
+  tclvarUpdate,                /* xUpdate */
   0,                           /* xBegin */
   0,                           /* xSync */
   0,                           /* xCommit */
@@ -407,7 +497,7 @@ extern int getDbPointer(Tcl_Interp *interp, const char *zA, sqlite3 **ppDb);
 /*
 ** Register the echo virtual table module.
 */
-static int register_tclvar_module(
+static int SQLITE_TCLAPI register_tclvar_module(
   ClientData clientData, /* Pointer to sqlite3_enable_XXX function */
   Tcl_Interp *interp,    /* The TCL interpreter that invoked this command */
   int objc,              /* Number of arguments */
@@ -422,7 +512,7 @@ static int register_tclvar_module(
   if( getDbPointer(interp, Tcl_GetString(objv[1]), &db) ) return TCL_ERROR;
 #ifndef SQLITE_OMIT_VIRTUALTABLE
   sqlite3_create_module(db, "tclvar", &tclvarModule, (void*)interp);
-  rc = Tcl_Eval(interp, 
+  rc = Tcl_Eval(interp,
       "proc like {pattern str} {\n"
       "  set p [string map {% * _ ?} $pattern]\n"
       "  string match $p $str\n"
@@ -464,7 +554,7 @@ int Sqlitetesttclvar_Init(Tcl_Interp *interp){
   };
   int i;
   for(i=0; i<sizeof(aObjCmd)/sizeof(aObjCmd[0]); i++){
-    Tcl_CreateObjCommand(interp, aObjCmd[i].zName, 
+    Tcl_CreateObjCommand(interp, aObjCmd[i].zName,
         aObjCmd[i].xProc, aObjCmd[i].clientData, 0);
   }
 #endif
