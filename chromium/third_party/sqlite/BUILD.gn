@@ -273,7 +273,7 @@ component("chromium_sqlite3") {
     ]
   }
 
-  if (is_posix || is_fuchsia) {
+  if (is_posix) {
     defines += [
       # Allow xSleep() call on Unix to use usleep() rather than sleep(), so it
       # will have microsecond precision.  Should only affect contended
