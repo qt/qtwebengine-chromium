@@ -13,7 +13,7 @@
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "third_party/lcms2-2.6/include/lcms2.h"
+#include "third_party/lcms/include/lcms2.h"
 #include "third_party/libopenjpeg20/openjpeg.h"
 #include "third_party/libopenjpeg20/opj_malloc.h"
 
