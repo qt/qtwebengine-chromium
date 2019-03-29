@@ -20,6 +20,10 @@ ClientRawMemoryTransferCacheEntry::~ClientRawMemoryTransferCacheEntry() =
 // static
 base::AtomicSequenceNumber ClientRawMemoryTransferCacheEntry::s_next_id_;
 
+uint32_t ClientRawMemoryTransferCacheEntry::SerializedSize() const {
+  return static_cast<uint32_t>(data_.size());
+}
+
 uint32_t ClientRawMemoryTransferCacheEntry::Id() const {
   return id_;
 }
@@ -38,8 +42,8 @@ ServiceRawMemoryTransferCacheEntry::ServiceRawMemoryTransferCacheEntry() =
 ServiceRawMemoryTransferCacheEntry::~ServiceRawMemoryTransferCacheEntry() =
     default;
 
-uint32_t ClientRawMemoryTransferCacheEntry::SerializedSize() const {
-  return static_cast<uint32_t>(data_.size());
+size_t ServiceRawMemoryTransferCacheEntry::CachedSize() const {
+  return data_.size();
 }
 
 bool ServiceRawMemoryTransferCacheEntry::Deserialize(
