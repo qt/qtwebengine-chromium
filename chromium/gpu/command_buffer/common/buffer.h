@@ -51,7 +51,7 @@ class GPU_EXPORT Buffer : public base::RefCountedThreadSafe<Buffer> {
 
   BufferBacking* backing() const { return backing_.get(); }
   void* memory() const { return memory_; }
-  uint32t_t size() const { return size_; }
+  uint32_t size() const { return size_; }
 
   // Returns NULL if the address overflows the memory.
   void* GetDataAddress(uint32_t data_offset, uint32_t data_size) const;
