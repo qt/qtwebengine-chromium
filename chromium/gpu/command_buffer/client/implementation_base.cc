@@ -289,7 +289,7 @@ void ImplementationBase::SetBucketAsString(uint32_t bucket_id,
                                            const std::string& str) {
   // NOTE: strings are passed NULL terminated. That means the empty
   // string will have a size of 1 and no-string will have a size of 0
-  base::CheckedNumeric<uint32_t> len = strlen(str);
+  base::CheckedNumeric<uint32_t> len = str.size();
   len += 1;
   SetBucketContents(bucket_id, str.c_str(), len.ValueOrDefault(0));
 }

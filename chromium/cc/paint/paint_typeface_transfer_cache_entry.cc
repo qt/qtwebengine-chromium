@@ -62,7 +62,7 @@ uint32_t ClientPaintTypefaceTransferCacheEntry::Id() const {
   return typeface_.sk_id();
 }
 
-size_t ClientPaintTypefaceTransferCacheEntry::SerializedSize() const {
+uint32_t ClientPaintTypefaceTransferCacheEntry::SerializedSize() const {
   return size_;
 }
 

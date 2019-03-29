@@ -522,7 +522,7 @@ bool VertexArrayObjectManager::SetupSimulatedClientSideBuffers(
           GLES2Util::GetGroupSizeForBufferType(attrib.size(), attrib.type());
       GLsizei elements = (primcount && attrib.divisor() > 0) ?
           ((primcount - 1) / attrib.divisor() + 1) : num_elements;
-      checked_total_size += RoundUpToMultipleOf4(base::CheckMul(bytes_per_element * elements));
+      checked_total_size += RoundUpToMultipleOf4(base::CheckMul(bytes_per_element, elements));
     }
   }
   GLsizei total_size = 0;

@@ -153,7 +153,7 @@ class PaintOpSerializer {
     if (!size) {
       SendSerializedData();
       buffer_ =
-          static_cast<char*>(ri_->MapRasterCHROMIUM(initial_size, &free_bytes_));
+          static_cast<char*>(ri_->MapRasterCHROMIUM(kBlockAlloc, &free_bytes_));
       if (!buffer_) {
         return 0;
       }

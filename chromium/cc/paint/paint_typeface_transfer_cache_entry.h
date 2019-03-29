@@ -19,7 +19,7 @@ class CC_PAINT_EXPORT ClientPaintTypefaceTransferCacheEntry
   explicit ClientPaintTypefaceTransferCacheEntry(const PaintTypeface& typeface);
   ~ClientPaintTypefaceTransferCacheEntry() final;
   uint32_t Id() const final;
-  size_t SerializedSize() const final;
+  uint32_t SerializedSize() const final;
   bool Serialize(base::span<uint8_t> data) const final;
 
  private:
@@ -27,7 +27,7 @@ class CC_PAINT_EXPORT ClientPaintTypefaceTransferCacheEntry
   bool SerializeInternal(Writer* writer) const;
 
   const PaintTypeface typeface_;
-  size_t size_ = 0u;
+  uint32_t size_ = 0u;
 };
 
 class CC_PAINT_EXPORT ServicePaintTypefaceTransferCacheEntry

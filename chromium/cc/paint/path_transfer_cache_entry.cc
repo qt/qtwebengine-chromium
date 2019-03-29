@@ -17,7 +17,7 @@ uint32_t ClientPathTransferCacheEntry::Id() const {
   return path_.getGenerationID();
 }
 
-size_t ClientPathTransferCacheEntry::SerializedSize() const {
+uint32_t ClientPathTransferCacheEntry::SerializedSize() const {
   return size_;
 }
 

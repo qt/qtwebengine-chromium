@@ -20,10 +20,6 @@ ClientRawMemoryTransferCacheEntry::~ClientRawMemoryTransferCacheEntry() =
 // static
 base::AtomicSequenceNumber ClientRawMemoryTransferCacheEntry::s_next_id_;
 
-size_t ClientRawMemoryTransferCacheEntry::SerializedSize() const {
-  return data_.size();
-}
-
 uint32_t ClientRawMemoryTransferCacheEntry::Id() const {
   return id_;
 }

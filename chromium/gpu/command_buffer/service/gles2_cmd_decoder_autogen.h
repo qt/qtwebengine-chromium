@@ -739,7 +739,7 @@ error::Error GLES2DecoderImpl::HandleDeleteBuffersImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t data_size;
-  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&data_size) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&data_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* buffers = GetImmediateDataAs<volatile const GLuint*>(

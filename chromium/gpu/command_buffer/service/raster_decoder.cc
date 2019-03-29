@@ -2568,7 +2568,7 @@ void RasterDecoderImpl::DoTexStorage2D(GLuint client_id,
   // For testing only. Allows us to stress the ability to respond to OOM errors.
   uint32_t num_pixels;
   if (workarounds().simulate_out_of_memory_on_large_textures &&
-      (!gles2::SafeMultiplyUint32(width, height, &num_pixels) ||
+      (!base::CheckMul(width, height).AssignIfValid(&num_pixels) ||
        (num_pixels >= 4096 * 4096))) {
     LOCAL_SET_GL_ERROR(GL_OUT_OF_MEMORY, "glTexStorage2D",
                        "synthetic out of memory");
