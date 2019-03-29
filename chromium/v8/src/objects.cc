@@ -4975,7 +4975,7 @@ Maybe<bool> Object::SetPropertyInternal(LookupIterator* it,
         }
         return JSProxy::SetProperty(it->GetHolder<JSProxy>(), it->GetName(),
                                     value, receiver, language_mode);
-
+      }
       case LookupIterator::INTERCEPTOR: {
         if (it->HolderIsReceiverOrHiddenPrototype()) {
           Maybe<bool> result =
