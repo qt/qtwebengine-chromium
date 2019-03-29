@@ -55,7 +55,7 @@ void WebRtcIsacfix_PitchFilter(int16_t* indatQQ, // Q10 if type is 1 or 4,
   int16_t oldLagQ7;
   int16_t oldGainQ12, lagdeltaQ7, curLagQ7, gaindeltaQ12, curGainQ12;
   size_t frcQQ = 0;
-  int32_t indW32 = 0
+  int32_t indW32 = 0;
   const int16_t* fracoeffQQ = NULL;
 
   // Assumptions in ARM assembly for WebRtcIsacfix_PitchFilterCoreARM().
