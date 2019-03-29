@@ -2099,7 +2099,6 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
   params.started_from_context_menu = false;
   /* params.navigation_ui_data: skip */
   /* params.input_start: skip */
-  params.was_activated = WasActivatedOption::kUnknown;
 
   std::unique_ptr<NavigationRequest> request =
       CreateNavigationRequestFromLoadParams(
@@ -2715,6 +2714,7 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
     bool override_user_agent,
     bool should_replace_current_entry,
     bool has_user_gesture,
+    NavigationDownloadPolicy download_policy,
     ReloadType reload_type,
     const NavigationEntryImpl& entry,
     FrameNavigationEntry* frame_entry) {
@@ -2788,8 +2788,11 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
       navigation_start,
       params.load_type == LOAD_TYPE_HTTP_POST ? "POST" : "GET",
       params.post_data, base::Optional<SourceLocation>(),
-      params.started_from_context_menu, has_user_gesture, InitiatorCSPInfo(),
-      params.input_start);
+      CSPDisposition::CHECK,
+      params.started_from_context_menu, has_user_gesture,
+      std::vector<ContentSecurityPolicy>() /* initiator_csp */,
+      CSPSource() /* initiator_self_source */
+      );
 
   RequestNavigationParams request_params(
       override_user_agent, params.redirect_chain, common_params.url,
@@ -2806,8 +2809,6 @@ NavigationControllerImpl::CreateNavigationRequestFromLoadParams(
     request_params.data_url_as_string = params.data_url_as_string->data();
   }
 #endif
-
-  request_params.was_activated = params.was_activated;
 
   // A form submission may happen here if the navigation is a renderer-initiated
   // form submission that took the OpenURL path.
@@ -2891,7 +2892,7 @@ NavigationControllerImpl::CreateNavigationRequestFromEntry(
   // Create the NavigationParams based on |entry| and |frame_entry|.
   CommonNavigationParams common_params = entry.ConstructCommonNavigationParams(
       *frame_entry, request_body, dest_url, dest_referrer, navigation_type,
-      previews_state, navigation_start, base::TimeTicks() /* input_start */);
+      previews_state, navigation_start);
 
   // TODO(clamy): |intended_as_new_entry| below should always be false once
   // Reload no longer leads to this being called for a pending NavigationEntry
