@@ -103,7 +103,7 @@ const QpackEntry* QpackHeaderTable::InsertEntry(QuicStringPiece name,
   }
 
   const uint64_t index = dropped_entry_count_ + dynamic_entries_.size();
-  dynamic_entries_.push_back({name, value, /* is_static = */ false, index});
+  dynamic_entries_.push_back({name, value, /* is_static = */ false, static_cast<size_t>(index)});
   QpackEntry* const new_entry = &dynamic_entries_.back();
 
   // Evict entries after inserting the new entry instead of before

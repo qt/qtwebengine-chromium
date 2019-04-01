@@ -199,7 +199,7 @@ class WrappedSkImage : public SharedImageBacking {
       case GrBackendApi::kVulkan: {
         GrVkImageInfo image_info;
         if (backend_texture.getVkImageInfo(&image_info))
-          tracing_id_ = reinterpret_cast<uint64_t>(image_info.fImage);
+          tracing_id_ = uint64_t(image_info.fImage);
         break;
       }
 #if BUILDFLAG(SKIA_USE_DAWN)
