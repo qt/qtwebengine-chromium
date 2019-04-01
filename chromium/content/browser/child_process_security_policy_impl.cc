@@ -1246,6 +1246,19 @@ void ChildProcessSecurityPolicyImpl::AddIsolatedOrigins(
     return true;  // Remove.
   });
 
+  // Ports are ignored when matching isolated origins (see also
+  // https://crbug.com/914511).
+  for (url::Origin& origin : origins_to_add) {
+    const std::string& scheme = origin.scheme();
+    int default_port =
+        url::DefaultPortForScheme(scheme.data(), scheme.length());
+    if (origin.port() != default_port) {
+      LOG(ERROR) << "Ignoring port number in isolated origin: " << origin;
+      origin = url::Origin::Create(GURL(
+          origin.scheme() + url::kStandardSchemeSeparator + origin.host()));
+    }
+  }
+
   // Taking the lock once and doing a batch insertion via base::flat_set::insert
   // is important because of performance characteristics of base::flat_set.
   base::AutoLock lock(lock_);
