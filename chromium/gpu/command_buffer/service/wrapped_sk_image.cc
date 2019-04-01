@@ -159,7 +159,7 @@ class WrappedSkImage : public SharedImageBacking {
       case GrBackendApi::kVulkan: {
         GrVkImageInfo image_info;
         if (gr_texture.getVkImageInfo(&image_info))
-          tracing_id_ = reinterpret_cast<uint64_t>(image_info.fImage);
+          tracing_id_ = uint64_t(image_info.fImage);
         break;
       }
       default:
