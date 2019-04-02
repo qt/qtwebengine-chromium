@@ -97,7 +97,6 @@ void WasmEngine::AsyncInstantiate(
     // exception to the promise chain.
     Handle<Object> exception(isolate->pending_exception(), isolate);
     isolate->clear_pending_exception();
-    DCHECK(*isolate->external_caught_exception_address());
     *isolate->external_caught_exception_address() = false;
     resolver->OnInstantiationFailed(exception);
   }
