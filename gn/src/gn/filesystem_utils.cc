@@ -632,6 +632,11 @@ void NormalizePath(std::string* path, std::string_view source_root) {
 
 void ConvertPathToSystem(std::string* path) {
 #if defined(OS_WIN)
+  if (path->size() > 2) {
+    if (IsSlash((*path)[0]) && (*path)[2] == ':') {
+      *path = path->substr(1);
+    }
+  }
   for (size_t i = 0; i < path->size(); i++) {
     if ((*path)[i] == '/')
       (*path)[i] = '\\';
@@ -666,6 +671,13 @@ std::string MakeRelativePath(const std::string& input,
       std::string corrected_input = input;
       corrected_input[letter_pos] = dest[letter_pos];
       return MakeRelativePath(corrected_input, dest);
+    }
+    // Give up if the drive paths are different so we don't end up
+    // returning a meaningless result.
+    if (input[letter_pos] != dest[letter_pos]) {
+      std::string ret = input;
+      ConvertPathToSystem(&ret);
+      return ret;
     }
   }
 #endif
