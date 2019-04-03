@@ -420,9 +420,12 @@ def WriteGNNinja(path, platform, host, options, linux_sysroot):
 
   elif platform.is_msvc():
     if not options.debug:
-      cflags.extend(['/Ox', '/DNDEBUG', '/GL'])
-      libflags.extend(['/LTCG'])
-      ldflags.extend(['/LTCG', '/OPT:REF', '/OPT:ICF'])
+      cflags.extend(['/Ox', '/DNDEBUG'])
+      if options.use_lto:
+        cflags.extend(['/GL'])
+        libflags.extend(['/LTCG'])
+        ldflags.extend(['/LTCG'])
+      ldflags.extend(['/OPT:REF', '/OPT:ICF'])
 
     cflags.extend([
         '/DNOMINMAX',
