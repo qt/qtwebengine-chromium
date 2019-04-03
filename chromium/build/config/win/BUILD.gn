@@ -541,7 +541,7 @@ config("windowed") {
 # Incremental linking ----------------------------------------------------------
 
 incremental_linking_on_switch = [ "/INCREMENTAL" ]
-if ((!is_debug && !is_component_build) || !use_lld) {
+if (!use_incremental_linking || !use_lld) {
   incremental_linking_off_switch = [ "/INCREMENTAL:NO" ]
 }
 if (use_lld) {
