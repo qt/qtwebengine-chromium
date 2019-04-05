@@ -1808,9 +1808,13 @@ TEST(URLCanonTest, CanonicalizePathURL) {
     const char* input;
     const char* expected;
   } path_cases[] = {
-    {"javascript:", "javascript:"},
-    {"JavaScript:Foo", "javascript:Foo"},
-    {"Foo:\":This /is interesting;?#", "foo:\":This /is interesting;?#"},
+      {"javascript:", "javascript:"},
+      {"JavaScript:Foo", "javascript:Foo"},
+      {"Foo:\":This /is interesting;?#", "foo:\":This /is interesting;?#"},
+
+      // Validation errors should not cause failure. See
+      // https://crbug.com/925614.
+      {"javascript:\uFFFF", "javascript:%EF%BF%BD"},
   };
 
   for (size_t i = 0; i < arraysize(path_cases); i++) {
