@@ -50,8 +50,8 @@ bool StructTraits<viz::mojom::CompositorFrameMetadataDataView,
          data.ReadReferencedSurfaces(&out->referenced_surfaces) &&
          data.ReadDeadline(&out->deadline) &&
          data.ReadActivationDependencies(&out->activation_dependencies) &&
-#if defined(OS_ANDROID)
          data.ReadRootLayerSize(&out->root_layer_size) &&
+#if defined(OS_ANDROID)
          data.ReadSelection(&out->selection) &&
 #endif  // defined(OS_ANDROID)
          data.ReadBeginFrameAck(&out->begin_frame_ack) &&

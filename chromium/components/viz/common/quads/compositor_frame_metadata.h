@@ -138,6 +138,7 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
   // These limits can be used together with the scroll/scale fields above to
   // determine if scrolling/scaling in a particular direction is possible.
   float min_page_scale_factor = 0.f;
+  gfx::SizeF root_layer_size;
 
   // Used to position the location top bar and page content, whose precise
   // position is computed by the renderer compositor.
@@ -150,7 +151,6 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
 
 #if defined(OS_ANDROID)
   float max_page_scale_factor = 0.f;
-  gfx::SizeF root_layer_size;
   bool root_overflow_y_hidden = false;
 
   // Used to position Android bottom bar, whose position is computed by the
