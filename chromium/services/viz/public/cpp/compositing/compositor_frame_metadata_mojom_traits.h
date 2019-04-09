@@ -104,6 +104,11 @@ struct StructTraits<viz::mojom::CompositorFrameMetadataDataView,
     return metadata.min_page_scale_factor;
   }
 
+  static const gfx::SizeF& root_layer_size(
+      const viz::CompositorFrameMetadata& metadata) {
+    return metadata.root_layer_size;
+  }
+
   static absl::optional<base::TimeDelta> preferred_frame_interval(
       const viz::CompositorFrameMetadata& metadata) {
     DCHECK(!metadata.preferred_frame_interval ||
