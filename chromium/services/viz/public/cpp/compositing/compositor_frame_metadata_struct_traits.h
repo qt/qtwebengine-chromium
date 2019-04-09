@@ -93,6 +93,11 @@ struct StructTraits<viz::mojom::CompositorFrameMetadataDataView,
     return metadata.min_page_scale_factor;
   }
 
+  static const gfx::SizeF& root_layer_size(
+      const viz::CompositorFrameMetadata& metadata) {
+    return metadata.root_layer_size;
+  }
+
   static float top_controls_height(
       const viz::CompositorFrameMetadata& metadata) {
     return metadata.top_controls_height;
@@ -122,11 +127,6 @@ struct StructTraits<viz::mojom::CompositorFrameMetadataDataView,
   static float max_page_scale_factor(
       const viz::CompositorFrameMetadata& metadata) {
     return metadata.max_page_scale_factor;
-  }
-
-  static const gfx::SizeF& root_layer_size(
-      const viz::CompositorFrameMetadata& metadata) {
-    return metadata.root_layer_size;
   }
 
   static bool root_overflow_y_hidden(

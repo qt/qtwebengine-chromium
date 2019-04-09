@@ -31,12 +31,10 @@ struct CompositorFrameMetadata {
   bool send_frame_token_to_embedder;
 
   float min_page_scale_factor;
+  gfx.mojom.SizeF root_layer_size;
 
   [EnableIf=is_android]
   float max_page_scale_factor;
-
-  [EnableIf=is_android]
-  gfx.mojom.SizeF root_layer_size;
 
   [EnableIf=is_android]
   bool root_overflow_y_hidden;
