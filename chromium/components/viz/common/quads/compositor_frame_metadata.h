@@ -133,6 +133,7 @@ class VIZ_COMMON_EXPORT CompositorFrameMetadata {
   // These limits can be used together with the scroll/scale fields above to
   // determine if scrolling/scaling in a particular direction is possible.
   float min_page_scale_factor = 0.f;
+  gfx::SizeF root_layer_size;
 
   // The visible height of the top-controls. If the value is not set, then the
   // visible height should be the same as in the latest submitted frame with a
