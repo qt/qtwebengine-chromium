@@ -100,6 +100,11 @@ struct StructTraits<viz::mojom::CompositorFrameMetadataDataView,
     return metadata.min_page_scale_factor;
   }
 
+  static const gfx::SizeF& root_layer_size(
+      const viz::CompositorFrameMetadata& metadata) {
+    return metadata.root_layer_size;
+  }
+
   static base::TimeTicks local_surface_id_allocation_time(
       const viz::CompositorFrameMetadata& metadata) {
     DCHECK(!metadata.local_surface_id_allocation_time.is_null());
