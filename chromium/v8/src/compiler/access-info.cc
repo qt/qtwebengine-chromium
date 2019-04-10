@@ -347,7 +347,7 @@ bool AccessInfoFactory::ComputePropertyAccessInfo(
   }
 
   MaybeHandle<JSObject> holder;
-  do {
+  while (true) {
     // Lookup the named property on the {map}.
     Handle<DescriptorArray> descriptors(map->instance_descriptors(), isolate());
     int const number = descriptors->Search(*name, *map);
@@ -540,8 +540,14 @@ bool AccessInfoFactory::ComputePropertyAccessInfo(
     }
     map = handle(map_prototype->map(), isolate());
     holder = map_prototype;
-  } while (CanInlinePropertyAccess(map));
-  return false;
+
+    if (!CanInlinePropertyAccess(map)) return false;
+
+    // Successful lookup on prototype chain needs to guarantee that all
+    // the prototypes up to the holder have stable maps. Let us make sure
+    // the prototype maps are stable here.
+    CHECK(map->is_stable());
+  }
 }
 
 bool AccessInfoFactory::ComputePropertyAccessInfo(
