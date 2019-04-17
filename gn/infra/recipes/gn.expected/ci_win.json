@@ -71,32 +71,19 @@
     ]
   },
   {
-    "cmd": [],
-    "name": "debug"
-  },
-  {
-    "cmd": [],
-    "name": "debug.build",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
     "cmd": [
       "cipd.bat",
       "ensure",
       "-root",
-      "[START_DIR]\\cipd\\windows_sdk",
+      "[CACHE]\\windows_sdk",
       "-ensure-file",
       "chrome_internal/third_party/sdk/windows uploaded:2018-06-13",
       "-json-output",
       "/path/to/tmp/json"
     ],
-    "cwd": "[START_DIR]\\gn",
     "infra_step": true,
-    "name": "debug.build.ensure_installed",
+    "name": "ensure_installed (2)",
     "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@2@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"result\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"\": [@@@",
@@ -115,13 +102,11 @@
       "python",
       "-u",
       "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
-      "[START_DIR]\\cipd\\windows_sdk\\win_sdk\\bin\\SetEnv.x64.json",
+      "[CACHE]\\windows_sdk\\win_sdk\\bin\\SetEnv.x64.json",
       "/path/to/tmp/json"
     ],
-    "cwd": "[START_DIR]\\gn",
-    "name": "debug.build.read SetEnv.x64.json",
+    "name": "read SetEnv.x64.json",
     "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@2@@@",
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"env\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"PATH\": [@@@",
@@ -145,6 +130,33 @@
     ]
   },
   {
+    "cmd": [],
+    "env": {
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
+    },
+    "env_prefixes": {
+      "PATH": [
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
+      ]
+    },
+    "name": "debug"
+  },
+  {
+    "cmd": [],
+    "env": {
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
+    },
+    "env_prefixes": {
+      "PATH": [
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
+      ]
+    },
+    "name": "debug.build",
+    "~followup_annotations": [
+      "@@@STEP_NEST_LEVEL@1@@@"
+    ]
+  },
+  {
     "cmd": [
       "python",
       "-u",
@@ -153,11 +165,11 @@
     ],
     "cwd": "[START_DIR]\\gn",
     "env": {
-      "VSINSTALLDIR": "[START_DIR]\\cipd\\windows_sdk"
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
     },
     "env_prefixes": {
       "PATH": [
-        "[START_DIR]\\cipd\\windows_sdk\\win_sdk\\bin\\x64"
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
       ]
     },
     "name": "debug.build.generate",
@@ -173,11 +185,11 @@
     ],
     "cwd": "[START_DIR]\\gn",
     "env": {
-      "VSINSTALLDIR": "[START_DIR]\\cipd\\windows_sdk"
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
     },
     "env_prefixes": {
       "PATH": [
-        "[START_DIR]\\cipd\\windows_sdk\\win_sdk\\bin\\x64"
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
       ]
     },
     "name": "debug.build.ninja",
@@ -187,22 +199,16 @@
   },
   {
     "cmd": [
-      "taskkill.exe",
-      "/f",
-      "/t",
-      "/im",
-      "mspdbsrv.exe"
-    ],
-    "cwd": "[START_DIR]\\gn",
-    "name": "debug.build.taskkill mspdbsrv",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@2@@@"
-    ]
-  },
-  {
-    "cmd": [
       "[START_DIR]\\gn\\out\\gn_unittests"
     ],
+    "env": {
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
+    },
+    "env_prefixes": {
+      "PATH": [
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
+      ]
+    },
     "name": "debug.test",
     "~followup_annotations": [
       "@@@STEP_NEST_LEVEL@1@@@"
@@ -210,10 +216,26 @@
   },
   {
     "cmd": [],
+    "env": {
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
+    },
+    "env_prefixes": {
+      "PATH": [
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
+      ]
+    },
     "name": "release"
   },
   {
     "cmd": [],
+    "env": {
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
+    },
+    "env_prefixes": {
+      "PATH": [
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
+      ]
+    },
     "name": "release.build",
     "~followup_annotations": [
       "@@@STEP_NEST_LEVEL@1@@@"
@@ -221,80 +243,19 @@
   },
   {
     "cmd": [
-      "cipd.bat",
-      "ensure",
-      "-root",
-      "[START_DIR]\\cipd\\windows_sdk",
-      "-ensure-file",
-      "chrome_internal/third_party/sdk/windows uploaded:2018-06-13",
-      "-json-output",
-      "/path/to/tmp/json"
-    ],
-    "cwd": "[START_DIR]\\gn",
-    "infra_step": true,
-    "name": "release.build.ensure_installed",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@2@@@",
-      "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"result\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@    \"\": [@@@",
-      "@@@STEP_LOG_LINE@json.output@      {@@@",
-      "@@@STEP_LOG_LINE@json.output@        \"instance_id\": \"resolved-instance_id-of-uploaded:2018-06\", @@@",
-      "@@@STEP_LOG_LINE@json.output@        \"package\": \"chrome_internal/third_party/sdk/windows\"@@@",
-      "@@@STEP_LOG_LINE@json.output@      }@@@",
-      "@@@STEP_LOG_LINE@json.output@    ]@@@",
-      "@@@STEP_LOG_LINE@json.output@  }@@@",
-      "@@@STEP_LOG_LINE@json.output@}@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
-      "[START_DIR]\\cipd\\windows_sdk\\win_sdk\\bin\\SetEnv.x64.json",
-      "/path/to/tmp/json"
-    ],
-    "cwd": "[START_DIR]\\gn",
-    "name": "release.build.read SetEnv.x64.json",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@2@@@",
-      "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"env\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@    \"PATH\": [@@@",
-      "@@@STEP_LOG_LINE@json.output@      [@@@",
-      "@@@STEP_LOG_LINE@json.output@        \"..\", @@@",
-      "@@@STEP_LOG_LINE@json.output@        \"..\", @@@",
-      "@@@STEP_LOG_LINE@json.output@        \"win_sdk\", @@@",
-      "@@@STEP_LOG_LINE@json.output@        \"bin\", @@@",
-      "@@@STEP_LOG_LINE@json.output@        \"x64\"@@@",
-      "@@@STEP_LOG_LINE@json.output@      ]@@@",
-      "@@@STEP_LOG_LINE@json.output@    ], @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"VSINSTALLDIR\": [@@@",
-      "@@@STEP_LOG_LINE@json.output@      [@@@",
-      "@@@STEP_LOG_LINE@json.output@        \"..\", @@@",
-      "@@@STEP_LOG_LINE@json.output@        \"..\\\\\"@@@",
-      "@@@STEP_LOG_LINE@json.output@      ]@@@",
-      "@@@STEP_LOG_LINE@json.output@    ]@@@",
-      "@@@STEP_LOG_LINE@json.output@  }@@@",
-      "@@@STEP_LOG_LINE@json.output@}@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
-      "[START_DIR]\\gn\\build\\gen.py"
+      "[START_DIR]\\gn\\build\\gen.py",
+      "--use-lto",
+      "--use-icf"
     ],
     "cwd": "[START_DIR]\\gn",
     "env": {
-      "VSINSTALLDIR": "[START_DIR]\\cipd\\windows_sdk"
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
     },
     "env_prefixes": {
       "PATH": [
-        "[START_DIR]\\cipd\\windows_sdk\\win_sdk\\bin\\x64"
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
       ]
     },
     "name": "release.build.generate",
@@ -310,16 +271,33 @@
     ],
     "cwd": "[START_DIR]\\gn",
     "env": {
-      "VSINSTALLDIR": "[START_DIR]\\cipd\\windows_sdk"
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
     },
     "env_prefixes": {
       "PATH": [
-        "[START_DIR]\\cipd\\windows_sdk\\win_sdk\\bin\\x64"
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
       ]
     },
     "name": "release.build.ninja",
     "~followup_annotations": [
       "@@@STEP_NEST_LEVEL@2@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "[START_DIR]\\gn\\out\\gn_unittests"
+    ],
+    "env": {
+      "VSINSTALLDIR": "[CACHE]\\windows_sdk"
+    },
+    "env_prefixes": {
+      "PATH": [
+        "[CACHE]\\windows_sdk\\win_sdk\\bin\\x64"
+      ]
+    },
+    "name": "release.test",
+    "~followup_annotations": [
+      "@@@STEP_NEST_LEVEL@1@@@"
     ]
   },
   {
@@ -330,38 +308,25 @@
       "/im",
       "mspdbsrv.exe"
     ],
-    "cwd": "[START_DIR]\\gn",
-    "name": "release.build.taskkill mspdbsrv",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@2@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "[START_DIR]\\gn\\out\\gn_unittests"
-    ],
-    "name": "release.test",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
+    "name": "taskkill mspdbsrv"
   },
   {
     "cmd": [
       "cipd.bat",
       "pkg-build",
       "-pkg-def",
-      "{\"data\": [{\"file\": \"gn.exe\"}, {\"version_file\": \".versions/gn.exe.cipd_version\"}], \"install_mode\": \"copy\", \"package\": \"gn/gn/windows-amd64\", \"root\": \"[START_DIR]\\\\gn\\\\out\"}",
+      "{\"data\": [{\"file\": \"gn.exe\"}, {\"version_file\": \".versions/gn.exe.cipd_version\"}], \"install_mode\": \"copy\", \"package\": \"gn/gn/${platform}\", \"root\": \"[START_DIR]\\\\gn\\\\out\"}",
       "-out",
       "[CLEANUP]\\gn.cipd",
       "-json-output",
       "/path/to/tmp/json"
     ],
-    "name": "build gn/gn/windows-amd64",
+    "name": "build gn/gn/${platform}",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"result\": {@@@",
       "@@@STEP_LOG_LINE@json.output@    \"instance_id\": \"40-chars-fake-of-the-package-instance_id\", @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"package\": \"gn/gn/windows-amd64\"@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"package\": \"gn/gn/${platform}\"@@@",
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@"
