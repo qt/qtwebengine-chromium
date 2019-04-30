@@ -447,6 +447,7 @@ class FakeServiceWorkerContainerHost
   }
   void Ping(PingCallback callback) override { NOTIMPLEMENTED(); }
   void HintToUpdateServiceWorker() override { NOTIMPLEMENTED(); }
+  void OnExecutionReady() override {}
 
  private:
   int get_controller_service_worker_count_ = 0;
