@@ -727,7 +727,7 @@ Reduction TypedOptimization::ReduceSpeculativeNumberAdd(Node* node) {
     Node* const value =
         graph()->NewNode(simplified()->NumberAdd(), toNum_lhs, toNum_rhs);
     ReplaceWithValue(node, value);
-    return Replace(node);
+    return Replace(value);
   }
   return NoChange();
 }
@@ -795,7 +795,7 @@ Reduction TypedOptimization::ReduceSpeculativeNumberBinop(Node* node) {
         NumberOpFromSpeculativeNumberOp(simplified(), node->op()), toNum_lhs,
         toNum_rhs);
     ReplaceWithValue(node, value);
-    return Replace(node);
+    return Replace(value);
   }
   return NoChange();
 }
@@ -810,7 +810,7 @@ Reduction TypedOptimization::ReduceSpeculativeNumberComparison(Node* node) {
     Node* const value = graph()->NewNode(
         NumberOpFromSpeculativeNumberOp(simplified(), node->op()), lhs, rhs);
     ReplaceWithValue(node, value);
-    return Replace(node);
+    return Replace(value);
   }
   return NoChange();
 }
