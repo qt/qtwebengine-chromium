@@ -218,10 +218,6 @@ class V8_EXPORT_PRIVATE IncrementalMarking {
 
   bool IsCompacting() { return IsMarking() && is_compacting_; }
 
-  void NotifyIncompleteScanOfObject(int unscanned_bytes) {
-    unscanned_bytes_of_large_object_ = unscanned_bytes;
-  }
-
   void ProcessBlackAllocatedObject(HeapObject obj);
 
   Heap* heap() const { return heap_; }
@@ -315,7 +311,6 @@ class V8_EXPORT_PRIVATE IncrementalMarking {
   // incremental marking step. It is used for updating
   // bytes_marked_ahead_of_schedule_ with contribution of concurrent marking.
   size_t bytes_marked_concurrently_;
-  size_t unscanned_bytes_of_large_object_;
 
   // Must use SetState() above to update state_
   State state_;
