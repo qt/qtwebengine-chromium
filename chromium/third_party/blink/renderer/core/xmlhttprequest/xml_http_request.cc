@@ -1035,9 +1035,9 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
     }
   }
 
-  same_origin_request_ = GetSecurityOrigin()->CanRequest(url_);
+  const bool same_origin_request = GetSecurityOrigin()->CanRequest(url_);
 
-  if (!same_origin_request_ && with_credentials_) {
+  if (!same_origin_request && with_credentials_) {
     UseCounter::Count(&execution_context,
                       WebFeature::kXMLHttpRequestCrossOriginWithCredentials);
   }
@@ -1045,7 +1045,7 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
   // We also remember whether upload events should be allowed for this request
   // in case the upload listeners are added after the request is started.
   upload_events_allowed_ =
-      same_origin_request_ || upload_events ||
+      same_origin_request || upload_events ||
       !CORS::IsCORSSafelistedMethod(method_) ||
       !CORS::ContainsOnlyCORSSafelistedHeaders(request_headers_);
 
@@ -1463,11 +1463,12 @@ String XMLHttpRequest::getAllResponseHeaders() const {
         !GetSecurityOrigin()->CanLoadLocalResources())
       continue;
 
-    if (!same_origin_request_ &&
+    if (response_.ResponseTypeViaServiceWorker() == network::mojom::FetchResponseType::kCORS &&
         !WebCORS::IsOnAccessControlResponseHeaderWhitelist(it->key) &&
         access_control_expose_header_set.find(it->key.Ascii().data()) ==
-            access_control_expose_header_set.end())
+            access_control_expose_header_set.end()) {
       continue;
+    }
 
     string_builder.Append(it->key.LowerASCII());
     string_builder.Append(':');
@@ -1499,7 +1500,7 @@ const AtomicString& XMLHttpRequest::getResponseHeader(
                             : network::mojom::FetchCredentialsMode::kSameOrigin,
           WrappedResourceResponse(response_));
 
-  if (!same_origin_request_ &&
+  if (response_.ResponseTypeViaServiceWorker() == network::mojom::FetchResponseType::kCORS &&
       !WebCORS::IsOnAccessControlResponseHeaderWhitelist(name) &&
       access_control_expose_header_set.find(name.Ascii().data()) ==
           access_control_expose_header_set.end()) {
