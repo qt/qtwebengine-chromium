@@ -115,6 +115,8 @@ void RegisterContentSchemes(bool lock_schemes) {
       url::AddNoAccessScheme(cs.name.c_str());
     if (cs.flags & url::CustomScheme::ContentSecurityPolicyIgnored)
       url::AddCSPBypassingScheme(cs.name.c_str());
+    if (cs.flags & url::CustomScheme::CorsEnabled)
+      url::AddCorsEnabledScheme(cs.name.c_str());
   }
 
   // Prevent future modification of the scheme lists. This is to prevent
