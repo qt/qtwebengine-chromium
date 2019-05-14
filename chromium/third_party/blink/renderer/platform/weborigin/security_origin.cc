@@ -559,6 +559,17 @@ String SecurityOrigin::ToRawString() const {
 }
 
 void SecurityOrigin::BuildRawString(StringBuilder& builder) const {
+  // NOTE(juvaldma)(Chromium 69.0.3497.128)
+  //
+  // Should match url::SchemeHostPort::Serialize().
+  if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
+    if (!cs->has_host_component()) {
+      builder.Append(protocol_);
+      builder.Append(":");
+      return;
+    }
+  }
+
   builder.Append(protocol_);
   builder.Append("://");
   builder.Append(host_);
