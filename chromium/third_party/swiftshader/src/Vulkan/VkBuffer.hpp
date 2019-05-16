@@ -34,7 +34,13 @@ public:
 	void copyFrom(const void* srcMemory, VkDeviceSize size, VkDeviceSize offset);
 	void copyTo(void* dstMemory, VkDeviceSize size, VkDeviceSize offset) const;
 	void copyTo(Buffer* dstBuffer, const VkBufferCopy& pRegion) const;
+	void fill(VkDeviceSize dstOffset, VkDeviceSize fillSize, uint32_t data);
+	void update(VkDeviceSize dstOffset, VkDeviceSize dataSize, const void* pData);
 	void* getOffsetPointer(VkDeviceSize offset) const;
+
+	// DataOffset is the offset in bytes from the Buffer to the pointer to the
+	// buffer's data memory.
+	static const size_t DataOffset;
 
 private:
 	void*                 memory = nullptr;

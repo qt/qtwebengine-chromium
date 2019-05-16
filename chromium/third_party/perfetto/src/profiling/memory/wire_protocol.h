@@ -29,6 +29,8 @@
 #include <unwindstack/UserX86.h>
 #include <unwindstack/UserX86_64.h>
 
+#include "src/profiling/memory/shared_ring_buffer.h"
+
 namespace perfetto {
 
 namespace base {
@@ -110,6 +112,12 @@ struct FreeMetadata {
   FreePageEntry entries[kFreePageSize];
 };
 
+enum HandshakeFDs : size_t {
+  kHandshakeMaps = 0,
+  kHandshakeMem = 1,
+  kHandshakeSize = 2,
+};
+
 struct WireMessage {
   RecordType record_type;
 
@@ -120,7 +128,7 @@ struct WireMessage {
   size_t payload_size;
 };
 
-bool SendWireMessage(base::UnixSocketRaw*, const WireMessage& msg);
+bool SendWireMessage(SharedRingBuffer* buf, const WireMessage& msg);
 
 // Parse message received over the wire.
 // |buf| has to outlive |out|.

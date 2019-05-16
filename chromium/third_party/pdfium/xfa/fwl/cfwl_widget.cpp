@@ -39,22 +39,10 @@ CFWL_Widget::CFWL_Widget(const CFWL_App* app,
     : m_pOwnerApp(app),
       m_pWidgetMgr(app->GetWidgetMgr()),
       m_pProperties(std::move(properties)),
-      m_pOuter(pOuter),
-      m_iLock(0),
-      m_pLayoutItem(nullptr),
-      m_nEventKey(0),
-      m_pDelegate(nullptr) {
+      m_pOuter(pOuter) {
   ASSERT(m_pWidgetMgr);
   ASSERT(m_pProperties);
-
-  CFWL_Widget* pParent = m_pProperties->m_pParent;
-  m_pWidgetMgr->InsertWidget(pParent, this);
-  if (IsChild())
-    return;
-
-  CFWL_Widget* pOwner = m_pProperties->m_pOwner;
-  if (pOwner)
-    m_pWidgetMgr->SetOwner(pOwner, this);
+  m_pWidgetMgr->InsertWidget(m_pProperties->m_pParent, this);
 }
 
 CFWL_Widget::~CFWL_Widget() {
@@ -93,10 +81,6 @@ CFX_RectF CFWL_Widget::GetClientRect() {
 void CFWL_Widget::SetParent(CFWL_Widget* pParent) {
   m_pProperties->m_pParent = pParent;
   m_pWidgetMgr->SetParent(pParent, this);
-}
-
-uint32_t CFWL_Widget::GetStyles() const {
-  return m_pProperties->m_dwStyles;
 }
 
 void CFWL_Widget::ModifyStyles(uint32_t dwStylesAdded,

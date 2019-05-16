@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
@@ -19,6 +20,7 @@
 #include "components/viz/common/gpu/context_lost_observer.h"
 #include "components/viz/common/gpu/context_lost_reason.h"
 #include "components/viz/common/resources/platform_color.h"
+#include "components/viz/common/viz_utils.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
@@ -42,7 +44,7 @@ namespace {
 
 gpu::ContextCreationAttribs CreateAttributes(
     bool requires_alpha_channel,
-    const gfx::ColorSpace& color_space) {
+    const RendererSettings& renderer_settings) {
   gpu::ContextCreationAttribs attributes;
   attributes.alpha_size = requires_alpha_channel ? 8 : -1;
   attributes.depth_size = 0;
@@ -63,17 +65,17 @@ gpu::ContextCreationAttribs CreateAttributes(
   attributes.lose_context_when_out_of_memory = true;
 
 #if defined(OS_ANDROID)
-  if (color_space == gfx::ColorSpace::CreateSRGB()) {
+  if (renderer_settings.color_space == gfx::ColorSpace::CreateSRGB()) {
     attributes.color_space = gpu::COLOR_SPACE_SRGB;
-  } else if (color_space == gfx::ColorSpace::CreateDisplayP3D65()) {
+  } else if (renderer_settings.color_space ==
+             gfx::ColorSpace::CreateDisplayP3D65()) {
     attributes.color_space = gpu::COLOR_SPACE_DISPLAY_P3;
   } else {
     // The browser only sends the above two color spaces.
     NOTREACHED();
   }
 
-  if (!requires_alpha_channel &&
-      base::SysInfo::AmountOfPhysicalMemoryMB() <= 512) {
+  if (!requires_alpha_channel && PreferRGB565ResourcesForDisplay()) {
     // See compositor_impl_android.cc for more information about this.
     // It is inside GetCompositorContextAttributes().
     attributes.alpha_size = 0;
@@ -83,6 +85,8 @@ gpu::ContextCreationAttribs CreateAttributes(
   }
 
   attributes.enable_swap_timestamps_if_supported = true;
+  attributes.backed_by_surface_texture =
+      renderer_settings.backed_by_surface_texture;
 #endif  // defined(OS_ANDROID)
 
   return attributes;
@@ -90,15 +94,6 @@ gpu::ContextCreationAttribs CreateAttributes(
 
 void UmaRecordContextLost(ContextLostReason reason) {
   UMA_HISTOGRAM_ENUMERATION("GPU.ContextLost.DisplayCompositor", reason);
-}
-
-gfx::ColorSpace ColorSpaceForRendererSettings(
-    const RendererSettings& renderer_settings) {
-#if defined(OS_ANDROID)
-  return renderer_settings.color_space;
-#else
-  return gfx::ColorSpace();
-#endif
 }
 
 gpu::SharedMemoryLimits SharedMemoryLimitsForRendererSettings(
@@ -120,9 +115,8 @@ VizProcessContextProvider::VizProcessContextProvider(
     gpu::ImageFactory* image_factory,
     gpu::GpuChannelManagerDelegate* gpu_channel_manager_delegate,
     const RendererSettings& renderer_settings)
-    : attributes_(
-          CreateAttributes(renderer_settings.requires_alpha_channel,
-                           ColorSpaceForRendererSettings(renderer_settings))) {
+    : attributes_(CreateAttributes(renderer_settings.requires_alpha_channel,
+                                   renderer_settings)) {
   InitializeContext(std::move(task_executor), surface_handle,
                     gpu_memory_buffer_manager, image_factory,
                     gpu_channel_manager_delegate,

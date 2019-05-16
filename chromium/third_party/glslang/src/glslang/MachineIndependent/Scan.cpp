@@ -592,6 +592,8 @@ void TScanContext::fillInKeywordMap()
 
     (*KeywordMap)["samplerExternalOES"] =      SAMPLEREXTERNALOES; // GL_OES_EGL_image_external
 
+    (*KeywordMap)["__samplerExternal2DY2YEXT"] = SAMPLEREXTERNAL2DY2YEXT; // GL_EXT_YUV_target
+
     (*KeywordMap)["sampler"] =                 SAMPLER;
     (*KeywordMap)["samplerShadow"] =           SAMPLERSHADOW;
 
@@ -711,6 +713,8 @@ void TScanContext::fillInKeywordMap()
     (*KeywordMap)["perviewNV"] =               PERVIEWNV;
     (*KeywordMap)["taskNV"] =                  PERTASKNV;
 #endif
+
+    (*KeywordMap)["fcoopmatNV"] =              FCOOPMATNV;
 
     ReservedSet = new std::unordered_set<const char*, str_hash, str_eq>;
 
@@ -1410,6 +1414,13 @@ int TScanContext::tokenizeIdentifier()
             return keyword;
         return identifierOrType();
 
+    case SAMPLEREXTERNAL2DY2YEXT:
+        afterType = true;
+        if (parseContext.symbolTable.atBuiltInLevel() ||
+            parseContext.extensionTurnedOn(E_GL_EXT_YUV_target))
+            return keyword;
+        return identifierOrType();
+
     case TEXTURE2D:
     case TEXTURECUBE:
     case TEXTURECUBEARRAY:
@@ -1602,6 +1613,13 @@ int TScanContext::tokenizeIdentifier()
             return keyword;
         return identifierOrType();
 #endif
+
+    case FCOOPMATNV:
+        afterType = true;
+        if (parseContext.symbolTable.atBuiltInLevel() ||
+            parseContext.extensionTurnedOn(E_GL_NV_cooperative_matrix))
+            return keyword;
+        return identifierOrType();
 
     default:
         parseContext.infoSink.info.message(EPrefixInternalError, "Unknown glslang keyword", loc);

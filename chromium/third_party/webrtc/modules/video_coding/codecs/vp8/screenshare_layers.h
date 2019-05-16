@@ -13,6 +13,7 @@
 #include <memory>
 #include <vector>
 
+#include "api/video_codecs/vp8_frame_config.h"
 #include "api/video_codecs/vp8_temporal_layers.h"
 #include "modules/video_coding/codecs/vp8/include/temporal_layers_checker.h"
 #include "modules/video_coding/utility/frame_dropper.h"
@@ -30,16 +31,14 @@ class ScreenshareLayers : public Vp8TemporalLayers {
   static const double kAcceptableTargetOvershoot;
   static const int kMaxFrameIntervalMs;
 
-  ScreenshareLayers(int num_temporal_layers,
-                    Clock* clock);
+  explicit ScreenshareLayers(int num_temporal_layers);
   ~ScreenshareLayers() override;
 
   bool SupportsEncoderFrameDropping() const override;
 
   // Returns the recommended VP8 encode flags needed. May refresh the decoder
   // and/or update the reference buffers.
-  Vp8TemporalLayers::FrameConfig UpdateLayerConfig(
-      uint32_t rtp_timestamp) override;
+  Vp8FrameConfig UpdateLayerConfig(uint32_t rtp_timestamp) override;
 
   // New target bitrate, per temporal layer.
   void OnRatesUpdated(const std::vector<uint32_t>& bitrates_bps,
@@ -61,8 +60,6 @@ class ScreenshareLayers : public Vp8TemporalLayers {
   bool TimeToSync(int64_t timestamp) const;
   uint32_t GetCodecTargetBitrateKbps() const;
 
-  Clock* const clock_;
-
   int number_of_temporal_layers_;
   int active_layer_;
   int64_t last_timestamp_;
@@ -74,7 +71,7 @@ class ScreenshareLayers : public Vp8TemporalLayers {
   int max_qp_;
   uint32_t max_debt_bytes_;
 
-  std::map<uint32_t, Vp8TemporalLayers::FrameConfig> pending_frame_configs_;
+  std::map<uint32_t, Vp8FrameConfig> pending_frame_configs_;
 
   // Configured max framerate.
   absl::optional<uint32_t> target_framerate_;

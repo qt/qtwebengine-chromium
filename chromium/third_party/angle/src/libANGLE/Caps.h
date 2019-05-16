@@ -284,7 +284,11 @@ struct Extensions
     bool framebufferMultisample;
 
     // GL_ANGLE_instanced_arrays
-    bool instancedArrays;
+    bool instancedArraysANGLE;
+    // GL_EXT_instanced_arrays
+    bool instancedArraysEXT;
+    // Any version of the instanced arrays extension
+    bool instancedArraysAny() const { return (instancedArraysANGLE || instancedArraysEXT); }
 
     // GL_ANGLE_pack_reverse_row_order
     bool packReverseRowOrder;
@@ -461,6 +465,9 @@ struct Extensions
     // GL_EXT_blend_func_extended
     bool blendFuncExtended;
     GLuint maxDualSourceDrawBuffers;
+
+    // GL_EXT_float_blend
+    bool floatBlend;
 
     // GL_ANGLE_memory_size
     bool memorySize;
@@ -843,6 +850,9 @@ struct DisplayExtensions
 
     // EGL_ANDROID_get_frame_timestamps
     bool getFrameTimestamps;
+
+    // EGL_ANDROID_recordable
+    bool recordable;
 };
 
 struct DeviceExtensions

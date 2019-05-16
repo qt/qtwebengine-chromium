@@ -117,26 +117,8 @@
 #include <openssl/mem.h>
 
 #include "internal.h"
-
-
-#if !defined(OPENSSL_NO_ASM) && defined(OPENSSL_X86_64)
-#define OPENSSL_BN_ASM_MONT5
-#define RSAZ_ENABLED
-
 #include "rsaz_exp.h"
 
-void bn_mul_mont_gather5(BN_ULONG *rp, const BN_ULONG *ap,
-                         const BN_ULONG *table, const BN_ULONG *np,
-                         const BN_ULONG *n0, int num, int power);
-void bn_scatter5(const BN_ULONG *inp, size_t num, BN_ULONG *table,
-                 size_t power);
-void bn_gather5(BN_ULONG *out, size_t num, BN_ULONG *table, size_t power);
-void bn_power5(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *table,
-               const BN_ULONG *np, const BN_ULONG *n0, int num, int power);
-int bn_from_montgomery(BN_ULONG *rp, const BN_ULONG *ap,
-                       const BN_ULONG *not_used, const BN_ULONG *np,
-                       const BN_ULONG *n0, int num);
-#endif
 
 int BN_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, BN_CTX *ctx) {
   int i, bits, ret = 0;
@@ -974,12 +956,12 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
   alignas(MOD_EXP_CTIME_MIN_CACHE_LINE_WIDTH) BN_ULONG
     storage[MOD_EXP_CTIME_STORAGE_LEN];
 #endif
-#ifdef RSAZ_ENABLED
-  // If the size of the operands allow it, perform the optimized
-  // RSAZ exponentiation. For further information see
-  // crypto/bn/rsaz_exp.c and accompanying assembly modules.
-  if ((16 == a->width) && (16 == p->width) && (BN_num_bits(m) == 1024) &&
-      rsaz_avx2_eligible()) {
+#if defined(RSAZ_ENABLED)
+  // If the size of the operands allow it, perform the optimized RSAZ
+  // exponentiation. For further information see crypto/fipsmodule/bn/rsaz_exp.c
+  // and accompanying assembly modules.
+  if (a->width == 16 && p->width == 16 && BN_num_bits(m) == 1024 &&
+      rsaz_avx2_preferred()) {
     if (!bn_wexpand(rr, 16)) {
       goto err;
     }

@@ -38,6 +38,7 @@ class CPDF_StructTree;
 class CPDF_TextPage;
 class CPDF_TextPageFind;
 class CPDFSDK_FormFillEnvironment;
+class CPDFSDK_InteractiveForm;
 class IPDFSDK_PauseAdapter;
 class FX_PATHPOINT;
 
@@ -206,6 +207,8 @@ CPDFSDKFormFillEnvironmentFromFPDFFormHandle(FPDF_FORMHANDLE handle) {
   return reinterpret_cast<CPDFSDK_FormFillEnvironment*>(handle);
 }
 
+CPDFSDK_InteractiveForm* FormHandleToInteractiveForm(FPDF_FORMHANDLE hHandle);
+
 ByteString ByteStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
 
 WideString WideStringFromFPDFWideString(FPDF_WIDESTRING wide_string);
@@ -260,7 +263,7 @@ void RenderPageWithContext(CPDF_PageRenderContext* pContext,
                            IPDFSDK_PauseAdapter* pause);
 
 void ReportUnsupportedFeatures(CPDF_Document* pDoc);
-void CheckUnSupportAnnot(CPDF_Document* pDoc, const CPDF_Annot* pPDFAnnot);
+void CheckForUnsupportedAnnot(const CPDF_Annot* pPDFAnnot);
 
 #ifndef _WIN32
 void SetLastError(int err);

@@ -19,20 +19,32 @@
 
 #include "dawn_wire/WireCmd_autogen.h"
 #include "dawn_wire/WireDeserializeAllocator.h"
+#include "dawn_wire/client/ClientBase_autogen.h"
 
 namespace dawn_wire { namespace client {
 
     class Device;
 
-    class Client : public CommandHandler {
+    class Client : public ClientBase {
       public:
-        Client(Device* device);
+        Client(CommandSerializer* serializer);
+        ~Client();
+
         const char* HandleCommands(const char* commands, size_t size);
+
+        void* GetCmdSpace(size_t size) {
+            return mSerializer->GetCmdSpace(size);
+        }
+
+        dawnDevice GetDevice() const {
+            return reinterpret_cast<dawnDeviceImpl*>(mDevice);
+        }
 
       private:
 #include "dawn_wire/client/ClientPrototypes_autogen.inl"
 
-        Device* mDevice;
+        Device* mDevice = nullptr;
+        CommandSerializer* mSerializer = nullptr;
         WireDeserializeAllocator mAllocator;
     };
 

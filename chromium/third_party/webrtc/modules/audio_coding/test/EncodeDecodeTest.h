@@ -65,7 +65,7 @@ class Sender {
 class Receiver {
  public:
   Receiver();
-  virtual ~Receiver() {};
+  virtual ~Receiver() {}
   void Setup(AudioCodingModule *acm, RTPStream *rtpStream,
              std::string out_file_name, size_t channels, int file_num);
   void Teardown();
@@ -84,7 +84,7 @@ class Receiver {
   AudioCodingModule* _acm;
   uint8_t _incomingPayload[MAX_INCOMING_PAYLOAD];
   RTPStream* _rtpStream;
-  WebRtcRTPHeader _rtpInfo;
+  RTPHeader _rtpHeader;
   size_t _realPayloadSizeBytes;
   size_t _payloadSizeBytes;
   uint32_t _nextTime;

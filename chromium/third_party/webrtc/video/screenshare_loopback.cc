@@ -333,7 +333,9 @@ void Loopback() {
                      false,  // ULPFEC disabled.
                      false,  // FlexFEC disabled.
                      false,  // Automatic scaling disabled.
-                     ""};
+                     "",
+                     0,  // capture_device_index.
+                     SdpVideoFormat::Parameters()};
   params.screenshare[0] = {true, flags::GenerateSlides(),
                            flags::SlideChangeInterval(),
                            flags::ScrollDuration(), flags::Slides()};

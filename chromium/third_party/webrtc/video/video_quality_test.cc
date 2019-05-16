@@ -47,6 +47,15 @@
 namespace webrtc {
 
 namespace {
+enum : int {  // The first valid value is 1.
+  kAbsSendTimeExtensionId = 1,
+  kGenericFrameDescriptorExtensionId00,
+  kGenericFrameDescriptorExtensionId01,
+  kTransportSequenceNumberExtensionId,
+  kVideoContentTypeExtensionId,
+  kVideoTimingExtensionId,
+};
+
 constexpr char kSyncGroup[] = "av_sync";
 constexpr int kOpusMinBitrateBps = 6000;
 constexpr int kOpusBitrateFbBps = 32000;
@@ -55,6 +64,27 @@ constexpr uint32_t kThumbnailSendSsrcStart = 0xE0000;
 constexpr uint32_t kThumbnailRtxSsrcStart = 0xF0000;
 
 constexpr int kDefaultMaxQp = cricket::WebRtcVideoChannel::kDefaultQpMax;
+
+std::pair<uint32_t, uint32_t> GetMinMaxBitratesBps(const VideoCodec& codec,
+                                                   size_t spatial_idx) {
+  uint32_t min_bitrate = codec.minBitrate;
+  uint32_t max_bitrate = codec.maxBitrate;
+  if (spatial_idx < codec.numberOfSimulcastStreams) {
+    min_bitrate =
+        std::max(min_bitrate, codec.simulcastStream[spatial_idx].minBitrate);
+    max_bitrate =
+        std::min(max_bitrate, codec.simulcastStream[spatial_idx].maxBitrate);
+  }
+  if (codec.codecType == VideoCodecType::kVideoCodecVP9 &&
+      spatial_idx < codec.VP9().numberOfSpatialLayers) {
+    min_bitrate =
+        std::max(min_bitrate, codec.spatialLayers[spatial_idx].minBitrate);
+    max_bitrate =
+        std::min(max_bitrate, codec.spatialLayers[spatial_idx].maxBitrate);
+  }
+  max_bitrate = std::max(max_bitrate, min_bitrate);
+  return {min_bitrate * 1000, max_bitrate * 1000};
+}
 
 class VideoStreamFactory
     : public VideoEncoderConfig::VideoStreamFactoryInterface {
@@ -87,17 +117,21 @@ class QualityTestVideoEncoder : public VideoEncoder,
  public:
   QualityTestVideoEncoder(std::unique_ptr<VideoEncoder> encoder,
                           VideoAnalyzer* analyzer,
-                          std::vector<rtc::PlatformFile> files)
-      : encoder_(std::move(encoder)), analyzer_(analyzer) {
-    for (rtc::PlatformFile file : files) {
+                          std::vector<FileWrapper> files,
+                          double overshoot_factor)
+      : encoder_(std::move(encoder)),
+        overshoot_factor_(overshoot_factor),
+        analyzer_(analyzer) {
+    for (FileWrapper& file : files) {
       writers_.push_back(
-          IvfFileWriter::Wrap(rtc::File(file), /* byte_limit= */ 100000000));
+          IvfFileWriter::Wrap(std::move(file), /* byte_limit= */ 100000000));
     }
   }
   // Implement VideoEncoder
   int32_t InitEncode(const VideoCodec* codec_settings,
                      int32_t number_of_cores,
                      size_t max_payload_size) override {
+    codec_settings_ = *codec_settings;
     return encoder_->InitEncode(codec_settings, number_of_cores,
                                 max_payload_size);
   }
@@ -115,15 +149,57 @@ class QualityTestVideoEncoder : public VideoEncoder,
     }
     return encoder_->Encode(frame, codec_specific_info, frame_types);
   }
-  int32_t SetRates(uint32_t bitrate, uint32_t framerate) override {
-    return encoder_->SetRates(bitrate, framerate);
-  }
   int32_t SetRateAllocation(const VideoBitrateAllocation& allocation,
                             uint32_t framerate) override {
-    return encoder_->SetRateAllocation(allocation, framerate);
+    RTC_DCHECK_GT(overshoot_factor_, 0.0);
+    if (overshoot_factor_ == 1.0) {
+      return encoder_->SetRateAllocation(allocation, framerate);
+    }
+
+    // Simulating encoder overshooting target bitrate, by configuring actual
+    // encoder too high. Take care not to adjust past limits of config,
+    // otherwise encoders may crash on DCHECK.
+    VideoBitrateAllocation overshot_allocation;
+    for (size_t si = 0; si < kMaxSpatialLayers; ++si) {
+      const uint32_t spatial_layer_bitrate_bps =
+          allocation.GetSpatialLayerSum(si);
+      if (spatial_layer_bitrate_bps == 0) {
+        continue;
+      }
+
+      uint32_t min_bitrate_bps;
+      uint32_t max_bitrate_bps;
+      std::tie(min_bitrate_bps, max_bitrate_bps) =
+          GetMinMaxBitratesBps(codec_settings_, si);
+      double overshoot_factor = overshoot_factor_;
+      const uint32_t corrected_bitrate = rtc::checked_cast<uint32_t>(
+          overshoot_factor * spatial_layer_bitrate_bps);
+      if (corrected_bitrate < min_bitrate_bps) {
+        overshoot_factor = min_bitrate_bps / spatial_layer_bitrate_bps;
+      } else if (corrected_bitrate > max_bitrate_bps) {
+        overshoot_factor = max_bitrate_bps / spatial_layer_bitrate_bps;
+      }
+
+      for (size_t ti = 0; ti < kMaxTemporalStreams; ++ti) {
+        if (allocation.HasBitrate(si, ti)) {
+          overshot_allocation.SetBitrate(
+              si, ti,
+              rtc::checked_cast<uint32_t>(overshoot_factor *
+                                          allocation.GetBitrate(si, ti)));
+        }
+      }
+    }
+
+    return encoder_->SetRateAllocation(overshot_allocation, framerate);
   }
   EncoderInfo GetEncoderInfo() const override {
-    return encoder_->GetEncoderInfo();
+    EncoderInfo info = encoder_->GetEncoderInfo();
+    if (overshoot_factor_ != 1.0) {
+      // We're simulating bad encoder, don't forward trusted setting
+      // from eg libvpx.
+      info.has_trusted_rate_controller = false;
+    }
+    return info;
   }
 
  private:
@@ -157,10 +233,12 @@ class QualityTestVideoEncoder : public VideoEncoder,
     callback_->OnDroppedFrame(reason);
   }
 
-  std::unique_ptr<VideoEncoder> encoder_;
-  EncodedImageCallback* callback_ = nullptr;
+  const std::unique_ptr<VideoEncoder> encoder_;
+  const double overshoot_factor_;
   VideoAnalyzer* const analyzer_;
   std::vector<std::unique_ptr<IvfFileWriter>> writers_;
+  EncodedImageCallback* callback_ = nullptr;
+  VideoCodec codec_settings_;
 };
 
 }  // namespace
@@ -182,7 +260,7 @@ std::unique_ptr<VideoDecoder> VideoQualityTest::CreateVideoDecoder(
     std::string path =
         params_.logging.encoded_frame_base_path + "." + str.str() + ".recv.ivf";
     decoder = absl::make_unique<FrameDumpingDecoder>(
-        std::move(decoder), rtc::CreatePlatformFile(path));
+        std::move(decoder), FileWrapper::OpenWriteOnly(path));
   }
   return decoder;
 }
@@ -202,21 +280,42 @@ std::unique_ptr<VideoEncoder> VideoQualityTest::CreateVideoEncoder(
   } else {
     encoder = internal_encoder_factory_.CreateVideoEncoder(format);
   }
+
+  std::vector<FileWrapper> encoded_frame_dump_files;
   if (!params_.logging.encoded_frame_base_path.empty()) {
     char ss_buf[100];
     rtc::SimpleStringBuilder sb(ss_buf);
     sb << send_logs_++;
     std::string prefix =
         params_.logging.encoded_frame_base_path + "." + sb.str() + ".send.";
+    encoded_frame_dump_files.push_back(
+        FileWrapper::OpenWriteOnly(prefix + "1.ivf"));
+    encoded_frame_dump_files.push_back(
+        FileWrapper::OpenWriteOnly(prefix + "2.ivf"));
+    encoded_frame_dump_files.push_back(
+        FileWrapper::OpenWriteOnly(prefix + "3.ivf"));
+  }
+
+  double overshoot_factor = 1.0;
+  // Match format to either of the streams in dual-stream mode in order to get
+  // the overshoot factor. This is not very robust but we can't know for sure
+  // which stream this encoder is meant for, from within the factory.
+  if (format ==
+      SdpVideoFormat(params_.video[0].codec, params_.video[0].sdp_params)) {
+    overshoot_factor = params_.video[0].encoder_overshoot_factor;
+  } else if (format == SdpVideoFormat(params_.video[1].codec,
+                                      params_.video[1].sdp_params)) {
+    overshoot_factor = params_.video[1].encoder_overshoot_factor;
+  }
+  if (overshoot_factor == 0.0) {
+    // If params were zero-initialized, set to 1.0 instead.
+    overshoot_factor = 1.0;
+  }
+
+  if (analyzer || !encoded_frame_dump_files.empty() || overshoot_factor > 1.0) {
     encoder = absl::make_unique<QualityTestVideoEncoder>(
-        std::move(encoder), analyzer,
-        std::vector<rtc::PlatformFile>(
-            {rtc::CreatePlatformFile(prefix + "1.ivf"),
-             rtc::CreatePlatformFile(prefix + "2.ivf"),
-             rtc::CreatePlatformFile(prefix + "3.ivf")}));
-  } else if (analyzer) {
-    encoder = absl::make_unique<QualityTestVideoEncoder>(
-        std::move(encoder), analyzer, std::vector<rtc::PlatformFile>());
+        std::move(encoder), analyzer, std::move(encoded_frame_dump_files),
+        overshoot_factor);
   }
 
   return encoder;
@@ -262,10 +361,44 @@ VideoQualityTest::VideoQualityTest(
 
 VideoQualityTest::Params::Params()
     : call({false, false, BitrateConstraints(), 0}),
-      video{{false, 640, 480, 30, 50, 800, 800, false, "VP8", 1, -1, 0, false,
-             false, false, ""},
-            {false, 640, 480, 30, 50, 800, 800, false, "VP8", 1, -1, 0, false,
-             false, false, ""}},
+      video{{false,
+             640,
+             480,
+             30,
+             50,
+             800,
+             800,
+             false,
+             "VP8",
+             1,
+             -1,
+             0,
+             false,
+             false,
+             false,
+             "",
+             0,
+             {},
+             0.0},
+            {false,
+             640,
+             480,
+             30,
+             50,
+             800,
+             800,
+             false,
+             "VP8",
+             1,
+             -1,
+             0,
+             false,
+             false,
+             false,
+             "",
+             0,
+             {},
+             0.0}},
       audio({false, false, false, false}),
       screenshare{{false, false, 10, 0}, {false, false, 10, 0}},
       analyzer({"", 0.0, 0.0, 0, "", ""}),
@@ -344,8 +477,11 @@ void VideoQualityTest::CheckParamsAndInjectionComponents() {
                  params_.video[video_idx].target_bitrate_bps);
     RTC_CHECK_GE(params_.video[video_idx].target_bitrate_bps,
                  params_.video[video_idx].min_bitrate_bps);
-    RTC_CHECK_LT(params_.video[video_idx].selected_tl,
-                 params_.video[video_idx].num_temporal_layers);
+    int selected_stream = params_.ss[video_idx].selected_stream;
+    int stream_tl = params_.ss[video_idx]
+                        .streams[selected_stream]
+                        .num_temporal_layers.value_or(1);
+    RTC_CHECK_LT(params_.video[video_idx].selected_tl, stream_tl);
     RTC_CHECK_LE(params_.ss[video_idx].selected_stream,
                  params_.ss[video_idx].streams.size());
     for (const VideoStream& stream : params_.ss[video_idx].streams) {
@@ -477,7 +613,7 @@ void VideoQualityTest::FillScalabilitySettings(
     // lists. To use a default value for an element, use -1 or leave empty.
     // Validity checks performed in CheckParamsAndInjectionComponents.
     RTC_CHECK(params->ss[video_idx].streams.empty());
-    for (auto descriptor : stream_descriptors) {
+    for (const auto& descriptor : stream_descriptors) {
       if (descriptor.empty())
         continue;
       VideoStream stream =
@@ -513,20 +649,21 @@ void VideoQualityTest::FillScalabilitySettings(
   params->ss[video_idx].selected_sl = selected_sl;
   params->ss[video_idx].inter_layer_pred = inter_layer_pred;
   RTC_CHECK(params->ss[video_idx].spatial_layers.empty());
-  for (auto descriptor : sl_descriptors) {
+  for (const auto& descriptor : sl_descriptors) {
     if (descriptor.empty())
       continue;
     std::vector<int> v = VideoQualityTest::ParseCSV(descriptor);
-    RTC_CHECK_EQ(v.size(), 7);
+    RTC_CHECK_EQ(v.size(), 8);
 
     SpatialLayer layer = {0};
     layer.width = v[0];
     layer.height = v[1];
-    layer.numberOfTemporalLayers = v[2];
-    layer.maxBitrate = v[3];
-    layer.minBitrate = v[4];
-    layer.targetBitrate = v[5];
-    layer.qpMax = v[6];
+    layer.maxFramerate = v[2];
+    layer.numberOfTemporalLayers = v[3];
+    layer.maxBitrate = v[4];
+    layer.minBitrate = v[5];
+    layer.targetBitrate = v[6];
+    layer.qpMax = v[7];
     layer.active = true;
 
     params->ss[video_idx].spatial_layers.push_back(layer);
@@ -586,10 +723,10 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
     if (params_.call.send_side_bwe) {
       video_send_configs_[video_idx].rtp.extensions.emplace_back(
           RtpExtension::kTransportSequenceNumberUri,
-          test::kTransportSequenceNumberExtensionId);
+          kTransportSequenceNumberExtensionId);
     } else {
       video_send_configs_[video_idx].rtp.extensions.emplace_back(
-          RtpExtension::kAbsSendTimeUri, test::kAbsSendTimeExtensionId);
+          RtpExtension::kAbsSendTimeUri, kAbsSendTimeExtensionId);
     }
 
     if (params_.call.generic_descriptor) {
@@ -599,14 +736,17 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       RTC_CHECK(field_trial::IsEnabled("WebRTC-GenericDescriptor"));
 
       video_send_configs_[video_idx].rtp.extensions.emplace_back(
-          RtpExtension::kGenericFrameDescriptorUri,
-          test::kGenericDescriptorExtensionId);
+          RtpExtension::kGenericFrameDescriptorUri00,
+          kGenericFrameDescriptorExtensionId00);
+      video_send_configs_[video_idx].rtp.extensions.emplace_back(
+          RtpExtension::kGenericFrameDescriptorUri01,
+          kGenericFrameDescriptorExtensionId01);
     }
 
     video_send_configs_[video_idx].rtp.extensions.emplace_back(
-        RtpExtension::kVideoContentTypeUri, test::kVideoContentTypeExtensionId);
+        RtpExtension::kVideoContentTypeUri, kVideoContentTypeExtensionId);
     video_send_configs_[video_idx].rtp.extensions.emplace_back(
-        RtpExtension::kVideoTimingUri, test::kVideoTimingExtensionId);
+        RtpExtension::kVideoTimingUri, kVideoTimingExtensionId);
 
     video_encoder_configs_[video_idx].video_format.name =
         params_.video[video_idx].codec;
@@ -622,6 +762,9 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
 
     video_send_configs_[video_idx].suspend_below_min_bitrate =
         params_.video[video_idx].suspend_below_min_bitrate;
+
+    video_send_configs_[video_idx].is_svc =
+        params_.ss[video_idx].streams.size() == 1;
 
     video_encoder_configs_[video_idx].number_of_streams =
         params_.ss[video_idx].streams.size();
@@ -754,10 +897,10 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
     if (params_.call.send_side_bwe) {
       GetFlexFecConfig()->rtp_header_extensions.push_back(
           RtpExtension(RtpExtension::kTransportSequenceNumberUri,
-                       test::kTransportSequenceNumberExtensionId));
+                       kTransportSequenceNumberExtensionId));
     } else {
-      GetFlexFecConfig()->rtp_header_extensions.push_back(RtpExtension(
-          RtpExtension::kAbsSendTimeUri, test::kAbsSendTimeExtensionId));
+      GetFlexFecConfig()->rtp_header_extensions.push_back(
+          RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeExtensionId));
     }
   }
 
@@ -795,10 +938,10 @@ void VideoQualityTest::SetupThumbnails(Transport* send_transport,
     if (params_.call.send_side_bwe) {
       thumbnail_send_config.rtp.extensions.push_back(
           RtpExtension(RtpExtension::kTransportSequenceNumberUri,
-                       test::kTransportSequenceNumberExtensionId));
+                       kTransportSequenceNumberExtensionId));
     } else {
-      thumbnail_send_config.rtp.extensions.push_back(RtpExtension(
-          RtpExtension::kAbsSendTimeUri, test::kAbsSendTimeExtensionId));
+      thumbnail_send_config.rtp.extensions.push_back(
+          RtpExtension(RtpExtension::kAbsSendTimeUri, kAbsSendTimeExtensionId));
     }
 
     VideoEncoderConfig thumbnail_encoder_config;
@@ -1230,7 +1373,7 @@ void VideoQualityTest::SetupAudio(Transport* transport) {
   if (params_.call.send_side_bwe) {
     audio_send_config.rtp.extensions.push_back(
         webrtc::RtpExtension(webrtc::RtpExtension::kTransportSequenceNumberUri,
-                             test::kTransportSequenceNumberExtensionId));
+                             kTransportSequenceNumberExtensionId));
     audio_send_config.min_bitrate_bps = kOpusMinBitrateBps;
     audio_send_config.max_bitrate_bps = kOpusBitrateFbBps;
     audio_send_config.send_codec_spec->transport_cc_enabled = true;

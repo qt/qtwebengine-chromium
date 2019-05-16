@@ -45,7 +45,10 @@ class RendererVk : angle::NonCopyable
     RendererVk();
     ~RendererVk();
 
-    angle::Result initialize(DisplayVk *displayVk, egl::Display *display, const char *wsiName);
+    angle::Result initialize(DisplayVk *displayVk,
+                             egl::Display *display,
+                             const char *wsiExtension,
+                             const char *wsiLayer);
     void onDestroy(vk::Context *context);
 
     void notifyDeviceLost();
@@ -107,6 +110,7 @@ class RendererVk : angle::NonCopyable
     // mLastCompletedQueueSerial, for example for when the application busy waits on a query
     // result).
     angle::Result checkCompletedCommands(vk::Context *context);
+
     // Wait for completion of batches until (at least) batch with given serial is finished.
     angle::Result finishToSerial(vk::Context *context, Serial serial);
 
@@ -154,6 +158,9 @@ class RendererVk : angle::NonCopyable
     // by next submission.
     const vk::Semaphore *getSubmitLastSignaledSemaphore(vk::Context *context);
 
+    // Get (or allocate) the fence that will be signaled on next submission.
+    angle::Result getSubmitFence(vk::Context *context, vk::Shared<vk::Fence> *sharedFenceOut);
+
     // This should only be called from ResourceVk.
     // TODO(jmadill): Keep in ContextVk to enable threaded rendering.
     vk::CommandGraph *getCommandGraph();
@@ -196,6 +203,13 @@ class RendererVk : angle::NonCopyable
     bool hasTextureFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
     bool hasBufferFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
 
+    void insertDebugMarker(GLenum source, GLuint id, std::string &&marker);
+    void pushDebugMarker(GLenum source, GLuint id, std::string &&marker);
+    void popDebugMarker();
+
+    static constexpr size_t kMaxExtensionNames = 200;
+    using ExtensionNameList = angle::FixedVector<const char *, kMaxExtensionNames>;
+
   private:
     // Number of semaphores for external entities to renderer to issue a wait, such as surface's
     // image acquire.
@@ -215,7 +229,7 @@ class RendererVk : angle::NonCopyable
                               vk::CommandBuffer &&commandBuffer);
     void freeAllInFlightResources();
     angle::Result flushCommandGraph(vk::Context *context, vk::CommandBuffer *commandBatch);
-    void initFeatures(const std::vector<VkExtensionProperties> &deviceExtensionProps);
+    void initFeatures(const ExtensionNameList &extensions);
     void initPipelineCacheVkKey();
     angle::Result initPipelineCache(DisplayVk *display);
 
@@ -253,6 +267,7 @@ class RendererVk : angle::NonCopyable
     std::vector<VkQueueFamilyProperties> mQueueFamilyProperties;
     VkQueue mQueue;
     uint32_t mCurrentQueueFamilyIndex;
+    uint32_t mMaxVertexAttribDivisor;
     VkDevice mDevice;
     vk::CommandPool mCommandPool;
     SerialFactory mQueueSerialFactory;
@@ -273,7 +288,7 @@ class RendererVk : angle::NonCopyable
         void destroy(VkDevice device);
 
         vk::CommandPool commandPool;
-        vk::Fence fence;
+        vk::Shared<vk::Fence> fence;
         Serial serial;
     };
 
@@ -310,6 +325,14 @@ class RendererVk : angle::NonCopyable
 
     // A pool of semaphores used to support the aforementioned mid-frame submissions.
     vk::DynamicSemaphorePool mSubmitSemaphorePool;
+
+    // mSubmitFence is the fence that's going to be signaled at the next submission.  This is used
+    // to support SyncVk objects, which may outlive the context (as EGLSync objects).
+    //
+    // TODO(geofflang): this is in preparation for moving RendererVk functionality to ContextVk, and
+    // is otherwise unnecessary as the SyncVk objects don't actually outlive the renderer currently.
+    // http://anglebug.com/2701
+    vk::Shared<vk::Fence> mSubmitFence;
 
     // See CommandGraph.h for a desription of the Command Graph.
     vk::CommandGraph mCommandGraph;

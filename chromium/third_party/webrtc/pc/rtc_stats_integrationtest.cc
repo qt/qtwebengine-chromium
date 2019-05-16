@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/strings/match.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_encoder_factory.h"
@@ -26,10 +27,10 @@
 #include "api/peer_connection_interface.h"
 #include "api/rtp_receiver_interface.h"
 #include "api/rtp_sender_interface.h"
+#include "api/scoped_refptr.h"
 #include "api/stats/rtc_stats.h"
 #include "api/stats/rtc_stats_report.h"
 #include "api/stats/rtcstats_objects.h"
-#include "api/test/fake_constraints.h"
 #include "pc/rtc_stats_traversal.h"
 #include "pc/test/peer_connection_test_wrapper.h"
 #include "pc/test/rtc_stats_obtainer.h"
@@ -37,11 +38,13 @@
 #include "rtc_base/event_tracer.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/ref_counted_object.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/trace_event.h"
 #include "rtc_base/virtual_socket_server.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
+
+using ::testing::Contains;
 
 namespace webrtc {
 
@@ -129,10 +132,8 @@ class RTCStatsIntegrationTest : public testing::Test {
     PeerConnectionTestWrapper::Connect(caller_.get(), callee_.get());
 
     // Get user media for audio and video
-    caller_->GetAndAddUserMedia(true, cricket::AudioOptions(), true,
-                                FakeConstraints());
-    callee_->GetAndAddUserMedia(true, cricket::AudioOptions(), true,
-                                FakeConstraints());
+    caller_->GetAndAddUserMedia(true, cricket::AudioOptions(), true);
+    callee_->GetAndAddUserMedia(true, cricket::AudioOptions(), true);
 
     // Create data channels
     DataChannelInit init;
@@ -402,8 +403,7 @@ class RTCStatsReportVerifier {
       }
     }
     for (const char* missing : missing_stats) {
-      if (std::find(allowed_missing_stats.begin(), allowed_missing_stats.end(),
-                    missing) == allowed_missing_stats.end()) {
+      if (!absl::c_linear_search(allowed_missing_stats, missing)) {
         verify_successful = false;
         EXPECT_TRUE(false) << "Missing expected stats type: " << missing;
       }
@@ -557,6 +557,18 @@ class RTCStatsReportVerifier {
             media_stream_track.frames_decoded);
         verifier.TestMemberIsNonNegative<uint32_t>(
             media_stream_track.frames_dropped);
+        verifier.TestMemberIsNonNegative<uint32_t>(
+            media_stream_track.freeze_count);
+        verifier.TestMemberIsNonNegative<uint32_t>(
+            media_stream_track.pause_count);
+        verifier.TestMemberIsNonNegative<double>(
+            media_stream_track.total_freezes_duration);
+        verifier.TestMemberIsNonNegative<double>(
+            media_stream_track.total_pauses_duration);
+        verifier.TestMemberIsNonNegative<double>(
+            media_stream_track.total_frames_duration);
+        verifier.TestMemberIsNonNegative<double>(
+            media_stream_track.sum_squared_frame_durations);
       } else {
         verifier.TestMemberIsNonNegative<uint32_t>(
             media_stream_track.frames_sent);
@@ -565,6 +577,16 @@ class RTCStatsReportVerifier {
         verifier.TestMemberIsUndefined(media_stream_track.frames_received);
         verifier.TestMemberIsUndefined(media_stream_track.frames_decoded);
         verifier.TestMemberIsUndefined(media_stream_track.frames_dropped);
+        verifier.TestMemberIsUndefined(media_stream_track.freeze_count);
+        verifier.TestMemberIsUndefined(media_stream_track.pause_count);
+        verifier.TestMemberIsUndefined(
+            media_stream_track.total_freezes_duration);
+        verifier.TestMemberIsUndefined(
+            media_stream_track.total_pauses_duration);
+        verifier.TestMemberIsUndefined(
+            media_stream_track.total_frames_duration);
+        verifier.TestMemberIsUndefined(
+            media_stream_track.sum_squared_frame_durations);
       }
       verifier.TestMemberIsUndefined(media_stream_track.frames_corrupted);
       verifier.TestMemberIsUndefined(media_stream_track.partial_frames_lost);
@@ -590,6 +612,13 @@ class RTCStatsReportVerifier {
       verifier.TestMemberIsUndefined(media_stream_track.frames_corrupted);
       verifier.TestMemberIsUndefined(media_stream_track.partial_frames_lost);
       verifier.TestMemberIsUndefined(media_stream_track.full_frames_lost);
+      verifier.TestMemberIsUndefined(media_stream_track.freeze_count);
+      verifier.TestMemberIsUndefined(media_stream_track.pause_count);
+      verifier.TestMemberIsUndefined(media_stream_track.total_freezes_duration);
+      verifier.TestMemberIsUndefined(media_stream_track.total_pauses_duration);
+      verifier.TestMemberIsUndefined(media_stream_track.total_frames_duration);
+      verifier.TestMemberIsUndefined(
+          media_stream_track.sum_squared_frame_durations);
       // Audio-only members
       verifier.TestMemberIsNonNegative<double>(media_stream_track.audio_level);
       verifier.TestMemberIsNonNegative<double>(
@@ -623,6 +652,8 @@ class RTCStatsReportVerifier {
           media_stream_track.jitter_buffer_flushes);
       verifier.TestMemberIsNonNegative<uint64_t>(
           media_stream_track.delayed_packet_outage_samples);
+      verifier.TestMemberIsNonNegative<double>(
+          media_stream_track.relative_packet_arrival_delay);
     } else {
       verifier.TestMemberIsUndefined(media_stream_track.jitter_buffer_delay);
       verifier.TestMemberIsUndefined(
@@ -633,6 +664,8 @@ class RTCStatsReportVerifier {
       verifier.TestMemberIsUndefined(media_stream_track.jitter_buffer_flushes);
       verifier.TestMemberIsUndefined(
           media_stream_track.delayed_packet_outage_samples);
+      verifier.TestMemberIsUndefined(
+          media_stream_track.relative_packet_arrival_delay);
     }
     return verifier.ExpectAllMembersSuccessfullyTested();
   }
@@ -897,13 +930,10 @@ TEST_F(RTCStatsIntegrationTest, GetStatsReferencedIds) {
     std::vector<const std::string*> neighbor_ids = GetStatsReferencedIds(stats);
     EXPECT_EQ(neighbor_ids.size(), expected_ids.size());
     for (const std::string* neighbor_id : neighbor_ids) {
-      EXPECT_TRUE(expected_ids.find(neighbor_id) != expected_ids.end())
-          << "Unexpected neighbor ID: " << *neighbor_id;
+      EXPECT_THAT(expected_ids, Contains(neighbor_id));
     }
     for (const std::string* expected_id : expected_ids) {
-      EXPECT_TRUE(std::find(neighbor_ids.begin(), neighbor_ids.end(),
-                            expected_id) != neighbor_ids.end())
-          << "Missing expected neighbor ID: " << *expected_id;
+      EXPECT_THAT(neighbor_ids, Contains(expected_id));
     }
   }
 }

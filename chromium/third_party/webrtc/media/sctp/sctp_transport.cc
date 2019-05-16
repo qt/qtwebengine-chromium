@@ -23,9 +23,9 @@ enum PreservedErrno {
 #include <stdarg.h>
 #include <stdio.h>
 
-#include <algorithm>
 #include <memory>
 
+#include "absl/algorithm/container.h"
 #include "media/base/codec.h"
 #include "media/base/media_constants.h"
 #include "media/base/stream_params.h"
@@ -383,9 +383,8 @@ SctpTransport::SctpTransport(rtc::Thread* network_thread,
                              rtc::PacketTransportInternal* transport)
     : network_thread_(network_thread),
       transport_(transport),
-      was_ever_writable_(transport->writable()) {
+      was_ever_writable_(transport ? transport->writable() : false) {
   RTC_DCHECK(network_thread_);
-  RTC_DCHECK(transport_);
   RTC_DCHECK_RUN_ON(network_thread_);
   ConnectTransportSignals();
 }
@@ -779,8 +778,8 @@ bool SctpTransport::SendQueuedStreamResets() {
 
   // Figure out how many streams need to be reset. We need to do this so we can
   // allocate the right amount of memory for the sctp_reset_streams structure.
-  size_t num_streams = std::count_if(
-      stream_status_by_sid_.begin(), stream_status_by_sid_.end(),
+  size_t num_streams = absl::c_count_if(
+      stream_status_by_sid_,
       [](const std::map<uint32_t, StreamStatus>::value_type& stream) {
         return stream.second.need_outgoing_reset();
       });

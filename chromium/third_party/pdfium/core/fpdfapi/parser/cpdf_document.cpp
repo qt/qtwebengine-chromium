@@ -30,6 +30,8 @@
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 #include "core/fxcodec/JBig2_DocumentContext.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxge/cfx_fontmapper.h"
+#include "core/fxge/cfx_substfont.h"
 #include "core/fxge/cfx_unicodeencoding.h"
 #include "core/fxge/fx_font.h"
 #include "third_party/base/ptr_util.h"
@@ -183,8 +185,8 @@ std::unique_ptr<CPDF_Dictionary> CalculateFontDesc(
 }  // namespace
 
 CPDF_Document::CPDF_Document()
-    : m_pDocPage(pdfium::MakeUnique<CPDF_DocPageData>(this)),
-      m_pDocRender(pdfium::MakeUnique<CPDF_DocRenderData>(this)),
+    : m_pDocRender(pdfium::MakeUnique<CPDF_DocRenderData>(this)),
+      m_pDocPage(pdfium::MakeUnique<CPDF_DocPageData>(this)),
       m_StockFontClearer(this) {}
 
 CPDF_Document::~CPDF_Document() = default;
@@ -626,7 +628,7 @@ void CPDF_Document::DeletePage(int iPage) {
 CPDF_Font* CPDF_Document::AddStandardFont(const char* font,
                                           CPDF_FontEncoding* pEncoding) {
   ByteString name(font);
-  if (PDF_GetStandardFontName(&name) < 0)
+  if (CFX_FontMapper::GetStandardFontName(&name) < 0)
     return nullptr;
   return GetPageData()->GetStandardFont(name, pEncoding);
 }

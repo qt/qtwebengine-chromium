@@ -7,19 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+ - isVolitile option to `CanvasKit.MakeSkVertices`. The previous (and current default) behavior
+   was for this to be true; some applications may go faster if set to false.
+ - `SkCanvas.saveLayer(rect, paint)`
+ - `SkCanvas.restoreToCount(int)` which can be used with the output of .save() and .saveLayer().
+ - Optional particles library from modules/particles. `See CanvasKit.MakeParticles(json)`;
+
+## [0.4.1] - 2019-03-01
+
+### Added
+ - Optional arguments to `MakeManagedAnimation` for supplying external assets (like images, fonts).
+
+## [0.4.0] - 2019-02-25
+
+### Added
  - `SkPath.addRoundRect`, `SkPath.reset`, `SkPath.rewind` exposed.
  - `SkCanvas.drawArc`, `SkCanvas.drawLine`, `SkCanvas.drawOval`, `SkCanvas.drawRoundRect` exposed.
  - Can import/export a SkPath to an array of commands. See `CanvasKit.MakePathFromCmds` and
    `SkPath.toCmds`.
  - `SkCanvas.drawTextBlob()` and `SkCanvas.SkTextBlob.MakeFromText()` to draw text to a canvas.
  - `CanvasKit.TextEncoding` enum. For use with `SkTextBlob`.
+ - Text shaping with `ShapedText` object and `SkCanvas.drawText`. At compile time, one can choose
+   between using Harfbuzz/ICU (default) or a primitive one ("primitive_shaper") which just does
+   line breaking. Using Harfbuzz/ICU substantially increases code size (4.3 MB to 6.4 MB).
 
 ### Changed
- - `SkCanvas.drawText()` now requires an `SkFont` object.
+ - `SkCanvas.drawText()` now requires an `SkFont` object for raw strings.
+
 
 ### Removed
  -  `SkPaint.setTextSize()`, `SkPaint.getTextSize()`, `SkPaint.setTypeface()`
    which should be replaced by using `SkFont`.
+ - Deprecated `CanvasKitInit().then()` interface (see 0.3.1 notes)
 
 
 ### Fixed

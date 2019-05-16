@@ -23,9 +23,9 @@
 #if SK_SUPPORT_GPU
 #include "GrCaps.h"
 #include "GrColorSpaceInfo.h"
-#include "GrContext.h"
-#include "GrContextPriv.h"
 #include "GrFragmentProcessor.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "SkGr.h"
 #endif
 
@@ -328,11 +328,14 @@ void SkPictureShader::PictureShaderContext::shadeSpan(int x, int y, SkPMColor ds
 }
 
 #if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "GrContextPriv.h"
+
 std::unique_ptr<GrFragmentProcessor> SkPictureShader::asFragmentProcessor(
         const GrFPArgs& args) const {
     int maxTextureSize = 0;
     if (args.fContext) {
-        maxTextureSize = args.fContext->contextPriv().caps()->maxTextureSize();
+        maxTextureSize = args.fContext->priv().caps()->maxTextureSize();
     }
 
     auto lm = this->totalLocalMatrix(args.fPreLocalMatrix, args.fPostLocalMatrix);

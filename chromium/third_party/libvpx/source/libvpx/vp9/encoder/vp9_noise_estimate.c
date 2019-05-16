@@ -32,7 +32,7 @@ static INLINE int noise_est_svc(const struct VP9_COMP *const cpi) {
 
 void vp9_noise_estimate_init(NOISE_ESTIMATE *const ne, int width, int height) {
   ne->enabled = 0;
-  ne->level = kLowLow;
+  ne->level = (width * height < 1280 * 720) ? kLowLow : kLow;
   ne->value = 0;
   ne->count = 0;
   ne->thresh = 90;
@@ -97,7 +97,7 @@ NOISE_LEVEL vp9_noise_estimate_extract_level(NOISE_ESTIMATE *const ne) {
   } else {
     if (ne->value > ne->thresh)
       noise_level = kMedium;
-    else if (ne->value > ((9 * ne->thresh) >> 4))
+    else if (ne->value > (ne->thresh >> 1))
       noise_level = kLow;
     else
       noise_level = kLowLow;
@@ -125,7 +125,7 @@ void vp9_update_noise_estimate(VP9_COMP *const cpi) {
     // Tune these thresholds for different resolutions when denoising is
     // enabled.
     if (cm->width > 640 && cm->width < 1920) {
-      thresh_consec_zeromv = 4;
+      thresh_consec_zeromv = 2;
       thresh_sum_diff = 200;
       thresh_sum_spatial = (120 * 120) << 8;
       thresh_spatial_var = (48 * 48) << 8;
@@ -151,7 +151,7 @@ void vp9_update_noise_estimate(VP9_COMP *const cpi) {
   } else if (frame_counter > 60 && cpi->svc.num_encoded_top_layer > 1 &&
              cpi->rc.frames_since_key > cpi->svc.number_spatial_layers &&
              cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1 &&
-             cpi->rc.avg_frame_low_motion < (low_res ? 70 : 50)) {
+             cpi->rc.avg_frame_low_motion < (low_res ? 60 : 40)) {
     // Force noise estimation to 0 and denoiser off if content has high motion.
     ne->level = kLowLow;
     ne->count = 0;

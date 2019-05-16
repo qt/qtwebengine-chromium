@@ -18,7 +18,8 @@
 #if SK_SUPPORT_GPU
 #include "GrClip.h"
 #include "GrColorSpaceXform.h"
-#include "GrContext.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContext.h"
 #include "GrTextureProxy.h"
 #include "SkGr.h"
@@ -31,11 +32,11 @@
 #include "glsl/GrGLSLUniformHandler.h"
 
 GR_FP_SRC_STRING SKSL_ARITHMETIC_SRC = R"(
-in uniform float4 k;
+in uniform half4 k;
 layout(key) const in bool enforcePMColor;
 in fragmentProcessor child;
 
-void main(int x, int y, inout half4 color) {
+void main(inout half4 color) {
     half4 dst = process(child);
     color = saturate(k.x * color * dst + k.y * color + k.z * dst + k.w);
     if (enforcePMColor) {
@@ -292,7 +293,7 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
         const OutputProperties& outputProperties) const {
     SkASSERT(source->isTextureBacked());
 
-    GrContext* context = source->getContext();
+    auto context = source->getContext();
 
     sk_sp<GrTextureProxy> backgroundProxy, foregroundProxy;
 
@@ -362,10 +363,10 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
 
     SkColorType colorType = outputProperties.colorType();
     GrBackendFormat format =
-            context->contextPriv().caps()->getBackendFormatFromColorType(colorType);
+            context->priv().caps()->getBackendFormatFromColorType(colorType);
 
     sk_sp<GrRenderTargetContext> renderTargetContext(
-        context->contextPriv().makeDeferredRenderTargetContext(
+        context->priv().makeDeferredRenderTargetContext(
             format, SkBackingFit::kApprox, bounds.width(), bounds.height(),
             SkColorType2GrPixelConfig(colorType),
             sk_ref_sp(outputProperties.colorSpace())));

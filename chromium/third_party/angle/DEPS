@@ -9,39 +9,39 @@ vars = {
   'build_with_chromium': False,
 
   # Current revision of dEQP.
-  'deqp_revision': 'f5637d67a00a1081a13008bb8dc93b2616c935e2',
+  'deqp_revision': '66a49e0a43f7af654ee1de8a3b1bcaf6c0d14aa4',
 
   # Current revision of glslang, the Khronos SPIRV compiler.
-  'glslang_revision': 'f9edfdab0e872c674e0a80e083239aa9637871ba',
+  'glslang_revision': 'f6e7c4d2de0d59724ea07739df70c466d169a2cd',
 
   # Current revision fo the SPIRV-Headers Vulkan support library.
-  'spirv_headers_revision': 'd5b2e1255f706ce1f88812217e9a554f299848af',
+  'spirv_headers_revision': '8bea0a266ac9b718aa0818d9e3a47c0b77c2cb23',
 
   # Current revision of SPIRV-Tools for Vulkan.
-  'spirv_tools_revision': 'd73b9d8dfbf7761e3fde323af00ec18ebfc0020c',
+  'spirv_tools_revision': 'fde69dcd80cc1ca548300702adf01eeb25441f3e',
 
   # Current revision of Khronos Vulkan-Headers.
-  'vulkan_headers_revision': 'b65941cc4b2b43b74de00534d110b581c52c394b',
+  'vulkan_headers_revision': 'c200cb25db0f47364d3318d92c1d8e9dfff2fef1',
 
   # Current revision of Khronos Vulkan-Loader.
-  'vulkan_loader_revision': '2aa6dcc10189f7700824bc5e21120beeff013c3a',
+  'vulkan_loader_revision': 'e1eafa18e17d00374253bcd37d015befa89fcc43',
 
   # Current revision of Khronos Vulkan-Tools.
-  'vulkan_tools_revision': '2e8d601de618eddf2bab8597fd140b2824a060b2',
+  'vulkan_tools_revision': '91b17fd866b2e9cfb875bf516b05536d059416b1',
 
   # Current revision of Khronos Vulkan-ValidationLayers.
-  'vulkan_validation_revision': '0fa2823fa693cc22afaa6e6c6d34aadb97104a2d',
+  'vulkan_validation_revision': '4eee269ae976567ef78db9c9feaafc3364578c87',
 }
 
 deps = {
 
   '{angle_root}/build': {
-    'url': '{chromium_git}/chromium/src/build.git@2fb6537bf59c9c9a736997b8bd888ca0ecf54322',
+    'url': '{chromium_git}/chromium/src/build.git@9a53be87ebb636c35f2ed9772e5deaeb350d790b',
     'condition': 'not build_with_chromium',
   },
 
   '{angle_root}/buildtools': {
-    'url': '{chromium_git}/chromium/buildtools.git@24ebce4578745db15274e180da1938ebc1358243',
+    'url': '{chromium_git}/chromium/buildtools.git@6fbda1b24c1893a893b17aa219b765b9e7c801d8',
     'condition': 'not build_with_chromium',
   },
 
@@ -57,15 +57,32 @@ deps = {
   },
 
   '{angle_root}/third_party/deqp/src': {
-    'url': '{android_git}/platform/external/deqp@{deqp_revision}',
+    'url': '{chromium_git}/external/deqp@{deqp_revision}',
+  },
+
+  # glmark2 is a GPL3-licensed OpenGL ES 2.0 benchmark. We use it for testing.
+  '{angle_root}/third_party/glmark2/src': {
+    'url': '{chromium_git}/external/github.com/glmark2/glmark2@c4b3ff5a481348e8bdc2b71ee275864db91e40b1',
   },
 
   '{angle_root}/third_party/glslang/src': {
     'url': '{chromium_git}/external/github.com/KhronosGroup/glslang@{glslang_revision}',
+    'condition': 'not build_with_chromium',
+  },
+
+  '{angle_root}/third_party/googletest': {
+    'url': '{chromium_git}/chromium/src/third_party/googletest@660425b1c5ca04559ab7e50c7572b5b771acca1c',
+    'condition': 'not build_with_chromium',
   },
 
   '{angle_root}/third_party/googletest/src': {
-    'url': '{chromium_git}/external/github.com/google/googletest.git@d5932506d6eed73ac80b9bcc47ed723c8c74eb1e',
+    'url': '{chromium_git}/external/github.com/google/googletest.git@7203f37f57e4fef0d77670098aabc186309eb874',
+    'condition': 'not build_with_chromium',
+  },
+
+  # libjpeg_turbo is used by glmark2.
+  '{angle_root}/third_party/libjpeg_turbo': {
+    'url': '{chromium_git}/chromium/deps/libjpeg_turbo@6dcdade8828297e306cabfdae80f3510f3f3eea2',
     'condition': 'not build_with_chromium',
   },
 
@@ -76,19 +93,47 @@ deps = {
 
   '{angle_root}/third_party/jsoncpp': {
     'url': '{chromium_git}/chromium/src/third_party/jsoncpp@fd0ac8ce63a47e99b71a58f1489136fbb19c9137',
-  },
+    'condition': 'not build_with_chromium',
+   },
 
   '{angle_root}/third_party/jsoncpp/source': {
-    'url' : '{chromium_git}/external/github.com/open-source-parsers/jsoncpp@f572e8e42e22cfcf5ab0aea26574f408943edfa4'
+    'url' : '{chromium_git}/external/github.com/open-source-parsers/jsoncpp@f572e8e42e22cfcf5ab0aea26574f408943edfa4',
+    'condition': 'not build_with_chromium',
+   },
+
+  '{angle_root}/third_party/qemu-linux-x64': {
+      'packages': [
+          {
+              'package': 'fuchsia/qemu/linux-amd64',
+              'version': '9cc486c5b18a0be515c39a280ca9a309c54cf994'
+          },
+      ],
+      'condition': 'not build_with_chromium and (host_os == "linux" and checkout_fuchsia)',
+      'dep_type': 'cipd',
+  },
+
+  '{angle_root}/third_party/qemu-mac-x64': {
+      'packages': [
+          {
+              'package': 'fuchsia/qemu/mac-amd64',
+              'version': '2d3358ae9a569b2d4a474f498b32b202a152134f'
+          },
+      ],
+      'condition': 'not build_with_chromium and (host_os == "mac" and checkout_fuchsia)',
+      'dep_type': 'cipd',
+  },
+
+  '{angle_root}/third_party/rapidjson/src': {
+    'url': '{chromium_git}/external/github.com/Tencent/rapidjson@7484e06c589873e1ed80382d262087e4fa80fb63',
   },
 
   '{angle_root}/third_party/spirv-headers/src': {
-    'url': '{android_git}/platform/external/shaderc/spirv-headers@{spirv_headers_revision}',
+    'url': '{chromium_git}/external/github.com/KhronosGroup/SPIRV-Headers@{spirv_headers_revision}',
     'condition': 'not build_with_chromium',
   },
 
   '{angle_root}/third_party/spirv-tools/src': {
-    'url': '{android_git}/platform/external/shaderc/spirv-tools@{spirv_tools_revision}',
+    'url': '{chromium_git}/external/github.com/KhronosGroup/SPIRV-Tools@{spirv_tools_revision}',
     'condition': 'not build_with_chromium',
   },
 
@@ -108,14 +153,29 @@ deps = {
     'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-ValidationLayers@{vulkan_validation_revision}',
   },
 
+  '{angle_root}/third_party/yasm': {
+    'url': '{chromium_git}/chromium/src/third_party/yasm@86b6058141a42aed51bbd8bb9f9d54d199d9dbd0',
+    'condition': 'not build_with_chromium',
+  },
+
+  '{angle_root}/third_party/yasm/source/patched-yasm': {
+    'url': '{chromium_git}/chromium/deps/yasm/patched-yasm.git@720b70524a4424b15fc57e82263568c8ba0496ad',
+    'condition': 'not build_with_chromium',
+  },
+
   '{angle_root}/third_party/zlib': {
     'url': '{chromium_git}/chromium/src/third_party/zlib@f95aeb0fa7f136ef4a457a6d9ba6f3c2701a444b',
     'condition': 'not build_with_chromium',
   },
 
   '{angle_root}/tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang.git@1d879cee563167a2b18baffb096cf9e29f2f9376',
+    'url': '{chromium_git}/chromium/src/tools/clang.git@3114fbc11f9644c54dd0a4cdbfa867bac50ff983',
     'condition': 'not build_with_chromium',
+  },
+
+  '{angle_root}/third_party/fuchsia-sdk': {
+    'url': '{chromium_git}/chromium/src/third_party/fuchsia-sdk.git@8e8db13b538ecb251e5ce9d5c781fc142f9752fd',
+    'condition': 'checkout_fuchsia and not build_with_chromium',
   },
 }
 
@@ -243,6 +303,16 @@ hooks = [
                 '--no_auth',
                 '--bucket', 'chromium-browser-clang/rc',
                 '-s', '{angle_root}/build/toolchain/win/rc/win/rc.exe.sha1',
+    ],
+  },
+
+  {
+    'name': 'fuchsia_sdk',
+    'pattern': '.',
+    'condition': 'checkout_fuchsia and not build_with_chromium',
+    'action': [
+      'python',
+      '{angle_root}/build/fuchsia/update_sdk.py',
     ],
   },
 ]

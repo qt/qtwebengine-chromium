@@ -24,7 +24,7 @@
 #define GR_FP_SRC_STRING static const char*
 #endif
 
-class GrContext;
+class GrContext_Base;
 class GrSkSLFPFactory;
 
 class GrSkSLFP : public GrFragmentProcessor {
@@ -68,10 +68,18 @@ public:
      * associated with it.
      */
     static std::unique_ptr<GrSkSLFP> Make(
-                   GrContext* context,
+                   GrContext_Base* context,
                    int index,
                    const char* name,
                    const char* sksl,
+                   const void* inputs,
+                   size_t inputSize);
+
+    static std::unique_ptr<GrSkSLFP> Make(
+                   GrContext_Base* context,
+                   int index,
+                   const char* name,
+                   SkString sksl,
                    const void* inputs,
                    size_t inputSize);
 
@@ -83,7 +91,8 @@ public:
 
 private:
     GrSkSLFP(sk_sp<GrSkSLFPFactoryCache> factoryCache, const GrShaderCaps* shaderCaps, int fIndex,
-             const char* name, const char* sksl, const void* inputs, size_t inputSize);
+             const char* name, const char* sksl, SkString skslString, const void* inputs,
+             size_t inputSize);
 
     GrSkSLFP(const GrSkSLFP& other);
 
@@ -104,6 +113,14 @@ private:
     int fIndex;
 
     const char* fName;
+
+    // For object lifetime purposes, we have fields for the SkSL as both a const char* and a
+    // SkString. The const char* is the one we actually use, but it may point to the SkString's
+    // bytes. Since GrSkSLFPs are frequently created from constant strings, this allows us to
+    // generally avoid the overhead of copying the bytes into an SkString (in which case fSkSLString
+    // is the empty string), while still allowing the GrSkSLFP to manage the string's lifetime when
+    // needed.
+    SkString fSkSLString;
 
     const char* fSkSL;
 

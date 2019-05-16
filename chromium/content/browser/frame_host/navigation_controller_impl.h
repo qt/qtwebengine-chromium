@@ -91,6 +91,7 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   void PruneAllButLastCommitted() override;
   void DeleteNavigationEntries(
       const DeletionPredicate& deletionPredicate) override;
+  bool IsEntryMarkedToBeSkipped(int index) override;
 
   // Starts a navigation in a newly created subframe as part of a history
   // navigation. Returns true if the history navigation could start, false
@@ -237,6 +238,10 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       const scoped_refptr<const base::RefCountedString>& data_url_as_string);
 #endif
 
+  // Invoked when a user activation occurs within the page, so that relevant
+  // entries can be updated as needed.
+  void NotifyUserActivation();
+
  private:
   friend class RestoreHelper;
 
@@ -369,7 +374,8 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool is_same_document,
       bool was_restored,
-      NavigationHandleImpl* handle);
+      NavigationHandleImpl* handle,
+      bool keep_pending_entry);
   void RendererDidNavigateToSamePage(
       RenderFrameHostImpl* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
@@ -412,9 +418,10 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // Discards only the transient entry.
   void DiscardTransientEntry();
 
-  // If we have the maximum number of entries, remove the oldest one in
-  // preparation to add another.
-  void PruneOldestEntryIfFull();
+  // If we have the maximum number of entries, remove the oldest entry that is
+  // marked to be skipped on back/forward button, in preparation to add another.
+  // If no entry is skippable, then the oldest entry will be pruned.
+  void PruneOldestSkippableEntryIfFull();
 
   // Removes all entries except the last committed entry.  If there is a new
   // pending navigation it is preserved. In contrast to

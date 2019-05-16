@@ -29,11 +29,10 @@ void init() {
     queue = dawnDeviceCreateQueue(device);
 
     {
-        dawnSwapChainBuilder builder = dawnDeviceCreateSwapChainBuilder(device);
-        uint64_t swapchainImpl = GetSwapChainImplementation();
-        dawnSwapChainBuilderSetImplementation(builder, swapchainImpl);
-        swapchain = dawnSwapChainBuilderGetResult(builder);
-        dawnSwapChainBuilderRelease(builder);
+        dawnSwapChainDescriptor descriptor;
+        descriptor.nextInChain = nullptr;
+        descriptor.implementation = GetSwapChainImplementation();
+        swapchain = dawnDeviceCreateSwapChain(device, &descriptor);
     }
     swapChainFormat = static_cast<dawnTextureFormat>(GetPreferredSwapChainTextureFormat());
     dawnSwapChainConfigure(swapchain, swapChainFormat, DAWN_TEXTURE_USAGE_BIT_OUTPUT_ATTACHMENT, 640,
@@ -71,37 +70,26 @@ void init() {
         fragmentStage.entryPoint = "main";
         descriptor.fragmentStage = &fragmentStage;
 
-        dawnAttachmentsStateDescriptor attachmentsState;
-        attachmentsState.nextInChain = nullptr;
-        attachmentsState.numColorAttachments = 1;
-        dawnAttachmentDescriptor colorAttachment = {nullptr, swapChainFormat};
-        dawnAttachmentDescriptor* colorAttachmentPtr[] = {&colorAttachment};
-        attachmentsState.colorAttachments = colorAttachmentPtr;
-        attachmentsState.hasDepthStencilAttachment = false;
-        // Even with hasDepthStencilAttachment = false, depthStencilAttachment must point to valid
-        // data because we don't have optional substructures yet.
-        attachmentsState.depthStencilAttachment = &colorAttachment;
-        descriptor.attachmentsState = &attachmentsState;
-
         descriptor.sampleCount = 1;
-
-        descriptor.numBlendStates = 1;
 
         dawnBlendDescriptor blendDescriptor;
         blendDescriptor.operation = DAWN_BLEND_OPERATION_ADD;
         blendDescriptor.srcFactor = DAWN_BLEND_FACTOR_ONE;
         blendDescriptor.dstFactor = DAWN_BLEND_FACTOR_ONE;
-        dawnBlendStateDescriptor blendStateDescriptor;
-        blendStateDescriptor.nextInChain = nullptr;
-        blendStateDescriptor.blendEnabled = false;
-        blendStateDescriptor.alphaBlend = blendDescriptor;
-        blendStateDescriptor.colorBlend = blendDescriptor;
-        blendStateDescriptor.colorWriteMask = DAWN_COLOR_WRITE_MASK_ALL;
-        descriptor.blendStates = &blendStateDescriptor;
+        dawnColorStateDescriptor colorStateDescriptor;
+        colorStateDescriptor.nextInChain = nullptr;
+        colorStateDescriptor.format = swapChainFormat;
+        colorStateDescriptor.alphaBlend = blendDescriptor;
+        colorStateDescriptor.colorBlend = blendDescriptor;
+        colorStateDescriptor.colorWriteMask = DAWN_COLOR_WRITE_MASK_ALL;
+
+        descriptor.colorStateCount = 1;
+        dawnColorStateDescriptor* colorStatesPtr[] = {&colorStateDescriptor};
+        descriptor.colorStates = colorStatesPtr;
 
         dawnPipelineLayoutDescriptor pl;
         pl.nextInChain = nullptr;
-        pl.numBindGroupLayouts = 0;
+        pl.bindGroupLayoutCount = 0;
         pl.bindGroupLayouts = nullptr;
         descriptor.layout = dawnDeviceCreatePipelineLayout(device, &pl);
 
@@ -112,21 +100,7 @@ void init() {
         descriptor.indexFormat = DAWN_INDEX_FORMAT_UINT32;
         descriptor.primitiveTopology = DAWN_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-        dawnStencilStateFaceDescriptor stencilFace;
-        stencilFace.compare = DAWN_COMPARE_FUNCTION_ALWAYS;
-        stencilFace.stencilFailOp = DAWN_STENCIL_OPERATION_KEEP;
-        stencilFace.depthFailOp = DAWN_STENCIL_OPERATION_KEEP;
-        stencilFace.passOp = DAWN_STENCIL_OPERATION_KEEP;
-
-        dawnDepthStencilStateDescriptor depthStencilState;
-        depthStencilState.nextInChain = nullptr;
-        depthStencilState.depthWriteEnabled = false;
-        depthStencilState.depthCompare = DAWN_COMPARE_FUNCTION_ALWAYS;
-        depthStencilState.back = stencilFace;
-        depthStencilState.front = stencilFace;
-        depthStencilState.stencilReadMask = 0xff;
-        depthStencilState.stencilWriteMask = 0xff;
-        descriptor.depthStencilState = &depthStencilState;
+        descriptor.depthStencilState = nullptr;
 
         pipeline = dawnDeviceCreateRenderPipeline(device, &descriptor);
 
@@ -144,36 +118,35 @@ void frame() {
         backbufferView = dawnTextureCreateDefaultTextureView(backbuffer);
     }
     dawnRenderPassDescriptor renderpassInfo;
+    dawnRenderPassColorAttachmentDescriptor colorAttachment;
+    dawnRenderPassColorAttachmentDescriptor* colorAttachments = {&colorAttachment};
     {
-        dawnRenderPassDescriptorBuilder builder = dawnDeviceCreateRenderPassDescriptorBuilder(device);
-        dawnRenderPassColorAttachmentDescriptor colorAttachment;
         colorAttachment.attachment = backbufferView;
         colorAttachment.resolveTarget = nullptr;
         colorAttachment.clearColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         colorAttachment.loadOp = DAWN_LOAD_OP_CLEAR;
         colorAttachment.storeOp = DAWN_STORE_OP_STORE;
-        dawnRenderPassDescriptorBuilderSetColorAttachments(builder, 1, &colorAttachment);
-        renderpassInfo = dawnRenderPassDescriptorBuilderGetResult(builder);
-        dawnRenderPassDescriptorBuilderRelease(builder);
+        renderpassInfo.colorAttachmentCount = 1;
+        renderpassInfo.colorAttachments = &colorAttachments;
+        renderpassInfo.depthStencilAttachment = nullptr;
     }
     dawnCommandBuffer commands;
     {
-        dawnCommandBufferBuilder builder = dawnDeviceCreateCommandBufferBuilder(device);
+        dawnCommandEncoder encoder = dawnDeviceCreateCommandEncoder(device);
 
-        dawnRenderPassEncoder pass = dawnCommandBufferBuilderBeginRenderPass(builder, renderpassInfo);
+        dawnRenderPassEncoder pass = dawnCommandEncoderBeginRenderPass(encoder, &renderpassInfo);
         dawnRenderPassEncoderSetPipeline(pass, pipeline);
         dawnRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         dawnRenderPassEncoderEndPass(pass);
         dawnRenderPassEncoderRelease(pass);
 
-        commands = dawnCommandBufferBuilderGetResult(builder);
-        dawnCommandBufferBuilderRelease(builder);
+        commands = dawnCommandEncoderFinish(encoder);
+        dawnCommandEncoderRelease(encoder);
     }
 
     dawnQueueSubmit(queue, 1, &commands);
     dawnCommandBufferRelease(commands);
     dawnSwapChainPresent(swapchain, backbuffer);
-    dawnRenderPassDescriptorRelease(renderpassInfo);
     dawnTextureViewRelease(backbufferView);
 
     DoFlush();

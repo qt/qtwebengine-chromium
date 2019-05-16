@@ -7,11 +7,11 @@
 
 #include "GrShadowRRectOp.h"
 
-#include "GrContext.h"
-#include "GrContextPriv.h"
 #include "GrDrawOpTest.h"
 #include "GrMemoryPool.h"
 #include "GrOpFlushState.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "SkRRectPriv.h"
 #include "effects/GrShadowGeoProc.h"
 
@@ -255,7 +255,7 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
-    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrFSAAType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
 
@@ -543,7 +543,7 @@ private:
         int instanceCount = fGeoData.count();
         SkASSERT(sizeof(CircleVertex) == gp->vertexStride());
 
-        const GrBuffer* vertexBuffer;
+        sk_sp<const GrBuffer> vertexBuffer;
         int firstVertex;
         CircleVertex* verts = (CircleVertex*)target->makeVertexSpace(
                 sizeof(CircleVertex), fVertCount, &vertexBuffer, &firstVertex);
@@ -552,7 +552,7 @@ private:
             return;
         }
 
-        const GrBuffer* indexBuffer = nullptr;
+        sk_sp<const GrBuffer> indexBuffer;
         int firstIndex = 0;
         uint16_t* indices = target->makeIndexSpace(fIndexCount, &indexBuffer, &firstIndex);
         if (!indices) {
@@ -589,15 +589,16 @@ private:
             }
         }
 
-        static const uint32_t kPipelineFlags = 0;
-        auto pipe = target->makePipeline(kPipelineFlags, GrProcessorSet::MakeEmptySet(),
-                                         target->detachAppliedClip());
-
         GrMesh* mesh = target->allocMesh(GrPrimitiveType::kTriangles);
-        mesh->setIndexed(indexBuffer, fIndexCount, firstIndex, 0, fVertCount - 1,
+        mesh->setIndexed(std::move(indexBuffer), fIndexCount, firstIndex, 0, fVertCount - 1,
                          GrPrimitiveRestart::kNo);
-        mesh->setVertexData(vertexBuffer, firstVertex);
-        target->draw(std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
+        mesh->setVertexData(std::move(vertexBuffer), firstVertex);
+        target->recordDraw(std::move(gp), mesh);
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        flushState->executeDrawsAndUploadsForMeshDrawOp(
+                this, chainBounds, GrProcessorSet::MakeEmptySet());
     }
 
     CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
@@ -620,7 +621,7 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace GrShadowRRectOp {
-std::unique_ptr<GrDrawOp> Make(GrContext* context,
+std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                GrColor color,
                                const SkMatrix& viewMatrix,
                                const SkRRect& rrect,
@@ -640,7 +641,7 @@ std::unique_ptr<GrDrawOp> Make(GrContext* context,
     SkScalar scaledRadius = SkScalarAbs(radius*matrixFactor);
     SkScalar scaledInsetWidth = SkScalarAbs(insetWidth*matrixFactor);
 
-    GrOpMemoryPool* pool = context->contextPriv().opMemoryPool();
+    GrOpMemoryPool* pool = context->priv().opMemoryPool();
 
     return pool->allocate<ShadowCircularRRectOp>(color, bounds,
                                                  scaledRadius,

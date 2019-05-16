@@ -55,6 +55,10 @@ class PERFETTO_EXPORT TraceStats {
     BufferStats& operator=(BufferStats&&);
     BufferStats(const BufferStats&);
     BufferStats& operator=(const BufferStats&);
+    bool operator==(const BufferStats&) const;
+    bool operator!=(const BufferStats& other) const {
+      return !(*this == other);
+    }
 
     // Conversion methods from/to the corresponding protobuf types.
     void FromProto(const perfetto::protos::TraceStats_BufferStats&);
@@ -90,6 +94,9 @@ class PERFETTO_EXPORT TraceStats {
 
     uint64_t chunks_overwritten() const { return chunks_overwritten_; }
     void set_chunks_overwritten(uint64_t value) { chunks_overwritten_ = value; }
+
+    uint64_t chunks_discarded() const { return chunks_discarded_; }
+    void set_chunks_discarded(uint64_t value) { chunks_discarded_ = value; }
 
     uint64_t chunks_read() const { return chunks_read_; }
     void set_chunks_read(uint64_t value) { chunks_read_ = value; }
@@ -131,6 +138,7 @@ class PERFETTO_EXPORT TraceStats {
     uint64_t chunks_written_ = {};
     uint64_t chunks_rewritten_ = {};
     uint64_t chunks_overwritten_ = {};
+    uint64_t chunks_discarded_ = {};
     uint64_t chunks_read_ = {};
     uint64_t chunks_committed_out_of_order_ = {};
     uint64_t write_wrap_count_ = {};
@@ -151,6 +159,8 @@ class PERFETTO_EXPORT TraceStats {
   TraceStats& operator=(TraceStats&&);
   TraceStats(const TraceStats&);
   TraceStats& operator=(const TraceStats&);
+  bool operator==(const TraceStats&) const;
+  bool operator!=(const TraceStats& other) const { return !(*this == other); }
 
   // Conversion methods from/to the corresponding protobuf types.
   void FromProto(const perfetto::protos::TraceStats&);
@@ -160,6 +170,8 @@ class PERFETTO_EXPORT TraceStats {
     return static_cast<int>(buffer_stats_.size());
   }
   const std::vector<BufferStats>& buffer_stats() const { return buffer_stats_; }
+  std::vector<BufferStats>* mutable_buffer_stats() { return &buffer_stats_; }
+  void clear_buffer_stats() { buffer_stats_.clear(); }
   BufferStats* add_buffer_stats() {
     buffer_stats_.emplace_back();
     return &buffer_stats_.back();
@@ -185,6 +197,12 @@ class PERFETTO_EXPORT TraceStats {
   uint32_t total_buffers() const { return total_buffers_; }
   void set_total_buffers(uint32_t value) { total_buffers_ = value; }
 
+  uint64_t chunks_discarded() const { return chunks_discarded_; }
+  void set_chunks_discarded(uint64_t value) { chunks_discarded_ = value; }
+
+  uint64_t patches_discarded() const { return patches_discarded_; }
+  void set_patches_discarded(uint64_t value) { patches_discarded_ = value; }
+
  private:
   std::vector<BufferStats> buffer_stats_;
   uint32_t producers_connected_ = {};
@@ -193,6 +211,8 @@ class PERFETTO_EXPORT TraceStats {
   uint64_t data_sources_seen_ = {};
   uint32_t tracing_sessions_ = {};
   uint32_t total_buffers_ = {};
+  uint64_t chunks_discarded_ = {};
+  uint64_t patches_discarded_ = {};
 
   // Allows to preserve unknown protobuf fields for compatibility
   // with future versions of .proto files.

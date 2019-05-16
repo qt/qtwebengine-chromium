@@ -180,6 +180,18 @@ declare_args() {
 
   # Determines whether Metal is available on iOS/macOS.
   rtc_use_metal_rendering = is_mac || (is_ios && current_cpu == "arm64")
+
+  # When set to false, builtin audio encoder/decoder factories and all the
+  # audio codecs they depend on will not be included in libwebrtc.{a|lib}
+  # (they will still be included in libjingle_peerconnection_so.so and
+  # WebRTC.framework)
+  rtc_include_builtin_audio_codecs = true
+
+  # When set to false, builtin video encoder/decoder factories and all the
+  # video codecs they depends on will not be included in libwebrtc.{a|lib}
+  # (they will still be included in libjingle_peerconnection_so.so and
+  # WebRTC.framework)
+  rtc_include_builtin_video_codecs = true
 }
 
 if (!build_with_mozilla) {
@@ -274,6 +286,9 @@ rtc_common_inherited_config = webrtc_root + ":common_inherited_config"
 
 # Common configs to remove or add in all rtc targets.
 rtc_remove_configs = []
+if (!build_with_chromium && is_clang) {
+  rtc_remove_configs += [ "//build/config/clang:find_bad_constructs" ]
+}
 rtc_add_configs = rtc_common_configs
 rtc_prod_configs = [ webrtc_root + ":rtc_prod_config" ]
 rtc_library_impl_config = [ webrtc_root + ":library_impl_config" ]
@@ -717,7 +732,10 @@ if (is_mac) {
     modulemap_path = "$target_gen_dir/Modules/module.modulemap"
 
     mac_framework_bundle(target_name) {
-      forward_variables_from(invoker, "*", [])
+      forward_variables_from(invoker, "*", [ "configs" ])
+      if (defined(invoker.configs)) {
+        configs += invoker.configs
+      }
 
       framework_version = "A"
       framework_contents = [
@@ -820,6 +838,16 @@ if (is_android) {
 
       # Treat warnings as errors.
       errorprone_args += [ "-Werror" ]
+
+      # WebRTC supports API level 16 while Chromium only supports 19.
+      # (the manifest defines minimum supported SDK version)
+      if (defined(invoker.android_manifest_for_lint)) {
+        # Custom manifest defined by the target, use that one.
+        android_manifest_for_lint = invoker.android_manifest_for_lint
+      } else {
+        # Default manifest for WebRTC.
+        android_manifest_for_lint = "//sdk/android/AndroidManifest.xml"
+      }
 
       # TODO(crbug.com/824679): Find out why this fails in Chromium
       if (!build_with_chromium) {

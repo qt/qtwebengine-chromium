@@ -114,10 +114,10 @@ bool SkBitmap::setInfo(const SkImageInfo& info, size_t rowBytes) {
 
     // require that rowBytes fit in 31bits
     int64_t mrb = info.minRowBytes64();
-    if ((int32_t)mrb != mrb) {
+    if (!SkTFitsIn<int32_t>(mrb)) {
         return reset_return_false(this);
     }
-    if ((int64_t)rowBytes != (int32_t)rowBytes) {
+    if (!SkTFitsIn<int32_t>(rowBytes)) {
         return reset_return_false(this);
     }
 
@@ -217,6 +217,38 @@ bool SkBitmap::tryAllocPixels(Allocator* allocator) {
         allocator = &stdalloc;
     }
     return allocator->allocPixelRef(this);
+}
+
+bool SkBitmap::tryAllocN32Pixels(int width, int height, bool isOpaque) {
+    SkImageInfo info = SkImageInfo::MakeN32(width, height,
+            isOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+    return this->tryAllocPixels(info);
+}
+
+void SkBitmap::allocN32Pixels(int width, int height, bool isOpaque) {
+    SkImageInfo info = SkImageInfo::MakeN32(width, height,
+                                        isOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+    this->allocPixels(info);
+}
+
+void SkBitmap::allocPixels() {
+    this->allocPixels((Allocator*)nullptr);
+}
+
+void SkBitmap::allocPixels(Allocator* allocator) {
+    SkASSERT_RELEASE(this->tryAllocPixels(allocator));
+}
+
+void SkBitmap::allocPixelsFlags(const SkImageInfo& info, uint32_t flags) {
+    SkASSERT_RELEASE(this->tryAllocPixelsFlags(info, flags));
+}
+
+void SkBitmap::allocPixels(const SkImageInfo& info, size_t rowBytes) {
+    SkASSERT_RELEASE(this->tryAllocPixels(info, rowBytes));
+}
+
+void SkBitmap::allocPixels(const SkImageInfo& info) {
+    this->allocPixels(info, info.minRowBytes());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

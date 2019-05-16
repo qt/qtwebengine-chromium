@@ -225,7 +225,7 @@ public:
             if (resource->resourcePriv().refsWrappedObjects()) {
                 ++fWrapped;
             }
-            if (SkBudgeted::kNo  == resource->resourcePriv().isBudgeted()) {
+            if (GrBudgetedType::kBudgeted != resource->resourcePriv().budgetedType()) {
                 fUnbudgetedSize += resource->gpuMemorySize();
             }
         }
@@ -233,9 +233,12 @@ public:
 
     void getStats(Stats*) const;
 
+#if GR_TEST_UTILS
     void dumpStats(SkString*) const;
 
     void dumpStatsKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* value) const;
+#endif
+
 #endif
 
 #ifdef SK_DEBUG

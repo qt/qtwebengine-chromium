@@ -13,10 +13,18 @@
 // limitations under the License.
 
 #include "dawn_wire/client/Client.h"
+#include "dawn_wire/client/Device.h"
 
 namespace dawn_wire { namespace client {
 
-    Client::Client(Device* device) : mDevice(device) {
+    Client::Client(CommandSerializer* serializer)
+        : ClientBase(),
+          mDevice(DeviceAllocator().New(this)->object.get()),
+          mSerializer(serializer) {
+    }
+
+    Client::~Client() {
+        DeviceAllocator().Free(mDevice);
     }
 
 }}  // namespace dawn_wire::client

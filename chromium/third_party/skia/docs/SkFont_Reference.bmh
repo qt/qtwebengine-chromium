@@ -709,7 +709,7 @@ Whether edge pixels draw opaque or with partial transparency.
 
 # ------------------------------------------------------------------------------
 
-#Method uint16_t unicharToGlyph(SkUnichar uni) const
+#Method SkGlyphID unicharToGlyph(SkUnichar uni) const
 #In incomplete
 #Line # incomplete ##
 
@@ -738,95 +738,6 @@ Whether edge pixels draw opaque or with partial transparency.
     #StdOut
         count = 5
     ##
-##
-
-#SeeAlso incomplete
-
-#Method ##
-
-# ------------------------------------------------------------------------------
-
-#Method bool containsText(const void* text, size_t byteLength, SkTextEncoding encoding) const
-#In Utility
-#Line # returns if all text corresponds to Glyphs ##
-#Populate
-
-#NoExample
-    #Description
-    containsText succeeds for degree symbol, but cannot find a glyph index
-    corresponding to the Unicode surrogate code point.
-    ##
-    SkFont font;
-    const uint16_t goodChar = 0x00B0;  // degree symbol
-    const uint16_t badChar = 0xD800;   // Unicode surrogate
-    SkDebugf("0x%04x %c= has char\n", goodChar,
-            font.containsText(&goodChar, 2, SkTextEncoding::kUTF16) ? '=' : '!');
-    SkDebugf("0x%04x %c= has char\n", badChar,
-            font.containsText(&badChar, 2, SkTextEncoding::kUTF16) ? '=' : '!');
-
-    #StdOut
-        0x00b0 == has char
-        0xd800 != has char
-    ##
-##
-
-#Example
-    #Description
-    containsText returns true that glyph index is greater than zero, not
-    that it corresponds to an entry in Typeface.
-    ##
-    SkFont font;
-    const uint16_t goodGlyph = 511;
-    const uint16_t zeroGlyph = 0;
-    const uint16_t badGlyph = 65535; // larger than glyph count in font
-    SkDebugf("0x%04x %c= has glyph\n", goodGlyph,
-            font.containsText(&goodGlyph, 2, SkTextEncoding::kGlyphID) ? '=' : '!');
-    SkDebugf("0x%04x %c= has glyph\n", zeroGlyph,
-            font.containsText(&zeroGlyph, 2, SkTextEncoding::kGlyphID) ? '=' : '!');
-    SkDebugf("0x%04x %c= has glyph\n", badGlyph,
-            font.containsText(&badGlyph, 2, SkTextEncoding::kGlyphID) ? '=' : '!');
-
-    #StdOut
-        0x01ff == has glyph
-        0x0000 != has glyph
-        0xffff == has glyph
-    ##
-##
-
-#SeeAlso incomplete
-
-#Method ##
-
-# ------------------------------------------------------------------------------
-
-#Method size_t breakText(const void* text, size_t length, SkTextEncoding encoding, SkScalar maxWidth,
-                     SkScalar* measuredWidth = nullptr) const
-#In  incomplete
-#Line # incomplete ##
-#Populate
-
-#Example
-    #Description
-    Line under "Breakfast" shows desired width, shorter than available characters.
-    Line under "Bre" shows measured width after breaking text.
-    ##
-    #Height 128
-    #Width 280
-        void draw(SkCanvas* canvas) {
-            SkPaint paint;
-            SkFont font(nullptr, 50);
-            const char str[] = "Breakfast";
-            const int count = strlen(str);
-            canvas->drawSimpleText(str, count, kUTF8_SkTextEncoding,
-                                   25, 50, font, paint);
-            SkScalar measuredWidth;
-            int partialBytes = font.breakText(str, count, kUTF8_SkTextEncoding,
-                                              100, &measuredWidth);
-            canvas->drawSimpleText(str, partialBytes, kUTF8_SkTextEncoding,
-                                   25, 100, font, paint);
-            canvas->drawLine(25, 60, 25 + 100, 60, paint);
-            canvas->drawLine(25, 110, 25 + measuredWidth, 110, paint);
-        }
 ##
 
 #SeeAlso incomplete

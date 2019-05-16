@@ -20,7 +20,7 @@
 #include "Device/QuadRasterizer.hpp"
 #include "Device/Surface.hpp"
 #include "Device/Primitive.hpp"
-#include "System/Debug.hpp"
+#include "Vulkan/VkDebug.hpp"
 
 namespace sw
 {
@@ -29,17 +29,20 @@ namespace sw
 	extern bool exactColorRounding;
 	extern bool forceClearRegisters;
 
-	PixelRoutine::PixelRoutine(const PixelProcessor::State &state, const PixelShader *shader)
-		: QuadRasterizer(state, shader), v(shader && shader->indirectAddressableInput)
+	PixelRoutine::PixelRoutine(
+			const PixelProcessor::State &state,
+			vk::PipelineLayout const *pipelineLayout,
+			SpirvShader const *spirvShader)
+		: QuadRasterizer(state, spirvShader),
+		  routine(pipelineLayout)
 	{
-		if(!shader || shader->getShaderModel() < 0x0200 || forceClearRegisters)
+		spirvShader->emitProlog(&routine);
+
+		if (forceClearRegisters)
 		{
-			for(int i = 0; i < MAX_FRAGMENT_INPUTS; i++)
+			for (int i = 0; i < MAX_INTERFACE_COMPONENTS; i++)
 			{
-				v[i].x = Float4(0.0f);
-				v[i].y = Float4(0.0f);
-				v[i].z = Float4(0.0f);
-				v[i].w = Float4(0.0f);
+				routine.inputs[i] = Float4(0.0f);
 			}
 		}
 	}
@@ -54,7 +57,7 @@ namespace sw
 			Long pipeTime = Ticks();
 		#endif
 
-		const bool earlyDepthTest = !state.depthOverride && !state.alphaTestActive();
+		const bool earlyDepthTest = !spirvShader->getModes().DepthReplacing && !state.alphaTestActive();
 
 		Int zMask[4];   // Depth mask
 		Int sMask[4];   // Stencil mask
@@ -142,50 +145,26 @@ namespace sw
 				}
 			}
 
-			for(int interpolant = 0; interpolant < MAX_FRAGMENT_INPUTS; interpolant++)
+			for (int interpolant = 0; interpolant < MAX_INTERFACE_COMPONENTS; interpolant++)
 			{
-				for(int component = 0; component < 4; component++)
+				auto const & input = spirvShader->inputs[interpolant];
+				if (input.Type != SpirvShader::ATTRIBTYPE_UNUSED)
 				{
-					if(state.interpolant[interpolant].component & (1 << component))
+					if (input.Centroid)
 					{
-						if(!state.interpolant[interpolant].centroid)
-						{
-							v[interpolant][component] = interpolate(xxxx, Dv[interpolant][component], rhw, primitive + OFFSET(Primitive, V[interpolant][component]), (state.interpolant[interpolant].flat & (1 << component)) != 0, state.perspective, false);
-						}
-						else
-						{
-							v[interpolant][component] = interpolateCentroid(XXXX, YYYY, rhwCentroid, primitive + OFFSET(Primitive, V[interpolant][component]), (state.interpolant[interpolant].flat & (1 << component)) != 0, state.perspective);
-						}
+						routine.inputs[interpolant] =
+								interpolateCentroid(XXXX, YYYY, rhwCentroid,
+													primitive + OFFSET(Primitive, V[interpolant]),
+													input.Flat, state.perspective);
+					}
+					else
+					{
+						routine.inputs[interpolant] =
+								interpolate(xxxx, Dv[interpolant], rhw,
+											primitive + OFFSET(Primitive, V[interpolant]),
+											input.Flat, state.perspective, false);
 					}
 				}
-
-				Float4 rcp;
-
-				switch(state.interpolant[interpolant].project)
-				{
-				case 0:
-					break;
-				case 1:
-					rcp = reciprocal(v[interpolant].y);
-					v[interpolant].x = v[interpolant].x * rcp;
-					break;
-				case 2:
-					rcp = reciprocal(v[interpolant].z);
-					v[interpolant].x = v[interpolant].x * rcp;
-					v[interpolant].y = v[interpolant].y * rcp;
-					break;
-				case 3:
-					rcp = reciprocal(v[interpolant].w);
-					v[interpolant].x = v[interpolant].x * rcp;
-					v[interpolant].y = v[interpolant].y * rcp;
-					v[interpolant].z = v[interpolant].z * rcp;
-					break;
-				}
-			}
-
-			if(state.fog.component)
-			{
-				f = interpolate(xxxx, Df, rhw, primitive + OFFSET(Primitive,f), state.fog.flat & 0x01, state.perspective, false);
 			}
 
 			setBuiltins(x, y, z, w);
@@ -210,7 +189,7 @@ namespace sw
 
 				alphaPass = alphaTest(cMask);
 
-				if((shader && shader->containsKill()) || state.alphaTestActive())
+				if((spirvShader && spirvShader->getModes().ContainsKill) || state.alphaTestActive())
 				{
 					for(unsigned int q = 0; q < state.multiSample; q++)
 					{
@@ -255,7 +234,7 @@ namespace sw
 							AddAtomic(Pointer<Long>(&profiler.ropOperations), 4);
 						#endif
 
-						rasterOperation(f, cBuffer, x, sMask, zMask, cMask);
+						rasterOperation(cBuffer, x, sMask, zMask, cMask);
 					}
 				}
 
@@ -394,7 +373,7 @@ namespace sw
 
 		Float4 Z = z;
 
-		if(shader && shader->depthOverride())
+		if(spirvShader && spirvShader->getModes().DepthReplacing)
 		{
 			if(complementaryDepthBuffer)
 			{
@@ -521,50 +500,6 @@ namespace sw
 		return zMask != 0;
 	}
 
-	void PixelRoutine::alphaTest(Int &aMask, Short4 &alpha)
-	{
-		Short4 cmp;
-		Short4 equal;
-
-		switch(state.alphaCompareMode)
-		{
-		case VK_COMPARE_OP_ALWAYS:
-			aMask = 0xF;
-			break;
-		case VK_COMPARE_OP_NEVER:
-			aMask = 0x0;
-			break;
-		case VK_COMPARE_OP_EQUAL:
-			cmp = CmpEQ(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
-			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
-			break;
-		case VK_COMPARE_OP_NOT_EQUAL:       // a != b ~ !(a == b)
-			cmp = CmpEQ(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4))) ^ Short4(0xFFFFu);   // FIXME
-			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
-			break;
-		case VK_COMPARE_OP_LESS:           // a < b ~ b > a
-			cmp = CmpGT(*Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)), alpha);
-			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
-			break;
-		case VK_COMPARE_OP_GREATER_OR_EQUAL:   // a >= b ~ (a > b) || (a == b) ~ !(b > a)   // TODO: Approximate
-			equal = CmpEQ(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
-			cmp = CmpGT(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
-			cmp |= equal;
-			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
-			break;
-		case VK_COMPARE_OP_LESS_OR_EQUAL:      // a <= b ~ !(a > b)
-			cmp = CmpGT(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4))) ^ Short4(0xFFFFu);   // FIXME
-			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
-			break;
-		case VK_COMPARE_OP_GREATER:        // a > b
-			cmp = CmpGT(alpha, *Pointer<Short4>(data + OFFSET(DrawData,factor.alphaReference4)));
-			aMask = SignMask(PackSigned(cmp, Short4(0x0000)));
-			break;
-		default:
-			ASSERT(false);
-		}
-	}
-
 	void PixelRoutine::alphaToCoverage(Int cMask[4], Float4 &alpha)
 	{
 		Int4 coverage0 = CmpNLT(alpha, *Pointer<Float4>(data + OFFSET(DrawData,a2c0)));
@@ -592,7 +527,7 @@ namespace sw
 
 		Float4 Z = z;
 
-		if(shader && shader->depthOverride())
+		if(spirvShader && spirvShader->getModes().DepthReplacing)
 		{
 			if(complementaryDepthBuffer)
 			{
@@ -1146,101 +1081,6 @@ namespace sw
 			break;
 		case VK_BLEND_OP_ZERO_EXT:
 			current.w = Short4(0x0000);
-			break;
-		default:
-			ASSERT(false);
-		}
-	}
-
-	void PixelRoutine::logicOperation(int index, Pointer<Byte> &cBuffer, Vector4s &current, Int &x)
-	{
-		if(state.logicalOperation == VK_LOGIC_OP_COPY)
-		{
-			return;
-		}
-
-		Vector4s pixel;
-		readPixel(index, cBuffer, x, pixel);
-
-		switch(state.logicalOperation)
-		{
-		case VK_LOGIC_OP_CLEAR:
-			current.x = UShort4(0);
-			current.y = UShort4(0);
-			current.z = UShort4(0);
-			break;
-		case VK_LOGIC_OP_SET:
-			current.x = UShort4(0xFFFFu);
-			current.y = UShort4(0xFFFFu);
-			current.z = UShort4(0xFFFFu);
-			break;
-		case VK_LOGIC_OP_COPY:
-			ASSERT(false);   // Optimized out
-			break;
-		case VK_LOGIC_OP_COPY_INVERTED:
-			current.x = ~current.x;
-			current.y = ~current.y;
-			current.z = ~current.z;
-			break;
-		case VK_LOGIC_OP_NO_OP:
-			current.x = pixel.x;
-			current.y = pixel.y;
-			current.z = pixel.z;
-			break;
-		case VK_LOGIC_OP_INVERT:
-			current.x = ~pixel.x;
-			current.y = ~pixel.y;
-			current.z = ~pixel.z;
-			break;
-		case VK_LOGIC_OP_AND:
-			current.x = pixel.x & current.x;
-			current.y = pixel.y & current.y;
-			current.z = pixel.z & current.z;
-			break;
-		case VK_LOGIC_OP_NAND:
-			current.x = ~(pixel.x & current.x);
-			current.y = ~(pixel.y & current.y);
-			current.z = ~(pixel.z & current.z);
-			break;
-		case VK_LOGIC_OP_OR:
-			current.x = pixel.x | current.x;
-			current.y = pixel.y | current.y;
-			current.z = pixel.z | current.z;
-			break;
-		case VK_LOGIC_OP_NOR:
-			current.x = ~(pixel.x | current.x);
-			current.y = ~(pixel.y | current.y);
-			current.z = ~(pixel.z | current.z);
-			break;
-		case VK_LOGIC_OP_XOR:
-			current.x = pixel.x ^ current.x;
-			current.y = pixel.y ^ current.y;
-			current.z = pixel.z ^ current.z;
-			break;
-		case VK_LOGIC_OP_EQUIVALENT:
-			current.x = ~(pixel.x ^ current.x);
-			current.y = ~(pixel.y ^ current.y);
-			current.z = ~(pixel.z ^ current.z);
-			break;
-		case VK_LOGIC_OP_AND_REVERSE:
-			current.x = ~pixel.x & current.x;
-			current.y = ~pixel.y & current.y;
-			current.z = ~pixel.z & current.z;
-			break;
-		case VK_LOGIC_OP_AND_INVERTED:
-			current.x = pixel.x & ~current.x;
-			current.y = pixel.y & ~current.y;
-			current.z = pixel.z & ~current.z;
-			break;
-		case VK_LOGIC_OP_OR_REVERSE:
-			current.x = ~pixel.x | current.x;
-			current.y = ~pixel.y | current.y;
-			current.z = ~pixel.z | current.z;
-			break;
-		case VK_LOGIC_OP_OR_INVERTED:
-			current.x = pixel.x | ~current.x;
-			current.y = pixel.y | ~current.y;
-			current.z = pixel.z | ~current.z;
 			break;
 		default:
 			ASSERT(false);
@@ -2479,6 +2319,6 @@ namespace sw
 
 	bool PixelRoutine::colorUsed()
 	{
-		return state.colorWriteMask || state.alphaTestActive() || state.shaderContainsKill;
+		return state.colorWriteMask || state.alphaTestActive() || (spirvShader && spirvShader->getModes().ContainsKill);
 	}
 }

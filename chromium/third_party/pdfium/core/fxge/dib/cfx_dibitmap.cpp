@@ -821,7 +821,6 @@ void CFX_DIBitmap::ConvertCMYKColorScale(uint32_t forecolor,
 }
 
 bool CFX_DIBitmap::ConvertColorScale(uint32_t forecolor, uint32_t backcolor) {
-  ASSERT(!IsAlphaMask());
   if (!m_pBuffer || IsAlphaMask())
     return false;
 
@@ -892,7 +891,7 @@ bool CFX_DIBitmap::CompositeBitmap(int dest_left,
   CFX_ScanlineCompositor compositor;
   if (!compositor.Init(GetFormat(), pSrcBitmap->GetFormat(), width,
                        pSrcBitmap->GetPalette(), 0, blend_type,
-                       pClipMask != nullptr, bRgbByteOrder, 0)) {
+                       pClipMask != nullptr, bRgbByteOrder)) {
     return false;
   }
   int dest_Bpp = m_bpp / 8;
@@ -940,8 +939,7 @@ bool CFX_DIBitmap::CompositeMask(int dest_left,
                                  int src_top,
                                  BlendMode blend_type,
                                  const CFX_ClipRgn* pClipRgn,
-                                 bool bRgbByteOrder,
-                                 int alpha_flag) {
+                                 bool bRgbByteOrder) {
   if (!m_pBuffer)
     return false;
 
@@ -955,8 +953,7 @@ bool CFX_DIBitmap::CompositeMask(int dest_left,
     return true;
   }
 
-  int src_alpha =
-      (uint8_t)(alpha_flag >> 8) ? (alpha_flag & 0xff) : FXARGB_A(color);
+  int src_alpha = FXARGB_A(color);
   if (src_alpha == 0)
     return true;
 
@@ -971,8 +968,7 @@ bool CFX_DIBitmap::CompositeMask(int dest_left,
   int Bpp = GetBPP() / 8;
   CFX_ScanlineCompositor compositor;
   if (!compositor.Init(GetFormat(), pMask->GetFormat(), width, nullptr, color,
-                       blend_type, pClipMask != nullptr, bRgbByteOrder,
-                       alpha_flag)) {
+                       blend_type, pClipMask != nullptr, bRgbByteOrder)) {
     return false;
   }
   for (int row = 0; row < height; row++) {
@@ -1024,7 +1020,7 @@ bool CFX_DIBitmap::CompositeRect(int left,
     dst_color = FXCMYK_TODIB(color);
   else
     dst_color = FXARGB_TODIB(color);
-  uint8_t* color_p = (uint8_t*)&dst_color;
+  uint8_t* color_p = reinterpret_cast<uint8_t*>(&dst_color);
   if (m_bpp == 8) {
     uint8_t gray = 255;
     if (!IsAlphaMask()) {
@@ -1114,14 +1110,13 @@ bool CFX_DIBitmap::CompositeRect(int left,
       uint8_t* dest_scan_alpha =
           m_pAlphaMask ? m_pAlphaMask->GetWritableScanline(row) + rect.left
                        : nullptr;
-      if (dest_scan_alpha) {
+      if (dest_scan_alpha)
         memset(dest_scan_alpha, 0xff, width);
-      }
+
       if (Bpp == 4) {
-        uint32_t* scan = (uint32_t*)dest_scan;
-        for (int col = 0; col < width; col++) {
+        uint32_t* scan = reinterpret_cast<uint32_t*>(dest_scan);
+        for (int col = 0; col < width; col++)
           *scan++ = dst_color;
-        }
       } else {
         for (int col = 0; col < width; col++) {
           *dest_scan++ = color_p[0];
@@ -1234,7 +1229,7 @@ bool CFX_DIBitmap::ConvertFormat(FXDIB_Format dest_format) {
         }
       }
     }
-  } else if (dest_format & 0x0200) {
+  } else if (GetIsAlphaFromFormat(dest_format)) {
     if (src_format == FXDIB_Argb) {
       pAlphaMask = CloneAlphaMask();
       if (!pAlphaMask)

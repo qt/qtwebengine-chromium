@@ -246,6 +246,82 @@ TEST_F(TracingServiceImplTest, LockdownMode) {
   consumer->WaitForTracingDisabled();
 }
 
+TEST_F(TracingServiceImplTest, ProducerNameFilterChange) {
+  std::unique_ptr<MockConsumer> consumer = CreateMockConsumer();
+  consumer->Connect(svc.get());
+
+  std::unique_ptr<MockProducer> producer1 = CreateMockProducer();
+  producer1->Connect(svc.get(), "mock_producer_1");
+  producer1->RegisterDataSource("data_source");
+
+  std::unique_ptr<MockProducer> producer2 = CreateMockProducer();
+  producer2->Connect(svc.get(), "mock_producer_2");
+  producer2->RegisterDataSource("data_source");
+
+  std::unique_ptr<MockProducer> producer3 = CreateMockProducer();
+  producer3->Connect(svc.get(), "mock_producer_3");
+  producer3->RegisterDataSource("data_source");
+  producer3->RegisterDataSource("unused_data_source");
+
+  TraceConfig trace_config;
+  trace_config.add_buffers()->set_size_kb(128);
+  auto* data_source = trace_config.add_data_sources();
+  data_source->mutable_config()->set_name("data_source");
+  *data_source->add_producer_name_filter() = "mock_producer_1";
+
+  // Enable tracing with only mock_producer_1 enabled;
+  // the rest should not start up.
+  consumer->EnableTracing(trace_config);
+
+  producer1->WaitForTracingSetup();
+  producer1->WaitForDataSourceSetup("data_source");
+  producer1->WaitForDataSourceStart("data_source");
+
+  EXPECT_CALL(*producer2, OnConnect()).Times(0);
+  EXPECT_CALL(*producer3, OnConnect()).Times(0);
+  task_runner.RunUntilIdle();
+  Mock::VerifyAndClearExpectations(producer2.get());
+  Mock::VerifyAndClearExpectations(producer3.get());
+
+  // Enable mock_producer_2, the third one should still
+  // not get connected.
+  *data_source->add_producer_name_filter() = "mock_producer_2";
+  consumer->ChangeTraceConfig(trace_config);
+
+  producer2->WaitForTracingSetup();
+  producer2->WaitForDataSourceSetup("data_source");
+  producer2->WaitForDataSourceStart("data_source");
+
+  // Enable mock_producer_3 but also try to do an
+  // unsupported change (adding a new data source);
+  // mock_producer_3 should get enabled but not
+  // for the new data source.
+  *data_source->add_producer_name_filter() = "mock_producer_3";
+  auto* dummy_data_source = trace_config.add_data_sources();
+  dummy_data_source->mutable_config()->set_name("unused_data_source");
+  *dummy_data_source->add_producer_name_filter() = "mock_producer_3";
+
+  consumer->ChangeTraceConfig(trace_config);
+
+  producer3->WaitForTracingSetup();
+  EXPECT_CALL(*producer3, SetupDataSource(_, _)).Times(1);
+  EXPECT_CALL(*producer3, StartDataSource(_, _)).Times(1);
+  task_runner.RunUntilIdle();
+  Mock::VerifyAndClearExpectations(producer3.get());
+
+  consumer->DisableTracing();
+  consumer->FreeBuffers();
+  producer1->WaitForDataSourceStop("data_source");
+  producer2->WaitForDataSourceStop("data_source");
+
+  EXPECT_CALL(*producer3, StopDataSource(_)).Times(1);
+
+  consumer->WaitForTracingDisabled();
+
+  task_runner.RunUntilIdle();
+  Mock::VerifyAndClearExpectations(producer3.get());
+}
+
 TEST_F(TracingServiceImplTest, DisconnectConsumerWhileTracing) {
   std::unique_ptr<MockConsumer> consumer = CreateMockConsumer();
   consumer->Connect(svc.get());
@@ -933,6 +1009,97 @@ TEST_F(TracingServiceImplTest, DeferredStart) {
 
   producer->WaitForDataSourceStop("ds_1");
   consumer->WaitForTracingDisabled();
+}
+
+TEST_F(TracingServiceImplTest, ProducerUIDsAndPacketSequenceIDs) {
+  std::unique_ptr<MockConsumer> consumer = CreateMockConsumer();
+  consumer->Connect(svc.get());
+
+  std::unique_ptr<MockProducer> producer1 = CreateMockProducer();
+  producer1->Connect(svc.get(), "mock_producer1", 123u /* uid */);
+  producer1->RegisterDataSource("data_source");
+
+  std::unique_ptr<MockProducer> producer2 = CreateMockProducer();
+  producer2->Connect(svc.get(), "mock_producer2", 456u /* uid */);
+  producer2->RegisterDataSource("data_source");
+
+  TraceConfig trace_config;
+  trace_config.add_buffers()->set_size_kb(128);
+  auto* ds_config = trace_config.add_data_sources()->mutable_config();
+  ds_config->set_name("data_source");
+
+  consumer->EnableTracing(trace_config);
+  producer1->WaitForTracingSetup();
+  producer1->WaitForDataSourceSetup("data_source");
+  producer2->WaitForTracingSetup();
+  producer2->WaitForDataSourceSetup("data_source");
+  producer1->WaitForDataSourceStart("data_source");
+  producer2->WaitForDataSourceStart("data_source");
+
+  std::unique_ptr<TraceWriter> writer1a =
+      producer1->CreateTraceWriter("data_source");
+  std::unique_ptr<TraceWriter> writer1b =
+      producer1->CreateTraceWriter("data_source");
+  std::unique_ptr<TraceWriter> writer2a =
+      producer2->CreateTraceWriter("data_source");
+  {
+    auto tp = writer1a->NewTracePacket();
+    tp->set_for_testing()->set_str("payload1a1");
+    tp = writer1b->NewTracePacket();
+    tp->set_for_testing()->set_str("payload1b1");
+    tp = writer1a->NewTracePacket();
+    tp->set_for_testing()->set_str("payload1a2");
+    tp = writer2a->NewTracePacket();
+    tp->set_for_testing()->set_str("payload2a1");
+    tp = writer1b->NewTracePacket();
+    tp->set_for_testing()->set_str("payload1b2");
+  }
+
+  auto flush_request = consumer->Flush();
+  producer1->WaitForFlush({writer1a.get(), writer1b.get()});
+  producer2->WaitForFlush(writer2a.get());
+  ASSERT_TRUE(flush_request.WaitForReply());
+
+  consumer->DisableTracing();
+  producer1->WaitForDataSourceStop("data_source");
+  producer2->WaitForDataSourceStop("data_source");
+  consumer->WaitForTracingDisabled();
+  auto packets = consumer->ReadBuffers();
+  EXPECT_THAT(
+      packets,
+      Contains(AllOf(
+          Property(&protos::TracePacket::for_testing,
+                   Property(&protos::TestEvent::str, Eq("payload1a1"))),
+          Property(&protos::TracePacket::trusted_uid, Eq(123)),
+          Property(&protos::TracePacket::trusted_packet_sequence_id, Eq(2u)))));
+  EXPECT_THAT(
+      packets,
+      Contains(AllOf(
+          Property(&protos::TracePacket::for_testing,
+                   Property(&protos::TestEvent::str, Eq("payload1a2"))),
+          Property(&protos::TracePacket::trusted_uid, Eq(123)),
+          Property(&protos::TracePacket::trusted_packet_sequence_id, Eq(2u)))));
+  EXPECT_THAT(
+      packets,
+      Contains(AllOf(
+          Property(&protos::TracePacket::for_testing,
+                   Property(&protos::TestEvent::str, Eq("payload1b1"))),
+          Property(&protos::TracePacket::trusted_uid, Eq(123)),
+          Property(&protos::TracePacket::trusted_packet_sequence_id, Eq(3u)))));
+  EXPECT_THAT(
+      packets,
+      Contains(AllOf(
+          Property(&protos::TracePacket::for_testing,
+                   Property(&protos::TestEvent::str, Eq("payload1b2"))),
+          Property(&protos::TracePacket::trusted_uid, Eq(123)),
+          Property(&protos::TracePacket::trusted_packet_sequence_id, Eq(3u)))));
+  EXPECT_THAT(
+      packets,
+      Contains(AllOf(
+          Property(&protos::TracePacket::for_testing,
+                   Property(&protos::TestEvent::str, Eq("payload2a1"))),
+          Property(&protos::TracePacket::trusted_uid, Eq(456)),
+          Property(&protos::TracePacket::trusted_packet_sequence_id, Eq(4u)))));
 }
 
 TEST_F(TracingServiceImplTest, AllowedBuffers) {

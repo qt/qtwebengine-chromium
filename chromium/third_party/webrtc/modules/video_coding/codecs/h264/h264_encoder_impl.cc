@@ -94,7 +94,6 @@ FrameType ConvertToVideoFrameType(EVideoFrameType type) {
 // is updated to point to each fragment, with offsets and lengths set as to
 // exclude the start codes.
 static void RtpFragmentize(EncodedImage* encoded_image,
-                           std::unique_ptr<uint8_t[]>* encoded_image_buffer,
                            const VideoFrameBuffer& frame_buffer,
                            SFrameBSInfo* info,
                            RTPFragmentationHeader* frag_header) {
@@ -126,8 +125,7 @@ static void RtpFragmentize(EncodedImage* encoded_image,
           << ", encoded bytes: " << required_capacity << ".";
       new_capacity = required_capacity;
     }
-    encoded_image->set_buffer(new uint8_t[new_capacity], new_capacity);
-    encoded_image_buffer->reset(encoded_image->data());
+    encoded_image->Allocate(new_capacity);
   }
 
   // Iterate layers and NAL units, note each NAL unit as a fragment and copy
@@ -167,7 +165,9 @@ H264EncoderImpl::H264EncoderImpl(const cricket::VideoCodec& codec)
       number_of_cores_(0),
       encoded_image_callback_(nullptr),
       has_reported_init_(false),
-      has_reported_error_(false) {
+      has_reported_error_(false),
+      num_temporal_layers_(1),
+      tl0sync_limit_(0) {
   RTC_CHECK(absl::EqualsIgnoreCase(codec.name, cricket::kH264CodecName));
   std::string packetization_mode_string;
   if (codec.GetParam(cricket::kH264FmtpPacketizationMode,
@@ -177,7 +177,6 @@ H264EncoderImpl::H264EncoderImpl(const cricket::VideoCodec& codec)
   }
   downscaled_buffers_.reserve(kMaxSimulcastStreams - 1);
   encoded_images_.reserve(kMaxSimulcastStreams);
-  encoded_image_buffers_.reserve(kMaxSimulcastStreams);
   encoders_.reserve(kMaxSimulcastStreams);
   configurations_.reserve(kMaxSimulcastStreams);
 }
@@ -212,15 +211,12 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
   int number_of_streams = SimulcastUtility::NumberOfSimulcastStreams(*inst);
   bool doing_simulcast = (number_of_streams > 1);
 
-  if (doing_simulcast && (!SimulcastUtility::ValidSimulcastResolutions(
-                              *inst, number_of_streams) ||
-                          !SimulcastUtility::ValidSimulcastTemporalLayers(
-                              *inst, number_of_streams))) {
+  if (doing_simulcast &&
+      !SimulcastUtility::ValidSimulcastParameters(*inst, number_of_streams)) {
     return WEBRTC_VIDEO_CODEC_ERR_SIMULCAST_PARAMETERS_NOT_SUPPORTED;
   }
   downscaled_buffers_.resize(number_of_streams - 1);
   encoded_images_.resize(number_of_streams);
-  encoded_image_buffers_.resize(number_of_streams);
   encoders_.resize(number_of_streams);
   pictures_.resize(number_of_streams);
   configurations_.resize(number_of_streams);
@@ -236,13 +232,10 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
     codec_.simulcastStream[0].height = codec_.height;
   }
 
+  num_temporal_layers_ = codec_.H264()->numberOfTemporalLayers;
+
   for (int i = 0, idx = number_of_streams - 1; i < number_of_streams;
        ++i, --idx) {
-    // Temporal layers still not supported.
-    if (inst->simulcastStream[i].numberOfTemporalLayers > 1) {
-      Release();
-      return WEBRTC_VIDEO_CODEC_ERR_SIMULCAST_PARAMETERS_NOT_SUPPORTED;
-    }
     ISVCEncoder* openh264_encoder;
     // Create encoder.
     if (WelsCreateSVCEncoder(&openh264_encoder) != 0) {
@@ -303,8 +296,7 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
     const size_t new_capacity =
         CalcBufferSize(VideoType::kI420, codec_.simulcastStream[idx].width,
                        codec_.simulcastStream[idx].height);
-    encoded_images_[i].set_buffer(new uint8_t[new_capacity], new_capacity);
-    encoded_image_buffers_[i].reset(encoded_images_[i].data());
+    encoded_images_[i].Allocate(new_capacity);
     encoded_images_[i]._completeFrame = true;
     encoded_images_[i]._encodedWidth = codec_.simulcastStream[idx].width;
     encoded_images_[i]._encodedHeight = codec_.simulcastStream[idx].height;
@@ -329,7 +321,6 @@ int32_t H264EncoderImpl::Release() {
   downscaled_buffers_.clear();
   configurations_.clear();
   encoded_images_.clear();
-  encoded_image_buffers_.clear();
   pictures_.clear();
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -514,8 +505,7 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
     // Split encoded image up into fragments. This also updates
     // |encoded_image_|.
     RTPFragmentationHeader frag_header;
-    RtpFragmentize(&encoded_images_[i], &encoded_image_buffers_[i],
-                   *frame_buffer, &info, &frag_header);
+    RtpFragmentize(&encoded_images_[i], *frame_buffer, &info, &frag_header);
 
     // Encoder can skip frames to save bandwidth in which case
     // |encoded_images_[i]._length| == 0.
@@ -530,6 +520,22 @@ int32_t H264EncoderImpl::Encode(const VideoFrame& input_frame,
       codec_specific.codecType = kVideoCodecH264;
       codec_specific.codecSpecific.H264.packetization_mode =
           packetization_mode_;
+      codec_specific.codecSpecific.H264.temporal_idx = kNoTemporalIdx;
+      codec_specific.codecSpecific.H264.idr_frame =
+          info.eFrameType == videoFrameTypeIDR;
+      codec_specific.codecSpecific.H264.base_layer_sync = false;
+      if (num_temporal_layers_ > 1) {
+        const uint8_t tid = info.sLayerInfo[0].uiTemporalId;
+        codec_specific.codecSpecific.H264.temporal_idx = tid;
+        codec_specific.codecSpecific.H264.base_layer_sync =
+            tid > 0 && tid < tl0sync_limit_;
+        if (codec_specific.codecSpecific.H264.base_layer_sync) {
+          tl0sync_limit_ = tid;
+        }
+        if (tid == 0) {
+          tl0sync_limit_ = num_temporal_layers_;
+        }
+      }
       encoded_image_callback_->OnEncodedImage(encoded_images_[i],
                                               &codec_specific, &frag_header);
     }
@@ -581,6 +587,10 @@ SEncParamExt H264EncoderImpl::CreateEncoderParams(size_t i) const {
       encoder_params.iTargetBitrate;
   encoder_params.sSpatialLayers[0].iMaxSpatialBitrate =
       encoder_params.iMaxBitrate;
+  encoder_params.iTemporalLayerNum = num_temporal_layers_;
+  if (encoder_params.iTemporalLayerNum > 1) {
+    encoder_params.iNumRefFrame = 1;
+  }
   RTC_LOG(INFO) << "OpenH264 version is " << OPENH264_MAJOR << "."
                 << OPENH264_MINOR;
   switch (packetization_mode_) {

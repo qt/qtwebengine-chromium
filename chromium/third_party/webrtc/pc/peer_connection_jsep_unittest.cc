@@ -1065,7 +1065,7 @@ TEST_P(RecycleMediaSectionTest, PendingRemoteRejectedAndNotRejectedLocal) {
 // for the media section. This is needed for full test coverage because
 // MediaSession has separate functions for processing audio and video media
 // sections.
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PeerConnectionJsepTest,
     RecycleMediaSectionTest,
     Combine(Values(cricket::MEDIA_TYPE_AUDIO, cricket::MEDIA_TYPE_VIDEO),
@@ -1692,6 +1692,24 @@ TEST_F(PeerConnectionJsepTest, LegacyNoMidAudioVideoAnswer) {
   ClearMids(answer.get());
 
   ASSERT_TRUE(caller->SetRemoteDescription(std::move(answer)));
+}
+
+// Test that negotiation works with legacy endpoints which do not support a=mid
+// when setting two remote descriptions without setting a local description in
+// between.
+TEST_F(PeerConnectionJsepTest, LegacyNoMidTwoRemoteOffers) {
+  auto caller = CreatePeerConnection();
+  caller->AddAudioTrack("audio");
+  auto callee = CreatePeerConnection();
+  callee->AddAudioTrack("audio");
+
+  auto offer = caller->CreateOffer();
+  ClearMids(offer.get());
+
+  ASSERT_TRUE(
+      callee->SetRemoteDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
+  EXPECT_TRUE(callee->SetLocalDescription(callee->CreateAnswer()));
 }
 
 // Test that SetLocalDescription fails if a=mid lines are missing.

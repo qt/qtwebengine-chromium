@@ -8,15 +8,12 @@
 #ifndef GrProxyProvider_DEFINED
 #define GrProxyProvider_DEFINED
 
-#include "GrCaps.h"
 #include "GrResourceKey.h"
 #include "GrTextureProxy.h"
 #include "GrTypes.h"
-#include "SkRefCnt.h"
 #include "SkTDynamicHash.h"
 
-class GrResourceProvider;
-class GrSingleOwner;
+class GrImageContext;
 class GrBackendRenderTarget;
 class SkBitmap;
 class SkImage;
@@ -26,8 +23,7 @@ class SkImage;
  */
 class GrProxyProvider {
 public:
-    GrProxyProvider(GrResourceProvider*, GrResourceCache*, sk_sp<const GrCaps>, GrSingleOwner*);
-    GrProxyProvider(uint32_t contextUniqueID, sk_sp<const GrCaps>, GrSingleOwner*);
+    GrProxyProvider(GrImageContext*);
 
     ~GrProxyProvider();
 
@@ -113,21 +109,22 @@ public:
      * kRead or kRW.
      */
     sk_sp<GrTextureProxy> wrapBackendTexture(const GrBackendTexture&, GrSurfaceOrigin,
-                                             GrWrapOwnership, GrIOType, ReleaseProc = nullptr,
-                                             ReleaseContext = nullptr);
+                                             GrWrapOwnership, GrWrapCacheable, GrIOType,
+                                             ReleaseProc = nullptr, ReleaseContext = nullptr);
 
     /*
      * Create a texture proxy that wraps a backend texture and is both texture-able and renderable
      */
-    sk_sp<GrTextureProxy> wrapRenderableBackendTexture(const GrBackendTexture&,
-                                                       GrSurfaceOrigin,
-                                                       int sampleCnt,
-                                                       GrWrapOwnership = kBorrow_GrWrapOwnership);
+    sk_sp<GrTextureProxy> wrapRenderableBackendTexture(const GrBackendTexture&, GrSurfaceOrigin,
+                                                       int sampleCnt, GrWrapOwnership,
+                                                       GrWrapCacheable, ReleaseProc,
+                                                       ReleaseContext);
 
     /*
      * Create a render target proxy that wraps a backend render target
      */
-    sk_sp<GrSurfaceProxy> wrapBackendRenderTarget(const GrBackendRenderTarget&, GrSurfaceOrigin);
+    sk_sp<GrSurfaceProxy> wrapBackendRenderTarget(const GrBackendRenderTarget&, GrSurfaceOrigin,
+                                                  ReleaseProc, ReleaseContext);
 
     /*
      * Create a render target proxy that wraps a backend texture
@@ -183,7 +180,8 @@ public:
                                                            GrInternalSurfaceFlags,
                                                            const TextureInfo*,
                                                            SkBackingFit,
-                                                           SkBudgeted);
+                                                           SkBudgeted,
+                                                           bool wrapsVkSecondaryCB);
 
     /**
      * Fully lazy proxies have unspecified width and height. Methods that rely on those values
@@ -214,24 +212,10 @@ public:
      */
     void processInvalidUniqueKey(const GrUniqueKey&, GrTextureProxy*, InvalidateGPUResource);
 
-    uint32_t contextUniqueID() const { return fContextUniqueID; }
-    const GrCaps* caps() const { return fCaps.get(); }
-    sk_sp<const GrCaps> refCaps() const { return fCaps; }
-
-    void abandon() {
-        fResourceCache = nullptr;
-        fResourceProvider = nullptr;
-        fAbandoned = true;
-    }
-
-    bool isAbandoned() const {
-#ifdef SK_DEBUG
-        if (fAbandoned) {
-            SkASSERT(!fResourceCache && !fResourceProvider);
-        }
-#endif
-        return fAbandoned;
-    }
+    // TODO: remove these entry points - it is a bit sloppy to be getting context info from here
+    uint32_t contextID() const;
+    const GrCaps* caps() const;
+    sk_sp<const GrCaps> refCaps() const;
 
     int numUniqueKeyProxies_TestOnly() const;
 
@@ -243,19 +227,25 @@ public:
     void removeAllUniqueKeys();
 
     /**
-     * Are we currently recording a DDL?
+     * Does the proxy provider have access to a GrDirectContext? If so, proxies will be
+     * instantiated immediately.
      */
-    bool recordingDDL() const { return !SkToBool(fResourceProvider); }
+    bool renderingDirectly() const;
 
+#if GR_TEST_UTILS
     /*
      * Create a texture proxy that is backed by an instantiated GrSurface.
      */
     sk_sp<GrTextureProxy> testingOnly_createInstantiatedProxy(const GrSurfaceDesc&, GrSurfaceOrigin,
                                                               SkBackingFit, SkBudgeted);
+    sk_sp<GrTextureProxy> testingOnly_createWrapped(sk_sp<GrTexture>, GrSurfaceOrigin);
+#endif
 
 private:
     friend class GrAHardwareBufferImageGenerator; // for createWrapped
     friend class GrResourceProvider; // for createWrapped
+
+    bool isAbandoned() const;
 
     sk_sp<GrTextureProxy> createWrapped(sk_sp<GrTexture> tex, GrSurfaceOrigin origin);
 
@@ -270,15 +260,7 @@ private:
     // on these proxies but they must send a message to the resourceCache when they are deleted.
     UniquelyKeyedProxyHash fUniquelyKeyedProxies;
 
-    GrResourceProvider*    fResourceProvider;
-    GrResourceCache*       fResourceCache;
-    bool                   fAbandoned;
-    sk_sp<const GrCaps>    fCaps;
-    // If this provider is owned by a DDLContext then this is the DirectContext's ID.
-    uint32_t               fContextUniqueID;
-
-    // In debug builds we guard against improper thread handling
-    SkDEBUGCODE(mutable GrSingleOwner* fSingleOwner;)
+    GrImageContext*        fImageContext;
 };
 
 #endif

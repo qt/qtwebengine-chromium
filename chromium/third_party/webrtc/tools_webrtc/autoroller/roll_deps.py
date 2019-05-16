@@ -38,6 +38,7 @@ DONT_AUTOROLL_THESE = [
 WEBRTC_ONLY_DEPS = [
   'src/base',
   'src/build',
+  'src/buildtools',
   'src/ios',
   'src/testing',
   'src/third_party',
@@ -247,6 +248,8 @@ def BuildDepsentryDict(deps_dict):
       if dep.get('dep_type') == 'cipd':
         result[path] = CipdDepsEntry(path, dep['packages'])
       else:
+        if '@' not in dep['url']:
+          continue
         url, revision = dep['url'].split('@')
         result[path] = DepsEntry(path, url, revision)
 

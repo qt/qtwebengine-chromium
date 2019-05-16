@@ -32,13 +32,14 @@ namespace webrtc {
 class MockRtpTransportControllerSend
     : public RtpTransportControllerSendInterface {
  public:
-  MOCK_METHOD9(
+  MOCK_METHOD10(
       CreateRtpVideoSender,
       RtpVideoSenderInterface*(std::map<uint32_t, RtpState>,
                                const std::map<uint32_t, RtpPayloadState>&,
                                const RtpConfig&,
                                int rtcp_report_interval_ms,
                                Transport*,
+                               bool,
                                const RtpSenderObservers&,
                                RtcEventLog*,
                                std::unique_ptr<FecController>,
@@ -48,11 +49,9 @@ class MockRtpTransportControllerSend
   MOCK_METHOD0(packet_router, PacketRouter*());
   MOCK_METHOD0(transport_feedback_observer, TransportFeedbackObserver*());
   MOCK_METHOD0(packet_sender, RtpPacketSender*());
-  MOCK_CONST_METHOD0(keepalive_config, RtpKeepAliveConfig&());
   MOCK_METHOD3(SetAllocatedSendBitrateLimits, void(int, int, int));
   MOCK_METHOD1(SetPacingFactor, void(float));
   MOCK_METHOD1(SetQueueTimeLimit, void(int));
-  MOCK_METHOD0(GetCallStatsObserver, CallStatsObserver*());
   MOCK_METHOD1(RegisterPacketFeedbackObserver, void(PacketFeedbackObserver*));
   MOCK_METHOD1(DeRegisterPacketFeedbackObserver, void(PacketFeedbackObserver*));
   MOCK_METHOD1(RegisterTargetTransferRateObserver,

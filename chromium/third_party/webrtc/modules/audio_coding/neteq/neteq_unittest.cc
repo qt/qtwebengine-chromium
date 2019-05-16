@@ -33,7 +33,6 @@
 #include "rtc_base/ignore_wundef.h"
 #include "rtc_base/message_digest.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/protobuf_utils.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/arch.h"
@@ -208,7 +207,7 @@ void ResultSink::AddResult(const NetEqNetworkStatistics& stats_raw) {
   neteq_unittest::NetEqNetworkStatistics stats;
   Convert(stats_raw, &stats);
 
-  ProtoString stats_string;
+  std::string stats_string;
   ASSERT_TRUE(stats.SerializeToString(&stats_string));
   AddMessage(output_fp_, digest_.get(), stats_string);
 #else
@@ -221,7 +220,7 @@ void ResultSink::AddResult(const RtcpStatistics& stats_raw) {
   neteq_unittest::RtcpStatistics stats;
   Convert(stats_raw, &stats);
 
-  ProtoString stats_string;
+  std::string stats_string;
   ASSERT_TRUE(stats.SerializeToString(&stats_string));
   AddMessage(output_fp_, digest_.get(), stats_string);
 #else
@@ -459,16 +458,16 @@ TEST_F(NetEqDecodingTest, MAYBE_TestBitExactness) {
       webrtc::test::ResourcePath("audio_coding/neteq_universal_new", "rtp");
 
   const std::string output_checksum =
-      PlatformChecksum("0c6dc227f781c81a229970f8fceda1a012498cba",
-                       "15c4a2202877a414515e218bdb7992f0ad53e5af", "not used",
-                       "0c6dc227f781c81a229970f8fceda1a012498cba",
-                       "25fc4c863caa499aa447a5b8d059f5452cbcc500");
+      PlatformChecksum("9652cee1d6771a9cbfda821ae1bbdb41b0dd4dee",
+                       "54a7e32f163663c0af35bf70bf45cefc24ad62ef", "not used",
+                       "9652cee1d6771a9cbfda821ae1bbdb41b0dd4dee",
+                       "79496b0a1ef0a3824f3ee04789748a461bed643f");
 
   const std::string network_stats_checksum =
-      PlatformChecksum("4b2370f5c794741d2a46be5c7935c66ef3fb53e9",
-                       "e339cb2adf5ab3dfc21cb7205d670a34751e8336", "not used",
-                       "4b2370f5c794741d2a46be5c7935c66ef3fb53e9",
-                       "4b2370f5c794741d2a46be5c7935c66ef3fb53e9");
+      PlatformChecksum("c59b1f9f282b6d8733cdff975e3c150ca4a47d51",
+                       "bca95e565996a4ffd6e2ac15736e08843bdca93b", "not used",
+                       "c59b1f9f282b6d8733cdff975e3c150ca4a47d51",
+                       "c59b1f9f282b6d8733cdff975e3c150ca4a47d51");
 
   DecodeAndCompare(input_rtp_file, output_checksum, network_stats_checksum,
                    FLAG_gen_ref);
@@ -1701,6 +1700,38 @@ TEST_F(NetEqDecodingTestFaxMode, TestJitterBufferDelayWithoutLoss) {
 
 TEST_F(NetEqDecodingTestFaxMode, TestJitterBufferDelayWithLoss) {
   TestJitterBufferDelay(true);
+}
+
+TEST_F(NetEqDecodingTestFaxMode, TestJitterBufferDelayWithAcceleration) {
+  const int kPacketLenMs = 10;  // All packets are of 10 ms size.
+  const size_t kSamples = kPacketLenMs * 16;
+  const size_t kPayloadBytes = kSamples * 2;
+  RTPHeader rtp_info;
+  rtp_info.ssrc = 0x1234;     // Just an arbitrary SSRC.
+  rtp_info.payloadType = 94;  // PCM16b WB codec.
+  rtp_info.markerBit = 0;
+  const uint8_t payload[kPayloadBytes] = {0};
+
+  neteq_->InsertPacket(rtp_info, payload, 0);
+
+  bool muted;
+  neteq_->GetAudio(&out_frame_, &muted);
+
+  rtp_info.sequenceNumber += 1;
+  rtp_info.timestamp += kSamples;
+  neteq_->InsertPacket(rtp_info, payload, 0);
+  rtp_info.sequenceNumber += 1;
+  rtp_info.timestamp += kSamples;
+  neteq_->InsertPacket(rtp_info, payload, 0);
+
+  // We have two packets in the buffer and kAccelerate operation will
+  // extract 20 ms of data.
+  neteq_->GetAudio(&out_frame_, &muted, Operations::kAccelerate);
+
+  // Check jitter buffer delay.
+  NetEqLifetimeStatistics stats = neteq_->GetLifetimeStatistics();
+  EXPECT_EQ(10 * kSamples * 3, stats.jitter_buffer_delay_ms);
+  EXPECT_EQ(kSamples * 3, stats.jitter_buffer_emitted_count);
 }
 
 namespace test {

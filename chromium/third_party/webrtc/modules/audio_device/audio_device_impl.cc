@@ -12,12 +12,12 @@
 
 #include <stddef.h>
 
+#include "api/scoped_refptr.h"
 #include "modules/audio_device/audio_device_config.h"  // IWYU pragma: keep
 #include "modules/audio_device/audio_device_generic.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/ref_counted_object.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "system_wrappers/include/metrics.h"
 
 #if defined(_WIN32)
@@ -110,14 +110,6 @@ rtc::scoped_refptr<AudioDeviceModuleForTest> AudioDeviceModule::CreateForTest(
   }
 
   return audioDevice;
-}
-
-// TODO(bugs.webrtc.org/7306): deprecated.
-rtc::scoped_refptr<AudioDeviceModule> AudioDeviceModule::Create(
-    const int32_t id,
-    const AudioLayer audio_layer) {
-  RTC_LOG(INFO) << __FUNCTION__;
-  return AudioDeviceModule::Create(audio_layer);
 }
 
 AudioDeviceModuleImpl::AudioDeviceModuleImpl(const AudioLayer audioLayer)

@@ -46,17 +46,18 @@ public:
     bool onReadPixels(const SkImageInfo&, void*, size_t, int srcX, int srcY,
                       CachingHint) const override;
 #if SK_SUPPORT_GPU
-    sk_sp<GrTextureProxy> asTextureProxyRef(GrContext*,
+    sk_sp<GrTextureProxy> asTextureProxyRef(GrRecordingContext*,
                                             const GrSamplerState&,
                                             SkScalar scaleAdjust[2]) const override;
     sk_sp<SkCachedData> getPlanes(SkYUVASizeInfo*, SkYUVAIndex[4],
                                   SkYUVColorSpace*, const void* planes[4]) override;
 #endif
     sk_sp<SkData> onRefEncoded() const override;
-    sk_sp<SkImage> onMakeSubset(const SkIRect&) const override;
+    sk_sp<SkImage> onMakeSubset(GrRecordingContext*, const SkIRect&) const override;
     bool getROPixels(SkBitmap*, CachingHint) const override;
     bool onIsLazyGenerated() const override { return true; }
-    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>) const override;
+    sk_sp<SkImage> onMakeColorTypeAndColorSpace(GrRecordingContext*,
+                                                SkColorType, sk_sp<SkColorSpace>) const override;
 
     bool onIsValid(GrContext*) const override;
 
@@ -64,7 +65,7 @@ public:
     // Returns the texture proxy. If we're going to generate and cache the texture, we should use
     // the passed in key (if the key is valid). If genType is AllowedTexGenType::kCheap and the
     // texture is not trivial to construct, returns nullptr.
-    sk_sp<GrTextureProxy> lockTextureProxy(GrContext*,
+    sk_sp<GrTextureProxy> lockTextureProxy(GrRecordingContext*,
                                            const GrUniqueKey& key,
                                            SkImage::CachingHint,
                                            bool willBeMipped,

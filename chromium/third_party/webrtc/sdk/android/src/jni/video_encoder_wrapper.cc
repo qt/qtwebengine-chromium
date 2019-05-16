@@ -374,7 +374,6 @@ CodecSpecificInfo VideoEncoderWrapper::ParseCodecSpecificInfo(
   const bool key_frame = frame._frameType == kVideoFrameKey;
 
   CodecSpecificInfo info;
-  memset(&info, 0, sizeof(info));
   info.codecType = codec_settings_.codecType;
 
   switch (codec_settings_.codecType) {
@@ -421,17 +420,13 @@ ScopedJavaLocalRef<jobject> VideoEncoderWrapper::ToJavaBitrateAllocation(
       jni, jni->NewObjectArray(kMaxSpatialLayers, int_array_class_.obj(),
                                nullptr /* initial */));
   for (int spatial_i = 0; spatial_i < kMaxSpatialLayers; ++spatial_i) {
-    ScopedJavaLocalRef<jintArray> j_array_spatial_layer(
-        jni, jni->NewIntArray(kMaxTemporalStreams));
-    jint* array_spatial_layer = jni->GetIntArrayElements(
-        j_array_spatial_layer.obj(), nullptr /* isCopy */);
+    std::array<int32_t, kMaxTemporalStreams> spatial_layer;
     for (int temporal_i = 0; temporal_i < kMaxTemporalStreams; ++temporal_i) {
-      array_spatial_layer[temporal_i] =
-          allocation.GetBitrate(spatial_i, temporal_i);
+      spatial_layer[temporal_i] = allocation.GetBitrate(spatial_i, temporal_i);
     }
-    jni->ReleaseIntArrayElements(j_array_spatial_layer.obj(),
-                                 array_spatial_layer, JNI_COMMIT);
 
+    ScopedJavaLocalRef<jintArray> j_array_spatial_layer =
+        NativeToJavaIntArray(jni, spatial_layer);
     jni->SetObjectArrayElement(j_allocation_array.obj(), spatial_i,
                                j_array_spatial_layer.obj());
   }

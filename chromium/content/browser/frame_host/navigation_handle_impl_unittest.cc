@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "content/browser/frame_host/navigation_handle_impl.h"
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "content/browser/frame_host/navigation_request.h"
@@ -11,6 +12,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_side_navigation_test_utils.h"
 #include "content/public/test/test_navigation_throttle.h"
+#include "content/test/navigation_simulator_impl.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_web_contents.h"
@@ -69,17 +71,17 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
   }
 
   void TearDown() override {
-    // Release the |test_handle_| before destroying the WebContents, to match
+    // Release the |request_| before destroying the WebContents, to match
     // the WebContentsObserverSanityChecker expectations.
-    test_handle_.reset();
+    request_.reset();
     RenderViewHostImplTestHarness::TearDown();
   }
 
-  void Resume() { test_handle_->throttle_runner_.CallResumeForTesting(); }
+  void Resume() { test_handle()->throttle_runner_.CallResumeForTesting(); }
 
   void CancelDeferredNavigation(
       NavigationThrottle::ThrottleCheckResult result) {
-    test_handle_->CancelDeferredNavigationInternal(result);
+    test_handle()->CancelDeferredNavigationInternal(result);
   }
 
   // Helper function to call WillStartRequest on |handle|. If this function
@@ -91,7 +93,7 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
 
     // It's safe to use base::Unretained since the NavigationHandle is owned by
     // the NavigationHandleImplTest.
-    test_handle_->WillStartRequest(
+    test_handle()->WillStartRequest(
         base::Bind(&NavigationHandleImplTest::UpdateThrottleCheckResult,
                    base::Unretained(this)));
   }
@@ -107,9 +109,8 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
 
     // It's safe to use base::Unretained since the NavigationHandle is owned by
     // the NavigationHandleImplTest.
-    test_handle_->WillRedirectRequest(
-        GURL(), "GET", GURL(), false, scoped_refptr<net::HttpResponseHeaders>(),
-        net::HttpResponseInfo::CONNECTION_INFO_HTTP1_1, nullptr,
+    test_handle()->WillRedirectRequest(
+        GURL(), nullptr,
         base::Bind(&NavigationHandleImplTest::UpdateThrottleCheckResult,
                    base::Unretained(this)));
   }
@@ -122,12 +123,11 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
       const base::Optional<net::SSLInfo> ssl_info = base::nullopt) {
     was_callback_called_ = false;
     callback_result_ = NavigationThrottle::DEFER;
-    test_handle_->set_net_error_code(net_error_code);
+    test_handle()->set_net_error_code(net_error_code);
 
     // It's safe to use base::Unretained since the NavigationHandle is owned by
     // the NavigationHandleImplTest.
-    test_handle_->WillFailRequest(
-        main_test_rfh(), ssl_info,
+    test_handle()->WillFailRequest(
         base::Bind(&NavigationHandleImplTest::UpdateThrottleCheckResult,
                    base::Unretained(this)));
   }
@@ -145,16 +145,15 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
     // by the NavigationHandleImplTest. The ConnectionInfo is different from
     // that sent to WillRedirectRequest to verify that it's correctly plumbed
     // in both cases.
-    test_handle_->WillProcessResponse(
-        main_test_rfh(), scoped_refptr<net::HttpResponseHeaders>(),
-        net::HttpResponseInfo::CONNECTION_INFO_QUIC_35, net::HostPortPair(),
-        net::SSLInfo(), GlobalRequestID(), false, false, false, false, false,
+    test_handle()->WillProcessResponse(
         base::Bind(&NavigationHandleImplTest::UpdateThrottleCheckResult,
                    base::Unretained(this)));
   }
 
   // Returns the handle used in tests.
-  NavigationHandleImpl* test_handle() const { return test_handle_.get(); }
+  NavigationHandleImpl* test_handle() const {
+    return request_->navigation_handle();
+  }
 
   // Whether the callback was called.
   bool was_callback_called() const { return was_callback_called_; }
@@ -164,7 +163,7 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
     return callback_result_;
   }
 
-  NavigationHandleImpl::State state() { return test_handle_->state(); }
+  NavigationHandleImpl::State state() { return test_handle()->state(); }
 
   bool is_deferring() {
     switch (state()) {
@@ -219,43 +218,13 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
     return test_throttle;
   }
 
-  // Creates and register a NavigationThrottle that will delete the
-  // NavigationHandle in checks.
-  void AddDeletingNavigationThrottle() {
-    DCHECK(test_handle_);
-    test_handle()->RegisterThrottleForTesting(
-        std::make_unique<DeletingNavigationThrottle>(
-            test_handle(), base::BindRepeating(
-                               &NavigationHandleImplTest::ResetNavigationHandle,
-                               base::Unretained(this))));
-  }
-
   void CreateNavigationHandle() {
     scoped_refptr<FrameNavigationEntry> frame_entry(new FrameNavigationEntry());
     request_ = NavigationRequest::CreateBrowserInitiated(
         main_test_rfh()->frame_tree_node(), CommonNavigationParams(),
         CommitNavigationParams(), false /* browser-initiated */, std::string(),
         *frame_entry, nullptr, nullptr, nullptr);
-    test_handle_ =
-        base::WrapUnique<NavigationHandleImpl>(new NavigationHandleImpl(
-            request_.get(), GURL(), base::nullopt, std::vector<GURL>(),
-            true,   // is_renderer_initiated
-            false,  // is_same_document
-            base::TimeTicks::Now(), 0,
-            false,                  // started_from_context_menu
-            CSPDisposition::CHECK,  // should_check_main_world_csp
-            false,                  // is_form_submission
-            nullptr,                // navigation_ui_data
-            "GET", net::HttpRequestHeaders(),
-            nullptr,  // resource_request_body
-            Referrer(),
-            false,  // has_user_gesture
-            ui::PAGE_TRANSITION_LINK,
-            false,  // is_external_protocol
-            blink::mojom::RequestContextType::LOCATION,
-            blink::WebMixedContentContextType::kBlockable,
-            std::string(),        // href_translate
-            base::TimeTicks()));  // input_start
+    request_->CreateNavigationHandle(true);
   }
 
  private:
@@ -268,10 +237,7 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
     was_callback_called_ = true;
   }
 
-  void ResetNavigationHandle() { test_handle_ = nullptr; }
-
   std::unique_ptr<NavigationRequest> request_;
-  std::unique_ptr<NavigationHandleImpl> test_handle_;
   bool was_callback_called_;
   NavigationThrottle::ThrottleCheckResult callback_result_;
 };
@@ -279,46 +245,63 @@ class NavigationHandleImplTest : public RenderViewHostImplTestHarness {
 // Checks that the request_context_type is properly set.
 // Note: can be extended to cover more internal members.
 TEST_F(NavigationHandleImplTest, SimpleDataChecksRedirectAndProcess) {
-  SimulateWillStartRequest();
-  EXPECT_EQ(blink::mojom::RequestContextType::LOCATION,
-            test_handle()->request_context_type());
+  const GURL kUrl1 = GURL("http://chromium.org");
+  const GURL kUrl2 = GURL("http://google.com");
+  auto navigation =
+      NavigationSimulatorImpl::CreateRendererInitiated(kUrl1, main_rfh());
+  navigation->Start();
+  EXPECT_EQ(blink::mojom::RequestContextType::HYPERLINK,
+            navigation->GetNavigationHandle()->request_context_type());
   EXPECT_EQ(net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN,
-            test_handle()->GetConnectionInfo());
+            navigation->GetNavigationHandle()->GetConnectionInfo());
 
-  SimulateWillRedirectRequest();
-  EXPECT_EQ(blink::mojom::RequestContextType::LOCATION,
-            test_handle()->request_context_type());
+  navigation->set_http_connection_info(
+      net::HttpResponseInfo::CONNECTION_INFO_HTTP1_1);
+  navigation->Redirect(kUrl2);
+  EXPECT_EQ(blink::mojom::RequestContextType::HYPERLINK,
+            navigation->GetNavigationHandle()->request_context_type());
   EXPECT_EQ(net::HttpResponseInfo::CONNECTION_INFO_HTTP1_1,
-            test_handle()->GetConnectionInfo());
+            navigation->GetNavigationHandle()->GetConnectionInfo());
 
-  SimulateWillProcessResponse();
-  EXPECT_EQ(blink::mojom::RequestContextType::LOCATION,
-            test_handle()->request_context_type());
+  navigation->set_http_connection_info(
+      net::HttpResponseInfo::CONNECTION_INFO_QUIC_35);
+  navigation->ReadyToCommit();
+  EXPECT_EQ(blink::mojom::RequestContextType::HYPERLINK,
+            navigation->GetNavigationHandle()->request_context_type());
   EXPECT_EQ(net::HttpResponseInfo::CONNECTION_INFO_QUIC_35,
-            test_handle()->GetConnectionInfo());
+            navigation->GetNavigationHandle()->GetConnectionInfo());
 }
 
 TEST_F(NavigationHandleImplTest, SimpleDataCheckNoRedirect) {
-  SimulateWillStartRequest();
+  const GURL kUrl = GURL("http://chromium.org");
+  auto navigation =
+      NavigationSimulatorImpl::CreateRendererInitiated(kUrl, main_rfh());
+  navigation->Start();
   EXPECT_EQ(net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN,
-            test_handle()->GetConnectionInfo());
+            navigation->GetNavigationHandle()->GetConnectionInfo());
 
-  SimulateWillProcessResponse();
+  navigation->set_http_connection_info(
+      net::HttpResponseInfo::CONNECTION_INFO_QUIC_35);
+  navigation->ReadyToCommit();
   EXPECT_EQ(net::HttpResponseInfo::CONNECTION_INFO_QUIC_35,
-            test_handle()->GetConnectionInfo());
+            navigation->GetNavigationHandle()->GetConnectionInfo());
 }
 
 TEST_F(NavigationHandleImplTest, SimpleDataChecksFailure) {
-  SimulateWillStartRequest();
-  EXPECT_EQ(blink::mojom::RequestContextType::LOCATION,
-            test_handle()->request_context_type());
+  const GURL kUrl = GURL("http://chromium.org");
+  auto navigation =
+      NavigationSimulatorImpl::CreateRendererInitiated(kUrl, main_rfh());
+  navigation->Start();
+  EXPECT_EQ(blink::mojom::RequestContextType::HYPERLINK,
+            navigation->GetNavigationHandle()->request_context_type());
   EXPECT_EQ(net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN,
-            test_handle()->GetConnectionInfo());
+            navigation->GetNavigationHandle()->GetConnectionInfo());
 
-  SimulateWillFailRequest(net::ERR_CERT_DATE_INVALID);
-  EXPECT_EQ(blink::mojom::RequestContextType::LOCATION,
-            test_handle()->request_context_type());
-  EXPECT_EQ(net::ERR_CERT_DATE_INVALID, test_handle()->GetNetErrorCode());
+  navigation->Fail(net::ERR_CERT_DATE_INVALID);
+  EXPECT_EQ(blink::mojom::RequestContextType::HYPERLINK,
+            navigation->GetNavigationHandle()->request_context_type());
+  EXPECT_EQ(net::ERR_CERT_DATE_INVALID,
+            navigation->GetNavigationHandle()->GetNetErrorCode());
 }
 
 // Checks that a navigation deferred during WillStartRequest can be properly
@@ -456,13 +439,19 @@ TEST_F(NavigationHandleImplTest, WillFailRequestSetsSSLInfo) {
   ssl_info.cert_status = net::CERT_STATUS_AUTHORITY_INVALID;
   ssl_info.connection_status = connection_status;
 
-  SimulateWillStartRequest();
-  SimulateWillFailRequest(net::ERR_CERT_DATE_INVALID, ssl_info);
+  const GURL kUrl = GURL("https://chromium.org");
+  auto navigation =
+      NavigationSimulatorImpl::CreateRendererInitiated(kUrl, main_rfh());
+  navigation->set_ssl_info(ssl_info);
+  navigation->Fail(net::ERR_CERT_DATE_INVALID);
 
   EXPECT_EQ(net::CERT_STATUS_AUTHORITY_INVALID,
-            test_handle()->GetSSLInfo().cert_status);
-  EXPECT_EQ(connection_status, test_handle()->GetSSLInfo().connection_status);
+            navigation->GetNavigationHandle()->GetSSLInfo()->cert_status);
+  EXPECT_EQ(connection_status,
+            navigation->GetNavigationHandle()->GetSSLInfo()->connection_status);
 }
+
+namespace {
 
 // Helper throttle which checks that it can access NavigationHandle's
 // RenderFrameHost in WillFailRequest() and then defers the failure.
@@ -486,20 +475,42 @@ class GetRenderFrameHostOnFailureNavigationThrottle
   DISALLOW_COPY_AND_ASSIGN(GetRenderFrameHostOnFailureNavigationThrottle);
 };
 
+class ThrottleTestContentBrowserClient : public ContentBrowserClient {
+  std::vector<std::unique_ptr<NavigationThrottle>> CreateThrottlesForNavigation(
+      NavigationHandle* navigation_handle) override {
+    std::vector<std::unique_ptr<NavigationThrottle>> throttle;
+    throttle.push_back(
+        std::make_unique<GetRenderFrameHostOnFailureNavigationThrottle>(
+            navigation_handle));
+    return throttle;
+  }
+};
+
+}  // namespace
+
 // Verify that the NavigationHandle::GetRenderFrameHost() can be retrieved by a
 // throttle in WillFailRequest(), as well as after deferring the failure.  This
 // is allowed, since at that point the final RenderFrameHost will have already
 // been chosen. See https://crbug.com/817881.
 TEST_F(NavigationHandleImplTest, WillFailRequestCanAccessRenderFrameHost) {
-  test_handle()->RegisterThrottleForTesting(
-      std::make_unique<GetRenderFrameHostOnFailureNavigationThrottle>(
-          test_handle()));
-  SimulateWillStartRequest();
-  SimulateWillFailRequest(net::ERR_CERT_DATE_INVALID);
-  EXPECT_EQ(NavigationHandleImpl::PROCESSING_WILL_FAIL_REQUEST, state());
-  EXPECT_TRUE(test_handle()->GetRenderFrameHost());
-  Resume();
-  EXPECT_TRUE(test_handle()->GetRenderFrameHost());
+  std::unique_ptr<ContentBrowserClient> client(
+      new ThrottleTestContentBrowserClient);
+  ContentBrowserClient* old_browser_client =
+      SetBrowserClientForTesting(client.get());
+
+  const GURL kUrl = GURL("http://chromium.org");
+  auto navigation =
+      NavigationSimulatorImpl::CreateRendererInitiated(kUrl, main_rfh());
+  navigation->SetAutoAdvance(false);
+  navigation->Start();
+  navigation->Fail(net::ERR_CERT_DATE_INVALID);
+  EXPECT_EQ(NavigationHandleImpl::PROCESSING_WILL_FAIL_REQUEST,
+            navigation->GetNavigationHandle()->state_for_testing());
+  EXPECT_TRUE(navigation->GetNavigationHandle()->GetRenderFrameHost());
+  navigation->GetNavigationHandle()->CallResumeForTesting();
+  EXPECT_TRUE(navigation->GetNavigationHandle()->GetRenderFrameHost());
+
+  SetBrowserClientForTesting(old_browser_client);
 }
 
 }  // namespace content

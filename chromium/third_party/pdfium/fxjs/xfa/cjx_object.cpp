@@ -30,7 +30,6 @@
 #include "xfa/fxfa/parser/cxfa_edge.h"
 #include "xfa/fxfa/parser/cxfa_fill.h"
 #include "xfa/fxfa/parser/cxfa_font.h"
-#include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_object.h"
@@ -72,11 +71,6 @@ void* GetMapKey_Element(XFA_Element eType, XFA_Attribute eAttribute) {
                             (static_cast<uint32_t>(eAttribute) << 8) |
                             XFA_KEYTYPE_Element);
 }
-
-void XFA_DefaultFreeData(void* pData) {}
-
-const XFA_MAPDATABLOCKCALLBACKINFO gs_XFADefaultFreeData = {XFA_DefaultFreeData,
-                                                            nullptr};
 
 std::tuple<int32_t, int32_t, int32_t> StrToRGB(const WideString& strRGB) {
   int32_t r = 0;
@@ -258,8 +252,8 @@ void CJX_Object::SetMapModuleString(void* pKey, WideStringView wsValue) {
 void CJX_Object::SetAttribute(WideStringView wsAttr,
                               WideStringView wsValue,
                               bool bNotify) {
-  Optional<XFA_ATTRIBUTEINFO> attr = XFA_GetAttributeByName(wsValue);
-  if (!attr.has_value()) {
+  Optional<XFA_ATTRIBUTEINFO> attr = XFA_GetAttributeByName(wsAttr);
+  if (attr.has_value()) {
     SetAttribute(attr.value().attribute, wsValue, bNotify);
     return;
   }
@@ -430,6 +424,11 @@ Optional<float> CJX_Object::TryMeasureAsFloat(XFA_Attribute attr) const {
 
 CXFA_Measurement CJX_Object::GetMeasure(XFA_Attribute eAttr) const {
   return TryMeasure(eAttr, true).value_or(CXFA_Measurement());
+}
+
+float CJX_Object::GetMeasureInUnit(XFA_Attribute eAttr, XFA_Unit unit) const {
+  auto measure = TryMeasure(eAttr, true).value_or(CXFA_Measurement());
+  return measure.ToUnit(unit);
 }
 
 WideString CJX_Object::GetCData(XFA_Attribute eAttr) {
@@ -779,9 +778,7 @@ Optional<WideString> CJX_Object::TryContent(bool bScriptModify, bool bProto) {
   if (pNode) {
     if (bScriptModify) {
       CFXJSE_Engine* pScriptContext = GetDocument()->GetScriptContext();
-      if (pScriptContext)
-        GetDocument()->GetScriptContext()->AddNodesOfRunScript(
-            ToNode(GetXFAObject()));
+      pScriptContext->AddNodesOfRunScript(ToNode(GetXFAObject()));
     }
     return TryCData(XFA_Attribute::Value, false);
   }
@@ -876,8 +873,8 @@ void CJX_Object::SetUserData(
     void* pKey,
     void* pData,
     const XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo) {
-  SetMapModuleBuffer(pKey, &pData, sizeof(void*),
-                     pCallbackInfo ? pCallbackInfo : &gs_XFADefaultFreeData);
+  ASSERT(pCallbackInfo);
+  SetMapModuleBuffer(pKey, &pData, sizeof(void*), pCallbackInfo);
 }
 
 XFA_MAPMODULEDATA* CJX_Object::CreateMapModuleData() {
@@ -1163,13 +1160,13 @@ void CJX_Object::ScriptAttributeString(CFXJSE_Value* pValue,
   CXFA_Node* pProtoNode = nullptr;
   if (!wsSOM.IsEmpty()) {
     XFA_RESOLVENODE_RS resolveNodeRS;
-    bool iRet = GetDocument()->GetScriptContext()->ResolveObjects(
+    bool bRet = GetDocument()->GetScriptContext()->ResolveObjects(
         pProtoRoot, wsSOM.AsStringView(), &resolveNodeRS,
         XFA_RESOLVENODE_Children | XFA_RESOLVENODE_Attributes |
             XFA_RESOLVENODE_Properties | XFA_RESOLVENODE_Parent |
             XFA_RESOLVENODE_Siblings,
         nullptr);
-    if (iRet && resolveNodeRS.objects.front()->IsNode())
+    if (bRet && resolveNodeRS.objects.front()->IsNode())
       pProtoNode = resolveNodeRS.objects.front()->AsNode();
 
   } else if (!wsID.IsEmpty()) {
@@ -1396,22 +1393,6 @@ void CJX_Object::ScriptSomMandatoryMessage(CFXJSE_Value* pValue,
   ScriptSomMessage(pValue, bSetting, XFA_SOM_MandatoryMessage);
 }
 
-void CJX_Object::ScriptFieldLength(CFXJSE_Value* pValue,
-                                   bool bSetting,
-                                   XFA_Attribute eAttribute) {
-  if (bSetting) {
-    ThrowInvalidPropertyException();
-    return;
-  }
-
-  CXFA_Node* node = ToNode(object_.Get());
-  if (!node->IsWidgetReady()) {
-    pValue->SetInteger(0);
-    return;
-  }
-  pValue->SetInteger(node->CountChoiceListItems(true));
-}
-
 void CJX_Object::ScriptSomDefaultValue(CFXJSE_Value* pValue,
                                        bool bSetting,
                                        XFA_Attribute /* unused */) {
@@ -1479,7 +1460,7 @@ void CJX_Object::ScriptSomDefaultValue(CFXJSE_Value* pValue,
     pValue->SetInteger(FXSYS_wtoi(content.c_str()));
   } else if (eType == XFA_Element::Float || eType == XFA_Element::Decimal) {
     CFGAS_Decimal decimal(content.AsStringView());
-    pValue->SetFloat((float)(double)decimal);
+    pValue->SetFloat(decimal.ToFloat());
   } else {
     pValue->SetString(content.ToUTF8().AsStringView());
   }
@@ -1574,57 +1555,7 @@ void CJX_Object::ScriptSomInstanceIndex(CFXJSE_Value* pValue,
   }
 }
 
-void CJX_Object::ScriptSubformInstanceManager(CFXJSE_Value* pValue,
-                                              bool bSetting,
-                                              XFA_Attribute eAttribute) {
-  if (bSetting) {
-    ThrowInvalidPropertyException();
-    return;
-  }
-
-  WideString wsName = GetCData(XFA_Attribute::Name);
-  CXFA_Node* pInstanceMgr = nullptr;
-  for (CXFA_Node* pNode = ToNode(GetXFAObject())->GetPrevSibling(); pNode;
-       pNode = pNode->GetPrevSibling()) {
-    if (pNode->GetElementType() == XFA_Element::InstanceManager) {
-      WideString wsInstMgrName =
-          pNode->JSObject()->GetCData(XFA_Attribute::Name);
-      if (wsInstMgrName.GetLength() >= 1 && wsInstMgrName[0] == '_' &&
-          wsInstMgrName.Right(wsInstMgrName.GetLength() - 1) == wsName) {
-        pInstanceMgr = pNode;
-      }
-      break;
-    }
-  }
-  if (!pInstanceMgr) {
-    pValue->SetNull();
-    return;
-  }
-
-  pValue->Assign(
-      GetDocument()->GetScriptContext()->GetJSValueFromMap(pInstanceMgr));
-}
-
 void CJX_Object::ScriptSubmitFormatMode(CFXJSE_Value* pValue,
                                         bool bSetting,
                                         XFA_Attribute eAttribute) {}
 
-void CJX_Object::ScriptFormChecksumS(CFXJSE_Value* pValue,
-                                     bool bSetting,
-                                     XFA_Attribute eAttribute) {
-  if (bSetting) {
-    SetAttribute(XFA_Attribute::Checksum, pValue->ToWideString().AsStringView(),
-                 false);
-    return;
-  }
-
-  Optional<WideString> checksum = TryAttribute(XFA_Attribute::Checksum, false);
-  pValue->SetString(checksum ? checksum->ToUTF8().AsStringView() : "");
-}
-
-void CJX_Object::ScriptExclGroupErrorText(CFXJSE_Value* pValue,
-                                          bool bSetting,
-                                          XFA_Attribute eAttribute) {
-  if (bSetting)
-    ThrowInvalidPropertyException();
-}

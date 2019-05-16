@@ -35,9 +35,17 @@ namespace dawn_native {
         dawn::BufferUsageBit::Storage;
 
     class BufferBase : public ObjectBase {
+        enum class BufferState {
+            Unmapped,
+            Mapped,
+            Destroyed,
+        };
+
       public:
         BufferBase(DeviceBase* device, const BufferDescriptor* descriptor);
         ~BufferBase();
+
+        static BufferBase* MakeError(DeviceBase* device);
 
         uint32_t GetSize() const;
         dawn::BufferUsageBit GetUsage() const;
@@ -46,35 +54,36 @@ namespace dawn_native {
 
         // Dawn API
         void SetSubData(uint32_t start, uint32_t count, const uint8_t* data);
-        void MapReadAsync(uint32_t start,
-                          uint32_t size,
-                          dawnBufferMapReadCallback callback,
-                          dawnCallbackUserdata userdata);
-        void MapWriteAsync(uint32_t start,
-                           uint32_t size,
-                           dawnBufferMapWriteCallback callback,
-                           dawnCallbackUserdata userdata);
+        void MapReadAsync(dawnBufferMapReadCallback callback, dawnCallbackUserdata userdata);
+        void MapWriteAsync(dawnBufferMapWriteCallback callback, dawnCallbackUserdata userdata);
         void Unmap();
+        void Destroy();
 
       protected:
+        BufferBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+
         void CallMapReadCallback(uint32_t serial,
                                  dawnBufferMapAsyncStatus status,
-                                 const void* pointer);
-        void CallMapWriteCallback(uint32_t serial, dawnBufferMapAsyncStatus status, void* pointer);
+                                 const void* pointer,
+                                 uint32_t dataLength);
+        void CallMapWriteCallback(uint32_t serial,
+                                  dawnBufferMapAsyncStatus status,
+                                  void* pointer,
+                                  uint32_t dataLength);
 
       private:
-        virtual void SetSubDataImpl(uint32_t start, uint32_t count, const uint8_t* data) = 0;
-        virtual void MapReadAsyncImpl(uint32_t serial, uint32_t start, uint32_t size) = 0;
-        virtual void MapWriteAsyncImpl(uint32_t serial, uint32_t start, uint32_t size) = 0;
+        virtual MaybeError SetSubDataImpl(uint32_t start, uint32_t count, const uint8_t* data);
+        virtual void MapReadAsyncImpl(uint32_t serial) = 0;
+        virtual void MapWriteAsyncImpl(uint32_t serial) = 0;
         virtual void UnmapImpl() = 0;
+        virtual void DestroyImpl() = 0;
 
         MaybeError ValidateSetSubData(uint32_t start, uint32_t count) const;
-        MaybeError ValidateMap(uint32_t start,
-                               uint32_t size,
-                               dawn::BufferUsageBit requiredUsage) const;
+        MaybeError ValidateMap(dawn::BufferUsageBit requiredUsage) const;
         MaybeError ValidateUnmap() const;
+        MaybeError ValidateDestroy() const;
 
-        uint32_t mSize;
+        uint32_t mSize = 0;
         dawn::BufferUsageBit mUsage = dawn::BufferUsageBit::None;
 
         dawnBufferMapReadCallback mMapReadCallback = nullptr;
@@ -82,7 +91,7 @@ namespace dawn_native {
         dawnCallbackUserdata mMapUserdata = 0;
         uint32_t mMapSerial = 0;
 
-        bool mIsMapped = false;
+        BufferState mState;
     };
 
     // This builder class is kept around purely for testing but should not be used.

@@ -44,12 +44,12 @@ private:
     struct CopyInfo {
         CopyInfo(GrSurface* src, GrSurfaceOrigin srcOrigin, const SkIRect& srcRect,
                  const SkIPoint& dstPoint)
-            : fSrc(src), fSrcOrigin(srcOrigin), fSrcRect(srcRect), fDstPoint(dstPoint) {}
+            : fSrc(sk_ref_sp(src)), fSrcOrigin(srcOrigin), fSrcRect(srcRect), fDstPoint(dstPoint) {}
 
-        GrSurface*      fSrc;
-        GrSurfaceOrigin fSrcOrigin;
-        SkIRect         fSrcRect;
-        SkIPoint        fDstPoint;
+        sk_sp<GrSurface> fSrc;
+        GrSurfaceOrigin  fSrcOrigin;
+        SkIRect          fSrcRect;
+        SkIPoint         fDstPoint;
     };
 
     GrVkGpu*                    fGpu;
@@ -96,9 +96,9 @@ private:
     GrGpu* gpu() override;
 
     // Bind vertex and index buffers
-    void bindGeometry(const GrBuffer* indexBuffer,
-                      const GrBuffer* vertexBuffer,
-                      const GrBuffer* instanceBuffer);
+    void bindGeometry(const GrGpuBuffer* indexBuffer,
+                      const GrGpuBuffer* vertexBuffer,
+                      const GrGpuBuffer* instanceBuffer);
 
     GrVkPipelineState* prepareDrawState(const GrPrimitiveProcessor&,
                                         const GrPipeline&,
@@ -159,17 +159,17 @@ private:
     struct CopyInfo {
         CopyInfo(GrSurface* src, GrSurfaceOrigin srcOrigin, const SkIRect& srcRect,
                  const SkIPoint& dstPoint, bool shouldDiscardDst)
-            : fSrc(src)
+            : fSrc(sk_ref_sp(src))
             , fSrcOrigin(srcOrigin)
             , fSrcRect(srcRect)
             , fDstPoint(dstPoint)
             , fShouldDiscardDst(shouldDiscardDst) {}
 
-        GrSurface*      fSrc;
-        GrSurfaceOrigin fSrcOrigin;
-        SkIRect         fSrcRect;
-        SkIPoint        fDstPoint;
-        bool            fShouldDiscardDst;
+        sk_sp<GrSurface> fSrc;
+        GrSurfaceOrigin  fSrcOrigin;
+        SkIRect          fSrcRect;
+        SkIPoint         fDstPoint;
+        bool             fShouldDiscardDst;
     };
 
     enum class LoadStoreState {
@@ -193,7 +193,7 @@ private:
         // Array of images that will be sampled and thus need to be transfered to sampled layout
         // before submitting the secondary command buffers. This must happen after we do any predraw
         // uploads or copies.
-        SkTArray<GrVkImage*>                   fSampledImages;
+        SkTArray<sk_sp<GrVkTexture>>           fSampledTextures;
 
         GrVkSecondaryCommandBuffer* currentCmdBuf() {
             return fCommandBuffers.back();

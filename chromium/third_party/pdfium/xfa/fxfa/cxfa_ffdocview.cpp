@@ -6,6 +6,8 @@
 
 #include "xfa/fxfa/cxfa_ffdocview.h"
 
+#include <utility>
+
 #include "core/fxcrt/fx_extension.h"
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cjx_object.h"
@@ -28,10 +30,10 @@
 #include "xfa/fxfa/cxfa_fwladapterwidgetmgr.h"
 #include "xfa/fxfa/cxfa_readynodeiterator.h"
 #include "xfa/fxfa/cxfa_textprovider.h"
+#include "xfa/fxfa/layout/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_acrobat.h"
 #include "xfa/fxfa/parser/cxfa_binditems.h"
 #include "xfa/fxfa/parser/cxfa_calculate.h"
-#include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_pageset.h"
 #include "xfa/fxfa/parser/cxfa_present.h"
 #include "xfa/fxfa/parser/cxfa_subform.h"
@@ -168,12 +170,16 @@ void CXFA_FFDocView::UpdateDocView() {
     return;
 
   LockUpdate();
-  for (CXFA_Node* pNode : m_NewAddedNodes) {
-    InitCalculate(pNode);
-    InitValidate(pNode);
-    ExecEventActivityByDeepFirst(pNode, XFA_EVENT_Ready, true, true);
+  while (!m_NewAddedNodes.empty()) {
+    std::vector<CXFA_Node*> nodes = std::move(m_NewAddedNodes);
+    m_NewAddedNodes.clear();
+    for (CXFA_Node* pNode : nodes) {
+      InitCalculate(pNode);
+      InitValidate(pNode);
+      ExecEventActivityByDeepFirst(pNode, XFA_EVENT_Ready, true, true);
+    }
+    // May have created more newly added nodes, try again.
   }
-  m_NewAddedNodes.clear();
 
   RunSubformIndexChange();
   RunCalculateWidgets();
@@ -405,9 +411,6 @@ int32_t CXFA_FFDocView::ExecEventActivityByDeepFirst(CXFA_Node* pFormNode,
 CXFA_FFWidget* CXFA_FFDocView::GetWidgetByName(const WideString& wsName,
                                                CXFA_FFWidget* pRefWidget) {
   CFXJSE_Engine* pScriptContext = m_pDoc->GetXFADoc()->GetScriptContext();
-  if (!pScriptContext)
-    return nullptr;
-
   CXFA_Node* pRefNode = nullptr;
   if (pRefWidget) {
     CXFA_Node* node = pRefWidget->GetNode();

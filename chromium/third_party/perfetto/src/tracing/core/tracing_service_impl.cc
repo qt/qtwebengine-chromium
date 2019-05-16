@@ -28,6 +28,10 @@
 #include <unistd.h>
 #endif
 
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+#include <sys/system_properties.h>
+#endif
+
 #include <algorithm>
 
 #include "perfetto/base/build_config.h"
@@ -99,6 +103,7 @@ uid_t geteuid() {
   return 0;
 }
 #endif  // PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
+
 }  // namespace
 
 // These constants instead are defined in the header because are used by tests.
@@ -379,8 +384,12 @@ bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
     tracing_session->buffers_index.push_back(global_id);
     const size_t buf_size_bytes = buffer_cfg.size_kb() * 1024u;
     total_buf_size_kb += buffer_cfg.size_kb();
-    auto it_and_inserted =
-        buffers_.emplace(global_id, TraceBuffer::Create(buf_size_bytes));
+    TraceBuffer::OverwritePolicy policy =
+        buffer_cfg.fill_policy() == TraceConfig::BufferConfig::DISCARD
+            ? TraceBuffer::kDiscard
+            : TraceBuffer::kOverwrite;
+    auto it_and_inserted = buffers_.emplace(
+        global_id, TraceBuffer::Create(buf_size_bytes, policy));
     PERFETTO_DCHECK(it_and_inserted.second);  // buffers_.count(global_id) == 0.
     std::unique_ptr<TraceBuffer>& trace_buffer = it_and_inserted.first->second;
     if (!trace_buffer) {
@@ -439,6 +448,120 @@ bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
     return StartTracing(tsid);
 
   return true;
+}
+
+void TracingServiceImpl::ChangeTraceConfig(ConsumerEndpointImpl* consumer,
+                                           const TraceConfig& updated_cfg) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  TracingSession* tracing_session =
+      GetTracingSession(consumer->tracing_session_id_);
+  PERFETTO_DCHECK(tracing_session);
+
+  if ((tracing_session->state != TracingSession::STARTED) &&
+      (tracing_session->state != TracingSession::CONFIGURED)) {
+    PERFETTO_ELOG(
+        "ChangeTraceConfig() was called for a tracing session which isn't "
+        "running.");
+    return;
+  }
+
+  // We only support updating producer_name_filter (and pass-through configs)
+  // for now; null out any changeable fields and make sure the rest are
+  // identical.
+  TraceConfig new_config_copy(updated_cfg);
+  for (auto& ds_cfg : *new_config_copy.mutable_data_sources()) {
+    ds_cfg.clear_producer_name_filter();
+  }
+
+  TraceConfig current_config_copy(tracing_session->config);
+  for (auto& ds_cfg : *current_config_copy.mutable_data_sources())
+    ds_cfg.clear_producer_name_filter();
+
+  if (new_config_copy != current_config_copy) {
+    PERFETTO_LOG(
+        "ChangeTraceConfig() was called with a config containing unsupported "
+        "changes; only adding to the producer_name_filter is currently "
+        "supported and will have an effect.");
+  }
+
+  for (TraceConfig::DataSource& cfg_data_source :
+       *tracing_session->config.mutable_data_sources()) {
+    // Find the updated producer_filter in the new config.
+    std::vector<std::string> new_producer_name_filter;
+    bool found_data_source = false;
+    for (auto it : updated_cfg.data_sources()) {
+      if (cfg_data_source.config().name() == it.config().name()) {
+        new_producer_name_filter = it.producer_name_filter();
+        found_data_source = true;
+        break;
+      }
+    }
+
+    // Bail out if data source not present in the new config.
+    if (!found_data_source) {
+      PERFETTO_ELOG(
+          "ChangeTraceConfig() called without a current data source also "
+          "present in the new "
+          "config: %s",
+          cfg_data_source.config().name().c_str());
+      continue;
+    }
+
+    // TODO(oysteine): Just replacing the filter means that if
+    // there are any filter entries which were present in the original config,
+    // but removed from the config passed to ChangeTraceConfig, any matching
+    // producers will keep producing but newly added producers after this
+    // point will never start.
+    *cfg_data_source.mutable_producer_name_filter() = new_producer_name_filter;
+
+    // Scan all the registered data sources with a matching name.
+    auto range = data_sources_.equal_range(cfg_data_source.config().name());
+    for (auto it = range.first; it != range.second; it++) {
+      ProducerEndpointImpl* producer = GetProducer(it->second.producer_id);
+      PERFETTO_DCHECK(producer);
+
+      // Check if the producer name of this data source is present
+      // in the name filter. We currently only support new filters, not removing
+      // old ones.
+      if (!new_producer_name_filter.empty() &&
+          std::find(new_producer_name_filter.begin(),
+                    new_producer_name_filter.end(),
+                    producer->name_) == new_producer_name_filter.end()) {
+        continue;
+      }
+
+      bool already_setup = false;
+      auto& ds_instances = tracing_session->data_source_instances;
+      for (auto instance_it = ds_instances.begin();
+           instance_it != ds_instances.end(); ++instance_it) {
+        if (instance_it->first == it->second.producer_id &&
+            instance_it->second.data_source_name ==
+                cfg_data_source.config().name()) {
+          already_setup = true;
+          break;
+        }
+      }
+
+      if (already_setup)
+        continue;
+
+      // If it wasn't previously setup, set it up now.
+      // (The per-producer config is optional).
+      TraceConfig::ProducerConfig producer_config;
+      for (auto& config : tracing_session->config.producers()) {
+        if (producer->name_ == config.producer_name()) {
+          producer_config = config;
+          break;
+        }
+      }
+
+      DataSourceInstance* ds_inst = SetupDataSource(
+          cfg_data_source, producer_config, it->second, tracing_session);
+
+      if (ds_inst && tracing_session->state == TracingSession::STARTED)
+        producer->StartDataSource(ds_inst->instance_id, ds_inst->config);
+    }
+  }
 }
 
 bool TracingServiceImpl::StartTracing(TracingSessionID tsid) {
@@ -1008,26 +1131,34 @@ void TracingServiceImpl::ReadBuffers(TracingSessionID tsid,
     tbuf.BeginRead();
     while (!did_hit_threshold) {
       TracePacket packet;
-      uid_t producer_uid = kInvalidUid;
-      if (!tbuf.ReadNextTracePacket(&packet, &producer_uid))
+      TraceBuffer::PacketSequenceProperties sequence_properties{};
+      if (!tbuf.ReadNextTracePacket(&packet, &sequence_properties)) {
         break;
-      PERFETTO_DCHECK(producer_uid != kInvalidUid);
+      }
+      PERFETTO_DCHECK(sequence_properties.producer_id_trusted != 0);
+      PERFETTO_DCHECK(sequence_properties.writer_id != 0);
+      PERFETTO_DCHECK(sequence_properties.producer_uid_trusted != kInvalidUid);
       PERFETTO_DCHECK(packet.size() > 0);
       if (!PacketStreamValidator::Validate(packet.slices())) {
         PERFETTO_DLOG("Dropping invalid packet");
         continue;
       }
 
-      // Append a slice with the trusted UID of the producer. This can't
-      // be spoofed because above we validated that the existing slices
-      // don't contain any trusted UID fields. For added safety we append
-      // instead of prepending because according to protobuf semantics, if
-      // the same field is encountered multiple times the last instance
-      // takes priority. Note that truncated packets are also rejected, so
-      // the producer can't give us a partial packet (e.g., a truncated
-      // string) which only becomes valid when the UID is appended here.
+      // Append a slice with the trusted field data. This can't be spoofed
+      // because above we validated that the existing slices don't contain any
+      // trusted fields. For added safety we append instead of prepending
+      // because according to protobuf semantics, if the same field is
+      // encountered multiple times the last instance takes priority. Note that
+      // truncated packets are also rejected, so the producer can't give us a
+      // partial packet (e.g., a truncated string) which only becomes valid when
+      // the trusted data is appended here.
       protos::TrustedPacket trusted_packet;
-      trusted_packet.set_trusted_uid(static_cast<int32_t>(producer_uid));
+      trusted_packet.set_trusted_uid(
+          static_cast<int32_t>(sequence_properties.producer_uid_trusted));
+      trusted_packet.set_trusted_packet_sequence_id(
+          tracing_session->GetPacketSequenceID(
+              sequence_properties.producer_id_trusted,
+              sequence_properties.writer_id));
       static constexpr size_t kTrustedBufSize = 16;
       Slice slice = Slice::Allocate(kTrustedBufSize);
       PERFETTO_CHECK(
@@ -1164,11 +1295,20 @@ void TracingServiceImpl::FreeBuffers(TracingSessionID tsid) {
     PERFETTO_DCHECK(buffers_.count(buffer_id) == 1);
     buffers_.erase(buffer_id);
   }
+  bool notify_traceur = tracing_session->config.notify_traceur();
   tracing_sessions_.erase(tsid);
   UpdateMemoryGuardrail();
 
   PERFETTO_LOG("Tracing session %" PRIu64 " ended, total sessions:%zu", tsid,
                tracing_sessions_.size());
+
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
+  static const char kTraceurProp[] = "sys.trace.trace_end_signal";
+  if (notify_traceur && __system_property_set(kTraceurProp, "1"))
+    PERFETTO_ELOG("Failed to setprop %s=1", kTraceurProp);
+#else
+  base::ignore_result(notify_traceur);
+#endif
 }
 
 void TracingServiceImpl::RegisterDataSource(ProducerID producer_id,
@@ -1267,6 +1407,8 @@ TracingServiceImpl::DataSourceInstance* TracingServiceImpl::SetupDataSource(
   }
   // TODO(primiano): Add tests for registration ordering
   // (data sources vs consumers).
+  // TODO: This logic is duplicated in ChangeTraceConfig, consider refactoring
+  // it. Meanwhile update both.
   if (!cfg_data_source.producer_name_filter().empty()) {
     if (std::find(cfg_data_source.producer_name_filter().begin(),
                   cfg_data_source.producer_name_filter().end(),
@@ -1364,6 +1506,7 @@ void TracingServiceImpl::CopyProducerPageIntoLogBuffer(
   ProducerEndpointImpl* producer = GetProducer(producer_id_trusted);
   if (!producer) {
     PERFETTO_DFATAL("Producer not found.");
+    chunks_discarded_++;
     return;
   }
 
@@ -1372,6 +1515,7 @@ void TracingServiceImpl::CopyProducerPageIntoLogBuffer(
     PERFETTO_DLOG("Could not find target buffer %" PRIu16
                   " for producer %" PRIu16,
                   buffer_id, producer_id_trusted);
+    chunks_discarded_++;
     return;
   }
 
@@ -1384,6 +1528,7 @@ void TracingServiceImpl::CopyProducerPageIntoLogBuffer(
                   " tried to write into forbidden target buffer %" PRIu16,
                   producer_id_trusted, buffer_id);
     PERFETTO_DFATAL("Forbidden target buffer");
+    chunks_discarded_++;
     return;
   }
 
@@ -1397,7 +1542,8 @@ void TracingServiceImpl::CopyProducerPageIntoLogBuffer(
                   ", but tried to write into buffer %" PRIu16,
                   writer_id, producer_id_trusted, *associated_buffer,
                   buffer_id);
-    PERFETTO_DCHECK(false);
+    PERFETTO_DFATAL("Wrong target buffer");
+    chunks_discarded_++;
     return;
   }
 
@@ -1419,18 +1565,30 @@ void TracingServiceImpl::ApplyChunkPatches(
     static_assert(std::numeric_limits<ChunkID>::max() == kMaxChunkID,
                   "Add a '|| chunk_id > kMaxChunkID' below if this fails");
     if (!writer_id || writer_id > kMaxWriterID || !buf) {
-      PERFETTO_DLOG(
+      PERFETTO_ELOG(
           "Received invalid chunks_to_patch request from Producer: %" PRIu16
           ", BufferID: %" PRIu32 " ChunkdID: %" PRIu32 " WriterID: %" PRIu16,
           producer_id_trusted, chunk.target_buffer(), chunk_id, writer_id);
+      patches_discarded_ += static_cast<uint64_t>(chunk.patches_size());
       continue;
     }
+
+    // Note, there's no need to validate that the producer is allowed to write
+    // to the specified buffer ID (or that it's the correct buffer ID for a
+    // registered TraceWriter). That's because TraceBuffer uses the producer ID
+    // and writer ID to look up the chunk to patch. If the producer specifies an
+    // incorrect buffer, this lookup will fail and TraceBuffer will ignore the
+    // patches. Because the producer ID is trusted, there's also no way for a
+    // malicious producer to patch another producer's data.
+
     // Speculate on the fact that there are going to be a limited amount of
     // patches per request, so we can allocate the |patches| array on the stack.
     std::array<TraceBuffer::Patch, 1024> patches;  // Uninitialized.
     if (chunk.patches().size() > patches.size()) {
-      PERFETTO_DFATAL("Too many patches (%zu) batched in the same request",
-                      patches.size());
+      PERFETTO_ELOG("Too many patches (%zu) batched in the same request",
+                    patches.size());
+      PERFETTO_DFATAL("Too many patches");
+      patches_discarded_ += static_cast<uint64_t>(chunk.patches_size());
       continue;
     }
 
@@ -1438,9 +1596,10 @@ void TracingServiceImpl::ApplyChunkPatches(
     for (const auto& patch : chunk.patches()) {
       const std::string& patch_data = patch.data();
       if (patch_data.size() != patches[i].data.size()) {
-        PERFETTO_DLOG("Received patch from producer: %" PRIu16
+        PERFETTO_ELOG("Received patch from producer: %" PRIu16
                       " of unexpected size %zu",
                       producer_id_trusted, patch_data.size());
+        patches_discarded_++;
         continue;
       }
       patches[i].offset_untrusted = patch.offset();
@@ -1525,6 +1684,7 @@ void TracingServiceImpl::SnapshotSyncMarker(std::vector<TracePacket>* packets) {
     uint8_t* dst = &sync_marker_packet_[0];
     protos::TrustedPacket packet;
     packet.set_trusted_uid(static_cast<int32_t>(uid_));
+    packet.set_trusted_packet_sequence_id(kServicePacketSequenceID);
     PERFETTO_CHECK(packet.SerializeToArray(dst, size_left));
     size_left -= packet.ByteSize();
     sync_marker_packet_size_ += static_cast<size_t>(packet.ByteSize());
@@ -1588,6 +1748,7 @@ void TracingServiceImpl::SnapshotClocks(std::vector<TracePacket>* packets) {
 #endif  // !PERFETTO_BUILDFLAG(PERFETTO_OS_MACOSX)
 
   packet.set_trusted_uid(static_cast<int32_t>(uid_));
+  packet.set_trusted_packet_sequence_id(kServicePacketSequenceID);
   Slice slice = Slice::Allocate(static_cast<size_t>(packet.ByteSize()));
   PERFETTO_CHECK(packet.SerializeWithCachedSizesToArray(slice.own_data()));
   packets->emplace_back();
@@ -1598,6 +1759,7 @@ void TracingServiceImpl::SnapshotStats(TracingSession* tracing_session,
                                        std::vector<TracePacket>* packets) {
   protos::TrustedPacket packet;
   packet.set_trusted_uid(static_cast<int32_t>(uid_));
+  packet.set_trusted_packet_sequence_id(kServicePacketSequenceID);
 
   protos::TraceStats* trace_stats = packet.mutable_trace_stats();
   GetTraceStats(tracing_session).ToProto(trace_stats);
@@ -1617,6 +1779,8 @@ TraceStats TracingServiceImpl::GetTraceStats(TracingSession* tracing_session) {
   trace_stats.set_tracing_sessions(
       static_cast<uint32_t>(tracing_sessions_.size()));
   trace_stats.set_total_buffers(static_cast<uint32_t>(buffers_.size()));
+  trace_stats.set_chunks_discarded(chunks_discarded_);
+  trace_stats.set_patches_discarded(patches_discarded_);
 
   for (BufferID buf_id : tracing_session->buffers_index) {
     TraceBuffer* buf = GetBufferByID(buf_id);
@@ -1638,6 +1802,7 @@ void TracingServiceImpl::MaybeEmitTraceConfig(
   protos::TrustedPacket packet;
   tracing_session->config.ToProto(packet.mutable_trace_config());
   packet.set_trusted_uid(static_cast<int32_t>(uid_));
+  packet.set_trusted_packet_sequence_id(kServicePacketSequenceID);
   Slice slice = Slice::Allocate(static_cast<size_t>(packet.ByteSize()));
   PERFETTO_CHECK(packet.SerializeWithCachedSizesToArray(slice.own_data()));
   packets->emplace_back();
@@ -1679,6 +1844,17 @@ void TracingServiceImpl::ConsumerEndpointImpl::EnableTracing(
   PERFETTO_DCHECK_THREAD(thread_checker_);
   if (!service_->EnableTracing(this, cfg, std::move(fd)))
     NotifyOnTracingDisabled();
+}
+
+void TracingServiceImpl::ConsumerEndpointImpl::ChangeTraceConfig(
+    const TraceConfig& cfg) {
+  if (!tracing_session_id_) {
+    PERFETTO_LOG(
+        "Consumer called ChangeTraceConfig() but tracing was "
+        "not active");
+    return;
+  }
+  service_->ChangeTraceConfig(this, cfg);
 }
 
 void TracingServiceImpl::ConsumerEndpointImpl::StartTracing() {
@@ -1927,8 +2103,9 @@ void TracingServiceImpl::ProducerEndpointImpl::StopDataSource(
 
 SharedMemoryArbiterImpl*
 TracingServiceImpl::ProducerEndpointImpl::GetOrCreateShmemArbiter() {
-  PERFETTO_DCHECK_THREAD(thread_checker_);
+  std::lock_guard<std::mutex> lock(inproc_shmem_arbiter_mutex_);
   if (!inproc_shmem_arbiter_) {
+    PERFETTO_CHECK(shared_memory_ && shared_memory_->start());
     inproc_shmem_arbiter_.reset(new SharedMemoryArbiterImpl(
         shared_memory_->start(), shared_memory_->size(),
         shared_buffer_page_size_kb_ * 1024, this, task_runner_));
@@ -1936,10 +2113,16 @@ TracingServiceImpl::ProducerEndpointImpl::GetOrCreateShmemArbiter() {
   return inproc_shmem_arbiter_.get();
 }
 
+// Can be called on any thread.
 std::unique_ptr<TraceWriter>
 TracingServiceImpl::ProducerEndpointImpl::CreateTraceWriter(BufferID buf_id) {
-  PERFETTO_DCHECK_THREAD(thread_checker_);
   return GetOrCreateShmemArbiter()->CreateTraceWriter(buf_id);
+}
+
+void TracingServiceImpl::ProducerEndpointImpl::NotifyFlushComplete(
+    FlushRequestID id) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  return GetOrCreateShmemArbiter()->NotifyFlushComplete(id);
 }
 
 void TracingServiceImpl::ProducerEndpointImpl::OnTracingSetup() {
@@ -1984,12 +2167,6 @@ void TracingServiceImpl::ProducerEndpointImpl::StartDataSource(
     if (weak_this)
       weak_this->producer_->StartDataSource(ds_id, std::move(config));
   });
-}
-
-void TracingServiceImpl::ProducerEndpointImpl::NotifyFlushComplete(
-    FlushRequestID id) {
-  PERFETTO_DCHECK_THREAD(thread_checker_);
-  return GetOrCreateShmemArbiter()->NotifyFlushComplete(id);
 }
 
 void TracingServiceImpl::ProducerEndpointImpl::NotifyDataSourceStopped(

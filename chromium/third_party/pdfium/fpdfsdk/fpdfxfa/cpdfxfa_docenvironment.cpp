@@ -11,6 +11,7 @@
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fxcrt/retain_ptr.h"
@@ -980,9 +981,6 @@ bool CPDFXFA_DocEnvironment::SetPropertyInNonXFAGlobalObject(
     return false;
 
   IJS_Runtime* pIJSRuntime = pFormFillEnv->GetIJSRuntime();
-  if (!pIJSRuntime)
-    return false;
-
   IJS_Runtime::ScopedEventContext pContext(pIJSRuntime);
   return pIJSRuntime->SetValueByNameInGlobalObject(szPropName, pValue);
 }
@@ -999,9 +997,6 @@ bool CPDFXFA_DocEnvironment::GetPropertyFromNonXFAGlobalObject(
     return false;
 
   IJS_Runtime* pIJSRuntime = pFormFillEnv->GetIJSRuntime();
-  if (!pIJSRuntime)
-    return false;
-
   IJS_Runtime::ScopedEventContext pContext(pIJSRuntime);
   return pIJSRuntime->GetValueByNameFromGlobalObject(szPropName, pValue);
 }

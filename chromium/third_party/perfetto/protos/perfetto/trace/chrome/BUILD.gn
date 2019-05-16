@@ -26,6 +26,10 @@ proto_library("lite") {
 }
 
 protozero_library("zero") {
+  deps = [
+    "../interned_data:zero",
+    "../track_event:zero",
+  ]
   sources = chrome_proto_names
   proto_in_dir = "$perfetto_root_path/protos"
   proto_out_dir = "$perfetto_root_path/protos"
@@ -34,10 +38,12 @@ protozero_library("zero") {
 
 proto_library("minimal_complete_lite") {
   generate_python = false
-  deps = [
+  link_deps = [
     ":lite",
     "../:minimal_lite",
     "../../config:lite",
+    "../interned_data:lite",
+    "../track_event:lite",
   ]
   sources = minimal_chrome_proto_names
   proto_in_dir = "$perfetto_root_path/protos"

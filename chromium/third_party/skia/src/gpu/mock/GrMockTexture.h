@@ -22,14 +22,13 @@ public:
         this->registerWithCache(budgeted);
     }
 
-    enum Wrapped { kWrapped };
-    GrMockTexture(GrMockGpu* gpu, Wrapped, const GrSurfaceDesc& desc, GrMipMapsStatus mipMapsStatus,
-                  const GrMockTextureInfo& info, GrIOType ioType, bool purgeImmediately)
+    GrMockTexture(GrMockGpu* gpu, const GrSurfaceDesc& desc, GrMipMapsStatus mipMapsStatus,
+                  const GrMockTextureInfo& info, GrWrapCacheable cacheable, GrIOType ioType)
             : GrMockTexture(gpu, desc, mipMapsStatus, info) {
         if (ioType == kRead_GrIOType) {
             this->setReadOnly();
         }
-        this->registerWithCacheWrapped(purgeImmediately);
+        this->registerWithCacheWrapped(cacheable);
     }
 
     ~GrMockTexture() override {}
@@ -44,15 +43,6 @@ public:
     }
 
     void textureParamsModified() override {}
-    void setRelease(sk_sp<GrReleaseProcHelper> releaseHelper) override {
-        fReleaseHelper = std::move(releaseHelper);
-    }
-
-    void setIdleProc(IdleProc proc, void* context) override {
-        fIdleProc = proc;
-        fIdleProcContext = context;
-    }
-    void* idleContext() const override { return fIdleProcContext; }
 
 protected:
     // constructor for subclasses
@@ -63,12 +53,10 @@ protected:
             , fInfo(info) {}
 
     void onRelease() override {
-        this->invokeReleaseProc();
         INHERITED::onRelease();
     }
 
     void onAbandon() override {
-        this->invokeReleaseProc();
         INHERITED::onAbandon();
     }
 
@@ -76,27 +64,8 @@ protected:
         return false;
     }
 
-    // protected so that GrMockTextureRenderTarget can call this to avoid "inheritance via
-    // dominance" warning.
-    void becamePurgeable() override {
-        if (fIdleProc) {
-            fIdleProc(fIdleProcContext);
-            fIdleProc = nullptr;
-            fIdleProcContext = nullptr;
-        }
-    }
-
 private:
-    void invokeReleaseProc() {
-        // Depending on the ref count of fReleaseHelper this may or may not actually trigger the
-        // ReleaseProc to be called.
-        fReleaseHelper.reset();
-    }
-
     GrMockTextureInfo fInfo;
-    sk_sp<GrReleaseProcHelper> fReleaseHelper;
-    IdleProc* fIdleProc = nullptr;
-    void* fIdleProcContext = nullptr;
 
     typedef GrTexture INHERITED;
 };
@@ -113,7 +82,7 @@ public:
     GrMockRenderTarget(GrMockGpu* gpu, Wrapped, const GrSurfaceDesc& desc,
                        const GrMockRenderTargetInfo& info)
             : GrSurface(gpu, desc), INHERITED(gpu, desc), fInfo(info) {
-        this->registerWithCacheWrapped();
+        this->registerWithCacheWrapped(GrWrapCacheable::kNo);
     }
 
     ResolveType getResolveType() const override { return kCanResolve_ResolveType; }
@@ -169,11 +138,11 @@ public:
     // Renderable wrapped backend texture.
     GrMockTextureRenderTarget(GrMockGpu* gpu, const GrSurfaceDesc& desc,
                               GrMipMapsStatus mipMapsStatus, const GrMockTextureInfo& texInfo,
-                              const GrMockRenderTargetInfo& rtInfo)
+                              const GrMockRenderTargetInfo& rtInfo, GrWrapCacheable cacheble)
             : GrSurface(gpu, desc)
             , GrMockTexture(gpu, desc, mipMapsStatus, texInfo)
             , GrMockRenderTarget(gpu, desc, rtInfo) {
-        this->registerWithCacheWrapped();
+        this->registerWithCacheWrapped(cacheble);
     }
 
     GrTexture* asTexture() override { return this; }
@@ -185,6 +154,10 @@ public:
         return GrMockTexture::backendFormat();
     }
 
+protected:
+    // This avoids an inherits via dominance warning on MSVC.
+    void willRemoveLastRefOrPendingIO() override { GrTexture::willRemoveLastRefOrPendingIO(); }
+
 private:
     void onAbandon() override {
         GrRenderTarget::onAbandon();
@@ -195,9 +168,6 @@ private:
         GrRenderTarget::onRelease();
         GrMockTexture::onRelease();
     }
-
-    // We implement this to avoid the inheritance via dominance warning.
-    void becamePurgeable() override { GrMockTexture::becamePurgeable(); }
 
     size_t onGpuMemorySize() const override {
         int numColorSamples = this->numColorSamples();

@@ -38,6 +38,11 @@ typedef struct search_site_config {
   int total_steps;
 } search_site_config;
 
+static INLINE const uint8_t *get_buf_from_mv(const struct buf_2d *buf,
+                                             const MV *mv) {
+  return &buf->buf[mv->row * buf->stride + mv->col];
+}
+
 void vp9_init_dsmotion_compensation(search_site_config *cfg, int stride);
 void vp9_init3smotion_compensation(search_site_config *cfg, int stride);
 
@@ -110,7 +115,8 @@ struct VP9_COMP;
 // "mvp_full" is the MV search starting point;
 // "ref_mv" is the context reference MV;
 // "tmp_mv" is the searched best MV.
-int vp9_full_pixel_search(struct VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
+int vp9_full_pixel_search(const struct VP9_COMP *const cpi,
+                          const MACROBLOCK *const x, BLOCK_SIZE bsize,
                           MV *mvp_full, int step_param, int search_method,
                           int error_per_bit, int *cost_list, const MV *ref_mv,
                           MV *tmp_mv, int var_max, int rd);
@@ -143,7 +149,6 @@ static INLINE MV get_full_mv(const MV *mv) {
   out_mv.col = mv->col >> 3;
   return out_mv;
 }
-
 struct TplDepFrame;
 void vp9_prepare_nb_full_mvs(const struct TplDepFrame *tpl_frame, int mi_row,
                              int mi_col, int rf_idx, BLOCK_SIZE bsize,

@@ -250,8 +250,8 @@ public:
     bool fSerializeAsStream;
     bool fCanBeLCD;
 
-    static LogFontTypeface* Create(const LOGFONT& lf) {
-        return new LogFontTypeface(get_style(lf), lf, false);
+    static sk_sp<LogFontTypeface> Make(const LOGFONT& lf) {
+        return sk_sp<LogFontTypeface>(new LogFontTypeface(get_style(lf), lf, false));
     }
 
     static void EnsureAccessible(const SkTypeface* face) {
@@ -259,7 +259,7 @@ public:
     }
 
 protected:
-    SkStreamAsset* onOpenStream(int* ttcIndex) const override;
+    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
     sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override;
     SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
                                            const SkDescriptor*) const override;
@@ -292,8 +292,9 @@ public:
     /**
      *  The created FontMemResourceTypeface takes ownership of fontMemResource.
      */
-    static FontMemResourceTypeface* Create(const LOGFONT& lf, HANDLE fontMemResource) {
-        return new FontMemResourceTypeface(get_style(lf), lf, fontMemResource);
+    static sk_sp<FontMemResourceTypeface> Make(const LOGFONT& lf, HANDLE fontMemResource) {
+        return sk_sp<FontMemResourceTypeface>(
+            new FontMemResourceTypeface(get_style(lf), lf, fontMemResource));
     }
 
 protected:
@@ -335,22 +336,22 @@ static bool FindByLogFont(SkTypeface* face, void* ctx) {
 SkTypeface* SkCreateTypefaceFromLOGFONT(const LOGFONT& origLF) {
     LOGFONT lf = origLF;
     make_canonical(&lf);
-    SkTypeface* face = SkTypefaceCache::FindByProcAndRef(FindByLogFont, &lf);
-    if (nullptr == face) {
-        face = LogFontTypeface::Create(lf);
+    sk_sp<SkTypeface> face = SkTypefaceCache::FindByProcAndRef(FindByLogFont, &lf);
+    if (!face) {
+        face = LogFontTypeface::Make(lf);
         SkTypefaceCache::Add(face);
     }
-    return face;
+    return face.release();
 }
 
 /**
  *  The created SkTypeface takes ownership of fontMemResource.
  */
-SkTypeface* SkCreateFontMemResourceTypefaceFromLOGFONT(const LOGFONT& origLF, HANDLE fontMemResource) {
+sk_sp<SkTypeface> SkCreateFontMemResourceTypefaceFromLOGFONT(const LOGFONT& origLF, HANDLE fontMemResource) {
     LOGFONT lf = origLF;
     make_canonical(&lf);
     // We'll never get a cache hit, so no point in putting this in SkTypefaceCache.
-    return FontMemResourceTypeface::Create(lf, fontMemResource);
+    return FontMemResourceTypeface::Make(lf, fontMemResource);
 }
 
 /**
@@ -1855,18 +1856,17 @@ static sk_sp<SkTypeface> create_from_stream(std::unique_ptr<SkStreamAsset> strea
     return sk_sp<SkTypeface>(SkCreateFontMemResourceTypefaceFromLOGFONT(lf, fontReference));
 }
 
-SkStreamAsset* LogFontTypeface::onOpenStream(int* ttcIndex) const {
+std::unique_ptr<SkStreamAsset> LogFontTypeface::onOpenStream(int* ttcIndex) const {
     *ttcIndex = 0;
 
-    const DWORD kTTCTag =
-        SkEndian_SwapBE32(SkSetFourByteTag('t', 't', 'c', 'f'));
+    const DWORD kTTCTag = SkEndian_SwapBE32(SkSetFourByteTag('t', 't', 'c', 'f'));
     LOGFONT lf = fLogFont;
 
     HDC hdc = ::CreateCompatibleDC(nullptr);
     HFONT font = CreateFontIndirect(&lf);
     HFONT savefont = (HFONT)SelectObject(hdc, font);
 
-    SkMemoryStream* stream = nullptr;
+    std::unique_ptr<SkStreamAsset> stream;
     DWORD tables[2] = {kTTCTag, 0};
     for (size_t i = 0; i < SK_ARRAY_COUNT(tables); i++) {
         DWORD bufferSize = GetFontData(hdc, tables[i], 0, nullptr, 0);
@@ -1875,12 +1875,11 @@ SkStreamAsset* LogFontTypeface::onOpenStream(int* ttcIndex) const {
             bufferSize = GetFontData(hdc, tables[i], 0, nullptr, 0);
         }
         if (bufferSize != GDI_ERROR) {
-            stream = new SkMemoryStream(bufferSize);
+            stream.reset(new SkMemoryStream(bufferSize));
             if (GetFontData(hdc, tables[i], 0, (void*)stream->getMemoryBase(), bufferSize)) {
                 break;
             } else {
-                delete stream;
-                stream = nullptr;
+                stream.reset();
             }
         }
     }

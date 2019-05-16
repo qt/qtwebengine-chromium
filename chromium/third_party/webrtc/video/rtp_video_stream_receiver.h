@@ -11,6 +11,7 @@
 #ifndef VIDEO_RTP_VIDEO_STREAM_RECEIVER_H_
 #define VIDEO_RTP_VIDEO_STREAM_RECEIVER_H_
 
+#include <atomic>
 #include <list>
 #include <map>
 #include <memory>
@@ -18,7 +19,6 @@
 #include <vector>
 
 #include "absl/types/optional.h"
-
 #include "api/crypto/frame_decryptor_interface.h"
 #include "api/video/color_space.h"
 #include "api/video_codecs/video_codec.h"
@@ -33,6 +33,7 @@
 #include "modules/rtp_rtcp/source/contributing_sources.h"
 #include "modules/video_coding/h264_sps_pps_tracker.h"
 #include "modules/video_coding/include/video_coding_defines.h"
+#include "modules/video_coding/loss_notification_controller.h"
 #include "modules/video_coding/packet_buffer.h"
 #include "modules/video_coding/rtp_frame_reference_finder.h"
 #include "rtc_base/constructor_magic.h"
@@ -55,15 +56,18 @@ class RtpPacketReceived;
 class Transport;
 class UlpfecReceiver;
 
-class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
+class RtpVideoStreamReceiver : public LossNotificationSender,
+                               public RecoveredPacketReceiver,
                                public RtpPacketSinkInterface,
                                public VCMFrameTypeCallback,
                                public VCMPacketRequestCallback,
-                               public video_coding::OnReceivedFrameCallback,
+                               public video_coding::OnAssembledFrameCallback,
                                public video_coding::OnCompleteFrameCallback,
-                               public OnDecryptedFrameCallback {
+                               public OnDecryptedFrameCallback,
+                               public OnDecryptionStatusChangeCallback {
  public:
   RtpVideoStreamReceiver(
+      Clock* clock,
       Transport* transport,
       RtcpRttStats* rtt_stats,
       PacketRouter* packet_router,
@@ -118,8 +122,19 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
   // Implements VCMFrameTypeCallback.
   int32_t RequestKeyFrame() override;
 
+  // Implements LossNotificationSender.
+  void SendLossNotification(uint16_t last_decoded_seq_num,
+                            uint16_t last_received_seq_num,
+                            bool decodability_flag) override;
+
   bool IsUlpfecEnabled() const;
   bool IsRetransmissionsEnabled() const;
+
+  // Returns true if a decryptor is attached and frames can be decrypted.
+  // Updated by OnDecryptionStatusChangeCallback. Note this refers to Frame
+  // Decryption not SRTP.
+  bool IsDecryptable() const;
+
   // Don't use, still experimental.
   void RequestPacketRetransmit(const std::vector<uint16_t>& sequence_numbers);
 
@@ -127,8 +142,8 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
   int32_t ResendPackets(const uint16_t* sequenceNumbers,
                         uint16_t length) override;
 
-  // Implements OnReceivedFrameCallback.
-  void OnReceivedFrame(
+  // Implements OnAssembledFrameCallback.
+  void OnAssembledFrame(
       std::unique_ptr<video_coding::RtpFrameObject> frame) override;
 
   // Implements OnCompleteFrameCallback.
@@ -138,6 +153,9 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
   // Implements OnDecryptedFrameCallback.
   void OnDecryptedFrame(
       std::unique_ptr<video_coding::RtpFrameObject> frame) override;
+
+  // Implements OnDecryptionStatusChangeCallback.
+  void OnDecryptionStatusChange(int status) override;
 
   // Called by VideoReceiveStream when stats are updated.
   void UpdateRtt(int64_t max_rtt_ms);
@@ -186,8 +204,9 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
 
   // Members for the new jitter buffer experiment.
   video_coding::OnCompleteFrameCallback* complete_frame_callback_;
-  KeyFrameRequestSender* keyframe_request_sender_;
+  KeyFrameRequestSender* const keyframe_request_sender_;
   std::unique_ptr<NackModule> nack_module_;
+  std::unique_ptr<LossNotificationController> loss_notification_controller_;
   rtc::scoped_refptr<video_coding::PacketBuffer> packet_buffer_;
   std::unique_ptr<video_coding::RtpFrameReferenceFinder> reference_finder_;
   rtc::CriticalSection last_seq_num_cs_;
@@ -223,6 +242,7 @@ class RtpVideoStreamReceiver : public RecoveredPacketReceiver,
   // rtp_reference_finder if they are decryptable.
   std::unique_ptr<BufferedFrameDecryptor> buffered_frame_decryptor_
       RTC_PT_GUARDED_BY(network_tc_);
+  std::atomic<bool> frames_decryptable_;
   absl::optional<ColorSpace> last_color_space_;
 };
 

@@ -18,9 +18,11 @@
 #include "SkSGGroup.h"
 #include "SkSGPath.h"
 #include "SkSGRect.h"
+#include "SkSGRenderEffect.h"
 #include "SkSGText.h"
 #include "SkSGTransform.h"
 #include "SkSGTrimEffect.h"
+#include "SkShaper.h"
 #include "SkTextBlob.h"
 #include "SkTextUtils.h"
 #include "SkTo.h"
@@ -100,6 +102,43 @@ SkMatrix44 TransformAdapter3D::totalMatrix() const {
 
 void TransformAdapter3D::apply() {
     fMatrixNode->setMatrix(this->totalMatrix());
+}
+
+RepeaterAdapter::RepeaterAdapter(sk_sp<sksg::RenderNode> repeater_node, Composite composite)
+    : fRepeaterNode(repeater_node)
+    , fComposite(composite)
+    , fRoot(sksg::Group::Make()) {}
+
+RepeaterAdapter::~RepeaterAdapter() = default;
+
+void RepeaterAdapter::apply() {
+    static constexpr SkScalar kMaxCount = 512;
+    const auto count = static_cast<size_t>(SkTPin(fCount, 0.0f, kMaxCount) + 0.5f);
+
+    const auto& compute_transform = [this] (size_t index) {
+        const auto t = fOffset + index;
+
+        // Position, scale & rotation are "scaled" by index/offset.
+        SkMatrix m = SkMatrix::MakeTrans(-fAnchorPoint.x(),
+                                         -fAnchorPoint.y());
+        m.postScale(std::pow(fScale.x() * .01f, fOffset),
+                    std::pow(fScale.y() * .01f, fOffset));
+        m.postRotate(t * fRotation);
+        m.postTranslate(t * fPosition.x() + fAnchorPoint.x(),
+                        t * fPosition.y() + fAnchorPoint.y());
+
+        return m;
+    };
+
+    // TODO: start/end opacity support.
+
+    // TODO: we can avoid rebuilding all the fragments in most cases.
+    fRoot->clear();
+    for (size_t i = 0; i < count; ++i) {
+        const auto insert_index = (fComposite == Composite::kAbove) ? i : count - i - 1;
+        fRoot->addChild(sksg::TransformEffect::Make(fRepeaterNode,
+                                                    compute_transform(insert_index)));
+    }
 }
 
 PolyStarAdapter::PolyStarAdapter(sk_sp<sksg::Path> wrapped_node, Type t)
@@ -225,6 +264,31 @@ void TrimEffectAdapter::apply() {
     fTrimEffect->setMode(mode);
 }
 
+DropShadowEffectAdapter::DropShadowEffectAdapter(sk_sp<sksg::DropShadowImageFilter> dropShadow)
+    : fDropShadow(std::move(dropShadow)) {
+    SkASSERT(fDropShadow);
+}
+
+DropShadowEffectAdapter::~DropShadowEffectAdapter() = default;
+
+void DropShadowEffectAdapter::apply() {
+    // fColor -> RGB, fOpacity -> A
+    fDropShadow->setColor(SkColorSetA(fColor, SkTPin(SkScalarRoundToInt(fOpacity), 0, 255)));
+
+    // The offset is specified in terms of a bearing angle + distance.
+    SkScalar sinV, cosV;
+    sinV = SkScalarSinCos(SkDegreesToRadians(90 - fDirection), &cosV);
+    fDropShadow->setOffset(SkVector::Make(fDistance * cosV, -fDistance * sinV));
+
+    // Close enough to AE.
+    static constexpr SkScalar kSoftnessToSigmaFactor = 0.3f;
+    const auto sigma = fSoftness * kSoftnessToSigmaFactor;
+    fDropShadow->setSigma(SkVector::Make(sigma, sigma));
+
+    fDropShadow->setMode(fShadowOnly ? sksg::DropShadowImageFilter::Mode::kShadowOnly
+                                     : sksg::DropShadowImageFilter::Mode::kShadowAndForeground);
+}
+
 TextAdapter::TextAdapter(sk_sp<sksg::Group> root)
     : fRoot(std::move(root))
     , fTextNode(sksg::TextBlob::Make())
@@ -259,41 +323,110 @@ sk_sp<SkTextBlob> TextAdapter::makeBlob() const {
     font.setSubpixel(true);
     font.setEdging(SkFont::Edging::kAntiAlias);
 
-    const auto align_fract = [](SkTextUtils::Align align) {
-        switch (align) {
-        case SkTextUtils::kLeft_Align:   return  0.0f;
-        case SkTextUtils::kCenter_Align: return -0.5f;
-        case SkTextUtils::kRight_Align:  return -1.0f;
+    // Helper for interfacing with SkShaper: buffers shaper-fed runs and performs
+    // per-line position adjustments (for external line breaking, horizontal alignment, etc).
+    class BlobMaker final : public SkShaper::RunHandler {
+    public:
+        BlobMaker(SkTextUtils::Align align)
+            : fAlignFactor(AlignFactor(align)) {}
+
+        Buffer newRunBuffer(const RunInfo& info, const SkFont& font, int glyphCount,
+                            SkSpan<const char> utf8) override {
+            fPendingLineAdvance += info.fAdvance;
+
+            auto& run = fPendingLineRuns.emplace_back(font, info, glyphCount);
+
+            return {
+                run.fGlyphs   .data(),
+                run.fPositions.data(),
+                nullptr,
+            };
         }
-        return 0.0f; // go home, msvc...
-    }(fText.fAlign);
 
-    const auto line_spacing = font.getSpacing();
-    float y_off             = 0;
-    SkSTArray<256, SkGlyphID, true> line_glyph_buffer;
-    SkTextBlobBuilder builder;
+        void commitRun() override { }
 
-    const auto& push_line = [&](const char* start, const char* end) {
-        if (end > start) {
-            const auto len   = SkToSizeT(end - start);
-            line_glyph_buffer.reset(font.countText(start, len, kUTF8_SkTextEncoding));
-            SkAssertResult(font.textToGlyphs(start, len, kUTF8_SkTextEncoding, line_glyph_buffer.data(),
-                    line_glyph_buffer.count())
-                           == line_glyph_buffer.count());
+        void commitLine() override {
+            SkScalar line_spacing = 0;
 
-            const auto x_off = align_fract != 0
-                    ? align_fract * font.measureText(start, len, kUTF8_SkTextEncoding)
-                    : 0;
-            const auto& buf  = builder.allocRun(font, line_glyph_buffer.count(), x_off, y_off);
-            if (!buf.glyphs) {
-                return;
+            for (const auto& run : fPendingLineRuns) {
+                const auto runSize = run.size();
+                const auto& blobBuffer = fBuilder.allocRunPos(run.fFont, SkToInt(runSize));
+
+                sk_careful_memcpy(blobBuffer.glyphs,
+                                  run.fGlyphs.data(),
+                                  runSize * sizeof(SkGlyphID));
+
+                // For each buffered line, perform the following position adjustments:
+                //   1) horizontal alignment
+                //   2) vertical advance (based on line number/offset)
+                //   3) baseline/ascent adjustment
+                const auto offset = SkVector::Make(fAlignFactor * fPendingLineAdvance.x(),
+                                                   fPendingLineVOffset + run.fInfo.fAscent);
+                for (size_t i = 0; i < runSize; ++i) {
+                    blobBuffer.points()[i] = run.fPositions[SkToInt(i)] + offset;
+                }
+
+                line_spacing = SkTMax(line_spacing,
+                                      run.fInfo.fDescent - run.fInfo.fAscent + run.fInfo.fLeading);
             }
 
-            memcpy(buf.glyphs, line_glyph_buffer.data(),
-                   SkToSizeT(line_glyph_buffer.count()) * sizeof(SkGlyphID));
-
-            y_off += line_spacing;
+            fPendingLineRuns.reset();
+            fPendingLineVOffset += line_spacing;
+            fPendingLineAdvance  = { 0, 0 };
         }
+
+        sk_sp<SkTextBlob> makeBlob() {
+            return fBuilder.make();
+        }
+
+    private:
+        static float AlignFactor(SkTextUtils::Align align) {
+            switch (align) {
+            case SkTextUtils::kLeft_Align:   return  0.0f;
+            case SkTextUtils::kCenter_Align: return -0.5f;
+            case SkTextUtils::kRight_Align:  return -1.0f;
+            }
+            return 0.0f; // go home, msvc...
+        }
+
+        struct Run {
+            SkFont                          fFont;
+            SkShaper::RunHandler::RunInfo   fInfo;
+            SkSTArray<128, SkGlyphID, true> fGlyphs;
+            SkSTArray<128, SkPoint  , true> fPositions;
+
+            Run(const SkFont& font, const SkShaper::RunHandler::RunInfo& info, int count)
+                : fFont(font)
+                , fInfo(info)
+                , fGlyphs   (count)
+                , fPositions(count) {
+                fGlyphs   .push_back_n(count);
+                fPositions.push_back_n(count);
+            }
+
+            size_t size() const {
+                SkASSERT(fGlyphs.size() == fPositions.size());
+                return fGlyphs.size();
+            }
+        };
+
+        const float fAlignFactor;
+
+        SkTextBlobBuilder        fBuilder;
+        SkSTArray<2, Run, false> fPendingLineRuns;
+        SkScalar                 fPendingLineVOffset = 0;
+        SkVector                 fPendingLineAdvance = { 0, 0 };
+    };
+
+    BlobMaker blobMaker(fText.fAlign);
+
+    const auto& push_line = [&](const char* start, const char* end) {
+        std::unique_ptr<SkShaper> shaper = SkShaper::Make();
+        if (!shaper) {
+            return;
+        }
+
+        shaper->shape(&blobMaker, font, start, SkToSizeT(end - start), true, { 0, 0 }, SK_ScalarMax);
     };
 
     const auto& is_line_break = [](SkUnichar uch) {
@@ -313,7 +446,7 @@ sk_sp<SkTextBlob> TextAdapter::makeBlob() const {
     }
     push_line(line_start, ptr);
 
-    return builder.make();
+    return blobMaker.makeBlob();
 }
 
 void TextAdapter::apply() {

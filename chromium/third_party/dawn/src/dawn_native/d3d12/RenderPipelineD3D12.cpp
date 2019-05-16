@@ -127,9 +127,9 @@ namespace dawn_native { namespace d3d12 {
             return static_cast<uint8_t>(colorWriteMask);
         }
 
-        D3D12_RENDER_TARGET_BLEND_DESC ComputeBlendDesc(const BlendStateDescriptor* descriptor) {
+        D3D12_RENDER_TARGET_BLEND_DESC ComputeColorDesc(const ColorStateDescriptor* descriptor) {
             D3D12_RENDER_TARGET_BLEND_DESC blendDesc;
-            blendDesc.BlendEnable = descriptor->blendEnabled;
+            blendDesc.BlendEnable = BlendEnabled(descriptor);
             blendDesc.SrcBlend = D3D12Blend(descriptor->colorBlend.srcFactor);
             blendDesc.DestBlend = D3D12Blend(descriptor->colorBlend.dstFactor);
             blendDesc.BlendOp = D3D12BlendOperation(descriptor->colorBlend.operation);
@@ -169,7 +169,7 @@ namespace dawn_native { namespace d3d12 {
         D3D12_DEPTH_STENCILOP_DESC StencilOpDesc(const StencilStateFaceDescriptor descriptor) {
             D3D12_DEPTH_STENCILOP_DESC desc;
 
-            desc.StencilFailOp = StencilOp(descriptor.stencilFailOp);
+            desc.StencilFailOp = StencilOp(descriptor.failOp);
             desc.StencilDepthFailOp = StencilOp(descriptor.depthFailOp);
             desc.StencilPassOp = StencilOp(descriptor.passOp);
             desc.StencilFunc = ToD3D12ComparisonFunc(descriptor.compare);
@@ -192,8 +192,8 @@ namespace dawn_native { namespace d3d12 {
             mDepthStencilDescriptor.StencilWriteMask =
                 static_cast<UINT8>(descriptor->stencilWriteMask);
 
-            mDepthStencilDescriptor.FrontFace = StencilOpDesc(descriptor->front);
-            mDepthStencilDescriptor.BackFace = StencilOpDesc(descriptor->back);
+            mDepthStencilDescriptor.FrontFace = StencilOpDesc(descriptor->stencilFront);
+            mDepthStencilDescriptor.BackFace = StencilOpDesc(descriptor->stencilBack);
             return mDepthStencilDescriptor;
         }
 
@@ -287,7 +287,7 @@ namespace dawn_native { namespace d3d12 {
         for (uint32_t i : IterateBitSet(GetColorAttachmentsMask())) {
             descriptorD3D12.RTVFormats[i] = D3D12TextureFormat(GetColorAttachmentFormat(i));
             descriptorD3D12.BlendState.RenderTarget[i] =
-                ComputeBlendDesc(GetBlendStateDescriptor(i));
+                ComputeColorDesc(GetColorStateDescriptor(i));
         }
         descriptorD3D12.NumRenderTargets = static_cast<uint32_t>(GetColorAttachmentsMask().count());
 

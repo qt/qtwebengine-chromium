@@ -22,8 +22,8 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/clock.h"
-#include "system_wrappers/include/field_trial.h"
 
+namespace webrtc {
 namespace {
 // Time limit in milliseconds between packet bursts.
 const int64_t kDefaultMinPacketLimitMs = 5;
@@ -35,23 +35,44 @@ const int64_t kMaxElapsedTimeMs = 2000;
 // time.
 const int64_t kMaxIntervalTimeMs = 30;
 
-}  // namespace
+bool IsDisabled(const WebRtcKeyValueConfig& field_trials,
+                absl::string_view key) {
+  return field_trials.Lookup(key).find("Disabled") == 0;
+}
 
-namespace webrtc {
+bool IsEnabled(const WebRtcKeyValueConfig& field_trials,
+               absl::string_view key) {
+  return field_trials.Lookup(key).find("Enabled") == 0;
+}
+
+}  // namespace
 
 const int64_t PacedSender::kMaxQueueLengthMs = 2000;
 const float PacedSender::kDefaultPaceMultiplier = 2.5f;
 
-PacedSender::PacedSender(const Clock* clock,
+PacedSender::PacedSender(Clock* clock,
                          PacketSender* packet_sender,
-                         RtcEventLog* event_log)
+                         RtcEventLog* event_log,
+                         const WebRtcKeyValueConfig* field_trials)
+    : PacedSender(clock,
+                  packet_sender,
+                  event_log,
+                  field_trials
+                      ? *field_trials
+                      : static_cast<const webrtc::WebRtcKeyValueConfig&>(
+                            FieldTrialBasedConfig())) {}
+
+PacedSender::PacedSender(Clock* clock,
+                         PacketSender* packet_sender,
+                         RtcEventLog* event_log,
+                         const WebRtcKeyValueConfig& field_trials)
     : clock_(clock),
       packet_sender_(packet_sender),
       alr_detector_(),
-      drain_large_queues_(!field_trial::IsDisabled("WebRTC-Pacer-DrainQueue")),
+      drain_large_queues_(!IsDisabled(field_trials, "WebRTC-Pacer-DrainQueue")),
       send_padding_if_silent_(
-          field_trial::IsEnabled("WebRTC-Pacer-PadInSilence")),
-      video_blocks_audio_(!field_trial::IsDisabled("WebRTC-Pacer-BlockAudio")),
+          IsEnabled(field_trials, "WebRTC-Pacer-PadInSilence")),
+      pace_audio_(!IsDisabled(field_trials, "WebRTC-Pacer-BlockAudio")),
       min_packet_limit_ms_("", kDefaultMinPacketLimitMs),
       last_timestamp_ms_(clock_->TimeInMilliseconds()),
       paused_(false),
@@ -76,15 +97,15 @@ PacedSender::PacedSender(const Clock* clock,
                            "pushback experiment must be enabled.";
   }
   ParseFieldTrial({&min_packet_limit_ms_},
-                  field_trial::FindFullName("WebRTC-Pacer-MinPacketLimitMs"));
+                  field_trials.Lookup("WebRTC-Pacer-MinPacketLimitMs"));
   UpdateBudgetWithElapsedTime(min_packet_limit_ms_);
 }
 
 PacedSender::~PacedSender() {}
 
-void PacedSender::CreateProbeCluster(int bitrate_bps) {
+void PacedSender::CreateProbeCluster(int bitrate_bps, int cluster_id) {
   rtc::CritScope cs(&critsect_);
-  prober_.CreateProbeCluster(bitrate_bps, TimeMilliseconds());
+  prober_.CreateProbeCluster(bitrate_bps, TimeMilliseconds(), cluster_id);
 }
 
 void PacedSender::Pause() {
@@ -185,6 +206,10 @@ void PacedSender::SetPacingRates(uint32_t pacing_rate_bps,
   RTC_DCHECK(pacing_rate_bps > 0);
   pacing_bitrate_kbps_ = pacing_rate_bps / 1000;
   padding_budget_.set_target_rate_kbps(padding_rate_bps / 1000);
+
+  RTC_LOG(LS_VERBOSE) << "bwe:pacer_updated pacing_kbps="
+                      << pacing_bitrate_kbps_
+                      << " padding_budget_kbps=" << padding_rate_bps / 1000;
 }
 
 void PacedSender::InsertPacket(RtpPacketSender::Priority priority,
@@ -327,8 +352,11 @@ void PacedSender::Process() {
             1, queue_time_limit - packets_.AverageQueueTimeMs());
         int min_bitrate_needed_kbps =
             static_cast<int>(queue_size_bytes * 8 / avg_time_left_ms);
-        if (min_bitrate_needed_kbps > target_bitrate_kbps)
+        if (min_bitrate_needed_kbps > target_bitrate_kbps) {
           target_bitrate_kbps = min_bitrate_needed_kbps;
+          RTC_LOG(LS_VERBOSE) << "bwe:large_pacing_queue pacing_rate_kbps="
+                              << target_bitrate_kbps;
+        }
       }
     }
 
@@ -359,7 +387,7 @@ void PacedSender::Process() {
     if (success) {
       bytes_sent += packet->bytes;
       // Send succeeded, remove it from the queue.
-      OnPacketSent(std::move(packet));
+      OnPacketSent(packet);
       if (is_probing && bytes_sent > recommended_probe_size)
         break;
     } else {
@@ -408,8 +436,7 @@ const RoundRobinPacketQueue::Packet* PacedSender::GetPendingPacket(
   // reinsert it if send fails.
   const RoundRobinPacketQueue::Packet* packet = &packets_.BeginPop();
   bool audio_packet = packet->priority == kHighPriority;
-  bool apply_pacing =
-      !audio_packet || account_for_audio_ || video_blocks_audio_;
+  bool apply_pacing = !audio_packet || pace_audio_;
   if (apply_pacing && (Congested() || (media_budget_.bytes_remaining() == 0 &&
                                        pacing_info.probe_cluster_id ==
                                            PacedPacketInfo::kNotAProbe))) {

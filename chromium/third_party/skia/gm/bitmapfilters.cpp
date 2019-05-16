@@ -59,7 +59,7 @@ static SkScalar draw_row(SkCanvas* canvas, const SkBitmap& bm) {
 
     x += draw_set(canvas, bm, 0, &paint);
     paint.reset();
-    paint.setAlpha(0x80);
+    paint.setAlphaf(0.5f);
     draw_set(canvas, bm, x, &paint);
     return x * scale / 3;
 }
@@ -120,7 +120,6 @@ class TestExtractAlphaGM : public skiagm::GM {
         paint.setStrokeWidth(20);
 
         canvas.drawCircle(50, 50, 39, paint);
-        canvas.flush();
 
         fBitmap.extractAlpha(&fAlpha);
     }

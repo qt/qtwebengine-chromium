@@ -8,8 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifdef HAVE_WEBRTC_VOICE
-
 #include "media/engine/webrtc_voice_engine.h"
 
 #include <algorithm>
@@ -19,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/strings/match.h"
 #include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/call/audio_sink.h"
@@ -37,6 +36,8 @@
 #include "rtc_base/arraysize.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/constructor_magic.h"
+#include "rtc_base/experiments/field_trial_parser.h"
+#include "rtc_base/experiments/field_trial_units.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/race_checker.h"
@@ -53,10 +54,6 @@ namespace {
 constexpr size_t kMaxUnsignaledRecvStreams = 4;
 
 constexpr int kNackRtpHistoryMs = 5000;
-
-// For SendSideBwe, Opus bitrate should be in the range between 6000 and 32000.
-const int kOpusMinBitrateBps = 6000;
-const int kOpusBitrateFbBps = 32000;
 
 const int kMinTelephoneEventCode = 0;  // RFC4733 (Section 2.3.1)
 const int kMaxTelephoneEventCode = 255;
@@ -127,12 +124,10 @@ bool VerifyUniquePayloadTypes(const std::vector<AudioCodec>& codecs) {
     return true;
   }
   std::vector<int> payload_types;
-  for (const AudioCodec& codec : codecs) {
-    payload_types.push_back(codec.id);
-  }
-  std::sort(payload_types.begin(), payload_types.end());
-  auto it = std::unique(payload_types.begin(), payload_types.end());
-  return it == payload_types.end();
+  absl::c_transform(codecs, std::back_inserter(payload_types),
+                    [](const AudioCodec& codec) { return codec.id; });
+  absl::c_sort(payload_types);
+  return absl::c_adjacent_find(payload_types) == payload_types.end();
 }
 
 absl::optional<std::string> GetAudioNetworkAdaptorConfig(
@@ -277,7 +272,7 @@ void WebRtcVoiceEngine::Init() {
     options.noise_suppression = true;
     options.highpass_filter = true;
     options.stereo_swapping = false;
-    options.audio_jitter_buffer_max_packets = 50;
+    options.audio_jitter_buffer_max_packets = 200;
     options.audio_jitter_buffer_fast_accelerate = false;
     options.audio_jitter_buffer_min_delay_ms = 0;
     options.audio_jitter_buffer_enable_rtx_handling = false;
@@ -561,16 +556,11 @@ const std::vector<AudioCodec>& WebRtcVoiceEngine::recv_codecs() const {
 RtpCapabilities WebRtcVoiceEngine::GetCapabilities() const {
   RTC_DCHECK(signal_thread_checker_.CalledOnValidThread());
   RtpCapabilities capabilities;
+  int id = 1;
   capabilities.header_extensions.push_back(
-      webrtc::RtpExtension(webrtc::RtpExtension::kAudioLevelUri,
-                           webrtc::RtpExtension::kAudioLevelDefaultId));
-  if (webrtc::field_trial::IsEnabled("WebRTC-Audio-SendSideBwe") &&
-      !webrtc::field_trial::IsEnabled("WebRTC-Audio-ABWENoTWCC")) {
-    capabilities.header_extensions.push_back(webrtc::RtpExtension(
-        webrtc::RtpExtension::kTransportSequenceNumberUri,
-        webrtc::RtpExtension::kTransportSequenceNumberDefaultId));
-  }
-
+      webrtc::RtpExtension(webrtc::RtpExtension::kAudioLevelUri, id++));
+  capabilities.header_extensions.push_back(webrtc::RtpExtension(
+      webrtc::RtpExtension::kTransportSequenceNumberUri, id++));
   return capabilities;
 }
 
@@ -582,7 +572,7 @@ void WebRtcVoiceEngine::RegisterChannel(WebRtcVoiceMediaChannel* channel) {
 
 void WebRtcVoiceEngine::UnregisterChannel(WebRtcVoiceMediaChannel* channel) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  auto it = std::find(channels_.begin(), channels_.end(), channel);
+  auto it = absl::c_find(channels_, channel);
   RTC_DCHECK(it != channels_.end());
   channels_.erase(it);
 }
@@ -729,8 +719,6 @@ class WebRtcVoiceMediaChannel::WebRtcAudioSendStream
       const webrtc::CryptoOptions& crypto_options)
       : call_(call),
         config_(send_transport, media_transport),
-        send_side_bwe_with_overhead_(
-            webrtc::field_trial::IsEnabled("WebRTC-SendSideBwe-WithOverhead")),
         max_send_bitrate_bps_(max_send_bitrate_bps),
         rtp_parameters_(CreateRtpParametersWithOneEncoding()) {
     RTC_DCHECK(call);
@@ -926,7 +914,8 @@ class WebRtcVoiceMediaChannel::WebRtcAudioSendStream
   }
 
   webrtc::RTCError SetRtpParameters(const webrtc::RtpParameters& parameters) {
-    webrtc::RTCError error = ValidateRtpParameters(rtp_parameters_, parameters);
+    webrtc::RTCError error = CheckRtpParametersInvalidModificationAndValues(
+        rtp_parameters_, parameters);
     if (!error.ok()) {
       return error;
     }
@@ -991,43 +980,10 @@ class WebRtcVoiceMediaChannel::WebRtcAudioSendStream
         config_.send_codec_spec &&
         absl::EqualsIgnoreCase(config_.send_codec_spec->format.name,
                                kOpusCodecName);
-    if (is_opus && webrtc::field_trial::IsEnabled("WebRTC-Audio-SendSideBwe")) {
-      config_.min_bitrate_bps = kOpusMinBitrateBps;
-
-      // This means that when RtpParameters is reset, we may change the
-      // encoder's bit rate immediately (through ReconfigureAudioSendStream()),
-      // meanwhile change the cap to the output of BWE.
-      config_.max_bitrate_bps =
-          rtp_parameters_.encodings[0].max_bitrate_bps
-              ? *rtp_parameters_.encodings[0].max_bitrate_bps
-              : kOpusBitrateFbBps;
-
-      // TODO(mflodman): Keep testing this and set proper values.
-      // Note: This is an early experiment currently only supported by Opus.
-      if (send_side_bwe_with_overhead_) {
-        const int max_packet_size_ms =
-            WEBRTC_OPUS_SUPPORT_120MS_PTIME ? 120 : 60;
-
-        // OverheadPerPacket = Ipv4(20B) + UDP(8B) + SRTP(10B) + RTP(12)
-        constexpr int kOverheadPerPacket = 20 + 8 + 10 + 12;
-
-        int min_overhead_bps =
-            kOverheadPerPacket * 8 * 1000 / max_packet_size_ms;
-
-        // We assume that |config_.max_bitrate_bps| before the next line is
-        // a hard limit on the payload bitrate, so we add min_overhead_bps to
-        // it to ensure that, when overhead is deducted, the payload rate
-        // never goes beyond the limit.
-        // Note: this also means that if a higher overhead is forced, we
-        // cannot reach the limit.
-        // TODO(minyue): Reconsider this when the signaling to BWE is done
-        // through a dedicated API.
-        config_.max_bitrate_bps += min_overhead_bps;
-
-        // In contrast to max_bitrate_bps, we let min_bitrate_bps always be
-        // reachable.
-        config_.min_bitrate_bps += min_overhead_bps;
-      }
+    if (is_opus && allocation_settings_.ConfigureRateAllocationRange()) {
+      config_.min_bitrate_bps = allocation_settings_.MinBitrateBps();
+      config_.max_bitrate_bps = allocation_settings_.MaxBitrateBps(
+          rtp_parameters_.encodings[0].max_bitrate_bps);
     }
   }
 
@@ -1064,9 +1020,9 @@ class WebRtcVoiceMediaChannel::WebRtcAudioSendStream
 
   rtc::ThreadChecker worker_thread_checker_;
   rtc::RaceChecker audio_capture_race_checker_;
+  const webrtc::AudioAllocationSettings allocation_settings_;
   webrtc::Call* call_ = nullptr;
   webrtc::AudioSendStream::Config config_;
-  const bool send_side_bwe_with_overhead_;
   // The stream is owned by WebRtcAudioSendStream and may be reallocated if
   // configuration changes.
   webrtc::AudioSendStream* stream_ = nullptr;
@@ -1215,6 +1171,29 @@ class WebRtcVoiceMediaChannel::WebRtcAudioReceiveStream {
       stream_->Stop();
     }
     playout_ = playout;
+  }
+
+  bool SetBaseMinimumPlayoutDelayMs(int delay_ms) {
+    RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+    RTC_DCHECK(stream_);
+    if (stream_->SetBaseMinimumPlayoutDelayMs(delay_ms)) {
+      // Memorize only valid delay because during stream recreation it will be
+      // passed to the constructor and it must be valid value.
+      config_.jitter_buffer_min_delay_ms = delay_ms;
+      return true;
+    } else {
+      RTC_LOG(LS_ERROR) << "Failed to SetBaseMinimumPlayoutDelayMs"
+                        << " on AudioReceiveStream on SSRC="
+                        << config_.rtp.remote_ssrc
+                        << " with delay_ms=" << delay_ms;
+      return false;
+    }
+  }
+
+  int GetBaseMinimumPlayoutDelayMs() const {
+    RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+    RTC_DCHECK(stream_);
+    return stream_->GetBaseMinimumPlayoutDelayMs();
   }
 
   std::vector<webrtc::RtpSource> GetSources() {
@@ -1996,6 +1975,44 @@ bool WebRtcVoiceMediaChannel::SetOutputVolume(uint32_t ssrc, double volume) {
   return true;
 }
 
+bool WebRtcVoiceMediaChannel::SetBaseMinimumPlayoutDelayMs(uint32_t ssrc,
+                                                           int delay_ms) {
+  RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
+  std::vector<uint32_t> ssrcs(1, ssrc);
+  // SSRC of 0 represents the default receive stream.
+  if (ssrc == 0) {
+    default_recv_base_minimum_delay_ms_ = delay_ms;
+    ssrcs = unsignaled_recv_ssrcs_;
+  }
+  for (uint32_t ssrc : ssrcs) {
+    const auto it = recv_streams_.find(ssrc);
+    if (it == recv_streams_.end()) {
+      RTC_LOG(LS_WARNING) << "SetBaseMinimumPlayoutDelayMs: no recv stream "
+                          << ssrc;
+      return false;
+    }
+    it->second->SetBaseMinimumPlayoutDelayMs(delay_ms);
+    RTC_LOG(LS_INFO) << "SetBaseMinimumPlayoutDelayMs() to " << delay_ms
+                     << " for recv stream with ssrc " << ssrc;
+  }
+  return true;
+}
+
+absl::optional<int> WebRtcVoiceMediaChannel::GetBaseMinimumPlayoutDelayMs(
+    uint32_t ssrc) const {
+  // SSRC of 0 represents the default receive stream.
+  if (ssrc == 0) {
+    return default_recv_base_minimum_delay_ms_;
+  }
+
+  const auto it = recv_streams_.find(ssrc);
+
+  if (it != recv_streams_.end()) {
+    return it->second->GetBaseMinimumPlayoutDelayMs();
+  }
+  return absl::nullopt;
+}
+
 bool WebRtcVoiceMediaChannel::CanInsertDtmf() {
   return dtmf_payload_type_.has_value() && send_;
 }
@@ -2067,9 +2084,7 @@ void WebRtcVoiceMediaChannel::OnPacketReceived(rtc::CopyOnWriteBuffer* packet,
   if (!GetRtpSsrc(packet->cdata(), packet->size(), &ssrc)) {
     return;
   }
-  RTC_DCHECK(std::find(unsignaled_recv_ssrcs_.begin(),
-                       unsignaled_recv_ssrcs_.end(),
-                       ssrc) == unsignaled_recv_ssrcs_.end());
+  RTC_DCHECK(!absl::c_linear_search(unsignaled_recv_ssrcs_, ssrc));
 
   // Add new stream.
   StreamParams sp = unsignaled_stream_params_;
@@ -2093,6 +2108,7 @@ void WebRtcVoiceMediaChannel::OnPacketReceived(rtc::CopyOnWriteBuffer* packet,
   RTC_DCHECK_GE(kMaxUnsignaledRecvStreams, unsignaled_recv_ssrcs_.size());
 
   SetOutputVolume(ssrc, default_recv_volume_);
+  SetBaseMinimumPlayoutDelayMs(ssrc, default_recv_base_minimum_delay_ms_);
 
   // The default sink can only be attached to one stream at a time, so we hook
   // it up to the *latest* unsignaled stream we've seen, in order to support the
@@ -2219,7 +2235,7 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     // See: https://bugs.chromium.org/p/webrtc/issues/detail?id=8158
     if (!unsignaled_recv_ssrcs_.empty()) {
       auto end_it = --unsignaled_recv_ssrcs_.end();
-      if (std::find(unsignaled_recv_ssrcs_.begin(), end_it, ssrc) != end_it) {
+      if (absl::linear_search(unsignaled_recv_ssrcs_.begin(), end_it, ssrc)) {
         continue;
       }
     }
@@ -2262,6 +2278,8 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     rinfo.decoding_muted_output = stats.decoding_muted_output;
     rinfo.capture_start_ntp_time_ms = stats.capture_start_ntp_time_ms;
     rinfo.jitter_buffer_flushes = stats.jitter_buffer_flushes;
+    rinfo.relative_packet_arrival_delay_seconds =
+        stats.relative_packet_arrival_delay_seconds;
 
     info->receivers.push_back(rinfo);
   }
@@ -2318,8 +2336,7 @@ std::vector<webrtc::RtpSource> WebRtcVoiceMediaChannel::GetSources(
 bool WebRtcVoiceMediaChannel::MaybeDeregisterUnsignaledRecvStream(
     uint32_t ssrc) {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  auto it = std::find(unsignaled_recv_ssrcs_.begin(),
-                      unsignaled_recv_ssrcs_.end(), ssrc);
+  auto it = absl::c_find(unsignaled_recv_ssrcs_, ssrc);
   if (it != unsignaled_recv_ssrcs_.end()) {
     unsignaled_recv_ssrcs_.erase(it);
     return true;
@@ -2327,5 +2344,3 @@ bool WebRtcVoiceMediaChannel::MaybeDeregisterUnsignaledRecvStream(
   return false;
 }
 }  // namespace cricket
-
-#endif  // HAVE_WEBRTC_VOICE

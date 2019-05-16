@@ -36,7 +36,7 @@ class BweSimulation : public BweTest,
  public:
   BweSimulation()
       : BweTest(), random_(Clock::GetRealTimeClock()->TimeInMicroseconds()) {}
-  virtual ~BweSimulation() {}
+  ~BweSimulation() override {}
 
  protected:
   void SetUp() override {
@@ -50,12 +50,12 @@ class BweSimulation : public BweTest,
   RTC_DISALLOW_COPY_AND_ASSIGN(BweSimulation);
 };
 
-INSTANTIATE_TEST_CASE_P(VideoSendersTest,
-                        BweSimulation,
-                        ::testing::Values(kRembEstimator,
-                                          kSendSideEstimator,
-                                          kNadaEstimator,
-                                          kBbrEstimator));
+INSTANTIATE_TEST_SUITE_P(VideoSendersTest,
+                         BweSimulation,
+                         ::testing::Values(kRembEstimator,
+                                           kSendSideEstimator,
+                                           kNadaEstimator,
+                                           kBbrEstimator));
 
 TEST_P(BweSimulation, SprintUplinkTest) {
   AdaptiveVideoSource source(0, 30, 300, 0, 0);

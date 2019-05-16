@@ -19,7 +19,7 @@
 #include "SkTo.h"
 
 namespace skiagm {
-class ImageFromYUVTextures : public GM {
+class ImageFromYUVTextures : public GpuGM {
 public:
     ImageFromYUVTextures() {
         this->setBGColor(0xFFFFFFFF);
@@ -94,11 +94,7 @@ protected:
     }
 
     void createYUVTextures(GrContext* context, GrBackendTexture yuvTextures[3]) {
-        if (context->abandoned()) {
-            return;
-        }
-
-        GrGpu* gpu = context->contextPriv().getGpu();
+        GrGpu* gpu = context->priv().getGpu();
         if (!gpu) {
             return;
         }
@@ -116,11 +112,7 @@ protected:
 
     void createResultTexture(GrContext* context, int width, int height,
                              GrBackendTexture* resultTexture) {
-        if (context->abandoned()) {
-            return;
-        }
-
-        GrGpu* gpu = context->contextPriv().getGpu();
+        GrGpu* gpu = context->priv().getGpu();
         if (!gpu) {
             return;
         }
@@ -136,7 +128,7 @@ protected:
             return;
         }
 
-        GrGpu* gpu = context->contextPriv().getGpu();
+        GrGpu* gpu = context->priv().getGpu();
         if (!gpu) {
             return;
         }
@@ -152,14 +144,7 @@ protected:
         context->resetContext();
     }
 
-    void onDraw(SkCanvas* canvas) override {
-        GrContext* context = canvas->getGrContext();
-        if (!context) {
-            skiagm::GM::DrawGpuOnlyMessage(canvas);
-            return;
-        }
-
-
+    void onDraw(GrContext* context, GrRenderTargetContext*, SkCanvas* canvas) override {
         constexpr SkScalar kPad = 10.f;
 
         SkTArray<sk_sp<SkImage>> images;

@@ -20,7 +20,6 @@
 namespace {
     class BindGroupBase;
     class BindGroup;
-    class RenderPassDescriptor;
 }  // namespace
 
 namespace dawn_native { namespace metal {
@@ -36,10 +35,10 @@ namespace dawn_native { namespace metal {
     class InputState;
     class PipelineLayout;
     class Queue;
-    using RenderPassDescriptor = RenderPassDescriptorBase;
     class RenderPipeline;
     class Sampler;
     class ShaderModule;
+    class StagingBuffer;
     class SwapChain;
     class Texture;
     class TextureView;
@@ -55,10 +54,10 @@ namespace dawn_native { namespace metal {
         using InputStateType = InputState;
         using PipelineLayoutType = PipelineLayout;
         using QueueType = Queue;
-        using RenderPassDescriptorType = RenderPassDescriptor;
         using RenderPipelineType = RenderPipeline;
         using SamplerType = Sampler;
         using ShaderModuleType = ShaderModule;
+        using StagingBufferType = StagingBuffer;
         using SwapChainType = SwapChain;
         using TextureType = Texture;
         using TextureViewType = TextureView;

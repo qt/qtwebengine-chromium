@@ -15,7 +15,7 @@
 #ifndef VK_PIPELINE_LAYOUT_HPP_
 #define VK_PIPELINE_LAYOUT_HPP_
 
-#include "VkObject.hpp"
+#include "VkDescriptorSetLayout.hpp"
 
 namespace vk
 {
@@ -29,7 +29,14 @@ public:
 
 	static size_t ComputeRequiredAllocationSize(const VkPipelineLayoutCreateInfo* pCreateInfo);
 
+	size_t getNumDescriptorSets() const;
+	size_t getBindingOffset(size_t descriptorSet, size_t binding) const;
+
 private:
+	uint32_t              setLayoutCount = 0;
+	DescriptorSetLayout** setLayouts = nullptr;
+	uint32_t              pushConstantRangeCount = 0;
+	VkPushConstantRange*  pushConstantRanges = nullptr;
 };
 
 static inline PipelineLayout* Cast(VkPipelineLayout object)

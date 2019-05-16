@@ -17,10 +17,12 @@
 #include "SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
-#include "GrContext.h"
+#include "GrCaps.h"
 #include "GrFixedClip.h"
 #include "GrFragmentProcessor.h"
 #include "GrPaint.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContext.h"
 #include "GrTexture.h"
 #include "GrTextureProxy.h"
@@ -459,17 +461,17 @@ sk_sp<SkSpecialImage> SkLightingImageFilterInternal::filterImageGPU(
                                                    const OutputProperties& outputProperties) const {
     SkASSERT(source->isTextureBacked());
 
-    GrContext* context = source->getContext();
+    auto context = source->getContext();
 
     sk_sp<GrTextureProxy> inputProxy(input->asTextureProxyRef(context));
     SkASSERT(inputProxy);
 
     SkColorType colorType = outputProperties.colorType();
     GrBackendFormat format =
-            context->contextPriv().caps()->getBackendFormatFromColorType(colorType);
+            context->priv().caps()->getBackendFormatFromColorType(colorType);
 
     sk_sp<GrRenderTargetContext> renderTargetContext(
-        context->contextPriv().makeDeferredRenderTargetContext(
+        context->priv().makeDeferredRenderTargetContext(
                                 format, SkBackingFit::kApprox, offsetBounds.width(),
                                 offsetBounds.height(), SkColorType2GrPixelConfig(colorType),
                                 sk_ref_sp(outputProperties.colorSpace())));
@@ -2043,7 +2045,7 @@ void GrGLSpecularLightingEffect::emitLightFunc(GrGLSLUniformHandler* uniformHand
     };
     SkString lightBody;
     lightBody.appendf("\thalf3 halfDir = half3(normalize(surfaceToLight + half3(0, 0, 1)));\n");
-    lightBody.appendf("\tfloat colorScale = %s * pow(dot(normal, halfDir), %s);\n",
+    lightBody.appendf("\thalf colorScale = half(%s * pow(dot(normal, halfDir), %s));\n",
                       ks, shininess);
     lightBody.appendf("\thalf3 color = lightColor * saturate(colorScale);\n");
     lightBody.appendf("\treturn half4(color, max(max(color.r, color.g), color.b));\n");

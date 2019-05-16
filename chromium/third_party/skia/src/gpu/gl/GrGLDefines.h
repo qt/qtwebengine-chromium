@@ -987,15 +987,7 @@
 #define GR_GL_PATH_MODELVIEW                                0x1700
 
 /*  ARM specific define for MSAA support on framebuffer fetch */
-#define GR_GL_FETCH_PER_SAMPLE_ARM                          0x8F65
-
-/* GL_EXT_raster_multisample */
-#define GR_GL_RASTER_MULTISAMPLE                            0x9327
-#define GR_GL_RASTER_SAMPLES                                0x9328
-#define GR_GL_MAX_RASTER_SAMPLES                            0x9329
-#define GR_GL_RASTER_FIXED_SAMPLE_LOCATIONS                 0x932A
-#define GR_GL_MULTISAMPLE_RASTERIZATION_ALLOWED             0x932B
-#define GR_GL_EFFECTIVE_RASTER_SAMPLES                      0x932C
+#define GR_GL_FETCH_PER_SAMPLE                              0x8F65
 
 /* GL_KHR_debug */
 #define GR_GL_DEBUG_OUTPUT                                  0x92E0
@@ -1038,9 +1030,11 @@
 
 /* GL_OES_EGL_image_external */
 #define GR_GL_TEXTURE_EXTERNAL                              0x8D65
+#define GR_GL_TEXTURE_BINDING_EXTERNAL                      0x8D67
 
 /* GL_ARB_texture_rectangle or GL_ANGLE_texture_rectangle */
 #define GR_GL_TEXTURE_RECTANGLE                             0x84F5
+#define GR_GL_TEXTURE_BINDING_RECTANGLE                     0x84F6
 
 /* GL_EXT_window_rectangles */
 #define GR_GL_MAX_WINDOW_RECTANGLES                         0x8f14

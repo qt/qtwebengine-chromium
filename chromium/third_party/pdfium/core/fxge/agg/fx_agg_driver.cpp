@@ -1144,7 +1144,7 @@ void CFX_AggDeviceDriver::InitPlatform() {}
 void CFX_AggDeviceDriver::DestroyPlatform() {}
 
 bool CFX_AggDeviceDriver::DrawDeviceText(int nChars,
-                                         const FXTEXT_CHARPOS* pCharPos,
+                                         const TextCharPos* pCharPos,
                                          CFX_Font* pFont,
                                          const CFX_Matrix* pObject2Device,
                                          float font_size,
@@ -1439,7 +1439,7 @@ bool CFX_AggDeviceDriver::FillRectWithBlend(const FX_RECT& rect,
                            draw_rect.Height(), m_pClipRgn->GetMask(),
                            fill_color, draw_rect.left - clip_rect.left,
                            draw_rect.top - clip_rect.top, BlendMode::kNormal,
-                           nullptr, m_bRgbByteOrder, 0);
+                           nullptr, m_bRgbByteOrder);
   return true;
 }
 
@@ -1504,7 +1504,7 @@ bool CFX_AggDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
     return m_pBitmap->CompositeMask(left, top, src_rect.Width(),
                                     src_rect.Height(), pBitmap, argb,
                                     src_rect.left, src_rect.top, blend_type,
-                                    m_pClipRgn.get(), m_bRgbByteOrder, 0);
+                                    m_pClipRgn.get(), m_bRgbByteOrder);
   }
   return m_pBitmap->CompositeBitmap(
       left, top, src_rect.Width(), src_rect.Height(), pBitmap, src_rect.left,
@@ -1535,7 +1535,7 @@ bool CFX_AggDeviceDriver::StretchDIBits(const RetainPtr<CFX_DIBBase>& pSource,
   dest_clip.Intersect(*pClipRect);
   CFX_BitmapComposer composer;
   composer.Compose(m_pBitmap, m_pClipRgn.get(), 255, argb, dest_clip, false,
-                   false, false, m_bRgbByteOrder, 0, blend_type);
+                   false, false, m_bRgbByteOrder, blend_type);
   dest_clip.Offset(-dest_rect.left, -dest_rect.top);
   CFX_ImageStretcher stretcher(&composer, pSource, dest_width, dest_height,
                                dest_clip, options);

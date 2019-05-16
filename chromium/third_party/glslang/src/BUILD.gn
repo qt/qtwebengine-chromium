@@ -141,11 +141,17 @@ source_set("glslang_sources") {
 
   if (is_clang) {
     cflags_cc = [
+      "-Wno-extra-semi",
       "-Wno-ignored-qualifiers",
       "-Wno-implicit-fallthrough",
       "-Wno-inconsistent-missing-override",
       "-Wno-sign-compare",
       "-Wno-unused-variable",
+    ]
+  }
+  if (is_win && !is_clang) {
+    cflags = [
+      "/wd4018", # signed/unsigned mismatch
     ]
   }
 

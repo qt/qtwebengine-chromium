@@ -11,9 +11,12 @@
 #include "sk_tool_utils.h"
 
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrMemoryPool.h"
 #include "GrOpFlushState.h"
 #include "GrPathUtils.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContextPriv.h"
 #include "SkColorPriv.h"
 #include "SkGeometry.h"
@@ -28,9 +31,11 @@ class BezierTestOp : public GrMeshDrawOp {
 public:
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fProcessorSet.finalize(fColor, GrProcessorAnalysisCoverage::kSingleChannel, clip,
-                                      false, caps, &fColor);
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
+        return fProcessorSet.finalize(
+                fColor, GrProcessorAnalysisCoverage::kSingleChannel, clip,
+                &GrUserStencilSettings::kUnused, fsaaType, caps, &fColor);
     }
 
     void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
@@ -48,8 +53,9 @@ protected:
         this->setBounds(rect, HasAABloat::kYes, IsZeroArea::kNo);
     }
 
-    Target::PipelineAndFixedDynamicState makePipeline(Target* target) {
-        return target->makePipeline(0, std::move(fProcessorSet), target->detachAppliedClip());
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        flushState->executeDrawsAndUploadsForMeshDrawOp(
+                this, chainBounds, std::move(fProcessorSet));
     }
 
     sk_sp<const GrGeometryProcessor> gp() const { return fGeometryProcessor; }
@@ -76,12 +82,12 @@ public:
 
     const char* name() const override { return "BezierConicTestOp"; }
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           sk_sp<const GrGeometryProcessor> gp,
                                           const SkRect& rect,
                                           const SkPMColor4f& color,
                                           const SkMatrix& klm) {
-        GrOpMemoryPool* pool = context->contextPriv().opMemoryPool();
+        GrOpMemoryPool* pool = context->priv().opMemoryPool();
 
         return pool->allocate<BezierConicTestOp>(std::move(gp), rect, color, klm);
     }
@@ -112,8 +118,8 @@ private:
             SkPoint3 pt3 = {verts[v].fPosition.x(), verts[v].fPosition.y(), 1.f};
             fKLM.mapHomogeneousPoints((SkPoint3* ) verts[v].fKLM, &pt3, 1);
         }
-        auto pipe = this->makePipeline(target);
-        helper.recordDraw(target, this->gp(), pipe.fPipeline, pipe.fFixedDynamicState);
+
+        helper.recordDraw(target, this->gp());
     }
 
     SkMatrix fKLM;
@@ -128,7 +134,7 @@ private:
 /**
  * This GM directly exercises effects that draw Bezier curves in the GPU backend.
  */
-class BezierConicEffects : public GM {
+class BezierConicEffects : public GpuGM {
 public:
     BezierConicEffects() {
         this->setBGColor(0xFFFFFFFF);
@@ -144,19 +150,8 @@ protected:
     }
 
 
-    void onDraw(SkCanvas* canvas) override {
-        GrRenderTargetContext* renderTargetContext =
-            canvas->internal_private_accessTopLayerRenderTargetContext();
-        if (!renderTargetContext) {
-            skiagm::GM::DrawGpuOnlyMessage(canvas);
-            return;
-        }
-
-        GrContext* context = canvas->getGrContext();
-        if (!context) {
-            return;
-        }
-
+    void onDraw(GrContext* context, GrRenderTargetContext* renderTargetContext,
+                SkCanvas* canvas) override {
         struct Vertex {
             SkPoint fPosition;
             float   fKLM[4]; // The last value is ignored. The effect expects a vec4f.
@@ -184,7 +179,7 @@ protected:
             for(int edgeType = 0; edgeType < kGrClipEdgeTypeCnt; ++edgeType) {
                 sk_sp<GrGeometryProcessor> gp;
                 GrClipEdgeType et = (GrClipEdgeType)edgeType;
-                gp = GrConicEffect::Make(color, SkMatrix::I(), et, *context->contextPriv().caps(),
+                gp = GrConicEffect::Make(color, SkMatrix::I(), et, *context->priv().caps(),
                                          SkMatrix::I(), false);
                 if (!gp) {
                     continue;
@@ -303,7 +298,7 @@ public:
                                           const SkRect& rect,
                                           const SkPMColor4f& color,
                                           const GrPathUtils::QuadUVMatrix& devToUV) {
-        GrOpMemoryPool* pool = context->contextPriv().opMemoryPool();
+        GrOpMemoryPool* pool = context->priv().opMemoryPool();
 
         return pool->allocate<BezierQuadTestOp>(std::move(gp), rect, color, devToUV);
     }
@@ -330,8 +325,7 @@ private:
         SkRect rect = this->rect();
         SkPointPriv::SetRectTriStrip(&verts[0].fPosition, rect, sizeof(Vertex));
         fDevToUV.apply(verts, 4, sizeof(Vertex), sizeof(SkPoint));
-        auto pipe = this->makePipeline(target);
-        helper.recordDraw(target, this->gp(), pipe.fPipeline, pipe.fFixedDynamicState);
+        helper.recordDraw(target, this->gp());
     }
 
     GrPathUtils::QuadUVMatrix fDevToUV;
@@ -345,7 +339,7 @@ private:
 /**
  * This GM directly exercises effects that draw Bezier quad curves in the GPU backend.
  */
-class BezierQuadEffects : public GM {
+class BezierQuadEffects : public GpuGM {
 public:
     BezierQuadEffects() {
         this->setBGColor(0xFFFFFFFF);
@@ -361,19 +355,8 @@ protected:
     }
 
 
-    void onDraw(SkCanvas* canvas) override {
-        GrRenderTargetContext* renderTargetContext =
-            canvas->internal_private_accessTopLayerRenderTargetContext();
-        if (!renderTargetContext) {
-            skiagm::GM::DrawGpuOnlyMessage(canvas);
-            return;
-        }
-
-        GrContext* context = canvas->getGrContext();
-        if (!context) {
-            return;
-        }
-
+    void onDraw(GrContext* context, GrRenderTargetContext* renderTargetContext,
+                SkCanvas* canvas) override {
         struct Vertex {
             SkPoint fPosition;
             float   fUV[4]; // The last two values are ignored. The effect expects a vec4f.
@@ -399,7 +382,7 @@ protected:
             for(int edgeType = 0; edgeType < kGrClipEdgeTypeCnt; ++edgeType) {
                 sk_sp<GrGeometryProcessor> gp;
                 GrClipEdgeType et = (GrClipEdgeType)edgeType;
-                gp = GrQuadEffect::Make(color, SkMatrix::I(), et, *context->contextPriv().caps(),
+                gp = GrQuadEffect::Make(color, SkMatrix::I(), et, *context->priv().caps(),
                                         SkMatrix::I(), false);
                 if (!gp) {
                     continue;

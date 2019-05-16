@@ -19,6 +19,7 @@
 #include "SkRasterHandleAllocator.h"
 #include "SkShader.h"
 #include "SkSpecialImage.h"
+#include "SkStrikeCache.h"
 #include "SkSurface.h"
 #include "SkTLazy.h"
 #include "SkVertices.h"
@@ -77,10 +78,20 @@ public:
         fNeedsTiling = clipR.right() > kMaxDim || clipR.bottom() > kMaxDim;
         if (fNeedsTiling) {
             if (bounds) {
-                SkRect devBounds;
-                dev->ctm().mapRect(&devBounds, *bounds);
-                if (devBounds.intersect(SkRect::Make(clipR))) {
-                    fSrcBounds = devBounds.roundOut();
+                // Make sure we round first, and then intersect. We can't rely on promoting the
+                // clipR to floats (and then intersecting with devBounds) since promoting
+                // int --> float can make the float larger than the int.
+                // rounding(out) first runs the risk of clamping if the float is larger an intmax
+                // but our roundOut() is saturating, which is fine for this use case
+                //
+                // e.g. the older version of this code did this:
+                //    devBounds = mapRect(bounds);
+                //    if (devBounds.intersect(SkRect::Make(clipR))) {
+                //        fSrcBounds = devBounds.roundOut();
+                // The problem being that the promotion of clipR to SkRect was unreliable
+                //
+                fSrcBounds = dev->ctm().mapRect(*bounds).roundOut();
+                if (fSrcBounds.intersect(clipR)) {
                     // Check again, now that we have computed srcbounds.
                     fNeedsTiling = fSrcBounds.right() > kMaxDim || fSrcBounds.bottom() > kMaxDim;
                 } else {
@@ -200,24 +211,14 @@ static bool valid_for_bitmap_device(const SkImageInfo& info,
     return true;
 }
 
-// TODO: unify this with the same functionality on SkDraw.
-static SkScalerContextFlags scaler_context_flags(const SkBitmap& bitmap)  {
-    // If we're doing linear blending, then we can disable the gamma hacks.
-    // Otherwise, leave them on. In either case, we still want the contrast boost:
-    // TODO: Can we be even smarter about mask gamma based on the dst transfer function?
-    if (bitmap.colorSpace() && bitmap.colorSpace()->gammaIsLinear()) {
-        return SkScalerContextFlags::kBoostContrast;
-    } else {
-        return SkScalerContextFlags::kFakeGammaAndBoostContrast;
-    }
-}
-
 SkBitmapDevice::SkBitmapDevice(const SkBitmap& bitmap)
-    : INHERITED(bitmap.info(), SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType))
-    , fBitmap(bitmap)
-    , fRCStack(bitmap.width(), bitmap.height())
-    , fGlyphPainter(this->surfaceProps(), bitmap.colorType(), scaler_context_flags(bitmap))
-{
+        : INHERITED(bitmap.info(), SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType))
+        , fBitmap(bitmap)
+        , fRCStack(bitmap.width(), bitmap.height())
+        , fGlyphPainter(this->surfaceProps(),
+                        bitmap.colorType(),
+                        bitmap.colorSpace(),
+                        SkStrikeCache::GlobalStrikeCache()) {
     SkASSERT(valid_for_bitmap_device(bitmap.info(), nullptr));
 }
 
@@ -227,12 +228,14 @@ SkBitmapDevice* SkBitmapDevice::Create(const SkImageInfo& info) {
 
 SkBitmapDevice::SkBitmapDevice(const SkBitmap& bitmap, const SkSurfaceProps& surfaceProps,
                                SkRasterHandleAllocator::Handle hndl, const SkBitmap* coverage)
-    : INHERITED(bitmap.info(), surfaceProps)
-    , fBitmap(bitmap)
-    , fRasterHandle(hndl)
-    , fRCStack(bitmap.width(), bitmap.height())
-    , fGlyphPainter(this->surfaceProps(), bitmap.colorType(), scaler_context_flags(bitmap))
-{
+        : INHERITED(bitmap.info(), surfaceProps)
+        , fBitmap(bitmap)
+        , fRasterHandle(hndl)
+        , fRCStack(bitmap.width(), bitmap.height())
+        , fGlyphPainter(this->surfaceProps(),
+                        bitmap.colorType(),
+                        bitmap.colorSpace(),
+                        SkStrikeCache::GlobalStrikeCache()) {
     SkASSERT(valid_for_bitmap_device(bitmap.info(), nullptr));
 
     if (coverage) {
@@ -389,13 +392,6 @@ void SkBitmapDevice::drawPath(const SkPath& path,
     }
 }
 
-void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y,
-                                const SkPaint& paint) {
-    SkMatrix matrix = SkMatrix::MakeTrans(x, y);
-    LogDrawScaleFactor(SkMatrix::Concat(this->ctm(), matrix), paint.getFilterQuality());
-    this->drawBitmap(bitmap, matrix, nullptr, paint);
-}
-
 void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, const SkMatrix& matrix,
                                 const SkRect* dstOrNull, const SkPaint& paint) {
     const SkRect* bounds = dstOrNull;
@@ -440,7 +436,7 @@ void SkBitmapDevice::drawBitmapRect(const SkBitmap& bitmap,
     }
     matrix.setRectToRect(tmpSrc, dst, SkMatrix::kFill_ScaleToFit);
 
-    LogDrawScaleFactor(SkMatrix::Concat(this->ctm(), matrix), paint.getFilterQuality());
+    LogDrawScaleFactor(this->ctm(), matrix, paint.getFilterQuality());
 
     const SkRect* dstPtr = &dst;
     const SkBitmap* bitmapPtr = &bitmap;
@@ -694,7 +690,10 @@ void SkBitmapDevice::drawSpecial(SkSpecialImage* src, int x, int y, const SkPain
 
     SkAutoDeviceCTMRestore adctmr(this, maskMatrix);
     paint.writable()->setShader(srcImage->makeShader(&shaderMatrix));
-    this->drawImage(mask.get(), maskBounds.x(), maskBounds.y(), *paint);
+    this->drawImageRect(mask.get(), nullptr,
+                        SkRect::MakeXYWH(maskBounds.x(), maskBounds.y(),
+                                         mask->width(), mask->height()),
+                        *paint, SkCanvas::kFast_SrcRectConstraint);
 }
 
 sk_sp<SkSpecialImage> SkBitmapDevice::makeSpecial(const SkBitmap& bitmap) {

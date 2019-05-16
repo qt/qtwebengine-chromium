@@ -29,11 +29,6 @@
 
 // #define NEW_DIAMOND_SEARCH
 
-static INLINE const uint8_t *get_buf_from_mv(const struct buf_2d *buf,
-                                             const MV *mv) {
-  return &buf->buf[mv->row * buf->stride + mv->col];
-}
-
 void vp9_set_mv_search_range(MvLimits *mv_limits, const MV *mv) {
   int col_min = (mv->col >> 3) - MAX_FULL_PEL_VAL + (mv->col & 7 ? 1 : 0);
   int row_min = (mv->row >> 3) - MAX_FULL_PEL_VAL + (mv->row & 7 ? 1 : 0);
@@ -1906,13 +1901,12 @@ static double full_pixel_exhaustive_new(const VP9_COMP *cpi, MACROBLOCK *x,
   return bestsme;
 }
 
-double vp9_diamond_search_sad_new(const MACROBLOCK *x,
-                                  const search_site_config *cfg,
-                                  const MV *init_full_mv, MV *best_full_mv,
-                                  double *best_mv_dist, double *best_mv_cost,
-                                  int search_param, double lambda, int *num00,
-                                  const vp9_variance_fn_ptr_t *fn_ptr,
-                                  const int_mv *nb_full_mvs, int full_mv_num) {
+static double diamond_search_sad_new(
+    const MACROBLOCK *x, const search_site_config *cfg, const MV *init_full_mv,
+    MV *best_full_mv, double *best_mv_dist, double *best_mv_cost,
+    int search_param, double lambda, int *num00,
+    const vp9_variance_fn_ptr_t *fn_ptr, const int_mv *nb_full_mvs,
+    int full_mv_num) {
   int i, j, step;
 
   const MACROBLOCKD *const xd = &x->e_mbd;
@@ -2430,7 +2424,7 @@ double vp9_full_pixel_diamond_new(const VP9_COMP *cpi, MACROBLOCK *x,
   const int further_steps = MAX_MVSEARCH_STEPS - 1 - step_param;
   const MV center_mv = { 0, 0 };
   vpx_clear_system_state();
-  bestsme = vp9_diamond_search_sad_new(
+  bestsme = diamond_search_sad_new(
       x, &cpi->ss_cfg, mvp_full, best_mv, best_mv_dist, best_mv_cost,
       step_param, lambda, &n, fn_ptr, nb_full_mvs, full_mv_num);
 
@@ -2448,7 +2442,7 @@ double vp9_full_pixel_diamond_new(const VP9_COMP *cpi, MACROBLOCK *x,
       MV temp_mv;
       double mv_dist;
       double mv_cost;
-      thissme = vp9_diamond_search_sad_new(
+      thissme = diamond_search_sad_new(
           x, &cpi->ss_cfg, mvp_full, &temp_mv, &mv_dist, &mv_cost,
           step_param + n, lambda, &num00, fn_ptr, nb_full_mvs, full_mv_num);
       thissme = vp9_get_mvpred_var(x, &temp_mv, &center_mv, fn_ptr, 0);
@@ -2492,7 +2486,8 @@ double vp9_full_pixel_diamond_new(const VP9_COMP *cpi, MACROBLOCK *x,
 /* do_refine: If last step (1-away) of n-step search doesn't pick the center
               point as the best match, we will do a final 1-away diamond
               refining search  */
-static int full_pixel_diamond(const VP9_COMP *cpi, MACROBLOCK *x, MV *mvp_full,
+static int full_pixel_diamond(const VP9_COMP *const cpi,
+                              const MACROBLOCK *const x, MV *mvp_full,
                               int step_param, int sadpb, int further_steps,
                               int do_refine, int *cost_list,
                               const vp9_variance_fn_ptr_t *fn_ptr,
@@ -2554,8 +2549,9 @@ static int full_pixel_diamond(const VP9_COMP *cpi, MACROBLOCK *x, MV *mvp_full,
 
 // Runs an limited range exhaustive mesh search using a pattern set
 // according to the encode speed profile.
-static int full_pixel_exhaustive(VP9_COMP *cpi, MACROBLOCK *x,
-                                 MV *centre_mv_full, int sadpb, int *cost_list,
+static int full_pixel_exhaustive(const VP9_COMP *const cpi,
+                                 const MACROBLOCK *const x, MV *centre_mv_full,
+                                 int sadpb, int *cost_list,
                                  const vp9_variance_fn_ptr_t *fn_ptr,
                                  const MV *ref_mv, MV *dst_mv) {
   const SPEED_FEATURES *const sf = &cpi->sf;
@@ -2817,13 +2813,13 @@ int vp9_refining_search_8p_c(const MACROBLOCK *x, MV *ref_mv, int error_per_bit,
   return best_sad;
 }
 
-int vp9_full_pixel_search(VP9_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
-                          MV *mvp_full, int step_param, int search_method,
-                          int error_per_bit, int *cost_list, const MV *ref_mv,
-                          MV *tmp_mv, int var_max, int rd) {
+int vp9_full_pixel_search(const VP9_COMP *const cpi, const MACROBLOCK *const x,
+                          BLOCK_SIZE bsize, MV *mvp_full, int step_param,
+                          int search_method, int error_per_bit, int *cost_list,
+                          const MV *ref_mv, MV *tmp_mv, int var_max, int rd) {
   const SPEED_FEATURES *const sf = &cpi->sf;
   const SEARCH_METHODS method = (SEARCH_METHODS)search_method;
-  vp9_variance_fn_ptr_t *fn_ptr = &cpi->fn_ptr[bsize];
+  const vp9_variance_fn_ptr_t *fn_ptr = &cpi->fn_ptr[bsize];
   int var = 0;
   int run_exhaustive_search = 0;
 

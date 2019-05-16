@@ -11,13 +11,22 @@
 #ifndef TEST_PC_E2E_API_AUDIO_QUALITY_ANALYZER_INTERFACE_H_
 #define TEST_PC_E2E_API_AUDIO_QUALITY_ANALYZER_INTERFACE_H_
 
-namespace webrtc {
+#include "test/pc/e2e/api/stats_observer_interface.h"
 
-class AudioQualityAnalyzerInterface {
+namespace webrtc {
+namespace test {
+
+class AudioQualityAnalyzerInterface : public StatsObserverInterface {
  public:
-  virtual ~AudioQualityAnalyzerInterface() = default;
+  ~AudioQualityAnalyzerInterface() override = default;
+
+  // Will be called by framework before test.
+  // |test_case_name| is name of test case, that should be used to report all
+  // audio metrics.
+  virtual void Start(std::string test_case_name) = 0;
 };
 
+}  // namespace test
 }  // namespace webrtc
 
 #endif  // TEST_PC_E2E_API_AUDIO_QUALITY_ANALYZER_INTERFACE_H_

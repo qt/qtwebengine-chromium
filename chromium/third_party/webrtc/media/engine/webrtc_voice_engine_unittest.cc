@@ -15,6 +15,7 @@
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/rtp_parameters.h"
+#include "api/scoped_refptr.h"
 #include "call/call.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
 #include "media/base/fake_media_engine.h"
@@ -29,19 +30,19 @@
 #include "rtc_base/arraysize.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "test/field_trial.h"
 #include "test/gtest.h"
 #include "test/mock_audio_decoder_factory.h"
 #include "test/mock_audio_encoder_factory.h"
 
-using testing::_;
-using testing::ContainerEq;
-using testing::Field;
-using testing::Return;
-using testing::ReturnPointee;
-using testing::SaveArg;
-using testing::StrictMock;
+using ::testing::_;
+using ::testing::ContainerEq;
+using ::testing::Contains;
+using ::testing::Field;
+using ::testing::Return;
+using ::testing::ReturnPointee;
+using ::testing::SaveArg;
+using ::testing::StrictMock;
 
 namespace {
 using webrtc::BitrateConstraints;
@@ -801,7 +802,7 @@ TEST_F(WebRtcVoiceEngineTestFake, CreateRecvStream) {
 TEST_F(WebRtcVoiceEngineTestFake, OpusSupportsTransportCc) {
   const std::vector<cricket::AudioCodec>& codecs = engine_->send_codecs();
   bool opus_found = false;
-  for (cricket::AudioCodec codec : codecs) {
+  for (const cricket::AudioCodec& codec : codecs) {
     if (codec.name == "opus") {
       EXPECT_TRUE(HasTransportCc(codec));
       opus_found = true;
@@ -2018,16 +2019,11 @@ class WebRtcVoiceEngineWithSendSideBweTest : public WebRtcVoiceEngineTestFake {
 
 TEST_F(WebRtcVoiceEngineWithSendSideBweTest,
        SupportsTransportSequenceNumberHeaderExtension) {
-  cricket::RtpCapabilities capabilities = engine_->GetCapabilities();
-  ASSERT_FALSE(capabilities.header_extensions.empty());
-  for (const webrtc::RtpExtension& extension : capabilities.header_extensions) {
-    if (extension.uri == webrtc::RtpExtension::kTransportSequenceNumberUri) {
-      EXPECT_EQ(webrtc::RtpExtension::kTransportSequenceNumberDefaultId,
-                extension.id);
-      return;
-    }
-  }
-  FAIL() << "Transport sequence number extension not in header-extension list.";
+  const cricket::RtpCapabilities capabilities = engine_->GetCapabilities();
+  EXPECT_THAT(capabilities.header_extensions,
+              Contains(testing::Field(
+                  "uri", &RtpExtension::uri,
+                  webrtc::RtpExtension::kTransportSequenceNumberUri)));
 }
 
 // Test support for audio level header extension.
@@ -2845,7 +2841,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetAudioOptions) {
       .Times(2)
       .WillRepeatedly(Return(false));
 
-  EXPECT_EQ(50u, GetRecvStreamConfig(kSsrcY).jitter_buffer_max_packets);
+  EXPECT_EQ(200u, GetRecvStreamConfig(kSsrcY).jitter_buffer_max_packets);
   EXPECT_FALSE(GetRecvStreamConfig(kSsrcY).jitter_buffer_fast_accelerate);
 
   // Nothing set in AudioOptions, so everything should be as default.
@@ -2854,7 +2850,7 @@ TEST_F(WebRtcVoiceEngineTestFake, SetAudioOptions) {
   EXPECT_TRUE(IsEchoCancellationEnabled());
   EXPECT_TRUE(IsHighPassFilterEnabled());
   EXPECT_TRUE(IsTypingDetectionEnabled());
-  EXPECT_EQ(50u, GetRecvStreamConfig(kSsrcY).jitter_buffer_max_packets);
+  EXPECT_EQ(200u, GetRecvStreamConfig(kSsrcY).jitter_buffer_max_packets);
   EXPECT_FALSE(GetRecvStreamConfig(kSsrcY).jitter_buffer_fast_accelerate);
 
   // Turn typing detection off.
@@ -3170,6 +3166,65 @@ TEST_F(WebRtcVoiceEngineTestFake, SetOutputVolumeUnsignaledRecvStream) {
     EXPECT_DOUBLE_EQ(3, GetRecvStream(kSsrc1).gain());
   }
   EXPECT_DOUBLE_EQ(4, GetRecvStream(kSsrcX).gain());
+}
+
+TEST_F(WebRtcVoiceEngineTestFake, BaseMinimumPlayoutDelayMs) {
+  EXPECT_TRUE(SetupChannel());
+  EXPECT_FALSE(channel_->SetBaseMinimumPlayoutDelayMs(kSsrcY, 200));
+  EXPECT_FALSE(channel_->GetBaseMinimumPlayoutDelayMs(kSsrcY).has_value());
+
+  cricket::StreamParams stream;
+  stream.ssrcs.push_back(kSsrcY);
+  EXPECT_TRUE(channel_->AddRecvStream(stream));
+  EXPECT_EQ(0, GetRecvStream(kSsrcY).base_mininum_playout_delay_ms());
+  EXPECT_TRUE(channel_->SetBaseMinimumPlayoutDelayMs(kSsrcY, 300));
+  EXPECT_EQ(300, GetRecvStream(kSsrcY).base_mininum_playout_delay_ms());
+}
+
+TEST_F(WebRtcVoiceEngineTestFake,
+       BaseMinimumPlayoutDelayMsUnsignaledRecvStream) {
+  // Here base minimum delay is abbreviated to delay in comments for shortness.
+  EXPECT_TRUE(SetupChannel());
+
+  // Spawn an unsignaled stream by sending a packet - delay should be 0.
+  DeliverPacket(kPcmuFrame, sizeof(kPcmuFrame));
+  EXPECT_EQ(0, channel_->GetBaseMinimumPlayoutDelayMs(kSsrc1).value_or(-1));
+  // Check that it doesn't provide default values for unknown ssrc.
+  EXPECT_FALSE(channel_->GetBaseMinimumPlayoutDelayMs(kSsrcY).has_value());
+
+  // Check that default value for unsignaled streams is 0.
+  EXPECT_EQ(0, channel_->GetBaseMinimumPlayoutDelayMs(kSsrc0).value_or(-1));
+
+  // Should remember the delay 100 which will be set on new unsignaled streams,
+  // and also set the delay to 100 on existing unsignaled streams.
+  EXPECT_TRUE(channel_->SetBaseMinimumPlayoutDelayMs(kSsrc0, 100));
+  EXPECT_EQ(100, channel_->GetBaseMinimumPlayoutDelayMs(kSsrc0).value_or(-1));
+  // Check that it doesn't provide default values for unknown ssrc.
+  EXPECT_FALSE(channel_->GetBaseMinimumPlayoutDelayMs(kSsrcY).has_value());
+
+  // Spawn an unsignaled stream by sending a packet - delay should be 100.
+  unsigned char pcmuFrame2[sizeof(kPcmuFrame)];
+  memcpy(pcmuFrame2, kPcmuFrame, sizeof(kPcmuFrame));
+  rtc::SetBE32(&pcmuFrame2[8], kSsrcX);
+  DeliverPacket(pcmuFrame2, sizeof(pcmuFrame2));
+  EXPECT_EQ(100, channel_->GetBaseMinimumPlayoutDelayMs(kSsrcX).value_or(-1));
+
+  // Setting delay with SSRC=0 should affect all unsignaled streams.
+  EXPECT_TRUE(channel_->SetBaseMinimumPlayoutDelayMs(kSsrc0, 300));
+  if (kMaxUnsignaledRecvStreams > 1) {
+    EXPECT_EQ(300, channel_->GetBaseMinimumPlayoutDelayMs(kSsrc1).value_or(-1));
+  }
+  EXPECT_EQ(300, channel_->GetBaseMinimumPlayoutDelayMs(kSsrcX).value_or(-1));
+
+  // Setting delay on an individual stream affects only that.
+  EXPECT_TRUE(channel_->SetBaseMinimumPlayoutDelayMs(kSsrcX, 400));
+  if (kMaxUnsignaledRecvStreams > 1) {
+    EXPECT_EQ(300, channel_->GetBaseMinimumPlayoutDelayMs(kSsrc1).value_or(-1));
+  }
+  EXPECT_EQ(400, channel_->GetBaseMinimumPlayoutDelayMs(kSsrcX).value_or(-1));
+  EXPECT_EQ(300, channel_->GetBaseMinimumPlayoutDelayMs(kSsrc0).value_or(-1));
+  // Check that it doesn't provide default values for unknown ssrc.
+  EXPECT_FALSE(channel_->GetBaseMinimumPlayoutDelayMs(kSsrcY).has_value());
 }
 
 TEST_F(WebRtcVoiceEngineTestFake, SetsSyncGroupFromStreamId) {

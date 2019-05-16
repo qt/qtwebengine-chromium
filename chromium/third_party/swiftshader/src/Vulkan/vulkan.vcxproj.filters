@@ -99,9 +99,6 @@
     <ClCompile Include="..\Device\Blitter.cpp">
       <Filter>Source Files\Device</Filter>
     </ClCompile>
-    <ClCompile Include="..\Pipeline\VertexShader.cpp">
-      <Filter>Source Files\Pipeline</Filter>
-    </ClCompile>
     <ClCompile Include="..\Pipeline\VertexRoutine.cpp">
       <Filter>Source Files\Pipeline</Filter>
     </ClCompile>
@@ -111,16 +108,10 @@
     <ClCompile Include="..\Pipeline\ShaderCore.cpp">
       <Filter>Source Files\Pipeline</Filter>
     </ClCompile>
-    <ClCompile Include="..\Pipeline\Shader.cpp">
-      <Filter>Source Files\Pipeline</Filter>
-    </ClCompile>
     <ClCompile Include="..\Pipeline\SetupRoutine.cpp">
       <Filter>Source Files\Pipeline</Filter>
     </ClCompile>
     <ClCompile Include="..\Pipeline\SamplerCore.cpp">
-      <Filter>Source Files\Pipeline</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Pipeline\PixelShader.cpp">
       <Filter>Source Files\Pipeline</Filter>
     </ClCompile>
     <ClCompile Include="..\Pipeline\PixelRoutine.cpp">
@@ -154,6 +145,9 @@
       <Filter>Source Files\WSI</Filter>
     </ClCompile>
     <ClCompile Include="..\WSI\libX11.cpp">
+      <Filter>Source Files\WSI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\WSI\VkSurfaceKHR.cpp">
       <Filter>Source Files\WSI</Filter>
     </ClCompile>
     <ClCompile Include="..\System\Configurator.cpp">
@@ -210,6 +204,12 @@
     <ClCompile Include="VkDebug.cpp">
       <Filter>Source Files\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="VkDescriptorPool.cpp">
+      <Filter>Source Files\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="VkDescriptorSetLayout.cpp">
+      <Filter>Source Files\Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="VkDevice.cpp">
       <Filter>Source Files\Vulkan</Filter>
     </ClCompile>
@@ -255,6 +255,15 @@
     <ClCompile Include="VkShaderModule.cpp">
       <Filter>Source Files\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="VkQueryPool.cpp">
+      <Filter>Source Files\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Pipeline\SpirvShader.cpp">
+      <Filter>Source Files\Pipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Pipeline\SpirvShader_dbg.cpp">
+      <Filter>Source Files\Pipeline</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -273,6 +282,12 @@
       <Filter>Header Files\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="VkConfig.h">
+      <Filter>Header Files\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="VkDescriptorPool.hpp">
+      <Filter>Header Files\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="VkDescriptorSetLayout.hpp">
       <Filter>Header Files\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="VkDevice.hpp">
@@ -318,6 +333,9 @@
       <Filter>Header Files\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="VkPhysicalDevice.hpp">
+      <Filter>Header Files\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="VkQueryPool.hpp">
       <Filter>Header Files\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="VkQueue.hpp">
@@ -440,8 +458,8 @@
     <ClInclude Include="..\WSI\libX11.hpp">
       <Filter>Header Files\WSI</Filter>
     </ClInclude>
-    <ClInclude Include="..\Pipeline\VertexShader.hpp">
-      <Filter>Header Files\Pipeline</Filter>
+    <ClInclude Include="..\WSI\VkSurfaceKHR.hpp">
+      <Filter>Header Files\WSI</Filter>
     </ClInclude>
     <ClInclude Include="..\Pipeline\VertexRoutine.hpp">
       <Filter>Header Files\Pipeline</Filter>
@@ -455,16 +473,10 @@
     <ClInclude Include="..\Pipeline\ShaderCore.hpp">
       <Filter>Header Files\Pipeline</Filter>
     </ClInclude>
-    <ClInclude Include="..\Pipeline\Shader.hpp">
-      <Filter>Header Files\Pipeline</Filter>
-    </ClInclude>
     <ClInclude Include="..\Pipeline\SetupRoutine.hpp">
       <Filter>Header Files\Pipeline</Filter>
     </ClInclude>
     <ClInclude Include="..\Pipeline\SamplerCore.hpp">
-      <Filter>Header Files\Pipeline</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Pipeline\PixelShader.hpp">
       <Filter>Header Files\Pipeline</Filter>
     </ClInclude>
     <ClInclude Include="..\Pipeline\PixelRoutine.hpp">
@@ -528,6 +540,9 @@
       <Filter>Header Files\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="Version.h" />
+    <ClInclude Include="..\Pipeline\SpirvShader.hpp">
+      <Filter>Header Files\Pipeline</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="swiftshader_icd.def" />

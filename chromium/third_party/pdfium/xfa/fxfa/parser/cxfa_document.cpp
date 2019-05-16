@@ -18,6 +18,7 @@
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
+#include "xfa/fxfa/layout/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cscript_datawindow.h"
 #include "xfa/fxfa/parser/cscript_eventpseudomodel.h"
 #include "xfa/fxfa/parser/cscript_hostpseudomodel.h"
@@ -31,7 +32,6 @@
 #include "xfa/fxfa/parser/cxfa_image.h"
 #include "xfa/fxfa/parser/cxfa_interactive.h"
 #include "xfa/fxfa/parser/cxfa_items.h"
-#include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_occur.h"
@@ -1585,27 +1585,27 @@ CXFA_Node* CXFA_Document::DataMerge_CopyContainer(CXFA_Node* pTemplateNode,
                                                   bool bOneInstance,
                                                   bool bDataMerge,
                                                   bool bUpLevel) {
+  ASSERT(pTemplateNode->IsContainerNode());
   switch (pTemplateNode->GetElementType()) {
-    case XFA_Element::SubformSet:
-    case XFA_Element::Subform:
     case XFA_Element::Area:
     case XFA_Element::PageArea:
+    case XFA_Element::Subform:
+    case XFA_Element::SubformSet:
       return CopyContainer_SubformSet(this, pTemplateNode, pFormNode,
                                       pDataScope, bOneInstance, bDataMerge);
+    case XFA_Element::ContentArea:
+    case XFA_Element::Draw:
     case XFA_Element::ExclGroup:
     case XFA_Element::Field:
-    case XFA_Element::Draw:
-    case XFA_Element::ContentArea:
       return CopyContainer_Field(this, pTemplateNode, pFormNode, pDataScope,
                                  bDataMerge, bUpLevel);
     case XFA_Element::PageSet:
     case XFA_Element::Variables:
-      break;
+      return nullptr;
     default:
       NOTREACHED();
-      break;
+      return nullptr;
   }
-  return nullptr;
 }
 
 void CXFA_Document::DataMerge_UpdateBindingRelations(
@@ -1815,8 +1815,7 @@ void CXFA_Document::DoDataRemerge(bool bDoDataMerge) {
   if (bDoDataMerge)
     DoDataMerge();
 
-  CXFA_LayoutProcessor* pLayoutProcessor = GetLayoutProcessor();
-  pLayoutProcessor->SetForceReLayout(true);
+  GetLayoutProcessor()->SetForceReLayout(true);
 }
 
 CXFA_Node* CXFA_Document::GetGlobalBinding(uint32_t dwNameHash) {

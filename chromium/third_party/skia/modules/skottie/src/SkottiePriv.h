@@ -79,6 +79,8 @@ public:
                                       sk_sp<sksg::RenderNode>) const;
     sk_sp<sksg::Path> attachPath(const skjson::Value&, AnimatorScope*) const;
 
+    bool hasNontrivialBlending() const { return fHasNontrivialBlending; }
+
 private:
     struct AttachLayerContext;
     struct AttachShapeContext;
@@ -95,6 +97,9 @@ private:
     sk_sp<sksg::RenderNode> attachLayer(const skjson::ObjectValue*, AttachLayerContext*) const;
     sk_sp<sksg::RenderNode> attachLayerEffects(const skjson::ArrayValue& jeffects, AnimatorScope*,
                                                sk_sp<sksg::RenderNode>) const;
+
+    sk_sp<sksg::RenderNode> attachBlendMode(const skjson::ObjectValue&,
+                                            sk_sp<sksg::RenderNode>) const;
 
     sk_sp<sksg::RenderNode> attachShape(const skjson::ArrayValue*, AttachShapeContext*) const;
     sk_sp<sksg::RenderNode> attachAssetRef(const skjson::ObjectValue&, AnimatorScope*,
@@ -171,8 +176,9 @@ private:
     Animation::Builder::Stats* fStats;
     const float                fDuration,
                                fFrameRate;
-
     mutable const char*        fPropertyObserverContext;
+    mutable bool               fHasNontrivialBlending : 1;
+
 
     struct LayerInfo {
         float fInPoint,

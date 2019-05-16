@@ -20,6 +20,7 @@ import {colorForThread, hueForCpu} from '../../frontend/colorizer';
 import {globals} from '../../frontend/globals';
 import {Track} from '../../frontend/track';
 import {trackRegistry} from '../../frontend/track_registry';
+import {searchEq, search} from '../../base/binary_search';
 
 import {
   Config,
@@ -49,12 +50,6 @@ function cropText(str: string, charWidth: number, rectWidth: number) {
   return displayText;
 }
 
-function getCurResolution() {
-  // Truncate the resolution to the closest power of 10.
-  const resolution = globals.frontendLocalState.timeScale.deltaPxToDuration(1);
-  return Math.pow(10, Math.floor(Math.log10(resolution)));
-}
-
 class CpuSliceTrack extends Track<Config, Data> {
   static readonly kind = CPU_SLICE_TRACK_KIND;
   static create(trackState: TrackState): CpuSliceTrack {
@@ -62,27 +57,12 @@ class CpuSliceTrack extends Track<Config, Data> {
   }
 
   private mouseXpos?: number;
-  private reqPending = false;
   private hue: number;
   private utidHoveredInThisTrack = -1;
 
   constructor(trackState: TrackState) {
     super(trackState);
     this.hue = hueForCpu(this.config.cpu);
-  }
-
-  reqDataDeferred() {
-    const {visibleWindowTime} = globals.frontendLocalState;
-    const reqStart = visibleWindowTime.start - visibleWindowTime.duration;
-    const reqEnd = visibleWindowTime.end + visibleWindowTime.duration;
-    const reqRes = getCurResolution();
-    this.reqPending = false;
-    globals.dispatch(Actions.reqTrackData({
-      trackId: this.trackState.id,
-      start: reqStart,
-      end: reqEnd,
-      resolution: reqRes
-    }));
   }
 
   renderCanvas(ctx: CanvasRenderingContext2D): void {
@@ -96,11 +76,8 @@ class CpuSliceTrack extends Track<Config, Data> {
         (visibleWindowTime.start >= data.start &&
          visibleWindowTime.end <= data.end);
     if (!inRange || data === undefined ||
-        data.resolution !== getCurResolution()) {
-      if (!this.reqPending) {
-        this.reqPending = true;
-        setTimeout(() => this.reqDataDeferred(), 50);
-      }
+        data.resolution !== globals.getCurResolution()) {
+      globals.requestTrackData(this.trackState.id);
     }
     if (data === undefined) return;  // Can't possibly draw anything.
 
@@ -155,8 +132,6 @@ class CpuSliceTrack extends Track<Config, Data> {
     ctx.font = '12px Google Sans';
     const charWidth = ctx.measureText('dbpqaouk').width / 8;
 
-    const isHovering = globals.frontendLocalState.hoveredUtid !== -1;
-
     for (let i = 0; i < data.starts.length; i++) {
       const tStart = data.starts[i];
       const tEnd = data.ends[i];
@@ -167,7 +142,7 @@ class CpuSliceTrack extends Track<Config, Data> {
       const rectStart = timeScale.timeToPx(tStart);
       const rectEnd = timeScale.timeToPx(tEnd);
       const rectWidth = rectEnd - rectStart;
-      if (rectWidth < 0.1) continue;
+      if (rectWidth < 0.3) continue;
 
       const threadInfo = globals.threads.get(utid);
 
@@ -187,6 +162,7 @@ class CpuSliceTrack extends Track<Config, Data> {
         }
       }
 
+      const isHovering = globals.frontendLocalState.hoveredUtid !== -1;
       const isThreadHovered = globals.frontendLocalState.hoveredUtid === utid;
       const isProcessHovered = globals.frontendLocalState.hoveredPid === pid;
       const color = colorForThread(threadInfo);
@@ -217,6 +193,30 @@ class CpuSliceTrack extends Track<Config, Data> {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
       ctx.font = '10px Google Sans';
       ctx.fillText(subTitle, rectXCenter, MARGIN_TOP + RECT_HEIGHT / 2 + 11);
+    }
+
+    // Draw a rectangle around the slice that is currently selected.
+    const selection = globals.state.currentSelection;
+    if (selection !== null && selection.kind === 'SLICE') {
+      const sliceIndex = searchEq(data.ids, selection.id);
+      if (sliceIndex[0] !== sliceIndex[1]) {
+        const tStart = data.starts[sliceIndex[0]];
+        const tEnd = data.ends[sliceIndex[0]];
+        const utid = data.utids[sliceIndex[0]];
+        const color = colorForThread(globals.threads.get(utid));
+        const rectStart = timeScale.timeToPx(tStart);
+        const rectEnd = timeScale.timeToPx(tEnd);
+        ctx.strokeStyle = `hsl(${color.h}, ${color.s}%, 30%)`;
+        ctx.beginPath();
+        ctx.lineWidth = 3;
+        ctx.moveTo(rectStart, MARGIN_TOP - 1.5);
+        ctx.lineTo(rectEnd, MARGIN_TOP - 1.5);
+        ctx.lineTo(rectEnd, MARGIN_TOP + RECT_HEIGHT + 1.5);
+        ctx.lineTo(rectStart, MARGIN_TOP + RECT_HEIGHT + 1.5);
+        ctx.lineTo(rectStart, MARGIN_TOP - 1.5);
+        ctx.stroke();
+        ctx.closePath();
+      }
     }
 
     const hoveredThread = globals.threads.get(this.utidHoveredInThisTrack);
@@ -276,6 +276,21 @@ class CpuSliceTrack extends Track<Config, Data> {
     this.utidHoveredInThisTrack = -1;
     globals.frontendLocalState.setHoveredUtidAndPid(-1, -1);
     this.mouseXpos = 0;
+  }
+
+  onMouseClick({x}: {x: number}) {
+    const data = this.data();
+    if (data === undefined || data.kind === 'summary') return false;
+    const {timeScale} = globals.frontendLocalState;
+    const time = timeScale.pxToTime(x);
+    const index = search(data.starts, time);
+    const id = index === -1 ? undefined : data.ids[index];
+    if (id && this.utidHoveredInThisTrack !== -1) {
+      globals.dispatch(Actions.selectSlice(
+        {utid: this.utidHoveredInThisTrack, id}));
+      return true;
+    }
+    return false;
   }
 }
 

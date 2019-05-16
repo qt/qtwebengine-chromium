@@ -36,15 +36,15 @@ rtc::scoped_refptr<PacketBuffer> PacketBuffer::Create(
     Clock* clock,
     size_t start_buffer_size,
     size_t max_buffer_size,
-    OnReceivedFrameCallback* received_frame_callback) {
+    OnAssembledFrameCallback* assembled_frame_callback) {
   return rtc::scoped_refptr<PacketBuffer>(new PacketBuffer(
-      clock, start_buffer_size, max_buffer_size, received_frame_callback));
+      clock, start_buffer_size, max_buffer_size, assembled_frame_callback));
 }
 
 PacketBuffer::PacketBuffer(Clock* clock,
                            size_t start_buffer_size,
                            size_t max_buffer_size,
-                           OnReceivedFrameCallback* received_frame_callback)
+                           OnAssembledFrameCallback* assembled_frame_callback)
     : clock_(clock),
       size_(start_buffer_size),
       max_size_(max_buffer_size),
@@ -53,7 +53,7 @@ PacketBuffer::PacketBuffer(Clock* clock,
       is_cleared_to_first_seq_num_(false),
       data_buffer_(start_buffer_size),
       sequence_buffer_(start_buffer_size),
-      received_frame_callback_(received_frame_callback),
+      assembled_frame_callback_(assembled_frame_callback),
       unique_frames_seen_(0),
       sps_pps_idr_is_h264_keyframe_(
           field_trial::IsEnabled("WebRTC-SpsPpsIdrIsH264Keyframe")) {
@@ -113,8 +113,8 @@ bool PacketBuffer::InsertPacket(VCMPacket* packet) {
       }
     }
 
-    sequence_buffer_[index].frame_begin = packet->is_first_packet_in_frame;
-    sequence_buffer_[index].frame_end = packet->is_last_packet_in_frame;
+    sequence_buffer_[index].frame_begin = packet->is_first_packet_in_frame();
+    sequence_buffer_[index].frame_end = packet->is_last_packet_in_frame();
     sequence_buffer_[index].seq_num = packet->seqNum;
     sequence_buffer_[index].continuous = false;
     sequence_buffer_[index].frame_created = false;
@@ -133,7 +133,7 @@ bool PacketBuffer::InsertPacket(VCMPacket* packet) {
   }
 
   for (std::unique_ptr<RtpFrameObject>& frame : found_frames)
-    received_frame_callback_->OnReceivedFrame(std::move(frame));
+    assembled_frame_callback_->OnAssembledFrame(std::move(frame));
 
   return true;
 }
@@ -203,7 +203,7 @@ void PacketBuffer::PaddingReceived(uint16_t seq_num) {
   }
 
   for (std::unique_ptr<RtpFrameObject>& frame : found_frames)
-    received_frame_callback_->OnReceivedFrame(std::move(frame));
+    assembled_frame_callback_->OnAssembledFrame(std::move(frame));
 }
 
 absl::optional<int64_t> PacketBuffer::LastReceivedPacketMs() const {
@@ -297,7 +297,7 @@ std::vector<std::unique_ptr<RtpFrameObject>> PacketBuffer::FindFrames(
       int64_t frame_timestamp = data_buffer_[start_index].timestamp;
 
       // Identify H.264 keyframes by means of SPS, PPS, and IDR.
-      bool is_h264 = data_buffer_[start_index].codec == kVideoCodecH264;
+      bool is_h264 = data_buffer_[start_index].codec() == kVideoCodecH264;
       bool has_h264_sps = false;
       bool has_h264_pps = false;
       bool has_h264_idr = false;

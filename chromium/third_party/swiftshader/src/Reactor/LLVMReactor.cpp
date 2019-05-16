@@ -79,8 +79,9 @@
 	#include <unordered_map>
 #endif
 
-#include <numeric>
 #include <fstream>
+#include <numeric>
+#include <thread>
 
 #if defined(__i386__) || defined(__x86_64__)
 #include <xmmintrin.h>
@@ -92,15 +93,6 @@
 extern "C" void X86CompilationCallback()
 {
 	assert(false);   // UNIMPLEMENTED
-}
-#endif
-
-#if defined(_WIN32)
-extern "C"
-{
-	bool (*CodeAnalystInitialize)() = 0;
-	void (*CodeAnalystCompleteJITLog)() = 0;
-	bool (*CodeAnalystLogJITCode)(const void *jitCodeStartAddr, unsigned int jitCodeSize, const wchar_t *functionName) = 0;
 }
 #endif
 
@@ -125,6 +117,18 @@ namespace
 	llvm::Function *function = nullptr;
 
 	rr::MutexLock codegenMutex;
+
+#ifdef ENABLE_RR_PRINT
+	std::string replace(std::string str, const std::string& substr, const std::string& replacement)
+	{
+		size_t pos = 0;
+		while((pos = str.find(substr, pos)) != std::string::npos) {
+			str.replace(pos, substr.length(), replacement);
+			pos += replacement.length();
+		}
+		return str;
+	}
+#endif // ENABLE_RR_PRINT
 
 #if REACTOR_LLVM_VERSION >= 7
 	llvm::Value *lowerPAVG(llvm::Value *x, llvm::Value *y)
@@ -348,30 +352,6 @@ namespace
 		return ::builder->CreateAdd(lhs, rhs);
 	}
 
-	llvm::Value *lowerMulHigh(llvm::Value *x, llvm::Value *y, bool sext)
-	{
-		llvm::VectorType *ty = llvm::cast<llvm::VectorType>(x->getType());
-		llvm::VectorType *extTy = llvm::VectorType::getExtendedElementVectorType(ty);
-
-		llvm::Value *extX, *extY;
-		if (sext)
-		{
-			extX = ::builder->CreateSExt(x, extTy);
-			extY = ::builder->CreateSExt(y, extTy);
-		}
-		else
-		{
-			extX = ::builder->CreateZExt(x, extTy);
-			extY = ::builder->CreateZExt(y, extTy);
-		}
-
-		llvm::Value *mult = ::builder->CreateMul(extX, extY);
-
-		llvm::IntegerType *intTy = llvm::cast<llvm::IntegerType>(ty->getElementType());
-		llvm::Value *mulh = ::builder->CreateAShr(mult, intTy->getIntegerBitWidth());
-		return ::builder->CreateTrunc(mulh, ty);
-	}
-
 	llvm::Value *lowerPack(llvm::Value *x, llvm::Value *y, bool isSigned)
 	{
 		llvm::VectorType *srcTy = llvm::cast<llvm::VectorType>(x->getType());
@@ -443,6 +423,30 @@ namespace
 	}
 #endif  // !defined(__i386__) && !defined(__x86_64__)
 #endif  // REACTOR_LLVM_VERSION >= 7
+
+	llvm::Value *lowerMulHigh(llvm::Value *x, llvm::Value *y, bool sext)
+	{
+		llvm::VectorType *ty = llvm::cast<llvm::VectorType>(x->getType());
+		llvm::VectorType *extTy = llvm::VectorType::getExtendedElementVectorType(ty);
+
+		llvm::Value *extX, *extY;
+		if (sext)
+		{
+			extX = ::builder->CreateSExt(x, extTy);
+			extY = ::builder->CreateSExt(y, extTy);
+		}
+		else
+		{
+			extX = ::builder->CreateZExt(x, extTy);
+			extY = ::builder->CreateZExt(y, extTy);
+		}
+
+		llvm::Value *mult = ::builder->CreateMul(extX, extY);
+
+		llvm::IntegerType *intTy = llvm::cast<llvm::IntegerType>(ty->getElementType());
+		llvm::Value *mulh = ::builder->CreateAShr(mult, intTy->getBitWidth());
+		return ::builder->CreateTrunc(mulh, ty);
+	}
 }
 
 namespace rr
@@ -547,12 +551,20 @@ namespace rr
 			func_.emplace("floorf", reinterpret_cast<void*>(floorf));
 			func_.emplace("nearbyintf", reinterpret_cast<void*>(nearbyintf));
 			func_.emplace("truncf", reinterpret_cast<void*>(truncf));
+			func_.emplace("printf", reinterpret_cast<void*>(printf));
+			func_.emplace("puts", reinterpret_cast<void*>(puts));
 		}
 
 		void *findSymbol(const std::string &name) const
 		{
-			FunctionMap::const_iterator it = func_.find(name);
-			return (it != func_.end()) ? it->second : nullptr;
+			// Trim off any underscores from the start of the symbol. LLVM likes
+			// to append these on macOS.
+			const char* trimmed = name.c_str();
+			while (trimmed[0] == '_') { trimmed++; }
+
+			FunctionMap::const_iterator it = func_.find(trimmed);
+			assert(it != func_.end()); // Missing functions will likely make the module fail in exciting non-obvious ways.
+			return it->second;
 		}
 	};
 
@@ -887,18 +899,6 @@ namespace rr
 		if(!::builder)
 		{
 			::builder = new llvm::IRBuilder<>(*::context);
-
-			#if defined(_WIN32) && REACTOR_LLVM_VERSION < 7
-				HMODULE CodeAnalyst = LoadLibrary("CAJitNtfyLib.dll");
-				if(CodeAnalyst)
-				{
-					CodeAnalystInitialize = (bool(*)())GetProcAddress(CodeAnalyst, "CAJIT_Initialize");
-					CodeAnalystCompleteJITLog = (void(*)())GetProcAddress(CodeAnalyst, "CAJIT_CompleteJITLog");
-					CodeAnalystLogJITCode = (bool(*)(const void*, unsigned int, const wchar_t*))GetProcAddress(CodeAnalyst, "CAJIT_LogJITCode");
-
-					CodeAnalystInitialize();
-				}
-			#endif
 		}
 	}
 
@@ -909,7 +909,7 @@ namespace rr
 		::codegenMutex.unlock();
 	}
 
-	Routine *Nucleus::acquireRoutine(const wchar_t *name, bool runOptimizations)
+	Routine *Nucleus::acquireRoutine(const char *name, bool runOptimizations)
 	{
 		if(::builder->GetInsertBlock()->empty() || !::builder->GetInsertBlock()->back().isTerminator())
 		{
@@ -927,12 +927,14 @@ namespace rr
 
 		if(false)
 		{
-#if REACTOR_LLVM_VERSION < 7
-			std::string error;
-#else
-			std::error_code error;
-#endif
-			llvm::raw_fd_ostream file("llvm-dump-unopt.txt", error);
+			#if REACTOR_LLVM_VERSION < 7
+				std::string error;
+				llvm::raw_fd_ostream file((std::string(name) + "-llvm-dump-unopt.txt").c_str(), error);
+			#else
+				std::error_code error;
+				llvm::raw_fd_ostream file(std::string(name) + "-llvm-dump-unopt.txt", error);
+			#endif
+
 			::module->print(file, 0);
 		}
 
@@ -943,23 +945,18 @@ namespace rr
 
 		if(false)
 		{
-#if REACTOR_LLVM_VERSION < 7
-			std::string error;
-#else
-			std::error_code error;
-#endif
-			llvm::raw_fd_ostream file("llvm-dump-opt.txt", error);
+			#if REACTOR_LLVM_VERSION < 7
+				std::string error;
+				llvm::raw_fd_ostream file((std::string(name) + "-llvm-dump-opt.txt").c_str(), error);
+			#else
+				std::error_code error;
+				llvm::raw_fd_ostream file(std::string(name) + "-llvm-dump-opt.txt", error);
+			#endif
+
 			::module->print(file, 0);
 		}
 
 		LLVMRoutine *routine = ::reactorJIT->acquireRoutine(::function);
-
-#if defined(_WIN32) && REACTOR_LLVM_VERSION < 7
-		if(CodeAnalystLogJITCode)
-		{
-			CodeAnalystLogJITCode(routine->getEntry(), routine->getCodeSize(), name);
-		}
-#endif
 
 		return routine;
 	}
@@ -1453,7 +1450,7 @@ namespace rr
 
 	Value *Nucleus::createFCmpUNE(Value *lhs, Value *rhs)
 	{
-		return V(::builder->CreateFCmpULE(V(lhs), V(rhs)));
+		return V(::builder->CreateFCmpUNE(V(lhs), V(rhs)));
 	}
 
 	Value *Nucleus::createExtractElement(Value *vector, Type *type, int index)
@@ -5718,6 +5715,18 @@ namespace rr
 #endif
 	}
 
+	RValue<Int4> MulHigh(RValue<Int4> x, RValue<Int4> y)
+	{
+		// TODO: For x86, build an intrinsics version of this which uses shuffles + pmuludq.
+		return As<Int4>(V(lowerMulHigh(V(x.value), V(y.value), true)));
+	}
+
+	RValue<UInt4> MulHigh(RValue<UInt4> x, RValue<UInt4> y)
+	{
+		// TODO: For x86, build an intrinsics version of this which uses shuffles + pmuludq.
+		return As<UInt4>(V(lowerMulHigh(V(x.value), V(y.value), false)));
+	}
+
 	RValue<Short8> PackSigned(RValue<Int4> x, RValue<Int4> y)
 	{
 #if defined(__i386__) || defined(__x86_64__)
@@ -6800,6 +6809,36 @@ namespace rr
 		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpOGT(x.value, y.value), Int4::getType()));
 	}
 
+	RValue<Int4> CmpUEQ(RValue<Float4> x, RValue<Float4> y)
+	{
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpUEQ(x.value, y.value), Int4::getType()));
+	}
+
+	RValue<Int4> CmpULT(RValue<Float4> x, RValue<Float4> y)
+	{
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpULT(x.value, y.value), Int4::getType()));
+	}
+
+	RValue<Int4> CmpULE(RValue<Float4> x, RValue<Float4> y)
+	{
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpULE(x.value, y.value), Int4::getType()));
+	}
+
+	RValue<Int4> CmpUNEQ(RValue<Float4> x, RValue<Float4> y)
+	{
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpUNE(x.value, y.value), Int4::getType()));
+	}
+
+	RValue<Int4> CmpUNLT(RValue<Float4> x, RValue<Float4> y)
+	{
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpUGE(x.value, y.value), Int4::getType()));
+	}
+
+	RValue<Int4> CmpUNLE(RValue<Float4> x, RValue<Float4> y)
+	{
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpUGT(x.value, y.value), Int4::getType()));
+	}
+
 	RValue<Int4> IsInf(RValue<Float4> x)
 	{
 		return CmpEQ(As<Int4>(x) & Int4(0x7FFFFFFF), Int4(0x7F800000));
@@ -7536,4 +7575,97 @@ namespace rr
 		}
 	}
 #endif  // defined(__i386__) || defined(__x86_64__)
+
+#ifdef ENABLE_RR_PRINT
+	// extractAll returns a vector containing the extracted n scalar value of
+	// the vector vec.
+	static std::vector<Value*> extractAll(Value* vec, int n)
+	{
+		std::vector<Value*> elements;
+		elements.reserve(n);
+		for (int i = 0; i < n; i++)
+		{
+			auto el = V(::builder->CreateExtractElement(V(vec), i));
+			elements.push_back(el);
+		}
+		return elements;
+	}
+
+	// toDouble returns all the float values in vals extended to doubles.
+	static std::vector<Value*> toDouble(const std::vector<Value*>& vals)
+	{
+		auto doubleTy = ::llvm::Type::getDoubleTy(*::context);
+		std::vector<Value*> elements;
+		elements.reserve(vals.size());
+		for (auto v : vals)
+		{
+			elements.push_back(V(::builder->CreateFPExt(V(v), doubleTy)));
+		}
+		return elements;
+	}
+
+	std::vector<Value*> PrintValue::Ty<Byte4>::val(const RValue<Byte4>& v) { return extractAll(v.value, 4); }
+	std::vector<Value*> PrintValue::Ty<Int4>::val(const RValue<Int4>& v) { return extractAll(v.value, 4); }
+	std::vector<Value*> PrintValue::Ty<UInt4>::val(const RValue<UInt4>& v) { return extractAll(v.value, 4); }
+	std::vector<Value*> PrintValue::Ty<Short4>::val(const RValue<Short4>& v) { return extractAll(v.value, 4); }
+	std::vector<Value*> PrintValue::Ty<UShort4>::val(const RValue<UShort4>& v) { return extractAll(v.value, 4); }
+	std::vector<Value*> PrintValue::Ty<Float>::val(const RValue<Float>& v) { return toDouble({v.value}); }
+	std::vector<Value*> PrintValue::Ty<Float4>::val(const RValue<Float4>& v) { return toDouble(extractAll(v.value, 4)); }
+
+	void Printv(const char* function, const char* file, int line, const char* fmt, std::initializer_list<PrintValue> args)
+	{
+		// LLVM types used below.
+		auto i32Ty = ::llvm::Type::getInt32Ty(*::context);
+		auto intTy = ::llvm::Type::getInt64Ty(*::context); // TODO: Natural int width.
+		auto i8PtrTy = ::llvm::Type::getInt8PtrTy(*::context);
+		auto funcTy = ::llvm::FunctionType::get(i32Ty, {i8PtrTy}, true);
+
+		auto func = ::module->getOrInsertFunction("printf", funcTy);
+
+		// Build the printf format message string.
+		std::string str;
+		if (file != nullptr) { str += (line > 0) ? "%s:%d " : "%s "; }
+		if (function != nullptr) { str += "%s "; }
+		str += fmt;
+
+		// Perform subsitution on all '{n}' bracketed indices in the format
+		// message.
+		int i = 0;
+		for (const PrintValue& arg : args)
+		{
+			str = replace(str, "{" + std::to_string(i++) + "}", arg.format);
+		}
+
+		::llvm::SmallVector<::llvm::Value*, 8> vals;
+
+		// The format message is always the first argument.
+		vals.push_back(::builder->CreateGlobalStringPtr(str));
+
+		// Add optional file, line and function info if provided.
+		if (file != nullptr)
+		{
+			vals.push_back(::builder->CreateGlobalStringPtr(file));
+			if (line > 0)
+			{
+				vals.push_back(::llvm::ConstantInt::get(intTy, line));
+			}
+		}
+		if (function != nullptr)
+		{
+			vals.push_back(::builder->CreateGlobalStringPtr(function));
+		}
+
+		// Add all format arguments.
+		for (const PrintValue& arg : args)
+		{
+			for (auto val : arg.values)
+			{
+				vals.push_back(V(val));
+			}
+		}
+
+		::builder->CreateCall(func, vals);
+	}
+#endif // ENABLE_RR_PRINT
+
 }

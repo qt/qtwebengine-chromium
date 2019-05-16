@@ -6,6 +6,7 @@
 
 #include "src/counters.h"
 #include "src/debug/debug.h"
+#include "src/heap/heap-inl.h"
 #include "src/log.h"
 #include "src/macro-assembler.h"
 #include "src/objects-inl.h"
@@ -96,10 +97,7 @@ ScriptData* CodeSerializer::SerializeSharedFunctionInfo(
   return data.GetScriptData();
 }
 
-bool CodeSerializer::SerializeReadOnlyObject(HeapObject obj,
-                                             HowToCode how_to_code,
-                                             WhereToPoint where_to_point,
-                                             int skip) {
+bool CodeSerializer::SerializeReadOnlyObject(HeapObject obj) {
   PagedSpace* read_only_space = isolate()->heap()->read_only_space();
   if (!read_only_space->Contains(obj)) return false;
 
@@ -117,42 +115,24 @@ bool CodeSerializer::SerializeReadOnlyObject(HeapObject obj,
   SerializerReference back_reference =
       SerializerReference::BackReference(RO_SPACE, chunk_index, chunk_offset);
   reference_map()->Add(reinterpret_cast<void*>(obj->ptr()), back_reference);
-  CHECK(SerializeBackReference(obj, how_to_code, where_to_point, skip));
+  CHECK(SerializeBackReference(obj));
   return true;
 }
 
-void CodeSerializer::SerializeObject(HeapObject obj, HowToCode how_to_code,
-                                     WhereToPoint where_to_point, int skip) {
-  if (SerializeHotObject(obj, how_to_code, where_to_point, skip)) return;
+void CodeSerializer::SerializeObject(HeapObject obj) {
+  if (SerializeHotObject(obj)) return;
 
-  if (SerializeRoot(obj, how_to_code, where_to_point, skip)) return;
+  if (SerializeRoot(obj)) return;
 
-  if (SerializeBackReference(obj, how_to_code, where_to_point, skip)) return;
+  if (SerializeBackReference(obj)) return;
 
-  if (SerializeReadOnlyObject(obj, how_to_code, where_to_point, skip)) return;
+  if (SerializeReadOnlyObject(obj)) return;
 
-  FlushSkip(skip);
-
-  if (obj->IsCode()) {
-    Code code_object = Code::cast(obj);
-    switch (code_object->kind()) {
-      case Code::OPTIMIZED_FUNCTION:  // No optimized code compiled yet.
-      case Code::REGEXP:              // No regexp literals initialized yet.
-      case Code::NUMBER_OF_KINDS:     // Pseudo enum value.
-      case Code::BYTECODE_HANDLER:    // No direct references to handlers.
-        break;                        // hit UNREACHABLE below.
-      case Code::STUB:
-      case Code::BUILTIN:
-      default:
-        return SerializeCodeObject(code_object, how_to_code, where_to_point);
-    }
-    UNREACHABLE();
-  }
+  CHECK(!obj->IsCode());
 
   ReadOnlyRoots roots(isolate());
   if (ElideObject(obj)) {
-    return SerializeObject(roots.undefined_value(), how_to_code, where_to_point,
-                           skip);
+    return SerializeObject(roots.undefined_value());
   }
 
   if (obj->IsScript()) {
@@ -170,7 +150,7 @@ void CodeSerializer::SerializeObject(HeapObject obj, HowToCode how_to_code,
     // object graph.
     FixedArray host_options = script_obj->host_defined_options();
     script_obj->set_host_defined_options(roots.empty_fixed_array());
-    SerializeGeneric(obj, how_to_code, where_to_point);
+    SerializeGeneric(obj);
     script_obj->set_host_defined_options(host_options);
     script_obj->set_context_data(context_data);
     return;
@@ -195,7 +175,7 @@ void CodeSerializer::SerializeObject(HeapObject obj, HowToCode how_to_code,
     }
     DCHECK(!sfi->HasDebugInfo());
 
-    SerializeGeneric(obj, how_to_code, where_to_point);
+    SerializeGeneric(obj);
 
     // Restore debug info
     if (!debug_info.is_null()) {
@@ -206,6 +186,18 @@ void CodeSerializer::SerializeObject(HeapObject obj, HowToCode how_to_code,
     }
     return;
   }
+
+  // NOTE(mmarchini): If we try to serialize an InterpreterData our process
+  // will crash since it stores a code object. Instead, we serialize the
+  // bytecode array stored within the InterpreterData, which is the important
+  // information. On deserialization we'll create our code objects again, if
+  // --interpreted-frames-native-stack is on. See v8:9122 for more context
+#ifndef V8_TARGET_ARCH_ARM
+  if (V8_UNLIKELY(FLAG_interpreted_frames_native_stack) &&
+      obj->IsInterpreterData()) {
+    obj = InterpreterData::cast(obj)->bytecode_array();
+  }
+#endif  // V8_TARGET_ARCH_ARM
 
   if (obj->IsBytecodeArray()) {
     // Clear the stack frame cache if present
@@ -221,17 +213,56 @@ void CodeSerializer::SerializeObject(HeapObject obj, HowToCode how_to_code,
   // We expect no instantiated function objects or contexts.
   CHECK(!obj->IsJSFunction() && !obj->IsContext());
 
-  SerializeGeneric(obj, how_to_code, where_to_point);
+  SerializeGeneric(obj);
 }
 
-void CodeSerializer::SerializeGeneric(HeapObject heap_object,
-                                      HowToCode how_to_code,
-                                      WhereToPoint where_to_point) {
+void CodeSerializer::SerializeGeneric(HeapObject heap_object) {
   // Object has not yet been serialized.  Serialize it here.
-  ObjectSerializer serializer(this, heap_object, &sink_, how_to_code,
-                              where_to_point);
+  ObjectSerializer serializer(this, heap_object, &sink_);
   serializer.Serialize();
 }
+
+#ifndef V8_TARGET_ARCH_ARM
+// NOTE(mmarchini): when FLAG_interpreted_frames_native_stack is on, we want to
+// create duplicates of InterpreterEntryTrampoline for the deserialized
+// functions, otherwise we'll call the builtin IET for those functions (which
+// is not what a user of this flag wants).
+void CreateInterpreterDataForDeserializedCode(Isolate* isolate,
+                                              Handle<SharedFunctionInfo> sfi,
+                                              bool log_code_creation) {
+  Script script = Script::cast(sfi->script());
+  Handle<Script> script_handle(script, isolate);
+  String name = ReadOnlyRoots(isolate).empty_string();
+  if (script->name()->IsString()) name = String::cast(script->name());
+  Handle<String> name_handle(name, isolate);
+
+  SharedFunctionInfo::ScriptIterator iter(isolate, script);
+  for (SharedFunctionInfo info = iter.Next(); !info.is_null();
+       info = iter.Next()) {
+    if (!info->HasBytecodeArray()) continue;
+    Handle<Code> code = isolate->factory()->CopyCode(Handle<Code>::cast(
+        isolate->factory()->interpreter_entry_trampoline_for_profiling()));
+
+    Handle<InterpreterData> interpreter_data =
+        Handle<InterpreterData>::cast(isolate->factory()->NewStruct(
+            INTERPRETER_DATA_TYPE, TENURED));
+
+    interpreter_data->set_bytecode_array(info->GetBytecodeArray());
+    interpreter_data->set_interpreter_trampoline(*code);
+
+    info->set_interpreter_data(*interpreter_data);
+
+    if (!log_code_creation) continue;
+    Handle<AbstractCode> abstract_code = Handle<AbstractCode>::cast(code);
+    int line_num = script->GetLineNumber(info->StartPosition()) + 1;
+    int column_num = script->GetColumnNumber(info->StartPosition()) + 1;
+    PROFILE(isolate,
+            CodeCreateEvent(CodeEventListener::INTERPRETED_FUNCTION_TAG,
+                            *abstract_code, info, *name_handle, line_num,
+                            column_num));
+  }
+}
+#endif  // V8_TARGET_ARCH_ARM
 
 MaybeHandle<SharedFunctionInfo> CodeSerializer::Deserialize(
     Isolate* isolate, ScriptData* cached_data, Handle<String> source,
@@ -276,6 +307,13 @@ MaybeHandle<SharedFunctionInfo> CodeSerializer::Deserialize(
       isolate->logger()->is_listening_to_code_events() ||
       isolate->is_profiling() ||
       isolate->code_event_dispatcher()->IsListeningToCodeEvents();
+
+#ifndef V8_TARGET_ARCH_ARM
+  if (V8_UNLIKELY(FLAG_interpreted_frames_native_stack))
+    CreateInterpreterDataForDeserializedCode(isolate, result,
+                                             log_code_creation);
+#endif  // V8_TARGET_ARCH_ARM
+
   if (log_code_creation || FLAG_log_function_events) {
     String name = ReadOnlyRoots(isolate).empty_string();
     Script script = Script::cast(result->script());
@@ -338,8 +376,6 @@ SerializedCodeData::SerializedCodeData(const std::vector<byte>* payload,
   SetMagicNumber();
   SetHeaderValue(kVersionHashOffset, Version::Hash());
   SetHeaderValue(kSourceHashOffset, cs->source_hash());
-  SetHeaderValue(kCpuFeaturesOffset,
-                 static_cast<uint32_t>(CpuFeatures::SupportedFeatures()));
   SetHeaderValue(kFlagHashOffset, FlagList::Hash());
   SetHeaderValue(kNumReservationsOffset,
                  static_cast<uint32_t>(reservations.size()));
@@ -369,16 +405,12 @@ SerializedCodeData::SanityCheckResult SerializedCodeData::SanityCheck(
   if (magic_number != kMagicNumber) return MAGIC_NUMBER_MISMATCH;
   uint32_t version_hash = GetHeaderValue(kVersionHashOffset);
   uint32_t source_hash = GetHeaderValue(kSourceHashOffset);
-  uint32_t cpu_features = GetHeaderValue(kCpuFeaturesOffset);
   uint32_t flags_hash = GetHeaderValue(kFlagHashOffset);
   uint32_t payload_length = GetHeaderValue(kPayloadLengthOffset);
   uint32_t c1 = GetHeaderValue(kChecksumPartAOffset);
   uint32_t c2 = GetHeaderValue(kChecksumPartBOffset);
   if (version_hash != Version::Hash()) return VERSION_MISMATCH;
   if (source_hash != expected_source_hash) return SOURCE_MISMATCH;
-  if (cpu_features != static_cast<uint32_t>(CpuFeatures::SupportedFeatures())) {
-    return CPU_FEATURES_MISMATCH;
-  }
   if (flags_hash != FlagList::Hash()) return FLAGS_MISMATCH;
   uint32_t max_payload_length =
       this->size_ -

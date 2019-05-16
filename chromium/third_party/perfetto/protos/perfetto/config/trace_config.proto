@@ -29,7 +29,7 @@ package perfetto.protos;
 // It contains the general config for the logging buffer(s) and the configs for
 // all the data source being enabled.
 //
-// Next id: 15.
+// Next id: 17.
 message TraceConfig {
   message BufferConfig {
     optional uint32 size_kb = 1;
@@ -39,9 +39,17 @@ message TraceConfig {
 
     enum FillPolicy {
       UNSPECIFIED = 0;
+
+      // Default behavior. The buffer operates as a conventional ring buffer.
+      // If the writer is faster than the reader (or if the reader reads only
+      // after tracing is stopped) newly written packets will overwrite old
+      // packets.
       RING_BUFFER = 1;
-      // TODO: not implemented yet.
-      // STOP_WHEN_FULL = 2;
+
+      // Behaves like RING_BUFFER as long as there is space in the buffer or
+      // the reader catches up with the writer. As soon as the writer hits
+      // an unread chunk, it stops accepting new data in the buffer.
+      DISCARD = 2;
     }
     optional FillPolicy fill_policy = 4;
   }
@@ -158,4 +166,8 @@ message TraceConfig {
 
   // Disable emitting clock timestamps into the trace.
   optional bool disable_clock_snapshotting = 15;
+
+  // Android-only. If set, sends an intent to the Traceur system app when the
+  // trace ends to notify it about the trace readiness.
+  optional bool notify_traceur = 16;
 }

@@ -63,6 +63,7 @@ class ChannelSendInterface {
                           std::unique_ptr<AudioEncoder> encoder) = 0;
   virtual void ModifyEncoder(
       rtc::FunctionView<void(std::unique_ptr<AudioEncoder>*)> modifier) = 0;
+  virtual void CallEncoder(rtc::FunctionView<void(AudioEncoder*)> modifier) = 0;
 
   virtual void SetLocalSSRC(uint32_t ssrc) = 0;
   // Use 0 to indicate that the extension should not be registered.
@@ -89,7 +90,6 @@ class ChannelSendInterface {
 
   virtual void ProcessAndEncodeAudio(
       std::unique_ptr<AudioFrame> audio_frame) = 0;
-  virtual void SetTransportOverhead(size_t transport_overhead_per_packet) = 0;
   virtual RtpRtcp* GetRtpRtcp() const = 0;
 
   virtual void OnTwccBasedUplinkPacketLossRate(float packet_loss_rate) = 0;
@@ -115,9 +115,11 @@ class ChannelSendInterface {
 };
 
 std::unique_ptr<ChannelSendInterface> CreateChannelSend(
+    Clock* clock,
     rtc::TaskQueue* encoder_queue,
     ProcessThread* module_process_thread,
     MediaTransportInterface* media_transport,
+    OverheadObserver* overhead_observer,
     Transport* rtp_transport,
     RtcpRttStats* rtcp_rtt_stats,
     RtcEventLog* rtc_event_log,

@@ -64,10 +64,7 @@ public:
 
     GrGLTexture(GrGLGpu*, SkBudgeted, const GrSurfaceDesc&, const IDDesc&, GrMipMapsStatus);
 
-    ~GrGLTexture() override {
-        // check that invokeReleaseProc has been called (if needed)
-        SkASSERT(!fReleaseHelper);
-    }
+    ~GrGLTexture() override {}
 
     GrBackendTexture getBackendTexture() const override;
 
@@ -77,16 +74,6 @@ public:
         fSamplerParams.invalidate();
         fNonSamplerParams.invalidate();
     }
-
-    void setRelease(sk_sp<GrReleaseProcHelper> releaseHelper) override {
-        fReleaseHelper = std::move(releaseHelper);
-    }
-
-    void setIdleProc(IdleProc proc, void* context) override {
-        fIdleProc = proc;
-        fIdleProcContext = context;
-    }
-    void* idleContext() const override { return fIdleProcContext; }
 
     // These functions are used to track the texture parameters associated with the texture.
     GrGpu::ResetTimestamp getCachedParamsTimestamp() const { return fParamsTimestamp; }
@@ -111,7 +98,7 @@ public:
     void baseLevelWasBoundToFBO() { fBaseLevelHasBeenBoundToFBO = true; }
 
     static sk_sp<GrGLTexture> MakeWrapped(GrGLGpu*, const GrSurfaceDesc&, GrMipMapsStatus,
-                                          const IDDesc&, GrIOType, bool purgeImmediately);
+                                          const IDDesc&, GrWrapCacheable, GrIOType);
 
     void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const override;
 
@@ -119,10 +106,9 @@ protected:
     // Constructor for subclasses.
     GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, GrMipMapsStatus);
 
-    enum Wrapped { kWrapped };
     // Constructor for instances wrapping backend objects.
-    GrGLTexture(GrGLGpu*, Wrapped, const GrSurfaceDesc&, GrMipMapsStatus, const IDDesc&, GrIOType,
-                bool purgeImmediately);
+    GrGLTexture(GrGLGpu*, const GrSurfaceDesc&, GrMipMapsStatus, const IDDesc&, GrWrapCacheable,
+                GrIOType);
 
     void init(const GrSurfaceDesc&, const IDDesc&);
 
@@ -132,26 +118,9 @@ protected:
     bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) override;
 
 private:
-    void invokeReleaseProc() {
-        // Depending on the ref count of fReleaseHelper this may or may not actually trigger the
-        // ReleaseProc to be called.
-        fReleaseHelper.reset();
-    }
-
-    void becamePurgeable() override {
-        if (fIdleProc) {
-            fIdleProc(fIdleProcContext);
-            fIdleProc = nullptr;
-            fIdleProcContext = nullptr;
-        }
-    }
-
     SamplerParams fSamplerParams;
     NonSamplerParams fNonSamplerParams;
     GrGpu::ResetTimestamp fParamsTimestamp;
-    sk_sp<GrReleaseProcHelper> fReleaseHelper;
-    IdleProc* fIdleProc = nullptr;
-    void* fIdleProcContext = nullptr;
     GrGLuint fID;
     GrGLenum fFormat;
     GrBackendObjectOwnership fTextureIDOwnership;

@@ -10,16 +10,18 @@
 
 #include "GrDrawOp.h"
 
+class GrRecordingContext;
+
 class GrAAFillRRectOp : public GrDrawOp {
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrAAFillRRectOp> Make(GrContext*, const SkMatrix&, const SkRRect&,
-                                                 const GrCaps&, GrPaint&&);
+    static std::unique_ptr<GrAAFillRRectOp> Make(GrRecordingContext*, const SkMatrix&,
+                                                 const SkRRect&, const GrCaps&, GrPaint&&);
 
     const char* name() const override { return "GrAAFillRRectOp"; }
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*) override;
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrFSAAType) override;
     CombineResult onCombineIfPossible(GrOp*, const GrCaps&) override;
     void visitProxies(const VisitProxyFunc& fn, VisitorType) const override {
         fProcessors.visitProxies(fn);
@@ -32,10 +34,11 @@ private:
     enum class Flags {
         kNone = 0,
         kUseHWDerivatives = 1 << 0,
-        kHasLocalCoords = 1 << 1
+        kHasLocalCoords = 1 << 1,
+        kWideColor = 1 << 2
     };
 
-    GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(Flags)
+    GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(Flags);
 
     class Processor;
 
@@ -66,7 +69,7 @@ private:
     int fInstanceCount = 1;
     int fInstanceStride = 0;
 
-    const GrBuffer* fInstanceBuffer = nullptr;
+    sk_sp<const GrBuffer> fInstanceBuffer;
     int fBaseInstance;
 
     friend class GrOpMemoryPool;

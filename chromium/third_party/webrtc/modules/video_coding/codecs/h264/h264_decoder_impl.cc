@@ -259,12 +259,12 @@ int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
   // "If the first 23 bits of the additional bytes are not 0, then damaged MPEG
   // bitstreams could cause overread and segfault." See
   // AV_INPUT_BUFFER_PADDING_SIZE. We'll zero the entire padding just in case.
-  memset(input_image.data() + input_image.size(), 0,
+  memset(input_image.mutable_data() + input_image.size(), 0,
          EncodedImage::GetBufferPaddingBytes(kVideoCodecH264));
 
   AVPacket packet;
   av_init_packet(&packet);
-  packet.data = input_image.data();
+  packet.data = input_image.mutable_data();
   if (input_image.size() >
       static_cast<size_t>(std::numeric_limits<int>::max())) {
     ReportError();
@@ -304,8 +304,8 @@ int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
 
   // Pass on color space from input frame if explicitly specified.
   const ColorSpace& color_space =
-      input_frame->color_space() ? *input_frame->color_space()
-                                 : ExtractH264ColorSpace(av_context_.get());
+      input_image.ColorSpace() ? *input_image.ColorSpace()
+                               : ExtractH264ColorSpace(av_context_.get());
   VideoFrame decoded_frame =
       VideoFrame::Builder()
           .set_video_frame_buffer(input_frame->video_frame_buffer())

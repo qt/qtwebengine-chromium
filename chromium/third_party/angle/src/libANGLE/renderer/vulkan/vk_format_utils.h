@@ -66,6 +66,13 @@ struct Format final : private angle::NonCopyable
     const angle::Format &textureFormat() const { return angle::Format::Get(textureFormatID); }
     const angle::Format &bufferFormat() const { return angle::Format::Get(bufferFormatID); }
 
+    // Get buffer alignment for image-copy operations (to or from a buffer).
+    const gl::InternalFormat &getInternalFormatInfo(GLenum type) const
+    {
+        return gl::GetInternalFormatInfo(internalFormat, type);
+    }
+    size_t getImageCopyBufferAlignment() const;
+
     angle::FormatID angleFormatID;
     GLenum internalFormat;
     angle::FormatID textureFormatID;
@@ -120,6 +127,9 @@ class FormatTable final : angle::NonCopyable
 const VkFormatProperties &GetMandatoryFormatSupport(VkFormat vkFormat);
 
 }  // namespace vk
+
+// Checks if a vkFormat supports all the features needed to use it as a GL texture format
+bool HasFullTextureFormatSupport(RendererVk *renderer, VkFormat vkFormat);
 
 // Returns the alignment for a buffer to be used with the vertex input stage in Vulkan. This
 // calculation is listed in the Vulkan spec at the end of the section 'Vertex Input Description'.

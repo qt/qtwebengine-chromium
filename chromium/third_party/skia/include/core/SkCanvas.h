@@ -41,7 +41,6 @@ class SkFont;
 class SkGlyphRunBuilder;
 class SkImage;
 class SkImageFilter;
-class SkMetaData;
 class SkPath;
 class SkPicture;
 class SkPixmap;
@@ -216,13 +215,6 @@ public:
         Frees up resources used by SkCanvas.
     */
     virtual ~SkCanvas();
-
-    /** Returns storage to associate additional data with the canvas.
-        The storage is freed when SkCanvas is deleted.
-
-        @return  storage that can be read from and written to
-    */
-    SkMetaData& getMetaData();
 
     /** Returns SkImageInfo for SkCanvas. If SkCanvas is not associated with raster surface or
         GPU surface, returned SkColorType is set to kUnknown_SkColorType.
@@ -622,7 +614,10 @@ public:
             @param bounds          layer dimensions; may be nullptr
             @param paint           applied to layer when overlaying prior layer;
                                    may be nullptr
-            @param backdrop        prior layer copied with SkImageFilter; may be nullptr
+            @param backdrop        If not null, this causes the current layer to be filtered by
+                                   backdrop, and then drawn into the new layer
+                                   (respecting the current clip).
+                                   If null, the new layer is initialized with transparent-black.
             @param saveLayerFlags  SaveLayerRec options to modify layer
             @return                SaveLayerRec fully specified
         */
@@ -644,8 +639,10 @@ public:
             @param bounds          layer dimensions; may be nullptr
             @param paint           graphics state applied to layer when overlaying prior
                                    layer; may be nullptr
-            @param backdrop        prior layer copied with SkImageFilter;
-                                   may be nullptr
+            @param backdrop        If not null, this causes the current layer to be filtered by
+                                   backdrop, and then drawn into the new layer
+                                   (respecting the current clip).
+                                   If null, the new layer is initialized with transparent-black.
             @param clipMask        clip applied to layer; may be nullptr
             @param clipMatrix      matrix applied to clipMask; may be nullptr to use
                                    identity matrix
@@ -669,7 +666,12 @@ public:
         /** modifies overlay */
         const SkPaint*       fPaint          = nullptr;
 
-        /** applies SkImageFilter to prior layer */
+        /**
+         *  If not null, this triggers the same initialization behavior as setting
+         *  kInitWithPrevious_SaveLayerFlag on fSaveLayerFlags: the current layer is copied into
+         *  the new layer, rather than initializing the new layer with transparent-black.
+         *  This is then filtered by fBackdrop (respecting the current clip).
+         */
         const SkImageFilter* fBackdrop       = nullptr;
 
         /** clips layer with mask alpha */
@@ -1305,12 +1307,8 @@ public:
     /** Draws SkImage image, with its top-left corner at (left, top),
         using clip, SkMatrix, and optional SkPaint paint.
 
-        If paint is supplied, apply SkColorFilter, alpha, SkImageFilter, SkBlendMode,
-        and SkDrawLooper. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds. If generated
-        mask extends beyond image bounds, replicate image edge colors, just as SkShader
-        made from SkImage::makeShader with SkShader::kClamp_TileMode set replicates the
-        image edge color when it samples outside of its bounds.
+        This is equivalent to drawImageRect() using a dst rect at (x,y) with the
+        same width and height of the image.
 
         @param image  uncompressed rectangular map of pixels
         @param left   left side of image
@@ -1324,12 +1322,8 @@ public:
     /** Draws SkImage image, with its top-left corner at (left, top),
         using clip, SkMatrix, and optional SkPaint paint.
 
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter,
-        SkBlendMode, and SkDrawLooper. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds. If generated
-        mask extends beyond image bounds, replicate image edge colors, just as SkShader
-        made from SkImage::makeShader with SkShader::kClamp_TileMode set replicates the
-        image edge color when it samples outside of its bounds.
+        This is equivalent to drawImageRect() using a dst rect at (x,y) with the
+        same width and height of the image.
 
         @param image  uncompressed rectangular map of pixels
         @param left   left side of image
@@ -1368,6 +1362,10 @@ public:
         as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
         replicates the image edge color when it samples outside of its bounds.
 
+        When using a shader or shader mask filter, its coordinate system is based on the
+        current CTM, so will reflect the dst rect geometry and is equivalent to
+        drawRect(dst). The src rect is only used to access the provided image.
+
         constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
         sample within src; set to kFast_SrcRectConstraint allows sampling outside to
         improve performance.
@@ -1396,6 +1394,10 @@ public:
         as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
         replicates the image edge color when it samples outside of its bounds.
 
+        When using a shader or shader mask filter, its coordinate system is based on the
+        current CTM, so will reflect the dst rect geometry and is equivalent to
+        drawRect(dst). The src rect is only used to access the provided image.
+
         constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
         sample within isrc; set to kFast_SrcRectConstraint allows sampling outside to
         improve performance.
@@ -1422,6 +1424,10 @@ public:
         as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
         replicates the image edge color when it samples outside of its bounds.
 
+        When using a shader or shader mask filter, its coordinate system is based on the
+        current CTM, so will reflect the dst rect geometry and is equivalent to
+        drawRect(dst).
+
         @param image       SkImage containing pixels, dimensions, and format
         @param dst         destination SkRect of image to draw to
         @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
@@ -1439,6 +1445,10 @@ public:
         If generated mask extends beyond image bounds, replicate image edge colors, just
         as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
         replicates the image edge color when it samples outside of its bounds.
+
+        When using a shader or shader mask filter, its coordinate system is based on the
+        current CTM, so will reflect the dst rect geometry and is equivalent to
+        drawRect(dst). The src rect is only used to access the provided image.
 
         @param image       SkImage containing pixels, dimensions, and format
         @param src         source SkRect of image to draw from
@@ -1464,6 +1474,10 @@ public:
         If generated mask extends beyond image bounds, replicate image edge colors, just
         as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
         replicates the image edge color when it samples outside of its bounds.
+
+        When using a shader or shader mask filter, its coordinate system is based on the
+        current CTM, so will reflect the dst rect geometry and is equivalent to
+        drawRect(dst). The src rect is only used to access the provided image.
 
         constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
         sample within image; set to kFast_SrcRectConstraint allows sampling outside to
@@ -1492,6 +1506,10 @@ public:
         If generated mask extends beyond image bounds, replicate image edge colors, just
         as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
         replicates the image edge color when it samples outside of its bounds.
+
+        When using a shader or shader mask filter, its coordinate system is based on the
+        current CTM, so will reflect the dst rect geometry and is equivalent to
+        drawRect(dst).
 
         constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
         sample within image; set to kFast_SrcRectConstraint allows sampling outside to
@@ -2519,7 +2537,6 @@ private:
 
     int         fSaveCount;         // value returned by getSaveCount()
 
-    SkMetaData* fMetaData;
     std::unique_ptr<SkRasterHandleAllocator> fAllocator;
 
     SkSurface_Base*  fSurfaceBase;
@@ -2546,7 +2563,7 @@ private:
     friend class SkPictureRecord;   // predrawNotify (why does it need it? <reed>)
     friend class SkOverdrawCanvas;
     friend class SkRasterHandleAllocator;
-
+    friend class ClipTileRenderer;  // GM needs getTopDevice() until API is in SkCanvas
 protected:
     // For use by SkNoDrawCanvas (via SkCanvasVirtualEnforcer, which can't be a friend)
     SkCanvas(const SkIRect& bounds);

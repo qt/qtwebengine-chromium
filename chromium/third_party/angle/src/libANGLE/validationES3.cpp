@@ -3083,7 +3083,7 @@ bool ValidateDrawElementsInstanced(Context *context,
         return false;
     }
 
-    return ValidateDrawElementsInstancedCommon(context, mode, count, type, indices, instanceCount);
+    return ValidateDrawElementsInstancedBase(context, mode, count, type, indices, instanceCount);
 }
 
 bool ValidateMultiDrawArraysInstancedANGLE(Context *context,
@@ -3100,7 +3100,7 @@ bool ValidateMultiDrawArraysInstancedANGLE(Context *context,
     }
     if (context->getClientMajorVersion() < 3)
     {
-        if (!context->getExtensions().instancedArrays)
+        if (!context->getExtensions().instancedArraysAny())
         {
             context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
             return false;
@@ -3136,7 +3136,7 @@ bool ValidateMultiDrawElementsInstancedANGLE(Context *context,
     }
     if (context->getClientMajorVersion() < 3)
     {
-        if (!context->getExtensions().instancedArrays)
+        if (!context->getExtensions().instancedArraysAny())
         {
             context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
             return false;
@@ -3148,8 +3148,8 @@ bool ValidateMultiDrawElementsInstancedANGLE(Context *context,
     }
     for (GLsizei drawID = 0; drawID < drawcount; ++drawID)
     {
-        if (!ValidateDrawElementsInstancedCommon(context, mode, counts[drawID], type,
-                                                 indices[drawID], instanceCounts[drawID]))
+        if (!ValidateDrawElementsInstancedBase(context, mode, counts[drawID], type, indices[drawID],
+                                               instanceCounts[drawID]))
         {
             return false;
         }

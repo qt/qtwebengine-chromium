@@ -13,12 +13,12 @@
 #include <memory>
 
 #include "absl/memory/memory.h"
+#include "api/scoped_refptr.h"
 #include "modules/audio_processing/include/audio_processing.h"
 #include "modules/audio_processing/test/echo_control_mock.h"
 #include "modules/audio_processing/test/test_utils.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ref_counted_object.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -133,7 +133,7 @@ class TestRenderPreProcessor : public CustomProcessing {
       std::transform(channel_view.begin(), channel_view.end(),
                      channel_view.begin(), ProcessSample);
     }
-  };
+  }
   std::string ToString() const override { return "TestRenderPreProcessor"; }
   void SetRuntimeSetting(AudioProcessing::RuntimeSetting setting) override {}
   // Modifies a sample. This member is used in Process() to modify a frame and

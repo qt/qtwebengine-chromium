@@ -14,6 +14,7 @@
 #include "absl/memory/memory.h"
 #include "api/media_transport_interface.h"
 #include "api/test/fake_media_transport.h"
+#include "api/test/loopback_media_transport.h"
 #include "p2p/base/fake_dtls_transport.h"
 #include "p2p/base/fake_ice_transport.h"
 #include "p2p/base/no_op_dtls_transport.h"
@@ -305,10 +306,14 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
   // JsepTransportController::Observer overrides.
   bool OnTransportChanged(const std::string& mid,
                           RtpTransportInternal* rtp_transport,
-                          cricket::DtlsTransportInternal* dtls_transport,
+                          rtc::scoped_refptr<DtlsTransport> dtls_transport,
                           MediaTransportInterface* media_transport) override {
     changed_rtp_transport_by_mid_[mid] = rtp_transport;
-    changed_dtls_transport_by_mid_[mid] = dtls_transport;
+    if (dtls_transport) {
+      changed_dtls_transport_by_mid_[mid] = dtls_transport->internal();
+    } else {
+      changed_dtls_transport_by_mid_[mid] = nullptr;
+    }
     changed_media_transport_by_mid_[mid] = media_transport;
     return true;
   }
@@ -415,15 +420,21 @@ TEST_F(JsepTransportControllerTest, GetDtlsTransportWithRtcpMux) {
   EXPECT_EQ(nullptr, transport_controller_->GetMediaTransport(kAudioMid1));
 }
 
-TEST_F(JsepTransportControllerTest, GetMediaTransportInCaller) {
+TEST_F(JsepTransportControllerTest,
+       DtlsIsStillCreatedIfMediaTransportIsOnlyUsedForDataChannels) {
   FakeMediaTransportFactory fake_media_transport_factory;
   JsepTransportController::Config config;
 
   config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
   config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
   CreateJsepTransportController(config);
   auto description = CreateSessionDescriptionWithBundleGroup();
   AddCryptoSettings(description.get());
+
+  EXPECT_NE(absl::nullopt,
+            transport_controller_->GenerateOrGetLastMediaTransportOffer());
 
   EXPECT_TRUE(transport_controller_
                   ->SetLocalDescription(SdpType::kOffer, description.get())
@@ -441,9 +452,86 @@ TEST_F(JsepTransportControllerTest, GetMediaTransportInCaller) {
   // Return nullptr for non-existing mids.
   EXPECT_EQ(nullptr, transport_controller_->GetMediaTransport(kVideoMid2));
 
+  EXPECT_EQ(cricket::ICE_CANDIDATE_COMPONENT_RTP,
+            transport_controller_->GetDtlsTransport(kAudioMid1)->component())
+      << "Media transport for media was not enabled, and so DTLS transport "
+         "should be created.";
+}
+
+TEST_F(JsepTransportControllerTest, GetMediaTransportInCaller) {
+  FakeMediaTransportFactory fake_media_transport_factory;
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+
+  EXPECT_NE(absl::nullopt,
+            transport_controller_->GenerateOrGetLastMediaTransportOffer());
+
+  EXPECT_TRUE(transport_controller_
+                  ->SetLocalDescription(SdpType::kOffer, description.get())
+                  .ok());
+
+  FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
+      transport_controller_->GetMediaTransport(kAudioMid1));
+
+  ASSERT_NE(nullptr, media_transport);
+
+  // After SetLocalDescription, media transport should be created as caller.
+  EXPECT_TRUE(media_transport->is_caller());
+  // We set the pre-shared key on the caller.
+  EXPECT_TRUE(media_transport->pre_shared_key().has_value());
+  EXPECT_TRUE(media_transport->is_connected());
+
+  // Return nullptr for non-existing mids.
+  EXPECT_EQ(nullptr, transport_controller_->GetMediaTransport(kVideoMid2));
+
   EXPECT_EQ(cricket::kNoOpDtlsTransportComponent,
             transport_controller_->GetDtlsTransport(kAudioMid1)->component())
       << "Because media transport is used, expected no-op DTLS transport.";
+}
+
+TEST_F(JsepTransportControllerTest,
+       GetMediaTransportOfferInTheConfigOnSubsequentCalls) {
+  FakeMediaTransportFactory fake_media_transport_factory;
+  WrapperMediaTransportFactory wrapping_factory(&fake_media_transport_factory);
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.media_transport_factory = &wrapping_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+
+  absl::optional<cricket::SessionDescription::MediaTransportSetting> settings =
+      transport_controller_->GenerateOrGetLastMediaTransportOffer();
+  ASSERT_NE(absl::nullopt, settings);
+
+  EXPECT_TRUE(transport_controller_
+                  ->SetLocalDescription(SdpType::kOffer, description.get())
+                  .ok());
+
+  FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
+      transport_controller_->GetMediaTransport(kAudioMid1));
+
+  ASSERT_NE(nullptr, media_transport);
+
+  absl::optional<cricket::SessionDescription::MediaTransportSetting>
+      new_settings =
+          transport_controller_->GenerateOrGetLastMediaTransportOffer();
+  ASSERT_NE(absl::nullopt, new_settings);
+  EXPECT_EQ(settings->transport_name, new_settings->transport_name);
+  EXPECT_EQ(settings->transport_setting, new_settings->transport_setting);
+  EXPECT_EQ(1, wrapping_factory.created_transport_count());
 }
 
 TEST_F(JsepTransportControllerTest, GetMediaTransportInCallee) {
@@ -452,9 +540,12 @@ TEST_F(JsepTransportControllerTest, GetMediaTransportInCallee) {
 
   config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
   config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
   CreateJsepTransportController(config);
   auto description = CreateSessionDescriptionWithBundleGroup();
   AddCryptoSettings(description.get());
+  description->AddMediaTransportSetting("fake", "fake-remote-settings");
   EXPECT_TRUE(transport_controller_
                   ->SetRemoteDescription(SdpType::kOffer, description.get())
                   .ok());
@@ -466,8 +557,13 @@ TEST_F(JsepTransportControllerTest, GetMediaTransportInCallee) {
 
   // After SetRemoteDescription, media transport should be created as callee.
   EXPECT_FALSE(media_transport->is_caller());
-  EXPECT_TRUE(media_transport->pre_shared_key().has_value());
+  // We do not set pre-shared key on the callee, it comes in media transport
+  // settings.
+  EXPECT_EQ(absl::nullopt, media_transport->settings().pre_shared_key);
+  EXPECT_TRUE(media_transport->is_connected());
 
+  EXPECT_EQ("fake-remote-settings",
+            media_transport->remote_transport_parameters());
   // Return nullptr for non-existing mids.
   EXPECT_EQ(nullptr, transport_controller_->GetMediaTransport(kVideoMid2));
 
@@ -476,14 +572,169 @@ TEST_F(JsepTransportControllerTest, GetMediaTransportInCallee) {
       << "Because media transport is used, expected no-op DTLS transport.";
 }
 
+TEST_F(JsepTransportControllerTest, GetMediaTransportInCalleePassesSdp) {
+  FakeMediaTransportFactory fake_media_transport_factory;
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+  description->AddMediaTransportSetting("fake", "this-is-a-test-setting");
+  EXPECT_TRUE(transport_controller_
+                  ->SetRemoteDescription(SdpType::kOffer, description.get())
+                  .ok());
+
+  FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
+      transport_controller_->GetMediaTransport(kAudioMid1));
+
+  ASSERT_NE(nullptr, media_transport);
+
+  EXPECT_EQ("this-is-a-test-setting",
+            media_transport->settings().remote_transport_parameters);
+}
+
+// Caller generates the offer if media transport returns empty offer (no
+// parameters).
+TEST_F(JsepTransportControllerTest, MediaTransportGeneratesSessionDescription) {
+  FakeMediaTransportFactory fake_media_transport_factory(
+      /*transport_offer=*/"");
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+  absl::optional<cricket::SessionDescription::MediaTransportSetting> settings =
+      transport_controller_->GenerateOrGetLastMediaTransportOffer();
+
+  ASSERT_TRUE(settings.has_value());
+  EXPECT_EQ("fake", settings->transport_name);
+  // Fake media transport returns empty settings (but not nullopt settings!)
+  EXPECT_EQ("", settings->transport_setting);
+}
+
+// Caller generates the offer if media transport returns offer with parameters.
+TEST_F(JsepTransportControllerTest,
+       MediaTransportGeneratesSessionDescriptionWithOfferParams) {
+  FakeMediaTransportFactory fake_media_transport_factory(
+      /*transport_offer=*/"offer-params");
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+  absl::optional<cricket::SessionDescription::MediaTransportSetting> settings =
+      transport_controller_->GenerateOrGetLastMediaTransportOffer();
+
+  ASSERT_TRUE(settings.has_value());
+  EXPECT_EQ("fake", settings->transport_name);
+  EXPECT_EQ("offer-params", settings->transport_setting);
+}
+
+// Caller skips the offer if media transport requests it.
+TEST_F(JsepTransportControllerTest,
+       MediaTransportGeneratesSkipsSessionDescription) {
+  FakeMediaTransportFactory fake_media_transport_factory(
+      /*transport_offer=*/absl::nullopt);
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+  absl::optional<cricket::SessionDescription::MediaTransportSetting> settings =
+      transport_controller_->GenerateOrGetLastMediaTransportOffer();
+
+  // Fake media transport returns nullopt settings
+  ASSERT_EQ(absl::nullopt, settings);
+}
+
+// Caller ignores its own outgoing parameters.
+TEST_F(JsepTransportControllerTest,
+       GetMediaTransportInCallerIgnoresXmtSection) {
+  FakeMediaTransportFactory fake_media_transport_factory;
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+  EXPECT_NE(absl::nullopt,
+            transport_controller_->GenerateOrGetLastMediaTransportOffer());
+  EXPECT_TRUE(transport_controller_
+                  ->SetLocalDescription(SdpType::kOffer, description.get())
+                  .ok());
+
+  FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
+      transport_controller_->GetMediaTransport(kAudioMid1));
+
+  ASSERT_NE(nullptr, media_transport);
+
+  // Remote parameters are nullopt, because we are the offerer (we don't)
+  // have the remote transport parameters, only ours.
+  EXPECT_EQ(absl::nullopt,
+            media_transport->settings().remote_transport_parameters);
+}
+
+TEST_F(JsepTransportControllerTest,
+       GetMediaTransportInCalleeIgnoresDifferentTransport) {
+  FakeMediaTransportFactory fake_media_transport_factory;
+  JsepTransportController::Config config;
+
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+  description->AddMediaTransportSetting("not-a-fake-transport",
+                                        "this-is-a-test-setting");
+  EXPECT_TRUE(transport_controller_
+                  ->SetRemoteDescription(SdpType::kOffer, description.get())
+                  .ok());
+
+  FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
+      transport_controller_->GetMediaTransport(kAudioMid1));
+
+  ASSERT_NE(nullptr, media_transport);
+
+  EXPECT_EQ(absl::nullopt,
+            media_transport->settings().remote_transport_parameters);
+}
+
 TEST_F(JsepTransportControllerTest, GetMediaTransportIsNotSetIfNoSdes) {
   FakeMediaTransportFactory fake_media_transport_factory;
   JsepTransportController::Config config;
 
   config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyNegotiate;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
   config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_media = true;
   CreateJsepTransportController(config);
-  auto description = CreateSessionDescriptionWithoutBundle();
+  auto description = CreateSessionDescriptionWithBundleGroup();
   EXPECT_TRUE(transport_controller_
                   ->SetRemoteDescription(SdpType::kOffer, description.get())
                   .ok());
@@ -492,7 +743,7 @@ TEST_F(JsepTransportControllerTest, GetMediaTransportIsNotSetIfNoSdes) {
 
   // Even if we set local description with crypto now (after the remote offer
   // was set), media transport won't be provided.
-  auto description2 = CreateSessionDescriptionWithoutBundle();
+  auto description2 = CreateSessionDescriptionWithBundleGroup();
   AddCryptoSettings(description2.get());
   EXPECT_TRUE(transport_controller_
                   ->SetLocalDescription(SdpType::kAnswer, description2.get())
@@ -506,27 +757,31 @@ TEST_F(JsepTransportControllerTest, GetMediaTransportIsNotSetIfNoSdes) {
 }
 
 TEST_F(JsepTransportControllerTest,
-       AfterSettingAnswerTheSameMediaTransportIsReturned) {
+       AfterSettingAnswerTheSameMediaTransportIsReturnedCallee) {
   FakeMediaTransportFactory fake_media_transport_factory;
   JsepTransportController::Config config;
 
   config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
   config.media_transport_factory = &fake_media_transport_factory;
+  config.use_media_transport_for_media = true;
   CreateJsepTransportController(config);
-  auto description = CreateSessionDescriptionWithoutBundle();
+  auto description = CreateSessionDescriptionWithBundleGroup();
   AddCryptoSettings(description.get());
+  description->AddMediaTransportSetting("fake", "fake-settings");
   EXPECT_TRUE(transport_controller_
                   ->SetRemoteDescription(SdpType::kOffer, description.get())
                   .ok());
-
   FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
       transport_controller_->GetMediaTransport(kAudioMid1));
   EXPECT_NE(nullptr, media_transport);
-  EXPECT_TRUE(media_transport->pre_shared_key().has_value());
+  EXPECT_FALSE(media_transport->pre_shared_key().has_value())
+      << "On the callee, preshared key is passed through the media-transport "
+         "settings (x-mt)";
 
   // Even if we set local description with crypto now (after the remote offer
   // was set), media transport won't be provided.
-  auto description2 = CreateSessionDescriptionWithoutBundle();
+  auto description2 = CreateSessionDescriptionWithBundleGroup();
   AddCryptoSettings(description2.get());
 
   RTCError result = transport_controller_->SetLocalDescription(
@@ -821,15 +1076,21 @@ TEST_F(JsepTransportControllerTest,
 }
 
 TEST_F(JsepTransportControllerTest,
-       SignalConnectionStateConnectedWithMediaTransport) {
+       SignalConnectionStateConnectedWithMediaTransportAndNoDtlsCaller) {
   FakeMediaTransportFactory fake_media_transport_factory;
   JsepTransportController::Config config;
   config.media_transport_factory = &fake_media_transport_factory;
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.use_media_transport_for_data_channels = true;
+  config.use_media_transport_for_media = true;
   CreateJsepTransportController(config);
 
   // Media Transport is only used with bundle.
   auto description = CreateSessionDescriptionWithBundleGroup();
   AddCryptoSettings(description.get());
+  EXPECT_NE(absl::nullopt,
+            transport_controller_->GenerateOrGetLastMediaTransportOffer());
   EXPECT_TRUE(transport_controller_
                   ->SetLocalDescription(SdpType::kOffer, description.get())
                   .ok());
@@ -838,6 +1099,7 @@ TEST_F(JsepTransportControllerTest,
       transport_controller_->GetDtlsTransport(kAudioMid1)->ice_transport());
   auto fake_video_ice = static_cast<cricket::FakeIceTransport*>(
       transport_controller_->GetDtlsTransport(kVideoMid1)->ice_transport());
+  EXPECT_EQ(fake_audio_ice, fake_video_ice);
   fake_audio_ice->SetConnectionCount(2);
   fake_audio_ice->SetConnectionCount(1);
   fake_video_ice->SetConnectionCount(2);
@@ -852,6 +1114,59 @@ TEST_F(JsepTransportControllerTest,
   FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
       transport_controller_->GetMediaTransport(kAudioMid1));
 
+  ASSERT_NE(nullptr, media_transport);
+
+  media_transport->SetState(webrtc::MediaTransportState::kWritable);
+  // Only one media transport.
+  EXPECT_EQ_WAIT(cricket::kIceConnectionConnected, connection_state_, kTimeout);
+}
+
+TEST_F(JsepTransportControllerTest,
+       SignalConnectionStateConnectedWithMediaTransportCaller) {
+  FakeMediaTransportFactory fake_media_transport_factory;
+  JsepTransportController::Config config;
+  config.media_transport_factory = &fake_media_transport_factory;
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.use_media_transport_for_media = true;
+  CreateJsepTransportController(config);
+
+  // Media Transport is only used with bundle.
+  auto description = CreateSessionDescriptionWithBundleGroup();
+  AddCryptoSettings(description.get());
+  EXPECT_NE(absl::nullopt,
+            transport_controller_->GenerateOrGetLastMediaTransportOffer());
+  EXPECT_TRUE(transport_controller_
+                  ->SetLocalDescription(SdpType::kOffer, description.get())
+                  .ok());
+
+  auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
+      transport_controller_->GetDtlsTransport(kAudioMid1));
+  auto fake_video_dtls = static_cast<FakeDtlsTransport*>(
+      transport_controller_->GetDtlsTransport(kVideoMid1));
+
+  auto fake_audio_ice = static_cast<cricket::FakeIceTransport*>(
+      transport_controller_->GetDtlsTransport(kAudioMid1)->ice_transport());
+  auto fake_video_ice = static_cast<cricket::FakeIceTransport*>(
+      transport_controller_->GetDtlsTransport(kVideoMid1)->ice_transport());
+  fake_audio_ice->SetConnectionCount(2);
+  fake_audio_ice->SetConnectionCount(1);
+  fake_video_ice->SetConnectionCount(2);
+  fake_video_ice->SetConnectionCount(1);
+  fake_audio_ice->SetWritable(true);
+  fake_video_ice->SetWritable(true);
+  fake_audio_dtls->SetWritable(true);
+  fake_video_dtls->SetWritable(true);
+
+  // Still not connected, because we are waiting for media transport.
+  EXPECT_EQ_WAIT(cricket::kIceConnectionConnecting, connection_state_,
+                 kTimeout);
+
+  FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
+      transport_controller_->GetMediaTransport(kAudioMid1));
+
+  ASSERT_NE(nullptr, media_transport);
+
   media_transport->SetState(webrtc::MediaTransportState::kWritable);
   EXPECT_EQ_WAIT(cricket::kIceConnectionConnecting, connection_state_,
                  kTimeout);
@@ -865,16 +1180,26 @@ TEST_F(JsepTransportControllerTest,
 }
 
 TEST_F(JsepTransportControllerTest,
-       SignalConnectionStateFailedWhenMediaTransportClosed) {
+       SignalConnectionStateFailedWhenMediaTransportClosedCaller) {
   FakeMediaTransportFactory fake_media_transport_factory;
   JsepTransportController::Config config;
   config.media_transport_factory = &fake_media_transport_factory;
+  config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  config.use_media_transport_for_media = true;
   CreateJsepTransportController(config);
-  auto description = CreateSessionDescriptionWithoutBundle();
+  auto description = CreateSessionDescriptionWithBundleGroup();
   AddCryptoSettings(description.get());
+  EXPECT_NE(absl::nullopt,
+            transport_controller_->GenerateOrGetLastMediaTransportOffer());
   EXPECT_TRUE(transport_controller_
                   ->SetLocalDescription(SdpType::kOffer, description.get())
                   .ok());
+
+  auto fake_audio_dtls = static_cast<FakeDtlsTransport*>(
+      transport_controller_->GetDtlsTransport(kAudioMid1));
+  auto fake_video_dtls = static_cast<FakeDtlsTransport*>(
+      transport_controller_->GetDtlsTransport(kVideoMid1));
 
   auto fake_audio_ice = static_cast<cricket::FakeIceTransport*>(
       transport_controller_->GetDtlsTransport(kAudioMid1)->ice_transport());
@@ -888,13 +1213,17 @@ TEST_F(JsepTransportControllerTest,
   fake_video_ice->SetConnectionCount(2);
   fake_video_ice->SetConnectionCount(1);
 
+  fake_audio_dtls->SetWritable(true);
+  fake_video_dtls->SetWritable(true);
+
   FakeMediaTransport* media_transport = static_cast<FakeMediaTransport*>(
       transport_controller_->GetMediaTransport(kAudioMid1));
-
+  ASSERT_NE(nullptr, media_transport);
   media_transport->SetState(webrtc::MediaTransportState::kWritable);
 
   media_transport = static_cast<FakeMediaTransport*>(
       transport_controller_->GetMediaTransport(kVideoMid1));
+  ASSERT_NE(nullptr, media_transport);
 
   media_transport->SetState(webrtc::MediaTransportState::kWritable);
 
@@ -1076,7 +1405,7 @@ TEST_F(JsepTransportControllerTest, IceSignalingOccursOnSignalingThread) {
   network_thread_->Start();
   CreateJsepTransportController(JsepTransportController::Config(),
                                 signaling_thread_, network_thread_.get(),
-                                /*PortAllocator=*/nullptr);
+                                /*port_allocator=*/nullptr);
   CreateLocalDescriptionAndCompleteConnectionOnNetworkThread();
 
   // connecting --> connected --> completed

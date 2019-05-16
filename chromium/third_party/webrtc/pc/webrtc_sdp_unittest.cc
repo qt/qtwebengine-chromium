@@ -17,6 +17,9 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
+#include "absl/memory/memory.h"
+#include "absl/strings/str_replace.h"
 #include "api/array_view.h"
 #include "api/crypto_params.h"
 #include "api/jsep_session_description.h"
@@ -37,7 +40,6 @@
 #include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/string_encode.h"
-#include "rtc_base/string_utils.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -87,9 +89,7 @@ typedef std::vector<AudioCodec> AudioCodecs;
 typedef std::vector<Candidate> Candidates;
 
 static const uint32_t kDefaultSctpPort = 5000;
-static const char kDefaultSctpPortStr[] = "5000";
 static const uint16_t kUnusualSctpPort = 9556;
-static const char kUnusualSctpPortStr[] = "9556";
 static const char kSessionTime[] = "t=0 0\r\n";
 static const uint32_t kCandidatePriority = 2130706432U;  // pref = 1.0
 static const char kAttributeIceUfragVoice[] = "a=ice-ufrag:ufrag_voice\r\n";
@@ -924,16 +924,13 @@ static bool SdpDeserializeCandidate(const std::string& message,
 static void InjectAfter(const std::string& line,
                         const std::string& newlines,
                         std::string* message) {
-  const std::string tmp = line + newlines;
-  rtc::replace_substrs(line.c_str(), line.length(), tmp.c_str(), tmp.length(),
-                       message);
+  absl::StrReplaceAll({{line, line + newlines}}, message);
 }
 
 static void Replace(const std::string& line,
                     const std::string& newlines,
                     std::string* message) {
-  rtc::replace_substrs(line.c_str(), line.length(), newlines.c_str(),
-                       newlines.length(), message);
+  absl::StrReplaceAll({{line, newlines}}, message);
 }
 
 // Expect fail to parase |bad_sdp| and expect |bad_part| be part of the error
@@ -1410,10 +1407,6 @@ class WebRtcSdpTest : public testing::Test {
 
     // streams
     EXPECT_EQ(cd1->streams(), cd2->streams());
-    EXPECT_EQ(cd1->has_receive_stream(), cd2->has_receive_stream());
-    if (cd1->has_receive_stream() && cd2->has_receive_stream()) {
-      EXPECT_EQ(cd1->receive_stream(), cd2->receive_stream());
-    }
 
     // extmap-allow-mixed
     EXPECT_EQ(cd1->extmap_allow_mixed_enum(), cd2->extmap_allow_mixed_enum());
@@ -1435,10 +1428,9 @@ class WebRtcSdpTest : public testing::Test {
     // Order of elements does not matter, only equivalence of sets.
     EXPECT_EQ(rids.size(), ids.size());
     for (const std::string& id : ids) {
-      EXPECT_EQ(1l, std::count_if(rids.begin(), rids.end(),
-                                  [id](const RidDescription& rid) {
-                                    return rid.rid == id;
-                                  }));
+      EXPECT_EQ(1l, absl::c_count_if(rids, [id](const RidDescription& rid) {
+                  return rid.rid == id;
+                }));
     }
   }
 
@@ -1588,14 +1580,8 @@ class WebRtcSdpTest : public testing::Test {
   // Disable the ice-ufrag and ice-pwd in given |sdp| message by replacing
   // them with invalid keywords so that the parser will just ignore them.
   bool RemoveCandidateUfragPwd(std::string* sdp) {
-    const char ice_ufrag[] = "a=ice-ufrag";
-    const char ice_ufragx[] = "a=xice-ufrag";
-    const char ice_pwd[] = "a=ice-pwd";
-    const char ice_pwdx[] = "a=xice-pwd";
-    rtc::replace_substrs(ice_ufrag, strlen(ice_ufrag), ice_ufragx,
-                         strlen(ice_ufragx), sdp);
-    rtc::replace_substrs(ice_pwd, strlen(ice_pwd), ice_pwdx, strlen(ice_pwdx),
-                         sdp);
+    absl::StrReplaceAll(
+        {{"a=ice-ufrag", "a=xice-ufrag"}, {"a=ice-pwd", "a=xice-pwd"}}, sdp);
     return true;
   }
 
@@ -2248,12 +2234,9 @@ TEST_F(WebRtcSdpTest, SerializeWithSctpDataChannelAndNewPort) {
   std::string expected_sdp = kSdpString;
   expected_sdp.append(kSdpSctpDataChannelString);
 
-  char default_portstr[16];
-  char new_portstr[16];
-  snprintf(default_portstr, sizeof(default_portstr), "%d", kDefaultSctpPort);
-  snprintf(new_portstr, sizeof(new_portstr), "%d", kNewPort);
-  rtc::replace_substrs(default_portstr, strlen(default_portstr), new_portstr,
-                       strlen(new_portstr), &expected_sdp);
+  absl::StrReplaceAll(
+      {{rtc::ToString(kDefaultSctpPort), rtc::ToString(kNewPort)}},
+      &expected_sdp);
 
   EXPECT_EQ(expected_sdp, message);
 }
@@ -2385,7 +2368,7 @@ TEST_F(WebRtcSdpTest, SerializeSessionDescriptionWithH264) {
   std::string to_find = "a=fmtp:" + pt + " ";
   size_t fmtp_pos = message.find(to_find);
   ASSERT_NE(std::string::npos, fmtp_pos) << "Failed to find " << to_find;
-  size_t fmtp_endpos = message.find("\n", fmtp_pos);
+  size_t fmtp_endpos = message.find('\n', fmtp_pos);
   ASSERT_NE(std::string::npos, fmtp_endpos);
   std::string fmtp_value = message.substr(fmtp_pos, fmtp_endpos);
   EXPECT_NE(std::string::npos, fmtp_value.find("level-asymmetry-allowed=1"));
@@ -2938,9 +2921,9 @@ TEST_F(WebRtcSdpTest, DeserializeSdpWithSctpDataChannelAndUnusualPort) {
   // Then get the deserialized JsepSessionDescription.
   std::string sdp_with_data = kSdpString;
   sdp_with_data.append(kSdpSctpDataChannelString);
-  rtc::replace_substrs(kDefaultSctpPortStr, strlen(kDefaultSctpPortStr),
-                       kUnusualSctpPortStr, strlen(kUnusualSctpPortStr),
-                       &sdp_with_data);
+  absl::StrReplaceAll(
+      {{rtc::ToString(kDefaultSctpPort), rtc::ToString(kUnusualSctpPort)}},
+      &sdp_with_data);
   JsepSessionDescription jdesc_output(kDummyType);
 
   EXPECT_TRUE(SdpDeserialize(sdp_with_data, &jdesc_output));
@@ -2961,9 +2944,9 @@ TEST_F(WebRtcSdpTest,
   // a=sctp-port
   std::string sdp_with_data = kSdpString;
   sdp_with_data.append(kSdpSctpDataChannelStringWithSctpPort);
-  rtc::replace_substrs(kDefaultSctpPortStr, strlen(kDefaultSctpPortStr),
-                       kUnusualSctpPortStr, strlen(kUnusualSctpPortStr),
-                       &sdp_with_data);
+  absl::StrReplaceAll(
+      {{rtc::ToString(kDefaultSctpPort), rtc::ToString(kUnusualSctpPort)}},
+      &sdp_with_data);
   JsepSessionDescription jdesc_output(kDummyType);
 
   EXPECT_TRUE(SdpDeserialize(sdp_with_data, &jdesc_output));
@@ -3024,9 +3007,9 @@ TEST_P(WebRtcSdpExtmapTest, DeserializeSessionDescriptionWithInvalidExtmap) {
   TestDeserializeExtmap(true, true, encrypted);
 }
 
-INSTANTIATE_TEST_CASE_P(Encrypted,
-                        WebRtcSdpExtmapTest,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(Encrypted,
+                         WebRtcSdpExtmapTest,
+                         ::testing::Values(false, true));
 
 TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutEndLineBreak) {
   JsepSessionDescription jdesc(kDummyType);
@@ -4132,8 +4115,6 @@ TEST_F(WebRtcSdpTest, TestDeserializeSimulcastAttribute) {
   EXPECT_FALSE(media->streams().empty());
   const std::vector<RidDescription>& rids = media->streams()[0].rids();
   CompareRidDescriptionIds(rids, {"1", "2", "3"});
-  ASSERT_TRUE(media->has_receive_stream());
-  CompareRidDescriptionIds(media->receive_stream().rids(), {"4", "5", "6"});
 }
 
 // Validates that deserialization removes rids that do not appear in SDP
@@ -4157,10 +4138,10 @@ TEST_F(WebRtcSdpTest, TestDeserializeSimulcastAttributeRemovesUnknownRids) {
   std::vector<SimulcastLayer> all_send_layers =
       simulcast.send_layers().GetAllLayers();
   EXPECT_EQ(2ul, all_send_layers.size());
-  EXPECT_EQ(0, std::count_if(all_send_layers.begin(), all_send_layers.end(),
-                             [](const SimulcastLayer& layer) {
-                               return layer.rid == "2";
-                             }));
+  EXPECT_EQ(0,
+            absl::c_count_if(all_send_layers, [](const SimulcastLayer& layer) {
+              return layer.rid == "2";
+            }));
 
   std::vector<SimulcastLayer> all_receive_layers =
       simulcast.receive_layers().GetAllLayers();
@@ -4170,8 +4151,6 @@ TEST_F(WebRtcSdpTest, TestDeserializeSimulcastAttributeRemovesUnknownRids) {
   EXPECT_FALSE(media->streams().empty());
   const std::vector<RidDescription>& rids = media->streams()[0].rids();
   CompareRidDescriptionIds(rids, {"1", "3"});
-  ASSERT_TRUE(media->has_receive_stream());
-  CompareRidDescriptionIds(media->receive_stream().rids(), {"4"});
 }
 
 // Validates that Simulcast removes rids that appear in both send and receive.
@@ -4199,8 +4178,6 @@ TEST_F(WebRtcSdpTest,
   EXPECT_FALSE(media->streams().empty());
   const std::vector<RidDescription>& rids = media->streams()[0].rids();
   CompareRidDescriptionIds(rids, {"1", "3"});
-  ASSERT_TRUE(media->has_receive_stream());
-  CompareRidDescriptionIds(media->receive_stream().rids(), {"4"});
 }
 
 // Ignores empty rid line.
@@ -4226,7 +4203,6 @@ TEST_F(WebRtcSdpTest, TestDeserializeIgnoresEmptyRidLines) {
   EXPECT_FALSE(media->streams().empty());
   const std::vector<RidDescription>& rids = media->streams()[0].rids();
   CompareRidDescriptionIds(rids, {"1", "2"});
-  ASSERT_FALSE(media->has_receive_stream());
 }
 
 // Ignores malformed rid lines.
@@ -4253,7 +4229,6 @@ TEST_F(WebRtcSdpTest, TestDeserializeIgnoresMalformedRidLines) {
   EXPECT_FALSE(media->streams().empty());
   const std::vector<RidDescription>& rids = media->streams()[0].rids();
   CompareRidDescriptionIds(rids, {"5"});
-  ASSERT_FALSE(media->has_receive_stream());
 }
 
 // Removes RIDs that specify a different format than the m= section.
@@ -4280,8 +4255,6 @@ TEST_F(WebRtcSdpTest, TestDeserializeRemovesRidsWithInvalidCodec) {
   EXPECT_EQ("1", rids[0].rid);
   EXPECT_EQ(1ul, rids[0].payload_types.size());
   EXPECT_EQ(120, rids[0].payload_types[0]);
-
-  ASSERT_FALSE(media->has_receive_stream());
 }
 
 // Ignores duplicate rid lines
@@ -4309,8 +4282,6 @@ TEST_F(WebRtcSdpTest, TestDeserializeIgnoresDuplicateRidLines) {
   EXPECT_FALSE(media->streams().empty());
   const std::vector<RidDescription>& rids = media->streams()[0].rids();
   CompareRidDescriptionIds(rids, {"1", "3"});
-  ASSERT_TRUE(media->has_receive_stream());
-  CompareRidDescriptionIds(media->receive_stream().rids(), {"4"});
 }
 
 // Simulcast serialization integration test.
@@ -4329,29 +4300,12 @@ TEST_F(WebRtcSdpTest, SerializeSimulcast_ComplexSerialization) {
   send_rids.push_back(RidDescription("3", RidDirection::kSend));
   send_rids.push_back(RidDescription("4", RidDirection::kSend));
   send_stream.set_rids(send_rids);
-  StreamParams recv_stream;
-  std::vector<RidDescription> recv_rids;
-  recv_rids.push_back(RidDescription("6", RidDirection::kReceive));
-  recv_rids.push_back(RidDescription("7", RidDirection::kReceive));
-  recv_rids.push_back(RidDescription("8", RidDirection::kReceive));
-  recv_rids.push_back(RidDescription("9", RidDirection::kReceive));
-  recv_rids.push_back(RidDescription("10", RidDirection::kReceive));
-  recv_rids.push_back(RidDescription("11", RidDirection::kReceive));
-  recv_stream.set_rids(recv_rids);
-  media->set_receive_stream(recv_stream);
 
   SimulcastDescription& simulcast = media->simulcast_description();
   simulcast.send_layers().AddLayerWithAlternatives(
       {SimulcastLayer("2", false), SimulcastLayer("1", true)});
   simulcast.send_layers().AddLayerWithAlternatives(
       {SimulcastLayer("4", false), SimulcastLayer("3", false)});
-
-  simulcast.receive_layers().AddLayerWithAlternatives(
-      {SimulcastLayer("6", false), SimulcastLayer("7", false)});
-  simulcast.receive_layers().AddLayer(SimulcastLayer("8", true));
-  simulcast.receive_layers().AddLayerWithAlternatives(
-      {SimulcastLayer("9", false), SimulcastLayer("10", true),
-       SimulcastLayer("11", false)});
 
   TestSerialize(jdesc_);
 }
@@ -4370,4 +4324,120 @@ TEST_F(WebRtcSdpTest, ParseNoMid) {
   EXPECT_THAT(output.description()->contents(),
               ElementsAre(Field("name", &cricket::ContentInfo::name, ""),
                           Field("name", &cricket::ContentInfo::name, "")));
+}
+
+// Test that the media transport name and base64-decoded setting is parsed from
+// an a=x-mt line.
+TEST_F(WebRtcSdpTest, ParseMediaTransport) {
+  JsepSessionDescription output(kDummyType);
+  std::string sdp = kSdpSessionString;
+  sdp += "a=x-mt:rtp:dGVzdDY0\r\n";
+  SdpParseError error;
+
+  ASSERT_TRUE(webrtc::SdpDeserialize(sdp, &output, &error))
+      << error.description;
+  const auto& settings = output.description()->MediaTransportSettings();
+  ASSERT_EQ(1u, settings.size());
+  EXPECT_EQ("rtp", settings[0].transport_name);
+  EXPECT_EQ("test64", settings[0].transport_setting);
+}
+
+// Test that an a=x-mt line fails to parse if its setting is invalid base 64.
+TEST_F(WebRtcSdpTest, ParseMediaTransportInvalidBase64) {
+  JsepSessionDescription output(kDummyType);
+  std::string sdp = kSdpSessionString;
+  sdp += "a=x-mt:rtp:ThisIsInvalidBase64\r\n";
+  SdpParseError error;
+
+  ASSERT_FALSE(webrtc::SdpDeserialize(sdp, &output, &error));
+}
+
+// Test that multiple a=x-mt lines are parsed in the order of preference (the
+// order of the lines in the SDP).
+TEST_F(WebRtcSdpTest, ParseMediaTransportMultipleLines) {
+  JsepSessionDescription output(kDummyType);
+  std::string sdp = kSdpSessionString;
+  sdp +=
+      "a=x-mt:rtp:dGVzdDY0\r\n"
+      "a=x-mt:generic:Z2VuZXJpY3NldHRpbmc=\r\n";
+  SdpParseError error;
+
+  ASSERT_TRUE(webrtc::SdpDeserialize(sdp, &output, &error))
+      << error.description;
+  const auto& settings = output.description()->MediaTransportSettings();
+  ASSERT_EQ(2u, settings.size());
+  EXPECT_EQ("rtp", settings[0].transport_name);
+  EXPECT_EQ("test64", settings[0].transport_setting);
+  EXPECT_EQ("generic", settings[1].transport_name);
+  EXPECT_EQ("genericsetting", settings[1].transport_setting);
+}
+
+// Test that only the first a=x-mt line associated with a transport name is
+// parsed and the rest ignored.
+TEST_F(WebRtcSdpTest, ParseMediaTransportSkipRepeatedTransport) {
+  JsepSessionDescription output(kDummyType);
+  std::string sdp = kSdpSessionString;
+  sdp +=
+      "a=x-mt:rtp:dGVzdDY0\r\n"
+      "a=x-mt:rtp:Z2VuZXJpY3NldHRpbmc=\r\n";
+  SdpParseError error;
+
+  // Repeated 'rtp' transport setting. We still parse the SDP successfully,
+  // but ignore the repeated transport.
+  ASSERT_TRUE(webrtc::SdpDeserialize(sdp, &output, &error));
+  const auto& settings = output.description()->MediaTransportSettings();
+  EXPECT_EQ("test64", settings[0].transport_setting);
+}
+
+// Test that an a=x-mt line fails to parse if it is missing a setting.
+TEST_F(WebRtcSdpTest, ParseMediaTransportMalformedLine) {
+  JsepSessionDescription output(kDummyType);
+  std::string sdp = kSdpSessionString;
+  sdp += "a=x-mt:rtp\r\n";
+  SdpParseError error;
+
+  ASSERT_FALSE(webrtc::SdpDeserialize(sdp, &output, &error));
+}
+
+// Test that an a=x-mt line fails to parse if its missing a name and setting.
+TEST_F(WebRtcSdpTest, ParseMediaTransportMalformedLine2) {
+  JsepSessionDescription output(kDummyType);
+  std::string sdp = kSdpSessionString;
+  sdp += "a=x-mt\r\n";
+  SdpParseError error;
+
+  ASSERT_FALSE(webrtc::SdpDeserialize(sdp, &output, &error));
+}
+
+TEST_F(WebRtcSdpTest, ParseMediaTransportIgnoreNonsenseAttributeLines) {
+  JsepSessionDescription output(kDummyType);
+  std::string sdp = kSdpSessionString;
+  sdp += "a=x-nonsense:rtp:dGVzdDY0\r\n";
+  SdpParseError error;
+
+  ASSERT_TRUE(webrtc::SdpDeserialize(sdp, &output, &error))
+      << error.description;
+  EXPECT_TRUE(output.description()->MediaTransportSettings().empty());
+}
+
+TEST_F(WebRtcSdpTest, SerializeMediaTransportSettings) {
+  cricket::SessionDescription* description = new cricket::SessionDescription();
+
+  JsepSessionDescription output(SdpType::kOffer);
+  // JsepSessionDescription takes ownership of the description.
+  output.Initialize(description, "session_id", "session_version");
+  output.description()->AddMediaTransportSetting("foo", "bar");
+  std::string serialized_out;
+  output.ToString(&serialized_out);
+  ASSERT_THAT(serialized_out, ::testing::HasSubstr("\r\na=x-mt:foo:YmFy\r\n"));
+}
+
+TEST_F(WebRtcSdpTest, SerializeMediaTransportSettingsTestCopy) {
+  cricket::SessionDescription description;
+  description.AddMediaTransportSetting("name", "setting");
+  std::unique_ptr<cricket::SessionDescription> copy =
+      absl::WrapUnique(description.Copy());
+  ASSERT_EQ(1u, copy->MediaTransportSettings().size());
+  EXPECT_EQ("name", copy->MediaTransportSettings()[0].transport_name);
+  EXPECT_EQ("setting", copy->MediaTransportSettings()[0].transport_setting);
 }

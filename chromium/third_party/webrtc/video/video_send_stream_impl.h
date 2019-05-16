@@ -40,7 +40,7 @@
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/weak_ptr.h"
 #include "video/call_stats.h"
-#include "video/encoder_rtcp_feedback.h"
+#include "video/encoder_key_frame_callback.h"
 #include "video/send_delay_stats.h"
 #include "video/send_statistics_proxy.h"
 #include "video/video_send_stream.h"
@@ -70,6 +70,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
                             public VideoBitrateAllocationObserver {
  public:
   VideoSendStreamImpl(
+      Clock* clock,
       SendStatisticsProxy* stats_proxy,
       rtc::TaskQueue* worker_queue,
       CallStats* call_stats,
@@ -112,8 +113,10 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   // Implements BitrateAllocatorObserver.
   uint32_t OnBitrateUpdated(BitrateAllocationUpdate update) override;
 
-  void OnEncoderConfigurationChanged(std::vector<VideoStream> streams,
-                                     int min_transmit_bitrate_bps) override;
+  void OnEncoderConfigurationChanged(
+      std::vector<VideoStream> streams,
+      VideoEncoderConfig::ContentType content_type,
+      int min_transmit_bitrate_bps) override;
 
   // Implements EncodedImageCallback. The implementation routes encoded frames
   // to the |payload_router_| and |config.pre_encode_callback| if set.
@@ -137,7 +140,9 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   void ConfigureSsrcs();
   void SignalEncoderTimedOut();
   void SignalEncoderActive();
-
+  MediaStreamAllocationConfig GetAllocationConfig() const
+      RTC_RUN_ON(worker_queue_);
+  Clock* const clock_;
   const bool has_alr_probing_;
   const PacingConfig pacing_config_;
 
@@ -166,7 +171,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   bool has_packet_feedback_;
 
   VideoStreamEncoderInterface* const video_stream_encoder_;
-  EncoderRtcpFeedback encoder_feedback_;
+  EncoderKeyFrameCallback encoder_feedback_;
 
   RtcpBandwidthObserver* const bandwidth_observer_;
   RtpVideoSenderInterface* const rtp_video_sender_;

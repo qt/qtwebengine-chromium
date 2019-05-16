@@ -43,6 +43,7 @@ struct RTPVideoHeader {
     int temporal_index = 0;
     absl::InlinedVector<int64_t, 5> dependencies;
     absl::InlinedVector<int, 5> higher_spatial_layers;
+    bool discardable = false;
   };
 
   RTPVideoHeader();
@@ -63,7 +64,7 @@ struct RTPVideoHeader {
 
   PlayoutDelay playout_delay = {-1, -1};
   VideoSendTiming video_timing;
-  FrameMarking frame_marking;
+  FrameMarking frame_marking = {false, false, false, false, false, 0xFF, 0, 0};
   absl::optional<ColorSpace> color_space;
   RTPVideoTypeHeader video_type_header;
 };

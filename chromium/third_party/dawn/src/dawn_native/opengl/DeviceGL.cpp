@@ -17,7 +17,7 @@
 #include "dawn_native/BackendConnection.h"
 #include "dawn_native/BindGroup.h"
 #include "dawn_native/BindGroupLayout.h"
-#include "dawn_native/RenderPassDescriptor.h"
+#include "dawn_native/DynamicUploader.h"
 #include "dawn_native/opengl/BufferGL.h"
 #include "dawn_native/opengl/CommandBufferGL.h"
 #include "dawn_native/opengl/ComputePipelineGL.h"
@@ -43,6 +43,9 @@ namespace dawn_native { namespace opengl {
         // on a serial that doesn't have a corresponding fence enqueued. Force all
         // operations to look as if they were completed (because they were).
         mCompletedSerial = mLastSubmittedSerial + 1;
+
+        mDynamicUploader = nullptr;
+
         Tick();
     }
 
@@ -57,8 +60,8 @@ namespace dawn_native { namespace opengl {
     ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return new Buffer(this, descriptor);
     }
-    CommandBufferBase* Device::CreateCommandBuffer(CommandBufferBuilder* builder) {
-        return new CommandBuffer(builder);
+    CommandBufferBase* Device::CreateCommandBuffer(CommandEncoderBase* encoder) {
+        return new CommandBuffer(this, encoder);
     }
     ResultOrError<ComputePipelineBase*> Device::CreateComputePipelineImpl(
         const ComputePipelineDescriptor* descriptor) {
@@ -74,10 +77,6 @@ namespace dawn_native { namespace opengl {
     ResultOrError<QueueBase*> Device::CreateQueueImpl() {
         return new Queue(this);
     }
-    RenderPassDescriptorBase* Device::CreateRenderPassDescriptor(
-        RenderPassDescriptorBuilder* builder) {
-        return new RenderPassDescriptor(builder);
-    }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
         return new RenderPipeline(this, descriptor);
@@ -89,8 +88,9 @@ namespace dawn_native { namespace opengl {
         const ShaderModuleDescriptor* descriptor) {
         return new ShaderModule(this, descriptor);
     }
-    SwapChainBase* Device::CreateSwapChain(SwapChainBuilder* builder) {
-        return new SwapChain(builder);
+    ResultOrError<SwapChainBase*> Device::CreateSwapChainImpl(
+        const SwapChainDescriptor* descriptor) {
+        return new SwapChain(this, descriptor);
     }
     ResultOrError<TextureBase*> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
         return new Texture(this, descriptor);
@@ -113,6 +113,10 @@ namespace dawn_native { namespace opengl {
 
     Serial Device::GetLastSubmittedCommandSerial() const {
         return mLastSubmittedSerial;
+    }
+
+    Serial Device::GetPendingCommandSerial() const {
+        return mLastSubmittedSerial + 1;
     }
 
     void Device::TickImpl() {
@@ -142,6 +146,18 @@ namespace dawn_native { namespace opengl {
             ASSERT(fenceSerial > mCompletedSerial);
             mCompletedSerial = fenceSerial;
         }
+    }
+
+    ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
+        return DAWN_UNIMPLEMENTED_ERROR("Device unable to create staging buffer.");
+    }
+
+    MaybeError Device::CopyFromStagingToBuffer(StagingBufferBase* source,
+                                               uint32_t sourceOffset,
+                                               BufferBase* destination,
+                                               uint32_t destinationOffset,
+                                               uint32_t size) {
+        return DAWN_UNIMPLEMENTED_ERROR("Device unable to copy from staging buffer.");
     }
 
 }}  // namespace dawn_native::opengl

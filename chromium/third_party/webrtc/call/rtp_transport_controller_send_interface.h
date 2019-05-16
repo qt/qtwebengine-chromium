@@ -106,6 +106,7 @@ class RtpTransportControllerSendInterface {
       const RtpConfig& rtp_config,
       int rtcp_report_interval_ms,
       Transport* send_transport,
+      bool is_svc,
       const RtpSenderObservers& observers,
       RtcEventLog* event_log,
       std::unique_ptr<FecController> fec_controller,
@@ -116,7 +117,6 @@ class RtpTransportControllerSendInterface {
   virtual TransportFeedbackObserver* transport_feedback_observer() = 0;
 
   virtual RtpPacketSender* packet_sender() = 0;
-  virtual const RtpKeepAliveConfig& keepalive_config() const = 0;
 
   // SetAllocatedSendBitrateLimits sets bitrates limits imposed by send codec
   // settings.
@@ -133,8 +133,6 @@ class RtpTransportControllerSendInterface {
 
   virtual void SetPacingFactor(float pacing_factor) = 0;
   virtual void SetQueueTimeLimit(int limit_ms) = 0;
-
-  virtual CallStatsObserver* GetCallStatsObserver() = 0;
 
   virtual void RegisterPacketFeedbackObserver(
       PacketFeedbackObserver* observer) = 0;

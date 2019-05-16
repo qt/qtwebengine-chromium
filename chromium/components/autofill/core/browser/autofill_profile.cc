@@ -337,8 +337,7 @@ void AutofillProfile::GetMatchingTypesAndValidities(
     const base::string16& text,
     const std::string& app_locale,
     ServerFieldTypeSet* matching_types,
-    std::map<ServerFieldType, AutofillProfile::ValidityState>*
-        matching_types_validities) const {
+    ServerFieldTypeValidityStateMap* matching_types_validities) const {
   if (!matching_types && !matching_types_validities)
     return;
 
@@ -828,6 +827,38 @@ void AutofillProfile::RecordAndLogUse() {
   RecordUse();
 }
 
+bool AutofillProfile::HasGreaterFrescocencyThan(
+    const AutofillProfile* other,
+    base::Time comparison_time,
+    bool use_client_validation,
+    bool use_server_validation) const {
+  bool is_valid = (!use_client_validation || IsValidByClient()) &&
+                  (!use_server_validation || IsValidByServer());
+  bool other_is_valid = (!use_client_validation || other->IsValidByClient()) &&
+                        (!use_server_validation || other->IsValidByServer());
+  if (is_valid == other_is_valid)
+    return HasGreaterFrecencyThan(other, comparison_time);
+  if (is_valid && !other_is_valid)
+    return true;
+  return false;
+}
+
+bool AutofillProfile::IsValidByClient() const {
+  for (auto const& it : client_validity_states_) {
+    if (it.second == INVALID)
+      return false;
+  }
+  return true;
+}
+
+bool AutofillProfile::IsValidByServer() const {
+  for (auto const& it : server_validity_states_) {
+    if (it.second == INVALID)
+      return false;
+  }
+  return true;
+}
+
 bool AutofillProfile::IsAnInvalidPhoneNumber(ServerFieldType type) const {
   if (GetValidityState(type, SERVER) == VALID ||
       (type != PHONE_HOME_WHOLE_NUMBER && type != PHONE_HOME_NUMBER &&
@@ -860,7 +891,7 @@ bool AutofillProfile::IsAnInvalidPhoneNumber(ServerFieldType type) const {
   return false;
 }
 
-AutofillProfile::ValidityState AutofillProfile::GetValidityState(
+AutofillDataModel::ValidityState AutofillProfile::GetValidityState(
     ServerFieldType type,
     ValidationSource validation_source) const {
   if (validation_source == CLIENT) {
@@ -917,7 +948,6 @@ int AutofillProfile::GetClientValidityBitfieldValue() const {
   int validity_value = 0;
   size_t field_type_shift = 0;
   for (ServerFieldType supported_type : kSupportedTypesByClientForValidation) {
-    DCHECK(GetValidityState(supported_type, CLIENT) != UNSUPPORTED);
     validity_value |= GetValidityState(supported_type, CLIENT)
                       << field_type_shift;
     field_type_shift += kValidityBitsPerType;
@@ -950,6 +980,29 @@ void AutofillProfile::SetClientValidityFromBitfieldValue(
     // Shift the bitfield value to access the validity of the next field type.
     bitfield_value = bitfield_value >> kValidityBitsPerType;
   }
+}
+
+bool AutofillProfile::ShouldSkipFillingOrSuggesting(
+    ServerFieldType type) const {
+  if (base::FeatureList::IsEnabled(
+          autofill::features::kAutofillProfileServerValidation) &&
+      GetValidityState(type, AutofillProfile::SERVER) ==
+          AutofillProfile::INVALID) {
+    return true;
+  }
+
+  // We are making an exception and skipping the validation check for address
+  // fields when the country is empty.
+  if (base::FeatureList::IsEnabled(
+          autofill::features::kAutofillProfileClientValidation) &&
+      GetValidityState(type, AutofillProfile::CLIENT) ==
+          AutofillProfile::INVALID &&
+      (GroupTypeOfServerFieldType(type) != ADDRESS_HOME ||
+       !GetRawInfo(ADDRESS_HOME_COUNTRY).empty())) {
+    return true;
+  }
+
+  return false;
 }
 
 base::string16 AutofillProfile::GetInfoImpl(

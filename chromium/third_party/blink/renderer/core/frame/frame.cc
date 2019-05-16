@@ -118,6 +118,8 @@ void Frame::DisconnectOwnerElement() {
   if (owner_->ContentFrame() == this)
     owner_->ClearContentFrame();
 
+  owner_->SetNeedsOcclusionTracking(false);
+
   owner_ = nullptr;
 }
 
@@ -130,8 +132,7 @@ bool Frame::IsMainFrame() const {
 }
 
 HTMLFrameOwnerElement* Frame::DeprecatedLocalOwner() const {
-  return owner_ && owner_->IsLocal() ? ToHTMLFrameOwnerElement(owner_)
-                                     : nullptr;
+  return DynamicTo<HTMLFrameOwnerElement>(owner_.Get());
 }
 
 static ChromeClient& GetEmptyChromeClient() {
@@ -190,16 +191,18 @@ void Frame::NotifyUserActivationInLocalTree() {
     node->user_activation_state_.Activate();
 
   // See FrameTreeNode::NotifyUserActivation() for details about this block.
-  if (IsLocalFrame() && RuntimeEnabledFeatures::UserActivationV2Enabled() &&
+  auto* local_frame = DynamicTo<LocalFrame>(this);
+  if (local_frame && RuntimeEnabledFeatures::UserActivationV2Enabled() &&
       RuntimeEnabledFeatures::UserActivationSameOriginVisibilityEnabled()) {
     const SecurityOrigin* security_origin =
-        ToLocalFrame(this)->GetSecurityContext()->GetSecurityOrigin();
+        local_frame->GetSecurityContext()->GetSecurityOrigin();
 
     Frame& root = Tree().Top();
     for (Frame* node = &root; node; node = node->Tree().TraverseNext(&root)) {
-      if (node->IsLocalFrame() &&
+      auto* local_frame_node = DynamicTo<LocalFrame>(node);
+      if (local_frame_node &&
           security_origin->CanAccess(
-              ToLocalFrame(node)->GetSecurityContext()->GetSecurityOrigin())) {
+              local_frame_node->GetSecurityContext()->GetSecurityOrigin())) {
         node->user_activation_state_.Activate();
       }
     }
@@ -231,9 +234,10 @@ void Frame::SetOwner(FrameOwner* owner) {
 }
 
 void Frame::UpdateInertIfPossible() {
-  if (owner_ && owner_->IsLocal()) {
-    ToHTMLFrameOwnerElement(owner_)->UpdateDistributionForFlatTreeTraversal();
-    if (ToHTMLFrameOwnerElement(owner_)->IsInert())
+  if (auto* frame_owner_element =
+          DynamicTo<HTMLFrameOwnerElement>(owner_.Get())) {
+    frame_owner_element->UpdateDistributionForFlatTreeTraversal();
+    if (frame_owner_element->IsInert())
       SetIsInert(true);
   }
 }

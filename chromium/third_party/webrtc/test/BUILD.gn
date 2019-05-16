@@ -54,14 +54,12 @@ rtc_source_set("video_test_common") {
     "video_codec_settings.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     "..:webrtc_common",
     "../api:libjingle_peerconnection_api",
+    "../api:scoped_refptr",
+    "../api/task_queue",
+    "../api/task_queue:global_task_queue_factory",
     "../api/video:video_frame",
     "../api/video:video_frame_i010",
     "../api/video:video_frame_i420",
@@ -90,11 +88,6 @@ rtc_source_set("rtp_test_utils") {
     "rtp_file_writer.cc",
     "rtp_file_writer.h",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   deps = [
     "..:webrtc_common",
@@ -203,11 +196,6 @@ rtc_source_set("test_support") {
     "//testing/gmock",
     "//testing/gtest",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 }
 
 if (rtc_include_tests) {
@@ -288,11 +276,6 @@ if (rtc_include_tests) {
       sources += [ "testsupport/jpeg_frame_writer_ios.cc" ]
     }
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     if (is_android) {
       deps += [ "//base:base" ]
     }
@@ -307,6 +290,7 @@ if (rtc_include_tests) {
     deps = [
       ":fileutils",
       "../rtc_base:rtc_base_approved",
+      "../rtc_base/system:file_wrapper",
     ]
   }
 
@@ -347,6 +331,7 @@ if (rtc_include_tests) {
       ":video_test_common",
       ":video_test_support",
       "../api:create_simulcast_test_fixture_api",
+      "../api:scoped_refptr",
       "../api:simulcast_test_fixture_api",
       "../api/test/video:function_video_factory",
       "../api/video:builtin_video_bitrate_allocator_factory",
@@ -357,6 +342,7 @@ if (rtc_include_tests) {
       "../modules/video_capture",
       "../modules/video_coding:simulcast_test_fixture_impl",
       "../rtc_base:rtc_base_approved",
+      "../rtc_base/system:file_wrapper",
       "../test:single_threaded_task_queue",
       "pc/e2e:e2e_unittests",
       "scenario:scenario_unittests",
@@ -373,7 +359,6 @@ if (rtc_include_tests) {
       "rtp_file_reader_unittest.cc",
       "rtp_file_writer_unittest.cc",
       "single_threaded_task_queue_unittest.cc",
-      "testsupport/always_passing_unittest.cc",
       "testsupport/perf_test_unittest.cc",
       "testsupport/test_artifacts_unittest.cc",
       "testsupport/video_frame_writer_unittest.cc",
@@ -382,11 +367,6 @@ if (rtc_include_tests) {
       "testsupport/yuv_frame_reader_unittest.cc",
       "testsupport/yuv_frame_writer_unittest.cc",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
 
     data = test_support_unittests_resources
     if (is_android) {
@@ -415,7 +395,6 @@ if (is_ios) {
     sources = [
       "testsupport/ios_file_utils.h",
       "testsupport/ios_file_utils.mm",
-      "testsupport/iosfileutils.h",
     ]
     deps = [
       "..:webrtc_common",
@@ -435,7 +414,6 @@ if (is_mac) {
     sources = [
       "testsupport/mac_file_utils.h",
       "testsupport/mac_file_utils.mm",
-      "testsupport/macfileutils.h",
     ]
     deps = [
       "../rtc_base:checks",
@@ -449,7 +427,6 @@ rtc_source_set("fileutils") {
   sources = [
     "testsupport/file_utils.cc",
     "testsupport/file_utils.h",
-    "testsupport/fileutils.h",
   ]
   deps = [
     ":fileutils_override_api",
@@ -477,7 +454,6 @@ rtc_source_set("fileutils_override_api") {
   testonly = true
   sources = [
     "testsupport/file_utils_override.h",
-    "testsupport/fileutils_override.h",
   ]
 }
 
@@ -572,10 +548,6 @@ rtc_source_set("direct_transport") {
     "direct_transport.cc",
     "direct_transport.h",
   ]
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
   deps = [
     "..:webrtc_common",
     "../api:simulated_network_api",
@@ -622,12 +594,9 @@ rtc_source_set("fake_video_codecs") {
     "fake_vp8_encoder.cc",
     "fake_vp8_encoder.h",
   ]
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
   deps = [
     "..:webrtc_common",
+    "../api:scoped_refptr",
     "../api/video:encoded_image",
     "../api/video:video_bitrate_allocation",
     "../api/video:video_frame",
@@ -656,8 +625,6 @@ rtc_source_set("test_common") {
   sources = [
     "call_test.cc",
     "call_test.h",
-    "constants.cc",
-    "constants.h",
     "drifting_clock.cc",
     "drifting_clock.h",
     "encoder_settings.cc",
@@ -689,11 +656,6 @@ rtc_source_set("test_common") {
     ]
   }
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":direct_transport",
     ":fake_video_codecs",
@@ -703,6 +665,7 @@ rtc_source_set("test_common") {
     ":video_test_common",
     "../:webrtc_common",
     "../api:libjingle_peerconnection_api",
+    "../api:scoped_refptr",
     "../api:simulated_network_api",
     "../api:transport_api",
     "../api/audio_codecs:builtin_audio_decoder_factory",
@@ -747,6 +710,7 @@ rtc_source_set("test_common") {
     "../video",
     "//testing/gtest",
     "//third_party/abseil-cpp/absl/memory",
+    "//third_party/abseil-cpp/absl/types:optional",
   ]
   if (!is_android && !build_with_chromium) {
     deps += [ "../modules/video_capture:video_capture_internal_impl" ]
@@ -780,10 +744,6 @@ if (is_mac) {
       "OpenGL.framework",
       "CoreVideo.framework",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 }
 
@@ -803,6 +763,7 @@ rtc_source_set("test_renderer_generic") {
   deps = [
     ":test_support",
     "..:webrtc_common",
+    "../api:scoped_refptr",
     "../api/video:video_frame",
     "../common_video",
     "../media:rtc_media_base",
@@ -838,11 +799,6 @@ rtc_source_set("test_renderer_generic") {
       "log",
     ]
   }
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 }
 
 rtc_source_set("audio_codec_mocks") {
@@ -863,6 +819,7 @@ rtc_source_set("audio_codec_mocks") {
   deps = [
     ":test_support",
     "../api:array_view",
+    "../api:scoped_refptr",
     "../api/audio_codecs:audio_codecs_api",
     "../api/audio_codecs:builtin_audio_decoder_factory",
     "../rtc_base:checks",

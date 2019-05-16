@@ -21,7 +21,7 @@
 #include "test/testsupport/file_utils.h"
 
 WEBRTC_DEFINE_bool(scenario_logs, false, "Save logs from scenario framework.");
-WEBRTC_DEFINE_string(out_root,
+WEBRTC_DEFINE_string(scenario_logs_root,
                      "",
                      "Output root path, based on project root if unset.");
 
@@ -32,7 +32,7 @@ int64_t kMicrosPerSec = 1000000;
 std::unique_ptr<FileLogWriterFactory> GetScenarioLogManager(
     std::string file_name) {
   if (FLAG_scenario_logs && !file_name.empty()) {
-    std::string output_root = FLAG_out_root;
+    std::string output_root = FLAG_scenario_logs_root;
     if (output_root.empty())
       output_root = OutputPath() + "output_data/";
 
@@ -227,8 +227,7 @@ EmulatedNetworkNode* Scenario::CreateNetworkNode(
     NetworkNodeConfig config,
     std::unique_ptr<NetworkBehaviorInterface> behavior) {
   RTC_DCHECK(config.mode == NetworkNodeConfig::TrafficMode::kCustom);
-  network_nodes_.emplace_back(new EmulatedNetworkNode(
-      std::move(behavior), config.packet_overhead.bytes_or(0)));
+  network_nodes_.emplace_back(new EmulatedNetworkNode(std::move(behavior)));
   EmulatedNetworkNode* network_node = network_nodes_.back().get();
   Every(config.update_frequency,
         [this, network_node] { network_node->Process(Now()); });
@@ -319,6 +318,9 @@ AudioStreamPair* Scenario::CreateAudioStream(
 RepeatedActivity* Scenario::Every(TimeDelta interval,
                                   std::function<void(TimeDelta)> function) {
   repeated_activities_.emplace_back(new RepeatedActivity(interval, function));
+  if (start_time_.IsFinite()) {
+    repeated_activities_.back()->SetStartTime(Now());
+  }
   return repeated_activities_.back().get();
 }
 
@@ -327,6 +329,9 @@ RepeatedActivity* Scenario::Every(TimeDelta interval,
   auto function_with_argument = [function](TimeDelta) { function(); };
   repeated_activities_.emplace_back(
       new RepeatedActivity(interval, function_with_argument));
+  if (start_time_.IsFinite()) {
+    repeated_activities_.back()->SetStartTime(Now());
+  }
   return repeated_activities_.back().get();
 }
 
@@ -371,7 +376,7 @@ void Scenario::RunUntil(TimeDelta max_duration,
       sim_clock_.AdvanceTimeMicroseconds(wait_time.us());
       // The fake clock is quite slow to update, we only update it if logging is
       // turned on to save time.
-      if (!log_writer_factory_)
+      if (log_writer_factory_)
         event_log_fake_clock_.SetTimeNanos(sim_clock_.TimeInMicroseconds() *
                                            1000);
     }
@@ -403,14 +408,14 @@ void Scenario::Start() {
 void Scenario::Stop() {
   RTC_DCHECK(start_time_.IsFinite());
   for (auto& stream_pair : video_streams_) {
-    stream_pair->send()->send_stream_->Stop();
+    stream_pair->send()->Stop();
   }
   for (auto& stream_pair : audio_streams_)
-    stream_pair->send()->send_stream_->Stop();
+    stream_pair->send()->Stop();
   for (auto& stream_pair : video_streams_)
-    stream_pair->receive()->receive_stream_->Stop();
+    stream_pair->receive()->Stop();
   for (auto& stream_pair : audio_streams_)
-    stream_pair->receive()->receive_stream_->Stop();
+    stream_pair->receive()->Stop();
   start_time_ = Timestamp::PlusInfinity();
 }
 

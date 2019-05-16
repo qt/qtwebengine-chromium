@@ -28,20 +28,13 @@ namespace internal {
   R(x16) R(x17) R(x18) R(x19) R(x20) R(x21) R(x22) R(x23) \
   R(x24) R(x25) R(x26) R(x27) R(x28) R(x29) R(x30) R(x31)
 
-#if defined(V8_OS_WIN)
-// x18 is reserved as platform register on Windows ARM64.
+// x18 is the platform register and is reserved for the use of platform ABIs.
+// It is known to be reserved by the OS at least on Windows and iOS.
 #define ALLOCATABLE_GENERAL_REGISTERS(R)                  \
   R(x0)  R(x1)  R(x2)  R(x3)  R(x4)  R(x5)  R(x6)  R(x7)  \
   R(x8)  R(x9)  R(x10) R(x11) R(x12) R(x13) R(x14) R(x15) \
          R(x19) R(x20) R(x21) R(x22) R(x23) R(x24) R(x25) \
   R(x27) R(x28)
-#else
-#define ALLOCATABLE_GENERAL_REGISTERS(R)                  \
-  R(x0)  R(x1)  R(x2)  R(x3)  R(x4)  R(x5)  R(x6)  R(x7)  \
-  R(x8)  R(x9)  R(x10) R(x11) R(x12) R(x13) R(x14) R(x15) \
-  R(x18) R(x19) R(x20) R(x21) R(x22) R(x23) R(x24) R(x25) \
-  R(x27) R(x28)
-#endif
 
 #define FLOAT_REGISTERS(V)                                \
   V(s0)  V(s1)  V(s2)  V(s3)  V(s4)  V(s5)  V(s6)  V(s7)  \
@@ -60,6 +53,12 @@ namespace internal {
   V(q8)  V(q9)  V(q10) V(q11) V(q12) V(q13) V(q14) V(q15) \
   V(q16) V(q17) V(q18) V(q19) V(q20) V(q21) V(q22) V(q23) \
   V(q24) V(q25) V(q26) V(q27) V(q28) V(q29) V(q30) V(q31)
+
+#define VECTOR_REGISTERS(V)                               \
+  V(v0)  V(v1)  V(v2)  V(v3)  V(v4)  V(v5)  V(v6)  V(v7)  \
+  V(v8)  V(v9)  V(v10) V(v11) V(v12) V(v13) V(v14) V(v15) \
+  V(v16) V(v17) V(v18) V(v19) V(v20) V(v21) V(v22) V(v23) \
+  V(v24) V(v25) V(v26) V(v27) V(v28) V(v29) V(v30) V(v31)
 
 // Register d29 could be allocated, but we keep an even length list here, in
 // order to make stack alignment easier for save and restore.
@@ -710,8 +709,9 @@ class CPURegList {
 #define kCallerSaved CPURegList::GetCallerSaved()
 #define kCallerSavedV CPURegList::GetCallerSavedV()
 
-// Define a {RegisterName} method for {CPURegister}.
-DEFINE_REGISTER_NAMES(CPURegister, GENERAL_REGISTERS);
+// Define a {RegisterName} method for {Register} and {VRegister}.
+DEFINE_REGISTER_NAMES(Register, GENERAL_REGISTERS)
+DEFINE_REGISTER_NAMES(VRegister, VECTOR_REGISTERS)
 
 // Give alias names to registers for calling conventions.
 constexpr Register kReturnRegister0 = x0;
@@ -721,12 +721,7 @@ constexpr Register kJSFunctionRegister = x1;
 constexpr Register kContextRegister = cp;
 constexpr Register kAllocateSizeRegister = x1;
 
-#if defined(V8_OS_WIN)
-// x18 is reserved as platform register on Windows ARM64.
 constexpr Register kSpeculationPoisonRegister = x23;
-#else
-constexpr Register kSpeculationPoisonRegister = x18;
-#endif
 
 constexpr Register kInterpreterAccumulatorRegister = x0;
 constexpr Register kInterpreterBytecodeOffsetRegister = x19;

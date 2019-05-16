@@ -17,15 +17,17 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxge/fx_font.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/cpp/fpdf_scopers.h"
 #include "public/fpdf_annot.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
+#include "testing/fx_string_testhelpers.h"
 #include "testing/gmock/include/gmock/gmock-matchers.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "testing/test_support.h"
+#include "testing/utils/hash.h"
 
 class FPDFEditEmbedderTest : public EmbedderTest {
  protected:
@@ -294,7 +296,7 @@ TEST_F(FPDFEditEmbedderTest, AddPaths) {
 
   FPDFPage_InsertObject(page, red_rect);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "66d02eaa6181e2c069ce2ea99beda497");
   }
@@ -357,7 +359,7 @@ TEST_F(FPDFEditEmbedderTest, AddPaths) {
   EXPECT_TRUE(FPDFPath_SetDrawMode(green_rect, FPDF_FILLMODE_WINDING, 0));
   FPDFPage_InsertObject(page, green_rect);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "7b0b87604594e773add528fae567a558");
   }
@@ -397,7 +399,7 @@ TEST_F(FPDFEditEmbedderTest, AddPaths) {
 
   FPDFPage_InsertObject(page, black_path);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "eadc8020a14dfcf091da2688733d8806");
   }
@@ -415,7 +417,7 @@ TEST_F(FPDFEditEmbedderTest, AddPaths) {
   FPDFPage_InsertObject(page, blue_path);
   const char kLastMD5[] = "9823e1a21bd9b72b6a442ba4f12af946";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792, kLastMD5);
   }
 
@@ -453,7 +455,7 @@ TEST_F(FPDFEditEmbedderTest, SetText) {
   const char kChangedMD5[] = "a0c4ea6620772991f66bf7130379b08a";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kChangedMD5);
   }
 
@@ -464,11 +466,11 @@ TEST_F(FPDFEditEmbedderTest, SetText) {
   UnloadPage(page);
 
   // Re-open the file and check the changes were kept in the saved .pdf.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kChangedMD5);
   }
 
@@ -491,7 +493,7 @@ TEST_F(FPDFEditEmbedderTest, RemovePageObject) {
 #else
     const char kOriginalMD5[] = "2baa4c0e1758deba1b9c908e1fbd04ed";
 #endif
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kOriginalMD5);
   }
 
@@ -510,7 +512,7 @@ TEST_F(FPDFEditEmbedderTest, RemovePageObject) {
 #else
     const char kRemovedMD5[] = "b76df015fe88009c3c342395df96abf1";
 #endif
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kRemovedMD5);
   }
   ASSERT_EQ(1, FPDFPage_CountObjects(page));
@@ -647,7 +649,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
 #else
     const char kOriginalMD5[] = "2edc6e70d54889aa0c0b7bdf3e168f86";
 #endif
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kOriginalMD5);
   }
 
@@ -693,7 +695,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
   const char kNonPrimesMD5[] = "33d9c45bec41ead92a295e252f6b7922";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kNonPrimesMD5);
   }
 
@@ -703,12 +705,12 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
   UnloadPage(page);
 
   // Re-open the file and check the prime marks are not there anymore.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(11, FPDFPage_CountObjects(saved_page));
 
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kNonPrimesMD5);
   }
 
@@ -760,7 +762,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarks) {
   UnloadPage(page);
 
   // Re-open the file and check the prime marks are not there anymore.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 1, kExpectedObjectCount, 0, 4, 9, 1);
@@ -816,7 +818,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkParam) {
   UnloadPage(page);
 
   // Re-open the file and check the "Factor" parameters are still gone.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   size_t square_count = 0;
@@ -875,7 +877,7 @@ TEST_F(FPDFEditEmbedderTest, MaintainMarkedObjects) {
 
   UnloadPage(page);
 
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 2, 18, 8, 3, 9, 1);
@@ -906,7 +908,7 @@ TEST_F(FPDFEditEmbedderTest, MaintainIndirectMarkedObjects) {
 
   UnloadPage(page);
 
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 2, 18, 8, 3, 9, 1);
@@ -937,7 +939,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObject) {
   FPDFPageObj_Destroy(page_object);
 
   // Re-open the file and check the page object count is still 1.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(1, FPDFPage_CountObjects(saved_page));
   CloseSavedPage(saved_page);
@@ -967,7 +969,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsNotLonely) {
   const char kHelloRemovedMD5[] = "95b92950647a2190e1230911e7a1a0e9";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kHelloRemovedMD5);
   }
 
@@ -978,12 +980,12 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsNotLonely) {
   FPDFPageObj_Destroy(page_object);
 
   // Re-open the file and check the page object count is still 2.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kHelloRemovedMD5);
   }
 
@@ -1014,7 +1016,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsLonely) {
   const char kGreetingsRemovedMD5[] = "2baa4c0e1758deba1b9c908e1fbd04ed";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kGreetingsRemovedMD5);
   }
 
@@ -1025,12 +1027,12 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsLonely) {
   FPDFPageObj_Destroy(page_object);
 
   // Re-open the file and check the page object count is still 2.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kGreetingsRemovedMD5);
   }
 
@@ -1130,7 +1132,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromStream) {
   const char kStream1RemovedMD5[] = "e86a3efc160ede6cfcb1f59bcacf1105";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kStream1RemovedMD5);
   }
 
@@ -1140,7 +1142,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromStream) {
 
   // Re-open the file and check the page object count is still 16, and that
   // content stream 1 was removed.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   // Content stream 0: page objects 0-14.
@@ -1158,7 +1160,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromStream) {
   }
 
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kStream1RemovedMD5);
   }
 
@@ -1198,7 +1200,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromSingleStream) {
 
   const char kAllRemovedMD5[] = "eee4600ac08b458ac7ac2320e225674c";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kAllRemovedMD5);
   }
 
@@ -1207,12 +1209,12 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromSingleStream) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(0, FPDFPage_CountObjects(saved_page));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kAllRemovedMD5);
   }
 
@@ -1262,7 +1264,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveFirstFromSingleStream) {
   const char kFirstRemovedMD5[] = "b76df015fe88009c3c342395df96abf1";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kFirstRemovedMD5);
   }
 
@@ -1271,7 +1273,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveFirstFromSingleStream) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   ASSERT_EQ(1, FPDFPage_CountObjects(saved_page));
@@ -1280,7 +1282,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveFirstFromSingleStream) {
   cpdf_page_object = CPDFPageObjectFromFPDFPageObject(page_object);
   ASSERT_EQ(0, cpdf_page_object->GetContentStream());
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kFirstRemovedMD5);
   }
 
@@ -1330,7 +1332,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveLastFromSingleStream) {
   const char kLastRemovedMD5[] = "93dcc09055f87a2792c8e3065af99a1b";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kLastRemovedMD5);
   }
 
@@ -1339,7 +1341,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveLastFromSingleStream) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   ASSERT_EQ(1, FPDFPage_CountObjects(saved_page));
@@ -1348,7 +1350,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveLastFromSingleStream) {
   cpdf_page_object = CPDFPageObjectFromFPDFPageObject(page_object);
   ASSERT_EQ(0, cpdf_page_object->GetContentStream());
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kLastRemovedMD5);
   }
 
@@ -1386,7 +1388,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromMultipleStreams) {
 
   const char kAllRemovedMD5[] = "eee4600ac08b458ac7ac2320e225674c";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 200, kAllRemovedMD5);
   }
 
@@ -1395,12 +1397,12 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromMultipleStreams) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 0.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   EXPECT_EQ(0, FPDFPage_CountObjects(saved_page));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 200, kAllRemovedMD5);
   }
 
@@ -1430,7 +1432,7 @@ TEST_F(FPDFEditEmbedderTest, InsertPageObjectAndSave) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 3.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(3, FPDFPage_CountObjects(saved_page));
   CloseSavedPage(saved_page);
@@ -1463,7 +1465,7 @@ TEST_F(FPDFEditEmbedderTest, InsertPageObjectEditAndSave) {
   UnloadPage(page);
 
   // Re-open the file and check the page object count is still 3.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(3, FPDFPage_CountObjects(saved_page));
   CloseSavedPage(saved_page);
@@ -1479,7 +1481,7 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   ASSERT_TRUE(page);
   const char kOriginalMD5[] = "b0170c575b65ecb93ebafada0ff0f038";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 300, kOriginalMD5);
   }
 
@@ -1494,7 +1496,7 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   ASSERT_EQ(kOriginalObjectCount + 1, FPDFPage_CountObjects(page));
   const char kPlusRectangleMD5[] = "6b9396ab570754b32b04ca629e902f77";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 200, 300, kPlusRectangleMD5);
   }
 
@@ -1504,11 +1506,11 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   UnloadPage(page);
 
   // Re-open the file and check the rectangle added is still there.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(kOriginalObjectCount + 1, FPDFPage_CountObjects(saved_page));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 300, kPlusRectangleMD5);
   }
 
@@ -1518,7 +1520,7 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   EXPECT_TRUE(FPDFPage_RemoveObject(saved_page, added_object));
   FPDFPageObj_Destroy(added_object);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 300, kOriginalMD5);
   }
   EXPECT_EQ(kOriginalObjectCount, FPDFPage_CountObjects(saved_page));
@@ -1532,11 +1534,11 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
 
   // Re-open the file (again) and check the black rectangle was removed and the
   // rest is intact.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   saved_page = LoadSavedPage(0);
   EXPECT_EQ(kOriginalObjectCount, FPDFPage_CountObjects(saved_page));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(saved_page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
     CompareBitmap(page_bitmap.get(), 200, 300, kOriginalMD5);
   }
 
@@ -1552,7 +1554,7 @@ TEST_F(FPDFEditEmbedderTest, AddAndRemovePaths) {
   // Render the blank page and verify it's a blank bitmap.
   const char kBlankMD5[] = "1940568c9ba33bac5d0b1ee9558c76b3";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792, kBlankMD5);
   }
   ASSERT_EQ(0, FPDFPage_CountObjects(page));
@@ -1565,7 +1567,7 @@ TEST_F(FPDFEditEmbedderTest, AddAndRemovePaths) {
   FPDFPage_InsertObject(page, red_rect);
   const char kRedRectangleMD5[] = "66d02eaa6181e2c069ce2ea99beda497";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792, kRedRectangleMD5);
   }
   EXPECT_EQ(1, FPDFPage_CountObjects(page));
@@ -1574,7 +1576,7 @@ TEST_F(FPDFEditEmbedderTest, AddAndRemovePaths) {
   // back to a blank one.
   EXPECT_TRUE(FPDFPage_RemoveObject(page, red_rect));
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792, kBlankMD5);
   }
   EXPECT_EQ(0, FPDFPage_CountObjects(page));
@@ -1673,7 +1675,7 @@ TEST_F(FPDFEditEmbedderTest, EditOverExistingContent) {
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   UnloadPage(page);
 
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   VerifySavedRendering(saved_page, 612, 792,
                        "ad04e5bd0f471a9a564fb034bd0fb073");
@@ -1724,7 +1726,7 @@ TEST_F(FPDFEditEmbedderTest, AddStrokedPaths) {
   EXPECT_TRUE(FPDFPath_SetDrawMode(rect, 0, 1));
   FPDFPage_InsertObject(page, rect);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "64bd31f862a89e0a9e505a5af6efd506");
   }
@@ -1740,7 +1742,7 @@ TEST_F(FPDFEditEmbedderTest, AddStrokedPaths) {
   EXPECT_TRUE(FPDFPath_SetDrawMode(check, 0, 1));
   FPDFPage_InsertObject(page, check);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "4b6f3b9d25c4e194821217d5016c3724");
   }
@@ -1757,7 +1759,7 @@ TEST_F(FPDFEditEmbedderTest, AddStrokedPaths) {
   EXPECT_TRUE(FPDFPath_SetDrawMode(path, FPDF_FILLMODE_ALTERNATE, 1));
   FPDFPage_InsertObject(page, path);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "ff3e6a22326754944cc6e56609acd73b");
   }
@@ -1779,7 +1781,7 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText) {
   FPDFPageObj_Transform(text_object1, 1, 0, 0, 1, 20, 20);
   FPDFPage_InsertObject(page, text_object1);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5[] = "a4dddc1a3930fa694bbff9789dab4161";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
@@ -1800,7 +1802,7 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText) {
   FPDFPageObj_Transform(text_object2, 1, 0, 0, 1, 100, 600);
   FPDFPage_InsertObject(page, text_object2);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5_2[] = "a5c4ace4c6f27644094813fe1441a21c";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
@@ -1821,7 +1823,7 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText) {
   FPDFPageObj_Transform(text_object3, 1, 1.5, 2, 0.5, 200, 200);
   FPDFPage_InsertObject(page, text_object3);
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5_3[] = "40b3ef04f915ff4c4208948001763544";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
@@ -1987,7 +1989,7 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText2) {
   EXPECT_TRUE(FPDFText_SetText(text_object, text.get()));
   FPDFPageObj_Transform(text_object, 1, 0, 0, 1, 20, 20);
   FPDFPage_InsertObject(page.get(), text_object);
-  ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page.get(), nullptr, 0);
+  ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "a4dddc1a3930fa694bbff9789dab4161";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
@@ -2110,7 +2112,7 @@ TEST_F(FPDFEditEmbedderTest, DoubleGenerating) {
 
   // Check the bitmap
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "5384da3406d62360ffb5cac4476fff1c");
   }
@@ -2122,7 +2124,7 @@ TEST_F(FPDFEditEmbedderTest, DoubleGenerating) {
 
   // Check that bitmap displays changed content
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "2e51656f5073b0bee611d9cd086aa09c");
   }
@@ -2131,7 +2133,7 @@ TEST_F(FPDFEditEmbedderTest, DoubleGenerating) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
   EXPECT_EQ(3u, graphics_dict->size());
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792,
                   "2e51656f5073b0bee611d9cd086aa09c");
   }
@@ -2171,7 +2173,7 @@ TEST_F(FPDFEditEmbedderTest, LoadSimpleType1Font) {
   const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetStringFor("Type"));
   EXPECT_EQ("Type1", font_dict->GetStringFor("Subtype"));
-  EXPECT_EQ("Times New Roman Bold", font_dict->GetStringFor("BaseFont"));
+  EXPECT_EQ("TimesNewRomanPS-BoldMT", font_dict->GetStringFor("BaseFont"));
   ASSERT_TRUE(font_dict->KeyExist("FirstChar"));
   ASSERT_TRUE(font_dict->KeyExist("LastChar"));
   EXPECT_EQ(32, font_dict->GetIntegerFor("FirstChar"));
@@ -2199,7 +2201,7 @@ TEST_F(FPDFEditEmbedderTest, LoadSimpleTrueTypeFont) {
   const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetStringFor("Type"));
   EXPECT_EQ("TrueType", font_dict->GetStringFor("Subtype"));
-  EXPECT_EQ("Courier New", font_dict->GetStringFor("BaseFont"));
+  EXPECT_EQ("CourierNewPSMT", font_dict->GetStringFor("BaseFont"));
   ASSERT_TRUE(font_dict->KeyExist("FirstChar"));
   ASSERT_TRUE(font_dict->KeyExist("LastChar"));
   EXPECT_EQ(32, font_dict->GetIntegerFor("FirstChar"));
@@ -2229,7 +2231,8 @@ TEST_F(FPDFEditEmbedderTest, LoadCIDType0Font) {
   const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetStringFor("Type"));
   EXPECT_EQ("Type0", font_dict->GetStringFor("Subtype"));
-  EXPECT_EQ("Times New Roman-Identity-H", font_dict->GetStringFor("BaseFont"));
+  EXPECT_EQ("TimesNewRomanPSMT-Identity-H",
+            font_dict->GetStringFor("BaseFont"));
   EXPECT_EQ("Identity-H", font_dict->GetStringFor("Encoding"));
   const CPDF_Array* descendant_array =
       font_dict->GetArrayFor("DescendantFonts");
@@ -2240,7 +2243,7 @@ TEST_F(FPDFEditEmbedderTest, LoadCIDType0Font) {
   const CPDF_Dictionary* cidfont_dict = descendant_array->GetDictAt(0);
   EXPECT_EQ("Font", cidfont_dict->GetStringFor("Type"));
   EXPECT_EQ("CIDFontType0", cidfont_dict->GetStringFor("Subtype"));
-  EXPECT_EQ("Times New Roman", cidfont_dict->GetStringFor("BaseFont"));
+  EXPECT_EQ("TimesNewRomanPSMT", cidfont_dict->GetStringFor("BaseFont"));
   const CPDF_Dictionary* cidinfo_dict =
       cidfont_dict->GetDictFor("CIDSystemInfo");
   ASSERT_TRUE(cidinfo_dict);
@@ -2277,7 +2280,7 @@ TEST_F(FPDFEditEmbedderTest, LoadCIDType2Font) {
   const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetStringFor("Type"));
   EXPECT_EQ("Type0", font_dict->GetStringFor("Subtype"));
-  EXPECT_EQ("Arial Italic", font_dict->GetStringFor("BaseFont"));
+  EXPECT_EQ("Arial-ItalicMT", font_dict->GetStringFor("BaseFont"));
   EXPECT_EQ("Identity-H", font_dict->GetStringFor("Encoding"));
   const CPDF_Array* descendant_array =
       font_dict->GetArrayFor("DescendantFonts");
@@ -2288,7 +2291,7 @@ TEST_F(FPDFEditEmbedderTest, LoadCIDType2Font) {
   const CPDF_Dictionary* cidfont_dict = descendant_array->GetDictAt(0);
   EXPECT_EQ("Font", cidfont_dict->GetStringFor("Type"));
   EXPECT_EQ("CIDFontType2", cidfont_dict->GetStringFor("Subtype"));
-  EXPECT_EQ("Arial Italic", cidfont_dict->GetStringFor("BaseFont"));
+  EXPECT_EQ("Arial-ItalicMT", cidfont_dict->GetStringFor("BaseFont"));
   const CPDF_Dictionary* cidinfo_dict =
       cidfont_dict->GetDictFor("CIDSystemInfo");
   ASSERT_TRUE(cidinfo_dict);
@@ -2332,7 +2335,7 @@ TEST_F(FPDFEditEmbedderTest, AddTrueTypeFontText) {
     EXPECT_TRUE(FPDFText_SetText(text_object, text.get()));
     FPDFPageObj_Transform(text_object, 1, 0, 0, 1, 400, 400);
     FPDFPage_InsertObject(page, text_object);
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5[] = "17d2b6cd574cf66170b09c8927529a94";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
@@ -2351,7 +2354,7 @@ TEST_F(FPDFEditEmbedderTest, AddTrueTypeFontText) {
     FPDFPageObj_Transform(text_object2, 1, 0, 0, 1, 200, 200);
     FPDFPage_InsertObject(page, text_object2);
   }
-  ScopedFPDFBitmap page_bitmap2 = RenderPageWithFlags(page, nullptr, 0);
+  ScopedFPDFBitmap page_bitmap2 = RenderPage(page);
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_2[] = "8eded4193ff1f0f77b8b600a825e97ea";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
@@ -2432,7 +2435,7 @@ TEST_F(FPDFEditEmbedderTest, AddCIDFontText) {
   // Check that the text renders properly.
   const char md5[] = "c68cd79aa72bf83a7b25271370d46b21";
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792, md5);
   }
 
@@ -2500,7 +2503,7 @@ TEST_F(FPDFEditEmbedderTest, AddMark) {
   UnloadPage(page);
 
   // Re-open the file and check the new mark is present.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 1, kExpectedObjectCount, 8, 4, 9, 2);
@@ -2558,7 +2561,7 @@ TEST_F(FPDFEditEmbedderTest, SetMarkParam) {
   UnloadPage(page);
 
   // Re-open the file and cerify "Position" still maps to "End".
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
 
   CheckMarkCounts(saved_page, 1, kExpectedObjectCount, 8, 4, 9, 1);
@@ -2658,7 +2661,7 @@ TEST_F(FPDFEditEmbedderTest, AddMarkedText) {
   const char md5[] = "70592859010ffbf532a2237b8118bcc4";
 #endif
   {
-    ScopedFPDFBitmap page_bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap page_bitmap = RenderPage(page);
     CompareBitmap(page_bitmap.get(), 612, 792, md5);
   }
 
@@ -2670,7 +2673,7 @@ TEST_F(FPDFEditEmbedderTest, AddMarkedText) {
   FPDF_ClosePage(page);
 
   // Re-open the file and check the changes were kept in the saved .pdf.
-  OpenSavedDocument(nullptr);
+  ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   EXPECT_EQ(1, FPDFPage_CountObjects(saved_page));
 

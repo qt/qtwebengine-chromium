@@ -580,9 +580,9 @@ std::unique_ptr<const PermissionSet> ExtensionPrefs::ReadPrefAsPermissionSet(
       extension_id, JoinPrefs(pref_key, kPrefScriptableHosts),
       &scriptable_hosts, UserScript::ValidUserScriptSchemes());
 
-  return std::make_unique<PermissionSet>(std::move(apis),
-                                         std::move(manifest_permissions),
-                                         explicit_hosts, scriptable_hosts);
+  return std::make_unique<PermissionSet>(
+      std::move(apis), std::move(manifest_permissions),
+      std::move(explicit_hosts), std::move(scriptable_hosts));
 }
 
 // Set the API or Manifest permissions.
@@ -876,7 +876,7 @@ void SaveInt64(prefs::DictionaryValueUpdate* dictionary,
   if (!dictionary)
     return;
 
-  std::string string_value = base::Int64ToString(value);
+  std::string string_value = base::NumberToString(value);
   dictionary->SetString(key, string_value);
 }
 
@@ -1389,7 +1389,7 @@ bool ExtensionPrefs::FinishDelayedInstallInfo(
 
   const base::Time install_time = clock_->Now();
   pending_install_dict->SetString(
-      kPrefInstallTime, base::Int64ToString(install_time.ToInternalValue()));
+      kPrefInstallTime, base::NumberToString(install_time.ToInternalValue()));
 
   // Commit the delayed install data.
   for (base::DictionaryValue::Iterator it(
@@ -1899,7 +1899,7 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
   extension_dict->SetBoolean(kPrefWasInstalledByOem,
                              extension->was_installed_by_oem());
   extension_dict->SetString(
-      kPrefInstallTime, base::Int64ToString(install_time.ToInternalValue()));
+      kPrefInstallTime, base::NumberToString(install_time.ToInternalValue()));
   if (install_flags & kInstallFlagIsBlacklistedForMalware)
     extension_dict->SetBoolean(kPrefBlacklist, true);
   if (dnr_ruleset_checksum)
@@ -1970,10 +1970,9 @@ void ExtensionPrefs::LoadExtensionControlledPrefs(
   if (!source_dict->GetDictionary(key, &preferences))
     return;
 
-  for (base::DictionaryValue::Iterator iter(*preferences); !iter.IsAtEnd();
-       iter.Advance()) {
-    extension_pref_value_map_->SetExtensionPref(extension_id, iter.key(), scope,
-                                                iter.value().DeepCopy());
+  for (const auto& pair : preferences->DictItems()) {
+    extension_pref_value_map_->SetExtensionPref(extension_id, pair.first, scope,
+                                                pair.second.Clone());
   }
 }
 

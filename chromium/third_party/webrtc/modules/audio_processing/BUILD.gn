@@ -7,7 +7,7 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("../../webrtc.gni")
-if (!build_with_mozilla) {
+if (rtc_enable_protobuf) {
   import("//third_party/protobuf/proto_library.gni")
 }
 
@@ -50,14 +50,40 @@ rtc_source_set("api") {
     ":audio_processing_statistics",
     ":config",
     ":gain_control_interface",
+    "../../api:scoped_refptr",
     "../../api/audio:aec3_config",
     "../../api/audio:echo_control",
     "../../rtc_base:deprecation",
     "../../rtc_base:macromagic",
-    "../../rtc_base:ptr_util",
     "../../rtc_base:rtc_base_approved",
     "../../rtc_base/system:rtc_export",
+    "//third_party/abseil-cpp/absl/memory:memory",
     "//third_party/abseil-cpp/absl/types:optional",
+  ]
+}
+
+rtc_static_library("audio_buffer") {
+  visibility = [ "*" ]
+
+  configs += [ ":apm_debug_dump" ]
+
+  sources = [
+    "audio_buffer.cc",
+    "audio_buffer.h",
+    "splitting_filter.cc",
+    "splitting_filter.h",
+    "three_band_filter_bank.cc",
+    "three_band_filter_bank.h",
+  ]
+
+  defines = []
+
+  deps = [
+    ":api",
+    "../../api/audio:audio_frame_api",
+    "../../common_audio:common_audio",
+    "../../common_audio:common_audio_c",
+    "../../rtc_base:checks",
   ]
 }
 
@@ -65,8 +91,6 @@ rtc_static_library("audio_processing") {
   visibility = [ "*" ]
   configs += [ ":apm_debug_dump" ]
   sources = [
-    "audio_buffer.cc",
-    "audio_buffer.h",
     "audio_processing_impl.cc",
     "audio_processing_impl.h",
     "common.h",
@@ -101,10 +125,6 @@ rtc_static_library("audio_processing") {
     "residual_echo_detector.h",
     "rms_level.cc",
     "rms_level.h",
-    "splitting_filter.cc",
-    "splitting_filter.h",
-    "three_band_filter_bank.cc",
-    "three_band_filter_bank.h",
     "transient/common.h",
     "transient/daubechies_8_wavelet_coeffs.h",
     "transient/dyadic_decimator.h",
@@ -128,6 +148,7 @@ rtc_static_library("audio_processing") {
   deps = [
     ":api",
     ":apm_logging",
+    ":audio_buffer",
     ":audio_frame_view",
     ":audio_generator_interface",
     ":audio_processing_c",
@@ -155,6 +176,7 @@ rtc_static_library("audio_processing") {
     "../../system_wrappers:metrics",
     "aec:aec",
     "aec:aec_core",
+    "aec3:aec3",
     "aecm:aecm_core",
     "agc",
     "agc:agc_legacy_c",
@@ -162,6 +184,7 @@ rtc_static_library("audio_processing") {
     "agc2:fixed_digital",
     "agc2:gain_applier",
     "vad",
+    "//third_party/abseil-cpp/absl/memory:memory",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
 
@@ -408,6 +431,7 @@ if (rtc_include_tests) {
       ":analog_mic_simulation",
       ":api",
       ":apm_logging",
+      ":audio_buffer",
       ":audio_frame_view",
       ":audio_processing",
       ":audioproc_test_utils",
@@ -416,6 +440,7 @@ if (rtc_include_tests) {
       ":mocks",
       "../..:webrtc_common",
       "../../api:array_view",
+      "../../api:scoped_refptr",
       "../../api/audio:aec3_config",
       "../../api/audio:aec3_factory",
       "../../common_audio:common_audio",
@@ -448,6 +473,7 @@ if (rtc_include_tests) {
       "test/conversational_speech:unittest",
       "utility:block_mean_calculator_unittest",
       "utility:legacy_delay_estimator_unittest",
+      "utility:pffft_wrapper_unittest",
       "vad:vad_unittests",
       "//testing/gtest",
       "//third_party/abseil-cpp/absl/memory",
@@ -503,11 +529,6 @@ if (rtc_include_tests) {
         "test/test_utils.h",
         "voice_detection_unittest.cc",
       ]
-    }
-
-    if ((!build_with_chromium || is_win) && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 
@@ -640,6 +661,7 @@ if (rtc_include_tests) {
 
     deps = [
       ":api",
+      ":audio_buffer",
       ":audio_processing",
       "../../api:array_view",
       "../../api/audio:audio_frame_api",

@@ -31,6 +31,9 @@ export class FrontendLocalState {
   perfDebug = false;
   hoveredUtid = -1;
   hoveredPid = -1;
+  hoveredTimestamp = -1;
+  showTimeSelectPreview = false;
+  showNotePreview = false;
 
   // TODO: there is some redundancy in the fact that both |visibleWindowTime|
   // and a |timeScale| have a notion of time range. That should live in one
@@ -77,4 +80,22 @@ export class FrontendLocalState {
     this.hoveredPid = pid;
     globals.rafScheduler.scheduleRedraw();
   }
+
+  // Sets the timestamp at which a vertical line will be drawn.
+  setHoveredTimestamp(ts: number) {
+    if (this.hoveredTimestamp === ts) return;
+    this.hoveredTimestamp = ts;
+    globals.rafScheduler.scheduleRedraw();
+  }
+
+  setShowNotePreview(show: boolean) {
+    this.showNotePreview = show;
+    globals.rafScheduler.scheduleRedraw();
+  }
+
+  setShowTimeSelectPreview(show: boolean) {
+    this.showTimeSelectPreview = show;
+    globals.rafScheduler.scheduleRedraw();
+  }
+
 }

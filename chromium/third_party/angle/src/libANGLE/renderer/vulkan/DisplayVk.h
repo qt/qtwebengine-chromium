@@ -67,9 +67,13 @@ class DisplayVk : public DisplayImpl, public vk::Context
 
     StreamProducerImpl *createStreamProducerD3DTexture(egl::Stream::ConsumerType consumerType,
                                                        const egl::AttributeMap &attribs) override;
+
+    EGLSyncImpl *createSync(const egl::AttributeMap &attribs) override;
+
     gl::Version getMaxSupportedESVersion() const override;
 
-    virtual const char *getWSIName() const = 0;
+    virtual const char *getWSIExtension() const = 0;
+    virtual const char *getWSILayer() const;
 
     // Determine if a config with given formats and sample counts is supported.  This callback may
     // modify the config to add or remove platform specific attributes such as nativeVisualID before

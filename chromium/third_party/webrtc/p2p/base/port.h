@@ -25,7 +25,6 @@
 #include "logging/rtc_event_log/ice_logger.h"
 #include "p2p/base/candidate_pair_interface.h"
 #include "p2p/base/p2p_constants.h"
-#include "p2p/base/packet_loss_estimator.h"
 #include "p2p/base/packet_socket_factory.h"
 #include "p2p/base/port_interface.h"
 #include "p2p/base/stun.h"
@@ -385,7 +384,7 @@ class Port : public PortInterface,
 
   int16_t network_cost() const { return network_cost_; }
 
-  void GetStunStats(absl::optional<StunStats>* stats) override{};
+  void GetStunStats(absl::optional<StunStats>* stats) override {}
 
  protected:
   enum { MSG_DESTROY_IF_DEAD = 0, MSG_FIRST_AVAILABLE };
@@ -836,8 +835,6 @@ class Connection : public CandidatePairInterface,
   int64_t last_ping_response_received_;
   int64_t receiving_unchanged_since_ = 0;
   std::vector<SentPing> pings_since_last_response_;
-
-  PacketLossEstimator packet_loss_estimator_;
 
   absl::optional<int> unwritable_timeout_;
   absl::optional<int> unwritable_min_checks_;

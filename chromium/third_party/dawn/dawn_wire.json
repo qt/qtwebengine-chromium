@@ -18,8 +18,6 @@
         "buffer map async": [
             { "name": "buffer id", "type": "ObjectId" },
             { "name": "request serial", "type": "uint32_t" },
-            { "name": "start", "type": "uint32_t" },
-            { "name": "size", "type": "uint32_t" },
             { "name": "is write", "type": "bool" }
         ],
         "buffer update mapped data": [
@@ -34,22 +32,23 @@
     },
     "return commands": {
         "buffer map read async callback": [
-            { "name": "buffer", "type": "ObjectHandle" },
+            { "name": "buffer", "type": "ObjectHandle", "handle_type": "buffer" },
             { "name": "request serial", "type": "uint32_t" },
             { "name": "status", "type": "uint32_t" },
             { "name": "data length", "type": "uint32_t" },
             { "name": "data", "type": "uint8_t", "annotation": "const*", "length": "data length" }
         ],
         "buffer map write async callback": [
-            { "name": "buffer", "type": "ObjectHandle" },
+            { "name": "buffer", "type": "ObjectHandle", "handle_type": "buffer" },
             { "name": "request serial", "type": "uint32_t" },
-            { "name": "status", "type": "uint32_t" }
+            { "name": "status", "type": "uint32_t" },
+            { "name": "data length", "type": "uint32_t" }
         ],
         "device error callback": [
             { "name": "message", "type": "char", "annotation": "const*", "length": "strlen" }
         ],
         "fence update completed value": [
-            { "name": "fence", "type": "ObjectHandle" },
+            { "name": "fence", "type": "ObjectHandle", "handle_type": "fence" },
             { "name": "value", "type": "uint64_t" }
         ]
     },
@@ -57,9 +56,10 @@
         "client_side_commands": [
             "FenceGetCompletedValue"
         ],
-        "client_proxied_commands": [
+        "client_handwritten_commands": [
             "BufferUnmap",
-            "DeviceCreateFence",
+            "QueueCreateFence",
+            "FenceGetCompletedValue",
             "QueueSignal"
         ],
         "client_special_objects": [
@@ -70,7 +70,7 @@
         "server_custom_pre_handler_commands": [
             "BufferUnmap"
         ],
-        "server_custom_post_handler_commands": [
+        "server_handwritten_commands": [
             "QueueSignal"
         ],
         "server_reverse_lookup_objects": [

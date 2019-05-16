@@ -7,7 +7,7 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 import("../webrtc.gni")
-if (!build_with_mozilla) {
+if (rtc_enable_protobuf) {
   import("//third_party/protobuf/proto_library.gni")
 }
 if (is_android) {
@@ -39,7 +39,8 @@ rtc_source_set("rtc_event_log_api") {
 
   deps = [
     "../api:libjingle_logging_api",
-    "../rtc_base:ptr_util",
+    "../api:scoped_refptr",
+    "../api/task_queue",
     "../rtc_base:rtc_base_approved",
     "//third_party/abseil-cpp/absl/memory",
   ]
@@ -65,7 +66,7 @@ rtc_source_set("rtc_event_pacing") {
 
   deps = [
     ":rtc_event_log_api",
-    "../rtc_base:ptr_util",
+    "../api:scoped_refptr",
     "//third_party/abseil-cpp/absl/memory",
   ]
 }
@@ -85,9 +86,9 @@ rtc_source_set("rtc_event_audio") {
   deps = [
     ":rtc_event_log_api",
     ":rtc_stream_config",
+    "../api:scoped_refptr",
     "../modules/audio_coding:audio_network_adaptor_config",
     "../rtc_base:checks",
-    "../rtc_base:ptr_util",
     "//third_party/abseil-cpp/absl/memory",
   ]
 }
@@ -108,8 +109,24 @@ rtc_source_set("rtc_event_bwe") {
 
   deps = [
     ":rtc_event_log_api",
+    "../api:scoped_refptr",
     "../modules/remote_bitrate_estimator:remote_bitrate_estimator",
-    "../rtc_base:ptr_util",
+    "//third_party/abseil-cpp/absl/memory",
+  ]
+}
+
+rtc_source_set("rtc_event_generic_packet_events") {
+  visibility = [ "*" ]
+  sources = [
+    "rtc_event_log/events/rtc_event_generic_ack_received.cc",
+    "rtc_event_log/events/rtc_event_generic_ack_received.h",
+    "rtc_event_log/events/rtc_event_generic_packet_received.cc",
+    "rtc_event_log/events/rtc_event_generic_packet_received.h",
+    "rtc_event_log/events/rtc_event_generic_packet_sent.cc",
+    "rtc_event_log/events/rtc_event_generic_packet_sent.h",
+  ]
+  deps = [
+    ":rtc_event_log_api",
     "//third_party/abseil-cpp/absl/memory",
   ]
 }
@@ -129,9 +146,9 @@ rtc_source_set("rtc_event_rtp_rtcp") {
   deps = [
     ":rtc_event_log_api",
     "../api:array_view",
+    "../api:scoped_refptr",
     "../modules/rtp_rtcp:rtp_rtcp_format",
     "../rtc_base:checks",
-    "../rtc_base:ptr_util",
     "../rtc_base:rtc_base_approved",
     "//third_party/abseil-cpp/absl/memory",
   ]
@@ -148,8 +165,8 @@ rtc_source_set("rtc_event_video") {
   deps = [
     ":rtc_event_log_api",
     ":rtc_stream_config",
+    "../api:scoped_refptr",
     "../rtc_base:checks",
-    "../rtc_base:ptr_util",
     "//third_party/abseil-cpp/absl/memory",
   ]
 }
@@ -166,7 +183,6 @@ rtc_static_library("rtc_event_log_impl_encoder") {
     "rtc_event_log/encoder/rtc_event_log_encoder_common.h",
     "rtc_event_log/encoder/var_int.cc",
     "rtc_event_log/encoder/var_int.h",
-    "rtc_event_log/encoder/varint.h",
   ]
 
   defines = []
@@ -187,6 +203,7 @@ rtc_static_library("rtc_event_log_impl_encoder") {
       ":ice_log",
       ":rtc_event_audio",
       ":rtc_event_bwe",
+      ":rtc_event_generic_packet_events",
       ":rtc_event_log2_proto",
       ":rtc_event_log_api",
       ":rtc_event_log_impl_output",
@@ -239,6 +256,7 @@ rtc_static_library("rtc_event_log_impl_base") {
     ":ice_log",
     ":rtc_event_log_api",
     "../api:libjingle_logging_api",
+    "../api/task_queue:global_task_queue_factory",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_task_queue",
@@ -347,6 +365,7 @@ if (rtc_enable_protobuf) {
         ":ice_log",
         ":rtc_event_audio",
         ":rtc_event_bwe",
+        ":rtc_event_generic_packet_events",
         ":rtc_event_log2_proto",
         ":rtc_event_log_api",
         ":rtc_event_log_impl_base",
@@ -375,10 +394,6 @@ if (rtc_enable_protobuf) {
         "//third_party/abseil-cpp/absl/memory",
         "//third_party/abseil-cpp/absl/types:optional",
       ]
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
 
     rtc_test("rtc_event_log2rtp_dump") {
@@ -400,10 +415,6 @@ if (rtc_enable_protobuf) {
         "//third_party/abseil-cpp/absl/memory",
         "//third_party/abseil-cpp/absl/types:optional",
       ]
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
   }
 }
@@ -420,7 +431,6 @@ rtc_source_set("ice_log") {
     "rtc_event_log/events/rtc_event_ice_candidate_pair_config.h",
     "rtc_event_log/ice_logger.cc",
     "rtc_event_log/ice_logger.h",
-    "rtc_event_log/icelogger.h",
   ]
 
   deps = [

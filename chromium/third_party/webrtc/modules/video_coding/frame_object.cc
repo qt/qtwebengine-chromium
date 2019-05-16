@@ -39,7 +39,7 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
 
   // EncodedFrame members
   frame_type_ = first_packet->frameType;
-  codec_type_ = first_packet->codec;
+  codec_type_ = first_packet->codec();
 
   // TODO(philipel): Remove when encoded image is replaced by EncodedFrame.
   // VCMEncodedFrame members
@@ -57,15 +57,15 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
   AllocateBitstreamBuffer(frame_size);
   bool bitstream_copied = packet_buffer_->GetBitstream(*this, data());
   RTC_DCHECK(bitstream_copied);
-  _encodedWidth = first_packet->width;
-  _encodedHeight = first_packet->height;
+  _encodedWidth = first_packet->width();
+  _encodedHeight = first_packet->height();
 
   // EncodedFrame members
   SetTimestamp(first_packet->timestamp);
 
   VCMPacket* last_packet = packet_buffer_->GetPacket(last_seq_num);
   RTC_CHECK(last_packet);
-  RTC_CHECK(last_packet->is_last_packet_in_frame);
+  RTC_CHECK(last_packet->is_last_packet_in_frame());
   // http://www.etsi.org/deliver/etsi_ts/126100_126199/126114/12.07.00_60/
   // ts_126114v120700p.pdf Section 7.4.5.
   // The MTSI client shall add the payload bytes as defined in this clause
@@ -73,9 +73,7 @@ RtpFrameObject::RtpFrameObject(PacketBuffer* packet_buffer,
   // frame (I-frame or IDR frame in H.264 (AVC), or an IRAP picture in H.265
   // (HEVC)).
   rotation_ = last_packet->video_header.rotation;
-  SetColorSpace(last_packet->video_header.color_space
-                    ? &last_packet->video_header.color_space.value()
-                    : nullptr);
+  SetColorSpace(last_packet->video_header.color_space);
   _rotation_set = true;
   content_type_ = last_packet->video_header.content_type;
   if (last_packet->video_header.video_timing.flags !=
@@ -172,15 +170,11 @@ void RtpFrameObject::AllocateBitstreamBuffer(size_t frame_size) {
   // Since FFmpeg use an optimized bitstream reader that reads in chunks of
   // 32/64 bits we have to add at least that much padding to the buffer
   // to make sure the decoder doesn't read out of bounds.
-  // NOTE! EncodedImage::_size is the size of the buffer (think capacity of
-  //       an std::vector) and EncodedImage::_length is the actual size of
-  //       the bitstream (think size of an std::vector).
   size_t new_size = frame_size + (codec_type_ == kVideoCodecH264
                                       ? EncodedImage::kBufferPaddingBytesH264
                                       : 0);
   if (capacity() < new_size) {
-    delete[] data();
-    set_buffer(new uint8_t[new_size], new_size);
+    Allocate(new_size);
   }
 
   set_size(frame_size);

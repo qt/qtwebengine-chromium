@@ -51,11 +51,11 @@
 
 namespace base {
 class SingleThreadTaskRunner;
-};
+}
 
 namespace network {
 class SharedURLLoaderFactory;
-};
+}
 
 namespace blink {
 
@@ -109,6 +109,9 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
 
   // Callback methods for SharedWorkerReportingProxy.
   void CountFeature(WebFeature);
+  void DidFetchScript();
+  void DidFailToFetchClassicScript();
+  void DidEvaluateClassicScript(bool success);
   void DidCloseWorkerGlobalScope();
   void DidTerminateWorkerThread();
 
@@ -120,10 +123,12 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
 
   void DidReceiveScriptLoaderResponse();
   void OnScriptLoaderFinished();
-  void ContinueOnScriptLoaderFinished();
-  void StartWorkerThread(std::unique_ptr<GlobalScopeCreationParams>,
-                         const KURL& script_response_url,
-                         const String& source_code);
+  void ContinueStartWorkerContext();
+  void StartWorkerThread(
+      std::unique_ptr<GlobalScopeCreationParams>,
+      const KURL& script_response_url,
+      const String& source_code,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object);
   WorkerClients* CreateWorkerClients();
 
   void ConnectTaskOnWorkerThread(MessagePortChannel);

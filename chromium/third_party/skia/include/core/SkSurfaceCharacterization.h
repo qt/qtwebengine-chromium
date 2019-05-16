@@ -17,7 +17,9 @@
 class SkColorSpace;
 
 #if SK_SUPPORT_GPU
+// TODO: remove the GrContext.h include once Flutter is updated
 #include "GrContext.h"
+#include "GrContextThreadSafeProxy.h"
 
 /** \class SkSurfaceCharacterization
     A surface characterization contains all the information Ganesh requires to makes its internal
@@ -84,6 +86,7 @@ public:
 
 private:
     friend class SkSurface_Gpu; // for 'set' & 'config'
+    friend class GrVkSecondaryCBDrawContext; // for 'set' & 'config'
     friend class GrContextThreadSafeProxy; // for private ctor
     friend class SkDeferredDisplayListRecorder; // for 'config'
     friend class SkSurface; // for 'config'

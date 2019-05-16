@@ -7,6 +7,7 @@
 
 #include "GrStrokeRectOp.h"
 
+#include "GrCaps.h"
 #include "GrColor.h"
 #include "GrDefaultGeoProcFactory.h"
 #include "GrDrawOpTest.h"
@@ -106,7 +107,7 @@ public:
     }
 #endif
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           const SkRect& rect,
@@ -162,8 +163,10 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fHelper.finalizeProcessors(caps, clip, GrProcessorAnalysisCoverage::kNone, &fColor);
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
+        return fHelper.finalizeProcessors(
+                caps, clip, fsaaType, GrProcessorAnalysisCoverage::kNone, &fColor);
     }
 
 private:
@@ -186,7 +189,7 @@ private:
             vertexCount = kVertsPerStrokeRect;
         }
 
-        const GrBuffer* vertexBuffer;
+        sk_sp<const GrBuffer> vertexBuffer;
         int firstVertex;
 
         void* verts =
@@ -215,9 +218,12 @@ private:
 
         GrMesh* mesh = target->allocMesh(primType);
         mesh->setNonIndexedNonInstanced(vertexCount);
-        mesh->setVertexData(vertexBuffer, firstVertex);
-        auto pipe = fHelper.makePipeline(target);
-        target->draw(std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
+        mesh->setVertexData(std::move(vertexBuffer), firstVertex);
+        target->recordDraw(std::move(gp), mesh);
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        fHelper.executeDrawsAndUploads(this, flushState, chainBounds);
     }
 
     // TODO: override onCombineIfPossible
@@ -317,7 +323,7 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           const SkRect& devOutside,
@@ -340,7 +346,7 @@ public:
         fWideColor = !SkPMColor4fFitsInBytes(color);
     }
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           const SkRect& rect,
@@ -404,13 +410,16 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fHelper.finalizeProcessors(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
-                                          &fRects.back().fColor);
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
+        return fHelper.finalizeProcessors(
+                caps, clip, fsaaType, GrProcessorAnalysisCoverage::kSingleChannel,
+                &fRects.back().fColor);
     }
 
 private:
     void onPrepareDraws(Target*) override;
+    void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
 
     static const int kMiterIndexCnt = 3 * 24;
     static const int kMiterVertexCnt = 16;
@@ -420,7 +429,7 @@ private:
     static const int kBevelVertexCnt = 24;
     static const int kNumBevelRectsInIndexBuffer = 256;
 
-    static sk_sp<const GrBuffer> GetIndexBuffer(GrResourceProvider*, bool miterStroke);
+    static sk_sp<const GrGpuBuffer> GetIndexBuffer(GrResourceProvider*, bool miterStroke);
 
     const SkMatrix& viewMatrix() const { return fViewMatrix; }
     bool miterStroke() const { return fMiterStroke; }
@@ -472,12 +481,17 @@ void AAStrokeRectOp::onPrepareDraws(Target* target) {
     int indicesPerInstance = this->miterStroke() ? kMiterIndexCnt : kBevelIndexCnt;
     int instanceCount = fRects.count();
 
-    sk_sp<const GrBuffer> indexBuffer =
+    sk_sp<const GrGpuBuffer> indexBuffer =
             GetIndexBuffer(target->resourceProvider(), this->miterStroke());
-    PatternHelper helper(target, GrPrimitiveType::kTriangles, gp->vertexStride(), indexBuffer.get(),
-                         verticesPerInstance, indicesPerInstance, instanceCount);
+    if (!indexBuffer) {
+        SkDebugf("Could not allocate indices\n");
+        return;
+    }
+    PatternHelper helper(target, GrPrimitiveType::kTriangles, gp->vertexStride(),
+                         std::move(indexBuffer), verticesPerInstance, indicesPerInstance,
+                         instanceCount);
     GrVertexWriter vertices{ helper.vertices() };
-    if (!vertices.fPtr || !indexBuffer) {
+    if (!vertices.fPtr) {
         SkDebugf("Could not allocate vertices\n");
         return;
     }
@@ -494,12 +508,15 @@ void AAStrokeRectOp::onPrepareDraws(Target* target) {
                                            info.fDegenerate,
                                            fHelper.compatibleWithAlphaAsCoverage());
     }
-    auto pipe = fHelper.makePipeline(target);
-    helper.recordDraw(target, std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState);
+    helper.recordDraw(target, std::move(gp));
 }
 
-sk_sp<const GrBuffer> AAStrokeRectOp::GetIndexBuffer(GrResourceProvider* resourceProvider,
-                                                     bool miterStroke) {
+void AAStrokeRectOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) {
+    fHelper.executeDrawsAndUploads(this, flushState, chainBounds);
+}
+
+sk_sp<const GrGpuBuffer> AAStrokeRectOp::GetIndexBuffer(GrResourceProvider* resourceProvider,
+                                                        bool miterStroke) {
     if (miterStroke) {
         // clang-format off
         static const uint16_t gMiterIndices[] = {
@@ -727,7 +744,7 @@ void AAStrokeRectOp::generateAAStrokeRectGeometry(GrVertexWriter& vertices,
 
 namespace GrStrokeRectOp {
 
-std::unique_ptr<GrDrawOp> Make(GrContext* context,
+std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                GrPaint&& paint,
                                GrAAType aaType,
                                const SkMatrix& viewMatrix,
@@ -744,7 +761,7 @@ std::unique_ptr<GrDrawOp> Make(GrContext* context,
     }
 }
 
-std::unique_ptr<GrDrawOp> MakeNested(GrContext* context,
+std::unique_ptr<GrDrawOp> MakeNested(GrRecordingContext* context,
                                      GrPaint&& paint,
                                      const SkMatrix& viewMatrix,
                                      const SkRect rects[2]) {

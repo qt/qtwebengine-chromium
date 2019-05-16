@@ -12,6 +12,7 @@
 
 #include <utility>
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "rtc_base/checks.h"
@@ -119,12 +120,14 @@ bool FakeVoiceMediaChannel::AddRecvStream(const StreamParams& sp) {
   if (!RtpHelper<VoiceMediaChannel>::AddRecvStream(sp))
     return false;
   output_scalings_[sp.first_ssrc()] = 1.0;
+  output_delays_[sp.first_ssrc()] = 0;
   return true;
 }
 bool FakeVoiceMediaChannel::RemoveRecvStream(uint32_t ssrc) {
   if (!RtpHelper<VoiceMediaChannel>::RemoveRecvStream(ssrc))
     return false;
   output_scalings_.erase(ssrc);
+  output_delays_.erase(ssrc);
   return true;
 }
 bool FakeVoiceMediaChannel::CanInsertDtmf() {
@@ -161,6 +164,23 @@ bool FakeVoiceMediaChannel::GetOutputVolume(uint32_t ssrc, double* volume) {
     return false;
   *volume = output_scalings_[ssrc];
   return true;
+}
+bool FakeVoiceMediaChannel::SetBaseMinimumPlayoutDelayMs(uint32_t ssrc,
+                                                         int delay_ms) {
+  if (output_delays_.find(ssrc) == output_delays_.end()) {
+    return false;
+  } else {
+    output_delays_[ssrc] = delay_ms;
+    return true;
+  }
+}
+absl::optional<int> FakeVoiceMediaChannel::GetBaseMinimumPlayoutDelayMs(
+    uint32_t ssrc) const {
+  const auto it = output_delays_.find(ssrc);
+  if (it != output_delays_.end()) {
+    return it->second;
+  }
+  return absl::nullopt;
 }
 bool FakeVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
   return false;
@@ -321,12 +341,14 @@ bool FakeVideoMediaChannel::AddRecvStream(const StreamParams& sp) {
   if (!RtpHelper<VideoMediaChannel>::AddRecvStream(sp))
     return false;
   sinks_[sp.first_ssrc()] = NULL;
+  output_delays_[sp.first_ssrc()] = 0;
   return true;
 }
 bool FakeVideoMediaChannel::RemoveRecvStream(uint32_t ssrc) {
   if (!RtpHelper<VideoMediaChannel>::RemoveRecvStream(ssrc))
     return false;
   sinks_.erase(ssrc);
+  output_delays_.erase(ssrc);
   return true;
 }
 void FakeVideoMediaChannel::FillBitrateInfo(BandwidthEstimationInfo* bwe_info) {
@@ -337,6 +359,23 @@ bool FakeVideoMediaChannel::GetStats(VideoMediaInfo* info) {
 std::vector<webrtc::RtpSource> FakeVideoMediaChannel::GetSources(
     uint32_t ssrc) const {
   return {};
+}
+bool FakeVideoMediaChannel::SetBaseMinimumPlayoutDelayMs(uint32_t ssrc,
+                                                         int delay_ms) {
+  if (output_delays_.find(ssrc) == output_delays_.end()) {
+    return false;
+  } else {
+    output_delays_[ssrc] = delay_ms;
+    return true;
+  }
+}
+absl::optional<int> FakeVideoMediaChannel::GetBaseMinimumPlayoutDelayMs(
+    uint32_t ssrc) const {
+  const auto it = output_delays_.find(ssrc);
+  if (it != output_delays_.end()) {
+    return it->second;
+  }
+  return absl::nullopt;
 }
 bool FakeVideoMediaChannel::SetRecvCodecs(
     const std::vector<VideoCodec>& codecs) {
@@ -482,7 +521,7 @@ FakeVoiceMediaChannel* FakeVoiceEngine::GetChannel(size_t index) {
   return (channels_.size() > index) ? channels_[index] : NULL;
 }
 void FakeVoiceEngine::UnregisterChannel(VoiceMediaChannel* channel) {
-  channels_.erase(std::find(channels_.begin(), channels_.end(), channel));
+  channels_.erase(absl::c_find(channels_, channel));
 }
 const std::vector<AudioCodec>& FakeVoiceEngine::send_codecs() const {
   return codecs_;
@@ -537,7 +576,7 @@ FakeVideoMediaChannel* FakeVideoEngine::GetChannel(size_t index) {
   return (channels_.size() > index) ? channels_[index] : nullptr;
 }
 void FakeVideoEngine::UnregisterChannel(VideoMediaChannel* channel) {
-  auto it = std::find(channels_.begin(), channels_.end(), channel);
+  auto it = absl::c_find(channels_, channel);
   RTC_DCHECK(it != channels_.end());
   channels_.erase(it);
 }
@@ -586,7 +625,7 @@ FakeDataMediaChannel* FakeDataEngine::GetChannel(size_t index) {
   return (channels_.size() > index) ? channels_[index] : NULL;
 }
 void FakeDataEngine::UnregisterChannel(DataMediaChannel* channel) {
-  channels_.erase(std::find(channels_.begin(), channels_.end(), channel));
+  channels_.erase(absl::c_find(channels_, channel));
 }
 void FakeDataEngine::SetDataCodecs(const std::vector<DataCodec>& data_codecs) {
   data_codecs_ = data_codecs;

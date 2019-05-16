@@ -1200,7 +1200,7 @@ bool CGdiDisplayDriver::SetDIBits(const RetainPtr<CFX_DIBBase>& pSource,
       if (!background->Create(width, height, FXDIB_Rgb32) ||
           !GetDIBits(background, left, top) ||
           !background->CompositeMask(0, 0, width, height, pSource, color, 0, 0,
-                                     BlendMode::kNormal, nullptr, false, 0)) {
+                                     BlendMode::kNormal, nullptr, false)) {
         return false;
       }
       FX_RECT alpha_src_rect(0, 0, width, height);
@@ -1299,7 +1299,7 @@ bool CGdiDisplayDriver::StretchDIBits(const RetainPtr<CFX_DIBBase>& pSource,
                    image_rect.top + clip_rect.top) ||
         !background->CompositeMask(0, 0, clip_width, clip_height, pStretched,
                                    color, 0, 0, BlendMode::kNormal, nullptr,
-                                   false, 0)) {
+                                   false)) {
       return false;
     }
 
@@ -1341,14 +1341,17 @@ bool CGdiDisplayDriver::StartDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
   return false;
 }
 
-CFX_WindowsRenderDevice::CFX_WindowsRenderDevice(HDC hDC) {
-  SetDeviceDriver(pdfium::WrapUnique(CreateDriver(hDC)));
+CFX_WindowsRenderDevice::CFX_WindowsRenderDevice(CCodec_ModuleMgr* pModuleMgr,
+                                                 HDC hDC) {
+  SetDeviceDriver(pdfium::WrapUnique(CreateDriver(pModuleMgr, hDC)));
 }
 
 CFX_WindowsRenderDevice::~CFX_WindowsRenderDevice() {}
 
 // static
-RenderDeviceDriverIface* CFX_WindowsRenderDevice::CreateDriver(HDC hDC) {
+RenderDeviceDriverIface* CFX_WindowsRenderDevice::CreateDriver(
+    CCodec_ModuleMgr* pModuleMgr,
+    HDC hDC) {
   int device_type = ::GetDeviceCaps(hDC, TECHNOLOGY);
   int obj_type = ::GetObjectType(hDC);
   bool use_printer = device_type == DT_RASPRINTER ||
@@ -1364,5 +1367,5 @@ RenderDeviceDriverIface* CFX_WindowsRenderDevice::CreateDriver(HDC hDC) {
   if (g_pdfium_print_mode == WindowsPrintMode::kModeTextOnly)
     return new CTextOnlyPrinterDriver(hDC);
 
-  return new CPSPrinterDriver(hDC, g_pdfium_print_mode, false);
+  return new CPSPrinterDriver(pModuleMgr, hDC, g_pdfium_print_mode, false);
 }

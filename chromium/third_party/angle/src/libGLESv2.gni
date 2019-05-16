@@ -17,6 +17,8 @@ libangle_common_sources = [
   "src/common/PackedEnums.h",
   "src/common/PackedGLEnums_autogen.cpp",
   "src/common/PackedGLEnums_autogen.h",
+  "src/common/PoolAlloc.cpp",
+  "src/common/PoolAlloc.h",
   "src/common/aligned_memory.cpp",
   "src/common/aligned_memory.h",
   "src/common/angleutils.cpp",
@@ -45,14 +47,17 @@ libangle_common_sources = [
   "src/common/third_party/base/anglebase/sys_byteorder.h",
   "src/common/third_party/smhasher/src/PMurHash.cpp",
   "src/common/third_party/smhasher/src/PMurHash.h",
-  "src/common/third_party/xxhash/xxhash.c",
-  "src/common/third_party/xxhash/xxhash.h",
   "src/common/tls.cpp",
   "src/common/tls.h",
   "src/common/uniform_type_info_autogen.cpp",
   "src/common/utilities.cpp",
   "src/common/utilities.h",
   "src/common/vector_utils.h",
+]
+
+xxhash_sources = [
+  "src/common/third_party/xxhash/xxhash.c",
+  "src/common/third_party/xxhash/xxhash.h",
 ]
 
 angle_system_utils_sources = [
@@ -79,6 +84,13 @@ if (is_mac) {
 
 if (is_win) {
   angle_system_utils_sources += [ "src/common/system_utils_win.cpp" ]
+}
+
+if (is_android) {
+  angle_system_utils_sources += [
+    "src/common/android_util.cpp",
+    "src/common/android_util.h",
+  ]
 }
 
 libangle_image_util_sources = [
@@ -724,8 +736,6 @@ libangle_gl_ozone_sources = [
 ]
 
 libangle_gl_egl_android_sources = [
-  "src/libANGLE/renderer/gl/egl/android/android_util.cpp",
-  "src/libANGLE/renderer/gl/egl/android/android_util.h",
   "src/libANGLE/renderer/gl/egl/android/DisplayAndroid.cpp",
   "src/libANGLE/renderer/gl/egl/android/DisplayAndroid.h",
   "src/libANGLE/renderer/gl/egl/android/NativeBufferImageSiblingAndroid.cpp",
@@ -780,6 +790,8 @@ libangle_vulkan_sources = [
   "src/libANGLE/renderer/vulkan/RenderTargetVk.h",
   "src/libANGLE/renderer/vulkan/SamplerVk.cpp",
   "src/libANGLE/renderer/vulkan/SamplerVk.h",
+  "src/libANGLE/renderer/vulkan/SecondaryCommandBuffer.cpp",
+  "src/libANGLE/renderer/vulkan/SecondaryCommandBuffer.h",
   "src/libANGLE/renderer/vulkan/ShaderVk.cpp",
   "src/libANGLE/renderer/vulkan/ShaderVk.h",
   "src/libANGLE/renderer/vulkan/SurfaceVk.cpp",
@@ -808,11 +820,14 @@ libangle_vulkan_sources = [
   "src/libANGLE/renderer/vulkan/vk_mandatory_format_support_table_autogen.cpp",
   "src/libANGLE/renderer/vulkan/vk_utils.cpp",
   "src/libANGLE/renderer/vulkan/vk_utils.h",
+  "src/libANGLE/renderer/vulkan/vk_wrapper.h",
 ]
 
 libangle_vulkan_android_sources = [
   "src/libANGLE/renderer/vulkan/android/DisplayVkAndroid.cpp",
   "src/libANGLE/renderer/vulkan/android/DisplayVkAndroid.h",
+  "src/libANGLE/renderer/vulkan/android/HardwareBufferImageSiblingVkAndroid.cpp",
+  "src/libANGLE/renderer/vulkan/android/HardwareBufferImageSiblingVkAndroid.h",
   "src/libANGLE/renderer/vulkan/android/WindowSurfaceVkAndroid.cpp",
   "src/libANGLE/renderer/vulkan/android/WindowSurfaceVkAndroid.h",
 ]
@@ -829,6 +844,13 @@ libangle_vulkan_xcb_sources = [
   "src/libANGLE/renderer/vulkan/xcb/DisplayVkXcb.h",
   "src/libANGLE/renderer/vulkan/xcb/WindowSurfaceVkXcb.cpp",
   "src/libANGLE/renderer/vulkan/xcb/WindowSurfaceVkXcb.h",
+]
+
+libangle_vulkan_fuchsia_sources = [
+  "src/libANGLE/renderer/vulkan/fuchsia/DisplayVkFuchsia.cpp",
+  "src/libANGLE/renderer/vulkan/fuchsia/DisplayVkFuchsia.h",
+  "src/libANGLE/renderer/vulkan/fuchsia/WindowSurfaceVkFuchsia.cpp",
+  "src/libANGLE/renderer/vulkan/fuchsia/WindowSurfaceVkFuchsia.h",
 ]
 
 libangle_null_sources = [

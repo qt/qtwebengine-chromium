@@ -29,7 +29,8 @@
 #define GL_CALL(X) GR_GL_CALL(this->gpu()->glInterface(), X)
 #define GL_CALL_RET(R, X) GR_GL_CALL_RET(this->gpu()->glInterface(), R, X)
 
-GrGLProgram* GrGLProgramBuilder::CreateProgram(const GrPrimitiveProcessor& primProc,
+GrGLProgram* GrGLProgramBuilder::CreateProgram(GrRenderTarget* renderTarget, GrSurfaceOrigin origin,
+                                               const GrPrimitiveProcessor& primProc,
                                                const GrTextureProxy* const primProcProxies[],
                                                const GrPipeline& pipeline,
                                                GrProgramDesc* desc,
@@ -41,9 +42,10 @@ GrGLProgram* GrGLProgramBuilder::CreateProgram(const GrPrimitiveProcessor& primP
 
     // create a builder.  This will be handed off to effects so they can use it to add
     // uniforms, varyings, textures, etc
-    GrGLProgramBuilder builder(gpu, pipeline, primProc, primProcProxies, desc);
+    GrGLProgramBuilder builder(gpu, renderTarget, origin,
+                               pipeline, primProc, primProcProxies, desc);
 
-    auto persistentCache = gpu->getContext()->contextPriv().getPersistentCache();
+    auto persistentCache = gpu->getContext()->priv().getPersistentCache();
     if (persistentCache) {
         sk_sp<SkData> key = SkData::MakeWithoutCopy(desc->asKey(), desc->keyLength());
         builder.fCached = persistentCache->load(*key);
@@ -60,11 +62,13 @@ GrGLProgram* GrGLProgramBuilder::CreateProgram(const GrPrimitiveProcessor& primP
 /////////////////////////////////////////////////////////////////////////////
 
 GrGLProgramBuilder::GrGLProgramBuilder(GrGLGpu* gpu,
+                                       GrRenderTarget* renderTarget,
+                                       GrSurfaceOrigin origin,
                                        const GrPipeline& pipeline,
                                        const GrPrimitiveProcessor& primProc,
                                        const GrTextureProxy* const primProcProxies[],
                                        GrProgramDesc* desc)
-        : INHERITED(primProc, primProcProxies, pipeline, desc)
+        : INHERITED(renderTarget, origin, primProc, primProcProxies, pipeline, desc)
         , fGpu(gpu)
         , fVaryingHandler(this)
         , fUniformHandler(this)
@@ -99,8 +103,7 @@ bool GrGLProgramBuilder::compileAndAttachShaders(const char* glsl,
     *shaderIds->append() = shaderId;
     if (inputs.fFlipY) {
         GrProgramDesc* d = this->desc();
-        d->setSurfaceOriginKey(GrGLSLFragmentShaderBuilder::KeyForSurfaceOrigin(
-                                                     this->pipeline().proxy()->origin()));
+        d->setSurfaceOriginKey(GrGLSLFragmentShaderBuilder::KeyForSurfaceOrigin(this->origin()));
     }
 
     return true;
@@ -170,7 +173,7 @@ void GrGLProgramBuilder::addInputVars(const SkSL::Program::Inputs& inputs) {
 
 void GrGLProgramBuilder::storeShaderInCache(const SkSL::Program::Inputs& inputs, GrGLuint programID,
                                             const SkSL::String& glsl) {
-    if (!this->gpu()->getContext()->contextPriv().getPersistentCache()) {
+    if (!this->gpu()->getContext()->priv().getPersistentCache()) {
         return;
     }
     sk_sp<SkData> key = SkData::MakeWithoutCopy(desc()->asKey(), desc()->keyLength());
@@ -190,7 +193,7 @@ void GrGLProgramBuilder::storeShaderInCache(const SkSL::Program::Inputs& inputs,
             memcpy(data.get() + offset, &binaryFormat, sizeof(binaryFormat));
             offset += sizeof(binaryFormat);
             memcpy(data.get() + offset, binary.get(), length);
-            this->gpu()->getContext()->contextPriv().getPersistentCache()->store(
+            this->gpu()->getContext()->priv().getPersistentCache()->store(
                                             *key, *SkData::MakeWithoutCopy(data.get(), dataLength));
         }
     } else {
@@ -201,7 +204,7 @@ void GrGLProgramBuilder::storeShaderInCache(const SkSL::Program::Inputs& inputs,
         memcpy(data.get() + offset, &inputs, sizeof(inputs));
         offset += sizeof(inputs);
         memcpy(data.get() + offset, glsl.data(), glsl.length());
-        this->gpu()->getContext()->contextPriv().getPersistentCache()->store(
+        this->gpu()->getContext()->priv().getPersistentCache()->store(
                                             *key, *SkData::MakeWithoutCopy(data.get(), dataLength));
     }
 }
@@ -217,7 +220,7 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
     }
 
     if (this->gpu()->glCaps().programBinarySupport() &&
-        this->gpu()->getContext()->contextPriv().getPersistentCache()) {
+        this->gpu()->getContext()->priv().getPersistentCache()) {
         GL_CALL(ProgramParameteri(programID, GR_GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GR_GL_TRUE));
     }
 
@@ -227,8 +230,9 @@ GrGLProgram* GrGLProgramBuilder::finalize() {
     const GrPrimitiveProcessor& primProc = this->primitiveProcessor();
     SkSL::Program::Settings settings;
     settings.fCaps = this->gpu()->glCaps().shaderCaps();
-    settings.fFlipY = this->pipeline().proxy()->origin() != kTopLeft_GrSurfaceOrigin;
-    settings.fSharpenTextures = this->gpu()->getContext()->contextPriv().sharpenMipmappedTextures();
+    settings.fFlipY = this->origin() != kTopLeft_GrSurfaceOrigin;
+    settings.fSharpenTextures =
+                    this->gpu()->getContext()->priv().options().fSharpenMipmappedTextures;
     settings.fFragColorIsInOut = this->fragColorIsInOut();
 
     SkSL::Program::Inputs inputs;

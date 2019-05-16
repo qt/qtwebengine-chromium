@@ -280,7 +280,7 @@ DestT Int4Array_Get(const uint8_t *arrayBytes, uint32_t arrayIndex)
 // Helper macro that casts to a bitfield type then verifies no bits were dropped.
 #define SetBitField(lhs, rhs)                                         \
     lhs = static_cast<typename std::decay<decltype(lhs)>::type>(rhs); \
-    ASSERT(static_cast<decltype(rhs)>(lhs) == (rhs));
+    ASSERT(static_cast<decltype(rhs)>(lhs) == (rhs))
 
 // When converting a byte number to a transition bit index we can shift instead of divide.
 constexpr size_t kTransitionByteShift = Log2(kGraphicsPipelineDirtyBitBytes);
@@ -536,6 +536,11 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
                           sizeof(attributeDescs);
     ANGLE_UNUSED_VARIABLE(unpackedSize);
 
+    gl::AttribArray<VkVertexInputBindingDivisorDescriptionEXT> divisorDesc;
+    VkPipelineVertexInputDivisorStateCreateInfoEXT divisorState = {};
+    divisorState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT;
+    divisorState.pVertexBindingDivisors = divisorDesc.data();
+
     for (size_t attribIndexSizeT : activeAttribLocationsMask)
     {
         const uint32_t attribIndex = static_cast<uint32_t>(attribIndexSizeT);
@@ -545,8 +550,18 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
         const PackedAttribDesc &packedAttrib          = mVertexInputAttribs.attribs[attribIndex];
 
         bindingDesc.binding   = attribIndex;
-        bindingDesc.inputRate = static_cast<VkVertexInputRate>(packedAttrib.inputRate);
         bindingDesc.stride    = static_cast<uint32_t>(packedAttrib.stride);
+        if (packedAttrib.divisor != 0)
+        {
+            bindingDesc.inputRate = static_cast<VkVertexInputRate>(VK_VERTEX_INPUT_RATE_INSTANCE);
+            divisorDesc[divisorState.vertexBindingDivisorCount].binding = bindingDesc.binding;
+            divisorDesc[divisorState.vertexBindingDivisorCount].divisor = packedAttrib.divisor;
+            ++divisorState.vertexBindingDivisorCount;
+        }
+        else
+        {
+            bindingDesc.inputRate = static_cast<VkVertexInputRate>(VK_VERTEX_INPUT_RATE_VERTEX);
+        }
 
         // The binding index could become more dynamic in ES 3.1.
         attribDesc.binding  = attribIndex;
@@ -564,6 +579,8 @@ angle::Result GraphicsPipelineDesc::initializePipeline(
     vertexInputState.pVertexBindingDescriptions      = bindingDescs.data();
     vertexInputState.vertexAttributeDescriptionCount = vertexAttribCount;
     vertexInputState.pVertexAttributeDescriptions    = attributeDescs.data();
+    if (divisorState.vertexBindingDivisorCount)
+        vertexInputState.pNext = &divisorState;
 
     // Primitive topology is filled in at draw time.
     inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -696,12 +713,12 @@ void GraphicsPipelineDesc::updateVertexInput(GraphicsPipelineTransitionBits *tra
 {
     vk::PackedAttribDesc &packedAttrib = mVertexInputAttribs.attribs[attribIndex];
 
-    // TODO(http://anglebug.com/2672): This will need to be updated to support instancing.
-    ASSERT(divisor == 0);
+    // TODO: Handle the case where the divisor overflows the field that holds it.
+    // http://anglebug.com/2672
+    ASSERT(divisor <= std::numeric_limits<decltype(packedAttrib.divisor)>::max());
 
     SetBitField(packedAttrib.stride, stride);
-    SetBitField(packedAttrib.inputRate,
-                divisor > 0 ? VK_VERTEX_INPUT_RATE_INSTANCE : VK_VERTEX_INPUT_RATE_VERTEX);
+    SetBitField(packedAttrib.divisor, divisor);
 
     if (format == VK_FORMAT_UNDEFINED)
     {
@@ -1374,7 +1391,7 @@ void DescriptorSetLayoutCache::destroy(VkDevice device)
 {
     for (auto &item : mPayload)
     {
-        vk::SharedDescriptorSetLayout &layout = item.second;
+        vk::RefCountedDescriptorSetLayout &layout = item.second;
         ASSERT(!layout.isReferenced());
         layout.get().destroy(device);
     }
@@ -1390,7 +1407,7 @@ angle::Result DescriptorSetLayoutCache::getDescriptorSetLayout(
     auto iter = mPayload.find(desc);
     if (iter != mPayload.end())
     {
-        vk::SharedDescriptorSetLayout &layout = iter->second;
+        vk::RefCountedDescriptorSetLayout &layout = iter->second;
         descriptorSetLayoutOut->set(&layout);
         return angle::Result::Continue;
     }
@@ -1408,8 +1425,9 @@ angle::Result DescriptorSetLayoutCache::getDescriptorSetLayout(
     vk::DescriptorSetLayout newLayout;
     ANGLE_VK_TRY(context, newLayout.init(context->getDevice(), createInfo));
 
-    auto insertedItem = mPayload.emplace(desc, vk::SharedDescriptorSetLayout(std::move(newLayout)));
-    vk::SharedDescriptorSetLayout &insertedLayout = insertedItem.first->second;
+    auto insertedItem =
+        mPayload.emplace(desc, vk::RefCountedDescriptorSetLayout(std::move(newLayout)));
+    vk::RefCountedDescriptorSetLayout &insertedLayout = insertedItem.first->second;
     descriptorSetLayoutOut->set(&insertedLayout);
 
     return angle::Result::Continue;
@@ -1427,7 +1445,7 @@ void PipelineLayoutCache::destroy(VkDevice device)
 {
     for (auto &item : mPayload)
     {
-        vk::SharedPipelineLayout &layout = item.second;
+        vk::RefCountedPipelineLayout &layout = item.second;
         layout.get().destroy(device);
     }
 
@@ -1443,7 +1461,7 @@ angle::Result PipelineLayoutCache::getPipelineLayout(
     auto iter = mPayload.find(desc);
     if (iter != mPayload.end())
     {
-        vk::SharedPipelineLayout &layout = iter->second;
+        vk::RefCountedPipelineLayout &layout = iter->second;
         pipelineLayoutOut->set(&layout);
         return angle::Result::Continue;
     }
@@ -1501,8 +1519,8 @@ angle::Result PipelineLayoutCache::getPipelineLayout(
     vk::PipelineLayout newLayout;
     ANGLE_VK_TRY(context, newLayout.init(context->getDevice(), createInfo));
 
-    auto insertedItem = mPayload.emplace(desc, vk::SharedPipelineLayout(std::move(newLayout)));
-    vk::SharedPipelineLayout &insertedLayout = insertedItem.first->second;
+    auto insertedItem = mPayload.emplace(desc, vk::RefCountedPipelineLayout(std::move(newLayout)));
+    vk::RefCountedPipelineLayout &insertedLayout = insertedItem.first->second;
     pipelineLayoutOut->set(&insertedLayout);
 
     return angle::Result::Continue;

@@ -80,6 +80,8 @@ protected:
         fSlide->draw(canvas);
     }
 
+    const RenderNode* onNodeAt(const SkPoint&) const override { return nullptr; }
+
 private:
     void tick(SkMSec t) {
         fSlide->animate(SkAnimTimer(t * 1e6));
@@ -113,9 +115,8 @@ public:
         : fDir(dir)
         , fRect(focusRect)
         , fTarget(nullptr)
+        , fMap(kFocusCtrl1, kFocusCtrl0)
         , fState(State::kIdle) {
-        fMap.setPts(kFocusCtrl1, kFocusCtrl0);
-
         fShadePaint = sksg::Color::Make(kFocusShade);
         fShade = sksg::Draw::Make(sksg::Plane::Make(), fShadePaint);
     }

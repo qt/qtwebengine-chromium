@@ -95,7 +95,7 @@ class PeerConnectionWrapperForBundleTest : public PeerConnectionWrapper {
 
   cricket::VoiceChannel* voice_channel() {
     auto transceivers = GetInternalPeerConnection()->GetTransceiversInternal();
-    for (auto transceiver : transceivers) {
+    for (const auto& transceiver : transceivers) {
       if (transceiver->media_type() == cricket::MEDIA_TYPE_AUDIO) {
         return static_cast<cricket::VoiceChannel*>(
             transceiver->internal()->channel());
@@ -116,7 +116,7 @@ class PeerConnectionWrapperForBundleTest : public PeerConnectionWrapper {
 
   cricket::VideoChannel* video_channel() {
     auto transceivers = GetInternalPeerConnection()->GetTransceiversInternal();
-    for (auto transceiver : transceivers) {
+    for (const auto& transceiver : transceivers) {
       if (transceiver->media_type() == cricket::MEDIA_TYPE_VIDEO) {
         return static_cast<cricket::VideoChannel*>(
             transceiver->internal()->channel());
@@ -282,6 +282,7 @@ SdpContentMutator RemoveRtcpMux() {
 std::vector<int> GetCandidateComponents(
     const std::vector<IceCandidateInterface*> candidates) {
   std::vector<int> components;
+  components.reserve(candidates.size());
   for (auto* candidate : candidates) {
     components.push_back(candidate->candidate().component());
   }
@@ -457,7 +458,7 @@ TEST_P(PeerConnectionBundleMatrixTest,
 // and multiplex audio/video from the start.
 // For all other policies, bundling should only be enabled if negotiated by the
 // answer.
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PeerConnectionBundleTest,
     PeerConnectionBundleMatrixTest,
     Combine(Values(SdpSemantics::kPlanB, SdpSemantics::kUnifiedPlan),
@@ -860,10 +861,10 @@ TEST_P(PeerConnectionBundleTest, RemoveContentFromBundleGroup) {
       callee->SetLocalDescription(CloneSessionDescription(answer.get())));
 }
 
-INSTANTIATE_TEST_CASE_P(PeerConnectionBundleTest,
-                        PeerConnectionBundleTest,
-                        Values(SdpSemantics::kPlanB,
-                               SdpSemantics::kUnifiedPlan));
+INSTANTIATE_TEST_SUITE_P(PeerConnectionBundleTest,
+                         PeerConnectionBundleTest,
+                         Values(SdpSemantics::kPlanB,
+                                SdpSemantics::kUnifiedPlan));
 
 // According to RFC5888, if an endpoint understands the semantics of an
 // "a=group", it MUST return an answer with that group. So, an empty BUNDLE

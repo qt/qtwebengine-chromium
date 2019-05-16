@@ -14,13 +14,15 @@
 
 #include "dawn_native/vulkan/CommandBufferVk.h"
 
+#include "dawn_native/CommandEncoder.h"
 #include "dawn_native/Commands.h"
 #include "dawn_native/vulkan/BindGroupVk.h"
 #include "dawn_native/vulkan/BufferVk.h"
 #include "dawn_native/vulkan/ComputePipelineVk.h"
 #include "dawn_native/vulkan/DeviceVk.h"
+#include "dawn_native/vulkan/FencedDeleter.h"
 #include "dawn_native/vulkan/PipelineLayoutVk.h"
-#include "dawn_native/vulkan/RenderPassDescriptorVk.h"
+#include "dawn_native/vulkan/RenderPassCache.h"
 #include "dawn_native/vulkan/RenderPipelineVk.h"
 #include "dawn_native/vulkan/TextureVk.h"
 
@@ -109,10 +111,103 @@ namespace dawn_native { namespace vulkan {
             std::bitset<kMaxBindGroups> mDirtySets;
         };
 
+        void RecordBeginRenderPass(VkCommandBuffer commands,
+                                   Device* device,
+                                   BeginRenderPassCmd* renderPass) {
+            // Query a VkRenderPass from the cache
+            VkRenderPass renderPassVK = VK_NULL_HANDLE;
+            {
+                RenderPassCacheQuery query;
+
+                for (uint32_t i : IterateBitSet(renderPass->colorAttachmentsSet)) {
+                    const auto& attachmentInfo = renderPass->colorAttachments[i];
+                    query.SetColor(i, attachmentInfo.view->GetFormat(), attachmentInfo.loadOp);
+                }
+
+                if (renderPass->hasDepthStencilAttachment) {
+                    const auto& attachmentInfo = renderPass->depthStencilAttachment;
+                    query.SetDepthStencil(attachmentInfo.view->GetTexture()->GetFormat(),
+                                          attachmentInfo.depthLoadOp, attachmentInfo.stencilLoadOp);
+                }
+
+                renderPassVK = device->GetRenderPassCache()->GetRenderPass(query);
+            }
+
+            // Create a framebuffer that will be used once for the render pass and gather the clear
+            // values for the attachments at the same time.
+            std::array<VkClearValue, kMaxColorAttachments + 1> clearValues;
+            VkFramebuffer framebuffer = VK_NULL_HANDLE;
+            uint32_t attachmentCount = 0;
+            {
+                // Fill in the attachment info that will be chained in the framebuffer create info.
+                std::array<VkImageView, kMaxColorAttachments + 1> attachments;
+
+                for (uint32_t i : IterateBitSet(renderPass->colorAttachmentsSet)) {
+                    auto& attachmentInfo = renderPass->colorAttachments[i];
+                    TextureView* view = ToBackend(attachmentInfo.view.Get());
+
+                    attachments[attachmentCount] = view->GetHandle();
+
+                    clearValues[attachmentCount].color.float32[0] = attachmentInfo.clearColor.r;
+                    clearValues[attachmentCount].color.float32[1] = attachmentInfo.clearColor.g;
+                    clearValues[attachmentCount].color.float32[2] = attachmentInfo.clearColor.b;
+                    clearValues[attachmentCount].color.float32[3] = attachmentInfo.clearColor.a;
+
+                    attachmentCount++;
+                }
+
+                if (renderPass->hasDepthStencilAttachment) {
+                    auto& attachmentInfo = renderPass->depthStencilAttachment;
+                    TextureView* view = ToBackend(attachmentInfo.view.Get());
+
+                    attachments[attachmentCount] = view->GetHandle();
+
+                    clearValues[attachmentCount].depthStencil.depth = attachmentInfo.clearDepth;
+                    clearValues[attachmentCount].depthStencil.stencil = attachmentInfo.clearStencil;
+
+                    attachmentCount++;
+                }
+
+                // Chain attachments and create the framebuffer
+                VkFramebufferCreateInfo createInfo;
+                createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+                createInfo.pNext = nullptr;
+                createInfo.flags = 0;
+                createInfo.renderPass = renderPassVK;
+                createInfo.attachmentCount = attachmentCount;
+                createInfo.pAttachments = attachments.data();
+                createInfo.width = renderPass->width;
+                createInfo.height = renderPass->height;
+                createInfo.layers = 1;
+
+                if (device->fn.CreateFramebuffer(device->GetVkDevice(), &createInfo, nullptr,
+                                                 &framebuffer) != VK_SUCCESS) {
+                    ASSERT(false);
+                }
+
+                // We don't reuse VkFramebuffers so mark the framebuffer for deletion as soon as the
+                // commands currently being recorded are finished.
+                device->GetFencedDeleter()->DeleteWhenUnused(framebuffer);
+            }
+
+            VkRenderPassBeginInfo beginInfo;
+            beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            beginInfo.pNext = nullptr;
+            beginInfo.renderPass = renderPassVK;
+            beginInfo.framebuffer = framebuffer;
+            beginInfo.renderArea.offset.x = 0;
+            beginInfo.renderArea.offset.y = 0;
+            beginInfo.renderArea.extent.width = renderPass->width;
+            beginInfo.renderArea.extent.height = renderPass->height;
+            beginInfo.clearValueCount = attachmentCount;
+            beginInfo.pClearValues = clearValues.data();
+
+            device->fn.CmdBeginRenderPass(commands, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        }
     }  // anonymous namespace
 
-    CommandBuffer::CommandBuffer(CommandBufferBuilder* builder)
-        : CommandBufferBase(builder), mCommands(builder->AcquireCommands()) {
+    CommandBuffer::CommandBuffer(Device* device, CommandEncoderBase* encoder)
+        : CommandBufferBase(device, encoder), mCommands(encoder->AcquireCommands()) {
     }
 
     CommandBuffer::~CommandBuffer() {
@@ -208,7 +303,7 @@ namespace dawn_native { namespace vulkan {
                     BeginRenderPassCmd* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
 
                     TransitionForPass(commands, passResourceUsages[nextPassNumber]);
-                    RecordRenderPass(commands, ToBackend(cmd->info.Get()));
+                    RecordRenderPass(commands, cmd);
 
                     nextPassNumber++;
                 } break;
@@ -270,10 +365,10 @@ namespace dawn_native { namespace vulkan {
         UNREACHABLE();
     }
     void CommandBuffer::RecordRenderPass(VkCommandBuffer commands,
-                                         RenderPassDescriptor* renderPass) {
+                                         BeginRenderPassCmd* renderPassCmd) {
         Device* device = ToBackend(GetDevice());
 
-        renderPass->RecordBeginRenderPass(commands);
+        RecordBeginRenderPass(commands, device, renderPassCmd);
 
         // Set the default value for the dynamic state
         {
@@ -294,8 +389,8 @@ namespace dawn_native { namespace vulkan {
             VkViewport viewport;
             viewport.x = 0.0f;
             viewport.y = 0.0f;
-            viewport.width = static_cast<float>(renderPass->GetWidth());
-            viewport.height = static_cast<float>(renderPass->GetHeight());
+            viewport.width = static_cast<float>(renderPassCmd->width);
+            viewport.height = static_cast<float>(renderPassCmd->height);
             viewport.minDepth = 0.0f;
             viewport.maxDepth = 1.0f;
             device->fn.CmdSetViewport(commands, 0, 1, &viewport);
@@ -303,8 +398,8 @@ namespace dawn_native { namespace vulkan {
             VkRect2D scissorRect;
             scissorRect.offset.x = 0;
             scissorRect.offset.y = 0;
-            scissorRect.extent.width = renderPass->GetWidth();
-            scissorRect.extent.height = renderPass->GetHeight();
+            scissorRect.extent.width = renderPassCmd->width;
+            scissorRect.extent.height = renderPassCmd->height;
             device->fn.CmdSetScissor(commands, 0, 1, &scissorRect);
         }
 
@@ -337,6 +432,53 @@ namespace dawn_native { namespace vulkan {
                                               draw->firstInstance);
                 } break;
 
+                case Command::InsertDebugMarker: {
+                    if (device->GetDeviceInfo().debugMarker) {
+                        InsertDebugMarkerCmd* cmd = mCommands.NextCommand<InsertDebugMarkerCmd>();
+                        const char* label = mCommands.NextData<char>(cmd->length + 1);
+                        VkDebugMarkerMarkerInfoEXT markerInfo;
+                        markerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_MARKER_INFO_EXT;
+                        markerInfo.pNext = nullptr;
+                        markerInfo.pMarkerName = label;
+                        // Default color to black
+                        markerInfo.color[0] = 0.0;
+                        markerInfo.color[1] = 0.0;
+                        markerInfo.color[2] = 0.0;
+                        markerInfo.color[3] = 1.0;
+                        device->fn.CmdDebugMarkerInsertEXT(commands, &markerInfo);
+                    } else {
+                        SkipCommand(&mCommands, Command::InsertDebugMarker);
+                    }
+                } break;
+
+                case Command::PopDebugGroup: {
+                    if (device->GetDeviceInfo().debugMarker) {
+                        mCommands.NextCommand<PopDebugGroupCmd>();
+                        device->fn.CmdDebugMarkerEndEXT(commands);
+                    } else {
+                        SkipCommand(&mCommands, Command::PopDebugGroup);
+                    }
+                } break;
+
+                case Command::PushDebugGroup: {
+                    if (device->GetDeviceInfo().debugMarker) {
+                        PushDebugGroupCmd* cmd = mCommands.NextCommand<PushDebugGroupCmd>();
+                        const char* label = mCommands.NextData<char>(cmd->length + 1);
+                        VkDebugMarkerMarkerInfoEXT markerInfo;
+                        markerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_MARKER_INFO_EXT;
+                        markerInfo.pNext = nullptr;
+                        markerInfo.pMarkerName = label;
+                        // Default color to black
+                        markerInfo.color[0] = 0.0;
+                        markerInfo.color[1] = 0.0;
+                        markerInfo.color[2] = 0.0;
+                        markerInfo.color[3] = 1.0;
+                        device->fn.CmdDebugMarkerBeginEXT(commands, &markerInfo);
+                    } else {
+                        SkipCommand(&mCommands, Command::PushDebugGroup);
+                    }
+                } break;
+
                 case Command::SetBindGroup: {
                     SetBindGroupCmd* cmd = mCommands.NextCommand<SetBindGroupCmd>();
                     VkDescriptorSet set = ToBackend(cmd->group.Get())->GetHandle();
@@ -347,10 +489,10 @@ namespace dawn_native { namespace vulkan {
                 case Command::SetBlendColor: {
                     SetBlendColorCmd* cmd = mCommands.NextCommand<SetBlendColorCmd>();
                     float blendConstants[4] = {
-                        cmd->r,
-                        cmd->g,
-                        cmd->b,
-                        cmd->a,
+                        cmd->color.r,
+                        cmd->color.g,
+                        cmd->color.b,
+                        cmd->color.a,
                     };
                     device->fn.CmdSetBlendConstants(commands, blendConstants);
                 } break;

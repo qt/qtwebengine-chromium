@@ -709,14 +709,13 @@ void MergeOnBeforeSendHeadersResponses(
     net::HttpRequestHeaders* request_headers,
     IgnoredActions* ignored_actions,
     extensions::WebRequestInfo::Logger* logger,
+    std::set<std::string>* removed_headers,
+    std::set<std::string>* set_headers,
     bool* request_headers_modified) {
   DCHECK(request_headers_modified);
+  DCHECK(removed_headers->empty());
+  DCHECK(set_headers->empty());
   *request_headers_modified = false;
-
-  // Here we collect which headers we have removed or set to new values
-  // so far due to extensions of higher precedence.
-  std::set<std::string> removed_headers;
-  std::set<std::string> set_headers;
 
   // We assume here that the deltas are sorted in decreasing extension
   // precedence (i.e. decreasing extension installation time).
@@ -739,14 +738,14 @@ void MergeOnBeforeSendHeadersResponses(
         const std::string& value = modification.value();
 
         // We must not delete anything that has been modified before.
-        if (removed_headers.find(key) != removed_headers.end() &&
+        if (removed_headers->find(key) != removed_headers->end() &&
             !extension_conflicts) {
           extension_conflicts = true;
         }
 
         // We must not modify anything that has been set to a *different*
         // value before.
-        if (set_headers.find(key) != set_headers.end() &&
+        if (set_headers->find(key) != set_headers->end() &&
             !extension_conflicts) {
           std::string current_value;
           if (!request_headers->GetHeader(key, &current_value) ||
@@ -763,7 +762,7 @@ void MergeOnBeforeSendHeadersResponses(
       for (auto key = delta.deleted_request_headers.begin();
            key != delta.deleted_request_headers.end() && !extension_conflicts;
            ++key) {
-        if (set_headers.find(*key) != set_headers.end()) {
+        if (set_headers->find(*key) != set_headers->end()) {
           std::string current_value;
           request_headers->GetHeader(*key, &current_value);
           extension_conflicts = true;
@@ -780,14 +779,14 @@ void MergeOnBeforeSendHeadersResponses(
         net::HttpRequestHeaders::Iterator modification(
             delta.modified_request_headers);
         while (modification.GetNext())
-          set_headers.insert(modification.name());
+          set_headers->insert(modification.name());
       }
 
       // Perform all deletions and record which keys were deleted.
       {
         for (const auto& header : delta.deleted_request_headers) {
           request_headers->RemoveHeader(header);
-          removed_headers.insert(header);
+          removed_headers->insert(header);
         }
       }
       logger->LogEvent(net::NetLogEventType::CHROME_EXTENSION_MODIFIED_HEADERS,
@@ -815,7 +814,7 @@ void MergeOnBeforeSendHeadersResponses(
           {"referer", WebRequestSpecialRequestHeaderModification::kReferer},
       };
   int special_headers_removed = 0;
-  for (const auto& header : removed_headers) {
+  for (const auto& header : *removed_headers) {
     auto it = kHeaderMap.find(base::ToLowerASCII(header));
     if (it != kHeaderMap.end()) {
       special_headers_removed++;
@@ -831,7 +830,7 @@ void MergeOnBeforeSendHeadersResponses(
   }
 
   int special_headers_changed = 0;
-  for (const auto& header : set_headers) {
+  for (const auto& header : *set_headers) {
     auto it = kHeaderMap.find(base::ToLowerASCII(header));
     if (it != kHeaderMap.end()) {
       special_headers_changed++;
@@ -889,7 +888,7 @@ static bool ApplyResponseCookieModification(const ResponseCookie& modification,
   if (modification.expires.has_value())
     modified |= cookie->SetExpires(*modification.expires);
   if (modification.max_age.has_value())
-    modified |= cookie->SetMaxAge(base::IntToString(*modification.max_age));
+    modified |= cookie->SetMaxAge(base::NumberToString(*modification.max_age));
   if (modification.domain.has_value())
     modified |= cookie->SetDomain(*modification.domain);
   if (modification.path.has_value())
@@ -921,7 +920,7 @@ static bool DoesResponseCookieMatchFilter(
   if (filter->max_age) {
     std::string actual_value =
         cookie.HasMaxAge() ? cookie.MaxAge() : std::string();
-    if (actual_value != base::IntToString(*filter->max_age))
+    if (actual_value != base::NumberToString(*filter->max_age))
       return false;
   }
   if (filter->domain) {
@@ -1236,7 +1235,7 @@ void ClearCacheOnNavigation() {
     ClearCacheOnNavigationOnUI();
   } else {
     base::PostTaskWithTraits(FROM_HERE, {content::BrowserThread::UI},
-                             base::Bind(&ClearCacheOnNavigationOnUI));
+                             base::BindOnce(&ClearCacheOnNavigationOnUI));
   }
 }
 

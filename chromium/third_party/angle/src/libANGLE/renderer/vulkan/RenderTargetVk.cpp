@@ -16,11 +16,8 @@
 
 namespace rx
 {
-RenderTargetVk::RenderTargetVk(vk::ImageHelper *image,
-                               vk::ImageView *imageView,
-                               size_t layerIndex,
-                               TextureVk *owner)
-    : mImage(image), mImageView(imageView), mLayerIndex(layerIndex), mOwner(owner)
+RenderTargetVk::RenderTargetVk()
+    : mImage(nullptr), mImageView(nullptr), mLevelIndex(0), mLayerIndex(0), mOwner(nullptr)
 {}
 
 RenderTargetVk::~RenderTargetVk() {}
@@ -28,9 +25,32 @@ RenderTargetVk::~RenderTargetVk() {}
 RenderTargetVk::RenderTargetVk(RenderTargetVk &&other)
     : mImage(other.mImage),
       mImageView(other.mImageView),
+      mLevelIndex(other.mLevelIndex),
       mLayerIndex(other.mLayerIndex),
       mOwner(other.mOwner)
 {}
+
+void RenderTargetVk::init(vk::ImageHelper *image,
+                          vk::ImageView *imageView,
+                          size_t levelIndex,
+                          size_t layerIndex,
+                          TextureVk *owner)
+{
+    mImage      = image;
+    mImageView  = imageView;
+    mLevelIndex = levelIndex;
+    mLayerIndex = layerIndex;
+    mOwner      = owner;
+}
+
+void RenderTargetVk::reset()
+{
+    mImage      = nullptr;
+    mImageView  = nullptr;
+    mLevelIndex = 0;
+    mLayerIndex = 0;
+    mOwner      = nullptr;
+}
 
 void RenderTargetVk::onColorDraw(vk::FramebufferHelper *framebufferVk,
                                  vk::CommandBuffer *commandBuffer,
@@ -43,10 +63,8 @@ void RenderTargetVk::onColorDraw(vk::FramebufferHelper *framebufferVk,
     renderPassDesc->packAttachment(mImage->getFormat());
 
     // TODO(jmadill): Use automatic layout transition. http://anglebug.com/2361
-    mImage->changeLayoutWithStages(VK_IMAGE_ASPECT_COLOR_BIT,
-                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                   VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, commandBuffer);
+    mImage->changeLayout(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment,
+                         commandBuffer);
 
     // Set up dependencies between the RT resource and the Framebuffer.
     mImage->addWriteDependency(framebufferVk);
@@ -66,9 +84,7 @@ void RenderTargetVk::onDepthStencilDraw(vk::FramebufferHelper *framebufferVk,
     const angle::Format &format    = mImage->getFormat().textureFormat();
     VkImageAspectFlags aspectFlags = vk::GetDepthStencilAspectFlags(format);
 
-    mImage->changeLayoutWithStages(aspectFlags, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                                   VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, commandBuffer);
+    mImage->changeLayout(aspectFlags, vk::ImageLayout::DepthStencilAttachment, commandBuffer);
 
     // Set up dependencies between the RT resource and the Framebuffer.
     mImage->addWriteDependency(framebufferVk);
@@ -118,17 +134,29 @@ void RenderTargetVk::updateSwapchainImage(vk::ImageHelper *image, vk::ImageView 
 }
 
 vk::ImageHelper *RenderTargetVk::getImageForRead(vk::CommandGraphResource *readingResource,
-                                                 VkImageLayout layout,
+                                                 vk::ImageLayout layout,
                                                  vk::CommandBuffer *commandBuffer)
 {
     ASSERT(mImage && mImage->valid());
 
     // TODO(jmadill): Better simultaneous resource access. http://anglebug.com/2679
+    //
+    // A better alternative would be:
+    //
+    // if (mImage->isLayoutChangeNecessary(layout)
+    // {
+    //     vk::CommandBuffer *srcLayoutChange;
+    //     ANGLE_TRY(mImage->recordCommands(contextVk, &srcLayoutChange));
+    //     mImage->changeLayout(mImage->getAspectFlags(), layout, srcLayoutChange);
+    // }
+    // mImage->addReadDependency(readingResource);
+    //
+    // I.e. the transition should happen on a node generated from mImage itself.
+    // However, this needs context to be available here, or all call sites changed
+    // to perform the layout transition and set the dependency.
     mImage->addWriteDependency(readingResource);
 
-    mImage->changeLayoutWithStages(mImage->getAspectFlags(), layout,
-                                   VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                   VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, commandBuffer);
+    mImage->changeLayout(mImage->getAspectFlags(), layout, commandBuffer);
 
     return mImage;
 }

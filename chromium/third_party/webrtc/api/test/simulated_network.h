@@ -61,6 +61,10 @@ struct BuiltInNetworkBehaviorConfig {
   bool allow_reordering = false;
   // The average length of a burst of lost packets.
   int avg_burst_loss_length = -1;
+  // Additional bytes to add to packet size.
+  int packet_overhead = 0;
+  // Enable CoDel active queue management.
+  bool codel_active_queue_management = false;
 };
 
 class NetworkBehaviorInterface {

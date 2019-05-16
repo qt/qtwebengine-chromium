@@ -71,16 +71,16 @@ namespace dawn_native { namespace d3d12 {
 
             D3D12_INPUT_ELEMENT_DESC& inputElementDescriptor = mInputElementDescriptors[count++];
 
-            const AttributeInfo& attribute = GetAttribute(i);
+            const VertexAttributeDescriptor& attribute = GetAttribute(i);
 
             // If the HLSL semantic is TEXCOORDN the SemanticName should be "TEXCOORD" and the
             // SemanticIndex N
             inputElementDescriptor.SemanticName = "TEXCOORD";
             inputElementDescriptor.SemanticIndex = static_cast<uint32_t>(i);
             inputElementDescriptor.Format = VertexFormatType(attribute.format);
-            inputElementDescriptor.InputSlot = attribute.bindingSlot;
+            inputElementDescriptor.InputSlot = attribute.inputSlot;
 
-            const InputInfo& input = GetInput(attribute.bindingSlot);
+            const VertexInputDescriptor& input = GetInput(attribute.inputSlot);
 
             inputElementDescriptor.AlignedByteOffset = attribute.offset;
             inputElementDescriptor.InputSlotClass = InputStepModeFunction(input.stepMode);

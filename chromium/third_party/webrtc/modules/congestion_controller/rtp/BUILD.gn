@@ -64,6 +64,7 @@ rtc_static_library("transport_feedback") {
     "../../../rtc_base:rtc_base_approved",
     "../../../rtc_base/network:sent_packet",
     "../../../system_wrappers",
+    "../../../system_wrappers:field_trial",
     "../../rtp_rtcp:rtp_rtcp_format",
   ]
 }
@@ -98,9 +99,5 @@ if (rtc_include_tests) {
       "../../rtp_rtcp:rtp_rtcp_format",
       "//testing/gmock",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 }

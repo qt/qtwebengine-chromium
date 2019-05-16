@@ -1123,12 +1123,13 @@ void GenerateCaps(const FunctionsGL *functions,
                                      functions->hasGLESExtension("GL_OES_texture_border_clamp") ||
                                      functions->hasGLESExtension("GL_EXT_texture_border_clamp") ||
                                      functions->hasGLESExtension("GL_NV_texture_border_clamp");
-    extensions->instancedArrays = functions->isAtLeastGL(gl::Version(3, 1)) ||
-                                  (functions->hasGLExtension("GL_ARB_instanced_arrays") &&
-                                   (functions->hasGLExtension("GL_ARB_draw_instanced") ||
-                                    functions->hasGLExtension("GL_EXT_draw_instanced"))) ||
-                                  functions->isAtLeastGLES(gl::Version(3, 0)) ||
-                                  functions->hasGLESExtension("GL_EXT_instanced_arrays");
+    extensions->instancedArraysANGLE = functions->isAtLeastGL(gl::Version(3, 1)) ||
+                                       (functions->hasGLExtension("GL_ARB_instanced_arrays") &&
+                                        (functions->hasGLExtension("GL_ARB_draw_instanced") ||
+                                         functions->hasGLExtension("GL_EXT_draw_instanced"))) ||
+                                       functions->isAtLeastGLES(gl::Version(3, 0)) ||
+                                       functions->hasGLESExtension("GL_EXT_instanced_arrays");
+    extensions->instancedArraysEXT = extensions->instancedArraysANGLE;
     extensions->unpackSubimage = functions->standard == STANDARD_GL_DESKTOP ||
                                  functions->isAtLeastGLES(gl::Version(3, 0)) ||
                                  functions->hasGLESExtension("GL_EXT_unpack_subimage");
@@ -1343,6 +1344,11 @@ void GenerateCaps(const FunctionsGL *functions,
         // for more information about this limitation.
         extensions->maxDualSourceDrawBuffers = 1;
     }
+
+    // EXT_float_blend
+    // Assume all desktop driver supports this by default.
+    extensions->floatBlend = functions->standard == STANDARD_GL_DESKTOP ||
+                             functions->hasGLESExtension("GL_EXT_float_blend");
 
     // GL_CHROMIUM_compressed_texture_etc
     // Expose this extension only when we support the formats or we're running on top of a native

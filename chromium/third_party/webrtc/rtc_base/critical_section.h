@@ -34,7 +34,7 @@
 #endif
 
 // See notes in the 'Performance' unit test for the effects of this flag.
-#define USE_NATIVE_MUTEX_ON_MAC 0
+#define USE_NATIVE_MUTEX_ON_MAC 1
 
 #if defined(WEBRTC_MAC) && !USE_NATIVE_MUTEX_ON_MAC
 #include <dispatch/dispatch.h>
@@ -52,7 +52,7 @@ namespace rtc {
 
 // Locking methods (Enter, TryEnter, Leave)are const to permit protecting
 // members inside a const context without requiring mutable CriticalSections
-// everywhere.
+// everywhere. CriticalSection is reentrant lock.
 class RTC_LOCKABLE CriticalSection {
  public:
   CriticalSection();

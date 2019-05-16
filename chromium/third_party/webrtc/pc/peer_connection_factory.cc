@@ -15,7 +15,6 @@
 
 #include "absl/memory/memory.h"
 #include "api/fec_controller.h"
-#include "api/media_constraints_interface.h"
 #include "api/media_stream_proxy.h"
 #include "api/media_stream_track_proxy.h"
 #include "api/media_transport_interface.h"
@@ -29,19 +28,12 @@
 #include "pc/rtp_parameters_conversion.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
-// Adding 'nogncheck' to disable the gn include headers check to support modular
-// WebRTC build targets.
-// TODO(zhihuang): This wouldn't be necessary if the interface and
-// implementation of the media engine were in separate build targets.
-#include "media/engine/webrtc_media_engine.h"           // nogncheck
-#include "modules/audio_device/include/audio_device.h"  // nogncheck
 #include "p2p/base/basic_packet_socket_factory.h"
 #include "p2p/client/basic_port_allocator.h"
 #include "pc/audio_track.h"
 #include "pc/local_audio_source.h"
 #include "pc/media_stream.h"
 #include "pc/peer_connection.h"
-#include "pc/video_capturer_track_source.h"
 #include "pc/video_track.h"
 #include "system_wrappers/include/field_trial.h"
 
@@ -293,29 +285,6 @@ PeerConnectionFactory::CreateAudioSource(const cricket::AudioOptions& options) {
   return source;
 }
 
-rtc::scoped_refptr<VideoTrackSourceInterface>
-PeerConnectionFactory::CreateVideoSource(
-    std::unique_ptr<cricket::VideoCapturer> capturer,
-    const MediaConstraintsInterface* constraints) {
-  RTC_DCHECK(signaling_thread_->IsCurrent());
-  rtc::scoped_refptr<VideoTrackSourceInterface> source(
-      VideoCapturerTrackSource::Create(worker_thread_, std::move(capturer),
-                                       constraints, false));
-  return VideoTrackSourceProxy::Create(signaling_thread_, worker_thread_,
-                                       source);
-}
-
-rtc::scoped_refptr<VideoTrackSourceInterface>
-PeerConnectionFactory::CreateVideoSource(
-    std::unique_ptr<cricket::VideoCapturer> capturer) {
-  RTC_DCHECK(signaling_thread_->IsCurrent());
-  rtc::scoped_refptr<VideoTrackSourceInterface> source(
-      VideoCapturerTrackSource::Create(worker_thread_, std::move(capturer),
-                                       false));
-  return VideoTrackSourceProxy::Create(signaling_thread_, worker_thread_,
-                                       source);
-}
-
 bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file,
                                          int64_t max_size_bytes) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
@@ -425,20 +394,6 @@ PeerConnectionFactory::CreateSctpTransportInternalFactory() {
 
 cricket::ChannelManager* PeerConnectionFactory::channel_manager() {
   return channel_manager_.get();
-}
-
-rtc::Thread* PeerConnectionFactory::signaling_thread() {
-  // This method can be called on a different thread when the factory is
-  // created in CreatePeerConnectionFactory().
-  return signaling_thread_;
-}
-
-rtc::Thread* PeerConnectionFactory::worker_thread() {
-  return worker_thread_;
-}
-
-rtc::Thread* PeerConnectionFactory::network_thread() {
-  return network_thread_;
 }
 
 std::unique_ptr<RtcEventLog> PeerConnectionFactory::CreateRtcEventLog_w() {

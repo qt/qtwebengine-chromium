@@ -8,7 +8,11 @@
 #include "SkGlyphRunPainter.h"
 
 #if SK_SUPPORT_GPU
+#include "GrCaps.h"
 #include "GrColorSpaceInfo.h"
+#include "GrContextPriv.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContext.h"
 #include "SkGr.h"
 #include "text/GrTextBlobCache.h"
@@ -25,6 +29,7 @@
 #include "SkPathEffect.h"
 #include "SkRasterClip.h"
 #include "SkRemoteGlyphCacheImpl.h"
+#include "SkStrikeInterface.h"
 #include "SkStrike.h"
 #include "SkStrikeCache.h"
 #include "SkTDArray.h"
@@ -71,31 +76,40 @@ bool SkStrikeCommon::GlyphTooBigForAtlas(const SkGlyph& glyph) {
 }
 
 // -- SkGlyphRunListPainter ------------------------------------------------------------------------
-SkGlyphRunListPainter::SkGlyphRunListPainter(
-        const SkSurfaceProps& props, SkColorType colorType, SkScalerContextFlags flags)
+SkGlyphRunListPainter::SkGlyphRunListPainter(const SkSurfaceProps& props,
+                                             SkColorType colorType,
+                                             SkScalerContextFlags flags,
+                                             SkStrikeCacheInterface* strikeCache)
         : fDeviceProps{props}
-        , fBitmapFallbackProps{SkSurfaceProps{props.flags(), kUnknown_SkPixelGeometry}}
-        , fColorType{colorType}
-        , fScalerContextFlags{flags} {}
-
-#if SK_SUPPORT_GPU
+        ,  fBitmapFallbackProps{SkSurfaceProps{props.flags(), kUnknown_SkPixelGeometry}}
+        ,  fColorType{colorType}, fScalerContextFlags{flags}
+        ,  fStrikeCache{strikeCache} {}
 
 // TODO: unify with code in GrTextContext.cpp
-static SkScalerContextFlags compute_scaler_context_flags(
-        const GrColorSpaceInfo& colorSpaceInfo) {
+static SkScalerContextFlags compute_scaler_context_flags(const SkColorSpace* cs) {
     // If we're doing linear blending, then we can disable the gamma hacks.
     // Otherwise, leave them on. In either case, we still want the contrast boost:
     // TODO: Can we be even smarter about mask gamma based on the dest transfer function?
-    if (colorSpaceInfo.isLinearlyBlended()) {
+    if (cs && cs->gammaIsLinear()) {
         return SkScalerContextFlags::kBoostContrast;
     } else {
         return SkScalerContextFlags::kFakeGammaAndBoostContrast;
     }
 }
 
-SkGlyphRunListPainter::SkGlyphRunListPainter(
-        const SkSurfaceProps& props, const GrColorSpaceInfo& csi)
-        : SkGlyphRunListPainter(props, kUnknown_SkColorType, compute_scaler_context_flags(csi)) {}
+SkGlyphRunListPainter::SkGlyphRunListPainter(const SkSurfaceProps& props,
+                                             SkColorType colorType,
+                                             SkColorSpace* cs,
+                                             SkStrikeCacheInterface* strikeCache)
+        : SkGlyphRunListPainter(props, colorType, compute_scaler_context_flags(cs), strikeCache) {}
+
+#if SK_SUPPORT_GPU
+SkGlyphRunListPainter::SkGlyphRunListPainter(const SkSurfaceProps& props,
+                                             const GrColorSpaceInfo& csi)
+        : SkGlyphRunListPainter(props,
+                                kUnknown_SkColorType,
+                                compute_scaler_context_flags(csi.colorSpace()),
+                                SkStrikeCache::GlobalStrikeCache()) {}
 
 SkGlyphRunListPainter::SkGlyphRunListPainter(const GrRenderTargetContext& rtc)
         : SkGlyphRunListPainter{rtc.surfaceProps(), rtc.colorSpaceInfo()} {}
@@ -253,9 +267,14 @@ void SkGlyphRunListPainter::drawForBitmapDevice(
 //   transformations from the view matrix. Calculate a text scale based on that reduction. This
 //   scale factor is used to increase the size of the destination rectangles. The destination
 //   rectangles are then scaled, rotated, etc. by the GPU using the view matrix.
-void SkGlyphRunListPainter::processARGBFallback(
-        SkScalar maxGlyphDimension, const SkPaint& runPaint, const SkFont& runFont,
-        const SkMatrix& viewMatrix, SkScalar textScale, ARGBFallback argbFallback) {
+template<typename ProcessDeviceT, typename ProcessSourceT>
+void SkGlyphRunListPainter::processARGBFallback(SkScalar maxGlyphDimension,
+                                                const SkPaint& runPaint,
+                                                const SkFont& runFont,
+                                                const SkMatrix& viewMatrix,
+                                                SkScalar textScale,
+                                                ProcessDeviceT&& processDevice,
+                                                ProcessSourceT&& processSource) {
     SkASSERT(!fARGBGlyphsIDs.empty());
 
     SkScalar maxScale = viewMatrix.getMaxScale();
@@ -265,11 +284,11 @@ void SkGlyphRunListPainter::processARGBFallback(
     SkScalar conservativeMaxGlyphDimension = maxGlyphDimension * textScale * maxScale;
 
     // If the situation that the matrix is simple, and all the glyphs are small enough. Go fast!
+    // N.B. If the matrix has scale, that will be reflected in the strike through the viewMatrix
+    // in the useFastPath case.
     bool useFastPath =
             viewMatrix.isScaleTranslate()
             && conservativeMaxGlyphDimension <= SkStrikeCommon::kSkSideTooBigForAtlas;
-
-    auto glyphIDs = SkSpan<const SkGlyphID>{fARGBGlyphsIDs};
 
     // A scaled and translated transform is the common case, and is handled directly in fallback.
     // Even if the transform is scale and translate, fallback must be careful to use glyphs that
@@ -283,14 +302,24 @@ void SkGlyphRunListPainter::processARGBFallback(
             point.fY =  SkScalarFloorToScalar(point.fY);
         }
 
-        auto positions = SkSpan<const SkPoint>{fARGBPositions};
-        argbFallback(runPaint,
-                     runFont,
-                     glyphIDs,
-                     positions,
-                     SK_Scalar1,
-                     viewMatrix,
-                     kTransformDone);
+        SkAutoDescriptor ad;
+        SkScalerContextEffects effects;
+        SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
+                runFont, runPaint, fDeviceProps, fScalerContextFlags, viewMatrix, &ad, &effects);
+
+        SkScopedStrike strike =
+                fStrikeCache->findOrCreateScopedStrike(
+                        *ad.getDesc(), effects, *runFont.getTypefaceOrDefault());
+
+        SkPoint* posCursor = fARGBPositions.data();
+        int glyphCount = 0;
+        for (SkGlyphID glyphID : fARGBGlyphsIDs) {
+            SkPoint pos = *posCursor++;
+            const SkGlyph& glyph = strike->getGlyphMetrics(glyphID, pos);
+            fGlyphPos[glyphCount++] = {&glyph, pos};
+        }
+
+        processDevice(SkSpan<const GlyphAndPos>{fGlyphPos, SkTo<size_t>(glyphCount)}, strike.get());
 
     } else {
         // If the matrix is complicated or if scaling is used to fit the glyphs in the cache,
@@ -318,163 +347,248 @@ void SkGlyphRunListPainter::processARGBFallback(
 
         SkFont fallbackFont{runFont};
         fallbackFont.setSize(fallbackTextSize);
+
+        // The scale factor to go from strike size to the source size for glyphs.
         SkScalar fallbackTextScale = runFontTextSize / fallbackTextSize;
-        auto positions = SkSpan<const SkPoint>{fARGBPositions};
-        argbFallback(runPaint,
-                     fallbackFont,
-                     glyphIDs,
-                     positions,
-                     fallbackTextScale,
-                     SkMatrix::I(),
-                     kDoTransform);
+
+        SkAutoDescriptor ad;
+        SkScalerContextEffects effects;
+        SkScalerContext::CreateDescriptorAndEffectsUsingPaint(fallbackFont,
+                                                              runPaint,
+                                                              fDeviceProps,
+                                                              fScalerContextFlags,
+                                                              SkMatrix::I(),
+                                                              &ad,
+                                                              &effects);
+
+        SkScopedStrike strike =
+                fStrikeCache->findOrCreateScopedStrike(
+                        *ad.getDesc(), effects, *fallbackFont.getTypefaceOrDefault());
+
+        SkPoint* posCursor = fARGBPositions.data();
+        int glyphCount = 0;
+        for (SkGlyphID glyphID : fARGBGlyphsIDs) {
+            SkPoint pos = *posCursor++;
+            const SkGlyph& glyph = strike->getGlyphMetrics(glyphID, pos);
+            fGlyphPos[glyphCount++] = {&glyph, pos};
+        }
+
+        processSource(SkSpan<const GlyphAndPos>{fGlyphPos, SkTo<size_t>(glyphCount)},
+                      strike.get(),
+                      fallbackTextScale,
+                      viewMatrix.hasPerspective());
     }
 }
 
 // Beware! The following code will end up holding two glyph caches at the same time, but they
 // will not be the same cache (which would cause two separate caches to be created).
-template <typename PerEmptyT, typename PerPathT>
+template<typename ProcessPathsT, typename ProcessDeviceT, typename ProcessSourceT>
 void SkGlyphRunListPainter::drawGlyphRunAsPathWithARGBFallback(
-        SkStrikeInterface* pathCache, const SkGlyphRun& glyphRun,
-        SkPoint origin, const SkPaint& runPaint, const SkMatrix& viewMatrix, SkScalar textScale,
-        PerEmptyT&& perEmpty, PerPathT&& perPath, ARGBFallback&& argbFallback) {
+        const SkPaint& runPaint, const SkFont& runFont,
+        const SkGlyphRun& glyphRun, SkPoint origin, const SkMatrix& viewMatrix,
+        ProcessPathsT&& processPaths, ProcessDeviceT&& processDevice,
+        ProcessSourceT&& processSource) {
     fARGBGlyphsIDs.clear();
     fARGBPositions.clear();
+    ScopedBuffers _ = this->ensureBuffers(glyphRun);
     SkScalar maxFallbackDimension{-SK_ScalarInfinity};
 
-    const SkPoint* positionCursor = glyphRun.positions().data();
-    for (auto glyphID : glyphRun.glyphsIDs()) {
-        SkPoint glyphPos = origin + *positionCursor++;
-        const SkGlyph& glyph = pathCache->getGlyphMetrics(glyphID, {0, 0});
-        if (glyph.isEmpty()) {
-            perEmpty(glyph, glyphPos);
-        } else if (glyph.fMaskFormat != SkMask::kARGB32_Format) {
-            if (pathCache->hasPath(glyph)) {
-                perPath(glyph, glyphPos);
-            } else {
-                perEmpty(glyph, glyphPos);
+    // setup our std runPaint, in hopes of getting hits in the cache
+    SkPaint pathPaint{runPaint};
+    SkFont pathFont{runFont};
+
+    // The factor to get from the size stored in the strike to the size needed for the source.
+    SkScalar strikeToSourceRatio = pathFont.setupForAsPaths(&pathPaint);
+
+    SkAutoDescriptor ad;
+    SkScalerContextEffects effects;
+    SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
+            pathFont, pathPaint, fDeviceProps, fScalerContextFlags, SkMatrix::I(), &ad, &effects);
+
+    {
+        SkScopedStrike strike =
+                fStrikeCache->findOrCreateScopedStrike(
+                        *ad.getDesc(), effects,*pathFont.getTypefaceOrDefault());
+
+        int glyphCount = 0;
+        const SkPoint* positionCursor = glyphRun.positions().data();
+        for (auto glyphID : glyphRun.glyphsIDs()) {
+            SkPoint glyphPos = origin + *positionCursor++;
+
+            // Use outline from {0, 0} because all transforms including subpixel translation happen
+            // during drawing.
+            const SkGlyph& glyph = strike->getGlyphMetrics(glyphID, {0, 0});
+            if (!glyph.isEmpty()) {
+                if (glyph.fMaskFormat != SkMask::kARGB32_Format) {
+                    if (strike->decideCouldDrawFromPath(glyph)) {
+                        fGlyphPos[glyphCount++] = {&glyph, glyphPos};
+                    }
+                } else {
+                    SkScalar largestDimension = std::max(glyph.fWidth, glyph.fHeight);
+                    maxFallbackDimension = std::max(maxFallbackDimension, largestDimension);
+                    fARGBGlyphsIDs.push_back(glyphID);
+                    fARGBPositions.push_back(glyphPos);
+                }
             }
-        } else {
-            SkScalar largestDimension = std::max(glyph.fWidth, glyph.fHeight);
-            maxFallbackDimension = std::max(maxFallbackDimension, largestDimension);
-            fARGBGlyphsIDs.push_back(glyphID);
-            fARGBPositions.push_back(glyphPos);
+        }
+
+        if (glyphCount > 0) {
+            processPaths(SkSpan<const GlyphAndPos>{fGlyphPos, SkTo<size_t>(glyphCount)},
+                         strike.get(),
+                         strikeToSourceRatio);
         }
     }
 
-    if (!fARGBGlyphsIDs.empty()) {
-        this->processARGBFallback(
-                maxFallbackDimension, runPaint, glyphRun.font(), viewMatrix, textScale,
-                std::move(argbFallback));
-
+    {
+        // fGlyphPos will be reused here.
+        if (!fARGBGlyphsIDs.empty()) {
+            this->processARGBFallback(
+                    maxFallbackDimension, runPaint, glyphRun.font(), viewMatrix,
+                    strikeToSourceRatio,
+                    std::forward<ProcessDeviceT>(processDevice),
+                    std::forward<ProcessSourceT>(processSource));
+        }
     }
 }
 
-template <typename EmptiesT, typename MasksT, typename PathsT>
+template <typename MasksT, typename PathsT>
 void SkGlyphRunListPainter::drawGlyphRunAsBMPWithPathFallback(
-        SkStrikeInterface* cache, const SkGlyphRun& glyphRun,
-        SkPoint origin, const SkMatrix& deviceMatrix,
-        EmptiesT&& processEmpties, MasksT&& processMasks, PathsT&& processPaths) {
-    ScopedBuffers _ = this->ensureBuffers(glyphRun);
+        const SkPaint& paint, const SkFont& font,
+        const SkGlyphRun& glyphRun, SkPoint origin, const SkMatrix& deviceMatrix,
+        MasksT&& processMasks, PathsT&& processPaths) {
 
-    int glyphCount = 0;
-    // Four empty glyphs are expected; one for each horizontal subpixel position.
-    SkSTArray<4, const SkGlyph*> emptyGlyphs;
+    SkAutoDescriptor ad;
+    SkScalerContextEffects effects;
+
+    SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
+            font, paint, fDeviceProps, fScalerContextFlags, deviceMatrix, &ad, &effects);
+
+    SkTypeface* typeface = font.getTypefaceOrDefault();
+    SkScopedStrike strike =
+            fStrikeCache->findOrCreateScopedStrike(*ad.getDesc(), effects, *typeface);
+
+    ScopedBuffers _ = this->ensureBuffers(glyphRun);
 
     SkMatrix mapping = deviceMatrix;
     mapping.preTranslate(origin.x(), origin.y());
-    SkVector rounding = cache->rounding();
+    SkVector rounding = strike->rounding();
     mapping.postTranslate(rounding.x(), rounding.y());
     mapping.mapPoints(fPositions,  glyphRun.positions().data(), glyphRun.runSize());
 
+    int glyphCount = 0;
     const SkPoint* posCursor = fPositions;
     for (auto glyphID : glyphRun.glyphsIDs()) {
         SkPoint mappedPt = *posCursor++;
 
-        if (std::any_of(emptyGlyphs.begin(), emptyGlyphs.end(),
-                        [glyphID](const SkGlyph* g) { return g->getGlyphID() == glyphID; })) {
-            continue;
-        }
-
         if (SkScalarsAreFinite(mappedPt.x(), mappedPt.y())) {
-            const SkGlyph& glyph = cache->getGlyphMetrics(glyphID, mappedPt);
-            if (glyph.isEmpty()) {
-                emptyGlyphs.push_back(&glyph);
-            } else if (SkStrikeCommon::GlyphTooBigForAtlas(glyph)) {
-                if (cache->hasPath(glyph)) {
-                    fPaths.push_back({&glyph, mappedPt});
+            const SkGlyph& glyph = strike->getGlyphMetrics(glyphID, mappedPt);
+            if (!glyph.isEmpty()) {
+                if (SkStrikeCommon::GlyphTooBigForAtlas(glyph)) {
+                    if (strike->decideCouldDrawFromPath(glyph)) {
+                        fPaths.push_back({&glyph, mappedPt});
+                    }
                 } else {
-                    // This happens when a bitmap-only font is forced to scale very large. This
-                    // doesn't happen in practice.
-                    emptyGlyphs.push_back(&glyph);
-                }
-            } else {
-                if (cache->hasImage(glyph)) {
-                    fMasks[glyphCount++] = {&glyph, mappedPt};
-                } else {
-                    // In practice, this never happens.
-                    emptyGlyphs.push_back(&glyph);
+                    // If the glyph is not empty, then it will have a pointer to mask data.
+                    fGlyphPos[glyphCount++] = {&glyph, mappedPt};
                 }
             }
         }
     }
 
-    if (!emptyGlyphs.empty()) {
-        processEmpties(SkSpan<const SkGlyph*>{emptyGlyphs.data(), emptyGlyphs.size()});
-    }
     if (glyphCount > 0) {
         mapping.mapPoints(fPositions, glyphCount);
-        processMasks(SkSpan<const GlyphAndPos>{fMasks, SkTo<size_t>(glyphCount)});
+        processMasks(SkSpan<const GlyphAndPos>{fGlyphPos, SkTo<size_t>(glyphCount)}, strike.get());
     }
     if (!fPaths.empty()) {
         processPaths(SkSpan<const GlyphAndPos>{fPaths});
     }
 }
 
-template <typename PerEmptyT, typename PerSDFT, typename PerPathT>
+#if SK_SUPPORT_GPU
+template <typename ProcessMasksT, typename ProcessPathsT,
+          typename ProcessDeviceT, typename ProcessSourceT>
 void SkGlyphRunListPainter::drawGlyphRunAsSDFWithARGBFallback(
-        SkStrikeInterface* cache, const SkGlyphRun& glyphRun,
-        SkPoint origin, const SkPaint& runPaint, const SkMatrix& viewMatrix, SkScalar textScale,
-        PerEmptyT&& perEmpty, PerSDFT&& perSDF, PerPathT&& perPath, ARGBFallback&& argbFallback) {
+        const SkPaint& runPaint, const SkFont& runFont,
+        const SkGlyphRun& glyphRun, SkPoint origin, const SkMatrix& viewMatrix,
+        const GrTextContext::Options& options,
+        ProcessMasksT&& processMasks, ProcessPathsT&& processPaths,
+        ProcessDeviceT&& processDevice, ProcessSourceT&& processSource) {
     fARGBGlyphsIDs.clear();
     fARGBPositions.clear();
+    ScopedBuffers _ = this->ensureBuffers(glyphRun);
     SkScalar maxFallbackDimension{-SK_ScalarInfinity};
 
+    // Setup distance field runPaint and text ratio
+    SkPaint dfPaint = GrTextContext::InitDistanceFieldPaint(runPaint);
+    SkScalar textScale;
+    SkFont dfFont = GrTextContext::InitDistanceFieldFont(
+            runFont, viewMatrix, options, &textScale);
+    // Fake-gamma and subpixel antialiasing are applied in the shader, so we ignore the
+    // passed-in scaler context flags. (It's only used when we fall-back to bitmap text).
+    SkScalerContextFlags flags = SkScalerContextFlags::kNone;
+
+    SkScalar minScale, maxScale;
+    std::tie(minScale, maxScale) = GrTextContext::InitDistanceFieldMinMaxScale(
+            runFont.getSize(), viewMatrix, options);
+
+    SkAutoDescriptor ad;
+    SkScalerContextEffects effects;
+    SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
+            dfFont, dfPaint, fDeviceProps, flags, SkMatrix::I(), &ad, &effects);
+    SkScopedStrike strike =
+            fStrikeCache->findOrCreateScopedStrike(
+                    *ad.getDesc(), effects, *dfFont.getTypefaceOrDefault());
+
+    std::vector<GlyphAndPos> paths;
+
+    int glyphCount = 0;
     const SkPoint* positionCursor = glyphRun.positions().data();
     for (auto glyphID : glyphRun.glyphsIDs()) {
-        const SkGlyph& glyph = cache->getGlyphMetrics(glyphID, {0, 0});
+        const SkGlyph& glyph = strike->getGlyphMetrics(glyphID, {0, 0});
         SkPoint glyphPos = origin + *positionCursor++;
-        if (glyph.isEmpty()) {
-            perEmpty(glyph, glyphPos);
-        } else if (glyph.fMaskFormat == SkMask::kSDF_Format) {
-            if (!SkStrikeCommon::GlyphTooBigForAtlas(glyph)) {
-                // TODO: this check is probably not needed. Remove when proven.
-                if (cache->hasImage(glyph)) {
-                    perSDF(glyph, glyphPos);
+        if (!glyph.isEmpty()) {
+            if (glyph.fMaskFormat == SkMask::kSDF_Format) {
+                if (!SkStrikeCommon::GlyphTooBigForAtlas(glyph)) {
+                    // If the glyph is not empty, then it will have a pointer to SDF data.
+                    fGlyphPos[glyphCount++] = {&glyph, glyphPos};
                 } else {
-                    perEmpty(glyph, glyphPos);
+                    if (strike->decideCouldDrawFromPath(glyph)) {
+                        paths.push_back({&glyph, glyphPos});
+                    }
                 }
             } else {
-                if (cache->hasPath(glyph)) {
-                    perPath(glyph, glyphPos);
-                } else {
-                    perEmpty(glyph, glyphPos);
-                }
+                SkASSERT(glyph.fMaskFormat == SkMask::kARGB32_Format);
+                SkScalar largestDimension = std::max(glyph.fWidth, glyph.fHeight);
+                maxFallbackDimension = std::max(maxFallbackDimension, largestDimension);
+                fARGBGlyphsIDs.push_back(glyphID);
+                fARGBPositions.push_back(glyphPos);
             }
-        } else {
-            SkASSERT(glyph.fMaskFormat == SkMask::kARGB32_Format);
-            SkScalar largestDimension = std::max(glyph.fWidth, glyph.fHeight);
-            maxFallbackDimension = std::max(maxFallbackDimension, largestDimension);
-            fARGBGlyphsIDs.push_back(glyphID);
-            fARGBPositions.push_back(glyphPos);
         }
     }
 
-    if (!fARGBGlyphsIDs.empty()) {
-        this->processARGBFallback(
-                maxFallbackDimension, runPaint, glyphRun.font(), viewMatrix, textScale,
-                std::move(argbFallback));
+    if (glyphCount > 0) {
+        bool hasWCoord = viewMatrix.hasPerspective()
+                         || options.fDistanceFieldVerticesAlwaysHaveW;
+        processMasks(SkSpan<const GlyphAndPos>{fGlyphPos, SkTo<size_t>(glyphCount)},
+                strike.get(), runFont, textScale, minScale, maxScale, hasWCoord);
+    }
+
+    if (!paths.empty()) {
+        processPaths(SkSpan<const GlyphAndPos>{paths}, strike.get(), textScale);
+    }
+
+    {
+        // fGlyphPos will be reused here.
+        if (!fARGBGlyphsIDs.empty()) {
+            this->processARGBFallback(
+                    maxFallbackDimension, runPaint, glyphRun.font(), viewMatrix,
+                    textScale,
+                    std::forward<ProcessDeviceT>(processDevice),
+                    std::forward<ProcessSourceT>(processSource));
+        }
     }
 }
+#endif
 
 SkGlyphRunListPainter::ScopedBuffers
 SkGlyphRunListPainter::ensureBuffers(const SkGlyphRunList& glyphRunList) {
@@ -505,7 +619,7 @@ SkPMColor4f generate_filtered_color(const SkPaint& paint, const GrColorSpaceInfo
 }
 
 void GrTextContext::drawGlyphRunList(
-        GrContext* context, GrTextTarget* target, const GrClip& clip,
+        GrRecordingContext* context, GrTextTarget* target, const GrClip& clip,
         const SkMatrix& viewMatrix, const SkSurfaceProps& props,
         const SkGlyphRunList& glyphRunList) {
     SkPoint origin = glyphRunList.origin();
@@ -517,7 +631,7 @@ void GrTextContext::drawGlyphRunList(
     GrColor color = generate_filtered_color(listPaint, target->colorSpaceInfo()).toBytes_RGBA();
 
     // If we have been abandoned, then don't draw
-    if (context->abandoned()) {
+    if (context->priv().abandoned()) {
         return;
     }
 
@@ -529,8 +643,8 @@ void GrTextContext::drawGlyphRunList(
                                                  (mf && !as_MFB(mf)->asABlur(&blurRec)));
     SkScalerContextFlags scalerContextFlags = ComputeScalerContextFlags(target->colorSpaceInfo());
 
-    auto glyphCache = context->contextPriv().getGlyphCache();
-    GrTextBlobCache* textBlobCache = context->contextPriv().getTextBlobCache();
+    auto grStrikeCache = context->priv().getGrStrikeCache();
+    GrTextBlobCache* textBlobCache = context->priv().getTextBlobCache();
 
     sk_sp<GrTextBlob> cacheBlob;
     GrTextBlob::Key key;
@@ -563,19 +677,21 @@ void GrTextContext::drawGlyphRunList(
             // TODO we could probably get away reuse most of the time if the pointer is unique,
             // but we'd have to clear the subrun information
             textBlobCache->remove(cacheBlob.get());
-            cacheBlob = textBlobCache->makeCachedBlob(glyphRunList, key, blurRec, listPaint, color);
+            cacheBlob = textBlobCache->makeCachedBlob(
+                    glyphRunList, key, blurRec, listPaint, color, grStrikeCache);
             cacheBlob->generateFromGlyphRunList(
-                    glyphCache, *context->contextPriv().caps()->shaderCaps(), fOptions,
+                    *context->priv().caps()->shaderCaps(), fOptions,
                     listPaint, scalerContextFlags, viewMatrix, props,
                     glyphRunList, target->glyphPainter());
         } else {
             textBlobCache->makeMRU(cacheBlob.get());
 
             if (CACHE_SANITY_CHECK) {
-                sk_sp<GrTextBlob> sanityBlob(textBlobCache->makeBlob(glyphRunList, color));
+                sk_sp<GrTextBlob> sanityBlob(textBlobCache->makeBlob(
+                        glyphRunList, color, grStrikeCache));
                 sanityBlob->setupKey(key, blurRec, listPaint);
                 cacheBlob->generateFromGlyphRunList(
-                        glyphCache, *context->contextPriv().caps()->shaderCaps(), fOptions,
+                        *context->priv().caps()->shaderCaps(), fOptions,
                         listPaint, scalerContextFlags, viewMatrix, props, glyphRunList,
                         target->glyphPainter());
                 GrTextBlob::AssertEqual(*sanityBlob, *cacheBlob);
@@ -583,12 +699,13 @@ void GrTextContext::drawGlyphRunList(
         }
     } else {
         if (canCache) {
-            cacheBlob = textBlobCache->makeCachedBlob(glyphRunList, key, blurRec, listPaint, color);
+            cacheBlob = textBlobCache->makeCachedBlob(
+                    glyphRunList, key, blurRec, listPaint, color, grStrikeCache);
         } else {
-            cacheBlob = textBlobCache->makeBlob(glyphRunList, color);
+            cacheBlob = textBlobCache->makeBlob(glyphRunList, color, grStrikeCache);
         }
         cacheBlob->generateFromGlyphRunList(
-                glyphCache, *context->contextPriv().caps()->shaderCaps(), fOptions, listPaint,
+                *context->priv().caps()->shaderCaps(), fOptions, listPaint,
                 scalerContextFlags, viewMatrix, props, glyphRunList,
                 target->glyphPainter());
     }
@@ -684,8 +801,7 @@ void GrTextBlob::Run::appendSourceSpaceGlyph(const sk_sp<GrTextStrike>& strike,
     }
 }
 
-void GrTextBlob::generateFromGlyphRunList(GrStrikeCache* glyphCache,
-                                          const GrShaderCaps& shaderCaps,
+void GrTextBlob::generateFromGlyphRunList(const GrShaderCaps& shaderCaps,
                                           const GrTextContext::Options& options,
                                           const SkPaint& paint,
                                           SkScalerContextFlags scalerContextFlags,
@@ -693,187 +809,212 @@ void GrTextBlob::generateFromGlyphRunList(GrStrikeCache* glyphCache,
                                           const SkSurfaceProps& props,
                                           const SkGlyphRunList& glyphRunList,
                                           SkGlyphRunListPainter* glyphPainter) {
-    struct ARGBFallbackHelper {
-        void operator()(const SkPaint& fallbackPaint, const SkFont& fallbackFont,
-                        SkSpan<const SkGlyphID> glyphIDs,
-                        SkSpan<const SkPoint> positions, SkScalar textScale,
-                        const SkMatrix& glyphCacheMatrix,
-                        SkGlyphRunListPainter::NeedsTransform needsTransform) const {
-            fBlob->setHasBitmap();
-            fRun->setSubRunHasW(glyphCacheMatrix.hasPerspective());
-            auto subRun = fRun->initARGBFallback();
-            SkExclusiveStrikePtr fallbackCache = SkStrikeCache::FindOrCreateStrikeExclusive(
-                    fallbackFont, fallbackPaint, fProps, fScalerContextFlags, glyphCacheMatrix);
-            sk_sp<GrTextStrike> strike = fGrStrikeCache->getStrike(fallbackCache.get());
-            fRun->setupFont(fallbackPaint, fallbackFont, fallbackCache->getDescriptor());
-
-            SkASSERT(strike != nullptr);
-            subRun->setStrike(strike);
-            const SkPoint* glyphPos = positions.data();
-            if (needsTransform == SkGlyphRunListPainter::kTransformDone) {
-                for (auto glyphID : glyphIDs) {
-                    const SkGlyph& glyph = fallbackCache->getGlyphIDMetrics(glyphID);
-                    fRun->appendDeviceSpaceGlyph(strike, glyph, *glyphPos++);
-                }
-            } else {
-                for (auto glyphID : glyphIDs) {
-                    const SkGlyph& glyph = fallbackCache->getGlyphIDMetrics(glyphID);
-                    fRun->appendSourceSpaceGlyph(strike, glyph, *glyphPos++, textScale);
-                }
-            }
-        }
-
-        GrTextBlob* const fBlob;
-        GrTextBlob::Run* fRun;
-        const SkSurfaceProps& fProps;
-        const SkScalerContextFlags fScalerContextFlags;
-        GrStrikeCache* const fGrStrikeCache;
-    };
-
     SkPoint origin = glyphRunList.origin();
     const SkPaint& runPaint = glyphRunList.paint();
-    this->initReusableBlob(runPaint.computeLuminanceColor(), viewMatrix, origin.x(), origin.y());
+    this->initReusableBlob(SkPaintPriv::ComputeLuminanceColor(runPaint), viewMatrix,
+                           origin.x(), origin.y());
 
     for (const auto& glyphRun : glyphRunList) {
         const SkFont& runFont = glyphRun.font();
 
-        Run* run = this->pushBackRun();
+        bool useSDFT = GrTextContext::CanDrawAsDistanceFields(
+                runPaint, runFont, viewMatrix, props, shaderCaps.supportsDistanceFieldText(),
+                options);
 
-        run->setRunFontAntiAlias(runFont.hasSomeAntiAliasing());
+        this->startRun(glyphRun, useSDFT);
 
-        if (GrTextContext::CanDrawAsDistanceFields(runPaint, runFont, viewMatrix, props,
-                                    shaderCaps.supportsDistanceFieldText(), options)) {
-            bool hasWCoord = viewMatrix.hasPerspective()
-                             || options.fDistanceFieldVerticesAlwaysHaveW;
+        if (useSDFT) {
 
-            // Setup distance field runPaint and text ratio
-            SkScalar textScale;
-            SkPaint distanceFieldPaint{runPaint};
-            SkFont distanceFieldFont{runFont};
-            SkScalerContextFlags flags;
-            GrTextContext::InitDistanceFieldPaint(runFont.getSize(),
-                                                  viewMatrix,
-                                                  options,
-                                                  this,
-                                                  &distanceFieldPaint,
-                                                  &distanceFieldFont,
-                                                  &textScale,
-                                                  &flags);
-            this->setHasDistanceField();
-            run->setSubRunHasDistanceFields(
-                    runFont.getEdging() == SkFont::Edging::kSubpixelAntiAlias,
-                    runFont.hasSomeAntiAliasing(),
-                    hasWCoord);
+            auto processMasks = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                       SkStrikeInterface* strike,
+                                       const SkFont& runFont,
+                                       SkScalar textScale,
+                                       SkScalar minScale,
+                                       SkScalar maxScale,
+                                       bool hasWCoord) {
+                this->processSDFTSource(
+                        masks, strike, runFont, textScale, minScale, maxScale, hasWCoord);
+            };
 
-            {
-                SkExclusiveStrikePtr cache =SkStrikeCache::FindOrCreateStrikeExclusive(
-                        distanceFieldFont, distanceFieldPaint, props, flags, SkMatrix::I());
-                sk_sp<GrTextStrike> currStrike = glyphCache->getStrike(cache.get());
-                run->setupFont(distanceFieldPaint, distanceFieldFont, cache->getDescriptor());
+            auto processPaths = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths,
+                                       SkStrikeInterface* strike, SkScalar textScale) {
+                this->processPathsSource(paths, strike, textScale);
+            };
 
-                auto perEmpty = [](const SkGlyph&, SkPoint) {};
+            auto fallbackDevice = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                         SkStrikeInterface* strike) {
+                this->processFallbackDevice(masks, strike);
+            };
 
-                auto perSDF =
-                    [run, &currStrike, textScale]
-                    (const SkGlyph& glyph, SkPoint position) {
-                        run->appendSourceSpaceGlyph(currStrike, glyph, position, textScale);
-                    };
+            auto fallbackSource = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                         SkStrikeInterface* strike,
+                                         SkScalar strikeToSourceRatio,
+                                         bool hasW) {
+                this->processFallbackSource(masks, strike, strikeToSourceRatio, hasW);
+            };
 
-                auto perPath =
-                    [run, textScale]
-                    (const SkGlyph& glyph, SkPoint position) {
-                        // TODO: path should always be set. Remove when proven.
-                        if (const SkPath* glyphPath = glyph.path()) {
-                            run->appendPathGlyph(*glyphPath, position, textScale, false);
-                        }
-                    };
-
-                ARGBFallbackHelper argbFallback{this, run, props, scalerContextFlags,
-                                                glyphCache};
-
-                glyphPainter->drawGlyphRunAsSDFWithARGBFallback(
-                    cache.get(), glyphRun, origin, runPaint, viewMatrix, textScale,
-                    std::move(perEmpty), std::move(perSDF), std::move(perPath),
-                    std::move(argbFallback));
-            }
+            glyphPainter->drawGlyphRunAsSDFWithARGBFallback(
+                runPaint, glyphRun.font(),
+                glyphRun, origin, viewMatrix,
+                options,
+                std::move(processMasks), std::move(processPaths),
+                std::move(fallbackDevice), std::move(fallbackSource));
 
         } else if (SkGlyphRunListPainter::ShouldDrawAsPath(runPaint, runFont, viewMatrix)) {
             // The glyphs are big, so use paths to draw them.
 
-            // Ensure the blob is set for bitmaptext
-            this->setHasBitmap();
-
-            // setup our std runPaint, in hopes of getting hits in the cache
-            SkPaint pathPaint{runPaint};
-            SkFont pathFont{runFont};
-            SkScalar textScale = pathFont.setupForAsPaths(&pathPaint);
-
-            auto pathCache = SkStrikeCache::FindOrCreateStrikeExclusive(
-                                pathFont, pathPaint, props,
-                                scalerContextFlags, SkMatrix::I());
-
-            auto perEmpty = [](const SkGlyph&, SkPoint) {};
-
-            // Given a glyph that is not ARGB, draw it.
-            auto perPath = [textScale, run]
-                           (const SkGlyph& glyph, SkPoint position) {
-                // TODO: path should always be set. Remove when proven.
-                if (const SkPath* glyphPath = glyph.path()) {
-                    run->appendPathGlyph(*glyphPath, position, textScale, false);
-                }
+            auto processPaths = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths,
+                                       SkStrikeInterface* strike, SkScalar textScale) {
+                this->processPathsSource(paths, strike, textScale);
             };
 
-            ARGBFallbackHelper argbFallback{this, run, props, scalerContextFlags, glyphCache};
+            auto fallbackDevice = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                         SkStrikeInterface* strike) {
+                this->processFallbackDevice(masks, strike);
+            };
+
+            auto fallbackSource = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                         SkStrikeInterface* strike,
+                                         SkScalar strikeToSourceRatio,
+                                         bool hasW) {
+                this->processFallbackSource(masks, strike, strikeToSourceRatio, hasW);
+            };
 
             glyphPainter->drawGlyphRunAsPathWithARGBFallback(
-                pathCache.get(), glyphRun, origin, runPaint, viewMatrix, textScale,
-                std::move(perEmpty), std::move(perPath), std::move(argbFallback));
+                    runPaint, runFont,
+                    glyphRun, origin, viewMatrix,
+                    std::move(processPaths),
+                    std::move(fallbackDevice), std::move(fallbackSource));
         } else {
-            // Ensure the blob is set for bitmaptext
-            this->setHasBitmap();
 
-            auto cache = SkStrikeCache::FindOrCreateStrikeExclusive(
-                    runFont, runPaint, props, scalerContextFlags, viewMatrix);
-            run->setupFont(runPaint, runFont, cache->getDescriptor());
+            auto processMasks = [this](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                       SkStrikeInterface* strike) {
+                this->processMasksDevice(masks, strike);
+            };
 
-            auto processEmpties = [](SkSpan<const SkGlyph*>glyphs) {};
-
-            auto processMasks =
-                [run, cache{cache.get()}, glyphCache]
-                (SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks) {
-                    sk_sp<GrTextStrike> currStrike = glyphCache->getStrike(cache);
-                    for (const auto& mask : masks) {
-                        SkPoint pt{SkScalarFloorToScalar(mask.position.fX),
-                                   SkScalarFloorToScalar(mask.position.fY)};
-                        run->appendDeviceSpaceGlyph(currStrike, *mask.glyph, pt);
-                    }
-                };
-
-            auto processPaths =
-                [run]
-                (SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths) {
-                    for (const auto& path : paths) {
-                        SkPoint pt{SkScalarFloorToScalar(path.position.fX),
-                                   SkScalarFloorToScalar(path.position.fY)};
-                        // TODO: path should always be set. Remove when proven.
-                        if (const SkPath* glyphPath = path.glyph->path()) {
-                            run->appendPathGlyph(*glyphPath, pt, SK_Scalar1, true);
-                        }
-                    }
-                };
+            auto processPaths = [this] (SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths) {
+                this->processPathsDevice(paths);
+            };
 
             glyphPainter->drawGlyphRunAsBMPWithPathFallback(
-                    cache.get(), glyphRun, origin, viewMatrix,
-                    std::move(processEmpties), std::move(processMasks), std::move(processPaths));
+                    runPaint, runFont,
+                    glyphRun, origin, viewMatrix,
+                    std::move(processMasks), std::move(processPaths));
         }
     }
 }
 
+GrTextBlob::Run* GrTextBlob::currentRun() {
+    return &fRuns[fRunCount - 1];
+}
+
+void GrTextBlob::startRun(const SkGlyphRun& glyphRun, bool useSDFT) {
+    if (useSDFT) {
+        this->setHasDistanceField();
+    }
+    Run* run = this->pushBackRun();
+    run->setRunFontAntiAlias(glyphRun.font().hasSomeAntiAliasing());
+}
+
+void GrTextBlob::processMasksDevice(SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                    SkStrikeInterface* strike) {
+    Run* run = this->currentRun();
+    this->setHasBitmap();
+    run->setupFont(strike->strikeSpec());
+    sk_sp<GrTextStrike> currStrike = fStrikeCache->getStrike(strike->getDescriptor());
+    for (const auto& mask : masks) {
+        SkPoint pt{SkScalarFloorToScalar(mask.position.fX),
+                   SkScalarFloorToScalar(mask.position.fY)};
+        run->appendDeviceSpaceGlyph(currStrike, *mask.glyph, pt);
+    }
+}
+
+void GrTextBlob::processPathsSource(SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths,
+                                    SkStrikeInterface* strike, SkScalar textScale) {
+    Run* run = this->currentRun();
+    this->setHasBitmap();
+    run->setupFont(strike->strikeSpec());
+    for (const auto& path : paths) {
+        if (const SkPath* glyphPath = path.glyph->path()) {
+            run->appendPathGlyph(*glyphPath, path.position, textScale,
+                                 false);
+        }
+    }
+}
+
+void GrTextBlob::processPathsDevice(SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths) {
+    Run* run = this->currentRun();
+    this->setHasBitmap();
+    for (const auto& path : paths) {
+        SkPoint pt{SkScalarFloorToScalar(path.position.fX),
+                   SkScalarFloorToScalar(path.position.fY)};
+        // TODO: path should always be set. Remove when proven.
+        if (const SkPath* glyphPath = path.glyph->path()) {
+            run->appendPathGlyph(*glyphPath, pt, SK_Scalar1, true);
+        }
+    }
+}
+
+void GrTextBlob::processSDFTSource(SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                   SkStrikeInterface* strike,
+                                   const SkFont& runFont,
+                                   SkScalar textScale,
+                                   SkScalar minScale,
+                                   SkScalar maxScale,
+                                   bool hasWCoord) {
+
+    Run* run = this->currentRun();
+    run->setSubRunHasDistanceFields(
+            runFont.getEdging() == SkFont::Edging::kSubpixelAntiAlias,
+            runFont.hasSomeAntiAliasing(),
+            hasWCoord);
+    this->setHasDistanceField();
+    this->setMinAndMaxScale(minScale, maxScale);
+    run->setupFont(strike->strikeSpec());
+    sk_sp<GrTextStrike> currStrike = fStrikeCache->getStrike(strike->getDescriptor());
+    for (const auto& mask : masks) {
+        run->appendSourceSpaceGlyph(
+                currStrike, *mask.glyph, mask.position, textScale);
+    }
+}
+
+void GrTextBlob::processFallbackSource(SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                       SkStrikeInterface* strike, SkScalar strikeToSourceRatio,
+                                       bool hasW) {
+    Run* run = this->currentRun();
+    this->setHasBitmap();
+    sk_sp<GrTextStrike> grStrike =
+            fStrikeCache->getStrike(strike->getDescriptor());
+    auto subRun = run->initARGBFallback();
+    run->setupFont(strike->strikeSpec());
+    subRun->setStrike(grStrike);
+    subRun->setHasWCoord(hasW);
+    for (const auto& mask : masks) {
+        run->appendSourceSpaceGlyph
+                (grStrike, *mask.glyph, mask.position, strikeToSourceRatio);
+    }
+}
+
+void GrTextBlob::processFallbackDevice(SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+                                       SkStrikeInterface* strike) {
+    Run* run = this->currentRun();
+    this->setHasBitmap();
+    sk_sp<GrTextStrike> grStrike = fStrikeCache->getStrike(strike->getDescriptor());
+    auto subRun = run->initARGBFallback();
+    run->setupFont(strike->strikeSpec());
+    subRun->setStrike(grStrike);
+    for (const auto& mask : masks) {
+        run->appendDeviceSpaceGlyph(grStrike, *mask.glyph, mask.position);
+    }
+}
+
+
 #if GR_TEST_UTILS
 
 #include "GrRenderTargetContext.h"
+#include "GrRecordingContextPriv.h"
 
-std::unique_ptr<GrDrawOp> GrTextContext::createOp_TestingOnly(GrContext* context,
+std::unique_ptr<GrDrawOp> GrTextContext::createOp_TestingOnly(GrRecordingContext* context,
                                                               GrTextContext* textContext,
                                                               GrRenderTargetContext* rtc,
                                                               const SkPaint& skPaint,
@@ -882,7 +1023,12 @@ std::unique_ptr<GrDrawOp> GrTextContext::createOp_TestingOnly(GrContext* context
                                                               const char* text,
                                                               int x,
                                                               int y) {
-    auto glyphCache = context->contextPriv().getGlyphCache();
+    auto direct = context->priv().asDirectContext();
+    if (!direct) {
+        return nullptr;
+    }
+
+    auto strikeCache = direct->priv().getGrStrikeCache();
 
     static SkSurfaceProps surfaceProps(SkSurfaceProps::kLegacyFontHost_InitType);
 
@@ -898,12 +1044,12 @@ std::unique_ptr<GrDrawOp> GrTextContext::createOp_TestingOnly(GrContext* context
     auto glyphRunList = builder.useGlyphRunList();
     sk_sp<GrTextBlob> blob;
     if (!glyphRunList.empty()) {
-        blob = context->contextPriv().getTextBlobCache()->makeBlob(glyphRunList, color);
+        blob = direct->priv().getTextBlobCache()->makeBlob(glyphRunList, color, strikeCache);
         // Use the text and textLen below, because we don't want to mess with the paint.
         SkScalerContextFlags scalerContextFlags =
                 ComputeScalerContextFlags(rtc->colorSpaceInfo());
         blob->generateFromGlyphRunList(
-                glyphCache, *context->contextPriv().caps()->shaderCaps(), textContext->fOptions,
+                *context->priv().caps()->shaderCaps(), textContext->fOptions,
                 skPaint, scalerContextFlags, viewMatrix, surfaceProps,
                 glyphRunList, rtc->textTarget()->glyphPainter());
     }
@@ -941,67 +1087,16 @@ void SkTextBlobCacheDiffCanvas::TrackLayerDevice::processGlyphRunForMask(
         SkPoint origin, const SkPaint& runPaint) {
     TRACE_EVENT0("skia", "SkTextBlobCacheDiffCanvas::processGlyphRunForMask");
 
-    SkScalerContextEffects effects;
-    auto* glyphCacheState = fStrikeServer->getOrCreateCache(
-            runPaint, glyphRun.font(), this->surfaceProps(), runMatrix,
-            SkScalerContextFlags::kFakeGammaAndBoostContrast, &effects);
-    SkASSERT(glyphCacheState);
+    auto processMasks = [] (
+            SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks, SkStrikeInterface*) { };
 
-    auto processEmpties = [glyphCacheState] (SkSpan<const SkGlyph*>glyphs) {
-        for (const SkGlyph* glyph : glyphs) {
-            glyphCacheState->addGlyph(glyph->getPackedID(), false);
-        }
-    };
-
-    auto processMasks = [glyphCacheState]
-                    (SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks) {
-        for (const auto& mask : masks) {
-            glyphCacheState->addGlyph(mask.glyph->getPackedID(), false);
-        }
-    };
-
-    // Glyphs which are too large for the atlas still request images when computing the bounds
-    // for the glyph, which is why its necessary to send both. See related code in
-    // get_packed_glyph_bounds in GrStrikeCache.cpp and crbug.com/510931.
-    auto processPaths = [glyphCacheState]
-                   (SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths) {
-        for (const auto& path : paths) {
-            SkPackedGlyphID glyphID = path.glyph->getPackedID();
-            glyphCacheState->addGlyph(glyphID, true);
-            glyphCacheState->addGlyph(glyphID, false);
-        }
-    };
+    auto processPaths = [] (SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths) { };
 
     fPainter.drawGlyphRunAsBMPWithPathFallback(
-            glyphCacheState, glyphRun, origin, runMatrix,
-            std::move(processEmpties), std::move(processMasks), std::move(processPaths));
+            runPaint, glyphRun.font(),
+            glyphRun, origin, runMatrix,
+            std::move(processMasks), std::move(processPaths));
 }
-
-struct ARGBHelper {
-    void operator()(const SkPaint& fallbackPaint,
-                    const SkFont& fallbackFont,
-                    SkSpan<const SkGlyphID> glyphIDs,
-                    SkSpan<const SkPoint> positions,
-                    SkScalar textScale,
-                    const SkMatrix& glyphCacheMatrix,
-                    SkGlyphRunListPainter::NeedsTransform needsTransform) {
-        TRACE_EVENT0("skia", "argbFallback");
-
-        SkScalerContextEffects effects;
-        auto* fallbackCache =
-                fStrikeServer->getOrCreateCache(
-                        fallbackPaint, fallbackFont, fSurfaceProps, fFallbackMatrix,
-                        SkScalerContextFlags::kFakeGammaAndBoostContrast, &effects);
-
-        for (auto glyphID : glyphIDs) {
-            fallbackCache->addGlyph(SkPackedGlyphID(glyphID, 0, 0), false);
-        }
-    }
-
-    const SkMatrix& fFallbackMatrix;
-    const SkSurfaceProps& fSurfaceProps;
-    SkStrikeServer* const fStrikeServer;
-};
 
 SkScalar SkTextBlobCacheDiffCanvas::SetupForPath(SkPaint* paint, SkFont* font) {
     return font->setupForAsPaths(paint);
@@ -1012,29 +1107,24 @@ void SkTextBlobCacheDiffCanvas::TrackLayerDevice::processGlyphRunForPaths(
         SkPoint origin, const SkPaint& runPaint) {
     TRACE_EVENT0("skia", "SkTextBlobCacheDiffCanvas::processGlyphRunForPaths");
 
-    SkPaint pathPaint{runPaint};
-    SkFont pathFont{glyphRun.font()};
-    SkScalar textScale = SetupForPath(&pathPaint, &pathFont);
+    // This processor is empty because all changes to the cache are tracked through
+    // getGlyphMetrics and decideCouldDrawFromPath.
+    auto processPaths = [](
+            SkSpan<const SkGlyphRunListPainter::GlyphAndPos>, SkStrikeInterface*, SkScalar) { };
 
-    SkScalerContextEffects effects;
-    auto* glyphCacheState = fStrikeServer->getOrCreateCache(
-            pathPaint, pathFont, this->surfaceProps(), SkMatrix::I(),
-            SkScalerContextFlags::kFakeGammaAndBoostContrast, &effects);
+    auto argbFallbackDevice = [](
+            SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks, SkStrikeInterface* strike) { };
 
-    auto perEmpty = [glyphCacheState] (const SkGlyph& glyph, SkPoint mappedPt) {
-        glyphCacheState->addGlyph(glyph.getPackedID(), false);
-    };
-
-    auto perPath = [glyphCacheState](const SkGlyph& glyph, SkPoint position) {
-        const bool asPath = true;
-        glyphCacheState->addGlyph(glyph.getGlyphID(), asPath);
-    };
-
-    ARGBHelper argbFallback{runMatrix, surfaceProps(), fStrikeServer};
+    auto argbFallbackSource = [](
+            SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+            SkStrikeInterface* strike,
+            SkScalar strikeToSourceRatio,
+            bool hasW) { };
 
     fPainter.drawGlyphRunAsPathWithARGBFallback(
-            glyphCacheState, glyphRun, origin, runPaint, runMatrix, textScale,
-            std::move(perEmpty), std::move(perPath), std::move(argbFallback));
+            runPaint, glyphRun.font(),
+            glyphRun, origin, runMatrix,
+            std::move(processPaths), std::move(argbFallbackDevice), std::move(argbFallbackSource));
 }
 
 #if SK_SUPPORT_GPU
@@ -1056,42 +1146,33 @@ bool SkTextBlobCacheDiffCanvas::TrackLayerDevice::maybeProcessGlyphRunForDFT(
         return false;
     }
 
-    SkScalar textRatio;
-    SkPaint dfPaint{runPaint};
-    SkFont dfFont{runFont};
-    SkScalerContextFlags flags;
-    GrTextContext::InitDistanceFieldPaint(runFont.getSize(),
-                                          runMatrix,
-                                          options,
-                                          nullptr,
-                                          &dfPaint,
-                                          &dfFont,
-                                          &textRatio,
-                                          &flags);
-    SkScalerContextEffects effects;
-    auto* sdfCache = fStrikeServer->getOrCreateCache(dfPaint, dfFont, this->surfaceProps(),
-                                                     SkMatrix::I(), flags, &effects);
+    auto processMasks =
+            [](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+               SkStrikeInterface* strike,
+               const SkFont& runFont,
+               SkScalar textScale,
+               SkScalar min,
+               SkScalar max,
+               bool hasWCoord) {};
 
-    ARGBHelper argbFallback{runMatrix, surfaceProps(), fStrikeServer};
+    auto processPaths =
+            [](SkSpan<const SkGlyphRunListPainter::GlyphAndPos> paths,
+               SkStrikeInterface* strike, SkScalar textScale) {};
 
-    auto perEmpty = [sdfCache] (const SkGlyph& glyph, SkPoint mappedPt) {
-        sdfCache->addGlyph(glyph.getPackedID(), false);
-    };
+    auto argbFallbackDevice = [](
+            SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks, SkStrikeInterface* strike) { };
 
-    auto perSDF = [sdfCache] (const SkGlyph& glyph, SkPoint position) {
-        const bool asPath = false;
-        sdfCache->addGlyph(glyph.getGlyphID(), asPath);
-    };
-
-    auto perPath = [sdfCache] (const SkGlyph& glyph, SkPoint position) {
-        const bool asPath = true;
-        sdfCache->addGlyph(glyph.getGlyphID(), asPath);
-    };
+    auto argbFallbackSource = [](
+            SkSpan<const SkGlyphRunListPainter::GlyphAndPos> masks,
+            SkStrikeInterface* strike,
+            SkScalar strikeToSourceRatio,
+            bool hasW) { };
 
     fPainter.drawGlyphRunAsSDFWithARGBFallback(
-            sdfCache, glyphRun, origin, runPaint, runMatrix, textRatio,
-            std::move(perEmpty), std::move(perSDF), std::move(perPath),
-            std::move(argbFallback));
+            runPaint, glyphRun.font(),
+            glyphRun, origin, runMatrix, options,
+            std::move(processMasks), std::move(processPaths),
+            std::move(argbFallbackDevice), std::move(argbFallbackSource));
 
     return true;
 }
@@ -1104,7 +1185,7 @@ SkGlyphRunListPainter::ScopedBuffers::ScopedBuffers(SkGlyphRunListPainter* paint
         fPainter->fMaxRunSize = size;
 
         fPainter->fPositions.reset(size);
-        fPainter->fMasks.reset(size);
+        fPainter->fGlyphPos.reset(size);
     }
 }
 
@@ -1116,7 +1197,7 @@ SkGlyphRunListPainter::ScopedBuffers::~ScopedBuffers() {
     if (fPainter->fMaxRunSize > 200) {
         fPainter->fMaxRunSize = 0;
         fPainter->fPositions.reset();
-        fPainter->fMasks.reset();
+        fPainter->fGlyphPos.reset();
         fPainter->fPaths.shrink_to_fit();
         fPainter->fARGBGlyphsIDs.shrink_to_fit();
         fPainter->fARGBPositions.shrink_to_fit();

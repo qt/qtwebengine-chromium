@@ -59,6 +59,10 @@ class PERFETTO_EXPORT AndroidPowerConfig {
   AndroidPowerConfig& operator=(AndroidPowerConfig&&);
   AndroidPowerConfig(const AndroidPowerConfig&);
   AndroidPowerConfig& operator=(const AndroidPowerConfig&);
+  bool operator==(const AndroidPowerConfig&) const;
+  bool operator!=(const AndroidPowerConfig& other) const {
+    return !(*this == other);
+  }
 
   // Conversion methods from/to the corresponding protobuf types.
   void FromProto(const perfetto::protos::AndroidPowerConfig&);
@@ -73,14 +77,22 @@ class PERFETTO_EXPORT AndroidPowerConfig {
   const std::vector<BatteryCounters>& battery_counters() const {
     return battery_counters_;
   }
+  std::vector<BatteryCounters>* mutable_battery_counters() {
+    return &battery_counters_;
+  }
+  void clear_battery_counters() { battery_counters_.clear(); }
   BatteryCounters* add_battery_counters() {
     battery_counters_.emplace_back();
     return &battery_counters_.back();
   }
 
+  bool collect_power_rails() const { return collect_power_rails_; }
+  void set_collect_power_rails(bool value) { collect_power_rails_ = value; }
+
  private:
   uint32_t battery_poll_ms_ = {};
   std::vector<BatteryCounters> battery_counters_;
+  bool collect_power_rails_ = {};
 
   // Allows to preserve unknown protobuf fields for compatibility
   // with future versions of .proto files.

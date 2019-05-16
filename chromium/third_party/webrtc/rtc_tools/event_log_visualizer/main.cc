@@ -43,6 +43,12 @@ WEBRTC_DEFINE_bool(plot_incoming_packet_sizes,
 WEBRTC_DEFINE_bool(plot_outgoing_packet_sizes,
                    false,
                    "Plot bar graph showing the size of each outgoing packet.");
+WEBRTC_DEFINE_bool(plot_incoming_rtcp_types,
+                   false,
+                   "Plot the RTCP block types for incoming RTCP packets.");
+WEBRTC_DEFINE_bool(plot_outgoing_rtcp_types,
+                   false,
+                   "Plot the RTCP block types for outgoing RTCP packets.");
 WEBRTC_DEFINE_bool(
     plot_incoming_packet_count,
     false,
@@ -88,6 +94,14 @@ WEBRTC_DEFINE_bool(plot_incoming_stream_bitrate,
 WEBRTC_DEFINE_bool(plot_outgoing_stream_bitrate,
                    true,
                    "Plot the bitrate used by each outgoing stream.");
+WEBRTC_DEFINE_bool(plot_incoming_layer_bitrate_allocation,
+                   false,
+                   "Plot the target bitrate for each incoming layer. Requires "
+                   "incoming RTCP XR with target bitrate to be populated.");
+WEBRTC_DEFINE_bool(plot_outgoing_layer_bitrate_allocation,
+                   false,
+                   "Plot the target bitrate for each outgoing layer. Requires "
+                   "outgoing RTCP XR with target bitrate to be populated.");
 WEBRTC_DEFINE_bool(
     plot_simulated_receiveside_bwe,
     false,
@@ -287,6 +301,14 @@ int main(int argc, char* argv[]) {
     analyzer.CreatePacketGraph(webrtc::kOutgoingPacket,
                                collection->AppendNewPlot());
   }
+  if (FLAG_plot_incoming_rtcp_types) {
+    analyzer.CreateRtcpTypeGraph(webrtc::kIncomingPacket,
+                                 collection->AppendNewPlot());
+  }
+  if (FLAG_plot_outgoing_rtcp_types) {
+    analyzer.CreateRtcpTypeGraph(webrtc::kOutgoingPacket,
+                                 collection->AppendNewPlot());
+  }
   if (FLAG_plot_incoming_packet_count) {
     analyzer.CreateAccumulatedPacketsGraph(webrtc::kIncomingPacket,
                                            collection->AppendNewPlot());
@@ -328,6 +350,14 @@ int main(int argc, char* argv[]) {
   if (FLAG_plot_outgoing_stream_bitrate) {
     analyzer.CreateStreamBitrateGraph(webrtc::kOutgoingPacket,
                                       collection->AppendNewPlot());
+  }
+  if (FLAG_plot_incoming_layer_bitrate_allocation) {
+    analyzer.CreateBitrateAllocationGraph(webrtc::kIncomingPacket,
+                                          collection->AppendNewPlot());
+  }
+  if (FLAG_plot_outgoing_layer_bitrate_allocation) {
+    analyzer.CreateBitrateAllocationGraph(webrtc::kOutgoingPacket,
+                                          collection->AppendNewPlot());
   }
   if (FLAG_plot_simulated_receiveside_bwe) {
     analyzer.CreateReceiveSideBweSimulationGraph(collection->AppendNewPlot());
@@ -495,6 +525,8 @@ int main(int argc, char* argv[]) {
 void SetAllPlotFlags(bool setting) {
   FLAG_plot_incoming_packet_sizes = setting;
   FLAG_plot_outgoing_packet_sizes = setting;
+  FLAG_plot_incoming_rtcp_types = setting;
+  FLAG_plot_outgoing_rtcp_types = setting;
   FLAG_plot_incoming_packet_count = setting;
   FLAG_plot_outgoing_packet_count = setting;
   FLAG_plot_audio_playout = setting;
@@ -506,6 +538,8 @@ void SetAllPlotFlags(bool setting) {
   FLAG_plot_outgoing_bitrate = setting;
   FLAG_plot_incoming_stream_bitrate = setting;
   FLAG_plot_outgoing_stream_bitrate = setting;
+  FLAG_plot_incoming_layer_bitrate_allocation = setting;
+  FLAG_plot_outgoing_layer_bitrate_allocation = setting;
   FLAG_plot_simulated_receiveside_bwe = setting;
   FLAG_plot_simulated_sendside_bwe = setting;
   FLAG_plot_network_delay_feedback = setting;
@@ -521,4 +555,5 @@ void SetAllPlotFlags(bool setting) {
   FLAG_plot_neteq_stats = setting;
   FLAG_plot_ice_candidate_pair_config = setting;
   FLAG_plot_ice_connectivity_check = setting;
+  FLAG_plot_pacer_delay = setting;
 }

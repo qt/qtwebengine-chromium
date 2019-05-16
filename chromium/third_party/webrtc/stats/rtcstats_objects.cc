@@ -56,7 +56,7 @@ WEBRTC_RTCSTATS_IMPL(RTCCertificateStats, RTCStats, "certificate",
     &fingerprint,
     &fingerprint_algorithm,
     &base64_certificate,
-    &issuer_certificate_id);
+    &issuer_certificate_id)
 // clang-format on
 
 RTCCertificateStats::RTCCertificateStats(const std::string& id,
@@ -86,7 +86,7 @@ WEBRTC_RTCSTATS_IMPL(RTCCodecStats, RTCStats, "codec",
     &clock_rate,
     &channels,
     &sdp_fmtp_line,
-    &implementation);
+    &implementation)
 // clang-format on
 
 RTCCodecStats::RTCCodecStats(const std::string& id, int64_t timestamp_us)
@@ -121,7 +121,7 @@ WEBRTC_RTCSTATS_IMPL(RTCDataChannelStats, RTCStats, "data-channel",
     &messages_sent,
     &bytes_sent,
     &messages_received,
-    &bytes_received);
+    &bytes_received)
 // clang-format on
 
 RTCDataChannelStats::RTCDataChannelStats(const std::string& id,
@@ -177,7 +177,7 @@ WEBRTC_RTCSTATS_IMPL(RTCIceCandidatePairStats, RTCStats, "candidate-pair",
     &consent_requests_received,
     &consent_requests_sent,
     &consent_responses_received,
-    &consent_responses_sent);
+    &consent_responses_sent)
 // clang-format on
 
 RTCIceCandidatePairStats::RTCIceCandidatePairStats(const std::string& id,
@@ -254,7 +254,7 @@ WEBRTC_RTCSTATS_IMPL(RTCIceCandidateStats, RTCStats, "abstract-ice-candidate",
     &candidate_type,
     &priority,
     &url,
-    &deleted);
+    &deleted)
 // clang-format on
 
 RTCIceCandidateStats::RTCIceCandidateStats(const std::string& id,
@@ -333,7 +333,7 @@ const char* RTCRemoteIceCandidateStats::type() const {
 // clang-format off
 WEBRTC_RTCSTATS_IMPL(RTCMediaStreamStats, RTCStats, "stream",
     &stream_identifier,
-    &track_ids);
+    &track_ids)
 // clang-format on
 
 RTCMediaStreamStats::RTCMediaStreamStats(const std::string& id,
@@ -381,7 +381,14 @@ WEBRTC_RTCSTATS_IMPL(RTCMediaStreamTrackStats, RTCStats, "track",
                      &concealed_samples,
                      &concealment_events,
                      &jitter_buffer_flushes,
-                     &delayed_packet_outage_samples);
+                     &delayed_packet_outage_samples,
+                     &relative_packet_arrival_delay,
+                     &freeze_count,
+                     &pause_count,
+                     &total_freezes_duration,
+                     &total_pauses_duration,
+                     &total_frames_duration,
+                     &sum_squared_frame_durations)
 // clang-format on
 
 RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(const std::string& id,
@@ -420,7 +427,14 @@ RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(std::string&& id,
       concealed_samples("concealedSamples"),
       concealment_events("concealmentEvents"),
       jitter_buffer_flushes("jitterBufferFlushes"),
-      delayed_packet_outage_samples("delayedPacketOutageSamples") {
+      delayed_packet_outage_samples("delayedPacketOutageSamples"),
+      relative_packet_arrival_delay("relativePacketArrivalDelay"),
+      freeze_count("freezeCount"),
+      pause_count("pauseCount"),
+      total_freezes_duration("totalFreezesDuration"),
+      total_pauses_duration("totalPausesDuration"),
+      total_frames_duration("totalFramesDuration"),
+      sum_squared_frame_durations("sumOfSquaredFramesDuration") {
   RTC_DCHECK(kind == RTCMediaStreamTrackKind::kAudio ||
              kind == RTCMediaStreamTrackKind::kVideo);
 }
@@ -455,14 +469,21 @@ RTCMediaStreamTrackStats::RTCMediaStreamTrackStats(
       concealed_samples(other.concealed_samples),
       concealment_events(other.concealment_events),
       jitter_buffer_flushes(other.jitter_buffer_flushes),
-      delayed_packet_outage_samples(other.delayed_packet_outage_samples) {}
+      delayed_packet_outage_samples(other.delayed_packet_outage_samples),
+      relative_packet_arrival_delay(other.relative_packet_arrival_delay),
+      freeze_count(other.freeze_count),
+      pause_count(other.pause_count),
+      total_freezes_duration(other.total_freezes_duration),
+      total_pauses_duration(other.total_pauses_duration),
+      total_frames_duration(other.total_frames_duration),
+      sum_squared_frame_durations(other.sum_squared_frame_durations) {}
 
 RTCMediaStreamTrackStats::~RTCMediaStreamTrackStats() {}
 
 // clang-format off
 WEBRTC_RTCSTATS_IMPL(RTCPeerConnectionStats, RTCStats, "peer-connection",
     &data_channels_opened,
-    &data_channels_closed);
+    &data_channels_closed)
 // clang-format on
 
 RTCPeerConnectionStats::RTCPeerConnectionStats(const std::string& id,
@@ -497,7 +518,7 @@ WEBRTC_RTCSTATS_IMPL(RTCRTPStreamStats, RTCStats, "rtp",
     &pli_count,
     &nack_count,
     &sli_count,
-    &qp_sum);
+    &qp_sum)
 // clang-format on
 
 RTCRTPStreamStats::RTCRTPStreamStats(const std::string& id,
@@ -557,7 +578,7 @@ WEBRTC_RTCSTATS_IMPL(
     &burst_discard_rate,
     &gap_loss_rate,
     &gap_discard_rate,
-    &frames_decoded);
+    &frames_decoded)
 // clang-format on
 
 RTCInboundRTPStreamStats::RTCInboundRTPStreamStats(const std::string& id,
@@ -614,7 +635,7 @@ WEBRTC_RTCSTATS_IMPL(
     &packets_sent,
     &bytes_sent,
     &target_bitrate,
-    &frames_encoded);
+    &frames_encoded)
 // clang-format on
 
 RTCOutboundRTPStreamStats::RTCOutboundRTPStreamStats(const std::string& id,
@@ -647,7 +668,7 @@ WEBRTC_RTCSTATS_IMPL(RTCTransportStats, RTCStats, "transport",
     &dtls_state,
     &selected_candidate_pair_id,
     &local_certificate_id,
-    &remote_certificate_id);
+    &remote_certificate_id)
 // clang-format on
 
 RTCTransportStats::RTCTransportStats(const std::string& id,

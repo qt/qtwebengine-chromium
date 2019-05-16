@@ -39,7 +39,7 @@ enum class BatteryCounter {
 
 extern "C" {
 
-// Thse functions are not thread safe unless specified otherwise.
+// These functions are not thread safe unless specified otherwise.
 
 bool __attribute__((visibility("default")))
 GetBatteryCounter(BatteryCounter, int64_t*);

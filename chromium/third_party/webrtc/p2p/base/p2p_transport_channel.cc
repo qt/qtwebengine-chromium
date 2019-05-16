@@ -10,11 +10,11 @@
 
 #include "p2p/base/p2p_transport_channel.h"
 
-#include <algorithm>
 #include <iterator>
 #include <set>
 #include <utility>
 
+#include "absl/algorithm/container.h"
 #include "api/candidate.h"
 #include "logging/rtc_event_log/ice_logger.h"
 #include "p2p/base/candidate_pair_interface.h"
@@ -406,19 +406,25 @@ webrtc::IceTransportState P2PTransportChannel::ComputeIceTransportState()
     }
   }
 
-  if (!writable() && has_been_writable_) {
-    if (has_connection)
-      return webrtc::IceTransportState::kDisconnected;
-    else
-      return webrtc::IceTransportState::kFailed;
+  if (had_connection_ && !has_connection) {
+    return webrtc::IceTransportState::kFailed;
   }
 
-  if (gathering_state_ == kIceGatheringNew)
+  if (!writable() && has_been_writable_) {
+    return webrtc::IceTransportState::kDisconnected;
+  }
+
+  if (!had_connection_ && !has_connection) {
     return webrtc::IceTransportState::kNew;
-  else if (has_connection)
-    return webrtc::IceTransportState::kConnected;
-  else
+  }
+
+  if (has_connection && !writable()) {
+    // A candidate pair has been formed by adding a remote candidate
+    // and gathering a local candidate.
     return webrtc::IceTransportState::kChecking;
+  }
+
+  return webrtc::IceTransportState::kConnected;
 }
 
 void P2PTransportChannel::SetIceParameters(const IceParameters& ice_params) {
@@ -629,6 +635,13 @@ void P2PTransportChannel::SetIceConfig(const IceConfig& config) {
         config_.stun_keepalive_interval);
     RTC_LOG(LS_INFO) << "Set STUN keepalive interval to "
                      << config.stun_keepalive_interval_or_default();
+  }
+
+  if (webrtc::field_trial::IsEnabled("WebRTC-ExtraICEPing")) {
+    RTC_LOG(LS_INFO) << "Set WebRTC-ExtraICEPing: Enabled";
+  }
+  if (webrtc::field_trial::IsEnabled("WebRTC-TurnAddMultiMapping")) {
+    RTC_LOG(LS_INFO) << "Set WebRTC-TurnAddMultiMapping: Enabled";
   }
 
   webrtc::BasicRegatheringController::Config regathering_config(
@@ -1095,10 +1108,10 @@ P2PTransportChannel::CandidateAndResolver::~CandidateAndResolver() {}
 
 void P2PTransportChannel::OnCandidateResolved(
     rtc::AsyncResolverInterface* resolver) {
-  auto p = std::find_if(resolvers_.begin(), resolvers_.end(),
-                        [resolver](const CandidateAndResolver& cr) {
-                          return cr.resolver_ == resolver;
-                        });
+  auto p =
+      absl::c_find_if(resolvers_, [resolver](const CandidateAndResolver& cr) {
+        return cr.resolver_ == resolver;
+      });
   if (p == resolvers_.end()) {
     RTC_LOG(LS_ERROR) << "Unexpected AsyncResolver signal";
     RTC_NOTREACHED();
@@ -1211,8 +1224,7 @@ bool P2PTransportChannel::CreateConnections(const Candidate& remote_candidate,
     }
   }
 
-  if ((origin_port != NULL) &&
-      std::find(ports_.begin(), ports_.end(), origin_port) == ports_.end()) {
+  if ((origin_port != NULL) && !absl::c_linear_search(ports_, origin_port)) {
     if (CreateConnection(origin_port, remote_candidate, origin_port))
       created = true;
   }
@@ -1268,9 +1280,7 @@ bool P2PTransportChannel::CreateConnection(PortInterface* port,
 }
 
 bool P2PTransportChannel::FindConnection(Connection* connection) const {
-  std::vector<Connection*>::const_iterator citer =
-      std::find(connections_.begin(), connections_.end(), connection);
-  return citer != connections_.end();
+  return absl::c_linear_search(connections_, connection);
 }
 
 uint32_t P2PTransportChannel::GetRemoteCandidateGeneration(
@@ -1460,9 +1470,9 @@ void P2PTransportChannel::MaybeStartPinging() {
   }
 
   int64_t now = rtc::TimeMillis();
-  if (std::any_of(
-          connections_.begin(), connections_.end(),
-          [this, now](const Connection* c) { return IsPingable(c, now); })) {
+  if (absl::c_any_of(connections_, [this, now](const Connection* c) {
+        return IsPingable(c, now);
+      })) {
     RTC_LOG(LS_INFO) << ToString()
                      << ": Have a pingable connection for the first time; "
                         "starting to ping.";
@@ -1621,12 +1631,11 @@ int P2PTransportChannel::CompareConnectionCandidates(
 }
 
 bool P2PTransportChannel::IsPortPruned(const Port* port) const {
-  return std::find(ports_.begin(), ports_.end(), port) == ports_.end();
+  return !absl::c_linear_search(ports_, port);
 }
 
 bool P2PTransportChannel::IsRemoteCandidatePruned(const Candidate& cand) const {
-  return std::find(remote_candidates_.begin(), remote_candidates_.end(), cand)
-      == remote_candidates_.end();
+  return !absl::c_linear_search(remote_candidates_, cand);
 }
 
 int P2PTransportChannel::CompareConnections(
@@ -1694,15 +1703,15 @@ void P2PTransportChannel::SortConnectionsAndUpdateState(
   // one whose estimated latency is lowest.  So it is the only one that we
   // need to consider switching to.
   // TODO(honghaiz): Don't sort;  Just use std::max_element in the right places.
-  std::stable_sort(connections_.begin(), connections_.end(),
-                   [this](const Connection* a, const Connection* b) {
-                     int cmp = CompareConnections(a, b, absl::nullopt, nullptr);
-                     if (cmp != 0) {
-                       return cmp > 0;
-                     }
-                     // Otherwise, sort based on latency estimate.
-                     return a->rtt() < b->rtt();
-                   });
+  absl::c_stable_sort(
+      connections_, [this](const Connection* a, const Connection* b) {
+        int cmp = CompareConnections(a, b, absl::nullopt, nullptr);
+        if (cmp != 0) {
+          return cmp > 0;
+        }
+        // Otherwise, sort based on latency estimate.
+        return a->rtt() < b->rtt();
+      });
 
   RTC_LOG(LS_VERBOSE) << "Sorting " << connections_.size()
                       << " available connections";
@@ -1996,8 +2005,8 @@ void P2PTransportChannel::CheckAndPing() {
   // When the selected connection is not receiving or not writable, or any
   // active connection has not been pinged enough times, use the weak ping
   // interval.
-  bool need_more_pings_at_weak_interval = std::any_of(
-      connections_.begin(), connections_.end(), [](Connection* conn) {
+  bool need_more_pings_at_weak_interval =
+      absl::c_any_of(connections_, [](Connection* conn) {
         return conn->active() &&
                conn->num_pings_sent() < MIN_PINGS_AT_WEAK_PING_INTERVAL;
       });
@@ -2124,19 +2133,17 @@ Connection* P2PTransportChannel::FindNextPingableConnection() {
   // Rule 2.1: Among such connections, pick the one with the earliest
   // last-ping-sent time.
   if (weak()) {
-    auto selectable_connections = GetBestWritableConnectionPerNetwork();
     std::vector<Connection*> pingable_selectable_connections;
-    std::copy_if(selectable_connections.begin(), selectable_connections.end(),
-                 std::back_inserter(pingable_selectable_connections),
-                 [this, now](Connection* conn) {
-                   return WritableConnectionPastPingInterval(conn, now);
-                 });
-    auto iter = std::min_element(pingable_selectable_connections.begin(),
-                                 pingable_selectable_connections.end(),
-                                 [](Connection* conn1, Connection* conn2) {
-                                   return conn1->last_ping_sent() <
-                                          conn2->last_ping_sent();
-                                 });
+    absl::c_copy_if(GetBestWritableConnectionPerNetwork(),
+                    std::back_inserter(pingable_selectable_connections),
+                    [this, now](Connection* conn) {
+                      return WritableConnectionPastPingInterval(conn, now);
+                    });
+    auto iter = absl::c_min_element(pingable_selectable_connections,
+                                    [](Connection* conn1, Connection* conn2) {
+                                      return conn1->last_ping_sent() <
+                                             conn2->last_ping_sent();
+                                    });
     if (iter != pingable_selectable_connections.end()) {
       return *iter;
     }
@@ -2157,10 +2164,9 @@ Connection* P2PTransportChannel::FindNextPingableConnection() {
   // Otherwise, treat everything as unpinged.
   // TODO(honghaiz): Instead of adding two separate vectors, we can add a state
   // "pinged" to filter out unpinged connections.
-  if (std::find_if(unpinged_connections_.begin(), unpinged_connections_.end(),
-                   [this, now](Connection* conn) {
-                     return this->IsPingable(conn, now);
-                   }) == unpinged_connections_.end()) {
+  if (absl::c_none_of(unpinged_connections_, [this, now](Connection* conn) {
+        return this->IsPingable(conn, now);
+      })) {
     unpinged_connections_.insert(pinged_connections_.begin(),
                                  pinged_connections_.end());
     pinged_connections_.clear();
@@ -2168,19 +2174,18 @@ Connection* P2PTransportChannel::FindNextPingableConnection() {
 
   // Among un-pinged pingable connections, "more pingable" takes precedence.
   std::vector<Connection*> pingable_connections;
-  std::copy_if(unpinged_connections_.begin(), unpinged_connections_.end(),
-               std::back_inserter(pingable_connections),
-               [this, now](Connection* conn) { return IsPingable(conn, now); });
-  auto iter =
-      std::max_element(pingable_connections.begin(), pingable_connections.end(),
-                       [this](Connection* conn1, Connection* conn2) {
-                         // Some implementations of max_element compare an
-                         // element with itself.
-                         if (conn1 == conn2) {
-                           return false;
-                         }
-                         return MorePingable(conn1, conn2) == conn2;
-                       });
+  absl::c_copy_if(
+      unpinged_connections_, std::back_inserter(pingable_connections),
+      [this, now](Connection* conn) { return IsPingable(conn, now); });
+  auto iter = absl::c_max_element(pingable_connections,
+                                  [this](Connection* conn1, Connection* conn2) {
+                                    // Some implementations of max_element
+                                    // compare an element with itself.
+                                    if (conn1 == conn2) {
+                                      return false;
+                                    }
+                                    return MorePingable(conn1, conn2) == conn2;
+                                  });
   if (iter != pingable_connections.end()) {
     return *iter;
   }
@@ -2289,11 +2294,10 @@ void P2PTransportChannel::OnConnectionDestroyed(Connection* connection) {
   // use it.
 
   // Remove this connection from the list.
-  std::vector<Connection*>::iterator iter =
-      std::find(connections_.begin(), connections_.end(), connection);
+  auto iter = absl::c_find(connections_, connection);
   RTC_DCHECK(iter != connections_.end());
-  pinged_connections_.erase(*iter);
-  unpinged_connections_.erase(*iter);
+  pinged_connections_.erase(connection);
+  unpinged_connections_.erase(connection);
   connections_.erase(iter);
 
   RTC_LOG(LS_INFO) << ToString() << ": Removed connection " << connection
@@ -2367,7 +2371,7 @@ void P2PTransportChannel::PruneAllPorts() {
 }
 
 bool P2PTransportChannel::PrunePort(PortInterface* port) {
-  auto it = std::find(ports_.begin(), ports_.end(), port);
+  auto it = absl::c_find(ports_, port);
   // Don't need to do anything if the port has been deleted from the port list.
   if (it == ports_.end()) {
     return false;
@@ -2487,10 +2491,9 @@ Connection* P2PTransportChannel::MorePingable(Connection* conn1,
 
   // During the initial state when nothing has been pinged yet, return the first
   // one in the ordered |connections_|.
-  return *(std::find_if(connections_.begin(), connections_.end(),
-                        [conn1, conn2](Connection* conn) {
-                          return conn == conn1 || conn == conn2;
-                        }));
+  return *(absl::c_find_if(connections_, [conn1, conn2](Connection* conn) {
+    return conn == conn1 || conn == conn2;
+  }));
 }
 
 void P2PTransportChannel::SetWritable(bool writable) {

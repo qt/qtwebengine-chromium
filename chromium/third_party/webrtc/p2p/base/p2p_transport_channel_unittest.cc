@@ -8,7 +8,6 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <algorithm>
 #include <list>
 #include <memory>
 
@@ -44,6 +43,7 @@ namespace {
 using rtc::SocketAddress;
 using ::testing::_;
 using ::testing::Assign;
+using ::testing::Contains;
 using ::testing::DoAll;
 using ::testing::InSequence;
 using ::testing::InvokeWithoutArgs;
@@ -1989,12 +1989,10 @@ TEST_F(P2PTransportChannelTest, TestUsingPooledSessionBeforeDoneGathering) {
   // pooled sessions.
   auto pooled_ports_1 = pooled_session_1->ReadyPorts();
   auto pooled_ports_2 = pooled_session_2->ReadyPorts();
-  EXPECT_NE(pooled_ports_1.end(),
-            std::find(pooled_ports_1.begin(), pooled_ports_1.end(),
-                      ep1_ch1()->selected_connection()->port()));
-  EXPECT_NE(pooled_ports_2.end(),
-            std::find(pooled_ports_2.begin(), pooled_ports_2.end(),
-                      ep2_ch1()->selected_connection()->port()));
+  EXPECT_THAT(pooled_ports_1,
+              Contains(ep1_ch1()->selected_connection()->port()));
+  EXPECT_THAT(pooled_ports_2,
+              Contains(ep2_ch1()->selected_connection()->port()));
 }
 
 // Test that a connection succeeds when the P2PTransportChannel uses a pooled
@@ -2034,12 +2032,10 @@ TEST_F(P2PTransportChannelTest, TestUsingPooledSessionAfterDoneGathering) {
   // pooled sessions.
   auto pooled_ports_1 = pooled_session_1->ReadyPorts();
   auto pooled_ports_2 = pooled_session_2->ReadyPorts();
-  EXPECT_NE(pooled_ports_1.end(),
-            std::find(pooled_ports_1.begin(), pooled_ports_1.end(),
-                      ep1_ch1()->selected_connection()->port()));
-  EXPECT_NE(pooled_ports_2.end(),
-            std::find(pooled_ports_2.begin(), pooled_ports_2.end(),
-                      ep2_ch1()->selected_connection()->port()));
+  EXPECT_THAT(pooled_ports_1,
+              Contains(ep1_ch1()->selected_connection()->port()));
+  EXPECT_THAT(pooled_ports_2,
+              Contains(ep2_ch1()->selected_connection()->port()));
 }
 
 // Test that when the "presume_writable_when_fully_relayed" flag is set to
@@ -4140,21 +4136,29 @@ TEST_F(P2PTransportChannelPingTest, TestGetState) {
   EXPECT_EQ(webrtc::IceTransportState::kNew, ch.GetIceTransportState());
   PrepareChannel(&ch);
   ch.MaybeStartGathering();
+  // After gathering we are still in the kNew state because we aren't checking
+  // any connections yet.
+  EXPECT_EQ(webrtc::IceTransportState::kNew, ch.GetIceTransportState());
   EXPECT_EQ(IceTransportState::STATE_INIT, ch.GetState());
   ch.AddRemoteCandidate(CreateUdpCandidate(LOCAL_PORT_TYPE, "1.1.1.1", 1, 100));
   ch.AddRemoteCandidate(CreateUdpCandidate(LOCAL_PORT_TYPE, "2.2.2.2", 2, 1));
+  // Checking candidates that have been added with gathered candidates.
+  ASSERT_GT(ch.connections().size(), 0u);
+  EXPECT_EQ(webrtc::IceTransportState::kChecking, ch.GetIceTransportState());
   Connection* conn1 = WaitForConnectionTo(&ch, "1.1.1.1", 1, &clock);
   Connection* conn2 = WaitForConnectionTo(&ch, "2.2.2.2", 2, &clock);
-  // Gathering complete with candidates.
-  EXPECT_EQ(webrtc::IceTransportState::kConnected, ch.GetIceTransportState());
   ASSERT_TRUE(conn1 != nullptr);
   ASSERT_TRUE(conn2 != nullptr);
   // Now there are two connections, so the transport channel is connecting.
   EXPECT_EQ(IceTransportState::STATE_CONNECTING, ch.GetState());
+  // No connections are writable yet, so we should still be in the kChecking
+  // state.
+  EXPECT_EQ(webrtc::IceTransportState::kChecking, ch.GetIceTransportState());
   // |conn1| becomes writable and receiving; it then should prune |conn2|.
   conn1->ReceivedPingResponse(LOW_RTT, "id");
   EXPECT_TRUE_SIMULATED_WAIT(conn2->pruned(), kShortTimeout, clock);
   EXPECT_EQ(IceTransportState::STATE_COMPLETED, ch.GetState());
+  EXPECT_EQ(webrtc::IceTransportState::kConnected, ch.GetIceTransportState());
   conn1->Prune();  // All connections are pruned.
   // Need to wait until the channel state is updated.
   EXPECT_EQ_SIMULATED_WAIT(IceTransportState::STATE_FAILED, ch.GetState(),

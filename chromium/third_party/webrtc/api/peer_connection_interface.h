@@ -96,9 +96,6 @@
 #include "api/turn_customizer.h"
 #include "logging/rtc_event_log/rtc_event_log_factory_interface.h"
 #include "media/base/media_config.h"
-// TODO(bugs.webrtc.org/6353): cricket::VideoCapturer is deprecated and should
-// be deleted from the PeerConnection api.
-#include "media/base/video_capturer.h"  // nogncheck
 // TODO(bugs.webrtc.org/7447): We plan to provide a way to let applications
 // inject a PacketSocketFactory and/or NetworkManager, and not expose
 // PortAllocator in the PeerConnection api.
@@ -125,7 +122,7 @@ class AudioDeviceModule;
 class AudioMixer;
 class AudioProcessing;
 class DtlsTransportInterface;
-class MediaConstraintsInterface;
+class SctpTransportInterface;
 class VideoDecoderFactory;
 class VideoEncoderFactory;
 
@@ -354,7 +351,7 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
 
     static const int kUndefined = -1;
     // Default maximum number of packets in the audio jitter buffer.
-    static const int kAudioJitterBufferMaxPackets = 50;
+    static const int kAudioJitterBufferMaxPackets = 200;
     // ICE connection receiving timeout for aggressive configuration.
     static const int kAggressiveIceConnectionReceivingTimeout = 1000;
 
@@ -602,9 +599,9 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     bool active_reset_srtp_params = false;
 
     // If MediaTransportFactory is provided in PeerConnectionFactory, this flag
-    // informs PeerConnection that it should use the MediaTransportInterface.
-    // It's invalid to set it to |true| if the MediaTransportFactory wasn't
-    // provided.
+    // informs PeerConnection that it should use the MediaTransportInterface for
+    // media (audio/video). It's invalid to set it to |true| if the
+    // MediaTransportFactory wasn't provided.
     bool use_media_transport = false;
 
     // If MediaTransportFactory is provided in PeerConnectionFactory, this flag
@@ -1042,6 +1039,10 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   virtual rtc::scoped_refptr<DtlsTransportInterface> LookupDtlsTransportByMid(
       const std::string& mid);
 
+  // Returns the SCTP transport, if any.
+  // TODO(hta): Remove default implementation after updating Chrome.
+  virtual rtc::scoped_refptr<SctpTransportInterface> GetSctpTransport() const;
+
   // Returns the current SignalingState.
   virtual SignalingState signaling_state() = 0;
 
@@ -1061,9 +1062,9 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
 
   // Starts RtcEventLog using existing file. Takes ownership of |file| and
   // passes it on to Call, which will take the ownership. If the
-  // operation fails the file will be closed. The logging will stop
-  // automatically after 10 minutes have passed, or when the StopRtcEventLog
-  // function is called.
+  // operation fails the file will be closed.
+  // The logging will stop when |max_size_bytes| is reached or when the
+  // StopRtcEventLog function is called.
   // TODO(eladalon): Deprecate and remove this.
   virtual bool StartRtcEventLog(rtc::PlatformFile file, int64_t max_size_bytes);
 
@@ -1344,30 +1345,6 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   virtual rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
       const cricket::AudioOptions& options) = 0;
 
-  // Creates a VideoTrackSourceInterface from |capturer|.
-  // TODO(deadbeef): We should aim to remove cricket::VideoCapturer from the
-  // API. It's mainly used as a wrapper around webrtc's provided
-  // platform-specific capturers, but these should be refactored to use
-  // VideoTrackSourceInterface directly.
-  // TODO(deadbeef): Make pure virtual once downstream mock PC factory classes
-  // are updated.
-  virtual rtc::scoped_refptr<VideoTrackSourceInterface> CreateVideoSource(
-      std::unique_ptr<cricket::VideoCapturer> capturer);
-
-  // A video source creator that allows selection of resolution and frame rate.
-  // |constraints| decides video resolution and frame rate but can be null.
-  // In the null case, use the version above.
-  //
-  // |constraints| is only used for the invocation of this method, and can
-  // safely be destroyed afterwards.
-  virtual rtc::scoped_refptr<VideoTrackSourceInterface> CreateVideoSource(
-      std::unique_ptr<cricket::VideoCapturer> capturer,
-      const MediaConstraintsInterface* constraints);
-
-  // Deprecated; please use the versions that take unique_ptrs above.
-  // TODO(deadbeef): Remove these once safe to do so.
-  virtual rtc::scoped_refptr<VideoTrackSourceInterface> CreateVideoSource(
-      cricket::VideoCapturer* capturer);
   // Creates a new local VideoTrack. The same |source| can be used in several
   // tracks.
   virtual rtc::scoped_refptr<VideoTrackInterface> CreateVideoTrack(

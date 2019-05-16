@@ -38,7 +38,7 @@ static bool xyz_almost_equal(const skcms_Matrix3x3& mA, const skcms_Matrix3x3& m
 
 sk_sp<SkColorSpace> SkColorSpace::MakeRGB(const skcms_TransferFunction& transferFn,
                                           const skcms_Matrix3x3& toXYZ) {
-    if (!is_valid_transfer_fn(reinterpret_cast<const SkColorSpaceTransferFn&>(transferFn))) {
+    if (!is_valid_transfer_fn(transferFn)) {
         return nullptr;
     }
 
@@ -113,11 +113,6 @@ void SkColorSpace::computeLazyDstFields() const {
         }
 
     });
-}
-
-bool SkColorSpace::isNumericalTransferFn(SkColorSpaceTransferFn* coeffs) const {
-    this->transferFn(&coeffs->fG);
-    return true;
 }
 
 bool SkColorSpace::isNumericalTransferFn(skcms_TransferFunction* coeffs) const {

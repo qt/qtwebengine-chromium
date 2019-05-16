@@ -14,20 +14,32 @@
 
 #include "dawn_native/ComputePassEncoder.h"
 
-#include "dawn_native/CommandBuffer.h"
+#include "dawn_native/CommandEncoder.h"
 #include "dawn_native/Commands.h"
 #include "dawn_native/ComputePipeline.h"
+#include "dawn_native/Device.h"
 
 namespace dawn_native {
 
     ComputePassEncoderBase::ComputePassEncoderBase(DeviceBase* device,
-                                                   CommandBufferBuilder* topLevelBuilder,
+                                                   CommandEncoderBase* topLevelEncoder,
                                                    CommandAllocator* allocator)
-        : ProgrammablePassEncoder(device, topLevelBuilder, allocator) {
+        : ProgrammablePassEncoder(device, topLevelEncoder, allocator) {
+    }
+
+    ComputePassEncoderBase::ComputePassEncoderBase(DeviceBase* device,
+                                                   CommandEncoderBase* topLevelEncoder,
+                                                   ErrorTag errorTag)
+        : ProgrammablePassEncoder(device, topLevelEncoder, errorTag) {
+    }
+
+    ComputePassEncoderBase* ComputePassEncoderBase::MakeError(DeviceBase* device,
+                                                              CommandEncoderBase* topLevelEncoder) {
+        return new ComputePassEncoderBase(device, topLevelEncoder, ObjectBase::kError);
     }
 
     void ComputePassEncoderBase::Dispatch(uint32_t x, uint32_t y, uint32_t z) {
-        if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
+        if (mTopLevelEncoder->ConsumedError(ValidateCanRecordCommands())) {
             return;
         }
 
@@ -39,12 +51,8 @@ namespace dawn_native {
     }
 
     void ComputePassEncoderBase::SetPipeline(ComputePipelineBase* pipeline) {
-        if (mTopLevelBuilder->ConsumedError(ValidateCanRecordCommands())) {
-            return;
-        }
-
-        if (pipeline == nullptr) {
-            mTopLevelBuilder->HandleError("Pipeline cannot be null");
+        if (mTopLevelEncoder->ConsumedError(ValidateCanRecordCommands()) ||
+            mTopLevelEncoder->ConsumedError(GetDevice()->ValidateObject(pipeline))) {
             return;
         }
 

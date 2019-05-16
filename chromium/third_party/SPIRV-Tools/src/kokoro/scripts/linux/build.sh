@@ -31,8 +31,7 @@ BUILD_TYPE="Debug"
 CMAKE_C_CXX_COMPILER=""
 if [ $COMPILER = "clang" ]
 then
-  sudo ln -s /usr/bin/clang-3.8 /usr/bin/clang
-  sudo ln -s /usr/bin/clang++-3.8 /usr/bin/clang++
+  PATH=/usr/lib/llvm-3.8/bin:$PATH
   CMAKE_C_CXX_COMPILER="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++"
 fi
 
@@ -48,7 +47,7 @@ ADDITIONAL_CMAKE_FLAGS=""
 if [ $CONFIG = "ASAN" ]
 then
   ADDITIONAL_CMAKE_FLAGS="-DCMAKE_CXX_FLAGS=-fsanitize=address -DCMAKE_C_FLAGS=-fsanitize=address"
-  export ASAN_SYMBOLIZER_PATH=/usr/bin/llvm-symbolizer-3.4
+  [ $COMPILER = "clang" ] || { echo "$CONFIG requires clang"; exit 1; }
 elif [ $CONFIG = "COVERAGE" ]
 then
   ADDITIONAL_CMAKE_FLAGS="-DENABLE_CODE_COVERAGE=ON"
@@ -78,7 +77,7 @@ mkdir build && cd $SRC/build
 # Invoke the build.
 BUILD_SHA=${KOKORO_GITHUB_COMMIT:-$KOKORO_GITHUB_PULL_REQUEST_COMMIT}
 echo $(date): Starting build...
-cmake -GNinja -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_INSTALL_PREFIX=install -DRE2_BUILD_TESTING=OFF $ADDITIONAL_CMAKE_FLAGS $CMAKE_C_CXX_COMPILER ..
+cmake -DPYTHON_EXECUTABLE:FILEPATH=/usr/bin/python2.7 -GNinja -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_INSTALL_PREFIX=install -DRE2_BUILD_TESTING=OFF $ADDITIONAL_CMAKE_FLAGS $CMAKE_C_CXX_COMPILER ..
 
 echo $(date): Build everything...
 ninja

@@ -162,6 +162,8 @@ SkAlphaType SkAndroidCodec::computeOutputAlphaType(bool requestedUnpremul) {
 sk_sp<SkColorSpace> SkAndroidCodec::computeOutputColorSpace(SkColorType outputColorType,
                                                             sk_sp<SkColorSpace> prefColorSpace) {
     switch (outputColorType) {
+        case kRGBA_F16_SkColorType:
+        case kRGB_565_SkColorType:
         case kRGBA_8888_SkColorType:
         case kBGRA_8888_SkColorType: {
             // If |prefColorSpace| is supplied, choose it.
@@ -184,12 +186,6 @@ sk_sp<SkColorSpace> SkAndroidCodec::computeOutputColorSpace(SkColorType outputCo
 
             return SkColorSpace::MakeSRGB();
         }
-        case kRGBA_F16_SkColorType:
-            // Note that |prefColorSpace| is ignored, F16 is always linear sRGB.
-            return SkColorSpace::MakeSRGBLinear();
-        case kRGB_565_SkColorType:
-            // Note that |prefColorSpace| is ignored, 565 is always sRGB.
-            return SkColorSpace::MakeSRGB();
         default:
             // Color correction not supported for kGray.
             return nullptr;
@@ -300,7 +296,13 @@ SkISize SkAndroidCodec::getSampledDimensions(int sampleSize) const {
         return fInfo.dimensions();
     }
 
-    return this->onGetSampledDimensions(sampleSize);
+    auto dims = this->onGetSampledDimensions(sampleSize);
+    if (fOrientationBehavior == SkAndroidCodec::ExifOrientationBehavior::kIgnore
+            || !SkPixmapPriv::ShouldSwapWidthHeight(fCodec->getOrigin())) {
+        return dims;
+    }
+
+    return { dims.height(), dims.width() };
 }
 
 bool SkAndroidCodec::getSupportedSubset(SkIRect* desiredSubset) const {

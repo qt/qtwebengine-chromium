@@ -71,7 +71,7 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string) {
   WebWindowFeatures window_features;
 
   // This code follows the HTML spec, specifically
-  // https://html.spec.whatwg.org/#concept-window-open-features-tokenize
+  // https://html.spec.whatwg.org/C/#concept-window-open-features-tokenize
   if (feature_string.IsEmpty())
     return window_features;
 
@@ -243,18 +243,24 @@ static Frame* CreateNewWindow(LocalFrame& opener_frame,
                                 ? kNavigationPolicyNewForegroundTab
                                 : NavigationPolicyForCreateWindow(features);
 
+  bool propagate_sandbox = opener_frame.GetDocument()->IsSandboxed(
+      kSandboxPropagatesToAuxiliaryBrowsingContexts);
   const SandboxFlags sandbox_flags =
-      opener_frame.GetDocument()->IsSandboxed(
-          kSandboxPropagatesToAuxiliaryBrowsingContexts)
-          ? opener_frame.GetSecurityContext()->GetSandboxFlags()
-          : kSandboxNone;
+      propagate_sandbox ? opener_frame.GetDocument()->GetSandboxFlags()
+                        : kSandboxNone;
+  bool not_sandboxed =
+      opener_frame.GetDocument()->GetSandboxFlags() == kSandboxNone;
+  FeaturePolicy::FeatureState opener_feature_state =
+      (not_sandboxed || propagate_sandbox)
+          ? opener_frame.GetDocument()->GetFeaturePolicy()->GetFeatureState()
+          : FeaturePolicy::FeatureState();
 
   SessionStorageNamespaceId new_namespace_id =
       AllocateSessionStorageNamespaceId();
 
   if (base::FeatureList::IsEnabled(features::kOnionSoupDOMStorage)) {
     // TODO(dmurph): Don't copy session storage when features.noopener is true:
-    // https://html.spec.whatwg.org/multipage/browsers.html#copy-session-storage
+    // https://html.spec.whatwg.org/C/#copy-session-storage
     // https://crbug.com/771959
     CoreInitializer::GetInstance().CloneSessionStorage(old_page,
                                                        new_namespace_id);
@@ -262,7 +268,7 @@ static Frame* CreateNewWindow(LocalFrame& opener_frame,
 
   Page* page = old_page->GetChromeClient().CreateWindow(
       &opener_frame, request, features, policy, sandbox_flags,
-      new_namespace_id);
+      opener_feature_state, new_namespace_id);
   if (!page)
     return nullptr;
 
@@ -276,29 +282,21 @@ static Frame* CreateNewWindow(LocalFrame& opener_frame,
   }
 
   DCHECK(page->MainFrame());
-  LocalFrame& frame = *ToLocalFrame(page->MainFrame());
+  LocalFrame& frame = *To<LocalFrame>(page->MainFrame());
 
   page->SetWindowFeatures(features);
 
   frame.View()->SetCanHaveScrollbars(features.scrollbars_visible);
 
-  // 'x' and 'y' specify the location of the window, while 'width' and 'height'
-  // specify the size of the viewport. We can only resize the window, so adjust
-  // for the difference between the window size and the viewport size.
-
-  IntRect window_rect = page->GetChromeClient().RootWindowRect();
-  IntSize viewport_size = page->GetChromeClient().PageRect().Size();
-
+  IntRect window_rect = page->GetChromeClient().RootWindowRect(frame);
   if (features.x_set)
     window_rect.SetX(features.x);
   if (features.y_set)
     window_rect.SetY(features.y);
   if (features.width_set)
-    window_rect.SetWidth(features.width +
-                         (window_rect.Width() - viewport_size.Width()));
+    window_rect.SetWidth(features.width);
   if (features.height_set)
-    window_rect.SetHeight(features.height +
-                          (window_rect.Height() - viewport_size.Height()));
+    window_rect.SetHeight(features.height);
 
   page->GetChromeClient().SetWindowRectWithAdjustment(window_rect, frame);
   page->GetChromeClient().Show(policy);
@@ -319,7 +317,7 @@ static Frame* CreateWindowHelper(LocalFrame& opener_frame,
          opener_frame.GetDocument()->Url().IsEmpty());
   DCHECK_EQ(request.GetResourceRequest().GetFrameType(),
             network::mojom::RequestContextFrameType::kAuxiliary);
-  probe::windowOpen(opener_frame.GetDocument(),
+  probe::WindowOpen(opener_frame.GetDocument(),
                     request.GetResourceRequest().Url(), request.FrameName(),
                     features,
                     LocalFrame::HasTransientUserActivation(&opener_frame));
@@ -337,7 +335,7 @@ static Frame* CreateWindowHelper(LocalFrame& opener_frame,
       // FIXME: This message should be moved off the console once a solution to
       // https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
       opener_frame.GetDocument()->AddConsoleMessage(ConsoleMessage::Create(
-          kSecurityMessageSource, kErrorMessageLevel,
+          kSecurityMessageSource, mojom::ConsoleMessageLevel::kError,
           "Blocked opening '" +
               request.GetResourceRequest().Url().ElidedString() +
               "' in a new window because the request was made in a sandboxed "
@@ -375,7 +373,8 @@ DOMWindow* CreateWindow(const String& url_string,
           ? KURL(g_empty_string)
           : entered_window_frame.GetDocument()->CompleteURL(url_string);
   if (!completed_url.IsEmpty() && !completed_url.IsValid()) {
-    UseCounter::Count(active_frame, WebFeature::kWindowOpenWithInvalidURL);
+    UseCounter::Count(incumbent_window.document(),
+                      WebFeature::kWindowOpenWithInvalidURL);
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
         "Unable to open a window with invalid URL '" +
@@ -390,11 +389,10 @@ DOMWindow* CreateWindow(const String& url_string,
     String script_source = DecodeURLEscapeSequences(
         completed_url.GetString(), DecodeURLMode::kUTF8OrIsomorphic);
 
-    if (!opener_frame.GetDocument()
-             ->GetContentSecurityPolicy()
-             ->AllowJavaScriptURLs(nullptr, script_source,
-                                   opener_frame.GetDocument()->Url(),
-                                   OrdinalNumber())) {
+    if (!opener_frame.GetDocument()->GetContentSecurityPolicy()->AllowInline(
+            ContentSecurityPolicy::InlineType::kJavaScriptURL,
+            nullptr /* element */, script_source, String() /* nonce */,
+            opener_frame.GetDocument()->Url(), OrdinalNumber())) {
       return nullptr;
     }
   }
@@ -426,6 +424,7 @@ DOMWindow* CreateWindow(const String& url_string,
   // createWindow(LocalFrame& openerFrame, ...).
   // This value will be set in ResourceRequest loaded in a new LocalFrame.
   bool has_user_gesture = LocalFrame::HasTransientUserActivation(&opener_frame);
+  opener_frame.MaybeLogAdClickNavigation();
 
   // We pass the opener frame for the lookupFrame in case the active frame is
   // different from the opener frame, and the name references a frame relative
@@ -488,12 +487,14 @@ void CreateWindowForRequest(const FrameLoadRequest& request,
       true /* force_new_foreground_tab */, created);
   if (!new_frame)
     return;
+  auto* new_local_frame = DynamicTo<LocalFrame>(new_frame);
   if (request.GetShouldSendReferrer() == kMaybeSendReferrer) {
     // TODO(japhet): Does network::mojom::ReferrerPolicy need to be proagated
     // for RemoteFrames?
-    if (new_frame->IsLocalFrame())
-      ToLocalFrame(new_frame)->GetDocument()->SetReferrerPolicy(
+    if (new_local_frame) {
+      new_local_frame->GetDocument()->SetReferrerPolicy(
           opener_frame.GetDocument()->GetReferrerPolicy());
+    }
   }
 
   // TODO(japhet): Form submissions on RemoteFrames don't work yet.
@@ -505,8 +506,8 @@ void CreateWindowForRequest(const FrameLoadRequest& request,
   auto blob_url_token = request.GetBlobURLToken();
   if (blob_url_token)
     new_request.SetBlobURLToken(std::move(blob_url_token));
-  if (new_frame->IsLocalFrame())
-    ToLocalFrame(new_frame)->Loader().StartNavigation(new_request);
+  if (new_local_frame)
+    new_local_frame->Loader().StartNavigation(new_request);
 }
 
 }  // namespace blink

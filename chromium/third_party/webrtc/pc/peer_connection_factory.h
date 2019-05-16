@@ -18,10 +18,10 @@
 #include "api/media_stream_interface.h"
 #include "api/media_transport_interface.h"
 #include "api/peer_connection_interface.h"
+#include "api/scoped_refptr.h"
 #include "media/sctp/sctp_transport_internal.h"
 #include "pc/channel_manager.h"
 #include "rtc_base/rtc_certificate_generator.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread.h"
 
 namespace rtc {
@@ -35,12 +35,6 @@ class RtcEventLog;
 
 class PeerConnectionFactory : public PeerConnectionFactoryInterface {
  public:
-  // Use the overloads of CreateVideoSource that take raw VideoCapturer
-  // pointers from PeerConnectionFactoryInterface.
-  // TODO(deadbeef): Remove this using statement once those overloads are
-  // removed.
-  using PeerConnectionFactoryInterface::CreateVideoSource;
-
   void SetOptions(const Options& options) override;
 
   rtc::scoped_refptr<PeerConnectionInterface> CreatePeerConnection(
@@ -67,16 +61,6 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
       const cricket::AudioOptions& options) override;
 
-  rtc::scoped_refptr<VideoTrackSourceInterface> CreateVideoSource(
-      std::unique_ptr<cricket::VideoCapturer> capturer) override;
-  // This version supports filtering on width, height and frame rate.
-  // For the "constraints=null" case, use the version without constraints.
-  // TODO(hta): Design a version without MediaConstraintsInterface.
-  // https://bugs.chromium.org/p/webrtc/issues/detail?id=5617
-  rtc::scoped_refptr<VideoTrackSourceInterface> CreateVideoSource(
-      std::unique_ptr<cricket::VideoCapturer> capturer,
-      const MediaConstraintsInterface* constraints) override;
-
   rtc::scoped_refptr<VideoTrackInterface> CreateVideoTrack(
       const std::string& id,
       VideoTrackSourceInterface* video_source) override;
@@ -92,9 +76,15 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   CreateSctpTransportInternalFactory();
 
   virtual cricket::ChannelManager* channel_manager();
-  virtual rtc::Thread* signaling_thread();
-  virtual rtc::Thread* worker_thread();
-  virtual rtc::Thread* network_thread();
+
+  rtc::Thread* signaling_thread() {
+    // This method can be called on a different thread when the factory is
+    // created in CreatePeerConnectionFactory().
+    return signaling_thread_;
+  }
+  rtc::Thread* worker_thread() { return worker_thread_; }
+  rtc::Thread* network_thread() { return network_thread_; }
+
   const Options& options() const { return options_; }
 
   MediaTransportFactory* media_transport_factory() {

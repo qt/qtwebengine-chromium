@@ -37,25 +37,6 @@ struct SK_API SkColorSpacePrimaries {
     bool toXYZD50(skcms_Matrix3x3* toXYZD50) const;
 };
 
-/**
- *  Contains the coefficients for a common transfer function equation, specified as
- *  a transformation from a curved space to linear.
- *
- *  LinearVal = sign(InputVal) * (  C*|InputVal| + F       ), for 0.0f <= |InputVal| <  D
- *  LinearVal = sign(InputVal) * ( (A*|InputVal| + B)^G + E), for D    <= |InputVal|
- *
- *  Function must be positive and increasing.
- */
-struct SK_API SkColorSpaceTransferFn {
-    float fG;
-    float fA;
-    float fB;
-    float fC;
-    float fD;
-    float fE;
-    float fF;
-};
-
 namespace SkNamedTransferFn {
 
 // Like SkNamedGamut::kSRGB, keeping this bitwise exactly the same as skcms makes things fastest.
@@ -124,13 +105,6 @@ public:
      */
     static sk_sp<SkColorSpace> MakeSRGBLinear();
 
-    // DEPRECATED
-    // Keeping this around until Android stops using it.
-    enum Gamut {
-        kSRGB_Gamut,
-        kDCIP3_D65_Gamut,
-    };
-
     /**
      *  Create an SkColorSpace from a transfer function and a row-major 3x3 transformation to XYZ.
      */
@@ -163,8 +137,6 @@ public:
      *
      *  If not, returns false.
      */
-    bool isNumericalTransferFn(SkColorSpaceTransferFn* fn) const;
-
     bool isNumericalTransferFn(skcms_TransferFunction* fn) const;
 
     /**

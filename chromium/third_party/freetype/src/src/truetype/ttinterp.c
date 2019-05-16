@@ -4,7 +4,7 @@
  *
  *   TrueType bytecode interpreter (body).
  *
- * Copyright 1996-2018 by
+ * Copyright (C) 1996-2019 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -1564,7 +1564,7 @@
             FT_ULong        idx,
             FT_F26Dot6      value )
   {
-    exc->cvt[idx] += value;
+    exc->cvt[idx] = ADD_LONG( exc->cvt[idx], value );
   }
 
 
@@ -1573,7 +1573,8 @@
                       FT_ULong        idx,
                       FT_F26Dot6      value )
   {
-    exc->cvt[idx] += FT_DivFix( value, Current_Ratio( exc ) );
+    exc->cvt[idx] = ADD_LONG( exc->cvt[idx],
+                              FT_DivFix( value, Current_Ratio( exc ) ) );
   }
 
 
@@ -6311,7 +6312,7 @@
     if ( exc->GS.auto_flip )
     {
       if ( ( org_dist ^ cvt_dist ) < 0 )
-        cvt_dist = -cvt_dist;
+        cvt_dist = NEG_LONG( cvt_dist );
     }
 
 #ifdef TT_SUPPORT_SUBPIXEL_HINTING_INFINALITY

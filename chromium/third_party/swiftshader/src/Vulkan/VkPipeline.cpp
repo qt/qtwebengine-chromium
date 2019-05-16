@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <Pipeline/SpirvShader.hpp>
 #include "VkPipeline.hpp"
+#include "VkPipelineLayout.hpp"
 #include "VkShaderModule.hpp"
+#include "Pipeline/SpirvShader.hpp"
+
+#include "spirv-tools/optimizer.hpp"
 
 namespace
 {
@@ -68,10 +71,11 @@ sw::StreamType getStreamType(VkFormat format)
 	case VK_FORMAT_R8_UINT:
 	case VK_FORMAT_R8G8_UINT:
 	case VK_FORMAT_R8G8B8A8_UINT:
-	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
 	case VK_FORMAT_A8B8G8R8_UINT_PACK32:
 		return sw::STREAMTYPE_BYTE;
+	case VK_FORMAT_B8G8R8A8_UNORM:
+		return sw::STREAMTYPE_COLOR;
 	case VK_FORMAT_R8_SNORM:
 	case VK_FORMAT_R8_SINT:
 	case VK_FORMAT_R8G8_SNORM:
@@ -183,12 +187,64 @@ uint32_t getNumberOfChannels(VkFormat format)
 	return 0;
 }
 
+// preprocessSpirv applies and freezes specializations into constants, inlines
+// all functions and performs constant folding.
+std::vector<uint32_t> preprocessSpirv(
+		std::vector<uint32_t> const &code,
+		VkSpecializationInfo const *specializationInfo)
+{
+	spvtools::Optimizer opt{SPV_ENV_VULKAN_1_1};
+
+	opt.SetMessageConsumer([](spv_message_level_t level, const char*, const spv_position_t& p, const char* m) {
+		switch (level)
+		{
+		case SPV_MSG_FATAL:
+		case SPV_MSG_INTERNAL_ERROR:
+		case SPV_MSG_ERROR:
+			ERR("%d:%d %s", p.line, p.column, m);
+			break;
+		case SPV_MSG_WARNING:
+		case SPV_MSG_INFO:
+		case SPV_MSG_DEBUG:
+			TRACE("%d:%d %s", p.line, p.column, m);
+			break;
+		}
+	});
+
+	opt.RegisterPass(spvtools::CreateInlineExhaustivePass());
+
+	// If the pipeline uses specialization, apply the specializations before freezing
+	if (specializationInfo)
+	{
+		std::unordered_map<uint32_t, std::vector<uint32_t>> specializations;
+		for (auto i = 0u; i < specializationInfo->mapEntryCount; ++i)
+		{
+			auto const &e = specializationInfo->pMapEntries[i];
+			auto value_ptr =
+					static_cast<uint32_t const *>(specializationInfo->pData) + e.offset / sizeof(uint32_t);
+			specializations.emplace(e.constantID,
+									std::vector<uint32_t>{value_ptr, value_ptr + e.size / sizeof(uint32_t)});
+		}
+		opt.RegisterPass(spvtools::CreateSetSpecConstantDefaultValuePass(specializations));
+	}
+	// Freeze specialization constants into normal constants, and propagate through
+	opt.RegisterPass(spvtools::CreateFreezeSpecConstantValuePass());
+	opt.RegisterPass(spvtools::CreateFoldSpecConstantOpAndCompositePass());
+
+	std::vector<uint32_t> optimized;
+	opt.Run(code.data(), code.size(), &optimized);
+	return optimized;
 }
+
+} // anonymous namespace
 
 namespace vk
 {
 
+Pipeline::Pipeline(PipelineLayout const *layout) : layout(layout) {}
+
 GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo* pCreateInfo, void* mem)
+	: Pipeline(Cast(pCreateInfo->layout))
 {
 	if((pCreateInfo->flags != 0) ||
 	   (pCreateInfo->stageCount != 2) ||
@@ -227,11 +283,17 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo* pCreateIn
 		UNIMPLEMENTED();
 	}
 
+	// Context must always have a PipelineLayout set.
+	context.pipelineLayout = layout;
+
+	// Temporary in-binding-order representation of buffer strides, to be consumed below
+	// when considering attributes. TODO: unfuse buffers from attributes in backend, is old GL model.
+	uint32_t bufferStrides[MAX_VERTEX_INPUT_BINDINGS];
 	for(uint32_t i = 0; i < vertexInputState->vertexBindingDescriptionCount; i++)
 	{
-		const VkVertexInputBindingDescription* vertexBindingDescription = vertexInputState->pVertexBindingDescriptions;
-		context.input[vertexBindingDescription->binding].stride = vertexBindingDescription->stride;
-		if(vertexBindingDescription->inputRate != VK_VERTEX_INPUT_RATE_VERTEX)
+		auto const & desc = vertexInputState->pVertexBindingDescriptions[i];
+		bufferStrides[desc.binding] = desc.stride;
+		if(desc.inputRate != VK_VERTEX_INPUT_RATE_VERTEX)
 		{
 			UNIMPLEMENTED();
 		}
@@ -239,20 +301,14 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo* pCreateIn
 
 	for(uint32_t i = 0; i < vertexInputState->vertexAttributeDescriptionCount; i++)
 	{
-		const VkVertexInputAttributeDescription* vertexAttributeDescriptions = vertexInputState->pVertexAttributeDescriptions;
-		sw::Stream& input = context.input[vertexAttributeDescriptions->binding];
-		input.count = getNumberOfChannels(vertexAttributeDescriptions->format);
-		input.type = getStreamType(vertexAttributeDescriptions->format);
-		input.normalized = !sw::Surface::isNonNormalizedInteger(vertexAttributeDescriptions->format);
-
-		if(vertexAttributeDescriptions->location != vertexAttributeDescriptions->binding)
-		{
-			UNIMPLEMENTED();
-		}
-		if(vertexAttributeDescriptions->offset != 0)
-		{
-			UNIMPLEMENTED();
-		}
+		auto const & desc = vertexInputState->pVertexAttributeDescriptions[i];
+		sw::Stream& input = context.input[desc.location];
+		input.count = getNumberOfChannels(desc.format);
+		input.type = getStreamType(desc.format);
+		input.normalized = !sw::Surface::isNonNormalizedInteger(desc.format);
+		input.offset = desc.offset;
+		input.binding = desc.binding;
+		input.stride = bufferStrides[desc.binding];
 	}
 
 	const VkPipelineInputAssemblyStateCreateInfo* assemblyState = pCreateInfo->pInputAssemblyState;
@@ -265,15 +321,18 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo* pCreateIn
 	context.drawType = Convert(assemblyState->topology);
 
 	const VkPipelineViewportStateCreateInfo* viewportState = pCreateInfo->pViewportState;
-	if((viewportState->flags != 0) ||
-	   (viewportState->viewportCount != 1) ||
-	   (viewportState->scissorCount	!= 1))
+	if(viewportState)
 	{
-		UNIMPLEMENTED();
-	}
+		if((viewportState->flags != 0) ||
+			(viewportState->viewportCount != 1) ||
+			(viewportState->scissorCount != 1))
+		{
+			UNIMPLEMENTED();
+		}
 
-	scissor = Convert(viewportState->pScissors[0]);
-	viewport = viewportState->pViewports[0];
+		scissor = Convert(viewportState->pScissors[0]);
+		viewport = viewportState->pViewports[0];
+	}
 
 	const VkPipelineRasterizationStateCreateInfo* rasterizationState = pCreateInfo->pRasterizationState;
 	if((rasterizationState->flags != 0) ||
@@ -284,88 +343,110 @@ GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo* pCreateIn
 	}
 
 	context.rasterizerDiscard = rasterizationState->rasterizerDiscardEnable;
+	context.cullMode = rasterizationState->cullMode;
 	context.frontFacingCCW = rasterizationState->frontFace == VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	context.depthBias = (rasterizationState->depthBiasEnable ? rasterizationState->depthBiasConstantFactor : 0.0f);
 	context.slopeDepthBias = (rasterizationState->depthBiasEnable ? rasterizationState->depthBiasSlopeFactor : 0.0f);
 
 	const VkPipelineMultisampleStateCreateInfo* multisampleState = pCreateInfo->pMultisampleState;
-	if((multisampleState->flags != 0) ||
-	   (multisampleState->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT) ||
-	   (multisampleState->sampleShadingEnable != 0) ||
-	   !((multisampleState->pSampleMask == nullptr) ||
-	     (*(multisampleState->pSampleMask) == 0xFFFFFFFFu)) ||
-	   (multisampleState->alphaToCoverageEnable != 0) ||
-	   (multisampleState->alphaToOneEnable != 0))
+	if(multisampleState)
 	{
-		UNIMPLEMENTED();
+		switch (multisampleState->rasterizationSamples) {
+		case VK_SAMPLE_COUNT_1_BIT:
+			context.sampleCount = 1;
+			break;
+		case VK_SAMPLE_COUNT_4_BIT:
+			context.sampleCount = 4;
+			break;
+		default:
+			UNIMPLEMENTED("Unsupported sample count");
+		}
+
+		if((multisampleState->flags != 0) ||
+			(multisampleState->sampleShadingEnable != 0) ||
+			!((multisampleState->pSampleMask == nullptr) ||
+			(*(multisampleState->pSampleMask) == 0xFFFFFFFFu)) ||
+				(multisampleState->alphaToCoverageEnable != 0) ||
+			(multisampleState->alphaToOneEnable != 0))
+		{
+			UNIMPLEMENTED();
+		}
+	}
+	else
+	{
+		context.sampleCount = 1;
 	}
 
 	const VkPipelineDepthStencilStateCreateInfo* depthStencilState = pCreateInfo->pDepthStencilState;
-	if((depthStencilState->flags != 0) ||
-	   (depthStencilState->depthBoundsTestEnable != 0) ||
-	   (depthStencilState->minDepthBounds != 0.0f) ||
-	   (depthStencilState->maxDepthBounds != 1.0f))
+	if(depthStencilState)
 	{
-		UNIMPLEMENTED();
-	}
-
-	context.depthBufferEnable = depthStencilState->depthTestEnable;
-	context.depthWriteEnable = depthStencilState->depthWriteEnable;
-	context.depthCompareMode = depthStencilState->depthCompareOp;
-
-	context.stencilEnable = context.twoSidedStencil = depthStencilState->stencilTestEnable;
-	if(context.stencilEnable)
-	{
-		context.stencilMask = depthStencilState->front.compareMask;
-		context.stencilCompareMode = depthStencilState->front.compareOp;
-		context.stencilZFailOperation = depthStencilState->front.depthFailOp;
-		context.stencilFailOperation = depthStencilState->front.failOp;
-		context.stencilPassOperation = depthStencilState->front.passOp;
-		context.stencilReference = depthStencilState->front.reference;
-		context.stencilWriteMask = depthStencilState->front.writeMask;
-
-		context.stencilMaskCCW = depthStencilState->back.compareMask;
-		context.stencilCompareModeCCW = depthStencilState->back.compareOp;
-		context.stencilZFailOperationCCW = depthStencilState->back.depthFailOp;
-		context.stencilFailOperationCCW = depthStencilState->back.failOp;
-		context.stencilPassOperationCCW = depthStencilState->back.passOp;
-		context.stencilReferenceCCW = depthStencilState->back.reference;
-		context.stencilWriteMaskCCW = depthStencilState->back.writeMask;
-	}
-
-	const VkPipelineColorBlendStateCreateInfo* colorBlendState = pCreateInfo->pColorBlendState;
-	if((colorBlendState->flags != 0) ||
-	   ((colorBlendState->logicOpEnable != 0) &&
-	    (colorBlendState->attachmentCount > 1)))
-	{
-		UNIMPLEMENTED();
-	}
-
-	context.colorLogicOpEnabled = colorBlendState->logicOpEnable;
-	context.logicalOperation = colorBlendState->logicOp;
-	blendConstants.r = colorBlendState->blendConstants[0];
-	blendConstants.g = colorBlendState->blendConstants[1];
-	blendConstants.b = colorBlendState->blendConstants[2];
-	blendConstants.a = colorBlendState->blendConstants[3];
-
-	if(colorBlendState->attachmentCount == 1)
-	{
-		const VkPipelineColorBlendAttachmentState& attachment = colorBlendState->pAttachments[0];
-		if(attachment.colorWriteMask != (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT))
+		if((depthStencilState->flags != 0) ||
+		   (depthStencilState->depthBoundsTestEnable != 0) ||
+		   (depthStencilState->minDepthBounds != 0.0f) ||
+		   (depthStencilState->maxDepthBounds != 1.0f))
 		{
 			UNIMPLEMENTED();
 		}
 
-		context.alphaBlendEnable = attachment.blendEnable;
-		context.separateAlphaBlendEnable = (attachment.alphaBlendOp != attachment.colorBlendOp) ||
-		                                   (attachment.dstAlphaBlendFactor != attachment.dstColorBlendFactor) ||
-		                                   (attachment.srcAlphaBlendFactor != attachment.srcColorBlendFactor);
-		context.blendOperationStateAlpha = attachment.alphaBlendOp;
-		context.blendOperationState = attachment.colorBlendOp;
-		context.destBlendFactorStateAlpha = attachment.dstAlphaBlendFactor;
-		context.destBlendFactorState = attachment.dstColorBlendFactor;
-		context.sourceBlendFactorStateAlpha = attachment.srcAlphaBlendFactor;
-		context.sourceBlendFactorState = attachment.srcColorBlendFactor;
+		context.depthBufferEnable = depthStencilState->depthTestEnable;
+		context.depthWriteEnable = depthStencilState->depthWriteEnable;
+		context.depthCompareMode = depthStencilState->depthCompareOp;
+
+		context.stencilEnable = context.twoSidedStencil = depthStencilState->stencilTestEnable;
+		if(context.stencilEnable)
+		{
+			context.stencilMask = depthStencilState->front.compareMask;
+			context.stencilCompareMode = depthStencilState->front.compareOp;
+			context.stencilZFailOperation = depthStencilState->front.depthFailOp;
+			context.stencilFailOperation = depthStencilState->front.failOp;
+			context.stencilPassOperation = depthStencilState->front.passOp;
+			context.stencilReference = depthStencilState->front.reference;
+			context.stencilWriteMask = depthStencilState->front.writeMask;
+
+			context.stencilMaskCCW = depthStencilState->back.compareMask;
+			context.stencilCompareModeCCW = depthStencilState->back.compareOp;
+			context.stencilZFailOperationCCW = depthStencilState->back.depthFailOp;
+			context.stencilFailOperationCCW = depthStencilState->back.failOp;
+			context.stencilPassOperationCCW = depthStencilState->back.passOp;
+			context.stencilReferenceCCW = depthStencilState->back.reference;
+			context.stencilWriteMaskCCW = depthStencilState->back.writeMask;
+		}
+	}
+
+	const VkPipelineColorBlendStateCreateInfo* colorBlendState = pCreateInfo->pColorBlendState;
+	if(colorBlendState)
+	{
+		if((colorBlendState->flags != 0) ||
+		   ((colorBlendState->logicOpEnable != 0) &&
+			(colorBlendState->attachmentCount > 1)))
+		{
+			UNIMPLEMENTED();
+		}
+
+		blendConstants.r = colorBlendState->blendConstants[0];
+		blendConstants.g = colorBlendState->blendConstants[1];
+		blendConstants.b = colorBlendState->blendConstants[2];
+		blendConstants.a = colorBlendState->blendConstants[3];
+
+		if(colorBlendState->attachmentCount == 1)
+		{
+			const VkPipelineColorBlendAttachmentState& attachment = colorBlendState->pAttachments[0];
+			if(attachment.colorWriteMask != (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT))
+			{
+				UNIMPLEMENTED();
+			}
+
+			context.alphaBlendEnable = attachment.blendEnable;
+			context.separateAlphaBlendEnable = (attachment.alphaBlendOp != attachment.colorBlendOp) ||
+											   (attachment.dstAlphaBlendFactor != attachment.dstColorBlendFactor) ||
+											   (attachment.srcAlphaBlendFactor != attachment.srcColorBlendFactor);
+			context.blendOperationStateAlpha = attachment.alphaBlendOp;
+			context.blendOperationState = attachment.colorBlendOp;
+			context.destBlendFactorStateAlpha = attachment.dstAlphaBlendFactor;
+			context.destBlendFactorState = attachment.dstColorBlendFactor;
+			context.sourceBlendFactorStateAlpha = attachment.srcAlphaBlendFactor;
+			context.sourceBlendFactorState = attachment.srcColorBlendFactor;
+		}
 	}
 }
 
@@ -382,28 +463,27 @@ size_t GraphicsPipeline::ComputeRequiredAllocationSize(const VkGraphicsPipelineC
 
 void GraphicsPipeline::compileShaders(const VkAllocationCallbacks* pAllocator, const VkGraphicsPipelineCreateInfo* pCreateInfo)
 {
-	for (auto pStage = pCreateInfo->pStages; pStage != pCreateInfo->pStages + pCreateInfo->stageCount; pStage++) {
+	for (auto pStage = pCreateInfo->pStages; pStage != pCreateInfo->pStages + pCreateInfo->stageCount; pStage++)
+	{
 		auto module = Cast(pStage->module);
 
-		// TODO: apply prep passes using SPIRV-Opt here.
-		// - Apply and freeze specializations, etc.
-		auto code = module->getCode();
+		auto code = preprocessSpirv(module->getCode(), pStage->pSpecializationInfo);
 
-		// TODO: pass in additional information here:
-		// - any NOS from pCreateInfo which we'll actually need
+		// TODO: also pass in any pipeline state which will affect shader compilation
 		auto spirvShader = new sw::SpirvShader{code};
 
-		switch (pStage->stage) {
-			case VK_SHADER_STAGE_VERTEX_BIT:
-				vertexShader = spirvShader;
-				break;
+		switch (pStage->stage)
+		{
+		case VK_SHADER_STAGE_VERTEX_BIT:
+			context.vertexShader = vertexShader = spirvShader;
+			break;
 
-			case VK_SHADER_STAGE_FRAGMENT_BIT:
-				fragmentShader = spirvShader;
-				break;
+		case VK_SHADER_STAGE_FRAGMENT_BIT:
+			context.pixelShader = fragmentShader = spirvShader;
+			break;
 
-			default:
-				UNIMPLEMENTED("Unsupported stage");
+		default:
+			UNIMPLEMENTED("Unsupported stage");
 		}
 	}
 }
@@ -452,6 +532,7 @@ const sw::Color<float>& GraphicsPipeline::getBlendConstants() const
 }
 
 ComputePipeline::ComputePipeline(const VkComputePipelineCreateInfo* pCreateInfo, void* mem)
+	: Pipeline(Cast(pCreateInfo->layout))
 {
 }
 

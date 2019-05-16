@@ -37,11 +37,16 @@ using GrStdSteadyClock = std::chrono::steady_clock;
 enum GrPixelConfig {
     kUnknown_GrPixelConfig,
     kAlpha_8_GrPixelConfig,
+    kAlpha_8_as_Alpha_GrPixelConfig,
+    kAlpha_8_as_Red_GrPixelConfig,
     kGray_8_GrPixelConfig,
+    kGray_8_as_Lum_GrPixelConfig,
+    kGray_8_as_Red_GrPixelConfig,
     kRGB_565_GrPixelConfig,
     kRGBA_4444_GrPixelConfig,
     kRGBA_8888_GrPixelConfig,
     kRGB_888_GrPixelConfig,
+    kRGB_888X_GrPixelConfig,
     kRG_88_GrPixelConfig,
     kBGRA_8888_GrPixelConfig,
     kSRGBA_8888_GrPixelConfig,
@@ -50,17 +55,11 @@ enum GrPixelConfig {
     kRGBA_float_GrPixelConfig,
     kRG_float_GrPixelConfig,
     kAlpha_half_GrPixelConfig,
+    kAlpha_half_as_Red_GrPixelConfig,
     kRGBA_half_GrPixelConfig,
     kRGB_ETC1_GrPixelConfig,
 
-    /** For internal usage. */
-    kPrivateConfig1_GrPixelConfig,
-    kPrivateConfig2_GrPixelConfig,
-    kPrivateConfig3_GrPixelConfig,
-    kPrivateConfig4_GrPixelConfig,
-    kPrivateConfig5_GrPixelConfig,
-
-    kLast_GrPixelConfig = kPrivateConfig5_GrPixelConfig
+    kLast_GrPixelConfig = kRGB_ETC1_GrPixelConfig
 };
 static const int kGrPixelConfigCnt = kLast_GrPixelConfig + 1;
 
@@ -197,6 +196,36 @@ enum GrWrapOwnership {
     kAdopt_GrWrapOwnership,
 };
 
+enum class GrWrapCacheable : bool {
+    /**
+     * The wrapped resource will be removed from the cache as soon as it becomes purgeable. It may
+     * still be assigned and found by a unique key, but the presence of the key will not be used to
+     * keep the resource alive when it has no references.
+     */
+    kNo = false,
+    /**
+     * The wrapped resource is allowed to remain in the GrResourceCache when it has no references
+     * but has a unique key. Such resources should only be given unique keys when it is known that
+     * the key will eventually be removed from the resource or invalidated via the message bus.
+     */
+    kYes = true
+};
+
+enum class GrBudgetedType : uint8_t {
+    /** The resource is budgeted and is subject to purging under budget pressure. */
+    kBudgeted,
+    /**
+     * The resource is unbudgeted and is purged as soon as it has no refs regardless of whether
+     * it has a unique or scratch key.
+     */
+    kUnbudgetedUncacheable,
+    /**
+     * The resource is unbudgeted and is allowed to remain in the cache with no refs if it
+     * has a unique key. Scratch keys are ignored.
+     */
+    kUnbudgetedCacheable,
+};
+
 /**
  * Clips are composed from these objects.
  */
@@ -211,8 +240,8 @@ enum class GrScissorTest : bool {
 };
 
 struct GrMipLevel {
-    const void* fPixels;
-    size_t fRowBytes;
+    const void* fPixels = nullptr;
+    size_t fRowBytes = 0;
 };
 
 /**
@@ -290,6 +319,22 @@ enum class GrAllowMixedSamples : bool { kNo = false, kYes = true };
 
 GrAAType GrChooseAAType(GrAA, GrFSAAType, GrAllowMixedSamples, const GrCaps&);
 
+/**
+ * A number of rectangle/quadrilateral drawing APIs can control anti-aliasing on a per edge basis.
+ * These masks specify which edges are AA'ed. The intent for this is to support tiling with seamless
+ * boundaries, where the inner edges are non-AA and the outer edges are AA. Regular draws (where AA
+ * is specified by GrAA) is almost equivalent to kNone or kAll, with the exception of how MSAA is
+ * handled.
+ *
+ * When tiling and there is MSAA, mixed edge rectangles are processed with MSAA, so in order for the
+ * tiled edges to remain seamless, inner tiles with kNone must also be processed with MSAA. In
+ * regular drawing, however, kNone should disable MSAA (if it's supported) to match the expected
+ * appearance.
+ *
+ * Therefore, APIs that use per-edge AA flags also take a GrAA value so that they can differentiate
+ * between the regular and tiling use case behaviors. Tiling operations should always pass
+ * GrAA::kYes while regular options should pass GrAA based on the SkPaint's anti-alias state.
+ */
 enum class GrQuadAAFlags {
     kLeft   = SkCanvas::kLeft_QuadAAFlag,
     kTop    = SkCanvas::kTop_QuadAAFlag,
@@ -383,7 +428,7 @@ enum GrShaderFlags {
     kGeometry_GrShaderFlag = 1 << kGeometry_GrShaderType,
     kFragment_GrShaderFlag = 1 << kFragment_GrShaderType
 };
-GR_MAKE_BITFIELD_OPS(GrShaderFlags);
+GR_MAKE_BITFIELD_OPS(GrShaderFlags)
 
 /**
  * Precisions of shader language variables. Not all shading languages support precisions or actually
@@ -791,25 +836,13 @@ enum GrIOType {
 /**
  * Indicates the type of data that a GPU buffer will be used for.
  */
-enum GrBufferType {
-    kVertex_GrBufferType,
-    kIndex_GrBufferType,
-    kTexel_GrBufferType,
-    kDrawIndirect_GrBufferType,
-    kXferCpuToGpu_GrBufferType,
-    kXferGpuToCpu_GrBufferType,
-
-    kLast_GrBufferType = kXferGpuToCpu_GrBufferType
+enum class GrGpuBufferType {
+    kVertex,
+    kIndex,
+    kXferCpuToGpu,
+    kXferGpuToCpu,
 };
-static const int kGrBufferTypeCount = kLast_GrBufferType + 1;
-
-static inline bool GrBufferTypeIsVertexOrIndex(GrBufferType type) {
-    SkASSERT(type >= 0 && type < kGrBufferTypeCount);
-    return type <= kIndex_GrBufferType;
-
-    GR_STATIC_ASSERT(0 == kVertex_GrBufferType);
-    GR_STATIC_ASSERT(1 == kIndex_GrBufferType);
-}
+static const int kGrGpuBufferTypeCount = static_cast<int>(GrGpuBufferType::kXferGpuToCpu) + 1;
 
 /**
  * Provides a performance hint regarding the frequency at which a data store will be accessed.
@@ -916,16 +949,6 @@ enum class  GrMipMapsStatus {
 GR_MAKE_BITFIELD_CLASS_OPS(GpuPathRenderers)
 
 /**
- * We want to extend the GrPixelConfig enum to add cases for dealing with alpha_8 which is
- * internally either alpha8 or red8. Also for Gray_8 which can be luminance_8 or red_8.
- */
-static constexpr GrPixelConfig kAlpha_8_as_Alpha_GrPixelConfig = kPrivateConfig1_GrPixelConfig;
-static constexpr GrPixelConfig kAlpha_8_as_Red_GrPixelConfig = kPrivateConfig2_GrPixelConfig;
-static constexpr GrPixelConfig kAlpha_half_as_Red_GrPixelConfig = kPrivateConfig3_GrPixelConfig;
-static constexpr GrPixelConfig kGray_8_as_Lum_GrPixelConfig = kPrivateConfig4_GrPixelConfig;
-static constexpr GrPixelConfig kGray_8_as_Red_GrPixelConfig = kPrivateConfig5_GrPixelConfig;
-
-/**
  * Refers to the encoding of a GPU buffer as it will be interpreted by the GPU when sampling and
  * blending.
  */
@@ -960,6 +983,7 @@ static inline GrSRGBEncoded GrPixelConfigIsSRGBEncoded(GrPixelConfig config) {
         case kRGB_565_GrPixelConfig:
         case kRGBA_4444_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
@@ -997,6 +1021,7 @@ static inline size_t GrBytesPerPixel(GrPixelConfig config) {
             return 2;
         case kRGBA_8888_GrPixelConfig:
         case kRGB_888_GrPixelConfig:  // Assuming GPUs store this 4-byte aligned.
+        case kRGB_888X_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
         case kSRGBA_8888_GrPixelConfig:
         case kSBGRA_8888_GrPixelConfig:
@@ -1020,6 +1045,7 @@ static inline bool GrPixelConfigIsOpaque(GrPixelConfig config) {
     switch (config) {
         case kRGB_565_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kGray_8_GrPixelConfig:
         case kGray_8_as_Lum_GrPixelConfig:
@@ -1063,6 +1089,7 @@ static inline bool GrPixelConfigIsAlphaOnly(GrPixelConfig config) {
         case kRGBA_4444_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
         case kSRGBA_8888_GrPixelConfig:
@@ -1090,6 +1117,7 @@ static inline bool GrPixelConfigIsFloatingPoint(GrPixelConfig config) {
         case kRGB_565_GrPixelConfig:
         case kRGBA_4444_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
@@ -1127,6 +1155,7 @@ static inline bool GrPixelConfigIsCompressed(GrPixelConfig config) {
         case kRGB_565_GrPixelConfig:
         case kRGBA_4444_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
@@ -1161,6 +1190,7 @@ static inline GrPixelConfig GrMakePixelConfigUncompressed(GrPixelConfig config) 
         case kRGB_565_GrPixelConfig:
         case kRGBA_4444_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
@@ -1201,6 +1231,7 @@ static inline size_t GrCompressedFormatDataSize(GrPixelConfig config,
         case kRGB_565_GrPixelConfig:
         case kRGBA_4444_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
@@ -1236,6 +1267,7 @@ static inline GrSLPrecision GrSLSamplerPrecision(GrPixelConfig config) {
         case kRGBA_4444_GrPixelConfig:
         case kRGBA_8888_GrPixelConfig:
         case kRGB_888_GrPixelConfig:
+        case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
         case kSRGBA_8888_GrPixelConfig:
@@ -1312,6 +1344,7 @@ static inline GrColorType SkColorTypeToGrColorType(SkColorType ct) {
         case kRGB_888x_SkColorType:     return GrColorType::kRGB_888x;
         case kBGRA_8888_SkColorType:    return GrColorType::kBGRA_8888;
         case kGray_8_SkColorType:       return GrColorType::kGray_8;
+        case kRGBA_F16Norm_SkColorType: return GrColorType::kRGBA_F16;  // TODO(brianosman)
         case kRGBA_F16_SkColorType:     return GrColorType::kRGBA_F16;
         case kRGBA_1010102_SkColorType: return GrColorType::kRGBA_1010102;
         case kRGB_101010x_SkColorType:  return GrColorType::kUnknown;
@@ -1397,6 +1430,9 @@ static inline GrColorType GrPixelConfigToColorTypeAndEncoding(GrPixelConfig conf
             *srgbEncoded = GrSRGBEncoded::kNo;
             return GrColorType::kRGBA_8888;
         case kRGB_888_GrPixelConfig:
+            *srgbEncoded = GrSRGBEncoded::kNo;
+            return GrColorType::kRGB_888x;
+        case kRGB_888X_GrPixelConfig:
             *srgbEncoded = GrSRGBEncoded::kNo;
             return GrColorType::kRGB_888x;
         case kRG_88_GrPixelConfig:
@@ -1518,20 +1554,24 @@ static inline GrPixelConfig GrColorTypeToPixelConfig(GrColorType config,
     return kUnknown_GrPixelConfig;
 }
 
-class GrReleaseProcHelper : public SkRefCnt {
+/**
+ * Ref-counted object that calls a callback from its destructor.
+ */
+class GrRefCntedCallback : public SkRefCnt {
 public:
-    // These match the definitions in SkImage, from whence they came
-    typedef void* ReleaseCtx;
-    typedef void (*ReleaseProc)(ReleaseCtx);
+    using Context = void*;
+    using Callback = void (*)(Context);
 
-    GrReleaseProcHelper(ReleaseProc proc, ReleaseCtx ctx) : fReleaseProc(proc), fReleaseCtx(ctx) {
+    GrRefCntedCallback(Callback proc, Context ctx) : fReleaseProc(proc), fReleaseCtx(ctx) {
         SkASSERT(proc);
     }
-    ~GrReleaseProcHelper() override { fReleaseProc(fReleaseCtx); }
+    ~GrRefCntedCallback() override { fReleaseProc ? fReleaseProc(fReleaseCtx) : void(); }
+
+    Context context() const { return fReleaseCtx; }
 
 private:
-    ReleaseProc fReleaseProc;
-    ReleaseCtx  fReleaseCtx;
+    Callback fReleaseProc;
+    Context fReleaseCtx;
 };
 
 #endif

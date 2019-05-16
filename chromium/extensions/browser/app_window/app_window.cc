@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -878,6 +879,10 @@ void AppWindow::UpdateNativeAlwaysOnTop() {
     // always-on-top.
     native_app_window_->SetAlwaysOnTop(true);
   }
+}
+
+void AppWindow::ActivateContents(WebContents* contents) {
+  native_app_window_->Activate();
 }
 
 void AppWindow::CloseContents(WebContents* contents) {

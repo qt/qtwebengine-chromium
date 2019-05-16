@@ -272,7 +272,6 @@ EXPERIMENT_LIST="
     fp_mb_stats
     emulate_hardware
     non_greedy_mv
-    ml_var_partition
 "
 CONFIG_LIST="
     dependency_tracking
@@ -420,6 +419,12 @@ process_cmdline() {
 }
 
 post_process_cmdline() {
+    if enabled coefficient_range_checking; then
+      echo "coefficient-range-checking is for decoders only, disabling encoders:"
+      soft_disable vp8_encoder
+      soft_disable vp9_encoder
+    fi
+
     c=""
 
     # Enable all detected codecs, if they haven't been disabled
@@ -620,9 +625,16 @@ process_toolchain() {
         check_cflags -Wundef && add_cflags_only -Wundef
         check_cflags -Wframe-larger-than=52000 && \
           add_cflags_only -Wframe-larger-than=52000
+        check_cflags -Wmissing-declarations && \
+          add_cflags_only -Wmissing-declarations
+        check_cflags -Wmissing-prototypes && \
+          add_cflags_only -Wmissing-prototypes
         if enabled mips || [ -z "${INLINE}" ]; then
           enabled extra_warnings || check_add_cflags -Wno-unused-function
         fi
+        # Enforce c89 for c files. Don't be too strict about it though. Allow
+        # gnu extensions like "//" for comments.
+        check_cflags -std=gnu89 && add_cflags_only -std=gnu89
         # Avoid this warning for third_party C++ sources. Some reorganization
         # would be needed to apply this only to test/*.cc.
         check_cflags -Wshorten-64-to-32 && add_cflags_only -Wshorten-64-to-32

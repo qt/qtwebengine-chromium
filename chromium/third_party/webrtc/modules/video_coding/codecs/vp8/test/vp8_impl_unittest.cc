@@ -193,7 +193,7 @@ TEST_F(TestVp8Impl, EncodedColorSpaceEqualsInputColorSpace) {
   VideoFrame input_frame_w_color_space =
       VideoFrame::Builder()
           .set_video_frame_buffer(input_frame->video_frame_buffer())
-          .set_color_space(&color_space)
+          .set_color_space(color_space)
           .build();
 
   EncodeAndWaitForFrame(input_frame_w_color_space, &encoded_frame,
@@ -229,7 +229,7 @@ TEST_F(TestVp8Impl, DecodedColorSpaceEqualsEncodedColorSpace) {
 
   // Encoded frame with explicit color space information.
   ColorSpace color_space = CreateTestColorSpace(/*with_hdr_metadata=*/false);
-  encoded_frame.SetColorSpace(&color_space);
+  encoded_frame.SetColorSpace(color_space);
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             decoder_->Decode(encoded_frame, false, nullptr, -1));
   std::unique_ptr<VideoFrame> decoded_frame;
@@ -242,30 +242,30 @@ TEST_F(TestVp8Impl, DecodedColorSpaceEqualsEncodedColorSpace) {
 
 TEST_F(TestVp8Impl, ChecksSimulcastSettings) {
   codec_settings_.numberOfSimulcastStreams = 2;
-  // Reslutions are not scaled by 2, temporal layers do not match.
+  // Resolutions are not in ascending order, temporal layers do not match.
   codec_settings_.simulcastStream[0] = {kWidth, kHeight, kFramerateFps, 2,
                                         4000,   3000,    2000,          80};
-  codec_settings_.simulcastStream[1] = {kWidth, kHeight, 30,   3,
-                                        4000,   3000,    2000, 80};
+  codec_settings_.simulcastStream[1] = {kWidth / 2, kHeight / 2, 30,   3,
+                                        4000,       3000,        2000, 80};
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_ERR_SIMULCAST_PARAMETERS_NOT_SUPPORTED,
             encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
   codec_settings_.numberOfSimulcastStreams = 3;
-  // Reslutions are not scaled by 2.
+  // Resolutions are not in ascending order.
   codec_settings_.simulcastStream[0] = {
       kWidth / 2, kHeight / 2, kFramerateFps, 1, 4000, 3000, 2000, 80};
   codec_settings_.simulcastStream[1] = {
-      kWidth / 2, kHeight / 2, kFramerateFps, 1, 4000, 3000, 2000, 80};
+      kWidth / 2 - 1, kHeight / 2 - 1, kFramerateFps, 1, 4000, 3000, 2000, 80};
   codec_settings_.simulcastStream[2] = {kWidth, kHeight, 30,   1,
                                         4000,   3000,    2000, 80};
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_ERR_SIMULCAST_PARAMETERS_NOT_SUPPORTED,
             encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
-  // Reslutions are not scaled by 2.
+  // Resolutions are not in ascending order.
   codec_settings_.simulcastStream[0] = {kWidth, kHeight, kFramerateFps, 1,
                                         4000,   3000,    2000,          80};
   codec_settings_.simulcastStream[1] = {kWidth, kHeight, kFramerateFps, 1,
                                         4000,   3000,    2000,          80};
-  codec_settings_.simulcastStream[2] = {kWidth, kHeight, kFramerateFps, 1,
-                                        4000,   3000,    2000,          80};
+  codec_settings_.simulcastStream[2] = {
+      kWidth - 1, kHeight - 1, kFramerateFps, 1, 4000, 3000, 2000, 80};
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_ERR_SIMULCAST_PARAMETERS_NOT_SUPPORTED,
             encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
   // Temporal layers do not match.
@@ -292,6 +292,16 @@ TEST_F(TestVp8Impl, ChecksSimulcastSettings) {
       kWidth / 4, kHeight / 4, kFramerateFps, 1, 4000, 3000, 2000, 80};
   codec_settings_.simulcastStream[1] = {
       kWidth / 2, kHeight / 2, kFramerateFps, 1, 4000, 3000, 2000, 80};
+  codec_settings_.simulcastStream[2] = {kWidth, kHeight, kFramerateFps, 1,
+                                        4000,   3000,    2000,          80};
+  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
+            encoder_->InitEncode(&codec_settings_, kNumCores, kMaxPayloadSize));
+  // Everything fine: custom scaling, top resolution matches video, temporal
+  // settings are the same for all layers.
+  codec_settings_.simulcastStream[0] = {
+      kWidth / 4, kHeight / 4, kFramerateFps, 1, 4000, 3000, 2000, 80};
+  codec_settings_.simulcastStream[1] = {kWidth, kHeight, kFramerateFps, 1,
+                                        4000,   3000,    2000,          80};
   codec_settings_.simulcastStream[2] = {kWidth, kHeight, kFramerateFps, 1,
                                         4000,   3000,    2000,          80};
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,

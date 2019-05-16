@@ -311,12 +311,17 @@ def js_native_methods(types, typ):
 def debug(text):
     print(text)
 
+def do_assert(expr):
+    assert expr
+    return ''
+
 def get_renders_for_targets(api_params, wire_json, targets):
     base_params = {
         'enumerate': enumerate,
         'format': format,
         'len': len,
         'debug': debug,
+        'assert': do_assert,
 
         'Name': lambda name: Name(name),
 
@@ -384,13 +389,18 @@ def get_renders_for_targets(api_params, wire_json, targets):
         renders.append(FileRender('dawn_wire/TypeTraits.h', 'dawn_wire/TypeTraits_autogen.h', wire_params))
         renders.append(FileRender('dawn_wire/WireCmd.h', 'dawn_wire/WireCmd_autogen.h', wire_params))
         renders.append(FileRender('dawn_wire/WireCmd.cpp', 'dawn_wire/WireCmd_autogen.cpp', wire_params))
-        renders.append(FileRender('dawn_wire/WireServer.cpp', 'dawn_wire/WireServer.cpp', wire_params))
         renders.append(FileRender('dawn_wire/client/ApiObjects.h', 'dawn_wire/client/ApiObjects_autogen.h', wire_params))
         renders.append(FileRender('dawn_wire/client/ApiProcs.cpp', 'dawn_wire/client/ApiProcs_autogen.cpp', wire_params))
         renders.append(FileRender('dawn_wire/client/ApiProcs.h', 'dawn_wire/client/ApiProcs_autogen.h', wire_params))
+        renders.append(FileRender('dawn_wire/client/ClientBase.h', 'dawn_wire/client/ClientBase_autogen.h', wire_params))
+        renders.append(FileRender('dawn_wire/client/ClientDoers.cpp', 'dawn_wire/client/ClientDoers_autogen.cpp', wire_params))
         renders.append(FileRender('dawn_wire/client/ClientHandlers.cpp', 'dawn_wire/client/ClientHandlers_autogen.cpp', wire_params))
         renders.append(FileRender('dawn_wire/client/ClientPrototypes.inl', 'dawn_wire/client/ClientPrototypes_autogen.inl', wire_params))
-        renders.append(FileRender('dawn_wire/client/Device.h', 'dawn_wire/client/Device_autogen.h', wire_params))
+        renders.append(FileRender('dawn_wire/server/ServerBase.h', 'dawn_wire/server/ServerBase_autogen.h', wire_params))
+        renders.append(FileRender('dawn_wire/server/ServerCallbacks.cpp', 'dawn_wire/server/ServerCallbacks_autogen.cpp', wire_params))
+        renders.append(FileRender('dawn_wire/server/ServerDoers.cpp', 'dawn_wire/server/ServerDoers_autogen.cpp', wire_params))
+        renders.append(FileRender('dawn_wire/server/ServerHandlers.cpp', 'dawn_wire/server/ServerHandlers_autogen.cpp', wire_params))
+        renders.append(FileRender('dawn_wire/server/ServerPrototypes.inl', 'dawn_wire/server/ServerPrototypes_autogen.inl', wire_params))
 
     return renders
 

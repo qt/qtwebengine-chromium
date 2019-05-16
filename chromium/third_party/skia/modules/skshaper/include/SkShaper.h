@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "SkPoint.h"
+#include "SkSpan.h"
 #include "SkTextBlob.h"
 #include "SkTypeface.h"
 
@@ -24,15 +25,21 @@ class SkFont;
  */
 class SkShaper {
 public:
-    SkShaper(sk_sp<SkTypeface> face);
-    ~SkShaper();
+    static std::unique_ptr<SkShaper> MakePrimitive();
+    #ifdef SK_SHAPER_HARFBUZZ_AVAILABLE
+    static std::unique_ptr<SkShaper> MakeHarfBuzz();
+    #endif
+
+    static std::unique_ptr<SkShaper> Make();
+
+    SkShaper();
+    virtual ~SkShaper();
 
     class RunHandler {
     public:
         virtual ~RunHandler() = default;
 
         struct RunInfo {
-            size_t   fLineIndex;
             SkVector fAdvance;
             SkScalar fAscent,
                      fDescent,
@@ -42,29 +49,30 @@ public:
         struct Buffer {
             SkGlyphID* glyphs;    // required
             SkPoint*   positions; // required
-            char*      utf8text;  // optional
             uint32_t*  clusters;  // optional
         };
 
+        // Callback per glyph run.
         virtual Buffer newRunBuffer(const RunInfo&, const SkFont&, int glyphCount,
-                                    int utf8textCount) = 0;
+                                    SkSpan<const char> utf8) = 0;
+
+        // Called after run information is filled out.
+        virtual void commitRun() = 0;
+        // Callback per line.
+        virtual void commitLine() = 0;
     };
 
-    bool good() const;
-    SkPoint shape(RunHandler* handler,
-                  const SkFont& srcPaint,
-                  const char* utf8text,
-                  size_t textBytes,
-                  bool leftToRight,
-                  SkPoint point,
-                  SkScalar width) const;
+    virtual SkPoint shape(RunHandler* handler,
+                          const SkFont& srcFont,
+                          const char* utf8text,
+                          size_t textBytes,
+                          bool leftToRight,
+                          SkPoint point,
+                          SkScalar width) const = 0;
 
 private:
     SkShaper(const SkShaper&) = delete;
     SkShaper& operator=(const SkShaper&) = delete;
-
-    struct Impl;
-    std::unique_ptr<Impl> fImpl;
 };
 
 /**
@@ -72,12 +80,19 @@ private:
  */
 class SkTextBlobBuilderRunHandler final : public SkShaper::RunHandler {
 public:
+    SkTextBlobBuilderRunHandler(const char* utf8Text) : fUtf8Text(utf8Text) {}
     sk_sp<SkTextBlob> makeBlob();
 
-    SkShaper::RunHandler::Buffer newRunBuffer(const RunInfo&, const SkFont&, int, int) override;
+    SkShaper::RunHandler::Buffer newRunBuffer(const RunInfo&, const SkFont&, int, SkSpan<const char>) override;
+    void commitRun() override;
+    void commitLine() override {}
 
 private:
     SkTextBlobBuilder fBuilder;
+    char const * const fUtf8Text;
+    uint32_t* fClusters;
+    int fClusterOffset;
+    int fGlyphCount;
 };
 
 #endif  // SkShaper_DEFINED

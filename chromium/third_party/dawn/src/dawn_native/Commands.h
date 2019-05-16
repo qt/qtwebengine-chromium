@@ -15,10 +15,14 @@
 #ifndef DAWNNATIVE_COMMANDS_H_
 #define DAWNNATIVE_COMMANDS_H_
 
-#include "dawn_native/RenderPassDescriptor.h"
+#include "common/Constants.h"
+
 #include "dawn_native/Texture.h"
 
 #include "dawn_native/dawn_platform.h"
+
+#include <array>
+#include <bitset>
 
 namespace dawn_native {
 
@@ -37,6 +41,9 @@ namespace dawn_native {
         DrawIndexed,
         EndComputePass,
         EndRenderPass,
+        InsertDebugMarker,
+        PopDebugGroup,
+        PushDebugGroup,
         SetComputePipeline,
         SetRenderPipeline,
         SetPushConstants,
@@ -50,8 +57,33 @@ namespace dawn_native {
 
     struct BeginComputePassCmd {};
 
+    struct RenderPassColorAttachmentInfo {
+        Ref<TextureViewBase> view;
+        Ref<TextureViewBase> resolveTarget;
+        dawn::LoadOp loadOp;
+        dawn::StoreOp storeOp;
+        dawn_native::Color clearColor;
+    };
+
+    struct RenderPassDepthStencilAttachmentInfo {
+        Ref<TextureViewBase> view;
+        dawn::LoadOp depthLoadOp;
+        dawn::StoreOp depthStoreOp;
+        dawn::LoadOp stencilLoadOp;
+        dawn::StoreOp stencilStoreOp;
+        float clearDepth;
+        uint32_t clearStencil;
+    };
+
     struct BeginRenderPassCmd {
-        Ref<RenderPassDescriptorBase> info;
+        std::bitset<kMaxColorAttachments> colorAttachmentsSet;
+        RenderPassColorAttachmentInfo colorAttachments[kMaxColorAttachments];
+        bool hasDepthStencilAttachment;
+        RenderPassDepthStencilAttachmentInfo depthStencilAttachment;
+
+        // Cache the width and height of all attachments for convenience
+        uint32_t width;
+        uint32_t height;
     };
 
     struct BufferCopy {
@@ -111,6 +143,16 @@ namespace dawn_native {
 
     struct EndRenderPassCmd {};
 
+    struct InsertDebugMarkerCmd {
+        uint32_t length;
+    };
+
+    struct PopDebugGroupCmd {};
+
+    struct PushDebugGroupCmd {
+        uint32_t length;
+    };
+
     struct SetComputePipelineCmd {
         Ref<ComputePipelineBase> pipeline;
     };
@@ -134,7 +176,7 @@ namespace dawn_native {
     };
 
     struct SetBlendColorCmd {
-        float r, g, b, a;
+        Color color;
     };
 
     struct SetBindGroupCmd {

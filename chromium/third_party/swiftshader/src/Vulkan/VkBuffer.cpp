@@ -21,6 +21,8 @@
 namespace vk
 {
 
+const size_t Buffer::DataOffset = offsetof(Buffer, memory);
+
 Buffer::Buffer(const VkBufferCreateInfo* pCreateInfo, void* mem) :
 	flags(pCreateInfo->flags), size(pCreateInfo->size), usage(pCreateInfo->usage),
 	sharingMode(pCreateInfo->sharingMode), queueFamilyIndexCount(pCreateInfo->queueFamilyIndexCount),
@@ -43,7 +45,22 @@ size_t Buffer::ComputeRequiredAllocationSize(const VkBufferCreateInfo* pCreateIn
 const VkMemoryRequirements Buffer::getMemoryRequirements() const
 {
 	VkMemoryRequirements memoryRequirements = {};
-	memoryRequirements.alignment = vk::REQUIRED_MEMORY_ALIGNMENT;
+	if(usage & (VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT))
+	{
+		memoryRequirements.alignment = vk::MIN_TEXEL_BUFFER_OFFSET_ALIGNMENT;
+	}
+	else if(usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+	{
+		memoryRequirements.alignment = vk::MIN_STORAGE_BUFFER_OFFSET_ALIGNMENT;
+	}
+	else if(usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+	{
+		memoryRequirements.alignment = vk::MIN_UNIFORM_BUFFER_OFFSET_ALIGNMENT;
+	}
+	else
+	{
+		memoryRequirements.alignment = REQUIRED_MEMORY_ALIGNMENT;
+	}
 	memoryRequirements.memoryTypeBits = vk::MEMORY_TYPE_GENERIC_BIT;
 	memoryRequirements.size = size; // TODO: also reserve space for a header containing
 		                            // the size of the buffer (for robust buffer access)
@@ -72,6 +89,20 @@ void Buffer::copyTo(void* dstMemory, VkDeviceSize pSize, VkDeviceSize pOffset) c
 void Buffer::copyTo(Buffer* dstBuffer, const VkBufferCopy& pRegion) const
 {
 	copyTo(dstBuffer->getOffsetPointer(pRegion.dstOffset), pRegion.size, pRegion.srcOffset);
+}
+
+void Buffer::fill(VkDeviceSize dstOffset, VkDeviceSize fillSize, uint32_t data)
+{
+	ASSERT((fillSize + dstOffset) <= size);
+
+	memset(getOffsetPointer(dstOffset), data, fillSize);
+}
+
+void Buffer::update(VkDeviceSize dstOffset, VkDeviceSize dataSize, const void* pData)
+{
+	ASSERT((dataSize + dstOffset) <= size);
+
+	memcpy(getOffsetPointer(dstOffset), pData, dataSize);
 }
 
 void* Buffer::getOffsetPointer(VkDeviceSize offset) const

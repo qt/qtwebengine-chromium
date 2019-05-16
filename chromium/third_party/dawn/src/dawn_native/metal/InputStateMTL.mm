@@ -66,18 +66,18 @@ namespace dawn_native { namespace metal {
             if (!attributesSetMask[i]) {
                 continue;
             }
-            const AttributeInfo& info = GetAttribute(i);
+            const VertexAttributeDescriptor& info = GetAttribute(i);
 
             auto attribDesc = [MTLVertexAttributeDescriptor new];
             attribDesc.format = VertexFormatType(info.format);
             attribDesc.offset = info.offset;
-            attribDesc.bufferIndex = kMaxBindingsPerGroup + info.bindingSlot;
+            attribDesc.bufferIndex = kMaxBindingsPerGroup + info.inputSlot;
             mMtlVertexDescriptor.attributes[i] = attribDesc;
             [attribDesc release];
         }
 
         for (uint32_t i : IterateBitSet(GetInputsSetMask())) {
-            const InputInfo& info = GetInput(i);
+            const VertexInputDescriptor& info = GetInput(i);
 
             auto layoutDesc = [MTLVertexBufferLayoutDescriptor new];
             if (info.stride == 0) {

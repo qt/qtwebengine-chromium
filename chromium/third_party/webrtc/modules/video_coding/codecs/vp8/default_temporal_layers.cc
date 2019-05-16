@@ -20,56 +20,33 @@
 #include "modules/include/module_common_types.h"
 #include "modules/video_coding/codecs/vp8/default_temporal_layers.h"
 #include "modules/video_coding/include/video_codec_interface.h"
+#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
-
-Vp8TemporalLayers::FrameConfig::FrameConfig()
-    : FrameConfig(kNone, kNone, kNone, false) {}
-
-Vp8TemporalLayers::FrameConfig::FrameConfig(
-    Vp8TemporalLayers::BufferFlags last,
-    Vp8TemporalLayers::BufferFlags golden,
-    Vp8TemporalLayers::BufferFlags arf)
-    : FrameConfig(last, golden, arf, false) {}
-
-Vp8TemporalLayers::FrameConfig::FrameConfig(
-    Vp8TemporalLayers::BufferFlags last,
-    Vp8TemporalLayers::BufferFlags golden,
-    Vp8TemporalLayers::BufferFlags arf,
-    FreezeEntropy)
-    : FrameConfig(last, golden, arf, true) {}
-
-Vp8TemporalLayers::FrameConfig::FrameConfig(
-    Vp8TemporalLayers::BufferFlags last,
-    Vp8TemporalLayers::BufferFlags golden,
-    Vp8TemporalLayers::BufferFlags arf,
-    bool freeze_entropy)
-    : drop_frame(last == Vp8TemporalLayers::kNone &&
-                 golden == Vp8TemporalLayers::kNone &&
-                 arf == Vp8TemporalLayers::kNone),
-      last_buffer_flags(last),
-      golden_buffer_flags(golden),
-      arf_buffer_flags(arf),
-      encoder_layer_id(0),
-      packetizer_temporal_idx(kNoTemporalIdx),
-      layer_sync(false),
-      freeze_entropy(freeze_entropy),
-      first_reference(Vp8BufferReference::kNone),
-      second_reference(Vp8BufferReference::kNone) {}
-
 DefaultTemporalLayers::PendingFrame::PendingFrame() = default;
 DefaultTemporalLayers::PendingFrame::PendingFrame(
     bool expired,
     uint8_t updated_buffers_mask,
-    const FrameConfig& frame_config)
+    const Vp8FrameConfig& frame_config)
     : expired(expired),
       updated_buffer_mask(updated_buffers_mask),
       frame_config(frame_config) {}
 
 namespace {
+using Buffer = Vp8FrameConfig::Buffer;
+using BufferFlags = Vp8FrameConfig::BufferFlags;
+using FreezeEntropy = Vp8FrameConfig::FreezeEntropy;
+using Vp8BufferReference = Vp8FrameConfig::Vp8BufferReference;
+
+constexpr BufferFlags kNone = BufferFlags::kNone;
+constexpr BufferFlags kReference = BufferFlags::kReference;
+constexpr BufferFlags kUpdate = BufferFlags::kUpdate;
+constexpr BufferFlags kReferenceAndUpdate = BufferFlags::kReferenceAndUpdate;
+constexpr FreezeEntropy kFreezeEntropy = FreezeEntropy::kFreezeEntropy;
+
 static constexpr uint8_t kUninitializedPatternIndex =
     std::numeric_limits<uint8_t>::max();
 static constexpr std::array<Vp8BufferReference, 3> kAllBuffers = {
@@ -108,15 +85,15 @@ std::vector<unsigned int> GetTemporalIds(size_t num_layers) {
   return {0};
 }
 
-uint8_t GetUpdatedBuffers(const Vp8TemporalLayers::FrameConfig& config) {
+uint8_t GetUpdatedBuffers(const Vp8FrameConfig& config) {
   uint8_t flags = 0;
-  if (config.last_buffer_flags & Vp8TemporalLayers::BufferFlags::kUpdate) {
+  if (config.last_buffer_flags & BufferFlags::kUpdate) {
     flags |= static_cast<uint8_t>(Vp8BufferReference::kLast);
   }
-  if (config.golden_buffer_flags & Vp8TemporalLayers::BufferFlags::kUpdate) {
+  if (config.golden_buffer_flags & BufferFlags::kUpdate) {
     flags |= static_cast<uint8_t>(Vp8BufferReference::kGolden);
   }
-  if (config.arf_buffer_flags & Vp8TemporalLayers::BufferFlags::kUpdate) {
+  if (config.arf_buffer_flags & BufferFlags::kUpdate) {
     flags |= static_cast<uint8_t>(Vp8BufferReference::kAltref);
   }
   return flags;
@@ -124,10 +101,10 @@ uint8_t GetUpdatedBuffers(const Vp8TemporalLayers::FrameConfig& config) {
 
 // Find the set of buffers that are never updated by the given pattern.
 std::set<Vp8BufferReference> FindKfBuffers(
-    const std::vector<Vp8TemporalLayers::FrameConfig>& frame_configs) {
+    const std::vector<Vp8FrameConfig>& frame_configs) {
   std::set<Vp8BufferReference> kf_buffers(kAllBuffers.begin(),
                                           kAllBuffers.end());
-  for (Vp8TemporalLayers::FrameConfig config : frame_configs) {
+  for (Vp8FrameConfig config : frame_configs) {
     // Get bit-masked set of update buffers for this frame config.
     uint8_t updated_buffers = GetUpdatedBuffers(config);
     for (Vp8BufferReference buffer : kAllBuffers) {
@@ -140,8 +117,8 @@ std::set<Vp8BufferReference> FindKfBuffers(
 }
 }  // namespace
 
-std::vector<Vp8TemporalLayers::FrameConfig>
-DefaultTemporalLayers::GetTemporalPattern(size_t num_layers) {
+std::vector<Vp8FrameConfig> DefaultTemporalLayers::GetTemporalPattern(
+    size_t num_layers) {
   // For indexing in the patterns described below (which temporal layers they
   // belong to), see the diagram above.
   // Layer sync is done similarly for all patterns (except single stream) and
@@ -157,8 +134,8 @@ DefaultTemporalLayers::GetTemporalPattern(size_t num_layers) {
   // keyframe.
   switch (num_layers) {
     case 1:
-      // All frames reference all buffers and the 'last' buffer is updated.
-      return {FrameConfig(kReferenceAndUpdate, kReference, kReference)};
+      // Always reference and update the same buffer.
+      return {Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone)};
     case 2:
       // All layers can reference but not update the 'alt' buffer, this means
       // that the 'alt' buffer reference is effectively the last keyframe.
@@ -169,25 +146,23 @@ DefaultTemporalLayers::GetTemporalPattern(size_t num_layers) {
         //   1---1   1---1 ...
         //  /   /   /   /
         // 0---0---0---0 ...
-        return {
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kUpdate, kReference),
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
+        return {Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+                Vp8FrameConfig(kReference, kUpdate, kNone),
+                Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+                Vp8FrameConfig(kReference, kReference, kNone, kFreezeEntropy)};
       } else {
         // "Default" 8-frame pattern:
         //   1---1---1---1   1---1---1---1 ...
         //  /   /   /   /   /   /   /   /
         // 0---0---0---0---0---0---0---0 ...
-        return {
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kUpdate, kReference),
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kReferenceAndUpdate, kReference),
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kReferenceAndUpdate, kReference),
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
+        return {Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+                Vp8FrameConfig(kReference, kUpdate, kNone),
+                Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+                Vp8FrameConfig(kReference, kReferenceAndUpdate, kNone),
+                Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+                Vp8FrameConfig(kReference, kReferenceAndUpdate, kNone),
+                Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+                Vp8FrameConfig(kReference, kReference, kNone, kFreezeEntropy)};
       }
     case 3:
       if (field_trial::IsEnabled("WebRTC-UseShortVP8TL3Pattern")) {
@@ -208,10 +183,10 @@ DefaultTemporalLayers::GetTemporalPattern(size_t num_layers) {
         // TL2 references both 'last' & 'golden' and references and updates
         // 'arf'.
         return {
-            FrameConfig(kReferenceAndUpdate, kNone, kNone),
-            FrameConfig(kReference, kNone, kUpdate),
-            FrameConfig(kReference, kUpdate, kNone),
-            FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
+            Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+            Vp8FrameConfig(kReference, kNone, kUpdate),
+            Vp8FrameConfig(kReference, kUpdate, kNone),
+            Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
       } else {
         // All layers can reference but not update the 'alt' buffer, this means
         // that the 'alt' buffer reference is effectively the last keyframe.
@@ -219,42 +194,43 @@ DefaultTemporalLayers::GetTemporalPattern(size_t num_layers) {
         // TL1 also references 'last' and references and updates 'golden'.
         // TL2 references both 'last' and 'golden' but updates no buffer.
         return {
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kNone, kReference, kFreezeEntropy),
-            FrameConfig(kReference, kUpdate, kReference),
-            FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
-            FrameConfig(kReferenceAndUpdate, kNone, kReference),
-            FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
-            FrameConfig(kReference, kReferenceAndUpdate, kReference),
-            FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
+            Vp8FrameConfig(kReferenceAndUpdate, kNone, kReference),
+            Vp8FrameConfig(kReference, kNone, kReference, kFreezeEntropy),
+            Vp8FrameConfig(kReference, kUpdate, kReference),
+            Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
+            Vp8FrameConfig(kReferenceAndUpdate, kNone, kReference),
+            Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
+            Vp8FrameConfig(kReference, kReferenceAndUpdate, kReference),
+            Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
       }
     case 4:
       // TL0 references and updates only the 'last' buffer.
       // TL1 references 'last' and updates and references 'golden'.
       // TL2 references 'last' and 'golden', and references and updates 'arf'.
       // TL3 references all buffers but update none of them.
-      return {FrameConfig(kReferenceAndUpdate, kNone, kNone),
-              FrameConfig(kReference, kNone, kNone, kFreezeEntropy),
-              FrameConfig(kReference, kNone, kUpdate),
-              FrameConfig(kReference, kNone, kReference, kFreezeEntropy),
-              FrameConfig(kReference, kUpdate, kNone),
-              FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
-              FrameConfig(kReference, kReference, kReferenceAndUpdate),
-              FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
-              FrameConfig(kReferenceAndUpdate, kNone, kNone),
-              FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
-              FrameConfig(kReference, kReference, kReferenceAndUpdate),
-              FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
-              FrameConfig(kReference, kReferenceAndUpdate, kNone),
-              FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
-              FrameConfig(kReference, kReference, kReferenceAndUpdate),
-              FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
+      return {
+          Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+          Vp8FrameConfig(kReference, kNone, kNone, kFreezeEntropy),
+          Vp8FrameConfig(kReference, kNone, kUpdate),
+          Vp8FrameConfig(kReference, kNone, kReference, kFreezeEntropy),
+          Vp8FrameConfig(kReference, kUpdate, kNone),
+          Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
+          Vp8FrameConfig(kReference, kReference, kReferenceAndUpdate),
+          Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
+          Vp8FrameConfig(kReferenceAndUpdate, kNone, kNone),
+          Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
+          Vp8FrameConfig(kReference, kReference, kReferenceAndUpdate),
+          Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
+          Vp8FrameConfig(kReference, kReferenceAndUpdate, kNone),
+          Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy),
+          Vp8FrameConfig(kReference, kReference, kReferenceAndUpdate),
+          Vp8FrameConfig(kReference, kReference, kReference, kFreezeEntropy)};
     default:
       RTC_NOTREACHED();
       break;
   }
   RTC_NOTREACHED();
-  return {FrameConfig(kNone, kNone, kNone)};
+  return {Vp8FrameConfig(kNone, kNone, kNone)};
 }
 
 DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers)
@@ -262,10 +238,7 @@ DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers)
       temporal_ids_(GetTemporalIds(num_layers_)),
       temporal_pattern_(GetTemporalPattern(num_layers_)),
       kf_buffers_(FindKfBuffers(temporal_pattern_)),
-      pattern_idx_(kUninitializedPatternIndex),
-      checker_(TemporalLayersChecker::CreateTemporalLayersChecker(
-          Vp8TemporalLayersType::kFixedPattern,
-          number_of_temporal_layers)) {
+      pattern_idx_(kUninitializedPatternIndex) {
   RTC_CHECK_GE(kMaxTemporalStreams, number_of_temporal_layers);
   RTC_CHECK_GE(number_of_temporal_layers, 0);
   RTC_CHECK_LE(number_of_temporal_layers, 4);
@@ -273,6 +246,11 @@ DefaultTemporalLayers::DefaultTemporalLayers(int number_of_temporal_layers)
   // temporal_ids_ are ever longer. If this is no longer correct it needs to
   // wrap at max(temporal_ids_.size(), temporal_pattern_.size()).
   RTC_DCHECK_LE(temporal_ids_.size(), temporal_pattern_.size());
+
+#if RTC_DCHECK_IS_ON
+  checker_ = TemporalLayersChecker::CreateTemporalLayersChecker(
+      Vp8TemporalLayersType::kFixedPattern, number_of_temporal_layers);
+#endif
 
   // Always need to start with a keyframe, so pre-populate all frame counters.
   for (Vp8BufferReference buffer : kAllBuffers) {
@@ -322,7 +300,7 @@ bool DefaultTemporalLayers::UpdateConfiguration(Vp8EncoderConfig* cfg) {
   return true;
 }
 
-bool DefaultTemporalLayers::IsSyncFrame(const FrameConfig& config) const {
+bool DefaultTemporalLayers::IsSyncFrame(const Vp8FrameConfig& config) const {
   // Since we always assign TL0 to 'last' in these patterns, we can infer layer
   // sync by checking if temporal id > 0 and we only reference TL0 or buffers
   // containing the last key-frame.
@@ -350,13 +328,12 @@ bool DefaultTemporalLayers::IsSyncFrame(const FrameConfig& config) const {
   return true;
 }
 
-Vp8TemporalLayers::FrameConfig DefaultTemporalLayers::UpdateLayerConfig(
-    uint32_t timestamp) {
+Vp8FrameConfig DefaultTemporalLayers::UpdateLayerConfig(uint32_t timestamp) {
   RTC_DCHECK_GT(num_layers_, 0);
   RTC_DCHECK_LT(0, temporal_pattern_.size());
 
   pattern_idx_ = (pattern_idx_ + 1) % temporal_pattern_.size();
-  Vp8TemporalLayers::FrameConfig tl_config = temporal_pattern_[pattern_idx_];
+  Vp8FrameConfig tl_config = temporal_pattern_[pattern_idx_];
   tl_config.encoder_layer_id = tl_config.packetizer_temporal_idx =
       temporal_ids_[pattern_idx_ % temporal_ids_.size()];
 
@@ -397,12 +374,12 @@ Vp8TemporalLayers::FrameConfig DefaultTemporalLayers::UpdateLayerConfig(
   pending_frames_[timestamp] =
       PendingFrame{false, GetUpdatedBuffers(tl_config), tl_config};
 
-  if (checker_) {
-    // Checker does not yet support encoder frame dropping, so validate flags
-    // here before they can be dropped.
-    // TODO(sprang): Update checker to support dropping.
-    RTC_DCHECK(checker_->CheckTemporalConfig(false, tl_config));
-  }
+#if RTC_DCHECK_IS_ON
+  // Checker does not yet support encoder frame dropping, so validate flags
+  // here before they can be dropped.
+  // TODO(sprang): Update checker to support dropping.
+  RTC_DCHECK(checker_->CheckTemporalConfig(false, tl_config));
+#endif
 
   return tl_config;
 }
@@ -424,7 +401,7 @@ void DefaultTemporalLayers::ValidateReferences(BufferFlags* flags,
   }
 }
 
-void DefaultTemporalLayers::UpdateSearchOrder(FrameConfig* config) {
+void DefaultTemporalLayers::UpdateSearchOrder(Vp8FrameConfig* config) {
   // Figure out which of the buffers we can reference, and order them so that
   // the most recently refreshed is first. Otherwise prioritize last first,
   // golden second, and altref third.
@@ -479,10 +456,12 @@ void DefaultTemporalLayers::OnEncodeDone(uint32_t rtp_timestamp,
   }
 
   PendingFrame& frame = pending_frame->second;
-  if (is_keyframe && checker_) {
+#if RTC_DCHECK_IS_ON
+  if (is_keyframe) {
     // Signal key-frame so checker resets state.
     RTC_DCHECK(checker_->CheckTemporalConfig(true, frame.frame_config));
   }
+#endif
 
   if (num_layers_ == 1) {
     vp8_info->temporalIdx = kNoTemporalIdx;
@@ -509,6 +488,24 @@ void DefaultTemporalLayers::OnEncodeDone(uint32_t rtp_timestamp,
       // Delta frame, update codec specifics with temporal id and sync flag.
       vp8_info->temporalIdx = frame.frame_config.packetizer_temporal_idx;
       vp8_info->layerSync = frame.frame_config.layer_sync;
+    }
+  }
+
+  vp8_info->useExplicitDependencies = true;
+  RTC_DCHECK_EQ(vp8_info->referencedBuffersCount, 0u);
+  RTC_DCHECK_EQ(vp8_info->updatedBuffersCount, 0u);
+
+  for (int i = 0; i < static_cast<int>(Buffer::kCount); ++i) {
+    if (!is_keyframe && frame.frame_config.References(static_cast<Buffer>(i))) {
+      RTC_DCHECK_LT(vp8_info->referencedBuffersCount,
+                    arraysize(CodecSpecificInfoVP8::referencedBuffers));
+      vp8_info->referencedBuffers[vp8_info->referencedBuffersCount++] = i;
+    }
+
+    if (is_keyframe || frame.frame_config.Updates(static_cast<Buffer>(i))) {
+      RTC_DCHECK_LT(vp8_info->updatedBuffersCount,
+                    arraysize(CodecSpecificInfoVP8::updatedBuffers));
+      vp8_info->updatedBuffers[vp8_info->updatedBuffersCount++] = i;
     }
   }
 
@@ -568,7 +565,7 @@ DefaultTemporalLayersChecker::~DefaultTemporalLayersChecker() = default;
 
 bool DefaultTemporalLayersChecker::CheckTemporalConfig(
     bool frame_is_keyframe,
-    const Vp8TemporalLayers::FrameConfig& frame_config) {
+    const Vp8FrameConfig& frame_config) {
   if (!TemporalLayersChecker::CheckTemporalConfig(frame_is_keyframe,
                                                   frame_config)) {
     return false;
@@ -618,8 +615,7 @@ bool DefaultTemporalLayersChecker::CheckTemporalConfig(
                    temporal_ids_[pattern_idx_] != kNoTemporalIdx;
   std::vector<int> dependencies;
 
-  if (frame_config.last_buffer_flags &
-      Vp8TemporalLayers::BufferFlags::kReference) {
+  if (frame_config.last_buffer_flags & BufferFlags::kReference) {
     uint8_t referenced_layer = temporal_ids_[last_.pattern_idx];
     if (referenced_layer > 0) {
       need_sync = false;
@@ -634,8 +630,7 @@ bool DefaultTemporalLayersChecker::CheckTemporalConfig(
     return false;
   }
 
-  if (frame_config.arf_buffer_flags &
-      Vp8TemporalLayers::BufferFlags::kReference) {
+  if (frame_config.arf_buffer_flags & BufferFlags::kReference) {
     uint8_t referenced_layer = temporal_ids_[arf_.pattern_idx];
     if (referenced_layer > 0) {
       need_sync = false;
@@ -650,8 +645,7 @@ bool DefaultTemporalLayersChecker::CheckTemporalConfig(
     return false;
   }
 
-  if (frame_config.golden_buffer_flags &
-      Vp8TemporalLayers::BufferFlags::kReference) {
+  if (frame_config.golden_buffer_flags & BufferFlags::kReference) {
     uint8_t referenced_layer = temporal_ids_[golden_.pattern_idx];
     if (referenced_layer > 0) {
       need_sync = false;
@@ -687,19 +681,17 @@ bool DefaultTemporalLayersChecker::CheckTemporalConfig(
     }
   }
 
-  if (frame_config.last_buffer_flags &
-      Vp8TemporalLayers::BufferFlags::kUpdate) {
+  if (frame_config.last_buffer_flags & BufferFlags::kUpdate) {
     last_.is_updated_this_cycle = true;
     last_.pattern_idx = pattern_idx_;
     last_.is_keyframe = false;
   }
-  if (frame_config.arf_buffer_flags & Vp8TemporalLayers::BufferFlags::kUpdate) {
+  if (frame_config.arf_buffer_flags & BufferFlags::kUpdate) {
     arf_.is_updated_this_cycle = true;
     arf_.pattern_idx = pattern_idx_;
     arf_.is_keyframe = false;
   }
-  if (frame_config.golden_buffer_flags &
-      Vp8TemporalLayers::BufferFlags::kUpdate) {
+  if (frame_config.golden_buffer_flags & BufferFlags::kUpdate) {
     golden_.is_updated_this_cycle = true;
     golden_.pattern_idx = pattern_idx_;
     golden_.is_keyframe = false;

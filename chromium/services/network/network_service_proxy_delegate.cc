@@ -13,8 +13,8 @@
 namespace network {
 namespace {
 
-// The maximum size of the cache that contains the GURLs that should use
-// alternate proxy list.
+// The maximum size of the two caches that contain the GURLs for which special
+// handling is required.
 constexpr size_t kMaxCacheSize = 15;
 
 // The maximum number of previous configs to keep.
@@ -86,6 +86,24 @@ void MergeRequestHeaders(net::HttpRequestHeaders* out,
   }
 }
 
+bool IsURLBlockedForCustomProxy(const net::URLRequest& request) {
+  auto* url_loader = URLLoader::ForRequest(request);
+  if (url_loader && url_loader->GetProcessId() == 0 &&
+      static_cast<SpecialRoutingIDs>(url_loader->GetRenderFrameId()) ==
+          MSG_ROUTING_NONE) {
+    // The request is not initiated by navigation or renderer. Block the request
+    // from going through custom proxy. This is a temporary solution to fix the
+    // bypassed downloads when using the custom proxy. See crbug.com/953166.
+    // TODO(957215): Implement a better solution in download manager and remove
+    // this codepath
+    return true;
+  }
+  // If the last entry occurs earlier in the |url_chain|, then very likely there
+  // is a redirect cycle.
+  return std::find(request.url_chain().rbegin() + 1, request.url_chain().rend(),
+                   request.url_chain().back()) != request.url_chain().rend();
+}
+
 }  // namespace
 
 NetworkServiceProxyDelegate::NetworkServiceProxyDelegate(
@@ -105,6 +123,15 @@ void NetworkServiceProxyDelegate::OnBeforeStartTransaction(
     net::HttpRequestHeaders* headers) {
   if (!MayProxyURL(request->url()))
     return;
+
+  if (!proxy_config_->can_use_proxy_on_http_url_redirect_cycles &&
+      MayHaveProxiedURL(request->url()) &&
+      request->url().SchemeIs(url::kHttpScheme) &&
+      IsURLBlockedForCustomProxy(*request)) {
+    redirect_loop_cache_.push_front(request->url());
+    if (previous_proxy_configs_.size() > kMaxCacheSize)
+      redirect_loop_cache_.pop_back();
+  }
 
   MergeRequestHeaders(headers, proxy_config_->pre_cache_headers);
 
@@ -153,6 +180,12 @@ void NetworkServiceProxyDelegate::OnResolveProxy(
   if (!EligibleForProxy(*result, url, method))
     return;
 
+  // Check if using custom proxy for |url| can result in redirect loops.
+  std::deque<GURL>::const_iterator it =
+      std::find(redirect_loop_cache_.begin(), redirect_loop_cache_.end(), url);
+  if (it != redirect_loop_cache_.end())
+    return;
+
   net::ProxyInfo proxy_info;
   if (ApplyProxyConfigToProxyInfo(GetProxyRulesForURL(url), proxy_retry_info,
                                   url, &proxy_info)) {
@@ -165,11 +198,11 @@ void NetworkServiceProxyDelegate::OnResolveProxy(
 void NetworkServiceProxyDelegate::OnFallback(const net::ProxyServer& bad_proxy,
                                              int net_error) {}
 
-void NetworkServiceProxyDelegate::OnBeforeTunnelRequest(
+void NetworkServiceProxyDelegate::OnBeforeHttp1TunnelRequest(
     const net::ProxyServer& proxy_server,
     net::HttpRequestHeaders* extra_headers) {}
 
-net::Error NetworkServiceProxyDelegate::OnTunnelHeadersReceived(
+net::Error NetworkServiceProxyDelegate::OnHttp1TunnelHeadersReceived(
     const net::ProxyServer& proxy_server,
     const net::HttpResponseHeaders& response_headers) {
   return net::OK;
@@ -255,7 +288,9 @@ bool NetworkServiceProxyDelegate::EligibleForProxy(
     const GURL& url,
     const std::string& method) const {
   return proxy_info.is_direct() && proxy_info.proxy_list().size() == 1 &&
-         MayProxyURL(url) && net::HttpUtil::IsMethodIdempotent(method);
+         MayProxyURL(url) &&
+         (proxy_config_->allow_non_idempotent_methods ||
+          net::HttpUtil::IsMethodIdempotent(method));
 }
 
 net::ProxyConfig::ProxyRules NetworkServiceProxyDelegate::GetProxyRulesForURL(

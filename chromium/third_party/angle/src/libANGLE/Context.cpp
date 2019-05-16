@@ -50,12 +50,6 @@ namespace gl
 {
 namespace
 {
-
-#define ANGLE_HANDLE_ERR(X) \
-    (void)(X);              \
-    return;
-#define ANGLE_CONTEXT_TRY(EXPR) ANGLE_TRY_TEMPLATE(EXPR, ANGLE_HANDLE_ERR);
-
 template <typename T>
 std::vector<Path *> GatherPaths(PathManager &resourceManager,
                                 GLsizei numPaths,
@@ -306,6 +300,7 @@ Context::Context(rx::EGLImplFactory *implFactory,
       mCurrentSurface(static_cast<egl::Surface *>(EGL_NO_SURFACE)),
       mCurrentDisplay(static_cast<egl::Display *>(EGL_NO_DISPLAY)),
       mWebGLContext(GetWebGLContext(attribs)),
+      mBufferAccessValidationEnabled(false),
       mExtensionsEnabled(GetExtensionsEnabled(attribs, mWebGLContext)),
       mMemoryProgramCache(memoryProgramCache),
       mVertexArrayObserverBinding(this, kVertexArraySubjectIndex),
@@ -3283,6 +3278,9 @@ void Context::initCaps()
 
     LimitCap(&mState.mCaps.maxImageUnits, IMPLEMENTATION_MAX_IMAGE_UNITS);
 
+    LimitCap(&mState.mCaps.maxCombinedAtomicCounterBuffers,
+             IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS);
+
     mState.mCaps.maxSampleMaskWords =
         std::min<GLuint>(mState.mCaps.maxSampleMaskWords, MAX_SAMPLE_MASK_WORDS);
 
@@ -3433,6 +3431,13 @@ void Context::updateCaps()
     mBlitDirtyObjects.set(State::DIRTY_OBJECT_DRAW_ATTACHMENTS, robustInit);
     mComputeDirtyObjects.set(State::DIRTY_OBJECT_TEXTURES_INIT, robustInit);
     mComputeDirtyObjects.set(State::DIRTY_OBJECT_IMAGES_INIT, robustInit);
+
+    // We need to validate buffer bounds if we are in a WebGL or robust access context and the
+    // back-end does not support robust buffer access behaviour.
+    if (!mSupportedExtensions.robustBufferAccessBehavior && (mState.isWebGL() || mRobustAccess))
+    {
+        mBufferAccessValidationEnabled = true;
+    }
 
     // Reinitialize state cache after extension changes.
     mStateCache.initialize(this);
@@ -5003,8 +5008,8 @@ GLuint Context::getDebugMessageLog(GLuint count,
 void Context::pushDebugGroup(GLenum source, GLuint id, GLsizei length, const GLchar *message)
 {
     std::string msg(message, (length > 0) ? static_cast<size_t>(length) : strlen(message));
+    mImplementation->pushDebugGroup(source, id, msg);
     mState.getDebug().pushGroup(source, id, std::move(msg));
-    mImplementation->pushDebugGroup(source, id, length, message);
 }
 
 void Context::popDebugGroup()
@@ -5893,23 +5898,7 @@ void Context::linkProgram(GLuint program)
     Program *programObject = getProgramNoResolveLink(program);
     ASSERT(programObject);
     ANGLE_CONTEXT_TRY(programObject->link(this));
-
-    // Don't parallel link a program which is active in any GL contexts. With this assumption, we
-    // don't need to worry that:
-    //   1. Draw calls after link use the new executable code or the old one depending on the link
-    //      result.
-    //   2. When a backend program, e.g., ProgramD3D is linking, other backend classes like
-    //      StateManager11, Renderer11, etc., may have a chance to make unexpected calls to
-    //      ProgramD3D.
-    if (programObject->isInUse())
-    {
-        programObject->resolveLink(this);
-        if (programObject->isLinked())
-        {
-            ANGLE_CONTEXT_TRY(mState.onProgramExecutableChange(this, programObject));
-        }
-        mStateCache.onProgramExecutableChange(this);
-    }
+    ANGLE_CONTEXT_TRY(onProgramLink(programObject));
 }
 
 void Context::releaseShaderCompiler()
@@ -6150,11 +6139,7 @@ void Context::programBinary(GLuint program, GLenum binaryFormat, const void *bin
     ASSERT(programObject != nullptr);
 
     ANGLE_CONTEXT_TRY(programObject->loadBinary(this, binaryFormat, binary, length));
-    if (programObject->isInUse())
-    {
-        ANGLE_CONTEXT_TRY(mState.onProgramExecutableChange(this, programObject));
-        mStateCache.onProgramExecutableChange(this);
-    }
+    ANGLE_CONTEXT_TRY(onProgramLink(programObject));
 }
 
 void Context::uniform1ui(GLint location, GLuint v0)
@@ -8034,6 +8019,28 @@ void Context::onSubjectStateChange(const Context *context,
     }
 }
 
+angle::Result Context::onProgramLink(Program *programObject)
+{
+    // Don't parallel link a program which is active in any GL contexts. With this assumption, we
+    // don't need to worry that:
+    //   1. Draw calls after link use the new executable code or the old one depending on the link
+    //      result.
+    //   2. When a backend program, e.g., ProgramD3D is linking, other backend classes like
+    //      StateManager11, Renderer11, etc., may have a chance to make unexpected calls to
+    //      ProgramD3D.
+    if (programObject->isInUse())
+    {
+        programObject->resolveLink(this);
+        if (programObject->isLinked())
+        {
+            ANGLE_TRY(mState.onProgramExecutableChange(this, programObject));
+        }
+        mStateCache.onProgramExecutableChange(this);
+    }
+
+    return angle::Result::Continue;
+}
+
 // ErrorSet implementation.
 ErrorSet::ErrorSet(Context *context) : mContext(context) {}
 
@@ -8097,6 +8104,14 @@ StateCache::StateCache()
 
 StateCache::~StateCache() = default;
 
+ANGLE_INLINE void StateCache::updateVertexElementLimits(Context *context)
+{
+    if (context->isBufferAccessValidationEnabled())
+    {
+        updateVertexElementLimitsImpl(context);
+    }
+}
+
 void StateCache::initialize(Context *context)
 {
     updateValidDrawModes(context);
@@ -8136,8 +8151,10 @@ void StateCache::updateActiveAttribsMask(Context *context)
     mCachedHasAnyEnabledClientAttrib = (clientAttribs & enabledAttribs).any();
 }
 
-void StateCache::updateVertexElementLimits(Context *context)
+void StateCache::updateVertexElementLimitsImpl(Context *context)
 {
+    ASSERT(context->isBufferAccessValidationEnabled());
+
     const VertexArray *vao = context->getState().getVertexArray();
 
     mCachedNonInstancedVertexElementLimit = std::numeric_limits<GLint64>::max();

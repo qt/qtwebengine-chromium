@@ -49,6 +49,7 @@
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/surfaces/frame_sink_id_allocator.h"
 #include "components/viz/common/surfaces/local_surface_id_allocation.h"
+#include "components/viz/common/viz_utils.h"
 #include "components/viz/host/host_display_client.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/display/display.h"
@@ -231,7 +232,6 @@ class CompositorDependencies {
   SingleThreadTaskGraphRunner task_graph_runner;
   viz::HostFrameSinkManager host_frame_sink_manager;
   viz::FrameSinkIdAllocator frame_sink_id_allocator;
-  viz::ParentLocalSurfaceIdAllocator surface_id_allocator;
 
   // Non-viz members:
   // This is owned here so that SurfaceManager will be accessible in process
@@ -247,8 +247,7 @@ class CompositorDependencies {
   CompositorDependencies() : frame_sink_id_allocator(kDefaultClientId) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-    bool enable_viz =
-        base::FeatureList::IsEnabled(features::kVizDisplayCompositor);
+    bool enable_viz = features::IsVizDisplayCompositorEnabled();
     if (!enable_viz) {
       // The SharedBitmapManager can be null as software compositing is not
       // supported or used on Android.
@@ -369,7 +368,7 @@ gpu::ContextCreationAttribs GetCompositorContextAttributes(
 
   if (requires_alpha_channel) {
     attributes.alpha_size = 8;
-  } else if (base::SysInfo::AmountOfPhysicalMemoryMB() <= 512) {
+  } else if (viz::PreferRGB565ResourcesForDisplay()) {
     // In this case we prefer to use RGB565 format instead of RGBA8888 if
     // possible.
     // TODO(danakj): CommandBufferStub constructor checks for alpha == 0
@@ -457,13 +456,6 @@ class AndroidOutputSurface : public viz::OutputSurface {
           flags, std::move(callback), std::move(presentation_callback));
     }
   }
-
-#if BUILDFLAG(ENABLE_VULKAN)
-  gpu::VulkanSurface* GetVulkanSurface() override {
-    NOTIMPLEMENTED();
-    return nullptr;
-  }
-#endif
 
   void BindToClient(viz::OutputSurfaceClient* client) override {
     DCHECK(client);
@@ -610,8 +602,7 @@ CompositorImpl::CompositorImpl(CompositorClient* client,
       lock_manager_(base::ThreadTaskRunnerHandle::Get()),
       enable_surface_synchronization_(
           features::IsSurfaceSynchronizationEnabled()),
-      enable_viz_(
-          base::FeatureList::IsEnabled(features::kVizDisplayCompositor)),
+      enable_viz_(features::IsVizDisplayCompositorEnabled()),
       weak_factory_(this) {
   DCHECK(client);
 
@@ -626,7 +617,7 @@ CompositorImpl::~CompositorImpl() {
   display::Screen::GetScreen()->RemoveObserver(this);
   DetachRootWindow();
   // Clean-up any surface references.
-  SetSurface(NULL);
+  SetSurface(nullptr, false);
 }
 
 void CompositorImpl::DetachRootWindow() {
@@ -661,6 +652,8 @@ void CompositorImpl::SetRootWindow(gfx::NativeWindow root_window) {
   }
 
   root_window_ = root_window;
+  if (base::FeatureList::IsEnabled(features::kForce60HzRefreshRate))
+    root_window_->SetForce60HzRefreshRate();
   root_window_->SetLayer(root_layer ? root_layer : cc::Layer::Create());
   root_window_->GetLayer()->SetBounds(size_);
   if (!readback_layer_tree_) {
@@ -689,7 +682,8 @@ void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
   }
 }
 
-void CompositorImpl::SetSurface(jobject surface) {
+void CompositorImpl::SetSurface(jobject surface,
+                                bool backed_by_surface_texture) {
   JNIEnv* env = base::android::AttachCurrentThread();
   gpu::GpuSurfaceTracker* tracker = gpu::GpuSurfaceTracker::Get();
 
@@ -700,6 +694,7 @@ void CompositorImpl::SetSurface(jobject surface) {
     ANativeWindow_release(window_);
     window_ = NULL;
     surface_handle_ = gpu::kNullSurfaceHandle;
+    backed_by_surface_texture_ = false;
   }
 
   ANativeWindow* window = NULL;
@@ -713,6 +708,7 @@ void CompositorImpl::SetSurface(jobject surface) {
 
   if (window) {
     window_ = window;
+    backed_by_surface_texture_ = backed_by_surface_texture;
     ANativeWindow_acquire(window);
     // Register first, SetVisible() might create a LayerTreeFrameSink.
     surface_handle_ = tracker->AddSurfaceForNativeWidget(
@@ -744,6 +740,13 @@ void CompositorImpl::CreateLayerTreeHost() {
     settings.initial_debug_state.show_debug_borders.set();
   settings.single_thread_proxy_scheduler = true;
   settings.use_painted_device_scale_factor = true;
+
+  if (features::IsSurfaceSynchronizationEnabled()) {
+    // TODO(crbug.com/933846): LatencyRecovery is causing jank on Android.
+    // Disable in viz mode for now, with plan to disable more widely once
+    // viz launches.
+    settings.enable_latency_recovery = false;
+  }
 
   animation_host_ = cc::AnimationHost::CreateMainInstance();
 
@@ -865,7 +868,17 @@ void CompositorImpl::SetNeedsComposite() {
   host_->SetNeedsAnimate();
 }
 
-void CompositorImpl::UpdateLayerTreeHost(bool record_main_frame_metrics) {
+void CompositorImpl::DidUpdateLayers() {
+  // Dump property trees and layers if run with:
+  //   --vmodule=compositor_impl_android=3
+  VLOG(3) << "After updating layers:\n"
+          << "property trees:\n"
+          << host_->property_trees()->ToString() << "\n"
+          << "cc::Layers:\n"
+          << host_->LayersAsString();
+}
+
+void CompositorImpl::UpdateLayerTreeHost() {
   client_->UpdateLayerTreeHost();
   if (needs_animate_) {
     needs_animate_ = false;
@@ -1167,9 +1180,15 @@ void CompositorImpl::SetVSyncPaused(bool paused) {
     display_private_->SetVSyncPaused(paused);
 }
 
+void CompositorImpl::OnUpdateRefreshRate(float refresh_rate) {
+  if (display_private_)
+    display_private_->UpdateRefreshRate(refresh_rate);
+}
+
 void CompositorImpl::InitializeVizLayerTreeFrameSink(
     scoped_refptr<ws::ContextProviderCommandBuffer> context_provider) {
   DCHECK(enable_viz_);
+  DCHECK(root_window_);
 
   pending_frames_ = 0;
   gpu_capabilities_ = context_provider->ContextCapabilities();
@@ -1197,6 +1216,7 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
       display_client_->GetBoundPtr(task_runner).PassInterface();
 
   viz::RendererSettings renderer_settings;
+  renderer_settings.partial_swap_enabled = true;
   renderer_settings.allow_antialiasing = false;
   renderer_settings.highp_threshold_min = 2048;
   renderer_settings.requires_alpha_channel = requires_alpha_channel_;
@@ -1206,10 +1226,13 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
           .GetSizeInPixel();
   renderer_settings.use_skia_renderer = features::IsUsingSkiaRenderer();
   renderer_settings.color_space = display_color_space_;
+  renderer_settings.backed_by_surface_texture = backed_by_surface_texture_;
+
   root_params->frame_sink_id = frame_sink_id_;
   root_params->widget = surface_handle_;
   root_params->gpu_compositing = true;
   root_params->renderer_settings = renderer_settings;
+  root_params->refresh_rate = root_window_->GetRefreshRate();
 
   GetHostFrameSinkManager()->CreateRootCompositorFrameSink(
       std::move(root_params));
@@ -1239,12 +1262,10 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
   display_private_->SetVSyncPaused(vsync_paused_);
 }
 
-viz::LocalSurfaceIdAllocation CompositorImpl::GenerateLocalSurfaceId() const {
+viz::LocalSurfaceIdAllocation CompositorImpl::GenerateLocalSurfaceId() {
   if (enable_surface_synchronization_) {
-    viz::ParentLocalSurfaceIdAllocator& allocator =
-        CompositorDependencies::Get().surface_id_allocator;
-    allocator.GenerateId();
-    return allocator.GetCurrentLocalSurfaceIdAllocation();
+    local_surface_id_allocator_.GenerateId();
+    return local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation();
   }
 
   return viz::LocalSurfaceIdAllocation();
@@ -1257,7 +1278,7 @@ void CompositorImpl::OnFatalOrSurfaceContextCreationFailure(
       << "Fatal error making Gpu context";
 
   if (context_result == gpu::ContextResult::kSurfaceFailure) {
-    SetSurface(nullptr);
+    SetSurface(nullptr, false);
     client_->RecreateSurface();
   }
 }

@@ -35,6 +35,7 @@
 #include "xfa/fxfa/cxfa_fwladapterwidgetmgr.h"
 #include "xfa/fxfa/cxfa_textlayout.h"
 #include "xfa/fxfa/cxfa_textprovider.h"
+#include "xfa/fxfa/layout/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_barcode.h"
 #include "xfa/fxfa/parser/cxfa_binditems.h"
 #include "xfa/fxfa/parser/cxfa_button.h"
@@ -119,26 +120,29 @@ CXFA_FFNotify::OnCreateContentLayoutItem(CXFA_Node* pNode) {
   switch (pNode->GetFFWidgetType()) {
     case XFA_FFWidgetType::kBarcode: {
       CXFA_Node* child = pNode->GetUIChildNode();
-      if (child->GetElementType() == XFA_Element::Barcode) {
-        pWidget = pdfium::MakeUnique<CXFA_FFBarcode>(
-            pNode, static_cast<CXFA_Barcode*>(child));
-      }
+      if (child->GetElementType() != XFA_Element::Barcode)
+        return nullptr;
+
+      pWidget = pdfium::MakeUnique<CXFA_FFBarcode>(
+          pNode, static_cast<CXFA_Barcode*>(child));
       break;
     }
     case XFA_FFWidgetType::kButton: {
       CXFA_Node* child = pNode->GetUIChildNode();
-      if (child->GetElementType() == XFA_Element::Button) {
-        pWidget = pdfium::MakeUnique<CXFA_FFPushButton>(
-            pNode, static_cast<CXFA_Button*>(child));
-      }
+      if (child->GetElementType() != XFA_Element::Button)
+        return nullptr;
+
+      pWidget = pdfium::MakeUnique<CXFA_FFPushButton>(
+          pNode, static_cast<CXFA_Button*>(child));
       break;
     }
     case XFA_FFWidgetType::kCheckButton: {
       CXFA_Node* child = pNode->GetUIChildNode();
-      if (child->GetElementType() == XFA_Element::CheckButton) {
-        pWidget = pdfium::MakeUnique<CXFA_FFCheckButton>(
-            pNode, static_cast<CXFA_CheckButton*>(child));
-      }
+      if (child->GetElementType() != XFA_Element::CheckButton)
+        return nullptr;
+
+      pWidget = pdfium::MakeUnique<CXFA_FFCheckButton>(
+          pNode, static_cast<CXFA_CheckButton*>(child));
       break;
     }
     case XFA_FFWidgetType::kChoiceList: {
@@ -159,10 +163,11 @@ CXFA_FFNotify::OnCreateContentLayoutItem(CXFA_Node* pNode) {
       break;
     case XFA_FFWidgetType::kPasswordEdit: {
       CXFA_Node* child = pNode->GetUIChildNode();
-      if (child->GetElementType() == XFA_Element::PasswordEdit) {
-        pWidget = pdfium::MakeUnique<CXFA_FFPasswordEdit>(
-            pNode, static_cast<CXFA_PasswordEdit*>(child));
-      }
+      if (child->GetElementType() != XFA_Element::PasswordEdit)
+        return nullptr;
+
+      pWidget = pdfium::MakeUnique<CXFA_FFPasswordEdit>(
+          pNode, static_cast<CXFA_PasswordEdit*>(child));
       break;
     }
     case XFA_FFWidgetType::kSignature:
@@ -407,6 +412,11 @@ void CXFA_FFNotify::OnValueChanged(CXFA_Node* pSender,
     pWidget->PerformLayout();
     pWidget->InvalidateRect();
   }
+}
+
+void CXFA_FFNotify::OnContainerChanged(CXFA_Node* pNode) {
+  CXFA_LayoutProcessor* pLayout = m_pDoc->GetXFADoc()->GetLayoutProcessor();
+  pLayout->AddChangedContainer(pNode);
 }
 
 void CXFA_FFNotify::OnChildAdded(CXFA_Node* pSender) {

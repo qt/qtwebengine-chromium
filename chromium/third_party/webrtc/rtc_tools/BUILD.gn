@@ -5,9 +5,10 @@
 # tree. An additional intellectual property rights grant can be found
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
-
-import("//third_party/protobuf/proto_library.gni")
 import("../webrtc.gni")
+if (rtc_enable_protobuf) {
+  import("//third_party/protobuf/proto_library.gni")
+}
 
 group("rtc_tools") {
   # This target shall build all targets in tools/.
@@ -65,6 +66,7 @@ rtc_static_library("video_file_reader") {
     "video_file_reader.h",
   ]
   deps = [
+    "../api:scoped_refptr",
     "../api/video:video_frame",
     "../api/video:video_frame_i420",
     "../rtc_base:checks",
@@ -81,6 +83,7 @@ rtc_static_library("video_file_writer") {
   ]
   deps = [
     ":video_file_reader",
+    "../api:scoped_refptr",
     "../api/video:video_frame",
     "../api/video:video_frame_i420",
     "../rtc_base:rtc_base_approved",
@@ -105,6 +108,7 @@ rtc_static_library("video_quality_analysis") {
   deps = [
     ":video_file_reader",
     "../api:array_view",
+    "../api:scoped_refptr",
     "../api/video:video_frame",
     "../api/video:video_frame_i420",
     "../common_video",
@@ -127,7 +131,7 @@ rtc_executable("frame_analyzer") {
     ":video_file_reader",
     ":video_file_writer",
     ":video_quality_analysis",
-    "../rtc_base:ptr_util",
+    "../api:scoped_refptr",
     "../rtc_base:stringutils",
     "../test:perf_test",
     "//third_party/abseil-cpp/absl/strings",
@@ -150,6 +154,46 @@ if (!build_with_chromium && !build_with_mozilla) {
 # Only expose the targets needed by Chromium (e.g. frame_analyzer) to avoid
 # building a lot of redundant code as part of Chromium builds.
 if (!build_with_chromium) {
+  rtc_executable("rtp_generator") {
+    visibility = [ "*" ]
+    testonly = true
+    sources = [
+      "rtp_generator/main.cc",
+      "rtp_generator/rtp_generator.cc",
+      "rtp_generator/rtp_generator.h",
+    ]
+
+    deps = [
+      ":command_line_parser",
+      "../api:libjingle_peerconnection_api",
+      "../api:transport_api",
+      "../api/video:builtin_video_bitrate_allocator_factory",
+      "../api/video_codecs:builtin_video_decoder_factory",
+      "../api/video_codecs:builtin_video_encoder_factory",
+      "../api/video_codecs:video_codecs_api",
+      "../call",
+      "../call:call_interfaces",
+      "../call:fake_network",
+      "../call:rtp_interfaces",
+      "../call:rtp_sender",
+      "../call:simulated_network",
+      "../call:simulated_packet_receiver",
+      "../call:video_stream_api",
+      "../logging:rtc_event_log_api",
+      "../logging:rtc_event_log_impl_base",
+      "../media:rtc_audio_video",
+      "../media:rtc_media_base",
+      "../rtc_base:rtc_base",
+      "../rtc_base:rtc_base_approved",
+      "../rtc_base:rtc_json",
+      "../rtc_base/system:file_wrapper",
+      "../test:fileutils",
+      "../test:rtp_test_utils",
+      "../test:video_test_common",
+      "//third_party/abseil-cpp/absl/strings",
+    ]
+  }
+
   rtc_executable("psnr_ssim_analyzer") {
     sources = [
       "psnr_ssim_analyzer/psnr_ssim_analyzer.cc",
@@ -159,8 +203,8 @@ if (!build_with_chromium) {
       ":command_line_parser",
       ":video_file_reader",
       ":video_quality_analysis",
+      "../api:scoped_refptr",
       "../api/video:video_frame",
-      "../rtc_base:ptr_util",
     ]
   }
 
@@ -173,8 +217,8 @@ if (!build_with_chromium) {
     deps = [
       ":video_file_reader",
       ":video_quality_analysis",
+      "../api:scoped_refptr",
       "../api/video:video_frame",
-      "../rtc_base:ptr_util",
     ]
   }
 
@@ -249,10 +293,6 @@ if (!build_with_chromium) {
         "event_log_visualizer/plot_python.h",
         "event_log_visualizer/triage_notifications.h",
       ]
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
       defines = [ "ENABLE_RTC_EVENT_LOG" ]
       deps = [
         ":chart_proto",
@@ -297,11 +337,6 @@ if (rtc_include_tests) {
       sources = [
         "event_log_visualizer/main.cc",
       ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
 
       defines = [ "ENABLE_RTC_EVENT_LOG" ]
       deps = [
@@ -371,17 +406,13 @@ if (rtc_include_tests) {
       "video_file_writer_unittest.cc",
     ]
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     deps = [
       ":command_line_parser",
       ":video_file_reader",
       ":video_file_writer",
       ":video_quality_analysis",
       "../:webrtc_common",
+      "../api:scoped_refptr",
       "../api/video:video_frame",
       "../api/video:video_frame_i420",
       "../common_video:common_video",

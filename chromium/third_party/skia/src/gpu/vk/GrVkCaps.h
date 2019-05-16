@@ -29,7 +29,8 @@ public:
      */
     GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
              VkPhysicalDevice device, const VkPhysicalDeviceFeatures2& features,
-             uint32_t instanceVersion, const GrVkExtensions& extensions);
+             uint32_t instanceVersion, uint32_t physicalDeviceVersion,
+             const GrVkExtensions& extensions);
 
     bool isConfigTexturable(GrPixelConfig config) const override {
         return SkToBool(ConfigInfo::kTextureable_Flag & fConfigTable[config].fOptimalFlags);
@@ -96,6 +97,12 @@ public:
     const StencilFormat& preferredStencilFormat() const {
         return fPreferredStencilFormat;
     }
+
+    // Returns whether the device supports VK_KHR_Swapchain. Internally Skia never uses any of the
+    // swapchain functions, but we may need to transition to and from the
+    // VK_IMAGE_LAYOUT_PRESENT_SRC_KHR image layout, so we must know whether that layout is
+    // supported.
+    bool supportsSwapchain() const { return fSupportsSwapchain; }
 
     // Returns whether the device supports the ability to extend VkPhysicalDeviceProperties struct.
     bool supportsPhysicalDeviceProperties2() const { return fSupportsPhysicalDeviceProperties2; }
@@ -165,7 +172,8 @@ private:
     };
 
     void init(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
-              VkPhysicalDevice device, const VkPhysicalDeviceFeatures2&, const GrVkExtensions&);
+              VkPhysicalDevice device, const VkPhysicalDeviceFeatures2&,
+              uint32_t physicalDeviceVersion, const GrVkExtensions&);
     void initGrCaps(const GrVkInterface* vkInterface,
                     VkPhysicalDevice physDev,
                     const VkPhysicalDeviceProperties&,
@@ -189,8 +197,8 @@ private:
         ConfigInfo() : fOptimalFlags(0), fLinearFlags(0) {}
 
         void init(const GrVkInterface*, VkPhysicalDevice, const VkPhysicalDeviceProperties&,
-                  VkFormat);
-        static void InitConfigFlags(VkFormatFeatureFlags, uint16_t* flags);
+                  VkFormat, bool disableRendering);
+        static void InitConfigFlags(VkFormatFeatureFlags, uint16_t* flags, bool disableRendering);
         void initSampleCounts(const GrVkInterface*, VkPhysicalDevice,
                               const VkPhysicalDeviceProperties&, VkFormat);
 
@@ -216,6 +224,8 @@ private:
     bool fMustSleepOnTearDown = false;
     bool fNewCBOnPipelineChange = false;
     bool fShouldAlwaysUseDedicatedImageMemory = false;
+
+    bool fSupportsSwapchain = false;
 
     bool fSupportsPhysicalDeviceProperties2 = false;
     bool fSupportsMemoryRequirements2 = false;

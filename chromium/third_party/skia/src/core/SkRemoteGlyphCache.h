@@ -22,6 +22,7 @@
 #include "SkNoDrawCanvas.h"
 #include "SkRefCnt.h"
 #include "SkSerialProcs.h"
+#include "SkStrikeInterface.h"
 #include "SkTypeface.h"
 
 class Serializer;
@@ -61,13 +62,14 @@ public:
         int fMaxTextureSize = 0;
         size_t fMaxTextureBytes = 0u;
     };
+
     SkTextBlobCacheDiffCanvas(int width, int height, const SkSurfaceProps& props,
                               SkStrikeServer* strikeServer, Settings settings = Settings());
 
-    // TODO(khushalsagar): Remove once removed from chromium.
-    SkTextBlobCacheDiffCanvas(int width, int height, const SkMatrix& deviceMatrix,
-                              const SkSurfaceProps& props, SkStrikeServer* strikeserver,
+    SkTextBlobCacheDiffCanvas(int width, int height, const SkSurfaceProps& props,
+                              SkStrikeServer* strikeServer, sk_sp<SkColorSpace> colorSpace,
                               Settings settings = Settings());
+
     ~SkTextBlobCacheDiffCanvas() override;
 
 protected:
@@ -85,7 +87,7 @@ private:
 using SkDiscardableHandleId = uint32_t;
 
 // This class is not thread-safe.
-class SK_API SkStrikeServer {
+class SK_API SkStrikeServer final : public SkStrikeCacheInterface {
 public:
     // An interface used by the server to create handles for pinning SkStrike
     // entries on the remote client.
@@ -112,7 +114,7 @@ public:
     };
 
     explicit SkStrikeServer(DiscardableHandleManager* discardableHandleManager);
-    ~SkStrikeServer();
+    ~SkStrikeServer() override;
 
     // Serializes the typeface to be remoted using this server.
     sk_sp<SkData> serializeTypeface(SkTypeface*);
@@ -132,6 +134,10 @@ public:
                                         SkScalerContextFlags flags,
                                         SkScalerContextEffects* effects);
 
+    SkScopedStrike findOrCreateScopedStrike(const SkDescriptor& desc,
+                                            const SkScalerContextEffects& effects,
+                                            const SkTypeface& typeface) override;
+
     void setMaxEntriesInDescriptorMapForTesting(size_t count) {
         fMaxEntriesInDescriptorMap = count;
     }
@@ -141,6 +147,10 @@ private:
     static constexpr size_t kMaxEntriesInDescriptorMap = 2000u;
 
     void checkForDeletedEntries();
+
+    SkGlyphCacheState* getOrCreateCache(const SkDescriptor& desc,
+                                        const SkTypeface& typeface,
+                                        SkScalerContextEffects effects);
 
     SkDescriptorMap<std::unique_ptr<SkGlyphCacheState>> fRemoteGlyphStateMap;
     DiscardableHandleManager* const fDiscardableHandleManager;

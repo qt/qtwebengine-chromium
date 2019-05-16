@@ -13,6 +13,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -52,6 +53,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "net/base/completion_callback.h"
 #include "net/base/features.h"
 #include "net/base/net_errors.h"
@@ -688,13 +690,17 @@ std::unique_ptr<StoragePartitionImpl> StoragePartitionImpl::Create(
                                           partition->service_worker_context_);
   partition->platform_notification_context_->Initialize();
 
+  partition->devtools_background_services_context_ =
+      base::MakeRefCounted<DevToolsBackgroundServicesContext>(
+          context, partition->service_worker_context_);
+
   partition->background_fetch_context_ =
       base::MakeRefCounted<BackgroundFetchContext>(
           context, partition->service_worker_context_,
           partition->cache_storage_context_, quota_manager_proxy);
 
   partition->background_sync_context_ =
-      base::MakeRefCounted<BackgroundSyncContext>();
+      base::MakeRefCounted<BackgroundSyncContextImpl>();
   partition->background_sync_context_->Init(partition->service_worker_context_);
 
   partition->payment_app_context_ = new PaymentAppContextImpl();
@@ -721,7 +727,7 @@ std::unique_ptr<StoragePartitionImpl> StoragePartitionImpl::Create(
       partition->url_loader_factory_getter_.get());
 
   partition->prefetch_url_loader_service_ =
-      base::MakeRefCounted<PrefetchURLLoaderService>();
+      base::MakeRefCounted<PrefetchURLLoaderService>(context);
 
   partition->cookie_store_context_ = base::MakeRefCounted<CookieStoreContext>();
   // Unit tests use the Initialize() callback to crash early if restoring the
@@ -821,6 +827,10 @@ ChromeAppCacheService* StoragePartitionImpl::GetAppCacheService() {
   return appcache_service_.get();
 }
 
+BackgroundSyncContextImpl* StoragePartitionImpl::GetBackgroundSyncContext() {
+  return background_sync_context_.get();
+}
+
 storage::FileSystemContext* StoragePartitionImpl::GetFileSystemContext() {
   return filesystem_context_.get();
 }
@@ -882,10 +892,6 @@ BackgroundFetchContext* StoragePartitionImpl::GetBackgroundFetchContext() {
   return background_fetch_context_.get();
 }
 
-BackgroundSyncContext* StoragePartitionImpl::GetBackgroundSyncContext() {
-  return background_sync_context_.get();
-}
-
 PaymentAppContextImpl* StoragePartitionImpl::GetPaymentAppContext() {
   return payment_app_context_.get();
 }
@@ -916,12 +922,24 @@ StoragePartitionImpl::GetGeneratedCodeCacheContext() {
   return generated_code_cache_context_.get();
 }
 
+DevToolsBackgroundServicesContext*
+StoragePartitionImpl::GetDevToolsBackgroundServicesContext() {
+  return devtools_background_services_context_.get();
+}
+
 void StoragePartitionImpl::OpenLocalStorage(
     const url::Origin& origin,
     blink::mojom::StorageAreaRequest request) {
   int process_id = bindings_.dispatch_context();
-  if (!ChildProcessSecurityPolicy::GetInstance()->CanAccessDataForOrigin(
-          process_id, origin.GetURL())) {
+  // TODO(943887): Replace HasSecurityState() call with something that can
+  // preserve security state after process shutdown. The security state check
+  // is a temporary solution to avoid crashes when this method is run after the
+  // process associated with |process_id| has been destroyed.
+  // It temporarily restores the old behavior of always allowing access if the
+  // process is gone.
+  auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+  if (!policy->CanAccessDataForOrigin(process_id, origin) &&
+      policy->HasSecurityState(process_id)) {
     SYSLOG(WARNING) << "Killing renderer: illegal localStorage request.";
     bindings_.ReportBadMessage("Access denied for localStorage request");
     return;
@@ -1216,10 +1234,14 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
     // TODO(lazyboy): Fix.
     if (storage_origin.is_empty()) {
       IncrementTaskCountOnUI();
+      // TODO(crbug.com/960325): Sometimes SessionStorage fails to call its
+      // callback. Figure out why.
       ClearSessionStorageOnUIThread(
           base::WrapRefCounted(dom_storage_context),
           base::WrapRefCounted(special_storage_policy), origin_matcher,
-          perform_storage_cleanup, decrement_callback);
+          perform_storage_cleanup,
+          mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+              static_cast<base::OnceClosure>(decrement_callback)));
     }
   }
 
@@ -1305,10 +1327,14 @@ void StoragePartitionImpl::ClearHttpAndMediaCaches(
   }
 }
 
-void StoragePartitionImpl::ClearCodeCaches(base::OnceClosure callback) {
+void StoragePartitionImpl::ClearCodeCaches(
+    const base::Time begin,
+    const base::Time end,
+    const base::RepeatingCallback<bool(const GURL&)>& url_matcher,
+    base::OnceClosure callback) {
   // StoragePartitionCodeCacheDataRemover deletes itself when it is done.
-  StoragePartitionCodeCacheDataRemover::Create(this)->Remove(
-      std::move(callback));
+  StoragePartitionCodeCacheDataRemover::Create(this, url_matcher, begin, end)
+      ->Remove(std::move(callback));
 }
 
 void StoragePartitionImpl::Flush() {

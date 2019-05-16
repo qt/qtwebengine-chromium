@@ -90,14 +90,10 @@ String GLSLCodeGenerator::getTypeName(const Type& type) {
             else if (component == *fContext.fDouble_Type) {
                 result = "dvec";
             }
-            else if (component == *fContext.fInt_Type ||
-                     component == *fContext.fShort_Type ||
-                     component == *fContext.fByte_Type) {
+            else if (component.isSigned()) {
                 result = "ivec";
             }
-            else if (component == *fContext.fUInt_Type ||
-                     component == *fContext.fUShort_Type ||
-                     component == *fContext.fUByte_Type) {
+            else if (component.isUnsigned()) {
                 result = "uvec";
             }
             else if (component == *fContext.fBool_Type) {
@@ -464,9 +460,9 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
         (*fFunctionClasses)["abs"]         = FunctionClass::kAbs;
         (*fFunctionClasses)["atan"]        = FunctionClass::kAtan;
         (*fFunctionClasses)["determinant"] = FunctionClass::kDeterminant;
-        (*fFunctionClasses)["dFdx"]        = FunctionClass::kDerivative;
-        (*fFunctionClasses)["dFdy"]        = FunctionClass::kDerivative;
-        (*fFunctionClasses)["fwidth"]      = FunctionClass::kDerivative;
+        (*fFunctionClasses)["dFdx"]        = FunctionClass::kDFdx;
+        (*fFunctionClasses)["dFdy"]        = FunctionClass::kDFdy;
+        (*fFunctionClasses)["fwidth"]      = FunctionClass::kFwidth;
         (*fFunctionClasses)["fma"]         = FunctionClass::kFMA;
         (*fFunctionClasses)["fract"]       = FunctionClass::kFract;
         (*fFunctionClasses)["inverse"]     = FunctionClass::kInverse;
@@ -521,7 +517,15 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                     }
                 }
                 break;
-            case FunctionClass::kDerivative:
+            case FunctionClass::kDFdy:
+                if (fProgram.fSettings.fFlipY) {
+                    // Flipping Y also negates the Y derivatives.
+                    this->write("-dFdy");
+                    nameWritten = true;
+                }
+                // fallthru
+            case FunctionClass::kDFdx:
+            case FunctionClass::kFwidth:
                 if (!fFoundDerivatives &&
                     fProgram.fSettings.fCaps->shaderDerivativeExtensionString()) {
                     SkASSERT(fProgram.fSettings.fCaps->shaderDerivativeSupport());
@@ -703,7 +707,9 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
 
 void GLSLCodeGenerator::writeConstructor(const Constructor& c, Precedence parentPrecedence) {
     if (c.fArguments.size() == 1 &&
-        this->getTypeName(c.fType) == this->getTypeName(c.fArguments[0]->fType)) {
+        (this->getTypeName(c.fType) == this->getTypeName(c.fArguments[0]->fType) ||
+        (c.fType.kind() == Type::kScalar_Kind &&
+         c.fArguments[0]->fType == *fContext.fFloatLiteral_Type))) {
         // in cases like half(float), they're different types as far as SkSL is concerned but the
         // same type as far as GLSL is concerned. We avoid a redundant float(float) by just writing
         // out the inner expression here.
@@ -842,10 +848,23 @@ void GLSLCodeGenerator::writeFieldAccess(const FieldAccess& f) {
 }
 
 void GLSLCodeGenerator::writeSwizzle(const Swizzle& swizzle) {
+    int last = swizzle.fComponents.back();
+    if (last == SKSL_SWIZZLE_0 || last == SKSL_SWIZZLE_1) {
+        this->writeType(swizzle.fType);
+        this->write("(");
+    }
     this->writeExpression(*swizzle.fBase, kPostfix_Precedence);
     this->write(".");
     for (int c : swizzle.fComponents) {
-        this->write(&("x\0y\0z\0w\0"[c * 2]));
+        if (c >= 0) {
+            this->write(&("x\0y\0z\0w\0"[c * 2]));
+        }
+    }
+    if (last == SKSL_SWIZZLE_0) {
+        this->write(", 0)");
+    }
+    else if (last == SKSL_SWIZZLE_1) {
+        this->write(", 1)");
     }
 }
 

@@ -970,7 +970,6 @@ namespace sw
 
 		state.preTransformed = context->preTransformed;
 		state.superSampling = context->getSuperSampleCount() > 1;
-		state.multiSampling = context->getMultiSampleCount() > 1;
 
 		state.transformFeedbackQueryEnabled = context->transformFeedbackQueryEnabled;
 		state.transformFeedbackEnabled = context->transformFeedbackEnabled;
@@ -1107,7 +1106,7 @@ namespace sw
 			}
 
 			generator->generate();
-			routine = (*generator)(L"VertexRoutine_%0.8X", state.shaderID);
+			routine = (*generator)("VertexRoutine_%0.8X", state.shaderID);
 			delete generator;
 
 			routineCache->add(state, routine);

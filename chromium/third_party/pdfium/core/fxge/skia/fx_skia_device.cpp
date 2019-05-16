@@ -16,6 +16,7 @@
 #include "core/fpdfapi/page/cpdf_stitchfunc.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcrt/cfx_bitstream.h"
 #include "core/fxcrt/fx_memory.h"
@@ -781,14 +782,14 @@ class SkiaState {
   }
 
   bool HasRSX(int nChars,
-              const FXTEXT_CHARPOS* pCharPos,
+              const TextCharPos* pCharPos,
               float* scaleXPtr,
               bool* oneAtATimePtr) {
     bool useRSXform = false;
     bool oneAtATime = false;
     float scaleX = 1;
     for (int index = 0; index < nChars; ++index) {
-      const FXTEXT_CHARPOS& cp = pCharPos[index];
+      const TextCharPos& cp = pCharPos[index];
       if (!cp.m_bGlyphAdjust)
         continue;
       bool upright = 0 == cp.m_AdjustMatrix[1] && 0 == cp.m_AdjustMatrix[2];
@@ -813,7 +814,7 @@ class SkiaState {
   }
 
   bool DrawText(int nChars,
-                const FXTEXT_CHARPOS* pCharPos,
+                const TextCharPos* pCharPos,
                 CFX_Font* pFont,
                 const CFX_Matrix* pMatrix,
                 float font_size,
@@ -860,7 +861,7 @@ class SkiaState {
     if (pFont->IsVertical())
       vFlip *= -1;
     for (int index = 0; index < nChars; ++index) {
-      const FXTEXT_CHARPOS& cp = pCharPos[index];
+      const TextCharPos& cp = pCharPos[index];
       m_positions[index + count] = {cp.m_Origin.x * flip,
                                     cp.m_Origin.y * vFlip};
       m_glyphs[index + count] = static_cast<uint16_t>(cp.m_GlyphIndex);
@@ -876,7 +877,7 @@ class SkiaState {
     }
     if (hasRSX) {
       for (int index = 0; index < nChars; ++index) {
-        const FXTEXT_CHARPOS& cp = pCharPos[index];
+        const TextCharPos& cp = pCharPos[index];
         SkRSXform* rsxform = &m_rsxform[index + count];
         if (cp.m_bGlyphAdjust) {
           rsxform->fSCos = cp.m_AdjustMatrix[0];
@@ -903,8 +904,8 @@ class SkiaState {
       sk_sp<SkTypeface> typeface(SkSafeRef(m_pTypeFace.Get()));
       skPaint.setTypeface(typeface);
     }
-    skPaint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-    skPaint.setHinting(SkPaint::kNo_Hinting);
+    skPaint.setTextEncoding(kGlyphID_SkTextEncoding);
+    skPaint.setHinting(kNo_SkFontHinting);
     skPaint.setTextScaleX(m_scaleX);
     skPaint.setTextSize(SkTAbs(m_fontSize));
     skPaint.setSubpixelText(true);
@@ -1539,7 +1540,7 @@ void CFX_SkiaDeviceDriver::PreMultiply() {
 }
 
 bool CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
-                                          const FXTEXT_CHARPOS* pCharPos,
+                                          const TextCharPos* pCharPos,
                                           CFX_Font* pFont,
                                           const CFX_Matrix* pObject2Device,
                                           float font_size,
@@ -1553,8 +1554,8 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
   paint.setAntiAlias(true);
   paint.setColor(color);
   paint.setTypeface(typeface);
-  paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
-  paint.setHinting(SkPaint::kNo_Hinting);
+  paint.setTextEncoding(kGlyphID_SkTextEncoding);
+  paint.setHinting(kNo_SkFontHinting);
   paint.setTextSize(SkTAbs(font_size));
   paint.setSubpixelText(true);
   m_pCanvas->save();
@@ -1571,7 +1572,7 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
   bool useRSXform = false;
   bool oneAtATime = false;
   for (int index = 0; index < nChars; ++index) {
-    const FXTEXT_CHARPOS& cp = pCharPos[index];
+    const TextCharPos& cp = pCharPos[index];
     positions[index] = {cp.m_Origin.x * flip, cp.m_Origin.y * vFlip};
     if (cp.m_bGlyphAdjust) {
       useRSXform = true;
@@ -1603,7 +1604,7 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
     SkTDArray<SkRSXform> xforms;
     xforms.setCount(nChars);
     for (int index = 0; index < nChars; ++index) {
-      const FXTEXT_CHARPOS& cp = pCharPos[index];
+      const TextCharPos& cp = pCharPos[index];
       SkRSXform* rsxform = &xforms[index];
       if (cp.m_bGlyphAdjust) {
         rsxform->fSCos = cp.m_AdjustMatrix[0];
@@ -1621,7 +1622,7 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(int nChars,
                                nullptr, paint);
   } else if (oneAtATime) {
     for (int index = 0; index < nChars; ++index) {
-      const FXTEXT_CHARPOS& cp = pCharPos[index];
+      const TextCharPos& cp = pCharPos[index];
       if (cp.m_bGlyphAdjust) {
         if (0 == cp.m_AdjustMatrix[1] && 0 == cp.m_AdjustMatrix[2] &&
             1 == cp.m_AdjustMatrix[3]) {
@@ -2261,7 +2262,7 @@ bool CFX_SkiaDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
     return m_pBitmap->CompositeMask(left, top, src_rect.Width(),
                                     src_rect.Height(), pBitmap, argb,
                                     src_rect.left, src_rect.top, blend_type,
-                                    m_pClipRgn.get(), m_bRgbByteOrder, 0);
+                                    m_pClipRgn.get(), m_bRgbByteOrder);
   }
   return m_pBitmap->CompositeBitmap(
       left, top, src_rect.Width(), src_rect.Height(), pBitmap, src_rect.left,
@@ -2311,7 +2312,7 @@ bool CFX_SkiaDeviceDriver::StretchDIBits(const RetainPtr<CFX_DIBBase>& pSource,
   dest_clip.Intersect(*pClipRect);
   CFX_BitmapComposer composer;
   composer.Compose(m_pBitmap, m_pClipRgn.get(), 255, argb, dest_clip, false,
-                   false, false, m_bRgbByteOrder, 0, blend_type);
+                   false, false, m_bRgbByteOrder, blend_type);
   dest_clip.Offset(-dest_rect.left, -dest_rect.top);
   CFX_ImageStretcher stretcher(&composer, pSource, dest_width, dest_height,
                                dest_clip, options);

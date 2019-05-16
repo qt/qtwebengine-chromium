@@ -209,7 +209,6 @@ message ChromeConfig {
 
 // Begin of protos/perfetto/config/data_source_config.proto
 
-
 // When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
 // to reflect changes in the corresponding C++ headers.
 
@@ -329,6 +328,9 @@ message AndroidPowerConfig {
   }
   optional uint32 battery_poll_ms = 1;
   repeated BatteryCounters battery_counters = 2;
+
+  // Where available enables per-power-rail measurements.
+  optional bool collect_power_rails = 3;
 }
 
 // End of protos/perfetto/config/power/android_power_config.proto
@@ -375,7 +377,6 @@ message ProcessStatsConfig {
 // End of protos/perfetto/config/process_stats/process_stats_config.proto
 
 // Begin of protos/perfetto/config/sys_stats/sys_stats_config.proto
-
 
 // When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
 // to reflect changes in the corresponding C++ headers.
@@ -481,7 +482,7 @@ message TestConfig {
 // It contains the general config for the logging buffer(s) and the configs for
 // all the data source being enabled.
 //
-// Next id: 15.
+// Next id: 17.
 message TraceConfig {
   message BufferConfig {
     optional uint32 size_kb = 1;
@@ -491,9 +492,17 @@ message TraceConfig {
 
     enum FillPolicy {
       UNSPECIFIED = 0;
+
+      // Default behavior. The buffer operates as a conventional ring buffer.
+      // If the writer is faster than the reader (or if the reader reads only
+      // after tracing is stopped) newly written packets will overwrite old
+      // packets.
       RING_BUFFER = 1;
-      // TODO: not implemented yet.
-      // STOP_WHEN_FULL = 2;
+
+      // Behaves like RING_BUFFER as long as there is space in the buffer or
+      // the reader catches up with the writer. As soon as the writer hits
+      // an unread chunk, it stops accepting new data in the buffer.
+      DISCARD = 2;
     }
     optional FillPolicy fill_policy = 4;
   }
@@ -610,6 +619,10 @@ message TraceConfig {
 
   // Disable emitting clock timestamps into the trace.
   optional bool disable_clock_snapshotting = 15;
+
+  // Android-only. If set, sends an intent to the Traceur system app when the
+  // trace ends to notify it about the trace readiness.
+  optional bool notify_traceur = 16;
 }
 
 // End of protos/perfetto/config/trace_config.proto
@@ -636,6 +649,9 @@ message HeapprofdConfig {
   // For watermark based triggering or local debugging.
   repeated uint64 pid = 4;
   optional bool all = 5;
+  // Do not emit function names for mappings starting with this prefix.
+  // E.g. /system to not emit symbols for any system libraries.
+  repeated string skip_symbol_prefix = 7;
 
   // Dump once at the end of the trace, emitting the heap dump at maximum
   // memory usage.

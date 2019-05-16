@@ -112,7 +112,7 @@ BUILD_DEPS_HOST = [
   ),
   ('buildtools/libunwind',
    'https://chromium.googlesource.com/external/llvm.org/libunwind.git',
-   '94edd59b16d2084a62699290f9cfdf120d74eedf',
+   '317087cfd8e608bd24e53934d59b5b85e0a9ded6',
    'all'
   ),
 
@@ -170,7 +170,7 @@ BUILD_DEPS_HOST = [
   # These dependencies are for libunwindstack, which is used by src/profiling.
   ('buildtools/android-core',
    'https://android.googlesource.com/platform/system/core.git',
-   'ad6a5c565c4908e3ae292f26510a2cc3c8bdf046',
+   '1c1850fad2470edc3732bfc05f7fe67f7e2fd422',
    'all'
   ),
 
@@ -182,14 +182,14 @@ BUILD_DEPS_HOST = [
 
   ('buildtools/bionic',
    'https://android.googlesource.com/platform/bionic.git',
-   '4b7c5cca7fbd0330cdfef41c97f1401824e78fba',
+   'a60488109cda997dfd83832731c8527feaa2825e',
    'all'
   ),
 
   # Example traces for regression tests.
   ('buildtools/test_data.zip',
-   'https://storage.googleapis.com/perfetto/test-data-20190123.zip',
-   '3761a0501669fc070022025678a8651f4a9495ad',
+   'https://storage.googleapis.com/perfetto/test-data-20190208-140128.zip',
+   '239d459e0682dea211e1d681bfd147f5f13d3be9',
    'all',
   ),
 
@@ -342,7 +342,7 @@ def IsGitRepoCheckoutOutAtRevision(path, revision):
 
 def CheckoutGitRepo(path, git_url, revision):
   if IsGitRepoCheckoutOutAtRevision(path, revision):
-    return
+    return False
   if os.path.exists(path):
     shutil.rmtree(path)
   MkdirRecursive(path)
@@ -352,6 +352,7 @@ def CheckoutGitRepo(path, git_url, revision):
     ['git', 'fetch', '--quiet', '--depth', '1', git_url, revision], cwd=path)
   subprocess.check_call(['git', 'checkout', revision, '--quiet'], cwd=path)
   assert(IsGitRepoCheckoutOutAtRevision(path, revision))
+  return True
 
 def InstallNodeModules():
   ui_dir = os.path.join(ROOT_DIR, 'ui')
@@ -376,7 +377,7 @@ def Main():
       continue
     local_path = os.path.join(ROOT_DIR, rel_path)
     if url.endswith('.git'):
-      CheckoutGitRepo(local_path, url, expected_sha1)
+      deps_updated |= CheckoutGitRepo(local_path, url, expected_sha1)
       continue
     is_zip = local_path.endswith('.zip') or local_path.endswith('.tgz')
     zip_target_dir = local_path[:-4] if is_zip else None

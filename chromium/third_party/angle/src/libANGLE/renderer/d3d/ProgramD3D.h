@@ -183,9 +183,9 @@ class ProgramD3D : public ProgramImpl
     bool usesGeometryShaderForPointSpriteEmulation() const;
     bool usesInstancedPointSpriteEmulation() const;
 
-    angle::Result load(const gl::Context *context,
-                       gl::InfoLog &infoLog,
-                       gl::BinaryInputStream *stream) override;
+    std::unique_ptr<LinkEvent> load(const gl::Context *context,
+                                    gl::BinaryInputStream *stream,
+                                    gl::InfoLog &infoLog) override;
     void save(const gl::Context *context, gl::BinaryOutputStream *stream) override;
     void setBinaryRetrievableHint(bool retrievable) override;
     void setSeparable(bool separable) override;
@@ -216,6 +216,9 @@ class ProgramD3D : public ProgramImpl
 
     void updateUniformBufferCache(const gl::Caps &caps,
                                   const gl::ShaderMap<unsigned int> &reservedShaderRegisterIndexes);
+
+    unsigned int getAtomicCounterBufferRegisterIndex(GLuint binding,
+                                                     gl::ShaderType shaderType) const;
 
     unsigned int getShaderStorageBufferRegisterIndex(GLuint blockIndex,
                                                      gl::ShaderType shaderType) const;
@@ -329,6 +332,9 @@ class ProgramD3D : public ProgramImpl
     class GetGeometryExecutableTask;
     class GraphicsProgramLinkEvent;
 
+    class LoadBinaryTask;
+    class LoadBinaryLinkEvent;
+
     class VertexExecutable
     {
       public:
@@ -435,6 +441,7 @@ class ProgramD3D : public ProgramImpl
                                gl::RangeUI *outUsedRange);
 
     void assignAllImageRegisters();
+    void assignAllAtomicCounterRegisters();
     void assignImageRegisters(size_t uniformIndex);
     static void AssignImages(unsigned int startImageIndex,
                              int startLogicalImageUnit,
@@ -466,6 +473,10 @@ class ProgramD3D : public ProgramImpl
     std::unique_ptr<LinkEvent> compileProgramExecutables(const gl::Context *context,
                                                          gl::InfoLog &infoLog);
     angle::Result compileComputeExecutable(d3d::Context *context, gl::InfoLog &infoLog);
+
+    angle::Result loadBinaryShaderExecutables(const gl::Context *context,
+                                              gl::BinaryInputStream *stream,
+                                              gl::InfoLog &infoLog);
 
     void gatherTransformFeedbackVaryings(const gl::VaryingPacking &varyings,
                                          const BuiltinInfo &builtins);
@@ -522,6 +533,7 @@ class ProgramD3D : public ProgramImpl
     std::vector<Image> mReadonlyImagesCS;
     gl::RangeUI mUsedComputeImageRange;
     gl::RangeUI mUsedComputeReadonlyImageRange;
+    gl::RangeUI mUsedComputeAtomicCounterRange;
 
     // Cache for pixel shader output layout to save reallocations.
     std::vector<GLenum> mPixelShaderOutputLayoutCache;
@@ -539,8 +551,11 @@ class ProgramD3D : public ProgramImpl
     std::vector<D3DVarying> mStreamOutVaryings;
     std::vector<D3DUniform *> mD3DUniforms;
     std::map<std::string, int> mImageBindingMap;
+    std::map<std::string, int> mAtomicBindingMap;
     std::vector<D3DInterfaceBlock> mD3DUniformBlocks;
     std::vector<D3DInterfaceBlock> mD3DShaderStorageBlocks;
+    std::array<unsigned int, gl::IMPLEMENTATION_MAX_ATOMIC_COUNTER_BUFFERS>
+        mComputeAtomicCounterBufferRegisterIndices;
 
     std::vector<sh::Uniform> mImage2DUniforms;
     gl::ImageUnitTextureTypeMap mComputeShaderImage2DBindLayoutCache;

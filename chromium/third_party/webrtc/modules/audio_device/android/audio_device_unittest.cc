@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include "api/scoped_refptr.h"
 #include "modules/audio_device/android/audio_common.h"
 #include "modules/audio_device/android/audio_manager.h"
 #include "modules/audio_device/android/build_info.h"
@@ -27,7 +28,6 @@
 #include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "rtc_base/format_macros.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/time_utils.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -514,7 +514,7 @@ class AudioDeviceTest : public ::testing::Test {
   rtc::scoped_refptr<AudioDeviceModule> CreateAudioDevice(
       AudioDeviceModule::AudioLayer audio_layer) {
     rtc::scoped_refptr<AudioDeviceModule> module(
-        AudioDeviceModule::Create(0, audio_layer));
+        AudioDeviceModule::Create(audio_layer));
     return module;
   }
 

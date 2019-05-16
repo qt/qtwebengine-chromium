@@ -17,6 +17,7 @@
 #include <string>
 #include <utility>
 
+#include "api/scoped_refptr.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_codec_constants.h"
 #include "api/video/video_frame_buffer.h"
@@ -26,7 +27,7 @@
 #include "modules/video_coding/utility/simulcast_rate_allocator.h"
 #include "rtc_base/atomic_ops.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/scoped_ref_ptr.h"
+#include "rtc_base/experiments/rate_control_settings.h"
 #include "system_wrappers/include/field_trial.h"
 #include "third_party/libyuv/include/libyuv/scale.h"
 
@@ -124,7 +125,9 @@ SimulcastEncoderAdapter::SimulcastEncoderAdapter(VideoEncoderFactory* factory,
       factory_(factory),
       video_format_(format),
       encoded_complete_callback_(nullptr),
-      experimental_boosted_screenshare_qp_(GetScreenshareBoostedQpValue()) {
+      experimental_boosted_screenshare_qp_(GetScreenshareBoostedQpValue()),
+      boost_base_layer_quality_(RateControlSettings::ParseFromFieldTrials()
+                                    .Vp8BoostBaseLayerQuality()) {
   RTC_DCHECK(factory_);
   encoder_info_.implementation_name = "SimulcastEncoderAdapter";
 
@@ -415,6 +418,8 @@ int SimulcastEncoderAdapter::Encode(
                         dst_buffer->StrideV(), dst_width, dst_height,
                         libyuv::kFilterBilinear);
 
+      // UpdateRect is not propagated to lower simulcast layers currently.
+      // TODO(ilnik): Consider scaling UpdateRect together with the buffer.
       VideoFrame frame = VideoFrame::Builder()
                              .set_video_frame_buffer(dst_buffer)
                              .set_timestamp_rtp(input_image.timestamp())
@@ -534,7 +539,7 @@ void SimulcastEncoderAdapter::PopulateStreamCodec(
       if (experimental_boosted_screenshare_qp_) {
         stream_codec->qpMax = *experimental_boosted_screenshare_qp_;
       }
-    } else {
+    } else if (boost_base_layer_quality_) {
       stream_codec->qpMax = kLowestResMaxQp;
     }
   }

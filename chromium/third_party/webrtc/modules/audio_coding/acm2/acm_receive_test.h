@@ -16,8 +16,8 @@
 #include <string>
 
 #include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/scoped_refptr.h"
 #include "rtc_base/constructor_magic.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
@@ -33,7 +33,8 @@ class AcmReceiveTestOldApi {
   enum NumOutputChannels : size_t {
     kArbitraryChannels = 0,
     kMonoOutput = 1,
-    kStereoOutput = 2
+    kStereoOutput = 2,
+    kQuadOutput = 4
   };
 
   AcmReceiveTestOldApi(PacketSource* packet_source,

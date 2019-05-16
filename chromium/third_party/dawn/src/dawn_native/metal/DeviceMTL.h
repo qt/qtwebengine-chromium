@@ -30,33 +30,37 @@
 namespace dawn_native { namespace metal {
 
     class MapRequestTracker;
-    class ResourceUploader;
 
     class Device : public DeviceBase {
       public:
-        Device();
+        Device(AdapterBase* adapter, id<MTLDevice> mtlDevice);
         ~Device();
 
-        CommandBufferBase* CreateCommandBuffer(CommandBufferBuilder* builder) override;
+        CommandBufferBase* CreateCommandBuffer(CommandEncoderBase* encoder) override;
         InputStateBase* CreateInputState(InputStateBuilder* builder) override;
-        RenderPassDescriptorBase* CreateRenderPassDescriptor(
-            RenderPassDescriptorBuilder* builder) override;
-        SwapChainBase* CreateSwapChain(SwapChainBuilder* builder) override;
 
         Serial GetCompletedCommandSerial() const final override;
         Serial GetLastSubmittedCommandSerial() const final override;
         void TickImpl() override;
 
-        const dawn_native::PCIInfo& GetPCIInfo() const override;
-
         id<MTLDevice> GetMTLDevice();
 
         id<MTLCommandBuffer> GetPendingCommandBuffer();
-        Serial GetPendingCommandSerial() const;
+        Serial GetPendingCommandSerial() const override;
         void SubmitPendingCommandBuffer();
 
         MapRequestTracker* GetMapTracker() const;
-        ResourceUploader* GetResourceUploader() const;
+
+        TextureBase* CreateTextureWrappingIOSurface(const TextureDescriptor* descriptor,
+                                                    IOSurfaceRef ioSurface,
+                                                    uint32_t plane);
+
+        ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
+        MaybeError CopyFromStagingToBuffer(StagingBufferBase* source,
+                                           uint32_t sourceOffset,
+                                           BufferBase* destination,
+                                           uint32_t destinationOffset,
+                                           uint32_t size) override;
 
       private:
         ResultOrError<BindGroupBase*> CreateBindGroupImpl(
@@ -74,24 +78,22 @@ namespace dawn_native { namespace metal {
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
         ResultOrError<ShaderModuleBase*> CreateShaderModuleImpl(
             const ShaderModuleDescriptor* descriptor) override;
+        ResultOrError<SwapChainBase*> CreateSwapChainImpl(
+            const SwapChainDescriptor* descriptor) override;
         ResultOrError<TextureBase*> CreateTextureImpl(const TextureDescriptor* descriptor) override;
         ResultOrError<TextureViewBase*> CreateTextureViewImpl(
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) override;
-        void CollectPCIInfo();
 
         void OnCompletedHandler();
 
         id<MTLDevice> mMtlDevice = nil;
         id<MTLCommandQueue> mCommandQueue = nil;
         std::unique_ptr<MapRequestTracker> mMapTracker;
-        std::unique_ptr<ResourceUploader> mResourceUploader;
 
         Serial mCompletedSerial = 0;
         Serial mLastSubmittedSerial = 0;
         id<MTLCommandBuffer> mPendingCommands = nil;
-
-        dawn_native::PCIInfo mPCIInfo;
     };
 
 }}  // namespace dawn_native::metal

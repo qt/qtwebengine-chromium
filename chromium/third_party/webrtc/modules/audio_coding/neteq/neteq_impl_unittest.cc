@@ -14,6 +14,7 @@
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "modules/audio_coding/neteq/accelerate.h"
 #include "modules/audio_coding/neteq/expand.h"
+#include "modules/audio_coding/neteq/histogram.h"
 #include "modules/audio_coding/neteq/include/neteq.h"
 #include "modules/audio_coding/neteq/mock/mock_buffer_level_filter.h"
 #include "modules/audio_coding/neteq/mock/mock_decoder_database.h"
@@ -25,6 +26,7 @@
 #include "modules/audio_coding/neteq/mock/mock_red_payload_splitter.h"
 #include "modules/audio_coding/neteq/neteq_impl.h"
 #include "modules/audio_coding/neteq/preemptive_expand.h"
+#include "modules/audio_coding/neteq/statistics_calculator.h"
 #include "modules/audio_coding/neteq/sync_buffer.h"
 #include "modules/audio_coding/neteq/timestamp_scaler.h"
 #include "rtc_base/numerics/safe_conversions.h"
@@ -96,8 +98,10 @@ class NetEqImplTest : public ::testing::Test {
 
     if (use_mock_delay_manager_) {
       std::unique_ptr<MockDelayManager> mock(new MockDelayManager(
-          config_.max_packets_in_buffer, config_.min_delay_ms,
-          config_.enable_rtx_handling, delay_peak_detector_, tick_timer_));
+          config_.max_packets_in_buffer, config_.min_delay_ms, 1020054733,
+          DelayManager::HistogramMode::INTER_ARRIVAL_TIME,
+          config_.enable_rtx_handling, delay_peak_detector_, tick_timer_,
+          deps.stats.get(), absl::make_unique<Histogram>(50, 32745)));
       mock_delay_manager_ = mock.get();
       EXPECT_CALL(*mock_delay_manager_, set_streaming_mode(false)).Times(1);
       deps.delay_manager = std::move(mock);
@@ -1261,6 +1265,34 @@ TEST_F(NetEqImplTest, TickTimerIncrement) {
   bool muted;
   EXPECT_EQ(NetEq::kOK, neteq_->GetAudio(&output, &muted));
   EXPECT_EQ(1u, tick_timer_->ticks());
+}
+
+TEST_F(NetEqImplTest, SetBaseMinimumDelay) {
+  UseNoMocks();
+  use_mock_delay_manager_ = true;
+  CreateInstance();
+
+  EXPECT_CALL(*mock_delay_manager_, SetBaseMinimumDelay(_))
+      .WillOnce(Return(true))
+      .WillOnce(Return(false));
+
+  const int delay_ms = 200;
+
+  EXPECT_EQ(true, neteq_->SetBaseMinimumDelayMs(delay_ms));
+  EXPECT_EQ(false, neteq_->SetBaseMinimumDelayMs(delay_ms));
+}
+
+TEST_F(NetEqImplTest, GetBaseMinimumDelayMs) {
+  UseNoMocks();
+  use_mock_delay_manager_ = true;
+  CreateInstance();
+
+  const int delay_ms = 200;
+
+  EXPECT_CALL(*mock_delay_manager_, GetBaseMinimumDelay())
+      .WillOnce(Return(delay_ms));
+
+  EXPECT_EQ(delay_ms, neteq_->GetBaseMinimumDelayMs());
 }
 
 TEST_F(NetEqImplTest, TargetDelayMs) {

@@ -26,15 +26,23 @@ import {NUM, NUM_NULL, rawQueryToRows, STR_NULL} from '../common/protos';
 import {SCROLLING_TRACK_GROUP} from '../common/state';
 import {TimeSpan} from '../common/time';
 import {QuantizedLoad, ThreadDesc} from '../frontend/globals';
+import {ANDROID_LOGS_TRACK_KIND} from '../tracks/android_log/common';
 import {SLICE_TRACK_KIND} from '../tracks/chrome_slices/common';
 import {CPU_FREQ_TRACK_KIND} from '../tracks/cpu_freq/common';
 import {CPU_SLICE_TRACK_KIND} from '../tracks/cpu_slices/common';
+import {
+  PROCESS_SCHEDULING_TRACK_KIND
+} from '../tracks/process_scheduling/common';
 import {PROCESS_SUMMARY_TRACK} from '../tracks/process_summary/common';
 
 import {Child, Children, Controller} from './controller';
 import {globals} from './globals';
 import {QueryController, QueryControllerArgs} from './query_controller';
 import {TrackControllerArgs, trackControllerRegistry} from './track_controller';
+import {
+  SelectionController,
+  SelectionControllerArgs
+} from './selection_controller';
 
 type States = 'init'|'loading_trace'|'ready';
 
@@ -107,6 +115,10 @@ export class TraceController extends Controller<States> {
           const queryArgs: QueryControllerArgs = {queryId, engine};
           childControllers.push(Child(queryId, QueryController, queryArgs));
         }
+
+        const selectionArgs: SelectionControllerArgs = {engine};
+        childControllers.push(
+          Child('selection', SelectionController, selectionArgs));
 
         return childControllers;
 
@@ -259,7 +271,7 @@ export class TraceController extends Controller<States> {
           trackGroup: SCROLLING_TRACK_GROUP,
           config: {
             cpu,
-            maximumValue: maxFreq.columns[0].longValues![0],
+            maximumValue: +maxFreq.columns[0].doubleValues![0],
           }
         }));
       }
@@ -324,7 +336,7 @@ export class TraceController extends Controller<States> {
           pid,
           thread.name as threadName,
           process.name as processName,
-          total_dur
+          total_dur as totalDur
         from
           thread
           left join process using(upid)
@@ -346,13 +358,15 @@ export class TraceController extends Controller<States> {
            pid: NUM_NULL,
            threadName: STR_NULL,
            processName: STR_NULL,
+           totalDur: NUM_NULL,
          })) {
       const utid = row.utid;
       const tid = row.tid;
       const upid = row.upid;
       const pid = row.pid;
       const threadName = row.threadName;
-      const processName = row.threadName;
+      const processName = row.processName;
+      const hasSchedEvents = !!row.totalDur;
 
       const maxDepth = utid === null ? undefined : utidToMaxDepth.get(utid);
       if (maxDepth === undefined &&
@@ -373,10 +387,12 @@ export class TraceController extends Controller<States> {
         }
 
         const pidForColor = pid || tid || upid || utid || 0;
+        const kind = hasSchedEvents ? PROCESS_SCHEDULING_TRACK_KIND :
+                                      PROCESS_SUMMARY_TRACK;
         addSummaryTrackActions.push(Actions.addTrack({
           id: summaryTrackId,
           engineId: this.engineId,
-          kind: PROCESS_SUMMARY_TRACK,
+          kind,
           name: `${upid === null ? tid : pid} summary`,
           config: {pidForColor, upid, utid},
         }));
@@ -436,6 +452,18 @@ export class TraceController extends Controller<States> {
         }));
       }
     }
+
+    const logCount = await engine.query(`select count(1) from android_logs`);
+    if (logCount.columns[0].longValues![0] > 0) {
+      addToTrackActions.push(Actions.addTrack({
+        engineId: this.engineId,
+        kind: ANDROID_LOGS_TRACK_KIND,
+        name: 'Android logs',
+        trackGroup: SCROLLING_TRACK_GROUP,
+        config: {}
+      }));
+    }
+
     const allActions =
         addSummaryTrackActions.concat(addTrackGroupActions, addToTrackActions);
     globals.dispatchMultiple(allActions);
@@ -444,7 +472,9 @@ export class TraceController extends Controller<States> {
   private async listThreads() {
     this.updateStatus('Reading thread list');
     const sqlQuery = `select utid, tid, pid, thread.name,
-        ifnull(process.name, thread.name)
+        ifnull(
+          case when length(process.name) > 0 then process.name else null end,
+          thread.name)
         from thread left join process using(upid)`;
     const threadRows = await assertExists(this.engine).query(sqlQuery);
     const threads: ThreadDesc[] = [];

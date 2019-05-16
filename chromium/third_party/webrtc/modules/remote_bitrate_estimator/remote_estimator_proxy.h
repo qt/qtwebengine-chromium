@@ -32,7 +32,11 @@ class TransportFeedback;
 
 class RemoteEstimatorProxy : public RemoteBitrateEstimator {
  public:
-  RemoteEstimatorProxy(const Clock* clock,
+  static const int kMinSendIntervalMs;
+  static const int kMaxSendIntervalMs;
+  static const int kDefaultSendIntervalMs;
+  static const int kBackWindowMs;
+  RemoteEstimatorProxy(Clock* clock,
                        TransportFeedbackSenderInterface* feedback_sender);
   ~RemoteEstimatorProxy() override;
 
@@ -47,30 +51,42 @@ class RemoteEstimatorProxy : public RemoteBitrateEstimator {
   int64_t TimeUntilNextProcess() override;
   void Process() override;
   void OnBitrateChanged(int bitrate);
-
-  static const int kMinSendIntervalMs;
-  static const int kMaxSendIntervalMs;
-  static const int kDefaultSendIntervalMs;
-  static const int kBackWindowMs;
+  void SetSendFeedbackOnRequestOnly(bool send_feedback_on_request_only);
 
  private:
-  void OnPacketArrival(uint16_t sequence_number, int64_t arrival_time)
+  static const int kMaxNumberOfPackets;
+  void OnPacketArrival(uint16_t sequence_number,
+                       int64_t arrival_time,
+                       absl::optional<FeedbackRequest> feedback_request)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(&lock_);
-  bool BuildFeedbackPacket(rtcp::TransportFeedback* feedback_packet);
+  void SendPeriodicFeedbacks() RTC_EXCLUSIVE_LOCKS_REQUIRED(&lock_);
+  void SendFeedbackOnRequest(int64_t sequence_number,
+                             const FeedbackRequest& feedback_request)
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(&lock_);
+  static int64_t BuildFeedbackPacket(
+      uint8_t feedback_packet_count,
+      uint32_t media_ssrc,
+      int64_t base_sequence_number,
+      std::map<int64_t, int64_t>::const_iterator
+          begin_iterator,  // |begin_iterator| is inclusive.
+      std::map<int64_t, int64_t>::const_iterator
+          end_iterator,  // |end_iterator| is exclusive.
+      rtcp::TransportFeedback* feedback_packet);
 
-  const Clock* const clock_;
+  Clock* const clock_;
   TransportFeedbackSenderInterface* const feedback_sender_;
   int64_t last_process_time_ms_;
 
   rtc::CriticalSection lock_;
 
   uint32_t media_ssrc_ RTC_GUARDED_BY(&lock_);
-  uint8_t feedback_sequence_ RTC_GUARDED_BY(&lock_);
+  uint8_t feedback_packet_count_ RTC_GUARDED_BY(&lock_);
   SequenceNumberUnwrapper unwrapper_ RTC_GUARDED_BY(&lock_);
   int64_t window_start_seq_ RTC_GUARDED_BY(&lock_);
   // Map unwrapped seq -> time.
   std::map<int64_t, int64_t> packet_arrival_times_ RTC_GUARDED_BY(&lock_);
   int64_t send_interval_ms_ RTC_GUARDED_BY(&lock_);
+  bool send_feedback_on_request_only_ RTC_GUARDED_BY(&lock_);
 };
 
 }  // namespace webrtc

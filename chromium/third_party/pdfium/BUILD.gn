@@ -20,10 +20,13 @@ config("pdfium_common_config") {
   ldflags = []
   include_dirs = [ "." ]
   defines = [
-    "OPJ_STATIC",
     "PNG_PREFIX",
     "PNG_USE_READ_MACROS",
   ]
+
+  if (!use_system_libopenjpeg2) {
+    defines += [ "OPJ_STATIC" ]
+  }
 
   if (pdf_enable_click_logging) {
     defines += [ "PDF_ENABLE_CLICK_LOGGING" ]
@@ -80,6 +83,9 @@ config("pdfium_core_config") {
   defines = []
   if (is_clang) {
     cflags += [ "-Wshadow" ]
+
+    # TODO(thakis): Remove once this is on globally, https://crbug.com/926235
+    cflags += [ "-Wextra-semi" ]
   }
   if (is_linux) {
     if (current_cpu == "x64") {
@@ -252,10 +258,10 @@ test("pdfium_unittests") {
     "core/fxcodec:unittests",
     "core/fxcrt",
     "core/fxcrt:unittests",
-    "core/fxge",
     "core/fxge:unittests",
     "fpdfsdk:unittests",
     "testing:test_support",
+    "testing:unit_test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -277,7 +283,6 @@ test("pdfium_unittests") {
     deps += [
       "fxbarcode:unittests",
       "xfa/fde:unittests",
-      "xfa/fgas",
       "xfa/fgas:unittests",
       "xfa/fgas/layout:unittests",
       "xfa/fwl:unittests",

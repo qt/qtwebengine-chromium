@@ -1400,7 +1400,8 @@ void sqlite3AddPrimaryKey(
    && sortOrder!=SQLITE_SO_DESC
   ){
     if( IN_RENAME_OBJECT && pList ){
-      sqlite3RenameTokenRemap(pParse, &pTab->iPKey, pList->a[0].pExpr);
+      Expr *pCExpr = sqlite3ExprSkipCollate(pList->a[0].pExpr);
+      sqlite3RenameTokenRemap(pParse, &pTab->iPKey, pCExpr);
     }
     pTab->iPKey = iCol;
     pTab->keyConf = (u8)onError;
@@ -3754,9 +3755,9 @@ void *sqlite3ArrayAllocate(
   int *pIdx         /* Write the index of a new slot here */
 ){
   char *z;
-  int n = *pnEntry;
+  sqlite3_int64 n = *pnEntry;
   if( (n & (n-1))==0 ){
-    int sz = (n==0) ? 1 : 2*n;
+    sqlite3_int64 sz = (n==0) ? 1 : 2*n;
     void *pNew = sqlite3DbRealloc(db, pArray, sz*szEntry);
     if( pNew==0 ){
       *pIdx = -1;
@@ -3877,7 +3878,7 @@ SrcList *sqlite3SrcListEnlarge(
   /* Allocate additional space if needed */
   if( (u32)pSrc->nSrc+nExtra>pSrc->nAlloc ){
     SrcList *pNew;
-    int nAlloc = pSrc->nSrc*2+nExtra;
+    sqlite3_int64 nAlloc = 2*(sqlite3_int64)pSrc->nSrc+nExtra;
     sqlite3 *db = pParse->db;
 
     if( pSrc->nSrc+nExtra>=SQLITE_MAX_SRCLIST ){
@@ -4633,7 +4634,7 @@ With *sqlite3WithAdd(
   }
 
   if( pWith ){
-    int nByte = sizeof(*pWith) + (sizeof(pWith->a[1]) * pWith->nCte);
+    sqlite3_int64 nByte = sizeof(*pWith) + (sizeof(pWith->a[1]) * pWith->nCte);
     pNew = sqlite3DbRealloc(db, pWith, nByte);
   }else{
     pNew = sqlite3DbMallocZero(db, sizeof(*pWith));

@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "absl/types/optional.h"
+#include "api/scoped_refptr.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_bitrate_allocator.h"
@@ -26,7 +27,6 @@
 #include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ref_counted_object.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -293,6 +293,18 @@ TEST_F(VideoCodecInitializerTest,
 
   EXPECT_TRUE(InitializeCodec());
   EXPECT_EQ(codec_out_.spatialLayers[0].maxBitrate,
+            kDefaultMaxBitrateBps / 1000);
+}
+
+TEST_F(VideoCodecInitializerTest,
+       Vp9SingleSpatialLayerTargetBitrateIsEqualToCodecMaxBitrate) {
+  SetUpFor(VideoCodecType::kVideoCodecVP9, 1, 1, true);
+  VideoStream stream = DefaultStream();
+  stream.num_temporal_layers = 1;
+  streams_.push_back(stream);
+
+  EXPECT_TRUE(InitializeCodec());
+  EXPECT_EQ(codec_out_.spatialLayers[0].targetBitrate,
             kDefaultMaxBitrateBps / 1000);
 }
 

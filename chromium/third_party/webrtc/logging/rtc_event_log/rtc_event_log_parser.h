@@ -434,6 +434,15 @@ class ParsedRtcEventLog {
     }
   }
 
+  const std::vector<LoggedRtcpPacketExtendedReports>& extended_reports(
+      PacketDirection direction) const {
+    if (direction == kIncomingPacket) {
+      return incoming_xr_;
+    } else {
+      return outgoing_xr_;
+    }
+  }
+
   const std::vector<LoggedRtcpPacketNack>& nacks(
       PacketDirection direction) const {
     if (direction == kIncomingPacket) {
@@ -452,6 +461,24 @@ class ParsedRtcEventLog {
     }
   }
 
+  const std::vector<LoggedRtcpPacketFir>& firs(
+      PacketDirection direction) const {
+    if (direction == kIncomingPacket) {
+      return incoming_fir_;
+    } else {
+      return outgoing_fir_;
+    }
+  }
+
+  const std::vector<LoggedRtcpPacketPli>& plis(
+      PacketDirection direction) const {
+    if (direction == kIncomingPacket) {
+      return incoming_pli_;
+    } else {
+      return outgoing_pli_;
+    }
+  }
+
   const std::vector<LoggedRtcpPacketTransportFeedback>& transport_feedbacks(
       PacketDirection direction) const {
     if (direction == kIncomingPacket) {
@@ -459,6 +486,27 @@ class ParsedRtcEventLog {
     } else {
       return outgoing_transport_feedback_;
     }
+  }
+
+  const std::vector<LoggedRtcpPacketLossNotification>& loss_notifications(
+      PacketDirection direction) {
+    if (direction == kIncomingPacket) {
+      return incoming_loss_notification_;
+    } else {
+      return outgoing_loss_notification_;
+    }
+  }
+
+  const std::vector<LoggedGenericPacketReceived>& generic_packets_received()
+      const {
+    return generic_packets_received_;
+  }
+  const std::vector<LoggedGenericPacketSent>& generic_packets_sent() const {
+    return generic_packets_sent_;
+  }
+
+  const std::vector<LoggedGenericAckReceived>& generic_acks_received() const {
+    return generic_acks_received_;
   }
 
   int64_t first_timestamp() const { return first_timestamp_; }
@@ -569,6 +617,10 @@ class ParsedRtcEventLog {
   void StoreAudioSendConfig(const rtclog2::AudioSendStreamConfig& proto);
   void StoreVideoRecvConfig(const rtclog2::VideoRecvStreamConfig& proto);
   void StoreVideoSendConfig(const rtclog2::VideoSendStreamConfig& proto);
+  void StoreGenericPacketReceivedEvent(
+      const rtclog2::GenericPacketReceived& proto);
+  void StoreGenericPacketSentEvent(const rtclog2::GenericPacketSent& proto);
+  void StoreGenericAckReceivedEvent(const rtclog2::GenericAckReceived& proto);
   // End of new parsing functions.
 
   struct Stream {
@@ -629,12 +681,20 @@ class ParsedRtcEventLog {
   std::vector<LoggedRtcpPacketReceiverReport> outgoing_rr_;
   std::vector<LoggedRtcpPacketSenderReport> incoming_sr_;
   std::vector<LoggedRtcpPacketSenderReport> outgoing_sr_;
+  std::vector<LoggedRtcpPacketExtendedReports> incoming_xr_;
+  std::vector<LoggedRtcpPacketExtendedReports> outgoing_xr_;
   std::vector<LoggedRtcpPacketNack> incoming_nack_;
   std::vector<LoggedRtcpPacketNack> outgoing_nack_;
   std::vector<LoggedRtcpPacketRemb> incoming_remb_;
   std::vector<LoggedRtcpPacketRemb> outgoing_remb_;
+  std::vector<LoggedRtcpPacketFir> incoming_fir_;
+  std::vector<LoggedRtcpPacketFir> outgoing_fir_;
+  std::vector<LoggedRtcpPacketPli> incoming_pli_;
+  std::vector<LoggedRtcpPacketPli> outgoing_pli_;
   std::vector<LoggedRtcpPacketTransportFeedback> incoming_transport_feedback_;
   std::vector<LoggedRtcpPacketTransportFeedback> outgoing_transport_feedback_;
+  std::vector<LoggedRtcpPacketLossNotification> incoming_loss_notification_;
+  std::vector<LoggedRtcpPacketLossNotification> outgoing_loss_notification_;
 
   std::vector<LoggedStartEvent> start_log_events_;
   std::vector<LoggedStopEvent> stop_log_events_;
@@ -666,6 +726,10 @@ class ParsedRtcEventLog {
   std::vector<LoggedAudioSendConfig> audio_send_configs_;
   std::vector<LoggedVideoRecvConfig> video_recv_configs_;
   std::vector<LoggedVideoSendConfig> video_send_configs_;
+
+  std::vector<LoggedGenericPacketReceived> generic_packets_received_;
+  std::vector<LoggedGenericPacketSent> generic_packets_sent_;
+  std::vector<LoggedGenericAckReceived> generic_acks_received_;
 
   uint8_t last_incoming_rtcp_packet_[IP_PACKET_SIZE];
   uint8_t last_incoming_rtcp_packet_length_;

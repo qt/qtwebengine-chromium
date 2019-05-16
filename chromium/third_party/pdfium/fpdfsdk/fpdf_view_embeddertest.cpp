@@ -14,6 +14,7 @@
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/utils/file_util.h"
 #include "testing/utils/path_service.h"
 
 namespace {
@@ -46,6 +47,170 @@ class FPDFViewEmbedderTest : public EmbedderTest {
                                       const FS_RECTF& rect,
                                       const char* expected_md5);
 };
+
+// Test for conversion of a point in device coordinates to page coordinates
+TEST_F(FPDFViewEmbedderTest, DeviceCoordinatesToPageCoordinates) {
+  EXPECT_TRUE(OpenDocument("about_blank.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  EXPECT_NE(nullptr, page);
+
+  // Error tolerance for floating point comparison
+  const double kTolerance = 0.0001;
+
+  // Display bounds in device coordinates
+  int start_x = 0;
+  int start_y = 0;
+  int size_x = 640;
+  int size_y = 480;
+
+  // Page Orientation normal
+  int rotate = 0;
+
+  // Device coordinate to be converted
+  int device_x = 10;
+  int device_y = 10;
+
+  double page_x = 0.0;
+  double page_y = 0.0;
+  EXPECT_TRUE(FPDF_DeviceToPage(page, start_x, start_y, size_x, size_y, rotate,
+                                device_x, device_y, &page_x, &page_y));
+  EXPECT_NEAR(9.5625, page_x, kTolerance);
+  EXPECT_NEAR(775.5, page_y, kTolerance);
+
+  // Rotate 90 degrees clockwise
+  rotate = 1;
+  EXPECT_TRUE(FPDF_DeviceToPage(page, start_x, start_y, size_x, size_y, rotate,
+                                device_x, device_y, &page_x, &page_y));
+  EXPECT_NEAR(12.75, page_x, kTolerance);
+  EXPECT_NEAR(12.375, page_y, kTolerance);
+
+  // Rotate 180 degrees
+  rotate = 2;
+  EXPECT_TRUE(FPDF_DeviceToPage(page, start_x, start_y, size_x, size_y, rotate,
+                                device_x, device_y, &page_x, &page_y));
+  EXPECT_NEAR(602.4374, page_x, kTolerance);
+  EXPECT_NEAR(16.5, page_y, kTolerance);
+
+  // Rotate 90 degrees counter-clockwise
+  rotate = 3;
+  EXPECT_TRUE(FPDF_DeviceToPage(page, start_x, start_y, size_x, size_y, rotate,
+                                device_x, device_y, &page_x, &page_y));
+  EXPECT_NEAR(599.25, page_x, kTolerance);
+  EXPECT_NEAR(779.625, page_y, kTolerance);
+
+  // FPDF_DeviceToPage() converts |rotate| into legal rotation by taking
+  // modulo by 4. A value of 4 is expected to be converted into 0 (normal
+  // rotation)
+  rotate = 4;
+  EXPECT_TRUE(FPDF_DeviceToPage(page, start_x, start_y, size_x, size_y, rotate,
+                                device_x, device_y, &page_x, &page_y));
+  EXPECT_NEAR(9.5625, page_x, kTolerance);
+  EXPECT_NEAR(775.5, page_y, kTolerance);
+
+  // FPDF_DeviceToPage returns untransformed coordinates if |rotate| % 4 is
+  // negative.
+  rotate = -1;
+  EXPECT_TRUE(FPDF_DeviceToPage(page, start_x, start_y, size_x, size_y, rotate,
+                                device_x, device_y, &page_x, &page_y));
+  EXPECT_NEAR(device_x, page_x, kTolerance);
+  EXPECT_NEAR(device_y, page_y, kTolerance);
+
+  // Negative case - invalid page
+  page_x = 1234.0;
+  page_y = 5678.0;
+  EXPECT_FALSE(FPDF_DeviceToPage(nullptr, start_x, start_y, size_x, size_y,
+                                 rotate, device_x, device_y, &page_x, &page_y));
+  // Out parameters are expected to remain unchanged
+  EXPECT_NEAR(1234.0, page_x, kTolerance);
+  EXPECT_NEAR(5678.0, page_y, kTolerance);
+
+  // Negative case - invalid output parameters
+  EXPECT_FALSE(FPDF_DeviceToPage(page, start_x, start_y, size_x, size_y, rotate,
+                                 device_x, device_y, nullptr, nullptr));
+
+  UnloadPage(page);
+}
+
+// Test for conversion of a point in page coordinates to device coordinates.
+TEST_F(FPDFViewEmbedderTest, PageCoordinatesToDeviceCoordinates) {
+  EXPECT_TRUE(OpenDocument("about_blank.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  EXPECT_NE(nullptr, page);
+
+  // Display bounds in device coordinates
+  int start_x = 0;
+  int start_y = 0;
+  int size_x = 640;
+  int size_y = 480;
+
+  // Page Orientation normal
+  int rotate = 0;
+
+  // Page coordinate to be converted
+  double page_x = 9.0;
+  double page_y = 775.0;
+
+  int device_x = 0;
+  int device_y = 0;
+  EXPECT_TRUE(FPDF_PageToDevice(page, start_x, start_y, size_x, size_y, rotate,
+                                page_x, page_y, &device_x, &device_y));
+
+  EXPECT_EQ(9, device_x);
+  EXPECT_EQ(10, device_y);
+
+  // Rotate 90 degrees clockwise
+  rotate = 1;
+  EXPECT_TRUE(FPDF_PageToDevice(page, start_x, start_y, size_x, size_y, rotate,
+                                page_x, page_y, &device_x, &device_y));
+  EXPECT_EQ(626, device_x);
+  EXPECT_EQ(7, device_y);
+
+  // Rotate 180 degrees
+  rotate = 2;
+  EXPECT_TRUE(FPDF_PageToDevice(page, start_x, start_y, size_x, size_y, rotate,
+                                page_x, page_y, &device_x, &device_y));
+  EXPECT_EQ(631, device_x);
+  EXPECT_EQ(470, device_y);
+
+  // Rotate 90 degrees counter-clockwise
+  rotate = 3;
+  EXPECT_TRUE(FPDF_PageToDevice(page, start_x, start_y, size_x, size_y, rotate,
+                                page_x, page_y, &device_x, &device_y));
+  EXPECT_EQ(14, device_x);
+  EXPECT_EQ(473, device_y);
+
+  // FPDF_PageToDevice() converts |rotate| into legal rotation by taking
+  // modulo by 4. A value of 4 is expected to be converted into 0 (normal
+  // rotation)
+  rotate = 4;
+  EXPECT_TRUE(FPDF_PageToDevice(page, start_x, start_y, size_x, size_y, rotate,
+                                page_x, page_y, &device_x, &device_y));
+  EXPECT_EQ(9, device_x);
+  EXPECT_EQ(10, device_y);
+
+  // FPDF_PageToDevice() returns untransformed coordinates if |rotate| % 4 is
+  // negative.
+  rotate = -1;
+  EXPECT_TRUE(FPDF_PageToDevice(page, start_x, start_y, size_x, size_y, rotate,
+                                page_x, page_y, &device_x, &device_y));
+  EXPECT_EQ(start_x, device_x);
+  EXPECT_EQ(start_y, device_y);
+
+  // Negative case - invalid page
+  device_x = 1234;
+  device_y = 5678;
+  EXPECT_FALSE(FPDF_PageToDevice(nullptr, start_x, start_y, size_x, size_y,
+                                 rotate, page_x, page_y, &device_x, &device_y));
+  // Out parameters are expected to remain unchanged
+  EXPECT_EQ(1234, device_x);
+  EXPECT_EQ(5678, device_y);
+
+  // Negative case - invalid output parameters
+  EXPECT_FALSE(FPDF_PageToDevice(page, start_x, start_y, size_x, size_y, rotate,
+                                 page_x, page_y, nullptr, nullptr));
+
+  UnloadPage(page);
+}
 
 TEST_F(FPDFViewEmbedderTest, Document) {
   EXPECT_TRUE(OpenDocument("about_blank.pdf"));
@@ -109,6 +274,37 @@ TEST_F(FPDFViewEmbedderTest, LinearizedDocument) {
 
 TEST_F(FPDFViewEmbedderTest, LoadCustomDocumentWithoutFileAccess) {
   EXPECT_FALSE(FPDF_LoadCustomDocument(nullptr, ""));
+}
+
+// See https://crbug.com/pdfium/1261
+TEST_F(FPDFViewEmbedderTest, LoadCustomDocumentWithShortLivedFileAccess) {
+  std::string file_contents_string;  // Must outlive |doc|.
+  ScopedFPDFDocument doc;
+  {
+    // Read a PDF, and copy it into |file_contents_string|.
+    std::string pdf_path;
+    size_t pdf_length;
+    ASSERT_TRUE(PathService::GetTestFilePath("rectangles.pdf", &pdf_path));
+    auto file_contents = GetFileContents(pdf_path.c_str(), &pdf_length);
+    ASSERT_TRUE(file_contents);
+    for (size_t i = 0; i < pdf_length; ++i)
+      file_contents_string.push_back(file_contents.get()[i]);
+
+    // Define a FPDF_FILEACCESS object that will go out of scope, while the
+    // loaded document in |doc| remains valid.
+    FPDF_FILEACCESS file_access = {};
+    file_access.m_FileLen = pdf_length;
+    file_access.m_GetBlock = GetBlockFromString;
+    file_access.m_Param = &file_contents_string;
+    doc.reset(FPDF_LoadCustomDocument(&file_access, nullptr));
+    ASSERT_TRUE(doc);
+  }
+
+  // Now try to access |doc| and make sure it still works.
+  ScopedFPDFPage page(FPDF_LoadPage(doc.get(), 0));
+  ASSERT_TRUE(page);
+  EXPECT_DOUBLE_EQ(200, FPDF_GetPageWidth(page.get()));
+  EXPECT_DOUBLE_EQ(300, FPDF_GetPageHeight(page.get()));
 }
 
 TEST_F(FPDFViewEmbedderTest, Page) {
@@ -633,18 +829,18 @@ TEST_F(FPDFViewEmbedderTest, FPDF_GetPageSizeByIndex) {
   UnloadPage(page);
 }
 
-class UnSupRecordDelegate final : public EmbedderTest::Delegate {
+class RecordUnsupportedErrorDelegate final : public EmbedderTest::Delegate {
  public:
-  UnSupRecordDelegate() : type_(-1) {}
-  ~UnSupRecordDelegate() override {}
+  RecordUnsupportedErrorDelegate() = default;
+  ~RecordUnsupportedErrorDelegate() override = default;
 
   void UnsupportedHandler(int type) override { type_ = type; }
 
-  int type_;
+  int type_ = -1;
 };
 
 TEST_F(FPDFViewEmbedderTest, UnSupportedOperations_NotFound) {
-  UnSupRecordDelegate delegate;
+  RecordUnsupportedErrorDelegate delegate;
   SetDelegate(&delegate);
   ASSERT_TRUE(OpenDocument("hello_world.pdf"));
   EXPECT_EQ(delegate.type_, -1);
@@ -652,7 +848,7 @@ TEST_F(FPDFViewEmbedderTest, UnSupportedOperations_NotFound) {
 }
 
 TEST_F(FPDFViewEmbedderTest, UnSupportedOperations_LoadCustomDocument) {
-  UnSupRecordDelegate delegate;
+  RecordUnsupportedErrorDelegate delegate;
   SetDelegate(&delegate);
   ASSERT_TRUE(OpenDocument("unsupported_feature.pdf"));
   EXPECT_EQ(FPDF_UNSP_DOC_PORTABLECOLLECTION, delegate.type_);
@@ -664,7 +860,7 @@ TEST_F(FPDFViewEmbedderTest, UnSupportedOperations_LoadDocument) {
   ASSERT_TRUE(
       PathService::GetTestFilePath("unsupported_feature.pdf", &file_path));
 
-  UnSupRecordDelegate delegate;
+  RecordUnsupportedErrorDelegate delegate;
   SetDelegate(&delegate);
   FPDF_DOCUMENT doc = FPDF_LoadDocument(file_path.c_str(), "");
   EXPECT_TRUE(doc != nullptr);

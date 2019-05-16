@@ -38,6 +38,21 @@ TraceStats& TraceStats::operator=(const TraceStats&) = default;
 TraceStats::TraceStats(TraceStats&&) noexcept = default;
 TraceStats& TraceStats::operator=(TraceStats&&) = default;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceStats::operator==(const TraceStats& other) const {
+  return (buffer_stats_ == other.buffer_stats_) &&
+         (producers_connected_ == other.producers_connected_) &&
+         (producers_seen_ == other.producers_seen_) &&
+         (data_sources_registered_ == other.data_sources_registered_) &&
+         (data_sources_seen_ == other.data_sources_seen_) &&
+         (tracing_sessions_ == other.tracing_sessions_) &&
+         (total_buffers_ == other.total_buffers_) &&
+         (chunks_discarded_ == other.chunks_discarded_) &&
+         (patches_discarded_ == other.patches_discarded_);
+}
+#pragma GCC diagnostic pop
+
 void TraceStats::FromProto(const perfetto::protos::TraceStats& proto) {
   buffer_stats_.clear();
   for (const auto& field : proto.buffer_stats()) {
@@ -75,6 +90,16 @@ void TraceStats::FromProto(const perfetto::protos::TraceStats& proto) {
   static_assert(sizeof(total_buffers_) == sizeof(proto.total_buffers()),
                 "size mismatch");
   total_buffers_ = static_cast<decltype(total_buffers_)>(proto.total_buffers());
+
+  static_assert(sizeof(chunks_discarded_) == sizeof(proto.chunks_discarded()),
+                "size mismatch");
+  chunks_discarded_ =
+      static_cast<decltype(chunks_discarded_)>(proto.chunks_discarded());
+
+  static_assert(sizeof(patches_discarded_) == sizeof(proto.patches_discarded()),
+                "size mismatch");
+  patches_discarded_ =
+      static_cast<decltype(patches_discarded_)>(proto.patches_discarded());
   unknown_fields_ = proto.unknown_fields();
 }
 
@@ -120,6 +145,17 @@ void TraceStats::ToProto(perfetto::protos::TraceStats* proto) const {
                 "size mismatch");
   proto->set_total_buffers(
       static_cast<decltype(proto->total_buffers())>(total_buffers_));
+
+  static_assert(sizeof(chunks_discarded_) == sizeof(proto->chunks_discarded()),
+                "size mismatch");
+  proto->set_chunks_discarded(
+      static_cast<decltype(proto->chunks_discarded())>(chunks_discarded_));
+
+  static_assert(
+      sizeof(patches_discarded_) == sizeof(proto->patches_discarded()),
+      "size mismatch");
+  proto->set_patches_discarded(
+      static_cast<decltype(proto->patches_discarded())>(patches_discarded_));
   *(proto->mutable_unknown_fields()) = unknown_fields_;
 }
 
@@ -132,6 +168,32 @@ TraceStats::BufferStats::BufferStats(TraceStats::BufferStats&&) noexcept =
     default;
 TraceStats::BufferStats& TraceStats::BufferStats::operator=(
     TraceStats::BufferStats&&) = default;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceStats::BufferStats::operator==(
+    const TraceStats::BufferStats& other) const {
+  return (buffer_size_ == other.buffer_size_) &&
+         (bytes_written_ == other.bytes_written_) &&
+         (bytes_overwritten_ == other.bytes_overwritten_) &&
+         (bytes_read_ == other.bytes_read_) &&
+         (padding_bytes_written_ == other.padding_bytes_written_) &&
+         (padding_bytes_cleared_ == other.padding_bytes_cleared_) &&
+         (chunks_written_ == other.chunks_written_) &&
+         (chunks_rewritten_ == other.chunks_rewritten_) &&
+         (chunks_overwritten_ == other.chunks_overwritten_) &&
+         (chunks_discarded_ == other.chunks_discarded_) &&
+         (chunks_read_ == other.chunks_read_) &&
+         (chunks_committed_out_of_order_ ==
+          other.chunks_committed_out_of_order_) &&
+         (write_wrap_count_ == other.write_wrap_count_) &&
+         (patches_succeeded_ == other.patches_succeeded_) &&
+         (patches_failed_ == other.patches_failed_) &&
+         (readaheads_succeeded_ == other.readaheads_succeeded_) &&
+         (readaheads_failed_ == other.readaheads_failed_) &&
+         (abi_violations_ == other.abi_violations_);
+}
+#pragma GCC diagnostic pop
 
 void TraceStats::BufferStats::FromProto(
     const perfetto::protos::TraceStats_BufferStats& proto) {
@@ -179,6 +241,11 @@ void TraceStats::BufferStats::FromProto(
       "size mismatch");
   chunks_overwritten_ =
       static_cast<decltype(chunks_overwritten_)>(proto.chunks_overwritten());
+
+  static_assert(sizeof(chunks_discarded_) == sizeof(proto.chunks_discarded()),
+                "size mismatch");
+  chunks_discarded_ =
+      static_cast<decltype(chunks_discarded_)>(proto.chunks_discarded());
 
   static_assert(sizeof(chunks_read_) == sizeof(proto.chunks_read()),
                 "size mismatch");
@@ -278,6 +345,11 @@ void TraceStats::BufferStats::ToProto(
       "size mismatch");
   proto->set_chunks_overwritten(
       static_cast<decltype(proto->chunks_overwritten())>(chunks_overwritten_));
+
+  static_assert(sizeof(chunks_discarded_) == sizeof(proto->chunks_discarded()),
+                "size mismatch");
+  proto->set_chunks_discarded(
+      static_cast<decltype(proto->chunks_discarded())>(chunks_discarded_));
 
   static_assert(sizeof(chunks_read_) == sizeof(proto->chunks_read()),
                 "size mismatch");

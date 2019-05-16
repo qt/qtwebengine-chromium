@@ -157,20 +157,6 @@ class MediaContentDescription {
     send_streams_.push_back(sp);
   }
 
-  // In Unified Plan (ex. Simulcast scenario) the receive stream might need
-  // to be specified in the media section description to allow specifying
-  // restrictions and identifying it within the session (see also RID).
-  const StreamParams& receive_stream() const {
-    RTC_DCHECK(has_receive_stream());
-    return receive_stream_.value();
-  }
-
-  bool has_receive_stream() const { return receive_stream_.has_value(); }
-
-  void set_receive_stream(const StreamParams& receive_stream) {
-    receive_stream_ = receive_stream;
-  }
-
   // Sets the CNAME of all StreamParams if it have not been set.
   void SetCnameIfEmpty(const std::string& cname) {
     for (cricket::StreamParamsVec::iterator it = send_streams_.begin();
@@ -241,7 +227,6 @@ class MediaContentDescription {
   std::vector<webrtc::RtpExtension> rtp_header_extensions_;
   bool rtp_header_extensions_set_ = false;
   StreamParamsVec send_streams_;
-  absl::optional<StreamParams> receive_stream_;
   bool conference_mode_ = false;
   webrtc::RtpTransceiverDirection direction_ =
       webrtc::RtpTransceiverDirection::kSendRecv;
@@ -438,6 +423,8 @@ class SessionDescription {
 
   SessionDescription* Copy() const;
 
+  struct MediaTransportSetting;
+
   // Content accessors.
   const ContentInfos& contents() const { return contents_; }
   ContentInfos& contents() { return contents_; }
@@ -525,6 +512,32 @@ class SessionDescription {
   }
   bool extmap_allow_mixed() const { return extmap_allow_mixed_; }
 
+  // Adds the media transport setting.
+  // Media transport name uniquely identifies the type of media transport.
+  // The name cannot be empty, or repeated in the previously added transport
+  // settings.
+  void AddMediaTransportSetting(const std::string& media_transport_name,
+                                const std::string& media_transport_setting) {
+    RTC_DCHECK(!media_transport_name.empty());
+    for (const auto& setting : media_transport_settings_) {
+      RTC_DCHECK(media_transport_name != setting.transport_name)
+          << "MediaTransportSetting was already registered, transport_name="
+          << setting.transport_name;
+    }
+    media_transport_settings_.push_back(
+        {media_transport_name, media_transport_setting});
+  }
+
+  // Gets the media transport settings, in order of preference.
+  const std::vector<MediaTransportSetting>& MediaTransportSettings() const {
+    return media_transport_settings_;
+  }
+
+  struct MediaTransportSetting {
+    std::string transport_name;
+    std::string transport_setting;
+  };
+
  private:
   SessionDescription(const SessionDescription&);
 
@@ -541,6 +554,8 @@ class SessionDescription {
   // correctly. If it's included in offer to us we will respond that we support
   // it.
   bool extmap_allow_mixed_ = false;
+
+  std::vector<MediaTransportSetting> media_transport_settings_;
 };
 
 // Indicates whether a session description was sent by the local client or

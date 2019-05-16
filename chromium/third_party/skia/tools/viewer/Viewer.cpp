@@ -10,6 +10,7 @@
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "ImageSlide.h"
+#include "ParticlesSlide.h"
 #include "Resources.h"
 #include "SKPSlide.h"
 #include "SampleSlide.h"
@@ -65,6 +66,8 @@ static DEFINE_bool(list, false, "List samples?");
 
 #ifdef SK_VULKAN
 #    define BACKENDS_STR "\"sw\", \"gl\", and \"vk\""
+#elif defined(SK_METAL) && defined(SK_BUILD_FOR_MAC)
+#    define BACKENDS_STR "\"sw\", \"gl\", and \"mtl\""
 #else
 #    define BACKENDS_STR "\"sw\" and \"gl\""
 #endif
@@ -87,6 +90,9 @@ const char* kBackendTypeStrings[sk_app::Window::kBackendTypeCount] = {
 #ifdef SK_VULKAN
     "Vulkan",
 #endif
+#if defined(SK_METAL) && defined(SK_BUILD_FOR_MAC)
+    "Metal",
+#endif
     "Raster"
 };
 
@@ -100,6 +106,11 @@ static sk_app::Window::BackendType get_backend_type(const char* str) {
     if (0 == strcmp(str, "angle")) {
         return sk_app::Window::kANGLE_BackendType;
     } else
+#endif
+#if defined(SK_METAL) && defined(SK_BUILD_FOR_MAC)
+        if (0 == strcmp(str, "mtl")) {
+            return sk_app::Window::kMetal_BackendType;
+        } else
 #endif
     if (0 == strcmp(str, "gl")) {
         return sk_app::Window::kNativeGL_BackendType;
@@ -154,6 +165,16 @@ static Window::BackendType backend_type_for_window(Window::BackendType backendTy
     // This lets us render the GUI faster (and correct).
     return Window::kRaster_BackendType == backendType ? Window::kNativeGL_BackendType : backendType;
 }
+
+class NullSlide : public Slide {
+    SkISize getDimensions() const override {
+        return SkISize::Make(640, 480);
+    }
+
+    void draw(SkCanvas* canvas) override {
+        canvas->clear(0xffff11ff);
+    }
+};
 
 const char* kName = "name";
 const char* kValue = "value";
@@ -624,6 +645,15 @@ void Viewer::initSlides() {
         }
     }
 
+    // Particle demo
+    {
+        // TODO: Convert this to a sample
+        sk_sp<Slide> slide(new ParticlesSlide());
+        if (!SkCommandLineFlags::ShouldSkip(FLAGS_match, slide->getName().c_str())) {
+            fSlides.push_back(std::move(slide));
+        }
+    }
+
     for (const auto& info : gExternalSlidesInfo) {
         for (const auto& flag : info.fFlags) {
             if (SkStrEndsWith(flag.c_str(), info.fExtension)) {
@@ -644,6 +674,11 @@ void Viewer::initSlides() {
                 dirSlides.reset();  // NOLINT(bugprone-use-after-move)
             }
         }
+    }
+
+    if (!fSlides.count()) {
+        sk_sp<Slide> slide(new NullSlide());
+        fSlides.push_back(std::move(slide));
     }
 }
 
@@ -1028,10 +1063,10 @@ public:
             const SkTextBlobBuilder::RunBuffer& runBuffer
                 = it.positioning() == SkTextBlobRunIterator::kDefault_Positioning
                     ? SkTextBlobBuilderPriv::AllocRunText(&builder, font,
-                        it.offset().x(),it.offset().y(), it.glyphCount(), it.textSize(), SkString())
+                        it.glyphCount(), it.offset().x(),it.offset().y(), it.textSize(), SkString())
                 : it.positioning() == SkTextBlobRunIterator::kHorizontal_Positioning
                     ? SkTextBlobBuilderPriv::AllocRunTextPosH(&builder, font,
-                        it.offset().y(), it.glyphCount(), it.textSize(), SkString())
+                        it.glyphCount(), it.offset().y(), it.textSize(), SkString())
                 : it.positioning() == SkTextBlobRunIterator::kFull_Positioning
                     ? SkTextBlobBuilderPriv::AllocRunTextPos(&builder, font,
                         it.glyphCount(), it.textSize(), SkString())
@@ -1111,11 +1146,16 @@ public:
     Viewer::SkFontFields* fFontOverrides;
 };
 
-void Viewer::drawSlide(SkCanvas* canvas) {
-    SkAutoCanvasRestore autorestore(canvas, false);
+void Viewer::drawSlide(SkSurface* surface) {
+    if (fCurrentSlide < 0) {
+        return;
+    }
+
+    SkAutoCanvasRestore autorestore(surface->getCanvas(), false);
 
     // By default, we render directly into the window's surface/canvas
-    SkCanvas* slideCanvas = canvas;
+    SkSurface* slideSurface = surface;
+    SkCanvas* slideCanvas = surface->getCanvas();
     fLastImage.reset();
 
     // If we're in any of the color managed modes, construct the color space we're going to use
@@ -1140,14 +1180,15 @@ void Viewer::drawSlide(SkCanvas* canvas) {
     // Grab some things we'll need to make surfaces (for tiling or general offscreen rendering)
     SkColorType colorType = (ColorMode::kColorManagedF16 == fColorMode) ? kRGBA_F16_SkColorType
                                                                         : kN32_SkColorType;
-    SkSurfaceProps props(SkSurfaceProps::kLegacyFontHost_InitType);
-    canvas->getProps(&props);
 
     auto make_surface = [=](int w, int h) {
+        SkSurfaceProps props(SkSurfaceProps::kLegacyFontHost_InitType);
+        slideCanvas->getProps(&props);
+
         SkImageInfo info = SkImageInfo::Make(w, h, colorType, kPremul_SkAlphaType, colorSpace);
         return Window::kRaster_BackendType == this->fBackendType
                 ? SkSurface::MakeRaster(info, &props)
-                : canvas->makeSurface(info, &props);
+                : slideCanvas->makeSurface(info, &props);
     };
 
     // We need to render offscreen if we're...
@@ -1161,6 +1202,7 @@ void Viewer::drawSlide(SkCanvas* canvas) {
         colorSpace != nullptr) {
 
         offscreenSurface = make_surface(fWindow->width(), fWindow->height());
+        slideSurface = offscreenSurface.get();
         slideCanvas = offscreenSurface->getCanvas();
     }
 
@@ -1211,13 +1253,14 @@ void Viewer::drawSlide(SkCanvas* canvas) {
 
     // Force a flush so we can time that, too
     fStatsLayer.beginTiming(fFlushTimer);
-    slideCanvas->flush();
+    slideSurface->flush();
     fStatsLayer.endTiming(fFlushTimer);
 
     // If we rendered offscreen, snap an image and push the results to the window's canvas
     if (offscreenSurface) {
         fLastImage = offscreenSurface->makeImageSnapshot();
 
+        SkCanvas* canvas = surface->getCanvas();
         SkPaint paint;
         paint.setBlendMode(SkBlendMode::kSrc);
         int prePerspectiveCount = canvas->save();
@@ -1236,10 +1279,10 @@ void Viewer::onBackendCreated() {
     fWindow->show();
 }
 
-void Viewer::onPaint(SkCanvas* canvas) {
-    this->drawSlide(canvas);
+void Viewer::onPaint(SkSurface* surface) {
+    this->drawSlide(surface);
 
-    fCommands.drawHelp(canvas);
+    fCommands.drawHelp(surface->getCanvas());
 
     this->drawImGui();
 
@@ -1345,143 +1388,45 @@ bool Viewer::onMouse(int x, int y, Window::InputState state, uint32_t modifiers)
     return true;
 }
 
-static ImVec2 ImGui_DragPrimary(const char* label, float* x, float* y,
-                                const ImVec2& pos, const ImVec2& size) {
-    // Transform primaries ([0, 0] - [0.8, 0.9]) to screen coords (including Y-flip)
-    ImVec2 center(pos.x + (*x / 0.8f) * size.x, pos.y + (1.0f - (*y / 0.9f)) * size.y);
-
-    // Invisible 10x10 button
-    ImGui::SetCursorScreenPos(ImVec2(center.x - 5, center.y - 5));
-    ImGui::InvisibleButton(label, ImVec2(10, 10));
-
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging()) {
-        ImGuiIO& io = ImGui::GetIO();
-        // Normalized mouse position, relative to our gamut box
-        ImVec2 mousePosXY((io.MousePos.x - pos.x) / size.x, (io.MousePos.y - pos.y) / size.y);
-        // Clamp to edge of box, convert back to primary scale
-        *x = SkTPin(mousePosXY.x, 0.0f, 1.0f) * 0.8f;
-        *y = SkTPin(1 - mousePosXY.y, 0.0f, 1.0f) * 0.9f;
-    }
-
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("x: %.3f\ny: %.3f", *x, *y);
-    }
-
-    // Return screen coordinates for the caller. We could just return center here, but we'd have
-    // one frame of lag during drag.
-    return ImVec2(pos.x + (*x / 0.8f) * size.x, pos.y + (1.0f - (*y / 0.9f)) * size.y);
-}
-
 static void ImGui_Primaries(SkColorSpacePrimaries* primaries, SkPaint* gamutPaint) {
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-    // The gamut image covers a (0.8 x 0.9) shaped region, so fit our image/canvas to the available
-    // width, and scale the height to maintain aspect ratio.
-    float canvasWidth = SkTMax(ImGui::GetContentRegionAvailWidth(), 50.0f);
-    ImVec2 size = ImVec2(canvasWidth, canvasWidth * (0.9f / 0.8f));
-    ImVec2 pos = ImGui::GetCursorScreenPos();
+    // The gamut image covers a (0.8 x 0.9) shaped region
+    ImGui::DragCanvas dc(primaries, { 0.0f, 0.9f }, { 0.8f, 0.0f });
 
     // Background image. Only draw a subset of the image, to avoid the regions less than zero.
     // Simplifes re-mapping math, clipping behavior, and increases resolution in the useful area.
     // Magic numbers are pixel locations of the origin and upper-right corner.
-    drawList->AddImage(gamutPaint, pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                       ImVec2(242, 61), ImVec2(1897, 1922));
+    dc.fDrawList->AddImage(gamutPaint, dc.fPos,
+                           ImVec2(dc.fPos.x + dc.fSize.x, dc.fPos.y + dc.fSize.y),
+                           ImVec2(242, 61), ImVec2(1897, 1922));
 
-    // Primary markers
-    ImVec2 r = ImGui_DragPrimary("R", &primaries->fRX, &primaries->fRY, pos, size);
-    ImVec2 g = ImGui_DragPrimary("G", &primaries->fGX, &primaries->fGY, pos, size);
-    ImVec2 b = ImGui_DragPrimary("B", &primaries->fBX, &primaries->fBY, pos, size);
-    ImVec2 w = ImGui_DragPrimary("W", &primaries->fWX, &primaries->fWY, pos, size);
-
-    // Gamut triangle
-    drawList->AddCircle(r, 5.0f, 0xFF000040);
-    drawList->AddCircle(g, 5.0f, 0xFF004000);
-    drawList->AddCircle(b, 5.0f, 0xFF400000);
-    drawList->AddCircle(w, 5.0f, 0xFFFFFFFF);
-    drawList->AddTriangle(r, g, b, 0xFFFFFFFF);
-
-    // Re-position cursor immediate after the diagram for subsequent controls
-    ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + size.y));
-}
-
-static ImVec2 ImGui_DragPoint(const char* label, SkPoint* p,
-                              const ImVec2& pos, const ImVec2& size, bool* dragging) {
-    // Transform points ([0, 0] - [1.0, 1.0]) to screen coords
-    ImVec2 center(pos.x + p->fX * size.x, pos.y + p->fY * size.y);
-
-    // Invisible 10x10 button
-    ImGui::SetCursorScreenPos(ImVec2(center.x - 5, center.y - 5));
-    ImGui::InvisibleButton(label, ImVec2(10, 10));
-
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging()) {
-        ImGuiIO& io = ImGui::GetIO();
-        // Normalized mouse position, relative to our gamut box
-        ImVec2 mousePosXY((io.MousePos.x - pos.x) / size.x, (io.MousePos.y - pos.y) / size.y);
-        // Clamp to edge of box
-        p->fX = SkTPin(mousePosXY.x, 0.0f, 1.0f);
-        p->fY = SkTPin(mousePosXY.y, 0.0f, 1.0f);
-        *dragging = true;
-    }
-
-    // Return screen coordinates for the caller. We could just return center here, but we'd have
-    // one frame of lag during drag.
-    return ImVec2(pos.x + p->fX * size.x, pos.y + p->fY * size.y);
+    dc.dragPoint((SkPoint*)(&primaries->fRX), true, 0xFF000040);
+    dc.dragPoint((SkPoint*)(&primaries->fGX), true, 0xFF004000);
+    dc.dragPoint((SkPoint*)(&primaries->fBX), true, 0xFF400000);
+    dc.dragPoint((SkPoint*)(&primaries->fWX), true);
+    dc.fDrawList->AddPolyline(dc.fScreenPoints.begin(), 3, 0xFFFFFFFF, true, 1.5f);
 }
 
 static bool ImGui_DragLocation(SkPoint* pt) {
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-    // Fit our image/canvas to the available width, and scale the height to maintain aspect ratio.
-    float canvasWidth = SkTMax(ImGui::GetContentRegionAvailWidth(), 50.0f);
-    ImVec2 size = ImVec2(canvasWidth, canvasWidth);
-    ImVec2 pos = ImGui::GetCursorScreenPos();
-
-    // Background rectangle
-    drawList->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(0, 0, 0, 128));
-
-    // Location marker
-    bool dragging = false;
-    ImVec2 tl = ImGui_DragPoint("SL", pt + 0, pos, size, &dragging);
-    drawList->AddCircle(tl, 5.0f, 0xFFFFFFFF);
-
-    ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + size.y));
-    ImGui::Spacing();
-
-    return dragging;
+    ImGui::DragCanvas dc(pt);
+    dc.fillColor(IM_COL32(0, 0, 0, 128));
+    dc.dragPoint(pt);
+    return dc.fDragging;
 }
 
 static bool ImGui_DragQuad(SkPoint* pts) {
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImGui::DragCanvas dc(pts);
+    dc.fillColor(IM_COL32(0, 0, 0, 128));
 
-    // Fit our image/canvas to the available width, and scale the height to maintain aspect ratio.
-    float canvasWidth = SkTMax(ImGui::GetContentRegionAvailWidth(), 50.0f);
-    ImVec2 size = ImVec2(canvasWidth, canvasWidth);
-    ImVec2 pos = ImGui::GetCursorScreenPos();
+    for (int i = 0; i < 4; ++i) {
+        dc.dragPoint(pts + i);
+    }
 
-    // Background rectangle
-    drawList->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(0, 0, 0, 128));
+    dc.fDrawList->AddLine(dc.fScreenPoints[0], dc.fScreenPoints[1], 0xFFFFFFFF);
+    dc.fDrawList->AddLine(dc.fScreenPoints[1], dc.fScreenPoints[3], 0xFFFFFFFF);
+    dc.fDrawList->AddLine(dc.fScreenPoints[3], dc.fScreenPoints[2], 0xFFFFFFFF);
+    dc.fDrawList->AddLine(dc.fScreenPoints[2], dc.fScreenPoints[0], 0xFFFFFFFF);
 
-    // Corner markers
-    bool dragging = false;
-    ImVec2 tl = ImGui_DragPoint("TL", pts + 0, pos, size, &dragging);
-    ImVec2 tr = ImGui_DragPoint("TR", pts + 1, pos, size, &dragging);
-    ImVec2 bl = ImGui_DragPoint("BL", pts + 2, pos, size, &dragging);
-    ImVec2 br = ImGui_DragPoint("BR", pts + 3, pos, size, &dragging);
-
-    // Draw markers and quad
-    drawList->AddCircle(tl, 5.0f, 0xFFFFFFFF);
-    drawList->AddCircle(tr, 5.0f, 0xFFFFFFFF);
-    drawList->AddCircle(bl, 5.0f, 0xFFFFFFFF);
-    drawList->AddCircle(br, 5.0f, 0xFFFFFFFF);
-    drawList->AddLine(tl, tr, 0xFFFFFFFF);
-    drawList->AddLine(tr, br, 0xFFFFFFFF);
-    drawList->AddLine(br, bl, 0xFFFFFFFF);
-    drawList->AddLine(bl, tl, 0xFFFFFFFF);
-
-    ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + size.y));
-    ImGui::Spacing();
-
-    return dragging;
+    return dc.fDragging;
 }
 
 void Viewer::drawImGui() {
@@ -1510,6 +1455,10 @@ void Viewer::drawImGui() {
 #if defined(SK_VULKAN)
                 ImGui::SameLine();
                 ImGui::RadioButton("Vulkan", &newBackend, sk_app::Window::kVulkan_BackendType);
+#endif
+#if defined(SK_METAL) && defined(SK_BUILD_FOR_MAC)
+                ImGui::SameLine();
+                ImGui::RadioButton("Metal", &newBackend, sk_app::Window::kMetal_BackendType);
 #endif
                 if (newBackend != fBackendType) {
                     fDeferredActions.push_back([=]() {
@@ -1584,7 +1533,7 @@ void Viewer::drawImGui() {
                         ImGui::RadioButton("Software", true);
                     } else if (fWindow->sampleCount() > 1) {
                         prButton(GpuPathRenderers::kAll);
-                        if (ctx->contextPriv().caps()->shaderCaps()->pathRenderingSupport()) {
+                        if (ctx->priv().caps()->shaderCaps()->pathRenderingSupport()) {
                             prButton(GpuPathRenderers::kStencilAndCover);
                         }
                         prButton(GpuPathRenderers::kTessellating);
@@ -1592,7 +1541,7 @@ void Viewer::drawImGui() {
                     } else {
                         prButton(GpuPathRenderers::kAll);
                         if (GrCoverageCountingPathRenderer::IsSupported(
-                                    *ctx->contextPriv().caps())) {
+                                    *ctx->priv().caps())) {
                             prButton(GpuPathRenderers::kCoverageCounting);
                         }
                         prButton(GpuPathRenderers::kSmall);
@@ -1959,7 +1908,7 @@ void Viewer::drawImGui() {
             SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
             if (fLastImage->readPixels(info, &pixel, info.minRowBytes(), xInt, yInt)) {
                 ImGui::SameLine();
-                ImGui::Text("(X, Y): %d, %d RGBA: %x %x %x %x",
+                ImGui::Text("(X, Y): %d, %d RGBA: %X %X %X %X",
                             xInt, yInt,
                             SkGetPackedR32(pixel), SkGetPackedG32(pixel),
                             SkGetPackedB32(pixel), SkGetPackedA32(pixel));
@@ -2074,7 +2023,7 @@ void Viewer::updateUIState() {
             if (!ctx) {
                 writer.appendString("Software");
             } else {
-                const auto* caps = ctx->contextPriv().caps();
+                const auto* caps = ctx->priv().caps();
 
                 writer.appendString(gPathRendererNames[GpuPathRenderers::kAll].c_str());
                 if (fWindow->sampleCount() > 1) {

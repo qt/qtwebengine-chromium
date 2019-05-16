@@ -21,14 +21,17 @@
 namespace dawn_native {
 
     // This is called RenderPassEncoderBase to match the code generator expectations. Note that it
-    // is a pure frontend type to record in its parent CommandBufferBuilder and never has a backend
+    // is a pure frontend type to record in its parent CommandEncoder and never has a backend
     // implementation.
     // TODO(cwallez@chromium.org): Remove that generator limitation and rename to ComputePassEncoder
     class RenderPassEncoderBase : public ProgrammablePassEncoder {
       public:
         RenderPassEncoderBase(DeviceBase* device,
-                              CommandBufferBuilder* topLevelBuilder,
+                              CommandEncoderBase* topLevelEncoder,
                               CommandAllocator* allocator);
+
+        static RenderPassEncoderBase* MakeError(DeviceBase* device,
+                                                CommandEncoderBase* topLevelEncoder);
 
         void Draw(uint32_t vertexCount,
                   uint32_t instanceCount,
@@ -43,7 +46,7 @@ namespace dawn_native {
         void SetPipeline(RenderPipelineBase* pipeline);
 
         void SetStencilReference(uint32_t reference);
-        void SetBlendColor(float r, float g, float b, float a);
+        void SetBlendColor(const Color* color);
         void SetScissorRect(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
         template <typename T>
@@ -60,6 +63,11 @@ namespace dawn_native {
                               BufferBase* const* buffers,
                               uint32_t const* offsets);
         void SetIndexBuffer(BufferBase* buffer, uint32_t offset);
+
+      protected:
+        RenderPassEncoderBase(DeviceBase* device,
+                              CommandEncoderBase* topLevelEncoder,
+                              ErrorTag errorTag);
     };
 
 }  // namespace dawn_native

@@ -19,7 +19,6 @@
 #include "dawn_native/vulkan/InputStateVk.h"
 #include "dawn_native/vulkan/PipelineLayoutVk.h"
 #include "dawn_native/vulkan/RenderPassCache.h"
-#include "dawn_native/vulkan/RenderPassDescriptorVk.h"
 #include "dawn_native/vulkan/ShaderModuleVk.h"
 #include "dawn_native/vulkan/UtilsVulkan.h"
 
@@ -112,10 +111,10 @@ namespace dawn_native { namespace vulkan {
             return static_cast<VkColorComponentFlagBits>(mask);
         }
 
-        VkPipelineColorBlendAttachmentState ComputeBlendDesc(
-            const BlendStateDescriptor* descriptor) {
+        VkPipelineColorBlendAttachmentState ComputeColorDesc(
+            const ColorStateDescriptor* descriptor) {
             VkPipelineColorBlendAttachmentState attachment;
-            attachment.blendEnable = descriptor->blendEnabled ? VK_TRUE : VK_FALSE;
+            attachment.blendEnable = BlendEnabled(descriptor) ? VK_TRUE : VK_FALSE;
             attachment.srcColorBlendFactor = VulkanBlendFactor(descriptor->colorBlend.srcFactor);
             attachment.dstColorBlendFactor = VulkanBlendFactor(descriptor->colorBlend.dstFactor);
             attachment.colorBlendOp = VulkanBlendOperation(descriptor->colorBlend.operation);
@@ -171,15 +170,17 @@ namespace dawn_native { namespace vulkan {
             depthStencilState.stencilTestEnable =
                 StencilTestEnabled(descriptor) ? VK_TRUE : VK_FALSE;
 
-            depthStencilState.front.failOp = VulkanStencilOp(descriptor->front.stencilFailOp);
-            depthStencilState.front.passOp = VulkanStencilOp(descriptor->front.passOp);
-            depthStencilState.front.depthFailOp = VulkanStencilOp(descriptor->front.depthFailOp);
-            depthStencilState.front.compareOp = ToVulkanCompareOp(descriptor->front.compare);
+            depthStencilState.front.failOp = VulkanStencilOp(descriptor->stencilFront.failOp);
+            depthStencilState.front.passOp = VulkanStencilOp(descriptor->stencilFront.passOp);
+            depthStencilState.front.depthFailOp =
+                VulkanStencilOp(descriptor->stencilFront.depthFailOp);
+            depthStencilState.front.compareOp = ToVulkanCompareOp(descriptor->stencilFront.compare);
 
-            depthStencilState.back.failOp = VulkanStencilOp(descriptor->back.stencilFailOp);
-            depthStencilState.back.passOp = VulkanStencilOp(descriptor->back.passOp);
-            depthStencilState.back.depthFailOp = VulkanStencilOp(descriptor->back.depthFailOp);
-            depthStencilState.back.compareOp = ToVulkanCompareOp(descriptor->back.compare);
+            depthStencilState.back.failOp = VulkanStencilOp(descriptor->stencilBack.failOp);
+            depthStencilState.back.passOp = VulkanStencilOp(descriptor->stencilBack.passOp);
+            depthStencilState.back.depthFailOp =
+                VulkanStencilOp(descriptor->stencilBack.depthFailOp);
+            depthStencilState.back.compareOp = ToVulkanCompareOp(descriptor->stencilBack.compare);
 
             // Dawn doesn't have separate front and back stencil masks.
             depthStencilState.front.compareMask = descriptor->stencilReadMask;
@@ -198,10 +199,6 @@ namespace dawn_native { namespace vulkan {
 
     RenderPipeline::RenderPipeline(Device* device, const RenderPipelineDescriptor* descriptor)
         : RenderPipelineBase(device, descriptor) {
-        // Eventually a bunch of the structures that need to be chained in the create info will be
-        // held by objects such as the BlendState. They aren't implemented yet so we initialize
-        // everything here.
-
         VkPipelineShaderStageCreateInfo shaderStages[2];
         {
             shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -282,11 +279,11 @@ namespace dawn_native { namespace vulkan {
             ComputeDepthStencilDesc(GetDepthStencilStateDescriptor());
 
         // Initialize the "blend state info" that will be chained in the "create info" from the data
-        // pre-computed in the BlendState
+        // pre-computed in the ColorState
         std::array<VkPipelineColorBlendAttachmentState, kMaxColorAttachments> colorBlendAttachments;
         for (uint32_t i : IterateBitSet(GetColorAttachmentsMask())) {
-            const BlendStateDescriptor* descriptor = GetBlendStateDescriptor(i);
-            colorBlendAttachments[i] = ComputeBlendDesc(descriptor);
+            const ColorStateDescriptor* descriptor = GetColorStateDescriptor(i);
+            colorBlendAttachments[i] = ComputeColorDesc(descriptor);
         }
         VkPipelineColorBlendStateCreateInfo colorBlend;
         colorBlend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

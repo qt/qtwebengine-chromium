@@ -258,52 +258,45 @@ struct RtpExtension {
   // Header extension for audio levels, as defined in:
   // http://tools.ietf.org/html/draft-ietf-avtext-client-to-mixer-audio-level-03
   static const char kAudioLevelUri[];
-  static const int kAudioLevelDefaultId;
 
   // Header extension for RTP timestamp offset, see RFC 5450 for details:
   // http://tools.ietf.org/html/rfc5450
   static const char kTimestampOffsetUri[];
-  static const int kTimestampOffsetDefaultId;
 
   // Header extension for absolute send time, see url for details:
   // http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
   static const char kAbsSendTimeUri[];
-  static const int kAbsSendTimeDefaultId;
 
   // Header extension for coordination of video orientation, see url for
   // details:
   // http://www.etsi.org/deliver/etsi_ts/126100_126199/126114/12.07.00_60/ts_126114v120700p.pdf
   static const char kVideoRotationUri[];
-  static const int kVideoRotationDefaultId;
 
   // Header extension for video content type. E.g. default or screenshare.
   static const char kVideoContentTypeUri[];
-  static const int kVideoContentTypeDefaultId;
 
   // Header extension for video timing.
   static const char kVideoTimingUri[];
-  static const int kVideoTimingDefaultId;
 
   // Header extension for video frame marking.
   static const char kFrameMarkingUri[];
-  static const int kFrameMarkingDefaultId;
 
   // Experimental codec agnostic frame descriptor.
+  static const char kGenericFrameDescriptorUri00[];
+  static const char kGenericFrameDescriptorUri01[];
+  // TODO(bugs.webrtc.org/10243): Remove once dependencies have been updated.
   static const char kGenericFrameDescriptorUri[];
-  static const int kGenericFrameDescriptorDefaultId;
 
   // Header extension for transport sequence number, see url for details:
   // http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions
   static const char kTransportSequenceNumberUri[];
-  static const int kTransportSequenceNumberDefaultId;
+  static const char kTransportSequenceNumberV2Uri[];
 
   static const char kPlayoutDelayUri[];
-  static const int kPlayoutDelayDefaultId;
 
   // Header extension for identifying media section within a transport.
   // https://tools.ietf.org/html/draft-ietf-mmusic-sdp-bundle-negotiation-49#section-15
   static const char kMidUri[];
-  static const int kMidDefaultId;
 
   // Encryption of Header Extensions, see RFC 6904 for details:
   // https://tools.ietf.org/html/rfc6904
@@ -311,15 +304,12 @@ struct RtpExtension {
 
   // Header extension for color space information.
   static const char kColorSpaceUri[];
-  static const int kColorSpaceDefaultId;
 
   // Header extension for RIDs and Repaired RIDs
   // https://tools.ietf.org/html/draft-ietf-avtext-rid-09
   // https://tools.ietf.org/html/draft-ietf-mmusic-rid-15
   static const char kRidUri[];
-  static const int kRidDefaultId;
   static const char kRepairedRidUri[];
-  static const int kRepairedRidDefaultId;
 
   // Inclusive min and max IDs for two-byte header extensions and one-byte
   // header extensions, per RFC8285 Section 4.2-4.3.
@@ -461,11 +451,10 @@ struct RtpEncodingParameters {
   // supported by the codec implementation).
   // TODO(asapersson): Different number of temporal layers are not supported
   // per simulcast layer.
-  // Not supported for screencast.
+  // Screencast support is experimental.
   absl::optional<int> num_temporal_layers;
 
   // For video, scale the resolution down by this factor.
-  // TODO(deadbeef): Not implemented.
   absl::optional<double> scale_resolution_down_by;
 
   // Scale the framerate down by this factor.
@@ -482,7 +471,6 @@ struct RtpEncodingParameters {
 
   // Value to use for RID RTP header extension.
   // Called "encodingId" in ORTC.
-  // TODO(deadbeef): Not implemented.
   std::string rid;
 
   // RIDs of encodings on which this layer depends.

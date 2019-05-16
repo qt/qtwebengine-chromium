@@ -18,10 +18,11 @@
 #define SRC_TRACE_PROCESSOR_FTRACE_UTILS_H_
 
 #include <stddef.h>
-
 #include <array>
 
-#include "perfetto/base/optional.h"
+#include "perfetto/base/logging.h"
+#include "perfetto/base/string_view.h"
+#include "perfetto/base/string_writer.h"
 
 namespace perfetto {
 namespace trace_processor {
@@ -48,8 +49,9 @@ class TaskState {
     kWaking = 256,
     kParked = 512,
     kNoLoad = 1024,
+    kNewTask = 2048,
 
-    kMaxState = 2048,
+    kMaxState = 4096,
     kValid = 0x8000,
   };
 
@@ -80,6 +82,13 @@ class TaskState {
  private:
   uint16_t state_ = 0;
 };
+
+void FormatSystracePrefix(int64_t timestamp,
+                          uint32_t cpu,
+                          uint32_t pid,
+                          uint32_t tgid,
+                          base::StringView name,
+                          base::StringWriter* writer);
 
 }  // namespace ftrace_utils
 }  // namespace trace_processor

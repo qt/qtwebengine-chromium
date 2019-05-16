@@ -32,6 +32,7 @@
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "system_wrappers/include/metrics.h"
+#include "test/gmock.h"
 
 namespace webrtc {
 
@@ -39,6 +40,8 @@ using RTCConfiguration = PeerConnectionInterface::RTCConfiguration;
 using RTCOfferAnswerOptions = PeerConnectionInterface::RTCOfferAnswerOptions;
 using rtc::SocketAddress;
 using ::testing::Combine;
+using ::testing::ElementsAre;
+using ::testing::Pair;
 using ::testing::Values;
 
 constexpr int kIceCandidatesTimeout = 10000;
@@ -211,7 +214,7 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
         static_cast<PeerConnectionProxyWithInternal<PeerConnectionInterface>*>(
             pc_wrapper_ptr->pc());
     PeerConnection* pc = static_cast<PeerConnection*>(pc_proxy->internal());
-    for (auto transceiver : pc->GetTransceiversInternal()) {
+    for (const auto& transceiver : pc->GetTransceiversInternal()) {
       if (transceiver->media_type() == cricket::MEDIA_TYPE_AUDIO) {
         // TODO(amithi): This test seems to be using a method that should not
         // be public |rtp_packet_transport|. Because the test is not mocking
@@ -435,11 +438,8 @@ TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenRemoteDescriptionNotSet) {
   caller->CreateOfferAndSetAsLocal();
 
   EXPECT_FALSE(caller->pc()->AddIceCandidate(jsep_candidate.get()));
-  EXPECT_EQ(
-      2, webrtc::metrics::NumSamples("WebRTC.PeerConnection.AddIceCandidate"));
-  EXPECT_EQ(
-      2, webrtc::metrics::NumEvents("WebRTC.PeerConnection.AddIceCandidate",
-                                    kAddIceCandidateFailNoRemoteDescription));
+  EXPECT_THAT(webrtc::metrics::Samples("WebRTC.PeerConnection.AddIceCandidate"),
+              ElementsAre(Pair(kAddIceCandidateFailNoRemoteDescription, 2)));
 }
 
 TEST_P(PeerConnectionIceTest, CannotAddCandidateWhenPeerConnectionClosed) {
@@ -872,7 +872,7 @@ TEST_P(PeerConnectionIceUfragPwdAnswerTest, TestIncludedInAnswer) {
   EXPECT_NE(answer_transport_desc->ice_pwd, local_transport_desc->ice_pwd);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PeerConnectionIceTest,
     PeerConnectionIceUfragPwdAnswerTest,
     Combine(Values(SdpSemantics::kPlanB, SdpSemantics::kUnifiedPlan),
@@ -970,10 +970,10 @@ TEST_P(PeerConnectionIceTest,
   EXPECT_EQ(cricket::ICEROLE_CONTROLLED, GetIceRole(callee));
 }
 
-INSTANTIATE_TEST_CASE_P(PeerConnectionIceTest,
-                        PeerConnectionIceTest,
-                        Values(SdpSemantics::kPlanB,
-                               SdpSemantics::kUnifiedPlan));
+INSTANTIATE_TEST_SUITE_P(PeerConnectionIceTest,
+                         PeerConnectionIceTest,
+                         Values(SdpSemantics::kPlanB,
+                                SdpSemantics::kUnifiedPlan));
 
 class PeerConnectionIceConfigTest : public testing::Test {
  protected:
@@ -994,7 +994,7 @@ class PeerConnectionIceConfigTest : public testing::Test {
                                           nullptr /* cert_generator */,
                                           &observer_));
     EXPECT_TRUE(pc.get());
-    pc_ = std::move(pc.get());
+    pc_ = std::move(pc);
   }
 
   rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory_ = nullptr;

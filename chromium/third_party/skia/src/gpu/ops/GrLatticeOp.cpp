@@ -133,7 +133,7 @@ public:
     static const int kVertsPerRect = 4;
     static const int kIndicesPerRect = 6;
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           sk_sp<GrTextureProxy> proxy,
@@ -193,13 +193,14 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
         auto opaque = fPatches[0].fColor.isOpaque() && GrPixelConfigIsOpaque(fProxy->config())
                               ? GrProcessorAnalysisColor::Opaque::kYes
                               : GrProcessorAnalysisColor::Opaque::kNo;
         auto analysisColor = GrProcessorAnalysisColor(opaque);
         auto result = fHelper.finalizeProcessors(
-                caps, clip, GrProcessorAnalysisCoverage::kNone, &analysisColor);
+                caps, clip, fsaaType, GrProcessorAnalysisCoverage::kNone, &analysisColor);
         analysisColor.isConstant(&fPatches[0].fColor);
         return result;
     }
@@ -225,10 +226,14 @@ private:
 
         const size_t kVertexStride = gp->vertexStride();
         sk_sp<const GrBuffer> indexBuffer = target->resourceProvider()->refQuadIndexBuffer();
-        PatternHelper helper(target, GrPrimitiveType::kTriangles, kVertexStride, indexBuffer.get(),
-                             kVertsPerRect, kIndicesPerRect, numRects);
+        if (!indexBuffer) {
+            SkDebugf("Could not allocate indices\n");
+            return;
+        }
+        PatternHelper helper(target, GrPrimitiveType::kTriangles, kVertexStride,
+                             std::move(indexBuffer), kVertsPerRect, kIndicesPerRect, numRects);
         GrVertexWriter vertices{helper.vertices()};
-        if (!vertices.fPtr || !indexBuffer) {
+        if (!vertices.fPtr) {
             SkDebugf("Could not allocate vertices\n");
             return;
         }
@@ -280,9 +285,13 @@ private:
                                                   kVertsPerRect * patch.fIter->numRectsToDraw());
             }
         }
-        auto pipe = fHelper.makePipeline(target, 1);
-        pipe.fFixedDynamicState->fPrimitiveProcessorTextures[0] = fProxy.get();
-        helper.recordDraw(target, std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState);
+        auto fixedDynamicState = target->makeFixedDynamicState(1);
+        fixedDynamicState->fPrimitiveProcessorTextures[0] = fProxy.get();
+        helper.recordDraw(target, std::move(gp), fixedDynamicState);
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        fHelper.executeDrawsAndUploads(this, flushState, chainBounds);
     }
 
     CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
@@ -325,7 +334,7 @@ private:
 }  // anonymous namespace
 
 namespace GrLatticeOp {
-std::unique_ptr<GrDrawOp> MakeNonAA(GrContext* context,
+std::unique_ptr<GrDrawOp> MakeNonAA(GrRecordingContext* context,
                                     GrPaint&& paint,
                                     const SkMatrix& viewMatrix,
                                     sk_sp<GrTextureProxy> proxy,
@@ -339,8 +348,8 @@ std::unique_ptr<GrDrawOp> MakeNonAA(GrContext* context,
 };
 
 #if GR_TEST_UTILS
-#include "GrContextPriv.h"
 #include "GrProxyProvider.h"
+#include "GrRecordingContextPriv.h"
 
 /** Randomly divides subset into count divs. */
 static void init_random_divs(int divs[], int count, int subsetStart, int subsetStop,
@@ -394,8 +403,8 @@ GR_DRAW_OP_TEST_DEFINE(NonAALatticeOp) {
     GrSurfaceOrigin origin =
             random->nextBool() ? kTopLeft_GrSurfaceOrigin : kBottomLeft_GrSurfaceOrigin;
     const GrBackendFormat format =
-            context->contextPriv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
-    auto proxy = context->contextPriv().proxyProvider()->createProxy(
+            context->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
+    auto proxy = context->priv().proxyProvider()->createProxy(
             format, desc, origin, SkBackingFit::kExact, SkBudgeted::kYes);
 
     do {

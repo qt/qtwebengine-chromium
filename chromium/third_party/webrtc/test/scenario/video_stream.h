@@ -15,6 +15,7 @@
 
 #include "rtc_base/constructor_magic.h"
 #include "test/fake_encoder.h"
+#include "test/fake_videorenderer.h"
 #include "test/frame_generator_capturer.h"
 #include "test/logging/log_writer.h"
 #include "test/scenario/call_client.h"
@@ -36,6 +37,7 @@ class SendVideoStream {
   VideoSendStream::Stats GetStats() const;
   ColumnPrinter StatsPrinter();
   void Start();
+  void Stop();
   void UpdateConfig(std::function<void(VideoStreamConfig*)> modifier);
 
  private:
@@ -57,9 +59,8 @@ class SendVideoStream {
   std::unique_ptr<VideoEncoderFactory> encoder_factory_;
   std::vector<test::FakeEncoder*> fake_encoders_ RTC_GUARDED_BY(crit_);
   std::unique_ptr<VideoBitrateAllocatorFactory> bitrate_allocator_factory_;
-  std::unique_ptr<TestVideoCapturer> video_capturer_;
+  std::unique_ptr<FrameGeneratorCapturer> video_capturer_;
   std::unique_ptr<ForwardingCapturedFrameTap> frame_tap_;
-  FrameGeneratorCapturer* frame_generator_ = nullptr;
   int next_local_network_id_ = 0;
   int next_remote_network_id_ = 0;
 };
@@ -70,6 +71,7 @@ class ReceiveVideoStream {
   RTC_DISALLOW_COPY_AND_ASSIGN(ReceiveVideoStream);
   ~ReceiveVideoStream();
   void Start();
+  void Stop();
 
  private:
   friend class Scenario;
@@ -81,9 +83,10 @@ class ReceiveVideoStream {
                      Transport* feedback_transport,
                      VideoQualityAnalyzer* analyzer);
 
-  VideoReceiveStream* receive_stream_ = nullptr;
+  std::vector<VideoReceiveStream*> receive_streams_;
   FlexfecReceiveStream* flecfec_stream_ = nullptr;
-  std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>> renderer_;
+  FakeVideoRenderer fake_renderer_;
+  std::unique_ptr<rtc::VideoSinkInterface<VideoFrame>> analyzer_;
   CallClient* const receiver_;
   const VideoStreamConfig config_;
   std::unique_ptr<VideoDecoderFactory> decoder_factory_;

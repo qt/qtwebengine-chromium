@@ -11,6 +11,7 @@
 
 #include "SkOSFile.h"
 #include "SkOSPath.h"
+#include <map>
 
 class SubtopicKeys {
 public:
@@ -739,7 +740,6 @@ bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
     if (fOut) {
         this->writePending();
         fclose(fOut);
-        fflush(fOut);
         if (ParserCommon::WrittenFileDiffers(fullName, filename)) {
             ParserCommon::CopyToFile(fullName, filename);
             SkDebugf("wrote %s\n", fullName.c_str());

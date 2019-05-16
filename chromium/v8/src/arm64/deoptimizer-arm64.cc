@@ -55,6 +55,12 @@ void CopyRegListToFrame(MacroAssembler* masm, const Register& dst,
   masm->Sub(dst, dst, dst_offset);
 }
 
+// TODO(jgruber): There's a hack here to explicitly skip restoration of the
+// so-called 'arm64 platform register' x18. The register may be in use by the
+// OS, thus we should not clobber it. Instead of this hack, it would be nicer
+// not to add x18 to the list of saved registers in the first place. The
+// complication here is that we require `reg_list.Count() % 2 == 0` in multiple
+// spots.
 void RestoreRegList(MacroAssembler* masm, const CPURegList& reg_list,
                     const Register& src_base, int src_offset) {
   DCHECK_EQ(reg_list.Count() % 2, 0);
@@ -68,10 +74,8 @@ void RestoreRegList(MacroAssembler* masm, const CPURegList& reg_list,
   Register src = temps.AcquireX();
   masm->Add(src, src_base, src_offset);
 
-#if defined(V8_OS_WIN)
-  // x18 is reserved as platform register on Windows.
+  // x18 is the platform register and is reserved for the use of platform ABIs.
   restore_list.Remove(x18);
-#endif
 
   // Restore every register in restore_list from src.
   while (!restore_list.IsEmpty()) {
@@ -79,12 +83,10 @@ void RestoreRegList(MacroAssembler* masm, const CPURegList& reg_list,
     CPURegister reg1 = restore_list.PopLowestIndex();
     int offset0 = reg0.code() * reg_size;
 
-#if defined(V8_OS_WIN)
     if (reg1 == NoCPUReg) {
       masm->Ldr(reg0, MemOperand(src, offset0));
       break;
     }
-#endif
 
     int offset1 = reg1.code() * reg_size;
 
@@ -215,7 +217,7 @@ void Deoptimizer::GenerateDeoptimizationEntries(MacroAssembler* masm,
   // frame description.
   __ Add(x3, x1, FrameDescription::frame_content_offset());
   __ SlotAddress(x1, 0);
-  __ Lsr(unwind_limit, unwind_limit, kPointerSizeLog2);
+  __ Lsr(unwind_limit, unwind_limit, kSystemPointerSizeLog2);
   __ Mov(x5, unwind_limit);
   __ CopyDoubleWords(x3, x1, x5);
   __ Drop(unwind_limit);
@@ -237,19 +239,18 @@ void Deoptimizer::GenerateDeoptimizationEntries(MacroAssembler* masm,
   }
 
   // Replace the current (input) frame with the output frames.
-  Label outer_push_loop, inner_push_loop,
-      outer_loop_header, inner_loop_header;
+  Label outer_push_loop, outer_loop_header;
   __ Ldrsw(x1, MemOperand(x4, Deoptimizer::output_count_offset()));
   __ Ldr(x0, MemOperand(x4, Deoptimizer::output_offset()));
-  __ Add(x1, x0, Operand(x1, LSL, kPointerSizeLog2));
+  __ Add(x1, x0, Operand(x1, LSL, kSystemPointerSizeLog2));
   __ B(&outer_loop_header);
 
   __ Bind(&outer_push_loop);
   Register current_frame = x2;
   Register frame_size = x3;
-  __ Ldr(current_frame, MemOperand(x0, kPointerSize, PostIndex));
+  __ Ldr(current_frame, MemOperand(x0, kSystemPointerSize, PostIndex));
   __ Ldr(x3, MemOperand(current_frame, FrameDescription::frame_size_offset()));
-  __ Lsr(frame_size, x3, kPointerSizeLog2);
+  __ Lsr(frame_size, x3, kSystemPointerSizeLog2);
   __ Claim(frame_size);
 
   __ Add(x7, current_frame, FrameDescription::frame_content_offset());

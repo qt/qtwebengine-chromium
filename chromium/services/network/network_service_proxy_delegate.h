@@ -52,9 +52,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
                       const net::ProxyRetryInfoMap& proxy_retry_info,
                       net::ProxyInfo* result) override;
   void OnFallback(const net::ProxyServer& bad_proxy, int net_error) override;
-  void OnBeforeTunnelRequest(const net::ProxyServer& proxy_server,
-                             net::HttpRequestHeaders* extra_headers) override;
-  net::Error OnTunnelHeadersReceived(
+  void OnBeforeHttp1TunnelRequest(
+      const net::ProxyServer& proxy_server,
+      net::HttpRequestHeaders* extra_headers) override;
+  net::Error OnHttp1TunnelHeadersReceived(
       const net::ProxyServer& proxy_server,
       const net::HttpResponseHeaders& response_headers) override;
 
@@ -89,6 +90,12 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
   mojo::Binding<mojom::CustomProxyConfigClient> binding_;
 
   base::MRUCache<std::string, bool> should_use_alternate_proxy_list_cache_;
+
+  // Cache of URLs for which the usage of custom proxy results
+  // in redirect loops. A container is used here since it's possible that
+  // at any given time, there are multiple URLs that result in redirect loops
+  // when fetched via the custom proxy.
+  std::deque<GURL> redirect_loop_cache_;
 
   // We keep track of a limited number of previous configs so we can determine
   // if a request used a custom proxy if the config happened to change during

@@ -30,6 +30,8 @@ enum class CommandGraphResourceType
     Framebuffer,
     Image,
     Query,
+    FenceSync,
+    DebugMarker,
 };
 
 // Certain functionality cannot be put in secondary command buffers, so they are special-cased in
@@ -40,6 +42,11 @@ enum class CommandGraphNodeFunction
     BeginQuery,
     EndQuery,
     WriteTimestamp,
+    SetFenceSync,
+    WaitFenceSync,
+    InsertDebugMarker,
+    PushDebugMarker,
+    PopDebugMarker,
 };
 
 // Receives notifications when a command buffer is no longer able to record. Can be used with
@@ -127,6 +134,9 @@ class CommandGraphNode final : angle::NonCopyable
     CommandGraphNodeFunction getFunction() const { return mFunction; }
 
     void setQueryPool(const QueryPool *queryPool, uint32_t queryIndex);
+    void setFenceSync(const vk::Event &event);
+    void setDebugMarker(GLenum source, std::string &&marker);
+    const std::string &getDebugMarker() const { return mDebugMarker; }
 
     ANGLE_INLINE void addGlobalMemoryBarrier(VkFlags srcAccess, VkFlags dstAccess)
     {
@@ -168,8 +178,14 @@ class CommandGraphNode final : angle::NonCopyable
     CommandBuffer mInsideRenderPassCommands;
 
     // Special-function additional data:
+    // Queries:
     VkQueryPool mQueryPool;
     uint32_t mQueryIndex;
+    // GLsync and EGLSync:
+    VkEvent mFenceSyncEvent;
+    // Debug markers:
+    GLenum mDebugMarkerSource;
+    std::string mDebugMarker;
 
     // Parents are commands that must be submitted before 'this' CommandNode can be submitted.
     std::vector<CommandGraphNode *> mParents;
@@ -359,6 +375,13 @@ class CommandGraph final : angle::NonCopyable
     void beginQuery(const QueryPool *queryPool, uint32_t queryIndex);
     void endQuery(const QueryPool *queryPool, uint32_t queryIndex);
     void writeTimestamp(const QueryPool *queryPool, uint32_t queryIndex);
+    // GLsync and EGLSync:
+    void setFenceSync(const vk::Event &event);
+    void waitFenceSync(const vk::Event &event);
+    // Debug markers:
+    void insertDebugMarker(GLenum source, std::string &&marker);
+    void pushDebugMarker(GLenum source, std::string &&marker);
+    void popDebugMarker();
 
   private:
     CommandGraphNode *allocateBarrierNode(CommandGraphResourceType resourceType,

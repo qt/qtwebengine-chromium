@@ -279,6 +279,43 @@ TEST(FullStackTest, ForemanCifLink150kbpsWithoutPacketLoss) {
   fixture->RunWithAnalyzer(foreman_cif);
 }
 
+// Restricted network and encoder overproducing by 30%.
+TEST(FullStackTest, ForemanCifLink150kbpsBadRateController) {
+  auto fixture = CreateVideoQualityTestFixture();
+  ParamsWithLogging foreman_cif;
+  foreman_cif.call.send_side_bwe = true;
+  foreman_cif.video[0] = {true,  352,           288, 30, 30000, 500000, 2000000,
+                          false, "VP8",         1,   0,  0,     false,  false,
+                          true,  "foreman_cif", 0,   {}, 1.30};
+  foreman_cif.analyzer = {
+      "foreman_cif_link_150kbps_delay100ms_30pkts_queue_overshoot30", 0.0, 0.0,
+      kFullStackTestDurationSecs};
+  foreman_cif.config->link_capacity_kbps = 150;
+  foreman_cif.config->queue_length_packets = 30;
+  foreman_cif.config->queue_delay_ms = 100;
+  fixture->RunWithAnalyzer(foreman_cif);
+}
+
+// Weak 3G-style link: 250kbps, 1% loss, 100ms delay, 15 packets queue.
+// Packet rate and loss are low enough that loss will happen with ~3s interval.
+// This triggers protection overhead to toggle between zero and non-zero.
+// Link queue is restrictive enough to trigger loss on probes.
+TEST(FullStackTest, ForemanCifMediaCapacitySmallLossAndQueue) {
+  auto fixture = CreateVideoQualityTestFixture();
+  ParamsWithLogging foreman_cif;
+  foreman_cif.call.send_side_bwe = true;
+  foreman_cif.video[0] = {true,  352,           288, 30, 30000, 500000, 2000000,
+                          false, "VP8",         1,   0,  0,     false,  false,
+                          true,  "foreman_cif", 0,   {}, 1.30};
+  foreman_cif.analyzer = {"foreman_cif_link_250kbps_delay100ms_10pkts_loss1",
+                          0.0, 0.0, kFullStackTestDurationSecs};
+  foreman_cif.config->link_capacity_kbps = 250;
+  foreman_cif.config->queue_length_packets = 10;
+  foreman_cif.config->queue_delay_ms = 100;
+  foreman_cif.config->loss_percent = 1;
+  fixture->RunWithAnalyzer(foreman_cif);
+}
+
 TEST_P(GenericDescriptorTest, ForemanCifPlr5) {
   auto fixture = CreateVideoQualityTestFixture();
   ParamsWithLogging foreman_cif;
@@ -704,27 +741,60 @@ TEST(FullStackTest, ScreenshareSlidesVP8_2TL) {
 // All the tests using this constant are disabled on Mac.
 const char kScreenshareSimulcastExperiment[] =
     "WebRTC-SimulcastScreenshare/Enabled/";
-
 // TODO(bugs.webrtc.org/9840): Investigate why is this test flaky on Win/Mac.
 #if !defined(WEBRTC_WIN)
-TEST(FullStackTest, ScreenshareSlidesVP8_3TL_Simulcast) {
+const char kScreenshareSimulcastVariableFramerateExperiment[] =
+    "WebRTC-SimulcastScreenshare/Enabled/"
+    "WebRTC-VP8VariableFramerateScreenshare/"
+    "Enabled,min_fps:5.0,min_qp:15,undershoot:30/";
+TEST(FullStackTest, ScreenshareSlidesVP8_2TL_Simulcast) {
   test::ScopedFieldTrials field_trial(
       AppendFieldTrials(kScreenshareSimulcastExperiment));
   auto fixture = CreateVideoQualityTestFixture();
   ParamsWithLogging screenshare;
   screenshare.call.send_side_bwe = true;
   screenshare.screenshare[0] = {true, false, 10};
-  screenshare.video[0] = {true,    1850,    1110,  5,     800000,
-                          2500000, 2500000, false, "VP8", 3,
-                          2,       400000,  false, false, false, ""};
+  screenshare.video[0] = {true,    1850,  1110,  30, 800000, 2500000,
+                          2500000, false, "VP8", 2,  1,      400000,
+                          false,   false, false, ""};
   screenshare.analyzer = {"screenshare_slides_simulcast", 0.0, 0.0,
                           kFullStackTestDurationSecs};
   ParamsWithLogging screenshare_params_high;
-  screenshare_params_high.video[0] = {true,    1850,  1110,  5, 400000, 1000000,
-                                      1000000, false, "VP8", 3, 0,      400000,
-                                      false,   false, false, ""};
+  screenshare_params_high.video[0] = {
+      true,  1850, 1110, 60,     600000, 1250000, 1250000, false,
+      "VP8", 2,    0,    400000, false,  false,   false,   ""};
   VideoQualityTest::Params screenshare_params_low;
-  screenshare_params_low.video[0] = {true,    1850,  1110,  5, 50000, 200000,
+  screenshare_params_low.video[0] = {true,    1850,  1110,  5, 30000, 200000,
+                                     1000000, false, "VP8", 2, 0,     400000,
+                                     false,   false, false, ""};
+
+  std::vector<VideoStream> streams = {
+      VideoQualityTest::DefaultVideoStream(screenshare_params_low, 0),
+      VideoQualityTest::DefaultVideoStream(screenshare_params_high, 0)};
+  screenshare.ss[0] = {
+      streams, 1, 1, 0, InterLayerPredMode::kOn, std::vector<SpatialLayer>(),
+      false};
+  fixture->RunWithAnalyzer(screenshare);
+}
+
+TEST(FullStackTest, ScreenshareSlidesVP8_2TL_Simulcast_Variable_Framerate) {
+  test::ScopedFieldTrials field_trial(
+      AppendFieldTrials(kScreenshareSimulcastVariableFramerateExperiment));
+  auto fixture = CreateVideoQualityTestFixture();
+  ParamsWithLogging screenshare;
+  screenshare.call.send_side_bwe = true;
+  screenshare.screenshare[0] = {true, false, 10};
+  screenshare.video[0] = {true,    1850,  1110,  30, 800000, 2500000,
+                          2500000, false, "VP8", 2,  1,      400000,
+                          false,   false, false, ""};
+  screenshare.analyzer = {"screenshare_slides_simulcast_variable_framerate",
+                          0.0, 0.0, kFullStackTestDurationSecs};
+  ParamsWithLogging screenshare_params_high;
+  screenshare_params_high.video[0] = {
+      true,  1850, 1110, 60,     600000, 1250000, 1250000, false,
+      "VP8", 2,    0,    400000, false,  false,   false,   ""};
+  VideoQualityTest::Params screenshare_params_low;
+  screenshare_params_low.video[0] = {true,    1850,  1110,  5, 30000, 200000,
                                      1000000, false, "VP8", 2, 0,     400000,
                                      false,   false, false, ""};
 
@@ -840,19 +910,40 @@ const ParamsWithLogging::Video kSimulcastVp8VideoLow = {
     2,      400000, false, false, false, "ConferenceMotion_1280_720_50"};
 
 #if defined(RTC_ENABLE_VP9)
-TEST(FullStackTest, ScreenshareSlidesVP9_2SL) {
+
+TEST(FullStackTest, ScreenshareSlidesVP9_3SL_High_Fps) {
   auto fixture = CreateVideoQualityTestFixture();
   ParamsWithLogging screenshare;
   screenshare.call.send_side_bwe = true;
-  screenshare.video[0] = {true,   1850,    1110,  5,     50000,
-                          200000, 2000000, false, "VP9", 1,
-                          0,      400000,  false, false, false, ""};
+  screenshare.video[0] = {true,    1850,  1110,  30, 50000, 200000,
+                          2000000, false, "VP9", 1,  0,     400000,
+                          false,   false, false, ""};
   screenshare.screenshare[0] = {true, false, 10};
-  screenshare.analyzer = {"screenshare_slides_vp9_2sl", 0.0, 0.0,
+  screenshare.analyzer = {"screenshare_slides_vp9_3sl_high_fps", 0.0, 0.0,
                           kFullStackTestDurationSecs};
   screenshare.ss[0] = {
-      std::vector<VideoStream>(),  0,    2, 1, InterLayerPredMode::kOn,
-      std::vector<SpatialLayer>(), false};
+      std::vector<VideoStream>(),  0,   3, 2, InterLayerPredMode::kOn,
+      std::vector<SpatialLayer>(), true};
+  fixture->RunWithAnalyzer(screenshare);
+}
+
+TEST(FullStackTest, ScreenshareSlidesVP9_3SL_Variable_Fps) {
+  webrtc::test::ScopedFieldTrials override_trials(
+      AppendFieldTrials("WebRTC-VP9VariableFramerateScreenshare/"
+                        "Enabled,min_qp:32,min_fps:5.0,undershoot:30,frames_"
+                        "before_steady_state:5/"));
+  auto fixture = CreateVideoQualityTestFixture();
+  ParamsWithLogging screenshare;
+  screenshare.call.send_side_bwe = true;
+  screenshare.video[0] = {true,    1850,  1110,  30, 50000, 200000,
+                          2000000, false, "VP9", 1,  0,     400000,
+                          false,   false, false, ""};
+  screenshare.screenshare[0] = {true, false, 10};
+  screenshare.analyzer = {"screenshare_slides_vp9_3sl_variable_fps", 0.0, 0.0,
+                          kFullStackTestDurationSecs};
+  screenshare.ss[0] = {
+      std::vector<VideoStream>(),  0,   3, 2, InterLayerPredMode::kOn,
+      std::vector<SpatialLayer>(), true};
   fixture->RunWithAnalyzer(screenshare);
 }
 
@@ -1220,10 +1311,11 @@ TEST(FullStackTest, MAYBE_LargeRoomVP8_50thumb) {
   fixture->RunWithAnalyzer(large_room);
 }
 
-INSTANTIATE_TEST_CASE_P(FullStackTest,
-                        GenericDescriptorTest,
-                        ::testing::Values("WebRTC-GenericDescriptor/Disabled/",
-                                          "WebRTC-GenericDescriptor/Enabled/"));
+INSTANTIATE_TEST_SUITE_P(
+    FullStackTest,
+    GenericDescriptorTest,
+    ::testing::Values("WebRTC-GenericDescriptor/Disabled/",
+                      "WebRTC-GenericDescriptor/Enabled/"));
 
 class DualStreamsTest : public ::testing::TestWithParam<int> {};
 
@@ -1231,7 +1323,7 @@ class DualStreamsTest : public ::testing::TestWithParam<int> {};
 // TODO(bugs.webrtc.org/9840): Investigate why is this test flaky on MAC.
 #if !defined(WEBRTC_ANDROID) && !defined(WEBRTC_IOS) && !defined(WEBRTC_MAC)
 TEST_P(DualStreamsTest,
-       ModeratelyRestricted_SlidesVp8_3TL_Simulcast_Video_Simulcast_High) {
+       ModeratelyRestricted_SlidesVp8_2TL_Simulcast_Video_Simulcast_High) {
   test::ScopedFieldTrials field_trial(
       AppendFieldTrials(std::string(kPacerPushBackExperiment) +
                         std::string(kScreenshareSimulcastExperiment)));
@@ -1240,17 +1332,16 @@ TEST_P(DualStreamsTest,
 
   // Screenshare Settings.
   dual_streams.screenshare[first_stream] = {true, false, 10};
-  dual_streams.video[first_stream] = {true,    1850,    1110,  5,     800000,
-                                      2500000, 2500000, false, "VP8", 3,
-                                      2,       400000,  false, false, false,
-                                      ""};
+  dual_streams.video[first_stream] = {true,    1850,  1110,  5, 800000, 2500000,
+                                      2500000, false, "VP8", 2, 1,      400000,
+                                      false,   false, false, ""};
 
   ParamsWithLogging screenshare_params_high;
-  screenshare_params_high.video[0] = {true,    1850,  1110,  5, 400000, 1000000,
-                                      1000000, false, "VP8", 3, 0,      400000,
-                                      false,   false, false, ""};
+  screenshare_params_high.video[0] = {
+      true,  1850, 1110, 60,     600000, 1250000, 1250000, false,
+      "VP8", 2,    0,    400000, false,  false,   false,   ""};
   VideoQualityTest::Params screenshare_params_low;
-  screenshare_params_low.video[0] = {true,    1850,  1110,  5, 50000, 200000,
+  screenshare_params_low.video[0] = {true,    1850,  1110,  5, 30000, 200000,
                                      1000000, false, "VP8", 2, 0,     400000,
                                      false,   false, false, ""};
   std::vector<VideoStream> screenhsare_streams = {
@@ -1329,8 +1420,8 @@ TEST_P(DualStreamsTest, Conference_Restricted) {
   fixture->RunWithAnalyzer(dual_streams);
 }
 
-INSTANTIATE_TEST_CASE_P(FullStackTest,
-                        DualStreamsTest,
-                        ::testing::Values(0, 1));
+INSTANTIATE_TEST_SUITE_P(FullStackTest,
+                         DualStreamsTest,
+                         ::testing::Values(0, 1));
 
 }  // namespace webrtc

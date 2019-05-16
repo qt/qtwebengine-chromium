@@ -19,7 +19,6 @@
 #include "common/Math.h"
 #include "dawn_native/d3d12/DeviceD3D12.h"
 #include "dawn_native/d3d12/ResourceAllocator.h"
-#include "dawn_native/d3d12/ResourceUploader.h"
 
 namespace dawn_native { namespace d3d12 {
 
@@ -106,7 +105,7 @@ namespace dawn_native { namespace d3d12 {
     }
 
     Buffer::~Buffer() {
-        ToBackend(GetDevice())->GetResourceAllocator()->Release(mResource);
+        DestroyImpl();
     }
 
     uint32_t Buffer::GetD3D12Size() const {
@@ -155,46 +154,44 @@ namespace dawn_native { namespace d3d12 {
 
     void Buffer::OnMapCommandSerialFinished(uint32_t mapSerial, void* data, bool isWrite) {
         if (isWrite) {
-            CallMapWriteCallback(mapSerial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, data);
+            CallMapWriteCallback(mapSerial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, data, GetSize());
         } else {
-            CallMapReadCallback(mapSerial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, data);
+            CallMapReadCallback(mapSerial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, data, GetSize());
         }
     }
 
-    void Buffer::SetSubDataImpl(uint32_t start, uint32_t count, const uint8_t* data) {
-        Device* device = ToBackend(GetDevice());
-
-        TransitionUsageNow(device->GetPendingCommandList(), dawn::BufferUsageBit::TransferDst);
-        device->GetResourceUploader()->BufferSubData(mResource, start, count, data);
-    }
-
-    void Buffer::MapReadAsyncImpl(uint32_t serial, uint32_t start, uint32_t count) {
+    void Buffer::MapReadAsyncImpl(uint32_t serial) {
         mWrittenMappedRange = {};
-        D3D12_RANGE readRange = {start, start + count};
+        D3D12_RANGE readRange = {0, GetSize()};
         char* data = nullptr;
         ASSERT_SUCCESS(mResource->Map(0, &readRange, reinterpret_cast<void**>(&data)));
 
         // There is no need to transition the resource to a new state: D3D12 seems to make the GPU
         // writes available when the fence is passed.
         MapRequestTracker* tracker = ToBackend(GetDevice())->GetMapRequestTracker();
-        tracker->Track(this, serial, data + start, false);
+        tracker->Track(this, serial, data, false);
     }
 
-    void Buffer::MapWriteAsyncImpl(uint32_t serial, uint32_t start, uint32_t count) {
-        mWrittenMappedRange = {start, start + count};
+    void Buffer::MapWriteAsyncImpl(uint32_t serial) {
+        mWrittenMappedRange = {0, GetSize()};
         char* data = nullptr;
         ASSERT_SUCCESS(mResource->Map(0, &mWrittenMappedRange, reinterpret_cast<void**>(&data)));
 
         // There is no need to transition the resource to a new state: D3D12 seems to make the CPU
         // writes available on queue submission.
         MapRequestTracker* tracker = ToBackend(GetDevice())->GetMapRequestTracker();
-        tracker->Track(this, serial, data + start, true);
+        tracker->Track(this, serial, data, true);
     }
 
     void Buffer::UnmapImpl() {
         mResource->Unmap(0, &mWrittenMappedRange);
         ToBackend(GetDevice())->GetResourceAllocator()->Release(mResource);
         mWrittenMappedRange = {};
+    }
+
+    void Buffer::DestroyImpl() {
+        ToBackend(GetDevice())->GetResourceAllocator()->Release(mResource);
+        mResource = nullptr;
     }
 
     MapRequestTracker::MapRequestTracker(Device* device) : mDevice(device) {

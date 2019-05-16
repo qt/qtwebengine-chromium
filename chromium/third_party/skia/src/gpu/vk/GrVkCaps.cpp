@@ -18,7 +18,8 @@
 
 GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
                    VkPhysicalDevice physDev, const VkPhysicalDeviceFeatures2& features,
-                   uint32_t instanceVersion, const GrVkExtensions& extensions)
+                   uint32_t instanceVersion, uint32_t physicalDeviceVersion,
+                   const GrVkExtensions& extensions)
     : INHERITED(contextOptions) {
 
     /**************************************************************************
@@ -48,7 +49,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
 
     fShaderCaps.reset(new GrShaderCaps(contextOptions));
 
-    this->init(contextOptions, vkInterface, physDev, features, extensions);
+    this->init(contextOptions, vkInterface, physDev, features, physicalDeviceVersion, extensions);
 }
 
 bool GrVkCaps::initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
@@ -230,7 +231,7 @@ template<typename T> T* get_extension_feature_struct(const VkPhysicalDeviceFeatu
 
 void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
                     VkPhysicalDevice physDev, const VkPhysicalDeviceFeatures2& features,
-                    const GrVkExtensions& extensions) {
+                    uint32_t physicalDeviceVersion, const GrVkExtensions& extensions) {
 
     VkPhysicalDeviceProperties properties;
     GR_VK_CALL(vkInterface, GetPhysicalDeviceProperties(physDev, &properties));
@@ -238,7 +239,11 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
     VkPhysicalDeviceMemoryProperties memoryProperties;
     GR_VK_CALL(vkInterface, GetPhysicalDeviceMemoryProperties(physDev, &memoryProperties));
 
-    uint32_t physicalDeviceVersion = properties.apiVersion;
+    SkASSERT(physicalDeviceVersion <= properties.apiVersion);
+
+    if (extensions.hasExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME, 1)) {
+        fSupportsSwapchain = true;
+    }
 
     if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
         extensions.hasExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, 1)) {
@@ -516,6 +521,8 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
                 // only extra work is the swizzle in the shader for all operations.
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::BGRA();
                 shaderCaps->fConfigOutputSwizzle[i] = GrSwizzle::BGRA();
+            } else if (kRGB_888X_GrPixelConfig == config) {
+                shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGB1();
             } else {
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGBA();
             }
@@ -592,19 +599,27 @@ void GrVkCaps::initConfigTable(const GrVkInterface* interface, VkPhysicalDevice 
         VkFormat format;
         if (GrPixelConfigToVkFormat(static_cast<GrPixelConfig>(i), &format)) {
             if (!GrPixelConfigIsSRGB(static_cast<GrPixelConfig>(i)) || fSRGBSupport) {
-                fConfigTable[i].init(interface, physDev, properties, format);
+                bool disableRendering = false;
+                if (static_cast<GrPixelConfig>(i) == kRGB_888X_GrPixelConfig) {
+                    // Currently we don't allow RGB_888X to be renderable because we don't have a
+                    // way to handle blends that reference dst alpha when the values in the dst
+                    // alpha channel are uninitialized.
+                    disableRendering = true;
+                }
+                fConfigTable[i].init(interface, physDev, properties, format, disableRendering);
             }
         }
     }
 }
 
-void GrVkCaps::ConfigInfo::InitConfigFlags(VkFormatFeatureFlags vkFlags, uint16_t* flags) {
+void GrVkCaps::ConfigInfo::InitConfigFlags(VkFormatFeatureFlags vkFlags, uint16_t* flags,
+                                           bool disableRendering) {
     if (SkToBool(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT & vkFlags) &&
         SkToBool(VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT & vkFlags)) {
         *flags = *flags | kTextureable_Flag;
 
         // Ganesh assumes that all renderable surfaces are also texturable
-        if (SkToBool(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT & vkFlags)) {
+        if (SkToBool(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT & vkFlags) & !disableRendering) {
             *flags = *flags | kRenderable_Flag;
         }
     }
@@ -665,12 +680,13 @@ void GrVkCaps::ConfigInfo::initSampleCounts(const GrVkInterface* interface,
 void GrVkCaps::ConfigInfo::init(const GrVkInterface* interface,
                                 VkPhysicalDevice physDev,
                                 const VkPhysicalDeviceProperties& properties,
-                                VkFormat format) {
+                                VkFormat format,
+                                bool disableRendering) {
     VkFormatProperties props;
     memset(&props, 0, sizeof(VkFormatProperties));
     GR_VK_CALL(interface, GetPhysicalDeviceFormatProperties(physDev, format, &props));
-    InitConfigFlags(props.linearTilingFeatures, &fLinearFlags);
-    InitConfigFlags(props.optimalTilingFeatures, &fOptimalFlags);
+    InitConfigFlags(props.linearTilingFeatures, &fLinearFlags, disableRendering);
+    InitConfigFlags(props.optimalTilingFeatures, &fOptimalFlags, disableRendering);
     if (fOptimalFlags & kRenderable_Flag) {
         this->initSampleCounts(interface, physDev, properties, format);
     }
@@ -713,7 +729,7 @@ bool GrVkCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
     return true;
 }
 
-GrPixelConfig validate_image_info(VkFormat format, SkColorType ct, bool hasYcbcrConversion) {
+static GrPixelConfig validate_image_info(VkFormat format, SkColorType ct, bool hasYcbcrConversion) {
     if (format == VK_FORMAT_UNDEFINED) {
         // If the format is undefined then it is only valid as an external image which requires that
         // we have a valid VkYcbcrConversion.
@@ -761,6 +777,9 @@ GrPixelConfig validate_image_info(VkFormat format, SkColorType ct, bool hasYcbcr
             if (VK_FORMAT_R8G8B8_UNORM == format) {
                 return kRGB_888_GrPixelConfig;
             }
+            if (VK_FORMAT_R8G8B8A8_UNORM == format) {
+                return kRGB_888X_GrPixelConfig;
+            }
             break;
         case kBGRA_8888_SkColorType:
             if (VK_FORMAT_B8G8R8A8_UNORM == format) {
@@ -779,6 +798,11 @@ GrPixelConfig validate_image_info(VkFormat format, SkColorType ct, bool hasYcbcr
         case kGray_8_SkColorType:
             if (VK_FORMAT_R8_UNORM == format) {
                 return kGray_8_as_Red_GrPixelConfig;
+            }
+            break;
+        case kRGBA_F16Norm_SkColorType:  // TODO(brianosman): ?
+            if (VK_FORMAT_R16G16B16A16_SFLOAT == format) {
+                return kRGBA_half_GrPixelConfig;
             }
             break;
         case kRGBA_F16_SkColorType:

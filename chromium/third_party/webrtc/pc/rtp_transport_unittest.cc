@@ -86,7 +86,7 @@ class SignalObserver : public sigslot::has_slots<> {
 
   absl::optional<rtc::NetworkRoute> network_route() { return network_route_; }
   void OnNetworkRouteChanged(absl::optional<rtc::NetworkRoute> network_route) {
-    network_route_ = std::move(network_route);
+    network_route_ = network_route;
   }
 
   void OnSentPacket(rtc::PacketTransportInternal* packet_transport,
@@ -293,11 +293,11 @@ TEST(RtpTransportTest, SignalDemuxedRtcp) {
   TransportObserver observer(&transport);
 
   // An rtcp packet.
-  const char data[] = {0, 73, 0, 0};
+  const unsigned char data[] = {0x80, 73, 0, 0};
   const int len = 4;
   const rtc::PacketOptions options;
   const int flags = 0;
-  fake_rtp.SendPacket(data, len, options, flags);
+  fake_rtp.SendPacket(reinterpret_cast<const char*>(data), len, options, flags);
   EXPECT_EQ(0, observer.rtp_count());
   EXPECT_EQ(1, observer.rtcp_count());
 }

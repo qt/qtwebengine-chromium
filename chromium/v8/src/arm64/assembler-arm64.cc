@@ -109,14 +109,9 @@ CPURegList CPURegList::GetCalleeSavedV(int size) {
 
 
 CPURegList CPURegList::GetCallerSaved(int size) {
-#if defined(V8_OS_WIN)
-  // x18 is reserved as platform register on Windows arm64.
+  // x18 is the platform register and is reserved for the use of platform ABIs.
   // Registers x0-x17 and lr (x30) are caller-saved.
   CPURegList list = CPURegList(CPURegister::kRegister, size, 0, 17);
-#else
-  // Registers x0-x18 and lr (x30) are caller-saved.
-  CPURegList list = CPURegList(CPURegister::kRegister, size, 0, 18);
-#endif
   list.Combine(lr);
   return list;
 }
@@ -149,13 +144,7 @@ CPURegList CPURegList::GetSafepointSavedRegisters() {
   list.Remove(16);
   list.Remove(17);
 
-// Don't add x18 to safepoint list on Windows arm64 because it is reserved
-// as platform register.
-#if !defined(V8_OS_WIN)
-  // Add x18 to the safepoint list, as although it's not in kJSCallerSaved, it
-  // is a caller-saved register according to the procedure call standard.
-  list.Combine(18);
-#endif
+  // x18 is the platform register and is reserved for the use of platform ABIs.
 
   // Add the link register (x30) to the safepoint list.
   list.Combine(30);
@@ -377,7 +366,7 @@ int ConstPool::WorstCaseSize() {
   //   blr xzr
   //   nop
   // All entries are 64-bit for now.
-  return 4 * kInstrSize + EntryCount() * kPointerSize;
+  return 4 * kInstrSize + EntryCount() * kSystemPointerSize;
 }
 
 
@@ -395,7 +384,7 @@ int ConstPool::SizeIfEmittedAtCurrentPc(bool require_jump) {
       IsAligned(assm_->pc_offset() + prologue_size, 8) ? 0 : kInstrSize;
 
   // All entries are 64-bit for now.
-  return prologue_size + EntryCount() * kPointerSize;
+  return prologue_size + EntryCount() * kSystemPointerSize;
 }
 
 
@@ -549,6 +538,7 @@ Assembler::~Assembler() {
   DCHECK_EQ(veneer_pool_blocked_nesting_, 0);
 }
 
+void Assembler::AbortedCodeGeneration() { constpool_.Clear(); }
 
 void Assembler::Reset() {
 #ifdef DEBUG
@@ -589,7 +579,9 @@ void Assembler::AllocateAndInstallRequestedHeapObjects(Isolate* isolate) {
   }
 }
 
-void Assembler::GetCode(Isolate* isolate, CodeDesc* desc) {
+void Assembler::GetCode(Isolate* isolate, CodeDesc* desc,
+                        SafepointTableBuilder* safepoint_table_builder,
+                        int handler_table_offset) {
   // Emit constant pool if necessary.
   CheckConstPool(true, false);
   DCHECK(constpool_.IsEmpty());
@@ -599,20 +591,26 @@ void Assembler::GetCode(Isolate* isolate, CodeDesc* desc) {
   AllocateAndInstallRequestedHeapObjects(isolate);
 
   // Set up code descriptor.
-  if (desc) {
-    desc->buffer = buffer_start_;
-    desc->buffer_size = buffer_->size();
-    desc->instr_size = pc_offset();
-    desc->reloc_size = static_cast<int>((buffer_start_ + desc->buffer_size) -
-                                        reloc_info_writer.pos());
-    desc->origin = this;
-    desc->constant_pool_size = 0;
-    desc->unwinding_info_size = 0;
-    desc->unwinding_info = nullptr;
-    desc->code_comments_size = code_comments_size;
-  }
-}
+  // TODO(jgruber): Reconsider how these offsets and sizes are maintained up to
+  // this point to make CodeDesc initialization less fiddly.
 
+  static constexpr int kConstantPoolSize = 0;
+  const int instruction_size = pc_offset();
+  const int code_comments_offset = instruction_size - code_comments_size;
+  const int constant_pool_offset = code_comments_offset - kConstantPoolSize;
+  const int handler_table_offset2 = (handler_table_offset == kNoHandlerTable)
+                                        ? constant_pool_offset
+                                        : handler_table_offset;
+  const int safepoint_table_offset =
+      (safepoint_table_builder == kNoSafepointTable)
+          ? handler_table_offset2
+          : safepoint_table_builder->GetCodeOffset();
+  const int reloc_info_offset =
+      static_cast<int>(reloc_info_writer.pos() - buffer_->start());
+  CodeDesc::Initialize(desc, this, safepoint_table_offset,
+                       handler_table_offset2, constant_pool_offset,
+                       code_comments_offset, reloc_info_offset);
+}
 
 void Assembler::Align(int m) {
   DCHECK(m >= 4 && base::bits::IsPowerOfTwo(m));
@@ -4887,7 +4885,9 @@ void Assembler::EmitVeneers(bool force_emit, bool need_protection, int margin) {
 
   EmitVeneersGuard();
 
+#ifdef DEBUG
   Label veneer_size_check;
+#endif
 
   std::multimap<int, FarBranchInfo>::iterator it, it_to_delete;
 

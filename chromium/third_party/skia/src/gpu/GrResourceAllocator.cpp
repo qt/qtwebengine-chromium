@@ -7,7 +7,6 @@
 
 #include "GrResourceAllocator.h"
 
-#include "GrDeinstantiateProxyTracker.h"
 #include "GrGpuResourcePriv.h"
 #include "GrOpList.h"
 #include "GrRenderTargetProxy.h"
@@ -107,12 +106,7 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
     if (proxy->readOnly() || !fResourceProvider->explicitlyAllocateGPUResources()) {
         // FIXME: remove this once we can do the lazy instantiation from assign instead.
         if (GrSurfaceProxy::LazyState::kNot != proxy->lazyInstantiationState()) {
-            if (proxy->priv().doLazyInstantiation(fResourceProvider)) {
-                if (proxy->priv().lazyInstantiationType() ==
-                    GrSurfaceProxy::LazyInstantiationType::kDeinstantiate) {
-                    fDeinstantiateTracker->addProxy(proxy);
-                }
-            }
+            proxy->priv().doLazyInstantiation(fResourceProvider);
         }
     }
 }
@@ -266,9 +260,9 @@ sk_sp<GrSurface> GrResourceAllocator::findSurfaceFor(const GrSurfaceProxy* proxy
     sk_sp<GrSurface> surface(fFreePool.findAndRemove(key, filter));
     if (surface) {
         if (SkBudgeted::kYes == proxy->isBudgeted() &&
-            SkBudgeted::kNo == surface->resourcePriv().isBudgeted()) {
+            GrBudgetedType::kBudgeted != surface->resourcePriv().budgetedType()) {
             // This gets the job done but isn't quite correct. It would be better to try to
-            // match budgeted proxies w/ budgeted surface and unbudgeted w/ unbudgeted.
+            // match budgeted proxies w/ budgeted surfaces and unbudgeted w/ unbudgeted.
             surface->resourcePriv().makeBudgeted();
         }
 
@@ -375,11 +369,6 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex, AssignError* o
         if (GrSurfaceProxy::LazyState::kNot != cur->proxy()->lazyInstantiationState()) {
             if (!cur->proxy()->priv().doLazyInstantiation(fResourceProvider)) {
                 *outError = AssignError::kFailedProxyInstantiation;
-            } else {
-                if (GrSurfaceProxy::LazyInstantiationType::kDeinstantiate ==
-                    cur->proxy()->priv().lazyInstantiationType()) {
-                    fDeinstantiateTracker->addProxy(cur->proxy());
-                }
             }
         } else if (sk_sp<GrSurface> surface = this->findSurfaceFor(cur->proxy(), needsStencil)) {
             // TODO: make getUniqueKey virtual on GrSurfaceProxy

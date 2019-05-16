@@ -16,6 +16,7 @@
 #include "absl/memory/memory.h"
 #include "absl/types/optional.h"
 #include "api/array_view.h"
+#include "api/scoped_refptr.h"
 #include "modules/audio_device/audio_device_impl.h"
 #include "modules/audio_device/include/audio_device.h"
 #include "modules/audio_device/include/mock_audio_transport.h"
@@ -25,7 +26,6 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/race_checker.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/thread_checker.h"
 #include "rtc_base/time_utils.h"
@@ -1112,14 +1112,14 @@ TEST_P(AudioDeviceTest, DISABLED_MeasureLoopbackLatency) {
 #ifdef WEBRTC_WIN
 // Test two different audio layers (or rather two different Core Audio
 // implementations) for Windows.
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AudioLayerWin,
     AudioDeviceTest,
     ::testing::Values(AudioDeviceModule::kPlatformDefaultAudio,
                       AudioDeviceModule::kWindowsCoreAudio2));
 #else
 // For all platforms but Windows, only test the default audio layer.
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AudioLayer,
     AudioDeviceTest,
     ::testing::Values(AudioDeviceModule::kPlatformDefaultAudio));

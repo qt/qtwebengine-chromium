@@ -28,7 +28,6 @@
 #include "SkSpecialImage.h"
 #include "SkTLazy.h"
 #include "SkTextBlobPriv.h"
-#include "SkTextToPathIter.h"
 #include "SkTo.h"
 #include "SkUtils.h"
 #include "SkVertices.h"
@@ -146,14 +145,6 @@ void SkBaseDevice::drawPatch(const SkPoint cubics[12], const SkColor colors[4],
                                                this->imageInfo().colorSpace());
     if (vertices) {
         this->drawVertices(vertices.get(), nullptr, 0, bmode, paint);
-    }
-}
-
-void SkBaseDevice::drawImage(const SkImage* image, SkScalar x, SkScalar y,
-                             const SkPaint& paint) {
-    SkBitmap bm;
-    if (as_IB(image)->getROPixels(&bm)) {
-        this->drawBitmap(bm, x, y, paint);
     }
 }
 
@@ -397,8 +388,10 @@ sk_sp<SkSpecialImage> SkBaseDevice::snapBackImage(const SkIRect&) {
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-void SkBaseDevice::LogDrawScaleFactor(const SkMatrix& matrix, SkFilterQuality filterQuality) {
+void SkBaseDevice::LogDrawScaleFactor(const SkMatrix& view, const SkMatrix& srcToDst,
+                                      SkFilterQuality filterQuality) {
 #if SK_HISTOGRAMS_ENABLED
+    SkMatrix matrix = SkMatrix::Concat(view, srcToDst);
     enum ScaleFactor {
         kUpscale_ScaleFactor,
         kNoScale_ScaleFactor,

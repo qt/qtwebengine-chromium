@@ -10,11 +10,11 @@
 
 #include "p2p/base/turn_port.h"
 
-#include <algorithm>
 #include <functional>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
 #include "absl/types/optional.h"
 #include "p2p/base/stun.h"
@@ -25,11 +25,14 @@
 #include "rtc_base/net_helpers.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/strings/string_builder.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace cricket {
 
 // TODO(juberti): Move to stun.h when relay messages have been renamed.
 static const int TURN_ALLOCATE_REQUEST = STUN_ALLOCATE_REQUEST;
+
+static const int STUN_ATTR_MULTI_MAPPING = 0xff04;
 
 // TODO(juberti): Extract to turnmessage.h
 static const int TURN_DEFAULT_PORT = 3478;
@@ -98,7 +101,8 @@ class TurnCreatePermissionRequest : public StunRequest,
  public:
   TurnCreatePermissionRequest(TurnPort* port,
                               TurnEntry* entry,
-                              const rtc::SocketAddress& ext_addr);
+                              const rtc::SocketAddress& ext_addr,
+                              const std::string& remote_ufrag);
   void Prepare(StunMessage* request) override;
   void OnSent() override;
   void OnResponse(StunMessage* response) override;
@@ -111,6 +115,7 @@ class TurnCreatePermissionRequest : public StunRequest,
   TurnPort* port_;
   TurnEntry* entry_;
   rtc::SocketAddress ext_addr_;
+  std::string remote_ufrag_;
 };
 
 class TurnChannelBindRequest : public StunRequest, public sigslot::has_slots<> {
@@ -139,7 +144,10 @@ class TurnChannelBindRequest : public StunRequest, public sigslot::has_slots<> {
 class TurnEntry : public sigslot::has_slots<> {
  public:
   enum BindState { STATE_UNBOUND, STATE_BINDING, STATE_BOUND };
-  TurnEntry(TurnPort* port, int channel_id, const rtc::SocketAddress& ext_addr);
+  TurnEntry(TurnPort* port,
+            int channel_id,
+            const rtc::SocketAddress& ext_addr,
+            const std::string remote_ufrag);
 
   TurnPort* port() { return port_; }
 
@@ -179,6 +187,11 @@ class TurnEntry : public sigslot::has_slots<> {
   // Signal sent when TurnEntry is destroyed.
   sigslot::signal1<TurnEntry*> SignalDestroyed;
 
+  const std::string& get_remote_ufrag() const { return remote_ufrag_; }
+  void set_remote_ufrag(const std::string& remote_ufrag) {
+    remote_ufrag_ = remote_ufrag;
+  }
+
  private:
   TurnPort* port_;
   int channel_id_;
@@ -189,6 +202,8 @@ class TurnEntry : public sigslot::has_slots<> {
   // actually fires, the TurnEntry will be destroyed only if the timestamp here
   // matches the one in the firing event.
   absl::optional<int64_t> destruction_timestamp_;
+
+  std::string remote_ufrag_;
 };
 
 TurnPort::TurnPort(rtc::Thread* thread,
@@ -434,12 +449,10 @@ void TurnPort::OnSocketConnect(rtc::AsyncPacketSocket* socket) {
   // Note that, aside from minor differences in log statements, this logic is
   // identical to that in TcpPort.
   const rtc::SocketAddress& socket_address = socket->GetLocalAddress();
-  const std::vector<rtc::InterfaceAddress>& desired_addresses =
-      Network()->GetIPs();
-  if (std::find_if(desired_addresses.begin(), desired_addresses.end(),
-                   [socket_address](const rtc::InterfaceAddress& addr) {
-                     return socket_address.ipaddr() == addr;
-                   }) == desired_addresses.end()) {
+  if (absl::c_none_of(Network()->GetIPs(),
+                      [socket_address](const rtc::InterfaceAddress& addr) {
+                        return socket_address.ipaddr() == addr;
+                      })) {
     if (socket->GetLocalAddress().IsLoopbackIP()) {
       RTC_LOG(LS_WARNING) << "Socket is bound to the address:"
                           << socket_address.ipaddr().ToString()
@@ -528,8 +541,8 @@ Connection* TurnPort::CreateConnection(const Candidate& remote_candidate,
             remote_candidate.address().family()) {
       // Create an entry, if needed, so we can get our permissions set up
       // correctly.
-      if (CreateOrRefreshEntry(remote_candidate.address(),
-                               next_channel_number_)) {
+      if (CreateOrRefreshEntry(remote_candidate.address(), next_channel_number_,
+                               remote_candidate.username())) {
         // An entry was created.
         next_channel_number_++;
       }
@@ -1121,37 +1134,39 @@ void TurnPort::ResetNonce() {
 }
 
 bool TurnPort::HasPermission(const rtc::IPAddress& ipaddr) const {
-  return (std::find_if(entries_.begin(), entries_.end(),
-                       [&ipaddr](const TurnEntry* e) {
-                         return e->address().ipaddr() == ipaddr;
-                       }) != entries_.end());
+  return absl::c_any_of(entries_, [&ipaddr](const TurnEntry* e) {
+    return e->address().ipaddr() == ipaddr;
+  });
 }
 
 TurnEntry* TurnPort::FindEntry(const rtc::SocketAddress& addr) const {
-  auto it = std::find_if(
-      entries_.begin(), entries_.end(),
-      [&addr](const TurnEntry* e) { return e->address() == addr; });
+  auto it = absl::c_find_if(
+      entries_, [&addr](const TurnEntry* e) { return e->address() == addr; });
   return (it != entries_.end()) ? *it : NULL;
 }
 
 TurnEntry* TurnPort::FindEntry(int channel_id) const {
-  auto it = std::find_if(entries_.begin(), entries_.end(),
-                         [&channel_id](const TurnEntry* e) {
-                           return e->channel_id() == channel_id;
-                         });
+  auto it = absl::c_find_if(entries_, [&channel_id](const TurnEntry* e) {
+    return e->channel_id() == channel_id;
+  });
   return (it != entries_.end()) ? *it : NULL;
 }
 
 bool TurnPort::EntryExists(TurnEntry* e) {
-  auto it = std::find(entries_.begin(), entries_.end(), e);
-  return it != entries_.end();
+  return absl::c_linear_search(entries_, e);
 }
 
 bool TurnPort::CreateOrRefreshEntry(const rtc::SocketAddress& addr,
                                     int channel_number) {
+  return CreateOrRefreshEntry(addr, channel_number, "");
+}
+
+bool TurnPort::CreateOrRefreshEntry(const rtc::SocketAddress& addr,
+                                    int channel_number,
+                                    const std::string& remote_ufrag) {
   TurnEntry* entry = FindEntry(addr);
   if (entry == nullptr) {
-    entry = new TurnEntry(this, channel_number, addr);
+    entry = new TurnEntry(this, channel_number, addr, remote_ufrag);
     entries_.push_back(entry);
     return true;
   } else {
@@ -1169,6 +1184,15 @@ bool TurnPort::CreateOrRefreshEntry(const rtc::SocketAddress& addr,
       // The only valid reason for destruction not being scheduled is that
       // there's still one connection.
       RTC_DCHECK(GetConnection(addr));
+    }
+
+    if (webrtc::field_trial::IsEnabled("WebRTC-TurnAddMultiMapping")) {
+      if (entry->get_remote_ufrag() != remote_ufrag) {
+        RTC_LOG(LS_INFO) << ToString() << ": remote ufrag updated."
+                         << " Sending new permission request";
+        entry->set_remote_ufrag(remote_ufrag);
+        entry->SendCreatePermissionRequest(0);
+      }
     }
   }
   return false;
@@ -1534,11 +1558,13 @@ void TurnRefreshRequest::OnTimeout() {
 TurnCreatePermissionRequest::TurnCreatePermissionRequest(
     TurnPort* port,
     TurnEntry* entry,
-    const rtc::SocketAddress& ext_addr)
+    const rtc::SocketAddress& ext_addr,
+    const std::string& remote_ufrag)
     : StunRequest(new TurnMessage()),
       port_(port),
       entry_(entry),
-      ext_addr_(ext_addr) {
+      ext_addr_(ext_addr),
+      remote_ufrag_(remote_ufrag) {
   entry_->SignalDestroyed.connect(
       this, &TurnCreatePermissionRequest::OnEntryDestroyed);
 }
@@ -1548,6 +1574,10 @@ void TurnCreatePermissionRequest::Prepare(StunMessage* request) {
   request->SetType(TURN_CREATE_PERMISSION_REQUEST);
   request->AddAttribute(absl::make_unique<StunXorAddressAttribute>(
       STUN_ATTR_XOR_PEER_ADDRESS, ext_addr_));
+  if (webrtc::field_trial::IsEnabled("WebRTC-TurnAddMultiMapping")) {
+    request->AddAttribute(absl::make_unique<cricket::StunByteStringAttribute>(
+        STUN_ATTR_MULTI_MAPPING, remote_ufrag_));
+  }
   port_->AddRequestAuthInfo(request);
   port_->TurnCustomizerMaybeModifyOutgoingStunMessage(request);
 }
@@ -1676,18 +1706,21 @@ void TurnChannelBindRequest::OnEntryDestroyed(TurnEntry* entry) {
 
 TurnEntry::TurnEntry(TurnPort* port,
                      int channel_id,
-                     const rtc::SocketAddress& ext_addr)
+                     const rtc::SocketAddress& ext_addr,
+                     const std::string remote_ufrag)
     : port_(port),
       channel_id_(channel_id),
       ext_addr_(ext_addr),
-      state_(STATE_UNBOUND) {
+      state_(STATE_UNBOUND),
+      remote_ufrag_(remote_ufrag) {
   // Creating permission for |ext_addr_|.
   SendCreatePermissionRequest(0);
 }
 
 void TurnEntry::SendCreatePermissionRequest(int delay) {
-  port_->SendRequest(new TurnCreatePermissionRequest(port_, this, ext_addr_),
-                     delay);
+  port_->SendRequest(
+      new TurnCreatePermissionRequest(port_, this, ext_addr_, remote_ufrag_),
+      delay);
 }
 
 void TurnEntry::SendChannelBindRequest(int delay) {

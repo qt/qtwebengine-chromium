@@ -16,10 +16,12 @@
 #include "SkUnPreMultiply.h"
 #include "SkColorData.h"
 #if SK_SUPPORT_GPU
+#include "GrCaps.h"
 #include "GrClip.h"
 #include "GrColorSpaceXform.h"
-#include "GrContext.h"
 #include "GrCoordTransform.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContext.h"
 #include "GrTexture.h"
 #include "GrTextureProxy.h"
@@ -270,7 +272,7 @@ sk_sp<SkSpecialImage> SkDisplacementMapEffect::onFilterImage(SkSpecialImage* sou
 
 #if SK_SUPPORT_GPU
     if (source->isTextureBacked()) {
-        GrContext* context = source->getContext();
+        auto context = source->getContext();
 
         sk_sp<GrTextureProxy> colorProxy(color->asTextureProxyRef(context));
         sk_sp<GrTextureProxy> displProxy(displ->asTextureProxyRef(context));
@@ -301,10 +303,10 @@ sk_sp<SkSpecialImage> SkDisplacementMapEffect::onFilterImage(SkSpecialImage* sou
         SkColorType colorType = ctx.outputProperties().colorType();
         GrPixelConfig config = SkColorType2GrPixelConfig(colorType);
         GrBackendFormat format =
-                context->contextPriv().caps()->getBackendFormatFromColorType(colorType);
+                context->priv().caps()->getBackendFormatFromColorType(colorType);
 
         sk_sp<GrRenderTargetContext> renderTargetContext(
-            context->contextPriv().makeDeferredRenderTargetContext(
+            context->priv().makeDeferredRenderTargetContext(
                     format, SkBackingFit::kApprox, bounds.width(), bounds.height(), config,
                     sk_ref_sp(colorSpace)));
         if (!renderTargetContext) {

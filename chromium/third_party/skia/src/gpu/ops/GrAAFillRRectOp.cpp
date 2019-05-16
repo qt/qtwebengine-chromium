@@ -8,9 +8,11 @@
 #include "GrAAFillRRectOp.h"
 
 #include "GrCaps.h"
-#include "GrContextPriv.h"
 #include "GrGpuCommandBuffer.h"
 #include "GrMemoryPool.h"
+#include "GrOpFlushState.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "SkRRectPriv.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLGeometryProcessor.h"
@@ -22,8 +24,8 @@
 static bool can_use_hw_derivatives(const GrShaderCaps&, const SkMatrix&, const SkRRect&);
 
 std::unique_ptr<GrAAFillRRectOp> GrAAFillRRectOp::Make(
-        GrContext* ctx, const SkMatrix& viewMatrix, const SkRRect& rrect, const GrCaps& caps,
-        GrPaint&& paint) {
+        GrRecordingContext* ctx, const SkMatrix& viewMatrix, const SkRRect& rrect,
+        const GrCaps& caps, GrPaint&& paint) {
     if (!caps.instanceAttribSupport()) {
         return nullptr;
     }
@@ -35,7 +37,7 @@ std::unique_ptr<GrAAFillRRectOp> GrAAFillRRectOp::Make(
         return nullptr;
     }
 
-    GrOpMemoryPool* pool = ctx->contextPriv().opMemoryPool();
+    GrOpMemoryPool* pool = ctx->priv().opMemoryPool();
     return pool->allocate<GrAAFillRRectOp>(*caps.shaderCaps(), viewMatrix, rrect, std::move(paint));
 }
 
@@ -79,17 +81,27 @@ GrAAFillRRectOp::GrAAFillRRectOp(const GrShaderCaps& shaderCaps, const SkMatrix&
     // We will write the color and local rect attribs during finalize().
 }
 
-GrProcessorSet::Analysis GrAAFillRRectOp::finalize(const GrCaps& caps, const GrAppliedClip* clip) {
+GrProcessorSet::Analysis GrAAFillRRectOp::finalize(
+        const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) {
     SkASSERT(1 == fInstanceCount);
 
     SkPMColor4f overrideColor;
     const GrProcessorSet::Analysis& analysis = fProcessors.finalize(
-            fOriginalColor, GrProcessorAnalysisCoverage::kSingleChannel, clip, false, caps,
-            &overrideColor);
+
+            fOriginalColor, GrProcessorAnalysisCoverage::kSingleChannel, clip,
+            &GrUserStencilSettings::kUnused, fsaaType, caps, &overrideColor);
 
     // Finish writing the instance attribs.
-    this->writeInstanceData(
-            (analysis.inputColorIsOverridden() ? overrideColor : fOriginalColor).toBytes_RGBA());
+    SkPMColor4f finalColor = analysis.inputColorIsOverridden() ? overrideColor : fOriginalColor;
+    if (!SkPMColor4fFitsInBytes(finalColor)) {
+        fFlags |= Flags::kWideColor;
+        uint32_t halfColor[2];
+        SkFloatToHalf_finite_ftz(Sk4f::Load(finalColor.vec())).store(&halfColor);
+        this->writeInstanceData(halfColor[0], halfColor[1]);
+    } else {
+        this->writeInstanceData(finalColor.toBytes_RGBA());
+    }
+
     if (analysis.usesLocalCoords()) {
         this->writeInstanceData(fLocalRect);
         fFlags |= Flags::kHasLocalCoords;
@@ -258,7 +270,14 @@ public:
             : GrGeometryProcessor(kGrAAFillRRectOp_Processor_ClassID)
             , fFlags(flags) {
         this->setVertexAttributes(kVertexAttribs, 3);
-        this->setInstanceAttributes(kInstanceAttribs, (flags & Flags::kHasLocalCoords) ? 6 : 5);
+        fInSkew = { "skew", kFloat4_GrVertexAttribType, kFloat4_GrSLType };
+        fInTranslate = { "translate", kFloat2_GrVertexAttribType, kFloat2_GrSLType };
+        fInRadiiX = { "radii_x", kFloat4_GrVertexAttribType, kFloat4_GrSLType };
+        fInRadiiY = { "radii_y", kFloat4_GrVertexAttribType, kFloat4_GrSLType };
+        fInColor = MakeColorAttribute("color", (flags & Flags::kWideColor));
+        fInLocalRect = {"local_rect", kFloat4_GrVertexAttribType, kFloat4_GrSLType};
+
+        this->setInstanceAttributes(&fInSkew, (flags & Flags::kHasLocalCoords) ? 6 : 5);
         SkASSERT(this->vertexStride() == sizeof(Vertex));
     }
 
@@ -276,15 +295,12 @@ private:
             {"corner_and_radius_outsets", kFloat4_GrVertexAttribType, kFloat4_GrSLType},
             {"aa_bloat_and_coverage", kFloat4_GrVertexAttribType, kFloat4_GrSLType}};
 
-    static constexpr Attribute kInstanceAttribs[] = {
-            {"skew", kFloat4_GrVertexAttribType, kFloat4_GrSLType},
-            {"translate", kFloat2_GrVertexAttribType, kFloat2_GrSLType},
-            {"radii_x", kFloat4_GrVertexAttribType, kFloat4_GrSLType},
-            {"radii_y", kFloat4_GrVertexAttribType, kFloat4_GrSLType},
-            {"color", kUByte4_norm_GrVertexAttribType, kHalf4_GrSLType},
-            {"local_rect", kFloat4_GrVertexAttribType, kFloat4_GrSLType}};  // Conditional.
-
-    static constexpr int kColorAttribIdx = 4;
+    Attribute fInSkew;
+    Attribute fInTranslate;
+    Attribute fInRadiiX;
+    Attribute fInRadiiY;
+    Attribute fInColor;
+    Attribute fInLocalRect;  // Conditional.
 
     const Flags fFlags;
 
@@ -292,7 +308,6 @@ private:
 };
 
 constexpr GrPrimitiveProcessor::Attribute GrAAFillRRectOp::Processor::kVertexAttribs[];
-constexpr GrPrimitiveProcessor::Attribute GrAAFillRRectOp::Processor::kInstanceAttribs[];
 
 class GrAAFillRRectOp::Processor::Impl : public GrGLSLGeometryProcessor {
 public:
@@ -302,7 +317,7 @@ public:
 
         GrGLSLVaryingHandler* varyings = args.fVaryingHandler;
         varyings->emitAttributes(proc);
-        varyings->addPassThroughAttribute(proc.kInstanceAttribs[kColorAttribIdx], args.fOutputColor,
+        varyings->addPassThroughAttribute(proc.fInColor, args.fOutputColor,
                                           GrGLSLVaryingHandler::Interpolation::kCanBeFlat);
 
         // Emit the vertex shader.
@@ -405,7 +420,7 @@ public:
         f->codeAppendf("float x_plus_1=%s.x, y=%s.y;", arcCoord.fsIn(), arcCoord.fsIn());
         f->codeAppendf("half coverage;");
         f->codeAppendf("if (0 == x_plus_1) {");
-        f->codeAppendf(    "coverage = y;");  // We are a non-arc pixel (i.e., linear coverage).
+        f->codeAppendf(    "coverage = half(y);");  // We are a non-arc pixel (i.e., linear coverage).
         f->codeAppendf("} else {");
         f->codeAppendf(    "float fn = x_plus_1 * (x_plus_1 - 2);");  // fn = (x+1)*(x-1) = x^2-1
         f->codeAppendf(    "fn = fma(y,y, fn);");  // fn = x^2 + y^2 - 1
@@ -416,7 +431,7 @@ public:
             f->codeAppendf("float gx=%s.z, gy=%s.w;", arcCoord.fsIn(), arcCoord.fsIn());
             f->codeAppendf("float fnwidth = abs(gx) + abs(gy);");
         }
-        f->codeAppendf(    "half d = fn/fnwidth;");
+        f->codeAppendf(    "half d = half(fn/fnwidth);");
         f->codeAppendf(    "coverage = clamp(.5 - d, 0, 1);");
         f->codeAppendf("}");
         f->codeAppendf("%s = half4(coverage);", args.fOutputCoverage);
@@ -440,18 +455,16 @@ void GrAAFillRRectOp::onExecute(GrOpFlushState* flushState, const SkRect& chainB
 
     GR_DEFINE_STATIC_UNIQUE_KEY(gIndexBufferKey);
 
-    sk_sp<const GrBuffer> indexBuffer =
-            flushState->resourceProvider()->findOrMakeStaticBuffer(
-                    kIndex_GrBufferType, sizeof(kIndexData), kIndexData, gIndexBufferKey);
+    sk_sp<const GrBuffer> indexBuffer = flushState->resourceProvider()->findOrMakeStaticBuffer(
+            GrGpuBufferType::kIndex, sizeof(kIndexData), kIndexData, gIndexBufferKey);
     if (!indexBuffer) {
         return;
     }
 
     GR_DEFINE_STATIC_UNIQUE_KEY(gVertexBufferKey);
 
-    sk_sp<const GrBuffer> vertexBuffer =
-            flushState->resourceProvider()->findOrMakeStaticBuffer(
-                    kVertex_GrBufferType, sizeof(kVertexData), kVertexData, gVertexBufferKey);
+    sk_sp<const GrBuffer> vertexBuffer = flushState->resourceProvider()->findOrMakeStaticBuffer(
+            GrGpuBufferType::kVertex, sizeof(kVertexData), kVertexData, gVertexBufferKey);
     if (!vertexBuffer) {
         return;
     }
@@ -460,7 +473,6 @@ void GrAAFillRRectOp::onExecute(GrOpFlushState* flushState, const SkRect& chainB
     SkASSERT(proc.instanceStride() == (size_t)fInstanceStride);
 
     GrPipeline::InitArgs initArgs;
-    initArgs.fProxy = flushState->drawOpArgs().fProxy;
     initArgs.fCaps = &flushState->caps();
     initArgs.fResourceProvider = flushState->resourceProvider();
     initArgs.fDstProxy = flushState->drawOpArgs().fDstProxy;
@@ -469,9 +481,9 @@ void GrAAFillRRectOp::onExecute(GrOpFlushState* flushState, const SkRect& chainB
     GrPipeline pipeline(initArgs, std::move(fProcessors), std::move(clip));
 
     GrMesh mesh(GrPrimitiveType::kTriangles);
-    mesh.setIndexedInstanced(indexBuffer.get(), SK_ARRAY_COUNT(kIndexData), fInstanceBuffer,
+    mesh.setIndexedInstanced(std::move(indexBuffer), SK_ARRAY_COUNT(kIndexData), fInstanceBuffer,
                              fInstanceCount, fBaseInstance, GrPrimitiveRestart::kNo);
-    mesh.setVertexData(vertexBuffer.get());
+    mesh.setVertexData(std::move(vertexBuffer));
     flushState->rtCommandBuffer()->draw(proc, pipeline, &fixedDynamicState, nullptr, &mesh, 1,
                                         this->bounds());
 }

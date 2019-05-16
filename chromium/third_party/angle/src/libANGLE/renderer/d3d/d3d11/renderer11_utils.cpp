@@ -893,6 +893,21 @@ size_t GetMaxComputeWorkGroupInvocations(D3D_FEATURE_LEVEL featureLevel)
     }
 }
 
+unsigned int GetMaxComputeSharedMemorySize(D3D_FEATURE_LEVEL featureLevel)
+{
+    switch (featureLevel)
+    {
+        // In D3D11 the maximum total size of all variables with the groupshared storage class is
+        // 32kb.
+        // https://docs.microsoft.com/en-us/windows/desktop/direct3dhlsl/dx-graphics-hlsl-variable-syntax
+        case D3D_FEATURE_LEVEL_11_1:
+        case D3D_FEATURE_LEVEL_11_0:
+            return 32768u;
+        default:
+            return 0u;
+    }
+}
+
 size_t GetMaximumComputeUniformVectors(D3D_FEATURE_LEVEL featureLevel)
 {
     switch (featureLevel)
@@ -1491,6 +1506,7 @@ void GenerateCaps(ID3D11Device *device,
     caps->maxComputeWorkGroupSize  = GetMaxComputeWorkGroupSize(featureLevel);
     caps->maxComputeWorkGroupInvocations =
         static_cast<GLuint>(GetMaxComputeWorkGroupInvocations(featureLevel));
+    caps->maxComputeSharedMemorySize = GetMaxComputeSharedMemorySize(featureLevel);
     caps->maxShaderUniformComponents[gl::ShaderType::Compute] =
         static_cast<GLuint>(GetMaximumComputeUniformVectors(featureLevel)) * 4;
     caps->maxShaderUniformBlocks[gl::ShaderType::Compute] =
@@ -1593,9 +1609,12 @@ void GenerateCaps(ID3D11Device *device,
     // and https://msdn.microsoft.com/en-us/library/windows/desktop/ff476900(v=vs.85).aspx
     extensions->robustBufferAccessBehavior = true;
     extensions->blendMinMax                = true;
+    // https://docs.microsoft.com/en-us/windows/desktop/direct3ddxgi/format-support-for-direct3d-11-0-feature-level-hardware
+    extensions->floatBlend                 = true;
     extensions->framebufferBlit            = GetFramebufferBlitSupport(featureLevel);
     extensions->framebufferMultisample     = GetFramebufferMultisampleSupport(featureLevel);
-    extensions->instancedArrays            = GetInstancingSupport(featureLevel);
+    extensions->instancedArraysANGLE       = GetInstancingSupport(featureLevel);
+    extensions->instancedArraysEXT         = GetInstancingSupport(featureLevel);
     extensions->packReverseRowOrder        = true;
     extensions->standardDerivatives        = GetDerivativeInstructionSupport(featureLevel);
     extensions->shaderTextureLOD           = GetShaderTextureLODSupport(featureLevel);

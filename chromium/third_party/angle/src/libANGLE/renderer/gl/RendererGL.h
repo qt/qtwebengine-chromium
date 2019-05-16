@@ -51,7 +51,7 @@ class StateManagerGL;
 class WorkerContext : angle::NonCopyable
 {
   public:
-    virtual ~WorkerContext(){};
+    virtual ~WorkerContext() {}
 
     virtual bool makeCurrent()   = 0;
     virtual void unmakeCurrent() = 0;
@@ -146,7 +146,7 @@ class RendererGL : angle::NonCopyable
     void popGroupMarker();
 
     // KHR_debug
-    void pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message);
+    void pushDebugGroup(GLenum source, GLuint id, const std::string &message);
     void popDebugGroup();
 
     std::string getVendorString() const;

@@ -73,6 +73,7 @@ module_prefix = 'perfetto_'
 # Shared libraries which are directly translated to Android system equivalents.
 library_whitelist = [
     'android.hardware.health@2.0',
+    "android.hardware.power.stats@1.0",
     'android',
     'base',
     'binder',
@@ -107,6 +108,7 @@ library_not_in_pdk = {
 additional_args = {
     'heapprofd_client': [
         ('include_dirs', ['bionic/libc']),
+        ('static_libs', ['libasync_safe']),
     ],
     'traced_probes': [
       ('required', ['libperfetto_android_internal']),
@@ -149,6 +151,9 @@ def enable_libunwind(module):
     # libunwind is disabled on Darwin so we cannot depend on it.
     pass
 
+def enable_sqlite(module):
+    module.static_libs.append('libsqlite')
+
 # Android equivalents for third-party libraries that the upstream project
 # depends on.
 builtin_deps = {
@@ -161,6 +166,7 @@ builtin_deps = {
     '//buildtools:protobuf_lite': enable_protobuf_lite,
     '//buildtools:protoc_lib': enable_protoc_lib,
     '//buildtools:libunwindstack': enable_libunwindstack,
+    '//buildtools:sqlite': enable_sqlite,
 }
 
 # ----------------------------------------------------------------------------
@@ -202,6 +208,8 @@ class Module(object):
         self.defaults = []
         self.cflags = set()
         self.local_include_dirs = []
+        self.include_dirs = []
+        self.required = []
         self.user_debug_flag = False
 
     def to_string(self, output):
@@ -223,8 +231,8 @@ class Module(object):
         self._output_field(output, 'defaults')
         self._output_field(output, 'cflags')
         self._output_field(output, 'local_include_dirs')
-        for key, value in additional_args.get(self.name, []):
-          self._write_value(output, key, value)
+        self._output_field(output, 'include_dirs')
+        self._output_field(output, 'required')
 
         disable_pdk = any(name in library_not_in_pdk for name in self.shared_libs)
         if self.user_debug_flag or disable_pdk:
@@ -557,6 +565,14 @@ def create_modules_from_target(blueprint, desc, target_name):
         if module.type == 'cc_library_static':
             module.export_generated_headers = module.generated_headers
 
+        # Merge in additional hardcoded arguments.
+        for key, add_val in additional_args.get(module.name, []):
+          curr = getattr(module, key)
+          if add_val and isinstance(add_val, list) and isinstance(curr, list):
+            curr.extend(add_val)
+          else:
+            raise Error('Unimplemented type of additional_args')
+
         blueprint.add_module(module)
 
 
@@ -589,7 +605,7 @@ def resolve_dependencies(desc, target_name):
     return resolved_deps
 
 
-def create_blueprint_for_targets(desc, force_debug, targets):
+def create_blueprint_for_targets(desc, targets):
     """Generate a blueprint for a list of GN targets."""
     blueprint = Blueprint()
 
@@ -604,8 +620,6 @@ def create_blueprint_for_targets(desc, force_debug, targets):
         '-fvisibility=hidden',
         '-Oz',
     ]
-    if force_debug:
-      defaults.cflags.extend(['-UNDEBUG'])
     defaults.user_debug_flag = True
 
     blueprint.add_module(defaults)
@@ -660,12 +674,6 @@ def main():
         default=os.path.join(repo_root(), 'Android.bp'),
     )
     parser.add_argument(
-        '-d',
-        '--force_debug',
-        action='store_true',
-        help='Add flags to enable DCHECK/DLOG/etc, even in release builds.'
-    )
-    parser.add_argument(
         'targets',
         nargs=argparse.REMAINDER,
         help='Targets to include in the blueprint (e.g., "//:perfetto_tests")')
@@ -677,8 +685,8 @@ def main():
     else:
         desc = create_build_description()
 
-    blueprint = create_blueprint_for_targets(desc, args.force_debug,
-                                             args.targets or default_targets)
+    blueprint = create_blueprint_for_targets(desc, args.targets or
+                                             default_targets)
     output = [
         """// Copyright (C) 2017 The Android Open Source Project
 //

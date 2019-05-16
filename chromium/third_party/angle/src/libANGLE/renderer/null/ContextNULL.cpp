@@ -68,7 +68,8 @@ ContextNULL::ContextNULL(const gl::State &state,
 
     mExtensions                        = gl::Extensions();
     mExtensions.fence                  = true;
-    mExtensions.instancedArrays        = true;
+    mExtensions.instancedArraysANGLE   = true;
+    mExtensions.instancedArraysEXT     = true;
     mExtensions.pixelBufferObject      = true;
     mExtensions.mapBuffer              = true;
     mExtensions.mapBufferRange         = true;
@@ -265,7 +266,7 @@ void ContextNULL::pushGroupMarker(GLsizei length, const char *marker) {}
 
 void ContextNULL::popGroupMarker() {}
 
-void ContextNULL::pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message) {}
+void ContextNULL::pushDebugGroup(GLenum source, GLuint id, const std::string &message) {}
 
 void ContextNULL::popDebugGroup() {}
 

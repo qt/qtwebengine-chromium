@@ -105,9 +105,18 @@ public:
     // Accessors used by draw calls, once the resources have been finalized.
     const GrCCFiller& filler() const { SkASSERT(!this->isMapped()); return fFiller; }
     const GrCCStroker& stroker() const { SkASSERT(!this->isMapped()); return fStroker; }
-    const GrBuffer* indexBuffer() const { SkASSERT(!this->isMapped()); return fIndexBuffer.get(); }
-    const GrBuffer* vertexBuffer() const { SkASSERT(!this->isMapped()); return fVertexBuffer.get();}
-    GrBuffer* instanceBuffer() const { SkASSERT(!this->isMapped()); return fInstanceBuffer.get(); }
+    sk_sp<const GrGpuBuffer> refIndexBuffer() const {
+        SkASSERT(!this->isMapped());
+        return fIndexBuffer;
+    }
+    sk_sp<const GrGpuBuffer> refVertexBuffer() const {
+        SkASSERT(!this->isMapped());
+        return fVertexBuffer;
+    }
+    sk_sp<const GrGpuBuffer> refInstanceBuffer() const {
+        SkASSERT(!this->isMapped());
+        return fInstanceBuffer;
+    }
 
 private:
     void recordCopyPathInstance(const GrCCPathCacheEntry&, const SkIVector& newAtlasOffset,
@@ -122,9 +131,9 @@ private:
     GrCCAtlasStack fCopyAtlasStack;
     GrCCAtlasStack fRenderedAtlasStack;
 
-    const sk_sp<const GrBuffer> fIndexBuffer;
-    const sk_sp<const GrBuffer> fVertexBuffer;
-    const sk_sp<GrBuffer> fInstanceBuffer;
+    const sk_sp<const GrGpuBuffer> fIndexBuffer;
+    const sk_sp<const GrGpuBuffer> fVertexBuffer;
+    const sk_sp<GrGpuBuffer> fInstanceBuffer;
 
     GrCCPathProcessor::Instance* fPathInstanceData = nullptr;
     int fNextCopyInstanceIdx;

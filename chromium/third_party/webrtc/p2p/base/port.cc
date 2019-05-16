@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "p2p/base/port_allocator.h"
@@ -29,6 +30,7 @@
 #include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/third_party/base64/base64.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace {
 
@@ -152,12 +154,6 @@ const int RTT_RATIO = 3;  // 3 : 1
 // The delay before we begin checking if this port is useless. We set
 // it to a little higher than a total STUN timeout.
 const int kPortTimeoutDelay = cricket::STUN_TOTAL_TIMEOUT + 5000;
-
-// For packet loss estimation.
-const int64_t kConsiderPacketLostAfter = 3000;  // 3 seconds
-
-// For packet loss estimation.
-const int64_t kForgetPacketAfter = 30000;  // 30 seconds
 
 }  // namespace
 
@@ -706,7 +702,7 @@ bool Port::ParseStunUsername(const StunMessage* stun_msg,
 
   // RFRAG:LFRAG
   const std::string username = username_attr->GetString();
-  size_t colon_pos = username.find(":");
+  size_t colon_pos = username.find(':');
   if (colon_pos == std::string::npos) {
     return false;
   }
@@ -957,7 +953,7 @@ void Port::UpdateNetworkCost() {
   // Network cost change will affect the connection selection criteria.
   // Signal the connection state change on each connection to force a
   // re-sort in P2PTransportChannel.
-  for (auto kv : connections_) {
+  for (const auto& kv : connections_) {
     Connection* conn = kv.second;
     conn->SignalStateChange(conn);
   }
@@ -1120,7 +1116,6 @@ Connection::Connection(Port* port,
       last_ping_received_(0),
       last_data_received_(0),
       last_ping_response_received_(0),
-      packet_loss_estimator_(kConsiderPacketLostAfter, kForgetPacketAfter),
       reported_(false),
       state_(IceCandidatePairState::WAITING),
       time_created_ms_(rtc::TimeMillis()) {
@@ -1334,6 +1329,11 @@ void Connection::OnReadPacket(const char* data,
 void Connection::HandleBindingRequest(IceMessage* msg) {
   // This connection should now be receiving.
   ReceivedPing();
+  if (webrtc::field_trial::IsEnabled("WebRTC-ExtraICEPing") &&
+      last_ping_response_received_ == 0) {
+    RTC_LOG(LS_INFO) << ToString() << "WebRTC-ExtraICEPing/Sending extra ping";
+    Ping(rtc::TimeMillis());
+  }
 
   const rtc::SocketAddress& remote_addr = remote_candidate_.address();
   const std::string& remote_ufrag = remote_candidate_.username();
@@ -1513,7 +1513,6 @@ void Connection::Ping(int64_t now) {
     nomination = nomination_;
   }
   pings_since_last_response_.push_back(SentPing(req->id(), now, nomination));
-  packet_loss_estimator_.ExpectResponse(req->id(), now);
   RTC_LOG(LS_VERBOSE) << ToString() << ": Sending STUN ping, id="
                       << rtc::hex_encode(req->id())
                       << ", nomination=" << nomination_;
@@ -1534,8 +1533,8 @@ void Connection::ReceivedPingResponse(int rtt, const std::string& request_id) {
   // So if we're not already, become writable. We may be bringing a pruned
   // connection back to life, but if we don't really want it, we can always
   // prune it again.
-  auto iter = std::find_if(
-      pings_since_last_response_.begin(), pings_since_last_response_.end(),
+  auto iter = absl::c_find_if(
+      pings_since_last_response_,
       [request_id](const SentPing& ping) { return ping.id == request_id; });
   if (iter != pings_since_last_response_.end() &&
       iter->nomination > acked_nomination_) {
@@ -1709,9 +1708,6 @@ void Connection::OnConnectionRequestResponse(ConnectionRequest* request,
                    << rtt << ", pings_since_last_response=" << pings;
   }
   ReceivedPingResponse(rtt, request->id());
-
-  int64_t time_received = rtc::TimeMillis();
-  packet_loss_estimator_.ReceivedResponse(request->id(), time_received);
 
   stats_.recv_ping_responses++;
   LogCandidatePairEvent(

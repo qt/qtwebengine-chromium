@@ -43,6 +43,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
       const KURL& script_url,
       mojom::ScriptType script_type,
       OffMainThreadWorkerScriptFetchOption,
+      const String& global_scope_name,
       const String& user_agent,
       scoped_refptr<WebWorkerFetchContext>,
       const Vector<CSPHeaderAndType>& content_security_policy_parsed_headers,
@@ -67,7 +68,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   // The URL to be used as the worker global scope's URL.
   // According to the spec, this should be response URL of the top-level
   // worker script after the top-level worker script is loaded.
-  // https://html.spec.whatwg.org/multipage/workers.html#run-a-worker
+  // https://html.spec.whatwg.org/C/#run-a-worker
   //
   // However, this can't be set to response URL in case of module workers or
   // off-the-main-thread fetch, because at the time of GlobalScopeCreationParams
@@ -81,6 +82,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   mojom::ScriptType script_type;
   OffMainThreadWorkerScriptFetchOption off_main_thread_fetch_option;
 
+  String global_scope_name;
   String user_agent;
 
   scoped_refptr<WebWorkerFetchContext> web_worker_fetch_context;

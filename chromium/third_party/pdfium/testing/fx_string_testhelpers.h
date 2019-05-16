@@ -5,32 +5,31 @@
 #ifndef TESTING_FX_STRING_TESTHELPERS_H_
 #define TESTING_FX_STRING_TESTHELPERS_H_
 
+#include <memory>
 #include <ostream>
+#include <string>
+#include <vector>
 
 #include "core/fxcrt/cfx_datetime.h"
-#include "core/fxcrt/fx_stream.h"
+#include "public/fpdfview.h"
+#include "testing/free_deleter.h"
 
 // Output stream operator so GTEST macros work with CFX_DateTime objects.
 std::ostream& operator<<(std::ostream& os, const CFX_DateTime& dt);
 
-class CFX_InvalidSeekableReadStream final : public IFX_SeekableReadStream {
- public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
+std::vector<std::string> StringSplit(const std::string& str, char delimiter);
 
-  // IFX_SeekableReadStream overrides:
-  bool ReadBlockAtOffset(void* buffer,
-                         FX_FILESIZE offset,
-                         size_t size) override {
-    return false;
-  }
-  FX_FILESIZE GetSize() override { return data_size_; }
+// Converts a FPDF_WIDESTRING to a std::string.
+// Deals with differences between UTF16LE and UTF8.
+std::string GetPlatformString(FPDF_WIDESTRING wstr);
 
- private:
-  explicit CFX_InvalidSeekableReadStream(FX_FILESIZE data_size);
-  ~CFX_InvalidSeekableReadStream() override;
+// Converts a FPDF_WIDESTRING to a std::wstring.
+// Deals with differences between UTF16LE and wchar_t.
+std::wstring GetPlatformWString(FPDF_WIDESTRING wstr);
 
-  const FX_FILESIZE data_size_;
-};
+// Returns a newly allocated FPDF_WIDESTRING.
+// Deals with differences between UTF16LE and wchar_t.
+std::unique_ptr<unsigned short, pdfium::FreeDeleter> GetFPDFWideString(
+    const std::wstring& wstr);
 
 #endif  // TESTING_FX_STRING_TESTHELPERS_H_

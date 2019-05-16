@@ -65,17 +65,6 @@ void FillTextureFormatCaps(RendererVk *renderer, VkFormat format, gl::TextureCap
     }
 }
 
-bool HasFullTextureFormatSupport(RendererVk *renderer, VkFormat vkFormat)
-{
-    constexpr uint32_t kBitsColor = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
-                                    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
-                                    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
-    constexpr uint32_t kBitsDepth = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
-
-    return renderer->hasTextureFormatFeatureBits(vkFormat, kBitsColor) ||
-           renderer->hasTextureFormatFeatureBits(vkFormat, kBitsDepth);
-}
-
 bool HasFullBufferFormatSupport(RendererVk *renderer, VkFormat vkFormat)
 {
     return renderer->hasBufferFormatFeatureBits(vkFormat, VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT);
@@ -153,6 +142,42 @@ void Format::initBufferFallback(RendererVk *renderer, const BufferFormatInitInfo
     vertexLoadRequiresConversion = info[i].vertexLoadRequiresConversion;
 }
 
+size_t Format::getImageCopyBufferAlignment() const
+{
+    // vkCmdCopyBufferToImage must have an offset that is a multiple of 4 as well as a multiple
+    // of the pixel block size.
+    // https://www.khronos.org/registry/vulkan/specs/1.0/man/html/VkBufferImageCopy.html
+    //
+    // We need lcm(4, blockSize) (lcm = least common multiplier).  Since 4 is constant, this
+    // can be calculated as:
+    //
+    //                      | blockSize             blockSize % 4 == 0
+    //                      | 4 * blockSize         blockSize % 4 == 1
+    // lcm(4, blockSize) = <
+    //                      | 2 * blockSize         blockSize % 4 == 2
+    //                      | 4 * blockSize         blockSize % 4 == 3
+    //
+    // This means:
+    //
+    // - blockSize % 2 != 0 gives a 4x multiplier
+    // - else blockSize % 4 != 0 gives a 2x multiplier
+    // - else there's no multiplier.
+    //
+    const angle::Format &format = textureFormat();
+
+    if (!format.isBlock)
+    {
+        // Currently, 4 is sufficient for any known non-block format.
+        return 4;
+    }
+
+    const size_t blockSize  = format.pixelBytes;
+    const size_t multiplier = blockSize % 2 != 0 ? 4 : blockSize % 4 != 0 ? 2 : 1;
+    const size_t alignment  = multiplier * blockSize;
+
+    return alignment;
+}
+
 bool operator==(const Format &lhs, const Format &rhs)
 {
     return &lhs == &rhs;
@@ -203,6 +228,17 @@ void FormatTable::initialize(RendererVk *renderer,
 }
 }  // namespace vk
 
+bool HasFullTextureFormatSupport(RendererVk *renderer, VkFormat vkFormat)
+{
+    constexpr uint32_t kBitsColor = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                                    VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    constexpr uint32_t kBitsDepth = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    return renderer->hasTextureFormatFeatureBits(vkFormat, kBitsColor) ||
+           renderer->hasTextureFormatFeatureBits(vkFormat, kBitsDepth);
+}
+
 size_t GetVertexInputAlignment(const vk::Format &format)
 {
     const angle::Format &bufferFormat = format.bufferFormat();
@@ -215,6 +251,14 @@ void MapSwizzleState(const vk::Format &format,
                      gl::SwizzleState *swizzleStateOut)
 {
     const angle::Format &angleFormat = format.angleFormat();
+
+    if (angleFormat.isBlock)
+    {
+        // No need to override swizzles for compressed images, as they are not emulated.
+        // Either way, angleFormat.xBits (with x in {red, green, blue, alpha}) is zero for blocked
+        // formats so the following code would incorrectly turn its swizzle to (0, 0, 0, 1).
+        return;
+    }
 
     switch (format.internalFormat)
     {

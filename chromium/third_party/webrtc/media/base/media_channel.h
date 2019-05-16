@@ -32,6 +32,7 @@
 #include "api/video/video_timing.h"
 #include "api/video_codecs/video_encoder_config.h"
 #include "media/base/codec.h"
+#include "media/base/delayable.h"
 #include "media/base/media_config.h"
 #include "media/base/media_constants.h"
 #include "media/base/stream_params.h"
@@ -273,6 +274,11 @@ class MediaChannel : public sigslot::has_slots<> {
   }
   bool ExtmapAllowMixed() const { return extmap_allow_mixed_; }
 
+  virtual webrtc::RtpParameters GetRtpSendParameters(uint32_t ssrc) const = 0;
+  virtual webrtc::RTCError SetRtpSendParameters(
+      uint32_t ssrc,
+      const webrtc::RtpParameters& parameters) = 0;
+
  protected:
   virtual rtc::DiffServCodePoint PreferredDscp() const;
 
@@ -481,6 +487,8 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
   uint64_t jitter_buffer_flushes = 0;
   // Number of samples expanded due to delayed packets.
   uint64_t delayed_packet_outage_samples = 0;
+  // Arrival delay of received audio packets.
+  double relative_packet_arrival_delay_seconds = 0.0;
 };
 
 struct VideoSenderInfo : public MediaSenderInfo {
@@ -533,6 +541,12 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
   uint32_t frames_rendered = 0;
   absl::optional<uint64_t> qp_sum;
   int64_t interframe_delay_max_ms = -1;
+  uint32_t freeze_count = 0;
+  uint32_t pause_count = 0;
+  uint32_t total_freezes_duration_ms = 0;
+  uint32_t total_pauses_duration_ms = 0;
+  uint32_t total_frames_duration_ms = 0;
+  double sum_squared_frame_durations = 0.0;
 
   webrtc::VideoContentType content_type = webrtc::VideoContentType::UNSPECIFIED;
 
@@ -696,7 +710,7 @@ struct AudioSendParameters : RtpSendParameters<AudioCodec> {
 
 struct AudioRecvParameters : RtpParameters<AudioCodec> {};
 
-class VoiceMediaChannel : public MediaChannel {
+class VoiceMediaChannel : public MediaChannel, public Delayable {
  public:
   VoiceMediaChannel() {}
   explicit VoiceMediaChannel(const MediaConfig& config)
@@ -706,10 +720,6 @@ class VoiceMediaChannel : public MediaChannel {
   cricket::MediaType media_type() const override;
   virtual bool SetSendParameters(const AudioSendParameters& params) = 0;
   virtual bool SetRecvParameters(const AudioRecvParameters& params) = 0;
-  virtual webrtc::RtpParameters GetRtpSendParameters(uint32_t ssrc) const = 0;
-  virtual webrtc::RTCError SetRtpSendParameters(
-      uint32_t ssrc,
-      const webrtc::RtpParameters& parameters) = 0;
   // Get the receive parameters for the incoming stream identified by |ssrc|.
   // If |ssrc| is 0, retrieve the receive parameters for the default receive
   // stream, which is used when SSRCs are not signaled. Note that calling with
@@ -769,7 +779,7 @@ struct VideoSendParameters : RtpSendParameters<VideoCodec> {
 // encapsulate all the parameters needed for a video RtpReceiver.
 struct VideoRecvParameters : RtpParameters<VideoCodec> {};
 
-class VideoMediaChannel : public MediaChannel {
+class VideoMediaChannel : public MediaChannel, public Delayable {
  public:
   VideoMediaChannel() {}
   explicit VideoMediaChannel(const MediaConfig& config)
@@ -779,10 +789,6 @@ class VideoMediaChannel : public MediaChannel {
   cricket::MediaType media_type() const override;
   virtual bool SetSendParameters(const VideoSendParameters& params) = 0;
   virtual bool SetRecvParameters(const VideoRecvParameters& params) = 0;
-  virtual webrtc::RtpParameters GetRtpSendParameters(uint32_t ssrc) const = 0;
-  virtual webrtc::RTCError SetRtpSendParameters(
-      uint32_t ssrc,
-      const webrtc::RtpParameters& parameters) = 0;
   // Get the receive parameters for the incoming stream identified by |ssrc|.
   // If |ssrc| is 0, retrieve the receive parameters for the default receive
   // stream, which is used when SSRCs are not signaled. Note that calling with
@@ -891,6 +897,12 @@ class DataMediaChannel : public MediaChannel {
   cricket::MediaType media_type() const override;
   virtual bool SetSendParameters(const DataSendParameters& params) = 0;
   virtual bool SetRecvParameters(const DataRecvParameters& params) = 0;
+
+  // RtpParameter methods are not supported for Data channel.
+  webrtc::RtpParameters GetRtpSendParameters(uint32_t ssrc) const override;
+  webrtc::RTCError SetRtpSendParameters(
+      uint32_t ssrc,
+      const webrtc::RtpParameters& parameters) override;
 
   // TODO(pthatcher): Implement this.
   virtual bool GetStats(DataMediaInfo* info);

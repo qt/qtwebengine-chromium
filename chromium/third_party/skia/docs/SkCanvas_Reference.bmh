@@ -217,20 +217,6 @@ The actual output depends on the installed fonts.
         }
         SkDebugf("\n");
     }
-
-    #StdOut
-    -----
-    ---x-
-    ---x-
-    ---x-
-    ---x-
-    ---x-
-    ---x-
-    -----
-    ---x-
-    ---x-
-    -----
-    #StdOut ##
 ##
 
 #SeeAlso MakeRasterDirect SkRasterHandleAllocator::MakeCanvas SkSurface::getCanvas SkCreateColorSpaceXformCanvas
@@ -267,20 +253,6 @@ The actual output depends on the installed fonts.
         }
         SkDebugf("\n");
     }
-
-    #StdOut
-    -----
-    ---x-
-    ---x-
-    ---x-
-    ---x-
-    ---x-
-    ---x-
-    -----
-    ---x-
-    ---x-
-    -----
-    #StdOut ##
 ##
 
 #SeeAlso MakeRasterDirect SkRasterHandleAllocator::MakeCanvas SkSurface::getCanvas SkCreateColorSpaceXformCanvas
@@ -326,35 +298,6 @@ void draw(SkCanvas* canvas) {
 #Subtopic Property
 #Line # metrics and attributes ##
 ##
-
-#Method SkMetaData& getMetaData()
-#In Property
-#In Utility
-#Line # associates additional data with the canvas ##
-#Populate
-
-#Example
-    const char* kHelloMetaData = "HelloMetaData";
-    SkCanvas canvas;
-    SkMetaData& metaData = canvas.getMetaData();
-    SkDebugf("before: %s\n", metaData.findString(kHelloMetaData));
-    metaData.setString(kHelloMetaData, "Hello!");
-    SkDebugf("during: %s\n", metaData.findString(kHelloMetaData));
-    metaData.removeString(kHelloMetaData);
-    SkDebugf("after: %s\n", metaData.findString(kHelloMetaData));
-
-    #StdOut
-        before: (null)
-        during: Hello!
-        after: (null)
-    #StdOut ##
-##
-
-#SeeAlso SkMetaData
-
-##
-
-# ------------------------------------------------------------------------------
 
 #Method SkImageInfo imageInfo() const
 #In Property
@@ -1361,9 +1304,9 @@ SaveLayerRec contains the state used to create the Layer.
 
 #Member const SkImageFilter*    fBackdrop
 #Line # applies Image_Filter to prior Layer ##
-    fBackdrop applies Image_Filter to the prior Layer when copying to the Layer;
-    may be nullptr. Use kInitWithPrevious_SaveLayerFlag to copy the
-    prior Layer without an Image_Filter.
+    If not null, this triggers the same initialization behavior as setting kInitWithPrevious_SaveLayerFlag
+    on fSaveLayerFlags: the current layer is copied into the new layer, rather than initializing the
+    new layer with transparent-black. This is then filtered by fBackdrop (respecting the current clip).
 ##
 
 #Member const SkImage*          fClipMask
@@ -1382,7 +1325,7 @@ SaveLayerRec contains the state used to create the Layer.
 #Member SaveLayerFlags          fSaveLayerFlags
 #Line # creates with prior Layer contents ##
     fSaveLayerFlags are used to create Layer without transparency,
-    and to create Layer with the ontents of the previous Layer.
+    and to create Layer with the contents of the previous Layer.
 ##
 
 #Example
@@ -4009,7 +3952,6 @@ Paint attributes related to text, like text size, have no effect on paint passed
         run.glyphs[0] = 20;
         sk_sp<const SkTextBlob> blob = textBlobBuilder.make();
         SkPaint paint;
-        paint.setTextSize(10);
         paint.setColor(SK_ColorBLUE);
         canvas->drawTextBlob(blob.get(), 0, 0, paint);
     }

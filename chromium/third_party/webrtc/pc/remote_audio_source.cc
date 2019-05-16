@@ -11,15 +11,18 @@
 #include "pc/remote_audio_source.h"
 
 #include <stddef.h>
-#include <algorithm>
 #include <string>
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
+#include "api/scoped_refptr.h"
+#include "pc/playout_latency.h"
+#include "pc/playout_latency_proxy.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/constructor_magic.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/scoped_ref_ptr.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_checker.h"
 
@@ -49,7 +52,11 @@ class RemoteAudioSource::AudioDataProxy : public AudioSinkInterface {
 RemoteAudioSource::RemoteAudioSource(rtc::Thread* worker_thread)
     : main_thread_(rtc::Thread::Current()),
       worker_thread_(worker_thread),
-      state_(MediaSourceInterface::kLive) {
+      state_(MediaSourceInterface::kLive),
+      latency_(PlayoutLatencyProxy::Create(
+          main_thread_,
+          worker_thread_,
+          new rtc::RefCountedObject<PlayoutLatency>(worker_thread))) {
   RTC_DCHECK(main_thread_);
   RTC_DCHECK(worker_thread_);
 }
@@ -64,6 +71,7 @@ void RemoteAudioSource::Start(cricket::VoiceMediaChannel* media_channel,
                               uint32_t ssrc) {
   RTC_DCHECK_RUN_ON(main_thread_);
   RTC_DCHECK(media_channel);
+
   // Register for callbacks immediately before AddSink so that we always get
   // notified when a channel goes out of scope (signaled when "AudioDataProxy"
   // is destroyed).
@@ -71,12 +79,18 @@ void RemoteAudioSource::Start(cricket::VoiceMediaChannel* media_channel,
     media_channel->SetRawAudioSink(ssrc,
                                    absl::make_unique<AudioDataProxy>(this));
   });
+
+  // Apply latency to the audio stream if |SetLatency| was called before.
+  latency_->OnStart(media_channel, ssrc);
 }
 
 void RemoteAudioSource::Stop(cricket::VoiceMediaChannel* media_channel,
                              uint32_t ssrc) {
   RTC_DCHECK_RUN_ON(main_thread_);
   RTC_DCHECK(media_channel);
+
+  latency_->OnStop();
+
   worker_thread_->Invoke<void>(
       RTC_FROM_HERE, [&] { media_channel->SetRawAudioSink(ssrc, nullptr); });
 }
@@ -99,10 +113,17 @@ void RemoteAudioSource::SetVolume(double volume) {
   }
 }
 
+void RemoteAudioSource::SetLatency(double latency) {
+  latency_->SetLatency(latency);
+}
+
+double RemoteAudioSource::GetLatency() const {
+  return latency_->GetLatency();
+}
+
 void RemoteAudioSource::RegisterAudioObserver(AudioObserver* observer) {
   RTC_DCHECK(observer != NULL);
-  RTC_DCHECK(std::find(audio_observers_.begin(), audio_observers_.end(),
-                       observer) == audio_observers_.end());
+  RTC_DCHECK(!absl::c_linear_search(audio_observers_, observer));
   audio_observers_.push_back(observer);
 }
 
@@ -121,7 +142,7 @@ void RemoteAudioSource::AddSink(AudioTrackSinkInterface* sink) {
   }
 
   rtc::CritScope lock(&sink_lock_);
-  RTC_DCHECK(std::find(sinks_.begin(), sinks_.end(), sink) == sinks_.end());
+  RTC_DCHECK(!absl::c_linear_search(sinks_, sink));
   sinks_.push_back(sink);
 }
 

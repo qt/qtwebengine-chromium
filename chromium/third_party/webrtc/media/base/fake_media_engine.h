@@ -19,6 +19,7 @@
 #include <tuple>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "api/call/audio_sink.h"
 #include "media/base/audio_source.h"
 #include "media/base/media_engine.h"
@@ -101,8 +102,7 @@ class RtpHelper : public Base {
   void set_fail_set_send_codecs(bool fail) { fail_set_send_codecs_ = fail; }
   void set_fail_set_recv_codecs(bool fail) { fail_set_recv_codecs_ = fail; }
   virtual bool AddSendStream(const StreamParams& sp) {
-    if (std::find(send_streams_.begin(), send_streams_.end(), sp) !=
-        send_streams_.end()) {
+    if (absl::c_linear_search(send_streams_, sp)) {
       return false;
     }
     send_streams_.push_back(sp);
@@ -118,8 +118,7 @@ class RtpHelper : public Base {
     return RemoveStreamBySsrc(&send_streams_, ssrc);
   }
   virtual bool AddRecvStream(const StreamParams& sp) {
-    if (std::find(receive_streams_.begin(), receive_streams_.end(), sp) !=
-        receive_streams_.end()) {
+    if (absl::c_linear_search(receive_streams_, sp)) {
       return false;
     }
     receive_streams_.push_back(sp);
@@ -147,8 +146,8 @@ class RtpHelper : public Base {
       const webrtc::RtpParameters& parameters) {
     auto parameters_iterator = rtp_send_parameters_.find(ssrc);
     if (parameters_iterator != rtp_send_parameters_.end()) {
-      auto result =
-          ValidateRtpParameters(parameters_iterator->second, parameters);
+      auto result = CheckRtpParametersInvalidModificationAndValues(
+          parameters_iterator->second, parameters);
       if (!result.ok())
         return result;
 
@@ -350,6 +349,10 @@ class FakeVoiceMediaChannel : public RtpHelper<VoiceMediaChannel> {
   bool SetOutputVolume(uint32_t ssrc, double volume) override;
   bool GetOutputVolume(uint32_t ssrc, double* volume);
 
+  bool SetBaseMinimumPlayoutDelayMs(uint32_t ssrc, int delay_ms) override;
+  absl::optional<int> GetBaseMinimumPlayoutDelayMs(
+      uint32_t ssrc) const override;
+
   bool GetStats(VoiceMediaInfo* info) override;
 
   void SetRawAudioSink(
@@ -385,6 +388,7 @@ class FakeVoiceMediaChannel : public RtpHelper<VoiceMediaChannel> {
   std::vector<AudioCodec> recv_codecs_;
   std::vector<AudioCodec> send_codecs_;
   std::map<uint32_t, double> output_scalings_;
+  std::map<uint32_t, int> output_delays_;
   std::vector<DtmfInfo> dtmf_info_queue_;
   AudioOptions options_;
   std::map<uint32_t, std::unique_ptr<VoiceChannelAudioSink>> local_sinks_;
@@ -437,6 +441,10 @@ class FakeVideoMediaChannel : public RtpHelper<VideoMediaChannel> {
 
   std::vector<webrtc::RtpSource> GetSources(uint32_t ssrc) const override;
 
+  bool SetBaseMinimumPlayoutDelayMs(uint32_t ssrc, int delay_ms) override;
+  absl::optional<int> GetBaseMinimumPlayoutDelayMs(
+      uint32_t ssrc) const override;
+
  private:
   bool SetRecvCodecs(const std::vector<VideoCodec>& codecs);
   bool SetSendCodecs(const std::vector<VideoCodec>& codecs);
@@ -448,6 +456,7 @@ class FakeVideoMediaChannel : public RtpHelper<VideoMediaChannel> {
   std::vector<VideoCodec> send_codecs_;
   std::map<uint32_t, rtc::VideoSinkInterface<webrtc::VideoFrame>*> sinks_;
   std::map<uint32_t, rtc::VideoSourceInterface<webrtc::VideoFrame>*> sources_;
+  std::map<uint32_t, int> output_delays_;
   VideoOptions options_;
   int max_bps_;
 };

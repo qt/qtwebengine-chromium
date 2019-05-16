@@ -42,14 +42,15 @@ class RtcEventLog;
 class RtpTransportControllerSend final
     : public RtpTransportControllerSendInterface,
       public RtcpBandwidthObserver,
-      public CallStatsObserver,
       public TransportFeedbackObserver {
  public:
   RtpTransportControllerSend(
       Clock* clock,
       RtcEventLog* event_log,
       NetworkControllerFactoryInterface* controller_factory,
-      const BitrateConstraints& bitrate_config);
+      const BitrateConstraints& bitrate_config,
+      std::unique_ptr<ProcessThread> process_thread,
+      TaskQueueFactory* task_queue_factory);
   ~RtpTransportControllerSend() override;
 
   RtpVideoSenderInterface* CreateRtpVideoSender(
@@ -59,6 +60,7 @@ class RtpTransportControllerSend final
       const RtpConfig& rtp_config,
       int rtcp_report_interval_ms,
       Transport* send_transport,
+      bool is_svc,
       const RtpSenderObservers& observers,
       RtcEventLog* event_log,
       std::unique_ptr<FecController> fec_controller,
@@ -72,16 +74,13 @@ class RtpTransportControllerSend final
 
   TransportFeedbackObserver* transport_feedback_observer() override;
   RtpPacketSender* packet_sender() override;
-  const RtpKeepAliveConfig& keepalive_config() const override;
 
   void SetAllocatedSendBitrateLimits(int min_send_bitrate_bps,
                                      int max_padding_bitrate_bps,
                                      int max_total_bitrate_bps) override;
 
-  void SetKeepAliveConfig(const RtpKeepAliveConfig& config);
   void SetPacingFactor(float pacing_factor) override;
   void SetQueueTimeLimit(int limit_ms) override;
-  CallStatsObserver* GetCallStatsObserver() override;
   void RegisterPacketFeedbackObserver(
       PacketFeedbackObserver* observer) override;
   void DeRegisterPacketFeedbackObserver(
@@ -116,8 +115,6 @@ class RtpTransportControllerSend final
                  const PacedPacketInfo& pacing_info) override;
   void OnTransportFeedback(const rtcp::TransportFeedback& feedback) override;
 
-  // Implements CallStatsObserver interface
-  void OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) override;
  private:
   void MaybeCreateControllers() RTC_RUN_ON(task_queue_);
   void UpdateInitialConstraints(TargetRateConstraints new_contraints)
@@ -133,11 +130,10 @@ class RtpTransportControllerSend final
   void PostUpdates(NetworkControlUpdate update) RTC_RUN_ON(task_queue_);
   void UpdateControlState() RTC_RUN_ON(task_queue_);
 
-  const Clock* const clock_;
+  Clock* const clock_;
   PacketRouter packet_router_;
   std::vector<std::unique_ptr<RtpVideoSenderInterface>> video_rtp_senders_;
   PacedSender pacer_;
-  RtpKeepAliveConfig keepalive_;
   RtpBitrateConfigurator bitrate_configurator_;
   std::map<std::string, rtc::NetworkRoute> network_routes_;
   const std::unique_ptr<ProcessThread> process_thread_;

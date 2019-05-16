@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <string>
 
+#include <vulkan/vulkan.h>
+
 namespace vk
 {
 
@@ -72,8 +74,16 @@ static const std::unordered_map<std::string, PFN_vkVoidFunction> instanceFunctio
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceQueueFamilyProperties2KHR),
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceMemoryProperties2KHR),
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceSparseImageFormatProperties2KHR),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkDestroySurfaceKHR),
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateXlibSurfaceKHR),
+#endif
+	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceSurfaceSupportKHR),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceSurfaceCapabilitiesKHR),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceSurfaceFormatsKHR),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceSurfacePresentModesKHR),
 };
-#undef MAKE_VULKAN_GLOBAL_ENTRY
+#undef MAKE_VULKAN_INSTANCE_ENTRY
 
 #define MAKE_VULKAN_DEVICE_ENTRY(aFunction) { #aFunction, reinterpret_cast<PFN_vkVoidFunction>(aFunction) }
 static const std::unordered_map<std::string, PFN_vkVoidFunction> deviceFunctionPointers =
@@ -237,7 +247,10 @@ static const std::unordered_map<std::string, PFN_vkVoidFunction> deviceFunctionP
 	MAKE_VULKAN_DEVICE_ENTRY(vkGetBufferMemoryRequirements2KHR),
 	MAKE_VULKAN_DEVICE_ENTRY(vkGetImageSparseMemoryRequirements2KHR),
 	// VK_KHR_maintenance3
-	MAKE_VULKAN_INSTANCE_ENTRY(vkGetDescriptorSetLayoutSupportKHR),
+	MAKE_VULKAN_DEVICE_ENTRY(vkGetDescriptorSetLayoutSupportKHR),
+	MAKE_VULKAN_DEVICE_ENTRY(vkCreateSwapchainKHR),
+	MAKE_VULKAN_DEVICE_ENTRY(vkDestroySwapchainKHR),
+	MAKE_VULKAN_DEVICE_ENTRY(vkGetSwapchainImagesKHR),
 };
 #undef MAKE_VULKAN_DEVICE_ENTRY
 

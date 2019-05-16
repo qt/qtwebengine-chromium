@@ -15,6 +15,7 @@
 
 #include "absl/memory/memory.h"
 #include "absl/types/optional.h"
+#include "api/scoped_refptr.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_buffer.h"
@@ -25,7 +26,6 @@
 #include "modules/video_coding/include/video_error_codes.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/exp_filter.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
@@ -283,11 +283,12 @@ int LibvpxVp8Decoder::Decode(const EncodedImage& input_image,
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int LibvpxVp8Decoder::ReturnFrame(const vpx_image_t* img,
-                                  uint32_t timestamp,
-                                  int64_t ntp_time_ms,
-                                  int qp,
-                                  const ColorSpace* explicit_color_space) {
+int LibvpxVp8Decoder::ReturnFrame(
+    const vpx_image_t* img,
+    uint32_t timestamp,
+    int64_t ntp_time_ms,
+    int qp,
+    const webrtc::ColorSpace* explicit_color_space) {
   if (img == NULL) {
     // Decoder OK and NULL image => No show frame
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;

@@ -15,7 +15,7 @@
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
 #include "xfa/fxfa/fxfa.h"
-#include "xfa/fxfa/parser/cxfa_contentlayoutitem.h"
+#include "xfa/fxfa/layout/cxfa_contentlayoutitem.h"
 
 class CFX_DIBitmap;
 class CXFA_Box;
@@ -59,27 +59,6 @@ class CXFA_CalcData {
 
   std::vector<CXFA_Node*> m_Globals;
   int32_t m_iRefCount;
-};
-
-enum class XFA_FFWidgetType {
-  kNone = 0,
-  kBarcode,
-  kButton,
-  kCheckButton,
-  kChoiceList,
-  kDateTimeEdit,
-  kImageEdit,
-  kNumericEdit,
-  kPasswordEdit,
-  kSignature,
-  kTextEdit,
-  kArc,
-  kLine,
-  kRectangle,
-  kText,
-  kImage,
-  kSubform,
-  kExclGroup
 };
 
 class CXFA_FFWidget : public CXFA_ContentLayoutItem {

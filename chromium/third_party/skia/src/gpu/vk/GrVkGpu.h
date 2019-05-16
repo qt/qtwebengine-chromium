@@ -104,11 +104,13 @@ public:
                           VkPipelineStageFlags dstStageMask,
                           bool byRegion,
                           VkMemoryBarrier* barrier) const;
-    void addBufferMemoryBarrier(VkPipelineStageFlags srcStageMask,
+    void addBufferMemoryBarrier(const GrVkResource*,
+                                VkPipelineStageFlags srcStageMask,
                                 VkPipelineStageFlags dstStageMask,
                                 bool byRegion,
                                 VkBufferMemoryBarrier* barrier) const;
-    void addImageMemoryBarrier(VkPipelineStageFlags srcStageMask,
+    void addImageMemoryBarrier(const GrVkResource*,
+                               VkPipelineStageFlags srcStageMask,
                                VkPipelineStageFlags dstStageMask,
                                bool byRegion,
                                VkImageMemoryBarrier* barrier) const;
@@ -175,7 +177,7 @@ public:
 
 private:
     GrVkGpu(GrContext*, const GrContextOptions&, const GrVkBackendContext&,
-            sk_sp<const GrVkInterface>);
+            sk_sp<const GrVkInterface>, uint32_t instanceVersion, uint32_t physicalDeviceVersion);
 
     void onResetContext(uint32_t resetBits) override {}
 
@@ -184,11 +186,12 @@ private:
     sk_sp<GrTexture> onCreateTexture(const GrSurfaceDesc&, SkBudgeted, const GrMipLevel[],
                                      int mipLevelCount) override;
 
-    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership, GrIOType,
-                                          bool purgeImmediately) override;
+    sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership, GrWrapCacheable,
+                                          GrIOType) override;
     sk_sp<GrTexture> onWrapRenderableBackendTexture(const GrBackendTexture&,
                                                     int sampleCnt,
-                                                    GrWrapOwnership) override;
+                                                    GrWrapOwnership,
+                                                    GrWrapCacheable) override;
     sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
@@ -197,8 +200,8 @@ private:
     sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
                                                                 const GrVkDrawableInfo&) override;
 
-    GrBuffer* onCreateBuffer(size_t size, GrBufferType type, GrAccessPattern,
-                             const void* data) override;
+    sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType type, GrAccessPattern,
+                                      const void* data) override;
 
     bool onReadPixels(GrSurface* surface, int left, int top, int width, int height, GrColorType,
                       void* buffer, size_t rowBytes) override;
@@ -207,13 +210,14 @@ private:
                        const GrMipLevel texels[], int mipLevelCount) override;
 
     bool onTransferPixels(GrTexture*, int left, int top, int width, int height, GrColorType,
-                          GrBuffer* transferBuffer, size_t offset, size_t rowBytes) override;
+                          GrGpuBuffer* transferBuffer, size_t offset, size_t rowBytes) override;
 
     bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin, GrSurface* src,
                        GrSurfaceOrigin srcOrigin, const SkIRect& srcRect,
                        const SkIPoint& dstPoint, bool canDiscardOutsideDstRect) override;
 
-    void onFinishFlush(bool insertedSemaphores) override;
+    void onFinishFlush(GrSurfaceProxy*, SkSurface::BackendSurfaceAccess access,
+                       SkSurface::FlushFlags flags, bool insertedSemaphores) override;
 
     // Ends and submits the current command buffer to the queue and then creates a new command
     // buffer and begins it. If sync is set to kForce_SyncQueue, the function will wait for all

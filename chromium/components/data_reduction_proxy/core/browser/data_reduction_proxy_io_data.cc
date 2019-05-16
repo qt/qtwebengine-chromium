@@ -25,6 +25,7 @@
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
 #include "components/data_reduction_proxy/core/browser/network_properties_manager.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_bypass_protocol.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
@@ -163,7 +164,7 @@ void DataReductionProxyIOData::InitializeOnIOThread() {
   config_->InitializeOnIOThread(
       url_loader_factory,
       base::BindRepeating(&DataReductionProxyIOData::CreateCustomProxyConfig,
-                          base::Unretained(this)),
+                          base::Unretained(this), true),
       network_properties_manager_.get());
   bypass_stats_->InitializeOnIOThread();
   proxy_delegate_->InitializeOnIOThread(this);
@@ -380,14 +381,14 @@ void DataReductionProxyIOData::OnProxyConfigUpdated() {
 
 network::mojom::CustomProxyConfigPtr
 DataReductionProxyIOData::CreateCustomProxyConfig(
+    bool is_warmup_url,
     const std::vector<DataReductionProxyServer>& proxies_for_http) const {
   auto config = network::mojom::CustomProxyConfig::New();
-  config->rules =
-      configurator_
-          ->CreateProxyConfig(true /* probe_url_config */,
-                              config_->GetNetworkPropertiesManager(),
-                              proxies_for_http)
-          .proxy_rules();
+  config->rules = configurator_
+                      ->CreateProxyConfig(
+                          is_warmup_url, config_->GetNetworkPropertiesManager(),
+                          proxies_for_http)
+                      .proxy_rules();
 
   // Set an alternate proxy list to be used for media requests which only
   // contains proxies supporting the media resource type.
@@ -408,6 +409,7 @@ DataReductionProxyIOData::CreateCustomProxyConfig(
 
   request_options_->AddRequestHeader(&config->post_cache_headers,
                                      base::nullopt);
+  config->can_use_proxy_on_http_url_redirect_cycles = false;
   return config;
 }
 
@@ -415,8 +417,10 @@ void DataReductionProxyIOData::UpdateCustomProxyConfig() {
   if (!proxy_config_client_)
     return;
 
-  proxy_config_client_->OnCustomProxyConfigUpdated(
-      CreateCustomProxyConfig(config_->GetProxiesForHttp()));
+  proxy_config_client_->OnCustomProxyConfigUpdated(CreateCustomProxyConfig(
+      !base::FeatureList::IsEnabled(
+          features::kDataReductionProxyDisableProxyFailedWarmup),
+      config_->GetProxiesForHttp()));
 }
 
 void DataReductionProxyIOData::UpdateThrottleConfig() {
@@ -481,15 +485,16 @@ void DataReductionProxyIOData::MarkProxiesAsBad(
   // Sanity check the inputs, as this data may originate from a lower-privilege
   // process (renderer).
 
-  // The current policy sets this to 5 minutes, so don't allow a bigger
-  // timespan.
-  if (bypass_duration < base::TimeDelta() ||
-      bypass_duration > base::TimeDelta::FromMinutes(5)) {
+  if (bypass_duration < base::TimeDelta()) {
     LOG(ERROR) << "Received bad MarkProxiesAsBad() -- invalid bypass_duration: "
                << bypass_duration;
     std::move(callback).Run();
     return;
   }
+
+  // Limit maximum bypass duration to a day.
+  if (bypass_duration > base::TimeDelta::FromDays(1))
+    bypass_duration = base::TimeDelta::FromDays(1);
 
   // |bad_proxies| should be DRP servers or this API allows marking arbitrary
   // proxies as bad. It is possible that proxies from an older config are

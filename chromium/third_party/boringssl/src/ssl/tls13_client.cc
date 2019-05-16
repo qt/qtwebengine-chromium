@@ -294,16 +294,14 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
     return ssl_hs_error;
   }
 
-  if (ssl_is_draft28(ssl->version)) {
-    // Recheck supported_versions, in case this is the second ServerHello.
-    uint16_t version;
-    if (!have_supported_versions ||
-        !CBS_get_u16(&supported_versions, &version) ||
-        version != ssl->version) {
-      OPENSSL_PUT_ERROR(SSL, SSL_R_SECOND_SERVERHELLO_VERSION_MISMATCH);
-      ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
-      return ssl_hs_error;
-    }
+  // Recheck supported_versions, in case this is the second ServerHello.
+  uint16_t version;
+  if (!have_supported_versions ||
+      !CBS_get_u16(&supported_versions, &version) ||
+      version != ssl->version) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_SECOND_SERVERHELLO_VERSION_MISMATCH);
+    ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
+    return ssl_hs_error;
   }
 
   alert = SSL_AD_DECODE_ERROR;
@@ -685,7 +683,7 @@ static enum ssl_hs_wait_t do_send_client_certificate(SSL_HANDSHAKE *hs) {
 
 static enum ssl_hs_wait_t do_send_client_certificate_verify(SSL_HANDSHAKE *hs) {
   // Don't send CertificateVerify if there is no certificate.
-  if (!ssl_has_certificate(hs->config)) {
+  if (!ssl_has_certificate(hs)) {
     hs->tls13_state = state_complete_second_flight;
     return ssl_hs_ok;
   }

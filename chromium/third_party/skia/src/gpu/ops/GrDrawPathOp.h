@@ -17,6 +17,7 @@
 #include "GrStencilSettings.h"
 
 class GrPaint;
+class GrRecordingContext;
 
 class GrDrawPathOpBase : public GrDrawOp {
 protected:
@@ -29,8 +30,9 @@ protected:
         }
         return FixedFunctionFlags::kUsesStencil;
     }
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return this->doProcessorAnalysis(caps, clip);
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
+        return this->doProcessorAnalysis(caps, clip, fsaaType);
     }
 
     void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
@@ -44,13 +46,8 @@ protected:
     const GrProcessorSet& processors() const { return fProcessorSet; }
     GrProcessorSet detachProcessors() { return std::move(fProcessorSet); }
     inline GrPipeline::InitArgs pipelineInitArgs(const GrOpFlushState&);
-    const GrProcessorSet::Analysis& doProcessorAnalysis(const GrCaps& caps,
-                                                        const GrAppliedClip* clip) {
-        bool isMixedSamples = GrAAType::kMixedSamples == fAAType;
-        fAnalysis = fProcessorSet.finalize(fInputColor, GrProcessorAnalysisCoverage::kNone, clip,
-                                           isMixedSamples, caps, &fInputColor);
-        return fAnalysis;
-    }
+    const GrProcessorSet::Analysis& doProcessorAnalysis(
+            const GrCaps&, const GrAppliedClip*, GrFSAAType);
     const GrProcessorSet::Analysis& processorAnalysis() const {
         SkASSERT(fAnalysis.isInitialized());
         return fAnalysis;
@@ -73,7 +70,7 @@ class GrDrawPathOp final : public GrDrawPathOpBase {
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext*,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext*,
                                           const SkMatrix& viewMatrix,
                                           GrPaint&&,
                                           GrAAType,

@@ -2623,6 +2623,12 @@ const char *ValidateDrawStates(Context *context)
         }
     }
 
+    if (!extensions.floatBlend && context->getState().isBlendEnabled() &&
+        framebuffer->hasActiveFloat32ColorAttachment())
+    {
+        return kUnsupportedFloatBlending;
+    }
+
     if (!framebuffer->isComplete(context))
     {
         // Note: this error should be generated as INVALID_FRAMEBUFFER_OPERATION.
@@ -2727,11 +2733,6 @@ const char *ValidateDrawStates(Context *context)
         // Do some additonal WebGL-specific validation
         if (extensions.webglCompatibility)
         {
-            if (!state.validateSamplerFormats())
-            {
-                return kSamplerFormatMismatch;
-            }
-
             const TransformFeedback *transformFeedbackObject = state.getCurrentTransformFeedback();
             if (transformFeedbackObject != nullptr && transformFeedbackObject->isActive() &&
                 transformFeedbackObject->buffersBoundForOtherUse())
@@ -2840,7 +2841,7 @@ bool ValidateDrawArraysInstancedANGLE(Context *context,
                                       GLsizei count,
                                       GLsizei primcount)
 {
-    if (!context->getExtensions().instancedArrays)
+    if (!context->getExtensions().instancedArraysANGLE)
     {
         context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
         return false;
@@ -2852,6 +2853,26 @@ bool ValidateDrawArraysInstancedANGLE(Context *context,
     }
 
     return ValidateDrawInstancedANGLE(context);
+}
+
+bool ValidateDrawArraysInstancedEXT(Context *context,
+                                    PrimitiveMode mode,
+                                    GLint first,
+                                    GLsizei count,
+                                    GLsizei primcount)
+{
+    if (!context->getExtensions().instancedArraysEXT)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    if (!ValidateDrawArraysInstancedBase(context, mode, first, count, primcount))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 const char *ValidateDrawElementsStates(Context *context)
@@ -2906,16 +2927,6 @@ const char *ValidateDrawElementsStates(Context *context)
     return nullptr;
 }
 
-bool ValidateDrawElementsInstancedCommon(Context *context,
-                                         PrimitiveMode mode,
-                                         GLsizei count,
-                                         DrawElementsType type,
-                                         const void *indices,
-                                         GLsizei primcount)
-{
-    return ValidateDrawElementsInstancedBase(context, mode, count, type, indices, primcount);
-}
-
 bool ValidateDrawElementsInstancedANGLE(Context *context,
                                         PrimitiveMode mode,
                                         GLsizei count,
@@ -2923,7 +2934,7 @@ bool ValidateDrawElementsInstancedANGLE(Context *context,
                                         const void *indices,
                                         GLsizei primcount)
 {
-    if (!context->getExtensions().instancedArrays)
+    if (!context->getExtensions().instancedArraysANGLE)
     {
         context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
         return false;
@@ -2935,6 +2946,27 @@ bool ValidateDrawElementsInstancedANGLE(Context *context,
     }
 
     return ValidateDrawInstancedANGLE(context);
+}
+
+bool ValidateDrawElementsInstancedEXT(Context *context,
+                                      PrimitiveMode mode,
+                                      GLsizei count,
+                                      DrawElementsType type,
+                                      const void *indices,
+                                      GLsizei primcount)
+{
+    if (!context->getExtensions().instancedArraysEXT)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    if (!ValidateDrawElementsInstancedBase(context, mode, count, type, indices, primcount))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 bool ValidateFramebufferTextureBase(Context *context,
@@ -5231,7 +5263,7 @@ bool ValidateGetVertexAttribBase(Context *context,
                     GL_VERTEX_ATTRIB_ARRAY_DIVISOR == GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE,
                     "ANGLE extension enums not equal to GL enums.");
                 if (context->getClientMajorVersion() < 3 &&
-                    !context->getExtensions().instancedArrays)
+                    !context->getExtensions().instancedArraysAny())
                 {
                     context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
                     return false;

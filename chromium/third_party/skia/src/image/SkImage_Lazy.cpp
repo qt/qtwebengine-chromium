@@ -16,12 +16,13 @@
 #include "SkNextID.h"
 
 #if SK_SUPPORT_GPU
-#include "GrContext.h"
-#include "GrContextPriv.h"
+#include "GrCaps.h"
 #include "GrGpuResourcePriv.h"
 #include "GrImageTextureMaker.h"
 #include "GrResourceKey.h"
 #include "GrProxyProvider.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrSamplerState.h"
 #include "GrYUVProvider.h"
 #include "SkGr.h"
@@ -237,7 +238,7 @@ bool SkImage_Lazy::onIsValid(GrContext* context) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if SK_SUPPORT_GPU
-sk_sp<GrTextureProxy> SkImage_Lazy::asTextureProxyRef(GrContext* context,
+sk_sp<GrTextureProxy> SkImage_Lazy::asTextureProxyRef(GrRecordingContext* context,
                                                       const GrSamplerState& params,
                                                       SkScalar scaleAdjust[2]) const {
     if (!context) {
@@ -249,7 +250,8 @@ sk_sp<GrTextureProxy> SkImage_Lazy::asTextureProxyRef(GrContext* context,
 }
 #endif
 
-sk_sp<SkImage> SkImage_Lazy::onMakeSubset(const SkIRect& subset) const {
+sk_sp<SkImage> SkImage_Lazy::onMakeSubset(GrRecordingContext* context,
+                                          const SkIRect& subset) const {
     SkASSERT(fInfo.bounds().contains(subset));
     SkASSERT(fInfo.bounds() != subset);
 
@@ -259,7 +261,8 @@ sk_sp<SkImage> SkImage_Lazy::onMakeSubset(const SkIRect& subset) const {
     return validator ? sk_sp<SkImage>(new SkImage_Lazy(&validator)) : nullptr;
 }
 
-sk_sp<SkImage> SkImage_Lazy::onMakeColorTypeAndColorSpace(SkColorType targetCT,
+sk_sp<SkImage> SkImage_Lazy::onMakeColorTypeAndColorSpace(GrRecordingContext*,
+                                                          SkColorType targetCT,
                                                           sk_sp<SkColorSpace> targetCS) const {
     SkAutoExclusive autoAquire(fOnMakeColorTypeAndSpaceMutex);
     if (fOnMakeColorTypeAndSpaceResult &&
@@ -363,7 +366,7 @@ sk_sp<SkCachedData> SkImage_Lazy::getPlanes(SkYUVASizeInfo* yuvaSizeInfo,
  *  4. Ask the generator to return RGB(A) data, which the GPU can convert
  */
 sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
-        GrContext* ctx,
+        GrRecordingContext* ctx,
         const GrUniqueKey& origKey,
         SkImage::CachingHint chint,
         bool willBeMipped,
@@ -389,7 +392,7 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
     GrUniqueKey key;
     this->makeCacheKeyFromOrigKey(origKey, &key);
 
-    GrProxyProvider* proxyProvider = ctx->contextPriv().proxyProvider();
+    GrProxyProvider* proxyProvider = ctx->priv().proxyProvider();
     sk_sp<GrTextureProxy> proxy;
 
     // 1. Check the cache for a pre-existing one
@@ -417,7 +420,7 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
             set_key_on_proxy(proxyProvider, proxy.get(), nullptr, key);
             if (!willBeMipped || GrMipMapped::kYes == proxy->mipMapped()) {
                 *fUniqueKeyInvalidatedMessages.append() =
-                        new GrUniqueKeyInvalidatedMessage(key, ctx->uniqueID());
+                        new GrUniqueKeyInvalidatedMessage(key, ctx->priv().contextID());
                 return proxy;
             }
         }
@@ -425,12 +428,12 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
 
     // 3. Ask the generator to return YUV planes, which the GPU can convert. If we will be mipping
     //    the texture we fall through here and have the CPU generate the mip maps for us.
-    if (!proxy && !willBeMipped && !ctx->contextPriv().disableGpuYUVConversion()) {
+    if (!proxy && !willBeMipped && !ctx->priv().options().fDisableGpuYUVConversion) {
         const GrSurfaceDesc desc = GrImageInfoToSurfaceDesc(fInfo);
 
         SkColorType colorType = fInfo.colorType();
         GrBackendFormat format =
-                ctx->contextPriv().caps()->getBackendFormatFromColorType(colorType);
+                ctx->priv().caps()->getBackendFormatFromColorType(colorType);
 
         ScopedGenerator generator(fSharedGenerator);
         Generator_GrYUVProvider provider(generator);
@@ -450,7 +453,7 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
                                      kLockTexturePathCount);
             set_key_on_proxy(proxyProvider, proxy.get(), nullptr, key);
             *fUniqueKeyInvalidatedMessages.append() =
-                    new GrUniqueKeyInvalidatedMessage(key, ctx->uniqueID());
+                    new GrUniqueKeyInvalidatedMessage(key, ctx->priv().contextID());
             return proxy;
         }
     }
@@ -469,7 +472,7 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
                                      kLockTexturePathCount);
             set_key_on_proxy(proxyProvider, proxy.get(), nullptr, key);
             *fUniqueKeyInvalidatedMessages.append() =
-                    new GrUniqueKeyInvalidatedMessage(key, ctx->uniqueID());
+                    new GrUniqueKeyInvalidatedMessage(key, ctx->priv().contextID());
             return proxy;
         }
     }
@@ -482,7 +485,7 @@ sk_sp<GrTextureProxy> SkImage_Lazy::lockTextureProxy(
         SkASSERT(willBeMipped);
         SkASSERT(GrMipMapped::kNo == proxy->mipMapped());
         *fUniqueKeyInvalidatedMessages.append() =
-                new GrUniqueKeyInvalidatedMessage(key, ctx->uniqueID());
+                new GrUniqueKeyInvalidatedMessage(key, ctx->priv().contextID());
         if (auto mippedProxy = GrCopyBaseMipMapToTextureProxy(ctx, proxy.get())) {
             set_key_on_proxy(proxyProvider, mippedProxy.get(), proxy.get(), key);
             return mippedProxy;

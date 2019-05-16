@@ -61,7 +61,7 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::CommandBuff
                                         GLsizei count,
                                         gl::DrawElementsType type,
                                         const void *indices,
-                                        GLsizei instances) override;
+                                        GLsizei instanceCount) override;
     angle::Result drawRangeElements(const gl::Context *context,
                                     gl::PrimitiveMode mode,
                                     GLuint start,
@@ -90,7 +90,7 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::CommandBuff
     void popGroupMarker() override;
 
     // KHR_debug
-    void pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message) override;
+    void pushDebugGroup(GLenum source, GLuint id, const std::string &message) override;
     void popDebugGroup() override;
 
     bool isViewportFlipEnabledForDrawFBO() const;
@@ -232,6 +232,7 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::CommandBuff
                             gl::PrimitiveMode mode,
                             GLint firstVertex,
                             GLsizei vertexOrIndexCount,
+                            GLsizei instanceCount,
                             gl::DrawElementsType indexTypeOrInvalid,
                             const void *indices,
                             DirtyBits dirtyBitMask,
@@ -239,6 +240,7 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::CommandBuff
     angle::Result setupIndexedDraw(const gl::Context *context,
                                    gl::PrimitiveMode mode,
                                    GLsizei indexCount,
+                                   GLsizei instanceCount,
                                    gl::DrawElementsType indexType,
                                    const void *indices,
                                    vk::CommandBuffer **commandBufferOut);
@@ -342,7 +344,7 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::CommandBuff
     vk::DynamicBuffer mDriverUniformsBuffer;
     VkDescriptorSet mDriverUniformsDescriptorSet;
     vk::BindingPointer<vk::DescriptorSetLayout> mDriverUniformsSetLayout;
-    vk::SharedDescriptorPoolBinding mDriverUniformsDescriptorPoolBinding;
+    vk::RefCountedDescriptorPoolBinding mDriverUniformsDescriptorPoolBinding;
 
     // This cache should also probably include the texture index (shader location) and array
     // index (also in the shader). This info is used in the descriptor update step.

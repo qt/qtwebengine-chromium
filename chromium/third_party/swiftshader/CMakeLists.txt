@@ -2,6 +2,16 @@ cmake_minimum_required(VERSION 2.8)
 
 project(SwiftShader C CXX)
 
+# On Windows we use custom solution and project files, except for certain third-
+# party projects which use CMake-generated ones. They are manually (re)generated
+# and made path relative using build/cmake.sh, so they can be checked into the
+# repository. Therefore they should not be auto-regenerated and left using
+# absolute paths by CMake's ZERO_CHECK.
+if(WIN32)
+    # Disable automatically regenerating project files on CMakeLists.txt changes.
+    set(CMAKE_SUPPRESS_REGENERATION true)
+endif()
+
 ###########################################################
 # Detect system
 ###########################################################
@@ -66,6 +76,8 @@ option (MSAN "Build with memory sanitizer" 0)
 option (ASAN "Build with address sanitizer" 0)
 option (TSAN "Build with thread sanitizer" 0)
 option (UBSAN "Build with undefined behavior sanitizer" 0)
+option (WARNINGS_AS_ERRORS "Treat all warnings as errors" 0)
+option (DCHECK_ALWAYS_ON "Check validation macros even in release builds" 0)
 
 if(ARCH STREQUAL "arm")
     set(DEFAULT_REACTOR_BACKEND "Subzero")
@@ -97,7 +109,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # Initialize submodules
 ###########################################################
 
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest)
+if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest/.git)
     message(WARNING "
   third_party/googletest submodule missing.
   Running 'git submodule update --init' to download it:
@@ -197,6 +209,7 @@ endmacro()
 if(MSVC)
     set_cpp_flag("/MP")
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+    add_definitions(-D_SBCS)  # Single Byte Character Set (ASCII)
 else()
     set_cpp_flag("--std=c++11")
     set_cpp_flag("-Wall")
@@ -205,7 +218,8 @@ else()
     set_cpp_flag("-Werror=missing-braces")
     set_cpp_flag("-fno-exceptions")
 
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+       CLANG_VERSION_STRING VERSION_GREATER_EQUAL 5)
         set_cpp_flag("-Werror=unused-lambda-capture")
     endif()
 
@@ -243,12 +257,34 @@ else()
 
     if(LINUX)
         set_cpp_flag("-DUSE_X11=1")
+        set_cpp_flag("-DVK_USE_PLATFORM_XLIB_KHR")
     endif()
 
     # Use -g3 to have even more debug info
     set_cpp_flag("-g -g3" DEBUG)
     set_cpp_flag("-g -g3" RELWITHDEBINFO)
-    set_cpp_flag("-s" RELEASE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # Treated as an unused argument with clang
+        set_cpp_flag("-s" RELEASE)
+    endif()
+
+    if(WARNINGS_AS_ERRORS)
+        set_cpp_flag("-Werror") # Treat all warnings as errors
+    endif()
+
+    if(DCHECK_ALWAYS_ON)
+        set_cpp_flag("-DDCHECK_ALWAYS_ON")
+    endif()
+
+    # Disable pedanitc warnings
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        set_cpp_flag("-Wno-ignored-attributes")  # ignoring attributes on template argument 'X'
+        set_cpp_flag("-Wno-attributes")          # 'X' attribute ignored
+        set_cpp_flag("-Wno-strict-aliasing")     # dereferencing type-punned pointer will break strict-aliasing rules
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        set_cpp_flag("-Wno-unneeded-internal-declaration") # function 'X' is not needed and will not be emitted
+        set_cpp_flag("-Wno-unused-private-field")          # private field 'offset' is not used - TODO: Consider enabling this once Vulkan is further implemented.
+    endif()
 
     # For distribution it is more important to be slim than super optimized
     set_cpp_flag("-Os" RELEASE)
@@ -282,7 +318,6 @@ if(WIN32)
     add_definitions(-DWINVER=0x501 -DNOMINMAX -DSTRICT)
     set(CMAKE_FIND_LIBRARY_PREFIXES ${CMAKE_FIND_LIBRARY_PREFIXES} "" "lib")
 endif()
-
 
 ###########################################################
 # LLVM
@@ -1731,13 +1766,31 @@ list(APPEND LLVM_INCLUDE_DIR
 
 endif()  # REACTOR_LLVM_VERSION
 
+# Suppress known LLVM warnings
+set(LLVM_COMPILE_FLAGS)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    list(APPEND LLVM_COMPILE_FLAGS
+        "-Wno-comment"                 # multi-line comment
+        "-Wno-noexcept-type"           # mangled name for ‘X’ will change in C++17 because the exception specification is part of a function type
+        "-Wno-maybe-uninitialized"     # ‘X’ may be used uninitialized in this function
+        "-Wno-unused-but-set-variable" # variable ‘X’ set but not used
+    )
+endif()
+string (REPLACE ";" " " LLVM_COMPILE_FLAGS "${LLVM_COMPILE_FLAGS}")
+
 add_library(llvm STATIC ${LLVM_LIST})
 set_target_properties(llvm PROPERTIES
     POSITION_INDEPENDENT_CODE 1
     INCLUDE_DIRECTORIES "${LLVM_INCLUDE_DIR}"
+    COMPILE_FLAGS "${LLVM_COMPILE_FLAGS}"
     COMPILE_DEFINITIONS "__STDC_CONSTANT_MACROS; __STDC_LIMIT_MACROS;"
     FOLDER "LLVM"
 )
+
+# Add required libraries for LLVM
+if(LINUX)
+    target_link_libraries(llvm dl)
+endif(LINUX)
 
 ###########################################################
 # Subzero
@@ -1876,7 +1929,6 @@ set(OPENGL_INCLUDE_DIR
 )
 
 set(VULKAN_INCLUDE_DIR
-    ${VULKAN_DIR}
     ${COMMON_INCLUDE_DIR}
 )
 
@@ -2007,6 +2059,10 @@ file(GLOB_RECURSE VULKAN_LIST
     ${SOURCE_DIR}/Device/*.hpp
     ${SOURCE_DIR}/Pipeline/*.cpp
     ${SOURCE_DIR}/Pipeline/*.hpp
+    ${SOURCE_DIR}/WSI/VkSurfaceKHR.cpp
+    ${SOURCE_DIR}/WSI/VkSurfaceKHR.hpp
+    ${SOURCE_DIR}/WSI/VkSwapchainKHR.cpp
+    ${SOURCE_DIR}/WSI/VkSwapchainKHR.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan/*.h}
 )
 
@@ -2042,6 +2098,13 @@ elseif(LINUX)
     )
     list(APPEND OPENGL_COMPILER_LIST
         ${OPENGL_COMPILER_DIR}/ossource_posix.cpp
+    )
+
+    list(APPEND VULKAN_LIST
+        ${SOURCE_DIR}/WSI/libX11.cpp
+        ${SOURCE_DIR}/WSI/libX11.hpp
+        ${SOURCE_DIR}/WSI/XlibSurfaceKHR.cpp
+        ${SOURCE_DIR}/WSI/XlibSurfaceKHR.hpp
     )
 elseif(APPLE)
     list(APPEND SWIFTSHADER_LIST
@@ -2171,6 +2234,12 @@ if(BUILD_GLES_CM)
 endif()
 
 if(BUILD_VULKAN)
+    # This variable is also used by SPIRV-Tools to locate SPIRV-Headers
+    set(SPIRV-Headers_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SPIRV-Headers")
+    list(APPEND VULKAN_INCLUDE_DIR "${SPIRV-Headers_SOURCE_DIR}/include")
+
+    add_subdirectory(third_party/SPIRV-Tools)
+
     add_library(libvk_swiftshader SHARED ${VULKAN_LIST})
     set_target_properties(libvk_swiftshader PROPERTIES
         INCLUDE_DIRECTORIES "${VULKAN_INCLUDE_DIR}"
@@ -2179,7 +2248,7 @@ if(BUILD_VULKAN)
         PREFIX ""
     )
     set_shared_library_export_map(libvk_swiftshader ${SOURCE_DIR}/Vulkan)
-    target_link_libraries(libvk_swiftshader ${Reactor} ${OS_LIBS})
+    target_link_libraries(libvk_swiftshader ${Reactor} ${OS_LIBS} SPIRV-Tools SPIRV-Tools-opt)
     add_custom_command(
         TARGET libvk_swiftshader
         POST_BUILD
@@ -2188,6 +2257,9 @@ if(BUILD_VULKAN)
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/out/${CMAKE_SYSTEM_NAME}/
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libvk_swiftshader> ${CMAKE_CURRENT_SOURCE_DIR}/out/${CMAKE_SYSTEM_NAME}/
     )
+    configure_file(
+        "${VULKAN_DIR}/vk_swiftshader_icd.json.tmpl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/out/${CMAKE_SYSTEM_NAME}/vk_swiftshader_icd.json")
 endif()
 
 ###########################################################
@@ -2220,6 +2292,7 @@ if(BUILD_SAMPLES)
         set_target_properties(OGLES2HelloAPI PROPERTIES
             INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include"
             COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES"
+            COMPILE_FLAGS "-Wno-deprecated-declarations" # 'NSTitledWindowMask', 'NSClosableWindowMask' is deprecated
             MACOSX_BUNDLE_INFO_PLIST "${HELLO2_DIR}/Build/OSX/Info.plist"
         )
         target_link_libraries(OGLES2HelloAPI libEGL libGLESv2 ${OS_LIBS})

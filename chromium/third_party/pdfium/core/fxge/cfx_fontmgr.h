@@ -11,7 +11,8 @@
 #include <memory>
 
 #include "core/fxcrt/fx_memory.h"
-#include "core/fxge/fx_font.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxge/fx_freetype.h"
 #include "third_party/base/optional.h"
 #include "third_party/base/span.h"
 
@@ -22,6 +23,8 @@ class SystemFontInfoIface;
 
 class CFX_FontMgr {
  public:
+  static Optional<pdfium::span<const uint8_t>> GetBuiltinFont(size_t index);
+
   CFX_FontMgr();
   ~CFX_FontMgr();
 
@@ -56,7 +59,6 @@ class CFX_FontMgr {
                           int italic_angle,
                           int CharsetCP,
                           CFX_SubstFont* pSubstFont);
-  Optional<pdfium::span<const uint8_t>> GetBuiltinFont(size_t index);
 
   // Always present.
   CFX_FontMapper* GetBuiltinMapper() const { return m_pBuiltinMapper.get(); }

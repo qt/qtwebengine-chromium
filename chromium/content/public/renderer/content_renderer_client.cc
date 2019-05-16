@@ -4,8 +4,8 @@
 
 #include "content/public/renderer/content_renderer_client.h"
 
-#include "content/public/renderer/media_stream_renderer_factory.h"
 #include "media/base/renderer_factory.h"
+#include "third_party/blink/public/platform/modules/mediastream/web_media_stream_renderer_factory.h"
 #include "third_party/blink/public/platform/web_audio_device.h"
 #include "third_party/blink/public/platform/web_media_stream_center.h"
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
@@ -27,9 +27,14 @@ bool ContentRendererClient::MaybeCreateMimeHandlerView(
     RenderFrame* embedder_frame,
     const blink::WebElement& owner_element,
     const GURL& original_url,
-    const std::string& original_mime_type,
-    int32_t instance_id_to_use) {
+    const std::string& original_mime_type) {
   return false;
+}
+
+v8::Local<v8::Object> ContentRendererClient::GetScriptableObject(
+    const blink::WebElement& plugin_element,
+    v8::Isolate* isolate) {
+  return v8::Local<v8::Object>();
 }
 
 bool ContentRendererClient::OverrideCreatePlugin(
@@ -180,7 +185,7 @@ bool ContentRendererClient::IsSupportedBitstreamAudioCodec(
   return false;
 }
 
-std::unique_ptr<MediaStreamRendererFactory>
+std::unique_ptr<blink::WebMediaStreamRendererFactory>
 ContentRendererClient::CreateMediaStreamRendererFactory() {
   return nullptr;
 }
@@ -238,12 +243,6 @@ ContentRendererClient::GetTaskSchedulerInitParams() {
 
 bool ContentRendererClient::IsIdleMediaSuspendEnabled() {
   return true;
-}
-
-bool ContentRendererClient::OverrideLegacySymantecCertConsoleMessage(
-    const GURL& url,
-    std::string* console_messsage) {
-  return false;
 }
 
 bool ContentRendererClient::SuppressLegacyTLSVersionConsoleMessage() {

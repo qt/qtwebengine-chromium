@@ -25,7 +25,9 @@ namespace sw
 	class PixelRoutine : public sw::QuadRasterizer, public ShaderCore
 	{
 	public:
-		PixelRoutine(const PixelProcessor::State &state, const PixelShader *shader);
+		PixelRoutine(const PixelProcessor::State &state,
+			vk::PipelineLayout const *pipelineLayout,
+			SpirvShader const *spirvShader);
 
 		virtual ~PixelRoutine();
 
@@ -34,18 +36,15 @@ namespace sw
 		Float4 w;    // Used as is
 		Float4 rhw;  // Reciprocal w
 
-		RegisterArray<MAX_FRAGMENT_INPUTS> v;   // Varying registers
+		SpirvRoutine routine;
 
 		// Depth output
 		Float4 oDepth;
 
-		typedef Shader::SourceParameter Src;
-		typedef Shader::DestinationParameter Dst;
-
 		virtual void setBuiltins(Int &x, Int &y, Float4(&z)[4], Float4 &w) = 0;
 		virtual void applyShader(Int cMask[4]) = 0;
 		virtual Bool alphaTest(Int cMask[4]) = 0;
-		virtual void rasterOperation(Float4 &fog, Pointer<Byte> cBuffer[4], Int &x, Int sMask[4], Int zMask[4], Int cMask[4]) = 0;
+		virtual void rasterOperation(Pointer<Byte> cBuffer[4], Int &x, Int sMask[4], Int zMask[4], Int cMask[4]) = 0;
 
 		virtual void quad(Pointer<Byte> cBuffer[4], Pointer<Byte> &zBuffer, Pointer<Byte> &sBuffer, Int cMask[4], Int &x, Int &y);
 
@@ -54,7 +53,6 @@ namespace sw
 
 		// Raster operations
 		void alphaBlend(int index, Pointer<Byte> &cBuffer, Vector4s &current, Int &x);
-		void logicOperation(int index, Pointer<Byte> &cBuffer, Vector4s &current, Int &x);
 		void writeColor(int index, Pointer<Byte> &cBuffer, Int &i, Vector4s &current, Int &sMask, Int &zMask, Int &cMask);
 		void alphaBlend(int index, Pointer<Byte> &cBuffer, Vector4f &oC, Int &x);
 		void writeColor(int index, Pointer<Byte> &cBuffer, Int &i, Vector4f &oC, Int &sMask, Int &zMask, Int &cMask);

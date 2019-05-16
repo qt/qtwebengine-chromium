@@ -16,9 +16,12 @@
 #include "SkRegion.h"
 
 #if SK_SUPPORT_GPU
+#include "GrCaps.h"
 #include "GrColorSpaceXform.h"
 #include "GrContext.h"
 #include "GrFixedClip.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContext.h"
 #include "GrTextureProxy.h"
 #include "effects/GrSimpleTextureEffect.h"
@@ -42,7 +45,7 @@ protected:
     sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
 
 #if SK_SUPPORT_GPU
-    sk_sp<GrTextureProxy> createMaskTexture(GrContext*,
+    sk_sp<GrTextureProxy> createMaskTexture(GrRecordingContext*,
                                             const SkMatrix&,
                                             const SkIRect& bounds) const;
 #endif
@@ -102,13 +105,13 @@ SkAlphaThresholdFilterImpl::SkAlphaThresholdFilterImpl(const SkRegion& region,
 }
 
 #if SK_SUPPORT_GPU
-sk_sp<GrTextureProxy> SkAlphaThresholdFilterImpl::createMaskTexture(GrContext* context,
+sk_sp<GrTextureProxy> SkAlphaThresholdFilterImpl::createMaskTexture(GrRecordingContext* context,
                                                                     const SkMatrix& inMatrix,
                                                                     const SkIRect& bounds) const {
     GrBackendFormat format =
-            context->contextPriv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
+            context->priv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
     sk_sp<GrRenderTargetContext> rtContext(
-        context->contextPriv().makeDeferredRenderTargetContextWithFallback(
+        context->priv().makeDeferredRenderTargetContextWithFallback(
             format, SkBackingFit::kApprox, bounds.width(), bounds.height(), kAlpha_8_GrPixelConfig,
             nullptr));
     if (!rtContext) {
@@ -161,7 +164,7 @@ sk_sp<SkSpecialImage> SkAlphaThresholdFilterImpl::onFilterImage(SkSpecialImage* 
 
 #if SK_SUPPORT_GPU
     if (source->isTextureBacked()) {
-        GrContext* context = source->getContext();
+        auto context = source->getContext();
 
         sk_sp<GrTextureProxy> inputProxy(input->asTextureProxyRef(context));
         SkASSERT(inputProxy);

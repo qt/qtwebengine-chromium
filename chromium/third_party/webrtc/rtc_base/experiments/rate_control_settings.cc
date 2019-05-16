@@ -121,12 +121,14 @@ RateControlSettings::RateControlSettings(
           ParseHysteresisFactor(key_value_config,
                                 kScreenshareHysteresisFieldTrialname,
                                 kDefaultScreenshareHysteresisFactor)),
-      bitrate_adjuster_("bitrate_adjuster", false) {
-  ParseFieldTrial(
-      {&congestion_window_, &congestion_window_pushback_, &pacing_factor_,
-       &alr_probing_, &trust_vp8_, &trust_vp9_, &video_hysteresis_,
-       &screenshare_hysteresis_, &bitrate_adjuster_},
-      key_value_config->Lookup("WebRTC-VideoRateControl"));
+      probe_max_allocation_("probe_max_allocation", true),
+      bitrate_adjuster_("bitrate_adjuster", false),
+      vp8_s0_boost_("vp8_s0_boost", true) {
+  ParseFieldTrial({&congestion_window_, &congestion_window_pushback_,
+                   &pacing_factor_, &alr_probing_, &trust_vp8_, &trust_vp9_,
+                   &video_hysteresis_, &screenshare_hysteresis_,
+                   &probe_max_allocation_, &bitrate_adjuster_, &vp8_s0_boost_},
+                  key_value_config->Lookup("WebRTC-VideoRateControl"));
 }
 
 RateControlSettings::~RateControlSettings() = default;
@@ -174,8 +176,28 @@ bool RateControlSettings::LibvpxVp8TrustedRateController() const {
   return trust_vp8_.Get();
 }
 
+bool RateControlSettings::Vp8BoostBaseLayerQuality() const {
+  return vp8_s0_boost_.Get();
+}
+
 bool RateControlSettings::LibvpxVp9TrustedRateController() const {
   return trust_vp9_.Get();
+}
+
+double RateControlSettings::GetSimulcastHysteresisFactor(
+    VideoCodecMode mode) const {
+  if (mode == VideoCodecMode::kScreensharing) {
+    return GetSimulcastScreenshareHysteresisFactor();
+  }
+  return GetSimulcastVideoHysteresisFactor();
+}
+
+double RateControlSettings::GetSimulcastHysteresisFactor(
+    VideoEncoderConfig::ContentType content_type) const {
+  if (content_type == VideoEncoderConfig::ContentType::kScreen) {
+    return GetSimulcastScreenshareHysteresisFactor();
+  }
+  return GetSimulcastVideoHysteresisFactor();
 }
 
 double RateControlSettings::GetSimulcastVideoHysteresisFactor() const {
@@ -186,7 +208,12 @@ double RateControlSettings::GetSimulcastScreenshareHysteresisFactor() const {
   return screenshare_hysteresis_.Get();
 }
 
+bool RateControlSettings::TriggerProbeOnMaxAllocatedBitrateChange() const {
+  return probe_max_allocation_.Get();
+}
+
 bool RateControlSettings::UseEncoderBitrateAdjuster() const {
   return bitrate_adjuster_.Get();
 }
+
 }  // namespace webrtc

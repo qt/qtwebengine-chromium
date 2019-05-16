@@ -210,8 +210,11 @@ CJS_Result CJX_Node::getElement(
 
   WideString expression = runtime->ToWideString(params[0]);
   int32_t iValue = params.size() >= 2 ? runtime->ToInt32(params[1]) : 0;
-  CXFA_Node* pNode = GetOrCreateProperty<CXFA_Node>(
-      iValue, XFA_GetElementByName(expression.AsStringView()));
+  XFA_Element eElement = XFA_GetElementByName(expression.AsStringView());
+  if (eElement == XFA_Element::Unknown)
+    return CJS_Result::Success(runtime->NewNull());
+
+  CXFA_Node* pNode = GetOrCreateProperty<CXFA_Node>(iValue, eElement);
   if (!pNode)
     return CJS_Result::Success(runtime->NewNull());
 
@@ -236,9 +239,12 @@ CJS_Result CJX_Node::isPropertySpecified(
   if (attr.has_value() && HasAttribute(attr.value().attribute))
     return CJS_Result::Success(runtime->NewBoolean(true));
 
+  XFA_Element eType = XFA_GetElementByName(expression.AsStringView());
+  if (eType == XFA_Element::Unknown)
+    return CJS_Result::Success(runtime->NewBoolean(false));
+
   bool bParent = params.size() < 2 || runtime->ToBoolean(params[1]);
   int32_t iIndex = params.size() == 3 ? runtime->ToInt32(params[2]) : 0;
-  XFA_Element eType = XFA_GetElementByName(expression.AsStringView());
   bool bHas = !!GetOrCreateProperty<CXFA_Node>(iIndex, eType);
   if (!bHas && bParent && GetXFANode()->GetParent()) {
     // Also check on the parent.
@@ -426,8 +432,12 @@ CJS_Result CJX_Node::setAttribute(
   if (params.size() != 2)
     return CJS_Result::Failure(JSMessage::kParamError);
 
+  // Note: yes, arglist is spec'd absolutely backwards from what any sane
+  // person would do, namely value first, attribute second.
   WideString attributeValue = runtime->ToWideString(params[0]);
   WideString attribute = runtime->ToWideString(params[1]);
+
+  // Pass them to our method, however, in the more usual manner.
   SetAttribute(attribute.AsStringView(), attributeValue.AsStringView(), true);
   return CJS_Result::Success();
 }

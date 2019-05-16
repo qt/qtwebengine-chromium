@@ -24,6 +24,9 @@ SimulatedNetwork::Config CreateSimulationConfig(NetworkNodeConfig config) {
   sim_config.loss_percent = config.simulation.loss_rate * 100;
   sim_config.queue_delay_ms = config.simulation.delay.ms();
   sim_config.delay_standard_deviation_ms = config.simulation.delay_std_dev.ms();
+  sim_config.packet_overhead = config.packet_overhead.bytes<int>();
+  sim_config.codel_active_queue_management =
+      config.simulation.codel_active_queue_management;
   return sim_config;
 }
 }  // namespace
@@ -73,12 +76,11 @@ SimulationNode::SimulationNode(
     NetworkNodeConfig config,
     std::unique_ptr<NetworkBehaviorInterface> behavior,
     SimulatedNetwork* simulation)
-    : EmulatedNetworkNode(std::move(behavior),
-                          config.packet_overhead.bytes_or(0)),
+    : EmulatedNetworkNode(std::move(behavior)),
       simulated_network_(simulation),
       config_(config) {}
 
-NetworkNodeTransport::NetworkNodeTransport(const Clock* sender_clock,
+NetworkNodeTransport::NetworkNodeTransport(Clock* sender_clock,
                                            Call* sender_call)
     : sender_clock_(sender_clock), sender_call_(sender_call) {}
 

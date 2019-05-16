@@ -18,8 +18,11 @@
 
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrCoordTransform.h"
 #include "GrFixedClip.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetContext.h"
 #include "GrTexture.h"
 #include "GrTextureProxy.h"
@@ -461,7 +464,7 @@ static void apply_morphology_pass(GrRenderTargetContext* renderTargetContext,
 }
 
 static sk_sp<SkSpecialImage> apply_morphology(
-                                          GrContext* context,
+                                          GrRecordingContext* context,
                                           SkSpecialImage* input,
                                           const SkIRect& rect,
                                           GrMorphologyEffect::Type morphType,
@@ -472,7 +475,7 @@ static sk_sp<SkSpecialImage> apply_morphology(
     sk_sp<SkColorSpace> colorSpace = sk_ref_sp(outputProperties.colorSpace());
     SkColorType colorType = outputProperties.colorType();
     GrBackendFormat format =
-            context->contextPriv().caps()->getBackendFormatFromColorType(colorType);
+            context->priv().caps()->getBackendFormatFromColorType(colorType);
     GrPixelConfig config = SkColorType2GrPixelConfig(colorType);
 
     // setup new clip
@@ -485,7 +488,7 @@ static sk_sp<SkSpecialImage> apply_morphology(
 
     if (radius.fWidth > 0) {
         sk_sp<GrRenderTargetContext> dstRTContext(
-            context->contextPriv().makeDeferredRenderTargetContext(
+            context->priv().makeDeferredRenderTargetContext(
                 format, SkBackingFit::kApprox, rect.width(), rect.height(), config, colorSpace));
         if (!dstRTContext) {
             return nullptr;
@@ -504,7 +507,7 @@ static sk_sp<SkSpecialImage> apply_morphology(
     }
     if (radius.fHeight > 0) {
         sk_sp<GrRenderTargetContext> dstRTContext(
-            context->contextPriv().makeDeferredRenderTargetContext(
+            context->priv().makeDeferredRenderTargetContext(
                 format, SkBackingFit::kApprox, rect.width(), rect.height(), config, colorSpace));
         if (!dstRTContext) {
             return nullptr;
@@ -677,7 +680,7 @@ sk_sp<SkSpecialImage> SkMorphologyImageFilter::onFilterImage(SkSpecialImage* sou
 
 #if SK_SUPPORT_GPU
     if (source->isTextureBacked()) {
-        GrContext* context = source->getContext();
+        auto context = source->getContext();
 
         // Ensure the input is in the destination color space. Typically applyCropRect will have
         // called pad_image to account for our dilation of bounds, so the result will already be

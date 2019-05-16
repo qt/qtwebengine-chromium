@@ -8,6 +8,7 @@
 #include "GrTessellatingPathRenderer.h"
 #include <stdio.h>
 #include "GrAuditTrail.h"
+#include "GrCaps.h"
 #include "GrClip.h"
 #include "GrDefaultGeoProcFactory.h"
 #include "GrDrawOpTest.h"
@@ -53,7 +54,7 @@ private:
     }
 };
 
-bool cache_match(GrBuffer* vertexBuffer, SkScalar tol, int* actualCount) {
+bool cache_match(GrGpuBuffer* vertexBuffer, SkScalar tol, int* actualCount) {
     if (!vertexBuffer) {
         return false;
     }
@@ -77,8 +78,8 @@ public:
     }
     void* lock(int vertexCount) override {
         size_t size = vertexCount * stride();
-        fVertexBuffer.reset(fResourceProvider->createBuffer(
-            size, kVertex_GrBufferType, kStatic_GrAccessPattern, GrResourceProvider::Flags::kNone));
+        fVertexBuffer = fResourceProvider->createBuffer(size, GrGpuBufferType::kVertex,
+                                                        kStatic_GrAccessPattern);
         if (!fVertexBuffer.get()) {
             return nullptr;
         }
@@ -98,9 +99,10 @@ public:
         }
         fVertices = nullptr;
     }
-    GrBuffer* vertexBuffer() { return fVertexBuffer.get(); }
+    sk_sp<GrGpuBuffer> detachVertexBuffer() { return std::move(fVertexBuffer); }
+
 private:
-    sk_sp<GrBuffer> fVertexBuffer;
+    sk_sp<GrGpuBuffer> fVertexBuffer;
     GrResourceProvider* fResourceProvider;
     bool fCanMapVB;
     void* fVertices;
@@ -122,11 +124,12 @@ public:
         fTarget->putBackVertices(fVertexCount - actualCount, stride());
         fVertices = nullptr;
     }
-    const GrBuffer* vertexBuffer() const { return fVertexBuffer; }
+    sk_sp<const GrBuffer> detachVertexBuffer() const { return std::move(fVertexBuffer); }
     int firstVertex() const { return fFirstVertex; }
+
 private:
     GrMeshDrawOp::Target* fTarget;
-    const GrBuffer* fVertexBuffer;
+    sk_sp<const GrBuffer> fVertexBuffer;
     int fVertexCount;
     int fFirstVertex;
     void* fVertices;
@@ -170,7 +173,7 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const GrShape& shape,
                                           const SkMatrix& viewMatrix,
@@ -224,11 +227,12 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
         GrProcessorAnalysisCoverage coverage = fAntiAlias
                                                        ? GrProcessorAnalysisCoverage::kSingleChannel
                                                        : GrProcessorAnalysisCoverage::kNone;
-        return fHelper.finalizeProcessors(caps, clip, coverage, &fColor);
+        return fHelper.finalizeProcessors(caps, clip, fsaaType, coverage, &fColor);
     }
 
 private:
@@ -258,12 +262,13 @@ private:
             memset(&builder[shapeKeyDataCnt], 0, sizeof(fDevClipBounds));
         }
         builder.finish();
-        sk_sp<GrBuffer> cachedVertexBuffer(rp->findByUniqueKey<GrBuffer>(key));
+        sk_sp<GrGpuBuffer> cachedVertexBuffer(rp->findByUniqueKey<GrGpuBuffer>(key));
         int actualCount;
         SkScalar tol = GrPathUtils::kDefaultTolerance;
         tol = GrPathUtils::scaleToleranceToSrc(tol, fViewMatrix, fShape.bounds());
         if (cache_match(cachedVertexBuffer.get(), tol, &actualCount)) {
-            this->drawVertices(target, std::move(gp), cachedVertexBuffer.get(), 0, actualCount);
+            this->drawVertices(target, std::move(gp), std::move(cachedVertexBuffer), 0,
+                               actualCount);
             return;
         }
 
@@ -282,13 +287,15 @@ private:
         if (count == 0) {
             return;
         }
-        this->drawVertices(target, std::move(gp), allocator.vertexBuffer(), 0, count);
+        sk_sp<GrGpuBuffer> vb = allocator.detachVertexBuffer();
         TessInfo info;
         info.fTolerance = isLinear ? 0 : tol;
         info.fCount = count;
-        key.setCustomData(SkData::MakeWithCopy(&info, sizeof(info)));
-        rp->assignUniqueKeyToResource(key, allocator.vertexBuffer());
         fShape.addGenIDChangeListener(sk_make_sp<PathInvalidator>(key, target->contextUniqueID()));
+        key.setCustomData(SkData::MakeWithCopy(&info, sizeof(info)));
+        rp->assignUniqueKeyToResource(key, vb.get());
+
+        this->drawVertices(target, std::move(gp), std::move(vb), 0, count);
     }
 
     void drawAA(Target* target, sk_sp<const GrGeometryProcessor> gp, size_t vertexStride) {
@@ -307,8 +314,8 @@ private:
         if (count == 0) {
             return;
         }
-        this->drawVertices(target, std::move(gp), allocator.vertexBuffer(), allocator.firstVertex(),
-                           count);
+        this->drawVertices(target, std::move(gp), allocator.detachVertexBuffer(),
+                           allocator.firstVertex(), count);
     }
 
     void onPrepareDraws(Target* target) override {
@@ -351,14 +358,17 @@ private:
         }
     }
 
-    void drawVertices(Target* target, sk_sp<const GrGeometryProcessor> gp, const GrBuffer* vb,
+    void drawVertices(Target* target, sk_sp<const GrGeometryProcessor> gp, sk_sp<const GrBuffer> vb,
                       int firstVertex, int count) {
         GrMesh* mesh = target->allocMesh(TESSELLATOR_WIREFRAME ? GrPrimitiveType::kLines
                                                                : GrPrimitiveType::kTriangles);
         mesh->setNonIndexedNonInstanced(count);
-        mesh->setVertexData(vb, firstVertex);
-        auto pipe = fHelper.makePipeline(target);
-        target->draw(std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState, mesh);
+        mesh->setVertexData(std::move(vb), firstVertex);
+        target->recordDraw(std::move(gp), mesh);
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        fHelper.executeDrawsAndUploads(this, flushState, chainBounds);
     }
 
     Helper fHelper;

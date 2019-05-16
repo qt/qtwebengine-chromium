@@ -159,10 +159,16 @@ void CFWL_Edit::SetThemeProvider(IFWL_ThemeProvider* pThemeProvider) {
   m_pProperties->m_pThemeProvider = pThemeProvider;
 }
 
-void CFWL_Edit::SetText(const WideString& wsText,
-                        CFDE_TextEditEngine::RecordOperation op) {
+void CFWL_Edit::SetText(const WideString& wsText) {
   m_EdtEngine.Clear();
-  m_EdtEngine.Insert(0, wsText, op);
+  m_EdtEngine.Insert(0, wsText,
+                     CFDE_TextEditEngine::RecordOperation::kInsertRecord);
+}
+
+void CFWL_Edit::SetTextSkipNotify(const WideString& wsText) {
+  m_EdtEngine.Clear();
+  m_EdtEngine.Insert(0, wsText,
+                     CFDE_TextEditEngine::RecordOperation::kSkipNotify);
 }
 
 int32_t CFWL_Edit::GetTextLength() const {
@@ -453,7 +459,7 @@ void CFWL_Edit::RenderText(CFX_RenderDevice* pRenderDev,
     if (!rtDocClip.IntersectWith(info.rtPiece))
       continue;
 
-    std::vector<FXTEXT_CHARPOS> char_pos = m_EdtEngine.GetDisplayPos(info);
+    std::vector<TextCharPos> char_pos = m_EdtEngine.GetDisplayPos(info);
     if (char_pos.empty())
       continue;
 

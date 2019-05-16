@@ -6,8 +6,10 @@
  */
 
 #include "GrRegionOp.h"
-#include <GrDrawOpTest.h>
+
+#include "GrCaps.h"
 #include "GrDefaultGeoProcFactory.h"
+#include "GrDrawOpTest.h"
 #include "GrMeshDrawOp.h"
 #include "GrOpFlushState.h"
 #include "GrResourceProvider.h"
@@ -38,7 +40,7 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           const SkRegion& region,
@@ -86,9 +88,10 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fHelper.finalizeProcessors(caps, clip, GrProcessorAnalysisCoverage::kNone,
-                                          &fRegions[0].fColor);
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
+        return fHelper.finalizeProcessors(
+                caps, clip, fsaaType, GrProcessorAnalysisCoverage::kNone, &fRegions[0].fColor);
     }
 
 private:
@@ -109,11 +112,16 @@ private:
         if (!numRects) {
             return;
         }
-        sk_sp<const GrBuffer> indexBuffer = target->resourceProvider()->refQuadIndexBuffer();
+        sk_sp<const GrGpuBuffer> indexBuffer = target->resourceProvider()->refQuadIndexBuffer();
+        if (!indexBuffer) {
+            SkDebugf("Could not allocate indices\n");
+            return;
+        }
         PatternHelper helper(target, GrPrimitiveType::kTriangles, gp->vertexStride(),
-                             indexBuffer.get(), kVertsPerInstance, kIndicesPerInstance, numRects);
+                             std::move(indexBuffer), kVertsPerInstance, kIndicesPerInstance,
+                             numRects);
         GrVertexWriter vertices{helper.vertices()};
-        if (!vertices.fPtr || !indexBuffer) {
+        if (!vertices.fPtr) {
             SkDebugf("Could not allocate vertices\n");
             return;
         }
@@ -127,8 +135,11 @@ private:
                 iter.next();
             }
         }
-        auto pipe = fHelper.makePipeline(target);
-        helper.recordDraw(target, std::move(gp), pipe.fPipeline, pipe.fFixedDynamicState);
+        helper.recordDraw(target, std::move(gp));
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        fHelper.executeDrawsAndUploads(this, flushState, chainBounds);
     }
 
     CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
@@ -163,7 +174,7 @@ private:
 
 namespace GrRegionOp {
 
-std::unique_ptr<GrDrawOp> Make(GrContext* context,
+std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                GrPaint&& paint,
                                const SkMatrix& viewMatrix,
                                const SkRegion& region,

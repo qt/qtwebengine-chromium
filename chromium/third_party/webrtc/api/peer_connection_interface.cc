@@ -10,6 +10,7 @@
 
 #include "api/peer_connection_interface.h"
 #include "api/dtls_transport_interface.h"
+#include "api/sctp_transport_interface.h"
 
 namespace webrtc {
 
@@ -187,6 +188,12 @@ PeerConnectionInterface::LookupDtlsTransportByMid(const std::string& mid) {
   return nullptr;
 }
 
+rtc::scoped_refptr<SctpTransportInterface>
+PeerConnectionInterface::GetSctpTransport() const {
+  RTC_NOTREACHED();
+  return nullptr;
+}
+
 PeerConnectionInterface::BitrateParameters::BitrateParameters() = default;
 
 PeerConnectionInterface::BitrateParameters::~BitrateParameters() = default;
@@ -233,25 +240,6 @@ RtpCapabilities PeerConnectionFactoryInterface::GetRtpSenderCapabilities(
 RtpCapabilities PeerConnectionFactoryInterface::GetRtpReceiverCapabilities(
     cricket::MediaType kind) const {
   return {};
-}
-
-rtc::scoped_refptr<VideoTrackSourceInterface>
-PeerConnectionFactoryInterface::CreateVideoSource(
-    std::unique_ptr<cricket::VideoCapturer> capturer) {
-  return nullptr;
-}
-
-rtc::scoped_refptr<VideoTrackSourceInterface>
-PeerConnectionFactoryInterface::CreateVideoSource(
-    std::unique_ptr<cricket::VideoCapturer> capturer,
-    const MediaConstraintsInterface* constraints) {
-  return nullptr;
-}
-
-rtc::scoped_refptr<VideoTrackSourceInterface>
-PeerConnectionFactoryInterface::CreateVideoSource(
-    cricket::VideoCapturer* capturer) {
-  return CreateVideoSource(std::unique_ptr<cricket::VideoCapturer>(capturer));
 }
 
 }  // namespace webrtc

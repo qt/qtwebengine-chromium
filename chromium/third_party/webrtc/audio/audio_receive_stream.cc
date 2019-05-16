@@ -67,6 +67,7 @@ std::string AudioReceiveStream::Config::ToString() const {
 namespace internal {
 namespace {
 std::unique_ptr<voe::ChannelReceiveInterface> CreateChannelReceive(
+    Clock* clock,
     webrtc::AudioState* audio_state,
     ProcessThread* module_process_thread,
     const webrtc::AudioReceiveStream::Config& config,
@@ -75,7 +76,7 @@ std::unique_ptr<voe::ChannelReceiveInterface> CreateChannelReceive(
   internal::AudioState* internal_audio_state =
       static_cast<internal::AudioState*>(audio_state);
   return voe::CreateChannelReceive(
-      module_process_thread, internal_audio_state->audio_device_module(),
+      clock, module_process_thread, internal_audio_state->audio_device_module(),
       config.media_transport, config.rtcp_send_transport, event_log,
       config.rtp.remote_ssrc, config.jitter_buffer_max_packets,
       config.jitter_buffer_fast_accelerate, config.jitter_buffer_min_delay_ms,
@@ -85,23 +86,27 @@ std::unique_ptr<voe::ChannelReceiveInterface> CreateChannelReceive(
 }  // namespace
 
 AudioReceiveStream::AudioReceiveStream(
+    Clock* clock,
     RtpStreamReceiverControllerInterface* receiver_controller,
     PacketRouter* packet_router,
     ProcessThread* module_process_thread,
     const webrtc::AudioReceiveStream::Config& config,
     const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
     webrtc::RtcEventLog* event_log)
-    : AudioReceiveStream(receiver_controller,
+    : AudioReceiveStream(clock,
+                         receiver_controller,
                          packet_router,
                          config,
                          audio_state,
                          event_log,
-                         CreateChannelReceive(audio_state.get(),
+                         CreateChannelReceive(clock,
+                                              audio_state.get(),
                                               module_process_thread,
                                               config,
                                               event_log)) {}
 
 AudioReceiveStream::AudioReceiveStream(
+    Clock* clock,
     RtpStreamReceiverControllerInterface* receiver_controller,
     PacketRouter* packet_router,
     const webrtc::AudioReceiveStream::Config& config,
@@ -216,6 +221,9 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.preemptive_expand_rate = Q14ToFloat(ns.currentPreemptiveRate);
   stats.jitter_buffer_flushes = ns.packetBufferFlushes;
   stats.delayed_packet_outage_samples = ns.delayedPacketOutageSamples;
+  stats.relative_packet_arrival_delay_seconds =
+      static_cast<double>(ns.relativePacketArrivalDelayMs) /
+      static_cast<double>(rtc::kNumMillisecsPerSec);
 
   auto ds = channel_receive_->GetDecodingCallStatistics();
   stats.decoding_calls_to_silence_generator = ds.calls_to_silence_generator;
@@ -237,6 +245,16 @@ void AudioReceiveStream::SetSink(AudioSinkInterface* sink) {
 void AudioReceiveStream::SetGain(float gain) {
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
   channel_receive_->SetChannelOutputVolumeScaling(gain);
+}
+
+bool AudioReceiveStream::SetBaseMinimumPlayoutDelayMs(int delay_ms) {
+  RTC_DCHECK_RUN_ON(&worker_thread_checker_);
+  return channel_receive_->SetBaseMinimumPlayoutDelayMs(delay_ms);
+}
+
+int AudioReceiveStream::GetBaseMinimumPlayoutDelayMs() const {
+  RTC_DCHECK_RUN_ON(&worker_thread_checker_);
+  return channel_receive_->GetBaseMinimumPlayoutDelayMs();
 }
 
 std::vector<RtpSource> AudioReceiveStream::GetSources() const {

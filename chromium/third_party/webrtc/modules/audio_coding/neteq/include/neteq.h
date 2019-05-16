@@ -22,9 +22,9 @@
 #include "api/audio_codecs/audio_decoder.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/rtp_headers.h"
+#include "api/scoped_refptr.h"
 #include "modules/audio_coding/neteq/defines.h"
 #include "rtc_base/constructor_magic.h"
-#include "rtc_base/scoped_ref_ptr.h"
 
 namespace webrtc {
 
@@ -71,9 +71,18 @@ struct NetEqLifetimeStatistics {
   uint64_t concealment_events = 0;
   uint64_t jitter_buffer_delay_ms = 0;
   uint64_t jitter_buffer_emitted_count = 0;
-  // Below stat is not part of the spec.
+  // Below stats are not part of the spec.
   uint64_t voice_concealed_samples = 0;
   uint64_t delayed_packet_outage_samples = 0;
+  // This is sum of relative packet arrival delays of received packets so far.
+  // Since end-to-end delay of a packet is difficult to measure and is not
+  // necessarily useful for measuring jitter buffer performance, we report a
+  // relative packet arrival delay. The relative packet arrival delay of a
+  // packet is defined as the arrival delay compared to the first packet
+  // received, given that it had zero delay. To avoid clock drift, the "first"
+  // packet can be made dynamic.
+  uint64_t relative_packet_arrival_delay_ms = 0;
+  uint64_t jitter_buffer_packets_received = 0;
 };
 
 // Metrics that describe the operations performed in NetEq, and the internal
@@ -114,8 +123,8 @@ class NetEq {
 
     int sample_rate_hz = 16000;  // Initial value. Will change with input data.
     bool enable_post_decode_vad = false;
-    size_t max_packets_in_buffer = 50;
-    int max_delay_ms = 2000;
+    size_t max_packets_in_buffer = 200;
+    int max_delay_ms = 0;
     int min_delay_ms = 0;
     bool enable_fast_accelerate = false;
     bool enable_muted_state = false;
@@ -193,6 +202,16 @@ class NetEq {
   // conditions) is higher. Calling this method has the same effect as setting
   // the |max_delay_ms| value in the NetEq::Config struct.
   virtual bool SetMaximumDelay(int delay_ms) = 0;
+
+  // Sets a base minimum delay in milliseconds for packet buffer. The minimum
+  // delay which is set via |SetMinimumDelay| can't be lower than base minimum
+  // delay. Calling this method is similar to setting the |min_delay_ms| value
+  // in the NetEq::Config struct. Returns true if the base minimum is
+  // successfully applied, otherwise false is returned.
+  virtual bool SetBaseMinimumDelayMs(int delay_ms) = 0;
+
+  // Returns current value of base minimum delay in milliseconds.
+  virtual int GetBaseMinimumDelayMs() const = 0;
 
   // Returns the current target delay in ms. This includes any extra delay
   // requested through SetMinimumDelay.

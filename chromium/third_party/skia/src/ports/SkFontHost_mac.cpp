@@ -727,7 +727,7 @@ public:
 
 protected:
     int onGetUPEM() const override;
-    SkStreamAsset* onOpenStream(int* ttcIndex) const override;
+    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
     std::unique_ptr<SkFontData> onMakeFontData() const override;
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override;
@@ -767,9 +767,10 @@ static sk_sp<SkTypeface> create_from_CTFontRef(SkUniqueCFRef<CTFontRef> font,
     SkASSERT(font);
 
     if (!isLocalStream) {
-        SkTypeface* face = SkTypefaceCache::FindByProcAndRef(find_by_CTFontRef, (void*)font.get());
+        sk_sp<SkTypeface> face = SkTypefaceCache::FindByProcAndRef(find_by_CTFontRef,
+                                                                   (void*)font.get());
         if (face) {
-            return sk_sp<SkTypeface>(face);
+            return face;
         }
     }
 
@@ -778,12 +779,12 @@ static sk_sp<SkTypeface> create_from_CTFontRef(SkUniqueCFRef<CTFontRef> font,
     CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(font.get());
     bool isFixedPitch = SkToBool(traits & kCTFontMonoSpaceTrait);
 
-    SkTypeface* face = new SkTypeface_Mac(std::move(font), std::move(resource),
-                                          style, isFixedPitch, isLocalStream);
+    sk_sp<SkTypeface> face(new SkTypeface_Mac(std::move(font), std::move(resource),
+                                              style, isFixedPitch, isLocalStream));
     if (!isLocalStream) {
         SkTypefaceCache::Add(face);
     }
-    return sk_sp<SkTypeface>(face);
+    return face;
 }
 
 /** Creates a typeface from a descriptor, searching the cache. */
@@ -1783,7 +1784,7 @@ static SK_SFNT_ULONG get_font_type_tag(CTFontRef ctFont) {
     }
 }
 
-SkStreamAsset* SkTypeface_Mac::onOpenStream(int* ttcIndex) const {
+std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const {
     SK_SFNT_ULONG fontType = get_font_type_tag(fFontRef.get());
 
     // get table tags
@@ -1840,7 +1841,7 @@ SkStreamAsset* SkTypeface_Mac::onOpenStream(int* ttcIndex) const {
     }
 
     // reserve memory for stream, and zero it (tables must be zero padded)
-    SkMemoryStream* stream = new SkMemoryStream(totalSize);
+    std::unique_ptr<SkStreamAsset> stream(new SkMemoryStream(totalSize));
     char* dataStart = (char*)stream->getMemoryBase();
     sk_bzero(dataStart, totalSize);
     char* dataPtr = dataStart;

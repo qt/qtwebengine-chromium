@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/containers/unique_ptr_adapters.h"
+#include "base/feature_list.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -223,7 +224,8 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   void MaybeProxyWebSocket(
       content::RenderFrameHost* frame,
       network::mojom::WebSocketRequest* request,
-      network::mojom::AuthenticationHandlerPtr* auth_handler);
+      network::mojom::AuthenticationHandlerPtr* auth_handler,
+      network::mojom::TrustedHeaderClientPtr* header_client);
 
   void ForceProxyForTesting();
 
@@ -357,6 +359,11 @@ class ExtensionWebRequestEventRouter {
                       GURL* new_url,
                       bool* should_collapse_initiator);
 
+  using BeforeSendHeadersCallback =
+      base::OnceCallback<void(const std::set<std::string>& removed_headers,
+                              const std::set<std::string>& set_headers,
+                              int error_code)>;
+
   // Dispatches the onBeforeSendHeaders event. This is fired for HTTP(s)
   // requests only, and allows modification of the outgoing request headers.
   // Returns net::ERR_IO_PENDING if an extension is intercepting the request, OK
@@ -364,7 +371,7 @@ class ExtensionWebRequestEventRouter {
   int OnBeforeSendHeaders(void* browser_context,
                           const extensions::InfoMap* extension_info_map,
                           const WebRequestInfo* request,
-                          net::CompletionOnceCallback callback,
+                          BeforeSendHeadersCallback callback,
                           net::HttpRequestHeaders* headers);
 
   // Dispatches the onSendHeaders event. This is fired for HTTP(s) requests
@@ -492,6 +499,9 @@ class ExtensionWebRequestEventRouter {
   // ExtraInfoSpec::EXTRA_HEADERS set.
   bool HasAnyExtraHeadersListener(void* browser_context);
 
+  // Like above, but for usage on the UI thread.
+  bool HasAnyExtraHeadersListenerOnUI(content::BrowserContext* browser_context);
+
  private:
   friend class WebRequestAPI;
   friend class base::NoDestructor<ExtensionWebRequestEventRouter>;
@@ -598,6 +608,14 @@ class ExtensionWebRequestEventRouter {
                      const RawListeners& listener_ids,
                      std::unique_ptr<WebRequestEventDetails> event_details);
 
+  void OnFrameDataReceived(
+      void* browser_context,
+      const WebRequestInfo* request,
+      std::unique_ptr<WebRequestEventDetails> event_details,
+      const InfoMap* extension_info_map,
+      std::unique_ptr<ListenerIDs> listener_ids,
+      const ExtensionApiFrameIdMap::FrameData& frame_data);
+
   void DispatchEventToListeners(
       void* browser_context,
       const InfoMap* extension_info_map,
@@ -703,6 +721,10 @@ class ExtensionWebRequestEventRouter {
   // Helper for |HasAnyExtraHeadersListener()|.
   bool HasAnyExtraHeadersListenerImpl(void* browser_context);
 
+  // Called on the UI thread to update |browser_contexts_with_extra_headers_|.
+  void UpdateExtraHeadersListenerOnUI(void* browser_context,
+                                      bool has_extra_headers_listeners);
+
   // Get the number of listeners - for testing only.
   size_t GetListenerCountForTesting(void* browser_context,
                                     const std::string& event_name);
@@ -716,6 +738,10 @@ class ExtensionWebRequestEventRouter {
 
   // Count of listeners per browser context which request extra headers.
   ExtraHeadersListenerCountMap extra_headers_listener_count_;
+
+  // Accessed on the UI thread to check if a given BrowserContext has any
+  // extra headers listeners.
+  std::set<content::BrowserContext*> browser_contexts_with_extra_headers_;
 
   // A map of network requests that are waiting for at least one event handler
   // to respond.
@@ -732,6 +758,10 @@ class ExtensionWebRequestEventRouter {
   // Keeps track of time spent waiting on extensions using the blocking
   // webRequest API.
   std::unique_ptr<ExtensionWebRequestTimeTracker> request_time_tracker_;
+
+  // The set of requests for which we are querying the frame data over the UI
+  // thread.
+  std::set<const WebRequestInfo*> pending_requests_for_frame_data_;
 
   CallbacksForPageLoad callbacks_for_page_load_;
 

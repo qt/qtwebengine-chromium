@@ -23,8 +23,8 @@
 #include "api/media_transport_interface.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_receiver_interface.h"
+#include "api/scoped_refptr.h"
 #include "call/rtp_config.h"
-#include "rtc_base/scoped_ref_ptr.h"
 
 namespace webrtc {
 class AudioSinkInterface;
@@ -74,6 +74,7 @@ class AudioReceiveStream {
     int32_t decoding_muted_output = 0;
     int64_t capture_start_ntp_time_ms = 0;
     uint64_t jitter_buffer_flushes = 0;
+    double relative_packet_arrival_delay_seconds = 0.0;
   };
 
   struct Config {
@@ -113,7 +114,7 @@ class AudioReceiveStream {
     MediaTransportInterface* media_transport = nullptr;
 
     // NetEq settings.
-    size_t jitter_buffer_max_packets = 50;
+    size_t jitter_buffer_max_packets = 200;
     bool jitter_buffer_fast_accelerate = false;
     int jitter_buffer_min_delay_ms = 0;
     bool jitter_buffer_enable_rtx_handling = false;
@@ -163,6 +164,15 @@ class AudioReceiveStream {
   // Sets playback gain of the stream, applied when mixing, and thus after it
   // is potentially forwarded to any attached AudioSinkInterface implementation.
   virtual void SetGain(float gain) = 0;
+
+  // Sets a base minimum for the playout delay. Base minimum delay sets lower
+  // bound on minimum delay value determining lower bound on playout delay.
+  //
+  // Returns true if value was successfully set, false overwise.
+  virtual bool SetBaseMinimumPlayoutDelayMs(int delay_ms) = 0;
+
+  // Returns current value of base minimum delay in milliseconds.
+  virtual int GetBaseMinimumPlayoutDelayMs() const = 0;
 
   virtual std::vector<RtpSource> GetSources() const = 0;
 

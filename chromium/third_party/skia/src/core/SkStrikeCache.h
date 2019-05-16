@@ -39,12 +39,12 @@ public:
     virtual bool canDelete() = 0;
 };
 
-class SkStrikeCache {
+class SkStrikeCache final : public SkStrikeCacheInterface {
     class Node;
 
 public:
     SkStrikeCache() = default;
-    ~SkStrikeCache();
+    ~SkStrikeCache() override;
 
     class ExclusiveStrikePtr {
     public:
@@ -113,6 +113,10 @@ public:
                                    SkGlyph* glyph,
                                    SkStrike* targetCache);
     bool desperationSearchForPath(const SkDescriptor& desc, SkGlyphID glyphID, SkPath* path);
+
+    SkScopedStrike findOrCreateScopedStrike(const SkDescriptor& desc,
+                                            const SkScalerContextEffects& effects,
+                                            const SkTypeface& typeface) override;
 
     static ExclusiveStrikePtr FindOrCreateStrikeExclusive(
             const SkFont& font,

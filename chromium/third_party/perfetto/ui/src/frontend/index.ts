@@ -14,13 +14,13 @@
 
 import '../tracks/all_frontend';
 
+import {applyPatches, Patch} from 'immer';
 import * as m from 'mithril';
 
 import {forwardRemoteCalls} from '../base/remote';
 import {Actions} from '../common/actions';
-import {State} from '../common/state';
 
-import {globals, QuantizedLoad, ThreadDesc} from './globals';
+import {globals, QuantizedLoad, SliceDetails, ThreadDesc} from './globals';
 import {HomePage} from './home_page';
 import {openBufferWithLegacyTraceViewer} from './legacy_trace_viewer';
 import {RecordPage} from './record_page';
@@ -33,12 +33,12 @@ import {ViewerPage} from './viewer_page';
 class FrontendApi {
   constructor(private router: Router) {}
 
-  updateState(state: State) {
-    globals.state = state;
+  patchState(patches: Patch[]) {
+    globals.state = applyPatches(globals.state, patches);
     // If the visible time in the global state has been updated more recently
     // than the visible time handled by the frontend @ 60fps, update it. This
     // typically happens when restoring the state from a permalink.
-    globals.frontendLocalState.mergeState(state.frontendLocalState);
+    globals.frontendLocalState.mergeState(globals.state.frontendLocalState);
     this.redraw();
   }
 
@@ -61,7 +61,7 @@ class FrontendApi {
   }
 
   publishTrackData(args: {id: string, data: {}}) {
-    globals.trackDataStore.set(args.id, args.data);
+    globals.setTrackData(args.id, args.data);
     globals.rafScheduler.scheduleRedraw();
   }
 
@@ -75,6 +75,11 @@ class FrontendApi {
     data.forEach(thread => {
       globals.threads.set(thread.utid, thread);
     });
+    this.redraw();
+  }
+
+  publishSliceDetails(click: SliceDetails) {
+    globals.sliceDetails = click;
     this.redraw();
   }
 
@@ -123,7 +128,7 @@ function main() {
   (window as {} as {globals: {}}).globals = globals;
 
   // /?s=xxxx for permalinks.
-  const stateHash = router.param('s');
+  const stateHash = Router.param('s');
   if (stateHash) {
     globals.dispatch(Actions.loadPermalink({
       hash: stateHash,

@@ -14,7 +14,6 @@
 
 #include <stdio.h>
 
-#include <algorithm>
 #include <functional>
 #include <list>
 #include <map>
@@ -22,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
@@ -60,6 +60,7 @@
 #include "pc/test/fake_rtc_certificate_generator.h"
 #include "pc/test/fake_video_track_renderer.h"
 #include "pc/test/mock_peer_connection_observers.h"
+#include "rtc_base/fake_clock.h"
 #include "rtc_base/fake_network.h"
 #include "rtc_base/firewall_socket_server.h"
 #include "rtc_base/gunit.h"
@@ -78,9 +79,10 @@ using ::cricket::StreamParams;
 using ::rtc::SocketAddress;
 using ::testing::_;
 using ::testing::Combine;
+using ::testing::Contains;
 using ::testing::ElementsAre;
-using ::testing::Return;
 using ::testing::NiceMock;
+using ::testing::Return;
 using ::testing::SetArgPointee;
 using ::testing::UnorderedElementsAreArray;
 using ::testing::Values;
@@ -279,6 +281,13 @@ class PeerConnectionWrapper : public webrtc::PeerConnectionObserver,
     ice_connection_state_history_.clear();
   }
 
+  // Every standardized ICE connection state in order that has been seen by the
+  // observer.
+  std::vector<PeerConnectionInterface::IceConnectionState>
+  standardized_ice_connection_state_history() const {
+    return standardized_ice_connection_state_history_;
+  }
+
   // Every PeerConnection state in order that has been seen by the observer.
   std::vector<PeerConnectionInterface::PeerConnectionState>
   peer_connection_state_history() const {
@@ -347,7 +356,7 @@ class PeerConnectionWrapper : public webrtc::PeerConnectionObserver,
   std::vector<rtc::scoped_refptr<RtpReceiverInterface>> GetReceiversOfType(
       cricket::MediaType media_type) {
     std::vector<rtc::scoped_refptr<RtpReceiverInterface>> receivers;
-    for (auto receiver : pc()->GetReceivers()) {
+    for (const auto& receiver : pc()->GetReceivers()) {
       if (receiver->media_type() == media_type) {
         receivers.push_back(receiver);
       }
@@ -892,6 +901,10 @@ class PeerConnectionWrapper : public webrtc::PeerConnectionObserver,
     EXPECT_EQ(pc()->ice_connection_state(), new_state);
     ice_connection_state_history_.push_back(new_state);
   }
+  void OnStandardizedIceConnectionChange(
+      webrtc::PeerConnectionInterface::IceConnectionState new_state) override {
+    standardized_ice_connection_state_history_.push_back(new_state);
+  }
   void OnConnectionChange(
       webrtc::PeerConnectionInterface::PeerConnectionState new_state) override {
     peer_connection_state_history_.push_back(new_state);
@@ -979,6 +992,8 @@ class PeerConnectionWrapper : public webrtc::PeerConnectionObserver,
 
   std::vector<PeerConnectionInterface::IceConnectionState>
       ice_connection_state_history_;
+  std::vector<PeerConnectionInterface::IceConnectionState>
+      standardized_ice_connection_state_history_;
   std::vector<PeerConnectionInterface::PeerConnectionState>
       peer_connection_state_history_;
   std::vector<PeerConnectionInterface::IceGatheringState>
@@ -1639,18 +1654,16 @@ TEST_P(PeerConnectionIntegrationTest,
   EXPECT_EQ(2U, callee()->rtp_receiver_observers().size());
   // Wait for all "first packet received" callbacks to be fired.
   EXPECT_TRUE_WAIT(
-      std::all_of(caller()->rtp_receiver_observers().begin(),
-                  caller()->rtp_receiver_observers().end(),
-                  [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
-                    return o->first_packet_received();
-                  }),
+      absl::c_all_of(caller()->rtp_receiver_observers(),
+                     [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
+                       return o->first_packet_received();
+                     }),
       kMaxWaitForFramesMs);
   EXPECT_TRUE_WAIT(
-      std::all_of(callee()->rtp_receiver_observers().begin(),
-                  callee()->rtp_receiver_observers().end(),
-                  [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
-                    return o->first_packet_received();
-                  }),
+      absl::c_all_of(callee()->rtp_receiver_observers(),
+                     [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
+                       return o->first_packet_received();
+                     }),
       kMaxWaitForFramesMs);
   // If new observers are set after the first packet was already received, the
   // callback should still be invoked.
@@ -1659,17 +1672,15 @@ TEST_P(PeerConnectionIntegrationTest,
   EXPECT_EQ(2U, caller()->rtp_receiver_observers().size());
   EXPECT_EQ(2U, callee()->rtp_receiver_observers().size());
   EXPECT_TRUE(
-      std::all_of(caller()->rtp_receiver_observers().begin(),
-                  caller()->rtp_receiver_observers().end(),
-                  [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
-                    return o->first_packet_received();
-                  }));
+      absl::c_all_of(caller()->rtp_receiver_observers(),
+                     [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
+                       return o->first_packet_received();
+                     }));
   EXPECT_TRUE(
-      std::all_of(callee()->rtp_receiver_observers().begin(),
-                  callee()->rtp_receiver_observers().end(),
-                  [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
-                    return o->first_packet_received();
-                  }));
+      absl::c_all_of(callee()->rtp_receiver_observers(),
+                     [](const std::unique_ptr<MockRtpReceiverObserver>& o) {
+                       return o->first_packet_received();
+                     }));
 }
 
 class DummyDtmfObserver : public DtmfSenderObserverInterface {
@@ -2237,7 +2248,7 @@ TEST_P(PeerConnectionIntegrationTest, AnswererRejectsAudioAndVideoSections) {
   } else {
     callee()->SetRemoteOfferHandler([this] {
       // Stopping all transceivers will cause all media sections to be rejected.
-      for (auto transceiver : callee()->pc()->GetTransceivers()) {
+      for (const auto& transceiver : callee()->pc()->GetTransceivers()) {
         transceiver->Stop();
       }
     });
@@ -2551,7 +2562,7 @@ TEST_P(PeerConnectionIntegrationTest, GetBytesReceivedStatsWithOldStatsApi) {
 
   // Get a handle to the remote tracks created, so they can be used as GetStats
   // filters.
-  for (auto receiver : callee()->pc()->GetReceivers()) {
+  for (const auto& receiver : callee()->pc()->GetReceivers()) {
     // We received frames, so we definitely should have nonzero "received bytes"
     // stats at this point.
     EXPECT_GT(callee()->OldGetStatsForTrack(receiver->track())->BytesReceived(),
@@ -3364,9 +3375,9 @@ TEST_P(PeerConnectionIntegrationTest, StressTestUnorderedSctpDataChannel) {
       caller()->data_observer()->messages();
   std::vector<std::string> callee_received_messages =
       callee()->data_observer()->messages();
-  std::sort(sent_messages.begin(), sent_messages.end());
-  std::sort(caller_received_messages.begin(), caller_received_messages.end());
-  std::sort(callee_received_messages.begin(), callee_received_messages.end());
+  absl::c_sort(sent_messages);
+  absl::c_sort(caller_received_messages);
+  absl::c_sort(callee_received_messages);
   EXPECT_EQ(sent_messages, caller_received_messages);
   EXPECT_EQ(sent_messages, callee_received_messages);
 }
@@ -3467,6 +3478,8 @@ TEST_P(PeerConnectionIntegrationTest,
 // channel.
 TEST_P(PeerConnectionIntegrationTest, MediaTransportDataChannelEndToEnd) {
   PeerConnectionInterface::RTCConfiguration rtc_config;
+  rtc_config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  rtc_config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
   rtc_config.use_media_transport_for_data_channels = true;
   rtc_config.enable_dtls_srtp = false;  // SDES is required for media transport.
   ASSERT_TRUE(CreatePeerConnectionWrappersWithConfigAndMediaTransportFactory(
@@ -3568,8 +3581,86 @@ TEST_P(PeerConnectionIntegrationTest,
   EXPECT_FALSE(callee()->data_channel()->negotiated());
 }
 
+TEST_P(PeerConnectionIntegrationTest, MediaTransportOfferUpgrade) {
+  PeerConnectionInterface::RTCConfiguration rtc_config;
+  rtc_config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  rtc_config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  rtc_config.use_media_transport = true;
+  rtc_config.enable_dtls_srtp = false;  // SDES is required for media transport.
+  ASSERT_TRUE(CreatePeerConnectionWrappersWithConfigAndMediaTransportFactory(
+      rtc_config, rtc_config, loopback_media_transports()->first_factory(),
+      loopback_media_transports()->second_factory()));
+  ConnectFakeSignaling();
+
+  // Do initial offer/answer with just a video track.
+  caller()->AddVideoTrack();
+  callee()->AddVideoTrack();
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+
+  // Ensure that the media transport is ready.
+  loopback_media_transports()->SetState(webrtc::MediaTransportState::kWritable);
+  loopback_media_transports()->FlushAsyncInvokes();
+
+  // Now add an audio track and do another offer/answer.
+  caller()->AddAudioTrack();
+  callee()->AddAudioTrack();
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+
+  // Ensure both audio and video frames are received end-to-end.
+  MediaExpectations media_expectations;
+  media_expectations.ExpectBidirectionalAudioAndVideo();
+  ASSERT_TRUE(ExpectNewFrames(media_expectations));
+
+  // The second offer should not have generated another media transport.
+  // Media transport was kept alive, and was not recreated.
+  EXPECT_EQ(1, loopback_media_transports()->first_factory_transport_count());
+  EXPECT_EQ(1, loopback_media_transports()->second_factory_transport_count());
+}
+
+TEST_P(PeerConnectionIntegrationTest, MediaTransportOfferUpgradeOnTheCallee) {
+  PeerConnectionInterface::RTCConfiguration rtc_config;
+  rtc_config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  rtc_config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
+  rtc_config.use_media_transport = true;
+  rtc_config.enable_dtls_srtp = false;  // SDES is required for media transport.
+  ASSERT_TRUE(CreatePeerConnectionWrappersWithConfigAndMediaTransportFactory(
+      rtc_config, rtc_config, loopback_media_transports()->first_factory(),
+      loopback_media_transports()->second_factory()));
+  ConnectFakeSignaling();
+
+  // Do initial offer/answer with just a video track.
+  caller()->AddVideoTrack();
+  callee()->AddVideoTrack();
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+
+  // Ensure that the media transport is ready.
+  loopback_media_transports()->SetState(webrtc::MediaTransportState::kWritable);
+  loopback_media_transports()->FlushAsyncInvokes();
+
+  // Now add an audio track and do another offer/answer.
+  caller()->AddAudioTrack();
+  callee()->AddAudioTrack();
+  callee()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+
+  // Ensure both audio and video frames are received end-to-end.
+  MediaExpectations media_expectations;
+  media_expectations.ExpectBidirectionalAudioAndVideo();
+  ASSERT_TRUE(ExpectNewFrames(media_expectations));
+
+  // The second offer should not have generated another media transport.
+  // Media transport was kept alive, and was not recreated.
+  EXPECT_EQ(1, loopback_media_transports()->first_factory_transport_count());
+  EXPECT_EQ(1, loopback_media_transports()->second_factory_transport_count());
+}
+
 TEST_P(PeerConnectionIntegrationTest, MediaTransportBidirectionalAudio) {
   PeerConnectionInterface::RTCConfiguration rtc_config;
+  rtc_config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
+  rtc_config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
   rtc_config.use_media_transport = true;
   rtc_config.enable_dtls_srtp = false;  // SDES is required for media transport.
   ASSERT_TRUE(CreatePeerConnectionWrappersWithConfigAndMediaTransportFactory(
@@ -3636,6 +3727,28 @@ TEST_P(PeerConnectionIntegrationTest, MediaTransportBidirectionalVideo) {
 
   EXPECT_GT(second_stats.received_video_frames, 0);
   EXPECT_GE(first_stats.sent_video_frames, second_stats.received_video_frames);
+}
+
+TEST_P(PeerConnectionIntegrationTest,
+       MediaTransportDataChannelUsesRtpBidirectionalVideo) {
+  PeerConnectionInterface::RTCConfiguration rtc_config;
+  rtc_config.use_media_transport = false;
+  rtc_config.use_media_transport_for_data_channels = true;
+  rtc_config.enable_dtls_srtp = false;  // SDES is required for media transport.
+  ASSERT_TRUE(CreatePeerConnectionWrappersWithConfigAndMediaTransportFactory(
+      rtc_config, rtc_config, loopback_media_transports()->first_factory(),
+      loopback_media_transports()->second_factory()));
+  ConnectFakeSignaling();
+
+  caller()->AddVideoTrack();
+  callee()->AddVideoTrack();
+  // Start offer/answer exchange and wait for it to complete.
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+
+  MediaExpectations media_expectations;
+  media_expectations.ExpectBidirectionalVideo();
+  ASSERT_TRUE(ExpectNewFrames(media_expectations));
 }
 
 // Test that the ICE connection and gathering states eventually reach
@@ -3789,9 +3902,10 @@ class PeerConnectionIntegrationIceStatesTest
 // states, induced by putting a firewall between the peers and waiting for them
 // to time out.
 TEST_P(PeerConnectionIntegrationIceStatesTest, VerifyIceStates) {
-  // TODO(bugs.webrtc.org/8295): When using a ScopedFakeClock, this test will
-  // sometimes hit a DCHECK in platform_thread.cc about the PacerThread being
-  // too busy. For now, revert to running without a fake clock.
+  rtc::ScopedFakeClock fake_clock;
+  // Some things use a time of "0" as a special value, so we need to start out
+  // the fake clock at a nonzero time.
+  fake_clock.AdvanceTime(TimeDelta::seconds(1));
 
   const SocketAddress kStunServerAddress =
       SocketAddress("99.99.99.1", cricket::STUN_SERVER_PORT);
@@ -3827,11 +3941,15 @@ TEST_P(PeerConnectionIntegrationIceStatesTest, VerifyIceStates) {
 
   ASSERT_EQ(PeerConnectionInterface::kIceConnectionCompleted,
             caller()->ice_connection_state());
-  ASSERT_EQ(PeerConnectionInterface::kIceConnectionConnected,
+  ASSERT_EQ(PeerConnectionInterface::kIceConnectionCompleted,
             caller()->standardized_ice_connection_state());
 
   // Verify that the observer was notified of the intermediate transitions.
   EXPECT_THAT(caller()->ice_connection_state_history(),
+              ElementsAre(PeerConnectionInterface::kIceConnectionChecking,
+                          PeerConnectionInterface::kIceConnectionConnected,
+                          PeerConnectionInterface::kIceConnectionCompleted));
+  EXPECT_THAT(caller()->standardized_ice_connection_state_history(),
               ElementsAre(PeerConnectionInterface::kIceConnectionChecking,
                           PeerConnectionInterface::kIceConnectionConnected,
                           PeerConnectionInterface::kIceConnectionCompleted));
@@ -3849,20 +3967,22 @@ TEST_P(PeerConnectionIntegrationIceStatesTest, VerifyIceStates) {
     firewall()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, caller_address);
   }
   RTC_LOG(LS_INFO) << "Firewall rules applied";
-  ASSERT_EQ_WAIT(PeerConnectionInterface::kIceConnectionDisconnected,
-                 caller()->ice_connection_state(), kDefaultTimeout);
-  ASSERT_EQ_WAIT(PeerConnectionInterface::kIceConnectionDisconnected,
-                 caller()->standardized_ice_connection_state(),
-                 kDefaultTimeout);
+  ASSERT_EQ_SIMULATED_WAIT(PeerConnectionInterface::kIceConnectionDisconnected,
+                           caller()->ice_connection_state(), kDefaultTimeout,
+                           fake_clock);
+  ASSERT_EQ_SIMULATED_WAIT(PeerConnectionInterface::kIceConnectionDisconnected,
+                           caller()->standardized_ice_connection_state(),
+                           kDefaultTimeout, fake_clock);
 
   // Let ICE re-establish by removing the firewall rules.
   firewall()->ClearRules();
   RTC_LOG(LS_INFO) << "Firewall rules cleared";
-  ASSERT_EQ_WAIT(PeerConnectionInterface::kIceConnectionCompleted,
-                 caller()->ice_connection_state(), kDefaultTimeout);
-  ASSERT_EQ_WAIT(PeerConnectionInterface::kIceConnectionConnected,
-                 caller()->standardized_ice_connection_state(),
-                 kDefaultTimeout);
+  ASSERT_EQ_SIMULATED_WAIT(PeerConnectionInterface::kIceConnectionCompleted,
+                           caller()->ice_connection_state(), kDefaultTimeout,
+                           fake_clock);
+  ASSERT_EQ_SIMULATED_WAIT(PeerConnectionInterface::kIceConnectionCompleted,
+                           caller()->standardized_ice_connection_state(),
+                           kDefaultTimeout, fake_clock);
 
   // According to RFC7675, if there is no response within 30 seconds then the
   // peer should consider the other side to have rejected the connection. This
@@ -3872,11 +3992,54 @@ TEST_P(PeerConnectionIntegrationIceStatesTest, VerifyIceStates) {
     firewall()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, caller_address);
   }
   RTC_LOG(LS_INFO) << "Firewall rules applied again";
-  ASSERT_EQ_WAIT(PeerConnectionInterface::kIceConnectionFailed,
-                 caller()->ice_connection_state(), kConsentTimeout);
-  ASSERT_EQ_WAIT(PeerConnectionInterface::kIceConnectionFailed,
-                 caller()->standardized_ice_connection_state(),
-                 kConsentTimeout);
+  ASSERT_EQ_SIMULATED_WAIT(PeerConnectionInterface::kIceConnectionFailed,
+                           caller()->ice_connection_state(), kConsentTimeout,
+                           fake_clock);
+  ASSERT_EQ_SIMULATED_WAIT(PeerConnectionInterface::kIceConnectionFailed,
+                           caller()->standardized_ice_connection_state(),
+                           kConsentTimeout, fake_clock);
+
+  // We need to manually close the peerconnections before the fake clock goes
+  // out of scope, or we trigger a DCHECK in rtp_sender.cc when we briefly
+  // return to using non-faked time.
+  delete SetCallerPcWrapperAndReturnCurrent(nullptr);
+  delete SetCalleePcWrapperAndReturnCurrent(nullptr);
+}
+
+// Tests that if the connection doesn't get set up properly we eventually reach
+// the "failed" iceConnectionState.
+TEST_P(PeerConnectionIntegrationIceStatesTest, IceStateSetupFailure) {
+  rtc::ScopedFakeClock fake_clock;
+  // Some things use a time of "0" as a special value, so we need to start out
+  // the fake clock at a nonzero time.
+  fake_clock.AdvanceTime(TimeDelta::seconds(1));
+
+  // Block connections to/from the caller and wait for ICE to become
+  // disconnected.
+  for (const auto& caller_address : CallerAddresses()) {
+    firewall()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, caller_address);
+  }
+
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignaling();
+  SetPortAllocatorFlags();
+  SetUpNetworkInterfaces();
+  caller()->AddAudioVideoTracks();
+  caller()->CreateAndSetAndSignalOffer();
+
+  // According to RFC7675, if there is no response within 30 seconds then the
+  // peer should consider the other side to have rejected the connection. This
+  // is signaled by the state transitioning to "failed".
+  constexpr int kConsentTimeout = 30000;
+  ASSERT_EQ_SIMULATED_WAIT(PeerConnectionInterface::kIceConnectionFailed,
+                           caller()->standardized_ice_connection_state(),
+                           kConsentTimeout, fake_clock);
+
+  // We need to manually close the peerconnections before the fake clock goes
+  // out of scope, or we trigger a DCHECK in rtp_sender.cc when we briefly
+  // return to using non-faked time.
+  delete SetCallerPcWrapperAndReturnCurrent(nullptr);
+  delete SetCalleePcWrapperAndReturnCurrent(nullptr);
 }
 
 // Tests that the best connection is set to the appropriate IPv4/IPv6 connection
@@ -3924,7 +4087,7 @@ constexpr uint32_t kFlagsIPv6NoStun =
 constexpr uint32_t kFlagsIPv4Stun =
     cricket::PORTALLOCATOR_DISABLE_TCP | cricket::PORTALLOCATOR_DISABLE_RELAY;
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PeerConnectionIntegrationTest,
     PeerConnectionIntegrationIceStatesTest,
     Combine(Values(SdpSemantics::kPlanB, SdpSemantics::kUnifiedPlan),
@@ -4027,17 +4190,11 @@ TEST_P(PeerConnectionIntegrationTest, EndToEndCallWithIceRenomination) {
   const cricket::SessionDescription* desc =
       caller()->pc()->local_description()->description();
   for (const cricket::TransportInfo& info : desc->transport_infos()) {
-    ASSERT_NE(
-        info.description.transport_options.end(),
-        std::find(info.description.transport_options.begin(),
-                  info.description.transport_options.end(), "renomination"));
+    ASSERT_THAT(info.description.transport_options, Contains("renomination"));
   }
   desc = callee()->pc()->local_description()->description();
   for (const cricket::TransportInfo& info : desc->transport_infos()) {
-    ASSERT_NE(
-        info.description.transport_options.end(),
-        std::find(info.description.transport_options.begin(),
-                  info.description.transport_options.end(), "renomination"));
+    ASSERT_THAT(info.description.transport_options, Contains("renomination"));
   }
   MediaExpectations media_expectations;
   media_expectations.ExpectBidirectionalAudioAndVideo();
@@ -4902,10 +5059,10 @@ TEST_P(PeerConnectionIntegrationTest,
   EXPECT_LT(0, callee_ice_event_count);
 }
 
-INSTANTIATE_TEST_CASE_P(PeerConnectionIntegrationTest,
-                        PeerConnectionIntegrationTest,
-                        Values(SdpSemantics::kPlanB,
-                               SdpSemantics::kUnifiedPlan));
+INSTANTIATE_TEST_SUITE_P(PeerConnectionIntegrationTest,
+                         PeerConnectionIntegrationTest,
+                         Values(SdpSemantics::kPlanB,
+                                SdpSemantics::kUnifiedPlan));
 
 // Tests that verify interoperability between Plan B and Unified Plan
 // PeerConnections.
@@ -5023,7 +5180,7 @@ TEST_P(PeerConnectionIntegrationInteropTest,
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PeerConnectionIntegrationTest,
     PeerConnectionIntegrationInteropTest,
     Values(std::make_tuple(SdpSemantics::kPlanB, SdpSemantics::kUnifiedPlan),

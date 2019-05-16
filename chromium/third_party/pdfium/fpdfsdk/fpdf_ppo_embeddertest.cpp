@@ -13,7 +13,6 @@
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "testing/test_support.h"
 
 namespace {
 
@@ -113,11 +112,18 @@ TEST_F(FPDFPPOEmbedderTest, NupRenderImage) {
   for (int i = 0; i < kPageCount; ++i) {
     ScopedFPDFPage page(FPDF_LoadPage(output_doc_3up.get(), i));
     ASSERT_TRUE(page);
-    ScopedFPDFBitmap bitmap(RenderPageWithFlags(page.get(), nullptr, 0));
+    ScopedFPDFBitmap bitmap = RenderPage(page.get());
     EXPECT_EQ(792, FPDFBitmap_GetWidth(bitmap.get()));
     EXPECT_EQ(612, FPDFBitmap_GetHeight(bitmap.get()));
     EXPECT_EQ(kExpectedMD5s[i], HashBitmap(bitmap.get()));
   }
+}
+
+TEST_F(FPDFPPOEmbedderTest, BUG_925981) {
+  ASSERT_TRUE(OpenDocument("bug_925981.pdf"));
+  ScopedFPDFDocument output_doc_2up(
+      FPDF_ImportNPagesToOne(document(), 612, 792, 2, 1));
+  EXPECT_EQ(1, FPDF_GetPageCount(output_doc_2up.get()));
 }
 
 TEST_F(FPDFPPOEmbedderTest, BadRepeatViewerPref) {
@@ -238,7 +244,7 @@ TEST_F(FPDFPPOEmbedderTest, BUG_750568) {
     FPDF_PAGE page = FPDF_LoadPage(output_doc, i);
     ASSERT_TRUE(page);
 
-    ScopedFPDFBitmap bitmap = RenderPageWithFlags(page, nullptr, 0);
+    ScopedFPDFBitmap bitmap = RenderPage(page);
     ASSERT_EQ(200, FPDFBitmap_GetWidth(bitmap.get()));
     ASSERT_EQ(200, FPDFBitmap_GetHeight(bitmap.get()));
     ASSERT_EQ(800, FPDFBitmap_GetStride(bitmap.get()));
@@ -269,7 +275,7 @@ TEST_F(FPDFPPOEmbedderTest, ImportWithZeroLengthStream) {
   EXPECT_EQ(1, FPDF_GetPageCount(new_doc));
   FPDF_PAGE new_page = FPDF_LoadPage(new_doc, 0);
   ASSERT_NE(nullptr, new_page);
-  ScopedFPDFBitmap new_bitmap = RenderPageWithFlags(new_page, nullptr, 0);
+  ScopedFPDFBitmap new_bitmap = RenderPage(new_page);
   ASSERT_EQ(200, FPDFBitmap_GetWidth(new_bitmap.get()));
   ASSERT_EQ(200, FPDFBitmap_GetHeight(new_bitmap.get()));
   ASSERT_EQ(800, FPDFBitmap_GetStride(new_bitmap.get()));

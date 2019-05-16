@@ -4,6 +4,7 @@
 
 #include "components/data_reduction_proxy/core/browser/warmup_url_fetcher.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/guid.h"
 #include "base/metrics/field_trial_params.h"
@@ -140,6 +141,11 @@ void WarmupURLFetcher::FetchWarmupURLNow(
   // Do not disable cookies. This allows the warmup connection to be reused
   // for loading user initiated requests.
   resource_request->load_flags = net::LOAD_BYPASS_CACHE;
+
+  // TODO(957215): This is a temporary solution to mark the request to go
+  // through the data reduction proxy. Otherwise only navigation requests and
+  // renderer requests will be allowed to use the proxy.
+  resource_request->render_frame_id = MSG_ROUTING_CONTROL;
 
   url_loader_ = network::SimpleURLLoader::Create(std::move(resource_request),
                                                  traffic_annotation);

@@ -14,7 +14,7 @@
 #include "GrTextTarget.h"
 #include "SkColorFilter.h"
 #include "SkMaskFilterBase.h"
-#include "SkTextToPathIter.h"
+#include "SkPaintPriv.h"
 #include "ops/GrAtlasTextOp.h"
 
 #include <new>
@@ -23,7 +23,10 @@ template <size_t N> static size_t sk_align(size_t s) {
     return ((s + (N-1)) / N) * N;
 }
 
-sk_sp<GrTextBlob> GrTextBlob::Make(int glyphCount, int runCount, GrColor color) {
+sk_sp<GrTextBlob> GrTextBlob::Make(int glyphCount,
+                                   int runCount,
+                                   GrColor color,
+                                   GrStrikeCache* strikeCache) {
     // We allocate size for the GrTextBlob itself, plus size for the vertices array,
     // and size for the glyphIds array.
     size_t verticesCount = glyphCount * kVerticesPerGlyph * kMaxVASize;
@@ -40,7 +43,7 @@ sk_sp<GrTextBlob> GrTextBlob::Make(int glyphCount, int runCount, GrColor color) 
         sk_bzero(allocation, size);
     }
 
-    sk_sp<GrTextBlob> blob{new (allocation) GrTextBlob{}};
+    sk_sp<GrTextBlob> blob{new (allocation) GrTextBlob{strikeCache}};
     blob->fSize = size;
 
     // setup offsets for vertices / glyphs
@@ -56,18 +59,15 @@ sk_sp<GrTextBlob> GrTextBlob::Make(int glyphCount, int runCount, GrColor color) 
     return blob;
 }
 
-void GrTextBlob::Run::setupFont(const SkPaint& skPaint,
-                                const SkFont& skFont,
-                                const SkDescriptor& cacheDescriptor) {
-    fTypeface = skFont.refTypefaceOrDefault();
-    SkScalerContextEffects effects{skPaint};
-    fPathEffect = sk_ref_sp(effects.fPathEffect);
-    fMaskFilter = sk_ref_sp(effects.fMaskFilter);
+void GrTextBlob::Run::setupFont(const SkStrikeSpec& strikeSpec) {
+    fTypeface = sk_ref_sp(&strikeSpec.typeface());
+    fPathEffect = sk_ref_sp(strikeSpec.effects().fPathEffect);
+    fMaskFilter = sk_ref_sp(strikeSpec.effects().fMaskFilter);
     // if we have an override descriptor for the run, then we should use that
     SkAutoDescriptor* desc =
             fARGBFallbackDescriptor.get() ? fARGBFallbackDescriptor.get() : &fDescriptor;
     // Set up the descriptor for possible cache lookups during regen.
-    desc->reset(cacheDescriptor);
+    desc->reset(strikeSpec.desc());
 }
 
 void GrTextBlob::Run::appendPathGlyph(const SkPath& path, SkPoint position,
@@ -82,7 +82,7 @@ bool GrTextBlob::mustRegenerate(const SkPaint& paint, bool anyRunHasSubpixelPosi
     // to regenerate the blob on any color change
     // We use the grPaint to get any color filter effects
     if (fKey.fCanonicalColor == SK_ColorTRANSPARENT &&
-        fLuminanceColor != paint.computeLuminanceColor()) {
+        fLuminanceColor != SkPaintPriv::ComputeLuminanceColor(paint)) {
         return true;
     }
 
@@ -177,7 +177,8 @@ inline std::unique_ptr<GrAtlasTextOp> GrTextBlob::makeOp(
         // TODO: Can we be even smarter based on the dest transfer function?
         op = GrAtlasTextOp::MakeDistanceField(
                 target->getContext(), std::move(grPaint), glyphCount, distanceAdjustTable,
-                target->colorSpaceInfo().isLinearlyBlended(), paint.computeLuminanceColor(),
+                target->colorSpaceInfo().isLinearlyBlended(),
+                SkPaintPriv::ComputeLuminanceColor(paint),
                 props, info.isAntiAliased(), info.hasUseLCDText());
     } else {
         op = GrAtlasTextOp::MakeBitmap(target->getContext(), std::move(grPaint), format, glyphCount,

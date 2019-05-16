@@ -35,6 +35,7 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/render/cpdf_charposlist.h"
 #include "core/fpdfapi/render/cpdf_devicebuffer.h"
 #include "core/fpdfapi/render/cpdf_dibbase.h"
@@ -53,11 +54,14 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_glyphbitmap.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
+#include "core/fxge/fx_font.h"
 #include "core/fxge/renderdevicedriver_iface.h"
+#include "core/fxge/text_glyph_pos.h"
 #include "third_party/base/compiler_specific.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/numerics/safe_math.h"
@@ -1792,20 +1796,23 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
   if (pdfium::ContainsValue(m_Type3FontCache, pType3Font))
     return true;
 
+  int device_class = m_pDevice->GetDeviceClass();
+  FX_ARGB fill_argb = GetFillArgbForType3(textobj);
+  int fill_alpha = FXARGB_A(fill_argb);
+  if (device_class != FXDC_DISPLAY && fill_alpha < 255)
+    return false;
+
   CFX_Matrix text_matrix = textobj->GetTextMatrix();
   CFX_Matrix char_matrix = pType3Font->GetFontMatrix();
   float font_size = textobj->m_TextState.GetFontSize();
   char_matrix.Scale(font_size, font_size);
-  FX_ARGB fill_argb = GetFillArgbForType3(textobj);
-  int fill_alpha = FXARGB_A(fill_argb);
-  int device_class = m_pDevice->GetDeviceClass();
-  std::vector<FXTEXT_GLYPHPOS> glyphs;
+
+  // Must come before |glyphs|, because |glyphs| points into |refTypeCache|.
+  CPDF_RefType3Cache refTypeCache(pType3Font);
+  std::vector<TextGlyphPos> glyphs;
   if (device_class == FXDC_DISPLAY)
     glyphs.resize(textobj->GetCharCodes().size());
-  else if (fill_alpha < 255)
-    return false;
 
-  CPDF_RefType3Cache refTypeCache(pType3Font);
   for (size_t iChar = 0; iChar < textobj->GetCharCodes().size(); ++iChar) {
     uint32_t charcode = textobj->GetCharCodes()[iChar];
     if (charcode == static_cast<uint32_t>(-1))
@@ -1822,13 +1829,15 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
     if (!pType3Char->LoadBitmap(m_pContext.Get())) {
       if (!glyphs.empty()) {
         for (size_t i = 0; i < iChar; ++i) {
-          const FXTEXT_GLYPHPOS& glyph = glyphs[i];
+          const TextGlyphPos& glyph = glyphs[i];
           if (!glyph.m_pGlyph)
             continue;
 
-          m_pDevice->SetBitMask(glyph.m_pGlyph->m_pBitmap,
-                                glyph.m_Origin.x + glyph.m_pGlyph->m_Left,
-                                glyph.m_Origin.y - glyph.m_pGlyph->m_Top,
+          Optional<CFX_Point> point = glyph.GetOrigin({0, 0});
+          if (!point.has_value())
+            continue;
+
+          m_pDevice->SetBitMask(glyph.m_pGlyph->GetBitmap(), point->x, point->y,
                                 fill_argb);
         }
         glyphs.clear();
@@ -1863,6 +1872,9 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
         FX_RECT rect =
             matrix.TransformRect(pType3Char->form()->CalcBoundingBox())
                 .GetOuterRect();
+        if (!rect.Valid())
+          continue;
+
         CFX_DefaultRenderDevice bitmap_device;
         if (!bitmap_device.Create(rect.Width(), rect.Height(), FXDIB_Argb,
                                   nullptr)) {
@@ -1893,8 +1905,9 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
 
         CFX_Point origin(FXSYS_round(matrix.e), FXSYS_round(matrix.f));
         if (glyphs.empty()) {
-          m_pDevice->SetBitMask(pBitmap->m_pBitmap, origin.x + pBitmap->m_Left,
-                                origin.y - pBitmap->m_Top, fill_argb);
+          m_pDevice->SetBitMask(pBitmap->GetBitmap(),
+                                origin.x + pBitmap->left(),
+                                origin.y - pBitmap->top(), fill_argb);
         } else {
           glyphs[iChar].m_pGlyph = pBitmap;
           glyphs[iChar].m_Origin = origin;
@@ -1916,33 +1929,24 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
   if (glyphs.empty())
     return true;
 
-  FX_RECT rect = FXGE_GetGlyphsBBox(glyphs, 0);
+  FX_RECT rect = GetGlyphsBBox(glyphs, 0);
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!pBitmap->Create(rect.Width(), rect.Height(), FXDIB_8bppMask))
     return true;
 
   pBitmap->Clear(0);
-  for (const FXTEXT_GLYPHPOS& glyph : glyphs) {
+  for (const TextGlyphPos& glyph : glyphs) {
     if (!glyph.m_pGlyph)
       continue;
 
-    pdfium::base::CheckedNumeric<int> left = glyph.m_Origin.x;
-    left += glyph.m_pGlyph->m_Left;
-    left -= rect.left;
-    if (!left.IsValid())
+    Optional<CFX_Point> point = glyph.GetOrigin({rect.left, rect.top});
+    if (!point.has_value())
       continue;
 
-    pdfium::base::CheckedNumeric<int> top = glyph.m_Origin.y;
-    top -= glyph.m_pGlyph->m_Top;
-    top -= rect.top;
-    if (!top.IsValid())
-      continue;
-
-    pBitmap->CompositeMask(left.ValueOrDie(), top.ValueOrDie(),
-                           glyph.m_pGlyph->m_pBitmap->GetWidth(),
-                           glyph.m_pGlyph->m_pBitmap->GetHeight(),
-                           glyph.m_pGlyph->m_pBitmap, fill_argb, 0, 0,
-                           BlendMode::kNormal, nullptr, false, 0);
+    pBitmap->CompositeMask(
+        point->x, point->y, glyph.m_pGlyph->GetBitmap()->GetWidth(),
+        glyph.m_pGlyph->GetBitmap()->GetHeight(), glyph.m_pGlyph->GetBitmap(),
+        fill_argb, 0, 0, BlendMode::kNormal, nullptr, false);
   }
   m_pDevice->SetBitMask(pBitmap, rect.left, rect.top, fill_argb);
   return true;
@@ -1972,11 +1976,10 @@ void CPDF_RenderStatus::DrawTextPathWithPattern(const CPDF_TextObject* textobj,
     RenderSingleObject(&path, mtObj2Device);
     return;
   }
-  CPDF_CharPosList CharPosList;
-  CharPosList.Load(textobj->GetCharCodes(), textobj->GetCharPositions(), pFont,
-                   font_size);
-  for (uint32_t i = 0; i < CharPosList.m_nChars; i++) {
-    FXTEXT_CHARPOS& charpos = CharPosList.m_pCharPos[i];
+  CPDF_CharPosList CharPosList(textobj->GetCharCodes(),
+                               textobj->GetCharPositions(), pFont, font_size);
+  for (uint32_t i = 0; i < CharPosList.GetCount(); ++i) {
+    const TextCharPos& charpos = CharPosList.GetAt(i);
     auto* font = charpos.m_FallbackFontPosition == -1
                      ? pFont->GetFont()
                      : pFont->GetFontFallback(charpos.m_FallbackFontPosition);
@@ -2311,7 +2314,7 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
         } else {
           pScreen->CompositeMask(start_x, start_y, width, height,
                                  pPatternBitmap, fill_argb, 0, 0,
-                                 BlendMode::kNormal, nullptr, false, 0);
+                                 BlendMode::kNormal, nullptr, false);
         }
       }
     }
@@ -2439,7 +2442,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
       if (pDIBitmap->IsAlphaMask()) {
         pClone->CompositeMask(0, 0, pClone->GetWidth(), pClone->GetHeight(),
                               pDIBitmap, mask_argb, left, top, blend_mode,
-                              nullptr, false, 0);
+                              nullptr, false);
       } else {
         pClone->CompositeBitmap(0, 0, pClone->GetWidth(), pClone->GetHeight(),
                                 pDIBitmap, left, top, blend_mode, nullptr,
@@ -2472,7 +2475,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
     pBackdrop->CompositeMask(left - back_left, top - back_top,
                              pDIBitmap->GetWidth(), pDIBitmap->GetHeight(),
                              pDIBitmap, mask_argb, 0, 0, blend_mode, nullptr,
-                             false, 0);
+                             false);
   } else {
     pBackdrop->CompositeBitmap(left - back_left, top - back_top,
                                pDIBitmap->GetWidth(), pDIBitmap->GetHeight(),

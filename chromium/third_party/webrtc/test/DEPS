@@ -45,4 +45,16 @@ specific_include_rules = {
   ".*stun_validator_fuzzer\.cc": [
     "+p2p/base/stun.h",
   ],
+  ".*test_peer\.(h|cc)": [
+    "+pc",
+    "+p2p",
+  ],
+  ".*network_emulation_pc_unittest\.cc": [
+    "+pc/peer_connection_wrapper.h",
+    "+pc/test/mock_peer_connection_observers.h",
+    "+p2p/client/basic_port_allocator.h",
+  ],
+  ".*peer_connection_quality_test\.(h|cc)": [
+    "+pc",
+  ]
 }

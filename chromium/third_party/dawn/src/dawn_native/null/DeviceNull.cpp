@@ -16,6 +16,7 @@
 
 #include "dawn_native/BackendConnection.h"
 #include "dawn_native/Commands.h"
+#include "dawn_native/DynamicUploader.h"
 
 #include <spirv-cross/spirv_cross.hpp>
 
@@ -60,6 +61,7 @@ namespace dawn_native { namespace null {
     }
 
     Device::~Device() {
+        mDynamicUploader = nullptr;
     }
 
     ResultOrError<BindGroupBase*> Device::CreateBindGroupImpl(
@@ -73,8 +75,8 @@ namespace dawn_native { namespace null {
     ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return new Buffer(this, descriptor);
     }
-    CommandBufferBase* Device::CreateCommandBuffer(CommandBufferBuilder* builder) {
-        return new CommandBuffer(builder);
+    CommandBufferBase* Device::CreateCommandBuffer(CommandEncoderBase* encoder) {
+        return new CommandBuffer(this, encoder);
     }
     ResultOrError<ComputePipelineBase*> Device::CreateComputePipelineImpl(
         const ComputePipelineDescriptor* descriptor) {
@@ -89,10 +91,6 @@ namespace dawn_native { namespace null {
     }
     ResultOrError<QueueBase*> Device::CreateQueueImpl() {
         return new Queue(this);
-    }
-    RenderPassDescriptorBase* Device::CreateRenderPassDescriptor(
-        RenderPassDescriptorBuilder* builder) {
-        return new RenderPassDescriptor(builder);
     }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
@@ -110,8 +108,9 @@ namespace dawn_native { namespace null {
 
         return module;
     }
-    SwapChainBase* Device::CreateSwapChain(SwapChainBuilder* builder) {
-        return new SwapChain(builder);
+    ResultOrError<SwapChainBase*> Device::CreateSwapChainImpl(
+        const SwapChainDescriptor* descriptor) {
+        return new SwapChain(this, descriptor);
     }
     ResultOrError<TextureBase*> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
         return new Texture(this, descriptor);
@@ -122,12 +121,30 @@ namespace dawn_native { namespace null {
         return new TextureView(texture, descriptor);
     }
 
+    ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
+        std::unique_ptr<StagingBufferBase> stagingBuffer =
+            std::make_unique<StagingBuffer>(size, this);
+        return std::move(stagingBuffer);
+    }
+
+    MaybeError Device::CopyFromStagingToBuffer(StagingBufferBase* source,
+                                               uint32_t sourceOffset,
+                                               BufferBase* destination,
+                                               uint32_t destinationOffset,
+                                               uint32_t size) {
+        return DAWN_UNIMPLEMENTED_ERROR("Device unable to copy from staging buffer.");
+    }
+
     Serial Device::GetCompletedCommandSerial() const {
         return mCompletedSerial;
     }
 
     Serial Device::GetLastSubmittedCommandSerial() const {
         return mLastSubmittedSerial;
+    }
+
+    Serial Device::GetPendingCommandSerial() const {
+        return mLastSubmittedSerial + 1;
     }
 
     void Device::TickImpl() {
@@ -173,33 +190,33 @@ namespace dawn_native { namespace null {
 
     void Buffer::MapReadOperationCompleted(uint32_t serial, void* ptr, bool isWrite) {
         if (isWrite) {
-            CallMapWriteCallback(serial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, ptr);
+            CallMapWriteCallback(serial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, ptr, GetSize());
         } else {
-            CallMapReadCallback(serial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, ptr);
+            CallMapReadCallback(serial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, ptr, GetSize());
         }
     }
 
-    void Buffer::SetSubDataImpl(uint32_t start, uint32_t count, const uint8_t* data) {
+    MaybeError Buffer::SetSubDataImpl(uint32_t start, uint32_t count, const uint8_t* data) {
         ASSERT(start + count <= GetSize());
         ASSERT(mBackingData);
         memcpy(mBackingData.get() + start, data, count);
+        return {};
     }
 
-    void Buffer::MapReadAsyncImpl(uint32_t serial, uint32_t start, uint32_t count) {
-        MapAsyncImplCommon(serial, start, count, false);
+    void Buffer::MapReadAsyncImpl(uint32_t serial) {
+        MapAsyncImplCommon(serial, false);
     }
 
-    void Buffer::MapWriteAsyncImpl(uint32_t serial, uint32_t start, uint32_t count) {
-        MapAsyncImplCommon(serial, start, count, true);
+    void Buffer::MapWriteAsyncImpl(uint32_t serial) {
+        MapAsyncImplCommon(serial, true);
     }
 
-    void Buffer::MapAsyncImplCommon(uint32_t serial, uint32_t start, uint32_t count, bool isWrite) {
-        ASSERT(start + count <= GetSize());
+    void Buffer::MapAsyncImplCommon(uint32_t serial, bool isWrite) {
         ASSERT(mBackingData);
 
         auto operation = new BufferMapReadOperation;
         operation->buffer = this;
-        operation->ptr = mBackingData.get() + start;
+        operation->ptr = mBackingData.get();
         operation->serial = serial;
         operation->isWrite = isWrite;
 
@@ -209,10 +226,13 @@ namespace dawn_native { namespace null {
     void Buffer::UnmapImpl() {
     }
 
+    void Buffer::DestroyImpl() {
+    }
+
     // CommandBuffer
 
-    CommandBuffer::CommandBuffer(CommandBufferBuilder* builder)
-        : CommandBufferBase(builder), mCommands(builder->AcquireCommands()) {
+    CommandBuffer::CommandBuffer(Device* device, CommandEncoderBase* encoder)
+        : CommandBufferBase(device, encoder), mCommands(encoder->AcquireCommands()) {
     }
 
     CommandBuffer::~CommandBuffer() {
@@ -233,7 +253,8 @@ namespace dawn_native { namespace null {
 
     // SwapChain
 
-    SwapChain::SwapChain(SwapChainBuilder* builder) : SwapChainBase(builder) {
+    SwapChain::SwapChain(Device* device, const SwapChainDescriptor* descriptor)
+        : SwapChainBase(device, descriptor) {
         const auto& im = GetImplementation();
         im.Init(im.userData, nullptr);
     }
@@ -270,6 +291,17 @@ namespace dawn_native { namespace null {
 
     dawn::TextureFormat NativeSwapChainImpl::GetPreferredFormat() const {
         return dawn::TextureFormat::R8G8B8A8Unorm;
+    }
+
+    // StagingBuffer
+
+    StagingBuffer::StagingBuffer(size_t size, Device* device) : StagingBufferBase(size) {
+    }
+
+    MaybeError StagingBuffer::Initialize() {
+        mBuffer = std::make_unique<uint8_t[]>(GetSize());
+        mMappedPointer = mBuffer.get();
+        return {};
     }
 
 }}  // namespace dawn_native::null

@@ -31,6 +31,7 @@
 #include "api/rtp_receiver_interface.h"
 #include "api/rtp_sender_interface.h"
 #include "api/rtp_transceiver_interface.h"
+#include "api/scoped_refptr.h"
 #include "api/set_remote_description_observer_interface.h"
 #include "api/uma_metrics.h"
 #include "api/video_codecs/builtin_video_decoder_factory.h"
@@ -51,7 +52,6 @@
 #include "rtc_base/gunit.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/rtc_certificate_generator.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/metrics.h"
 #include "test/gmock.h"
@@ -64,6 +64,7 @@ namespace webrtc {
 
 using RTCConfiguration = PeerConnectionInterface::RTCConfiguration;
 using ::testing::ElementsAre;
+using ::testing::Pair;
 using ::testing::UnorderedElementsAre;
 using ::testing::Values;
 
@@ -1428,18 +1429,6 @@ TEST_F(PeerConnectionRtpTestUnifiedPlan,
   EXPECT_FALSE(caller->observer()->negotiation_needed());
 }
 
-// Test that AddTransceiver fails if trying to use simulcast using
-// send_encodings as it isn't currently supported.
-TEST_F(PeerConnectionRtpTestUnifiedPlan, CheckForUnsupportedSimulcast) {
-  auto caller = CreatePeerConnection();
-
-  RtpTransceiverInit init;
-  init.send_encodings.emplace_back();
-  init.send_encodings.emplace_back();
-  auto result = caller->pc()->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init);
-  EXPECT_EQ(result.error().type(), RTCErrorType::UNSUPPORTED_PARAMETER);
-}
-
 // Test that AddTransceiver fails if trying to use unimplemented RTP encoding
 // parameters with the send_encodings parameters.
 TEST_F(PeerConnectionRtpTestUnifiedPlan,
@@ -1452,8 +1441,7 @@ TEST_F(PeerConnectionRtpTestUnifiedPlan,
   auto default_send_encodings = init.send_encodings;
 
   // Unimplemented RtpParameters: ssrc, codec_payload_type, fec, rtx, dtx,
-  // ptime, scale_resolution_down_by, scale_framerate_down_by, rid,
-  // dependency_rids.
+  // ptime, scale_framerate_down_by, dependency_rids.
   init.send_encodings[0].ssrc = 1;
   EXPECT_EQ(RTCErrorType::UNSUPPORTED_PARAMETER,
             caller->pc()
@@ -1502,28 +1490,64 @@ TEST_F(PeerConnectionRtpTestUnifiedPlan,
                 .type());
   init.send_encodings = default_send_encodings;
 
-  init.send_encodings[0].scale_resolution_down_by = 2.0;
-  EXPECT_EQ(RTCErrorType::UNSUPPORTED_PARAMETER,
-            caller->pc()
-                ->AddTransceiver(cricket::MEDIA_TYPE_AUDIO, init)
-                .error()
-                .type());
-  init.send_encodings = default_send_encodings;
-
-  init.send_encodings[0].rid = "dummy_rid";
-  EXPECT_EQ(RTCErrorType::UNSUPPORTED_PARAMETER,
-            caller->pc()
-                ->AddTransceiver(cricket::MEDIA_TYPE_AUDIO, init)
-                .error()
-                .type());
-  init.send_encodings = default_send_encodings;
-
   init.send_encodings[0].dependency_rids.push_back("dummy_rid");
   EXPECT_EQ(RTCErrorType::UNSUPPORTED_PARAMETER,
             caller->pc()
                 ->AddTransceiver(cricket::MEDIA_TYPE_AUDIO, init)
                 .error()
                 .type());
+}
+
+// Test that AddTransceiver fails if trying to use invalid RTP encoding
+// parameters with the send_encodings parameters.
+TEST_F(PeerConnectionRtpTestUnifiedPlan, CheckForInvalidEncodingParameters) {
+  auto caller = CreatePeerConnection();
+
+  RtpTransceiverInit init;
+  init.send_encodings.emplace_back();
+
+  auto default_send_encodings = init.send_encodings;
+
+  init.send_encodings[0].scale_resolution_down_by = 0.5;
+  EXPECT_EQ(RTCErrorType::INVALID_RANGE,
+            caller->pc()
+                ->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init)
+                .error()
+                .type());
+  init.send_encodings = default_send_encodings;
+
+  init.send_encodings[0].bitrate_priority = 0;
+  EXPECT_EQ(RTCErrorType::INVALID_RANGE,
+            caller->pc()
+                ->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init)
+                .error()
+                .type());
+  init.send_encodings = default_send_encodings;
+
+  init.send_encodings[0].min_bitrate_bps = 200000;
+  init.send_encodings[0].max_bitrate_bps = 100000;
+  EXPECT_EQ(RTCErrorType::INVALID_RANGE,
+            caller->pc()
+                ->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init)
+                .error()
+                .type());
+  init.send_encodings = default_send_encodings;
+
+  init.send_encodings[0].num_temporal_layers = 0;
+  EXPECT_EQ(RTCErrorType::INVALID_RANGE,
+            caller->pc()
+                ->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init)
+                .error()
+                .type());
+  init.send_encodings = default_send_encodings;
+
+  init.send_encodings[0].num_temporal_layers = 5;
+  EXPECT_EQ(RTCErrorType::INVALID_RANGE,
+            caller->pc()
+                ->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init)
+                .error()
+                .type());
+  init.send_encodings = default_send_encodings;
 }
 
 // Test that AddTransceiver transfers the send_encodings to the sender and they
@@ -1583,11 +1607,8 @@ TEST_F(PeerConnectionMsidSignalingTest, UnifiedPlanTalkingToOurself) {
   EXPECT_EQ(cricket::kMsidSignalingMediaSection,
             answer->description()->msid_signaling());
   // Check that this is counted correctly
-  EXPECT_EQ(2, webrtc::metrics::NumSamples(
-                   "WebRTC.PeerConnection.SdpSemanticNegotiated"));
-  EXPECT_EQ(2, webrtc::metrics::NumEvents(
-                   "WebRTC.PeerConnection.SdpSemanticNegotiated",
-                   kSdpSemanticNegotiatedUnifiedPlan));
+  EXPECT_THAT(metrics::Samples("WebRTC.PeerConnection.SdpSemanticNegotiated"),
+              ElementsAre(Pair(kSdpSemanticNegotiatedUnifiedPlan, 2)));
 }
 
 TEST_F(PeerConnectionMsidSignalingTest, PlanBOfferToUnifiedPlanAnswer) {
@@ -1675,11 +1696,8 @@ TEST_F(SdpFormatReceivedTest, DataChannelOnlyIsReportedAsNoTracks) {
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   // Note that only the callee does ReportSdpFormatReceived.
-  EXPECT_EQ(1, webrtc::metrics::NumSamples(
-                   "WebRTC.PeerConnection.SdpFormatReceived"));
-  EXPECT_EQ(
-      1, webrtc::metrics::NumEvents("WebRTC.PeerConnection.SdpFormatReceived",
-                                    kSdpFormatReceivedNoTracks));
+  EXPECT_THAT(metrics::Samples("WebRTC.PeerConnection.SdpFormatReceived"),
+              ElementsAre(Pair(kSdpFormatReceivedNoTracks, 1)));
 }
 #endif  // HAVE_SCTP
 
@@ -1691,11 +1709,8 @@ TEST_F(SdpFormatReceivedTest, SimpleUnifiedPlanIsReportedAsSimple) {
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   // Note that only the callee does ReportSdpFormatReceived.
-  EXPECT_EQ(1, webrtc::metrics::NumSamples(
-                   "WebRTC.PeerConnection.SdpFormatReceived"));
-  EXPECT_EQ(
-      1, webrtc::metrics::NumEvents("WebRTC.PeerConnection.SdpFormatReceived",
-                                    kSdpFormatReceivedSimple));
+  EXPECT_THAT(metrics::Samples("WebRTC.PeerConnection.SdpFormatReceived"),
+              ElementsAre(Pair(kSdpFormatReceivedSimple, 1)));
 }
 
 TEST_F(SdpFormatReceivedTest, SimplePlanBIsReportedAsSimple) {
@@ -1704,12 +1719,9 @@ TEST_F(SdpFormatReceivedTest, SimplePlanBIsReportedAsSimple) {
   auto callee = CreatePeerConnectionWithUnifiedPlan();
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
-
-  EXPECT_EQ(1, webrtc::metrics::NumSamples(
-                   "WebRTC.PeerConnection.SdpFormatReceived"));
-  EXPECT_EQ(
-      1, webrtc::metrics::NumEvents("WebRTC.PeerConnection.SdpFormatReceived",
-                                    kSdpFormatReceivedSimple));
+  // Note that only the callee does ReportSdpFormatReceived.
+  EXPECT_THAT(metrics::Samples("WebRTC.PeerConnection.SdpFormatReceived"),
+              ElementsAre(Pair(kSdpFormatReceivedSimple, 1)));
 }
 
 TEST_F(SdpFormatReceivedTest, ComplexUnifiedIsReportedAsComplexUnifiedPlan) {
@@ -1721,11 +1733,8 @@ TEST_F(SdpFormatReceivedTest, ComplexUnifiedIsReportedAsComplexUnifiedPlan) {
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   // Note that only the callee does ReportSdpFormatReceived.
-  EXPECT_EQ(1, webrtc::metrics::NumSamples(
-                   "WebRTC.PeerConnection.SdpFormatReceived"));
-  EXPECT_EQ(
-      1, webrtc::metrics::NumEvents("WebRTC.PeerConnection.SdpFormatReceived",
-                                    kSdpFormatReceivedComplexUnifiedPlan));
+  EXPECT_THAT(metrics::Samples("WebRTC.PeerConnection.SdpFormatReceived"),
+              ElementsAre(Pair(kSdpFormatReceivedComplexUnifiedPlan, 1)));
 }
 
 TEST_F(SdpFormatReceivedTest, ComplexPlanBIsReportedAsComplexPlanB) {
@@ -1739,11 +1748,8 @@ TEST_F(SdpFormatReceivedTest, ComplexPlanBIsReportedAsComplexPlanB) {
   // SDP Format to be recorded.
   ASSERT_FALSE(callee->SetRemoteDescription(caller->CreateOffer()));
   // Note that only the callee does ReportSdpFormatReceived.
-  EXPECT_EQ(1, webrtc::metrics::NumSamples(
-                   "WebRTC.PeerConnection.SdpFormatReceived"));
-  EXPECT_EQ(
-      1, webrtc::metrics::NumEvents("WebRTC.PeerConnection.SdpFormatReceived",
-                                    kSdpFormatReceivedComplexPlanB));
+  EXPECT_THAT(metrics::Samples("WebRTC.PeerConnection.SdpFormatReceived"),
+              ElementsAre(Pair(kSdpFormatReceivedComplexPlanB, 1)));
 }
 
 // Sender setups in a call.
@@ -1771,9 +1777,9 @@ TEST_P(PeerConnectionRtpTest, CreateTwoSendersWithSameTrack) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(PeerConnectionRtpTest,
-                        PeerConnectionRtpTest,
-                        Values(SdpSemantics::kPlanB,
-                               SdpSemantics::kUnifiedPlan));
+INSTANTIATE_TEST_SUITE_P(PeerConnectionRtpTest,
+                         PeerConnectionRtpTest,
+                         Values(SdpSemantics::kPlanB,
+                                SdpSemantics::kUnifiedPlan));
 
 }  // namespace webrtc

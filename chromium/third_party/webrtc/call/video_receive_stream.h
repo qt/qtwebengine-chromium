@@ -90,6 +90,13 @@ class VideoReceiveStream {
     int width = 0;
     int height = 0;
 
+    uint32_t freeze_count = 0;
+    uint32_t pause_count = 0;
+    uint32_t total_freezes_duration_ms = 0;
+    uint32_t total_pauses_duration_ms = 0;
+    uint32_t total_frames_duration_ms = 0;
+    double sum_squared_frame_durations = 0.0;
+
     VideoContentType content_type = VideoContentType::UNSPECIFIED;
 
     int sync_offset_ms = std::numeric_limits<int>::max();
@@ -193,17 +200,16 @@ class VideoReceiveStream {
 
     MediaTransportInterface* media_transport = nullptr;
 
-    // Must not be 'nullptr' when the stream is started.
+    // Must always be set.
     rtc::VideoSinkInterface<VideoFrame>* renderer = nullptr;
 
     // Expected delay needed by the renderer, i.e. the frame will be delivered
     // this many milliseconds, if possible, earlier than the ideal render time.
-    // Only valid if 'renderer' is set.
     int render_delay_ms = 10;
 
-    // If set, pass frames on to the renderer as soon as they are
+    // If false, pass frames on to the renderer as soon as they are
     // available.
-    bool disable_prerenderer_smoothing = false;
+    bool enable_prerenderer_smoothing = true;
 
     // Identifier for an A/V synchronization group. Empty string to disable.
     // TODO(pbos): Synchronize streams in a sync group, not just video streams
@@ -245,6 +251,15 @@ class VideoReceiveStream {
   virtual void RemoveSecondarySink(const RtpPacketSinkInterface* sink) = 0;
 
   virtual std::vector<RtpSource> GetSources() const = 0;
+
+  // Sets a base minimum for the playout delay. Base minimum delay sets lower
+  // bound on minimum delay value determining lower bound on playout delay.
+  //
+  // Returns true if value was successfully set, false overwise.
+  virtual bool SetBaseMinimumPlayoutDelayMs(int delay_ms) = 0;
+
+  // Returns current value of base minimum delay in milliseconds.
+  virtual int GetBaseMinimumPlayoutDelayMs() const = 0;
 
  protected:
   virtual ~VideoReceiveStream() {}

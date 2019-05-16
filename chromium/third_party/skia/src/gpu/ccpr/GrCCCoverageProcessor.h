@@ -100,12 +100,12 @@ public:
     // Appends a GrMesh that will draw the provided instances. The instanceBuffer must be an array
     // of either TriPointInstance or QuadPointInstance, depending on this processor's RendererPass,
     // with coordinates in the desired shape's final atlas-space position.
-    void appendMesh(GrBuffer* instanceBuffer, int instanceCount, int baseInstance,
+    void appendMesh(sk_sp<GrGpuBuffer> instanceBuffer, int instanceCount, int baseInstance,
                     SkTArray<GrMesh>* out) const {
         if (Impl::kGeometryShader == fImpl) {
-            this->appendGSMesh(instanceBuffer, instanceCount, baseInstance, out);
+            this->appendGSMesh(std::move(instanceBuffer), instanceCount, baseInstance, out);
         } else {
-            this->appendVSMesh(instanceBuffer, instanceCount, baseInstance, out);
+            this->appendVSMesh(std::move(instanceBuffer), instanceCount, baseInstance, out);
         }
     }
 
@@ -250,9 +250,9 @@ private:
     void initGS();
     void initVS(GrResourceProvider*);
 
-    void appendGSMesh(GrBuffer* instanceBuffer, int instanceCount, int baseInstance,
+    void appendGSMesh(sk_sp<const GrGpuBuffer> instanceBuffer, int instanceCount, int baseInstance,
                       SkTArray<GrMesh>* out) const;
-    void appendVSMesh(GrBuffer* instanceBuffer, int instanceCount, int baseInstance,
+    void appendVSMesh(sk_sp<const GrGpuBuffer> instanceBuffer, int instanceCount, int baseInstance,
                       SkTArray<GrMesh>* out) const;
 
     GrGLSLPrimitiveProcessor* createGSImpl(std::unique_ptr<Shader>) const;
@@ -269,8 +269,8 @@ private:
 
     // Used by VSImpl.
     Attribute fInstanceAttributes[2];
-    sk_sp<const GrBuffer> fVSVertexBuffer;
-    sk_sp<const GrBuffer> fVSIndexBuffer;
+    sk_sp<const GrGpuBuffer> fVSVertexBuffer;
+    sk_sp<const GrGpuBuffer> fVSIndexBuffer;
     int fVSNumIndicesPerInstance;
     GrPrimitiveType fVSTriangleType;
 

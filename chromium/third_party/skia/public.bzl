@@ -450,7 +450,6 @@ DM_SRCS_ALL = struct(
         "tools/ResourceFactory.h",
         "tools/Resources.cpp",
         "tools/Resources.h",
-        "tools/SkJSONCPP.h",
         "tools/UrlDataManager.cpp",
         "tools/UrlDataManager.h",
         "tools/debugger/*.cpp",
@@ -691,6 +690,7 @@ SKSHAPER_HARFBUZZ_SRCS = [
     "modules/skshaper/include/SkShaper.h",
     "modules/skshaper/src/SkShaper.cpp",
     "modules/skshaper/src/SkShaper_harfbuzz.cpp",
+    "modules/skshaper/src/SkShaper_primitive.cpp",
 ]
 
 SKSHAPER_PRIMITIVE_SRCS = [

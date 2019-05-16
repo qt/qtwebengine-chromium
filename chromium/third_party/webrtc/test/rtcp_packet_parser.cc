@@ -55,8 +55,11 @@ bool RtcpPacketParser::Parse(const void* data, size_t length) {
           case rtcp::Pli::kFeedbackMessageType:
             pli_.Parse(header, &sender_ssrc_);
             break;
-          case rtcp::Remb::kFeedbackMessageType:
-            remb_.Parse(header, &sender_ssrc_);
+          case rtcp::Psfb::kAfbMessageType:
+            if (!loss_notification_.Parse(header, &sender_ssrc_) &&
+                !remb_.Parse(header, &sender_ssrc_)) {
+              RTC_LOG(LS_WARNING) << "Unknown application layer FB message.";
+            }
             break;
           default:
             RTC_LOG(LS_WARNING)

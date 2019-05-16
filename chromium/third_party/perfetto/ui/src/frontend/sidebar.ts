@@ -42,7 +42,11 @@ join process using(upid)
 order by cpu_sec desc limit 100;`;
 
 const CYCLES_PER_P_STATE_PER_CPU = `
-select ref as cpu, value as freq, sum(dur * value)/1e6 as mcycles
+select
+  ref as cpu,
+  value as freq,
+  lead(ts) over (partition by ref order by ts) - ts as dur,
+  sum(dur * value)/1e6 as mcycles
 from counters where name = 'cpufreq' group by cpu, freq
 order by mcycles desc limit 32;`;
 
@@ -99,6 +103,7 @@ const SECTIONS = [
       {t: 'Record new trace', a: navigateRecord, i: 'fiber_smart_record'},
       {t: 'Show timeline', a: navigateViewer, i: 'line_style'},
       {t: 'Share current trace', a: dispatchCreatePermalink, i: 'share'},
+      {t: 'Download current trace', a: downloadTrace, i: 'file_download'},
     ],
   },
   {
@@ -195,6 +200,7 @@ function openTraceUrl(url: string): (e: Event) => void {
     globals.dispatch(Actions.openTraceFromUrl({url}));
   };
 }
+
 function onInputElementFileSelectionChanged(e: Event) {
   if (!(e.target instanceof HTMLInputElement)) {
     throw new Error('Not an input element');
@@ -229,6 +235,25 @@ function navigateViewer(e: Event) {
 function dispatchCreatePermalink(e: Event) {
   e.preventDefault();
   globals.dispatch(Actions.createPermalink({}));
+}
+
+function downloadTrace(e: Event) {
+  e.preventDefault();
+  const engine = Object.values(globals.state.engines)[0];
+  if (!engine) return;
+  const src = engine.source;
+  if (typeof src === 'string') {
+    window.open(src);
+  } else {
+    const url = URL.createObjectURL(src);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = src.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 }
 
 export class Sidebar implements m.ClassComponent {

@@ -28,6 +28,10 @@ namespace sw
 namespace vk
 {
 
+class Framebuffer;
+class Pipeline;
+class RenderPass;
+
 class CommandBuffer
 {
 public:
@@ -118,8 +122,10 @@ public:
 	struct ExecutionState
 	{
 		sw::Renderer* renderer = nullptr;
-		VkRenderPass renderpass = VK_NULL_HANDLE;
-		VkPipeline pipelines[VK_PIPELINE_BIND_POINT_RANGE_SIZE] = {};
+		RenderPass* renderPass = nullptr;
+		Framebuffer* renderPassFramebuffer = nullptr;
+		Pipeline* pipelines[VK_PIPELINE_BIND_POINT_RANGE_SIZE] = {};
+		VkDescriptorSet boundDescriptorSets[VK_PIPELINE_BIND_POINT_RANGE_SIZE][MAX_BOUND_DESCRIPTOR_SETS] = { { VK_NULL_HANDLE } };
 
 		struct VertexInputBinding
 		{
@@ -127,6 +133,10 @@ public:
 			VkDeviceSize offset;
 		};
 		VertexInputBinding vertexInputBindings[MAX_VERTEX_INPUT_BINDINGS] = {};
+		VertexInputBinding indexBufferBinding;
+		VkIndexType indexType;
+
+		void bindAttachments();
 	};
 
 	void submit(CommandBuffer::ExecutionState& executionState);

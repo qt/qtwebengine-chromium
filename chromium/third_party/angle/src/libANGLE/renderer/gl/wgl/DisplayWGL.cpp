@@ -282,7 +282,7 @@ egl::Error DisplayWGL::initializeImpl(egl::Display *display)
     mHasRobustness = functionsGL->getGraphicsResetStatus != nullptr;
     if (mHasWGLCreateContextRobustness != mHasRobustness)
     {
-        WARN() << "WGL_ARB_create_context_robustness exists but unable to OpenGL context with "
+        WARN() << "WGL_ARB_create_context_robustness exists but unable to create a context with "
                   "robustness.";
     }
 
@@ -885,7 +885,7 @@ HGLRC DisplayWGL::createContextAttribs(const gl::Version &version,
 
 egl::Error DisplayWGL::createRenderer(std::shared_ptr<RendererWGL> *outRenderer)
 {
-    HGLRC context = nullptr;
+    HGLRC context       = nullptr;
     HGLRC sharedContext = nullptr;
     std::vector<int> workerContextAttribs;
 
@@ -1006,19 +1006,22 @@ WorkerContext *DisplayWGL::createWorkerContext(std::string *infoLog,
     HDC workerDeviceContext   = nullptr;
     HGLRC workerContext       = nullptr;
 
-#define CLEANUP_ON_ERROR()                                                      \
-    if (workerContext)                                                          \
-    {                                                                           \
-        mFunctionsWGL->deleteContext(workerContext);                            \
-    }                                                                           \
-    if (workerDeviceContext)                                                    \
-    {                                                                           \
-        mFunctionsWGL->releasePbufferDCARB(workerPbuffer, workerDeviceContext); \
-    }                                                                           \
-    if (workerPbuffer)                                                          \
-    {                                                                           \
-        mFunctionsWGL->destroyPbufferARB(workerPbuffer);                        \
-    }
+#define CLEANUP_ON_ERROR()                                                          \
+    do                                                                              \
+    {                                                                               \
+        if (workerContext)                                                          \
+        {                                                                           \
+            mFunctionsWGL->deleteContext(workerContext);                            \
+        }                                                                           \
+        if (workerDeviceContext)                                                    \
+        {                                                                           \
+            mFunctionsWGL->releasePbufferDCARB(workerPbuffer, workerDeviceContext); \
+        }                                                                           \
+        if (workerPbuffer)                                                          \
+        {                                                                           \
+            mFunctionsWGL->destroyPbufferARB(workerPbuffer);                        \
+        }                                                                           \
+    } while (0)
 
     const int attribs[] = {0, 0};
     workerPbuffer = mFunctionsWGL->createPbufferARB(mDeviceContext, mPixelFormat, 1, 1, attribs);

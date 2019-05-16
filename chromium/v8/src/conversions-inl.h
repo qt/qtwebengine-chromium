@@ -59,10 +59,25 @@ inline unsigned int FastD2UI(double x) {
 
 
 inline float DoubleToFloat32(double x) {
-  // TODO(yangguo): This static_cast is implementation-defined behaviour in C++,
-  // so we may need to do the conversion manually instead to match the spec.
-  volatile float f = static_cast<float>(x);
-  return f;
+  using limits = std::numeric_limits<float>;
+  if (x > limits::max()) {
+    // kRoundingThreshold is the maximum double that rounds down to
+    // the maximum representable float. Its mantissa bits are:
+    // 1111111111111111111111101111111111111111111111111111
+    // [<--- float range --->]
+    // Note the zero-bit right after the float mantissa range, which
+    // determines the rounding-down.
+    static const double kRoundingThreshold = 3.4028235677973362e+38;
+    if (x <= kRoundingThreshold) return limits::max();
+    return limits::infinity();
+  }
+  if (x < limits::lowest()) {
+    // Same as above, mirrored to negative numbers.
+    static const double kRoundingThreshold = -3.4028235677973362e+38;
+    if (x >= kRoundingThreshold) return limits::lowest();
+    return -limits::infinity();
+  }
+  return static_cast<float>(x);
 }
 
 

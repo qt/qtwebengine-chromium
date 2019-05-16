@@ -21,6 +21,7 @@
 #include "api/media_types.h"
 #include "api/peer_connection_interface.h"
 #include "api/peer_connection_proxy.h"
+#include "api/scoped_refptr.h"
 #include "api/test/fake_media_transport.h"
 #include "media/base/codec.h"
 #include "media/base/fake_media_engine.h"
@@ -39,7 +40,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/rtc_certificate_generator.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread.h"
 #include "test/gtest.h"
 #ifdef WEBRTC_ANDROID
@@ -403,22 +403,20 @@ TEST_P(PeerConnectionDataChannelTest,
   EXPECT_EQ(CreatePeerConnection(config), nullptr);
 }
 
-TEST_P(PeerConnectionDataChannelTest,
-       MediaTransportDataChannelFailsWithoutSdes) {
+// This test now DCHECKs, instead of failing to SetLocalDescription.
+TEST_P(PeerConnectionDataChannelTest, MediaTransportWithoutSdesFails) {
   RTCConfiguration config;
   config.use_media_transport_for_data_channels = true;
   config.enable_dtls_srtp = true;  // Disables SDES for data sections.
+
   auto caller = CreatePeerConnectionWithDataChannel(config);
 
-  std::string error;
-  ASSERT_FALSE(caller->SetLocalDescription(caller->CreateOffer(), &error));
-  EXPECT_EQ(error,
-            "Failed to set local offer sdp: Failed to create data channel.");
+  EXPECT_EQ(nullptr, caller);
 }
 
-INSTANTIATE_TEST_CASE_P(PeerConnectionDataChannelTest,
-                        PeerConnectionDataChannelTest,
-                        Values(SdpSemantics::kPlanB,
-                               SdpSemantics::kUnifiedPlan));
+INSTANTIATE_TEST_SUITE_P(PeerConnectionDataChannelTest,
+                         PeerConnectionDataChannelTest,
+                         Values(SdpSemantics::kPlanB,
+                                SdpSemantics::kUnifiedPlan));
 
 }  // namespace webrtc

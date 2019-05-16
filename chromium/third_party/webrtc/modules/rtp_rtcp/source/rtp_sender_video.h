@@ -19,9 +19,9 @@
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/rtp_rtcp/include/flexfec_sender.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/playout_delay_oracle.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
-#include "modules/rtp_rtcp/source/rtp_utility.h"
 #include "modules/rtp_rtcp/source/ulpfec_generator.h"
 #include "rtc_base/critical_section.h"
 #include "rtc_base/one_time_event.h"
@@ -35,6 +35,17 @@ class FrameEncryptorInterface;
 class RtpPacketizer;
 class RtpPacketToSend;
 
+// kConditionallyRetransmitHigherLayers allows retransmission of video frames
+// in higher layers if either the last frame in that layer was too far back in
+// time, or if we estimate that a new frame will be available in a lower layer
+// in a shorter time than it would take to request and receive a retransmission.
+enum RetransmissionMode : uint8_t {
+  kRetransmitOff = 0x0,
+  kRetransmitBaseLayer = 0x2,
+  kRetransmitHigherLayers = 0x4,
+  kConditionallyRetransmitHigherLayers = 0x8,
+};
+
 class RTPSenderVideo {
  public:
   static constexpr int64_t kTLRateWindowSizeMs = 2500;
@@ -42,17 +53,13 @@ class RTPSenderVideo {
   RTPSenderVideo(Clock* clock,
                  RTPSender* rtpSender,
                  FlexfecSender* flexfec_sender,
+                 PlayoutDelayOracle* playout_delay_oracle,
                  FrameEncryptorInterface* frame_encryptor,
-                 bool require_frame_encryption);
+                 bool require_frame_encryption,
+                 const WebRtcKeyValueConfig& field_trials);
   virtual ~RTPSenderVideo();
 
-  virtual enum VideoCodecType VideoCodecType() const;
-
-  static RtpUtility::Payload* CreateVideoPayload(absl::string_view payload_name,
-                                                 int8_t payload_type);
-
-  bool SendVideo(enum VideoCodecType video_type,
-                 FrameType frame_type,
+  bool SendVideo(FrameType frame_type,
                  int8_t payload_type,
                  uint32_t capture_timestamp,
                  int64_t capture_time_ms,
@@ -62,13 +69,17 @@ class RTPSenderVideo {
                  const RTPVideoHeader* video_header,
                  int64_t expected_retransmission_time_ms);
 
-  void SetVideoCodecType(enum VideoCodecType type);
+  void RegisterPayloadType(int8_t payload_type, absl::string_view payload_name);
 
-  // ULPFEC.
+  // Set RED and ULPFEC payload types. A payload type of -1 means that the
+  // corresponding feature is turned off. Note that we DO NOT support enabling
+  // ULPFEC without enabling RED, and RED is only ever used when ULPFEC is
+  // enabled.
   void SetUlpfecConfig(int red_payload_type, int ulpfec_payload_type);
-  void GetUlpfecConfig(int* red_payload_type, int* ulpfec_payload_type) const;
 
   // FlexFEC/ULPFEC.
+  // Set FEC rates, max frames before FEC is sent, and type of FEC masks.
+  // Returns false on failure.
   void SetFecParameters(const FecProtectionParams& delta_params,
                         const FecProtectionParams& key_params);
 
@@ -77,10 +88,11 @@ class RTPSenderVideo {
 
   uint32_t VideoBitrateSent() const;
   uint32_t FecOverheadRate() const;
-  uint32_t PacketizationOverheadBps() const;
 
-  int SelectiveRetransmissions() const;
-  void SetSelectiveRetransmissions(uint8_t settings);
+  // Returns the current packetization overhead rate, in bps. Note that this is
+  // the payload overhead, eg the VP8 payload headers, not the RTP headers
+  // or extension/
+  uint32_t PacketizationOverheadBps() const;
 
  protected:
   static uint8_t GetTemporalId(const RTPVideoHeader& header);
@@ -116,6 +128,10 @@ class RTPSenderVideo {
                                   StorageType media_packet_storage,
                                   bool protect_media_packet);
 
+  bool LogAndSendToNetwork(std::unique_ptr<RtpPacketToSend> packet,
+                           StorageType storage,
+                           RtpPacketSender::Priority priority);
+
   bool red_enabled() const RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_) {
     return red_payload_type_ >= 0;
   }
@@ -133,14 +149,23 @@ class RTPSenderVideo {
   RTPSender* const rtp_sender_;
   Clock* const clock_;
 
+  // Maps payload type to codec type, for packetization.
+  // TODO(nisse): Set on construction, to avoid lock.
+  rtc::CriticalSection payload_type_crit_;
+  std::map<int8_t, VideoCodecType> payload_type_map_
+      RTC_GUARDED_BY(payload_type_crit_);
+
   // Should never be held when calling out of this class.
   rtc::CriticalSection crit_;
 
-  enum VideoCodecType video_type_;
   int32_t retransmission_settings_ RTC_GUARDED_BY(crit_);
   VideoRotation last_rotation_ RTC_GUARDED_BY(crit_);
   absl::optional<ColorSpace> last_color_space_ RTC_GUARDED_BY(crit_);
   bool transmit_color_space_next_frame_ RTC_GUARDED_BY(crit_);
+  // Tracks the current request for playout delay limits from application
+  // and decides whether the current RTP frame should include the playout
+  // delay extension on header.
+  PlayoutDelayOracle* const playout_delay_oracle_;
 
   // RED/ULPFEC.
   int red_payload_type_ RTC_GUARDED_BY(crit_);

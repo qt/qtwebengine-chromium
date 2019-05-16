@@ -16,6 +16,7 @@
 #include "SkRect.h"
 #include "SkRefCnt.h"
 #include "SkScalar.h"
+#include "SkStream.h"
 #include "SkString.h"
 #include "SkTArray.h"
 #include "SkTHash.h"
@@ -30,7 +31,6 @@ class SkFontStyle;
 class SkGlyph;
 class SkPath;
 class SkScalerContext;
-class SkStreamAsset;
 class SkSVGDOM;
 class SkWStream;
 struct SkAdvancedTypefaceMetrics;
@@ -81,7 +81,7 @@ protected:
     void getGlyphToUnicodeMap(SkUnichar*) const override;
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override;
 
-    SkStreamAsset* onOpenStream(int* ttcIndex) const override {
+    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override {
         return nullptr;
     }
 

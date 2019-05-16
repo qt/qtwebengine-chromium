@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "api/async_resolver_factory.h"
 #include "api/call/call_factory_interface.h"
 #include "api/fec_controller.h"
@@ -34,6 +35,7 @@
 #include "test/pc/e2e/api/video_quality_analyzer_interface.h"
 
 namespace webrtc {
+namespace test {
 
 // TODO(titovartem) move to API when it will be stabilized.
 class PeerConnectionE2EQualityTestFixture {
@@ -71,7 +73,12 @@ class PeerConnectionE2EQualityTestFixture {
   // so client can't inject its own. Also only network manager can be overridden
   // inside port allocator.
   struct PeerConnectionComponents {
-    std::unique_ptr<rtc::NetworkManager> network_manager;
+    PeerConnectionComponents(rtc::NetworkManager* network_manager)
+        : network_manager(network_manager) {
+      RTC_CHECK(network_manager);
+    }
+
+    rtc::NetworkManager* const network_manager;
     std::unique_ptr<webrtc::AsyncResolverFactory> async_resolver_factory;
     std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator;
     std::unique_ptr<rtc::SSLCertificateVerifier> tls_cert_verifier;
@@ -80,8 +87,13 @@ class PeerConnectionE2EQualityTestFixture {
   // Contains all components, that can be overridden in peer connection. Also
   // has a network thread, that will be used to communicate with another peers.
   struct InjectableComponents {
-    explicit InjectableComponents(rtc::Thread* network_thread)
-        : network_thread(network_thread) {
+    explicit InjectableComponents(rtc::Thread* network_thread,
+                                  rtc::NetworkManager* network_manager)
+        : network_thread(network_thread),
+          pcf_dependencies(
+              absl::make_unique<PeerConnectionFactoryComponents>()),
+          pc_dependencies(
+              absl::make_unique<PeerConnectionComponents>(network_manager)) {
       RTC_CHECK(network_thread);
     }
 
@@ -104,26 +116,52 @@ class PeerConnectionE2EQualityTestFixture {
     std::vector<std::string> slides_yuv_file_names;
   };
 
+  enum VideoGeneratorType { kDefault, kI420A, kI010 };
+
   // Contains properties of single video stream.
   struct VideoConfig {
-    size_t width;
-    size_t height;
-    int32_t fps;
+    VideoConfig(size_t width, size_t height, int32_t fps)
+        : width(width), height(height), fps(fps) {}
+
+    const size_t width;
+    const size_t height;
+    const int32_t fps;
     // Have to be unique among all specified configs for all peers in the call.
+    // Will be auto generated if omitted.
     absl::optional<std::string> stream_label;
-    // Only single from 3 next fields can be specified.
-    // If specified generator with this name will be used as input.
-    absl::optional<std::string> generator_name;
-    // If specified this file will be used as input.
+    // Only 1 from |generator|, |input_file_name| and |screen_share_config| can
+    // be specified. If none of them are specified, then |generator| will be set
+    // to VideoGeneratorType::kDefault.
+    // If specified generator of this type will be used to produce input video.
+    absl::optional<VideoGeneratorType> generator;
+    // If specified this file will be used as input. Input video will be played
+    // in a circle.
     absl::optional<std::string> input_file_name;
     // If specified screen share video stream will be created as input.
     absl::optional<ScreenShareConfig> screen_share_config;
+    // Specifies spatial index of the video stream to analyze.
+    // There are 3 cases:
+    // 1. |target_spatial_index| omitted: in such case it will be assumed that
+    //    video stream has not spatial layers and simulcast streams.
+    // 2. |target_spatial_index| presented and simulcast encoder is used:
+    //    in such case |target_spatial_index| will specify the index of
+    //    simulcast stream, that should be analyzed. Other streams will be
+    //    dropped.
+    // 3. |target_spatial_index| presented and SVP encoder is used:
+    //    in such case |target_spatial_index| will specify the top interesting
+    //    spatial layer and all layers bellow, including target one will be
+    //    processed. All layers above target one will be dropped.
+    absl::optional<int> target_spatial_index;
     // If specified the input stream will be also copied to specified file.
+    // It is actually one of the test's output file, which contains copy of what
+    // was captured during the test for this video stream on sender side.
+    // It is useful when generator is used as input.
     absl::optional<std::string> input_dump_file_name;
     // If specified this file will be used as output on the receiver side for
     // this stream. If multiple streams will be produced by input stream,
-    // output files will be appended with indexes.
-    absl::optional<std::string> output_file_name;
+    // output files will be appended with indexes. The produced files contains
+    // what was rendered for this video stream on receiver side.
+    absl::optional<std::string> output_dump_file_name;
   };
 
   // Contains properties for audio in the call.
@@ -132,13 +170,16 @@ class PeerConnectionE2EQualityTestFixture {
       kGenerated,
       kFile,
     };
-    Mode mode;
+    // Have to be unique among all specified configs for all peers in the call.
+    // Will be auto generated if omitted.
+    absl::optional<std::string> stream_label;
+    Mode mode = kGenerated;
     // Have to be specified only if mode = kFile
     absl::optional<std::string> input_file_name;
     // If specified the input stream will be also copied to specified file.
     absl::optional<std::string> input_dump_file_name;
     // If specified the output stream will be copied to specified file.
-    absl::optional<std::string> output_file_name;
+    absl::optional<std::string> output_dump_file_name;
     // Audio options to use.
     cricket::AudioOptions audio_options;
   };
@@ -149,23 +190,33 @@ class PeerConnectionE2EQualityTestFixture {
   struct Params {
     // If |video_configs| is empty - no video should be added to the test call.
     std::vector<VideoConfig> video_configs;
-    // If |audio_config| is presented audio stream will be configured
+    // If |audio_config| is set audio stream will be configured
     absl::optional<AudioConfig> audio_config;
+    // If |rtc_event_log_path| is set, an RTCEventLog will be saved in that
+    // location and it will be available for further analysis.
+    absl::optional<std::string> rtc_event_log_path;
 
     PeerConnectionInterface::RTCConfiguration rtc_configuration;
   };
 
-  // Contains analyzers for audio and video stream. Both of them are optional
-  // and default implementations will be provided, if any will be omitted.
-  struct Analyzers {
-    std::unique_ptr<AudioQualityAnalyzerInterface> audio_quality_analyzer;
-    std::unique_ptr<VideoQualityAnalyzerInterface> video_quality_analyzer;
+  // Contains parameters, that describe how long framework should run quality
+  // test.
+  struct RunParams {
+    // Specifies how long the test should be run. This time shows how long
+    // the media should flow after connection was established and before
+    // it will be shut downed.
+    TimeDelta run_duration;
   };
 
-  virtual void Run() = 0;
+  virtual void Run(std::unique_ptr<InjectableComponents> alice_components,
+                   std::unique_ptr<Params> alice_params,
+                   std::unique_ptr<InjectableComponents> bob_components,
+                   std::unique_ptr<Params> bob_params,
+                   RunParams run_params) = 0;
   virtual ~PeerConnectionE2EQualityTestFixture() = default;
 };
 
+}  // namespace test
 }  // namespace webrtc
 
 #endif  // TEST_PC_E2E_API_PEERCONNECTION_QUALITY_TEST_FIXTURE_H_

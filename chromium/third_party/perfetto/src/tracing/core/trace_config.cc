@@ -39,6 +39,28 @@ TraceConfig& TraceConfig::operator=(const TraceConfig&) = default;
 TraceConfig::TraceConfig(TraceConfig&&) noexcept = default;
 TraceConfig& TraceConfig::operator=(TraceConfig&&) = default;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceConfig::operator==(const TraceConfig& other) const {
+  return (buffers_ == other.buffers_) &&
+         (data_sources_ == other.data_sources_) &&
+         (duration_ms_ == other.duration_ms_) &&
+         (enable_extra_guardrails_ == other.enable_extra_guardrails_) &&
+         (lockdown_mode_ == other.lockdown_mode_) &&
+         (producers_ == other.producers_) &&
+         (statsd_metadata_ == other.statsd_metadata_) &&
+         (write_into_file_ == other.write_into_file_) &&
+         (file_write_period_ms_ == other.file_write_period_ms_) &&
+         (max_file_size_bytes_ == other.max_file_size_bytes_) &&
+         (guardrail_overrides_ == other.guardrail_overrides_) &&
+         (deferred_start_ == other.deferred_start_) &&
+         (flush_period_ms_ == other.flush_period_ms_) &&
+         (flush_timeout_ms_ == other.flush_timeout_ms_) &&
+         (disable_clock_snapshotting_ == other.disable_clock_snapshotting_) &&
+         (notify_traceur_ == other.notify_traceur_);
+}
+#pragma GCC diagnostic pop
+
 void TraceConfig::FromProto(const perfetto::protos::TraceConfig& proto) {
   buffers_.clear();
   for (const auto& field : proto.buffers()) {
@@ -114,6 +136,11 @@ void TraceConfig::FromProto(const perfetto::protos::TraceConfig& proto) {
   disable_clock_snapshotting_ =
       static_cast<decltype(disable_clock_snapshotting_)>(
           proto.disable_clock_snapshotting());
+
+  static_assert(sizeof(notify_traceur_) == sizeof(proto.notify_traceur()),
+                "size mismatch");
+  notify_traceur_ =
+      static_cast<decltype(notify_traceur_)>(proto.notify_traceur());
   unknown_fields_ = proto.unknown_fields();
 }
 
@@ -196,6 +223,11 @@ void TraceConfig::ToProto(perfetto::protos::TraceConfig* proto) const {
   proto->set_disable_clock_snapshotting(
       static_cast<decltype(proto->disable_clock_snapshotting())>(
           disable_clock_snapshotting_));
+
+  static_assert(sizeof(notify_traceur_) == sizeof(proto->notify_traceur()),
+                "size mismatch");
+  proto->set_notify_traceur(
+      static_cast<decltype(proto->notify_traceur())>(notify_traceur_));
   *(proto->mutable_unknown_fields()) = unknown_fields_;
 }
 
@@ -209,6 +241,14 @@ TraceConfig::BufferConfig::BufferConfig(TraceConfig::BufferConfig&&) noexcept =
     default;
 TraceConfig::BufferConfig& TraceConfig::BufferConfig::operator=(
     TraceConfig::BufferConfig&&) = default;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceConfig::BufferConfig::operator==(
+    const TraceConfig::BufferConfig& other) const {
+  return (size_kb_ == other.size_kb_) && (fill_policy_ == other.fill_policy_);
+}
+#pragma GCC diagnostic pop
 
 void TraceConfig::BufferConfig::FromProto(
     const perfetto::protos::TraceConfig_BufferConfig& proto) {
@@ -244,6 +284,15 @@ TraceConfig::DataSource::DataSource(TraceConfig::DataSource&&) noexcept =
     default;
 TraceConfig::DataSource& TraceConfig::DataSource::operator=(
     TraceConfig::DataSource&&) = default;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceConfig::DataSource::operator==(
+    const TraceConfig::DataSource& other) const {
+  return (config_ == other.config_) &&
+         (producer_name_filter_ == other.producer_name_filter_);
+}
+#pragma GCC diagnostic pop
 
 void TraceConfig::DataSource::FromProto(
     const perfetto::protos::TraceConfig_DataSource& proto) {
@@ -286,6 +335,16 @@ TraceConfig::ProducerConfig::ProducerConfig(
     TraceConfig::ProducerConfig&&) noexcept = default;
 TraceConfig::ProducerConfig& TraceConfig::ProducerConfig::operator=(
     TraceConfig::ProducerConfig&&) = default;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceConfig::ProducerConfig::operator==(
+    const TraceConfig::ProducerConfig& other) const {
+  return (producer_name_ == other.producer_name_) &&
+         (shm_size_kb_ == other.shm_size_kb_) &&
+         (page_size_kb_ == other.page_size_kb_);
+}
+#pragma GCC diagnostic pop
 
 void TraceConfig::ProducerConfig::FromProto(
     const perfetto::protos::TraceConfig_ProducerConfig& proto) {
@@ -334,6 +393,17 @@ TraceConfig::StatsdMetadata::StatsdMetadata(
     TraceConfig::StatsdMetadata&&) noexcept = default;
 TraceConfig::StatsdMetadata& TraceConfig::StatsdMetadata::operator=(
     TraceConfig::StatsdMetadata&&) = default;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceConfig::StatsdMetadata::operator==(
+    const TraceConfig::StatsdMetadata& other) const {
+  return (triggering_alert_id_ == other.triggering_alert_id_) &&
+         (triggering_config_uid_ == other.triggering_config_uid_) &&
+         (triggering_config_id_ == other.triggering_config_id_) &&
+         (triggering_subscription_id_ == other.triggering_subscription_id_);
+}
+#pragma GCC diagnostic pop
 
 void TraceConfig::StatsdMetadata::FromProto(
     const perfetto::protos::TraceConfig_StatsdMetadata& proto) {
@@ -408,6 +478,14 @@ TraceConfig::GuardrailOverrides::GuardrailOverrides(
     TraceConfig::GuardrailOverrides&&) noexcept = default;
 TraceConfig::GuardrailOverrides& TraceConfig::GuardrailOverrides::operator=(
     TraceConfig::GuardrailOverrides&&) = default;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool TraceConfig::GuardrailOverrides::operator==(
+    const TraceConfig::GuardrailOverrides& other) const {
+  return (max_upload_per_day_bytes_ == other.max_upload_per_day_bytes_);
+}
+#pragma GCC diagnostic pop
 
 void TraceConfig::GuardrailOverrides::FromProto(
     const perfetto::protos::TraceConfig_GuardrailOverrides& proto) {

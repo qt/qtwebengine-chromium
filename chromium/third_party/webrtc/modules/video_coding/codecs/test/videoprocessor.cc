@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "absl/memory/memory.h"
+#include "api/scoped_refptr.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/video_bitrate_allocator_factory.h"
@@ -30,7 +31,6 @@
 #include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/time_utils.h"
 #include "test/gtest.h"
 #include "third_party/libyuv/include/libyuv/compare.h"
@@ -109,7 +109,8 @@ void ExtractI420BufferWithSize(const VideoFrame& image,
 
 void CalculateFrameQuality(const I420BufferInterface& ref_buffer,
                            const I420BufferInterface& dec_buffer,
-                           FrameStatistics* frame_stat) {
+                           FrameStatistics* frame_stat,
+                           bool calc_ssim) {
   if (ref_buffer.width() != dec_buffer.width() ||
       ref_buffer.height() != dec_buffer.height()) {
     RTC_CHECK_GE(ref_buffer.width(), dec_buffer.width());
@@ -126,7 +127,7 @@ void CalculateFrameQuality(const I420BufferInterface& ref_buffer,
               scaled_buffer->width(), scaled_buffer->height(),
               libyuv::kFilterBox);
 
-    CalculateFrameQuality(*scaled_buffer, dec_buffer, frame_stat);
+    CalculateFrameQuality(*scaled_buffer, dec_buffer, frame_stat, calc_ssim);
   } else {
     const uint64_t sse_y = libyuv::ComputeSumSquareErrorPlane(
         dec_buffer.DataY(), dec_buffer.StrideY(), ref_buffer.DataY(),
@@ -149,18 +150,11 @@ void CalculateFrameQuality(const I420BufferInterface& ref_buffer,
     frame_stat->psnr_v = libyuv::SumSquareErrorToPsnr(sse_v, num_u_samples);
     frame_stat->psnr = libyuv::SumSquareErrorToPsnr(
         sse_y + sse_u + sse_v, num_y_samples + 2 * num_u_samples);
-    frame_stat->ssim = I420SSIM(ref_buffer, dec_buffer);
-  }
-}
 
-std::vector<FrameType> FrameTypeForFrame(
-    const VideoCodecTestFixture::Config& config,
-    size_t frame_idx) {
-  if (config.keyframe_interval > 0 &&
-      (frame_idx % config.keyframe_interval == 0)) {
-    return {kVideoFrameKey};
+    if (calc_ssim) {
+      frame_stat->ssim = I420SSIM(ref_buffer, dec_buffer);
+    }
   }
-  return {kVideoFrameDelta};
 }
 
 }  // namespace
@@ -246,14 +240,6 @@ VideoProcessor::~VideoProcessor() {
 
   // Sanity check.
   RTC_CHECK_LE(input_frames_.size(), kMaxBufferedInputFrames);
-
-  // Deal with manual memory management of EncodedImage's.
-  for (size_t i = 0; i < num_simulcast_or_spatial_layers_; ++i) {
-    uint8_t* data = merged_encoded_frames_.at(i).data();
-    if (data) {
-      delete[] data;
-    }
-  }
 }
 
 void VideoProcessor::ProcessFrame() {
@@ -300,7 +286,8 @@ void VideoProcessor::ProcessFrame() {
 
   // Encode.
   const std::vector<FrameType> frame_types =
-      FrameTypeForFrame(config_, frame_number);
+      (frame_number == 0) ? std::vector<FrameType>{kVideoFrameKey}
+                          : std::vector<FrameType>{kVideoFrameDelta};
   const int encode_return_code =
       encoder_->Encode(input_frame, nullptr, &frame_types);
   for (size_t i = 0; i < num_simulcast_or_spatial_layers_; ++i) {
@@ -503,9 +490,12 @@ void VideoProcessor::FrameDecoded(const VideoFrame& decoded_frame,
     RTC_CHECK(reference_frame != input_frames_.cend())
         << "The codecs are either buffering too much, dropping too much, or "
            "being too slow relative the input frame rate.";
+
+    // SSIM calculation is not optimized. Skip it in real-time mode.
+    const bool calc_ssim = !config_.encode_in_real_time;
     CalculateFrameQuality(
         *reference_frame->second.video_frame_buffer()->ToI420(),
-        *decoded_frame.video_frame_buffer()->ToI420(), frame_stat);
+        *decoded_frame.video_frame_buffer()->ToI420(), frame_stat, calc_ssim);
 
     // Erase all buffered input frames that we have moved past for all
     // simulcast/spatial layers. Never buffer more than
@@ -571,27 +561,19 @@ const webrtc::EncodedImage* VideoProcessor::BuildAndStoreSuperframe(
   const size_t buffer_size_bytes =
       payload_size_bytes + EncodedImage::GetBufferPaddingBytes(codec);
 
-  uint8_t* copied_buffer = new uint8_t[buffer_size_bytes];
-  RTC_CHECK(copied_buffer);
-
+  EncodedImage copied_image = encoded_image;
+  copied_image.Allocate(buffer_size_bytes);
   if (base_image.size()) {
     RTC_CHECK(base_image.data());
-    memcpy(copied_buffer, base_image.data(), base_image.size());
+    memcpy(copied_image.data(), base_image.data(), base_image.size());
   }
-  memcpy(copied_buffer + base_image.size(), encoded_image.data(),
+  memcpy(copied_image.data() + base_image.size(), encoded_image.data(),
          encoded_image.size());
 
-  EncodedImage copied_image = encoded_image;
-  copied_image = encoded_image;
-  copied_image.set_buffer(copied_buffer, buffer_size_bytes);
   copied_image.set_size(payload_size_bytes);
 
   // Replace previous EncodedImage for this spatial layer.
-  uint8_t* old_data = merged_encoded_frames_.at(spatial_idx).data();
-  if (old_data) {
-    delete[] old_data;
-  }
-  merged_encoded_frames_.at(spatial_idx) = copied_image;
+  merged_encoded_frames_.at(spatial_idx) = std::move(copied_image);
 
   return &merged_encoded_frames_.at(spatial_idx);
 }

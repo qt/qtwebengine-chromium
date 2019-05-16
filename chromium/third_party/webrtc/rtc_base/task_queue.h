@@ -13,15 +13,15 @@
 
 #include <stdint.h>
 #include <memory>
-#include <type_traits>
 #include <utility>
 
 #include "absl/memory/memory.h"
 #include "api/task_queue/queued_task.h"
-#include "api/task_queue/task_queue_priority.h"
+#include "api/task_queue/task_queue_base.h"
+#include "api/task_queue/task_queue_factory.h"
 #include "rtc_base/constructor_magic.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/system/rtc_export.h"
+#include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace rtc {
@@ -29,55 +29,6 @@ namespace rtc {
 // TODO(danilchap): Remove the alias when all of webrtc is updated to use
 // webrtc::QueuedTask directly.
 using ::webrtc::QueuedTask;
-
-// Simple implementation of QueuedTask for use with rtc::Bind and lambdas.
-template <class Closure>
-class ClosureTask : public QueuedTask {
- public:
-  explicit ClosureTask(Closure&& closure)
-      : closure_(std::forward<Closure>(closure)) {}
-
- private:
-  bool Run() override {
-    closure_();
-    return true;
-  }
-
-  typename std::remove_const<
-      typename std::remove_reference<Closure>::type>::type closure_;
-};
-
-// Extends ClosureTask to also allow specifying cleanup code.
-// This is useful when using lambdas if guaranteeing cleanup, even if a task
-// was dropped (queue is too full), is required.
-template <class Closure, class Cleanup>
-class ClosureTaskWithCleanup : public ClosureTask<Closure> {
- public:
-  ClosureTaskWithCleanup(Closure&& closure, Cleanup&& cleanup)
-      : ClosureTask<Closure>(std::forward<Closure>(closure)),
-        cleanup_(std::forward<Cleanup>(cleanup)) {}
-  ~ClosureTaskWithCleanup() { cleanup_(); }
-
- private:
-  typename std::remove_const<
-      typename std::remove_reference<Cleanup>::type>::type cleanup_;
-};
-
-// Convenience function to construct closures that can be passed directly
-// to methods that support std::unique_ptr<QueuedTask> but not template
-// based parameters.
-template <class Closure>
-static std::unique_ptr<QueuedTask> NewClosure(Closure&& closure) {
-  return absl::make_unique<ClosureTask<Closure>>(
-      std::forward<Closure>(closure));
-}
-
-template <class Closure, class Cleanup>
-static std::unique_ptr<QueuedTask> NewClosure(Closure&& closure,
-                                              Cleanup&& cleanup) {
-  return absl::make_unique<ClosureTaskWithCleanup<Closure, Cleanup>>(
-      std::forward<Closure>(closure), std::forward<Cleanup>(cleanup));
-}
 
 // Implements a task queue that asynchronously executes tasks in a way that
 // guarantees that they're executed in FIFO order and that tasks never overlap.
@@ -97,19 +48,7 @@ static std::unique_ptr<QueuedTask> NewClosure(Closure&& closure,
 //       queue_.PostTask([]() { Work(); });
 //     ...
 //
-//   2) Doing work asynchronously on a worker queue and providing a notification
-//      callback on the current queue, when the work has been done:
-//
-//     void MyClass::StartWorkAndLetMeKnowWhenDone(
-//         std::unique_ptr<QueuedTask> callback) {
-//       DCHECK(TaskQueue::Current()) << "Need to be running on a queue";
-//       queue_.PostTaskAndReply([]() { Work(); }, std::move(callback));
-//     }
-//     ...
-//     my_class->StartWorkAndLetMeKnowWhenDone(
-//         NewClosure([]() { RTC_LOG(INFO) << "The work is done!";}));
-//
-//   3) Posting a custom task on a timer.  The task posts itself again after
+//   2) Posting a custom task on a timer.  The task posts itself again after
 //      every running:
 //
 //     class TimerTask : public QueuedTask {
@@ -143,9 +82,10 @@ class RTC_LOCKABLE RTC_EXPORT TaskQueue {
  public:
   // TaskQueue priority levels. On some platforms these will map to thread
   // priorities, on others such as Mac and iOS, GCD queue priorities.
-  using Priority = ::webrtc::TaskQueuePriority;
-  class Impl;
+  using Priority = ::webrtc::TaskQueueFactory::Priority;
 
+  explicit TaskQueue(std::unique_ptr<webrtc::TaskQueueBase,
+                                     webrtc::TaskQueueDeleter> task_queue);
   explicit TaskQueue(const char* queue_name,
                      Priority priority = Priority::NORMAL);
   ~TaskQueue();
@@ -154,6 +94,9 @@ class RTC_LOCKABLE RTC_EXPORT TaskQueue {
 
   // Used for DCHECKing the current queue.
   bool IsCurrent() const;
+
+  // Returns non-owning pointer to the task queue implementation.
+  webrtc::TaskQueueBase* Get() { return impl_; }
 
   // TODO(tommi): For better debuggability, implement RTC_FROM_HERE.
 
@@ -175,7 +118,7 @@ class RTC_LOCKABLE RTC_EXPORT TaskQueue {
                 Closure,
                 std::unique_ptr<QueuedTask>>::value>::type* = nullptr>
   void PostTask(Closure&& closure) {
-    PostTask(NewClosure(std::forward<Closure>(closure)));
+    PostTask(webrtc::ToQueuedTask(std::forward<Closure>(closure)));
   }
 
   // See documentation above for performance expectations.
@@ -184,19 +127,12 @@ class RTC_LOCKABLE RTC_EXPORT TaskQueue {
                 Closure,
                 std::unique_ptr<QueuedTask>>::value>::type* = nullptr>
   void PostDelayedTask(Closure&& closure, uint32_t milliseconds) {
-    PostDelayedTask(NewClosure(std::forward<Closure>(closure)), milliseconds);
+    PostDelayedTask(webrtc::ToQueuedTask(std::forward<Closure>(closure)),
+                    milliseconds);
   }
 
  private:
-  // TODO(danilchap): Remove when external implementaions of TaskQueue remove
-  // these two functions.
-  void PostTaskAndReply(std::unique_ptr<QueuedTask> task,
-                        std::unique_ptr<QueuedTask> reply,
-                        TaskQueue* reply_queue);
-  void PostTaskAndReply(std::unique_ptr<QueuedTask> task,
-                        std::unique_ptr<QueuedTask> reply);
-
-  const scoped_refptr<Impl> impl_;
+  webrtc::TaskQueueBase* const impl_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(TaskQueue);
 };

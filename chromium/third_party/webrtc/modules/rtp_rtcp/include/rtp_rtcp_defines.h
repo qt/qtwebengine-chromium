@@ -41,47 +41,6 @@ const int kBogusRtpRateForAudioRtcp = 8000;
 // Minimum RTP header size in bytes.
 const uint8_t kRtpHeaderSize = 12;
 
-struct AudioPayload {
-  SdpAudioFormat format;
-  uint32_t rate;
-};
-
-struct VideoPayload {
-  VideoCodecType videoCodecType;
-  // The H264 profile only matters if videoCodecType == kVideoCodecH264.
-  H264::Profile h264_profile;
-};
-
-class PayloadUnion {
- public:
-  explicit PayloadUnion(const AudioPayload& payload);
-  explicit PayloadUnion(const VideoPayload& payload);
-  PayloadUnion(const PayloadUnion&);
-  PayloadUnion(PayloadUnion&&);
-  ~PayloadUnion();
-
-  PayloadUnion& operator=(const PayloadUnion&);
-  PayloadUnion& operator=(PayloadUnion&&);
-
-  bool is_audio() const {
-    return absl::holds_alternative<AudioPayload>(payload_);
-  }
-  bool is_video() const {
-    return absl::holds_alternative<VideoPayload>(payload_);
-  }
-  const AudioPayload& audio_payload() const {
-    return absl::get<AudioPayload>(payload_);
-  }
-  const VideoPayload& video_payload() const {
-    return absl::get<VideoPayload>(payload_);
-  }
-  AudioPayload& audio_payload() { return absl::get<AudioPayload>(payload_); }
-  VideoPayload& video_payload() { return absl::get<VideoPayload>(payload_); }
-
- private:
-  absl::variant<AudioPayload, VideoPayload> payload_;
-};
-
 enum ProtectionType { kUnprotectedPacket, kProtectedPacket };
 
 enum StorageType { kDontRetransmit, kAllowRetransmission };
@@ -96,6 +55,7 @@ enum RTPExtensionType : int {
   kRtpExtensionAbsoluteSendTime,
   kRtpExtensionVideoRotation,
   kRtpExtensionTransportSequenceNumber,
+  kRtpExtensionTransportSequenceNumber02,
   kRtpExtensionPlayoutDelay,
   kRtpExtensionVideoContentType,
   kRtpExtensionVideoTiming,
@@ -103,7 +63,9 @@ enum RTPExtensionType : int {
   kRtpExtensionRtpStreamId,
   kRtpExtensionRepairedRtpStreamId,
   kRtpExtensionMid,
-  kRtpExtensionGenericFrameDescriptor,
+  kRtpExtensionGenericFrameDescriptor00,
+  kRtpExtensionGenericFrameDescriptor = kRtpExtensionGenericFrameDescriptor00,
+  kRtpExtensionGenericFrameDescriptor01,
   kRtpExtensionColorSpace,
   kRtpExtensionNumberOfExtensions  // Must be the last entity in the enum.
 };
@@ -124,6 +86,7 @@ enum RTCPPacketType : uint32_t {
   kRtcpTmmbn = 0x0200,
   kRtcpSrReq = 0x0400,
   kRtcpApp = 0x1000,
+  kRtcpLossNotification = 0x2000,
   kRtcpRemb = 0x10000,
   kRtcpTransmissionTimeOffset = 0x20000,
   kRtcpXrReceiverReferenceTime = 0x40000,
@@ -135,19 +98,6 @@ enum RTCPPacketType : uint32_t {
 enum KeyFrameRequestMethod { kKeyFrameReqPliRtcp, kKeyFrameReqFirRtcp };
 
 enum RtpRtcpPacketType { kPacketRtp = 0, kPacketKeepAlive = 1 };
-
-// kConditionallyRetransmitHigherLayers allows retransmission of video frames
-// in higher layers if either the last frame in that layer was too far back in
-// time, or if we estimate that a new frame will be available in a lower layer
-// in a shorter time than it would take to request and receive a retransmission.
-enum RetransmissionMode : uint8_t {
-  kRetransmitOff = 0x0,
-  kRetransmitFECPackets = 0x1,
-  kRetransmitBaseLayer = 0x2,
-  kRetransmitHigherLayers = 0x4,
-  kConditionallyRetransmitHigherLayers = 0x8,
-  kRetransmitAllPackets = 0xFF
-};
 
 enum RtxMode {
   kRtxOff = 0x0,
@@ -507,6 +457,19 @@ class StreamDataCountersCallback {
 
   virtual void DataCountersUpdated(const StreamDataCounters& counters,
                                    uint32_t ssrc) = 0;
+};
+
+class RtcpAckObserver {
+ public:
+  // This method is called on received report blocks matching the sender ssrc.
+  // TODO(nisse): Use of "extended" sequence number is a bit brittle, since the
+  // observer for this callback typically has its own sequence number unwrapper,
+  // and there's no guarantee that they are in sync. Change to pass raw sequence
+  // number, possibly augmented with timestamp (if available) to aid
+  // disambiguation.
+  virtual void OnReceivedAck(int64_t extended_highest_sequence_number) = 0;
+
+  virtual ~RtcpAckObserver() = default;
 };
 
 }  // namespace webrtc

@@ -16,6 +16,7 @@
 
 #include "tools/trace_to_text/trace_to_profile.h"
 
+#include <cxxabi.h>
 #include <inttypes.h>
 
 #include <algorithm>
@@ -41,6 +42,15 @@ namespace trace_to_text {
 namespace {
 
 constexpr const char* kDefaultTmp = "/tmp";
+
+void MaybeDemangle(std::string* name) {
+  int ignored;
+  char* data = abi::__cxa_demangle(name->c_str(), nullptr, nullptr, &ignored);
+  if (data) {
+    *name = data;
+    free(data);
+  }
+}
 
 std::string GetTemp() {
   const char* tmp = getenv("TMPDIR");
@@ -68,6 +78,16 @@ std::string ToHex(const std::string& build_id) {
   return hex_build_id;
 }
 
+enum Strings : int64_t {
+  kEmpty = 0,
+  kObjects,
+  kAllocObjects,
+  kCount,
+  kSpace,
+  kAllocSpace,
+  kBytes
+};
+
 void DumpProfilePacket(std::vector<ProfilePacket>& packet_fragments,
                        const std::string& file_prefix) {
   std::map<uint64_t, std::string> string_lookup;
@@ -91,15 +111,31 @@ void DumpProfilePacket(std::vector<ProfilePacket>& packet_fragments,
   }
 
   std::map<std::string, uint64_t> string_table;
-  string_table[""] = 0;
-  string_table["space"] = 1;
-  string_table["bytes"] = 2;
+  string_table[""] = kEmpty;
+  string_table["objects"] = kObjects;
+  string_table["alloc_objects"] = kAllocObjects;
+  string_table["count"] = kCount;
+  string_table["space"] = kSpace;
+  string_table["alloc_space"] = kAllocSpace;
+  string_table["bytes"] = kBytes;
 
   GProfile profile;
   GValueType* value_type = profile.add_sample_type();
-  // ["space", "bytes"];
-  value_type->set_type(1);
-  value_type->set_type(2);
+  value_type->set_type(kObjects);
+  value_type->set_unit(kCount);
+
+  value_type = profile.add_sample_type();
+  value_type->set_type(kAllocObjects);
+  value_type->set_unit(kCount);
+
+  value_type = profile.add_sample_type();
+  value_type->set_type(kAllocSpace);
+  value_type->set_unit(kBytes);
+
+  // The last value is the default one selected.
+  value_type = profile.add_sample_type();
+  value_type->set_type(kSpace);
+  value_type->set_unit(kBytes);
 
   for (const ProfilePacket& packet : packet_fragments) {
     for (const ProfilePacket::Mapping& mapping : packet.mappings()) {
@@ -158,8 +194,13 @@ void DumpProfilePacket(std::vector<ProfilePacket>& packet_fragments,
       continue;
     }
     decltype(string_table)::iterator it;
+    std::string function_name = str_it->second;
+    // This assumes both the device that captured the trace and the host
+    // machine use the same mangling scheme. This is a reasonable
+    // assumption as the Itanium ABI is the de-facto standard for mangling.
+    MaybeDemangle(&function_name);
     std::tie(it, std::ignore) =
-        string_table.emplace(str_it->second, string_table.size());
+        string_table.emplace(std::move(function_name), string_table.size());
     GFunction* gfunction = profile.add_function();
     gfunction->set_id(function_name_id);
     gfunction->set_name(static_cast<int64_t>(it->second));
@@ -196,6 +237,10 @@ void DumpProfilePacket(std::vector<ProfilePacket>& packet_fragments,
         }
         for (uint64_t frame_id : it->second)
           gsample->add_location_id(frame_id);
+        gsample->add_value(
+            static_cast<int64_t>(sample.alloc_count() - sample.free_count()));
+        gsample->add_value(static_cast<int64_t>(sample.alloc_count()));
+        gsample->add_value(static_cast<int64_t>(sample.self_allocated()));
         gsample->add_value(static_cast<int64_t>(sample.self_allocated() -
                                                 sample.self_freed()));
       }

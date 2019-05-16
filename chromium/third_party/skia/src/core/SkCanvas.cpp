@@ -24,7 +24,6 @@
 #include "SkMSAN.h"
 #include "SkMakeUnique.h"
 #include "SkMatrixUtils.h"
-#include "SkMetaData.h"
 #include "SkNoDrawCanvas.h"
 #include "SkNx.h"
 #include "SkPaintPriv.h"
@@ -551,7 +550,6 @@ void SkCanvas::resetForNextPicture(const SkIRect& bounds) {
 void SkCanvas::init(sk_sp<SkBaseDevice> device) {
     fAllowSimplifyClip = false;
     fSaveCount = 1;
-    fMetaData = nullptr;
 
     fMCRec = (MCRec*)fMCStack.push_back();
     new (fMCRec) MCRec;
@@ -660,18 +658,7 @@ SkCanvas::~SkCanvas() {
 
     this->internalRestore();    // restore the last, since we're going away
 
-    delete fMetaData;
-
     dec_canvas();
-}
-
-SkMetaData& SkCanvas::getMetaData() {
-    // metadata users are rare, so we lazily allocate it. If that changes we
-    // can decide to just make it a field in the device (rather than a ptr)
-    if (nullptr == fMetaData) {
-        fMetaData = new SkMetaData;
-    }
-    return *fMetaData;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -985,6 +972,12 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
     const SkRect* bounds = rec.fBounds;
     const SkPaint* paint = rec.fPaint;
     SaveLayerFlags saveLayerFlags = rec.fSaveLayerFlags;
+
+    // If we have a backdrop filter, then we must apply it to the entire layer (clip-bounds)
+    // regardless of any hint-rect from the caller. skbug.com/8783
+    if (rec.fBackdrop) {
+        bounds = nullptr;
+    }
 
     SkLazyPaint lazyP;
     SkImageFilter* imageFilter = paint ? paint->getImageFilter() : nullptr;
@@ -2314,7 +2307,9 @@ void SkCanvas::onDrawImage(const SkImage* image, SkScalar x, SkScalar y, const S
                                       SkScalarRoundToInt(pt.fY), pnt,
                                       nullptr, SkMatrix::I());
         } else {
-            iter.fDevice->drawImage(image, x, y, pnt);
+            iter.fDevice->drawImageRect(
+                    image, nullptr, SkRect::MakeXYWH(x, y, image->width(), image->height()), pnt,
+                    kStrict_SrcRectConstraint);
         }
     }
 
@@ -2390,7 +2385,9 @@ void SkCanvas::onDrawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y, cons
                                       SkScalarRoundToInt(pt.fY), pnt,
                                       nullptr, SkMatrix::I());
         } else {
-            iter.fDevice->drawBitmap(bitmap, x, y, looper.paint());
+            SkRect fullImage = SkRect::MakeWH(bitmap.width(), bitmap.height());
+            iter.fDevice->drawBitmapRect(bitmap, &fullImage, fullImage.makeOffset(x, y), pnt,
+                                         kStrict_SrcRectConstraint);
         }
     }
 

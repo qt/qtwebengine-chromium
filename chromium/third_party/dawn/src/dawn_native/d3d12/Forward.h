@@ -29,10 +29,10 @@ namespace dawn_native { namespace d3d12 {
     class InputState;
     class PipelineLayout;
     class Queue;
-    class RenderPassDescriptor;
     class RenderPipeline;
     class Sampler;
     class ShaderModule;
+    class StagingBuffer;
     class SwapChain;
     class Texture;
     class TextureView;
@@ -48,10 +48,10 @@ namespace dawn_native { namespace d3d12 {
         using InputStateType = InputState;
         using PipelineLayoutType = PipelineLayout;
         using QueueType = Queue;
-        using RenderPassDescriptorType = RenderPassDescriptor;
         using RenderPipelineType = RenderPipeline;
         using SamplerType = Sampler;
         using ShaderModuleType = ShaderModule;
+        using StagingBufferType = StagingBuffer;
         using SwapChainType = SwapChain;
         using TextureType = Texture;
         using TextureViewType = TextureView;

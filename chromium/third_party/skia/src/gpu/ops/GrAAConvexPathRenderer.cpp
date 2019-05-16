@@ -7,7 +7,6 @@
 
 #include "GrAAConvexPathRenderer.h"
 #include "GrCaps.h"
-#include "GrContext.h"
 #include "GrDrawOpTest.h"
 #include "GrGeometryProcessor.h"
 #include "GrPathUtils.h"
@@ -243,8 +242,7 @@ static inline void add_line_to_segment(const SkPoint& pt,
 
 static inline void add_quad_segment(const SkPoint pts[3],
                                     SegmentArray* segments) {
-    if (SkPointPriv::DistanceToSqd(pts[0], pts[1]) < kCloseSqd ||
-        SkPointPriv::DistanceToSqd(pts[1], pts[2]) < kCloseSqd) {
+    if (SkPointPriv::DistanceToLineSegmentBetweenSqd(pts[1], pts[0], pts[2]) < kCloseSqd) {
         if (pts[0] != pts[2]) {
             add_line_to_segment(pts[2], segments);
         }
@@ -571,8 +569,8 @@ public:
             fragBuilder->codeAppendf("half edgeAlpha;");
 
             // keep the derivative instructions outside the conditional
-            fragBuilder->codeAppendf("half2 duvdx = dFdx(%s.xy);", v.fsIn());
-            fragBuilder->codeAppendf("half2 duvdy = dFdy(%s.xy);", v.fsIn());
+            fragBuilder->codeAppendf("half2 duvdx = half2(dFdx(%s.xy));", v.fsIn());
+            fragBuilder->codeAppendf("half2 duvdy = half2(dFdy(%s.xy));", v.fsIn());
             fragBuilder->codeAppendf("if (%s.z > 0.0 && %s.w > 0.0) {", v.fsIn(), v.fsIn());
             // today we know z and w are in device space. We could use derivatives
             fragBuilder->codeAppendf("edgeAlpha = min(min(%s.z, %s.w) + 0.5, 1.0);", v.fsIn(),
@@ -671,7 +669,7 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrContext* context,
+    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
                                           GrPaint&& paint,
                                           const SkMatrix& viewMatrix,
                                           const SkPath& path,
@@ -707,14 +705,15 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
-        return fHelper.finalizeProcessors(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
-                                          &fPaths.back().fColor);
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) override {
+        return fHelper.finalizeProcessors(
+                caps, clip, fsaaType, GrProcessorAnalysisCoverage::kSingleChannel,
+                &fPaths.back().fColor);
     }
 
 private:
     void onPrepareDraws(Target* target) override {
-        auto pipe = fHelper.makePipeline(target);
         int instanceCount = fPaths.count();
 
         SkMatrix invert;
@@ -761,7 +760,7 @@ private:
                 continue;
             }
 
-            const GrBuffer* vertexBuffer;
+            sk_sp<const GrBuffer> vertexBuffer;
             int firstVertex;
 
             GrVertexWriter verts{target->makeVertexSpace(kVertexStride, vertexCount,
@@ -772,7 +771,7 @@ private:
                 return;
             }
 
-            const GrBuffer* indexBuffer;
+            sk_sp<const GrBuffer> indexBuffer;
             int firstIndex;
 
             uint16_t *idxs = target->makeIndexSpace(indexCount, &indexBuffer, &firstIndex);
@@ -795,9 +794,12 @@ private:
                 firstIndex += draw.fIndexCnt;
                 firstVertex += draw.fVertexCnt;
             }
-            target->draw(quadProcessor, pipe.fPipeline, pipe.fFixedDynamicState, nullptr, meshes,
-                         draws.count());
+            target->recordDraw(quadProcessor, meshes, draws.count());
         }
+    }
+
+    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
+        fHelper.executeDrawsAndUploads(this, flushState, chainBounds);
     }
 
     CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {

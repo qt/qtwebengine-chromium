@@ -45,6 +45,8 @@ bool ImageView::imageTypesMatch(VkImageType imageType) const
 		case VK_IMAGE_VIEW_TYPE_1D:
 		case VK_IMAGE_VIEW_TYPE_1D_ARRAY:
 			return true;
+		default:
+			break;
 		}
 		break;
 	case VK_IMAGE_TYPE_2D:
@@ -56,6 +58,8 @@ bool ImageView::imageTypesMatch(VkImageType imageType) const
 		case VK_IMAGE_VIEW_TYPE_CUBE:
 		case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY:
 			return isCube;
+		default:
+			break;
 		}
 		break;
 	case VK_IMAGE_TYPE_3D:
@@ -63,6 +67,8 @@ bool ImageView::imageTypesMatch(VkImageType imageType) const
 		{
 		case VK_IMAGE_VIEW_TYPE_3D:
 			return true;
+		default:
+			break;
 		}
 		break;
 	default:
@@ -72,7 +78,7 @@ bool ImageView::imageTypesMatch(VkImageType imageType) const
 	return false;
 }
 
-void ImageView::clear(const VkClearValue& clearValue, const VkRect2D& renderArea)
+void ImageView::clear(const VkClearValue& clearValue, const VkImageAspectFlags aspectMask, const VkRect2D& renderArea)
 {
 	// Note: clearing ignores swizzling, so components is ignored.
 
@@ -87,6 +93,42 @@ void ImageView::clear(const VkClearValue& clearValue, const VkRect2D& renderArea
 	}
 
 	image->clear(clearValue, renderArea, subresourceRange);
+}
+
+void ImageView::clear(const VkClearValue& clearValue, const VkImageAspectFlags aspectMask, const VkClearRect& renderArea)
+{
+	// Note: clearing ignores swizzling, so components is ignored.
+
+	if(!imageTypesMatch(image->getImageType()))
+	{
+		UNIMPLEMENTED();
+	}
+
+	if(image->getFormat() != format)
+	{
+		UNIMPLEMENTED();
+	}
+
+	VkImageSubresourceRange sr;
+	sr.aspectMask = aspectMask;
+	sr.baseMipLevel = subresourceRange.baseMipLevel;
+	sr.levelCount = subresourceRange.levelCount;
+	sr.baseArrayLayer = renderArea.baseArrayLayer + subresourceRange.baseArrayLayer;
+	sr.layerCount = renderArea.layerCount;
+
+	image->clear(clearValue, renderArea.rect, sr);
+}
+
+void *ImageView::getOffsetPointer(const VkOffset3D& offset, VkImageAspectFlagBits aspect) const
+{
+	VkImageSubresourceLayers imageSubresourceLayers =
+	{
+		aspect,
+		subresourceRange.baseMipLevel,
+		subresourceRange.baseArrayLayer,
+		subresourceRange.layerCount
+	};
+	return image->getTexelPointer(offset, imageSubresourceLayers);
 }
 
 }

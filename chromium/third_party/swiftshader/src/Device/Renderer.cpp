@@ -29,7 +29,11 @@
 #include "System/Half.hpp"
 #include "System/Math.hpp"
 #include "System/Timer.hpp"
-#include "System/Debug.hpp"
+#include "Vulkan/VkConfig.h"
+#include "Vulkan/VkDebug.hpp"
+#include "Vulkan/VkImageView.hpp"
+#include "Pipeline/SpirvShader.hpp"
+#include "Vertex.hpp"
 
 #undef max
 
@@ -42,7 +46,6 @@ unsigned int maxPrimitives = 1 << 21;
 
 namespace sw
 {
-	extern bool halfIntegerCoordinates;     // Pixel centers are not at integer coordinates
 	extern bool booleanFaceRegister;
 	extern bool fullPixelPositionRegister;
 	extern bool leadingVertexFirst;         // Flat shading uses first vertex, else last
@@ -77,7 +80,6 @@ namespace sw
 
 		if(!initialized)
 		{
-			sw::halfIntegerCoordinates = conventions.halfIntegerCoordinates;
 			sw::booleanFaceRegister = conventions.booleanFaceRegister;
 			sw::fullPixelPositionRegister = conventions.fullPixelPositionRegister;
 			sw::leadingVertexFirst = conventions.leadingVertexFirst;
@@ -97,14 +99,6 @@ namespace sw
 	DrawCall::DrawCall()
 	{
 		queries = 0;
-
-		vsDirtyConstF = VERTEX_UNIFORM_VECTORS + 1;
-		vsDirtyConstI = 16;
-		vsDirtyConstB = 16;
-
-		psDirtyConstF = FRAGMENT_UNIFORM_VECTORS;
-		psDirtyConstI = 16;
-		psDirtyConstB = 16;
 
 		references = -1;
 
@@ -126,8 +120,6 @@ namespace sw
 		setRenderTarget(0, nullptr);
 		clipper = new Clipper;
 		blitter = new Blitter;
-
-		updateClipPlanes = true;
 
 		#if PERF_HUD
 			resetTimers();
@@ -183,7 +175,10 @@ namespace sw
 
 	Renderer::~Renderer()
 	{
+		sync->lock(EXCLUSIVE);
 		sync->destruct();
+		terminateThreads();
+		sync->unlock();
 
 		delete clipper;
 		clipper = nullptr;
@@ -191,15 +186,17 @@ namespace sw
 		delete blitter;
 		blitter = nullptr;
 
-		terminateThreads();
 		delete resumeApp;
+		resumeApp = nullptr;
 
 		for(int draw = 0; draw < DRAW_COUNT; draw++)
 		{
 			delete drawCall[draw];
+			drawCall[draw] = nullptr;
 		}
 
 		delete swiftConfig;
+		swiftConfig = nullptr;
 	}
 
 	// This object has to be mem aligned
@@ -214,7 +211,7 @@ namespace sw
 		sw::deallocate(mem);
 	}
 
-	void Renderer::draw(DrawType drawType, unsigned int indexOffset, unsigned int count, bool update)
+	void Renderer::draw(DrawType drawType, unsigned int count, bool update)
 	{
 		#ifndef NDEBUG
 			if(count < minPrimitives || count > maxPrimitives)
@@ -226,9 +223,8 @@ namespace sw
 		context->drawType = drawType;
 
 		updateConfiguration();
-		updateClipper();
 
-		int ms = context->getMultiSampleCount();
+		int ms = context->sampleCount;
 		unsigned int oldMultiSampleMask = context->multiSampleMask;
 		context->multiSampleMask = context->sampleMask & ((unsigned)0xFFFFFFFF >> (32 - ms));
 
@@ -294,14 +290,10 @@ namespace sw
 		if(queries.size() != 0)
 		{
 			draw->queries = new std::list<Query*>();
-			bool includePrimitivesWrittenQueries = vertexState.transformFeedbackQueryEnabled && vertexState.transformFeedbackEnabled;
 			for(auto &query : queries)
 			{
-				if(includePrimitivesWrittenQueries || (query->type != Query::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN))
-				{
-					++query->reference; // Atomic
-					draw->queries->push_back(query);
-				}
+				++query->reference; // Atomic
+				draw->queries->push_back(query);
 			}
 		}
 
@@ -323,116 +315,24 @@ namespace sw
 
 		for(int i = 0; i < MAX_VERTEX_INPUTS; i++)
 		{
-			draw->vertexStream[i] = context->input[i].resource;
 			data->input[i] = context->input[i].buffer;
 			data->stride[i] = context->input[i].stride;
-
-			if(draw->vertexStream[i])
-			{
-				draw->vertexStream[i]->lock(PUBLIC, PRIVATE);
-			}
 		}
 
 		if(context->indexBuffer)
 		{
-			data->indices = (unsigned char*)context->indexBuffer->lock(PUBLIC, PRIVATE) + indexOffset;
+			data->indices = context->indexBuffer;
 		}
 
-		draw->indexBuffer = context->indexBuffer;
-
-		for(int sampler = 0; sampler < TOTAL_IMAGE_UNITS; sampler++)
-		{
-			draw->texture[sampler] = 0;
-		}
-
-		for(int sampler = 0; sampler < TEXTURE_IMAGE_UNITS; sampler++)
-		{
-			if(pixelState.sampler[sampler].textureType != TEXTURE_NULL)
-			{
-				draw->texture[sampler] = context->texture[sampler];
-				draw->texture[sampler]->lock(PUBLIC, isReadWriteTexture(sampler) ? MANAGED : PRIVATE);   // If the texure is both read and written, use the same read/write lock as render targets
-
-				data->mipmap[sampler] = context->sampler[sampler].getTextureData();
-			}
-		}
-
-		if(context->pixelShader)
-		{
-			if(draw->psDirtyConstF)
-			{
-				memcpy(&data->ps.c, PixelProcessor::c, sizeof(float4) * draw->psDirtyConstF);
-				draw->psDirtyConstF = 0;
-			}
-
-			if(draw->psDirtyConstI)
-			{
-				memcpy(&data->ps.i, PixelProcessor::i, sizeof(int4) * draw->psDirtyConstI);
-				draw->psDirtyConstI = 0;
-			}
-
-			if(draw->psDirtyConstB)
-			{
-				memcpy(&data->ps.b, PixelProcessor::b, sizeof(bool) * draw->psDirtyConstB);
-				draw->psDirtyConstB = 0;
-			}
-
-			PixelProcessor::lockUniformBuffers(data->ps.u, draw->pUniformBuffers);
-		}
-		else
-		{
-			for(int i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; i++)
-			{
-				draw->pUniformBuffers[i] = nullptr;
-			}
-		}
-
-		for(int sampler = 0; sampler < VERTEX_TEXTURE_IMAGE_UNITS; sampler++)
-		{
-			if(vertexState.sampler[sampler].textureType != TEXTURE_NULL)
-			{
-				draw->texture[TEXTURE_IMAGE_UNITS + sampler] = context->texture[TEXTURE_IMAGE_UNITS + sampler];
-				draw->texture[TEXTURE_IMAGE_UNITS + sampler]->lock(PUBLIC, PRIVATE);
-
-				data->mipmap[TEXTURE_IMAGE_UNITS + sampler] = context->sampler[TEXTURE_IMAGE_UNITS + sampler].getTextureData();
-			}
-		}
-
-		if(draw->vsDirtyConstF)
-		{
-			memcpy(&data->vs.c, VertexProcessor::c, sizeof(float4) * draw->vsDirtyConstF);
-			draw->vsDirtyConstF = 0;
-		}
-
-		if(draw->vsDirtyConstI)
-		{
-			memcpy(&data->vs.i, VertexProcessor::i, sizeof(int4) * draw->vsDirtyConstI);
-			draw->vsDirtyConstI = 0;
-		}
-
-		if(draw->vsDirtyConstB)
-		{
-			memcpy(&data->vs.b, VertexProcessor::b, sizeof(bool) * draw->vsDirtyConstB);
-			draw->vsDirtyConstB = 0;
-		}
-
-		if(context->vertexShader->isInstanceIdDeclared())
+		if(context->vertexShader->hasBuiltinInput(spv::BuiltInInstanceId))
 		{
 			data->instanceID = context->instanceID;
 		}
-
-		VertexProcessor::lockUniformBuffers(data->vs.u, draw->vUniformBuffers);
-		VertexProcessor::lockTransformFeedbackBuffers(data->vs.t, data->vs.reg, data->vs.row, data->vs.col, data->vs.str, draw->transformFeedbackBuffers);
 
 		if(pixelState.stencilActive)
 		{
 			data->stencil[0] = stencil;
 			data->stencil[1] = stencilCCW;
-		}
-
-		if(setupState.isDrawPoint)
-		{
-			data->pointSizeMin = pointSizeMin;
-			data->pointSizeMax = pointSizeMax;
 		}
 
 		data->lineWidth = context->lineWidth;
@@ -508,17 +408,6 @@ namespace sw
 			data->slopeDepthBias = context->slopeDepthBias;
 			data->depthRange = Z;
 			data->depthNear = N;
-			draw->clipFlags = clipFlags;
-
-			if(clipFlags)
-			{
-				if(clipFlags & Clipper::CLIP_PLANE0) data->clipPlane[0] = clipPlane[0];
-				if(clipFlags & Clipper::CLIP_PLANE1) data->clipPlane[1] = clipPlane[1];
-				if(clipFlags & Clipper::CLIP_PLANE2) data->clipPlane[2] = clipPlane[2];
-				if(clipFlags & Clipper::CLIP_PLANE3) data->clipPlane[3] = clipPlane[3];
-				if(clipFlags & Clipper::CLIP_PLANE4) data->clipPlane[4] = clipPlane[4];
-				if(clipFlags & Clipper::CLIP_PLANE5) data->clipPlane[5] = clipPlane[5];
-			}
 		}
 
 		// Target
@@ -529,10 +418,10 @@ namespace sw
 
 				if(draw->renderTarget[index])
 				{
-					unsigned int layer = context->renderTargetLayer[index];
-					data->colorBuffer[index] = (unsigned int*)context->renderTarget[index]->lockInternal(0, 0, layer, LOCK_READWRITE, MANAGED);
-					data->colorPitchB[index] = context->renderTarget[index]->getInternalPitchB();
-					data->colorSliceB[index] = context->renderTarget[index]->getInternalSliceB();
+					VkOffset3D offset = { 0, 0, static_cast<int32_t>(context->renderTargetLayer[index]) };
+					data->colorBuffer[index] = (unsigned int*)context->renderTarget[index]->getOffsetPointer(offset, VK_IMAGE_ASPECT_COLOR_BIT);
+					data->colorPitchB[index] = context->renderTarget[index]->rowPitchBytes(VK_IMAGE_ASPECT_COLOR_BIT);
+					data->colorSliceB[index] = context->renderTarget[index]->slicePitchBytes(VK_IMAGE_ASPECT_COLOR_BIT);
 				}
 			}
 
@@ -541,18 +430,18 @@ namespace sw
 
 			if(draw->depthBuffer)
 			{
-				unsigned int layer = context->depthBufferLayer;
-				data->depthBuffer = (float*)context->depthBuffer->lockInternal(0, 0, layer, LOCK_READWRITE, MANAGED);
-				data->depthPitchB = context->depthBuffer->getInternalPitchB();
-				data->depthSliceB = context->depthBuffer->getInternalSliceB();
+				VkOffset3D offset = { 0, 0, static_cast<int32_t>(context->depthBufferLayer) };
+				data->depthBuffer = (float*)context->depthBuffer->getOffsetPointer(offset, VK_IMAGE_ASPECT_DEPTH_BIT);
+				data->depthPitchB = context->depthBuffer->rowPitchBytes(VK_IMAGE_ASPECT_DEPTH_BIT);
+				data->depthSliceB = context->depthBuffer->slicePitchBytes(VK_IMAGE_ASPECT_DEPTH_BIT);
 			}
 
 			if(draw->stencilBuffer)
 			{
-				unsigned int layer = context->stencilBufferLayer;
-				data->stencilBuffer = (unsigned char*)context->stencilBuffer->lockStencil(0, 0, layer, MANAGED);
-				data->stencilPitchB = context->stencilBuffer->getStencilPitchB();
-				data->stencilSliceB = context->stencilBuffer->getStencilSliceB();
+				VkOffset3D offset = { 0, 0, static_cast<int32_t>(context->stencilBufferLayer) };
+				data->stencilBuffer = (unsigned char*)context->stencilBuffer->getOffsetPointer(offset, VK_IMAGE_ASPECT_STENCIL_BIT);
+				data->stencilPitchB = context->stencilBuffer->rowPitchBytes(VK_IMAGE_ASPECT_STENCIL_BIT);
+				data->stencilSliceB = context->stencilBuffer->slicePitchBytes(VK_IMAGE_ASPECT_STENCIL_BIT);
 			}
 		}
 
@@ -914,65 +803,6 @@ namespace sw
 					draw.queries = 0;
 				}
 
-				for(int i = 0; i < RENDERTARGETS; i++)
-				{
-					if(draw.renderTarget[i])
-					{
-						draw.renderTarget[i]->unlockInternal();
-					}
-				}
-
-				if(draw.depthBuffer)
-				{
-					draw.depthBuffer->unlockInternal();
-				}
-
-				if(draw.stencilBuffer)
-				{
-					draw.stencilBuffer->unlockStencil();
-				}
-
-				for(int i = 0; i < TOTAL_IMAGE_UNITS; i++)
-				{
-					if(draw.texture[i])
-					{
-						draw.texture[i]->unlock();
-					}
-				}
-
-				for(int i = 0; i < MAX_VERTEX_INPUTS; i++)
-				{
-					if(draw.vertexStream[i])
-					{
-						draw.vertexStream[i]->unlock();
-					}
-				}
-
-				if(draw.indexBuffer)
-				{
-					draw.indexBuffer->unlock();
-				}
-
-				for(int i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; i++)
-				{
-					if(draw.pUniformBuffers[i])
-					{
-						draw.pUniformBuffers[i]->unlock();
-					}
-					if(draw.vUniformBuffers[i])
-					{
-						draw.vUniformBuffers[i]->unlock();
-					}
-				}
-
-				for(int i = 0; i < MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS; i++)
-				{
-					if(draw.transformFeedbackBuffers[i])
-					{
-						draw.transformFeedbackBuffers[i]->unlock();
-					}
-				}
-
 				draw.vertexRoutine->unbind();
 				draw.setupRoutine->unbind();
 				draw.pixelRoutine->unbind();
@@ -1294,7 +1124,6 @@ namespace sw
 		const SetupProcessor::RoutinePointer &setupRoutine = draw.setupPointer;
 
 		int ms = state.multiSample;
-		int pos = state.positionRegister;
 		const DrawData *data = draw.data;
 		int visible = 0;
 
@@ -1306,9 +1135,9 @@ namespace sw
 
 			if((v0.clipFlags & v1.clipFlags & v2.clipFlags) == Clipper::CLIP_FINITE)
 			{
-				Polygon polygon(&v0.v[pos], &v1.v[pos], &v2.v[pos]);
+				Polygon polygon(&v0.builtins.position, &v1.builtins.position, &v2.builtins.position);
 
-				int clipFlagsOr = v0.clipFlags | v1.clipFlags | v2.clipFlags | draw.clipFlags;
+				int clipFlagsOr = v0.clipFlags | v1.clipFlags | v2.clipFlags;
 
 				if(clipFlagsOr != Clipper::CLIP_FINITE)
 				{
@@ -1390,10 +1219,8 @@ namespace sw
 		Vertex &v0 = triangle.v0;
 		Vertex &v1 = triangle.v1;
 
-		int pos = state.positionRegister;
-
-		const float4 &P0 = v0.v[pos];
-		const float4 &P1 = v1.v[pos];
+		const float4 &P0 = v0.builtins.position;
+		const float4 &P1 = v1.builtins.position;
 
 		if(P0.w <= 0 && P1.w <= 0)
 		{
@@ -1452,7 +1279,7 @@ namespace sw
 			{
 				Polygon polygon(P, 4);
 
-				int clipFlagsOr = C[0] | C[1] | C[2] | C[3] | draw.clipFlags;
+				int clipFlagsOr = C[0] | C[1] | C[2] | C[3];
 
 				if(clipFlagsOr != Clipper::CLIP_FINITE)
 				{
@@ -1558,7 +1385,7 @@ namespace sw
 
 				Polygon polygon(L, 6);
 
-				int clipFlagsOr = C[0] | C[1] | C[2] | C[3] | C[4] | C[5] | C[6] | C[7] | draw.clipFlags;
+				int clipFlagsOr = C[0] | C[1] | C[2] | C[3] | C[4] | C[5] | C[6] | C[7];
 
 				if(clipFlagsOr != Clipper::CLIP_FINITE)
 				{
@@ -1578,35 +1405,21 @@ namespace sw
 	bool Renderer::setupPoint(Primitive &primitive, Triangle &triangle, const DrawCall &draw)
 	{
 		const SetupProcessor::RoutinePointer &setupRoutine = draw.setupPointer;
-		const SetupProcessor::State &state = draw.setupState;
 		const DrawData &data = *draw.data;
 
 		Vertex &v = triangle.v0;
 
-		float pSize;
+		float pSize = v.builtins.pointSize;
 
-		int pts = state.pointSizeRegister;
-
-		if(state.pointSizeRegister != Unused)
-		{
-			pSize = v.v[pts].y;
-		}
-		else
-		{
-			pSize = 1.0f;
-		}
-
-		pSize = clamp(pSize, data.pointSizeMin, data.pointSizeMax);
+		pSize = clamp(pSize, 1.0f, static_cast<float>(vk::MAX_POINT_SIZE));
 
 		float4 P[4];
 		int C[4];
 
-		int pos = state.positionRegister;
-
-		P[0] = v.v[pos];
-		P[1] = v.v[pos];
-		P[2] = v.v[pos];
-		P[3] = v.v[pos];
+		P[0] = v.builtins.position;
+		P[1] = v.builtins.position;
+		P[2] = v.builtins.position;
+		P[3] = v.builtins.position;
 
 		const float X = pSize * P[0].w * data.halfPixelX[0];
 		const float Y = pSize * P[0].w * data.halfPixelY[0];
@@ -1630,14 +1443,14 @@ namespace sw
 		triangle.v1 = triangle.v0;
 		triangle.v2 = triangle.v0;
 
-		triangle.v1.X += iround(16 * 0.5f * pSize);
-		triangle.v2.Y -= iround(16 * 0.5f * pSize) * (data.Hx16[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
+		triangle.v1.projected.x += iround(16 * 0.5f * pSize);
+		triangle.v2.projected.y -= iround(16 * 0.5f * pSize) * (data.Hx16[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
 
 		Polygon polygon(P, 4);
 
 		if((C[0] & C[1] & C[2] & C[3]) == Clipper::CLIP_FINITE)
 		{
-			int clipFlagsOr = C[0] | C[1] | C[2] | C[3] | draw.clipFlags;
+			int clipFlagsOr = C[0] | C[1] | C[2] | C[3];
 
 			if(clipFlagsOr != Clipper::CLIP_FINITE)
 			{
@@ -1723,97 +1536,6 @@ namespace sw
 		}
 	}
 
-	void Renderer::loadConstants(const VertexShader *vertexShader)
-	{
-		size_t count = vertexShader->getLength();
-
-		for(size_t i = 0; i < count; i++)
-		{
-			const Shader::Instruction *instruction = vertexShader->getInstruction(i);
-
-			if(instruction->opcode == Shader::OPCODE_DEF)
-			{
-				int index = instruction->dst.index;
-				float value[4];
-
-				value[0] = instruction->src[0].value[0];
-				value[1] = instruction->src[0].value[1];
-				value[2] = instruction->src[0].value[2];
-				value[3] = instruction->src[0].value[3];
-
-				setVertexShaderConstantF(index, value);
-			}
-			else if(instruction->opcode == Shader::OPCODE_DEFI)
-			{
-				int index = instruction->dst.index;
-				int integer[4];
-
-				integer[0] = instruction->src[0].integer[0];
-				integer[1] = instruction->src[0].integer[1];
-				integer[2] = instruction->src[0].integer[2];
-				integer[3] = instruction->src[0].integer[3];
-
-				setVertexShaderConstantI(index, integer);
-			}
-			else if(instruction->opcode == Shader::OPCODE_DEFB)
-			{
-				int index = instruction->dst.index;
-				int boolean = instruction->src[0].boolean[0];
-
-				setVertexShaderConstantB(index, &boolean);
-			}
-		}
-	}
-
-	void Renderer::loadConstants(const PixelShader *pixelShader)
-	{
-		if(!pixelShader) return;
-
-		size_t count = pixelShader->getLength();
-
-		for(size_t i = 0; i < count; i++)
-		{
-			const Shader::Instruction *instruction = pixelShader->getInstruction(i);
-
-			if(instruction->opcode == Shader::OPCODE_DEF)
-			{
-				int index = instruction->dst.index;
-				float value[4];
-
-				value[0] = instruction->src[0].value[0];
-				value[1] = instruction->src[0].value[1];
-				value[2] = instruction->src[0].value[2];
-				value[3] = instruction->src[0].value[3];
-
-				setPixelShaderConstantF(index, value);
-			}
-			else if(instruction->opcode == Shader::OPCODE_DEFI)
-			{
-				int index = instruction->dst.index;
-				int integer[4];
-
-				integer[0] = instruction->src[0].integer[0];
-				integer[1] = instruction->src[0].integer[1];
-				integer[2] = instruction->src[0].integer[2];
-				integer[3] = instruction->src[0].integer[3];
-
-				setPixelShaderConstantI(index, integer);
-			}
-			else if(instruction->opcode == Shader::OPCODE_DEFB)
-			{
-				int index = instruction->dst.index;
-				int boolean = instruction->src[0].boolean[0];
-
-				setPixelShaderConstantB(index, &boolean);
-			}
-		}
-	}
-
-	void Renderer::setIndexBuffer(Resource *indexBuffer)
-	{
-		context->indexBuffer = indexBuffer;
-	}
-
 	void Renderer::setMultiSampleMask(unsigned int mask)
 	{
 		context->sampleMask = mask;
@@ -1822,293 +1544,6 @@ namespace sw
 	void Renderer::setTransparencyAntialiasing(TransparencyAntialiasing transparencyAntialiasing)
 	{
 		sw::transparencyAntialiasing = transparencyAntialiasing;
-	}
-
-	bool Renderer::isReadWriteTexture(int sampler)
-	{
-		for(int index = 0; index < RENDERTARGETS; index++)
-		{
-			if(context->renderTarget[index] && context->texture[sampler] == context->renderTarget[index]->getResource())
-			{
-				return true;
-			}
-		}
-
-		if(context->depthBuffer && context->texture[sampler] == context->depthBuffer->getResource())
-		{
-			return true;
-		}
-
-		return false;
-	}
-
-	void Renderer::updateClipper()
-	{
-		if(updateClipPlanes)
-		{
-			if(clipFlags & Clipper::CLIP_PLANE0) clipPlane[0] = userPlane[0];
-			if(clipFlags & Clipper::CLIP_PLANE1) clipPlane[1] = userPlane[1];
-			if(clipFlags & Clipper::CLIP_PLANE2) clipPlane[2] = userPlane[2];
-			if(clipFlags & Clipper::CLIP_PLANE3) clipPlane[3] = userPlane[3];
-			if(clipFlags & Clipper::CLIP_PLANE4) clipPlane[4] = userPlane[4];
-			if(clipFlags & Clipper::CLIP_PLANE5) clipPlane[5] = userPlane[5];
-
-			updateClipPlanes = false;
-		}
-	}
-
-	void Renderer::setTextureResource(unsigned int sampler, Resource *resource)
-	{
-		ASSERT(sampler < TOTAL_IMAGE_UNITS);
-
-		context->texture[sampler] = resource;
-	}
-
-	void Renderer::setTextureLevel(unsigned int sampler, unsigned int face, unsigned int level, Surface *surface, TextureType type)
-	{
-		ASSERT(sampler < TOTAL_IMAGE_UNITS && face < 6 && level < MIPMAP_LEVELS);
-
-		context->sampler[sampler].setTextureLevel(face, level, surface, type);
-	}
-
-	void Renderer::setTextureFilter(SamplerType type, int sampler, FilterType textureFilter)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setTextureFilter(sampler, textureFilter);
-		}
-		else
-		{
-			VertexProcessor::setTextureFilter(sampler, textureFilter);
-		}
-	}
-
-	void Renderer::setMipmapFilter(SamplerType type, int sampler, MipmapType mipmapFilter)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setMipmapFilter(sampler, mipmapFilter);
-		}
-		else
-		{
-			VertexProcessor::setMipmapFilter(sampler, mipmapFilter);
-		}
-	}
-
-	void Renderer::setGatherEnable(SamplerType type, int sampler, bool enable)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setGatherEnable(sampler, enable);
-		}
-		else
-		{
-			VertexProcessor::setGatherEnable(sampler, enable);
-		}
-	}
-
-	void Renderer::setAddressingModeU(SamplerType type, int sampler, AddressingMode addressMode)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setAddressingModeU(sampler, addressMode);
-		}
-		else
-		{
-			VertexProcessor::setAddressingModeU(sampler, addressMode);
-		}
-	}
-
-	void Renderer::setAddressingModeV(SamplerType type, int sampler, AddressingMode addressMode)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setAddressingModeV(sampler, addressMode);
-		}
-		else
-		{
-			VertexProcessor::setAddressingModeV(sampler, addressMode);
-		}
-	}
-
-	void Renderer::setAddressingModeW(SamplerType type, int sampler, AddressingMode addressMode)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setAddressingModeW(sampler, addressMode);
-		}
-		else
-		{
-			VertexProcessor::setAddressingModeW(sampler, addressMode);
-		}
-	}
-
-	void Renderer::setReadSRGB(SamplerType type, int sampler, bool sRGB)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setReadSRGB(sampler, sRGB);
-		}
-		else
-		{
-			VertexProcessor::setReadSRGB(sampler, sRGB);
-		}
-	}
-
-	void Renderer::setMipmapLOD(SamplerType type, int sampler, float bias)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setMipmapLOD(sampler, bias);
-		}
-		else
-		{
-			VertexProcessor::setMipmapLOD(sampler, bias);
-		}
-	}
-
-	void Renderer::setBorderColor(SamplerType type, int sampler, const Color<float> &borderColor)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setBorderColor(sampler, borderColor);
-		}
-		else
-		{
-			VertexProcessor::setBorderColor(sampler, borderColor);
-		}
-	}
-
-	void Renderer::setMaxAnisotropy(SamplerType type, int sampler, float maxAnisotropy)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setMaxAnisotropy(sampler, maxAnisotropy);
-		}
-		else
-		{
-			VertexProcessor::setMaxAnisotropy(sampler, maxAnisotropy);
-		}
-	}
-
-	void Renderer::setHighPrecisionFiltering(SamplerType type, int sampler, bool highPrecisionFiltering)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setHighPrecisionFiltering(sampler, highPrecisionFiltering);
-		}
-		else
-		{
-			VertexProcessor::setHighPrecisionFiltering(sampler, highPrecisionFiltering);
-		}
-	}
-
-	void Renderer::setSwizzleR(SamplerType type, int sampler, SwizzleType swizzleR)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setSwizzleR(sampler, swizzleR);
-		}
-		else
-		{
-			VertexProcessor::setSwizzleR(sampler, swizzleR);
-		}
-	}
-
-	void Renderer::setSwizzleG(SamplerType type, int sampler, SwizzleType swizzleG)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setSwizzleG(sampler, swizzleG);
-		}
-		else
-		{
-			VertexProcessor::setSwizzleG(sampler, swizzleG);
-		}
-	}
-
-	void Renderer::setSwizzleB(SamplerType type, int sampler, SwizzleType swizzleB)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setSwizzleB(sampler, swizzleB);
-		}
-		else
-		{
-			VertexProcessor::setSwizzleB(sampler, swizzleB);
-		}
-	}
-
-	void Renderer::setSwizzleA(SamplerType type, int sampler, SwizzleType swizzleA)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setSwizzleA(sampler, swizzleA);
-		}
-		else
-		{
-			VertexProcessor::setSwizzleA(sampler, swizzleA);
-		}
-	}
-
-	void Renderer::setCompareFunc(SamplerType type, int sampler, CompareFunc compFunc)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setCompareFunc(sampler, compFunc);
-		}
-		else
-		{
-			VertexProcessor::setCompareFunc(sampler, compFunc);
-		}
-	}
-
-	void Renderer::setBaseLevel(SamplerType type, int sampler, int baseLevel)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setBaseLevel(sampler, baseLevel);
-		}
-		else
-		{
-			VertexProcessor::setBaseLevel(sampler, baseLevel);
-		}
-	}
-
-	void Renderer::setMaxLevel(SamplerType type, int sampler, int maxLevel)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setMaxLevel(sampler, maxLevel);
-		}
-		else
-		{
-			VertexProcessor::setMaxLevel(sampler, maxLevel);
-		}
-	}
-
-	void Renderer::setMinLod(SamplerType type, int sampler, float minLod)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setMinLod(sampler, minLod);
-		}
-		else
-		{
-			VertexProcessor::setMinLod(sampler, minLod);
-		}
-	}
-
-	void Renderer::setMaxLod(SamplerType type, int sampler, float maxLod)
-	{
-		if(type == SAMPLER_PIXEL)
-		{
-			PixelProcessor::setMaxLod(sampler, maxLod);
-		}
-		else
-		{
-			VertexProcessor::setMaxLod(sampler, maxLod);
-		}
 	}
 
 	void Renderer::setLineWidth(float width)
@@ -2131,120 +1566,14 @@ namespace sw
 		context->rasterizerDiscard = rasterizerDiscard;
 	}
 
-	void Renderer::setPixelShader(const PixelShader *shader)
+	void Renderer::setPixelShader(const SpirvShader *shader)
 	{
 		context->pixelShader = shader;
-
-		loadConstants(shader);
 	}
 
-	void Renderer::setVertexShader(const VertexShader *shader)
+	void Renderer::setVertexShader(const SpirvShader *shader)
 	{
 		context->vertexShader = shader;
-
-		loadConstants(shader);
-	}
-
-	void Renderer::setPixelShaderConstantF(unsigned int index, const float value[4], unsigned int count)
-	{
-		for(unsigned int i = 0; i < DRAW_COUNT; i++)
-		{
-			if(drawCall[i]->psDirtyConstF < index + count)
-			{
-				drawCall[i]->psDirtyConstF = index + count;
-			}
-		}
-
-		for(unsigned int i = 0; i < count; i++)
-		{
-			PixelProcessor::setFloatConstant(index + i, value);
-			value += 4;
-		}
-	}
-
-	void Renderer::setPixelShaderConstantI(unsigned int index, const int value[4], unsigned int count)
-	{
-		for(unsigned int i = 0; i < DRAW_COUNT; i++)
-		{
-			if(drawCall[i]->psDirtyConstI < index + count)
-			{
-				drawCall[i]->psDirtyConstI = index + count;
-			}
-		}
-
-		for(unsigned int i = 0; i < count; i++)
-		{
-			PixelProcessor::setIntegerConstant(index + i, value);
-			value += 4;
-		}
-	}
-
-	void Renderer::setPixelShaderConstantB(unsigned int index, const int *boolean, unsigned int count)
-	{
-		for(unsigned int i = 0; i < DRAW_COUNT; i++)
-		{
-			if(drawCall[i]->psDirtyConstB < index + count)
-			{
-				drawCall[i]->psDirtyConstB = index + count;
-			}
-		}
-
-		for(unsigned int i = 0; i < count; i++)
-		{
-			PixelProcessor::setBooleanConstant(index + i, *boolean);
-			boolean++;
-		}
-	}
-
-	void Renderer::setVertexShaderConstantF(unsigned int index, const float value[4], unsigned int count)
-	{
-		for(unsigned int i = 0; i < DRAW_COUNT; i++)
-		{
-			if(drawCall[i]->vsDirtyConstF < index + count)
-			{
-				drawCall[i]->vsDirtyConstF = index + count;
-			}
-		}
-
-		for(unsigned int i = 0; i < count; i++)
-		{
-			VertexProcessor::setFloatConstant(index + i, value);
-			value += 4;
-		}
-	}
-
-	void Renderer::setVertexShaderConstantI(unsigned int index, const int value[4], unsigned int count)
-	{
-		for(unsigned int i = 0; i < DRAW_COUNT; i++)
-		{
-			if(drawCall[i]->vsDirtyConstI < index + count)
-			{
-				drawCall[i]->vsDirtyConstI = index + count;
-			}
-		}
-
-		for(unsigned int i = 0; i < count; i++)
-		{
-			VertexProcessor::setIntegerConstant(index + i, value);
-			value += 4;
-		}
-	}
-
-	void Renderer::setVertexShaderConstantB(unsigned int index, const int *boolean, unsigned int count)
-	{
-		for(unsigned int i = 0; i < DRAW_COUNT; i++)
-		{
-			if(drawCall[i]->vsDirtyConstB < index + count)
-			{
-				drawCall[i]->vsDirtyConstB = index + count;
-			}
-		}
-
-		for(unsigned int i = 0; i < count; i++)
-		{
-			VertexProcessor::setBooleanConstant(index + i, *boolean);
-			boolean++;
-		}
 	}
 
 	void Renderer::addQuery(Query *query)
@@ -2302,22 +1631,6 @@ namespace sw
 	void Renderer::setScissor(const Rect &scissor)
 	{
 		this->scissor = scissor;
-	}
-
-	void Renderer::setClipFlags(int flags)
-	{
-		clipFlags = flags << 8;   // Bottom 8 bits used by legacy frustum
-	}
-
-	void Renderer::setClipPlane(unsigned int index, const float plane[4])
-	{
-		if(index < MAX_CLIP_PLANES)
-		{
-			userPlane[index] = plane;
-		}
-		else ASSERT(false);
-
-		updateClipPlanes = true;
 	}
 
 	void Renderer::updateConfiguration(bool initialUpdate)

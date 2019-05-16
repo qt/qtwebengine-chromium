@@ -19,6 +19,7 @@
 #include "SkMaskGamma.h"
 #include "SkMatrix.h"
 #include "SkPaint.h"
+#include "SkStrikeInterface.h"
 #include "SkSurfacePriv.h"
 #include "SkTypeface.h"
 #include "SkWriteBuffer.h"
@@ -35,18 +36,6 @@ enum SkScalerContextFlags : uint32_t {
     kFakeGamma                 = 1 << 0,
     kBoostContrast             = 1 << 1,
     kFakeGammaAndBoostContrast = kFakeGamma | kBoostContrast,
-};
-
-struct SkScalerContextEffects {
-    SkScalerContextEffects() : fPathEffect(nullptr), fMaskFilter(nullptr) {}
-    SkScalerContextEffects(SkPathEffect* pe, SkMaskFilter* mf)
-        : fPathEffect(pe), fMaskFilter(mf) {}
-    explicit SkScalerContextEffects(const SkPaint& paint)
-        : fPathEffect(paint.getPathEffect())
-        , fMaskFilter(paint.getMaskFilter()) {}
-
-    SkPathEffect*   fPathEffect;
-    SkMaskFilter*   fMaskFilter;
 };
 
 enum SkAxisAlignment : uint32_t {
@@ -211,9 +200,10 @@ public:
         return fLumBits;
     }
 
-
+    // setLuminanceColor forces the alpha to be 0xFF because the blitter that draws the glyph
+    // will apply the alpha from the paint. Don't apply the alpha twice.
     void setLuminanceColor(SkColor c) {
-        fLumBits = c;
+        fLumBits = SkColorSetRGB(SkColorGetR(c), SkColorGetG(c), SkColorGetB(c));
     }
 
 private:
@@ -310,18 +300,16 @@ public:
                                   SkScalerContextFlags scalerContextFlags,
                                   const SkMatrix& deviceMatrix,
                                   SkScalerContextRec* rec,
-                                  SkScalerContextEffects* effects,
-                                  bool enableTypefaceFiltering = true);
+                                  SkScalerContextEffects* effects);
 
     // If we are creating rec and effects from a font only, then there is no device around either.
     static void MakeRecAndEffectsFromFont(const SkFont& font,
                                           SkScalerContextRec* rec,
-                                          SkScalerContextEffects* effects,
-                                          bool enableTypefaceFiltering = true) {
+                                          SkScalerContextEffects* effects) {
         SkPaint paint;
         return MakeRecAndEffects(
                 font, paint, SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType),
-                SkScalerContextFlags::kNone, SkMatrix::I(), rec, effects, enableTypefaceFiltering);
+                SkScalerContextFlags::kNone, SkMatrix::I(), rec, effects);
     }
 
     static SkDescriptor*  MakeDescriptorForPaths(SkFontID fontID,
@@ -410,6 +398,10 @@ protected:
 private:
     friend class SkRandomScalerContext; // For debug purposes
 
+    static SkScalerContextRec PreprocessRec(const SkTypeface& typeface,
+                                            const SkScalerContextEffects& effects,
+                                            const SkDescriptor& desc);
+
     // never null
     sk_sp<SkTypeface> fTypeface;
 
@@ -428,10 +420,6 @@ private:
 protected:
     // Visible to subclasses so that generateImage can apply the pre-blend directly.
     const SkMaskGamma::PreBlend fPreBlend;
-private:
-    // When there is a filter, previous steps must create a linear mask
-    // and the pre-blend applied as a final step.
-    const SkMaskGamma::PreBlend fPreBlendForFilter;
 };
 
 #define kRec_SkDescriptorTag            SkSetFourByteTag('s', 'r', 'e', 'c')

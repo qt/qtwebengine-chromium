@@ -2047,7 +2047,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" }
       ]
     },
@@ -2056,7 +2056,7 @@
       "opcode" : 228,
       "operands" : [
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2068,7 +2068,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2080,7 +2080,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Equal'" },
         { "kind" : "IdMemorySemantics", "name" : "'Unequal'" },
         { "kind" : "IdRef",             "name" : "'Value'" },
@@ -2094,7 +2094,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Equal'" },
         { "kind" : "IdMemorySemantics", "name" : "'Unequal'" },
         { "kind" : "IdRef",             "name" : "'Value'" },
@@ -2109,7 +2109,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" }
       ]
     },
@@ -2120,7 +2120,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" }
       ]
     },
@@ -2131,7 +2131,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2143,7 +2143,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2155,7 +2155,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2167,7 +2167,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2179,7 +2179,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2191,7 +2191,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2203,7 +2203,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2215,7 +2215,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2227,7 +2227,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" },
         { "kind" : "IdRef",             "name" : "'Value'" }
       ]
@@ -2999,7 +2999,7 @@
         { "kind" : "IdResultType" },
         { "kind" : "IdResult" },
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" }
       ],
       "capabilities" : [ "Kernel" ]
@@ -3009,7 +3009,7 @@
       "opcode" : 319,
       "operands" : [
         { "kind" : "IdRef",             "name" : "'Pointer'" },
-        { "kind" : "IdScope",           "name" : "'Scope'" },
+        { "kind" : "IdScope",           "name" : "'Memory'" },
         { "kind" : "IdMemorySemantics", "name" : "'Semantics'" }
       ],
       "capabilities" : [ "Kernel" ]
@@ -4068,6 +4068,75 @@
       ],
       "capabilities" : [ "ImageFootprintNV" ],
       "extensions" : [ "SPV_NV_shader_image_footprint" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpTypeCooperativeMatrixNV",
+      "opcode" : 5358,
+      "operands" : [
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef",        "name" : "'Component Type'" },
+        { "kind" : "IdScope",      "name" : "'Execution'" },
+        { "kind" : "IdRef",        "name" : "'Rows'" },
+        { "kind" : "IdRef",        "name" : "'Columns'" }
+      ],
+      "capabilities" : [ "CooperativeMatrixNV" ],
+      "extensions" : [ "SPV_NV_cooperative_matrix" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpCooperativeMatrixLoadNV",
+      "opcode" : 5359,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef",             "name" : "'Pointer'" },
+        { "kind" : "IdRef",             "name" : "'Stride'" },
+        { "kind" : "IdRef",             "name" : "'Column Major'" },
+        { "kind" : "MemoryAccess",      "quantifier" : "?" }
+      ],
+      "capabilities" : [ "CooperativeMatrixNV" ],
+      "extensions" : [ "SPV_NV_cooperative_matrix" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpCooperativeMatrixStoreNV",
+      "opcode" : 5360,
+      "operands" : [
+        { "kind" : "IdRef",             "name" : "'Pointer'" },
+        { "kind" : "IdRef",             "name" : "'Object'" },
+        { "kind" : "IdRef",             "name" : "'Stride'" },
+        { "kind" : "IdRef",             "name" : "'Column Major'" },
+        { "kind" : "MemoryAccess",      "quantifier" : "?" }
+      ],
+      "capabilities" : [ "CooperativeMatrixNV" ],
+      "extensions" : [ "SPV_NV_cooperative_matrix" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpCooperativeMatrixMulAddNV",
+      "opcode" : 5361,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef",             "name" : "'A'" },
+        { "kind" : "IdRef",             "name" : "'B'" },
+        { "kind" : "IdRef",             "name" : "'C'" }
+      ],
+      "capabilities" : [ "CooperativeMatrixNV" ],
+      "extensions" : [ "SPV_NV_cooperative_matrix" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpCooperativeMatrixLengthNV",
+      "opcode" : 5362,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef",        "name" : "'Type'" }
+      ],
+      "capabilities" : [ "CooperativeMatrixNV" ],
+      "extensions" : [ "SPV_NV_cooperative_matrix" ],
       "version" : "None"
     }
   ],
@@ -7470,6 +7539,13 @@
           "value" : 5347,
           "capabilities" : [ "Shader" ],
           "extensions" : [ "SPV_EXT_physical_storage_buffer" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "CooperativeMatrixNV",
+          "value" : 5357,
+          "capabilities" : [ "Shader" ],
+          "extensions" : [ "SPV_NV_cooperative_matrix" ],
           "version" : "None"
         }
       ]

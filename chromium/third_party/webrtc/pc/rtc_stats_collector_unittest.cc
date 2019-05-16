@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/str_replace.h"
 #include "api/rtp_parameters.h"
 #include "api/stats/rtc_stats_report.h"
 #include "api/stats/rtcstats_objects.h"
@@ -134,11 +135,10 @@ std::unique_ptr<CertificateInfo> CreateFakeCertificateAndInfoFromDers(
           new rtc::FakeSSLIdentity(info->pems)));
   // Strip header/footer and newline characters of PEM strings.
   for (size_t i = 0; i < info->pems.size(); ++i) {
-    rtc::replace_substrs("-----BEGIN CERTIFICATE-----", 27, "", 0,
-                         &info->pems[i]);
-    rtc::replace_substrs("-----END CERTIFICATE-----", 25, "", 0,
-                         &info->pems[i]);
-    rtc::replace_substrs("\n", 1, "", 0, &info->pems[i]);
+    absl::StrReplaceAll({{"-----BEGIN CERTIFICATE-----", ""},
+                         {"-----END CERTIFICATE-----", ""},
+                         {"\n", ""}},
+                        &info->pems[i]);
   }
   // Fingerprints for the whole certificate chain, starting with leaf
   // certificate.
@@ -214,8 +214,8 @@ class FakeVideoTrackForStats : public MediaStreamTrack<VideoTrackInterface> {
   }
 
   void AddOrUpdateSink(rtc::VideoSinkInterface<VideoFrame>* sink,
-                       const rtc::VideoSinkWants& wants) override{};
-  void RemoveSink(rtc::VideoSinkInterface<VideoFrame>* sink) override{};
+                       const rtc::VideoSinkWants& wants) override {}
+  void RemoveSink(rtc::VideoSinkInterface<VideoFrame>* sink) override {}
 
   VideoTrackSourceInterface* GetSource() const override { return nullptr; }
 };
@@ -1428,6 +1428,7 @@ TEST_F(RTCStatsCollectorTest,
   voice_receiver_info.jitter_buffer_emitted_count = 13;
   voice_receiver_info.jitter_buffer_flushes = 7;
   voice_receiver_info.delayed_packet_outage_samples = 15;
+  voice_receiver_info.relative_packet_arrival_delay_seconds = 16;
 
   stats_->CreateMockRtpSendersReceiversAndChannels(
       {}, {std::make_pair(remote_audio_track.get(), voice_receiver_info)}, {},
@@ -1464,6 +1465,7 @@ TEST_F(RTCStatsCollectorTest,
   expected_remote_audio_track.jitter_buffer_emitted_count = 13;
   expected_remote_audio_track.jitter_buffer_flushes = 7;
   expected_remote_audio_track.delayed_packet_outage_samples = 15;
+  expected_remote_audio_track.relative_packet_arrival_delay = 16;
   ASSERT_TRUE(report->Get(expected_remote_audio_track.id()));
   EXPECT_EQ(expected_remote_audio_track,
             report->Get(expected_remote_audio_track.id())
@@ -1552,6 +1554,12 @@ TEST_F(RTCStatsCollectorTest,
   video_receiver_info_ssrc3.frames_received = 1000;
   video_receiver_info_ssrc3.frames_decoded = 995;
   video_receiver_info_ssrc3.frames_rendered = 990;
+  video_receiver_info_ssrc3.freeze_count = 3;
+  video_receiver_info_ssrc3.pause_count = 2;
+  video_receiver_info_ssrc3.total_freezes_duration_ms = 1000;
+  video_receiver_info_ssrc3.total_pauses_duration_ms = 10000;
+  video_receiver_info_ssrc3.total_frames_duration_ms = 15000;
+  video_receiver_info_ssrc3.sum_squared_frame_durations = 1.5;
 
   stats_->CreateMockRtpSendersReceiversAndChannels(
       {}, {}, {},
@@ -1591,6 +1599,13 @@ TEST_F(RTCStatsCollectorTest,
   expected_remote_video_track_ssrc3.frames_received = 1000;
   expected_remote_video_track_ssrc3.frames_decoded = 995;
   expected_remote_video_track_ssrc3.frames_dropped = 1000 - 990;
+  expected_remote_video_track_ssrc3.freeze_count = 3;
+  expected_remote_video_track_ssrc3.pause_count = 2;
+  expected_remote_video_track_ssrc3.total_freezes_duration = 1;
+  expected_remote_video_track_ssrc3.total_pauses_duration = 10;
+  expected_remote_video_track_ssrc3.total_frames_duration = 15;
+  expected_remote_video_track_ssrc3.sum_squared_frame_durations = 1.5;
+
   ASSERT_TRUE(report->Get(expected_remote_video_track_ssrc3.id()));
   EXPECT_EQ(expected_remote_video_track_ssrc3,
             report->Get(expected_remote_video_track_ssrc3.id())
@@ -2184,7 +2199,7 @@ class RTCTestStats : public RTCStats {
   RTCStatsMember<int32_t> dummy_stat;
 };
 
-WEBRTC_RTCSTATS_IMPL(RTCTestStats, RTCStats, "test-stats", &dummy_stat);
+WEBRTC_RTCSTATS_IMPL(RTCTestStats, RTCStats, "test-stats", &dummy_stat)
 
 // Overrides the stats collection to verify thread usage and that the resulting
 // partial reports are merged.
@@ -2236,7 +2251,9 @@ class FakeRTCStatsCollector : public RTCStatsCollector,
         worker_thread_(pc->worker_thread()),
         network_thread_(pc->network_thread()) {}
 
-  void ProducePartialResultsOnSignalingThread(int64_t timestamp_us) override {
+  void ProducePartialResultsOnSignalingThreadImpl(
+      int64_t timestamp_us,
+      RTCStatsReport* partial_report) override {
     EXPECT_TRUE(signaling_thread_->IsCurrent());
     {
       rtc::CritScope cs(&lock_);
@@ -2244,13 +2261,15 @@ class FakeRTCStatsCollector : public RTCStatsCollector,
       ++produced_on_signaling_thread_;
     }
 
-    rtc::scoped_refptr<RTCStatsReport> signaling_report =
-        RTCStatsReport::Create(0);
-    signaling_report->AddStats(std::unique_ptr<const RTCStats>(
+    partial_report->AddStats(std::unique_ptr<const RTCStats>(
         new RTCTestStats("SignalingThreadStats", timestamp_us)));
-    AddPartialResults(signaling_report);
   }
-  void ProducePartialResultsOnNetworkThread(int64_t timestamp_us) override {
+  void ProducePartialResultsOnNetworkThreadImpl(
+      int64_t timestamp_us,
+      const std::map<std::string, cricket::TransportStats>&
+          transport_stats_by_name,
+      const std::map<std::string, CertificateStatsPair>& transport_cert_stats,
+      RTCStatsReport* partial_report) override {
     EXPECT_TRUE(network_thread_->IsCurrent());
     {
       rtc::CritScope cs(&lock_);
@@ -2258,11 +2277,8 @@ class FakeRTCStatsCollector : public RTCStatsCollector,
       ++produced_on_network_thread_;
     }
 
-    rtc::scoped_refptr<RTCStatsReport> network_report =
-        RTCStatsReport::Create(0);
-    network_report->AddStats(std::unique_ptr<const RTCStats>(
+    partial_report->AddStats(std::unique_ptr<const RTCStats>(
         new RTCTestStats("NetworkThreadStats", timestamp_us)));
-    AddPartialResults(network_report);
   }
 
  private:

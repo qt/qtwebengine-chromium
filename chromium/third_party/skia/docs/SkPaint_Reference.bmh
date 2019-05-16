@@ -26,8 +26,7 @@ Paint does not directly implement dashing or blur, but contains the objects that
 The objects contained by Paint are opaque, and cannot be edited outside of the Paint
 to affect it. The implementation is free to defer computations associated with the
 Paint, or ignore them altogether. For instance, some GPU implementations draw all
-Path geometries with Anti_Aliasing, regardless of how SkPaint::kAntiAlias_Flag
-is set in Paint.
+Path geometries with Anti_Aliasing.
 
 Paint describes a single color, a single font, a single image quality, and so on.
 Multiple colors are drawn either by using multiple paints or with objects like
@@ -49,31 +48,18 @@ Constructs Paint with default values.
 # Dither                 # false                    ##
 # Draw_Looper            # nullptr                  ##
 # Filter_Quality         # kNone_SkFilterQuality    ##
-# Font_Force_Hinting     # false                    ##
-# Font_Embedded_Bitmaps  # false                    ##
-# Font_Embolden          # false                    ##
-# Font_Hinting           # SkFontHinting::kNormal   ##
-# Font_Hinting_Spacing   # false                    ##
-# Font_Anti_Alias        # false                    ##
-# Font_Linear            # false                    ##
-# Font_Scale_X           # 1                        ##
-# Font_Size              # 12                       ##
-# Font_Skew_X            # 0                        ##
-# Font_Subpixel          # false                    ##
 # Image_Filter           # nullptr                  ##
 # Miter_Limit            # 4                        ##
 # Mask_Filter            # nullptr                  ##
 # Path_Effect            # nullptr                  ##
 # Shader                 # nullptr                  ##
 # Style                  # kFill_Style              ##
-# Text_Encoding          # kUTF8_SkTextEncoding     ##
-# Typeface               # nullptr                  ##
 # Stroke_Cap             # kButt_Cap                ##
 # Stroke_Join            # kMiter_Join              ##
 # Stroke_Width           # 0                        ##
 #Table ##
 
-The flags, text size, hinting, and miter limit may be overridden at compile time by defining
+The miter limit may be overridden at compile time by defining
 paint default values. The overrides may be included in "SkUserConfig.h" or predefined by the
 build system.
 
@@ -86,7 +72,6 @@ build system.
 #ifndef SkUserConfig_DEFINED
 #define SkUserConfig_DEFINED
 
-#define SkPaintDefaults_Flags      0x01   // always enable antialiasing
 #define SkPaintDefaults_TextSize   24.f   // double default font size
 #define SkPaintDefaults_Hinting    3      // use full hinting
 #define SkPaintDefaults_MiterLimit 10.f   // use HTML Canvas miter limit setting
@@ -284,132 +269,6 @@ $$$#  # restore original markup character
 ##
 
 # ------------------------------------------------------------------------------
-
-#Subtopic Hinting
-#Line # glyph outline adjustment ##
-##
-
-#Method void setHinting(SkFontHinting hintingLevel)
-#In Hinting
-#Line # sets Hinting, glyph outline adjustment level ##
-#Populate
-
-    #Example
-        SkPaint paint1, paint2;
-        paint2.setHinting(SkFontHinting::kNormal);
-        SkDebugf("paint1 %c= paint2\n", paint1 == paint2 ? '=' : ':');
-
-        #StdOut
-        paint1 == paint2
-        ##
-    ##
-##
-
-#Method SkFontHinting getHinting() const
-#In Hinting
-#Line # returns Hinting, glyph outline adjustment level ##
-#Populate
-
-    #Example
-        SkPaint paint;
-        SkDebugf("SkFontHinting::kNormal %c= paint.getHinting()\n",
-                SkFontHinting::kNormal == paint.getHinting() ? '=' : ':');
-
-        #StdOut
-            SkFontHinting::kNormal == paint.getHinting()
-        ##
-    ##
-##
-
-# ------------------------------------------------------------------------------
-#Subtopic Flags
-#Line # attributes represented by single bits ##
-##
-
-#Enum Flags
-#Line # values described by bits and masks ##
-
-#Code
-#Populate
-##
-
-The bit values stored in Flags.
-The default value for Flags, normally zero, can be changed at compile time
-with a custom definition of SkPaintDefaults_Flags.
-All flags can be read and written explicitly; Flags allows manipulating
-multiple settings at once.
-
-    #Const kAntiAlias_Flag          0x0001
-    #Line # mask for setting Anti_Alias ##
-    ##
-    #Const kDither_Flag             0x0004
-    #Line # mask for setting Dither ##
-    ##
-    #Const kFakeBoldText_Flag       0x0020
-    #Line # mask for setting Font_Embolden ##
-    ##
-    #Const kLinearText_Flag         0x0040
-    #Line # mask for setting Font_Linear ##
-    ##
-    #Const kSubpixelText_Flag       0x0080
-    #Line # mask for setting Font_Subpixel ##
-    ##
-    #Const kLCDRenderText_Flag      0x0200
-    #Line # mask for setting Font_Anti_Alias ##
-    ##
-    #Const kEmbeddedBitmapText_Flag 0x0400
-    #Line # mask for setting Font_Embedded_Bitmaps ##
-    ##
-    #Const kAutoHinting_Flag        0x0800
-    #Line # mask for setting Font_Force_Hinting ##
-    ##
-    #Const kAllFlags                0xFFFF
-    #Line # mask of all Flags ##
-        mask of all Flags, including private flags and flags reserved for future use
-    ##
-
-Flags default to all flags clear, disabling the associated feature.
-
-#Enum ##
-
-#Method uint32_t getFlags() const
-#In Flags
-#Line # returns Flags stored in a bit field ##
-#Populate
-
-#Example
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    SkDebugf("(SkPaint::kAntiAlias_Flag & paint.getFlags()) %c= 0\n",
-        SkPaint::kAntiAlias_Flag & paint.getFlags() ? '!' : '=');
-
-    #StdOut
-        (SkPaint::kAntiAlias_Flag & paint.getFlags()) != 0
-    ##
-##
-
-##
-
-#Method void setFlags(uint32_t flags)
-#In Flags
-#Line # sets multiple Flags in a bit field ##
-#Populate
-
-#Example
-    SkPaint paint;
-    paint.setFlags((uint32_t) (SkPaint::kAntiAlias_Flag | SkPaint::kDither_Flag));
-    SkDebugf("paint.isAntiAlias()\n", paint.isAntiAlias() ? '!' : '=');
-    SkDebugf("paint.isDither()\n", paint.isDither() ? '!' : '=');
-
-    #StdOut
-        paint.isAntiAlias()
-        paint.isDither()
-    ##
-##
-
-##
-
-# ------------------------------------------------------------------------------
 #Subtopic Anti_Alias
 #Alias Anti_Alias
 #Substitute anti-alias
@@ -424,8 +283,6 @@ Flags default to all flags clear, disabling the associated feature.
 #Line # approximating coverage with transparency ##
 
 Anti_Alias drawing approximates partial pixel coverage with transparency.
-If kAntiAlias_Flag is clear, pixel centers contained by the shape edge are drawn opaque.
-If kAntiAlias_Flag is set, pixels are drawn with Color_Alpha equal to their coverage.
 
 The rule for Aliased pixels is inconsistent across platforms. A shape edge
 passing through the pixel center may, but is not required to, draw the pixel.
@@ -442,8 +299,6 @@ Alias.
 The amount of coverage computed for Anti_Aliased pixels also varies across platforms.
 
 Anti_Alias is disabled by default.
-Anti_Alias can be enabled by default by setting SkPaintDefaults_Flags to kAntiAlias_Flag
-at compile time.
 
 #Example
     #Width 512
@@ -483,18 +338,8 @@ at compile time.
 #Populate
 
 #Example
-        SkPaint paint;
-        SkDebugf("paint.isAntiAlias() %c= !!(paint.getFlags() & SkPaint::kAntiAlias_Flag)\n",
-                paint.isAntiAlias() == !!(paint.getFlags() & SkPaint::kAntiAlias_Flag) ? '=' : '!');
-        paint.setAntiAlias(true);
-        SkDebugf("paint.isAntiAlias() %c= !!(paint.getFlags() & SkPaint::kAntiAlias_Flag)\n",
-                paint.isAntiAlias() == !!(paint.getFlags() & SkPaint::kAntiAlias_Flag) ? '=' : '!');
-
-    #StdOut
-        paint.isAntiAlias() == !!(paint.getFlags() & SkPaint::kAntiAlias_Flag)
-        paint.isAntiAlias() == !!(paint.getFlags() & SkPaint::kAntiAlias_Flag)
-    ##
-    ##
+    SkPaint paint;
+##
 ##
 
 #Method void setAntiAlias(bool aa)
@@ -503,16 +348,8 @@ at compile time.
 #Populate
 
 #Example
-        SkPaint paint1, paint2;
-        paint1.setAntiAlias(true);
-        paint2.setFlags(paint2.getFlags() | SkPaint::kAntiAlias_Flag);
-        SkDebugf("paint1 %c= paint2\n", paint1 == paint2 ? '=' : '!');
-
-        #StdOut
-            paint1 == paint2
-        ##
-    ##
-
+    SkPaint paint;
+##
 ##
 
 # ------------------------------------------------------------------------------
@@ -531,8 +368,6 @@ Dither cannot be enabled for kAlpha_8_SkColorType Surface and
 kRGBA_F16_SkColorType Surface.
 
 Dither is disabled by default.
-Dither can be enabled by default by setting SkPaintDefaults_Flags to kDither_Flag
-at compile time.
 
 Some platform implementations may ignore dithering. Set #Formula # SK_IGNORE_GPU_DITHER ##
 to ignore Dither on GPU_Surface.
@@ -600,18 +435,7 @@ void draw(SkCanvas* canvas) {
 
 #Example
         SkPaint paint;
-        SkDebugf("paint.isDither() %c= !!(paint.getFlags() & SkPaint::kDither_Flag)\n",
-                paint.isDither() == !!(paint.getFlags() & SkPaint::kDither_Flag) ? '=' : '!');
-        paint.setDither(true);
-        SkDebugf("paint.isDither() %c= !!(paint.getFlags() & SkPaint::kDither_Flag)\n",
-                paint.isDither() == !!(paint.getFlags() & SkPaint::kDither_Flag) ? '=' : '!');
-
-    #StdOut
-        paint.isDither() == !!(paint.getFlags() & SkPaint::kDither_Flag)
-        paint.isDither() == !!(paint.getFlags() & SkPaint::kDither_Flag)
     ##
-    ##
-
 ##
 
 #Method void setDither(bool dither)
@@ -620,457 +444,10 @@ void draw(SkCanvas* canvas) {
 #Populate
 
 #Example
-        SkPaint paint1, paint2;
-        paint1.setDither(true);
-        paint2.setFlags(paint2.getFlags() | SkPaint::kDither_Flag);
-        SkDebugf("paint1 %c= paint2\n", paint1 == paint2 ? '=' : '!');
-
-        #StdOut
-            paint1 == paint2
-        ##
+        SkPaint paint;
     ##
 
     #SeeAlso kRGB_565_SkColorType
-
-##
-
-# ------------------------------------------------------------------------------
-#Subtopic Device_Text
-#Line # increase precision of glyph position ##
-
-Font_Anti_Alias and Font_Subpixel increase the precision of glyph position.
-
-When set, Flags kLCDRenderText_Flag takes advantage of the organization of RGB stripes that
-create a color, and relies
-on the small size of the stripe and visual perception to make the color fringing imperceptible.
-Font_Anti_Alias can be enabled on devices that orient stripes horizontally or vertically, and that order
-the color components as RGB or BGR.
-
-Flags kSubpixelText_Flag uses the pixel transparency to represent a fractional offset.
-As the opaqueness
-of the color increases, the edge of the glyph appears to move towards the outside of the pixel.
-
-Either or both techniques can be enabled.
-kLCDRenderText_Flag and kSubpixelText_Flag are clear by default.
-Font_Anti_Alias or Font_Subpixel can be enabled by default by setting SkPaintDefaults_Flags to
-kLCDRenderText_Flag or kSubpixelText_Flag (or both) at compile time.
-
-#Example
-    #Description
-        Four commas are drawn normally and with combinations of Font_Anti_Alias and Font_Subpixel.
-        When Font_Subpixel is disabled, the comma Glyphs are identical, but not evenly spaced.
-        When Font_Subpixel is enabled, the comma Glyphs are unique, but appear evenly spaced.
-    ##
-
-    SkBitmap bitmap;
-    bitmap.allocN32Pixels(24, 33);
-    SkCanvas offscreen(bitmap);
-    offscreen.clear(SK_ColorWHITE);
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setTextSize(20);
-    for (bool lcd : { false, true }) {
-        paint.setLCDRenderText(lcd);
-        for (bool subpixel : { false, true }) {
-            paint.setSubpixelText(subpixel);
-            offscreen.drawString(",,,,", 0, 4, paint);
-            offscreen.translate(0, 7);
-        }
-    }
-    canvas->drawBitmap(bitmap, 4, 12);
-    canvas->scale(9, 9);
-    canvas->drawBitmap(bitmap, 4, -1);
-##
-#Subtopic Device_Text ##
-
-#Subtopic Linear_Text
-#Line # selects text rendering as Glyph or Path ##
-
-Font_Linear selects whether text is rendered as a Glyph or as a Path.
-If Font_Linear is set, it has the same effect as setting Hinting to SkFontHinting::kNormal.
-If Font_Linear is clear, it is the same as setting Hinting to SkFontHinting::kNone.
-#Subtopic Linear_Text ##
-
-#Method bool isLinearText() const
-#In Linear_Text
-#Line # returns true if text is converted to Path ##
-#Populate
-
-#Example
-    #Height 128
-    void draw(SkCanvas* canvas) {
-        SkPaint paint;
-        paint.setAntiAlias(true);
-        const char testStr[] = "xxxx xxxx";
-        for (auto linearText : { false, true } ) {
-            paint.setLinearText(linearText);
-            paint.setTextSize(24);
-            canvas->drawString(paint.isLinearText() ? "linear" : "hinted", 128, 30, paint);
-            for (SkScalar textSize = 8; textSize < 30; textSize *= 1.22f) {
-                paint.setTextSize(textSize);
-                canvas->translate(0, textSize);
-                canvas->drawString(testStr, 10, 0, paint);
-            }
-        }
-    }
-    ##
-
-    #SeeAlso setLinearText Hinting
-##
-
-#Method void setLinearText(bool linearText)
-#In Linear_Text
-#Line # converts to Path before draw or measure ##
-#Populate
-
-#Example
-    #Height 128
-    void draw(SkCanvas* canvas) {
-        SkPaint paint;
-        paint.setAntiAlias(true);
-        const char testStr[] = "abcd efgh";
-        size_t count = 9;
-        for (int textSize : { 12, 24 } ) {
-            SkFont font(nullptr, textSize);
-            for (auto linearMetrics : { false, true } ) {
-                font.setLinearMetrics(linearMetrics);
-                SkString width;
-                width.appendScalar(font.measureText(testStr, count, SkTextEncoding::kUTF8));
-                canvas->translate(0, textSize + 4);
-                canvas->drawSimpleText(testStr, count, SkTextEncoding::kUTF8,
-                    10, 0, font, paint);
-                canvas->drawSimpleText(width.c_str(), width.size(), SkTextEncoding::kUTF8,
-                    128, 0, font, paint);
-            }
-        }
-    }
-    ##
-
-    #SeeAlso isLinearText Hinting
-##
-
-#Subtopic Subpixel_Text
-#Line # uses pixel transparency to represent fractional offset ##
-
-Flags kSubpixelText_Flag uses the pixel transparency to represent a fractional offset.
-As the opaqueness
-of the color increases, the edge of the glyph appears to move towards the outside of the pixel.
-#Subtopic Subpixel_Text ##
-
-#Method bool isSubpixelText() const
-#In Subpixel_Text
-#Line # returns true if Font_Subpixel is set ##
-#Populate
-
-#Example
-SkPaint paint;
-SkDebugf("paint.isSubpixelText() %c= !!(paint.getFlags() & SkPaint::kSubpixelText_Flag)\n",
-    paint.isSubpixelText() == !!(paint.getFlags() & SkPaint::kSubpixelText_Flag) ? '=' : '!');
-paint.setSubpixelText(true);
-SkDebugf("paint.isSubpixelText() %c= !!(paint.getFlags() & SkPaint::kSubpixelText_Flag)\n",
-    paint.isSubpixelText() == !!(paint.getFlags() & SkPaint::kSubpixelText_Flag) ? '=' : '!');
-
-        #StdOut
-            paint.isSubpixelText() == !!(paint.getFlags() & SkPaint::kSubpixelText_Flag)
-            paint.isSubpixelText() == !!(paint.getFlags() & SkPaint::kSubpixelText_Flag)
-        ##
-    ##
-
-##
-
-#Method void setSubpixelText(bool subpixelText)
-#In Subpixel_Text
-#Line # sets or clears Font_Subpixel ##
-#Populate
-
-#Example
-        SkPaint paint1, paint2;
-        paint1.setSubpixelText(true);
-        paint2.setFlags(paint2.getFlags() | SkPaint::kSubpixelText_Flag);
-        SkDebugf("paint1 %c= paint2\n", paint1 == paint2 ? '=' : '!');
-
-        #StdOut
-            paint1 == paint2
-        ##
-    ##
-
-##
-
-#Subtopic LCD_Text
-#Line # text relying on the order of RGB stripes ##
-
-When set, Font_Anti_Alias takes advantage of the organization of RGB stripes that
-create a color, and relies
-on the small size of the stripe and visual perception to make the color fringing imperceptible.
-Font_Anti_Alias can be enabled on devices that orient stripes horizontally or vertically, and that order
-the color components as RGB or BGR.
-#Subtopic LCD_Text ##
-
-#Method bool isLCDRenderText() const
-#In LCD_Text
-#Line # returns true if Font_Anti_Alias is set ##
-#Populate
-
-#Example
-SkPaint paint;
-SkDebugf("paint.isLCDRenderText() %c= !!(paint.getFlags() & SkPaint::kLCDRenderText_Flag)\n",
-    paint.isLCDRenderText() == !!(paint.getFlags() & SkPaint::kLCDRenderText_Flag) ? '=' : '!');
-paint.setLCDRenderText(true);
-SkDebugf("paint.isLCDRenderText() %c= !!(paint.getFlags() & SkPaint::kLCDRenderText_Flag)\n",
-    paint.isLCDRenderText() == !!(paint.getFlags() & SkPaint::kLCDRenderText_Flag) ? '=' : '!');
-
-        #StdOut
-            paint.isLCDRenderText() == !!(paint.getFlags() & SkPaint::kLCDRenderText_Flag)
-            paint.isLCDRenderText() == !!(paint.getFlags() & SkPaint::kLCDRenderText_Flag)
-        ##
-    ##
-
-##
-
-#Method void setLCDRenderText(bool lcdText)
-#In LCD_Text
-#Line # sets or clears Font_Anti_Alias ##
-#Populate
-
-#Example
-        SkPaint paint1, paint2;
-        paint1.setLCDRenderText(true);
-        paint2.setFlags(paint2.getFlags() | SkPaint::kLCDRenderText_Flag);
-        SkDebugf("paint1 %c= paint2\n", paint1 == paint2 ? '=' : '!');
-
-        #StdOut
-            paint1 == paint2
-        ##
-    ##
-
-
-##
-
-# ------------------------------------------------------------------------------
-#Subtopic Embedded_Bitmaps
-#Line # custom sized bitmap Glyphs ##
-
-Font_Embedded_Bitmaps allows selecting custom sized bitmap Glyphs.
-Flags kEmbeddedBitmapText_Flag when set chooses an embedded bitmap glyph over an outline contained
-in a font if the platform supports this option.
-
-FreeType selects the bitmap glyph if available when kEmbeddedBitmapText_Flag is set, and selects
-the outline glyph if kEmbeddedBitmapText_Flag is clear.
-Windows may select the bitmap glyph but is not required to do so.
-OS_X and iOS do not support this option.
-
-Font_Embedded_Bitmaps is disabled by default.
-Font_Embedded_Bitmaps can be enabled by default by setting SkPaintDefaults_Flags to
-kEmbeddedBitmapText_Flag at compile time.
-
-#Example
-    #ToDo image will only output on Ubuntu ... how to handle that in fiddle? ##
-    #Platform !fiddle
-    #Description
-        The "hintgasp" TrueType font in the Skia resources/fonts directory
-        includes an embedded bitmap Glyph at odd font sizes. This example works
-        on platforms that use FreeType as their Font_Engine.
-        Windows may, but is not required to, return a bitmap glyph if
-        kEmbeddedBitmapText_Flag is set.
-    ##
-    #Image  embeddedbitmap.png
-
-    SkBitmap bitmap;
-    bitmap.allocN32Pixels(30, 15);
-    bitmap.eraseColor(0);
-    SkCanvas offscreen(bitmap);
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setTextSize(13);
-    paint.setTypeface(MakeResourceAsTypeface("fonts/hintgasp.ttf"));
-    for (bool embedded : { false, true}) {
-        paint.setEmbeddedBitmapText(embedded);
-        offscreen.drawString("A", embedded ? 5 : 15, 15, paint);
-    }
-    canvas->drawBitmap(bitmap, 0, 0);
-    canvas->scale(10, 10);
-    canvas->drawBitmap(bitmap, -2, 1);
-##
-#Subtopic Embedded_Bitmaps ##
-
-#Method bool isEmbeddedBitmapText() const
-#In Embedded_Bitmaps
-#Line # returns true if Font_Embedded_Bitmaps is set ##
-#Populate
-
-#Example
-        SkPaint paint;
-        SkDebugf("paint.isEmbeddedBitmapText() %c="
-                " !!(paint.getFlags() & SkPaint::kEmbeddedBitmapText_Flag)\n",
-                paint.isEmbeddedBitmapText() ==
-                !!(paint.getFlags() & SkPaint::kEmbeddedBitmapText_Flag) ? '=' : '!');
-        paint.setEmbeddedBitmapText(true);
-        SkDebugf("paint.isEmbeddedBitmapText() %c="
-                " !!(paint.getFlags() & SkPaint::kEmbeddedBitmapText_Flag)\n",
-                paint.isEmbeddedBitmapText() ==
-                !!(paint.getFlags() & SkPaint::kEmbeddedBitmapText_Flag) ? '=' : '!');
-
-        #StdOut
-            paint.isEmbeddedBitmapText() == !!(paint.getFlags() & SkPaint::kEmbeddedBitmapText_Flag)
-            paint.isEmbeddedBitmapText() == !!(paint.getFlags() & SkPaint::kEmbeddedBitmapText_Flag)
-        ##
-    ##
-
-##
-
-#Method void setEmbeddedBitmapText(bool useEmbeddedBitmapText)
-#In Embedded_Bitmaps
-#Line # sets or clears Font_Embedded_Bitmaps ##
-#Populate
-
-#Example
-        SkPaint paint1, paint2;
-        paint1.setEmbeddedBitmapText(true);
-        paint2.setFlags(paint2.getFlags() | SkPaint::kEmbeddedBitmapText_Flag);
-        SkDebugf("paint1 %c= paint2\n", paint1 == paint2 ? '=' : '!');
-
-        #StdOut
-            paint1 == paint2
-        ##
-    ##
-
-##
-
-# ------------------------------------------------------------------------------
-#Subtopic Automatic_Hinting
-#Line # always adjust glyph paths ##
-
-If Hinting is set to SkFontHinting::kNormal or SkFontHinting::kFull, Font_Force_Hinting
-instructs the Font_Manager to always hint Glyphs.
-Font_Force_Hinting has no effect if Hinting is set to SkFontHinting::kNone or
-SkFontHinting::kSlight.
-
-Font_Force_Hinting only affects platforms that use FreeType as the Font_Manager.
-#Subtopic Automatic_Hinting ##
-
-#Method bool isAutohinted() const
-#In Automatic_Hinting
-#Line # returns true if Glyphs are always hinted ##
-#Populate
-
-#Example
-            SkPaint paint;
-            for (auto forceAutoHinting : { false, true} ) {
-            paint.setAutohinted(forceAutoHinting);
-            SkDebugf("paint.isAutohinted() %c="
-                    " !!(paint.getFlags() & SkPaint::kAutoHinting_Flag)\n",
-                    paint.isAutohinted() ==
-                    !!(paint.getFlags() & SkPaint::kAutoHinting_Flag) ? '=' : '!');
-            }
-            #StdOut
-                paint.isAutohinted() == !!(paint.getFlags() & SkPaint::kAutoHinting_Flag)
-                paint.isAutohinted() == !!(paint.getFlags() & SkPaint::kAutoHinting_Flag)
-            ##
-    ##
-
-    #SeeAlso setAutohinted Hinting
-
-##
-
-#Method void setAutohinted(bool useAutohinter)
-#In Automatic_Hinting
-#Line # sets Glyphs to always be hinted ##
-#Populate
-
-#Example
-    void draw(SkCanvas* canvas) {
-        SkPaint paint;
-        paint.setAntiAlias(true);
-        const char testStr[] = "xxxx xxxx";
-            for (auto forceAutoHinting : { false, true} ) {
-            paint.setAutohinted(forceAutoHinting);
-            paint.setTextSize(24);
-            canvas->drawString(paint.isAutohinted() ? "auto-hinted" : "default", 108, 30, paint);
-            for (SkScalar textSize = 8; textSize < 30; textSize *= 1.22f) {
-                paint.setTextSize(textSize);
-                canvas->translate(0, textSize);
-                canvas->drawString(testStr, 10, 0, paint);
-            }
-        }
-    }
-    ##
-
-    #SeeAlso isAutohinted Hinting
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Subtopic Fake_Bold
-#Line # approximate font styles ##
-
-Font_Embolden approximates the bold font style accompanying a normal font when a bold font face
-is not available. Skia does not provide font substitution; it is up to the client to find the
-bold font face using the platform Font_Manager.
-
-Use Text_Skew_X to approximate an italic font style when the italic font face
-is not available.
-
-A FreeType based port may define SK_USE_FREETYPE_EMBOLDEN at compile time to direct
-the font engine to create the bold Glyphs. Otherwise, the extra bold is computed
-by increasing the stroke width and setting the Style to kStrokeAndFill_Style as needed.
-
-Font_Embolden is disabled by default.
-
-#Example
-#Height 128
-void draw(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setTextSize(40);
-    canvas->drawString("OjYy_-", 10, 35, paint);
-    paint.setFakeBoldText(true);
-    canvas->drawString("OjYy_-", 10, 75, paint);
-    // create a custom fake bold by varying the stroke width
-    paint.setFakeBoldText(false);
-    paint.setStyle(SkPaint::kStrokeAndFill_Style);
-    paint.setStrokeWidth(40.f / 48);
-    canvas->drawString("OjYy_-", 10, 115, paint);
-}
-##
-#Subtopic Fake_Bold ##
-
-#Method bool isFakeBoldText() const
-#In Fake_Bold
-#Line # returns true if Font_Embolden is set ##
-#Populate
-
-#Example
-    SkPaint paint;
-    SkDebugf("paint.isFakeBoldText() %c= !!(paint.getFlags() & SkPaint::kFakeBoldText_Flag)\n",
-        paint.isFakeBoldText() == !!(paint.getFlags() & SkPaint::kFakeBoldText_Flag) ? '=' : '!');
-    paint.setFakeBoldText(true);
-    SkDebugf("paint.isFakeBoldText() %c= !!(paint.getFlags() & SkPaint::kFakeBoldText_Flag)\n",
-        paint.isFakeBoldText() == !!(paint.getFlags() & SkPaint::kFakeBoldText_Flag) ? '=' : '!');
-
-        #StdOut
-            paint.isFakeBoldText() == !!(paint.getFlags() & SkPaint::kFakeBoldText_Flag)
-            paint.isFakeBoldText() == !!(paint.getFlags() & SkPaint::kFakeBoldText_Flag)
-        ##
-    ##
-
-##
-
-#Method void setFakeBoldText(bool fakeBoldText)
-#In Fake_Bold
-#Line # sets or clears Font_Embolden ##
-#Populate
-
-#Example
-        SkPaint paint1, paint2;
-        paint1.setFakeBoldText(true);
-        paint2.setFlags(paint2.getFlags() | SkPaint::kFakeBoldText_Flag);
-        SkDebugf("paint1 %c= paint2\n", paint1 == paint2 ? '=' : '!');
-
-        #StdOut
-            paint1 == paint2
-        ##
-    ##
 
 ##
 
@@ -1304,6 +681,17 @@ Color_Alpha sets the transparency independent of RGB: red, blue, and green.
 
 ##
 
+#Method float getAlphaf() const
+#In Alpha_Methods
+#Line # returns Color_Alpha, color opacity ##
+#Populate
+
+#Example
+    SkPaint paint;
+##
+
+##
+
 #Method void setAlpha(U8CPU a)
 #In Alpha_Methods
 #Line # sets Color_Alpha, color opacity ##
@@ -1319,6 +707,17 @@ Color_Alpha sets the transparency independent of RGB: red, blue, and green.
             0x44112233 == paint.getColor()
         ##
     ##
+
+##
+
+#Method void setAlphaf(float a)
+#In Alpha_Methods
+#Line # sets Color_Alpha, color opacity ##
+#Populate
+
+#Example
+    SkPaint paint;
+##
 
 ##
 
@@ -1364,21 +763,21 @@ The stroke is centered on the shape; it extends equally on either side of the sh
 #Subtopic Stroke ##
 
 As Stroke_Width gets smaller, the drawn path frame is thinner. Stroke_Width less than one
-may have gaps, and if kAntiAlias_Flag is set, Color_Alpha will increase to visually decrease coverage.
+may have gaps, and if antialiasing is on, Color_Alpha will increase to visually decrease coverage.
 
 #SeeAlso Path_Fill_Type Path_Effect Style_Fill Style_Stroke
 #Subtopic Style ##
 
 #Subtopic Hairline
 Stroke_Width of zero has a special meaning and switches drawing to use Hairline.
-Hairline draws the thinnest continuous frame. If kAntiAlias_Flag is clear, adjacent pixels
+Hairline draws the thinnest continuous frame. If antialiasing is off, adjacent pixels
 flow horizontally, vertically,or diagonally.
 
 #ToDo  what is the description of Anti_Aliased hairlines? ##
 
 Path drawing with Hairline may hit the same pixel more than once. For instance, Path containing
 two lines in one Path_Contour will draw the corner point once, but may both lines may draw the adjacent
-pixel. If kAntiAlias_Flag is set, transparency is applied twice, resulting in a darker pixel. Some
+pixel. If antialiasing is on, transparency is applied twice, resulting in a darker pixel. Some
 GPU-backed implementations apply transparency at a later drawing stage, avoiding double hit pixels
 while stroking.
 
@@ -2535,81 +1934,12 @@ implementation.
     void draw(SkCanvas* canvas) {
         SkPaint paint;
         paint.setTypeface(SkTypeface::MakeFromName(nullptr, SkFontStyle()));
-        paint.setAntiAlias(true);
-        paint.setTextSize(36);
-        canvas->drawString("A Big Hello!", 10, 40, paint);
+        SkFont font(nullptr, 36);
+        canvas->drawString("A Big Hello!", 10, 40, font, paint);
         paint.setTypeface(nullptr);
         paint.setFakeBoldText(true);
-        canvas->drawString("A Big Hello!", 10, 80, paint);
+        canvas->drawString("A Big Hello!", 10, 80, font, paint);
     }
-##
-
-#Method SkTypeface* getTypeface() const
-
-#In Typeface_Methods
-#Line # returns Typeface, font description ##
-#Populate
-
-#Example
-        void draw(SkCanvas* canvas) {
-           SkPaint paint;
-           SkDebugf("nullptr %c= typeface\n", paint.getTypeface() ? '!' : '=');
-           paint.setTypeface(SkTypeface::MakeFromName("monospace", SkFontStyle()));
-           SkDebugf("nullptr %c= typeface\n", paint.getTypeface() ? '!' : '=');
-        }
-
-        #StdOut
-            nullptr == typeface
-            nullptr != typeface
-        ##
-    ##
-
-##
-
-#Method sk_sp<SkTypeface> refTypeface() const
-
-#In Typeface_Methods
-#Line # references Typeface, font description ##
-#Populate
-
-#Example
-        void draw(SkCanvas* canvas) {
-           SkPaint paint1, paint2;
-           paint1.setTypeface(SkTypeface::MakeFromName("monospace",
-                    SkFontStyle(SkFontStyle::kNormal_Weight, SkFontStyle::kNormal_Width,
-                    SkFontStyle::kItalic_Slant)));
-           SkDebugf("typeface1 %c= typeface2\n",
-                    paint1.getTypeface() == paint2.getTypeface() ? '=' : '!');
-           paint2.setTypeface(paint1.refTypeface());
-           SkDebugf("typeface1 %c= typeface2\n",
-                    paint1.getTypeface() == paint2.getTypeface() ? '=' : '!');
-        }
-
-        #StdOut
-            typeface1 != typeface2
-            typeface1 == typeface2
-        ##
-    ##
-
-##
-
-#Method void setTypeface(sk_sp<SkTypeface> typeface)
-
-#In Typeface_Methods
-#Line # sets Typeface, font description ##
-#Populate
-
-#Example
-    #Height 64
-        void draw(SkCanvas* canvas) {
-            SkPaint paint;
-            paint.setTypeface(SkTypeface::MakeFromName("monospace", SkFontStyle()));
-            canvas->drawString("hamburgerfons", 10, 30, paint);
-            paint.setTypeface(nullptr);
-            canvas->drawString("hamburgerfons", 10, 50, paint);
-        }
-    ##
-
 ##
 
 #Subtopic Typeface_Methods ##
@@ -2714,9 +2044,9 @@ Mask_Filter.
         SkPaint paint;
         paint.setAntiAlias(true);
         paint.setColor(SK_ColorWHITE);
-        paint.setTextSize(96);
+        SkFont font(nullptr, 96);
         offscreen.clear(0);
-        offscreen.drawString("e", 20, 70, paint);
+        offscreen.drawString("e", 20, 70, font, paint);
         paint.setImageFilter(
                SkLightingImageFilter::MakePointLitDiffuse(SkPoint3::Make(80, 100, 10),
                SK_ColorWHITE, 1, 2, nullptr, nullptr));
@@ -2838,40 +2168,13 @@ Set SkPaintDefaults_TextSize at compile time to change the default setting.
 #Height 135
     void draw(SkCanvas* canvas) {
         SkPaint paint;
-        canvas->drawString("12 point", 10, 20, paint);
-        paint.setTextSize(24);
-        canvas->drawString("24 point", 10, 60, paint);
-        paint.setTextSize(48);
+        SkFont font;
+        canvas->drawString("12 point", 10, 20, font, paint);
+        font.setSize(24);
+        canvas->drawString("24 point", 10, 60, font, paint);
+        font.setSize(48);
         canvas->drawString("48 point", 10, 120, paint);
     }
-##
-
-#Method SkScalar getTextSize() const
-
-#In Text_Size
-#Line # returns text size in points ##
-#Populate
-
-#Example
-        SkPaint paint;
-        SkDebugf("12 %c= default text size\n", 12 == paint.getTextSize() ? '=' : '!');
-    ##
-
-##
-
-#Method void setTextSize(SkScalar textSize)
-
-#In Text_Size
-#Line # sets text size in points ##
-#Populate
-
-#Example
-        SkPaint paint;
-        SkDebugf("12 %c= text size\n", 12 == paint.getTextSize() ? '=' : '!');
-        paint.setTextSize(-20);
-        SkDebugf("12 %c= text size\n", 12 == paint.getTextSize() ? '=' : '!');
-    ##
-
 ##
 
 #Subtopic Text_Size ##
@@ -2889,43 +2192,14 @@ Text_Scale_X defaults to 1.
 #Height 128
     void draw(SkCanvas* canvas) {
         SkPaint paint;
-        paint.setAntiAlias(true);
-        paint.setTextSize(24);
-        paint.setTextScaleX(.8f);
-        canvas->drawString("narrow", 10, 20, paint);
-        paint.setTextScaleX(1);
-        canvas->drawString("normal", 10, 60, paint);
-        paint.setTextScaleX(1.2f);
-        canvas->drawString("wide", 10, 100, paint);
+        SkFont font(nullptr, 24);
+        font.setScaleX(.8f);
+        canvas->drawString("narrow", 10, 20, font, paint);
+        font.setScaleX(1);
+        canvas->drawString("normal", 10, 60, font, paint);
+        font.setScaleX(1.2f);
+        canvas->drawString("wide", 10, 100, font, paint);
     }
-##
-
-#Method SkScalar getTextScaleX() const
-
-#In Text_Scale_X
-#Line # returns the text horizontal scale; condensed text ##
-#Populate
-
-#Example
-        SkPaint paint;
-        SkDebugf("1 %c= default text scale x\n", 1 == paint.getTextScaleX() ? '=' : '!');
-    ##
-
-##
-
-
-#Method void setTextScaleX(SkScalar scaleX)
-
-#In Text_Scale_X
-#Line # sets the text horizontal scale; condensed text ##
-#Populate
-
-#Example
-        SkPaint paint;
-        paint.setTextScaleX(0.f / 0.f);
-        SkDebugf("text scale %s-a-number\n", SkScalarIsNaN(paint.getTextScaleX()) ? "not" : "is");
-    ##
-
 ##
 
 #Subtopic Text_Scale_X ##
@@ -2944,42 +2218,14 @@ Text_Skew_X defaults to 0.
 #Height 128
     void draw(SkCanvas* canvas) {
         SkPaint paint;
-        paint.setAntiAlias(true);
-        paint.setTextSize(24);
-        paint.setTextSkewX(-.25f);
-        canvas->drawString("right-leaning", 10, 100, paint);
-        paint.setTextSkewX(0);
-        canvas->drawString("normal", 10, 60, paint);
-        paint.setTextSkewX(.25f);
-        canvas->drawString("left-leaning", 10, 20, paint);
+        SkFont font(nullptr, 24);
+        font.setSkewX(-.25f);
+        canvas->drawString("right-leaning", 10, 100, font, paint);
+        font.setSkewX(0);
+        canvas->drawString("normal", 10, 60, font, paint);
+        font.setSkewX(.25f);
+        canvas->drawString("left-leaning", 10, 20, font, paint);
     }
-##
-
-#Method SkScalar getTextSkewX() const
-
-#In Text_Skew_X
-#Line # returns the text horizontal skew; oblique text ##
-#Populate
-
-#Example
-        SkPaint paint;
-        SkDebugf("0 %c= default text skew x\n", 0 == paint.getTextSkewX() ? '=' : '!');
-    ##
-
-##
-
-#Method void setTextSkewX(SkScalar skewX)
-
-#In Text_Skew_X
-#Line # sets the text horizontal skew; oblique text ##
-#Populate
-
-#Example
-        SkPaint paint;
-        paint.setTextScaleX(1.f / 0.f);
-        SkDebugf("text scale %s-finite\n", SkScalarIsFinite(paint.getTextScaleX()) ? "is" : "not");
-    ##
-
 ##
 
 #Subtopic Text_Skew_X ##
@@ -3001,60 +2247,15 @@ void draw(SkCanvas* canvas) {
     const char hello8[] = "Hello" "\xE2" "\x98" "\xBA";
     const uint16_t hello16[] = { 'H', 'e', 'l', 'l', 'o', 0x263A };
     const uint32_t hello32[] = { 'H', 'e', 'l', 'l', 'o', 0x263A };
-    paint.setTextSize(24);
-    canvas->drawText(hello8, sizeof(hello8) - 1, 10, 30, paint);
-    paint.setTextEncoding(SkTextEncoding::kUTF16);
-    canvas->drawText(hello16, sizeof(hello16), 10, 60, paint);
-    paint.setTextEncoding(SkTextEncoding::kUTF32);
-    canvas->drawText(hello32, sizeof(hello32), 10, 90, paint);
+    SkFont font(nullptr, 24);
+    canvas->drawSimpleText(hello8, sizeof(hello8) - 1, SkTextEncoding::kUTF8, 10, 30, font, paint);
+    canvas->drawSimpleText(hello16, sizeof(hello16), SkTextEncoding::kUTF16, 10, 60, font, paint);
+    canvas->drawSimpleText(hello32, sizeof(hello32), SkTextEncoding::kUTF32, 10, 90, font, paint);
     uint16_t glyphs[SK_ARRAY_COUNT(hello32)];
-    SkFont font;
     font.textToGlyphs(hello32, sizeof(hello32), SkTextEncoding::kUTF32,
             glyphs, SK_ARRAY_COUNT(hello32));
-    paint.setTextEncoding(kGlyphID_SkTextEncoding);
-    canvas->drawText(glyphs, sizeof(glyphs), 10, 120, paint);
+    canvas->drawSimpleText(glyphs, sizeof(glyphs), kGlyphID_SkTextEncoding, 10, 120, font, paint);
 }
-##
-
-#Method SkTextEncoding getTextEncoding() const
-
-#In Text_Encoding
-#Line # returns character or glyph encoded size ##
-#Populate
-
-#Example
-        SkPaint paint;
-        SkDebugf("kUTF8_SkTextEncoding %c= text encoding\n",
-                kUTF8_SkTextEncoding == paint.getTextEncoding() ? '=' : '!');
-        paint.setTextEncoding(kGlyphID_SkTextEncoding);
-        SkDebugf("kGlyphID_SkTextEncoding %c= text encoding\n",
-                kGlyphID_SkTextEncoding == paint.getTextEncoding() ? '=' : '!');
-
-        #StdOut
-            kUTF8_SkTextEncoding == text encoding
-            kGlyphID_SkTextEncoding == text encoding
-        ##
-    ##
-
-##
-
-
-#Method void setTextEncoding(SkTextEncoding encoding)
-
-#In Text_Encoding
-#Line # sets character or glyph encoded size ##
-#Populate
-
-#Example
-        SkPaint paint;
-        paint.setTextEncoding((SkTextEncoding) 4);
-        SkDebugf("4 %c= text encoding\n", (SkTextEncoding) 4 == paint.getTextEncoding() ? '=' : '!');
-
-        #StdOut
-            4 != text encoding
-        ##
-    ##
-
 ##
 
 #Subtopic Text_Encoding ##

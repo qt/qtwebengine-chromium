@@ -817,6 +817,7 @@ $code.=<<___;
 .type	_bsaes_encrypt8,\@abi-omnipotent
 .align	64
 _bsaes_encrypt8:
+.cfi_startproc
 	lea	.LBS0(%rip), $const	# constants table
 
 	movdqa	($key), @XMM[9]		# round 0 key
@@ -876,11 +877,13 @@ $code.=<<___;
 	pxor	@XMM[8], @XMM[0]
 	pxor	@XMM[8], @XMM[1]
 	ret
+.cfi_endproc
 .size	_bsaes_encrypt8,.-_bsaes_encrypt8
 
 .type	_bsaes_decrypt8,\@abi-omnipotent
 .align	64
 _bsaes_decrypt8:
+.cfi_startproc
 	lea	.LBS0(%rip), $const	# constants table
 
 	movdqa	($key), @XMM[9]		# round 0 key
@@ -938,6 +941,7 @@ $code.=<<___;
 	pxor	@XMM[8], @XMM[0]
 	pxor	@XMM[8], @XMM[1]
 	ret
+.cfi_endproc
 .size	_bsaes_decrypt8,.-_bsaes_decrypt8
 ___
 }
@@ -972,6 +976,7 @@ $code.=<<___;
 .type	_bsaes_key_convert,\@abi-omnipotent
 .align	16
 _bsaes_key_convert:
+.cfi_startproc
 	lea	.Lmasks(%rip), $const
 	movdqu	($inp), %xmm7		# load round 0 key
 	lea	0x10($inp), $inp
@@ -1050,6 +1055,7 @@ _bsaes_key_convert:
 	movdqa	0x50($const), %xmm7	# .L63
 	#movdqa	%xmm6, ($out)		# don't save last round key
 	ret
+.cfi_endproc
 .size	_bsaes_key_convert,.-_bsaes_key_convert
 ___
 }
@@ -1914,6 +1920,12 @@ $code.=<<___;
 .align	16
 bsaes_ctr32_encrypt_blocks:
 .cfi_startproc
+#ifndef NDEBUG
+#ifndef BORINGSSL_FIPS
+.extern	BORINGSSL_function_hit
+	movb \$1, BORINGSSL_function_hit+6(%rip)
+#endif
+#endif
 	mov	%rsp, %rax
 .Lctr_enc_prologue:
 	push	%rbp

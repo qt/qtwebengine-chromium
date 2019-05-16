@@ -8,6 +8,7 @@
 #include "base/format_macros.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
+#include "build/build_config.h"
 #include "components/download/public/common/download_create_info.h"
 #include "components/download/public/common/download_interrupt_reasons_utils.h"
 #include "components/download/public/common/download_save_info.h"
@@ -18,6 +19,10 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
 #include "services/network/public/cpp/resource_request.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/content_uri_utils.h"
+#endif
 
 namespace download {
 
@@ -239,9 +244,6 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   request->referrer_policy = params->referrer_policy();
   request->allow_download = true;
   request->is_main_frame = true;
-
-  if (params->render_process_host_id() >= 0)
-    request->render_frame_id = params->render_frame_host_routing_id();
 
   bool has_upload_data = false;
   if (params->post_body()) {
@@ -532,7 +534,12 @@ bool IsDownloadDone(const GURL& url,
 
 bool DeleteDownloadedFile(const base::FilePath& path) {
   DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
-
+#if defined(OS_ANDROID)
+  if (path.IsContentUri()) {
+    base::DeleteContentUri(path);
+    return true;
+  }
+#endif
   // Make sure we only delete files.
   if (base::DirectoryExists(path))
     return true;

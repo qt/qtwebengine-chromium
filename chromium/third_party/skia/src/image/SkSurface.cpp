@@ -244,12 +244,18 @@ void SkSurface::prepareForExternalIO() {
 }
 
 void SkSurface::flush() {
-    asSB(this)->onFlush(0, nullptr);
+    asSB(this)->onFlush(BackendSurfaceAccess::kNoAccess, kNone_FlushFlags, 0, nullptr);
+}
+
+GrSemaphoresSubmitted SkSurface::flush(BackendSurfaceAccess access, FlushFlags flags,
+                                       int numSemaphores, GrBackendSemaphore signalSemaphores[]) {
+    return asSB(this)->onFlush(access, flags, numSemaphores, signalSemaphores);
 }
 
 GrSemaphoresSubmitted SkSurface::flushAndSignalSemaphores(int numSemaphores,
                                                           GrBackendSemaphore signalSemaphores[]) {
-    return asSB(this)->onFlush(numSemaphores, signalSemaphores);
+    return asSB(this)->onFlush(BackendSurfaceAccess::kNoAccess, kNone_FlushFlags,
+                               numSemaphores, signalSemaphores);
 }
 
 bool SkSurface::wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) {
@@ -300,7 +306,7 @@ sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrContext*, SkBudgeted, const SkIma
     return nullptr;
 }
 
-sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrContext*, const SkSurfaceCharacterization&,
+sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrRecordingContext*, const SkSurfaceCharacterization&,
                                              SkBudgeted) {
     return nullptr;
 }
@@ -308,7 +314,8 @@ sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrContext*, const SkSurfaceCharacte
 sk_sp<SkSurface> SkSurface::MakeFromBackendTexture(GrContext*, const GrBackendTexture&,
                                                    GrSurfaceOrigin origin, int sampleCnt,
                                                    SkColorType, sk_sp<SkColorSpace>,
-                                                   const SkSurfaceProps*) {
+                                                   const SkSurfaceProps*,
+                                                   TextureReleaseProc, ReleaseContext) {
     return nullptr;
 }
 
@@ -317,7 +324,8 @@ sk_sp<SkSurface> SkSurface::MakeFromBackendRenderTarget(GrContext*,
                                                         GrSurfaceOrigin origin,
                                                         SkColorType,
                                                         sk_sp<SkColorSpace>,
-                                                        const SkSurfaceProps*) {
+                                                        const SkSurfaceProps*,
+                                                        RenderTargetReleaseProc, ReleaseContext) {
     return nullptr;
 }
 

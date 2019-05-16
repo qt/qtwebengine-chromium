@@ -31,11 +31,6 @@ rtc_static_library("encoded_frame") {
     "//third_party/abseil-cpp/absl/types:optional",
     "//third_party/abseil-cpp/absl/types:variant",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 }
 
 rtc_static_library("nack_module") {
@@ -46,11 +41,6 @@ rtc_static_library("nack_module") {
     "nack_module.cc",
     "nack_module.h",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   deps = [
     ":packet",
@@ -85,6 +75,7 @@ rtc_static_library("video_coding") {
   deps = [
     "..:module_fec_api",
     "../../api:libjingle_peerconnection_api",
+    "../../api:scoped_refptr",
     "../../api/video:encoded_image",
     "../../api/video:video_bitrate_allocation",
     "../../api/video:video_bitrate_allocator_factory",
@@ -101,8 +92,6 @@ rtc_static_library("video_coding") {
     "decoder_database.h",
     "decoding_state.cc",
     "decoding_state.h",
-    "encoder_database.cc",
-    "encoder_database.h",
     "fec_controller_default.cc",
     "fec_controller_default.h",
     "fec_rate_table.h",
@@ -114,8 +103,6 @@ rtc_static_library("video_coding") {
     "frame_object.h",
     "generic_decoder.cc",
     "generic_decoder.h",
-    "generic_encoder.cc",
-    "generic_encoder.h",
     "h264_sprop_parameter_sets.cc",
     "h264_sprop_parameter_sets.h",
     "h264_sps_pps_tracker.cc",
@@ -130,9 +117,10 @@ rtc_static_library("video_coding") {
     "jitter_buffer_common.h",
     "jitter_estimator.cc",
     "jitter_estimator.h",
+    "loss_notification_controller.cc",
+    "loss_notification_controller.h",
     "media_opt_util.cc",
     "media_opt_util.h",
-    "nack_fec_tables.h",
     "packet_buffer.cc",
     "packet_buffer.h",
     "receiver.cc",
@@ -151,13 +139,7 @@ rtc_static_library("video_coding") {
     "video_coding_impl.cc",
     "video_coding_impl.h",
     "video_receiver.cc",
-    "video_sender.cc",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   deps += [
     ":codec_globals_headers",
@@ -218,19 +200,6 @@ rtc_source_set("video_codec_interface") {
   ]
 }
 
-rtc_source_set("mock_headers") {
-  testonly = true
-  sources = [
-    "include/mock/mock_video_codec_interface.h",
-  ]
-  deps = [
-    ":video_codec_interface",
-    ":video_coding_utility",
-    "../..:webrtc_common",
-    "../../test:test_support",
-  ]
-}
-
 rtc_source_set("codec_globals_headers") {
   visibility = [ "*" ]
   sources = [
@@ -270,11 +239,6 @@ rtc_source_set("video_coding_utility") {
     "utility/vp9_uncompressed_header_parser.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":video_codec_interface",
     "..:module_api",
@@ -294,6 +258,7 @@ rtc_source_set("video_coding_utility") {
     "../../rtc_base/experiments:quality_scaling_experiment",
     "../../rtc_base/experiments:rate_control_settings",
     "../../rtc_base/system:arch",
+    "../../rtc_base/system:file_wrapper",
     "../../rtc_base/task_utils:repeating_task",
     "../../system_wrappers",
     "../../system_wrappers:field_trial",
@@ -308,11 +273,6 @@ rtc_static_library("webrtc_h264") {
     "codecs/h264/h264.cc",
     "codecs/h264/include/h264.h",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   defines = []
   deps = [
@@ -336,7 +296,6 @@ rtc_static_library("webrtc_h264") {
 
   if (rtc_use_h264) {
     assert(!(is_win && !is_clang), "See: bugs.webrtc.org/9213#c13.")
-    defines += [ "WEBRTC_USE_H264" ]
     sources += [
       "codecs/h264/h264_color_space.cc",
       "codecs/h264/h264_color_space.h",
@@ -369,16 +328,12 @@ rtc_static_library("webrtc_multiplex") {
     "codecs/multiplex/multiplex_encoder_adapter.cc",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":video_codec_interface",
     ":video_coding_utility",
     "..:module_api",
     "../..:webrtc_common",
+    "../../api:scoped_refptr",
     "../../api/video:encoded_image",
     "../../api/video:video_frame",
     "../../api/video:video_frame_i420",
@@ -405,11 +360,6 @@ rtc_static_library("webrtc_vp8") {
     "codecs/vp8/libvpx_vp8_encoder.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":codec_globals_headers",
     ":video_codec_interface",
@@ -417,6 +367,7 @@ rtc_static_library("webrtc_vp8") {
     ":webrtc_vp8_temporal_layers",
     "..:module_api",
     "../..:webrtc_common",
+    "../../api:scoped_refptr",
     "../../api/video:encoded_image",
     "../../api/video:video_frame",
     "../../api/video:video_frame_i420",
@@ -453,11 +404,6 @@ rtc_static_library("webrtc_vp8_temporal_layers") {
     "codecs/vp8/temporal_layers_checker.cc",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":codec_globals_headers",
     ":video_codec_interface",
@@ -485,11 +431,6 @@ rtc_static_library("webrtc_vp9_helpers") {
     "codecs/vp9/svc_rate_allocator.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":codec_globals_headers",
     ":video_codec_interface",
@@ -514,17 +455,13 @@ rtc_static_library("webrtc_vp9") {
     "codecs/vp9/vp9_impl.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     ":video_codec_interface",
     ":video_coding_utility",
     ":webrtc_vp9_helpers",
     "..:module_api",
     "../..:webrtc_common",
+    "../../api:scoped_refptr",
     "../../api/video:video_frame",
     "../../api/video:video_frame_i010",
     "../../api/video_codecs:video_codecs_api",
@@ -584,11 +521,6 @@ if (rtc_include_tests) {
         "../../sdk:videosource_objc",
         "../../sdk:videotoolbox_objc",
       ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
   }
 
@@ -599,13 +531,7 @@ if (rtc_include_tests) {
       "utility/simulcast_test_fixture_impl.h",
     ]
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     deps = [
-      ":mock_headers",
       ":video_codec_interface",
       ":video_coding",
       ":video_coding_utility",
@@ -634,11 +560,6 @@ if (rtc_include_tests) {
       "codecs/test/videoprocessor.h",
     ]
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     deps = [
       ":codec_globals_headers",
       ":video_codec_interface",
@@ -647,6 +568,7 @@ if (rtc_include_tests) {
       ":webrtc_vp9_helpers",
       "..:module_api",
       "../..:webrtc_common",
+      "../../api:scoped_refptr",
       "../../api:videocodec_test_fixture_api",
       "../../api/video:builtin_video_bitrate_allocator_factory",
       "../../api/video:encoded_image",
@@ -748,21 +670,17 @@ if (rtc_include_tests) {
       "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("video_coding_modules_tests") {
     testonly = true
+    defines = []
 
     sources = [
       "codecs/h264/test/h264_impl_unittest.cc",
       "codecs/multiplex/test/multiplex_adapter_unittest.cc",
       "codecs/test/video_encoder_decoder_instantiation_tests.cc",
       "codecs/test/videocodec_test_libvpx.cc",
-      "codecs/test/videocodec_test_parameterized.cc",
       "codecs/vp8/test/mock_libvpx_interface.h",
       "codecs/vp8/test/vp8_impl_unittest.cc",
       "codecs/vp9/test/vp9_impl_unittest.cc",
@@ -772,7 +690,6 @@ if (rtc_include_tests) {
     }
 
     deps = [
-      ":mock_headers",
       ":video_codec_interface",
       ":video_codecs_test_framework",
       ":video_coding_utility",
@@ -787,6 +704,7 @@ if (rtc_include_tests) {
       "../../api:mock_video_codec_factory",
       "../../api:mock_video_decoder",
       "../../api:mock_video_encoder",
+      "../../api:scoped_refptr",
       "../../api:videocodec_test_fixture_api",
       "../../api/test/video:function_video_factory",
       "../../api/video:encoded_image",
@@ -830,11 +748,6 @@ if (rtc_include_tests) {
       }
     }
 
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-
     if (rtc_build_libvpx) {
       deps += [ rtc_libvpx_dir ]
     }
@@ -855,13 +768,13 @@ if (rtc_include_tests) {
       "decoding_state_unittest.cc",
       "fec_controller_unittest.cc",
       "frame_buffer2_unittest.cc",
-      "generic_encoder_unittest.cc",
       "h264_sprop_parameter_sets_unittest.cc",
       "h264_sps_pps_tracker_unittest.cc",
       "histogram_unittest.cc",
       "include/mock/mock_vcm_callbacks.h",
       "jitter_buffer_unittest.cc",
       "jitter_estimator_tests.cc",
+      "loss_notification_controller_unittest.cc",
       "nack_module_unittest.cc",
       "receiver_unittest.cc",
       "rtp_frame_reference_finder_unittest.cc",
@@ -879,7 +792,6 @@ if (rtc_include_tests) {
       "video_codec_initializer_unittest.cc",
       "video_packet_buffer_unittest.cc",
       "video_receiver_unittest.cc",
-      "video_sender_unittest.cc",
     ]
     if (rtc_use_h264) {
       sources += [
@@ -891,7 +803,6 @@ if (rtc_include_tests) {
     deps = [
       ":codec_globals_headers",
       ":encoded_frame",
-      ":mock_headers",
       ":nack_module",
       ":packet",
       ":simulcast_test_fixture_impl",
@@ -913,6 +824,7 @@ if (rtc_include_tests) {
       "../../api:fec_controller_api",
       "../../api:mock_video_decoder",
       "../../api:mock_video_encoder",
+      "../../api:scoped_refptr",
       "../../api:simulcast_test_fixture_api",
       "../../api:videocodec_test_fixture_api",
       "../../api/test/video:function_video_factory",
@@ -951,10 +863,6 @@ if (rtc_include_tests) {
     ]
     if (rtc_build_libvpx) {
       deps += [ rtc_libvpx_dir ]
-    }
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
   }
 }

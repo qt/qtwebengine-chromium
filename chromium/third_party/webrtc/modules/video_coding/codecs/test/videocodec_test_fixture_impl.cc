@@ -39,7 +39,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/cpu_time.h"
 #include "rtc_base/event.h"
-#include "rtc_base/file.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/cpu_info.h"
@@ -259,7 +258,6 @@ std::string VideoCodecTestFixtureImpl::Config::ToString() const {
   ss << "\nuse_single_core: " << use_single_core;
   ss << "\nmeasure_cpu: " << measure_cpu;
   ss << "\nnum_cores: " << NumberOfCores();
-  ss << "\nkeyframe_interval: " << keyframe_interval;
   ss << "\ncodec_type: " << codec_type;
   ss << "\n\n--> codec_settings";
   ss << "\nwidth: " << codec_settings.width;
@@ -540,8 +538,13 @@ void VideoCodecTestFixtureImpl::VerifyVideoStatistic(
   if (quality_thresholds) {
     EXPECT_GT(video_stat.avg_psnr, quality_thresholds->min_avg_psnr);
     EXPECT_GT(video_stat.min_psnr, quality_thresholds->min_min_psnr);
-    EXPECT_GT(video_stat.avg_ssim, quality_thresholds->min_avg_ssim);
-    EXPECT_GT(video_stat.min_ssim, quality_thresholds->min_min_ssim);
+
+    // SSIM calculation is not optimized and thus it is disabled in real-time
+    // mode.
+    if (!config_.encode_in_real_time) {
+      EXPECT_GT(video_stat.avg_ssim, quality_thresholds->min_avg_ssim);
+      EXPECT_GT(video_stat.min_ssim, quality_thresholds->min_min_ssim);
+    }
   }
 
   if (bs_thresholds) {
@@ -565,7 +568,7 @@ void VideoCodecTestFixtureImpl::CreateEncoderAndDecoder() {
   } else {
     params = {};
   }
-  SdpVideoFormat format(config_.codec_name);
+  SdpVideoFormat format(config_.codec_name, params);
 
   encoder_ = encoder_factory_->CreateVideoEncoder(format);
   EXPECT_TRUE(encoder_) << "Encoder not successfully created.";
@@ -617,8 +620,8 @@ void VideoCodecTestFixtureImpl::SetUpAndInitObjects(
                                              std::to_string(simulcast_svc_idx);
 
     if (config_.visualization_params.save_encoded_ivf) {
-      rtc::File post_encode_file =
-          rtc::File::Create(output_filename_base + ".ivf");
+      FileWrapper post_encode_file =
+          FileWrapper::OpenWriteOnly(output_filename_base + ".ivf");
       encoded_frame_writers_.push_back(
           IvfFileWriter::Wrap(std::move(post_encode_file), 0));
     }

@@ -113,9 +113,9 @@ void init() {
     utils::ComboRenderPipelineDescriptor descriptor(device);
     descriptor.cVertexStage.module = vsModule;
     descriptor.cFragmentStage.module = fsModule;
-    descriptor.cAttachmentsState.hasDepthStencilAttachment = true;
-    descriptor.cDepthStencilAttachment.format = dawn::TextureFormat::D32FloatS8Uint;
-    descriptor.cColorAttachments[0]->format = GetPreferredSwapChainTextureFormat();
+    descriptor.depthStencilState = &descriptor.cDepthStencilState;
+    descriptor.cDepthStencilState.format = dawn::TextureFormat::D32FloatS8Uint;
+    descriptor.cColorStates[0]->format = GetPreferredSwapChainTextureFormat();
 
     pipeline = device.CreateRenderPipeline(&descriptor);
 
@@ -131,18 +131,18 @@ void init() {
 }
 
 void frame() {
-    dawn::Texture backbuffer;
-    dawn::RenderPassDescriptor renderPass;
-    GetNextRenderPassDescriptor(device, swapchain, depthStencilView, &backbuffer, &renderPass);
+    dawn::Texture backbuffer = swapchain.GetNextTexture();
 
     static int f = 0;
     f++;
 
     size_t i = 0;
 
-    dawn::CommandBufferBuilder builder = device.CreateCommandBufferBuilder();
+    utils::ComboRenderPassDescriptor renderPass({backbuffer.CreateDefaultTextureView()},
+                                                depthStencilView);
+    dawn::CommandEncoder encoder = device.CreateCommandEncoder();
     {
-        dawn::RenderPassEncoder pass = builder.BeginRenderPass(renderPass);
+        dawn::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
         pass.SetPipeline(pipeline);
 
         for (int k = 0; k < 10000; k++) {
@@ -155,7 +155,7 @@ void frame() {
         pass.EndPass();
     }
 
-    dawn::CommandBuffer commands = builder.GetResult();
+    dawn::CommandBuffer commands = encoder.Finish();
     queue.Submit(1, &commands);
     swapchain.Present(backbuffer);
     DoFlush();

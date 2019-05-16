@@ -190,6 +190,8 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
 
     canvas->translate(0,80);
 
+    // TODO(mtklein): sample and check the middle points of these gradients too.
+
     // Draw a gradient from P3 red to P3 green interpolating in unpremul P3, checking the corners.
     {
 
@@ -286,15 +288,43 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
                                              nullptr/*local matrix*/));
         canvas->drawRect({10,10,70,70}, paint);
         canvas->save();
-            compare_pixel("PM P3 gradient, P3 red",
+            compare_pixel("PM sRGB gradient, P3 red",
                           canvas, 10,10,
                           {1,0,0,1}, p3.get());
 
             canvas->translate(180, 0);
 
-            compare_pixel("PM P3 gradient, P3 green",
+            compare_pixel("PM sRGB gradient, P3 green",
                           canvas, 69,69,
                           {0,1,0,1}, p3.get());
+        canvas->restore();
+    }
+
+    canvas->translate(0,80);
+
+    // Leon's blue -> green -> red gradient, interpolating in premul.
+    {
+        SkPoint points[] = {{10.5,10.5}, {10.5,69.5}};
+        SkColor4f colors[] = { {0,0,1,1}, {0,1,0,1}, {1,0,0,1} };
+
+        SkPaint paint;
+        paint.setShader(
+                SkGradientShader::MakeLinear(points, colors, p3,
+                                             nullptr, SK_ARRAY_COUNT(colors),
+                                             SkShader::kClamp_TileMode,
+                                             SkGradientShader::kInterpolateColorsInPremul_Flag,
+                                             nullptr/*local matrix*/));
+        canvas->drawRect({10,10,70,70}, paint);
+        canvas->save();
+            compare_pixel("Leon's gradient, P3 blue",
+                          canvas, 10,10,
+                          {0,0,1,1}, p3.get());
+
+            canvas->translate(180, 0);
+
+            compare_pixel("Leon's gradient, P3 red",
+                          canvas, 10,69,
+                          {1,0,0,1}, p3.get());
         canvas->restore();
     }
 

@@ -58,11 +58,6 @@ public:
     using PromiseImageTextureReleaseProc = void (*)(PromiseImageTextureContext);
     using PromiseImageTextureDoneProc = void (*)(PromiseImageTextureContext);
 
-    // Deprecated types. To be removed.
-    using LegacyPromiseImageTextureFulfillProc = void (*)(PromiseImageTextureContext,
-                                                          GrBackendTexture*);
-    using TextureContext = PromiseImageTextureContext;
-
     /**
         Create a new SkImage that is very similar to an SkImage created by MakeFromTexture. The main
         difference is that the client doesn't have the backend texture on the gpu yet but they know
@@ -74,19 +69,18 @@ public:
         match those set during the SkImage creation, and it must have a valid backend gpu texture.
         The gpu texture supplied by the client must stay valid until we call the textureReleaseProc.
 
-        When we are done with the texture returned by the textureFulfillProc we will call the
-        textureReleaseProc passing in the textureContext. This is a signal to the client that they
-        are free to delete the underlying gpu texture. If future draws also use the same promise
-        image we will call the textureFulfillProc again if we've already called the
-        textureReleaseProc. We will always call textureFulfillProc and textureReleaseProc in pairs.
-        In other words we will never call textureFulfillProc or textureReleaseProc multiple times
-        for the same textureContext before calling the other.
+        When all the following are true:
+            * the promise image is deleted,
+            * any SkDeferredDisplayLists that recorded draws referencing the image are deleted,
+            * and the texture is safe to delete in the underlying API with respect to drawn
+              SkDeferredDisplayLists that reference the image
+        the textureReleaseProc and then textureDoneProc are called. The texture can be deleted
+        by the client as soon as textureReleaseProc is called. There is at most one call to each of
+        textureFulfillProc, textureReleaseProc, and textureDoneProc. textureDoneProc is always
+        called even if image creation fails or if the image is never fulfilled (e.g. it is never
+        drawn). If textureFulfillProc is called then textureReleaseProc will always be called even
+        if textureFulfillProc fails.
 
-        We call the promiseDoneProc when we will no longer call the textureFulfillProc again. We
-        pass in the textureContext as a parameter to the promiseDoneProc. We also guarantee that
-        there will be no outstanding textureReleaseProcs that still need to be called when we call
-        the textureDoneProc. Thus when the textureDoneProc gets called the client is able to cleanup
-        all GPU objects and meta data needed for the textureFulfill call.
 
         This call is only valid if the SkDeferredDisplayListRecorder is backed by a gpu context.
 
@@ -120,19 +114,6 @@ public:
                                       PromiseImageTextureReleaseProc textureReleaseProc,
                                       PromiseImageTextureDoneProc textureDoneProc,
                                       PromiseImageTextureContext textureContext);
-    /** Deprecated variant of above. */
-    sk_sp<SkImage> makePromiseTexture(const GrBackendFormat& backendFormat,
-                                      int width,
-                                      int height,
-                                      GrMipMapped mipMapped,
-                                      GrSurfaceOrigin origin,
-                                      SkColorType colorType,
-                                      SkAlphaType alphaType,
-                                      sk_sp<SkColorSpace> colorSpace,
-                                      LegacyPromiseImageTextureFulfillProc textureFulfillProc,
-                                      PromiseImageTextureReleaseProc textureReleaseProc,
-                                      PromiseImageTextureDoneProc textureDoneProc,
-                                      PromiseImageTextureContext textureContext);
 
     /**
         This entry point operates the same as 'makePromiseTexture' except that its
@@ -150,19 +131,6 @@ public:
                                           GrSurfaceOrigin imageOrigin,
                                           sk_sp<SkColorSpace> imageColorSpace,
                                           PromiseImageTextureFulfillProc textureFulfillProc,
-                                          PromiseImageTextureReleaseProc textureReleaseProc,
-                                          PromiseImageTextureDoneProc textureDoneProc,
-                                          PromiseImageTextureContext textureContexts[]);
-    /** Deprecated variant of above. */
-    sk_sp<SkImage> makeYUVAPromiseTexture(SkYUVColorSpace yuvColorSpace,
-                                          const GrBackendFormat yuvaFormats[],
-                                          const SkISize yuvaSizes[],
-                                          const SkYUVAIndex yuvaIndices[4],
-                                          int imageWidth,
-                                          int imageHeight,
-                                          GrSurfaceOrigin imageOrigin,
-                                          sk_sp<SkColorSpace> imageColorSpace,
-                                          LegacyPromiseImageTextureFulfillProc textureFulfillProc,
                                           PromiseImageTextureReleaseProc textureReleaseProc,
                                           PromiseImageTextureDoneProc textureDoneProc,
                                           PromiseImageTextureContext textureContexts[]);

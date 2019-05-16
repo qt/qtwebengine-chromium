@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/str_replace.h"
 #include "absl/types/optional.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
@@ -36,6 +37,7 @@
 #include "api/rtp_receiver_interface.h"
 #include "api/rtp_sender_interface.h"
 #include "api/rtp_transceiver_interface.h"
+#include "api/scoped_refptr.h"
 #include "api/video_codecs/builtin_video_decoder_factory.h"
 #include "api/video_codecs/builtin_video_encoder_factory.h"
 #include "api/video_codecs/video_decoder_factory.h"
@@ -48,7 +50,6 @@
 #include "media/base/media_config.h"
 #include "media/base/media_engine.h"
 #include "media/base/stream_params.h"
-#include "media/base/video_capturer.h"
 #include "media/engine/webrtc_media_engine.h"
 #include "media/sctp/sctp_transport_internal.h"
 #include "modules/audio_device/include/audio_device.h"
@@ -80,9 +81,7 @@
 #include "rtc_base/platform_file.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/rtc_certificate_generator.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/socket_address.h"
-#include "rtc_base/string_utils.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/virtual_socket_server.h"
@@ -2030,8 +2029,7 @@ TEST_P(PeerConnectionInterfaceTest, TestReceiveOnlyDataChannel) {
   std::string receive_label = "answer_channel";
   std::string sdp;
   EXPECT_TRUE(pc_->local_description()->ToString(&sdp));
-  rtc::replace_substrs(offer_label.c_str(), offer_label.length(),
-                       receive_label.c_str(), receive_label.length(), &sdp);
+  absl::StrReplaceAll({{offer_label, receive_label}}, &sdp);
   CreateAnswerAsRemoteDescription(sdp);
 
   // Verify that a new incoming data channel has been created and that
@@ -2664,7 +2662,7 @@ TEST_P(PeerConnectionInterfaceTest, CloseAndTestStreamsAndStates) {
   } else {
     // Verify that the RtpTransceivers are still present but all stopped.
     EXPECT_EQ(2u, pc_->GetTransceivers().size());
-    for (auto transceiver : pc_->GetTransceivers()) {
+    for (const auto& transceiver : pc_->GetTransceivers()) {
       EXPECT_TRUE(transceiver->stopped());
     }
   }
@@ -2885,8 +2883,7 @@ TEST_P(PeerConnectionInterfaceTest, RecvonlyDescriptionDoesntCreateStream) {
   CreatePeerConnection(config);
 
   std::string recvonly_offer = GetSdpStringWithStream1();
-  rtc::replace_substrs(kSendrecv, strlen(kSendrecv), kRecvonly,
-                       strlen(kRecvonly), &recvonly_offer);
+  absl::StrReplaceAll({{kSendrecv, kRecvonly}}, &recvonly_offer);
   CreateAndSetRemoteOffer(recvonly_offer);
 
   EXPECT_EQ(0u, observer_.remote_streams()->count());
@@ -3948,10 +3945,10 @@ TEST_P(PeerConnectionInterfaceTest, ExtmapAllowMixedIsConfigurable) {
   EXPECT_TRUE(offer->description()->extmap_allow_mixed());
 }
 
-INSTANTIATE_TEST_CASE_P(PeerConnectionInterfaceTest,
-                        PeerConnectionInterfaceTest,
-                        Values(SdpSemantics::kPlanB,
-                               SdpSemantics::kUnifiedPlan));
+INSTANTIATE_TEST_SUITE_P(PeerConnectionInterfaceTest,
+                         PeerConnectionInterfaceTest,
+                         Values(SdpSemantics::kPlanB,
+                                SdpSemantics::kUnifiedPlan));
 
 class PeerConnectionMediaConfigTest : public testing::Test {
  protected:

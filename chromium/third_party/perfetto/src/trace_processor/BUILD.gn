@@ -14,6 +14,7 @@
 
 import("../../gn/perfetto.gni")
 import("../../gn/wasm.gni")
+import("../../gn/fuzzer.gni")
 
 wasm_lib("trace_processor_wasm") {
   name = "trace_processor"
@@ -46,6 +47,8 @@ source_set("lib") {
     "android_logs_table.h",
     "args_table.cc",
     "args_table.h",
+    "args_tracker.cc",
+    "args_tracker.h",
     "chunked_trace_reader.h",
     "clock_tracker.cc",
     "clock_tracker.h",
@@ -121,6 +124,7 @@ source_set("lib") {
     "../../gn:default_deps",
     "../../include/perfetto/traced:sys_stats_counters",
     "../../protos/perfetto/trace:lite",
+    "../../protos/perfetto/trace/ftrace:lite",
     "../../protos/perfetto/trace_processor:lite",
     "../base",
     "../protozero",
@@ -146,7 +150,10 @@ if (current_toolchain == host_toolchain) {
       "../base",
     ]
     if (perfetto_build_standalone) {
-      deps += [ "../../buildtools:linenoise" ]
+      deps += [
+        "../../buildtools:linenoise",
+        "../../gn/standalone:gen_git_revision",
+      ]
     }
     sources = [
       "trace_processor_shell.cc",
@@ -208,6 +215,24 @@ source_set("integrationtests") {
   ]
   deps = [
     ":lib",
+    "../../buildtools:sqlite",
+    "../../gn:default_deps",
+    "../../gn:gtest_deps",
+    "../../protos/perfetto/trace:lite",
+    "../../protos/perfetto/trace_processor:lite",
+    "../base",
+    "../base:test_support",
+  ]
+}
+
+perfetto_fuzzer_test("trace_processor_fuzzer") {
+  testonly = true
+  sources = [
+    "trace_parsing_fuzzer.cc",
+  ]
+  deps = [
+    ":lib",
+    "../../../../gn:default_deps",
     "../../buildtools:sqlite",
     "../../gn:default_deps",
     "../../gn:gtest_deps",

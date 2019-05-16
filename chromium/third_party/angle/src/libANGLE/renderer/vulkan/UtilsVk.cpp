@@ -389,7 +389,7 @@ angle::Result UtilsVk::clearBuffer(vk::Context *context,
     shaderParams.clearValue = params.clearValue;
 
     VkDescriptorSet descriptorSet;
-    vk::SharedDescriptorPoolBinding descriptorPoolBinding;
+    vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
     ANGLE_TRY(mDescriptorPools[Function::BufferClear].allocateSets(
         context, mDescriptorSetLayouts[Function::BufferClear][kSetIndex].get().ptr(), 1,
         &descriptorPoolBinding, &descriptorSet));
@@ -451,7 +451,7 @@ angle::Result UtilsVk::copyBuffer(vk::Context *context,
     shaderParams.srcOffset  = params.srcOffset;
 
     VkDescriptorSet descriptorSet;
-    vk::SharedDescriptorPoolBinding descriptorPoolBinding;
+    vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
     ANGLE_TRY(mDescriptorPools[Function::BufferCopy].allocateSets(
         context, mDescriptorSetLayouts[Function::BufferCopy][kSetIndex].get().ptr(), 1,
         &descriptorPoolBinding, &descriptorSet));
@@ -534,7 +534,7 @@ angle::Result UtilsVk::convertVertexBuffer(vk::Context *context,
     flags |= isAligned ? ConvertVertex_comp::kIsAligned : 0;
 
     VkDescriptorSet descriptorSet;
-    vk::SharedDescriptorPoolBinding descriptorPoolBinding;
+    vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
     ANGLE_TRY(mDescriptorPools[Function::ConvertVertexBuffer].allocateSets(
         context, mDescriptorSetLayouts[Function::ConvertVertexBuffer][kSetIndex].get().ptr(), 1,
         &descriptorPoolBinding, &descriptorSet));
@@ -620,7 +620,7 @@ angle::Result UtilsVk::clearImage(ContextVk *contextVk,
     vk::CommandBuffer *commandBuffer;
     if (!framebuffer->appendToStartedRenderPass(renderer->getCurrentQueueSerial(), &commandBuffer))
     {
-        ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, &commandBuffer))
+        ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, &commandBuffer));
     }
 
     ImageClearShaderParams shaderParams;
@@ -641,6 +641,11 @@ angle::Result UtilsVk::clearImage(ContextVk *contextVk,
     VkRect2D scissor;
     const gl::State &glState = contextVk->getState();
     gl_vk::GetScissor(glState, invertViewport, renderArea, &scissor);
+    // TODO(courtneygo): workaround for scissor issue on some devices. http://anglebug.com/3114
+    if ((scissor.extent.width == 0) || (scissor.extent.height == 0))
+    {
+        return angle::Result::Continue;
+    }
     pipelineDesc.setScissor(scissor);
 
     vk::ShaderLibrary &shaderLibrary                    = renderer->getShaderLibrary();
@@ -705,7 +710,7 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     flags |= src->getLayerCount() > 1 ? ImageCopy_frag::kSrcIsArray : 0;
 
     VkDescriptorSet descriptorSet;
-    vk::SharedDescriptorPoolBinding descriptorPoolBinding;
+    vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
     ANGLE_TRY(mDescriptorPools[Function::ImageCopy].allocateSets(
         contextVk, mDescriptorSetLayouts[Function::ImageCopy][kSetIndex].get().ptr(), 1,
         &descriptorPoolBinding, &descriptorSet));
@@ -733,24 +738,20 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     pipelineDesc.setScissor(scissor);
 
     // Change source layout outside render pass
-    if (src->getCurrentLayout() != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    if (src->isLayoutChangeNecessary(vk::ImageLayout::FragmentShaderReadOnly))
     {
         vk::CommandBuffer *srcLayoutChange;
         ANGLE_TRY(src->recordCommands(contextVk, &srcLayoutChange));
-        src->changeLayoutWithStages(VK_IMAGE_ASPECT_COLOR_BIT,
-                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, srcLayoutChange);
+        src->changeLayout(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::FragmentShaderReadOnly,
+                          srcLayoutChange);
     }
 
     // Change destination layout outside render pass as well
     vk::CommandBuffer *destLayoutChange;
     ANGLE_TRY(dest->recordCommands(contextVk, &destLayoutChange));
 
-    dest->changeLayoutWithStages(VK_IMAGE_ASPECT_COLOR_BIT,
-                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, destLayoutChange);
+    dest->changeLayout(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment,
+                       destLayoutChange);
 
     vk::CommandBuffer *commandBuffer;
     ANGLE_TRY(

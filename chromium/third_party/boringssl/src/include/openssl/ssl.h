@@ -619,9 +619,6 @@ OPENSSL_EXPORT int DTLSv1_handle_timeout(SSL *ssl);
 #define DTLS1_VERSION 0xfeff
 #define DTLS1_2_VERSION 0xfefd
 
-#define TLS1_3_DRAFT23_VERSION 0x7f17
-#define TLS1_3_DRAFT28_VERSION 0x7f1c
-
 // SSL_CTX_set_min_proto_version sets the minimum protocol version for |ctx| to
 // |version|. If |version| is zero, the default minimum version is used. It
 // returns one on success and zero if |version| is invalid.
@@ -884,8 +881,9 @@ OPENSSL_EXPORT int SSL_clear_chain_certs(SSL *ssl);
 // |SSL_get_client_CA_list| for information on the server's certificate
 // request.
 //
-// On the server, the callback will be called on non-resumption handshakes,
-// after extensions have been processed.
+// On the server, the callback will be called after extensions have been
+// processed, but before the resumption decision has been made. This differs
+// from OpenSSL which handles resumption before selecting the certificate.
 OPENSSL_EXPORT void SSL_CTX_set_cert_cb(SSL_CTX *ctx,
                                         int (*cb)(SSL *ssl, void *arg),
                                         void *arg);
@@ -898,6 +896,10 @@ OPENSSL_EXPORT void SSL_CTX_set_cert_cb(SSL_CTX *ctx,
 // On the client, the callback may call |SSL_get0_certificate_types| and
 // |SSL_get_client_CA_list| for information on the server's certificate
 // request.
+//
+// On the server, the callback will be called after extensions have been
+// processed, but before the resumption decision has been made. This differs
+// from OpenSSL which handles resumption before selecting the certificate.
 OPENSSL_EXPORT void SSL_set_cert_cb(SSL *ssl, int (*cb)(SSL *ssl, void *arg),
                                     void *arg);
 
@@ -3057,6 +3059,41 @@ OPENSSL_EXPORT void SSL_get_peer_quic_transport_params(const SSL *ssl,
                                                        size_t *out_params_len);
 
 
+// Delegated credentials.
+//
+// *** EXPERIMENTAL — PRONE TO CHANGE ***
+//
+// draft-ietf-tls-subcerts is a proposed extension for TLS 1.3 and above that
+// allows an end point to use its certificate to delegate credentials for
+// authentication. If the peer indicates support for this extension, then this
+// host may use a delegated credential to sign the handshake. Once issued,
+// credentials can't be revoked. In order to mitigate the damage in case the
+// credential secret key is compromised, the credential is only valid for a
+// short time (days, hours, or even minutes). This library implements draft-02
+// of the protocol spec.
+//
+// The extension ID has not been assigned; we're using 0xff02 for the time
+// being. Currently only the server side is implemented.
+//
+// Servers configure a DC for use in the handshake via
+// |SSL_set1_delegated_credential|. It must be signed by the host's end-entity
+// certificate as defined in draft-ietf-tls-subcerts-03.
+
+// SSL_set1_delegated_credential configures the delegated credential (DC) that
+// will be sent to the peer for the current connection. |dc| is the DC in wire
+// format, and |pkey| or |key_method| is the corresponding private key.
+// Currently (as of draft-02), only servers may configure a DC to use in the
+// handshake.
+//
+// The DC will only be used if the protocol version is correct and the signature
+// scheme is supported by the peer. If not, the DC will not be negotiated and
+// the handshake will use the private key (or private key method) associated
+// with the certificate.
+OPENSSL_EXPORT int SSL_set1_delegated_credential(
+    SSL *ssl, CRYPTO_BUFFER *dc, EVP_PKEY *pkey,
+    const SSL_PRIVATE_KEY_METHOD *key_method);
+
+
 // QUIC integration.
 //
 // QUIC acts as an underlying transport for the TLS 1.3 handshake. The following
@@ -3172,6 +3209,12 @@ OPENSSL_EXPORT int SSL_process_quic_post_handshake(SSL *ssl);
 // for the lifetime of |ctx|. It returns one on success and zero on error.
 OPENSSL_EXPORT int SSL_CTX_set_quic_method(SSL_CTX *ctx,
                                            const SSL_QUIC_METHOD *quic_method);
+
+// SSL_set_quic_method configures the QUIC hooks. This should only be
+// configured with a minimum version of TLS 1.3. |quic_method| must remain valid
+// for the lifetime of |ssl|. It returns one on success and zero on error.
+OPENSSL_EXPORT int SSL_set_quic_method(SSL *ssl,
+                                       const SSL_QUIC_METHOD *quic_method);
 
 
 // Early data.
@@ -3518,28 +3561,6 @@ OPENSSL_EXPORT int SSL_renegotiate_pending(SSL *ssl);
 // performed by |ssl|. This includes the pending renegotiation, if any.
 OPENSSL_EXPORT int SSL_total_renegotiations(const SSL *ssl);
 
-// tls13_variant_t determines what TLS 1.3 variant to negotiate.
-enum tls13_variant_t {
-  tls13_rfc = 0,
-  tls13_draft23,
-  tls13_draft28,
-  // tls13_all enables all variants of TLS 1.3, to keep the transition smooth as
-  // early adopters move to the final version.
-  tls13_all,
-};
-
-// SSL_CTX_set_tls13_variant sets which variant of TLS 1.3 we negotiate. On the
-// server, if |variant| is not |tls13_default|, all variants are enabled. On the
-// client, only the configured variant is enabled.
-OPENSSL_EXPORT void SSL_CTX_set_tls13_variant(SSL_CTX *ctx,
-                                              enum tls13_variant_t variant);
-
-// SSL_set_tls13_variant sets which variant of TLS 1.3 we negotiate. On the
-// server, if |variant| is not |tls13_default|, all variants are enabled. On the
-// client, only the configured variant is enabled.
-OPENSSL_EXPORT void SSL_set_tls13_variant(SSL *ssl,
-                                          enum tls13_variant_t variant);
-
 // SSL_MAX_CERT_LIST_DEFAULT is the default maximum length, in bytes, of a peer
 // certificate chain.
 #define SSL_MAX_CERT_LIST_DEFAULT (1024 * 100)
@@ -3649,6 +3670,12 @@ OPENSSL_EXPORT void SSL_CTX_set_dos_protection_cb(
 // For now, this is incompatible with |SSL_VERIFY_NONE| mode, and is only
 // respected on clients.
 OPENSSL_EXPORT void SSL_CTX_set_reverify_on_resume(SSL_CTX *ctx, int enabled);
+
+// SSL_set_enforce_rsa_key_usage configures whether the keyUsage extension of
+// RSA leaf certificates will be checked for consistency with the TLS
+// usage. This parameter may be set late; it will not be read until after the
+// certificate verification callback.
+OPENSSL_EXPORT void SSL_set_enforce_rsa_key_usage(SSL *ssl, int enabled);
 
 // SSL_ST_* are possible values for |SSL_state|, the bitmasks that make them up,
 // and some historical values for compatibility. Only |SSL_ST_INIT| and
@@ -3813,12 +3840,12 @@ OPENSSL_EXPORT void SSL_set_ignore_tls13_downgrade(SSL *ssl, int ignore);
 // mechanism would have aborted |ssl|'s handshake and zero otherwise.
 OPENSSL_EXPORT int SSL_is_tls13_downgrade(const SSL *ssl);
 
-// SSL_set_jdk11_workaround configures whether to workaround a bug in JDK 11's
-// TLS 1.3 implementation. Prior to 11.0.2, JDK 11 fails to send SNI in
-// connections which offer a TLS 1.3 session. Enabling this workaround will
-// disable TLS 1.3 on such clients.
+// SSL_set_jdk11_workaround configures whether to workaround various bugs in
+// JDK 11's TLS 1.3 implementation by disabling TLS 1.3 for such clients.
 //
-// See also https://bugs.openjdk.java.net/browse/JDK-8211806.
+// https://bugs.openjdk.java.net/browse/JDK-8211806
+// https://bugs.openjdk.java.net/browse/JDK-8212885
+// https://bugs.openjdk.java.net/browse/JDK-8213202
 OPENSSL_EXPORT void SSL_set_jdk11_workaround(SSL *ssl, int enable);
 
 
@@ -4166,6 +4193,7 @@ DEFINE_STACK_OF(SSL_COMP)
 #define SSL_OP_NETSCAPE_DEMO_CIPHER_CHANGE_BUG 0
 #define SSL_OP_NETSCAPE_REUSE_CIPHER_CHANGE_BUG 0
 #define SSL_OP_NO_COMPRESSION 0
+#define SSL_OP_NO_RENEGOTIATION 0  // ssl_renegotiate_never is the default
 #define SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION 0
 #define SSL_OP_NO_SSLv2 0
 #define SSL_OP_NO_SSLv3 0
@@ -4951,6 +4979,9 @@ BSSL_NAMESPACE_END
 #define SSL_R_TLS13_DOWNGRADE 297
 #define SSL_R_QUIC_INTERNAL_ERROR 298
 #define SSL_R_WRONG_ENCRYPTION_LEVEL_RECEIVED 299
+#define SSL_R_TOO_MUCH_READ_EARLY_DATA 300
+#define SSL_R_INVALID_DELEGATED_CREDENTIAL 301
+#define SSL_R_KEY_USAGE_BIT_INCORRECT 302
 #define SSL_R_SSLV3_ALERT_CLOSE_NOTIFY 1000
 #define SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE 1010
 #define SSL_R_SSLV3_ALERT_BAD_RECORD_MAC 1020
@@ -4983,6 +5014,5 @@ BSSL_NAMESPACE_END
 #define SSL_R_TLSV1_BAD_CERTIFICATE_HASH_VALUE 1114
 #define SSL_R_TLSV1_UNKNOWN_PSK_IDENTITY 1115
 #define SSL_R_TLSV1_CERTIFICATE_REQUIRED 1116
-#define SSL_R_TOO_MUCH_READ_EARLY_DATA 1117
 
 #endif  // OPENSSL_HEADER_SSL_H

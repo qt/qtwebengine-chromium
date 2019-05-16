@@ -172,7 +172,7 @@ protected:
         }
     }
 
-    void onDraw(SkCanvas* canvas) override {
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
         SkFont font;
         font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
         font.setSubpixel(true);
@@ -190,13 +190,15 @@ protected:
             }
         }
         if (nullptr == fset.get()) {
-            return;
+            *errorMsg = "No SkFontStyleSet";
+            return DrawResult::kFail;
         }
 
         canvas->translate(20, 40);
         this->exploreFamily(canvas, font, fset.get());
         canvas->translate(150, 0);
         this->iterateFamily(canvas, font, fset.get());
+        return DrawResult::kOk;
     }
 
 private:
@@ -232,9 +234,9 @@ public:
         font.getMetrics(&fm);
         SkPaint metricsPaint(boundsPaint);
         metricsPaint.setStyle(SkPaint::kFill_Style);
-        metricsPaint.setAlpha(0x40);
+        metricsPaint.setAlphaf(0.25f);
         if ((fm.fFlags & SkFontMetrics::kUnderlinePositionIsValid_Flag) &&
-            (fm.fFlags & SkFontMetrics::kUnderlinePositionIsValid_Flag))
+            (fm.fFlags & SkFontMetrics::kUnderlineThicknessIsValid_Flag))
         {
             SkRect underline{ fontBounds.fLeft,  fm.fUnderlinePosition+y,
                               fontBounds.fRight, fm.fUnderlinePosition+y + fm.fUnderlineThickness };
@@ -242,7 +244,7 @@ public:
         }
 
         if ((fm.fFlags & SkFontMetrics::kStrikeoutPositionIsValid_Flag) &&
-            (fm.fFlags & SkFontMetrics::kStrikeoutPositionIsValid_Flag))
+            (fm.fFlags & SkFontMetrics::kStrikeoutThicknessIsValid_Flag))
         {
             SkRect strikeout{ fontBounds.fLeft,  fm.fStrikeoutPosition+y - fm.fStrikeoutThickness,
                               fontBounds.fRight, fm.fStrikeoutPosition+y };

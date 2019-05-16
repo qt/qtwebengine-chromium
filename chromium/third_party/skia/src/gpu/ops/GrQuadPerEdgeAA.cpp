@@ -374,7 +374,7 @@ GR_DECLARE_STATIC_UNIQUE_KEY(gAAFillRectIndexBufferKey);
 static const int kVertsPerAAFillRect = 8;
 static const int kIndicesPerAAFillRect = 30;
 
-static sk_sp<const GrBuffer> get_index_buffer(GrResourceProvider* resourceProvider) {
+static sk_sp<const GrGpuBuffer> get_index_buffer(GrResourceProvider* resourceProvider) {
     GR_DEFINE_STATIC_UNIQUE_KEY(gAAFillRectIndexBufferKey);
 
     // clang-format off
@@ -467,24 +467,24 @@ bool ConfigureMeshIndices(GrMeshDrawOp::Target* target, GrMesh* mesh, const Vert
                           int quadCount) {
     if (spec.usesCoverageAA()) {
         // AA quads use 8 vertices, basically nested rectangles
-        sk_sp<const GrBuffer> ibuffer = get_index_buffer(target->resourceProvider());
+        sk_sp<const GrGpuBuffer> ibuffer = get_index_buffer(target->resourceProvider());
         if (!ibuffer) {
             return false;
         }
 
         mesh->setPrimitiveType(GrPrimitiveType::kTriangles);
-        mesh->setIndexedPatterned(ibuffer.get(), kIndicesPerAAFillRect, kVertsPerAAFillRect,
-                quadCount, kNumAAQuadsInIndexBuffer);
+        mesh->setIndexedPatterned(std::move(ibuffer), kIndicesPerAAFillRect, kVertsPerAAFillRect,
+                                  quadCount, kNumAAQuadsInIndexBuffer);
     } else {
         // Non-AA quads use 4 vertices, and regular triangle strip layout
         if (quadCount > 1) {
-            sk_sp<const GrBuffer> ibuffer = target->resourceProvider()->refQuadIndexBuffer();
+            sk_sp<const GrGpuBuffer> ibuffer = target->resourceProvider()->refQuadIndexBuffer();
             if (!ibuffer) {
                 return false;
             }
 
             mesh->setPrimitiveType(GrPrimitiveType::kTriangles);
-            mesh->setIndexedPatterned(ibuffer.get(), 6, 4, quadCount,
+            mesh->setIndexedPatterned(std::move(ibuffer), 6, 4, quadCount,
                                       GrResourceProvider::QuadCountOfQuadBuffer());
         } else {
             mesh->setPrimitiveType(GrPrimitiveType::kTriangleStrip);
@@ -659,12 +659,12 @@ public:
                                                        coverage.vsOut(), gp.fPosition.name());
                     }
 
-                    args.fFragBuilder->codeAppendf("%s = float4(%s);",
+                    args.fFragBuilder->codeAppendf("%s = half4(half(%s));",
                                                    args.fOutputCoverage, coverage.fsIn());
                 } else {
                     // Set coverage to 1, since it's either non-AA or the coverage was already
                     // folded into the output color
-                    args.fFragBuilder->codeAppendf("%s = float4(1);", args.fOutputCoverage);
+                    args.fFragBuilder->codeAppendf("%s = half4(1);", args.fOutputCoverage);
                 }
             }
             GrGLSLColorSpaceXformHelper fTextureColorSpaceXformHelper;

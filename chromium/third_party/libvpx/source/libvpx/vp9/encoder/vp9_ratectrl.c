@@ -668,7 +668,7 @@ static int adjust_q_cbr(const VP9_COMP *cpi, int q) {
   }
   if (cpi->oxcf.content == VP9E_CONTENT_SCREEN)
     vp9_cyclic_refresh_limit_q(cpi, &q);
-  return q;
+  return VPXMAX(VPXMIN(q, cpi->rc.worst_quality), cpi->rc.best_quality);
 }
 
 static double get_rate_correction_factor(const VP9_COMP *cpi) {
@@ -1076,6 +1076,7 @@ static int rc_pick_q_and_bounds_one_pass_cbr(const VP9_COMP *cpi,
         q = *top_index;
     }
   }
+
   assert(*top_index <= rc->worst_quality && *top_index >= rc->best_quality);
   assert(*bottom_index <= rc->worst_quality &&
          *bottom_index >= rc->best_quality);
@@ -2271,7 +2272,7 @@ void vp9_rc_get_one_pass_cbr_params(VP9_COMP *cpi) {
   RATE_CONTROL *const rc = &cpi->rc;
   int target;
   if ((cm->current_video_frame == 0) || (cpi->frame_flags & FRAMEFLAGS_KEY) ||
-      rc->frames_to_key == 0) {
+      (cpi->oxcf.auto_key && rc->frames_to_key == 0)) {
     cm->frame_type = KEY_FRAME;
     rc->frames_to_key = cpi->oxcf.key_freq;
     rc->kf_boost = DEFAULT_KF_BOOST;
@@ -2931,7 +2932,7 @@ void vp9_scene_detection_onepass(VP9_COMP *cpi) {
         } else {
           rc->avg_source_sad[lagframe_idx] = avg_sad;
         }
-        if (num_zero_temp_sad < (num_samples >> 1))
+        if (num_zero_temp_sad < (3 * num_samples >> 2))
           rc->high_num_blocks_with_motion = 1;
       }
     }

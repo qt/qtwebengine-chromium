@@ -7,10 +7,10 @@
 
 #include "GrCCDrawPathsOp.h"
 
-#include "GrContext.h"
-#include "GrContextPriv.h"
 #include "GrMemoryPool.h"
 #include "GrOpFlushState.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "ccpr/GrCCPathCache.h"
 #include "ccpr/GrCCPerFlushResources.h"
 #include "ccpr/GrCoverageCountingPathRenderer.h"
@@ -26,8 +26,8 @@ static bool has_coord_transforms(const GrPaint& paint) {
 }
 
 std::unique_ptr<GrCCDrawPathsOp> GrCCDrawPathsOp::Make(
-        GrContext* context, const SkIRect& clipIBounds, const SkMatrix& m, const GrShape& shape,
-        GrPaint&& paint) {
+        GrRecordingContext* context, const SkIRect& clipIBounds, const SkMatrix& m,
+        const GrShape& shape, GrPaint&& paint) {
     SkRect conservativeDevBounds;
     m.mapRect(&conservativeDevBounds, shape.bounds());
 
@@ -75,8 +75,9 @@ std::unique_ptr<GrCCDrawPathsOp> GrCCDrawPathsOp::Make(
 }
 
 std::unique_ptr<GrCCDrawPathsOp> GrCCDrawPathsOp::InternalMake(
-        GrContext* context, const SkIRect& clipIBounds, const SkMatrix& m, const GrShape& shape,
-        float strokeDevWidth, const SkRect& conservativeDevBounds, GrPaint&& paint) {
+        GrRecordingContext* context, const SkIRect& clipIBounds, const SkMatrix& m,
+        const GrShape& shape, float strokeDevWidth, const SkRect& conservativeDevBounds,
+        GrPaint&& paint) {
     // The path itself should have been cropped if larger than kPathCropThreshold. If it had a
     // stroke, that would have further inflated its draw bounds.
     SkASSERT(SkTMax(conservativeDevBounds.height(), conservativeDevBounds.width()) <
@@ -91,7 +92,7 @@ std::unique_ptr<GrCCDrawPathsOp> GrCCDrawPathsOp::InternalMake(
         return nullptr;
     }
 
-    GrOpMemoryPool* pool = context->contextPriv().opMemoryPool();
+    GrOpMemoryPool* pool = context->priv().opMemoryPool();
     return pool->allocate<GrCCDrawPathsOp>(m, shape, strokeDevWidth, shapeConservativeIBounds,
                                            maskDevIBounds, conservativeDevBounds, std::move(paint));
 }
@@ -138,16 +139,18 @@ GrCCDrawPathsOp::SingleDraw::SingleDraw(const SkMatrix& m, const GrShape& shape,
 #endif
 }
 
-GrProcessorSet::Analysis GrCCDrawPathsOp::finalize(const GrCaps& caps, const GrAppliedClip* clip) {
+GrProcessorSet::Analysis GrCCDrawPathsOp::finalize(
+        const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType) {
     SkASSERT(1 == fNumDraws);  // There should only be one single path draw in this Op right now.
-    return fDraws.head().finalize(caps, clip, &fProcessors);
+    return fDraws.head().finalize(caps, clip, fsaaType, &fProcessors);
 }
 
 GrProcessorSet::Analysis GrCCDrawPathsOp::SingleDraw::finalize(
-        const GrCaps& caps, const GrAppliedClip* clip, GrProcessorSet* processors) {
+        const GrCaps& caps, const GrAppliedClip* clip, GrFSAAType fsaaType,
+        GrProcessorSet* processors) {
     const GrProcessorSet::Analysis& analysis = processors->finalize(
-            fColor, GrProcessorAnalysisCoverage::kSingleChannel, clip, false, caps,
-            &fColor);
+            fColor, GrProcessorAnalysisCoverage::kSingleChannel, clip,
+            &GrUserStencilSettings::kUnused, fsaaType, caps, &fColor);
 
     // Lines start looking jagged when they get thinner than 1px. For thin strokes it looks better
     // if we can convert them to hairline (i.e., inflate the stroke width to 1px), and instead
@@ -399,7 +402,6 @@ void GrCCDrawPathsOp::onExecute(GrOpFlushState* flushState, const SkRect& chainB
     }
 
     GrPipeline::InitArgs initArgs;
-    initArgs.fProxy = flushState->drawOpArgs().fProxy;
     initArgs.fCaps = &flushState->caps();
     initArgs.fResourceProvider = flushState->resourceProvider();
     initArgs.fDstProxy = flushState->drawOpArgs().fDstProxy;

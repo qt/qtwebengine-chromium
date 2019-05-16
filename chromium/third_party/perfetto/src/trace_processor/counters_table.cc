@@ -42,10 +42,9 @@ StorageSchema CountersTable::CreateStorageSchema() {
       .AddOrderedNumericColumn("ts", &cs.timestamps())
       .AddStringColumn("name", &cs.name_ids(), &storage_->string_pool())
       .AddNumericColumn("value", &cs.values())
-      .AddNumericColumn("dur", &cs.durations())
-      .AddColumn<TsEndColumn>("ts_end", &cs.timestamps(), &cs.durations())
-      .AddColumn<RefColumn>("ref", storage_)
+      .AddColumn<RefColumn>("ref", &cs.refs(), &cs.types(), storage_)
       .AddStringColumn("ref_type", &cs.types(), &ref_types_)
+      .AddNumericColumn("arg_set_id", &cs.arg_set_ids())
       .Build({"name", "ts", "ref"});
 }
 
@@ -71,13 +70,18 @@ int CountersTable::BestIndex(const QueryConstraints& qc, BestIndexInfo* info) {
 }
 
 CountersTable::RefColumn::RefColumn(std::string col_name,
+                                    const std::deque<int64_t>* refs,
+                                    const std::deque<RefType>* types,
                                     const TraceStorage* storage)
-    : StorageColumn(col_name, false /* hidden */), storage_(storage) {}
+    : StorageColumn(col_name, false /* hidden */),
+      refs_(refs),
+      types_(types),
+      storage_(storage) {}
 
 void CountersTable::RefColumn::ReportResult(sqlite3_context* ctx,
                                             uint32_t row) const {
-  auto ref = storage_->counters().refs()[row];
-  auto type = storage_->counters().types()[row];
+  auto ref = (*refs_)[row];
+  auto type = (*types_)[row];
   if (type == RefType::kRefUtidLookupUpid) {
     auto upid = storage_->GetThread(static_cast<uint32_t>(ref)).upid;
     if (upid.has_value()) {
@@ -102,8 +106,8 @@ void CountersTable::RefColumn::Filter(int op,
   bool op_is_null = sqlite_utils::IsOpIsNull(op);
   auto predicate = sqlite_utils::CreateNumericPredicate<int64_t>(op, value);
   index->FilterRows([this, &predicate, op_is_null](uint32_t row) {
-    auto ref = storage_->counters().refs()[row];
-    auto type = storage_->counters().types()[row];
+    auto ref = (*refs_)[row];
+    auto type = (*types_)[row];
     if (type == RefType::kRefUtidLookupUpid) {
       auto upid = storage_->GetThread(static_cast<uint32_t>(ref)).upid;
       // Trying to filter null with any operation we currently handle
@@ -123,33 +127,28 @@ CountersTable::RefColumn::Comparator CountersTable::RefColumn::Sort(
 }
 
 int CountersTable::RefColumn::CompareRefsAsc(uint32_t f, uint32_t s) const {
-  auto ref_f = storage_->counters().refs()[f];
-  auto ref_s = storage_->counters().refs()[s];
+  auto ref_f = (*refs_)[f];
+  auto ref_s = (*refs_)[s];
 
-  auto type_f = storage_->counters().types()[f];
-  auto type_s = storage_->counters().types()[s];
+  auto type_f = (*types_)[f];
+  auto type_s = (*types_)[s];
 
+  base::Optional<int64_t> val_f = ref_f;
+  base::Optional<int64_t> val_s = ref_s;
   if (type_f == RefType::kRefUtidLookupUpid) {
-    auto upid_f = storage_->GetThread(static_cast<uint32_t>(ref_f)).upid;
-    if (type_s == RefType::kRefUtidLookupUpid) {
-      auto upid_s = storage_->GetThread(static_cast<uint32_t>(ref_s)).upid;
-      if (!upid_f.has_value() && !upid_s.has_value()) {
-        return 0;
-      } else if (!upid_f.has_value()) {
-        return -1;
-      } else if (!upid_s.has_value()) {
-        return 1;
-      }
-      return sqlite_utils::CompareValuesAsc(upid_f.value(), upid_s.value());
-    }
-    if (!upid_f.has_value())
-      return -1;
-  } else if (type_s == RefType::kRefUtidLookupUpid) {
-    auto upid_s = storage_->GetThread(static_cast<uint32_t>(ref_s)).upid;
-    if (!upid_s.has_value())
-      return 1;
+    val_f = storage_->GetThread(static_cast<uint32_t>(ref_f)).upid;
   }
-  return sqlite_utils::CompareValuesAsc(ref_f, ref_s);
+  if (type_s == RefType::kRefUtidLookupUpid) {
+    val_s = storage_->GetThread(static_cast<uint32_t>(ref_s)).upid;
+  }
+
+  if (val_f.has_value() && val_s.has_value()) {
+    return sqlite_utils::CompareValuesAsc(val_f.value(), val_s.value());
+  } else if (!val_f.has_value()) {
+    return val_s.has_value() ? -1 : 0;
+  } else {
+    return 1;
+  }
 }
 
 }  // namespace trace_processor

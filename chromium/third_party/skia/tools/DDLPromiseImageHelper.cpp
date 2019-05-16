@@ -13,6 +13,7 @@
 #include "SkCachedData.h"
 #include "SkDeferredDisplayListRecorder.h"
 #include "SkImage_Base.h"
+#include "SkImage_GpuYUVA.h"
 #include "SkYUVAIndex.h"
 #include "SkYUVASizeInfo.h"
 
@@ -23,24 +24,18 @@ DDLPromiseImageHelper::PromiseImageCallbackContext::~PromiseImageCallbackContext
     SkASSERT(!fTotalFulfills || fDoneCnt);
 
     if (fPromiseImageTexture) {
-        GrGpu* gpu = fContext->contextPriv().getGpu();
+        GrGpu* gpu = fContext->priv().getGpu();
         gpu->deleteTestingOnlyBackendTexture(fPromiseImageTexture->backendTexture());
     }
 }
 
 void DDLPromiseImageHelper::PromiseImageCallbackContext::setBackendTexture(
         const GrBackendTexture& backendTexture) {
-    SkASSERT(!fUnreleasedFulfills);
-    if (fPromiseImageTexture) {
-        GrGpu* gpu = fContext->contextPriv().getGpu();
-        gpu->deleteTestingOnlyBackendTexture(fPromiseImageTexture->backendTexture());
-    }
+    SkASSERT(!fPromiseImageTexture);
     fPromiseImageTexture = SkPromiseImageTexture::Make(backendTexture);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-DDLPromiseImageHelper::~DDLPromiseImageHelper() {}
 
 sk_sp<SkData> DDLPromiseImageHelper::deflateSKP(const SkPicture* inputPicture) {
     SkSerialProcs procs;
@@ -107,7 +102,7 @@ static GrBackendTexture create_yuva_texture(GrGpu* gpu, const SkPixmap& pm,
 }
 
 void DDLPromiseImageHelper::uploadAllToGPU(GrContext* context) {
-    GrGpu* gpu = context->contextPriv().getGpu();
+    GrGpu* gpu = context->priv().getGpu();
     SkASSERT(gpu);
 
     for (int i = 0; i < fImageInfo.count(); ++i) {
@@ -146,34 +141,6 @@ void DDLPromiseImageHelper::uploadAllToGPU(GrContext* context) {
             //SkAssertResult(callbackContext->backendTexture().isValid());
 
             fImageInfo[i].setCallbackContext(0, std::move(callbackContext));
-        }
-    }
-}
-
-void DDLPromiseImageHelper::replaceEveryOtherPromiseTexture(GrContext* context) {
-    GrGpu* gpu = context->contextPriv().getGpu();
-    SkASSERT(gpu);
-
-    for (int i = 0; i < fImageInfo.count(); i += 2) {
-        PromiseImageInfo& info = fImageInfo[i];
-
-        // DDL TODO: how can we tell if we need mipmapping!
-        if (info.isYUV()) {
-            int numPixmaps;
-            SkAssertResult(SkYUVAIndex::AreValidIndices(info.yuvaIndices(), &numPixmaps));
-            for (int j = 0; j < numPixmaps; ++j) {
-                const SkPixmap& yuvPixmap = info.yuvPixmap(j);
-                info.callbackContext(j)->setBackendTexture(
-                        create_yuva_texture(gpu, yuvPixmap, info.yuvaIndices(), j));
-                SkASSERT(info.callbackContext(j)->promiseImageTexture());
-            }
-        } else {
-            const SkBitmap& bm = info.normalBitmap();
-            info.callbackContext(0)->setBackendTexture(gpu->createTestingOnlyBackendTexture(
-                    bm.getPixels(), bm.width(), bm.height(), bm.colorType(), false,
-                    GrMipMapped::kNo, bm.rowBytes()));
-            // The GMs sometimes request too large an image
-            // SkAssertResult(callbackContext->backendTexture().isValid());
         }
     }
 }
@@ -250,6 +217,16 @@ sk_sp<SkImage> DDLPromiseImageHelper::PromiseImageCreator(const void* rawData,
         for (int i = 0; i < textureCount; ++i) {
             curImage.callbackContext(i)->wasAddedToImage();
         }
+
+#ifdef SK_DEBUG
+        {
+            // By the peekProxy contract this image should not have a single backing proxy so
+            // should return null. The call should also not trigger the conversion to RGBA.
+            SkImage_GpuYUVA* yuva = reinterpret_cast<SkImage_GpuYUVA*>(image.get());
+            SkASSERT(!yuva->peekProxy());
+            SkASSERT(!yuva->peekProxy());  // the first call didn't force a conversion to RGBA
+        }
+#endif
     } else {
         const GrBackendTexture& backendTex = curImage.promiseTexture(0)->backendTexture();
         GrBackendFormat backendFormat = backendTex.getBackendFormat();
@@ -269,7 +246,7 @@ sk_sp<SkImage> DDLPromiseImageHelper::PromiseImageCreator(const void* rawData,
                                              DDLPromiseImageHelper::PromiseImageFulfillProc,
                                              DDLPromiseImageHelper::PromiseImageReleaseProc,
                                              DDLPromiseImageHelper::PromiseImageDoneProc,
-                                             (void*) curImage.refCallbackContext(0).release());
+                                             (void*)curImage.refCallbackContext(0).release());
         curImage.callbackContext(0)->wasAddedToImage();
     }
     perRecorderContext->fPromiseImages->push_back(image);

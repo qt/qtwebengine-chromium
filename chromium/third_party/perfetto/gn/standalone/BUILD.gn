@@ -120,10 +120,6 @@ config("default") {
     ]
   }
 
-  if (is_android) {
-    libs += [ "log" ]
-  }
-
   if (is_debug) {
     libs += [ "dl" ]
   }
@@ -240,4 +236,32 @@ config("executable") {
       "-Wl,-rpath-link=.",
     ]
   }
+}
+
+# This config is only added to certain leaf target types (see BUILDCONFIG.gn).
+# This allows us to remove the config (and thus the dependency) on a per-target
+# basis. If the config was applied to source_sets, then they would unavoidably
+# carry the dependency onto liblog to the final target.
+config("android_liblog") {
+  if (is_android) {
+    libs = [ "log" ]
+  }
+}
+
+config("gen_include_path") {
+  include_dirs = [ root_gen_dir ]
+}
+
+# This action generates a perfetto_version.gen.h which contains the git SHA1
+# of HEAD. The file can be included from C/C++ sources and exposes a
+# PERFETTO_GET_GIT_REVISION() macro that contains the git revision.
+action("gen_git_revision") {
+  script = "gen_git_revision.py"
+  generated_header = "${root_gen_dir}/perfetto_version.gen.h"
+  args = [ rebase_path(generated_header, root_build_dir) ]
+  inputs = []
+  outputs = [
+    generated_header,
+  ]
+  public_configs = [ ":gen_include_path" ]
 }

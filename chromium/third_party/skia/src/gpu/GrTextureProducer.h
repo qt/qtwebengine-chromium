@@ -13,8 +13,8 @@
 #include "SkImageInfo.h"
 #include "SkNoncopyable.h"
 
-class GrContext;
 class GrFragmentProcessor;
+class GrRecordingContext;
 class GrTexture;
 class GrTextureProxy;
 class SkColorSpace;
@@ -85,11 +85,8 @@ public:
     sk_sp<GrTextureProxy> refTextureProxyForParams(const GrSamplerState&,
                                                    SkScalar scaleAdjust[2]);
 
-    sk_sp<GrTextureProxy> refTextureProxyForParams(GrSamplerState::Filter filter,
-                                                   SkScalar scaleAdjust[2]) {
-        return this->refTextureProxyForParams(
-                GrSamplerState(GrSamplerState::WrapMode::kClamp, filter), scaleAdjust);
-    }
+    sk_sp<GrTextureProxy> refTextureProxyForParams(
+            const GrSamplerState::Filter* filterOrNullForBicubic, SkScalar scaleAdjust[2]);
 
     /**
      * Returns a texture. If willNeedMips is true then the returned texture is guaranteed to have
@@ -107,18 +104,20 @@ public:
     int width() const { return fWidth; }
     int height() const { return fHeight; }
     bool isAlphaOnly() const { return fIsAlphaOnly; }
+    bool domainNeedsDecal() const { return fDomainNeedsDecal; }
     virtual SkAlphaType alphaType() const = 0;
     virtual SkColorSpace* colorSpace() const = 0;
-    virtual SkColorSpace* targetColorSpace() const { return nullptr; }
 
 protected:
     friend class GrTextureProducer_TestAccess;
 
-    GrTextureProducer(GrContext* context, int width, int height, bool isAlphaOnly)
+    GrTextureProducer(GrRecordingContext* context, int width, int height, bool isAlphaOnly,
+                      bool domainNeedsDecal)
         : fContext(context)
         , fWidth(width)
         , fHeight(height)
-        , fIsAlphaOnly(isAlphaOnly) {}
+        , fIsAlphaOnly(isAlphaOnly)
+        , fDomainNeedsDecal(domainNeedsDecal) {}
 
     /** Helper for creating a key for a copy from an original key. */
     static void MakeCopyKeyFromOrigKey(const GrUniqueKey& origKey,
@@ -157,7 +156,8 @@ protected:
         kTightCopy_DomainMode
     };
 
-    static sk_sp<GrTextureProxy> CopyOnGpu(GrContext*, sk_sp<GrTextureProxy> inputProxy,
+    // This can draw to accomplish the copy, thus the recording context is needed
+    static sk_sp<GrTextureProxy> CopyOnGpu(GrRecordingContext*, sk_sp<GrTextureProxy> inputProxy,
                                            const CopyParams& copyParams,
                                            bool dstWillRequireMipMaps);
 
@@ -168,23 +168,27 @@ protected:
                                           const GrSamplerState::Filter* filterModeOrNullForBicubic,
                                           SkRect* domainRect);
 
-    static std::unique_ptr<GrFragmentProcessor> CreateFragmentProcessorForDomainAndFilter(
+    std::unique_ptr<GrFragmentProcessor> createFragmentProcessorForDomainAndFilter(
             sk_sp<GrTextureProxy> proxy,
             const SkMatrix& textureMatrix,
             DomainMode,
             const SkRect& domain,
             const GrSamplerState::Filter* filterOrNullForBicubic);
 
-    GrContext* fContext;
+    GrRecordingContext* context() const { return fContext; }
 
 private:
     virtual sk_sp<GrTextureProxy> onRefTextureProxyForParams(const GrSamplerState&,
                                                              bool willBeMipped,
                                                              SkScalar scaleAdjust[2]) = 0;
 
-    const int   fWidth;
-    const int   fHeight;
-    const bool  fIsAlphaOnly;
+    GrRecordingContext* fContext;
+    const int           fWidth;
+    const int           fHeight;
+    const bool          fIsAlphaOnly;
+    // If true, any domain effect uses kDecal instead of kClamp, and sampler filter uses
+    // kClampToBorder instead of kClamp.
+    const bool  fDomainNeedsDecal;
 
     typedef SkNoncopyable INHERITED;
 };

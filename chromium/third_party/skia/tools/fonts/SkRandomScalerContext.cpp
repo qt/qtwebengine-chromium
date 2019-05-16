@@ -172,7 +172,7 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> SkRandomTypeface::onGetAdvancedMetric
     return fProxy->getAdvancedMetrics();
 }
 
-SkStreamAsset* SkRandomTypeface::onOpenStream(int* ttcIndex) const {
+std::unique_ptr<SkStreamAsset> SkRandomTypeface::onOpenStream(int* ttcIndex) const {
     return fProxy->openStream(ttcIndex);
 }
 

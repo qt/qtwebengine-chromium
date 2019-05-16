@@ -22,6 +22,8 @@
 #include "GLFW/glfw3.h"
 #include "GLFW/glfw3native.h"
 
+#import <QuartzCore/CAMetalLayer.h>
+
 namespace utils {
     class SwapChainImplMTL {
       public:
@@ -108,14 +110,7 @@ namespace utils {
 
     class MetalBinding : public BackendBinding {
       public:
-        void SetupGLFWWindowHints() override {
-            glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        }
-
-        dawnDevice CreateDevice() override {
-            dawnDevice device = dawn_native::metal::CreateDevice();
-            mMetalDevice = dawn_native::metal::GetMetalDevice(device);
-            return device;
+        MetalBinding(GLFWwindow* window, dawnDevice device) : BackendBinding(window, device) {
         }
 
         uint64_t GetSwapChainImplementation() override {
@@ -131,11 +126,10 @@ namespace utils {
         }
 
       private:
-        id<MTLDevice> mMetalDevice = nil;
         dawnSwapChainImplementation mSwapchainImpl = {};
     };
 
-    BackendBinding* CreateMetalBinding() {
-        return new MetalBinding;
+    BackendBinding* CreateMetalBinding(GLFWwindow* window, dawnDevice device) {
+        return new MetalBinding(window, device);
     }
 }

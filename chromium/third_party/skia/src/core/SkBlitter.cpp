@@ -10,6 +10,7 @@
 #include "SkAntiRun.h"
 #include "SkArenaAlloc.h"
 #include "SkColor.h"
+#include "SkColorData.h"
 #include "SkColorFilter.h"
 #include "SkMask.h"
 #include "SkMaskFilterBase.h"
@@ -293,7 +294,7 @@ static inline void bits_to_runs(SkBlitter* blitter, int x, int y,
 
 // maskBitCount is the number of 1's to place in the mask. It must be in the range between 1 and 8.
 static uint8_t generate_right_mask(int maskBitCount) {
-    return static_cast<uint8_t>(0xFF00U >> maskBitCount);
+    return static_cast<uint8_t>((0xFF00U >> maskBitCount) & 0xFF);
 }
 
 void SkBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
@@ -764,8 +765,7 @@ bool SkBlitter::UseRasterPipelineBlitter(const SkPixmap& device, const SkPaint& 
     const SkMaskFilterBase* mf = as_MFB(paint.getMaskFilter());
 
     // The legacy blitters cannot handle any of these complex features (anymore).
-    if (device.colorSpace()                                ||
-        device.alphaType() == kUnpremul_SkAlphaType        ||
+    if (device.alphaType() == kUnpremul_SkAlphaType        ||
         matrix.hasPerspective()                            ||
         paint.getColorFilter()                             ||
         paint.getBlendMode() > SkBlendMode::kLastCoeffMode ||
@@ -778,6 +778,21 @@ bool SkBlitter::UseRasterPipelineBlitter(const SkPixmap& device, const SkPaint& 
     // Choosing SkRasterPipelineBlitter will also let us to hit its single-color memset path.
     if (!paint.getShader() && paint.getBlendMode() != SkBlendMode::kSrcOver) {
         return true;
+    }
+
+#ifdef SK_SUPPORT_LEGACY_CHOOSERASTERPIPELINE
+    if (device.colorSpace()) {
+        return true;
+    }
+#endif
+
+    auto cs = device.colorSpace();
+    // We check (indirectly via makeContext()) later on if the shader can handle the colorspace
+    // in legacy mode, so here we just focus on if a single color needs raster-pipeline.
+    if (cs && !paint.getShader()) {
+        if (!paint.getColor4f().fitsInBytes() || !cs->isSRGB()) {
+            return true;
+        }
     }
 
     // Only kN32 and 565 are handled by legacy blitters now, 565 mostly just for Android.
@@ -843,7 +858,6 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
     }
 
     // Everything but legacy kN32_SkColorType and kRGB_565_SkColorType should already be handled.
-    SkASSERT(!device.colorSpace());
     SkASSERT(device.colorType() == kN32_SkColorType ||
              device.colorType() == kRGB_565_SkColorType);
 

@@ -717,9 +717,19 @@ static void block_yrd(VP9_COMP *cpi, MACROBLOCK *x, RD_COST *this_rdc,
 
   // The max tx_size passed in is TX_16X16.
   assert(tx_size != TX_32X32);
-
+#if CONFIG_VP9_HIGHBITDEPTH
+  if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+    vpx_highbd_subtract_block(bh, bw, p->src_diff, bw, p->src.buf,
+                              p->src.stride, pd->dst.buf, pd->dst.stride,
+                              x->e_mbd.bd);
+  } else {
+    vpx_subtract_block(bh, bw, p->src_diff, bw, p->src.buf, p->src.stride,
+                       pd->dst.buf, pd->dst.stride);
+  }
+#else
   vpx_subtract_block(bh, bw, p->src_diff, bw, p->src.buf, p->src.stride,
                      pd->dst.buf, pd->dst.stride);
+#endif
   *skippable = 1;
   // Keep track of the row and column of the blocks we use so that we know
   // if we are in the unrestricted motion border.
@@ -1683,6 +1693,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   unsigned int sse_zeromv_normalized = UINT_MAX;
   unsigned int best_sse_sofar = UINT_MAX;
   int gf_temporal_ref = 0;
+  int force_test_gf_zeromv = 0;
 #if CONFIG_VP9_TEMPORAL_DENOISING
   VP9_PICKMODE_CTX_DEN ctx_den;
   int64_t zero_last_cost_orig = INT64_MAX;
@@ -1698,6 +1709,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   int svc_mv_row = 0;
   int no_scaling = 0;
   unsigned int thresh_svc_skip_golden = 500;
+  unsigned int thresh_skip_golden = 500;
   int scene_change_detected =
       cpi->rc.high_source_sad ||
       (cpi->use_svc && cpi->svc.high_source_sad_superframe);
@@ -1811,7 +1823,8 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       x->source_variance =
           vp9_get_sby_perpixel_variance(cpi, &x->plane[0].src, bsize);
 
-    if (cpi->oxcf.content == VP9E_CONTENT_SCREEN && mi->segment_id > 0 &&
+    if (cpi->oxcf.content == VP9E_CONTENT_SCREEN &&
+        cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ && mi->segment_id > 0 &&
         x->zero_temp_sad_source && x->source_variance == 0) {
       mi->segment_id = 0;
       vp9_init_plane_quantizers(cpi, x);
@@ -1939,6 +1952,14 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
     flag_svc_subpel = 1;
   }
 
+  // For SVC with quality layers, when QP of lower layer is lower
+  // than current layer: force check of GF-ZEROMV before early exit
+  // due to skip flag.
+  if (svc->spatial_layer_id > 0 && no_scaling &&
+      (cpi->ref_frame_flags & flag_list[GOLDEN_FRAME]) &&
+      cm->base_qindex > svc->lower_layer_qindex + 10)
+    force_test_gf_zeromv = 1;
+
   for (idx = 0; idx < num_inter_modes + comp_modes; ++idx) {
     int rate_mv = 0;
     int mode_rd_thresh;
@@ -2009,17 +2030,22 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       if (segfeature_active(seg, mi->segment_id, SEG_LVL_REF_FRAME)) continue;
     }
 
-    // For SVC, skip the golden (spatial) reference search if sse of zeromv_last
-    // is below threshold.
-    if (cpi->use_svc && ref_frame == GOLDEN_FRAME &&
-        sse_zeromv_normalized < thresh_svc_skip_golden)
+    // For CBR mode: skip the golden reference search if sse of zeromv_last is
+    // below threshold.
+    if (ref_frame == GOLDEN_FRAME && cpi->oxcf.rc_mode == VPX_CBR &&
+        ((cpi->use_svc && sse_zeromv_normalized < thresh_svc_skip_golden) ||
+         (!cpi->use_svc && sse_zeromv_normalized < thresh_skip_golden)))
       continue;
 
     if (!(cpi->ref_frame_flags & flag_list[ref_frame])) continue;
 
-    if (sf->short_circuit_flat_blocks && x->source_variance == 0 &&
-        (frame_mv[this_mode][ref_frame].as_int != 0 ||
-         (cpi->oxcf.content == VP9E_CONTENT_SCREEN && !svc->spatial_layer_id &&
+    // For screen content on flat blocks: skip non-zero motion check for
+    // stationary blocks, only skip zero motion check for non-stationary blocks.
+    if (cpi->oxcf.content == VP9E_CONTENT_SCREEN &&
+        sf->short_circuit_flat_blocks && x->source_variance == 0 &&
+        ((frame_mv[this_mode][ref_frame].as_int != 0 &&
+          x->zero_temp_sad_source) ||
+         (frame_mv[this_mode][ref_frame].as_int == 0 &&
           !x->zero_temp_sad_source))) {
       continue;
     }
@@ -2231,7 +2257,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
                           &var_y, &sse_y);
       }
       // Save normalized sse (between current and last frame) for (0, 0) motion.
-      if (cpi->use_svc && ref_frame == LAST_FRAME &&
+      if (ref_frame == LAST_FRAME &&
           frame_mv[this_mode][ref_frame].as_int == 0) {
         sse_zeromv_normalized =
             sse_y >> (b_width_log2_lookup[bsize] + b_height_log2_lookup[bsize]);
@@ -2349,11 +2375,14 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       if (reuse_inter_pred) free_pred_buffer(this_mode_pred);
     }
 
-    if (x->skip) break;
+    if (x->skip &&
+        (!force_test_gf_zeromv || mode_checked[ZEROMV][GOLDEN_FRAME]))
+      break;
 
     // If early termination flag is 1 and at least 2 modes are checked,
     // the mode search is terminated.
-    if (best_early_term && idx > 0 && !scene_change_detected) {
+    if (best_early_term && idx > 0 && !scene_change_detected &&
+        (!force_test_gf_zeromv || mode_checked[ZEROMV][GOLDEN_FRAME])) {
       x->skip = 1;
       break;
     }
@@ -2396,6 +2425,7 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   // Perform intra prediction search, if the best SAD is above a certain
   // threshold.
   if (best_rdc.rdcost == INT64_MAX ||
+      (cpi->oxcf.content == VP9E_CONTENT_SCREEN && x->source_variance == 0) ||
       (scene_change_detected && perform_intra_pred) ||
       ((!force_skip_low_temp_var || bsize < BLOCK_32X32 ||
         x->content_state_sb == kVeryHighSad) &&
@@ -2438,8 +2468,11 @@ void vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
       const PREDICTION_MODE this_mode = intra_mode_list[i];
       THR_MODES mode_index = mode_idx[INTRA_FRAME][mode_offset(this_mode)];
       int mode_rd_thresh = rd_threshes[mode_index];
+      // For spatially flat blocks, under short_circuit_flat_blocks flag:
+      // only check DC mode for stationary blocks, otherwise also check
+      // H and V mode.
       if (sf->short_circuit_flat_blocks && x->source_variance == 0 &&
-          this_mode != DC_PRED) {
+          ((x->zero_temp_sad_source && this_mode != DC_PRED) || i > 2)) {
         continue;
       }
 

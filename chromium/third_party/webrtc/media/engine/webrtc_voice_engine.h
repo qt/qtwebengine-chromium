@@ -18,6 +18,7 @@
 
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/rtp_receiver_interface.h"
+#include "api/scoped_refptr.h"
 #include "call/audio_state.h"
 #include "call/call.h"
 #include "media/base/rtp_utils.h"
@@ -26,8 +27,8 @@
 #include "pc/channel.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/constructor_magic.h"
+#include "rtc_base/experiments/audio_allocation_settings.h"
 #include "rtc_base/network_route.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread_checker.h"
 
@@ -106,6 +107,8 @@ class WebRtcVoiceEngine final : public VoiceEngineInterface {
   rtc::ThreadChecker signal_thread_checker_;
   rtc::ThreadChecker worker_thread_checker_;
 
+  const webrtc::AudioAllocationSettings allocation_settings_;
+
   // The audio device module.
   rtc::scoped_refptr<webrtc::AudioDeviceModule> adm_;
   rtc::scoped_refptr<webrtc::AudioEncoderFactory> encoder_factory_;
@@ -130,7 +133,7 @@ class WebRtcVoiceEngine final : public VoiceEngineInterface {
   absl::optional<bool> delay_agnostic_aec_;
   absl::optional<bool> experimental_ns_;
   // Jitter buffer settings for new streams.
-  size_t audio_jitter_buffer_max_packets_ = 50;
+  size_t audio_jitter_buffer_max_packets_ = 200;
   bool audio_jitter_buffer_fast_accelerate_ = false;
   int audio_jitter_buffer_min_delay_ms_ = 0;
   bool audio_jitter_buffer_enable_rtx_handling_ = false;
@@ -192,6 +195,10 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
 
   // SSRC=0 will apply the new volume to current and future unsignaled streams.
   bool SetOutputVolume(uint32_t ssrc, double volume) override;
+
+  bool SetBaseMinimumPlayoutDelayMs(uint32_t ssrc, int delay_ms) override;
+  absl::optional<int> GetBaseMinimumPlayoutDelayMs(
+      uint32_t ssrc) const override;
 
   bool CanInsertDtmf() override;
   bool InsertDtmf(uint32_t ssrc, int event, int duration) override;
@@ -292,6 +299,10 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
 
   // Volume for unsignaled streams, which may be set before the stream exists.
   double default_recv_volume_ = 1.0;
+
+  // Delay for unsignaled streams, which may be set before the stream exists.
+  int default_recv_base_minimum_delay_ms_ = 0;
+
   // Sink for latest unsignaled stream - may be set before the stream exists.
   std::unique_ptr<webrtc::AudioSinkInterface> default_sink_;
   // Default SSRC to use for RTCP receiver reports in case of no signaled

@@ -14,17 +14,36 @@
 #include <stdint.h>
 
 #include "absl/types/optional.h"
+#include "api/scoped_refptr.h"
 #include "api/video/color_space.h"
 #include "api/video/hdr_metadata.h"
 #include "api/video/video_frame_buffer.h"
 #include "api/video/video_rotation.h"
-#include "rtc_base/scoped_ref_ptr.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
 
 class RTC_EXPORT VideoFrame {
  public:
+  struct UpdateRect {
+    int offset_x;
+    int offset_y;
+    int width;
+    int height;
+
+    // Makes this UpdateRect a bounding box of this and other rect.
+    void Union(const UpdateRect& other);
+
+    // Makes this UpdateRect an intersection of this and other rect.
+    void Intersect(const UpdateRect& other);
+
+    // Sets everything to 0, making this UpdateRect a zero-size (empty) update.
+    void MakeEmptyUpdate();
+
+    bool IsEmpty() const;
+  };
+
   // Preferred way of building VideoFrame objects.
   class Builder {
    public:
@@ -39,9 +58,10 @@ class RTC_EXPORT VideoFrame {
     Builder& set_timestamp_rtp(uint32_t timestamp_rtp);
     Builder& set_ntp_time_ms(int64_t ntp_time_ms);
     Builder& set_rotation(VideoRotation rotation);
-    Builder& set_color_space(const ColorSpace& color_space);
+    Builder& set_color_space(const absl::optional<ColorSpace>& color_space);
     Builder& set_color_space(const ColorSpace* color_space);
     Builder& set_id(uint16_t id);
+    Builder& set_update_rect(const UpdateRect& update_rect);
 
    private:
     uint16_t id_ = 0;
@@ -51,6 +71,7 @@ class RTC_EXPORT VideoFrame {
     int64_t ntp_time_ms_ = 0;
     VideoRotation rotation_ = kVideoRotation_0;
     absl::optional<ColorSpace> color_space_;
+    absl::optional<UpdateRect> update_rect_;
   };
 
   // To be deprecated. Migrate all use to Builder.
@@ -126,12 +147,9 @@ class RTC_EXPORT VideoFrame {
   void set_rotation(VideoRotation rotation) { rotation_ = rotation; }
 
   // Get color space when available.
-  const ColorSpace* color_space() const {
-    return color_space_ ? &*color_space_ : nullptr;
-  }
-  void set_color_space(ColorSpace* color_space) {
-    color_space_ =
-        color_space ? absl::make_optional(*color_space) : absl::nullopt;
+  const absl::optional<ColorSpace>& color_space() const { return color_space_; }
+  void set_color_space(const absl::optional<ColorSpace>& color_space) {
+    color_space_ = color_space;
   }
 
   // Get render time in milliseconds.
@@ -148,6 +166,18 @@ class RTC_EXPORT VideoFrame {
     return video_frame_buffer()->type() == VideoFrameBuffer::Type::kNative;
   }
 
+  // Always initialized to whole frame update, can be set by Builder or manually
+  // by |set_update_rect|.
+  UpdateRect update_rect() const { return update_rect_; }
+  // Rectangle must be within the frame dimensions.
+  void set_update_rect(const VideoFrame::UpdateRect& update_rect) {
+    RTC_DCHECK_GE(update_rect.offset_x, 0);
+    RTC_DCHECK_GE(update_rect.offset_y, 0);
+    RTC_DCHECK_LE(update_rect.offset_x + update_rect.width, width());
+    RTC_DCHECK_LE(update_rect.offset_y + update_rect.height, height());
+    update_rect_ = update_rect;
+  }
+
  private:
   VideoFrame(uint16_t id,
              const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
@@ -155,7 +185,8 @@ class RTC_EXPORT VideoFrame {
              uint32_t timestamp_rtp,
              int64_t ntp_time_ms,
              VideoRotation rotation,
-             const absl::optional<ColorSpace>& color_space);
+             const absl::optional<ColorSpace>& color_space,
+             const absl::optional<UpdateRect>& update_rect);
 
   uint16_t id_;
   // An opaque reference counted handle that stores the pixel data.
@@ -165,6 +196,9 @@ class RTC_EXPORT VideoFrame {
   int64_t timestamp_us_;
   VideoRotation rotation_;
   absl::optional<ColorSpace> color_space_;
+  // Updated since the last frame area. Unless set explicitly, will always be
+  // a full frame rectangle.
+  UpdateRect update_rect_;
 };
 
 }  // namespace webrtc

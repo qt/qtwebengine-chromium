@@ -15,15 +15,12 @@
 #ifndef DAWNNATIVE_D3D12BACKEND_H_
 #define DAWNNATIVE_D3D12BACKEND_H_
 
-#include <dawn/dawn.h>
 #include <dawn/dawn_wsi.h>
-#include <dawn_native/dawn_native_export.h>
+#include <dawn_native/DawnNative.h>
 
 #include <windows.h>
 
 namespace dawn_native { namespace d3d12 {
-    DAWN_NATIVE_EXPORT dawnDevice CreateDevice();
-
     DAWN_NATIVE_EXPORT dawnSwapChainImplementation CreateNativeSwapChainImpl(dawnDevice device,
                                                                              HWND window);
     DAWN_NATIVE_EXPORT dawnTextureFormat

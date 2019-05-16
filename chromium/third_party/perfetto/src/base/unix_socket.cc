@@ -347,6 +347,19 @@ bool UnixSocketRaw::SetTxTimeout(uint32_t timeout_ms) {
                     sizeof(timeout)) == 0;
 }
 
+bool UnixSocketRaw::SetRxTimeout(uint32_t timeout_ms) {
+  PERFETTO_DCHECK(fd_);
+  struct timeval timeout {};
+  uint32_t timeout_sec = timeout_ms / 1000;
+  timeout.tv_sec = static_cast<decltype(timeout.tv_sec)>(timeout_sec);
+  timeout.tv_usec = static_cast<decltype(timeout.tv_usec)>(
+      (timeout_ms - (timeout_sec * 1000)) * 1000);
+
+  return setsockopt(*fd_, SOL_SOCKET, SO_RCVTIMEO,
+                    reinterpret_cast<const char*>(&timeout),
+                    sizeof(timeout)) == 0;
+}
+
 #pragma GCC diagnostic pop
 
 // +--------------------+
@@ -465,6 +478,15 @@ UnixSocket::UnixSocket(EventListener* event_listener,
 UnixSocket::~UnixSocket() {
   // The implicit dtor of |weak_ptr_factory_| will no-op pending callbacks.
   Shutdown(true);
+}
+
+UnixSocketRaw UnixSocket::ReleaseSocket() {
+  // This will invalidate any pending calls to OnEvent.
+  state_ = State::kDisconnected;
+  if (sock_raw_)
+    task_runner_->RemoveFileDescriptorWatch(sock_raw_.fd());
+
+  return std::move(sock_raw_);
 }
 
 // Called only by the Connect() static constructor.

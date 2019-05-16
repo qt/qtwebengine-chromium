@@ -61,7 +61,7 @@ void HeapTracker::RecordMalloc(const std::vector<FrameData>& callstack,
       // already happened at committed_sequence_number_, while in fact the free
       // might not have happened until right before this operation.
 
-      if (alloc.sequence_number > commited_sequence_number_) {
+      if (alloc.sequence_number > committed_sequence_number_) {
         // Only count the previous allocation if it hasn't already been
         // committed to avoid double counting it.
         alloc.AddToCallstackAllocations();
@@ -84,7 +84,7 @@ void HeapTracker::RecordMalloc(const std::vector<FrameData>& callstack,
 }
 
 void HeapTracker::RecordOperation(uint64_t sequence_number, uint64_t address) {
-  if (sequence_number != commited_sequence_number_ + 1) {
+  if (sequence_number != committed_sequence_number_ + 1) {
     pending_operations_.emplace(sequence_number, address);
     return;
   }
@@ -95,14 +95,14 @@ void HeapTracker::RecordOperation(uint64_t sequence_number, uint64_t address) {
   // committed.
   auto it = pending_operations_.begin();
   while (it != pending_operations_.end() &&
-         it->first == commited_sequence_number_ + 1) {
+         it->first == committed_sequence_number_ + 1) {
     CommitOperation(it->first, it->second);
     it = pending_operations_.erase(it);
   }
 }
 
 void HeapTracker::CommitOperation(uint64_t sequence_number, uint64_t address) {
-  commited_sequence_number_++;
+  committed_sequence_number_++;
 
   // We will see many frees for addresses we do not know about.
   auto leaf_it = allocations_.find(address);
@@ -297,150 +297,9 @@ void DumpState::WriteString(const Interned<std::string>& str) {
 
     auto interned_string = current_profile_packet->add_strings();
     interned_string->set_id(str.id());
-    interned_string->set_str(str->c_str(), str->size());
+    interned_string->set_str(reinterpret_cast<const uint8_t*>(str->c_str()),
+                             str->size());
   }
-}
-
-void BookkeepingThread::HandleBookkeepingRecord(BookkeepingRecord* rec) {
-  BookkeepingData* bookkeeping_data = nullptr;
-  if (rec->pid != 0) {
-    std::lock_guard<std::mutex> l(bookkeeping_mutex_);
-    auto it = bookkeeping_data_.find(rec->pid);
-    if (it == bookkeeping_data_.end()) {
-      PERFETTO_DFATAL("Invalid pid: %d", rec->pid);
-      return;
-    }
-    bookkeeping_data = &it->second;
-  }
-
-  if (rec->record_type == BookkeepingRecord::Type::Dump) {
-    DumpRecord& dump_rec = rec->dump_record;
-    std::shared_ptr<TraceWriter> trace_writer = dump_rec.trace_writer.lock();
-    if (!trace_writer) {
-      PERFETTO_LOG("Not dumping heaps");
-      return;
-    }
-    PERFETTO_LOG("Dumping heaps");
-    DumpState dump_state(trace_writer.get(), &next_index);
-
-    for (const pid_t pid : dump_rec.pids) {
-      auto it = bookkeeping_data_.find(pid);
-      if (it == bookkeeping_data_.end())
-        continue;
-
-      PERFETTO_LOG("Dumping %d ", it->first);
-      it->second.heap_tracker.Dump(pid, &dump_state);
-    }
-
-    for (GlobalCallstackTrie::Node* node : dump_state.callstacks_to_dump) {
-      // There need to be two separate loops over built_callstack because
-      // protozero cannot interleave different messages.
-      auto built_callstack = callsites_.BuildCallstack(node);
-      for (const Interned<Frame>& frame : built_callstack)
-        dump_state.WriteFrame(frame);
-      ProfilePacket::Callstack* callstack =
-          dump_state.current_profile_packet->add_callstacks();
-      callstack->set_id(node->id());
-      for (const Interned<Frame>& frame : built_callstack)
-        callstack->add_frame_ids(frame.id());
-    }
-
-    // We cannot garbage collect until we have finished dumping, as the state
-    // in DumpState points into the GlobalCallstackTrie.
-    for (const pid_t pid : dump_rec.pids) {
-      auto it = bookkeeping_data_.find(pid);
-      if (it == bookkeeping_data_.end())
-        continue;
-
-      if (it->second.ref_count == 0) {
-        std::lock_guard<std::mutex> l(bookkeeping_mutex_);
-        it = bookkeeping_data_.erase(it);
-      }
-    }
-    dump_state.current_trace_packet->Finalize();
-    trace_writer->Flush(dump_rec.callback);
-  } else if (rec->record_type == BookkeepingRecord::Type::Free) {
-    FreeRecord& free_rec = rec->free_record;
-    FreePageEntry* entries = free_rec.metadata->entries;
-    uint64_t num_entries = free_rec.metadata->num_entries;
-    if (num_entries > kFreePageSize)
-      return;
-    for (size_t i = 0; i < num_entries; ++i) {
-      const FreePageEntry& entry = entries[i];
-      bookkeeping_data->heap_tracker.RecordFree(entry.addr,
-                                                entry.sequence_number);
-    }
-  } else if (rec->record_type == BookkeepingRecord::Type::Malloc) {
-    AllocRecord& alloc_rec = rec->alloc_record;
-    bookkeeping_data->heap_tracker.RecordMalloc(
-        alloc_rec.frames, alloc_rec.alloc_metadata.alloc_address,
-        alloc_rec.alloc_metadata.total_size,
-        alloc_rec.alloc_metadata.sequence_number);
-  } else {
-    PERFETTO_DFATAL("Invalid record type");
-  }
-}
-
-BookkeepingThread::ProcessHandle BookkeepingThread::NotifyProcessConnected(
-    pid_t pid) {
-  std::lock_guard<std::mutex> l(bookkeeping_mutex_);
-  // emplace gives the existing BookkeepingData for pid if it already exists
-  // or creates a new one.
-  auto it_and_inserted = bookkeeping_data_.emplace(pid, &callsites_);
-  BookkeepingData& bk = it_and_inserted.first->second;
-  bk.ref_count++;
-  return {this, pid};
-}
-
-void BookkeepingThread::NotifyProcessDisconnected(pid_t pid) {
-  std::lock_guard<std::mutex> l(bookkeeping_mutex_);
-  auto it = bookkeeping_data_.find(pid);
-  if (it == bookkeeping_data_.end()) {
-    PERFETTO_DFATAL("Client for %d not found", pid);
-    return;
-  }
-  it->second.ref_count--;
-}
-
-void BookkeepingThread::Run(BoundedQueue<BookkeepingRecord>* input_queue) {
-  for (;;) {
-    BookkeepingRecord rec;
-    if (!input_queue->Get(&rec))
-      return;
-    HandleBookkeepingRecord(&rec);
-  }
-}
-
-BookkeepingThread::ProcessHandle::ProcessHandle(
-    BookkeepingThread* bookkeeping_thread,
-    pid_t pid)
-    : bookkeeping_thread_(bookkeeping_thread), pid_(pid) {}
-
-BookkeepingThread::ProcessHandle::~ProcessHandle() {
-  if (bookkeeping_thread_)
-    bookkeeping_thread_->NotifyProcessDisconnected(pid_);
-}
-
-BookkeepingThread::ProcessHandle::ProcessHandle(ProcessHandle&& other) noexcept
-    : bookkeeping_thread_(other.bookkeeping_thread_), pid_(other.pid_) {
-  other.bookkeeping_thread_ = nullptr;
-}
-
-BookkeepingThread::ProcessHandle& BookkeepingThread::ProcessHandle::operator=(
-    ProcessHandle&& other) noexcept {
-  // Construct this temporary because the RHS could be an lvalue cast to an
-  // rvalue whose lifetime we do not know.
-  ProcessHandle tmp(std::move(other));
-  using std::swap;
-  swap(*this, tmp);
-  return *this;
-}
-
-void swap(BookkeepingThread::ProcessHandle& a,
-          BookkeepingThread::ProcessHandle& b) {
-  using std::swap;
-  swap(a.bookkeeping_thread_, b.bookkeeping_thread_);
-  swap(a.pid_, b.pid_);
 }
 
 }  // namespace profiling

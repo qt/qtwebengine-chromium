@@ -15,9 +15,11 @@
 #include "dawn_native/opengl/CommandBufferGL.h"
 
 #include "dawn_native/BindGroup.h"
+#include "dawn_native/CommandEncoder.h"
 #include "dawn_native/Commands.h"
 #include "dawn_native/opengl/BufferGL.h"
 #include "dawn_native/opengl/ComputePipelineGL.h"
+#include "dawn_native/opengl/DeviceGL.h"
 #include "dawn_native/opengl/Forward.h"
 #include "dawn_native/opengl/InputStateGL.h"
 #include "dawn_native/opengl/PersistentPipelineStateGL.h"
@@ -281,8 +283,8 @@ namespace dawn_native { namespace opengl {
         }
     }  // namespace
 
-    CommandBuffer::CommandBuffer(CommandBufferBuilder* builder)
-        : CommandBufferBase(builder), mCommands(builder->AcquireCommands()) {
+    CommandBuffer::CommandBuffer(Device* device, CommandEncoderBase* encoder)
+        : CommandBufferBase(device, encoder), mCommands(encoder->AcquireCommands()) {
     }
 
     CommandBuffer::~CommandBuffer() {
@@ -300,7 +302,7 @@ namespace dawn_native { namespace opengl {
 
                 case Command::BeginRenderPass: {
                     auto* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
-                    ExecuteRenderPass(ToBackend(cmd->info.Get()));
+                    ExecuteRenderPass(cmd);
                 } break;
 
                 case Command::CopyBufferToBuffer: {
@@ -460,7 +462,7 @@ namespace dawn_native { namespace opengl {
         UNREACHABLE();
     }
 
-    void CommandBuffer::ExecuteRenderPass(RenderPassDescriptorBase* renderPass) {
+    void CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
         GLuint fbo = 0;
 
         // Create the framebuffer used for this render pass and calls the correct glDrawBuffers
@@ -483,8 +485,8 @@ namespace dawn_native { namespace opengl {
             // Construct GL framebuffer
 
             unsigned int attachmentCount = 0;
-            for (uint32_t i : IterateBitSet(renderPass->GetColorAttachmentMask())) {
-                TextureViewBase* textureView = renderPass->GetColorAttachment(i).view.Get();
+            for (uint32_t i : IterateBitSet(renderPass->colorAttachmentsSet)) {
+                TextureViewBase* textureView = renderPass->colorAttachments[i].view.Get();
                 GLuint texture = ToBackend(textureView->GetTexture())->GetHandle();
 
                 // Attach color buffers.
@@ -509,8 +511,8 @@ namespace dawn_native { namespace opengl {
             }
             glDrawBuffers(attachmentCount, drawBuffers.data());
 
-            if (renderPass->HasDepthStencilAttachment()) {
-                TextureViewBase* textureView = renderPass->GetDepthStencilAttachment().view.Get();
+            if (renderPass->hasDepthStencilAttachment) {
+                TextureViewBase* textureView = renderPass->depthStencilAttachment.view.Get();
                 GLuint texture = ToBackend(textureView->GetTexture())->GetHandle();
                 dawn::TextureFormat format = textureView->GetTexture()->GetFormat();
 
@@ -539,17 +541,17 @@ namespace dawn_native { namespace opengl {
 
         // Clear framebuffer attachments as needed
         {
-            for (uint32_t i : IterateBitSet(renderPass->GetColorAttachmentMask())) {
-                const auto& attachmentInfo = renderPass->GetColorAttachment(i);
+            for (uint32_t i : IterateBitSet(renderPass->colorAttachmentsSet)) {
+                const auto& attachmentInfo = renderPass->colorAttachments[i];
 
                 // Load op - color
                 if (attachmentInfo.loadOp == dawn::LoadOp::Clear) {
-                    glClearBufferfv(GL_COLOR, i, attachmentInfo.clearColor.data());
+                    glClearBufferfv(GL_COLOR, i, &attachmentInfo.clearColor.r);
                 }
             }
 
-            if (renderPass->HasDepthStencilAttachment()) {
-                const auto& attachmentInfo = renderPass->GetDepthStencilAttachment();
+            if (renderPass->hasDepthStencilAttachment) {
+                const auto& attachmentInfo = renderPass->depthStencilAttachment;
                 dawn::TextureFormat attachmentFormat =
                     attachmentInfo.view->GetTexture()->GetFormat();
 
@@ -581,8 +583,8 @@ namespace dawn_native { namespace opengl {
         // Set defaults for dynamic state
         persistentPipelineState.SetDefaultState();
         glBlendColor(0, 0, 0, 0);
-        glViewport(0, 0, renderPass->GetWidth(), renderPass->GetHeight());
-        glScissor(0, 0, renderPass->GetWidth(), renderPass->GetHeight());
+        glViewport(0, 0, renderPass->width, renderPass->height);
+        glScissor(0, 0, renderPass->width, renderPass->height);
 
         Command type;
         while (mCommands.NextCommandId(&type)) {
@@ -635,6 +637,14 @@ namespace dawn_native { namespace opengl {
                     }
                 } break;
 
+                case Command::InsertDebugMarker:
+                case Command::PopDebugGroup:
+                case Command::PushDebugGroup: {
+                    // Due to lack of linux driver support for GL_EXT_debug_marker
+                    // extension these functions are skipped.
+                    SkipCommand(&mCommands, type);
+                } break;
+
                 case Command::SetRenderPipeline: {
                     SetRenderPipelineCmd* cmd = mCommands.NextCommand<SetRenderPipelineCmd>();
                     lastPipeline = ToBackend(cmd->pipeline).Get();
@@ -662,7 +672,7 @@ namespace dawn_native { namespace opengl {
 
                 case Command::SetBlendColor: {
                     SetBlendColorCmd* cmd = mCommands.NextCommand<SetBlendColorCmd>();
-                    glBlendColor(cmd->r, cmd->g, cmd->b, cmd->a);
+                    glBlendColor(cmd->color.r, cmd->color.g, cmd->color.b, cmd->color.a);
                 } break;
 
                 case Command::SetBindGroup: {

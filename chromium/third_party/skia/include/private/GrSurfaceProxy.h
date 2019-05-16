@@ -16,8 +16,10 @@
 #include "SkRect.h"
 
 class GrCaps;
+class GrContext_Base;
 class GrOpList;
 class GrProxyProvider;
+class GrRecordingContext;
 class GrRenderTargetOpList;
 class GrRenderTargetProxy;
 class GrResourceProvider;
@@ -64,14 +66,13 @@ public:
         SkASSERT(0 == fPendingReads);
         SkASSERT(0 == fPendingWrites);
 
-        SkASSERT(fRefCnt == fTarget->fRefCnt);
-        SkASSERT(!fTarget->internalHasPendingIO());
         // In the current hybrid world, the proxy and backing surface are ref/unreffed in
-        // synchrony. In this instance we're deInstantiating the proxy so, regardless of the
-        // number of refs on the backing surface, we're going to remove it. If/when the proxy
-        // is re-instantiated all the refs on the proxy (presumably due to multiple uses in ops)
-        // will be transfered to the new surface.
-        for (int refs = fTarget->fRefCnt; refs; --refs) {
+        // synchrony. Each ref we've added or removed to the proxy was mirrored to the backing
+        // surface. Though, that backing surface could be owned by other proxies as well. Remove
+        // a ref from the backing surface for each ref the proxy has since we are about to remove
+        // our pointer to the surface. If this proxy is reinstantiated then all the proxy's refs
+        // get transferred to the (possibly new) backing surface.
+        for (int refs = fRefCnt; refs; --refs) {
             fTarget->unref();
         }
         fTarget = nullptr;
@@ -207,8 +208,6 @@ public:
     enum class LazyInstantiationType {
         kSingleUse,      // Instantiation callback is allowed to be called only once.
         kMultipleUse,    // Instantiation callback can be called multiple times.
-        kDeinstantiate,  // Instantiation callback can be called multiple times,
-                         // but we will deinstantiate the proxy after every flush.
     };
 
     enum class LazyState {
@@ -397,20 +396,21 @@ public:
 
     // Helper function that creates a temporary SurfaceContext to perform the copy
     // The copy is is not a render target and not multisampled.
-    static sk_sp<GrTextureProxy> Copy(GrContext*, GrSurfaceProxy* src, GrMipMapped, SkIRect srcRect,
-                                      SkBackingFit, SkBudgeted);
+    static sk_sp<GrTextureProxy> Copy(GrRecordingContext*, GrSurfaceProxy* src, GrMipMapped,
+                                      SkIRect srcRect, SkBackingFit, SkBudgeted);
 
     // Copy the entire 'src'
-    static sk_sp<GrTextureProxy> Copy(GrContext*, GrSurfaceProxy* src, GrMipMapped, SkBackingFit,
-                                      SkBudgeted budgeted);
+    static sk_sp<GrTextureProxy> Copy(GrRecordingContext*, GrSurfaceProxy* src, GrMipMapped,
+                                      SkBackingFit, SkBudgeted);
 
     // Test-only entry point - should decrease in use as proxies propagate
-    static sk_sp<GrSurfaceContext> TestCopy(GrContext* context, const GrSurfaceDesc& dstDesc,
+    static sk_sp<GrSurfaceContext> TestCopy(GrRecordingContext* context,
+                                            const GrSurfaceDesc& dstDesc,
                                             GrSurfaceOrigin, GrSurfaceProxy* srcProxy);
 
     bool isWrapped_ForTesting() const;
 
-    SkDEBUGCODE(void validate(GrContext*) const;)
+    SkDEBUGCODE(void validate(GrContext_Base*) const;)
 
     // Provides access to functions that aren't part of the public API.
     inline GrSurfaceProxyPriv priv();

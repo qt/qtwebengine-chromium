@@ -33,14 +33,17 @@ rtc_source_set("call_interfaces") {
     "..:webrtc_common",
     "../api:fec_controller_api",
     "../api:libjingle_peerconnection_api",
+    "../api:scoped_refptr",
     "../api:transport_api",
     "../api/audio:audio_mixer_api",
     "../api/audio_codecs:audio_codecs_api",
+    "../api/task_queue",
     "../api/transport:network_control",
     "../modules/audio_device:audio_device",
     "../modules/audio_processing:api",
     "../modules/audio_processing:audio_processing",
     "../modules/audio_processing:audio_processing_statistics",
+    "../modules/utility:utility",
     "../rtc_base:audio_format_to_string",
     "../rtc_base:checks",
     "../rtc_base:rtc_base",
@@ -123,6 +126,7 @@ rtc_source_set("rtp_sender") {
     "..:webrtc_common",
     "../api:fec_controller_api",
     "../api:transport_api",
+    "../api/transport:field_trial_based_config",
     "../api/transport:goog_cc",
     "../api/transport:network_control",
     "../api/units:data_rate",
@@ -194,7 +198,6 @@ rtc_static_library("call") {
     "call.cc",
     "call_factory.cc",
     "call_factory.h",
-    "callfactory.h",
     "degraded_call.cc",
     "degraded_call.h",
     "flexfec_receive_stream_impl.cc",
@@ -219,6 +222,7 @@ rtc_static_library("call") {
     "../api:libjingle_peerconnection_api",
     "../api:simulated_network_api",
     "../api:transport_api",
+    "../api/task_queue:global_task_queue_factory",
     "../api/transport:network_control",
     "../api/units:time_delta",
     "../api/video_codecs:video_codecs_api",
@@ -228,6 +232,7 @@ rtc_static_library("call") {
     "../logging:rtc_event_rtp_rtcp",
     "../logging:rtc_event_video",
     "../logging:rtc_stream_config",
+    "../modules:module_api",
     "../modules/bitrate_controller",
     "../modules/congestion_controller",
     "../modules/pacing",
@@ -285,8 +290,10 @@ rtc_source_set("simulated_network") {
     "../api/units:data_rate",
     "../api/units:data_size",
     "../api/units:time_delta",
+    "../api/units:timestamp",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+    "../rtc_base:sequenced_task_checker",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
@@ -299,7 +306,6 @@ rtc_source_set("simulated_packet_receiver") {
   deps = [
     ":call_interfaces",
     "../api:simulated_network_api",
-    "../modules:module_api",
   ]
 }
 
@@ -316,7 +322,6 @@ rtc_source_set("fake_network") {
     "../api:libjingle_peerconnection_api",
     "../api:simulated_network_api",
     "../api:transport_api",
-    "../modules:module_api",
     "../modules/utility",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
@@ -362,6 +367,7 @@ if (rtc_include_tests) {
       "../api:mock_audio_mixer",
       "../api:transport_api",
       "../api/audio_codecs:builtin_audio_decoder_factory",
+      "../api/task_queue:global_task_queue_factory",
       "../api/video:video_frame",
       "../audio:audio",
       "../logging:rtc_event_log_api",
@@ -399,10 +405,6 @@ if (rtc_include_tests) {
       "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("call_perf_tests") {
@@ -445,10 +447,6 @@ if (rtc_include_tests) {
       "//testing/gtest",
       "//third_party/abseil-cpp/absl/memory",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   # TODO(eladalon): This should be moved, as with the TODO for |rtp_interfaces|.
@@ -493,21 +491,21 @@ if (rtc_include_tests) {
     ]
   }
 
-  rtc_test("fake_network_unittests") {
+  rtc_source_set("fake_network_pipe_unittests") {
+    testonly = true
+
     sources = [
-      "test/fake_network_pipe_unittest.cc",
+      "fake_network_pipe_unittest.cc",
+      "simulated_network_unittest.cc",
     ]
     deps = [
-      ":call_interfaces",
       ":fake_network",
       ":simulated_network",
-      "../modules/rtp_rtcp",
-      "../rtc_base:rtc_base_approved",
+      "../api/units:data_rate",
       "../system_wrappers",
-      "../test:test_common",
-      "../test:test_main",
       "../test:test_support",
       "//testing/gtest",
+      "//third_party/abseil-cpp/absl/algorithm:container",
       "//third_party/abseil-cpp/absl/memory",
     ]
   }

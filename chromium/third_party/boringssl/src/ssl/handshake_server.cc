@@ -303,7 +303,7 @@ static void ssl_get_compatible_server_ciphers(SSL_HANDSHAKE *hs,
   uint32_t mask_k = 0;
   uint32_t mask_a = 0;
 
-  if (ssl_has_certificate(hs->config)) {
+  if (ssl_has_certificate(hs)) {
     mask_a |= ssl_cipher_auth_mask_for_key(hs->local_pubkey.get());
     if (EVP_PKEY_id(hs->local_pubkey.get()) == EVP_PKEY_RSA) {
       mask_k |= SSL_kRSA;
@@ -402,8 +402,7 @@ static enum ssl_hs_wait_t do_start_accept(SSL_HANDSHAKE *hs) {
 }
 
 // is_probably_jdk11_with_tls13 returns whether |client_hello| was probably sent
-// from a JDK 11 client (11.0.1 or earlier) with both TLS 1.3 and a prior
-// version enabled.
+// from a JDK 11 client with both TLS 1.3 and a prior version enabled.
 static bool is_probably_jdk11_with_tls13(const SSL_CLIENT_HELLO *client_hello) {
   // JDK 11 ClientHellos contain a number of unusual properties which should
   // limit false positives.
@@ -868,7 +867,7 @@ static enum ssl_hs_wait_t do_send_server_certificate(SSL_HANDSHAKE *hs) {
   ScopedCBB cbb;
 
   if (ssl_cipher_uses_certificate_auth(hs->new_cipher)) {
-    if (!ssl_has_certificate(hs->config)) {
+    if (!ssl_has_certificate(hs)) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_NO_CERTIFICATE_SET);
       return ssl_hs_error;
     }
@@ -974,7 +973,7 @@ static enum ssl_hs_wait_t do_send_server_key_exchange(SSL_HANDSHAKE *hs) {
 
   // Add a signature.
   if (ssl_cipher_uses_certificate_auth(hs->new_cipher)) {
-    if (!ssl_has_private_key(hs->config)) {
+    if (!ssl_has_private_key(hs)) {
       ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
       return ssl_hs_error;
     }

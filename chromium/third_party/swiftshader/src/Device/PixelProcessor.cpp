@@ -17,9 +17,9 @@
 #include "Surface.hpp"
 #include "Primitive.hpp"
 #include "Pipeline/PixelProgram.hpp"
-#include "Pipeline/PixelShader.hpp"
 #include "Pipeline/Constants.hpp"
-#include "System/Debug.hpp"
+#include "Vulkan/VkDebug.hpp"
+#include "Vulkan/VkImageView.hpp"
 
 #include <string.h>
 
@@ -59,12 +59,6 @@ namespace sw
 		return memcmp(static_cast<const States*>(this), static_cast<const States*>(&state), sizeof(States)) == 0;
 	}
 
-	PixelProcessor::UniformBufferInfo::UniformBufferInfo()
-	{
-		buffer = nullptr;
-		offset = 0;
-	}
-
 	PixelProcessor::PixelProcessor(Context *context) : context(context)
 	{
 		routineCache = nullptr;
@@ -77,265 +71,27 @@ namespace sw
 		routineCache = nullptr;
 	}
 
-	void PixelProcessor::setFloatConstant(unsigned int index, const float value[4])
-	{
-		if(index < FRAGMENT_UNIFORM_VECTORS)
-		{
-			c[index][0] = value[0];
-			c[index][1] = value[1];
-			c[index][2] = value[2];
-			c[index][3] = value[3];
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setIntegerConstant(unsigned int index, const int value[4])
-	{
-		if(index < 16)
-		{
-			i[index][0] = value[0];
-			i[index][1] = value[1];
-			i[index][2] = value[2];
-			i[index][3] = value[3];
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setBooleanConstant(unsigned int index, int boolean)
-	{
-		if(index < 16)
-		{
-			b[index] = boolean != 0;
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setUniformBuffer(int index, sw::Resource* buffer, int offset)
-	{
-		uniformBufferInfo[index].buffer = buffer;
-		uniformBufferInfo[index].offset = offset;
-	}
-
-	void PixelProcessor::lockUniformBuffers(byte** u, sw::Resource* uniformBuffers[])
-	{
-		for(int i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; ++i)
-		{
-			u[i] = uniformBufferInfo[i].buffer ? static_cast<byte*>(uniformBufferInfo[i].buffer->lock(PUBLIC, PRIVATE)) + uniformBufferInfo[i].offset : nullptr;
-			uniformBuffers[i] = uniformBufferInfo[i].buffer;
-		}
-	}
-
-	void PixelProcessor::setRenderTarget(int index, Surface *renderTarget, unsigned int layer)
+	void PixelProcessor::setRenderTarget(int index, vk::ImageView* renderTarget, unsigned int layer)
 	{
 		context->renderTarget[index] = renderTarget;
 		context->renderTargetLayer[index] = layer;
 	}
 
-	void PixelProcessor::setDepthBuffer(Surface *depthBuffer, unsigned int layer)
+	void PixelProcessor::setDepthBuffer(vk::ImageView *depthBuffer, unsigned int layer)
 	{
 		context->depthBuffer = depthBuffer;
 		context->depthBufferLayer = layer;
 	}
 
-	void PixelProcessor::setStencilBuffer(Surface *stencilBuffer, unsigned int layer)
+	void PixelProcessor::setStencilBuffer(vk::ImageView *stencilBuffer, unsigned int layer)
 	{
 		context->stencilBuffer = stencilBuffer;
 		context->stencilBufferLayer = layer;
 	}
 
-	void PixelProcessor::setTextureFilter(unsigned int sampler, FilterType textureFilter)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setTextureFilter(textureFilter);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setMipmapFilter(unsigned int sampler, MipmapType mipmapFilter)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setMipmapFilter(mipmapFilter);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setGatherEnable(unsigned int sampler, bool enable)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setGatherEnable(enable);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setAddressingModeU(unsigned int sampler, AddressingMode addressMode)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setAddressingModeU(addressMode);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setAddressingModeV(unsigned int sampler, AddressingMode addressMode)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setAddressingModeV(addressMode);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setAddressingModeW(unsigned int sampler, AddressingMode addressMode)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setAddressingModeW(addressMode);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setReadSRGB(unsigned int sampler, bool sRGB)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setReadSRGB(sRGB);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setMipmapLOD(unsigned int sampler, float bias)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setMipmapLOD(bias);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setBorderColor(unsigned int sampler, const Color<float> &borderColor)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setBorderColor(borderColor);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setMaxAnisotropy(unsigned int sampler, float maxAnisotropy)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setMaxAnisotropy(maxAnisotropy);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setHighPrecisionFiltering(unsigned int sampler, bool highPrecisionFiltering)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setHighPrecisionFiltering(highPrecisionFiltering);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setSwizzleR(unsigned int sampler, SwizzleType swizzleR)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setSwizzleR(swizzleR);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setSwizzleG(unsigned int sampler, SwizzleType swizzleG)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setSwizzleG(swizzleG);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setSwizzleB(unsigned int sampler, SwizzleType swizzleB)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setSwizzleB(swizzleB);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setSwizzleA(unsigned int sampler, SwizzleType swizzleA)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setSwizzleA(swizzleA);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setCompareFunc(unsigned int sampler, CompareFunc compFunc)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setCompareFunc(compFunc);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setBaseLevel(unsigned int sampler, int baseLevel)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setBaseLevel(baseLevel);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setMaxLevel(unsigned int sampler, int maxLevel)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setMaxLevel(maxLevel);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setMinLod(unsigned int sampler, float minLod)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setMinLod(minLod);
-		}
-		else ASSERT(false);
-	}
-
-	void PixelProcessor::setMaxLod(unsigned int sampler, float maxLod)
-	{
-		if(sampler < TEXTURE_IMAGE_UNITS)
-		{
-			context->sampler[sampler].setMaxLod(maxLod);
-		}
-		else ASSERT(false);
-	}
-
 	void PixelProcessor::setWriteSRGB(bool sRGB)
 	{
 		context->setWriteSRGB(sRGB);
-	}
-
-	void PixelProcessor::setColorLogicOpEnabled(bool colorLogicOpEnabled)
-	{
-		context->setColorLogicOpEnabled(colorLogicOpEnabled);
-	}
-
-	void PixelProcessor::setLogicalOperation(VkLogicOp logicalOperation)
-	{
-		context->setLogicalOperation(logicalOperation);
 	}
 
 	void PixelProcessor::setDepthBufferEnable(bool depthBufferEnable)
@@ -348,19 +104,9 @@ namespace sw
 		context->depthCompareMode = depthCompareMode;
 	}
 
-	void PixelProcessor::setAlphaCompare(VkCompareOp alphaCompareMode)
-	{
-		context->alphaCompareMode = alphaCompareMode;
-	}
-
 	void PixelProcessor::setDepthWriteEnable(bool depthWriteEnable)
 	{
 		context->depthWriteEnable = depthWriteEnable;
-	}
-
-	void PixelProcessor::setAlphaTestEnable(bool alphaTestEnable)
-	{
-		context->alphaTestEnable = alphaTestEnable;
 	}
 
 	void PixelProcessor::setCullMode(CullMode cullMode, bool frontFacingCCW)
@@ -595,16 +341,6 @@ namespace sw
 		context->setBlendOperationAlpha(blendOperationAlpha);
 	}
 
-	void PixelProcessor::setAlphaReference(float alphaReference)
-	{
-		context->alphaReference = alphaReference;
-
-		factor.alphaReference4[0] = (word)iround(alphaReference * 0x1000 / 0xFF);
-		factor.alphaReference4[1] = (word)iround(alphaReference * 0x1000 / 0xFF);
-		factor.alphaReference4[2] = (word)iround(alphaReference * 0x1000 / 0xFF);
-		factor.alphaReference4[3] = (word)iround(alphaReference * 0x1000 / 0xFF);
-	}
-
 	void PixelProcessor::setPerspectiveCorrection(bool perspectiveEnable)
 	{
 		perspectiveCorrection = perspectiveEnable;
@@ -634,14 +370,9 @@ namespace sw
 			state.shaderID = 0;
 		}
 
-		state.depthOverride = context->pixelShader && context->pixelShader->depthOverride();
-		state.shaderContainsKill = context->pixelShader ? context->pixelShader->containsKill() : false;
-
 		if(context->alphaTestActive())
 		{
-			state.alphaCompareMode = context->alphaCompareMode;
-
-			state.transparencyAntialiasing = context->getMultiSampleCount() > 1 ? transparencyAntialiasing : TRANSPARENCY_NONE;
+			state.transparencyAntialiasing = context->sampleCount > 1 ? transparencyAntialiasing : TRANSPARENCY_NONE;
 		}
 
 		state.depthWriteEnable = context->depthWriteActive();
@@ -671,7 +402,7 @@ namespace sw
 		{
 			state.depthTestActive = true;
 			state.depthCompareMode = context->depthCompareMode;
-			state.quadLayoutDepthBuffer = Surface::hasQuadLayout(context->depthBuffer->getInternalFormat());
+			state.quadLayoutDepthBuffer = Surface::hasQuadLayout(context->depthBuffer->getFormat());
 		}
 
 		state.occlusionEnabled = context->occlusionEnabled;
@@ -690,75 +421,22 @@ namespace sw
 			state.blendOperationAlpha = context->blendOperationAlpha();
 		}
 
-		state.logicalOperation = context->colorLogicOp();
-
 		for(int i = 0; i < RENDERTARGETS; i++)
 		{
 			state.colorWriteMask |= context->colorWriteActive(i) << (4 * i);
 			state.targetFormat[i] = context->renderTargetInternalFormat(i);
 		}
 
-		state.writeSRGB	= context->writeSRGB && context->renderTarget[0] && Surface::isSRGBwritable(context->renderTarget[0]->getExternalFormat());
-		state.multiSample = context->getMultiSampleCount();
+		state.writeSRGB	= context->writeSRGB && context->renderTarget[0] && Surface::isSRGBwritable(context->renderTarget[0]->getFormat());
+		state.multiSample = context->sampleCount;
 		state.multiSampleMask = context->multiSampleMask;
 
 		if(state.multiSample > 1 && context->pixelShader)
 		{
-			state.centroid = context->pixelShader->containsCentroid();
+			state.centroid = context->pixelShader->getModes().NeedsCentroid;
 		}
 
 		state.frontFaceCCW = context->frontFacingCCW;
-
-
-		for(unsigned int i = 0; i < 16; i++)
-		{
-			if(context->pixelShader)
-			{
-				if(context->pixelShader->usesSampler(i))
-				{
-					state.sampler[i] = context->sampler[i].samplerState();
-				}
-			}
-		}
-
-		const bool point = context->isDrawPoint();
-
-		for(int interpolant = 0; interpolant < MAX_FRAGMENT_INPUTS; interpolant++)
-		{
-			for(int component = 0; component < 4; component++)
-			{
-				const Shader::Semantic &semantic = context->pixelShader->getInput(interpolant, component);
-
-				if(semantic.active())
-				{
-					bool flat = point;
-
-					switch(semantic.usage)
-					{
-					case Shader::USAGE_TEXCOORD: flat = false;                  break;
-					case Shader::USAGE_COLOR:    flat = semantic.flat || point; break;
-					}
-
-					state.interpolant[interpolant].component |= 1 << component;
-
-					if(flat)
-					{
-						state.interpolant[interpolant].flat |= 1 << component;
-					}
-				}
-			}
-		}
-
-		if(state.centroid)
-		{
-			for(int interpolant = 0; interpolant < MAX_FRAGMENT_INPUTS; interpolant++)
-			{
-				for(int component = 0; component < 4; component++)
-				{
-					state.interpolant[interpolant].centroid = context->pixelShader->getInput(interpolant, 0).centroid;
-				}
-			}
-		}
 
 		state.hash = state.computeHash();
 
@@ -771,10 +449,9 @@ namespace sw
 
 		if(!routine)
 		{
-			const bool integerPipeline = (context->pixelShaderModel() <= 0x0104);
-			QuadRasterizer *generator = new PixelProgram(state, context->pixelShader);
+			QuadRasterizer *generator = new PixelProgram(state, context->pipelineLayout, context->pixelShader);
 			generator->generate();
-			routine = (*generator)(L"PixelRoutine_%0.8X", state.shaderID);
+			routine = (*generator)("PixelRoutine_%0.8X", state.shaderID);
 			delete generator;
 
 			routineCache->add(state, routine);

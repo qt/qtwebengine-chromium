@@ -12,7 +12,7 @@
 #include "GrAppliedClip.h"
 #include "GrBufferAllocPool.h"
 #include "GrDeferredUpload.h"
-#include "GrDeinstantiateProxyTracker.h"
+#include "GrRenderTargetProxy.h"
 #include "SkArenaAlloc.h"
 #include "SkArenaAllocList.h"
 #include "ops/GrMeshDrawOp.h"
@@ -28,8 +28,8 @@ public:
     // vertexSpace and indexSpace may either be null or an alloation of size
     // GrBufferAllocPool::kDefaultBufferSize. If the latter, then CPU memory is only allocated for
     // vertices/indices when a buffer larger than kDefaultBufferSize is required.
-    GrOpFlushState(GrGpu*, GrResourceProvider*, GrTokenTracker*, void* vertexSpace,
-                   void* indexSpace);
+    GrOpFlushState(GrGpu*, GrResourceProvider*, GrTokenTracker*,
+                   sk_sp<GrBufferAllocPool::CpuBufferCache> = nullptr);
 
     ~GrOpFlushState() final { this->reset(); }
 
@@ -40,7 +40,9 @@ public:
     void doUpload(GrDeferredTextureUploadFn&);
 
     /** Called as ops are executed. Must be called in the same order as the ops were prepared. */
-    void executeDrawsAndUploadsForMeshDrawOp(const GrOp* op, const SkRect& opBounds);
+    void executeDrawsAndUploadsForMeshDrawOp(
+            const GrOp* op, const SkRect& chainBounds, GrProcessorSet&&, uint32_t pipelineFlags = 0,
+            const GrUserStencilSettings* = &GrUserStencilSettings::kUnused);
 
     GrGpuCommandBuffer* commandBuffer() { return fCommandBuffer; }
     // Helper function used by Ops that are only called via RenderTargetOpLists
@@ -53,6 +55,7 @@ public:
 
     /** Additional data required on a per-op basis when executing GrOps. */
     struct OpArgs {
+        GrSurfaceOrigin origin() const { return fProxy->origin(); }
         GrRenderTarget* renderTarget() const { return fProxy->peekRenderTarget(); }
 
         GrOp* fOp;
@@ -77,22 +80,22 @@ public:
     GrDeferredUploadToken addASAPUpload(GrDeferredTextureUploadFn&&) final;
 
     /** Overrides of GrMeshDrawOp::Target. */
-    void draw(sk_sp<const GrGeometryProcessor>,
-              const GrPipeline*,
-              const GrPipeline::FixedDynamicState*,
-              const GrPipeline::DynamicStateArrays*,
-              const GrMesh[],
-              int meshCnt) final;
-    void* makeVertexSpace(size_t vertexSize, int vertexCount, const GrBuffer**,
+    void recordDraw(
+            sk_sp<const GrGeometryProcessor>, const GrMesh[], int meshCnt,
+            const GrPipeline::FixedDynamicState*, const GrPipeline::DynamicStateArrays*) final;
+    void* makeVertexSpace(size_t vertexSize, int vertexCount, sk_sp<const GrBuffer>*,
                           int* startVertex) final;
-    uint16_t* makeIndexSpace(int indexCount, const GrBuffer**, int* startIndex) final;
+    uint16_t* makeIndexSpace(int indexCount, sk_sp<const GrBuffer>*, int* startIndex) final;
     void* makeVertexSpaceAtLeast(size_t vertexSize, int minVertexCount, int fallbackVertexCount,
-                                 const GrBuffer**, int* startVertex, int* actualVertexCount) final;
-    uint16_t* makeIndexSpaceAtLeast(int minIndexCount, int fallbackIndexCount, const GrBuffer**,
-                                    int* startIndex, int* actualIndexCount) final;
+                                 sk_sp<const GrBuffer>*, int* startVertex,
+                                 int* actualVertexCount) final;
+    uint16_t* makeIndexSpaceAtLeast(int minIndexCount, int fallbackIndexCount,
+                                    sk_sp<const GrBuffer>*, int* startIndex,
+                                    int* actualIndexCount) final;
     void putBackIndices(int indexCount) final;
     void putBackVertices(int vertices, size_t vertexStride) final;
     GrRenderTargetProxy* proxy() const final { return fOpArgs->fProxy; }
+    const GrAppliedClip* appliedClip() final { return fOpArgs->fAppliedClip; }
     GrAppliedClip detachAppliedClip() final;
     const GrXferProcessor::DstProxy& dstProxy() const final { return fOpArgs->fDstProxy; }
     GrDeferredUploadTarget* deferredUploadTarget() final { return this; }
@@ -105,11 +108,9 @@ public:
     // permissible).
     GrAtlasManager* atlasManager() const final;
 
-    GrDeinstantiateProxyTracker* deinstantiateProxyTracker() { return &fDeinstantiateProxyTracker; }
-
 private:
     /** GrMeshDrawOp::Target override. */
-    SkArenaAlloc* pipelineArena() override { return &fArena; }
+    SkArenaAlloc* allocator() override { return &fArena; }
 
     struct InlineUpload {
         InlineUpload(GrDeferredTextureUploadFn&& upload, GrDeferredUploadToken token)
@@ -125,7 +126,6 @@ private:
     struct Draw {
         ~Draw();
         sk_sp<const GrGeometryProcessor> fGeometryProcessor;
-        const GrPipeline* fPipeline = nullptr;
         const GrPipeline::FixedDynamicState* fFixedDynamicState;
         const GrPipeline::DynamicStateArrays* fDynamicStateArrays;
         const GrMesh* fMeshes = nullptr;
@@ -161,9 +161,6 @@ private:
     // Variables that are used to track where we are in lists as ops are executed
     SkArenaAllocList<Draw>::Iter fCurrDraw;
     SkArenaAllocList<InlineUpload>::Iter fCurrUpload;
-
-    // Used to track the proxies that need to be deinstantiated after we finish a flush
-    GrDeinstantiateProxyTracker fDeinstantiateProxyTracker;
 };
 
 #endif

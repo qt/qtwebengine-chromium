@@ -23,7 +23,6 @@
 #include "media/engine/internal_decoder_factory.h"
 #include "modules/rtp_rtcp/include/rtp_header_parser.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/file.h"
 #include "rtc_base/flags.h"
 #include "rtc_base/string_to_number.h"
 #include "rtc_base/strings/json.h"
@@ -186,7 +185,7 @@ class FileRenderPassthrough : public rtc::VideoSinkInterface<VideoFrame> {
                         rtc::VideoSinkInterface<VideoFrame>* renderer)
       : basename_(basename), renderer_(renderer), file_(nullptr), count_(0) {}
 
-  ~FileRenderPassthrough() {
+  ~FileRenderPassthrough() override {
     if (file_)
       fclose(file_);
   }
@@ -219,7 +218,7 @@ class DecoderBitstreamFileWriter : public test::FakeDecoder {
       : file_(fopen(filename, "wb")) {
     RTC_DCHECK(file_);
   }
-  ~DecoderBitstreamFileWriter() { fclose(file_); }
+  ~DecoderBitstreamFileWriter() override { fclose(file_); }
 
   int32_t Decode(const EncodedImage& encoded_frame,
                  bool /* missing_frames */,
@@ -247,7 +246,7 @@ class RtpReplayer final {
                      const std::string& rtp_dump_path) {
     webrtc::RtcEventLogNullImpl event_log;
     Call::Config call_config(&event_log);
-    std::unique_ptr<Call> call(Call::Create(std::move(call_config)));
+    std::unique_ptr<Call> call(Call::Create(call_config));
     std::unique_ptr<StreamState> stream_state;
     // Attempt to load the configuration
     if (replay_config_path.empty()) {

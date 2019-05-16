@@ -26,8 +26,8 @@
 #include "SkSurface.h"
 
 #if SK_SUPPORT_GPU
-#include "GrTexture.h"
 #include "GrContext.h"
+#include "GrTexture.h"
 #include "SkImage_Gpu.h"
 #endif
 #include "GrBackendSurface.h"
@@ -141,7 +141,13 @@ sk_sp<SkImage> SkImage::makeSubset(const SkIRect& subset) const {
     if (bounds == subset) {
         return sk_ref_sp(const_cast<SkImage*>(this));
     }
-    return as_IB(this)->onMakeSubset(subset);
+
+    // CONTEXT TODO: propagate the context parameter to the top-level API
+#if SK_SUPPORT_GPU
+    return as_IB(this)->onMakeSubset(as_IB(this)->context(), subset);
+#else
+    return as_IB(this)->onMakeSubset(nullptr, subset);
+#endif
 }
 
 #if SK_SUPPORT_GPU
@@ -264,8 +270,12 @@ sk_sp<SkImage> SkImage::makeWithFilter(GrContext* grContext,
     if (!filter || !outSubset || !offset || !this->bounds().contains(subset)) {
         return nullptr;
     }
-    sk_sp<SkSpecialImage> srcSpecialImage = SkSpecialImage::MakeFromImage(
-        grContext, subset, sk_ref_sp(const_cast<SkImage*>(this)));
+    sk_sp<SkSpecialImage> srcSpecialImage =
+#if SK_SUPPORT_GPU
+        SkSpecialImage::MakeFromImage(grContext, subset, sk_ref_sp(const_cast<SkImage*>(this)));
+#else
+        SkSpecialImage::MakeFromImage(nullptr, subset, sk_ref_sp(const_cast<SkImage*>(this)));
+#endif
     if (!srcSpecialImage) {
         return nullptr;
     }
@@ -317,7 +327,13 @@ sk_sp<SkImage> SkImage::makeColorSpace(sk_sp<SkColorSpace> target) const {
         return sk_ref_sp(const_cast<SkImage*>(this));
     }
 
-    return as_IB(this)->onMakeColorTypeAndColorSpace(this->colorType(), std::move(target));
+    // CONTEXT TODO: propagate the context parameter to the top-level API
+#if SK_SUPPORT_GPU
+    return as_IB(this)->onMakeColorTypeAndColorSpace(as_IB(this)->context(),
+#else
+    return as_IB(this)->onMakeColorTypeAndColorSpace(nullptr,
+#endif
+                                                     this->colorType(), std::move(target));
 }
 
 sk_sp<SkImage> SkImage::makeColorTypeAndColorSpace(SkColorType targetColorType,
@@ -336,7 +352,13 @@ sk_sp<SkImage> SkImage::makeColorTypeAndColorSpace(SkColorType targetColorType,
         return sk_ref_sp(const_cast<SkImage*>(this));
     }
 
-    return as_IB(this)->onMakeColorTypeAndColorSpace(targetColorType, std::move(targetColorSpace));
+    // CONTEXT TODO: propagate the context parameter to the top-level API
+#if SK_SUPPORT_GPU
+    return as_IB(this)->onMakeColorTypeAndColorSpace(as_IB(this)->context(),
+#else
+    return as_IB(this)->onMakeColorTypeAndColorSpace(nullptr,
+#endif
+                                                     targetColorType, std::move(targetColorSpace));
 }
 
 sk_sp<SkImage> SkImage::makeNonTextureImage() const {

@@ -19,10 +19,13 @@ static void draw_masked_image(SkCanvas* canvas, const SkImage* image, SkScalar x
                               const SkImage* mask, sk_sp<SkMaskFilter> outer, SkBlendMode mode) {
     SkMatrix matrix = SkMatrix::MakeScale(SkIntToScalar(image->width()) / mask->width(),
                                           SkIntToScalar(image->height() / mask->height()));
+    // The geometry of the drawImage is also translated by (x,y) so make the mask filter's
+    // coordinate system align with the rendered rectangle.
+    matrix.postTranslate(x, y);
     SkPaint paint;
     auto mf = SkShaderMaskFilter::Make(mask->makeShader(&matrix));
     if (outer) {
-        mf = SkMaskFilter::MakeCompose(outer, mf);
+        mf = SkMaskFilter::MakeCompose(outer->makeWithMatrix(matrix), mf);
     }
     paint.setMaskFilter(mf);
     paint.setAntiAlias(true);
@@ -55,13 +58,14 @@ DEF_SIMPLE_GM(shadermaskfilter_gradient, canvas, 512, 512) {
 }
 
 #include "Resources.h"
-DEF_SIMPLE_GM(shadermaskfilter_image, canvas, 560, 370) {
+DEF_SIMPLE_GM_CAN_FAIL(shadermaskfilter_image, canvas, errorMsg, 560, 370) {
     canvas->scale(1.25f, 1.25f);
 
     auto image = GetResourceAsImage("images/mandrill_128.png");
     auto mask = GetResourceAsImage("images/color_wheel.png");
     if (!image || !mask) {
-        return;
+        *errorMsg = "Could not load images. Did you forget to set the resourcePath?";
+        return skiagm::DrawResult::kFail;
     }
     auto blurmf = SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, 5);
     auto gradmf = SkShaderMaskFilter::Make(make_shader(SkRect::MakeIWH(mask->width(),
@@ -77,6 +81,7 @@ DEF_SIMPLE_GM(shadermaskfilter_image, canvas, 560, 370) {
         canvas->restore();
         canvas->translate(0, image->height() + 20.f);
     }
+    return skiagm::DrawResult::kOk;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

@@ -187,6 +187,8 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachNestedAnimation(const char* name
             return SkRect::MakeSize(fAnimation->size());
         }
 
+        const RenderNode* onNodeAt(const SkPoint&) const override { return nullptr; }
+
         void onRender(SkCanvas* canvas, const RenderContext* ctx) const override {
             const auto local_scope =
                 ScopedRenderContext(canvas, ctx).setIsolation(this->bounds(), true);
@@ -460,7 +462,7 @@ private:
 };
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue* jlayer,
-                                                     AttachLayerContext* layerCtx) const {
+                                                      AttachLayerContext* layerCtx) const {
     if (!jlayer) return nullptr;
 
     const LayerInfo layer_info = {
@@ -523,6 +525,9 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue*
     if (const skjson::ArrayValue* jeffects = (*jlayer)["ef"]) {
         layer = this->attachLayerEffects(*jeffects, &layer_animators, std::move(layer));
     }
+
+    // Optional blend mode.
+    layer = this->attachBlendMode(*jlayer, std::move(layer));
 
     class LayerController final : public sksg::GroupAnimator {
     public:

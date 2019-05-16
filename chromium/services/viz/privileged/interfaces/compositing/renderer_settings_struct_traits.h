@@ -53,10 +53,6 @@ struct StructTraits<viz::mojom::RendererSettingsDataView,
     return input.show_overdraw_feedback;
   }
 
-  static bool enable_draw_occlusion(const viz::RendererSettings& input) {
-    return input.enable_draw_occlusion;
-  }
-
   static int highp_threshold_min(const viz::RendererSettings& input) {
     return input.highp_threshold_min;
   }
@@ -68,6 +64,10 @@ struct StructTraits<viz::mojom::RendererSettingsDataView,
 
   static bool use_skia_renderer(const viz::RendererSettings& input) {
     return input.use_skia_renderer;
+  }
+
+  static bool use_skia_renderer_non_ddl(const viz::RendererSettings& input) {
+    return input.use_skia_renderer_non_ddl;
   }
 
   static bool record_sk_picture(const viz::RendererSettings& input) {
@@ -89,6 +89,10 @@ struct StructTraits<viz::mojom::RendererSettingsDataView,
 
   static gfx::ColorSpace color_space(const viz::RendererSettings& input) {
     return input.color_space;
+  }
+
+  static bool backed_by_surface_texture(const viz::RendererSettings& input) {
+    return input.backed_by_surface_texture;
   }
 #endif
 

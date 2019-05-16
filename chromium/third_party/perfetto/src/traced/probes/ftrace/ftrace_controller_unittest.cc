@@ -20,9 +20,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "perfetto/trace/ftrace/ftrace_event_bundle.pbzero.h"
-#include "perfetto/trace/trace_packet.pb.h"
-#include "perfetto/trace/trace_packet.pbzero.h"
 #include "src/traced/probes/ftrace/cpu_reader.h"
 #include "src/traced/probes/ftrace/ftrace_config.h"
 #include "src/traced/probes/ftrace/ftrace_config_muxer.h"
@@ -30,9 +27,14 @@
 #include "src/traced/probes/ftrace/ftrace_procfs.h"
 #include "src/traced/probes/ftrace/proto_translation_table.h"
 #include "src/tracing/core/trace_writer_for_testing.h"
-
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+
+#include "perfetto/trace/trace_packet.pb.h"
+
+#include "perfetto/trace/ftrace/ftrace_event_bundle.pbzero.h"
+#include "perfetto/trace/ftrace/ftrace_stats.pbzero.h"
+#include "perfetto/trace/trace_packet.pbzero.h"
 
 using testing::_;
 using testing::AnyNumber;
@@ -91,6 +93,7 @@ class MockTaskRunner : public base::TaskRunner {
   MOCK_METHOD2(PostDelayedTask, void(std::function<void()>, uint32_t delay_ms));
   MOCK_METHOD2(AddFileDescriptorWatch, void(int fd, std::function<void()>));
   MOCK_METHOD1(RemoveFileDescriptorWatch, void(int fd));
+  MOCK_CONST_METHOD0(RunsTasksOnCurrentThread, bool());
 
  private:
   std::mutex lock_;

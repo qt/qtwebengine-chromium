@@ -16,10 +16,10 @@
 
 #include "Primitive.hpp"
 #include "Surface.hpp"
-#include "Pipeline/PixelShader.hpp"
-#include "Pipeline/VertexShader.hpp"
 #include "System/Memory.hpp"
-#include "System/Debug.hpp"
+#include "Vulkan/VkDebug.hpp"
+#include "Vulkan/VkImageView.hpp"
+#include "Pipeline/SpirvShader.hpp"
 
 #include <string.h>
 
@@ -27,7 +27,6 @@ namespace sw
 {
 	extern bool perspectiveCorrection;
 
-	bool halfIntegerCoordinates = false;     // Pixel centers are not at integer coordinates
 	bool booleanFaceRegister = false;
 	bool fullPixelPositionRegister = false;
 	bool leadingVertexFirst = false;         // Flat shading uses first vertex, else last
@@ -191,14 +190,11 @@ namespace sw
 		stencilZFailOperationCCW = VK_STENCIL_OP_KEEP;
 		stencilWriteMaskCCW = 0xFFFFFFFF;
 
-		alphaCompareMode = VK_COMPARE_OP_ALWAYS;
-		alphaTestEnable = false;
-
 		rasterizerDiscard = false;
 
 		depthCompareMode = VK_COMPARE_OP_LESS;
-		depthBufferEnable = true;
-		depthWriteEnable = true;
+		depthBufferEnable = false;
+		depthWriteEnable = false;
 
 		alphaBlendEnable = false;
 		sourceBlendFactorState = VK_BLEND_FACTOR_ONE;
@@ -222,22 +218,19 @@ namespace sw
 			colorWriteMask[i] = 0x0000000F;
 		}
 
+		pipelineLayout = nullptr;
+
 		pixelShader = nullptr;
 		vertexShader = nullptr;
 
 		instanceID = 0;
 
 		occlusionEnabled = false;
-		transformFeedbackQueryEnabled = false;
-		transformFeedbackEnabled = 0;
 
 		lineWidth = 1.0f;
 
 		writeSRGB = false;
 		sampleMask = 0xFFFFFFFF;
-
-		colorLogicOpEnabled = false;
-		logicalOperation = VK_LOGIC_OP_COPY;
 	}
 
 	bool Context::setDepthBufferEnable(bool depthBufferEnable)
@@ -317,20 +310,6 @@ namespace sw
 		return modified;
 	}
 
-	bool Context::setColorLogicOpEnabled(bool enabled)
-	{
-		bool modified = (Context::colorLogicOpEnabled != enabled);
-		Context::colorLogicOpEnabled = enabled;
-		return modified;
-	}
-
-	bool Context::setLogicalOperation(VkLogicOp logicalOperation)
-	{
-		bool modified = (Context::logicalOperation != logicalOperation);
-		Context::logicalOperation = logicalOperation;
-		return modified;
-	}
-
 	bool Context::depthWriteActive()
 	{
 		if(!depthBufferActive()) return false;
@@ -340,12 +319,7 @@ namespace sw
 
 	bool Context::alphaTestActive()
 	{
-		if(transparencyAntialiasing != TRANSPARENCY_NONE) return true;
-		if(!alphaTestEnable) return false;
-		if(alphaCompareMode == VK_COMPARE_OP_ALWAYS) return false;
-		if(alphaReference == 0.0f && alphaCompareMode == VK_COMPARE_OP_GREATER_OR_EQUAL) return false;
-
-		return true;
+		return transparencyAntialiasing != TRANSPARENCY_NONE;
 	}
 
 	bool Context::depthBufferActive()
@@ -374,11 +348,6 @@ namespace sw
 		bool alphaBlend = separateAlphaBlendEnable ? !(blendOperationAlpha() == VK_BLEND_OP_SRC_EXT && sourceBlendFactorAlpha() == VK_BLEND_FACTOR_ONE) : colorBlend;
 
 		return colorBlend || alphaBlend;
-	}
-
-	VkLogicOp Context::colorLogicOp()
-	{
-		return colorLogicOpEnabled ? logicalOperation : VK_LOGIC_OP_COPY;
 	}
 
 	VkBlendFactor Context::sourceBlendFactor()
@@ -515,7 +484,7 @@ namespace sw
 			}
 			else
 			{
-				if(destBlendFactor() == VK_BLEND_OP_ZERO_EXT)
+				if(destBlendFactor() == VK_BLEND_FACTOR_ZERO)
 				{
 					return VK_BLEND_OP_ZERO_EXT;   // Negative, clamped to zero
 				}
@@ -683,7 +652,7 @@ namespace sw
 				}
 				else
 				{
-					if(destBlendFactorAlpha() == VK_BLEND_OP_ZERO_EXT)
+					if(destBlendFactorAlpha() == VK_BLEND_FACTOR_ZERO)
 					{
 						return VK_BLEND_OP_ZERO_EXT;   // Negative, clamped to zero
 					}
@@ -724,26 +693,11 @@ namespace sw
 		return true;
 	}
 
-	unsigned short Context::pixelShaderModel() const
-	{
-		return pixelShader ? pixelShader->getShaderModel() : 0x0000;
-	}
-
-	unsigned short Context::vertexShaderModel() const
-	{
-		return vertexShader ? vertexShader->getShaderModel() : 0x0000;
-	}
-
-	int Context::getMultiSampleCount() const
-	{
-		return renderTarget[0] ? renderTarget[0]->getMultiSampleCount() : 1;
-	}
-
 	VkFormat Context::renderTargetInternalFormat(int index)
 	{
 		if(renderTarget[index])
 		{
-			return renderTarget[index]->getInternalFormat();
+			return renderTarget[index]->getFormat();
 		}
 		else
 		{
@@ -751,14 +705,22 @@ namespace sw
 		}
 	}
 
-	int Context::colorWriteActive()
+	bool Context::colorWriteActive()
 	{
-		return colorWriteActive(0) | colorWriteActive(1) | colorWriteActive(2) | colorWriteActive(3);
+		for (int i = 0; i < RENDERTARGETS; i++)
+		{
+			if (colorWriteActive(i))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	int Context::colorWriteActive(int index)
 	{
-		if(!renderTarget[index] || renderTarget[index]->getInternalFormat() == VK_FORMAT_UNDEFINED)
+		if(!renderTarget[index] || renderTarget[index]->getFormat() == VK_FORMAT_UNDEFINED)
 		{
 			return 0;
 		}
@@ -774,6 +736,6 @@ namespace sw
 
 	bool Context::colorUsed()
 	{
-		return colorWriteActive() || alphaTestActive() || (pixelShader && pixelShader->containsKill());
+		return colorWriteActive() || alphaTestActive() || (pixelShader && pixelShader->getModes().ContainsKill);
 	}
 }

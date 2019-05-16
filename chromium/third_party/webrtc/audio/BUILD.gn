@@ -37,15 +37,11 @@ rtc_static_library("audio") {
     "transport_feedback_packet_loss_tracker.h",
   ]
 
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
-
   deps = [
     "../api:array_view",
     "../api:call_api",
     "../api:libjingle_peerconnection_api",
+    "../api:scoped_refptr",
     "../api:transport_api",
     "../api/audio:aec3_factory",
     "../api/audio:audio_frame_api",
@@ -78,6 +74,7 @@ rtc_static_library("audio") {
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_task_queue",
     "../rtc_base:safe_minmax",
+    "../rtc_base/experiments:audio_allocation_settings",
     "../system_wrappers",
     "../system_wrappers:field_trial",
     "../system_wrappers:metrics",
@@ -104,11 +101,6 @@ if (rtc_include_tests) {
       "../test:test_support",
       "//third_party/abseil-cpp/absl/memory",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("audio_tests") {
@@ -147,6 +139,7 @@ if (rtc_include_tests) {
       "../logging:rtc_event_log_api",
       "../modules/audio_device:mock_audio_device",
       "../rtc_base:rtc_base_tests_utils",
+      "../test:field_trial",
 
       # For TestAudioDeviceModule
       "../modules/audio_device:audio_device_impl",
@@ -172,11 +165,6 @@ if (rtc_include_tests) {
       "//testing/gtest",
       "//third_party/abseil-cpp/absl/memory",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   if (rtc_enable_protobuf) {
@@ -206,11 +194,6 @@ if (rtc_include_tests) {
         "../resources/voice_engine/audio_tiny16.wav",
         "../resources/voice_engine/audio_tiny48.wav",
       ]
-
-      if (!build_with_chromium && is_clang) {
-        # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163)
-        suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-      }
     }
 
     group("low_bandwidth_audio_perf_test") {
@@ -280,10 +263,5 @@ if (rtc_include_tests) {
     data = [
       "//resources/voice_engine/audio_dtx16.wav",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 }

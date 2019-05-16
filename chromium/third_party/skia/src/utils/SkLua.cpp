@@ -16,6 +16,7 @@
 #include "SkColorFilter.h"
 #include "SkData.h"
 #include "SkFont.h"
+#include "SkFontMetrics.h"
 #include "SkFontStyle.h"
 #include "SkGradientShader.h"
 #include "SkImage.h"
@@ -556,7 +557,8 @@ static int lcanvas_drawText(lua_State* L) {
         return 0;
     }
 
-#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
+    // TODO: restore this logic based on SkFont instead of SkPaint
+#if 0
     if (lua_isstring(L, 2) && lua_isnumber(L, 3) && lua_isnumber(L, 4)) {
         size_t len;
         const char* text = lua_tolstring(L, 2, &len);
@@ -1871,17 +1873,18 @@ static int lsk_newTextBlob(lua_State* L) {
     SkRect bounds;
     lua2rect(L, 2, &bounds);
 
-    SkShaper shaper(nullptr);
+    std::unique_ptr<SkShaper> shaper = SkShaper::Make();
 
-#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
+    // TODO: restore this logic based on SkFont instead of SkPaint
+#if 0
     const SkPaint& paint = *get_obj<SkPaint>(L, 3);
     SkFont font = SkFont::LEGACY_ExtractFromPaint(paint);
 #else
     SkFont font;
 #endif
-    SkTextBlobBuilderRunHandler builder;
-    SkPoint end = shaper.shape(&builder, font, text, strlen(text), true,
-                               { bounds.left(), bounds.top() }, bounds.width());
+    SkTextBlobBuilderRunHandler builder(text);
+    SkPoint end = shaper->shape(&builder, font, text, strlen(text), true,
+                                { bounds.left(), bounds.top() }, bounds.width());
 
     push_ref<SkTextBlob>(L, builder.makeBlob());
     SkLua(L).pushScalar(end.fY);

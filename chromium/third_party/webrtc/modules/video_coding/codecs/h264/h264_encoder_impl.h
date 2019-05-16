@@ -90,7 +90,6 @@ class H264EncoderImpl : public H264Encoder {
   std::vector<rtc::scoped_refptr<I420Buffer>> downscaled_buffers_;
   std::vector<LayerConfig> configurations_;
   std::vector<EncodedImage> encoded_images_;
-  std::vector<std::unique_ptr<uint8_t[]>> encoded_image_buffers_;
 
   VideoCodec codec_;
   H264PacketizationMode packetization_mode_;
@@ -100,6 +99,9 @@ class H264EncoderImpl : public H264Encoder {
 
   bool has_reported_init_;
   bool has_reported_error_;
+
+  int num_temporal_layers_;
+  uint8_t tl0sync_limit_;
 };
 
 }  // namespace webrtc

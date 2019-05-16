@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {DraftObject} from 'immer';
+import {Draft} from 'immer';
 
 import {assertExists} from '../base/logging';
 import {ConvertTrace} from '../controller/trace_converter';
@@ -26,7 +26,7 @@ import {
   TraceTime,
 } from './state';
 
-type StateDraft = DraftObject<State>;
+type StateDraft = Draft<State>;
 
 
 function clearTraceState(state: StateDraft) {
@@ -231,66 +231,39 @@ export const StateActions = {
   },
 
   // TODO(hjd): Remove setState - it causes problems due to reuse of ids.
-  setState(_state: StateDraft, _args: {newState: State}): void {
-    // This has to be handled at a higher level since we can't
-    // replace the whole tree here however we still need a method here
-    // so it appears on the proxy Actions class.
-    throw new Error('Called setState on StateActions.');
-  },
-
-  setConfig(state: StateDraft, args: {config: RecordConfig;}): void {
-    state.recordConfig = args.config;
-  },
-
-  // TODO(hjd): Parametrize this to increase type safety. See comments on
-  // aosp/778194
-  setConfigControl(
-      state: StateDraft,
-      args: {name: string; value: string | number | boolean | null;}): void {
-    const config = state.recordConfig;
-    config[args.name] = args.value;
-  },
-
-  addConfigControl(
-      state: StateDraft, args: {name: string; optionsToAdd: string[];}): void {
-    // tslint:disable-next-line no-any
-    const config = state.recordConfig as any;
-    const options = config[args.name];
-    for (const option of args.optionsToAdd) {
-      if (options.includes(option)) continue;
-      options.push(option);
+  setState(state: StateDraft, args: {newState: State}): void {
+    for (const key of Object.keys(state)) {
+      // tslint:disable-next-line no-any
+      delete (state as any)[key];
+    }
+    for (const key of Object.keys(args.newState)) {
+      // tslint:disable-next-line no-any
+      (state as any)[key] = (args.newState as any)[key];
     }
   },
 
-  removeConfigControl(
-      state: StateDraft, args: {name: string; optionsToRemove: string[];}):
-      void {
-        // tslint:disable-next-line no-any
-        const config = state.recordConfig as any;
-        const options = config[args.name];
-        for (const option of args.optionsToRemove) {
-          const index = options.indexOf(option);
-          if (index === -1) continue;
-          options.splice(index, 1);
-        }
-      },
-
-  toggleDisplayConfigAsPbtxt(state: StateDraft, _: {}): void {
-    state.displayConfigAsPbtxt = !state.displayConfigAsPbtxt;
+  setRecordConfig(state: StateDraft, args: {config: RecordConfig;}): void {
+    state.recordConfig = args.config;
   },
 
-  selectNote(state: StateDraft, args: {id: string | null}): void {
-    state.selectedNote = args.id;
+  selectNote(state: StateDraft, args: {id: string}): void {
+    if (args.id) {
+      state.currentSelection = {
+        kind: 'NOTE',
+        id: args.id
+      };
+    }
   },
 
-  addNote(state: StateDraft, args: {timestamp: number}): void {
+  addNote(state: StateDraft, args: {timestamp: number, color: string}): void {
     const id = `${state.nextId++}`;
     state.notes[id] = {
       id,
       timestamp: args.timestamp,
-      color: '#000000',
+      color: args.color,
       text: '',
     };
+    this.selectNote(state, {id});
   },
 
   changeNoteColor(state: StateDraft, args: {id: string, newColor: string}):
@@ -308,10 +281,33 @@ export const StateActions = {
 
   removeNote(state: StateDraft, args: {id: string}): void {
     delete state.notes[args.id];
-    if (args.id === state.selectedNote) {
-      state.selectedNote = null;
+    if (state.currentSelection === null) return;
+    if (state.currentSelection.kind === 'NOTE' &&
+        state.currentSelection.id === args.id) {
+      state.currentSelection = null;
     }
   },
+
+  selectSlice(state: StateDraft, args: {utid: number, id: number}): void {
+    state.currentSelection = {
+      kind: 'SLICE',
+      utid: args.utid,
+      id: args.id,
+    };
+  },
+
+  selectTimeSpan(
+      state: StateDraft, args: {startTs: number, endTs: number}): void {
+    state.currentSelection = {
+      kind: 'TIMESPAN',
+      startTs: args.startTs,
+      endTs: args.endTs,
+    };
+  },
+
+  deselect(state: StateDraft, _: {}): void {
+    state.currentSelection = null;
+  }
 
 };
 

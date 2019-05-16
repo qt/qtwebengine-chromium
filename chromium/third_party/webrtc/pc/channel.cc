@@ -8,12 +8,12 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <algorithm>
 #include <iterator>
 #include <utility>
 
 #include "pc/channel.h"
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
 #include "api/call/audio_sink.h"
 #include "media/base/media_constants.h"
@@ -28,15 +28,13 @@
 #include "rtc_base/network_route.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/trace_event.h"
-// Adding 'nogncheck' to disable the gn include headers check to support modular
-// WebRTC build targets.
-#include "media/engine/webrtc_voice_engine.h"  // nogncheck
 #include "p2p/base/packet_transport_internal.h"
 #include "pc/channel_manager.h"
 #include "pc/rtp_media_utils.h"
 
 namespace cricket {
 using rtc::Bind;
+using rtc::UniqueRandomIdGenerator;
 using webrtc::SdpType;
 
 namespace {
@@ -44,6 +42,39 @@ namespace {
 struct SendPacketMessageData : public rtc::MessageData {
   rtc::CopyOnWriteBuffer packet;
   rtc::PacketOptions options;
+};
+
+// Finds a stream based on target's Primary SSRC or RIDs.
+// This struct is used in BaseChannel::UpdateLocalStreams_w.
+struct StreamFinder {
+  explicit StreamFinder(const StreamParams* target) : target_(target) {
+    RTC_DCHECK(target);
+  }
+
+  bool operator()(const StreamParams& sp) const {
+    if (target_->has_ssrcs() && sp.has_ssrcs()) {
+      return sp.has_ssrc(target_->first_ssrc());
+    }
+
+    if (!target_->has_rids() && !sp.has_rids()) {
+      return false;
+    }
+
+    const std::vector<RidDescription>& target_rids = target_->rids();
+    const std::vector<RidDescription>& source_rids = sp.rids();
+    if (source_rids.size() != target_rids.size()) {
+      return false;
+    }
+
+    // Check that all RIDs match.
+    return std::equal(source_rids.begin(), source_rids.end(),
+                      target_rids.begin(),
+                      [](const RidDescription& lhs, const RidDescription& rhs) {
+                        return lhs.rid == rhs.rid;
+                      });
+  }
+
+  const StreamParams* target_;
 };
 
 }  // namespace
@@ -102,15 +133,18 @@ BaseChannel::BaseChannel(rtc::Thread* worker_thread,
                          std::unique_ptr<MediaChannel> media_channel,
                          const std::string& content_name,
                          bool srtp_required,
-                         webrtc::CryptoOptions crypto_options)
+                         webrtc::CryptoOptions crypto_options,
+                         UniqueRandomIdGenerator* ssrc_generator)
     : worker_thread_(worker_thread),
       network_thread_(network_thread),
       signaling_thread_(signaling_thread),
       content_name_(content_name),
       srtp_required_(srtp_required),
       crypto_options_(crypto_options),
-      media_channel_(std::move(media_channel)) {
+      media_channel_(std::move(media_channel)),
+      ssrc_generator_(ssrc_generator) {
   RTC_DCHECK_RUN_ON(worker_thread_);
+  RTC_DCHECK(ssrc_generator_);
   demuxer_criteria_.mid = content_name;
   RTC_LOG(LS_INFO) << "Created channel for " << content_name;
 }
@@ -120,7 +154,7 @@ BaseChannel::~BaseChannel() {
   RTC_DCHECK_RUN_ON(worker_thread_);
 
   if (media_transport_) {
-    media_transport_->SetNetworkChangeCallback(nullptr);
+    media_transport_->RemoveNetworkChangeCallback(this);
   }
 
   // Eats any outstanding messages or packets.
@@ -183,7 +217,7 @@ void BaseChannel::Init_w(webrtc::RtpTransportInternal* rtp_transport,
   RTC_LOG(LS_INFO) << "BaseChannel::Init_w, media_transport="
                    << (media_transport_ != nullptr);
   if (media_transport_) {
-    media_transport_->SetNetworkChangeCallback(this);
+    media_transport_->AddNetworkChangeCallback(this);
   }
 }
 
@@ -581,35 +615,77 @@ bool BaseChannel::RemoveRecvStream_w(uint32_t ssrc) {
 bool BaseChannel::UpdateLocalStreams_w(const std::vector<StreamParams>& streams,
                                        SdpType type,
                                        std::string* error_desc) {
+  // In the case of RIDs (where SSRCs are not negotiated), this method will
+  // generate an SSRC for each layer in StreamParams. That representation will
+  // be stored internally in |local_streams_|.
+  // In subsequent offers, the same stream can appear in |streams| again
+  // (without the SSRCs), so it should be looked up using RIDs (if available)
+  // and then by primary SSRC.
+  // In both scenarios, it is safe to assume that the media channel will be
+  // created with a StreamParams object with SSRCs. However, it is not safe to
+  // assume that |local_streams_| will always have SSRCs as there are scenarios
+  // in which niether SSRCs or RIDs are negotiated.
+
   // Check for streams that have been removed.
   bool ret = true;
   for (const StreamParams& old_stream : local_streams_) {
-    if (old_stream.has_ssrcs() &&
-        !GetStreamBySsrc(streams, old_stream.first_ssrc())) {
-      if (!media_channel()->RemoveSendStream(old_stream.first_ssrc())) {
-        rtc::StringBuilder desc;
-        desc << "Failed to remove send stream with ssrc "
-             << old_stream.first_ssrc() << ".";
-        SafeSetError(desc.str(), error_desc);
-        ret = false;
-      }
+    if (!old_stream.has_ssrcs() ||
+        GetStream(streams, StreamFinder(&old_stream))) {
+      continue;
+    }
+    if (!media_channel()->RemoveSendStream(old_stream.first_ssrc())) {
+      rtc::StringBuilder desc;
+      desc << "Failed to remove send stream with ssrc "
+           << old_stream.first_ssrc() << ".";
+      SafeSetError(desc.str(), error_desc);
+      ret = false;
     }
   }
   // Check for new streams.
-  for (const StreamParams& new_stream : streams) {
-    if (new_stream.has_ssrcs() &&
-        !GetStreamBySsrc(local_streams_, new_stream.first_ssrc())) {
-      if (media_channel()->AddSendStream(new_stream)) {
-        RTC_LOG(LS_INFO) << "Add send stream ssrc: " << new_stream.ssrcs[0];
-      } else {
-        rtc::StringBuilder desc;
-        desc << "Failed to add send stream ssrc: " << new_stream.first_ssrc();
-        SafeSetError(desc.str(), error_desc);
-        ret = false;
-      }
+  std::vector<StreamParams> all_streams;
+  for (const StreamParams& stream : streams) {
+    StreamParams* existing = GetStream(local_streams_, StreamFinder(&stream));
+    if (existing) {
+      // Parameters cannot change for an existing stream.
+      all_streams.push_back(*existing);
+      continue;
+    }
+
+    all_streams.push_back(stream);
+    StreamParams& new_stream = all_streams.back();
+
+    if (!new_stream.has_ssrcs() && !new_stream.has_rids()) {
+      continue;
+    }
+
+    RTC_DCHECK(new_stream.has_ssrcs() || new_stream.has_rids());
+    if (new_stream.has_ssrcs() && new_stream.has_rids()) {
+      rtc::StringBuilder desc;
+      desc << "Failed to add send stream: " << new_stream.first_ssrc()
+           << ". Stream has both SSRCs and RIDs.";
+      SafeSetError(desc.str(), error_desc);
+      ret = false;
+      continue;
+    }
+
+    // At this point we use the legacy simulcast group in StreamParams to
+    // indicate that we want multiple layers to the media channel.
+    if (!new_stream.has_ssrcs()) {
+      // TODO(bugs.webrtc.org/10250): Indicate if flex is desired here.
+      new_stream.GenerateSsrcs(new_stream.rids().size(), /* rtx = */ true,
+                               /* flex_fec = */ false, ssrc_generator_);
+    }
+
+    if (media_channel()->AddSendStream(new_stream)) {
+      RTC_LOG(LS_INFO) << "Add send stream ssrc: " << new_stream.ssrcs[0];
+    } else {
+      rtc::StringBuilder desc;
+      desc << "Failed to add send stream ssrc: " << new_stream.first_ssrc();
+      SafeSetError(desc.str(), error_desc);
+      ret = false;
     }
   }
-  local_streams_ = streams;
+  local_streams_ = all_streams;
   return ret;
 }
 
@@ -667,11 +743,10 @@ RtpHeaderExtensions BaseChannel::GetFilteredRtpHeaderExtensions(
   RTC_DCHECK(rtp_transport_);
   if (crypto_options_.srtp.enable_encrypted_rtp_header_extensions) {
     RtpHeaderExtensions filtered;
-    auto pred = [](const webrtc::RtpExtension& extension) {
-      return !extension.encrypt;
-    };
-    std::copy_if(extensions.begin(), extensions.end(),
-                 std::back_inserter(filtered), pred);
+    absl::c_copy_if(extensions, std::back_inserter(filtered),
+                    [](const webrtc::RtpExtension& extension) {
+                      return !extension.encrypt;
+                    });
     return filtered;
   }
 
@@ -729,19 +804,19 @@ void BaseChannel::SignalSentPacket_w(const rtc::SentPacket& sent_packet) {
 VoiceChannel::VoiceChannel(rtc::Thread* worker_thread,
                            rtc::Thread* network_thread,
                            rtc::Thread* signaling_thread,
-                           // TODO(nisse): Delete unused argument.
-                           MediaEngineInterface* /* media_engine */,
                            std::unique_ptr<VoiceMediaChannel> media_channel,
                            const std::string& content_name,
                            bool srtp_required,
-                           webrtc::CryptoOptions crypto_options)
+                           webrtc::CryptoOptions crypto_options,
+                           UniqueRandomIdGenerator* ssrc_generator)
     : BaseChannel(worker_thread,
                   network_thread,
                   signaling_thread,
                   std::move(media_channel),
                   content_name,
                   srtp_required,
-                  crypto_options) {}
+                  crypto_options,
+                  ssrc_generator) {}
 
 VoiceChannel::~VoiceChannel() {
   if (media_transport()) {
@@ -895,14 +970,16 @@ VideoChannel::VideoChannel(rtc::Thread* worker_thread,
                            std::unique_ptr<VideoMediaChannel> media_channel,
                            const std::string& content_name,
                            bool srtp_required,
-                           webrtc::CryptoOptions crypto_options)
+                           webrtc::CryptoOptions crypto_options,
+                           UniqueRandomIdGenerator* ssrc_generator)
     : BaseChannel(worker_thread,
                   network_thread,
                   signaling_thread,
                   std::move(media_channel),
                   content_name,
                   srtp_required,
-                  crypto_options) {}
+                  crypto_options,
+                  ssrc_generator) {}
 
 VideoChannel::~VideoChannel() {
   TRACE_EVENT0("webrtc", "VideoChannel::~VideoChannel");
@@ -1034,14 +1111,16 @@ RtpDataChannel::RtpDataChannel(rtc::Thread* worker_thread,
                                std::unique_ptr<DataMediaChannel> media_channel,
                                const std::string& content_name,
                                bool srtp_required,
-                               webrtc::CryptoOptions crypto_options)
+                               webrtc::CryptoOptions crypto_options,
+                               UniqueRandomIdGenerator* ssrc_generator)
     : BaseChannel(worker_thread,
                   network_thread,
                   signaling_thread,
                   std::move(media_channel),
                   content_name,
                   srtp_required,
-                  crypto_options) {}
+                  crypto_options,
+                  ssrc_generator) {}
 
 RtpDataChannel::~RtpDataChannel() {
   TRACE_EVENT0("webrtc", "RtpDataChannel::~RtpDataChannel");

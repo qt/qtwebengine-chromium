@@ -304,6 +304,12 @@ typedef struct TplDepStats {
 
 #if CONFIG_NON_GREEDY_MV
 #define SQUARE_BLOCK_SIZES 4
+
+#define ZERO_MV_MODE 0
+#define NEW_MV_MODE 1
+#define NEAREST_MV_MODE 2
+#define NEAR_MV_MODE 3
+#define MAX_MV_MODE 4
 #endif
 
 typedef struct TplDepFrame {
@@ -320,6 +326,8 @@ typedef struct TplDepFrame {
   double mv_dist_sum[3];
   double mv_cost_sum[3];
   int_mv *pyramid_mv_arr[3][SQUARE_BLOCK_SIZES];
+  int *mv_mode_arr[3];
+  double *rd_diff_arr[3];
 #endif
 } TplDepFrame;
 
@@ -582,14 +590,17 @@ typedef struct VP9_COMP {
 #endif
   YV12_BUFFER_CONFIG *raw_source_frame;
 
+  BLOCK_SIZE tpl_bsize;
   TplDepFrame tpl_stats[MAX_ARF_GOP_SIZE];
   YV12_BUFFER_CONFIG *tpl_recon_frames[REF_FRAMES];
   EncFrameBuf enc_frame_buf[REF_FRAMES];
 #if CONFIG_NON_GREEDY_MV
+  int tpl_ready;
   int feature_score_loc_alloc;
   FEATURE_SCORE_LOC *feature_score_loc_arr;
   FEATURE_SCORE_LOC **feature_score_loc_sort;
   FEATURE_SCORE_LOC **feature_score_loc_heap;
+  int_mv *select_mv_arr;
 #endif
 
   TileDataEnc *tile_data;
@@ -945,8 +956,8 @@ static INLINE RefCntBuffer *get_ref_cnt_buffer(VP9_COMMON *cm, int fb_idx) {
 }
 
 static INLINE YV12_BUFFER_CONFIG *get_ref_frame_buffer(
-    VP9_COMP *cpi, MV_REFERENCE_FRAME ref_frame) {
-  VP9_COMMON *const cm = &cpi->common;
+    const VP9_COMP *const cpi, MV_REFERENCE_FRAME ref_frame) {
+  const VP9_COMMON *const cm = &cpi->common;
   const int buf_idx = get_ref_frame_buf_idx(cpi, ref_frame);
   return buf_idx != INVALID_IDX ? &cm->buffer_pool->frame_bufs[buf_idx].buf
                                 : NULL;
@@ -1025,7 +1036,7 @@ static INLINE int is_altref_enabled(const VP9_COMP *const cpi) {
          cpi->oxcf.enable_auto_arf;
 }
 
-static INLINE void set_ref_ptrs(VP9_COMMON *cm, MACROBLOCKD *xd,
+static INLINE void set_ref_ptrs(const VP9_COMMON *const cm, MACROBLOCKD *xd,
                                 MV_REFERENCE_FRAME ref0,
                                 MV_REFERENCE_FRAME ref1) {
   xd->block_refs[0] =

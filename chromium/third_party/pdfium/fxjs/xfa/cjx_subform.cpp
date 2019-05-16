@@ -10,6 +10,7 @@
 
 #include "fxjs/cfx_v8.h"
 #include "fxjs/js_resources.h"
+#include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cfxjse_value.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
@@ -97,20 +98,33 @@ void CJX_Subform::locale(CFXJSE_Value* pValue,
   pValue->SetString(wsLocaleName.ToUTF8().AsStringView());
 }
 
-void CJX_Subform::instanceIndex(CFXJSE_Value* pValue,
-                                bool bSetting,
-                                XFA_Attribute eAttribute) {
-  ScriptSomInstanceIndex(pValue, bSetting, eAttribute);
-}
+void CJX_Subform::instanceManager(CFXJSE_Value* pValue,
+                                  bool bSetting,
+                                  XFA_Attribute eAttribute) {
+  if (bSetting) {
+    ThrowInvalidPropertyException();
+    return;
+  }
 
-void CJX_Subform::layout(CFXJSE_Value* pValue,
-                         bool bSetting,
-                         XFA_Attribute eAttribute) {
-  ScriptAttributeString(pValue, bSetting, eAttribute);
-}
+  WideString wsName = GetCData(XFA_Attribute::Name);
+  CXFA_Node* pInstanceMgr = nullptr;
+  for (CXFA_Node* pNode = ToNode(GetXFAObject())->GetPrevSibling(); pNode;
+       pNode = pNode->GetPrevSibling()) {
+    if (pNode->GetElementType() == XFA_Element::InstanceManager) {
+      WideString wsInstMgrName =
+          pNode->JSObject()->GetCData(XFA_Attribute::Name);
+      if (wsInstMgrName.GetLength() >= 1 && wsInstMgrName[0] == '_' &&
+          wsInstMgrName.Right(wsInstMgrName.GetLength() - 1) == wsName) {
+        pInstanceMgr = pNode;
+      }
+      break;
+    }
+  }
+  if (!pInstanceMgr) {
+    pValue->SetNull();
+    return;
+  }
 
-void CJX_Subform::validationMessage(CFXJSE_Value* pValue,
-                                    bool bSetting,
-                                    XFA_Attribute eAttribute) {
-  ScriptSomValidationMessage(pValue, bSetting, eAttribute);
+  pValue->Assign(
+      GetDocument()->GetScriptContext()->GetJSValueFromMap(pInstanceMgr));
 }

@@ -128,6 +128,10 @@ SkShaderBase::Context* SkImageShader::onMakeContext(const ContextRec& rec,
         return nullptr;
     }
 
+    if (!rec.isLegacyCompatible(fImage->colorSpace())) {
+        return nullptr;
+    }
+
     return SkBitmapProcLegacyShader::MakeContext(*this, fTileModeX, fTileModeY,
                                                  SkBitmapProvider(fImage.get()), rec, alloc);
 }
@@ -158,9 +162,10 @@ sk_sp<SkShader> SkImageShader::Make(sk_sp<SkImage> image,
 
 #if SK_SUPPORT_GPU
 
+#include "GrCaps.h"
 #include "GrColorSpaceInfo.h"
-#include "GrContext.h"
-#include "GrContextPriv.h"
+#include "GrRecordingContext.h"
+#include "GrRecordingContextPriv.h"
 #include "SkGr.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
@@ -196,7 +201,7 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
     // clamp-to-border is reset to clamp since the hw cannot implement it directly.
     GrTextureDomain::Mode domainX = GrTextureDomain::kIgnore_Mode;
     GrTextureDomain::Mode domainY = GrTextureDomain::kIgnore_Mode;
-    if (!args.fContext->contextPriv().caps()->clampToBorderSupport()) {
+    if (!args.fContext->priv().caps()->clampToBorderSupport()) {
         if (wrapModes[0] == GrSamplerState::WrapMode::kClampToBorder) {
             domainX = GrTextureDomain::kDecal_Mode;
             wrapModes[0] = GrSamplerState::WrapMode::kClamp;
@@ -214,7 +219,7 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
     bool doBicubic;
     GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
             args.fFilterQuality, *args.fViewMatrix, *lm,
-            args.fContext->contextPriv().sharpenMipmappedTextures(), &doBicubic);
+            args.fContext->priv().options().fSharpenMipmappedTextures, &doBicubic);
     GrSamplerState samplerState(wrapModes, textureFilterMode);
     SkScalar scaleAdjust[2] = { 1.0f, 1.0f };
     sk_sp<GrTextureProxy> proxy(as_IB(fImage)->asTextureProxyRef(args.fContext, samplerState,
@@ -357,6 +362,7 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
             case kARGB_4444_SkColorType:    p->append(SkRasterPipeline::gather_4444,    ctx); break;
             case kRGBA_8888_SkColorType:    p->append(SkRasterPipeline::gather_8888,    ctx); break;
             case kRGBA_1010102_SkColorType: p->append(SkRasterPipeline::gather_1010102, ctx); break;
+            case kRGBA_F16Norm_SkColorType:
             case kRGBA_F16_SkColorType:     p->append(SkRasterPipeline::gather_f16,     ctx); break;
             case kRGBA_F32_SkColorType:     p->append(SkRasterPipeline::gather_f32,     ctx); break;
 
@@ -372,7 +378,7 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
             case kBGRA_8888_SkColorType:    p->append(SkRasterPipeline::gather_8888,    ctx);
                                             p->append(SkRasterPipeline::swap_rb            ); break;
 
-            default: SkASSERT(false);
+            case kUnknown_SkColorType: SkASSERT(false);
         }
         if (decal_ctx) {
             p->append(SkRasterPipeline::check_decal_mask, decal_ctx);

@@ -39,12 +39,13 @@ GrRenderTargetProxy::GrRenderTargetProxy(LazyInstantiateCallback&& callback,
                                          LazyInstantiationType lazyType,
                                          const GrBackendFormat& format, const GrSurfaceDesc& desc,
                                          GrSurfaceOrigin origin,  SkBackingFit fit,
-                                         SkBudgeted budgeted, GrInternalSurfaceFlags surfaceFlags)
+                                         SkBudgeted budgeted, GrInternalSurfaceFlags surfaceFlags,
+                                         WrapsVkSecondaryCB wrapsVkSecondaryCB)
         : INHERITED(std::move(callback), lazyType, format, desc, origin, fit, budgeted,
                     surfaceFlags)
         , fSampleCnt(desc.fSampleCnt)
         , fNeedsStencil(false)
-        , fWrapsVkSecondaryCB(WrapsVkSecondaryCB::kNo) {
+        , fWrapsVkSecondaryCB(wrapsVkSecondaryCB) {
     SkASSERT(SkToBool(kRenderTarget_GrSurfaceFlag & desc.fFlags));
 }
 
@@ -111,7 +112,8 @@ bool GrRenderTargetProxy::refsWrappedObjects() const {
 
 #ifdef SK_DEBUG
 void GrRenderTargetProxy::onValidateSurface(const GrSurface* surface) {
-    SkASSERT(!surface->asTexture());
+    // We do not check that surface->asTexture returns null since, when replaying DDLs we
+    // can fulfill a renderTarget-only proxy w/ a textureRenderTarget.
 
     // Anything that is checked here should be duplicated in GrTextureRenderTargetProxy's version
     SkASSERT(surface->asRenderTarget());

@@ -39,7 +39,6 @@ if (is_android) {
     sources = [
       "jni/android_call_client.cc",
       "jni/android_call_client.h",
-      "jni/androidcallclient.h",
       "jni/onload.cc",
     ]
 
@@ -48,6 +47,7 @@ if (is_android) {
 
     deps = [
       ":generated_jni",
+      "../../api:scoped_refptr",
       "//api:libjingle_peerconnection_api",
       "//api/audio_codecs:builtin_audio_decoder_factory",
       "//api/audio_codecs:builtin_audio_encoder_factory",

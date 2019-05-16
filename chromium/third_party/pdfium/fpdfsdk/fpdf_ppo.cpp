@@ -185,13 +185,6 @@ CFX_FloatRect GetCropBox(const CPDF_Dictionary* pPageDict) {
   return GetMediaBox(pPageDict);
 }
 
-const CPDF_Object* GetPageOrganizerPageContent(
-    const CPDF_Dictionary* pPageDict) {
-  return pPageDict
-             ? pPageDict->GetDirectObjectFor(pdfium::page_object::kContents)
-             : nullptr;
-}
-
 bool CopyInheritable(CPDF_Dictionary* pDestPageDict,
                      const CPDF_Dictionary* pSrcPageDict,
                      const ByteString& key) {
@@ -683,7 +676,9 @@ uint32_t CPDF_NPageToOneExporter::MakeXObject(
     ObjectNumberMap* pObjNumberMap) {
   ASSERT(pSrcPageDict);
 
-  const CPDF_Object* pSrcContentObj = GetPageOrganizerPageContent(pSrcPageDict);
+  const CPDF_Object* pSrcContentObj =
+      pSrcPageDict->GetDirectObjectFor(pdfium::page_object::kContents);
+
   CPDF_Stream* pNewXObject = dest()->NewIndirect<CPDF_Stream>(
       nullptr, 0, dest()->New<CPDF_Dictionary>());
   CPDF_Dictionary* pNewXObjectDict = pNewXObject->GetDict();
@@ -703,8 +698,12 @@ uint32_t CPDF_NPageToOneExporter::MakeXObject(
   pNewXObjectDict->SetRectFor("BBox", GetCropBox(pSrcPageDict));
   // TODO(xlou): add matrix field to pNewXObjectDict.
 
-  if (const CPDF_Array* pSrcContentArray = ToArray(pSrcContentObj)) {
-    ByteString bsSrcContentStream;
+  if (!pSrcContentObj)
+    return pNewXObject->GetObjNum();
+
+  ByteString bsSrcContentStream;
+  const CPDF_Array* pSrcContentArray = ToArray(pSrcContentObj);
+  if (pSrcContentArray) {
     for (size_t i = 0; i < pSrcContentArray->size(); ++i) {
       const CPDF_Stream* pStream = pSrcContentArray->GetStreamAt(i);
       auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
@@ -712,17 +711,13 @@ uint32_t CPDF_NPageToOneExporter::MakeXObject(
       bsSrcContentStream += ByteString(pAcc->GetData(), pAcc->GetSize());
       bsSrcContentStream += "\n";
     }
-    pNewXObject->SetDataAndRemoveFilter(bsSrcContentStream.AsRawSpan());
   } else {
-    ByteString bsStream;
-    {
-      const CPDF_Stream* pStream = pSrcContentObj->AsStream();
-      auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
-      pAcc->LoadAllDataFiltered();
-      bsStream = ByteString(pAcc->GetData(), pAcc->GetSize());
-    }
-    pNewXObject->SetDataAndRemoveFilter(bsStream.AsRawSpan());
+    const CPDF_Stream* pStream = pSrcContentObj->AsStream();
+    auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+    pAcc->LoadAllDataFiltered();
+    bsSrcContentStream = ByteString(pAcc->GetData(), pAcc->GetSize());
   }
+  pNewXObject->SetDataAndRemoveFilter(bsSrcContentStream.AsRawSpan());
   return pNewXObject->GetObjNum();
 }
 

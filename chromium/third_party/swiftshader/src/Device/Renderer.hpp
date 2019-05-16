@@ -145,9 +145,6 @@ namespace sw
 		PS ps;
 
 		int instanceID;
-
-		float pointSizeMin;
-		float pointSizeMax;
 		float lineWidth;
 
 		PixelProcessor::Stencil stencil[2];   // clockwise, counterclockwise
@@ -250,41 +247,16 @@ namespace sw
 		void *operator new(size_t size);
 		void operator delete(void * mem);
 
-		void draw(DrawType drawType, unsigned int indexOffset, unsigned int count, bool update = true);
+		void draw(DrawType drawType, unsigned int count, bool update = true);
 
 		void clear(void *value, VkFormat format, Surface *dest, const Rect &rect, unsigned int rgbaMask);
 		void blit(Surface *source, const SliceRectF &sRect, Surface *dest, const SliceRect &dRect, bool filter, bool isStencil = false, bool sRGBconversion = true);
 		void blit3D(Surface *source, Surface *dest);
 
 		void setContext(const sw::Context& context);
-		void setIndexBuffer(Resource *indexBuffer);
 
 		void setMultiSampleMask(unsigned int mask);
 		void setTransparencyAntialiasing(TransparencyAntialiasing transparencyAntialiasing);
-
-		void setTextureResource(unsigned int sampler, Resource *resource);
-		void setTextureLevel(unsigned int sampler, unsigned int face, unsigned int level, Surface *surface, TextureType type);
-
-		void setTextureFilter(SamplerType type, int sampler, FilterType textureFilter);
-		void setMipmapFilter(SamplerType type, int sampler, MipmapType mipmapFilter);
-		void setGatherEnable(SamplerType type, int sampler, bool enable);
-		void setAddressingModeU(SamplerType type, int sampler, AddressingMode addressingMode);
-		void setAddressingModeV(SamplerType type, int sampler, AddressingMode addressingMode);
-		void setAddressingModeW(SamplerType type, int sampler, AddressingMode addressingMode);
-		void setReadSRGB(SamplerType type, int sampler, bool sRGB);
-		void setMipmapLOD(SamplerType type, int sampler, float bias);
-		void setBorderColor(SamplerType type, int sampler, const Color<float> &borderColor);
-		void setMaxAnisotropy(SamplerType type, int sampler, float maxAnisotropy);
-		void setHighPrecisionFiltering(SamplerType type, int sampler, bool highPrecisionFiltering);
-		void setSwizzleR(SamplerType type, int sampler, SwizzleType swizzleR);
-		void setSwizzleG(SamplerType type, int sampler, SwizzleType swizzleG);
-		void setSwizzleB(SamplerType type, int sampler, SwizzleType swizzleB);
-		void setSwizzleA(SamplerType type, int sampler, SwizzleType swizzleA);
-		void setCompareFunc(SamplerType type, int sampler, CompareFunc compare);
-		void setBaseLevel(SamplerType type, int sampler, int baseLevel);
-		void setMaxLevel(SamplerType type, int sampler, int maxLevel);
-		void setMinLod(SamplerType type, int sampler, float minLod);
-		void setMaxLod(SamplerType type, int sampler, float maxLod);
 
 		void setLineWidth(float width);
 
@@ -294,28 +266,12 @@ namespace sw
 		void setRasterizerDiscard(bool rasterizerDiscard);
 
 		// Programmable pipelines
-		void setPixelShader(const PixelShader *shader);
-		void setVertexShader(const VertexShader *shader);
-
-		void setPixelShaderConstantF(unsigned int index, const float value[4], unsigned int count = 1);
-		void setPixelShaderConstantI(unsigned int index, const int value[4], unsigned int count = 1);
-		void setPixelShaderConstantB(unsigned int index, const int *boolean, unsigned int count = 1);
-
-		void setVertexShaderConstantF(unsigned int index, const float value[4], unsigned int count = 1);
-		void setVertexShaderConstantI(unsigned int index, const int value[4], unsigned int count = 1);
-		void setVertexShaderConstantB(unsigned int index, const int *boolean, unsigned int count = 1);
+		void setPixelShader(const SpirvShader *shader);
+		void setVertexShader(const SpirvShader *shader);
 
 		// Viewport & Clipper
 		void setViewport(const VkViewport &viewport);
 		void setScissor(const Rect &scissor);
-		void setClipFlags(int flags);
-		void setClipPlane(unsigned int index, const float plane[4]);
-
-		// Partial transform
-		void setModelMatrix(const Matrix &M, int i = 0);
-		void setViewMatrix(const Matrix &V);
-		void setBaseMatrix(const Matrix &B);
-		void setProjectionMatrix(const Matrix &P);
 
 		void addQuery(Query *query);
 		void removeQuery(Query *query);
@@ -351,14 +307,9 @@ namespace sw
 		bool setupLine(Primitive &primitive, Triangle &triangle, const DrawCall &draw);
 		bool setupPoint(Primitive &primitive, Triangle &triangle, const DrawCall &draw);
 
-		bool isReadWriteTexture(int sampler);
-		void updateClipper();
 		void updateConfiguration(bool initialUpdate = false);
 		void initializeThreads();
 		void terminateThreads();
-
-		void loadConstants(const VertexShader *vertexShader);
-		void loadConstants(const PixelShader *pixelShader);
 
 		Context *context;
 		Clipper *clipper;
@@ -369,11 +320,6 @@ namespace sw
 
 		Triangle *triangleBatch[16];
 		Primitive *primitiveBatch[16];
-
-		// User-defined clipping planes
-		Plane userPlane[MAX_CLIP_PLANES];
-		Plane clipPlane[MAX_CLIP_PLANES];   // Tranformed to clip space
-		bool updateClipPlanes;
 
 		AtomicInt exitThreads;
 		AtomicInt threadsAwake;
@@ -451,27 +397,11 @@ namespace sw
 		int (Renderer::*setupPrimitives)(int batch, int count);
 		SetupProcessor::State setupState;
 
-		Resource *vertexStream[MAX_VERTEX_INPUTS];
-		Resource *indexBuffer;
-		Surface *renderTarget[RENDERTARGETS];
-		Surface *depthBuffer;
-		Surface *stencilBuffer;
-		Resource *texture[TOTAL_IMAGE_UNITS];
-		Resource* pUniformBuffers[MAX_UNIFORM_BUFFER_BINDINGS];
-		Resource* vUniformBuffers[MAX_UNIFORM_BUFFER_BINDINGS];
-		Resource* transformFeedbackBuffers[MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS];
-
-		unsigned int vsDirtyConstF;
-		unsigned int vsDirtyConstI;
-		unsigned int vsDirtyConstB;
-
-		unsigned int psDirtyConstF;
-		unsigned int psDirtyConstI;
-		unsigned int psDirtyConstB;
+		vk::ImageView *renderTarget[RENDERTARGETS];
+		vk::ImageView *depthBuffer;
+		vk::ImageView *stencilBuffer;
 
 		std::list<Query*> *queries;
-
-		AtomicInt clipFlags;
 
 		AtomicInt primitive;    // Current primitive to enter pipeline
 		AtomicInt count;        // Number of primitives to render

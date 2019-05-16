@@ -64,8 +64,7 @@ public:
     void submit();
 
 private:
-    void internalBegin();
-    void internalEnd();
+    void addNullCommand();
 
     GrGpu* gpu() override { return fGpu; }
 
@@ -73,8 +72,7 @@ private:
             const GrPrimitiveProcessor& primProc,
             const GrPipeline& pipeline,
             const GrPipeline::FixedDynamicState* fixedDynamicState,
-            const GrMesh meshes[],
-            int meshCount);
+            GrPrimitiveType primType);
 
     void onDraw(const GrPrimitiveProcessor& primProc,
                 const GrPipeline& pipeline,
@@ -127,7 +125,7 @@ private:
     GrGpuRTCommandBuffer::LoadAndStoreInfo        fColorLoadAndStoreInfo;
     GrGpuRTCommandBuffer::StencilLoadAndStoreInfo fStencilLoadAndStoreInfo;
 
-    id<MTLRenderCommandEncoder> fActiveRenderCmdEncoder;
+    __strong id<MTLRenderCommandEncoder> fActiveRenderCmdEncoder;
     MTLRenderPassDescriptor* fRenderPassDesc;
 
     struct CommandBufferInfo {

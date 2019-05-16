@@ -225,6 +225,8 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
       views_bridge_mac::mojom::VisibilityTransition transitions) override;
   void SetVisibleOnAllSpaces(bool always_visible) override;
   void SetFullscreen(bool fullscreen) override;
+  void SetCanAppearInExistingFullscreenSpaces(
+      bool can_appear_in_existing_fullscreen_spaces) override;
   void SetMiniaturized(bool miniaturized) override;
   void SetSizeConstraints(const gfx::Size& min_size,
                           const gfx::Size& max_size,
@@ -342,6 +344,13 @@ class VIEWS_EXPORT BridgedNativeWidgetImpl
   // Whether this window is in a fullscreen transition, and the fullscreen state
   // can not currently be changed.
   bool in_fullscreen_transition_ = false;
+
+  // Trying to close an NSWindow during a fullscreen transition will cause the
+  // window to lock up. Use this to track if CloseWindow was called during a
+  // fullscreen transition, to defer the -[NSWindow close] call until the
+  // transition is complete.
+  // https://crbug.com/945237
+  bool has_deferred_window_close_ = false;
 
   // Stores the value last read from -[NSWindow isVisible], to detect visibility
   // changes.

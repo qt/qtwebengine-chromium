@@ -45,6 +45,20 @@ public:
 
     virtual GrBackendFormat backendFormat() const = 0;
 
+    void setRelease(sk_sp<GrRefCntedCallback> releaseHelper) {
+        this->onSetRelease(releaseHelper);
+        fReleaseHelper = std::move(releaseHelper);
+    }
+
+    // These match the definitions in SkImage, from whence they came.
+    // TODO: Remove Chrome's need to call this on a GrTexture
+    typedef void* ReleaseCtx;
+    typedef void (*ReleaseProc)(ReleaseCtx);
+    void setRelease(ReleaseProc proc, ReleaseCtx ctx) {
+        sk_sp<GrRefCntedCallback> helper(new GrRefCntedCallback(proc, ctx));
+        this->setRelease(std::move(helper));
+    }
+
     /**
      * @return the texture associated with the surface, may be null.
      */
@@ -107,7 +121,10 @@ protected:
             , fSurfaceFlags(GrInternalSurfaceFlags::kNone) {
     }
 
-    ~GrSurface() override {}
+    ~GrSurface() override {
+        // check that invokeReleaseProc has been called (if needed)
+        SkASSERT(!fReleaseHelper);
+    }
 
     void onRelease() override;
     void onAbandon() override;
@@ -115,10 +132,21 @@ protected:
 private:
     const char* getResourceType() const override { return "Surface"; }
 
-    GrPixelConfig          fConfig;
-    int                    fWidth;
-    int                    fHeight;
-    GrInternalSurfaceFlags fSurfaceFlags;
+    // Unmanaged backends (e.g. Vulkan) may want to specially handle the release proc in order to
+    // ensure it isn't called until GPU work related to the resource is completed.
+    virtual void onSetRelease(sk_sp<GrRefCntedCallback>) {}
+
+    void invokeReleaseProc() {
+        // Depending on the ref count of fReleaseHelper this may or may not actually trigger the
+        // ReleaseProc to be called.
+        fReleaseHelper.reset();
+    }
+
+    GrPixelConfig              fConfig;
+    int                        fWidth;
+    int                        fHeight;
+    GrInternalSurfaceFlags     fSurfaceFlags;
+    sk_sp<GrRefCntedCallback>  fReleaseHelper;
 
     typedef GrGpuResource INHERITED;
 };

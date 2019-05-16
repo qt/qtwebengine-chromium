@@ -13,7 +13,6 @@
 #ifndef PC_MEDIA_SESSION_H_
 #define PC_MEDIA_SESSION_H_
 
-#include <algorithm>
 #include <map>
 #include <memory>
 #include <string>
@@ -26,6 +25,7 @@
 #include "p2p/base/transport_description_factory.h"
 #include "pc/jsep_transport.h"
 #include "pc/session_description.h"
+#include "rtc_base/unique_id_generator.h"
 
 namespace cricket {
 
@@ -76,15 +76,6 @@ struct MediaDescriptionOptions {
   // Note: There's no equivalent "RtpReceiverOptions" because only send
   // stream information goes in the local descriptions.
   std::vector<SenderOptions> sender_options;
-  // |receive_rids| and |receive_simulcast_layers| are used with spec-compliant
-  // simulcast. When Simulcast is used, they should both not be empty.
-  // All RIDs in |receive_simulcast_layers| must appear in receive_rids as well.
-  // |receive_rids| could also be used outside of simulcast. It is possible to
-  // add restrictions on the incoming stream during negotiation outside the
-  // simulcast scenario. This is currently not fully supported, as meaningful
-  // restrictions are not handled by this library.
-  std::vector<RidDescription> receive_rids;
-  SimulcastLayerList receive_simulcast_layers;
 
  private:
   // Doesn't DCHECK on |type|.
@@ -119,6 +110,12 @@ struct MediaSessionOptions {
   // descriptions will be generated.
   std::vector<MediaDescriptionOptions> media_description_options;
   std::vector<IceParameters> pooled_ice_credentials;
+
+  // An optional media transport settings.
+  // In the future we may consider using a vector here, to indicate multiple
+  // supported transports.
+  absl::optional<cricket::SessionDescription::MediaTransportSetting>
+      media_transport_settings;
 };
 
 // Creates media session descriptions according to the supplied codecs and
@@ -127,15 +124,19 @@ struct MediaSessionOptions {
 // of the various fields to determine the proper result.
 class MediaSessionDescriptionFactory {
  public:
-  // Default ctor; use methods below to set configuration.
-  // The TransportDescriptionFactory is not owned by MediaSessionDescFactory,
-  // so it must be kept alive by the user of this class.
-  explicit MediaSessionDescriptionFactory(
-      const TransportDescriptionFactory* factory);
+  // Simple constructor that does not set any configuration for the factory.
+  // When using this constructor, the methods below can be used to set the
+  // configuration.
+  // The TransportDescriptionFactory and the UniqueRandomIdGenerator are not
+  // owned by MediaSessionDescriptionFactory, so they must be kept alive by the
+  // user of this class.
+  MediaSessionDescriptionFactory(const TransportDescriptionFactory* factory,
+                                 rtc::UniqueRandomIdGenerator* ssrc_generator);
   // This helper automatically sets up the factory to get its configuration
   // from the specified ChannelManager.
   MediaSessionDescriptionFactory(ChannelManager* cmanager,
-                                 const TransportDescriptionFactory* factory);
+                                 const TransportDescriptionFactory* factory,
+                                 rtc::UniqueRandomIdGenerator* ssrc_generator);
 
   const AudioCodecs& audio_sendrecv_codecs() const;
   const AudioCodecs& audio_send_codecs() const;
@@ -300,6 +301,8 @@ class MediaSessionDescriptionFactory {
   VideoCodecs video_codecs_;
   RtpHeaderExtensions video_rtp_extensions_;
   DataCodecs data_codecs_;
+  // This object is not owned by the channel so it must outlive it.
+  rtc::UniqueRandomIdGenerator* const ssrc_generator_;
   bool enable_encrypted_rtp_header_extensions_ = false;
   // TODO(zhihuang): Rename secure_ to sdec_policy_; rename the related getter
   // and setter.

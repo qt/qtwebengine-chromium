@@ -66,24 +66,26 @@ TEST_F(CountersTableUnittest, SelectWhereCpu) {
   uint32_t freq = 3000;
 
   context_.storage->mutable_counters()->AddCounter(
-      timestamp, 0 /* dur */, 1, freq, 1 /* cpu */, RefType::kRefCpuId);
-  context_.storage->mutable_counters()->AddCounter(timestamp + 1, 1 /* dur */,
-                                                   1, freq + 1000, 1 /* cpu */,
-                                                   RefType::kRefCpuId);
-  context_.storage->mutable_counters()->AddCounter(timestamp + 2, 1 /* dur */,
-                                                   1, freq + 2000, 2 /* cpu */,
-                                                   RefType::kRefCpuId);
+      timestamp, 1, freq, 1 /* cpu */, RefType::kRefCpuId);
+  context_.storage->mutable_counters()->AddCounter(
+      timestamp + 1, 1, freq + 1000, 1 /* cpu */, RefType::kRefCpuId);
+  context_.storage->mutable_counters()->AddCounter(
+      timestamp + 2, 1, freq + 2000, 2 /* cpu */, RefType::kRefCpuId);
 
-  PrepareValidStatement("SELECT ts, dur, value FROM counters where ref = 1");
+  PrepareValidStatement(
+      "SELECT ts, "
+      "lead(ts) over (partition by name, ref order by ts) - ts as dur, "
+      "value "
+      "FROM counters where ref = 1");
 
   ASSERT_EQ(sqlite3_step(*stmt_), SQLITE_ROW);
   ASSERT_EQ(sqlite3_column_int(*stmt_, 0), timestamp);
-  ASSERT_EQ(sqlite3_column_int(*stmt_, 1), 0);
+  ASSERT_EQ(sqlite3_column_int(*stmt_, 1), 1);
   ASSERT_EQ(sqlite3_column_int(*stmt_, 2), freq);
 
   ASSERT_EQ(sqlite3_step(*stmt_), SQLITE_ROW);
   ASSERT_EQ(sqlite3_column_int(*stmt_, 0), timestamp + 1);
-  ASSERT_EQ(sqlite3_column_int(*stmt_, 1), 1);
+  ASSERT_EQ(sqlite3_column_int(*stmt_, 1), 0);
   ASSERT_EQ(sqlite3_column_int(*stmt_, 2), freq + 1000);
 
   ASSERT_EQ(sqlite3_step(*stmt_), SQLITE_DONE);
@@ -95,17 +97,22 @@ TEST_F(CountersTableUnittest, GroupByFreq) {
   uint32_t name_id = 1;
 
   context_.storage->mutable_counters()->AddCounter(
-      timestamp, 1 /* dur */, name_id, freq, 1 /* cpu */, RefType::kRefCpuId);
+      timestamp, name_id, freq, 1 /* cpu */, RefType::kRefCpuId);
   context_.storage->mutable_counters()->AddCounter(
-      timestamp + 1, 2 /* dur */, name_id, freq + 1000, 1 /* cpu */,
-      RefType::kRefCpuId);
-  context_.storage->mutable_counters()->AddCounter(timestamp + 3, 0 /* dur */,
-                                                   name_id, freq, 1 /* cpu */,
-                                                   RefType::kRefCpuId);
+      timestamp + 1, name_id, freq + 1000, 1 /* cpu */, RefType::kRefCpuId);
+  context_.storage->mutable_counters()->AddCounter(
+      timestamp + 3, name_id, freq, 1 /* cpu */, RefType::kRefCpuId);
 
   PrepareValidStatement(
-      "SELECT value, sum(dur) as dur_sum FROM counters where value > 0 group "
-      "by value order by dur_sum desc");
+      "SELECT value, sum(dur) as dur_sum "
+      "FROM ( "
+      "select value, "
+      "lead(ts) over (partition by name, ref order by ts) - ts as dur "
+      "from counters"
+      ") "
+      "where value > 0 "
+      "group by value "
+      "order by dur_sum desc");
 
   ASSERT_EQ(sqlite3_step(*stmt_), SQLITE_ROW);
   ASSERT_EQ(sqlite3_column_int(*stmt_, 0), freq + 1000);
@@ -125,9 +132,8 @@ TEST_F(CountersTableUnittest, UtidLookupUpid) {
 
   uint32_t utid = context_.process_tracker->UpdateThread(timestamp, 1, 0);
 
-  context_.storage->mutable_counters()->AddCounter(timestamp, 0 /* dur */,
-                                                   name_id, value, utid,
-                                                   RefType::kRefUtidLookupUpid);
+  context_.storage->mutable_counters()->AddCounter(
+      timestamp, name_id, value, utid, RefType::kRefUtidLookupUpid);
 
   PrepareValidStatement("SELECT value, ref, ref_type FROM counters");
 
@@ -170,12 +176,10 @@ TEST_F(CountersTableUnittest, UtidLookupUpidSort) {
   auto* thread_a = context_.storage->GetMutableThread(utid_a);
   thread_a->upid = context_.process_tracker->UpdateProcess(100);
 
-  context_.storage->mutable_counters()->AddCounter(timestamp, 0 /* dur */,
-                                                   name_id, value, utid_a,
-                                                   RefType::kRefUtidLookupUpid);
-  context_.storage->mutable_counters()->AddCounter(timestamp + 1, 0 /* dur */,
-                                                   name_id, value, utid_b,
-                                                   RefType::kRefUtidLookupUpid);
+  context_.storage->mutable_counters()->AddCounter(
+      timestamp, name_id, value, utid_a, RefType::kRefUtidLookupUpid);
+  context_.storage->mutable_counters()->AddCounter(
+      timestamp + 1, name_id, value, utid_b, RefType::kRefUtidLookupUpid);
 
   PrepareValidStatement("SELECT ts, ref, ref_type FROM counters ORDER BY ref");
 
@@ -192,6 +196,43 @@ TEST_F(CountersTableUnittest, UtidLookupUpidSort) {
                "upid");
 
   ASSERT_EQ(sqlite3_step(*stmt_), SQLITE_DONE);
+}
+
+TEST_F(CountersTableUnittest, RefColumnComparator) {
+  int64_t timestamp = 1000;
+
+  UniquePid upid = context_.process_tracker->UpdateProcess(100);
+  // To ensure that upid and utid are not the same number
+  UniqueTid no_upid_tid =
+      context_.process_tracker->UpdateThread(timestamp, 101, 0);
+  UniqueTid utid = context_.process_tracker->UpdateThread(timestamp, 102, 0);
+  context_.storage->GetMutableThread(utid)->upid = upid;
+  ASSERT_NE(upid, utid);
+
+  uint32_t ctr_lookup_upid =
+      static_cast<uint32_t>(context_.storage->mutable_counters()->AddCounter(
+          timestamp, 0, 1 /* value */, utid, RefType::kRefUtidLookupUpid));
+
+  uint32_t ctr_upid =
+      static_cast<uint32_t>(context_.storage->mutable_counters()->AddCounter(
+          timestamp, 0, 1 /* value */, upid, RefType::kRefUpid));
+
+  uint32_t ctr_null_upid =
+      static_cast<uint32_t>(context_.storage->mutable_counters()->AddCounter(
+          timestamp, 0, 1 /* value */, no_upid_tid,
+          RefType::kRefUtidLookupUpid));
+
+  const auto& cs = context_.storage->counters();
+  CountersTable::RefColumn ref_column("ref", &cs.refs(), &cs.types(),
+                                      context_.storage.get());
+  auto comparator = ref_column.Sort(QueryConstraints::OrderBy());
+  // Lookup equality
+  ASSERT_EQ(comparator(ctr_lookup_upid, ctr_upid), 0);
+
+  // Null handling
+  ASSERT_EQ(comparator(ctr_upid, ctr_null_upid), 1);
+  ASSERT_EQ(comparator(ctr_null_upid, ctr_upid), -1);
+  ASSERT_EQ(comparator(ctr_null_upid, ctr_null_upid), 0);
 }
 
 }  // namespace

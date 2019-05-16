@@ -24,6 +24,13 @@ Group::~Group() {
     }
 }
 
+void Group::clear() {
+    for (const auto& child : fChildren) {
+        this->unobserveInval(child);
+    }
+    fChildren.clear();
+}
+
 void Group::addChild(sk_sp<RenderNode> node) {
     // should we allow duplicates?
     for (const auto& child : fChildren) {
@@ -57,6 +64,16 @@ void Group::onRender(SkCanvas* canvas, const RenderContext* ctx) const {
     for (const auto& child : fChildren) {
         child->render(canvas, local_ctx);
     }
+}
+
+const RenderNode* Group::onNodeAt(const SkPoint& p) const {
+    for (auto it = fChildren.crbegin(); it != fChildren.crend(); ++it) {
+        if (const auto* node = (*it)->nodeAt(p)) {
+            return node;
+        }
+    }
+
+    return nullptr;
 }
 
 SkRect Group::onRevalidate(InvalidationController* ic, const SkMatrix& ctm) {

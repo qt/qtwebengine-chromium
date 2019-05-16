@@ -7,7 +7,7 @@ jobs:
       xcode: "9.2.0"
     steps:
       - checkout
-      - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install wget pkg-config libtool ragel freetype glib cairo
+      - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install wget autoconf automake libtool pkg-config ragel freetype glib cairo
       - run: ./autogen.sh --with-freetype --with-glib --with-gobject --with-cairo
       - run: make -j4
       - run: make check || .ci/fail.sh
@@ -17,7 +17,17 @@ jobs:
       xcode: "10.1.0"
     steps:
       - checkout
-      - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install wget pkg-config libtool ragel freetype glib cairo
+      - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install wget autoconf automake libtool pkg-config ragel freetype glib cairo
+      - run: ./autogen.sh --with-freetype --with-glib --with-gobject --with-cairo
+      - run: make -j4
+      - run: make check || .ci/fail.sh
+
+  macos-10.14.3-aat-fonts:
+    macos:
+      xcode: "10.2.0"
+    steps:
+      - checkout
+      - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install wget autoconf automake libtool pkg-config ragel freetype glib cairo
       - run: ./autogen.sh --with-freetype --with-glib --with-gobject --with-cairo
       - run: make -j4
       - run: make check || .ci/fail.sh
@@ -52,7 +62,7 @@ jobs:
       - image: alpine
     steps:
       - checkout
-      - run: apk update && apk add ragel make pkgconfig libtool autoconf automake gettext gcc g++ glib-dev freetype-dev cairo-dev
+      - run: apk update && apk add ragel make pkgconfig libtool autoconf automake gettext gcc g++ glib-dev freetype-dev cairo-dev python
       # C??FLAGS are not needed for a regular build
       - run: CFLAGS="-O3" CXXFLAGS="-O3 -DHB_NO_MMAP" ./autogen.sh
       - run: make -j32
@@ -60,10 +70,10 @@ jobs:
 
   archlinux-py3-all:
     docker:
-      - image: base/devel
+      - image: archlinux/base
     steps:
       - checkout
-      - run: pacman --noconfirm -Syu freetype2 cairo icu gettext gobject-introspection gcc gcc-libs glib2 graphite pkg-config ragel python python-pip
+      - run: pacman --noconfirm -Syu freetype2 cairo icu gettext gobject-introspection gcc gcc-libs glib2 graphite pkg-config ragel python python-pip make which base-devel
       - run: pip install flake8 fonttools
       - run: flake8 . --count --select=E901,E999,F821,F822,F823 --show-source --statistics
       # C??FLAGS are not needed for a regular build
@@ -71,13 +81,22 @@ jobs:
       - run: make -j32 CPPFLAGS="-Werror"
       - run: make check CPPFLAGS="-Werror" || .ci/fail.sh
 
+  ## Doesn't play well with CircleCI apparently
+  #void-notest:
+  #  docker:
+  #    - image: voidlinux/voidlinux
+  #  steps:
+  #    - checkout
+  #    - run: xbps-install -Suy freetype gettext gcc glib graphite pkg-config ragel libtool autoconf automake make
+  #    - run: ./autogen.sh && make -j32 && make check
+
   clang-O3-O0:
     docker:
       - image: multiarch/crossbuild
     steps:
       - checkout
       - run: apt update || true
-      - run: apt install -y ragel libfreetype6-dev libfontconfig1-dev libglib2.0-dev libcairo2-dev libicu-dev libgraphite2-dev python python-pip
+      - run: apt install -y wget autoconf automake libtool pkg-config ragel libfreetype6-dev libfontconfig1-dev libglib2.0-dev libcairo2-dev libicu-dev libgraphite2-dev python python-pip
       - run: pip install fonttools
       - run: wget http://download.savannah.gnu.org/releases/freetype/freetype-2.9.tar.bz2 && tar xf freetype-2.9.tar.bz2 && cd freetype-2.9 && ./autogen.sh && ./configure && make -j32 && cd ..
       - run: CFLAGS="-O3" CXXFLAGS="-O3" CC=clang CXX=clang++ ./autogen.sh --with-freetype --with-fontconfig --with-glib --with-cairo --with-icu --with-graphite2
@@ -299,6 +318,7 @@ workflows:
       # macOS
       - macos-10.12.6-aat-fonts
       - macos-10.13.6-aat-fonts
+      - macos-10.14.3-aat-fonts
       - macos-notest-ios
 
       # both autotools and cmake
@@ -307,6 +327,7 @@ workflows:
       # autotools based builds
       - alpine-O3-NOMMAP
       - archlinux-py3-all
+      #- void-notest
       - gcc-valgrind
       - clang-O3-O0
       - clang-everything

@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "absl/strings/match.h"
-#include "rtc_base/scoped_ref_ptr.h"
+#include "api/scoped_refptr.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_tools/frame_analyzer/video_color_aligner.h"
 #include "rtc_tools/frame_analyzer/video_geometry_aligner.h"
@@ -130,7 +130,7 @@ int main(int argc, char* argv[]) {
 
   if (!reference_video || !test_video) {
     fprintf(stderr, "Error opening video files\n");
-    return 0;
+    return 1;
   }
 
   const std::vector<size_t> matching_indices =

@@ -40,6 +40,15 @@ AndroidPowerConfig::AndroidPowerConfig(AndroidPowerConfig&&) noexcept = default;
 AndroidPowerConfig& AndroidPowerConfig::operator=(AndroidPowerConfig&&) =
     default;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+bool AndroidPowerConfig::operator==(const AndroidPowerConfig& other) const {
+  return (battery_poll_ms_ == other.battery_poll_ms_) &&
+         (battery_counters_ == other.battery_counters_) &&
+         (collect_power_rails_ == other.collect_power_rails_);
+}
+#pragma GCC diagnostic pop
+
 void AndroidPowerConfig::FromProto(
     const perfetto::protos::AndroidPowerConfig& proto) {
   static_assert(sizeof(battery_poll_ms_) == sizeof(proto.battery_poll_ms()),
@@ -56,6 +65,12 @@ void AndroidPowerConfig::FromProto(
     battery_counters_.back() =
         static_cast<decltype(battery_counters_)::value_type>(field);
   }
+
+  static_assert(
+      sizeof(collect_power_rails_) == sizeof(proto.collect_power_rails()),
+      "size mismatch");
+  collect_power_rails_ =
+      static_cast<decltype(collect_power_rails_)>(proto.collect_power_rails());
   unknown_fields_ = proto.unknown_fields();
 }
 
@@ -74,6 +89,13 @@ void AndroidPowerConfig::ToProto(
     static_assert(sizeof(it) == sizeof(proto->battery_counters(0)),
                   "size mismatch");
   }
+
+  static_assert(
+      sizeof(collect_power_rails_) == sizeof(proto->collect_power_rails()),
+      "size mismatch");
+  proto->set_collect_power_rails(
+      static_cast<decltype(proto->collect_power_rails())>(
+          collect_power_rails_));
   *(proto->mutable_unknown_fields()) = unknown_fields_;
 }
 

@@ -275,7 +275,7 @@ void ReceiveStatisticsProxy::UpdateHistograms() {
   // Aggregate content_specific_stats_ by removing experiment or simulcast
   // information;
   std::map<VideoContentType, ContentSpecificStats> aggregated_stats;
-  for (auto it : content_specific_stats_) {
+  for (const auto& it : content_specific_stats_) {
     // Calculate simulcast specific metrics (".S0" ... ".S2" suffixes).
     VideoContentType content_type = it.first;
     if (videocontenttypehelpers::GetSimulcastId(content_type) > 0) {
@@ -297,7 +297,7 @@ void ReceiveStatisticsProxy::UpdateHistograms() {
     aggregated_stats[content_type].Add(it.second);
   }
 
-  for (auto it : aggregated_stats) {
+  for (const auto& it : aggregated_stats) {
     // For the metric Foo we report the following slices:
     // WebRTC.Video.Foo,
     // WebRTC.Video.Screenshare.Foo,
@@ -582,8 +582,18 @@ VideoReceiveStream::Stats ReceiveStatisticsProxy::GetStats() const {
       static_cast<int>(total_byte_tracker_.ComputeRate() * 8);
   stats_.interframe_delay_max_ms =
       interframe_delay_max_moving_.Max(now_ms).value_or(-1);
-  stats_.timing_frame_info = timing_frame_info_counter_.Max(now_ms);
+  stats_.freeze_count = video_quality_observer_->NumFreezes();
+  stats_.pause_count = video_quality_observer_->NumPauses();
+  stats_.total_freezes_duration_ms =
+      video_quality_observer_->TotalFreezesDurationMs();
+  stats_.total_pauses_duration_ms =
+      video_quality_observer_->TotalPausesDurationMs();
+  stats_.total_frames_duration_ms =
+      video_quality_observer_->TotalFramesDurationMs();
+  stats_.sum_squared_frame_durations =
+      video_quality_observer_->SumSquaredFrameDurationsSec();
   stats_.content_type = last_content_type_;
+  stats_.timing_frame_info = timing_frame_info_counter_.Max(now_ms);
   return stats_;
 }
 

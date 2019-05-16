@@ -59,7 +59,11 @@ const char kCryptohomeInstallAttributesIsInvalid[] =
 const char kCryptohomeInstallAttributesIsFirstInstall[] =
     "InstallAttributesIsFirstInstall";
 const char kCryptohomeTpmIsAttestationPrepared[] = "TpmIsAttestationPrepared";
+const char kCryptohomeTpmAttestationGetEnrollmentPreparationsEx[] =
+    "TpmAttestationGetEnrollmentPreparationsEx";
 const char kCryptohomeTpmIsAttestationEnrolled[] = "TpmIsAttestationEnrolled";
+const char kCryptohomeTpmAttestationGetIdentityCertificatesEx[] =
+    "TpmAttestationGetIdentityCertificatesEx";
 const char kCryptohomeTpmAttestationCreateEnrollRequest[] =
     "TpmAttestationCreateEnrollRequest";
 const char kCryptohomeAsyncTpmAttestationCreateEnrollRequest[] =
@@ -133,6 +137,8 @@ const char kCryptohomeGetSupportedKeyPolicies[] = "GetSupportedKeyPolicies";
 const char kCryptohomeIsQuotaSupported[] = "IsQuotaSupported";
 const char kCryptohomeGetCurrentSpaceForUid[] = "GetCurrentSpaceForUid";
 const char kCryptohomeGetCurrentSpaceForGid[] = "GetCurrentSpaceForGid";
+const char kCryptohomeLockToSingleUserMountUntilReboot[] =
+    "LockToSingleUserMountUntilReboot";
 
 // Signals of the |kCryptohomeInterface| interface:
 const char kSignalAsyncCallStatus[] = "AsyncCallStatus";

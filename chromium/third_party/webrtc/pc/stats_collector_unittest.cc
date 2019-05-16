@@ -9,14 +9,15 @@
  */
 
 #include <stdio.h>
-#include <algorithm>
 #include <memory>
 
+#include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
 #include "absl/types/optional.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/candidate.h"
 #include "api/data_channel_interface.h"
+#include "api/scoped_refptr.h"
 #include "call/call.h"
 #include "media/base/media_channel.h"
 #include "modules/audio_processing/include/audio_processing_statistics.h"
@@ -33,7 +34,6 @@
 #include "rtc_base/net_helper.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/rtc_certificate.h"
-#include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/ssl_stream_adapter.h"
@@ -235,7 +235,7 @@ std::string DerToPem(const std::string& der) {
 
 std::vector<std::string> DersToPems(const std::vector<std::string>& ders) {
   std::vector<std::string> pems(ders.size());
-  std::transform(ders.begin(), ders.end(), pems.begin(), DerToPem);
+  absl::c_transform(ders, pems.begin(), DerToPem);
   return pems;
 }
 
@@ -1750,6 +1750,6 @@ TEST_P(StatsCollectorTrackTest, VerifyVideoReceiveSsrcStatsNew) {
             ExtractSsrcStatsValue(reports, StatsReport::kStatsValueNameQpSum));
 }
 
-INSTANTIATE_TEST_CASE_P(HasStream, StatsCollectorTrackTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(HasStream, StatsCollectorTrackTest, ::testing::Bool());
 
 }  // namespace webrtc

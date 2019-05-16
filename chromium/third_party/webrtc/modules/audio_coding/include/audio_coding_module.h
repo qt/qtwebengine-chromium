@@ -27,11 +27,11 @@
 namespace webrtc {
 
 // forward declarations
-struct WebRtcRTPHeader;
 class AudioDecoder;
 class AudioEncoder;
 class AudioFrame;
 class RTPFragmentationHeader;
+struct RTPHeader;
 
 #define WEBRTC_10MS_PCM_AUDIO 960  // 16 bits super wideband 48 kHz
 
@@ -246,7 +246,7 @@ class AudioCodingModule {
   //
   virtual int32_t IncomingPacket(const uint8_t* incoming_payload,
                                  const size_t payload_len_bytes,
-                                 const WebRtcRTPHeader& rtp_info) = 0;
+                                 const RTPHeader& rtp_header) = 0;
 
   ///////////////////////////////////////////////////////////////////////////
   // int SetMinimumPlayoutDelay()
@@ -274,6 +274,15 @@ class AudioCodingModule {
   //    0 if the maximum delay is set.
   //
   virtual int SetMaximumPlayoutDelay(int time_ms) = 0;
+
+  // Sets a base minimum for the playout delay. Base minimum delay sets lower
+  // bound minimum delay value which is set via SetMinimumPlayoutDelay.
+  //
+  // Returns true if value was successfully set, false overwise.
+  virtual bool SetBaseMinimumPlayoutDelayMs(int delay_ms) = 0;
+
+  // Returns current value of base minimum delay in milliseconds.
+  virtual int GetBaseMinimumPlayoutDelayMs() const = 0;
 
   ///////////////////////////////////////////////////////////////////////////
   // int32_t PlayoutTimestamp()

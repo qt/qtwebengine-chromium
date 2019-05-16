@@ -53,9 +53,11 @@ class VideoSendStream : public webrtc::VideoSendStream {
   using RtpPayloadStateMap = std::map<uint32_t, RtpPayloadState>;
 
   VideoSendStream(
+      Clock* clock,
       int num_cpu_cores,
       ProcessThread* module_process_thread,
       rtc::TaskQueue* worker_queue,
+      TaskQueueFactory* task_queue_factory,
       CallStats* call_stats,
       RtpTransportControllerSendInterface* transport,
       BitrateAllocatorInterface* bitrate_allocator,

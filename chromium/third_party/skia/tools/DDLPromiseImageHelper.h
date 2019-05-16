@@ -47,17 +47,13 @@ struct SkYUVAIndex;
 // all the replaying is complete. This will pin the GrBackendTextures in VRAM.
 class DDLPromiseImageHelper {
 public:
-    DDLPromiseImageHelper() { }
-    ~DDLPromiseImageHelper();
+    DDLPromiseImageHelper() = default;
+    ~DDLPromiseImageHelper() = default;
 
     // Convert the SkPicture into SkData replacing all the SkImages with an index.
     sk_sp<SkData> deflateSKP(const SkPicture* inputPicture);
 
     void uploadAllToGPU(GrContext* context);
-
-    // Change the backing store texture for half the images. (Must ensure all fulfilled images are
-    // released before calling this.).
-    void replaceEveryOtherPromiseTexture(GrContext*);
 
     // reinflate a deflated SKP, replacing all the indices with promise images.
     sk_sp<SkPicture> reinflateSKP(SkDeferredDisplayListRecorder*,

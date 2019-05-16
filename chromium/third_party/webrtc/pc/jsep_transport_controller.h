@@ -58,7 +58,7 @@ class JsepTransportController : public sigslot::has_slots<> {
     virtual bool OnTransportChanged(
         const std::string& mid,
         RtpTransportInternal* rtp_transport,
-        cricket::DtlsTransportInternal* dtls_transport,
+        rtc::scoped_refptr<DtlsTransport> dtls_transport,
         MediaTransportInterface* media_transport) = 0;
   };
 
@@ -83,10 +83,19 @@ class JsepTransportController : public sigslot::has_slots<> {
     bool active_reset_srtp_params = false;
     RtcEventLog* event_log = nullptr;
 
+    // Whether media transport is used for media.
+    bool use_media_transport_for_media = false;
+
+    // Whether media transport is used for data channels.
+    bool use_media_transport_for_data_channels = false;
+
     // Optional media transport factory (experimental). If provided it will be
-    // used to create media_transport and will be used to send / receive
-    // audio and video frames instead of RTP. Note that currently
-    // media_transport co-exists with RTP / RTCP transports and uses the same
+    // used to create media_transport (as long as either
+    // |use_media_transport_for_media| or
+    // |use_media_transport_for_data_channels| is set to true). However, whether
+    // it will be used to send / receive audio and video frames instead of RTP
+    // is determined by |use_media_transport_for_media|. Note that currently
+    // media_transport co-exists with RTP / RTCP transports and may use the same
     // underlying ICE transport.
     MediaTransportFactory* media_transport_factory = nullptr;
   };
@@ -173,10 +182,18 @@ class JsepTransportController : public sigslot::has_slots<> {
   void SetActiveResetSrtpParams(bool active_reset_srtp_params);
 
   // Allows to overwrite the settings from config. You may set or reset the
-  // media transport factory on the jsep transport controller, as long as you
-  // did not call 'GetMediaTransport' or 'MaybeCreateJsepTransport'. Once Jsep
-  // transport is created, you can't change this setting.
-  void SetMediaTransportFactory(MediaTransportFactory* media_transport_factory);
+  // media transport configuration on the jsep transport controller, as long as
+  // you did not call 'GetMediaTransport' or 'MaybeCreateJsepTransport'. Once
+  // Jsep transport is created, you can't change this setting.
+  void SetMediaTransportSettings(bool use_media_transport_for_media,
+                                 bool use_media_transport_for_data_channels);
+
+  // If media transport is present enabled and supported,
+  // when this method is called, it creates a media transport and generates its
+  // offer. The new offer is then returned, and the created media transport will
+  // subsequently be used.
+  absl::optional<cricket::SessionDescription::MediaTransportSetting>
+  GenerateOrGetLastMediaTransportOffer();
 
   // All of these signals are fired on the signaling thread.
 
@@ -273,16 +290,20 @@ class JsepTransportController : public sigslot::has_slots<> {
   // Transport is created either during SetLocalDescription (|local| == true) or
   // during SetRemoteDescription (|local| == false). Passing |local| helps to
   // differentiate initiator (caller) from answerer (callee).
-  RTCError MaybeCreateJsepTransport(bool local,
-                                    const cricket::ContentInfo& content_info);
+  RTCError MaybeCreateJsepTransport(
+      bool local,
+      const cricket::ContentInfo& content_info,
+      const cricket::SessionDescription& description);
 
-  // Creates media transport if config wants to use it, and pre-shared key is
-  // provided in content info. It modifies the config to disable media transport
-  // if pre-shared key is not provided.
+  // Creates media transport if config wants to use it, and a=x-mt line is
+  // present for the current media transport. Returned MediaTransportInterface
+  // is not connected, and must be connected to ICE. You must call
+  // |GenerateOrGetLastMediaTransportOffer| on the caller before calling
+  // MaybeCreateMediaTransport.
   std::unique_ptr<webrtc::MediaTransportInterface> MaybeCreateMediaTransport(
       const cricket::ContentInfo& content_info,
-      bool local,
-      cricket::IceTransportInternal* ice_transport);
+      const cricket::SessionDescription& description,
+      bool local);
   void MaybeDestroyJsepTransport(const std::string& mid);
   void DestroyAllJsepTransports_n();
 
@@ -358,6 +379,41 @@ class JsepTransportController : public sigslot::has_slots<> {
   cricket::IceGatheringState ice_gathering_state_ = cricket::kIceGatheringNew;
 
   Config config_;
+  // Determines if Config::media_transport_factory should be used
+  // to create a media transport. (when falling back to RTP this may be false).
+  // This is a prerequisite, but is not sufficient to create media transport
+  // (the factory needs to be provided in the config, and config must allow for
+  // media transport).
+  bool is_media_transport_factory_enabled_ = true;
+
+  // Early on in the call we don't know if media transport is going to be used,
+  // but we need to get the server-supported parameters to add to an SDP.
+  // This server media transport will be promoted to the used media transport
+  // after the local description is set, and the ownership will be transferred
+  // to the actual JsepTransport.
+  // This "offer" media transport is not created if it's done on the party that
+  // provides answer. This offer media transport is only created once at the
+  // beginning of the connection, and never again.
+  std::unique_ptr<MediaTransportInterface> offer_media_transport_ = nullptr;
+
+  // Contains the offer of the |offer_media_transport_|, in case if it needs to
+  // be repeated.
+  absl::optional<cricket::SessionDescription::MediaTransportSetting>
+      media_transport_offer_settings_;
+
+  // When the new offer is regenerated (due to upgrade), we don't want to
+  // re-create media transport. New streams might be created; but media
+  // transport stays the same. This flag prevents re-creation of the transport
+  // on the offerer.
+  // The first media transport is created in jsep transport controller as the
+  // |offer_media_transport_|, and then the ownership is moved to the
+  // appropriate JsepTransport, at which point |offer_media_transport_| is
+  // zeroed out. On the callee (answerer), the first media transport is not even
+  // assigned to |offer_media_transport_|. Both offerer and answerer can
+  // recreate the Offer (e.g. after adding streams in Plan B), and so we want to
+  // prevent recreation of the media transport when that happens.
+  bool media_transport_created_once_ = false;
+
   const cricket::SessionDescription* local_desc_ = nullptr;
   const cricket::SessionDescription* remote_desc_ = nullptr;
   absl::optional<bool> initial_offerer_;

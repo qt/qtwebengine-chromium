@@ -17,7 +17,7 @@
 #include "Pipeline/ShaderCore.hpp"
 #include "Reactor/Reactor.hpp"
 #include "System/Memory.hpp"
-#include "System/Debug.hpp"
+#include "Vulkan/VkDebug.hpp"
 
 namespace sw
 {
@@ -1625,7 +1625,7 @@ namespace sw
 			}
 		}
 
-		return function(L"BlitRoutine");
+		return function("BlitRoutine");
 	}
 
 	bool Blitter::blitReactor(Surface *source, const SliceRectF &sourceRect, Surface *dest, const SliceRect &destRect, const Blitter::Options &options)

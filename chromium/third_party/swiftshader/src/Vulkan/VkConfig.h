@@ -37,7 +37,10 @@ enum
 
 enum
 {
-	REQUIRED_MEMORY_ALIGNMENT = 8, // For 64 bit formats on ARM64
+	REQUIRED_MEMORY_ALIGNMENT = 16, // ARM64 will want 8 bytes for 64b formats; x86 wants 16 bytes for 128b formats
+	MIN_TEXEL_BUFFER_OFFSET_ALIGNMENT = 256,
+	MIN_UNIFORM_BUFFER_OFFSET_ALIGNMENT = 256,
+	MIN_STORAGE_BUFFER_OFFSET_ALIGNMENT = 256,
 	MEMORY_TYPE_GENERIC_BIT = 0x1, // Generic system memory.
 };
 
@@ -52,7 +55,13 @@ enum
 
 enum
 {
+	MAX_BOUND_DESCRIPTOR_SETS = 4,
 	MAX_VERTEX_INPUT_BINDINGS = 16,
+};
+
+enum
+{
+	MAX_POINT_SIZE = 1,		// Large points are not supported. If/when we turn this on, must be >= 64.
 };
 
 }

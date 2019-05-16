@@ -8,8 +8,8 @@
 #ifndef GrProcessor_DEFINED
 #define GrProcessor_DEFINED
 
-#include "GrBuffer.h"
 #include "GrColor.h"
+#include "GrGpuBuffer.h"
 #include "GrProcessorUnitTest.h"
 #include "GrSamplerState.h"
 #include "GrShaderVar.h"
@@ -120,6 +120,7 @@ public:
         kGrMatrixConvolutionEffect_ClassID,
         kGrMeshTestProcessor_ClassID,
         kGrMorphologyEffect_ClassID,
+        kGrMixerEffect_ClassID,
         kGrOverdrawFragmentProcessor_ClassID,
         kGrPathProcessor_ClassID,
         kGrPerlinNoise2Effect_ClassID,

@@ -257,6 +257,7 @@ typedef struct {
 
   int count_mb_ref_frame_usage[MAX_REF_FRAMES];
 
+  int last_q[2];
 } LAYER_CONTEXT;
 
 typedef struct VP8_COMP {
@@ -510,6 +511,7 @@ typedef struct VP8_COMP {
 
   int force_maxqp;
   int frames_since_last_drop_overshoot;
+  int last_pred_err_mb;
 
   // GF update for 1 pass cbr.
   int gf_update_onepass_cbr;

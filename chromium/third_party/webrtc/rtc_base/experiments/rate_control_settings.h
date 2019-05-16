@@ -13,6 +13,8 @@
 
 #include "absl/types/optional.h"
 #include "api/transport/webrtc_key_value_config.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder_config.h"
 #include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/experiments/field_trial_units.h"
 
@@ -39,16 +41,24 @@ class RateControlSettings final {
   bool UseAlrProbing() const;
 
   bool LibvpxVp8TrustedRateController() const;
+  bool Vp8BoostBaseLayerQuality() const;
   bool LibvpxVp9TrustedRateController() const;
 
-  double GetSimulcastVideoHysteresisFactor() const;
-  double GetSimulcastScreenshareHysteresisFactor() const;
+  // TODO(bugs.webrtc.org/10272): Remove one of these when we have merged
+  // VideoCodecMode and VideoEncoderConfig::ContentType.
+  double GetSimulcastHysteresisFactor(VideoCodecMode mode) const;
+  double GetSimulcastHysteresisFactor(
+      VideoEncoderConfig::ContentType content_type) const;
 
+  bool TriggerProbeOnMaxAllocatedBitrateChange() const;
   bool UseEncoderBitrateAdjuster() const;
 
  private:
   explicit RateControlSettings(
       const WebRtcKeyValueConfig* const key_value_config);
+
+  double GetSimulcastVideoHysteresisFactor() const;
+  double GetSimulcastScreenshareHysteresisFactor() const;
 
   FieldTrialOptional<int> congestion_window_;
   FieldTrialOptional<int> congestion_window_pushback_;
@@ -58,7 +68,9 @@ class RateControlSettings final {
   FieldTrialParameter<bool> trust_vp9_;
   FieldTrialParameter<double> video_hysteresis_;
   FieldTrialParameter<double> screenshare_hysteresis_;
+  FieldTrialParameter<bool> probe_max_allocation_;
   FieldTrialParameter<bool> bitrate_adjuster_;
+  FieldTrialParameter<bool> vp8_s0_boost_;
 };
 
 }  // namespace webrtc

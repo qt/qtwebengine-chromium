@@ -28,7 +28,7 @@ class ADMWrapper : public AudioDeviceModule, public AudioTransport {
     auto res = impl_->RegisterAudioCallback(this);
     is_valid_ = (impl_.get() != nullptr) && (res == 0);
   }
-  virtual ~ADMWrapper() {
+  ~ADMWrapper() override {
     audio_transport_ = nullptr;
     observer_ = nullptr;
   }
@@ -289,13 +289,4 @@ rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceWithDataObserver(
 
   return audio_device;
 }
-
-// TODO(bugs.webrtc.org/7306): deprecated.
-rtc::scoped_refptr<AudioDeviceModule> CreateAudioDeviceWithDataObserver(
-    const int32_t id,
-    const AudioDeviceModule::AudioLayer audio_layer,
-    AudioDeviceDataObserver* observer) {
-  return CreateAudioDeviceWithDataObserver(audio_layer, observer);
-}
-
 }  // namespace webrtc

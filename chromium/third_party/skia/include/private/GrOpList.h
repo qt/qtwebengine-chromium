@@ -18,6 +18,7 @@ class GrAuditTrail;
 class GrCaps;
 class GrOpFlushState;
 class GrOpMemoryPool;
+class GrRecordingContext;
 class GrRenderTargetOpList;
 class GrResourceAllocator;
 class GrResourceProvider;
@@ -39,7 +40,7 @@ public:
     void prepare(GrOpFlushState* flushState);
     bool execute(GrOpFlushState* flushState) { return this->onExecute(flushState); }
 
-    virtual bool copySurface(GrContext*,
+    virtual bool copySurface(GrRecordingContext*,
                              GrSurfaceProxy* dst,
                              GrSurfaceProxy* src,
                              const SkIRect& srcRect,
@@ -114,8 +115,8 @@ private:
 
     void addDependency(GrOpList* dependedOn);
     void addDependent(GrOpList* dependent);
-    SkDEBUGCODE(bool isDependedent(const GrOpList* dependent) const);
-    SkDEBUGCODE(void validate() const);
+    SkDEBUGCODE(bool isDependedent(const GrOpList* dependent) const;)
+    SkDEBUGCODE(void validate() const;)
     void closeThoseWhoDependOnMe(const GrCaps&);
 
     // Remove all Ops which reference proxies that are not instantiated.

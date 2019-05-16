@@ -92,13 +92,17 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
   // Incoming packet from network parsed and ready for decode.
   int IncomingPacket(const uint8_t* incoming_payload,
                      const size_t payload_length,
-                     const WebRtcRTPHeader& rtp_info) override;
+                     const RTPHeader& rtp_info) override;
 
   // Minimum playout delay.
   int SetMinimumPlayoutDelay(int time_ms) override;
 
   // Maximum playout delay.
   int SetMaximumPlayoutDelay(int time_ms) override;
+
+  bool SetBaseMinimumPlayoutDelayMs(int delay_ms) override;
+
+  int GetBaseMinimumPlayoutDelayMs() const override;
 
   absl::optional<uint32_t> PlayoutTimestamp() override;
 
@@ -473,7 +477,9 @@ int AudioCodingModuleImpl::Add10MsDataInternal(const AudioFrame& audio_frame,
     return -1;
   }
 
-  if (audio_frame.num_channels_ != 1 && audio_frame.num_channels_ != 2) {
+  if (audio_frame.num_channels_ != 1 && audio_frame.num_channels_ != 2 &&
+      audio_frame.num_channels_ != 4 && audio_frame.num_channels_ != 6 &&
+      audio_frame.num_channels_ != 8) {
     RTC_LOG(LS_ERROR) << "Cannot Add 10 ms audio, invalid number of channels.";
     return -1;
   }
@@ -648,9 +654,6 @@ int AudioCodingModuleImpl::InitializeReceiverSafe() {
   // start-up.
   if (receiver_initialized_)
     receiver_.RemoveAllCodecs();
-  receiver_.ResetInitialDelay();
-  receiver_.SetMinimumDelay(0);
-  receiver_.SetMaximumDelay(0);
   receiver_.FlushBuffers();
 
   receiver_initialized_ = true;
@@ -684,7 +687,7 @@ absl::optional<std::pair<int, SdpAudioFormat>>
 // Incoming packet from network parsed and ready for decode.
 int AudioCodingModuleImpl::IncomingPacket(const uint8_t* incoming_payload,
                                           const size_t payload_length,
-                                          const WebRtcRTPHeader& rtp_header) {
+                                          const RTPHeader& rtp_header) {
   RTC_DCHECK_EQ(payload_length == 0, incoming_payload == nullptr);
   return receiver_.InsertPacket(
       rtp_header,
@@ -706,6 +709,15 @@ int AudioCodingModuleImpl::SetMaximumPlayoutDelay(int time_ms) {
     return -1;
   }
   return receiver_.SetMaximumDelay(time_ms);
+}
+
+bool AudioCodingModuleImpl::SetBaseMinimumPlayoutDelayMs(int delay_ms) {
+  // All necessary validation happens on NetEq level.
+  return receiver_.SetBaseMinimumDelayMs(delay_ms);
+}
+
+int AudioCodingModuleImpl::GetBaseMinimumPlayoutDelayMs() const {
+  return receiver_.GetBaseMinimumDelayMs();
 }
 
 // Get 10 milliseconds of raw audio data to play out.

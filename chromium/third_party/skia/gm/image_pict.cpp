@@ -156,11 +156,11 @@ public:
             surface->getCanvas()->translate(-100, -100);
             surface->getCanvas()->drawPicture(pic);
             sk_sp<SkImage> image(surface->makeImageSnapshot());
-            fProxy = as_IB(image)->asTextureProxyRef();
+            fProxy = as_IB(image)->asTextureProxyRef(fCtx.get());
         }
     }
 protected:
-    sk_sp<GrTextureProxy> onGenerateTexture(GrContext* ctx, const SkImageInfo& info,
+    sk_sp<GrTextureProxy> onGenerateTexture(GrRecordingContext* ctx, const SkImageInfo& info,
                                             const SkIPoint& origin,
                                             bool willBeMipped) override {
         SkASSERT(ctx);
@@ -183,7 +183,7 @@ protected:
 
         GrMipMapped mipMapped = willBeMipped ? GrMipMapped::kYes : GrMipMapped::kNo;
 
-        sk_sp<GrSurfaceContext> dstContext(fCtx->contextPriv().makeDeferredSurfaceContext(
+        sk_sp<GrSurfaceContext> dstContext(fCtx->priv().makeDeferredSurfaceContext(
                 fProxy->backendFormat(), desc, fProxy->origin(), mipMapped, SkBackingFit::kExact,
                 SkBudgeted::kYes));
         if (!dstContext) {
