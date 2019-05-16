@@ -87,8 +87,8 @@ class SharedWorkerConnectListener final
   }
 
   void ScriptLoadFailed() override {
-    worker_->DispatchEvent(Event::CreateCancelable(EventTypeNames::error));
     worker_->SetIsBeingConnected(false);
+    worker_->DispatchEvent(Event::CreateCancelable(EventTypeNames::error));
   }
 
   void Connected() override { worker_->SetIsBeingConnected(false); }
