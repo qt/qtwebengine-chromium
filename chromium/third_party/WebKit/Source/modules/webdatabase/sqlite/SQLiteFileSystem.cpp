@@ -39,9 +39,28 @@
 // platform-specific files SQLiteFileSystemChromium{Win|Posix}.cpp
 namespace blink {
 
-SQLiteFileSystem::SQLiteFileSystem() {}
+#if DCHECK_IS_ON()
+// static
+bool SQLiteFileSystem::initialize_sqlite_called_ = false;
+#endif  // DCHECK_IS_ON
 
+// static
+void SQLiteFileSystem::initializeSQLite() {
+#if DCHECK_IS_ON()
+  DCHECK(!initialize_sqlite_called_) << __func__ << " already called";
+  initialize_sqlite_called_ = true;
+#endif  // DCHECK_IS_ON()
+
+  sqlite3_initialize();
+  registerSQLiteVFS();
+}
+
+// static
 int SQLiteFileSystem::openDatabase(const String& filename, sqlite3** database) {
+#if DCHECK_IS_ON()
+  DCHECK(initialize_sqlite_called_)
+      << "InitializeSQLite() must be called before " << __func__;
+#endif  // DCHECK_IS_ON()
   SafePointScope scope(BlinkGC::HeapPointersOnStack);
   return sqlite3_open_v2(filename.utf8().data(), database,
                          SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,

@@ -148,16 +148,16 @@ int chromiumSleep(sqlite3_vfs* vfs, int microseconds) {
   return wrappedVfs->xSleep(wrappedVfs, microseconds);
 }
 
-int chromiumCurrentTime(sqlite3_vfs* vfs, double* prNow) {
-  sqlite3_vfs* wrappedVfs = static_cast<sqlite3_vfs*>(vfs->pAppData);
-  return wrappedVfs->xCurrentTime(wrappedVfs, prNow);
-}
-
 int chromiumGetLastError(sqlite3_vfs* vfs, int e, char* s) {
   // xGetLastError() has never been used by SQLite.  The implementation in
   // os_win.c indicates this is a reasonable implementation.
   *s = '\0';
   return 0;
+}
+
+int chromiumCurrentTimeInt64(sqlite3_vfs* vfs, sqlite3_int64* now) {
+  sqlite3_vfs* wrapped_vfs = static_cast<sqlite3_vfs*>(vfs->pAppData);
+  return wrapped_vfs->xCurrentTimeInt64(wrapped_vfs, now);
 }
 
 }  // namespace
@@ -169,9 +169,9 @@ void SQLiteFileSystem::registerSQLiteVFS() {
   // TODO(shess): Implement local versions.
   ASSERT(wrappedVfs->xRandomness);
   ASSERT(wrappedVfs->xSleep);
-  ASSERT(wrappedVfs->xCurrentTime);
+  ASSERT(wrappedVfs->xCurrentTimeInt64);
 
-  static sqlite3_vfs chromium_vfs = {1,
+  static sqlite3_vfs chromium_vfs = {2,
                                      wrappedVfs->szOsFile,
                                      wrappedVfs->mxPathname,
                                      0,
@@ -187,8 +187,9 @@ void SQLiteFileSystem::registerSQLiteVFS() {
                                      chromiumDlClose,
                                      chromiumRandomness,
                                      chromiumSleep,
-                                     chromiumCurrentTime,
-                                     chromiumGetLastError};
+                                     nullptr,  // CurrentTime is deprecated.
+                                     chromiumGetLastError,
+                                     chromiumCurrentTimeInt64};
   sqlite3_vfs_register(&chromium_vfs, 0);
 }
 
