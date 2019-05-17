@@ -34,9 +34,9 @@ bool g_support_renderer_switching;
 
 }  // namespace
 
-static CGLPixelFormatObj GetPixelFormat() {
+static CGLPixelFormatObj GetPixelFormat(const int core_profile = 0) {
   static CGLPixelFormatObj format;
-  if (format)
+  if (format && core_profile == 0)
     return format;
   std::vector<CGLPixelFormatAttribute> attribs;
   // If the system supports dual gpus then allow offline renderers for every
@@ -52,7 +52,7 @@ static CGLPixelFormatObj GetPixelFormat() {
   }
   if (GetGLImplementation() == kGLImplementationDesktopGLCoreProfile) {
     attribs.push_back(kCGLPFAOpenGLProfile);
-    attribs.push_back((CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core);
+    attribs.push_back((CGLPixelFormatAttribute)core_profile);
   }
 
   attribs.push_back((CGLPixelFormatAttribute) 0);
@@ -72,8 +72,9 @@ static CGLPixelFormatObj GetPixelFormat() {
   return format;
 }
 
-GLContextCGL::GLContextCGL(GLShareGroup* share_group)
-    : GLContextReal(share_group) {}
+GLContextCGL::GLContextCGL(GLShareGroup* share_group, int core_profile_number)
+    : GLContextReal(share_group)
+    , core_profile_number_(core_profile_number) {}
 
 bool GLContextCGL::Initialize(GLSurface* compatible_surface,
                               const GLContextAttribs& attribs) {
@@ -90,7 +91,7 @@ bool GLContextCGL::Initialize(GLSurface* compatible_surface,
   GLContextCGL* share_context = share_group() ?
       static_cast<GLContextCGL*>(share_group()->GetContext()) : nullptr;
 
-  CGLPixelFormatObj format = GetPixelFormat();
+  CGLPixelFormatObj format = GetPixelFormat(core_profile_number_);
   if (!format)
     return false;
 
