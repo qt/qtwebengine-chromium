@@ -21,7 +21,7 @@ class GLSurface;
 // Encapsulates a CGL OpenGL context.
 class GL_EXPORT GLContextCGL : public GLContextReal {
  public:
-  explicit GLContextCGL(GLShareGroup* share_group);
+  explicit GLContextCGL(GLShareGroup* share_group, int core_profile_number = 0);
 
   // Implement GLContext.
   bool Initialize(GLSurface* compatible_surface,
@@ -55,6 +55,8 @@ class GL_EXPORT GLContextCGL : public GLContextReal {
 
   // Debugging for https://crbug.com/863817
   bool has_switched_gpus_ = false;
+
+  int core_profile_number_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextCGL);
 };
