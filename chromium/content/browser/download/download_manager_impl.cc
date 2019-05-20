@@ -362,7 +362,10 @@ download::DownloadItemImpl* DownloadManagerImpl::CreateActiveItem(
     uint32_t id,
     const download::DownloadCreateInfo& info) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(!base::ContainsKey(downloads_, id));
+
+  if (base::ContainsKey(downloads_, id))
+    return nullptr;
+
   download::DownloadItemImpl* download =
       item_factory_->CreateActiveItem(this, id, info);
 
@@ -628,11 +631,13 @@ void DownloadManagerImpl::CreateNewDownloadItemToStart(
   download::DownloadItemImpl* download = CreateActiveItem(id, *info);
   std::move(callback).Run(std::move(info), download,
                           should_persist_new_download_);
-  // For new downloads, we notify here, rather than earlier, so that
-  // the download_file is bound to download and all the usual
-  // setters (e.g. Cancel) work.
-  for (auto& observer : observers_)
-    observer.OnDownloadCreated(this, download);
+  if (download) {
+      // For new downloads, we notify here, rather than earlier, so that
+      // the download_file is bound to download and all the usual
+      // setters (e.g. Cancel) work.
+      for (auto& observer : observers_)
+          observer.OnDownloadCreated(this, download);
+  }
   OnDownloadStarted(download, on_started);
 }
 
