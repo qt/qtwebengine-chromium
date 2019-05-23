@@ -91,7 +91,7 @@ void Generate_StackOverflowCheck(MacroAssembler* masm, Register num_args,
   // Add the size of the arguments.
   static_assert(kSystemPointerSize == 4,
                 "The next instruction assumes kSystemPointerSize == 4");
-  __ lea(scratch, Operand(scratch, num_args, times_system_pointer_size, 0));
+  __ lea(scratch, Operand(scratch, num_args, times_4, 0));
   if (include_receiver) {
     __ add(scratch, Immediate(kSystemPointerSize));
   }
