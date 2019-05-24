@@ -5,19 +5,24 @@
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/platform/web_keyboard_event.h"
 #include "third_party/blink/renderer/core/exported/web_remote_frame_impl.h"
 #include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
+#include "ui/events/keycodes/dom/dom_key.h"
 
 namespace blink {
 
 class SpatialNavigationTest : public RenderingTest {
  public:
   SpatialNavigationTest()
-      : RenderingTest(SingleChildLocalFrameClient::Create()) {}
+      : RenderingTest(MakeGarbageCollected<SingleChildLocalFrameClient>()) {}
 
   LayoutRect TopOfVisualViewport() {
     LayoutRect visual_viewport = RootViewport(&GetFrame());
@@ -193,7 +198,7 @@ TEST_F(SpatialNavigationTest, StartAtVisibleFocusedElement) {
 
   EXPECT_EQ(SearchOrigin(RootViewport(&GetFrame()), b,
                          SpatialNavigationDirection::kDown),
-            NodeRectInRootFrame(b, true));
+            NodeRectInRootFrame(b));
 }
 
 TEST_F(SpatialNavigationTest, StartAtVisibleFocusedScroller) {
@@ -215,7 +220,7 @@ TEST_F(SpatialNavigationTest, StartAtVisibleFocusedScroller) {
   Element* scroller = GetDocument().getElementById("scroller");
   EXPECT_EQ(SearchOrigin(RootViewport(&GetFrame()), scroller,
                          SpatialNavigationDirection::kDown),
-            NodeRectInRootFrame(scroller, true));
+            NodeRectInRootFrame(scroller));
 }
 
 TEST_F(SpatialNavigationTest, StartAtVisibleFocusedIframe) {
@@ -236,7 +241,7 @@ TEST_F(SpatialNavigationTest, StartAtVisibleFocusedIframe) {
   Element* iframe = GetDocument().getElementById("iframe");
   EXPECT_EQ(SearchOrigin(RootViewport(&GetFrame()), iframe,
                          SpatialNavigationDirection::kDown),
-            NodeRectInRootFrame(iframe, true));
+            NodeRectInRootFrame(iframe));
 }
 
 TEST_F(SpatialNavigationTest, StartAtTopWhenGoingDownwardsWithoutFocus) {
@@ -312,7 +317,7 @@ TEST_F(SpatialNavigationTest, StartAtContainersEdge) {
 
   Element* b = GetDocument().getElementById("b");
   const Element* container = GetDocument().getElementById("container");
-  const LayoutRect container_box = NodeRectInRootFrame(container, true);
+  const LayoutRect container_box = NodeRectInRootFrame(container);
 
   // TODO(crbug.com/889840):
   // VisibleBoundsInVisualViewport does not (yet) take div-clipping into
@@ -428,7 +433,7 @@ TEST_F(SpatialNavigationTest, PartiallyVisible) {
 
   EXPECT_FALSE(IsOffscreen(b));  // <button> is not completely offscreen.
 
-  LayoutRect button_in_root_frame = NodeRectInRootFrame(b, true);
+  LayoutRect button_in_root_frame = NodeRectInRootFrame(b);
 
   EXPECT_EQ(SearchOrigin(RootViewport(&GetFrame()), b,
                          SpatialNavigationDirection::kUp),
@@ -437,7 +442,7 @@ TEST_F(SpatialNavigationTest, PartiallyVisible) {
   // Do some scrolling.
   ScrollableArea* root_scroller = GetDocument().View()->GetScrollableArea();
   root_scroller->SetScrollOffset(ScrollOffset(0, 600), kProgrammaticScroll);
-  LayoutRect button_after_scroll = NodeRectInRootFrame(b, true);
+  LayoutRect button_after_scroll = NodeRectInRootFrame(b);
   ASSERT_NE(button_in_root_frame,
             button_after_scroll);  // As we scrolled, the
                                    // <button>'s position in
@@ -554,7 +559,7 @@ TEST_F(SpatialNavigationTest, PartiallyVisibleIFrame) {
   EXPECT_TRUE(IsOffscreen(child_element));         // Completely offscreen.
   EXPECT_FALSE(IsOffscreen(enclosing_container));  // Partially visible.
 
-  LayoutRect iframe = NodeRectInRootFrame(enclosing_container, true);
+  LayoutRect iframe = NodeRectInRootFrame(enclosing_container);
 
   // When searching downwards we start at activeElement's
   // container's (here: the iframe's) topmost visible edge.
@@ -651,6 +656,56 @@ TEST_F(SpatialNavigationTest, HasRemoteFrame) {
   webview->MainFrameImpl()->FirstChild()->Swap(
       frame_test_helpers::CreateRemote());
   EXPECT_TRUE(HasRemoteFrame(iframe));
+}
+
+class SpatialNavigationWithFocuslessModeTest
+    : public SpatialNavigationTest,
+      public ::testing::WithParamInterface<bool> {
+ public:
+  SpatialNavigationWithFocuslessModeTest() : use_focusless_mode_(GetParam()) {}
+
+  void SetUp() override {
+    SpatialNavigationTest::SetUp();
+    GetDocument().GetSettings()->SetSpatialNavigationEnabled(true);
+  }
+
+ private:
+  ScopedFocuslessSpatialNavigationForTest use_focusless_mode_;
+};
+
+INSTANTIATE_TEST_SUITE_P(,
+                         SpatialNavigationWithFocuslessModeTest,
+                         ::testing::Bool());
+
+TEST_P(SpatialNavigationWithFocuslessModeTest, PressEnterKeyActiveElement) {
+  SetBodyInnerHTML("<button id='b'>hello</button>");
+
+  Element* b = GetDocument().getElementById("b");
+
+  // Move interest to button.
+  WebKeyboardEvent arrow_down{WebInputEvent::kRawKeyDown,
+                              WebInputEvent::kNoModifiers,
+                              WebInputEvent::GetStaticTimeStampForTests()};
+  arrow_down.dom_key = ui::DomKey::ARROW_DOWN;
+  GetDocument().GetFrame()->GetEventHandler().KeyEvent(arrow_down);
+
+  arrow_down.SetType(WebInputEvent::kKeyUp);
+  GetDocument().GetFrame()->GetEventHandler().KeyEvent(arrow_down);
+
+  EXPECT_FALSE(b->IsActive());
+
+  // Enter key down add :active state to element.
+  WebKeyboardEvent enter{WebInputEvent::kRawKeyDown,
+                         WebInputEvent::kNoModifiers,
+                         WebInputEvent::GetStaticTimeStampForTests()};
+  enter.dom_key = ui::DomKey::ENTER;
+  GetDocument().GetFrame()->GetEventHandler().KeyEvent(enter);
+  EXPECT_TRUE(b->IsActive());
+
+  // Enter key up remove :active state to element.
+  enter.SetType(WebInputEvent::kKeyUp);
+  GetDocument().GetFrame()->GetEventHandler().KeyEvent(enter);
+  EXPECT_FALSE(b->IsActive());
 }
 
 }  // namespace blink

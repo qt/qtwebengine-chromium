@@ -78,14 +78,11 @@ static CompositorElementId NewElementId() {
   return CompositorElementIdFromUniqueObjectId(NewUniqueObjectId());
 }
 
-std::unique_ptr<LinkHighlightImpl> LinkHighlightImpl::Create(Node* node) {
-  return base::WrapUnique(new LinkHighlightImpl(node));
-}
-
 LinkHighlightImpl::LinkHighlightImpl(Node* node)
     : node_(node),
       current_graphics_layer_(nullptr),
       is_scrolling_graphics_layer_(false),
+      offset_from_transform_node_(FloatPoint()),
       geometry_needs_update_(false),
       is_animating_(false),
       start_time_(CurrentTimeTicks()),
@@ -106,16 +103,11 @@ LinkHighlightImpl::LinkHighlightImpl(Node* node)
   geometry_needs_update_ = true;
 
   EffectPaintPropertyNode::State state;
-  // In theory this value doesn't matter because the actual opacity during
-  // composited animation is controlled by cc. However, this value could prevent
-  // potential glitches at the end of the animation when opacity should be 0.
-  // For web tests we don't fade out.
-  // TODO(crbug.com/935770): Investigate the root cause that seems a timing
-  // issue at the end of a composited animation in BlinkGenPropertyTree mode.
-  state.opacity = WebTestSupport::IsRunningWebTest() ? kStartOpacity : 0;
+  state.opacity = kStartOpacity;
   state.local_transform_space = &TransformPaintPropertyNode::Root();
   state.compositor_element_id = element_id_;
   state.direct_compositing_reasons = CompositingReason::kActiveOpacityAnimation;
+  state.has_active_opacity_animation = true;
   effect_ = EffectPaintPropertyNode::Create(EffectPaintPropertyNode::Root(),
                                             std::move(state));
 #if DCHECK_IS_ON()
@@ -290,9 +282,9 @@ bool LinkHighlightImpl::ComputeHighlightLayerPathAndPosition(
   layer->SetPosition(bounding_rect.Location());
 
   if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
-    FloatPoint offset(current_graphics_layer_->GetOffsetFromTransformNode());
-    offset.MoveBy(bounding_rect.Location());
-    layer->SetOffsetToTransformParent(gfx::Vector2dF(offset.X(), offset.Y()));
+    offset_from_transform_node_ =
+        FloatPoint(current_graphics_layer_->GetOffsetFromTransformNode());
+    offset_from_transform_node_.MoveBy(bounding_rect.Location());
     SetPaintArtifactCompositorNeedsUpdate();
   }
 
@@ -347,8 +339,7 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
   constexpr auto kFadeDuration = TimeDelta::FromMilliseconds(100);
   constexpr auto kMinPreFadeDuration = TimeDelta::FromMilliseconds(100);
 
-  std::unique_ptr<CompositorFloatAnimationCurve> curve =
-      CompositorFloatAnimationCurve::Create();
+  auto curve = std::make_unique<CompositorFloatAnimationCurve>();
 
   const auto& timing_function = *CubicBezierTimingFunction::Preset(
       CubicBezierTimingFunction::EaseType::EASE);
@@ -368,9 +359,8 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
       (kFadeDuration + extra_duration_required).InSecondsF(),
       WebTestSupport::IsRunningWebTest() ? kStartOpacity : 0, timing_function));
 
-  std::unique_ptr<CompositorKeyframeModel> keyframe_model =
-      CompositorKeyframeModel::Create(
-          *curve, compositor_target_property::OPACITY, 0, 0);
+  auto keyframe_model = std::make_unique<CompositorKeyframeModel>(
+      *curve, compositor_target_property::OPACITY, 0, 0);
 
   compositor_animation_->AddKeyframeModel(std::move(keyframe_model));
 
@@ -507,14 +497,11 @@ void LinkHighlightImpl::Paint(GraphicsContext& context) {
       layer->SetBounds(gfx::Size(EnclosingIntRect(bounding_rect).Size()));
       layer->SetNeedsDisplay();
     }
-    // Always set offset because it is excluded from the above equality check.
-    layer->SetOffsetToTransformParent(
-        gfx::Vector2dF(bounding_rect.X(), bounding_rect.Y()));
 
     auto property_tree_state = fragment->LocalBorderBoxProperties();
     property_tree_state.SetEffect(Effect());
     RecordForeignLayer(context, DisplayItem::kForeignLayerLinkHighlight, layer,
-                       property_tree_state);
+                       bounding_rect.Location(), property_tree_state);
   }
 
   if (index < fragments_.size()) {

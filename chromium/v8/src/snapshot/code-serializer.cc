@@ -245,7 +245,7 @@ void CreateInterpreterDataForDeserializedCode(Isolate* isolate,
 
     Handle<InterpreterData> interpreter_data =
         Handle<InterpreterData>::cast(isolate->factory()->NewStruct(
-            INTERPRETER_DATA_TYPE, TENURED));
+            INTERPRETER_DATA_TYPE, AllocationType::kOld));
 
     interpreter_data->set_bytecode_array(info->GetBytecodeArray());
     interpreter_data->set_interpreter_trampoline(*code);

@@ -29,6 +29,10 @@
 #include "components/metrics/system_memory_stats_recorder.h"
 #endif
 
+#if defined(OS_ANDROID)
+#include "base/android/application_status_listener.h"
+#endif
+
 namespace metrics {
 
 namespace {
@@ -322,8 +326,15 @@ void StabilityMetricsHelper::IncrementLongPrefsValue(const char* path) {
   local_state_->SetInt64(path, value + 1);
 }
 
-void StabilityMetricsHelper::LogRendererHang(RendererHangCause hang_cause) {
-  UMA_HISTOGRAM_ENUMERATION("ChildProcess.HungRendererCause", hang_cause);
+void StabilityMetricsHelper::LogRendererHang() {
+#if defined(OS_ANDROID)
+  base::android::ApplicationState app_state =
+      base::android::ApplicationStatusListener::GetState();
+  bool is_foreground =
+      app_state == base::android::APPLICATION_STATE_HAS_RUNNING_ACTIVITIES ||
+      app_state == base::android::APPLICATION_STATE_HAS_PAUSED_ACTIVITIES;
+  UMA_HISTOGRAM_BOOLEAN("ChildProcess.HungRendererInForeground", is_foreground);
+#endif
   IncrementPrefValue(prefs::kStabilityRendererHangCount);
 }
 
