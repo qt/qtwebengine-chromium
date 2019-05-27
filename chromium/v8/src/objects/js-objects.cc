@@ -3792,6 +3792,11 @@ void JSObject::ApplyAttributesToDictionary(
   }
 }
 
+template
+void JSObject::ApplyAttributesToDictionary<v8::internal::NumberDictionary>(
+    Isolate* isolate, ReadOnlyRoots roots, Handle<v8::internal::NumberDictionary> dictionary,
+    const PropertyAttributes attributes);
+
 template <PropertyAttributes attrs>
 Maybe<bool> JSObject::PreventExtensionsWithTransition(
     Handle<JSObject> object, ShouldThrow should_throw) {
