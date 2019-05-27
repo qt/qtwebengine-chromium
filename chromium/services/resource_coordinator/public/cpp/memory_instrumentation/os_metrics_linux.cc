@@ -7,8 +7,10 @@
 #include <stdint.h>
 #include <memory>
 
+#if defined(OS_ANDROID)
 #include "base/android/library_loader/anchor_functions.h"
 #include "base/android/library_loader/anchor_functions_buildflags.h"
+#endif
 #include "base/debug/elf_reader.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"

@@ -509,9 +509,10 @@ class StoragePartitionImpl::NetworkContextOwner {
     network::mojom::NetworkContextParamsPtr network_context_params =
         network::mojom::NetworkContextParams::New();
     content::UpdateCorsExemptHeader(network_context_params.get());
+#if !defined(TOOLKIT_QT)
     variations::UpdateCorsExemptHeaderForVariations(
-
         network_context_params.get());
+#endif
     context_getter_ = std::move(context_getter);
     network_context_ = std::make_unique<network::NetworkContext>(
         GetNetworkServiceImpl(), std::move(network_context_request),
