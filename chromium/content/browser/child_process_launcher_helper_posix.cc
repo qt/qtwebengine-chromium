@@ -85,8 +85,8 @@ std::unique_ptr<PosixFileDescriptorInfo> CreateDefaultPosixFilesToMap(
 // Mac shared memory doesn't use file descriptors.
 #if !defined(OS_MACOSX)
   int fd = base::FieldTrialList::GetFieldTrialDescriptor();
-  DCHECK_NE(fd, -1);
-  files_to_register->Share(service_manager::kFieldTrialDescriptor, fd);
+  if (fd != -1)
+    files_to_register->Share(service_manager::kFieldTrialDescriptor, fd);
 
   const bool mojo_channel_mac = false;
 #else
