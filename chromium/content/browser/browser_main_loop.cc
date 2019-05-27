@@ -1324,7 +1324,9 @@ void BrowserMainLoop::PostCreateThreadsImpl() {
 
   HistogramSynchronizer::GetInstance();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   FieldTrialSynchronizer::CreateInstance();
+#endif
 
   // cc assumes a single client name for metrics in a process, which is
   // is inconsistent with single process mode where both the renderer and
