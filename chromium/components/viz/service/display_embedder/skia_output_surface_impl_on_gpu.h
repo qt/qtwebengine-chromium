@@ -259,6 +259,10 @@ class SkiaOutputSurfaceImplOnGpu
 
   void PreserveChildSurfaceControls();
 
+#ifdef TOOLKIT_QT
+  void SetFrameSinkId(const FrameSinkId& frame_sink_id);
+#endif
+
   void InitDelegatedInkPointRendererReceiver(
       mojo::PendingReceiver<gfx::mojom::DelegatedInkPointRenderer>
           pending_receiver);
@@ -501,6 +505,10 @@ class SkiaOutputSurfaceImplOnGpu
   // Draws `overdraw_ddl` to the target `canvas`.
   void DrawOverdraw(sk_sp<GrDeferredDisplayList> overdraw_ddl,
                     SkCanvas& canvas);
+
+#ifdef TOOLKIT_QT
+  std::unique_ptr<SkiaOutputDevice> CreateOutputDevice();
+#endif
 
   // Gets the cached SkiaImageRepresentation for this mailbox if it exists, or
   // returns a newly produced one and caches it.
