@@ -12,7 +12,7 @@
 #include "components/viz/common/features.h"
 #include "components/viz/service/display/overlay_processor_stub.h"
 
-#if defined(OS_APPLE)
+#if defined(OS_APPLE) && !defined(TOOLKIT_QT)
 #include "components/viz/service/display/overlay_processor_mac.h"
 #elif defined(OS_WIN)
 #include "components/viz/service/display/overlay_processor_win.h"
@@ -82,7 +82,7 @@ OverlayProcessorInterface::CreateOverlayProcessor(
     gpu::SharedImageManager* shared_image_manager,
     const RendererSettings& renderer_settings,
     const DebugRendererSettings* debug_settings) {
-#if defined(OS_APPLE)
+#if defined(OS_APPLE) && !defined(TOOLKIT_QT)
   bool could_overlay =
       output_surface->GetSurfaceHandle() != gpu::kNullSurfaceHandle;
   could_overlay &= output_surface->capabilities().supports_surfaceless;
