@@ -15,7 +15,7 @@
 #include "components/viz/service/display/display_compositor_memory_and_task_controller.h"
 #include "components/viz/service/display/overlay_processor_stub.h"
 
-#if defined(OS_APPLE)
+#if defined(OS_APPLE) && !defined(TOOLKIT_QT)
 #include "components/viz/service/display/overlay_processor_mac.h"
 #elif defined(OS_WIN)
 #include "components/viz/service/display/overlay_processor_win.h"
@@ -89,7 +89,7 @@ OverlayProcessorInterface::CreateOverlayProcessor(
   if (surface_handle == gpu::kNullSurfaceHandle)
     return std::make_unique<OverlayProcessorStub>();
 
-#if defined(OS_APPLE)
+#if defined(OS_APPLE) && !defined(TOOLKIT_QT)
   DCHECK(capabilities.supports_surfaceless);
 
   return std::make_unique<OverlayProcessorMac>(

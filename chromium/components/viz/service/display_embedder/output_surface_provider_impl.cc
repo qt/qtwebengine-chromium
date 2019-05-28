@@ -142,8 +142,12 @@ std::unique_ptr<OutputSurface> OutputSurfaceProviderImpl::CreateOutputSurface(
   std::unique_ptr<OutputSurface> output_surface;
 
   if (!gpu_compositing) {
+#if defined(TOOLKIT_QT)
+    output_surface = CreateSoftwareOutputSurface();
+#else
     output_surface = std::make_unique<SoftwareOutputSurface>(
         CreateSoftwareOutputDeviceForPlatform(surface_handle, display_client));
+#endif
   } else if (renderer_settings.use_skia_renderer) {
     DCHECK(gpu_dependency);
     {
@@ -213,6 +217,9 @@ std::unique_ptr<OutputSurface> OutputSurfaceProviderImpl::CreateOutputSurface(
       }
     }
 
+#if defined(TOOLKIT_QT)
+    output_surface = CreateGLOutputSurface(std::move(context_provider));
+#else
     if (surface_handle == gpu::kNullSurfaceHandle) {
       output_surface = std::make_unique<GLOutputSurfaceOffscreen>(
           std::move(context_provider));
@@ -244,6 +251,7 @@ std::unique_ptr<OutputSurface> OutputSurfaceProviderImpl::CreateOutputSurface(
           std::move(context_provider), surface_handle);
 #endif
     }
+#endif
   }
 
   return output_surface;

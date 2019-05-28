@@ -76,7 +76,7 @@ void OutputSurface::UpdateLatencyInfoOnSwap(
 
 void OutputSurface::SetNeedsSwapSizeNotifications(
     bool needs_swap_size_notifications) {
-  DCHECK(!needs_swap_size_notifications);
+//  DCHECK(!needs_swap_size_notifications);
 }
 
 base::ScopedClosureRunner OutputSurface::GetCacheBackBufferCb() {

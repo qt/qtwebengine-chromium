@@ -1305,11 +1305,15 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
     if (!gl_surface_)
       return false;
 
+#ifdef TOOLKIT_QT
+    output_device_ = CreateOutputDevice();
+#else
     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
         context_state_, gfx::SurfaceOrigin::kTopLeft,
         renderer_settings_.requires_alpha_channel,
         shared_gpu_deps_->memory_tracker(),
         GetDidSwapBuffersCompleteCallback());
+#endif
   } else {
     gl_surface_ =
         dependency_->CreateGLSurface(weak_ptr_factory_.GetWeakPtr(), format);
@@ -1366,6 +1370,10 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
 
 #if BUILDFLAG(ENABLE_VULKAN)
 bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
+#ifdef TOOLKIT_QT
+  output_device_ = CreateOutputDevice();
+  return true;
+#endif
   if (dependency_->IsOffscreen()) {
     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
         context_state_, gfx::SurfaceOrigin::kBottomLeft,
@@ -1850,6 +1858,13 @@ SkiaOutputSurfaceImplOnGpu::GetOrCreateRenderPassOverlayBacking(
   shared_image_factory_->DestroySharedImage(mailbox);
 
   return backing;
+}
+#endif
+
+#ifdef TOOLKIT_QT
+void SkiaOutputSurfaceImplOnGpu::SetFrameSinkId(const FrameSinkId& frame_sink_id) {
+  if (output_device_)
+    output_device_->SetFrameSinkId(frame_sink_id);
 }
 #endif
 
