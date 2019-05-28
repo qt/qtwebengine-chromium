@@ -91,6 +91,9 @@ class VIZ_SERVICE_EXPORT VizProcessContextProvider
 
   virtual base::ScopedClosureRunner GetCacheBackBufferCb();
 
+#ifdef TOOLKIT_QT
+  gpu::InProcessCommandBuffer *command_buffer() { return command_buffer_.get(); }
+#endif
   void SetNeedsMeasureNextDrawLatency();
 
  protected:
