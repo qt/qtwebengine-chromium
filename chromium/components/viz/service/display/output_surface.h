@@ -32,6 +32,10 @@
 #include "ui/gfx/surface_origin.h"
 #include "ui/latency/latency_info.h"
 
+#ifdef TOOLKIT_QT
+#include "components/viz/common/surfaces/frame_sink_id.h"
+#endif
+
 namespace gfx {
 namespace mojom {
 class DelegatedInkPointRenderer;
@@ -290,6 +294,10 @@ class VIZ_SERVICE_EXPORT OutputSurface {
 
   // Notifies the OutputSurface of rate of content updates in frames per second.
   virtual void SetFrameRate(float frame_rate) {}
+
+#ifdef TOOLKIT_QT
+  virtual void SetFrameSinkId(const FrameSinkId& frame_sink_id) {}
+#endif
 
   // Sends the pending delegated ink renderer receiver to GPU Main to allow the
   // browser process to send points directly there.
