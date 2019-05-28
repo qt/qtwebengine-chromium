@@ -409,6 +409,10 @@ void Display::Initialize(DisplayClient* client,
   if (output_surface_->software_device())
     output_surface_->software_device()->BindToClient(this);
 
+#ifdef TOOLKIT_QT
+  output_surface_->SetFrameSinkId(frame_sink_id_);
+#endif
+
   frame_rate_decider_ = std::make_unique<FrameRateDecider>(
       surface_manager_, this, hw_support_for_multiple_refresh_rates,
       SupportsSetFrameRate(output_surface_.get()));
