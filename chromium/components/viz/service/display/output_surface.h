@@ -10,6 +10,7 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/threading/thread_checker.h"
+#include "build/build_config.h"
 #include "components/viz/common/display/update_vsync_parameters_callback.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/resources/returned_resource.h"
@@ -28,6 +29,10 @@
 #include "ui/gfx/overlay_transform.h"
 #include "ui/gfx/surface_origin.h"
 #include "ui/latency/latency_info.h"
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+#include "components/viz/common/surfaces/frame_sink_id.h"
+#endif
 
 namespace gfx {
 namespace mojom {
@@ -266,6 +271,10 @@ class VIZ_SERVICE_EXPORT OutputSurface {
 
   // Notifies the OutputSurface of rate of content updates in frames per second.
   virtual void SetFrameRate(float frame_rate) {}
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+  virtual void SetFrameSinkId(const FrameSinkId& frame_sink_id) {}
+#endif
 
   // Sends the pending delegated ink renderer receiver to GPU Main to allow the
   // browser process to send points directly there.

@@ -114,6 +114,9 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   gfx::Rect GetCurrentFramebufferDamage() const override;
   void SetFrameRate(float frame_rate) override;
   void SetNeedsMeasureNextDrawLatency() override;
+#if BUILDFLAG(IS_QTWEBENGINE)
+  void SetFrameSinkId(const FrameSinkId& frame_sink_id) override;
+#endif
 
   // SkiaOutputSurface implementation:
   SkCanvas* BeginPaintCurrentFrame() override;
