@@ -9,7 +9,7 @@
 #include "components/viz/common/display/renderer_settings.h"
 #include "components/viz/common/features.h"
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
 #include "components/viz/service/display/overlay_processor_mac.h"
 #elif defined(OS_WIN)
 #include "components/viz/service/display/overlay_processor_win.h"
@@ -83,7 +83,7 @@ OverlayProcessorInterface::CreateOverlayProcessor(
     gpu::MemoryTracker* memory_tracker,
     scoped_refptr<gpu::GpuTaskSchedulerHelper> gpu_task_scheduler,
     gpu::SharedImageInterface* shared_image_interface) {
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
   bool could_overlay = surface_handle != gpu::kNullSurfaceHandle;
   could_overlay &= capabilities.supports_surfaceless;
   bool enable_ca_overlay = could_overlay && renderer_settings.allow_overlays;
