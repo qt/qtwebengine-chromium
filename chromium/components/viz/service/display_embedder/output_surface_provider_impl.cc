@@ -99,8 +99,12 @@ std::unique_ptr<OutputSurface> OutputSurfaceProviderImpl::CreateOutputSurface(
 #endif
 
   if (!gpu_compositing) {
+#if defined(TOOLKIT_QT)
+    return CreateSoftwareOutputSurface(renderer_settings);
+#else
     return std::make_unique<SoftwareOutputSurface>(
         CreateSoftwareOutputDeviceForPlatform(surface_handle, display_client));
+#endif
   } else {
     DCHECK(gpu_dependency);
 
