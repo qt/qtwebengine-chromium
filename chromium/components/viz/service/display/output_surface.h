@@ -10,6 +10,7 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/threading/thread_checker.h"
+#include "build/build_config.h"
 #include "components/viz/common/display/update_vsync_parameters_callback.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/resources/returned_resource.h"
@@ -31,6 +32,10 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "ui/gfx/android/surface_control_frame_rate.h"
+#endif
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+#include "components/viz/common/surfaces/frame_sink_id.h"
 #endif
 
 namespace gfx {
@@ -278,6 +283,10 @@ class VIZ_SERVICE_EXPORT OutputSurface {
 #if BUILDFLAG(IS_ANDROID)
   // Notifies the OutputSurface of rate of content updates in frames per second.
   virtual void SetFrameRate(gfx::SurfaceControlFrameRate frame_rate) {}
+#endif
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+  virtual void SetFrameSinkId(const FrameSinkId& frame_sink_id) {}
 #endif
 
   // Sends the pending delegated ink renderer receiver to GPU Main to allow the

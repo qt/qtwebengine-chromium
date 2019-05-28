@@ -1594,6 +1594,15 @@ void SkiaOutputSurfaceImpl::PreserveChildSurfaceControls() {
                  /*need_framebuffer=*/false);
 }
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+void SkiaOutputSurfaceImpl::SetFrameSinkId(const FrameSinkId& frame_sink_id) {
+  auto task = base::BindOnce(&SkiaOutputSurfaceImplOnGpu::SetFrameSinkId,
+                             base::Unretained(impl_on_gpu_.get()), frame_sink_id);
+  EnqueueGpuTask(std::move(task), {}, /*make_current=*/false,
+                 /*need_framebuffer=*/false);
+}
+#endif
+
 void SkiaOutputSurfaceImpl::InitDelegatedInkPointRendererReceiver(
     mojo::PendingReceiver<gfx::mojom::DelegatedInkPointRenderer>
         pending_receiver) {

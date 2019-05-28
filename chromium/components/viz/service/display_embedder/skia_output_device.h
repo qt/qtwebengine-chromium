@@ -180,6 +180,10 @@ class VIZ_SERVICE_EXPORT SkiaOutputDevice {
 
   void SetDrawTimings(base::TimeTicks submitted, base::TimeTicks started);
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  virtual void SetFrameSinkId(const FrameSinkId& frame_sink_id) {}
+#endif
+
   void SetDependencyTimings(base::TimeTicks task_ready);
 
   // Copy and return the contents of the surface owned by this device. If this
