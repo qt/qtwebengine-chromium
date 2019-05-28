@@ -234,6 +234,10 @@ class SkiaOutputSurfaceImplOnGpu
 
   void PreserveChildSurfaceControls();
 
+#ifdef TOOLKIT_QT
+  void SetFrameSinkId(const FrameSinkId& frame_sink_id);
+#endif
+
   void InitDelegatedInkPointRendererReceiver(
       mojo::PendingReceiver<gfx::mojom::DelegatedInkPointRenderer>
           pending_receiver);
@@ -386,6 +390,10 @@ class SkiaOutputSurfaceImplOnGpu
   std::unique_ptr<gpu::SharedImageRepresentationSkia>
   GetOrCreateRenderPassOverlayBacking(
       const SkSurfaceCharacterization& characterization);
+#endif
+
+#ifdef TOOLKIT_QT
+  std::unique_ptr<SkiaOutputDevice> CreateOutputDevice();
 #endif
 
   class ReleaseCurrent {
