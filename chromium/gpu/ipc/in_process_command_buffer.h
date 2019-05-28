@@ -53,6 +53,9 @@
 namespace gl {
 class GLContext;
 class GLShareGroup;
+#ifdef TOOLKIT_QT
+class GLFence;
+#endif
 }
 
 namespace gfx {
@@ -180,6 +183,14 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   // SharedImageInterfaceInProcess::CommandBufferHelper implementation:
   void SetError() override;
   void WrapTaskWithGpuCheck(base::OnceClosure task) override;
+
+#ifdef TOOLKIT_QT
+  using GetTextureCallback = base::OnceCallback<void(unsigned int, std::unique_ptr<gl::GLFence>)>;
+  void GetTextureQt(unsigned int client_id,
+                    GetTextureCallback callback,
+                    const std::vector<SyncToken>& sync_token_fences);
+  void GetTextureQtOnGpuThread(unsigned int client_id, GetTextureCallback callback);
+#endif
 
  private:
   struct InitializeOnGpuThreadParams {
