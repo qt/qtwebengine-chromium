@@ -304,6 +304,10 @@ void Display::Initialize(DisplayClient* client,
   if (output_surface_->software_device())
     output_surface_->software_device()->BindToClient(this);
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  output_surface_->SetFrameSinkId(frame_sink_id_);
+#endif
+
   if (features::IsUsingFrameIntervalDecider()) {
     frame_interval_decider_ = std::make_unique<FrameIntervalDecider>();
   } else {

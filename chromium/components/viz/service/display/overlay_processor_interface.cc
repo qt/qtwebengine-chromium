@@ -19,7 +19,7 @@
 #include "components/viz/service/display_embedder/skia_output_surface_dependency.h"
 #include "ui/gfx/overlay_priority_hint.h"
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !defined(TOOLKIT_QT)
 #include "components/viz/service/display/overlay_processor_mac.h"
 #elif BUILDFLAG(IS_WIN)
 #include "components/viz/service/display/overlay_processor_win.h"
@@ -103,7 +103,7 @@ OverlayProcessorInterface::CreateOverlayProcessor(
   if (surface_handle == gpu::kNullSurfaceHandle)
     return std::make_unique<OverlayProcessorStub>();
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !defined(TOOLKIT_QT) /* FIXME: only dcheck? */
   DCHECK(capabilities.supports_surfaceless);
   return std::make_unique<OverlayProcessorMac>();
 #elif BUILDFLAG(IS_WIN)
