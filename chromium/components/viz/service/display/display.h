@@ -176,6 +176,10 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
 
   base::ScopedClosureRunner GetCacheBackBufferCb();
 
+#if defined(TOOLKIT_QT)
+  FrameSinkId frame_sink_id() const { return frame_sink_id_; }
+#endif
+
   bool IsRootFrameMissing() const;
 
  private:

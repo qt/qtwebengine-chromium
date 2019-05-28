@@ -34,6 +34,11 @@ namespace viz {
 class GpuServiceImpl;
 class SoftwareOutputDevice;
 
+#if defined(TOOLKIT_QT)
+class OutputSurface;
+class VizProcessContextProvider;
+#endif
+
 // In-process implementation of OutputSurfaceProvider.
 class VIZ_SERVICE_EXPORT OutputSurfaceProviderImpl
     : public OutputSurfaceProvider {
@@ -57,6 +62,12 @@ class VIZ_SERVICE_EXPORT OutputSurfaceProviderImpl
       const RendererSettings& renderer_settings) override;
 
  private:
+#if defined(TOOLKIT_QT)
+  std::unique_ptr<OutputSurface> CreateSoftwareOutputSurface();
+  std::unique_ptr<OutputSurface> CreateGLOutputSurface(
+      scoped_refptr<VizProcessContextProvider> context_provider);
+#endif
+
   std::unique_ptr<SoftwareOutputDevice> CreateSoftwareOutputDeviceForPlatform(
       gpu::SurfaceHandle surface_handle,
       mojom::DisplayClient* display_client);

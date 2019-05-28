@@ -94,7 +94,9 @@ std::unique_ptr<OverlayCandidateValidator> OverlayCandidateValidator::Create(
     return nullptr;
 
   if (capabilities.supports_surfaceless) {
-#if defined(USE_OZONE)
+#if defined(TOOLKIT_QT)
+    return nullptr;
+#elif defined(USE_OZONE)
     return CreateOverlayCandidateValidatorOzone(surface_handle,
                                                 renderer_settings);
 #elif defined(OS_MACOSX)
