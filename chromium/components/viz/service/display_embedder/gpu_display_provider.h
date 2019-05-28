@@ -36,6 +36,11 @@ class GpuServiceImpl;
 class ServerSharedBitmapManager;
 class SoftwareOutputDevice;
 
+#if defined(TOOLKIT_QT)
+class OutputSurface;
+class VizProcessContextProvider;
+#endif
+
 // In-process implementation of DisplayProvider.
 class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
  public:
@@ -69,6 +74,14 @@ class VIZ_SERVICE_EXPORT GpuDisplayProvider : public DisplayProvider {
   uint32_t GetRestartId() const override;
 
  private:
+#if defined(TOOLKIT_QT)
+  std::unique_ptr<OutputSurface> CreateSoftwareOutputSurface(
+      UpdateVSyncParametersCallback update_vsync_callback);
+  std::unique_ptr<OutputSurface> CreateGLOutputSurface(
+      scoped_refptr<VizProcessContextProvider> context_provider,
+      UpdateVSyncParametersCallback update_vsync_callback);
+#endif
+
   std::unique_ptr<SoftwareOutputDevice> CreateSoftwareOutputDeviceForPlatform(
       gpu::SurfaceHandle surface_handle,
       mojom::DisplayClient* display_client);

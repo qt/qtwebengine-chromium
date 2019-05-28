@@ -147,6 +147,10 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
 
   void SetSupportedFrameIntervals(std::vector<base::TimeDelta> intervals);
 
+#if defined(TOOLKIT_QT)
+  FrameSinkId frame_sink_id() const { return frame_sink_id_; }
+#endif
+
  private:
   // TODO(cblume, crbug.com/900973): |enable_shared_images| is a temporary
   // solution that unblocks us until SharedImages are threadsafe in WebView.

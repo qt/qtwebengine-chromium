@@ -124,9 +124,13 @@ std::unique_ptr<Display> GpuDisplayProvider::CreateDisplay(
   SkiaOutputSurface* skia_output_surface = nullptr;
 
   if (!gpu_compositing) {
+#if defined(TOOLKIT_QT)
+    output_surface = CreateSoftwareOutputSurface(std::move(update_vsync_callback));
+#else
     output_surface = std::make_unique<SoftwareOutputSurface>(
         CreateSoftwareOutputDeviceForPlatform(surface_handle, display_client),
         std::move(update_vsync_callback));
+#endif
   } else if (renderer_settings.use_skia_renderer ||
              renderer_settings.use_skia_renderer_non_ddl) {
 #if defined(OS_MACOSX) || defined(OS_WIN)
@@ -204,6 +208,9 @@ std::unique_ptr<Display> GpuDisplayProvider::CreateDisplay(
       }
     }
 
+#if defined(TOOLKIT_QT)
+    output_surface = CreateGLOutputSurface(std::move(context_provider), std::move(update_vsync_callback));
+#else
     if (surface_handle == gpu::kNullSurfaceHandle) {
       output_surface = std::make_unique<GLOutputSurfaceOffscreen>(
           std::move(context_provider), std::move(update_vsync_callback));
@@ -257,6 +264,7 @@ std::unique_ptr<Display> GpuDisplayProvider::CreateDisplay(
           std::move(context_provider), std::move(update_vsync_callback));
 #endif
     }
+#endif
   }
 
   // If we need swap size notifications tell the output surface now.
