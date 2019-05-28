@@ -45,7 +45,9 @@ std::unique_ptr<OverlayCandidateValidator> OverlayCandidateValidator::Create(
     return nullptr;
 
   if (capabilities.supports_surfaceless) {
-#if defined(OS_MACOSX)
+#if defined(TOOLKIT_QT)
+    return nullptr;
+#elif defined(OS_MACOSX)
     return std::make_unique<OverlayCandidateValidatorMac>(
         !renderer_settings.allow_overlays);
 #endif

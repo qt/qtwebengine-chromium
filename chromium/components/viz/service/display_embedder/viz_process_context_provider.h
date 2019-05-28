@@ -81,6 +81,10 @@ class VIZ_SERVICE_EXPORT VizProcessContextProvider
 
   base::ScopedClosureRunner GetCacheBackBufferCb();
 
+#ifdef TOOLKIT_QT
+  gpu::InProcessCommandBuffer *command_buffer() { return command_buffer_.get(); }
+#endif
+
  private:
   friend class base::RefCountedThreadSafe<VizProcessContextProvider>;
   ~VizProcessContextProvider() override;
