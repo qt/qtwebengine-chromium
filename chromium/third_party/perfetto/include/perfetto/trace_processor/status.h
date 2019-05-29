@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <string>
 
+#include "perfetto/base/compiler.h"
 #include "perfetto/base/export.h"
 
 namespace perfetto {
@@ -68,7 +69,7 @@ inline Status OkStatus() {
 
 // Returns a status object which represents an error with the given message
 // formatted using printf.
-__attribute__((__format__(__printf__, 1, 2))) inline Status ErrStatus(
+PERFETTO_PRINTF_FORMAT(1, 2) inline Status ErrStatus(
     const char* format,
     ...) {
   va_list ap;

@@ -1779,7 +1779,7 @@ bool TracingServiceImpl::ReadBuffers(TracingSessionID tsid,
       int iov_batch_size = static_cast<int>(std::min(num_iovecs - i, kIOVMax));
       ssize_t wr_size = PERFETTO_EINTR(writev(fd, &iovecs[i], iov_batch_size));
       if (wr_size <= 0) {
-        PERFETTO_PLOG("writev() failed");
+        PERFETTO_ELOG("writev() failed (errno: %d, %s)", errno, strerror(errno));
         stop_writing_into_file = true;
         break;
       }
