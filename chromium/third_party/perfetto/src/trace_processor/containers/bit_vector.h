@@ -432,18 +432,36 @@ class BitVector {
 
     // Returns the number of set bits.
     uint32_t GetNumBitsSet() const {
+#if defined(__GNUC__) || defined(__clang__)
       // We use __builtin_popcountll here as it's available natively for the two
       // targets we care most about (x64 and WASM).
       return static_cast<uint32_t>(__builtin_popcountll(word_));
+#else
+      // See http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+      uint64_t v = word_;
+      return
+        (((v      ) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 12) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 24) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f;
+#endif
     }
 
     // Returns the number of set bits up to and including the bit at |idx|.
     uint32_t GetNumBitsSet(uint32_t idx) const {
       PERFETTO_DCHECK(idx < kBits);
 
+#if defined(__GNUC__) || defined(__clang__)
       // We use __builtin_popcountll here as it's available natively for the two
       // targets we care most about (x64 and WASM).
       return static_cast<uint32_t>(__builtin_popcountll(WordUntil(idx)));
+#else
+      // See http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+      uint64_t v = WordUntil(idx);
+      return
+        (((v      ) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 12) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 24) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f;
+#endif
     }
 
     // Retains all bits up to and including the bit at |idx| and clears

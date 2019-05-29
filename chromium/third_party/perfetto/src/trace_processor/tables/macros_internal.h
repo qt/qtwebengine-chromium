@@ -48,7 +48,7 @@ class RootParentTable : public Table {
     uint32_t id;
     uint32_t row;
   };
-  IdAndRow Insert(const Row&) { PERFETTO_FATAL("Should not be called"); }
+  IdAndRow Insert(const Row&) { PERFETTO_FATAL("Should not be called"); return {0,0}; }
 };
 
 // IdHelper is used to figure out the Id type for a table.
@@ -223,11 +223,15 @@ class MacroTable : public Table {
 
 #define PERFETTO_TP_COLUMN_FLAG_CHOOSER(type, name, maybe_flags, fn, ...) fn
 
+#define CR_EXPAND_ARG(arg) arg
+
+// Invokes the chosen column constructor by passing the given args.
 #define PERFETTO_TP_COLUMN_FLAG(...)                                    \
+  CR_EXPAND_ARG(                                                        \
   PERFETTO_TP_COLUMN_FLAG_CHOOSER(__VA_ARGS__,                          \
                                   PERFETTO_TP_COLUMN_FLAG_HAS_FLAG_COL, \
                                   PERFETTO_TP_COLUMN_FLAG_NO_FLAG_COL)  \
-  (__VA_ARGS__)
+  (__VA_ARGS__))
 
 // Creates the sparse vector with the given flags.
 #define PERFETTO_TP_TABLE_CONSTRUCTOR_SV(type, name, ...)               \
