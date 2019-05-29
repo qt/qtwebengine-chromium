@@ -51,8 +51,13 @@ namespace {
 constexpr int kMaxDecoderFieldId = 999;
 
 void Assert(bool condition) {
+#ifndef _MSC_VER
   if (!condition)
     __builtin_trap();
+#else
+  if (!condition)
+    __debugbreak();
+#endif
 }
 
 struct FileDescriptorComp {

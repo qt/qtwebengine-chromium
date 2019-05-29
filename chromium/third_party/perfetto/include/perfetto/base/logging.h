@@ -84,7 +84,7 @@ enum LogLev { kLogDebug = 0, kLogInfo, kLogImportant, kLogError };
 #define PERFETTO_XLOG_STDERR(level, fmt, ...)                              \
   fprintf(stderr, "%-24.24s " fmt "\n",                                    \
           ::perfetto::base::Basename(__FILE__ "(" PERFETTO_LOG_LINE "):"), \
-          ##__VA_ARGS__)
+          __VA_ARGS__)
 #else
 constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
                                    "\x1b[31m"};
@@ -121,12 +121,39 @@ constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
 #define PERFETTO_XLOG PERFETTO_XLOG_STDERR
 #endif
 
-#define PERFETTO_IMMEDIATE_CRASH() \
-  do {                             \
-    __builtin_trap();              \
-    __builtin_unreachable();       \
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_CLANG) || PERFETTO_BUILDFLAG(PERFETTO_COMPILER_GCC)
+#define PERFETTO_TRAP_SEQUENCE() __builtin_trap()
+#elif PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+#define PERFETTO_TRAP_SEQUENCE() __debugbreak()
+#else
+#error Port
+#endif
+
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_CLANG) || PERFETTO_BUILDFLAG(PERFETTO_COMPILER_GCC)
+#define PERFETTO_IMMEDIATE_CRASH()    \
+  do {                                \
+    PERFETTO_TRAP_SEQUENCE();         \
+    __builtin_unreachable();          \
+  } while(false)
+#else
+// This is supporting non-chrome use of logging.h to build with MSVC.
+#define PERFETTO_IMMEDIATE_CRASH()  PERFETTO_TRAP_SEQUENCE()
+#endif
+
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+#define CR_EXPAND_ARG(arg) arg
+#define PERFETTO_LOG(fmt, ...) CR_EXPAND_ARG(PERFETTO_XLOG(kLogInfo, fmt, __VA_ARGS__))
+#define PERFETTO_ILOG(fmt, ...) CR_EXPAND_ARG(PERFETTO_XLOG(kLogImportant, fmt, __VA_ARGS__))
+#define PERFETTO_ELOG(fmt, ...) CR_EXPAND_ARG(PERFETTO_XLOG(kLogError, fmt, __VA_ARGS__))
+#define PERFETTO_FATAL(fmt, ...)       \
+  do {                                 \
+    CR_EXPAND_ARG(PERFETTO_ELOG(fmt, __VA_ARGS__)); \
+    PERFETTO_IMMEDIATE_CRASH();        \
   } while (0)
 
+#define PERFETTO_PLOG(x, ...) \
+  CR_EXPAND_ARG(PERFETTO_ELOG(x " (errno: %d, %s)", ##__VA_ARGS__, errno, strerror(errno)))
+#else
 #define PERFETTO_LOG(fmt, ...) PERFETTO_XLOG(kLogInfo, fmt, ##__VA_ARGS__)
 #define PERFETTO_ILOG(fmt, ...) PERFETTO_XLOG(kLogImportant, fmt, ##__VA_ARGS__)
 #define PERFETTO_ELOG(fmt, ...) PERFETTO_XLOG(kLogError, fmt, ##__VA_ARGS__)
@@ -138,7 +165,7 @@ constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
 
 #define PERFETTO_PLOG(x, ...) \
   PERFETTO_ELOG(x " (errno: %d, %s)", ##__VA_ARGS__, errno, strerror(errno))
-
+#endif
 #if PERFETTO_DLOG_IS_ON()
 
 #define PERFETTO_DLOG(fmt, ...) PERFETTO_XLOG(kLogDebug, fmt, ##__VA_ARGS__)

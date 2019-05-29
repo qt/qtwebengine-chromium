@@ -27,16 +27,21 @@
 #endif
 
 #define PERFETTO_EINTR(x)                                   \
-  ({                                                        \
+  ([&](){                                                   \
     decltype(x) eintr_wrapper_result;                       \
     do {                                                    \
       eintr_wrapper_result = (x);                           \
     } while (eintr_wrapper_result == -1 && errno == EINTR); \
-    eintr_wrapper_result;                                   \
-  })
+    return eintr_wrapper_result;                            \
+  }())
 
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_GCC) || PERFETTO_BUILDFLAG(PERFETTO_COMPILER_CLANG)
 #define PERFETTO_LIKELY(_x) __builtin_expect(!!(_x), 1)
 #define PERFETTO_UNLIKELY(_x) __builtin_expect(!!(_x), 0)
+#else
+#define PERFETTO_LIKELY(_x) (_x)
+#define PERFETTO_UNLIKELY(_x) (_x)
+#endif
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_WIN)
 // TODO(brucedawson) - create a ::perfetto::base::IOSize to replace this.
