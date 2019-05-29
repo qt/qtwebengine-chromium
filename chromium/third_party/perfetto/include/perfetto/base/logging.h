@@ -24,8 +24,10 @@
 #include "perfetto/base/compiler.h"
 #include "perfetto/base/export.h"
 
+#ifdef __GNUC__
 // Ignore GCC warning about a missing argument for a variadic macro parameter.
 #pragma GCC system_header
+#endif
 
 // TODO(primiano): move this to base/build_config.h, turn into
 // PERFETTO_BUILDFLAG(DCHECK_IS_ON) and update call sites to use that instead.
@@ -99,12 +101,48 @@ PERFETTO_EXPORT void LogMessage(LogLev,
                                __LINE__, fmt, ##__VA_ARGS__)
 #endif
 
-#define PERFETTO_IMMEDIATE_CRASH() \
-  do {                             \
-    __builtin_trap();              \
-    __builtin_unreachable();       \
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_CLANG) || PERFETTO_BUILDFLAG(PERFETTO_COMPILER_GCC)
+#define PERFETTO_TRAP_SEQUENCE() __builtin_trap()
+#elif PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+#define PERFETTO_TRAP_SEQUENCE() __debugbreak()
+#else
+#error Port
+#endif
+
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_CLANG) || PERFETTO_BUILDFLAG(PERFETTO_COMPILER_GCC)
+#define PERFETTO_IMMEDIATE_CRASH()    \
+  do {                                \
+    PERFETTO_TRAP_SEQUENCE();         \
+    __builtin_unreachable();          \
+  } while(false)
+#else
+// This is supporting non-chrome use of logging.h to build with MSVC.
+#define PERFETTO_IMMEDIATE_CRASH()  PERFETTO_TRAP_SEQUENCE()
+#endif
+
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+#define CR_EXPAND_ARG(arg) arg
+#if PERFETTO_BUILDFLAG(PERFETTO_VERBOSE_LOGS)
+#define PERFETTO_LOG(fmt, ...) \
+  CR_EXPAND_ARG(PERFETTO_XLOG(::perfetto::base::kLogInfo, fmt, __VA_ARGS__))
+#else // PERFETTO_BUILDFLAG(PERFETTO_VERBOSE_LOGS)
+#define PERFETTO_LOG(...) ::perfetto::base::ignore_result(__VA_ARGS__)
+#endif // PERFETTO_BUILDFLAG(PERFETTO_VERBOSE_LOGS)
+
+#define PERFETTO_ILOG(fmt, ...) \
+  CR_EXPAND_ARG(                \
+      PERFETTO_XLOG(::perfetto::base::kLogImportant, fmt, __VA_ARGS__))
+#define PERFETTO_ELOG(fmt, ...) \
+  CR_EXPAND_ARG(PERFETTO_XLOG(::perfetto::base::kLogError, fmt, __VA_ARGS__))
+#define PERFETTO_FATAL(fmt, ...)       \
+  do {                                 \
+    CR_EXPAND_ARG(PERFETTO_ELOG(fmt, __VA_ARGS__)); \
+    PERFETTO_IMMEDIATE_CRASH();        \
   } while (0)
 
+#define PERFETTO_PLOG(x, ...) \
+  CR_EXPAND_ARG(PERFETTO_ELOG(x " (errno: %d, %s)", ##__VA_ARGS__, errno, strerror(errno)))
+#else
 #if PERFETTO_BUILDFLAG(PERFETTO_VERBOSE_LOGS)
 #define PERFETTO_LOG(fmt, ...) \
   PERFETTO_XLOG(::perfetto::base::kLogInfo, fmt, ##__VA_ARGS__)
@@ -124,6 +162,7 @@ PERFETTO_EXPORT void LogMessage(LogLev,
 
 #define PERFETTO_PLOG(x, ...) \
   PERFETTO_ELOG(x " (errno: %d, %s)", ##__VA_ARGS__, errno, strerror(errno))
+#endif
 
 #define PERFETTO_CHECK(x)                            \
   do {                                               \
@@ -134,13 +173,17 @@ PERFETTO_EXPORT void LogMessage(LogLev,
   } while (0)
 
 #if PERFETTO_DLOG_IS_ON()
-
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+#define PERFETTO_DLOG(fmt, ...) \
+  CR_EXPAND_ARG(PERFETTO_XLOG(::perfetto::base::kLogDebug, fmt, __VA_ARGS__))
+#define PERFETTO_DPLOG(x, ...) \
+  CR_EXPAND_ARG(PERFETTO_DLOG(x " (errno: %d, %s)", __VA_ARGS__, errno, strerror(errno)))
+#else
 #define PERFETTO_DLOG(fmt, ...) \
   PERFETTO_XLOG(::perfetto::base::kLogDebug, fmt, ##__VA_ARGS__)
-
 #define PERFETTO_DPLOG(x, ...) \
   PERFETTO_DLOG(x " (errno: %d, %s)", ##__VA_ARGS__, errno, strerror(errno))
-
+#endif // PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
 #else  // PERFETTO_DLOG_IS_ON()
 
 #define PERFETTO_DLOG(...) ::perfetto::base::ignore_result(__VA_ARGS__)
