@@ -1902,8 +1902,18 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
 
         CFX_Point origin(FXSYS_round(matrix.e), FXSYS_round(matrix.f));
         if (glyphs.empty()) {
-          m_pDevice->SetBitMask(pBitmap->m_pBitmap, origin.x + pBitmap->m_Left,
-                                origin.y - pBitmap->m_Top, fill_argb);
+          FX_SAFE_INT32 left = origin.x;
+          left += pBitmap->m_Left;
+          if (!left.IsValid())
+            continue;
+
+          FX_SAFE_INT32 top = origin.y;
+          top -= pBitmap->m_Top;
+          if (!top.IsValid())
+            continue;
+
+          m_pDevice->SetBitMask(pBitmap->m_pBitmap, left.ValueOrDie(),
+                                top.ValueOrDie(), fill_argb);
         } else {
           glyphs[iChar].m_pGlyph = pBitmap;
           glyphs[iChar].m_Origin = origin;
