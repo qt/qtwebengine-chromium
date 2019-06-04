@@ -192,7 +192,12 @@ const base::Feature kCooperativeScheduling{"CooperativeScheduling",
 // Enables crash reporting via Reporting API.
 // https://www.w3.org/TR/reporting/#crash-report
 const base::Feature kCrashReporting{"CrashReporting",
-                                    base::FEATURE_ENABLED_BY_DEFAULT};
+#if BUILDFLAG(ENABLE_REPORTING)
+                                    base::FEATURE_ENABLED_BY_DEFAULT
+#else
+                                    base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 // Enables support for the `Critical-CH` response header.
 // https://github.com/WICG/client-hints-infrastructure/blob/master/reliability.md#critical-ch
