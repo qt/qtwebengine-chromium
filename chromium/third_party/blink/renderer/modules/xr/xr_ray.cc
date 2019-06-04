@@ -107,8 +107,8 @@ DOMFloat32Array* XRRay::matrix() {
 
     const blink::FloatPoint3D initialRayDirection =
         blink::FloatPoint3D{0.f, 0.f, -1.f};
-    const blink::FloatPoint3D desiredRayDirection = {
-        direction_->x(), direction_->y(), direction_->z()};
+    const blink::FloatPoint3D desiredRayDirection(
+        direction_->x(), direction_->y(), direction_->z());
 
     float cos_angle = initialRayDirection.Dot(desiredRayDirection);
 

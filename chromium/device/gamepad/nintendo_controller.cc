@@ -1560,15 +1560,15 @@ void NintendoController::RequestEnableUsbTimeout(bool enable) {
 }
 
 void NintendoController::RequestEnableImu(bool enable) {
-  SubCommand(kSubCommandEnableImu, enable ? 0x01 : 0x00);
+  SubCommand(kSubCommandEnableImu, {uint8_t(enable ? 0x01 : 0x00)});
 }
 
 void NintendoController::RequestEnableVibration(bool enable) {
-  SubCommand(kSubCommandEnableVibration, enable ? 0x01 : 0x00);
+  SubCommand(kSubCommandEnableVibration, {uint8_t(enable ? 0x01 : 0x00)});
 }
 
 void NintendoController::RequestSetPlayerLights(uint8_t light_pattern) {
-  SubCommand(kSubCommandSetPlayerLights, light_pattern);
+  SubCommand(kSubCommandSetPlayerLights, {light_pattern});
 }
 
 void NintendoController::RequestSetHomeLight(
@@ -1583,8 +1583,8 @@ void NintendoController::RequestSetHomeLight(
   DCHECK_LE(cycle_count, 0xf);
   if ((cycle_count > 0 && minicycle_count == 1) || minicycle_duration == 0)
     minicycle_count = 0;
-  std::vector<uint8_t> bytes = {(minicycle_count << 4) | minicycle_duration,
-                                (start_intensity << 4) | cycle_count};
+  std::vector<uint8_t> bytes = {uint8_t((minicycle_count << 4) | minicycle_duration),
+                                uint8_t((start_intensity << 4) | cycle_count)};
   bytes.insert(bytes.end(), minicycle_data.begin(), minicycle_data.end());
   SubCommand(kSubCommandSetHomeLight, bytes);
 }
@@ -1602,7 +1602,7 @@ void NintendoController::RequestSetHomeLightIntensity(double intensity) {
   // 1x minicycle duration. Because |minicycle_count| and |cycle_count| are
   // both zero, the device will transition to the 1st minicycle and then stay at
   // |led_intensity|.
-  RequestSetHomeLight(0, 1, led_intensity, 0, {led_intensity << 4, 0x00});
+  RequestSetHomeLight(0, 1, led_intensity, 0, {uint8_t(led_intensity << 4), 0x00});
 }
 
 void NintendoController::RequestSetImuSensitivity(
@@ -1625,7 +1625,7 @@ void NintendoController::ReadSpi(uint16_t address, size_t length) {
   uint8_t address_high = (address >> 8) & 0xff;
   uint8_t address_low = address & 0xff;
   SubCommand(kSubCommandReadSpi,
-             {address_low, address_high, 0x00, 0x00, uint8_t{length}});
+             {address_low, address_high, 0x00, 0x00, uint8_t(length)});
 }
 
 void NintendoController::RequestImuCalibration() {

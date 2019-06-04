@@ -55,7 +55,7 @@ BrowserUIThreadScheduler::BrowserUIThreadScheduler()
     : owned_sequence_manager_(
           base::sequence_manager::CreateUnboundSequenceManager(
               base::sequence_manager::SequenceManager::Settings{
-                  .message_loop_type = base::MessageLoop::TYPE_UI})),
+                  base::MessageLoop::TYPE_UI})),
       sequence_manager_(owned_sequence_manager_.get()),
       time_domain_(sequence_manager_->GetRealTimeDomain()) {
   InitialiseTaskQueues();
