@@ -171,7 +171,12 @@ const base::Feature kCooperativeScheduling{"CooperativeScheduling",
 // Enables crash reporting via Reporting API.
 // https://www.w3.org/TR/reporting/#crash-report
 const base::Feature kCrashReporting{"CrashReporting",
-                                    base::FEATURE_ENABLED_BY_DEFAULT};
+#if BUILDFLAG(ENABLE_REPORTING)
+                                    base::FEATURE_ENABLED_BY_DEFAULT
+#else
+                                    base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 // Puts save-data header in the holdback mode. This disables sending of
 // save-data header to origins, and to the renderer processes within Chrome.
