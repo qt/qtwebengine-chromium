@@ -96,7 +96,6 @@ struct COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) ClipboardFormatType {
 
  private:
   friend class base::NoDestructor<ClipboardFormatType>;
-  friend struct ClipboardFormatType;
 
   // Platform-specific glue used internally by the ClipboardFormatType struct.
   // Each platform should define at least one of each of the following:
