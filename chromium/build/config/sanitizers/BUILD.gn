@@ -248,7 +248,7 @@ config("default_sanitizer_ldflags") {
 config("common_sanitizer_flags") {
   cflags = []
 
-  if (using_sanitizer) {
+  if (using_sanitizer && is_clang) {
     assert(is_clang, "sanitizers only supported with clang")
 
     # Allow non-default toolchains to enable sanitizers in toolchain_args even
@@ -458,10 +458,21 @@ config("ubsan_flags") {
       "-fsanitize=vla-bound",
       "-fsanitize-ignorelist=$ubsan_ignorelist_path",
     ]
+    if (!is_clang) {
+      # These exposes too much illegal C++14 code to compile on anything stricter than clang:
+      cflags += [
+        "-fno-sanitize=null",
+        "-fno-sanitize=returns-nonnull-attribute",
+      ]
+      # Clang specific flag:
+      cflags -= [
+        "-fsanitize-blacklist=$ubsan_blacklist_path",
+      ]
+    }
 
     # Chromecast ubsan builds fail to compile with these
     # experimental flags, so only add them to non-chromecast ubsan builds.
-    if (!is_chromecast) {
+    if (!is_chromecast && is_clang) {
       cflags += [
         # Employ the experimental PBQP register allocator to avoid slow
         # compilation on files with too many basic blocks.
@@ -516,6 +527,12 @@ config("ubsan_vptr_flags") {
       "-fsanitize=vptr",
       "-fsanitize-ignorelist=$ubsan_vptr_ignorelist_path",
     ]
+    if (!is_clang) {
+      # Clang specific flag:
+      cflags -= [
+        "-fsanitize-blacklist=$ubsan_vptr_blacklist_path",
+      ]
+    }
   }
 }
 
