@@ -292,8 +292,8 @@ if (sanitizer_coverage_flags == "") {
   }
 }
 
-assert(!using_sanitizer || is_clang,
-       "Sanitizers (is_*san) require setting is_clang = true in 'gn args'")
+#assert(!using_sanitizer || is_clang,
+#       "Sanitizers (is_*san) require setting is_clang = true in 'gn args'")
 
 assert(!is_cfi || is_clang,
        "is_cfi requires setting is_clang = true in 'gn args'")
