@@ -2926,6 +2926,14 @@ source_set("browser") {
       "net/reporting_service_proxy.cc",
       "net/reporting_service_proxy.h",
     ]
+  } else {
+    # Needed in all cases
+    sources += [
+      "net/cross_origin_embedder_policy_reporter.cc",
+      "net/cross_origin_embedder_policy_reporter.h",
+      "net/cross_origin_opener_policy_reporter.cc",
+      "net/cross_origin_opener_policy_reporter.h",
+    ]
   }
 
   if (use_viz_devtools) {
