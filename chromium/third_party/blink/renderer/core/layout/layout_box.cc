@@ -2458,7 +2458,7 @@ scoped_refptr<const NGLayoutResult> LayoutBox::CachedLayoutResult(
 
   scoped_refptr<const NGLayoutResult> new_result =
       base::AdoptRef(new NGLayoutResult(*cached_layout_result, new_space,
-                                        bfc_line_offset, bfc_block_offset));
+                                        bfc_line_offset, std::move(bfc_block_offset)));
 
   if (needs_cached_result_update)
     SetCachedLayoutResult(*new_result, break_token);

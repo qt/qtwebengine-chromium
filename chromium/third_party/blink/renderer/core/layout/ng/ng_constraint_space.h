@@ -363,7 +363,7 @@ class CORE_EXPORT NGConstraintSpace final {
   // This value is calculated *after* an initial pass of the tree, and should
   // only be present during subsequent passes.
   base::Optional<LayoutUnit> FloatsBfcBlockOffset() const {
-    return HasRareData() ? rare_data_->floats_bfc_block_offset : base::nullopt;
+    return (HasRareData() && rare_data_->floats_bfc_block_offset) ? base::make_optional(*rare_data_->floats_bfc_block_offset) : base::nullopt;
   }
 
   // Return the types (none, left, right, both) of preceding adjoining
