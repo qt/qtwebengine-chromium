@@ -229,7 +229,7 @@ ScriptPromise PresentationRequest::getAvailability(ScriptState* script_state) {
         PresentationAvailabilityProperty::kReady);
 
     controller->GetAvailabilityState()->RequestAvailability(
-        urls_, std::make_unique<PresentationAvailabilityCallbacks>(
+        urls_, new PresentationAvailabilityCallbacks(
                    availability_property_, urls_));
   }
   return availability_property_->Promise(script_state->World());
