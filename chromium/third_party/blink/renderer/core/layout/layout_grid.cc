@@ -432,7 +432,7 @@ LayoutUnit LayoutGrid::GuttersSize(
   if (span <= 1)
     return LayoutUnit();
 
-  LayoutUnit gap = GridGap(direction, available_size);
+  LayoutUnit gap = GridGap(direction, base::pass_optional(available_size));
 
   // Fast path, no collapsing tracks.
   if (!grid.HasAutoRepeatEmptyTracks(direction))
@@ -714,7 +714,7 @@ size_t LayoutGrid::ComputeAutoRepeatTracksCount(
 
   // Add gutters as if there where only 1 auto repeat track. Gaps between auto
   // repeat tracks will be added later when computing the repetitions.
-  LayoutUnit gap_size = GridGap(direction, available_size);
+  LayoutUnit gap_size = GridGap(direction, available_size.value());
   tracks_size +=
       gap_size * (track_sizes.size() + auto_repeat_track_list_length - 1);
 
@@ -812,7 +812,7 @@ void LayoutGrid::PlaceItemsOnGrid(
       kForRows, ConvertLayoutUnitToOptional(
                     AvailableLogicalHeightForPercentageComputation()));
   size_t auto_repeat_columns =
-      ComputeAutoRepeatTracksCount(kForColumns, available_logical_width);
+      ComputeAutoRepeatTracksCount(kForColumns, base::pass_optional(available_logical_width));
 
   auto_repeat_rows = ClampAutoRepeatTracks(kForRows, auto_repeat_rows);
   auto_repeat_columns = ClampAutoRepeatTracks(kForColumns, auto_repeat_columns);

@@ -1548,7 +1548,7 @@ NGLayoutResult::EStatus NGBlockLayoutAlgorithm::HandleInflow(
                        /* is_new_fc */ false);
   NGConstraintSpace child_space = CreateConstraintSpaceForChild(
       child, child_data, child_available_size_, /* is_new_fc */ false,
-      forced_bfc_block_offset, has_clearance_past_adjoining_floats);
+      base::pass_optional(forced_bfc_block_offset), has_clearance_past_adjoining_floats);
   scoped_refptr<const NGLayoutResult> layout_result =
       LayoutInflow(child_space, child_break_token, early_break_, &child,
                    inline_child_layout_context);
@@ -1574,7 +1574,7 @@ NGLayoutResult::EStatus NGBlockLayoutAlgorithm::FinishInflow(
     NGInlineChildLayoutContext* inline_child_layout_context,
     scoped_refptr<const NGInlineBreakToken>* previous_inline_break_token) {
   base::Optional<LayoutUnit> child_bfc_block_offset =
-      layout_result->BfcBlockOffset();
+      base::pass_optional(layout_result->BfcBlockOffset());
 
   bool is_self_collapsing = layout_result->IsSelfCollapsing();
 
@@ -1726,7 +1726,7 @@ NGLayoutResult::EStatus NGBlockLayoutAlgorithm::FinishInflow(
       child_bfc_block_offset) {
     NGConstraintSpace new_child_space = CreateConstraintSpaceForChild(
         child, *child_data, child_available_size_, /* is_new_fc */ false,
-        child_bfc_block_offset);
+        base::pass_optional(child_bfc_block_offset));
     layout_result =
         LayoutInflow(new_child_space, child_break_token, early_break_, &child,
                      inline_child_layout_context);
@@ -1741,7 +1741,7 @@ NGLayoutResult::EStatus NGBlockLayoutAlgorithm::FinishInflow(
       DCHECK(child_bfc_block_offset);
       new_child_space = CreateConstraintSpaceForChild(
           child, *child_data, child_available_size_, /* is_new_fc */ false,
-          child_bfc_block_offset);
+          base::pass_optional(child_bfc_block_offset));
       layout_result =
           LayoutInflow(new_child_space, child_break_token, early_break_, &child,
                        inline_child_layout_context);
@@ -1786,7 +1786,7 @@ NGLayoutResult::EStatus NGBlockLayoutAlgorithm::FinishInflow(
   NGFragment fragment(ConstraintSpace().GetWritingMode(), physical_fragment);
 
   LogicalOffset logical_offset = CalculateLogicalOffset(
-      fragment, layout_result->BfcLineOffset(), child_bfc_block_offset);
+      fragment, layout_result->BfcLineOffset(), base::pass_optional(child_bfc_block_offset));
 
   if (ConstraintSpace().HasBlockFragmentation() &&
       container_builder_.BfcBlockOffset() && child_bfc_block_offset) {
@@ -1831,7 +1831,7 @@ NGLayoutResult::EStatus NGBlockLayoutAlgorithm::FinishInflow(
   }
 
   *previous_inflow_position = ComputeInflowPosition(
-      *previous_inflow_position, child, *child_data, child_bfc_block_offset,
+      *previous_inflow_position, child, *child_data, base::pass_optional(child_bfc_block_offset),
       logical_offset, *layout_result, fragment,
       self_collapsing_child_had_clearance);
 
