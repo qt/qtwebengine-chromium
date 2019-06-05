@@ -289,7 +289,7 @@ NGTableTypes::Row ComputeMinimumRowBlockSize(
     } else {
       has_rowspan_start = true;
       rowspan_cells->push_back(NGTableTypes::CreateRowspanCell(
-          row_index, rowspan, &cell_block_constraint, cell_css_block_size));
+          row_index, rowspan, &cell_block_constraint, base::pass_optional(cell_css_block_size)));
     }
   }
 
@@ -335,7 +335,7 @@ class ColumnConstraintsBuilder {
     NGTableTypes::Column col_constraint =
         NGTableTypes::CreateColumn(column.Style(),
                                    !is_fixed_layout_ && colgroup_constraint_
-                                       ? colgroup_constraint_->max_inline_size
+                                       ? base::pass_optional(colgroup_constraint_->max_inline_size)
                                        : base::nullopt,
                                    is_fixed_layout_);
     for (wtf_size_t i = 0; i < span; ++i)

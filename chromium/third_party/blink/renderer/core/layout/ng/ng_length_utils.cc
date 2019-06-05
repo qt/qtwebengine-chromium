@@ -737,7 +737,7 @@ LayoutUnit ComputeBlockSizeForFragment(
     return intrinsic_size;
 
   return ComputeBlockSizeForFragmentInternal(
-      constraint_space, style, border_padding, intrinsic_size, inline_size,
+      constraint_space, style, border_padding, intrinsic_size, base::pass_optional(inline_size),
       should_be_considered_as_replaced, available_block_size_adjustment);
 }
 

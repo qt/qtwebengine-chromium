@@ -437,7 +437,7 @@ void ComputeOutOfFlowInlineDimensions(
       style.LogicalInlineStart(), style.LogicalInlineEnd(), min_inline_size,
       max_inline_size, static_position.offset.inline_offset,
       GetStaticPositionEdge(static_position.inline_edge), is_start_dominant,
-      false /* is_block_direction */, is_table, inline_size,
+      false /* is_block_direction */, is_table, base::pass_optional(inline_size),
       &dimensions->size.inline_size, &dimensions->inset.inline_start,
       &dimensions->inset.inline_end, &dimensions->margins.inline_start,
       &dimensions->margins.inline_end);
@@ -499,7 +499,7 @@ void ComputeOutOfFlowBlockDimensions(
       style.MarginAfter(), style.LogicalTop(), style.LogicalBottom(),
       min_block_size, max_block_size, static_position.offset.block_offset,
       GetStaticPositionEdge(static_position.block_edge), is_start_dominant,
-      true /* is_block_direction */, is_table, block_size,
+      true /* is_block_direction */, is_table, base::pass_optional(block_size),
       &dimensions->size.block_size, &dimensions->inset.block_start,
       &dimensions->inset.block_end, &dimensions->margins.block_start,
       &dimensions->margins.block_end);
