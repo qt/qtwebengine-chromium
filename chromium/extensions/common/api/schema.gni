@@ -80,6 +80,7 @@ if (use_qt) {
     "bluetooth_private.idl",
     "bluetooth_socket.idl",
     "cast_channel.idl",
+    "feedback_private.idl",
     "system_cpu.idl",
     "system_display.idl",
     "system_memory.idl",

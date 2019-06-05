@@ -160,6 +160,7 @@ source_set("api") {
       "//extensions/browser/api/bluetooth_low_energy",
       "//extensions/browser/api/bluetooth_socket",
       "//extensions/browser/api/cast_channel",
+      "//extensions/browser/api/feedback_private",
       "//extensions/browser/api/system_cpu",
       "//extensions/browser/api/system_display",
       "//extensions/browser/api/system_info",

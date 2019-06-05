@@ -17,7 +17,9 @@
 #include "extensions/browser/api/clipboard/clipboard_api.h"
 #include "extensions/browser/api/declarative_net_request/rules_monitor_service.h"
 #include "extensions/browser/api/display_source/display_source_event_router_factory.h"
+#if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/feedback_private/feedback_private_api.h"
+#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/hid/hid_device_manager.h"
 #include "extensions/browser/api/idle/idle_manager_factory.h"
 #include "extensions/browser/api/management/management_api.h"
