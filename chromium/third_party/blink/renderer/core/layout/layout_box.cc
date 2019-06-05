@@ -3259,7 +3259,7 @@ scoped_refptr<const NGLayoutResult> LayoutBox::CachedLayoutResult(
 
   LayoutUnit bfc_line_offset = new_space.BfcOffset().line_offset;
   base::Optional<LayoutUnit> bfc_block_offset =
-      cached_layout_result->BfcBlockOffset();
+      base::pass_optional(cached_layout_result->BfcBlockOffset());
   LayoutUnit block_offset_delta;
   NGMarginStrut end_margin_strut = cached_layout_result->EndMarginStrut();
 
@@ -3363,7 +3363,7 @@ scoped_refptr<const NGLayoutResult> LayoutBox::CachedLayoutResult(
   scoped_refptr<const NGLayoutResult> new_result =
       base::AdoptRef(new NGLayoutResult(*cached_layout_result, new_space,
                                         end_margin_strut, bfc_line_offset,
-                                        bfc_block_offset, block_offset_delta));
+                                        std::move(bfc_block_offset), block_offset_delta));
 
   if (needs_cached_result_update)
     SetCachedLayoutResult(new_result);
