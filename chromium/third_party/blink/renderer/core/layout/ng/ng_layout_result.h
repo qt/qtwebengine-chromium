@@ -122,7 +122,7 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
 
   const base::Optional<LayoutUnit> BfcBlockOffset() const {
     if (HasRareData())
-      return rare_data_->bfc_block_offset;
+      return base::pass_optional(rare_data_->bfc_block_offset);
 
     if (bitfields_.has_oof_positioned_offset) {
       DCHECK(physical_fragment_->IsOutOfFlowPositioned());
@@ -332,7 +332,7 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
     RareData(LayoutUnit bfc_line_offset,
              base::Optional<LayoutUnit> bfc_block_offset)
         : bfc_line_offset(bfc_line_offset),
-          bfc_block_offset(bfc_block_offset) {}
+          bfc_block_offset(base::pass_optional(bfc_block_offset)) {}
 
     LayoutUnit bfc_line_offset;
     base::Optional<LayoutUnit> bfc_block_offset;

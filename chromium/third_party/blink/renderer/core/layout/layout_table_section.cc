@@ -2013,7 +2013,7 @@ void LayoutTableSection::AdjustRowForPagination(LayoutTableRow& row_object,
       row_is_at_top_of_column =
           !offset_from_top_of_page ||
           offset_from_top_of_page <= OffsetForRepeatedHeader() ||
-          offset_from_top_of_page <= Table()->VBorderSpacing();
+          offset_from_top_of_page <= LayoutUnit(Table()->VBorderSpacing());
     }
 
     if (!row_is_at_top_of_column)

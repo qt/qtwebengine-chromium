@@ -434,9 +434,10 @@ NGLogicalOutOfFlowPosition ComputePartialAbsoluteWithChildInlineSize(
       style.LogicalInlineStart(), style.LogicalInlineEnd(), min_inline_size,
       max_inline_size, static_position.offset.inline_offset,
       GetStaticPositionEdge(static_position.inline_edge), is_start_dominant,
-      false /* is_block_direction */, inline_size, &position.size.inline_size,
-      &position.inset.inline_start, &position.inset.inline_end,
-      &position.margins.inline_start, &position.margins.inline_end);
+      false /* is_block_direction */, base::pass_optional(inline_size),
+      &position.size.inline_size, &position.inset.inline_start,
+      &position.inset.inline_end, &position.margins.inline_start,
+      &position.margins.inline_end);
 
   return position;
 }
@@ -496,9 +497,10 @@ void ComputeFullAbsoluteWithChildBlockSize(
       style.MarginAfter(), style.LogicalTop(), style.LogicalBottom(),
       min_block_size, max_block_size, static_position.offset.block_offset,
       GetStaticPositionEdge(static_position.block_edge), is_start_dominant,
-      true /* is_block_direction */, block_size, &position->size.block_size,
-      &position->inset.block_start, &position->inset.block_end,
-      &position->margins.block_start, &position->margins.block_end);
+      true /* is_block_direction */, base::pass_optional(block_size),
+      &position->size.block_size, &position->inset.block_start,
+      &position->inset.block_end, &position->margins.block_start,
+      &position->margins.block_end);
 }
 
 }  // namespace blink
