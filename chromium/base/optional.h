@@ -910,6 +910,11 @@ constexpr Optional<T> make_optional(std::initializer_list<U> il,
   return Optional<T>(in_place, il, std::forward<Args>(args)...);
 }
 
+template<typename T>
+constexpr Optional<T> pass_optional(const Optional<T> &opt) {
+  return opt ? make_optional(*opt) : nullopt;
+}
+
 // Partial specialization for a function template is not allowed. Also, it is
 // not allowed to add overload function to std namespace, while it is allowed
 // to specialize the template in std. Thus, swap() (kind of) overloading is

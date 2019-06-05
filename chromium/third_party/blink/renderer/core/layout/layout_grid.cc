@@ -425,7 +425,7 @@ LayoutUnit LayoutGrid::GuttersSize(
   if (span <= 1)
     return LayoutUnit();
 
-  LayoutUnit gap = GridGap(direction, available_size);
+  LayoutUnit gap = GridGap(direction, base::pass_optional(available_size));
 
   // Fast path, no collapsing tracks.
   if (!grid.HasAutoRepeatEmptyTracks(direction))
