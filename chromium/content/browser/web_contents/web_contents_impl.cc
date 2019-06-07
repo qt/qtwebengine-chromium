@@ -1597,6 +1597,7 @@ void WebContentsImpl::SetUserAgentOverride(
                         "override_in_new_tabs", override_in_new_tabs);
   DCHECK(!ua_override.ua_metadata_override.has_value() ||
          !ua_override.ua_string_override.empty());
+  should_override_user_agent_in_new_tabs_ = override_in_new_tabs;
 
   if (GetUserAgentOverride() == ua_override)
     return;
@@ -1605,8 +1606,6 @@ void WebContentsImpl::SetUserAgentOverride(
       !net::HttpUtil::IsValidHeaderValue(ua_override.ua_string_override)) {
     return;
   }
-
-  should_override_user_agent_in_new_tabs_ = override_in_new_tabs;
 
   renderer_preferences_.user_agent_override = ua_override;
 
