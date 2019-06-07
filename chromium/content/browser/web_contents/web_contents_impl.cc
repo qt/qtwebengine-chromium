@@ -2404,6 +2404,7 @@ void WebContentsImpl::SetUserAgentOverride(
                         "override_in_new_tabs", override_in_new_tabs);
   DCHECK(!ua_override.ua_metadata_override.has_value() ||
          !ua_override.ua_string_override.empty());
+  should_override_user_agent_in_new_tabs_ = override_in_new_tabs;
 
   if (GetUserAgentOverride() == ua_override) {
     return;
@@ -2413,8 +2414,6 @@ void WebContentsImpl::SetUserAgentOverride(
       !net::HttpUtil::IsValidHeaderValue(ua_override.ua_string_override)) {
     return;
   }
-
-  should_override_user_agent_in_new_tabs_ = override_in_new_tabs;
 
   // Update any in-flight load requests with overrides for new tabs.
   if (delayed_load_url_params_.get()) {
