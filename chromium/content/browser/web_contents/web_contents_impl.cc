@@ -1269,10 +1269,10 @@ WebUI* WebContentsImpl::GetCommittedWebUI() {
 
 void WebContentsImpl::SetUserAgentOverride(const std::string& override,
                                            bool override_in_new_tabs) {
+  should_override_user_agent_in_new_tabs_ = override_in_new_tabs;
+
   if (GetUserAgentOverride() == override)
     return;
-
-  should_override_user_agent_in_new_tabs_ = override_in_new_tabs;
 
   renderer_preferences_.user_agent_override = override;
 
