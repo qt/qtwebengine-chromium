@@ -586,6 +586,14 @@ void URLLoader::FollowRedirect(const std::vector<std::string>& removed_headers,
     return;
   }
 
+  // Removing headers can't make the set of pre-existing headers unsafe, but
+  // adding headers can.
+  if (!AreRequestHeadersSafe(modified_headers)) {
+    NotifyCompleted(net::ERR_INVALID_ARGUMENT);
+    // |this| may have been deleted.
+    return;
+  }
+
   deferred_redirect_url_.reset();
   new_redirect_url_ = new_url;
 
