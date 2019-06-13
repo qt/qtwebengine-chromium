@@ -7,6 +7,7 @@
 #include "base/stl_util.h"
 #include "net/base/load_flags.h"
 #include "services/network/cors/preflight_controller.h"
+#include "services/network/loader_util.h"
 #include "services/network/public/cpp/cors/cors.h"
 #include "url/url_util.h"
 
@@ -139,6 +140,11 @@ void CORSURLLoader::FollowRedirect(
   // call this function. Let's abort the request.
   if (request_.fetch_redirect_mode == mojom::FetchRedirectMode::kError) {
     HandleComplete(URLLoaderCompletionStatus(net::ERR_FAILED));
+    return;
+  }
+
+  if (!AreRequestHeadersSafe(request_.headers)) {
+    HandleComplete(URLLoaderCompletionStatus(net::ERR_INVALID_ARGUMENT));
     return;
   }
 

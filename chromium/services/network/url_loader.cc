@@ -491,6 +491,14 @@ void URLLoader::FollowRedirect(
       url_request_->RemoveRequestHeaderByName(key);
   }
 
+  if (modified_request_headers.has_value()) {
+    if (!AreRequestHeadersSafe(modified_request_headers.value())) {
+      NotifyCompleted(net::ERR_INVALID_ARGUMENT);
+      // |this| may have been deleted.
+      return;
+    }
+  }
+
   url_request_->FollowDeferredRedirect(modified_request_headers);
 }
 

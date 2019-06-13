@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "net/base/load_flags.h"
 #include "services/network/cors/cors_url_loader.h"
+#include "services/network/loader_util.h"
 #include "services/network/network_context.h"
 #include "services/network/public/cpp/cors/cors.h"
 #include "services/network/public/cpp/features.h"
@@ -124,6 +125,9 @@ bool CORSURLLoaderFactory::IsSane(const ResourceRequest& request) {
                     "other.";
     return false;
   }
+
+  if (!AreRequestHeadersSafe(request.headers))
+    return false;
 
   // TODO(yhirano): If the request mode is "no-cors", the redirect mode should
   // be "follow".
