@@ -166,9 +166,13 @@ constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
 #define PERFETTO_PLOG(x, ...) \
   PERFETTO_ELOG(x " (errno: %d, %s)", ##__VA_ARGS__, errno, strerror(errno))
 #endif
-#if PERFETTO_DLOG_IS_ON()
 
+#if PERFETTO_DLOG_IS_ON()
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+#define PERFETTO_DLOG(fmt, ...) CR_EXPAND_ARG(PERFETTO_XLOG(kLogDebug, fmt, __VA_ARGS__))
+#else
 #define PERFETTO_DLOG(fmt, ...) PERFETTO_XLOG(kLogDebug, fmt, ##__VA_ARGS__)
+#endif // PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
 
 #define PERFETTO_DPLOG(x, ...) \
   PERFETTO_DLOG(x " (errno: %d, %s)", ##__VA_ARGS__, errno, strerror(errno))
@@ -182,6 +186,21 @@ constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
 
 #if PERFETTO_DCHECK_IS_ON()
 
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+#define PERFETTO_DCHECK(x)                           \
+  do {                                               \
+    if (PERFETTO_UNLIKELY(!(x))) {                   \
+      PERFETTO_ELOG("%s (errno: %d, %s)", "PERFETTO_CHECK(" #x ")", errno, strerror(errno)); \
+      PERFETTO_IMMEDIATE_CRASH();                    \
+    }                                                \
+  } while (0)
+
+#define PERFETTO_DFATAL(fmt, ...)      \
+  do {                                 \
+    CR_EXPAND_ARG(PERFETTO_ELOG(fmt, __VA_ARGS__)); \
+    PERFETTO_IMMEDIATE_CRASH();        \
+  } while (0)
+#else
 #define PERFETTO_DCHECK(x)                           \
   do {                                               \
     if (PERFETTO_UNLIKELY(!(x))) {                   \
@@ -195,7 +214,7 @@ constexpr const char* kLogFmt[] = {"\x1b[2m", "\x1b[39m", "\x1b[32m\x1b[1m",
     PERFETTO_PLOG(fmt, ##__VA_ARGS__); \
     PERFETTO_IMMEDIATE_CRASH();        \
   } while (0)
-
+#endif
 #else
 
 #define PERFETTO_DCHECK(x) \
