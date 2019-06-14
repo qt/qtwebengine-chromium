@@ -564,7 +564,11 @@ class BASE_EXPORT TraceArguments {
   TraceArguments() : size_(0) {}
 
   // Constructor for a single argument.
+#if defined(COMPILER_MSVC)
+  template <typename T>
+#else
   template <typename T, class = decltype(TraceValue::TypeCheck<T>::value)>
+#endif
   TraceArguments(const char* arg1_name, T&& arg1_value) : size_(1) {
     types_[0] = TraceValue::TypeFor<T>::value;
     names_[0] = arg1_name;
@@ -573,9 +577,13 @@ class BASE_EXPORT TraceArguments {
 
   // Constructor for two arguments.
   template <typename T1,
+#if defined(COMPILER_MSVC)
+            typename T2>
+#else
             typename T2,
             class = decltype(TraceValue::TypeCheck<T1>::value &&
                              TraceValue::TypeCheck<T2>::value)>
+#endif
   TraceArguments(const char* arg1_name,
                  T1&& arg1_value,
                  const char* arg2_name,
