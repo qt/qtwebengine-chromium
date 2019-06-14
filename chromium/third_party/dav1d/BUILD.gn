@@ -91,6 +91,17 @@ config("dav1d_config") {
     "libdav1d/include/dav1d",
     platform_config_root,
   ]
+  if (!is_clang) {
+    if (is_win) {
+      include_dirs += [
+        "libdav1d/include/compat/msvc"
+      ]
+    } else {
+      include_dirs += [
+        "libdav1d/include/compat/gcc"
+      ]
+    }
+  }
 }
 
 dav1d_copts = [

@@ -83,6 +83,7 @@ class TransformStreamWrapper::Algorithm : public ScriptFunction {
     ExceptionState exception_state_;
     ExceptionToRejectPromiseScope reject_promise_scope_;
   };
+  friend class AlgorithmScope;
 
   Member<TransformStreamTransformer> transformer_;
   const char* const interface_name_;

@@ -53,7 +53,11 @@ V8_EXPORT_PRIVATE void Heap_MarkingBarrierForDescriptorArraySlow(
 namespace heap_internals {
 
 struct Space {
+#if V8_CC_MSVC
+  static constexpr uintptr_t kIdOffset = 10 * kSystemPointerSize;
+#else
   static constexpr uintptr_t kIdOffset = 9 * kSystemPointerSize;
+#endif
   V8_INLINE AllocationSpace identity() {
     return *reinterpret_cast<AllocationSpace*>(reinterpret_cast<Address>(this) +
                                                kIdOffset);

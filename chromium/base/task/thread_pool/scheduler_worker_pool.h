@@ -120,7 +120,9 @@ class BASE_EXPORT SchedulerWorkerPool {
    protected:
     BaseScopedWorkersExecutor() = default;
     ~BaseScopedWorkersExecutor() = default;
+#if !defined(COMPILER_MSVC)
     DISALLOW_COPY_AND_ASSIGN(BaseScopedWorkersExecutor);
+#endif
   };
 
   // Allows a sequence to be pushed to a pool's PriorityQueue at the end of a
