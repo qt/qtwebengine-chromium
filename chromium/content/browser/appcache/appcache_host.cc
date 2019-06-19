@@ -14,7 +14,10 @@
 #include "content/browser/appcache/appcache_request.h"
 #include "content/browser/appcache/appcache_request_handler.h"
 #include "content/browser/appcache/appcache_subresource_url_factory.h"
+#include "content/common/appcache_interfaces.h"
+#include "content/public/browser/child_process_security_policy.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/url_constants.h"
 #include "net/url_request/url_request.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
@@ -46,7 +49,17 @@ void FillCacheInfo(const AppCache* cache,
   info->size = cache->cache_size();
 }
 
-}  // Anonymous namespace
+bool CanAccessDocumentURL(int process_id, const GURL& document_url) {
+  DCHECK_NE(process_id, ChildProcessHost::kInvalidUniqueID);
+  auto* security_policy = ChildProcessSecurityPolicy::GetInstance();
+  return document_url.is_empty() ||       // window.open("javascript:''") case.
+         document_url == kAboutSrcDocURL ||  // <iframe srcdoc= ...> case.
+         document_url.IsAboutBlank() ||   // <iframe src="javascript:''"> case.
+         document_url == GURL("data:,") ||  // CSP blocked_urls.
+         security_policy->CanAccessDataForOrigin(process_id, document_url);
+}
+
+}  // namespace
 
 AppCacheHost::AppCacheHost(int host_id,
                            int process_id,
@@ -98,6 +111,17 @@ bool AppCacheHost::SelectCache(const GURL& document_url,
                                const GURL& manifest_url) {
   if (was_select_cache_called_)
     return false;
+
+  DCHECK_NE(process_id_, ChildProcessHost::kInvalidUniqueID);
+  if (!CanAccessDocumentURL(process_id_, document_url)) {
+    return false;
+  }
+
+  auto* security_policy = ChildProcessSecurityPolicy::GetInstance();
+  if (!manifest_url.is_empty() &&
+      !security_policy->CanAccessDataForOrigin(process_id_, manifest_url)) {
+    return false;
+  }
 
   DCHECK(pending_start_update_callback_.is_null() &&
          pending_swap_cache_callback_.is_null() &&
@@ -185,6 +209,10 @@ bool AppCacheHost::MarkAsForeignEntry(const GURL& document_url,
                                       int64_t cache_document_was_loaded_from) {
   if (was_select_cache_called_)
     return false;
+
+  if (!CanAccessDocumentURL(process_id_, document_url)) {
+    return false;
+  }
 
   // The document url is not the resource url in the fallback case.
   storage()->MarkEntryAsForeign(
