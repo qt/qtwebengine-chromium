@@ -241,6 +241,7 @@ class CORE_EXPORT Document : public ContainerNode,
                              public mojom::blink::NavigationInitiator {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(Document);
+  USING_PRE_FINALIZER(Document, Dispose);
 
  public:
   static Document* Create(const DocumentInit& init) {
@@ -1665,6 +1666,8 @@ class CORE_EXPORT Document : public ContainerNode,
   void SetFreezingInProgress(bool is_freezing_in_progress) {
     is_freezing_in_progress_ = is_freezing_in_progress;
   };
+
+  void Dispose();
 
   DocumentLifecycle lifecycle_;
 

@@ -7943,6 +7943,10 @@ bool Document::ChildrenCanHaveStyle() const {
   return false;
 }
 
+void Document::Dispose() {
+  navigation_initiator_bindings_.CloseAllBindings();
+}
+
 template class CORE_TEMPLATE_EXPORT Supplement<Document>;
 
 }  // namespace blink
