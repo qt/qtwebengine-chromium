@@ -30,7 +30,7 @@ UkmEntryBuilderBase::~UkmEntryBuilderBase() = default;
 
 void UkmEntryBuilderBase::SetMetricInternal(uint64_t metric_hash,
                                             int64_t value) {
-  entry_->metrics.emplace(metric_hash, value);
+  entry_->metrics.emplace(std::make_pair(metric_hash, value));
 }
 
 void UkmEntryBuilderBase::Record(UkmRecorder* recorder) {
