@@ -18,6 +18,7 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket.h"
 #include "content/common/zygote/zygote_commands_linux.h"
+#include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "sandbox/policy/switches.h"
@@ -221,8 +222,8 @@ void ZygoteCommunication::Init(
     base::OnceCallback<pid_t(base::CommandLine*, base::ScopedFD*)> launcher) {
   CHECK(!init_);
 
-  base::FilePath chrome_path;
-  CHECK(base::PathService::Get(base::FILE_EXE, &chrome_path));
+  base::FilePath chrome_path = content::ChildProcessHost::GetChildPath(
+      content::ChildProcessHost::CHILD_NORMAL);
 
   base::CommandLine cmd_line(chrome_path);
   cmd_line.AppendSwitchASCII(switches::kProcessType, switches::kZygoteProcess);
