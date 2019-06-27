@@ -66,6 +66,8 @@ class CONTENT_EXPORT AXImageAnnotator : public base::CheckedObserver {
    public:
     ImageInfo(const blink::WebAXObject& image);
     virtual ~ImageInfo();
+    ImageInfo(ImageInfo&&) = default;
+    ImageInfo& operator=(ImageInfo&&) = default;
 
     mojo::PendingRemote<image_annotation::mojom::ImageProcessor>
     GetImageProcessor();

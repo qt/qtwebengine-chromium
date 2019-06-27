@@ -754,12 +754,15 @@ void TraceEventDataSource::Flush(
 }
 
 void TraceEventDataSource::ClearIncrementalState() {
+#ifndef TOOLKIT_QT
   TrackEventThreadLocalEventSink::ClearIncrementalState();
+#endif
   EmitProcessDescriptor();
 }
 
 std::unique_ptr<perfetto::StartupTraceWriter>
 TraceEventDataSource::CreateTraceWriterLocked() {
+#ifndef TOOLKIT_QT
   lock_.AssertAcquired();
 
   // The call to CreateTraceWriter() below posts a task which is not allowed
@@ -785,10 +788,14 @@ TraceEventDataSource::CreateTraceWriterLocked() {
         producer_->CreateTraceWriter(target_buffer_));
   }
   return trace_writer;
+#else
+  return nullptr;
+#endif
 }
 
 ThreadLocalEventSink* TraceEventDataSource::CreateThreadLocalEventSink(
     bool thread_will_flush) {
+#ifndef TOOLKIT_QT
   base::AutoLock lock(lock_);
   uint32_t session_id = session_id_.load(std::memory_order_relaxed);
 
@@ -800,6 +807,9 @@ ThreadLocalEventSink* TraceEventDataSource::CreateThreadLocalEventSink(
   return new TrackEventThreadLocalEventSink(std::move(trace_writer), session_id,
                                             disable_interning_,
                                             privacy_filtering_enabled_);
+#else
+  return nullptr;
+#endif
 }
 
 // static

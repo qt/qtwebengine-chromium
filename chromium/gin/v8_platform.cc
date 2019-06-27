@@ -273,10 +273,14 @@ base::LazyInstance<PageAllocator>::Leaky g_page_allocator =
 
 }  // namespace gin
 
+namespace base {
+
+namespace trace_event {
+
 // Allow std::unique_ptr<v8::ConvertableToTraceFormat> to be a valid
 // initialization value for trace macros.
 template <>
-struct base::trace_event::TraceValue::Helper<
+struct TraceValue::Helper<
     std::unique_ptr<v8::ConvertableToTraceFormat>> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_CONVERTABLE;
   static inline void SetValue(
@@ -288,6 +292,10 @@ struct base::trace_event::TraceValue::Helper<
         new gin::ConvertableToTraceFormatWrapper(std::move(value));
   }
 };
+
+} // namespace trace_event
+
+} // namespace base
 
 namespace gin {
 

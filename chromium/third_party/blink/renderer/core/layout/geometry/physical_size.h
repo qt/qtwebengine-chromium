@@ -56,7 +56,7 @@ struct CORE_EXPORT PhysicalSize {
   }
 
   constexpr bool operator==(const PhysicalSize& other) const {
-    return std::tie(other.width, other.height) == std::tie(width, height);
+    return other.width == width && other.height == height;
   }
   constexpr bool operator!=(const PhysicalSize& other) const {
     return !(*this == other);

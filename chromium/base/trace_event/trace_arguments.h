@@ -490,21 +490,21 @@ class BASE_EXPORT StringStorage {
   void Reset(size_t alloc_size = 0);
 
   // Accessors.
-  constexpr size_t size() const { return data_ ? data_->size : 0u; }
-  constexpr const char* data() const { return data_ ? data_->chars : nullptr; }
-  constexpr char* data() { return data_ ? data_->chars : nullptr; }
+  size_t size() const { return data_ ? data_->size : 0u; }
+  const char* data() const { return data_ ? data_->chars : nullptr; }
+  char* data() { return data_ ? data_->chars : nullptr; }
 
-  constexpr const char* begin() const { return data(); }
-  constexpr const char* end() const { return data() + size(); }
+  const char* begin() const { return data(); }
+  const char* end() const { return data() + size(); }
   inline char* begin() { return data(); }
   inline char* end() { return data() + size(); }
 
   // True iff storage is empty.
-  constexpr bool empty() const { return size() == 0; }
+  bool empty() const { return size() == 0; }
 
   // Returns true if |ptr| is inside the storage area, false otherwise.
   // Used during unit-testing.
-  constexpr bool Contains(const void* ptr) const {
+  bool Contains(const void* ptr) const {
     const char* char_ptr = static_cast<const char*>(ptr);
     return (char_ptr >= begin() && char_ptr < end());
   }
@@ -515,7 +515,7 @@ class BASE_EXPORT StringStorage {
 
   // Return an estimate of the memory overhead of this instance. This doesn't
   // count the size of |data_| itself.
-  constexpr size_t EstimateTraceMemoryOverhead() const {
+  size_t EstimateTraceMemoryOverhead() const {
     return data_ ? sizeof(size_t) + data_->size : 0u;
   }
 

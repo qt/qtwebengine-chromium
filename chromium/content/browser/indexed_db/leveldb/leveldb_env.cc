@@ -74,7 +74,7 @@ DefaultLevelDBFactory::OpenDB(const leveldb_env::Options& options,
                               const std::string& name) {
   std::unique_ptr<leveldb::DB> db;
   leveldb::Status s = leveldb_env::OpenDB(options, name, &db);
-  return {std::move(db), s};
+  return std::make_tuple(std::move(db), s);
 }
 
 std::tuple<scoped_refptr<LevelDBState>, leveldb::Status, bool /* disk_full*/>
@@ -108,13 +108,13 @@ DefaultLevelDBFactory::OpenLevelDBState(
     if (!status.ok()) {
       LOG(ERROR) << "Failed to open in-memory LevelDB database: "
                  << status.ToString();
-      return {nullptr, status, false};
+      return std::make_tuple(nullptr, status, false);
     }
 
-    return {LevelDBState::CreateForInMemoryDB(std::move(in_memory_env),
-                                              ldb_comparator, std::move(db),
-                                              "in-memory-database"),
-            status, false};
+    return std::make_tuple(LevelDBState::CreateForInMemoryDB(std::move(in_memory_env),
+                               ldb_comparator, std::move(db),
+                               "in-memory-database"),
+                           status, false);
   }
 
   leveldb_env::Options options =
@@ -143,15 +143,15 @@ DefaultLevelDBFactory::OpenLevelDBState(
 
     LOG(ERROR) << "Failed to open LevelDB database from "
                << file_name.AsUTF8Unsafe() << "," << status.ToString();
-    return {nullptr, status, is_disk_full};
+    return std::make_tuple(nullptr, status, is_disk_full);
   }
 
   UMA_HISTOGRAM_MEDIUM_TIMES("WebCore.IndexedDB.LevelDB.OpenTime",
                              base::TimeTicks::Now() - begin_time);
 
-  return {LevelDBState::CreateForDiskDB(ldb_comparator, std::move(db),
-                                        std::move(file_name)),
-          status, false};
+  return std::make_tuple(LevelDBState::CreateForDiskDB(ldb_comparator, std::move(db),
+                                                       std::move(file_name)),
+                         status, false);
 }
 
 std::unique_ptr<TransactionalLevelDBDatabase>

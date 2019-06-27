@@ -263,9 +263,9 @@ struct MD5CE {
     while (*end != 0)
       ++end;
     // Double check that the precision losing conversion is safe.
-    DCHECK(end >= string);
-    DCHECK(static_cast<std::ptrdiff_t>(static_cast<uint32_t>(end - string)) ==
-           (end - string));
+//    DCHECK(end >= string);
+//    DCHECK(static_cast<std::ptrdiff_t>(static_cast<uint32_t>(end - string)) ==
+//           (end - string));
     return static_cast<uint32_t>(end - string);
   }
 

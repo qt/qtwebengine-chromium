@@ -51,7 +51,7 @@ void AecDumpManagerImpl::Add(
     mojo::PendingRemote<blink::mojom::AecDumpAgent> agent) {
   int id = ++id_counter_;
 
-  agents_.emplace(std::make_pair(id, std::move(agent)));
+  agents_.emplace(std::make_pair(id, mojo::Remote<blink::mojom::AecDumpAgent>(std::move(agent))));
 
   agents_[id].set_disconnect_handler(
       base::BindOnce(&AecDumpManagerImpl::OnAgentDisconnected,

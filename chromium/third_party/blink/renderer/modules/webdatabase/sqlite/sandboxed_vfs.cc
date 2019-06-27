@@ -170,7 +170,7 @@ std::tuple<int, sqlite3*> SandboxedVfs::OpenDatabase(const String& filename) {
       connection = nullptr;
     }
   }
-  return {status, connection};
+  return std::tuple<int, sqlite3*>(status, connection);
 }
 
 int SandboxedVfs::Open(const char* full_path,
