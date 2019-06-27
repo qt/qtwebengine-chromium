@@ -45,7 +45,7 @@ class BASE_EXPORT AnyInternal {
     type_ops_ = other.type_ops_;
   }
 
-  constexpr bool has_value() const noexcept { return !!type_ops_; }
+  bool has_value() const noexcept { return !!type_ops_; }
 
   TypeId type() const noexcept {
     if (!type_ops_)
@@ -160,7 +160,11 @@ class BASE_EXPORT AnyInternal {
 
 // static
 template <typename T>
-const AnyInternal::TypeOps AnyInternal::TypeOpsHelper<T>::type_ops;
+constexpr AnyInternal::TypeOps AnyInternal::TypeOpsHelper<T>::type_ops;
+
+//static
+template <typename T>
+constexpr bool AnyInternal::InlineStorageHelper<T>::kUseInlineStorage;
 
 template <typename T>
 struct AnyInternal::ConstructHelper<T, /* UseInlineStorage */ true> {

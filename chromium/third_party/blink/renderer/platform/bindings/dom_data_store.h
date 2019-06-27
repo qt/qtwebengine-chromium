@@ -238,6 +238,16 @@ class DOMDataStore {
       handle_ = std::move(rhs.handle_);
       return *this;
     }
+
+    // Fake copy support, because WTF::HashMap references it.
+    DOMWorldWrapperReference(const DOMWorldWrapperReference&)
+        : TraceWrapperV8Reference() {
+      NOTREACHED();
+    }
+    DOMWorldWrapperReference& operator=(const DOMWorldWrapperReference&) {
+      NOTREACHED();
+      return *this;
+    }
   };
 
   // UntracedMember is safe here as the map is not keeping ScriptWrappable alive
@@ -250,8 +260,6 @@ class DOMDataStore {
   GC_PLUGIN_IGNORE(
       "Avoid dispatch on Visitor by looking up value in DOMDataStore::Trace.")
   base::Optional<MapType> wrapper_map_;
-
-  DISALLOW_COPY_AND_ASSIGN(DOMDataStore);
 };
 
 }  // namespace blink

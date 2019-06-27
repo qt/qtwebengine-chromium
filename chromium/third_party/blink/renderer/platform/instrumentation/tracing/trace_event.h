@@ -11,14 +11,18 @@
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
+namespace base {
+namespace trace_event {
 // Conversion from CString to TraceValue so that trace arguments can be strings.
 template <>
-struct base::trace_event::TraceValue::Helper<WTF::CString> {
+struct TraceValue::Helper<WTF::CString> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_COPY_STRING;
   static inline void SetValue(TraceValue* v, const WTF::CString& value) {
     v->as_string = value.data();
   }
 };
+}  // namespace trace_event
+}  // namespace base
 
 namespace blink {
 namespace trace_event {
