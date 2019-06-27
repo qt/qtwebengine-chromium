@@ -132,6 +132,10 @@ class BASE_EXPORT WeakReferenceOwner {
  public:
   WeakReferenceOwner();
   ~WeakReferenceOwner();
+  WeakReferenceOwner(WeakReferenceOwner&& other) noexcept = default;
+  WeakReferenceOwner(const WeakReferenceOwner& other) = default;
+  WeakReferenceOwner& operator=(WeakReferenceOwner&& other) noexcept = default;
+  WeakReferenceOwner& operator=(const WeakReferenceOwner& other) = default;
 
   WeakReference GetRef() const;
 
@@ -323,6 +327,8 @@ class WeakPtrFactory : public internal::WeakPtrFactoryBase {
       : WeakPtrFactoryBase(reinterpret_cast<uintptr_t>(ptr)) {}
 
   ~WeakPtrFactory() = default;
+  WeakPtrFactory(WeakPtrFactory&&) noexcept = default;
+  WeakPtrFactory& operator=(WeakPtrFactory&&) noexcept = default;
 
   WeakPtr<T> GetWeakPtr() const {
     return WeakPtr<T>(weak_reference_owner_.GetRef(),

@@ -672,10 +672,10 @@ bool TransportParameters::AreValid(std::string* error_details) const {
     return false;
   }
   for (const auto& kv : custom_parameters) {
-    if (TransportParameterIdIsKnown(kv.first)) {
+    if (TransportParameterIdIsKnown(TransportParameterId(kv.first))) {
       *error_details = quiche::QuicheStrCat(
           "Using custom_parameters with known ID ",
-          TransportParameterIdToString(kv.first), " is not allowed");
+          TransportParameterIdToString(TransportParameterId(kv.first)), " is not allowed");
       return false;
     }
   }
@@ -1034,7 +1034,7 @@ bool SerializeTransportParameters(ParsedQuicVersion version,
   }
 
   for (const auto& kv : in.custom_parameters) {
-    const TransportParameters::TransportParameterId param_id = kv.first;
+    const TransportParameters::TransportParameterId param_id = TransportParameters::TransportParameterId(kv.first);
     if (param_id % 31 == 27) {
       // See the "Reserved Transport Parameters" section of
       // draft-ietf-quic-transport.

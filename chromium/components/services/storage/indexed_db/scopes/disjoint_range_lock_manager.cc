@@ -25,10 +25,10 @@ DisjointRangeLockManager::LockRequest::LockRequest(LockRequest&&) noexcept =
     default;
 DisjointRangeLockManager::LockRequest::~LockRequest() = default;
 DisjointRangeLockManager::Lock::Lock() = default;
-DisjointRangeLockManager::Lock::Lock(Lock&&) noexcept = default;
+DisjointRangeLockManager::Lock::Lock(Lock&&) = default;
 DisjointRangeLockManager::Lock::~Lock() = default;
 DisjointRangeLockManager::Lock& DisjointRangeLockManager::Lock::operator=(
-    DisjointRangeLockManager::Lock&&) noexcept = default;
+    DisjointRangeLockManager::Lock&&) = default;
 
 DisjointRangeLockManager::DisjointRangeLockManager(int level_count)
     : task_runner_(base::SequencedTaskRunnerHandle::Get()) {

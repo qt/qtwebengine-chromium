@@ -27,8 +27,11 @@ class ImageProcessor : public mojom::ImageProcessor {
   // TODO(crbug.com/916420): accept a more sophisticated interface to fetch
   //                         pixels; this will be required for iOS, where pixel
   //                         access entails a full image redownload.
+  ImageProcessor() = default;
   explicit ImageProcessor(base::RepeatingCallback<SkBitmap()> get_pixels);
   ~ImageProcessor() override;
+  ImageProcessor(ImageProcessor&&) = default;
+  ImageProcessor& operator=(ImageProcessor&&) = default;
 
   // Reencodes the image data for transmission to the service. Will be called by
   // the service if pixel data is needed.
@@ -48,7 +51,7 @@ class ImageProcessor : public mojom::ImageProcessor {
   // The quality parameter to use when encoding images before transmission.
   static constexpr int kJpgQuality = 65;
 
-  const base::RepeatingCallback<SkBitmap()> get_pixels_;
+  base::RepeatingCallback<SkBitmap()> get_pixels_;
 
   scoped_refptr<base::SequencedTaskRunner> background_task_runner_;
 

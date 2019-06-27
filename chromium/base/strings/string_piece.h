@@ -157,7 +157,11 @@ template <typename STRING_TYPE> class BasicStringPiece {
   // We provide non-explicit singleton constructors so users can pass
   // in a "const char*" or a "string" wherever a "StringPiece" is
   // expected (likewise for char16, string16, StringPiece16).
+#if defined(COMPILER_GCC)
+  constexpr BasicStringPiece() __attribute__((always_inline)) : ptr_(nullptr), length_(0) {}
+#else
   constexpr BasicStringPiece() : ptr_(nullptr), length_(0) {}
+#endif
   // TODO(crbug.com/1049498): Construction from nullptr is not allowed for
   // std::basic_string_view, so remove the special handling for it.
   // Note: This doesn't just use STRING_TYPE::traits_type::length(), since that
@@ -179,7 +183,11 @@ template <typename STRING_TYPE> class BasicStringPiece {
   }
   BasicStringPiece(const STRING_TYPE& str)
       : ptr_(str.data()), length_(str.size()) {}
+#if defined(COMPILER_GCC)
+  constexpr BasicStringPiece(const value_type* offset, size_type len) __attribute__((always_inline))
+#else
   constexpr BasicStringPiece(const value_type* offset, size_type len)
+#endif
       : ptr_(offset), length_(len) {}
   BasicStringPiece(const typename STRING_TYPE::const_iterator& begin,
                    const typename STRING_TYPE::const_iterator& end) {

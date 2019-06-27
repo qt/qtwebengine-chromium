@@ -80,10 +80,10 @@ class DisjointRangeLockManager : public ScopesLockManager {
   struct Lock {
     Lock();
     Lock(const Lock&) = delete;
-    Lock(Lock&&) noexcept;
+    Lock(Lock&&);
     ~Lock();
     Lock& operator=(const Lock&) = delete;
-    Lock& operator=(Lock&&) noexcept;
+    Lock& operator=(Lock&&);
 
     bool CanBeAcquired(LockType lock_type) {
       return acquired_count == 0 ||

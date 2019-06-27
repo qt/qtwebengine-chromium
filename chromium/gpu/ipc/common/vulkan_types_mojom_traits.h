@@ -85,7 +85,7 @@ struct StructTraits<gpu::mojom::VkPhysicalDevicePropertiesDataView,
 
   static base::span<const uint8_t> pipelineCacheUUID(
       const VkPhysicalDeviceProperties& input) {
-    return input.pipelineCacheUUID;
+    return base::make_span(input.pipelineCacheUUID);
   }
 
   static const VkPhysicalDeviceLimits& limits(
@@ -399,7 +399,7 @@ struct StructTraits<gpu::mojom::VkPhysicalDeviceLimitsDataView,
 
   static base::span<const uint32_t> maxComputeWorkGroupCount(
       const VkPhysicalDeviceLimits& input) {
-    return input.maxComputeWorkGroupCount;
+    return base::make_span(input.maxComputeWorkGroupCount);
   }
 
   static uint32_t maxComputeWorkGroupInvocations(
@@ -409,7 +409,7 @@ struct StructTraits<gpu::mojom::VkPhysicalDeviceLimitsDataView,
 
   static base::span<const uint32_t> maxComputeWorkGroupSize(
       const VkPhysicalDeviceLimits& input) {
-    return input.maxComputeWorkGroupSize;
+    return base::make_span(input.maxComputeWorkGroupSize);
   }
 
   static uint32_t subPixelPrecisionBits(const VkPhysicalDeviceLimits& input) {
@@ -447,12 +447,12 @@ struct StructTraits<gpu::mojom::VkPhysicalDeviceLimitsDataView,
 
   static base::span<const uint32_t> maxViewportDimensions(
       const VkPhysicalDeviceLimits& input) {
-    return input.maxViewportDimensions;
+    return base::make_span(input.maxViewportDimensions);
   }
 
   static base::span<const float> viewportBoundsRange(
       const VkPhysicalDeviceLimits& input) {
-    return input.viewportBoundsRange;
+    return base::make_span(input.viewportBoundsRange);
   }
 
   static uint32_t viewportSubPixelBits(const VkPhysicalDeviceLimits& input) {
@@ -599,12 +599,12 @@ struct StructTraits<gpu::mojom::VkPhysicalDeviceLimitsDataView,
 
   static base::span<const float> pointSizeRange(
       const VkPhysicalDeviceLimits& input) {
-    return input.pointSizeRange;
+    return base::make_span(input.pointSizeRange);
   }
 
   static base::span<const float> lineWidthRange(
       const VkPhysicalDeviceLimits& input) {
-    return input.lineWidthRange;
+    return base::make_span(input.lineWidthRange);
   }
 
   static float pointSizeGranularity(const VkPhysicalDeviceLimits& input) {

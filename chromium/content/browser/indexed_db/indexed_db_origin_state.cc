@@ -215,7 +215,7 @@ IndexedDBOriginState::RunTasks() {
         continue;
       case IndexedDBDatabase::RunTasksResult::kError:
         running_tasks_ = false;
-        return {RunTasksResult::kError, status};
+        return std::make_tuple(RunTasksResult::kError, status);
       case IndexedDBDatabase::RunTasksResult::kCanBeDestroyed:
         db_it = databases_.erase(db_it);
         break;
@@ -223,8 +223,8 @@ IndexedDBOriginState::RunTasks() {
   }
   running_tasks_ = false;
   if (CanCloseFactory() && closing_stage_ == ClosingState::kClosed)
-    return {RunTasksResult::kCanBeDestroyed, leveldb::Status::OK()};
-  return {RunTasksResult::kDone, leveldb::Status::OK()};
+    return std::make_tuple(RunTasksResult::kCanBeDestroyed, leveldb::Status::OK());
+  return std::make_tuple(RunTasksResult::kDone, leveldb::Status::OK());
 }
 
 IndexedDBDatabase* IndexedDBOriginState::AddDatabase(

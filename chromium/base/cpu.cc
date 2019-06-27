@@ -76,7 +76,7 @@ std::tuple<int, int, int, int> ComputeX86FamilyAndModel(
     family += ext_family;
   }
 
-  return {family, model, ext_family, ext_model};
+  return std::make_tuple(family, model, ext_family, ext_model);
 }
 
 }  // namespace internal

@@ -93,7 +93,7 @@ CSSParserContext::CSSParserContext(CSSParserMode mode,
                        secure_context_mode,
                        nullptr,
                        use_counter_document,
-                       ResourceFetchRestriction::kNone) {}
+                       blink::ResourceFetchRestriction::kNone) {}
 
 CSSParserContext::CSSParserContext(const Document& document)
     : CSSParserContext(document,
@@ -154,7 +154,7 @@ CSSParserContext::CSSParserContext(const ExecutionContext& context)
                        IsA<LocalDOMWindow>(&context)
                            ? To<LocalDOMWindow>(context).document()
                            : nullptr,
-                       ResourceFetchRestriction::kNone) {}
+                       blink::ResourceFetchRestriction::kNone) {}
 
 CSSParserContext::CSSParserContext(
     const KURL& base_url,

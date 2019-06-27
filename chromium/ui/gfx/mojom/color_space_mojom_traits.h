@@ -394,11 +394,11 @@ struct COMPONENT_EXPORT(UI_GFX_MOJOM_TRAITS)
 
   static base::span<const float> custom_primary_matrix(
       const gfx::ColorSpace& input) {
-    return input.custom_primary_matrix_;
+    return base::span<const float>(input.custom_primary_matrix_);
   }
 
   static base::span<const float> transfer_params(const gfx::ColorSpace& input) {
-    return input.transfer_params_;
+    return base::span<const float>(input.transfer_params_);
   }
 
   static bool Read(gfx::mojom::ColorSpaceDataView data, gfx::ColorSpace* out);

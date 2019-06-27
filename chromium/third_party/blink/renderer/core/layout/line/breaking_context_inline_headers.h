@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/core/layout/line/word_measurement.h"
 #include "third_party/blink/renderer/core/layout/text_run_constructor.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/style/computed_style_base_constants.h"
 #include "third_party/blink/renderer/platform/fonts/character_range.h"
 #include "third_party/blink/renderer/platform/text/hyphenation.h"
 #include "third_party/blink/renderer/platform/text/text_break_iterator.h"
@@ -998,7 +999,7 @@ inline bool BreakingContext::HandleText(WordMeasurements& word_measurements,
                       curr_ws_ == EWhiteSpace::kPre);
   bool mid_word_break = false;
   bool line_break_anywhere =
-      auto_wrap_ ? current_style_->GetLineBreak() == LineBreak::kAnywhere
+      auto_wrap_ ? current_style_->GetLineBreak() == blink::LineBreak::kAnywhere
                  : false;
   bool break_all =
       auto_wrap_ && (current_style_->WordBreak() == EWordBreak::kBreakAll ||
