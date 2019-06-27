@@ -17,6 +17,8 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
+#include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
@@ -90,47 +92,11 @@ static void ConsiderForBestCandidate(SpatialNavigationDirection direction,
 
   double distance =
       ComputeDistanceDataForNode(direction, current_interest, candidate);
-  if (distance == MaxDistance())
+  if (distance == kMaxDistance)
     return;
 
-  if (best_candidate->IsNull()) {
-    *best_candidate = candidate;
-    *best_distance = distance;
-    return;
-  }
 
-  LayoutRect intersection_rect = Intersection(
-      candidate.rect_in_root_frame, best_candidate->rect_in_root_frame);
-  if (!intersection_rect.IsEmpty() &&
-      !AreElementsOnSameLine(*best_candidate, candidate) &&
-      intersection_rect == candidate.rect_in_root_frame) {
-    // If 2 nodes are intersecting, do hit test to find which node in on top.
-    LayoutUnit x = intersection_rect.X() + intersection_rect.Width() / 2;
-    LayoutUnit y = intersection_rect.Y() + intersection_rect.Height() / 2;
-    if (!IsA<LocalFrame>(
-            candidate.visible_node->GetDocument().GetPage()->MainFrame()))
-      return;
-    HitTestLocation location(IntPoint(x.ToInt(), y.ToInt()));
-    HitTestResult result =
-        candidate.visible_node->GetDocument()
-            .GetPage()
-            ->DeprecatedLocalMainFrame()
-            ->GetEventHandler()
-            .HitTestResultAtLocation(
-                location, HitTestRequest::kReadOnly | HitTestRequest::kActive |
-                              HitTestRequest::kIgnoreClipping);
-    if (candidate.visible_node->ContainsIncludingHostElements(
-            *result.InnerNode())) {
-      *best_candidate = candidate;
-      *best_distance = distance;
-      return;
-    }
-    if (best_candidate->visible_node->ContainsIncludingHostElements(
-            *result.InnerNode()))
-      return;
-  }
-
-  if (distance < *best_distance) {
+  if (distance < *best_distance && IsUnobscured(candidate)) {
     *best_candidate = candidate;
     *best_distance = distance;
   }
@@ -196,10 +162,18 @@ bool SpatialNavigationController::HandleEnterKeyboardEvent(
     return false;
 
   if (event->type() == event_type_names::kKeydown) {
+    enter_key_down_seen_ = true;
     interest_element->SetActive(true);
+  } else if (event->type() == event_type_names::kKeypress) {
+    enter_key_press_seen_ = true;
   } else if (event->type() == event_type_names::kKeyup) {
     interest_element->SetActive(false);
-    if (RuntimeEnabledFeatures::FocuslessSpatialNavigationEnabled()) {
+
+    // Ensure that the enter key has not already been handled by something else,
+    // or we can end up clicking elements multiple times. Some elements already
+    // convert the Enter key into click on down and press (and up) events.
+    if (RuntimeEnabledFeatures::FocuslessSpatialNavigationEnabled() &&
+        enter_key_down_seen_ && enter_key_press_seen_) {
       interest_element->focus(FocusParams(SelectionBehaviorOnFocus::kReset,
                                           kWebFocusTypeSpatialNavigation,
                                           nullptr));
@@ -209,6 +183,28 @@ bool SpatialNavigationController::HandleEnterKeyboardEvent(
     }
   }
 
+  return true;
+}
+
+void SpatialNavigationController::ResetEnterKeyState() {
+  enter_key_down_seen_ = false;
+  enter_key_press_seen_ = false;
+}
+
+bool SpatialNavigationController::HandleImeSubmitKeyboardEvent(
+    KeyboardEvent* event) {
+  DCHECK(page_->GetSettings().GetSpatialNavigationEnabled());
+
+  if (!IsHTMLFormControlElement(GetFocusedElement()))
+    return false;
+
+  HTMLFormControlElement* element =
+      ToHTMLFormControlElement(GetFocusedElement());
+
+  if (!element->formOwner())
+    return false;
+
+  element->formOwner()->SubmitImplicitly(*event, true);
   return true;
 }
 
@@ -248,6 +244,8 @@ void SpatialNavigationController::DidDetachFrameView() {
   // etc.) then reset navigation.
   if (interest_element_ && !interest_element_->GetDocument().View())
     interest_element_ = nullptr;
+  // TODO(crbug.com/956209): should be checked via an integration test.
+  ResetMojoBindings();
 }
 
 void SpatialNavigationController::Trace(blink::Visitor* visitor) {
@@ -317,7 +315,7 @@ FocusCandidate SpatialNavigationController::FindNextCandidateInContainer(
   current_interest.visible_node = interest_child_in_container;
 
   FocusCandidate best_candidate;
-  double best_distance = MaxDistance();
+  double best_distance = kMaxDistance;
   for (; element;
        element =
            IsScrollableAreaOrDocument(element)
@@ -550,6 +548,7 @@ void SpatialNavigationController::UpdateSpatialNavigationState(
   bool change = false;
   change |= UpdateCanExitFocus(element);
   change |= UpdateCanSelectInterestedElement(element);
+  change |= UpdateIsFormFocused(element);
   change |= UpdateHasNextFormElement(element);
   change |= UpdateHasDefaultVideoControls(element);
   if (change)
@@ -564,7 +563,7 @@ void SpatialNavigationController::OnSpatialNavigationStateChanged() {
 }
 
 bool SpatialNavigationController::UpdateCanExitFocus(Element* element) {
-  bool can_exit_focus = IsFocused(element);
+  bool can_exit_focus = IsFocused(element) && !IsHTMLBodyElement(element);
   if (can_exit_focus == spatial_navigation_state_->can_exit_focus)
     return false;
   spatial_navigation_state_->can_exit_focus = can_exit_focus;
@@ -591,6 +590,15 @@ bool SpatialNavigationController::UpdateHasNextFormElement(Element* element) {
     return false;
 
   spatial_navigation_state_->has_next_form_element = has_next_form_element;
+  return true;
+}
+
+bool SpatialNavigationController::UpdateIsFormFocused(Element* element) {
+  bool is_form_focused = IsFocused(element) && element->IsFormControlElement();
+
+  if (is_form_focused == spatial_navigation_state_->is_form_focused)
+    return false;
+  spatial_navigation_state_->is_form_focused = is_form_focused;
   return true;
 }
 

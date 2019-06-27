@@ -444,7 +444,7 @@ void FrameLoader::DidFinishNavigation() {
   // progress.
   DCHECK((document_loader_ && document_loader_->SentDidFinishLoad()) ||
          !HasProvisionalNavigation());
-  if (!document_loader_ || !document_loader_->SentDidFinishLoad() ||
+  if ((document_loader_ && !document_loader_->SentDidFinishLoad()) ||
       HasProvisionalNavigation()) {
     return;
   }
@@ -730,9 +730,6 @@ bool FrameLoader::PrepareRequestForThisFrame(FrameLoadRequest& request) {
         "Not allowed to load local resource: " + url.ElidedString()));
     return false;
   }
-
-  if (request.FrameName().IsEmpty())
-    request.SetFrameName(frame_->GetDocument()->BaseTarget());
   return true;
 }
 
@@ -948,7 +945,7 @@ void FrameLoader::StartNavigation(const FrameLoadRequest& passed_request,
     }
   }
 
-  if (request.ClientRedirect() == ClientRedirectPolicy::kClientRedirect) {
+  if (request.ClientRedirectReason() != ClientNavigationReason::kNone) {
     probe::FrameRequestedNavigation(frame_, frame_, url,
                                     request.ClientRedirectReason());
   }

@@ -788,7 +788,7 @@
 <translation id="2220529011494928058">Een probleem melden</translation>
 <translation id="2220572644011485463">Pincode of wachtwoord</translation>
 <translation id="2224444042887712269">Deze instelling hoort bij <ph name="OWNER_EMAIL" />.</translation>
-<translation id="2224471211857467033">Toegankelijkheidsgebeurtenissen</translation>
+<translation id="2224471211857467033">Toegankelijkheidsfunctionaliteit</translation>
 <translation id="2224551243087462610">Mapnaam bewerken</translation>
 <translation id="2226449515541314767">Deze site is geblokkeerd voor volledig beheer van MIDI-apparaten.</translation>
 <translation id="2226720438730111184">Vertel ons wat er aan de hand is</translation>
@@ -2403,7 +2403,7 @@
 <translation id="4756388243121344051">Gesc&amp;hiedenis</translation>
 <translation id="4759238208242260848">Downloads</translation>
 <translation id="4761104368405085019">Je microfoon gebruiken</translation>
-<translation id="476166673298332917">De apparaatbeheerder kan je browseactiviteit controleren.</translation>
+<translation id="476166673298332917">De apparaatbeheerder heeft toegang tot alle activiteit, inclusief wachtwoorden en communicatie.</translation>
 <translation id="4762718786438001384">Er is zeer weinig schijfruimte beschikbaar op het apparaat</translation>
 <translation id="4763408175235639573">De volgende cookies zijn opgeslagen toen je deze pagina bekeek</translation>
 <translation id="4763830802490665879">Cookies van meerdere sites worden gewist bij het afsluiten.</translation>
@@ -3815,7 +3815,7 @@
 <translation id="6977381486153291903">Firmwarerevisie</translation>
 <translation id="6978121630131642226">Zoekmachines</translation>
 <translation id="6979440798594660689">Dempen (standaard)</translation>
-<translation id="6979737339423435258">Altijd</translation>
+<translation id="6979737339423435258">Alles</translation>
 <translation id="6980462514016882061">Google kan je browsegeschiedenis gebruiken om Google Zoeken, advertenties en andere Google-services te personaliseren</translation>
 <translation id="6981982820502123353">Toegankelijkheid</translation>
 <translation id="6983783921975806247">Geregistreerde OID</translation>
@@ -4245,7 +4245,7 @@
 <translation id="7645176681409127223"><ph name="USER_NAME" /> (eigenaar)</translation>
 <translation id="7647403192093989392">Geen recente activiteiten</translation>
 <translation id="7648992873808071793">Bestanden op dit apparaat bewaren</translation>
-<translation id="7649070708921625228">Help</translation>
+<translation id="7649070708921625228">Hulp</translation>
 <translation id="7650511557061837441">'<ph name="TRIGGERING_EXTENSION_NAME" />' wil '<ph name="EXTENSION_NAME" />' verwijderen.</translation>
 <translation id="7652808307838961528">Persoon bewerken: <ph name="PROFILE_NAME" /></translation>
 <translation id="765293928828334535">Apps, extensies en gebruikersscripts kunnen niet worden toegevoegd vanaf deze website</translation>

@@ -169,7 +169,10 @@ bool read_path(Deserializer* deserializer, SkGlyph* glyph, SkStrike* cache) {
     uint64_t pathSize = 0u;
     if (!deserializer->read<uint64_t>(&pathSize)) return false;
 
-    if (pathSize == 0u) return true;
+    if (pathSize == 0u) {
+        cache->initializePath(glyph, nullptr, 0u);
+        return true;
+    }
 
     auto* path = deserializer->read(pathSize, kPathAlignment);
     if (!path) return false;
@@ -605,16 +608,14 @@ void SkStrikeServer::SkGlyphCacheState::writeGlyphPath(const SkPackedGlyphID& gl
 }
 
 
-// This version of glyphMetrics only adds entries to result if their data need to be sent to the
-// GPU process. As a result, empty glyphs will be sent so that the GPU code can lookup the glyph
-// and detect that it is empty.
+// Be sure to read and understand the comment for prepareForDrawing in SkStrikeInterface.h before
+// working on this code.
 SkSpan<const SkGlyphPos> SkStrikeServer::SkGlyphCacheState::prepareForDrawing(
         const SkGlyphID glyphIDs[],
         const SkPoint positions[],
         size_t n,
         int maxDimension,
         SkGlyphPos results[]) {
-    size_t glyphsToSendCount = 0;
     for (size_t i = 0; i < n; i++) {
         SkPoint glyphPos = positions[i];
         SkGlyphID glyphID = glyphIDs[i];
@@ -635,10 +636,7 @@ SkSpan<const SkGlyphPos> SkStrikeServer::SkGlyphCacheState::prepareForDrawing(
             fContext->getMetrics(glyphPtr);
 
             if (glyphPtr->maxDimension() <= maxDimension) {
-
                 // The mask/SDF will fit in the cache.
-                // TODO: no need to do this once code base converted over to bulk.
-                results[glyphsToSendCount++] = {i, glyphPtr, glyphPos};
             } else if (glyphPtr->fMaskFormat != SkMask::kARGB32_Format) {
 
                 // The glyph is too big for the atlas, but it is not color, so it is handled with a
@@ -646,13 +644,12 @@ SkSpan<const SkGlyphPos> SkStrikeServer::SkGlyphCacheState::prepareForDrawing(
                 if (glyphPtr->fPathData == nullptr) {
 
                     // Never checked for a path before. Add the path now.
-                    auto path = const_cast<SkGlyph&>(*glyphPtr).addPath(fContext.get(), &fAlloc);
-                    if (path != nullptr) {
+                    const_cast<SkGlyph&>(*glyphPtr).addPath(fContext.get(), &fAlloc);
 
-                        // A path was added make sure to send it to the GPU.
-                        fCachedGlyphPaths.add(glyphPtr->getPackedID());
-                        fPendingGlyphPaths.push_back(glyphPtr->getPackedID());
-                    }
+                    // Always send the path data, even if its not available, to make sure empty
+                    // paths are not incorrectly assumed to be cache misses.
+                    fCachedGlyphPaths.add(glyphPtr->getPackedID());
+                    fPendingGlyphPaths.push_back(glyphPtr->getPackedID());
                 }
             } else {
 
@@ -666,8 +663,13 @@ SkSpan<const SkGlyphPos> SkStrikeServer::SkGlyphCacheState::prepareForDrawing(
             fPendingGlyphImages.push_back(packedGlyphID);
         }
 
+        // Each glyph needs to be added as per the contract for prepareForDrawing.
+        // TODO(herb): check if the empty glyphs need to be added here. They certainly need to be
+        //             sent, but do the need to be processed by the painter?
+        results[i] = {i, glyphPtr, glyphPos};
     }
-    return SkSpan<const SkGlyphPos>(results, glyphsToSendCount);
+
+    return SkSpan<const SkGlyphPos>{results, n};
 }
 
 // SkStrikeClient -----------------------------------------
@@ -694,10 +696,10 @@ SkStrikeClient::SkStrikeClient(sk_sp<DiscardableHandleManager> discardableManage
 
 SkStrikeClient::~SkStrikeClient() = default;
 
-#define READ_FAILURE                             \
-    {                                            \
-        SkDebugf("Bad font data serialization"); \
-        return false;                            \
+#define READ_FAILURE                                                \
+    {                                                               \
+        SkDebugf("Bad font data serialization line: %d", __LINE__); \
+        return false;                                               \
     }
 
 static bool readGlyph(SkTLazy<SkGlyph>& glyph, Deserializer* deserializer) {
