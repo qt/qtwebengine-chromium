@@ -122,7 +122,7 @@ void FrameSinkManagerImpl::RegisterFrameSinkId(const FrameSinkId& frame_sink_id,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(!base::Contains(frame_sink_data_, frame_sink_id));
 
-  frame_sink_data_.emplace(std::make_pair(frame_sink_id, report_activation));
+  frame_sink_data_.emplace(std::make_pair(frame_sink_id, viz::FrameSinkManagerImpl::FrameSinkData(report_activation)));
 
   if (video_detector_)
     video_detector_->OnFrameSinkIdRegistered(frame_sink_id);

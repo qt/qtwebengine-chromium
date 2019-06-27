@@ -320,12 +320,12 @@ sk_sp<GrTextBlob> GrTextBlob::Make(const SkGlyphRunList& glyphRunList,
                                    GrColor color,
                                    bool forceWForDistanceFields) {
 
-    static_assert(sizeof(ARGB2DVertex) <= sizeof(Mask2DVertex));
-    static_assert(alignof(ARGB2DVertex) <= alignof(Mask2DVertex));
+    static_assert(sizeof(ARGB2DVertex) <= sizeof(Mask2DVertex), "");
+    static_assert(alignof(ARGB2DVertex) <= alignof(Mask2DVertex), "");
     size_t quadSize = sizeof(Mask2DVertex) * kVerticesPerGlyph;
     if (drawMatrix.hasPerspective() || forceWForDistanceFields) {
-        static_assert(sizeof(ARGB3DVertex) <= sizeof(SDFT3DVertex));
-        static_assert(alignof(ARGB3DVertex) <= alignof(SDFT3DVertex));
+        static_assert(sizeof(ARGB3DVertex) <= sizeof(SDFT3DVertex), "");
+        static_assert(alignof(ARGB3DVertex) <= alignof(SDFT3DVertex), "");
         quadSize = sizeof(SDFT3DVertex) * kVerticesPerGlyph;
     }
 

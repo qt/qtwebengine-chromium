@@ -27,7 +27,7 @@ struct QUIC_EXPORT_PRIVATE TransportParameters {
   // The identifier used to differentiate transport parameters.
   enum TransportParameterId : uint64_t;
   // A map used to specify custom parameters.
-  using ParameterMap = QuicUnorderedMap<TransportParameterId, std::string>;
+  typedef QuicUnorderedMap<uint16_t, std::string> ParameterMap;
   // Represents an individual QUIC transport parameter that only encodes a
   // variable length integer. Can only be created inside the constructor for
   // TransportParameters.

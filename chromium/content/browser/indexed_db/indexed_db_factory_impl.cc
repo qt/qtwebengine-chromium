@@ -111,7 +111,7 @@ CreateDatabaseDirectories(const base::FilePath& path_base,
                << "\"";
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_FAILED_DIRECTORY,
                      origin);
-    return {base::FilePath(), base::FilePath(), status};
+    return std::make_tuple(base::FilePath(), base::FilePath(), status);
   }
 
   base::FilePath leveldb_path =
@@ -122,9 +122,9 @@ CreateDatabaseDirectories(const base::FilePath& path_base,
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_ORIGIN_TOO_LONG,
                      origin);
     status = leveldb::Status::IOError("File path too long");
-    return {base::FilePath(), base::FilePath(), status};
+    return std::make_tuple(base::FilePath(), base::FilePath(), status);
   }
-  return {leveldb_path, blob_path, status};
+  return std::make_tuple(leveldb_path, blob_path, status);
 }
 
 std::tuple<bool, leveldb::Status> AreSchemasKnown(
@@ -134,32 +134,32 @@ std::tuple<bool, leveldb::Status> AreSchemasKnown(
   leveldb::Status s = indexed_db::GetInt(db, SchemaVersionKey::Encode(),
                                          &db_schema_version, &found);
   if (!s.ok())
-    return {false, s};
+    return std::make_tuple(false, s);
   if (!found) {
-    return {true, s};
+    return std::make_tuple(true, s);
   }
   if (db_schema_version < 0)
-    return {false, leveldb::Status::Corruption(
-                       "Invalid IndexedDB database schema version.")};
+    return std::make_tuple(false, leveldb::Status::Corruption(
+                       "Invalid IndexedDB database schema version."));
   if (db_schema_version > indexed_db::kLatestKnownSchemaVersion) {
-    return {false, s};
+    return std::make_tuple(false, s);
   }
 
   int64_t raw_db_data_version = 0;
   s = indexed_db::GetInt(db, DataVersionKey::Encode(), &raw_db_data_version,
                          &found);
   if (!s.ok())
-    return {false, s};
+    return std::make_tuple(false, s);
   if (!found) {
-    return {true, s};
+    return std::make_tuple(true, s);
   }
   if (raw_db_data_version < 0)
-    return {false,
-            leveldb::Status::Corruption("Invalid IndexedDB data version.")};
+    return std::make_tuple(false,
+            leveldb::Status::Corruption("Invalid IndexedDB data version."));
 
-  return {IndexedDBDataFormatVersion::GetCurrent().IsAtLeast(
+  return std::make_tuple(IndexedDBDataFormatVersion::GetCurrent().IsAtLeast(
               IndexedDBDataFormatVersion::Decode(raw_db_data_version)),
-          s};
+          s);
 }
 }  // namespace
 
@@ -665,9 +665,9 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto it = factories_per_origin_.find(origin);
   if (it != factories_per_origin_.end()) {
-    return {it->second->CreateHandle(), leveldb::Status::OK(),
-            IndexedDBDatabaseError(), IndexedDBDataLossInfo(),
-            /*was_cold_open=*/false};
+    return std::make_tuple(it->second->CreateHandle(), leveldb::Status::OK(),
+                           IndexedDBDatabaseError(), IndexedDBDataLossInfo(),
+                           /*was_cold_open=*/false);
   }
   UMA_HISTOGRAM_ENUMERATION(
       indexed_db::kBackingStoreActionUmaName,
@@ -682,8 +682,8 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
     std::tie(database_path, blob_path, s) =
         CreateDatabaseDirectories(data_directory, origin);
     if (!s.ok())
-      return {IndexedDBOriginStateHandle(), s, CreateDefaultError(),
-              IndexedDBDataLossInfo(), /*was_cold_open=*/true};
+      return std::make_tuple(IndexedDBOriginStateHandle(), s, CreateDefaultError(),
+                             IndexedDBDataLossInfo(), /*was_cold_open=*/true);
   }
 
   // TODO(dmurph) Have these factories be given in the constructor, or as
@@ -753,16 +753,16 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
           FROM_HERE,
           base::BindOnce(&storage::QuotaManagerProxy::NotifyWriteFailed,
                          context_->quota_manager_proxy(), origin));
-      return {IndexedDBOriginStateHandle(), s,
+      return std::make_tuple(IndexedDBOriginStateHandle(), s,
               IndexedDBDatabaseError(
                   blink::mojom::IDBException::kQuotaError,
                   ASCIIToUTF16("Encountered full disk while opening "
                                "backing store for indexedDB.open.")),
-              data_loss_info, /*was_cold_open=*/true};
+              data_loss_info, /*was_cold_open=*/true);
 
     } else {
-      return {IndexedDBOriginStateHandle(), s, CreateDefaultError(),
-              data_loss_info, /*was_cold_open=*/true};
+      return std::make_tuple(IndexedDBOriginStateHandle(), s, CreateDefaultError(),
+              data_loss_info, /*was_cold_open=*/true);
     }
   }
   DCHECK(backing_store);
@@ -775,8 +775,8 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_NO_RECOVERY,
                      origin);
 
-    return {IndexedDBOriginStateHandle(), s, CreateDefaultError(),
-            data_loss_info, /*was_cold_open=*/true};
+    return std::make_tuple(IndexedDBOriginStateHandle(), s, CreateDefaultError(),
+            data_loss_info, /*was_cold_open=*/true);
   }
 
   if (!is_incognito_and_in_memory)
@@ -805,8 +805,8 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
   it = factories_per_origin_.emplace(origin, std::move(origin_state)).first;
 
   context_->FactoryOpened(origin);
-  return {it->second->CreateHandle(), s, IndexedDBDatabaseError(),
-          data_loss_info, /*was_cold_open=*/true};
+  return std::make_tuple(it->second->CreateHandle(), s, IndexedDBDatabaseError(),
+          data_loss_info, /*was_cold_open=*/true);
 }
 
 std::unique_ptr<IndexedDBBackingStore> IndexedDBFactoryImpl::CreateBackingStore(
@@ -879,7 +879,7 @@ IndexedDBFactoryImpl::OpenAndVerifyIndexedDBBackingStore(
           leveldb_env::LEVELDB_STATUS_MAX);
       if (UNLIKELY(!status.ok())) {
         LOG(ERROR) << "Unable to delete backing store: " << status.ToString();
-        return {nullptr, status, data_loss_info, /*is_disk_full=*/false};
+        return std::make_tuple(nullptr, status, data_loss_info, /*is_disk_full=*/false);
       }
     }
   }
@@ -900,7 +900,8 @@ IndexedDBFactoryImpl::OpenAndVerifyIndexedDBBackingStore(
         indexed_db::ReportLevelDBError("WebCore.IndexedDB.LevelDBOpenErrors",
                                        status);
       }
-      return {nullptr, status, IndexedDBDataLossInfo(), is_disk_full};
+      return std::make_tuple(nullptr, status, IndexedDBDataLossInfo(),
+                             is_disk_full);
     }
     UMA_HISTOGRAM_MEDIUM_TIMES("WebCore.IndexedDB.LevelDB.OpenTime",
                                base::TimeTicks::Now() - begin_time);
@@ -914,8 +915,8 @@ IndexedDBFactoryImpl::OpenAndVerifyIndexedDBBackingStore(
     std::tie(scopes, status) = scopes_factory->CreateAndInitializeLevelDBScopes(
         std::move(scopes_options), database_state);
     if (UNLIKELY(!status.ok()))
-      return {nullptr, status, std::move(data_loss_info),
-              /*is_disk_full=*/false};
+      return std::make_tuple(nullptr, status, std::move(data_loss_info),
+                             /*is_disk_full=*/false);
   }
 
   // Create the TransactionalLevelDBDatabase wrapper.
@@ -935,15 +936,15 @@ IndexedDBFactoryImpl::OpenAndVerifyIndexedDBBackingStore(
         indexed_db::
             INDEXED_DB_BACKING_STORE_OPEN_FAILED_IO_ERROR_CHECKING_SCHEMA,
         origin);
-    return {nullptr, status, std::move(data_loss_info), /*is_disk_full=*/false};
+    return std::make_tuple(nullptr, status, std::move(data_loss_info), /*is_disk_full=*/false);
   } else if (UNLIKELY(!are_schemas_known)) {
     LOG(ERROR) << "IndexedDB backing store had unknown schema, treating it as "
                   "failure to open.";
     ReportOpenStatus(
         indexed_db::INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_SCHEMA,
         origin);
-    return {nullptr, leveldb::Status::Corruption("Unknown IndexedDB schema"),
-            std::move(data_loss_info), /*is_disk_full=*/false};
+    return std::make_tuple(nullptr, leveldb::Status::Corruption("Unknown IndexedDB schema"),
+            std::move(data_loss_info), /*is_disk_full=*/false);
   }
 
   bool first_open_since_startup =
@@ -965,10 +966,10 @@ IndexedDBFactoryImpl::OpenAndVerifyIndexedDBBackingStore(
                                   first_open_since_startup));
 
   if (UNLIKELY(!status.ok()))
-    return {nullptr, status, IndexedDBDataLossInfo(), /*is_disk_full=*/false};
+    return std::make_tuple(nullptr, status, IndexedDBDataLossInfo(), /*is_disk_full=*/false);
 
-  return {std::move(backing_store), status, std::move(data_loss_info),
-          /*is_disk_full=*/false};
+  return std::make_tuple(std::move(backing_store), status, std::move(data_loss_info),
+          /*is_disk_full=*/false);
 }
 
 void IndexedDBFactoryImpl::RemoveOriginState(const url::Origin& origin) {

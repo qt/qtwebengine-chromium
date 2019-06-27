@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/core/streams/queue_with_sizes.h"
 
-#include <math.h>
+#include <cmath>
 
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_v8_reference.h"
@@ -17,7 +17,7 @@ namespace {
 
 // https://streams.spec.whatwg.org/#is-finite-non-negative-number
 bool IsFiniteNonNegativeNumber(double v) {
-  return isfinite(v) && v >= 0;
+  return std::isfinite(v) && v >= 0;
 }
 
 }  // namespace

@@ -44,8 +44,8 @@ struct CORE_EXPORT LogicalOffset {
                                    PhysicalSize inner_size) const;
 
   constexpr bool operator==(const LogicalOffset& other) const {
-    return std::tie(other.inline_offset, other.block_offset) ==
-           std::tie(inline_offset, block_offset);
+    return other.inline_offset == inline_offset &&
+           other.block_offset == block_offset;
   }
   constexpr bool operator!=(const LogicalOffset& other) const {
     return !operator==(other);

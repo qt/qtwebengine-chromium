@@ -212,18 +212,18 @@ TransactionalLevelDBIterator::WillUseDBIterator(bool perform_seek) {
   leveldb::Status s;
   db_->OnIteratorUsed(this);
   if (!IsEvicted())
-    return {"", s};
+    return std::make_tuple("", s);
 
   s = ReloadIterator();
   if (!s.ok())
-    return {"", s};
+    return std::make_tuple("", s);
 
   if (iterator_state_ == IteratorState::kEvictedAndValid && perform_seek)
     iterator_->Seek(key_before_eviction_);
 
   iterator_state_ = IteratorState::kActive;
   value_before_eviction_.clear();
-  return {std::move(key_before_eviction_), s};
+  return std::make_tuple(std::move(key_before_eviction_), s);
 }
 
 leveldb::Status TransactionalLevelDBIterator::ReloadIterator() {

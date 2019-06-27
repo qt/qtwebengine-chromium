@@ -407,9 +407,9 @@ bool TIntermAggregate::replaceChildNode(TIntermNode *original, TIntermNode *repl
     return replaceChildNodeInternal(original, replacement);
 }
 
-TIntermBlock::TIntermBlock(const TIntermBlock &node)
+TIntermBlock::TIntermBlock(const TIntermBlock &block)
 {
-    for (TIntermNode *node : node.mStatements)
+    for (TIntermNode *node : block.mStatements)
     {
         mStatements.push_back(node->deepCopy());
     }

@@ -118,7 +118,10 @@ public:
         }
 
         int v = 0, u = 0;
-        for (auto [transform, fp] : transformRange) {
+        const auto& rng = transformRange;
+        for (auto it = rng.begin(); it != rng.end(); ++it) {
+            const GrCoordTransform& transform = tup.first;
+            const GrFragmentProcessor& fp = tup.second;
             if (fp.isSampledWithExplicitCoords()) {
                 if (transform.isNoOp()) {
                     continue;

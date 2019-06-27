@@ -134,9 +134,9 @@ class VIZ_SERVICE_EXPORT GLRendererCopier {
     // I420_PLANES requests: I420 scaling and format conversion, and
     // textures+framebuffers for readback.
     std::unique_ptr<GLI420Converter> i420_converter;
-    std::array<GLuint, 3> yuv_textures = {0, 0, 0};
+    std::array<GLuint, 3> yuv_textures { {0, 0, 0} };
     gfx::Size y_texture_size;
-    std::array<GLuint, 3> yuv_readback_framebuffers = {0, 0, 0};
+    std::array<GLuint, 3> yuv_readback_framebuffers { {0, 0, 0} };
 
     ReusableThings();
     ~ReusableThings();

@@ -40,8 +40,8 @@ struct FilterParamMapKey {
 // in a hashmap
 struct FilterParamMapKeyHash {
   std::size_t operator()(const FilterParamMapKey& k) const {
-    return std::hash<input_prediction::FilterType>{}(k.filter_type) ^
-           std::hash<input_prediction::PredictorType>{}(k.predictor_type);
+    return std::hash<int>{}(int(k.filter_type)) ^
+           std::hash<int>{}(int(k.predictor_type));
   }
 };
 

@@ -514,8 +514,12 @@ bool GrVkOpsRenderPass::onBindTextures(const GrPrimitiveProcessor& primProc,
     for (int i = 0; i < primProc.numTextureSamplers(); ++i) {
         check_sampled_texture(primProcTextures[i]->peekTexture(), fRenderTarget, fGpu);
     }
+
     GrFragmentProcessor::PipelineTextureSamplerRange textureSamplerRange(pipeline);
-    for (auto [sampler, fp] : textureSamplerRange) {
+    const auto& rng = textureSamplerRange;
+    for (auto it = rng.begin(); it != rng.end(); ++it) {
+        auto t = *it;
+        const GrFragmentProcessor::TextureSampler& sampler = t.first;
         check_sampled_texture(sampler.peekTexture(), fRenderTarget, fGpu);
     }
     if (GrTexture* dstTexture = pipeline.peekDstTexture()) {
