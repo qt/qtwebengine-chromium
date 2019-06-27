@@ -87,7 +87,7 @@ CSSParserContext::CSSParserContext(CSSParserMode mode,
                        secure_context_mode,
                        kDoNotCheckContentSecurityPolicy,
                        use_counter_document,
-                       ResourceFetchRestriction::kNone) {}
+                       blink::ResourceFetchRestriction::kNone) {}
 
 CSSParserContext::CSSParserContext(const Document& document)
     : CSSParserContext(document,
@@ -146,7 +146,7 @@ CSSParserContext::CSSParserContext(const ExecutionContext& context)
                            ? kDoNotCheckContentSecurityPolicy
                            : kCheckContentSecurityPolicy,
                        DynamicTo<Document>(context),
-                       ResourceFetchRestriction::kNone) {}
+                       blink::ResourceFetchRestriction::kNone) {}
 
 CSSParserContext::CSSParserContext(
     const KURL& base_url,

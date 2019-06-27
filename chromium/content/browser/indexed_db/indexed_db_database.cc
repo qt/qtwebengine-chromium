@@ -197,7 +197,7 @@ IndexedDBDatabase::RunTasks() {
            IndexedDBConnectionCoordinator::ExecuteTaskResult::kMoreTasks);
 
   if (task_state == IndexedDBConnectionCoordinator::ExecuteTaskResult::kError)
-    return {RunTasksResult::kError, status};
+    return std::make_tuple(RunTasksResult::kError, status);
 
   bool transactions_removed = true;
 
@@ -235,7 +235,7 @@ IndexedDBDatabase::RunTasks() {
         std::tie(task_result, transaction_status) = txn->RunTasks();
         switch (task_result) {
           case IndexedDBTransaction::RunTasksResult::kError:
-            return {RunTasksResult::kError, transaction_status};
+            return std::make_tuple(RunTasksResult::kError, transaction_status);
           case IndexedDBTransaction::RunTasksResult::kCommitted:
           case IndexedDBTransaction::RunTasksResult::kAborted:
             if (txn->mode() ==
@@ -262,8 +262,8 @@ IndexedDBDatabase::RunTasks() {
     }
   }
   if (CanBeDestroyed())
-    return {RunTasksResult::kCanBeDestroyed, leveldb::Status::OK()};
-  return {RunTasksResult::kDone, leveldb::Status::OK()};
+    return std::make_tuple(RunTasksResult::kCanBeDestroyed, leveldb::Status::OK());
+  return std::make_tuple(RunTasksResult::kDone, leveldb::Status::OK());
 }
 
 leveldb::Status IndexedDBDatabase::ForceCloseAndRunTasks() {

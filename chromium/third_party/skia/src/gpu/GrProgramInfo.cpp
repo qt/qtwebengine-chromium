@@ -116,7 +116,10 @@ void GrProgramInfo::checkMSAAAndMIPSAreResolved() const {
         }
     }
 
-    for (auto [sampler, fp] : GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline())) {
+    const auto& rng = GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline());
+    for (auto it = rng.begin(); it != rng.end(); ++it) {
+        auto t = *it;
+        const GrFragmentProcessor::TextureSampler& sampler = t.first;
         assertResolved(sampler.peekTexture(), sampler.samplerState());
     }
 }

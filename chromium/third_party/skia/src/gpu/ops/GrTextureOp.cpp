@@ -346,9 +346,9 @@ private:
             return static_cast<GrTextureOp::Saturate>(fSaturate);
         }
 
-        static_assert(GrSamplerState::kFilterCount <= 4);
-        static_assert(kGrAATypeCount <= 4);
-        static_assert(GrQuadPerEdgeAA::kColorTypeCount <= 4);
+        static_assert(GrSamplerState::kFilterCount <= 4, "");
+        static_assert(kGrAATypeCount <= 4, "");
+        static_assert(GrQuadPerEdgeAA::kColorTypeCount <= 4, "");
     };
 
     // This descriptor is used in both onPrePrepareDraws and onPrepareDraws.

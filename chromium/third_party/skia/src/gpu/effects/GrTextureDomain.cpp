@@ -324,7 +324,10 @@ std::unique_ptr<GrFragmentProcessor> GrDomainEffect::Make(std::unique_ptr<GrFrag
     }
     int count = 0;
     GrCoordTransform* coordTransform = nullptr;
-    for (auto [transform, ignored] : GrFragmentProcessor::FPCoordTransformRange(*fp)) {
+    const auto& rng = GrFragmentProcessor::FPCoordTransformRange(*fp);
+    for (auto it = rng.begin(); it != rng.end(); ++it) {
+        auto t = *it;
+        GrCoordTransform& transform = t.first;
         ++count;
         coordTransform = &transform;
     }

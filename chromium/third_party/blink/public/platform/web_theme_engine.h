@@ -232,7 +232,7 @@ class WebThemeEngine {
   virtual ForcedColors GetForcedColors() const { return ForcedColors::kNone; }
   virtual void SetForcedColors(const blink::ForcedColors forced_colors) {}
   virtual blink::PreferredColorScheme PreferredColorScheme() const {
-    return PreferredColorScheme::kNoPreference;
+    return blink::PreferredColorScheme::kNoPreference;
   }
   virtual void SetPreferredColorScheme(
       const blink::PreferredColorScheme preferred_color_scheme) {}

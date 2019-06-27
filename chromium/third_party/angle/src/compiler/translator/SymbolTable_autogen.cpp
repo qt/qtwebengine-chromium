@@ -18,6 +18,14 @@
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/tree_util/BuiltIn.h"
 
+#ifdef isinf
+#undef isinf
+#endif
+
+#ifdef isnan
+#undef isnan
+#endif
+
 namespace sh
 {
 using Resources = ShBuiltInResources;

@@ -105,7 +105,8 @@ class PLATFORM_EXPORT ThreadHeapStatsCollector {
       FOR_ALL_SCOPES(CASE)
 #undef CASE
       default:
-        NOTREACHED();
+        break;
+//        NOTREACHED();
     }
     return nullptr;
   }
@@ -119,7 +120,8 @@ class PLATFORM_EXPORT ThreadHeapStatsCollector {
       FOR_ALL_CONCURRENT_SCOPES(CASE)
 #undef CASE
       default:
-        NOTREACHED();
+        break;
+//        NOTREACHED();
     }
     return nullptr;
   }

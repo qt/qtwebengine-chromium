@@ -238,7 +238,7 @@ Event::Properties GetEventPropertiesFromXEvent(EventType type,
     // Change these into mouse move events.
     bool crossing_intermediate_window = xev.xcrossing.detail == NotifyVirtual;
     properties.emplace(kPropertyMouseCrossedIntermediateWindow,
-                       crossing_intermediate_window);
+                       Values{crossing_intermediate_window});
   }
   return properties;
 }

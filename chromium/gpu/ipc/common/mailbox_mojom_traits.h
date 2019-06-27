@@ -15,7 +15,7 @@ namespace mojo {
 template <>
 struct StructTraits<gpu::mojom::MailboxDataView, gpu::Mailbox> {
   static base::span<const int8_t> name(const gpu::Mailbox& mailbox) {
-    return mailbox.name;
+    return base::span<const int8_t>(mailbox.name);
   }
   static bool Read(gpu::mojom::MailboxDataView data, gpu::Mailbox* out);
 };

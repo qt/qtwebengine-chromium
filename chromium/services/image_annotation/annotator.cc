@@ -128,7 +128,7 @@ std::tuple<bool, std::vector<mojom::AnnotationPtr>> ParseJsonDescAnnotations(
   std::vector<mojom::AnnotationPtr> results;
 
   if (!desc_engine.is_dict())
-    return {adult, std::move(results)};
+    return std::make_tuple(adult, std::move(results));
 
   // If there is a failure reason, log it and track whether it is due to adult
   // content.
@@ -144,11 +144,11 @@ std::tuple<bool, std::vector<mojom::AnnotationPtr>> ParseJsonDescAnnotations(
   const base::Value* const desc_list_dict =
       desc_engine.FindKey("descriptionList");
   if (!desc_list_dict || !desc_list_dict->is_dict())
-    return {adult, std::move(results)};
+    return std::make_tuple(adult, std::move(results));
 
   const base::Value* const desc_list = desc_list_dict->FindKey("descriptions");
   if (!desc_list || !desc_list->is_list())
-    return {adult, std::move(results)};
+    return std::make_tuple(adult, std::move(results));
 
   for (const base::Value& desc : desc_list->GetList()) {
     if (!desc.is_dict())
@@ -186,7 +186,7 @@ std::tuple<bool, std::vector<mojom::AnnotationPtr>> ParseJsonDescAnnotations(
         type_lookup->second, score->GetDouble(), text->GetString()));
   }
 
-  return {adult, std::move(results)};
+  return std::make_tuple(adult, std::move(results));
 }
 
 // Returns the integer status code for this engine, or -1 if no status can be

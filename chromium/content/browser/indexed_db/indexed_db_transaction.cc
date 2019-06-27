@@ -449,9 +449,9 @@ IndexedDBTransaction::RunTasks() {
 
   // May have been aborted.
   if (aborted_)
-    return {RunTasksResult::kAborted, leveldb::Status::OK()};
+    return std::make_tuple(RunTasksResult::kAborted, leveldb::Status::OK());
   if (IsTaskQueueEmpty() && !is_commit_pending_)
-    return {RunTasksResult::kNotFinished, leveldb::Status::OK()};
+    return std::make_tuple(RunTasksResult::kNotFinished, leveldb::Status::OK());
 
   processing_event_queue_ = true;
 
@@ -474,10 +474,10 @@ IndexedDBTransaction::RunTasks() {
     }
     if (!result.ok()) {
       processing_event_queue_ = false;
-      return {
+      return std::make_tuple(
           RunTasksResult::kError,
-          result,
-      };
+          result
+      );
     }
 
     run_preemptive_queue =
@@ -493,14 +493,14 @@ IndexedDBTransaction::RunTasks() {
     // This can delete |this|.
     leveldb::Status result = Commit();
     if (!result.ok())
-      return {RunTasksResult::kError, result};
+      return std::make_tuple(RunTasksResult::kError, result);
   }
 
   // The transaction may have been aborted while processing tasks.
   if (state_ == FINISHED) {
     processing_event_queue_ = false;
-    return {aborted_ ? RunTasksResult::kAborted : RunTasksResult::kCommitted,
-            leveldb::Status::OK()};
+    return std::make_tuple(aborted_ ? RunTasksResult::kAborted : RunTasksResult::kCommitted,
+            leveldb::Status::OK());
   }
 
   DCHECK(state_ == STARTED || state_ == COMMITTING) << state_;
@@ -515,7 +515,7 @@ IndexedDBTransaction::RunTasks() {
                                         ptr_factory_.GetWeakPtr()));
   }
   processing_event_queue_ = false;
-  return {RunTasksResult::kNotFinished, leveldb::Status::OK()};
+  return std::make_tuple(RunTasksResult::kNotFinished, leveldb::Status::OK());
 }
 
 base::TimeDelta IndexedDBTransaction::GetInactivityTimeout() const {

@@ -503,7 +503,7 @@ namespace skvm {
     template <typename T, typename... Rest>
     bool Builder::allImm(Val id, T* imm, Rest... rest) const {
         if (fProgram[id].op == Op::splat) {
-            static_assert(sizeof(T) == 4);
+            static_assert(sizeof(T) == 4, "");
             memcpy(imm, &fProgram[id].immy, 4);
             return this->allImm(rest...);
         }

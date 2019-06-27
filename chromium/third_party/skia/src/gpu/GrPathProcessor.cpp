@@ -91,7 +91,11 @@ public:
         }
 
         int t = 0;
-        for (auto [transform, fp] : transformRange) {
+        const auto& rng = transformRange;
+        for (auto it = rng.begin(); it != rng.end(); ++it) {
+            auto tup = *it;
+            const GrCoordTransform& transform = tup.first;
+            const GrFragmentProcessor& fp = tup.second;
             SkASSERT(fInstalledTransforms[t].fHandle.isValid());
             SkMatrix m;
             if (fp.coordTransformsApplyToLocalCoords()) {

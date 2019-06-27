@@ -150,7 +150,9 @@ void GrGLSLProgramBuilder::emitAndInstallFragProcs(SkString* color, SkString* co
         const GrFragmentProcessor& fp = this->pipeline().getFragmentProcessor(i);
         output = this->emitAndInstallFragProc(fp, i, transformedCoordVarsIdx, **inOut, output,
                                               &glslFragmentProcessors);
-        for (const auto& subFP : GrFragmentProcessor::FPCRange(fp)) {
+        const auto& rng = GrFragmentProcessor::FPCRange(fp);
+        for (auto it = rng.begin(); it != rng.end(); ++it) {
+            const auto& subFP = *it;
             transformedCoordVarsIdx += subFP.numCoordTransforms();
         }
         **inOut = output;
@@ -185,7 +187,9 @@ SkString GrGLSLProgramBuilder::emitAndInstallFragProc(
 
     SkSTArray<4, SamplerHandle> texSamplers;
     int samplerIdx = 0;
-    for (const auto& subFP : GrFragmentProcessor::FPCRange(fp)) {
+    const auto& rng = GrFragmentProcessor::FPCRange(fp);
+    for (auto it = rng.begin(); it != rng.end(); ++it) {
+        const auto& subFP = *it;
         for (int i = 0; i < subFP.numTextureSamplers(); ++i) {
             SkString name;
             name.printf("TextureSampler_%d", samplerIdx++);

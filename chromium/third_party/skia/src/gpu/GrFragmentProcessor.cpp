@@ -48,7 +48,10 @@ bool GrFragmentProcessor::isEqual(const GrFragmentProcessor& that) const {
 }
 
 void GrFragmentProcessor::visitProxies(const GrOp::VisitProxyFunc& func) {
-    for (auto [sampler, fp] : FPTextureSamplerRange(*this)) {
+    const auto& rng = FPTextureSamplerRange(*this);
+    for (auto it = rng.begin(); it != rng.end(); ++it) {
+        auto t = *it;
+        const GrFragmentProcessor::TextureSampler& sampler = t.first;
         bool mipped = (GrSamplerState::Filter::kMipMap == sampler.samplerState().filter());
         func(sampler.proxy(), GrMipMapped(mipped));
     }

@@ -111,7 +111,11 @@ void GrGLSLGeometryProcessor::setTransformDataHelper(const SkMatrix& localMatrix
                                                      const GrGLSLProgramDataManager& pdman,
                                                      const CoordTransformRange& transformRange) {
     int i = 0;
-    for (auto [transform, fp] : transformRange) {
+    const auto& rng = transformRange;
+    for (auto it = rng.begin(); it != rng.end(); ++it) {
+        auto t = *it;
+        const GrCoordTransform& transform = t.first;
+        const GrFragmentProcessor& fp = t.second;
         if (fInstalledTransforms[i].fHandle.isValid()) {
             SkMatrix m;
             if (fp.coordTransformsApplyToLocalCoords()) {

@@ -57,8 +57,8 @@ class CORE_EXPORT CSSParserContext final
                    network::mojom::ReferrerPolicy referrer_policy_override,
                    const WTF::TextEncoding& charset = WTF::TextEncoding(),
                    SelectorProfile = kLiveProfile,
-                   ResourceFetchRestriction resource_fetch_restriction =
-                       ResourceFetchRestriction::kNone);
+                   blink::ResourceFetchRestriction resource_fetch_restriction =
+                       blink::ResourceFetchRestriction::kNone);
 
   // This is used for workers, where we don't have a document.
   CSSParserContext(const ExecutionContext& context);
@@ -75,7 +75,7 @@ class CORE_EXPORT CSSParserContext final
                    SecureContextMode,
                    ContentSecurityPolicyDisposition,
                    const Document* use_counter_document,
-                   ResourceFetchRestriction resource_fetch_restriction);
+                   blink::ResourceFetchRestriction resource_fetch_restriction);
 
   bool operator==(const CSSParserContext&) const;
   bool operator!=(const CSSParserContext& other) const {
@@ -88,7 +88,7 @@ class CORE_EXPORT CSSParserContext final
   const WTF::TextEncoding& Charset() const { return charset_; }
   const Referrer& GetReferrer() const { return referrer_; }
   bool IsHTMLDocument() const { return is_html_document_; }
-  enum ResourceFetchRestriction ResourceFetchRestriction() const {
+  blink::ResourceFetchRestriction ResourceFetchRestriction() const {
     return resource_fetch_restriction_;
   }
   bool IsLiveProfile() const { return profile_ == kLiveProfile; }
@@ -160,7 +160,7 @@ class CORE_EXPORT CSSParserContext final
 
   // Flag indicating whether images with a URL scheme other than "data" are
   // allowed.
-  const enum ResourceFetchRestriction resource_fetch_restriction_;
+  const blink::ResourceFetchRestriction resource_fetch_restriction_;
 };
 
 CORE_EXPORT const CSSParserContext* StrictCSSParserContext(SecureContextMode);

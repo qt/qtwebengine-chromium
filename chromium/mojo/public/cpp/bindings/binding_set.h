@@ -72,6 +72,8 @@ class BindingSetBase {
   using ImplPointerType = typename Traits::ImplPointerType;
 
   BindingSetBase() {}
+  BindingSetBase(BindingSetBase&&) = default;
+  BindingSetBase& operator=(BindingSetBase&&) = default;
 
   void set_connection_error_handler(base::RepeatingClosure error_handler) {
     error_handler_ = std::move(error_handler);

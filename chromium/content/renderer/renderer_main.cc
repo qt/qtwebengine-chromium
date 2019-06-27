@@ -37,9 +37,12 @@
 #include "mojo/public/cpp/bindings/mojo_buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "services/service_manager/sandbox/switches.h"
-#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "ui/base/ui_base_switches.h"
+
+#ifndef TOOLKIT_QT
+#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
+#endif
 
 #if defined(OS_ANDROID)
 #include "base/android/library_loader/library_loader_hooks.h"
@@ -196,9 +199,11 @@ int RendererMain(const MainFunctionParams& parameters) {
     new RenderThreadImpl(run_loop.QuitClosure(),
                          std::move(main_thread_scheduler));
 
+#ifndef TOOLKIT_QT
     // Setup tracing sampler profiler as early as possible.
     auto tracing_sampler_profiler =
         tracing::TracingSamplerProfiler::CreateOnMainThread();
+#endif
 
     if (need_sandbox)
       should_run_loop = platform.EnableSandbox();
