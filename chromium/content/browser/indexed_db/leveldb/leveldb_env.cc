@@ -69,7 +69,7 @@ DefaultLevelDBFactory::OpenDB(const leveldb_env::Options& options,
                               const std::string& name) {
   std::unique_ptr<leveldb::DB> db;
   leveldb::Status s = leveldb_env::OpenDB(options, name, &db);
-  return {std::move(db), s};
+  return std::make_tuple(std::move(db), s);
 }
 
 std::tuple<scoped_refptr<LevelDBState>, leveldb::Status, bool /* disk_full*/>

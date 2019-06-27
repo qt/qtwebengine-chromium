@@ -62,9 +62,10 @@ ax::mojom::ImageAnnotationStatus AXImageAnnotator::GetImageAnnotationStatus(
 
 bool AXImageAnnotator::HasAnnotationInCache(blink::WebAXObject& image) const {
   DCHECK(!image.IsDetached());
-  if (!HasImageInCache(image))
-    return false;
-  return image_annotations_.at(image.AxID()).HasAnnotation();
+  const auto lookup = image_annotations_.find(image.AxID());
+  if (lookup != image_annotations_.end())
+    return lookup->second.HasAnnotation();
+  return false;
 }
 
 bool AXImageAnnotator::HasImageInCache(const blink::WebAXObject& image) const {
