@@ -4413,10 +4413,10 @@ MaybeLocal<String> v8::Object::ObjectProtoToString(Local<Context> context) {
   PREPARE_FOR_EXECUTION(context, Object, ObjectProtoToString, String);
   auto self = Utils::OpenHandle(this);
   Local<Value> result;
-  has_pending_exception =
-      !ToLocal<Value>(i::Execution::Call(isolate, isolate->object_to_string(),
-                                         self, 0, nullptr),
-                      &result);
+  has_pending_exception = !ToLocal<Value>(
+      i::Execution::CallBuiltin(isolate, isolate->object_to_string(), self, 0,
+                                nullptr),
+      &result);
   RETURN_ON_FAILED_EXECUTION(String);
   RETURN_ESCAPED(Local<String>::Cast(result));
 }
@@ -6900,8 +6900,8 @@ MaybeLocal<Value> Map::Get(Local<Context> context, Local<Value> key) {
   Local<Value> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
   has_pending_exception =
-      !ToLocal<Value>(i::Execution::Call(isolate, isolate->map_get(), self,
-                                         arraysize(argv), argv),
+      !ToLocal<Value>(i::Execution::CallBuiltin(isolate, isolate->map_get(),
+                                                self, arraysize(argv), argv),
                       &result);
   RETURN_ON_FAILED_EXECUTION(Value);
   RETURN_ESCAPED(result);
@@ -6915,9 +6915,10 @@ MaybeLocal<Map> Map::Set(Local<Context> context, Local<Value> key,
   i::Handle<i::Object> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key),
                                  Utils::OpenHandle(*value)};
-  has_pending_exception = !i::Execution::Call(isolate, isolate->map_set(), self,
-                                              arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->map_set(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Map);
   RETURN_ESCAPED(Local<Map>::Cast(Utils::ToLocal(result)));
 }
@@ -6929,9 +6930,10 @@ Maybe<bool> Map::Has(Local<Context> context, Local<Value> key) {
   auto self = Utils::OpenHandle(this);
   i::Handle<i::Object> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
-  has_pending_exception = !i::Execution::Call(isolate, isolate->map_has(), self,
-                                              arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->map_has(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return Just(result->IsTrue(isolate));
 }
@@ -6943,9 +6945,10 @@ Maybe<bool> Map::Delete(Local<Context> context, Local<Value> key) {
   auto self = Utils::OpenHandle(this);
   i::Handle<i::Object> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
-  has_pending_exception = !i::Execution::Call(isolate, isolate->map_delete(),
-                                              self, arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->map_delete(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return Just(result->IsTrue(isolate));
 }
@@ -7030,9 +7033,10 @@ MaybeLocal<Set> Set::Add(Local<Context> context, Local<Value> key) {
   auto self = Utils::OpenHandle(this);
   i::Handle<i::Object> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
-  has_pending_exception = !i::Execution::Call(isolate, isolate->set_add(), self,
-                                              arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->set_add(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Set);
   RETURN_ESCAPED(Local<Set>::Cast(Utils::ToLocal(result)));
 }
@@ -7044,9 +7048,10 @@ Maybe<bool> Set::Has(Local<Context> context, Local<Value> key) {
   auto self = Utils::OpenHandle(this);
   i::Handle<i::Object> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
-  has_pending_exception = !i::Execution::Call(isolate, isolate->set_has(), self,
-                                              arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->set_has(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return Just(result->IsTrue(isolate));
 }
@@ -7058,9 +7063,10 @@ Maybe<bool> Set::Delete(Local<Context> context, Local<Value> key) {
   auto self = Utils::OpenHandle(this);
   i::Handle<i::Object> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
-  has_pending_exception = !i::Execution::Call(isolate, isolate->set_delete(),
-                                              self, arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->set_delete(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return Just(result->IsTrue(isolate));
 }
@@ -7163,9 +7169,10 @@ MaybeLocal<Promise> Promise::Catch(Local<Context> context,
   auto self = Utils::OpenHandle(this);
   i::Handle<i::Object> argv[] = { Utils::OpenHandle(*handler) };
   i::Handle<i::Object> result;
-  has_pending_exception = !i::Execution::Call(isolate, isolate->promise_catch(),
-                                              self, arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->promise_catch(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Promise);
   RETURN_ESCAPED(Local<Promise>::Cast(Utils::ToLocal(result)));
 }
@@ -7177,9 +7184,10 @@ MaybeLocal<Promise> Promise::Then(Local<Context> context,
   auto self = Utils::OpenHandle(this);
   i::Handle<i::Object> argv[] = { Utils::OpenHandle(*handler) };
   i::Handle<i::Object> result;
-  has_pending_exception = !i::Execution::Call(isolate, isolate->promise_then(),
-                                              self, arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->promise_then(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Promise);
   RETURN_ESCAPED(Local<Promise>::Cast(Utils::ToLocal(result)));
 }
@@ -7192,9 +7200,10 @@ MaybeLocal<Promise> Promise::Then(Local<Context> context,
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*on_fulfilled),
                                  Utils::OpenHandle(*on_rejected)};
   i::Handle<i::Object> result;
-  has_pending_exception = !i::Execution::Call(isolate, isolate->promise_then(),
-                                              self, arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->promise_then(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(Promise);
   RETURN_ESCAPED(Local<Promise>::Cast(Utils::ToLocal(result)));
 }
@@ -9845,8 +9854,8 @@ v8::MaybeLocal<v8::Value> debug::WeakMap::Get(v8::Local<v8::Context> context,
   Local<Value> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key)};
   has_pending_exception =
-      !ToLocal<Value>(i::Execution::Call(isolate, isolate->weakmap_get(), self,
-                                         arraysize(argv), argv),
+      !ToLocal<Value>(i::Execution::CallBuiltin(isolate, isolate->weakmap_get(),
+                                                self, arraysize(argv), argv),
                       &result);
   RETURN_ON_FAILED_EXECUTION(Value);
   RETURN_ESCAPED(result);
@@ -9860,9 +9869,10 @@ v8::MaybeLocal<debug::WeakMap> debug::WeakMap::Set(
   i::Handle<i::Object> result;
   i::Handle<i::Object> argv[] = {Utils::OpenHandle(*key),
                                  Utils::OpenHandle(*value)};
-  has_pending_exception = !i::Execution::Call(isolate, isolate->weakmap_set(),
-                                              self, arraysize(argv), argv)
-                               .ToHandle(&result);
+  has_pending_exception =
+      !i::Execution::CallBuiltin(isolate, isolate->weakmap_set(), self,
+                                 arraysize(argv), argv)
+           .ToHandle(&result);
   RETURN_ON_FAILED_EXECUTION(WeakMap);
   RETURN_ESCAPED(Local<WeakMap>::Cast(Utils::ToLocal(result)));
 }
