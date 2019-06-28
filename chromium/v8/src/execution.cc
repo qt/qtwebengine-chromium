@@ -265,6 +265,17 @@ MaybeHandle<Object> Execution::TryCall(
   return maybe_result;
 }
 
+MaybeHandle<Object> Execution::CallBuiltin(Isolate* isolate,
+                                           Handle<JSFunction> builtin,
+                                           Handle<Object> receiver, int argc,
+                                           Handle<Object> argv[]) {
+  DCHECK(builtin->code()->is_builtin());
+  DisableBreak no_break(isolate->debug());
+  return Invoke(isolate, false, builtin, receiver, argc, argv,
+                isolate->factory()->undefined_value(),
+                MessageHandling::kReport, Execution::Target::kCallable);
+}
+
 MaybeHandle<Object> Execution::RunMicrotasks(
     Isolate* isolate, MessageHandling message_handling,
     MaybeHandle<Object>* exception_out) {
