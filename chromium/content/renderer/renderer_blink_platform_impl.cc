@@ -907,6 +907,7 @@ void RendererBlinkPlatformImpl::UpdateWebRTCAPICount(
 
 base::Optional<double>
 RendererBlinkPlatformImpl::GetWebRtcMaxCaptureFrameRate() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   const std::string max_fps_str =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kWebRtcMaxCaptureFramerate);
@@ -915,6 +916,7 @@ RendererBlinkPlatformImpl::GetWebRtcMaxCaptureFrameRate() {
     if (base::StringToDouble(max_fps_str, &value) && value >= 0.0)
       return value;
   }
+#endif
   return base::nullopt;
 }
 
@@ -1122,11 +1124,15 @@ blink::WebPushProvider* RendererBlinkPlatformImpl::PushProvider() {
 
 blink::WebTransmissionEncodingInfoHandler*
 RendererBlinkPlatformImpl::TransmissionEncodingInfoHandler() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (!web_transmission_encoding_info_handler_) {
     web_transmission_encoding_info_handler_.reset(
         new content::TransmissionEncodingInfoHandler());
   }
   return web_transmission_encoding_info_handler_.get();
+#else
+  return nullptr;
+#endif
 }
 
 //------------------------------------------------------------------------------
