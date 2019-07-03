@@ -56,6 +56,7 @@ class MODULES_EXPORT MediaControlsTouchlessImpl final
   void OnFocusIn() override;
   void OnTimeUpdate() override {}
   void OnDurationChange() override {}
+  void OnSeeking() override {}
   void OnLoadingProgress() override {}
   void OnPlay() override;
   void OnPause() override;
@@ -70,7 +71,9 @@ class MODULES_EXPORT MediaControlsTouchlessImpl final
   MediaControlsTouchlessMediaEventListener& MediaEventListener() const;
 
   // Test functions
-  void OnMediaMenuResultForTest(mojom::blink::MenuResponsePtr);
+  void SetMediaControlsMenuHostForTesting(
+      mojom::blink::MediaControlsMenuHostPtr);
+  void MenuHostFlushForTesting();
 
   void Trace(blink::Visitor*) override;
 

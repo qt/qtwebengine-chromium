@@ -665,6 +665,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool ShouldIgnoreUnresponsiveRenderer() override;
   bool HideDownloadUI() const override;
   bool HasPersistentVideo() const override;
+  bool IsSpatialNavigationDisabled() const override;
   RenderFrameHost* GetPendingMainFrame() override;
   void DidFirstVisuallyNonEmptyPaint(RenderViewHostImpl* source) override;
   void DidCommitAndDrawCompositorFrame(RenderViewHostImpl* source) override;
@@ -886,6 +887,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Unpause the throbber if it was paused.
   void DidProceedOnInterstitial() override;
 
+  bool HadInnerWebContents() override;
+
   // Forces overscroll to be disabled (used by touch emulation).
   void SetForceDisableOverscrollContent(bool force_disable);
 
@@ -987,6 +990,9 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Updates the tracking information for |this| to know if there is
   // a video currently in Picture-in-Picture mode.
   void SetHasPictureInPictureVideo(bool has_picture_in_picture_video);
+
+  // Sets the spatial navigation state.
+  void SetSpatialNavigationDisabled(bool disabled);
 
 #if defined(OS_ANDROID)
   // Called by FindRequestManager when all of the find match rects are in.
@@ -1826,6 +1832,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   bool has_persistent_video_ = false;
 
+  bool is_spatial_navigation_disabled_ = false;
+
   bool is_currently_audible_ = false;
   bool was_ever_audible_ = false;
 
@@ -1854,6 +1862,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // If non-null then this WebContents is embedded in a portal and its outer
   // WebContents can be found by using GetOuterWebContents().
   Portal* portal_ = nullptr;
+
+  // TODO(crbug.com/934637): Remove this field when pdf/any inner web contents
+  // user gesture is properly propagated. This is a temporary fix for history
+  // intervention to be disabled for pdfs (crbug.com/965434).
+  bool had_inner_webcontents_;
 
   base::WeakPtrFactory<WebContentsImpl> loading_weak_factory_;
   base::WeakPtrFactory<WebContentsImpl> weak_factory_;

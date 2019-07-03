@@ -655,6 +655,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::SequencedTaskRunner& GetAecDumpFileTaskRunner();
 #endif
   void NotifyRendererIfLockedToSite();
+  void PopulateTerminationInfoRendererFields(ChildProcessTerminationInfo* info);
 
   static void OnMojoError(int render_process_id, const std::string& error);
 

@@ -38,7 +38,7 @@ gclient_gn_args = [
 
 
 vars = {
-  "buildspec_platforms": "win, ios, linux64, chromeos, win64, android, mac64",
+  "buildspec_platforms": "android",
   # Variable that can be used to support multiple build scenarios, like having
   # Chromium specific targets in a client project's GN file or sync dependencies
   # conditionally etc.
@@ -130,11 +130,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and whatever else without interference from each other.
-  'skia_revision': '72c68f6af98f5dd0a2a615719a4861d91574740e',
+  'skia_revision': '6b86bdee08efdbc7d6c4fa37a118e8420624cbe4',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'v8_revision': 'f7380d154b2d2c57edd03a9b3e36e3bcccf44925',
+  'v8_revision': '227247d5e5a09caddbe2a967bd2449c19c91e155',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling swarming_client
   # and whatever else without interference from each other.
@@ -142,7 +142,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
-  'angle_revision': '1b6a9ca29c8a192ec907fa1a48c54eb20dc524b5',
+  'angle_revision': 'b98a3d1c05e20a3ffcee8617b84f82f71cd58eee',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling SwiftShader
   # and whatever else without interference from each other.
@@ -181,7 +181,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling NaCl
   # and whatever else without interference from each other.
-  'nacl_revision': '6abc006f6760ec49350cd45e8bccbff4809725ac',
+  'nacl_revision': 'f8d9b46365a16f3ab0ba278139575e2c271964e9',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling freetype
   # and whatever else without interference from each other.
@@ -979,7 +979,7 @@ deps = {
     Var('chromium_git') + '/chromium/deps/hunspell_dictionaries.git' + '@' + '3874188bd69fe67a825d07584c74451e45063e95',
 
   'src/third_party/icu':
-    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + 'ae4b77dc8966796f0bd93bb6342023276749e148',
+    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + 'e3d32ff805c917e6a8a6ed1c6e1acb1f2e83c544',
 
   'src/third_party/icu4j': {
       'packages': [
@@ -1355,7 +1355,7 @@ deps = {
     Var('chromium_git') + '/external/khronosgroup/webgl.git' + '@' + '3f6583d3fee4ab71866ade794504a20eb6f63f88',
 
   'src/third_party/webrtc':
-    Var('webrtc_git') + '/src.git' + '@' + 'd624d80698c9ebb54b10017a2a9d1db89202d39b',
+    Var('webrtc_git') + '/src.git' + '@' + '159c16f3ceea1d02d08d51fc83d843019d773ec6',
 
   'src/third_party/xdg-utils': {
       'url': Var('chromium_git') + '/chromium/deps/xdg-utils.git' + '@' + 'd80274d5869b17b8c9067a1022e4416ee7ed5e0d',
@@ -1396,7 +1396,7 @@ deps = {
     Var('chromium_git') + '/v8/v8.git' + '@' +  Var('v8_revision'),
 
   'src-internal': {
-    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@218cd462af968e86baf6d5f5d6d8984f912eb17d',
+    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@6c4854e672a1319fabf55d2017d12ba91e3ba5ad',
     'condition': 'checkout_src_internal',
   },
 

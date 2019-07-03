@@ -23,6 +23,7 @@
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_elements_helper.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_orientation_lock_delegate.h"
+#include "third_party/blink/renderer/modules/media_controls/media_controls_shared_helper.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_text_track_manager.h"
 #include "third_party/blink/renderer/modules/media_controls/touchless/elements/media_controls_touchless_bottom_container_element.h"
 #include "third_party/blink/renderer/modules/media_controls/touchless/elements/media_controls_touchless_overlay_element.h"
@@ -77,24 +78,24 @@ MediaControlsTouchlessImpl* MediaControlsTouchlessImpl::Create(
     ShadowRoot& shadow_root) {
   MediaControlsTouchlessImpl* controls =
       MakeGarbageCollected<MediaControlsTouchlessImpl>(media_element);
-  controls->overlay_ =
-      MakeGarbageCollected<MediaControlsTouchlessOverlayElement>(*controls);
   controls->bottom_container_ =
       MakeGarbageCollected<MediaControlsTouchlessBottomContainerElement>(
           *controls);
+  controls->overlay_ =
+      MakeGarbageCollected<MediaControlsTouchlessOverlayElement>(*controls);
   controls->volume_container_ =
       MakeGarbageCollected<MediaControlsTouchlessVolumeContainerElement>(
           *controls);
 
-  controls->ParserAppendChild(controls->overlay_);
   controls->ParserAppendChild(controls->bottom_container_);
+  controls->ParserAppendChild(controls->overlay_);
   controls->ParserAppendChild(controls->volume_container_);
 
   // Controls start hidden.
-  controls->overlay_->MakeTransparent();
-  controls->volume_container_->MakeTransparent();
   if (!media_element.paused())
     controls->bottom_container_->MakeTransparent();
+  controls->overlay_->MakeTransparent();
+  controls->volume_container_->MakeTransparent();
 
   if (RuntimeEnabledFeatures::VideoFullscreenOrientationLockEnabled() &&
       media_element.IsHTMLVideoElement()) {
@@ -166,8 +167,8 @@ MediaControlsTouchlessImpl::MediaEventListener() const {
 
 void MediaControlsTouchlessImpl::OnFocusIn() {
   if (MediaElement().ShouldShowControls()) {
-    overlay_->MakeOpaque(true);
     bottom_container_->MakeOpaque(!MediaElement().paused());
+    overlay_->MakeOpaque(true);
   }
 }
 
@@ -191,7 +192,7 @@ void MediaControlsTouchlessImpl::OnKeyDown(KeyboardEvent* event) {
   bool handled = true;
   switch (event->keyCode()) {
     case VKEY_RETURN:
-      volume_container_->MakeTransparent();
+      volume_container_->MakeTransparent(true);
       overlay_->MakeOpaque(true);
       MediaElement().TogglePlayState();
       break;
@@ -270,9 +271,8 @@ void MediaControlsTouchlessImpl::ShowContextMenu() {
 
   WTF::Vector<mojom::blink::MenuItem> menu_items;
 
-  // TODO(jazzhsu, https://crbug.com/942577): Populate fullscreen list entry
-  // properly.
-  menu_items.push_back(mojom::blink::MenuItem::FULLSCREEN);
+  if (MediaControlsSharedHelpers::ShouldShowFullscreenButton(MediaElement()))
+    menu_items.push_back(mojom::blink::MenuItem::FULLSCREEN);
 
   if (MediaElement().HasAudio())
     menu_items.push_back(mojom::blink::MenuItem::MUTE);
@@ -402,14 +402,14 @@ WebScreenOrientationType MediaControlsTouchlessImpl::GetOrientation() {
 void MediaControlsTouchlessImpl::HandleTopButtonPress() {
   MaybeChangeVolume(kVolumeToChangeForTouchless);
   volume_container_->UpdateVolume();
-  overlay_->MakeTransparent();
+  overlay_->MakeTransparent(true);
   volume_container_->MakeOpaque(true);
 }
 
 void MediaControlsTouchlessImpl::HandleBottomButtonPress() {
   MaybeChangeVolume(kVolumeToChangeForTouchless * -1);
   volume_container_->UpdateVolume();
-  overlay_->MakeTransparent();
+  overlay_->MakeTransparent(true);
   volume_container_->MakeOpaque(true);
 }
 
@@ -448,9 +448,13 @@ void MediaControlsTouchlessImpl::Trace(blink::Visitor* visitor) {
   HTMLDivElement::Trace(visitor);
 }
 
-void MediaControlsTouchlessImpl::OnMediaMenuResultForTest(
-    mojom::blink::MenuResponsePtr response) {
-  OnMediaMenuResult(std::move(response));
+void MediaControlsTouchlessImpl::SetMediaControlsMenuHostForTesting(
+    mojom::blink::MediaControlsMenuHostPtr menu_host) {
+  media_controls_host_ = std::move(menu_host);
+}
+
+void MediaControlsTouchlessImpl::MenuHostFlushForTesting() {
+  media_controls_host_.FlushForTesting();
 }
 
 }  // namespace blink

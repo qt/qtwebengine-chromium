@@ -592,6 +592,7 @@ WebContentsImpl::WebContentsImpl(BrowserContext* browser_context)
 #endif  // !defined(OS_ANDROID)
       is_overlay_content_(false),
       showing_context_menu_(false),
+      had_inner_webcontents_(false),
       loading_weak_factory_(this),
       weak_factory_(this) {
   frame_tree_.SetFrameRemoveListener(
@@ -687,7 +688,8 @@ WebContentsImpl::~WebContentsImpl() {
   // Do not update state as the WebContents is being destroyed.
   frame_tree_.root()->ResetNavigationRequest(true, true);
   if (root->speculative_frame_host()) {
-    root->speculative_frame_host()->DeleteRenderFrame();
+    root->speculative_frame_host()->DeleteRenderFrame(
+        FrameDeleteIntention::kSpeculativeMainFrameForShutdown);
     root->speculative_frame_host()->SetRenderFrameCreated(false);
     root->speculative_frame_host()->ResetNavigationRequests();
   }
@@ -3518,6 +3520,10 @@ void WebContentsImpl::DidProceedOnInterstitial() {
     LoadingStateChanged(true, true, nullptr);
 }
 
+bool WebContentsImpl::HadInnerWebContents() {
+  return had_inner_webcontents_;
+}
+
 void WebContentsImpl::DetachInterstitialPage(bool has_focus) {
   bool interstitial_pausing_throbber =
       ShowingInterstitialPage() && interstitial_page_->pause_throbber();
@@ -4428,6 +4434,9 @@ void WebContentsImpl::DidNavigateMainFramePostCommit(
   if (delegate_)
     delegate_->DidNavigateMainFramePostCommit(this);
   view_->SetOverscrollControllerEnabled(CanOverscrollContent());
+
+  if (!details.is_same_document && GetInnerWebContents().empty())
+    had_inner_webcontents_ = false;
 }
 
 void WebContentsImpl::DidNavigateAnyFramePostCommit(
@@ -5495,6 +5504,10 @@ bool WebContentsImpl::HasPersistentVideo() const {
   return has_persistent_video_;
 }
 
+bool WebContentsImpl::IsSpatialNavigationDisabled() const {
+  return is_spatial_navigation_disabled_;
+}
+
 RenderFrameHost* WebContentsImpl::GetPendingMainFrame() {
   return GetRenderManager()->speculative_frame_host();
 }
@@ -5631,6 +5644,7 @@ void WebContentsImpl::FocusOuterAttachmentFrameChain() {
 }
 
 void WebContentsImpl::InnerWebContentsCreated(WebContents* inner_web_contents) {
+  had_inner_webcontents_ = true;
   for (auto& observer : observers_)
     observer.InnerWebContentsCreated(inner_web_contents);
 }
@@ -6753,6 +6767,14 @@ void WebContentsImpl::SetHasPersistentVideo(bool has_persistent_video) {
   has_persistent_video_ = has_persistent_video;
   NotifyPreferencesChanged();
   media_web_contents_observer()->RequestPersistentVideo(has_persistent_video);
+}
+
+void WebContentsImpl::SetSpatialNavigationDisabled(bool disabled) {
+  if (is_spatial_navigation_disabled_ == disabled)
+    return;
+
+  is_spatial_navigation_disabled_ = disabled;
+  NotifyPreferencesChanged();
 }
 
 void WebContentsImpl::BrowserPluginGuestWillDetach() {

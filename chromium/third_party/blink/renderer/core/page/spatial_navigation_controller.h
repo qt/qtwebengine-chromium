@@ -30,6 +30,11 @@ class CORE_EXPORT SpatialNavigationController
   bool HandleArrowKeyboardEvent(KeyboardEvent* event);
   bool HandleEnterKeyboardEvent(KeyboardEvent* event);
   bool HandleEscapeKeyboardEvent(KeyboardEvent* event);
+  bool HandleImeSubmitKeyboardEvent(KeyboardEvent* event);
+
+  // Called when the enter key is released to clear local state because we don't
+  // get a consistent event stream when the Enter key is partially handled.
+  void ResetEnterKeyState();
 
   // Returns the element that's currently interested. i.e. the Element that's
   // currently indicated to the user.
@@ -39,8 +44,6 @@ class CORE_EXPORT SpatialNavigationController
 
   void OnSpatialNavigationSettingChanged();
   void FocusedNodeChanged(Document*);
-
-  void ResetMojoBindings();
 
   void Trace(blink::Visitor*);
 
@@ -97,14 +100,21 @@ class CORE_EXPORT SpatialNavigationController
   bool UpdateCanExitFocus(Element* element);
   bool UpdateCanSelectInterestedElement(Element* element);
   bool UpdateHasNextFormElement(Element* element);
+  bool UpdateIsFormFocused(Element* element);
   bool UpdateHasDefaultVideoControls(Element* element);
 
   const mojom::blink::SpatialNavigationHostPtr& GetSpatialNavigationHost();
+  void ResetMojoBindings();
 
   // The currently indicated element or nullptr if no node is indicated by
   // spatial navigation.
   WeakMember<Element> interest_element_;
   Member<Page> page_;
+
+  // We need to track whether the enter key has been handled in down or press to
+  // know whether to generate a click on the up.
+  bool enter_key_down_seen_ = false;
+  bool enter_key_press_seen_ = false;
 
   mojom::blink::SpatialNavigationStatePtr spatial_navigation_state_;
   mojom::blink::SpatialNavigationHostPtr spatial_navigation_host_;
