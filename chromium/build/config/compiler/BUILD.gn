@@ -2121,7 +2121,7 @@ config("optimize_max") {
       # build also specifies /Ot, /Oi, and /GF, but these are implied by /O2.
       cflags = [ "/O2" ] + common_optimize_on_cflags
 
-      if (is_official_build) {
+      if (is_official_build && full_wpo_on_official) {
         if (!is_clang) {
           cflags += [ "/GL" ]  # Whole program optimization.
         }
@@ -2161,7 +2161,7 @@ config("optimize_speed") {
       cflags = [ "/O2" ] + common_optimize_on_cflags
 
       # TODO(thakis): Remove is_clang here, https://crbug.com/598772
-      if (is_official_build && !is_clang) {
+      if (is_official_build && full_wpo_on_official && !is_clang) {
         cflags += [ "/GL" ]  # Whole program optimization.
       }
     } else if (optimize_for_fuzzing) {
