@@ -1470,6 +1470,7 @@ void LayoutTableSection::MarkAllCellsWidthsDirtyAndOrNeedsLayout(
 }
 
 LayoutUnit LayoutTableSection::FirstLineBoxBaseline() const {
+  DCHECK(!NeedsCellRecalc());
   if (!grid_.size())
     return LayoutUnit(-1);
 
@@ -1515,6 +1516,7 @@ void LayoutTableSection::DirtiedRowsAndEffectiveColumns(
     const LayoutRect& damage_rect,
     CellSpan& rows,
     CellSpan& columns) const {
+  DCHECK(!NeedsCellRecalc());
   if (!grid_.size()) {
     rows = CellSpan();
     columns = CellSpan(1, 1);
