@@ -1471,6 +1471,7 @@ bool LayoutTableSection::RecalcLayoutOverflow() {
 }
 
 void LayoutTableSection::RecalcVisualOverflow() {
+  SECURITY_CHECK(!needs_cell_recalc_);
   unsigned total_rows = grid_.size();
   for (unsigned r = 0; r < total_rows; r++) {
     LayoutTableRow* row_layouter = RowLayoutObjectAt(r);
@@ -1496,6 +1497,7 @@ void LayoutTableSection::MarkAllCellsWidthsDirtyAndOrNeedsLayout(
 }
 
 LayoutUnit LayoutTableSection::FirstLineBoxBaseline() const {
+  DCHECK(!NeedsCellRecalc());
   if (!grid_.size())
     return LayoutUnit(-1);
 
@@ -1541,6 +1543,7 @@ void LayoutTableSection::DirtiedRowsAndEffectiveColumns(
     const LayoutRect& damage_rect,
     CellSpan& rows,
     CellSpan& columns) const {
+  DCHECK(!NeedsCellRecalc());
   if (!grid_.size()) {
     rows = CellSpan();
     columns = CellSpan(1, 1);
