@@ -1421,9 +1421,13 @@ void TaskQueueImpl::DelayedIncomingQueue::SweepCancelledTasks() {
     if (it->task.IsCancelled()) {
       if (it->is_high_res)
         pending_high_res_tasks_--;
-      *it = std::move(queue_.c.back());
+      bool is_last_task_sequence = it->sequence_num == queue_.c.back().sequence_num;
+      if (!is_last_task_sequence)
+        *it = std::move(queue_.c.back());
       queue_.c.pop_back();
       task_deleted = true;
+      if (is_last_task_sequence)
+        break;
     } else {
       it++;
     }
