@@ -83,7 +83,9 @@ TextInputManager::GetCompositionRangeInfo() const {
 
 const TextInputManager::TextSelection* TextInputManager::GetTextSelection(
     RenderWidgetHostViewBase* view) const {
+#ifndef TOOLKIT_QT
   DCHECK(!view || IsRegistered(view));
+#endif
   if (!view)
     view = active_view_;
   // A crash occurs when we end up here with an unregistered view.
