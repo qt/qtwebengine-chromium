@@ -223,7 +223,7 @@ ResultCode TargetProcess::TransferVariable(const char* name,
 
   void* child_var = const_cast<void*>(address);
 
-#if SANDBOX_EXPORTS
+#if defined(SANDBOX_EXPORTS)
   HMODULE module = ::LoadLibrary(exe_name_.get());
   if (!module)
     return SBOX_ERROR_CANNOT_LOADLIBRARY_EXECUTABLE;
