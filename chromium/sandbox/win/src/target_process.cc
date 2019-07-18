@@ -219,12 +219,12 @@ ResultCode TargetProcess::Create(
     ::TerminateProcess(process_info.process_handle(), 0);
     return SBOX_ERROR_CANNOT_FIND_BASE_ADDRESS;
   }
-
+#if !defined(SANDBOX_EXPORTS)
   if (base_address_ != CURRENT_MODULE()) {
     ::TerminateProcess(process_info.process_handle(), 0);
     return SBOX_ERROR_INVALID_TARGET_BASE_ADDRESS;
   }
-
+#endif
   sandbox_process_info_.Set(process_info.Take());
   return SBOX_ALL_OK;
 }
@@ -237,7 +237,7 @@ ResultCode TargetProcess::TransferVariable(const char* name,
 
   void* child_var = const_cast<void*>(address);
 
-#if SANDBOX_EXPORTS
+#if defined(SANDBOX_EXPORTS)
   HMODULE module = ::LoadLibrary(exe_name_.get());
   if (!module)
     return SBOX_ERROR_CANNOT_LOADLIBRARY_EXECUTABLE;
@@ -272,7 +272,10 @@ ResultCode TargetProcess::Init(
     absl::optional<base::span<const uint8_t>> delegate_data,
     uint32_t shared_IPC_size,
     DWORD* win_error) {
-  ResultCode ret = VerifySentinels();
+  ResultCode ret = SBOX_ALL_OK;
+#if !defined(SANDBOX_EXPORTS)
+  ret = VerifySentinels();
+#endif
   if (ret != SBOX_ALL_OK)
     return ret;
 
