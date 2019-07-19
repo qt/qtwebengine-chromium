@@ -6,8 +6,12 @@
 
 #include "base/no_destructor.h"
 #include "build/build_config.h"
-#include "components/spellcheck/common/spellcheck.mojom.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "services/service_manager/public/cpp/manifest_builder.h"
+
+#if BUILDFLAG(ENABLE_SPELLCHECK)
+#include "components/spellcheck/common/spellcheck.mojom.h"
+#endif
 
 const service_manager::Manifest& GetQtWebEngineRendererManifest()
 {
@@ -15,8 +19,10 @@ const service_manager::Manifest& GetQtWebEngineRendererManifest()
         service_manager::ManifestBuilder()
             .WithServiceName("qtwebengine_renderer")
             .WithDisplayName("QtWebEngine Renderer")
+#if BUILDFLAG(ENABLE_SPELLCHECK)
             .ExposeCapability("browser",
                               service_manager::Manifest::InterfaceList<spellcheck::mojom::SpellChecker>())
+#endif
             .RequireCapability("qtwebengine", "renderer")
             .Build()};
     return *manifest;
