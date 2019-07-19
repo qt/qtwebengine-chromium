@@ -1,4 +1,5 @@
 import("//chrome/common/features.gni")
+import("//components/spellcheck/spellcheck_build_features.gni")
 import("//tools/grit/grit_rule.gni")
 import ("//mojo/public/tools/bindings/mojom.gni")
 
@@ -50,10 +51,12 @@ source_set("qtwebengine_packaged_service_manifests") {
 
   deps = [
     "//base",
-    "//components/spellcheck/common:interfaces",
     "//services/proxy_resolver/public/cpp:manifest",
     "//services/service_manager/public/cpp",
   ]
+  if (enable_spellcheck) {
+    deps += [ "//components/spellcheck/common:interfaces" ]
+  }
 }
 
 source_set("qtwebengine_renderer_manifest") {
@@ -64,9 +67,11 @@ source_set("qtwebengine_renderer_manifest") {
 
   deps = [
     "//base",
-    "//components/spellcheck/common:interfaces",
     "//services/service_manager/public/cpp",
   ]
+  if (enable_spellcheck) {
+    deps += [ "//components/spellcheck/common:interfaces" ]
+  }
 }
 
 
