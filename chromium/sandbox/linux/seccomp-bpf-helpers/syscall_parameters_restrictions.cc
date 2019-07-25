@@ -412,9 +412,11 @@ ResultExpr RestrictPtrace() {
 #if !defined(__aarch64__)
         PTRACE_GETREGS,
         PTRACE_GETFPREGS,
+#if defined(TRACE_GET_THREAD_AREA)
         PTRACE_GET_THREAD_AREA,
 #endif
-#if defined(__arm__)
+#endif
+#if defined(__arm__) && defined (PTRACE_GETVFPREGS)
         PTRACE_GETVFPREGS,
 #endif
         PTRACE_GETREGSET,
