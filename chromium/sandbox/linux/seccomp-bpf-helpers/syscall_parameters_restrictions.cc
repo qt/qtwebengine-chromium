@@ -428,10 +428,13 @@ ResultExpr RestrictPtrace() {
   return Switch(request)
       .CASES((
 #if !defined(__aarch64__)
-                 PTRACE_GETREGS, PTRACE_GETFPREGS, PTRACE_GET_THREAD_AREA,
+                 PTRACE_GETREGS, PTRACE_GETFPREGS,
+#if defined(TRACE_GET_THREAD_AREA)
+                 PTRACE_GET_THREAD_AREA,
+#endif
                  PTRACE_GETREGSET,
 #endif
-#if defined(__arm__)
+#if defined(__arm__) && defined (PTRACE_GETVFPREGS)
                  PTRACE_GETVFPREGS,
 #endif
                  PTRACE_PEEKDATA, PTRACE_ATTACH, PTRACE_DETACH),
