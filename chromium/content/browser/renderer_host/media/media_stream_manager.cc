@@ -745,7 +745,7 @@ void MediaStreamManager::CancelRequest(const std::string& label) {
       continue;
     }
     // Stop the opening/opened devices of the requests.
-    CloseDevice(device.type, device.session_id);
+    CloseDevice(device.type, device.session_id());
   }
 
   // Cancel the request if still pending at UI side.
@@ -772,11 +772,12 @@ void MediaStreamManager::CancelAllRequests(int render_process_id,
   }
 }
 
-void MediaStreamManager::StopStreamDevice(int render_process_id,
-                                          int render_frame_id,
-                                          int requester_id,
-                                          const std::string& device_id,
-                                          int session_id) {
+void MediaStreamManager::StopStreamDevice(
+    int render_process_id,
+    int render_frame_id,
+    int requester_id,
+    const std::string& device_id,
+    const base::UnguessableToken& session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "StopStreamDevice({render_frame_id = " << render_frame_id << "} "
            << ", {device_id = " << device_id << "}, session_id = " << session_id
@@ -795,15 +796,15 @@ void MediaStreamManager::StopStreamDevice(int render_process_id,
     }
 
     for (const MediaStreamDevice& device : request->devices) {
-      if (device.id == device_id && device.session_id == session_id) {
-        StopDevice(device.type, device.session_id);
+      if (device.id == device_id && device.session_id() == session_id) {
+        StopDevice(device.type, device.session_id());
         return;
       }
     }
   }
 }
 
-int MediaStreamManager::VideoDeviceIdToSessionId(
+base::UnguessableToken MediaStreamManager::VideoDeviceIdToSessionId(
     const std::string& device_id) const {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
@@ -811,14 +812,15 @@ int MediaStreamManager::VideoDeviceIdToSessionId(
     for (const MediaStreamDevice& device : device_request.second->devices) {
       if (device.id == device_id &&
           device.type == MediaStreamType::DEVICE_VIDEO_CAPTURE) {
-        return device.session_id;
+        return device.session_id();
       }
     }
   }
-  return MediaStreamDevice::kNoId;
+  return base::UnguessableToken();
 }
 
-void MediaStreamManager::StopDevice(MediaStreamType type, int session_id) {
+void MediaStreamManager::StopDevice(MediaStreamType type,
+                                    const base::UnguessableToken& session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "StopDevice"
            << "{type = " << type << "}"
@@ -834,7 +836,7 @@ void MediaStreamManager::StopDevice(MediaStreamType type, int session_id) {
     }
     auto device_it = devices->begin();
     while (device_it != devices->end()) {
-      if (device_it->type != type || device_it->session_id != session_id) {
+      if (device_it->type != type || device_it->session_id() != session_id) {
         ++device_it;
         continue;
       }
@@ -857,7 +859,8 @@ void MediaStreamManager::StopDevice(MediaStreamType type, int session_id) {
   }
 }
 
-void MediaStreamManager::CloseDevice(MediaStreamType type, int session_id) {
+void MediaStreamManager::CloseDevice(MediaStreamType type,
+                                     const base::UnguessableToken& session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "CloseDevice("
            << "{type = " << type << "} "
@@ -867,7 +870,7 @@ void MediaStreamManager::CloseDevice(MediaStreamType type, int session_id) {
   for (const LabeledDeviceRequest& labeled_request : requests_) {
     DeviceRequest* const request = labeled_request.second.get();
     for (const MediaStreamDevice& device : request->devices) {
-      if (device.session_id == session_id && device.type == type) {
+      if (device.session_id() == session_id && device.type == type) {
         // Notify observers that this device is being closed.
         // Note that only one device per type can be opened.
         request->SetState(type, MEDIA_REQUEST_STATE_CLOSING);
@@ -953,7 +956,7 @@ void MediaStreamManager::StopRemovedDevice(
          type == blink::MEDIA_DEVICE_TYPE_VIDEO_INPUT);
 
   MediaStreamType stream_type = ConvertToMediaStreamType(type);
-  std::vector<int> session_ids;
+  std::vector<base::UnguessableToken> session_ids;
   for (const LabeledDeviceRequest& labeled_request : requests_) {
     const DeviceRequest* request = labeled_request.second.get();
     for (const MediaStreamDevice& device : request->devices) {
@@ -961,14 +964,14 @@ void MediaStreamManager::StopRemovedDevice(
           request->salt_and_origin.device_id_salt,
           request->salt_and_origin.origin, media_device_info.device_id);
       if (device.id == source_id && device.type == stream_type) {
-        session_ids.push_back(device.session_id);
+        session_ids.push_back(device.session_id());
         if (request->device_stopped_cb) {
           request->device_stopped_cb.Run(labeled_request.first, device);
         }
       }
     }
   }
-  for (const int session_id : session_ids)
+  for (const auto& session_id : session_ids)
     StopDevice(stream_type, session_id);
 
   AddLogMessageOnIOThread(
@@ -1654,8 +1657,9 @@ void MediaStreamManager::InitializeMaybeAsync(
                           base::Unretained(this))));
 }
 
-void MediaStreamManager::Opened(MediaStreamType stream_type,
-                                int capture_session_id) {
+void MediaStreamManager::Opened(
+    MediaStreamType stream_type,
+    const base::UnguessableToken& capture_session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "Opened({stream_type = " << stream_type << "} "
            << "{capture_session_id = " << capture_session_id << "})";
@@ -1668,7 +1672,7 @@ void MediaStreamManager::Opened(MediaStreamType stream_type,
     DeviceRequest* request = labeled_request.second.get();
     for (MediaStreamDevice& device : request->devices) {
       if (device.type == stream_type &&
-          device.session_id == capture_session_id) {
+          device.session_id() == capture_session_id) {
         CHECK_EQ(request->state(device.type), MEDIA_REQUEST_STATE_OPENING);
         // We've found a matching request.
         request->SetState(device.type, MEDIA_REQUEST_STATE_DONE);
@@ -1680,7 +1684,7 @@ void MediaStreamManager::Opened(MediaStreamType stream_type,
           if (device.type != MediaStreamType::GUM_TAB_AUDIO_CAPTURE) {
             const MediaStreamDevice* opened_device =
                 audio_input_device_manager_->GetOpenedDeviceById(
-                    device.session_id);
+                    device.session_id());
             device.input = opened_device->input;
 
             // Since the audio input device manager will set the input
@@ -1726,8 +1730,9 @@ void MediaStreamManager::HandleRequestDone(const std::string& label,
   }
 }
 
-void MediaStreamManager::Closed(MediaStreamType stream_type,
-                                int capture_session_id) {
+void MediaStreamManager::Closed(
+    MediaStreamType stream_type,
+    const base::UnguessableToken& capture_session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
 
@@ -1763,8 +1768,9 @@ void MediaStreamManager::DevicesEnumerated(
     ReadOutputParamsAndPostRequestToUI(label, request, enumeration);
 }
 
-void MediaStreamManager::Aborted(MediaStreamType stream_type,
-                                 int capture_session_id) {
+void MediaStreamManager::Aborted(
+    MediaStreamType stream_type,
+    const base::UnguessableToken& capture_session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "Aborted({stream_type = " << stream_type << "} "
            << "{capture_session_id = " << capture_session_id << "})";
@@ -1901,7 +1907,7 @@ void MediaStreamManager::HandleAccessRequestResponse(
         continue;
       }
     }
-    device.session_id = GetDeviceManager(device.type)->Open(device);
+    device.set_session_id(GetDeviceManager(device.type)->Open(device));
     TranslateDeviceIdToSourceId(request, &device);
     request->devices.push_back(device);
 
@@ -1909,7 +1915,7 @@ void MediaStreamManager::HandleAccessRequestResponse(
     DVLOG(1) << "HandleAccessRequestResponse - opening device "
              << ", {label = " << label << "}"
              << ", {device_id = " << device.id << "}"
-             << ", {session_id = " << device.session_id << "}";
+             << ", {session_id = " << device.session_id() << "}";
   }
 
   // Check whether we've received all stream types requested.
@@ -1941,7 +1947,8 @@ void MediaStreamManager::HandleChangeSourceRequestResponse(
     MediaStreamDevice new_device = media_stream_device;
     found_audio |= blink::IsAudioInputMediaType(new_device.type);
 
-    new_device.session_id = GetDeviceManager(new_device.type)->Open(new_device);
+    new_device.set_session_id(
+        GetDeviceManager(new_device.type)->Open(new_device));
     request->SetState(new_device.type, MEDIA_REQUEST_STATE_OPENING);
     request->devices.push_back(new_device);
   }
@@ -2086,7 +2093,7 @@ void MediaStreamManager::OnMediaStreamUIWindowId(
     if (media_id.window_id > DesktopMediaID::kNullId)
       continue;
 #endif
-    video_capture_manager_->SetDesktopCaptureWindowId(device.session_id,
+    video_capture_manager_->SetDesktopCaptureWindowId(device.session_id(),
                                                       window_id);
     break;
   }
@@ -2174,10 +2181,11 @@ bool MediaStreamManager::IsOriginAllowed(int render_process_id,
   return true;
 }
 
-void MediaStreamManager::SetCapturingLinkSecured(int render_process_id,
-                                                 int session_id,
-                                                 MediaStreamType type,
-                                                 bool is_secure) {
+void MediaStreamManager::SetCapturingLinkSecured(
+    int render_process_id,
+    const base::UnguessableToken& session_id,
+    MediaStreamType type,
+    bool is_secure) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   for (LabeledDeviceRequest& labeled_request : requests_) {
     DeviceRequest* request = labeled_request.second.get();
@@ -2185,7 +2193,7 @@ void MediaStreamManager::SetCapturingLinkSecured(int render_process_id,
       continue;
 
     for (const MediaStreamDevice& device : request->devices) {
-      if (device.session_id == session_id && device.type == type) {
+      if (device.session_id() == session_id && device.type == type) {
         request->SetCapturingLinkSecured(is_secure);
         return;
       }
