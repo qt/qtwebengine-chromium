@@ -104,7 +104,7 @@ CodeCacheHostImpl::CodeCacheHostImpl(
       generated_code_cache_context_(std::move(generated_code_cache_context)) {}
 
 CodeCacheHostImpl::~CodeCacheHostImpl() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 // static
@@ -131,7 +131,7 @@ void CodeCacheHostImpl::DidGenerateCacheableMetadata(
     return;
   }
 
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   GeneratedCodeCache* code_cache = GetCodeCache(cache_type);
   if (!code_cache)
