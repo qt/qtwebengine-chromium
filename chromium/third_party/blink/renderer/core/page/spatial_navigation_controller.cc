@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
+#include "third_party/blink/renderer/platform/histogram.h"
 
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 
@@ -239,13 +240,18 @@ Element* SpatialNavigationController::GetInterestedElement() const {
   return document->ActiveElement();
 }
 
-void SpatialNavigationController::DidDetachFrameView() {
+void SpatialNavigationController::DidDetachFrameView(
+    const LocalFrameView& view) {
   // If the interested element's view was lost (frame detached, navigated,
   // etc.) then reset navigation.
   if (interest_element_ && !interest_element_->GetDocument().View())
     interest_element_ = nullptr;
-  // TODO(crbug.com/956209): should be checked via an integration test.
-  ResetMojoBindings();
+
+  // TODO(bokan): This still needs a test. crbug.com/976892.
+  if (view.GetFrame().IsMainFrame()) {
+    // TODO(crbug.com/956209): should be checked via an integration test.
+    ResetMojoBindings();
+  }
 }
 
 void SpatialNavigationController::Trace(blink::Visitor* visitor) {
@@ -255,6 +261,8 @@ void SpatialNavigationController::Trace(blink::Visitor* visitor) {
 
 bool SpatialNavigationController::Advance(
     SpatialNavigationDirection direction) {
+  SCOPED_BLINK_UMA_HISTOGRAM_TIMER("Blink.SpatialNavigation.Advance");
+
   Node* interest_node = StartingNode();
   if (!interest_node)
     return false;
@@ -540,6 +548,15 @@ void SpatialNavigationController::FocusedNodeChanged(Document* document) {
     MoveInterestTo(document->FocusedElement());
   } else {
     UpdateSpatialNavigationState(interest_element_);
+  }
+}
+
+void SpatialNavigationController::FullscreenStateChanged(Element* element) {
+  if (!RuntimeEnabledFeatures::FocuslessSpatialNavigationEnabled())
+    return;
+  if (IsHTMLMediaElement(element)) {
+    element->focus(FocusParams(SelectionBehaviorOnFocus::kReset,
+                               kWebFocusTypeSpatialNavigation, nullptr));
   }
 }
 
