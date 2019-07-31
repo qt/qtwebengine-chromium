@@ -256,7 +256,7 @@ void OfflineAudioDestinationHandler::FinishOfflineRendering() {
 void OfflineAudioDestinationHandler::NotifySuspend(size_t frame) {
   DCHECK(IsMainThread());
 
-  if (Context() && Context()->GetExecutionContext())
+  if (!IsExecutionContextDestroyed() && Context())
     Context()->ResolveSuspendOnMainThread(frame);
 }
 
