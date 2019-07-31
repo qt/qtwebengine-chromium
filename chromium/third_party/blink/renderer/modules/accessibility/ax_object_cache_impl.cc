@@ -811,6 +811,19 @@ void AXObjectCacheImpl::UpdateAriaOwns(
   relation_cache_->UpdateAriaOwns(owner, id_vector, owned_children);
 }
 
+bool AXObjectCacheImpl::MayHaveHTMLLabel(const HTMLElement& elem) {
+  // Return false if this type of element will not accept a <label for> label.
+  if (!elem.IsLabelable())
+    return false;
+
+  // Return true if a <label for> pointed to this element at some point.
+  if (relation_cache_->MayHaveHTMLLabelViaForAttribute(elem))
+    return true;
+
+  // Return true if any amcestor is a label, as in <label><input></label>.
+  return Traversal<HTMLLabelElement>::FirstAncestor(elem);
+}
+
 void AXObjectCacheImpl::CheckedStateChanged(Node* node) {
   PostNotification(node, AXObjectCacheImpl::kAXCheckedStateChanged);
 }
@@ -1003,7 +1016,8 @@ void AXObjectCacheImpl::HandleAttributeChanged(const QualifiedName& attr_name,
 }
 
 void AXObjectCacheImpl::LabelChanged(Element* element) {
-  TextChanged(ToHTMLLabelElement(element)->control());
+  // Will call back to TextChanged() when done updating relation cache.
+  relation_cache_->LabelChanged(element);
 }
 
 void AXObjectCacheImpl::InlineTextBoxesUpdated(
