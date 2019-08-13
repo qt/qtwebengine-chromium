@@ -110,7 +110,7 @@ struct COMPONENT_EXPORT(CC_SHARED_MOJOM_TRAITS)
     return metadata.tracked_element_bounds;
   }
 
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_QTWEBENGINE)
   static float bottom_controls_height(const cc::RenderFrameMetadata& metadata) {
     return metadata.bottom_controls_height;
   }

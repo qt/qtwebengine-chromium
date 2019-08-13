@@ -2928,6 +2928,7 @@ viz::CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() {
   }
 
   metadata.min_page_scale_factor = active_tree_->min_page_scale_factor();
+  metadata.root_layer_size = active_tree_->ScrollableSize();
 
   if (browser_controls_offset_manager_->TopControlsHeight() > 0) {
     float visible_height =
@@ -3059,7 +3060,7 @@ RenderFrameMetadata LayerTreeHostImpl::MakeRenderFrameMetadata(
       browser_controls_offset_manager_->TopControlsHeight();
   metadata.top_controls_shown_ratio =
       browser_controls_offset_manager_->TopControlsShownRatio();
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_QTWEBENGINE)
   metadata.bottom_controls_height =
       browser_controls_offset_manager_->BottomControlsHeight();
   metadata.bottom_controls_shown_ratio =

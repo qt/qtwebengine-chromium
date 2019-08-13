@@ -126,7 +126,7 @@ class CC_EXPORT RenderFrameMetadata {
   // setTrackedElementRect).
   TrackedElementBounds tracked_element_bounds;
 
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_QTWEBENGINE)
   // Used to position Android bottom bar, whose position is computed by the
   // renderer compositor.
   float bottom_controls_height = 0.f;

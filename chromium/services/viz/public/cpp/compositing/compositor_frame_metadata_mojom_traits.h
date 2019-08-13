@@ -129,6 +129,11 @@ struct StructTraits<viz::mojom::CompositorFrameMetadataDataView,
     return metadata.min_page_scale_factor;
   }
 
+  static const gfx::SizeF& root_layer_size(
+      const viz::CompositorFrameMetadata& metadata) {
+    return metadata.root_layer_size;
+  }
+
   static std::optional<float> top_controls_visible_height(
       const viz::CompositorFrameMetadata& metadata) {
     return metadata.top_controls_visible_height;
