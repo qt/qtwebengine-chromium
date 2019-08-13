@@ -2339,6 +2339,7 @@ viz::CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() {
     last_draw_referenced_surfaces_ = referenced_surfaces;
 
   metadata.min_page_scale_factor = active_tree_->min_page_scale_factor();
+  metadata.root_layer_size = active_tree_->ScrollableSize();
 
   if (browser_controls_offset_manager_->TopControlsHeight() > 0) {
     metadata.top_controls_visible_height.emplace(
@@ -2390,7 +2391,7 @@ RenderFrameMetadata LayerTreeHostImpl::MakeRenderFrameMetadata(
       browser_controls_offset_manager_->TopControlsHeight();
   metadata.top_controls_shown_ratio =
       browser_controls_offset_manager_->TopControlsShownRatio();
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || defined(TOOLKIT_QT)
   metadata.bottom_controls_height =
       browser_controls_offset_manager_->BottomControlsHeight();
   metadata.bottom_controls_shown_ratio =
