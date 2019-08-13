@@ -123,7 +123,7 @@ class CC_EXPORT RenderFrameMetadata {
   // `local_surface_id`.
   base::TimeDelta current_surface_visual_update_duration;
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || defined(TOOLKIT_QT)
   // Used to position Android bottom bar, whose position is computed by the
   // renderer compositor.
   float bottom_controls_height = 0.f;
