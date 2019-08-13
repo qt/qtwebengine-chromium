@@ -77,7 +77,7 @@ struct StructTraits<content::mojom::RenderFrameMetadataDataView,
     return metadata.new_vertical_scroll_direction;
   }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
   static float bottom_controls_height(const cc::RenderFrameMetadata& metadata) {
     return metadata.bottom_controls_height;
   }
