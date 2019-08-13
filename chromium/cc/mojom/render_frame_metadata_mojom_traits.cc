@@ -50,7 +50,7 @@ bool StructTraits<
   out->top_controls_shown_ratio = data.top_controls_shown_ratio();
   out->primary_main_frame_item_sequence_number =
       data.primary_main_frame_item_sequence_number();
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_QTWEBENGINE)
   out->bottom_controls_height = data.bottom_controls_height();
   out->bottom_controls_shown_ratio = data.bottom_controls_shown_ratio();
   out->top_controls_min_height_offset = data.top_controls_min_height_offset();
@@ -73,7 +73,7 @@ bool StructTraits<
     SetFailedCheckCrashKey("delegated_ink_metadata");
     return false;
   }
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_QTWEBENGINE)
   if (!data.ReadScrollableViewportSize(&out->scrollable_viewport_size)) {
     SetFailedCheckCrashKey("scrollable_viewport_size");
     return false;
