@@ -231,6 +231,17 @@ X11EventSource::GetRootCursorLocationFromCurrentEvent() const {
 }
 #endif
 
+// TODO(crbug.com/965991): Use ui::Event in Aura/X11
+#if !defined(USE_X11)
+void X11EventSource::RemoveXEventDispatcher(XEventDispatcher* dispatcher) {
+  delegate_->RemoveXEventDispatcher(dispatcher);
+}
+
+void X11EventSource::AddXEventDispatcher(XEventDispatcher* dispatcher) {
+  delegate_->AddXEventDispatcher(dispatcher);
+}
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 // X11EventSource, protected
 
