@@ -1251,6 +1251,7 @@ class NavigationURLLoaderImpl::URLLoaderRequestController
     }
 
     bool is_download;
+    bool is_stream;
 
     bool must_download =
         download_utils::MustDownload(url_, head.headers.get(), head.mime_type);
@@ -1271,6 +1272,7 @@ class NavigationURLLoaderImpl::URLLoaderRequestController
     // When a plugin intercepted the response, we don't want to download it.
     is_download =
         !head.intercepted_by_plugin && (must_download || !known_mime_type);
+    is_stream = false;
 
     // If NetworkService is on, or an interceptor handled the request, the
     // request doesn't use ResourceDispatcherHost so
@@ -1278,7 +1280,7 @@ class NavigationURLLoaderImpl::URLLoaderRequestController
     if (base::FeatureList::IsEnabled(network::features::kNetworkService) ||
         !default_loader_used_) {
       CallOnReceivedResponse(head, std::move(url_loader_client_endpoints),
-                             is_download);
+                             is_download, is_stream);
       return;
     }
 
@@ -1293,12 +1295,13 @@ class NavigationURLLoaderImpl::URLLoaderRequestController
       ResourceRequestInfoImpl* info =
           ResourceRequestInfoImpl::ForRequest(url_request);
       is_download = !head.intercepted_by_plugin && info->IsDownload();
+      is_stream = info->is_stream();
     } else {
-      is_download = false;
+      is_download = is_stream = false;
     }
 
     CallOnReceivedResponse(head, std::move(url_loader_client_endpoints),
-                           is_download);
+                           is_download, is_stream);
   }
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -1332,14 +1335,14 @@ class NavigationURLLoaderImpl::URLLoaderRequestController
     bool is_download = !has_plugin && is_download_if_not_handled_by_plugin;
 
     CallOnReceivedResponse(head, std::move(url_loader_client_endpoints),
-                           is_download);
+                           is_download, false /* is_stream */);
   }
 #endif
 
   void CallOnReceivedResponse(
       const network::ResourceResponseHead& head,
       network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-      bool is_download) {
+      bool is_download, bool is_stream) {
     scoped_refptr<network::ResourceResponse> response(
         new network::ResourceResponse());
     response->head = head;
@@ -1356,7 +1359,7 @@ class NavigationURLLoaderImpl::URLLoaderRequestController
                        response->DeepCopy(),
                        std::move(url_loader_client_endpoints),
                        std::move(response_body_), global_request_id_,
-                       is_download, ui_to_io_time_, base::Time::Now()));
+                       is_download, is_stream, ui_to_io_time_, base::Time::Now()));
   }
 
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
@@ -1909,6 +1912,7 @@ void NavigationURLLoaderImpl::OnReceiveResponse(
     mojo::ScopedDataPipeConsumerHandle response_body,
     const GlobalRequestID& global_request_id,
     bool is_download,
+    bool is_stream,
     base::TimeDelta total_ui_to_io_time,
     base::Time io_post_time) {
   const base::TimeDelta kMinTime = base::TimeDelta::FromMicroseconds(1);
@@ -1930,7 +1934,8 @@ void NavigationURLLoaderImpl::OnReceiveResponse(
   delegate_->OnResponseStarted(
       std::move(url_loader_client_endpoints), std::move(response_head),
       std::move(response_body), global_request_id, is_download,
-      download_policy_, request_controller_->TakeSubresourceLoaderParams());
+      download_policy_, is_stream,
+      request_controller_->TakeSubresourceLoaderParams());
 }
 
 void NavigationURLLoaderImpl::OnReceiveRedirect(

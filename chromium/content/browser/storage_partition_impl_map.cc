@@ -36,6 +36,10 @@
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/resource_context_impl.h"
 #include "content/browser/storage_partition_impl.h"
+#include "content/browser/streams/stream.h"
+#include "content/browser/streams/stream_context.h"
+#include "content/browser/streams/stream_registry.h"
+#include "content/browser/streams/stream_url_request_job.h"
 #include "content/browser/webui/url_data_manager_backend.h"
 #include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_context.h"
@@ -62,17 +66,24 @@ namespace content {
 
 namespace {
 
-// Wrapper to call ChromeBlobStorageContext::context() on the IO thread.
+// A derivative that knows about Streams too.
 class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  explicit BlobProtocolHandler(ChromeBlobStorageContext* blob_storage_context)
-      : blob_storage_context_(blob_storage_context) {}
+  BlobProtocolHandler(ChromeBlobStorageContext* blob_storage_context,
+                      StreamContext* stream_context)
+      : blob_storage_context_(blob_storage_context),
+        stream_context_(stream_context) {}
 
   ~BlobProtocolHandler() override {}
 
   net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate) const override {
+    scoped_refptr<Stream> stream =
+        stream_context_->registry()->GetStream(request->url());
+    if (stream.get())
+      return new StreamURLRequestJob(request, network_delegate, stream);
+
     if (!blob_protocol_handler_) {
       // Construction is deferred because 'this' is constructed on
       // the main thread but we want blob_protocol_handler_ constructed
@@ -85,6 +96,7 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
 
  private:
   const scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
+  const scoped_refptr<StreamContext> stream_context_;
   mutable std::unique_ptr<storage::BlobProtocolHandler> blob_protocol_handler_;
   DISALLOW_COPY_AND_ASSIGN(BlobProtocolHandler);
 };
@@ -391,9 +403,10 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
   if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
     ChromeBlobStorageContext* blob_storage_context =
         ChromeBlobStorageContext::GetFor(browser_context_);
+    StreamContext* stream_context = StreamContext::GetFor(browser_context_);
     ProtocolHandlerMap protocol_handlers;
-    protocol_handlers[url::kBlobScheme] =
-        std::make_unique<BlobProtocolHandler>(blob_storage_context);
+    protocol_handlers[url::kBlobScheme] = std::make_unique<BlobProtocolHandler>(
+        blob_storage_context, stream_context);
     protocol_handlers[url::kFileSystemScheme] = CreateFileSystemProtocolHandler(
         partition_domain, partition->GetFileSystemContext());
     for (const auto& scheme : URLDataManagerBackend::GetWebUISchemes()) {

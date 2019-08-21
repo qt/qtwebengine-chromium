@@ -5,6 +5,7 @@
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 
 #include "content/public/browser/resource_request_info.h"
+#include "content/public/browser/stream_info.h"
 
 namespace content {
 
@@ -24,6 +25,18 @@ void ResourceDispatcherHostDelegate::DownloadStarting(
     bool must_download,
     bool is_new_request,
     std::vector<std::unique_ptr<ResourceThrottle>>* throttles) {}
+
+bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
+    net::URLRequest* request,
+    const std::string& mime_type,
+    GURL* origin,
+    std::string* payload) {
+  return false;
+}
+
+void ResourceDispatcherHostDelegate::OnStreamCreated(
+    net::URLRequest* request,
+    std::unique_ptr<content::StreamInfo> stream) {}
 
 void ResourceDispatcherHostDelegate::OnResponseStarted(
     net::URLRequest* request,

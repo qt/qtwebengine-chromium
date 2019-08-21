@@ -27,6 +27,7 @@ namespace content {
 class AppCacheService;
 class ResourceContext;
 class ResourceThrottle;
+struct StreamInfo;
 
 // Interface that the embedder provides to ResourceDispatcherHost to allow
 // observing and modifying requests.
@@ -55,6 +56,26 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
       bool must_download,
       bool is_new_request,
       std::vector<std::unique_ptr<ResourceThrottle>>* throttles);
+
+  // Returns true and sets |origin| if a Stream should be created for the
+  // resource. If true is returned, a new Stream will be created and
+  // OnStreamCreated() will be called with a StreamHandle instance for the
+  // Stream. The handle contains the URL for reading the Stream etc. The
+  // Stream's origin will be set to |origin|.
+  //
+  // If the stream will be rendered in a BrowserPlugin, |payload| will contain
+  // the data that should be given to the old ResourceHandler to forward to the
+  // renderer process.
+  virtual bool ShouldInterceptResourceAsStream(
+      net::URLRequest* request,
+      const std::string& mime_type,
+      GURL* origin,
+      std::string* payload);
+
+  // Informs the delegate that a Stream was created. The Stream can be read from
+  // the blob URL of the Stream, but can only be read once.
+  virtual void OnStreamCreated(net::URLRequest* request,
+                               std::unique_ptr<content::StreamInfo> stream);
 
   // Informs the delegate that a response has started.
   virtual void OnResponseStarted(net::URLRequest* request,

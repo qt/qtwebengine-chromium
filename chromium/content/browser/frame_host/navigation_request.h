@@ -491,6 +491,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate,
       const GlobalRequestID& request_id,
       bool is_download,
       NavigationDownloadPolicy download_policy,
+      bool is_stream,
       base::Optional<SubresourceLoaderParams> subresource_loader_params)
       override;
   void OnRequestFailed(
@@ -829,6 +830,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate,
   base::Optional<net::SSLInfo> ssl_info_;
   base::Optional<net::AuthChallengeInfo> auth_challenge_info_;
   bool is_download_ = false;
+  bool is_stream_ = false;
   GlobalRequestID request_id_;
 
   // Holds information for the navigation while the WillFailRequest
