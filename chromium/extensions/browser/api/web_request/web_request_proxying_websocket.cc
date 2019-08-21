@@ -157,10 +157,10 @@ void WebRequestProxyingWebSocket::OnResponseReceived(
 
   response_.remote_endpoint = response->remote_endpoint;
 
-  // TODO(yhirano): OnResponseReceived is called with the original
-  // response headers. That means if OnHeadersReceived modified them the
-  // renderer won't see that modification. This is the opposite of http(s)
-  // requests.
+  // TODO(yhirano): with both network service enabled or disabled,
+  // OnFinishOpeningHandshake is called with the original response headers.
+  // That means if OnHeadersReceived modified them the renderer won't see that
+  // modification. This is the opposite of http(s) requests.
   forwarding_handshake_client_->OnResponseReceived(std::move(response));
 
   if (!binding_as_header_client_ || response_.headers) {

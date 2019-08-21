@@ -68,6 +68,12 @@ bool ExtensionsBrowserClient::IsActivityLoggingEnabled(
   return false;
 }
 
+ExtensionNavigationUIData*
+ExtensionsBrowserClient::GetExtensionNavigationUIData(
+    net::URLRequest* request) {
+  return nullptr;
+}
+
 void ExtensionsBrowserClient::GetTabAndWindowIdForWebContents(
     content::WebContents* web_contents,
     int* tab_id,

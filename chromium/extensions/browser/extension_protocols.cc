@@ -382,7 +382,8 @@ bool ExtensionCanLoadInIncognito(bool is_main_frame,
 // Pass true for |is_incognito| only for incognito profiles and not Chrome OS
 // guest mode profiles.
 //
-// Called on the UI thread.
+// May be called on the IO thread (non-Network Service path) or the UI thread
+// (Network Service path).
 bool AllowExtensionResourceLoad(const GURL& url,
                                 content::ResourceType resource_type,
                                 ui::PageTransition page_transition,

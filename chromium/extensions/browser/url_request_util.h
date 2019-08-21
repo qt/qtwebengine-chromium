@@ -14,6 +14,10 @@
 
 class GURL;
 
+namespace net {
+class URLRequest;
+}
+
 namespace extensions {
 class Extension;
 class ExtensionSet;

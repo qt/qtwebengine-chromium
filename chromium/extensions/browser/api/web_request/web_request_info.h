@@ -25,6 +25,15 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
+namespace content {
+class ResourceContext;
+}  // namespace content
+
+namespace net {
+class HttpResponseHeaders;
+class URLRequest;
+}  // namespace net
+
 namespace network {
 struct ResourceResponseHead;
 }
@@ -39,8 +48,10 @@ struct WebRequestInfoInitParams {
   WebRequestInfoInitParams(WebRequestInfoInitParams&& other);
   WebRequestInfoInitParams& operator=(WebRequestInfoInitParams&& other);
 
+  explicit WebRequestInfoInitParams(net::URLRequest* url_request);
+
   // Initializes a WebRequestInfoInitParams from information provided over a
-  // URLLoaderFactory interface.
+  // URLLoaderFactory interface, for use with the Network Service.
   WebRequestInfoInitParams(
       uint64_t request_id,
       int render_process_id,
@@ -66,11 +77,13 @@ struct WebRequestInfoInitParams {
   WebRequestResourceType web_request_type = WebRequestResourceType::OTHER;
   bool is_async = false;
   net::HttpRequestHeaders extra_request_headers;
+  bool is_pac_request = false;
   std::unique_ptr<base::DictionaryValue> request_body_data;
   bool is_web_view = false;
   int web_view_instance_id = -1;
   int web_view_rules_registry_id = -1;
   int web_view_embedder_process_id = -1;
+  content::ResourceContext* resource_context = nullptr;
   base::Optional<ExtensionApiFrameIdMap::FrameData> frame_data;
 
  private:
@@ -83,11 +96,23 @@ struct WebRequestInfoInitParams {
 // A URL request representation used by WebRequest API internals. This structure
 // carries information about an in-progress request.
 struct WebRequestInfo {
+  // Initializes a WebRequestInfoInitParams from a net::URLRequest. Should be
+  // used sparingly, as we are moving away from direct URLRequest usage and
+  // toward using Network Service. Prefer passing and referencing
+  // WebRequestInfoInitParams in lieu of exposing any new direct references to
+  // net::URLRequest throughout extensions WebRequest-related code.
+  explicit WebRequestInfo(net::URLRequest* url_request);
+
   explicit WebRequestInfo(WebRequestInfoInitParams params);
 
   ~WebRequestInfo();
 
-  // Fill in response data for this request.
+  // Fill in response data for this request. Only used when the Network Service
+  // is disabled.
+  void AddResponseInfoFromURLRequest(net::URLRequest* url_request);
+
+  // Fill in response data for this request. Only used when the Network Service
+  // is enabled.
   void AddResponseInfoFromResourceResponse(
       const network::ResourceResponseHead& response);
 
@@ -137,6 +162,9 @@ struct WebRequestInfo {
   const bool is_async;
 
   const net::HttpRequestHeaders extra_request_headers;
+
+  // Indicates if this request is for a PAC script.
+  const bool is_pac_request;
 
   // HTTP response code for this request if applicable. -1 if not.
   int response_code = -1;
