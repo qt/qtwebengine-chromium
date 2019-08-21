@@ -89,7 +89,7 @@ SI ATTR I32 NS(to_fixed_)(F f) {  return CAST(I32, f + 0.5f); }
 // Comparisons result in bool when N == 1, in an I32 mask when N > 1.
 // We've made this a macro so it can be type-generic...
 template <typename T>
-SI ATTR T if_then_else(I32 c, T t, T e)
+SI ATTR T NS(if_then_else_)(I32 c, T t, T e)
 {
 #if N == 1
     return c ? t : e;
@@ -97,6 +97,7 @@ SI ATTR T if_then_else(I32 c, T t, T e)
     return (T)( ((c) & (I32)(t)) | (~(c) & (I32)(e)) );
 #endif
 }
+#define if_then_else NS(if_then_else_)
 
 #if defined(USING_NEON_F16C)
     SI ATTR F   NS(F_from_Half_(U16 half)) { return      vcvt_f32_f16((float16x4_t)half); }
@@ -496,10 +497,11 @@ SI ATTR F NS(table_16_)(const skcms_Curve* curve, F v) {
 
 // Color lookup tables, by input dimension and bit depth.
 template<int I, int B>
-inline ATTR void clut(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a);
+inline ATTR void NS(clut_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a);
+#define clut NS(clut_)
 
 template<>
-void clut<0, 8>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
+void NS(clut_)<0, 8>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
     U32 rgb = gather_24(a2b->grid_8, ix);
 
     *r = CAST(F, (rgb >>  0) & 0xff) * (1/255.0f);
@@ -511,7 +513,7 @@ void clut<0, 8>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a)
 }
 
 template<>
-void clut<0, 16>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
+void NS(clut_)<0, 16>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
     #if defined(__arm__)
         // This is up to 2x faster on 32-bit ARM than the #else-case fast path.
         *r = F_from_U16_BE(gather_16(a2b->grid_16, 3*ix+0));
@@ -534,7 +536,7 @@ void clut<0, 16>(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a
 // These are all the same basic approach: handle one dimension, then the rest recursively.
 // We let "I" be the current dimension, and "J" the previous dimension, I-1.  "B" is the bit depth.
 template<int I, int B>
-void clut(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
+void NS(clut_)(const skcms_A2B* a2b, I32 ix, I32 stride, F* r, F* g, F* b, F a) {
         I32 limit = CAST(I32, F0);                                                                \
         limit += a2b->grid_points[I-1];                                                           \
                                                                                                   \
