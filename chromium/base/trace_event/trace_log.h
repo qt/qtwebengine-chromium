@@ -248,11 +248,7 @@ class BASE_EXPORT TraceLog :
       const unsigned char* category_group_enabled);
   static constexpr const unsigned char* GetBuiltinCategoryEnabled(
       const char* name) {
-    TraceCategory* builtin_category =
-        CategoryRegistry::GetBuiltinCategoryByName(name);
-    if (builtin_category)
-      return builtin_category->state_ptr();
-    return nullptr;
+    return CategoryRegistry::GetBuiltinCategoryEnabled(name);
   }
 
   // Called by TRACE_EVENT* macros, don't call this directly.
