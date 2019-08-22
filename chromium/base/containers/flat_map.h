@@ -247,6 +247,12 @@ class flat_map : public ::base::internal::flat_tree<
   friend void swap(flat_map& lhs, flat_map& rhs) noexcept { lhs.swap(rhs); }
 };
 
+
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ <= 7
+template <typename... T>
+struct is_trivially_copy_constructible<flat_map<T...>> : std::false_type {};
+#endif
+
 // ----------------------------------------------------------------------------
 // Lifetime.
 

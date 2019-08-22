@@ -131,6 +131,7 @@ scoped_refptr<Image> CSSPaintValue::GetImage(
         layout_object.GetFrame()->GetPage()->DeviceScaleFactorDeprecated();
   }
 
+#ifndef TOOLKIT_QT
   // For Off-Thread PaintWorklet, we just collect the necessary inputs together
   // and defer the actual JavaScript call until much later (during cc Raster).
   //
@@ -172,6 +173,7 @@ scoped_refptr<Image> CSSPaintValue::GetImage(
       return PaintWorkletDeferredImage::Create(std::move(input), target_size);
     }
   }
+#endif
 
   return generator.Paint(client, target_size, parsed_input_arguments_,
                          device_scale_factor);
