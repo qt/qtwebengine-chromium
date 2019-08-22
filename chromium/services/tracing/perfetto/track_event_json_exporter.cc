@@ -757,6 +757,6 @@ TrackEventJSONExporter::HandleLegacyEvent(const TrackEvent::LegacyEvent& event,
   }
   // Even if |flags==0|, we need to call AddFlags to output instant event scope.
   builder.AddFlags(flags, id, event.id_scope());
-  return builder;
+  return std::move(builder);
 }
 }  // namespace tracing

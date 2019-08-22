@@ -453,7 +453,7 @@ RulesetManager::GetRedirectOrUpgradeAction(
 
     Action action(Action::Type::REDIRECT);
     action.redirect_url = std::move(redirect_action.redirect_url);
-    return action;
+    return std::move(action);
   }
 
   return base::nullopt;
@@ -472,7 +472,7 @@ base::Optional<RulesetManager::Action> RulesetManager::GetRemoveHeadersAction(
   Action action(Action::Type::REMOVE_HEADERS);
   PopulateHeadersFromMask(mask, &action.request_headers_to_remove,
                           &action.response_headers_to_remove);
-  return action;
+  return std::move(action);
 }
 
 RulesetManager::Action RulesetManager::EvaluateRequestInternal(

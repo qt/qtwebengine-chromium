@@ -85,7 +85,7 @@ base::Optional<OptRecordRdata> AddPaddingIfNecessary(
         std::string(padding_size - OptRecordRdata::Opt::kHeaderSize, 0)));
   }
 
-  return merged_opt_rdata;
+  return base::make_optional(std::move(merged_opt_rdata));
 }
 
 }  // namespace

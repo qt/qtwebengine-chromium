@@ -105,6 +105,7 @@ bool BuildCustomValues(const Document& document,
 
 }  // namespace
 
+#ifndef TOOLKIT_QT
 // static
 base::Optional<PaintWorkletStylePropertyMap::CrossThreadData>
 PaintWorkletStylePropertyMap::BuildCrossThreadData(
@@ -123,6 +124,7 @@ PaintWorkletStylePropertyMap::BuildCrossThreadData(
     return base::nullopt;
   return data;
 }
+#endif
 
 // static
 PaintWorkletStylePropertyMap::CrossThreadData

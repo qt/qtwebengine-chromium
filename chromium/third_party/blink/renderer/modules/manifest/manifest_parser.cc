@@ -622,7 +622,7 @@ ManifestParser::ParseShareTarget(const JSONObject* object) {
     return base::nullopt;
   }
 
-  return share_target;
+  return std::move(share_target);
 }
 
 base::Optional<mojom::blink::ManifestFileHandlerPtr>
@@ -648,7 +648,7 @@ ManifestParser::ParseFileHandler(const JSONObject* object) {
     return base::nullopt;
   }
 
-  return file_handler;
+  return std::move(file_handler);
 }
 
 String ManifestParser::ParseRelatedApplicationPlatform(
