@@ -428,7 +428,7 @@ std::vector<RequestAction> RulesetManager::GetRemoveHeadersActions(
     combined_mask |= extension_ruleset_mask;
   }
 
-  return remove_headers_actions;
+  return std::move(remove_headers_actions);
 }
 
 std::vector<RequestAction> RulesetManager::EvaluateRequestInternal(
