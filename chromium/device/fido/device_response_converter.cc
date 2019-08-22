@@ -131,7 +131,7 @@ ReadCTAPMakeCredentialResponse(FidoTransportProtocol transport_used,
         base::make_span<kLargeBlobKeyLength>(it->second.GetBytestring()));
   }
 
-  return response;
+  return std::move(response);
 }
 
 base::Optional<AuthenticatorGetAssertionResponse> ReadCTAPGetAssertionResponse(
@@ -200,7 +200,7 @@ base::Optional<AuthenticatorGetAssertionResponse> ReadCTAPGetAssertionResponse(
         base::make_span<kLargeBlobKeyLength>(it->second.GetBytestring()));
   }
 
-  return response;
+  return std::move(response);
 }
 
 base::Optional<AuthenticatorGetInfoResponse> ReadCTAPGetInfoResponse(
@@ -718,7 +718,7 @@ base::Optional<cbor::Value> FixInvalidUTF8(cbor::Value in,
                                            PathPredicate predicate) {
   if (!ContainsInvalidUTF8(in)) {
     // Common case that everything is fine.
-    return in;
+    return std::move(in);
   }
 
   std::vector<const cbor::Value*> path;

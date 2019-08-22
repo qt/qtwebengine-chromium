@@ -338,7 +338,7 @@ std::vector<RequestAction> RulesetManager::GetModifyHeadersActions(
   //  priority.
   //  - Between extensions: |rulesets| is sorder in descending order of
   //  extension priority.
-  return modify_headers_actions;
+  return std::move(modify_headers_actions);
 }
 
 std::vector<RequestAction> RulesetManager::EvaluateRequestInternal(

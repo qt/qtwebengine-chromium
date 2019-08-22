@@ -131,7 +131,7 @@ base::Optional<BioEnrollmentResponse> BioEnrollmentResponse::Parse(
   BioEnrollmentResponse response;
 
   if (!cbor_response || !cbor_response->is_map()) {
-    return response;
+    return base::make_optional<BioEnrollmentResponse>(std::move(response));
   }
 
   const auto& response_map = cbor_response->GetMap();
@@ -252,7 +252,7 @@ base::Optional<BioEnrollmentResponse> BioEnrollmentResponse::Parse(
     response.template_infos = std::move(template_infos);
   }
 
-  return std::move(response);
+  return base::make_optional<BioEnrollmentResponse>(std::move(response));
 }
 
 BioEnrollmentResponse::BioEnrollmentResponse() = default;

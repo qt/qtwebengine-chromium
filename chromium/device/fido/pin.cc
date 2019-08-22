@@ -135,7 +135,7 @@ base::Optional<bssl::UniquePtr<EC_POINT>> PointFromKeyAgreementResponse(
     return base::nullopt;
   }
 
-  return ret;
+  return std::move(ret);
 }
 
 // static

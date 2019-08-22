@@ -67,6 +67,7 @@ class ShapeResult::GlyphOffset final : public FloatSize {
   USING_FAST_MALLOC(GlyphOffset);
 
  public:
+  GlyphOffset() = default;
   using FloatSize::FloatSize;
 
   explicit GlyphOffset(const FloatSize& other) : FloatSize(other) {}

@@ -34,6 +34,7 @@ class CORE_EXPORT PaintWorkletStylePropertyMap
       HashMap<String, std::unique_ptr<CrossThreadStyleValue>>;
   // Build the data that will be passed to the worklet thread to construct a
   // style map. Should be called on the main thread only.
+#ifndef TOOLKIT_QT
   // TODO(xidachen): consider making the input_property_ids as part of the
   // return value. Or make both CrossThreadData and input_property_ids as
   // params and return a bool.
@@ -44,6 +45,7 @@ class CORE_EXPORT PaintWorkletStylePropertyMap
       const Vector<CSSPropertyID>& native_properties,
       const Vector<AtomicString>& custom_properties,
       CompositorPaintWorkletInput::PropertyKeys& input_property_keys);
+#endif
 
   static CrossThreadData CopyCrossThreadData(const CrossThreadData& data);
 
