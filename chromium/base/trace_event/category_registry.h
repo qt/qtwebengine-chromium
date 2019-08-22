@@ -83,6 +83,21 @@ class BASE_EXPORT CategoryRegistry {
 #endif
   }
 
+  static constexpr const unsigned char* GetBuiltinCategoryEnabled(
+      const char* category_group) {
+#if defined(OS_WIN) && defined(COMPONENT_BUILD)
+    // The address cannot be evaluated at compile-time in Windows compoment
+    // builds.
+    return nullptr;
+#else
+    for (size_t i = 0; i < BuiltinCategories::Size(); ++i) {
+      if (StrEqConstexpr(category_group, BuiltinCategories::At(i)))
+        return categories_[i].state_ptr();
+    }
+    return nullptr;
+#endif
+  }
+
   // Returns whether |category| points at one of the meta categories that
   // shouldn't be displayed in the tracing UI.
   static bool IsMetaCategory(const TraceCategory* category);
