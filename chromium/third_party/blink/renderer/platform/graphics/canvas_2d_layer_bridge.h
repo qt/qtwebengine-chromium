@@ -219,8 +219,9 @@ class PLATFORM_EXPORT Canvas2DLayerBridge : public cc::TextureLayerClient {
   void ClearPendingRasterTimers();
   void FinishRasterTimers(gpu::gles2::GLES2Interface*);
   struct RasterTimer {
+    RasterTimer() : gl_query_id(0) { }
     // The id for querying the duration of the gpu-side of the draw
-    GLuint gl_query_id = 0u;
+    GLuint gl_query_id;
 
     // The duration of the CPU-side of the draw
     base::TimeDelta cpu_raster_duration;

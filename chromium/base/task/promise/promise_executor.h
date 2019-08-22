@@ -222,7 +222,7 @@ class BASE_EXPORT PromiseExecutor {
 
 // static
 template <typename T>
-const PromiseExecutor::VTable PromiseExecutor::VTableHelper<T>::vtable_;
+constexpr PromiseExecutor::VTable PromiseExecutor::VTableHelper<T>::vtable_;
 
 }  // namespace internal
 }  // namespace base

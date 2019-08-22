@@ -549,7 +549,7 @@ base::Optional<cbor::Value> FixInvalidUTF8(cbor::Value in,
                                            PathPredicate predicate) {
   if (!ContainsInvalidUTF8(in)) {
     // Common case that everything is fine.
-    return in;
+    return std::move(in);
   }
 
   std::vector<const cbor::Value*> path;

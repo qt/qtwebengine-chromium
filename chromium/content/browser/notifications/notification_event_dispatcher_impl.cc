@@ -458,8 +458,7 @@ void NotificationEventDispatcherImpl::RegisterNonPersistentNotificationListener(
     non_persistent_notification_listeners_.erase(notification_id);
   }
 
-  non_persistent_notification_listeners_.insert(
-      {notification_id, std::move(bound_remote)});
+  non_persistent_notification_listeners_.emplace(notification_id, std::move(bound_remote));
 }
 
 void NotificationEventDispatcherImpl::DispatchNonPersistentShowEvent(
