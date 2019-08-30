@@ -128,7 +128,12 @@ void UpdateCommonPointerEventInit(const WebPointerEvent& web_pointer_event,
     pointer_event_init->setWidth(point_shape.width());
     pointer_event_init->setHeight(point_shape.height());
   }
-  pointer_event_init->setPressure(GetPointerEventPressure(
+#if defined(TOOLKIT_QT)
+  if (web_pointer_event.pointer_type == WebPointerProperties::PointerType::kPen)
+    pointer_event_init->setPressure(web_pointer_event.force);
+  else
+#endif
+    pointer_event_init->setPressure(GetPointerEventPressure(
       web_pointer_event.force, pointer_event_init->buttons()));
   pointer_event_init->setTiltX(web_pointer_event.tilt_x);
   pointer_event_init->setTiltY(web_pointer_event.tilt_y);
