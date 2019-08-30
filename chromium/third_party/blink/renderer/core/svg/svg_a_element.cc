@@ -120,8 +120,9 @@ void SVGAElement::DefaultEventHandler(Event& event) {
       if (url[0] == '#') {
         Element* target_element =
             GetTreeScope().getElementById(AtomicString(url.Substring(1)));
-        if (target_element && IsSVGSMILElement(*target_element)) {
-          ToSVGSMILElement(target_element)->BeginByLinkActivation();
+        if (auto* svg_smil_element =
+                DynamicTo<SVGSMILElement>(target_element)) {
+          svg_smil_element->BeginByLinkActivation();
           event.SetDefaultHandled();
           return;
         }
@@ -132,14 +133,18 @@ void SVGAElement::DefaultEventHandler(Event& event) {
         target = AtomicString("_blank");
       event.SetDefaultHandled();
 
+      if (!GetDocument().GetFrame())
+        return;
+
       FrameLoadRequest frame_request(
           &GetDocument(), ResourceRequest(GetDocument().CompleteURL(url)));
       frame_request.SetNavigationPolicy(NavigationPolicyFromEvent(&event));
       frame_request.SetTriggeringEventInfo(
           event.isTrusted() ? WebTriggeringEventInfo::kFromTrustedEvent
                             : WebTriggeringEventInfo::kFromUntrustedEvent);
-      if (!GetDocument().GetFrame())
-        return;
+      frame_request.GetResourceRequest().SetHasUserGesture(
+          LocalFrame::HasTransientUserActivation(GetDocument().GetFrame()));
+
       Frame* frame = GetDocument()
                          .GetFrame()
                          ->Tree()

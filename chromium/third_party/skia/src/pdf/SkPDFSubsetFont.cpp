@@ -11,6 +11,7 @@
 
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
+#include "src/utils/SkCallableTraits.h"
 
 #include "hb.h"
 #include "hb-subset.h"
@@ -22,7 +23,13 @@ using HBSubsetInput = resource<hb_subset_input_t, hb_subset_input_destroy>;
 using HBSet = resource<hb_set_t, hb_set_destroy>;
 
 static HBBlob to_blob(sk_sp<SkData> data) {
-    return HBBlob(hb_blob_create((char*)data->data(), SkToUInt(data->size()),
+    using blob_size_t = SkCallableTraits<decltype(hb_blob_create)>::argument<1>::type;
+    if (!SkTFitsIn<blob_size_t>(data->size())) {
+        return nullptr;
+    }
+    const char* blobData = static_cast<const char*>(data->data());
+    blob_size_t blobSize = SkTo<blob_size_t>(data->size());
+    return HBBlob(hb_blob_create(blobData, blobSize,
                                  HB_MEMORY_MODE_READONLY,
                                  data.release(), [](void* p){ ((SkData*)p)->unref(); }));
 }
@@ -66,7 +73,6 @@ static sk_sp<SkData> subset_harfbuzz(sk_sp<SkData> fontData,
 
     hb_subset_input_set_retain_gids(input.get(), true);
     hb_subset_input_set_drop_hints(input.get(), true);
-    hb_subset_input_set_drop_layout(input.get(), true);
     HBFace subset(hb_subset(face.get(), input.get()));
     HBBlob result(hb_face_reference_blob(subset.get()));
     return to_data(std::move(result));

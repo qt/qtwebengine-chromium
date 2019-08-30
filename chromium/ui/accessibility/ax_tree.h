@@ -24,7 +24,7 @@ class AXTableInfo;
 class AXTree;
 class AXTreeObserver;
 struct AXTreeUpdateState;
-class AXLanguageInfoStats;
+class AXLanguageDetectionManager;
 
 // AXTree is a live, managed tree of AXNode objects that can receive
 // updates from another AXTreeSource via AXTreeUpdates, and it can be
@@ -147,11 +147,15 @@ class AX_EXPORT AXTree : public AXNode::OwnerTree {
   // set_size values, minimizing the size of the cache.
   int32_t GetSetSize(const AXNode& node, const AXNode* ordered_set) override;
 
+  Selection GetUnignoredSelection() const override;
+
   bool GetTreeUpdateInProgressState() const override;
   void SetTreeUpdateInProgressState(bool set_tree_update_value);
 
-  // Language detection statistics
-  std::unique_ptr<AXLanguageInfoStats> language_info_stats;
+  // Language detection manager, entry point to language detection features.
+  // TODO(chrishall): Should this be stored by pointer or value?
+  //                  When should we initialize this?
+  std::unique_ptr<AXLanguageDetectionManager> language_detection_manager;
 
  private:
   friend class AXTableInfoTest;

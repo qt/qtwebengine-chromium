@@ -32,7 +32,6 @@
 
 #include <limits>
 #include "base/auto_reset.h"
-#include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/layout/flexible_box_algorithm.h"
 #include "third_party/blink/renderer/core/layout/layout_state.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -45,6 +44,7 @@
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
+#include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
@@ -283,30 +283,28 @@ void LayoutFlexibleBox::RemoveChild(LayoutObject* child) {
 
 bool LayoutFlexibleBox::HitTestChildren(
     HitTestResult& result,
-    const HitTestLocation& location_in_container,
-    const LayoutPoint& accumulated_offset,
+    const HitTestLocation& hit_test_location,
+    const PhysicalOffset& accumulated_offset,
     HitTestAction hit_test_action) {
   if (hit_test_action != kHitTestForeground)
     return false;
 
-  LayoutPoint scrolled_offset(HasOverflowClip()
-                                  ? accumulated_offset - ScrolledContentOffset()
-                                  : accumulated_offset);
+  PhysicalOffset scrolled_offset = accumulated_offset;
+  if (HasOverflowClip())
+    scrolled_offset -= PhysicalOffset(ScrolledContentOffset());
 
   for (LayoutBox* child = LastChildBox(); child;
        child = child->PreviousSiblingBox()) {
     if (child->HasSelfPaintingLayer())
       continue;
 
-    LayoutPoint child_point =
-        FlipForWritingModeForChild(child, scrolled_offset);
-
-    bool child_hit =
-        child->HitTestAllPhases(result, location_in_container, child_point);
+    PhysicalOffset child_accumulated_offset =
+        scrolled_offset + child->PhysicalLocation(this);
+    bool child_hit = child->HitTestAllPhases(result, hit_test_location,
+                                             child_accumulated_offset);
     if (child_hit) {
-      UpdateHitTestResult(
-          result, DeprecatedFlipForWritingMode(ToLayoutPoint(
-                      location_in_container.Point() - accumulated_offset)));
+      UpdateHitTestResult(result,
+                          hit_test_location.Point() - accumulated_offset);
       return true;
     }
   }
@@ -501,6 +499,12 @@ LayoutUnit LayoutFlexibleBox::ChildUnstretchedLogicalHeight(
   // This should only be called if the logical height is the cross size
   DCHECK(MainAxisIsInlineAxis(child));
   if (NeedToStretchChildLogicalHeight(child)) {
+    LayoutUnit old_override_height = LayoutUnit(-1);
+    if (child.HasOverrideLogicalHeight()) {
+      old_override_height = child.OverrideLogicalHeight();
+      const_cast<LayoutBox&>(child).ClearOverrideLogicalHeight();
+    }
+
     LayoutUnit child_intrinsic_content_logical_height;
     if (!child.ShouldApplySizeContainment()) {
       if (child.DisplayLockInducesSizeContainment()) {
@@ -518,6 +522,10 @@ LayoutUnit LayoutFlexibleBox::ChildUnstretchedLogicalHeight(
     LogicalExtentComputedValues values;
     child.ComputeLogicalHeight(child_intrinsic_logical_height, LayoutUnit(),
                                values);
+    if (old_override_height != LayoutUnit(-1)) {
+      const_cast<LayoutBox&>(child).SetOverrideLogicalHeight(
+          old_override_height);
+    }
     return values.extent_;
   }
   return child.LogicalHeight();
@@ -528,14 +536,23 @@ LayoutUnit LayoutFlexibleBox::ChildUnstretchedLogicalWidth(
     const LayoutBox& child) const {
   // This should only be called if the logical width is the cross size
   DCHECK(!MainAxisIsInlineAxis(child));
-  DCHECK(!child.HasOverrideLogicalWidth());
+
   // We compute the width as if we were unstretched. Only the main axis
   // override size is set at this point.
   // However, if our cross axis length is definite we don't need to recompute
   // and can just return the already-set logical width.
   if (!CrossAxisLengthIsDefinite(child, child.StyleRef().LogicalWidth())) {
+    LayoutUnit old_override_width = LayoutUnit(-1);
+    if (child.HasOverrideLogicalWidth()) {
+      old_override_width = child.OverrideLogicalWidth();
+      const_cast<LayoutBox&>(child).ClearOverrideLogicalWidth();
+    }
+
     LogicalExtentComputedValues values;
     child.ComputeLogicalWidth(values);
+
+    if (old_override_width != LayoutUnit(-1))
+      const_cast<LayoutBox&>(child).SetOverrideLogicalWidth(old_override_width);
     return values.extent_;
   }
 
@@ -1206,8 +1223,6 @@ void LayoutFlexibleBox::ConstructAndAppendFlexItem(
     FlexLayoutAlgorithm* algorithm,
     LayoutBox& child,
     ChildLayoutType layout_type) {
-  if (layout_type != kNeverLayout)
-    child.ClearOverrideSize();
   if (layout_type != kNeverLayout &&
       ChildHasIntrinsicMainAxisSize(*algorithm, child)) {
     // If this condition is true, then ComputeMainAxisExtentForChild will call
@@ -1222,6 +1237,7 @@ void LayoutFlexibleBox::ConstructAndAppendFlexItem(
     UpdateBlockChildDirtyBitsBeforeLayout(layout_type == kForceLayout, child);
     if (child.NeedsLayout() || layout_type == kForceLayout ||
         !intrinsic_size_along_main_axis_.Contains(&child)) {
+      child.ClearOverrideSize();
       child.ForceLayout();
       CacheChildMainSize(child);
     }
@@ -1488,8 +1504,19 @@ void LayoutFlexibleBox::LayoutLineItems(FlexLine* current_line,
     UpdateBlockChildDirtyBitsBeforeLayout(force_child_relayout, *child);
     if (!child->NeedsLayout())
       MarkChildForPaginationRelayoutIfNeeded(*child, layout_scope);
-    if (child->NeedsLayout())
+    if (child->NeedsLayout()) {
       relaid_out_children_.insert(child);
+      // It is very important that we only clear the cross axis override size
+      // if we are in fact going to lay out the child. Otherwise, the cross
+      // axis size and the actual laid out size get out of sync, which will
+      // cause problems if we later lay out the child in simplified layout,
+      // which does not go through regular flex layout and therefore would
+      // not reset the cross axis size.
+      if (MainAxisIsInlineAxis(*child))
+        child->ClearOverrideLogicalHeight();
+      else
+        child->ClearOverrideLogicalWidth();
+    }
     child->LayoutIfNeeded();
 
     // This shouldn't be necessary, because we set the override size to be
