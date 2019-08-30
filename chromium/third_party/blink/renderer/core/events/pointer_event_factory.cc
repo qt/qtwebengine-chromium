@@ -6,6 +6,7 @@
 
 #include "base/notreached.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_pointer_event_init.h"
 #include "third_party/blink/renderer/core/events/pointer_event_util.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -123,7 +124,12 @@ void UpdateCommonPointerEventInit(const WebPointerEvent& web_pointer_event,
     pointer_event_init->setWidth(point_shape.width());
     pointer_event_init->setHeight(point_shape.height());
   }
-  pointer_event_init->setPressure(GetPointerEventPressure(
+#if BUILDFLAG(IS_QTWEBENGINE)
+  if (web_pointer_event.pointer_type == WebPointerProperties::PointerType::kPen)
+    pointer_event_init->setPressure(web_pointer_event.force);
+  else
+#endif
+    pointer_event_init->setPressure(GetPointerEventPressure(
       web_pointer_event.force, pointer_event_init->buttons()));
   pointer_event_init->setTiltX(round(web_pointer_event.tilt_x));
   pointer_event_init->setTiltY(round(web_pointer_event.tilt_y));
