@@ -18,7 +18,6 @@ if (use_system_harfbuzz) {
     ]
     packages = [
       "harfbuzz",
-      "harfbuzz-subset",
     ]
   }
 } else {
