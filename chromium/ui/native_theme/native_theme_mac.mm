@@ -118,8 +118,8 @@ namespace ui {
 
 // static
 NativeTheme* NativeTheme::GetInstanceForWeb() {
-  if (features::IsFormControlsRefreshEnabled())
-    return NativeThemeAura::web_instance();
+//  if (features::IsFormControlsRefreshEnable())
+//    return NativeThemeAura::web_instance();
   return NativeThemeMac::instance();
 }
 
