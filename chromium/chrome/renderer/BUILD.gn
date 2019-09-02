@@ -404,7 +404,7 @@ jumbo_static_library("renderer") {
     ]
   }
 
-  if (!is_android) {
+  if (!is_android && !use_qt) {
     sources += [
       "searchbox/search_bouncer.cc",
       "searchbox/search_bouncer.h",

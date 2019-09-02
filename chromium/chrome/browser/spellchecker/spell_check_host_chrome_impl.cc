@@ -150,7 +150,7 @@ std::vector<SpellCheckResult> SpellCheckHostChromeImpl::FilterCustomWordResults(
 }
 #endif  // BUILDFLAG(USE_RENDERER_SPELLCHECKER)
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
 
 void SpellCheckHostChromeImpl::CheckSpelling(const base::string16& word,
                                              int route_id,
