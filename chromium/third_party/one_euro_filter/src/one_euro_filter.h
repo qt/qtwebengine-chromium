@@ -5,6 +5,8 @@
 
 #include "low_pass_filter.h"
 
+#include <memory>
+
 namespace one_euro_filter {
 namespace test {
 class OneEuroFilterTest;
