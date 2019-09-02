@@ -41,7 +41,7 @@ config("inside_blink") {
     "BLINK_IMPLEMENTATION=1",
     "INSIDE_BLINK",
   ]
-  if (is_clang) {
+  if (is_clang || !is_win) {
     cflags += [
       "-Wconversion",
       "-Wno-float-conversion",
@@ -54,6 +54,11 @@ config("inside_blink") {
         default_toolchain != "//build/toolchain/cros:target") {
       cflags += [ "-Wno-enum-float-conversion" ]
     }
+  } else {
+    cflags += [
+      "/wd4101",
+      "/wd4805",
+    ]
   }
 }
 
