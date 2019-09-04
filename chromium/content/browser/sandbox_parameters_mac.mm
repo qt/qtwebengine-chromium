@@ -29,6 +29,10 @@
 
 namespace content {
 
+#if defined(TOOLKIT_QT)
+std::string getQtPrefix();
+#endif
+
 namespace {
 
 // Produce the OS version as an integer "1010", etc. and pass that to the
@@ -61,9 +65,6 @@ void AddDarwinUserCache(sandbox::SeatbeltExecClient* client) {
 // All of the below functions populate the |client| with the parameters that the
 // sandbox needs to resolve information that cannot be known at build time, such
 // as the user's home directory.
-#if defined(TOOLKIT_QT)
-std::string getQtPrefix();
-#endif
 
 void SetupCommonSandboxParameters(sandbox::SeatbeltExecClient* client) {
   const base::CommandLine* command_line =
