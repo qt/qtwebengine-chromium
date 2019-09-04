@@ -99,7 +99,7 @@
 
 (allow mach-lookup
   (browser-service-name "FieldTrialMemoryServer")
-  (browser-service-name "rohitfork")
+  (browser-service-name "qtrohitfork")
 )
 
 ; Allow realpath() to work.
