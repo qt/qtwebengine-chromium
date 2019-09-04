@@ -16,7 +16,7 @@
 namespace content {
 
 namespace {
-const char kBootstrapName[] = "rohitfork";
+const char kBootstrapName[] = "qtrohitfork";
 }
 
 // static

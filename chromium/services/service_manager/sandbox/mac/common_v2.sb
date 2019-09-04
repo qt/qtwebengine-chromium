@@ -75,7 +75,7 @@
 (allow file-read* (path (param executable-path)))
 
 (allow mach-lookup (global-name (string-append (param bundle-id)
-                                               ".rohitfork."
+                                               ".qtrohitfork."
                                                (param browser-pid))))
 
 ; Allow realpath() to work.
