@@ -23,6 +23,9 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
+#if defined(USE_GLIB)
+#error configured with glib but trying to compile libevent message pump
+#endif
 // Lifecycle of struct event
 // Libevent uses two main data structures:
 // struct event_base (of which there is one per message pump), and
