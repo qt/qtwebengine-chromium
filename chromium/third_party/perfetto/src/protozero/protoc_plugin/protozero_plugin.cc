@@ -49,8 +49,13 @@ using google::protobuf::io::ZeroCopyOutputStream;
 constexpr int kMaxDecoderFieldId = 999;
 
 void Assert(bool condition) {
+#ifdef _MSC_VER
+  if (!condition)
+    __debugbreak();
+#else
   if (!condition)
     __builtin_trap();
+#endif
 }
 
 struct FileDescriptorComp {

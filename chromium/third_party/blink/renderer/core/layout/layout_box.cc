@@ -2398,8 +2398,7 @@ scoped_refptr<const NGLayoutResult> LayoutBox::CachedLayoutResult(
   if (size_cache_status == NGLayoutCacheStatus::kNeedsSimplifiedLayout)
     cache_status = NGLayoutCacheStatus::kNeedsSimplifiedLayout;
 
-  base::Optional<LayoutUnit> bfc_block_offset =
-      cached_layout_result->BfcBlockOffset();
+  base::Optional<LayoutUnit> bfc_block_offset = base::pass_optional(cached_layout_result->BfcBlockOffset());
   LayoutUnit bfc_line_offset = new_space.BfcOffset().line_offset;
 
   const NGConstraintSpace& old_space =

@@ -381,6 +381,18 @@ jumbo_component("gl") {
         "//third_party/angle:libGLESv2",
       ]
     }
+    if (is_win) {
+      sources -= [
+        "dc_layer_tree.cc",
+        "dc_layer_tree.h",
+        "direct_composition_child_surface_win.cc",
+        "direct_composition_child_surface_win.h",
+        "direct_composition_surface_win.cc",
+        "direct_composition_surface_win.h",
+        "swap_chain_presenter.cc",
+        "swap_chain_presenter.h",
+      ]
+    }
     if (is_linux || is_win) {
       sources -= [
         "gl_surface_egl.cc",

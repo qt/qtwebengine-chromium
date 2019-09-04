@@ -23,12 +23,12 @@ enum class ThreadType {
 };
 
 constexpr const char* const kBuiltinSequences[] = {
-    [FrameSequenceTrackerType::kCompositorAnimation] = "CompositorAnimation",
-    [FrameSequenceTrackerType::kMainThreadAnimation] = "MainThreadAnimation",
-    [FrameSequenceTrackerType::kPinchZoom] = "PinchZoom",
-    [FrameSequenceTrackerType::kRAF] = "RAF",
-    [FrameSequenceTrackerType::kTouchScroll] = "TouchScroll",
-    [FrameSequenceTrackerType::kWheelScroll] = "WheelScroll",
+    /*[FrameSequenceTrackerType::kCompositorAnimation] = */ "CompositorAnimation",
+    /*[FrameSequenceTrackerType::kMainThreadAnimation] = */ "MainThreadAnimation",
+    /*[FrameSequenceTrackerType::kPinchZoom] = */ "PinchZoom",
+    /*[FrameSequenceTrackerType::kRAF] = */ "RAF",
+    /*[FrameSequenceTrackerType::kTouchScroll] = */ "TouchScroll",
+    /*[FrameSequenceTrackerType::kWheelScroll] = */ "WheelScroll",
 };
 
 constexpr int kBuiltinSequenceNum = base::size(kBuiltinSequences);

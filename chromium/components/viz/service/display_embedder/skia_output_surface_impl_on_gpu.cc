@@ -713,10 +713,9 @@ void SkiaOutputSurfaceImplOnGpu::FinishPaintCurrentFrame(
       scoped_promise_image_access.end_semaphores().emplace_back();
 
     GrFlushInfo flush_info = {
-        .fFlags = kNone_GrFlushFlags,
-        .fNumSemaphores = scoped_promise_image_access.end_semaphores().size(),
-        .fSignalSemaphores =
-            scoped_promise_image_access.end_semaphores().data(),
+        kNone_GrFlushFlags,
+        scoped_promise_image_access.end_semaphores().size(),
+        scoped_promise_image_access.end_semaphores().data(),
     };
 
     gpu::AddVulkanCleanupTaskForSkiaFlush(vulkan_context_provider_,
@@ -843,10 +842,9 @@ void SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass(
     }
     offscreen.surface()->draw(ddl.get());
     GrFlushInfo flush_info = {
-        .fFlags = kNone_GrFlushFlags,
-        .fNumSemaphores = scoped_promise_image_access.end_semaphores().size(),
-        .fSignalSemaphores =
-            scoped_promise_image_access.end_semaphores().data(),
+        kNone_GrFlushFlags,
+        scoped_promise_image_access.end_semaphores().size(),
+        scoped_promise_image_access.end_semaphores().data(),
     };
 
     gpu::AddVulkanCleanupTaskForSkiaFlush(vulkan_context_provider_,

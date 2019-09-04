@@ -1304,7 +1304,7 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
                        /* is_new_fc */ false);
   NGConstraintSpace child_space = CreateConstraintSpaceForChild(
       child, child_data, child_available_size_, /* is_new_fc */ false,
-      forced_bfc_block_offset, has_clearance_past_adjoining_floats);
+      base::pass_optional(forced_bfc_block_offset), has_clearance_past_adjoining_floats);
   scoped_refptr<const NGLayoutResult> layout_result = LayoutInflow(
       child_space, child_break_token, &child, inline_child_layout_context);
 
@@ -1329,7 +1329,7 @@ bool NGBlockLayoutAlgorithm::FinishInflow(
     NGInlineChildLayoutContext* inline_child_layout_context,
     scoped_refptr<const NGInlineBreakToken>* previous_inline_break_token) {
   base::Optional<LayoutUnit> child_bfc_block_offset =
-      layout_result->BfcBlockOffset();
+      base::pass_optional(layout_result->BfcBlockOffset());
 
   bool is_self_collapsing = layout_result->IsSelfCollapsing();
 
@@ -1482,7 +1482,7 @@ bool NGBlockLayoutAlgorithm::FinishInflow(
       child_bfc_block_offset) {
     NGConstraintSpace new_child_space = CreateConstraintSpaceForChild(
         child, *child_data, child_available_size_, /* is_new_fc */ false,
-        child_bfc_block_offset);
+        base::pass_optional(child_bfc_block_offset));
     layout_result = LayoutInflow(new_child_space, child_break_token, &child,
                                  inline_child_layout_context);
 

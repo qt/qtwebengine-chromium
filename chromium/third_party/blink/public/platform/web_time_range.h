@@ -33,6 +33,8 @@
 
 #include "third_party/blink/public/platform/web_vector.h"
 
+#include <algorithm>
+
 namespace blink {
 
 class WebTimeRange {

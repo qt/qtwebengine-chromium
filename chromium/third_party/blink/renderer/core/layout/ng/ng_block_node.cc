@@ -1134,7 +1134,7 @@ scoped_refptr<const NGLayoutResult> NGBlockNode::RunLegacyLayout(
     if (needs_cached_result_update) {
       layout_result = base::AdoptRef(new NGLayoutResult(
           *layout_result, constraint_space, layout_result->BfcLineOffset(),
-          layout_result->BfcBlockOffset()));
+          base::pass_optional(layout_result->BfcBlockOffset())));
       box_->SetCachedLayoutResult(*layout_result, /* break_token */ nullptr);
     }
   }

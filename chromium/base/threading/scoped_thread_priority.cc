@@ -14,7 +14,7 @@ namespace base {
 // Enable the boost of thread priority when the code may load a library. The
 // thread priority boost is required to avoid priority inversion on the loader
 // lock.
-constexpr base::Feature kBoostThreadPriorityOnLibraryLoading{
+const base::Feature kBoostThreadPriorityOnLibraryLoading{
     "BoostThreadPriorityOnLibraryLoading", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif  // OS_WIN
 

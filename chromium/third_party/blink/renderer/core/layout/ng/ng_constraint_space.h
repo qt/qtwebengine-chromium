@@ -387,14 +387,14 @@ class CORE_EXPORT NGConstraintSpace final {
   // This value should be propagated to child layouts if the current layout
   // hasn't resolved its BFC offset yet.
   base::Optional<LayoutUnit> ForcedBfcBlockOffset() const {
-    return HasRareData() ? rare_data_->forced_bfc_block_offset : base::nullopt;
+    return HasRareData() ? base::pass_optional(rare_data_->forced_bfc_block_offset) : base::nullopt;
   }
 
   // If present, this is a hint as to where place any adjoining objects. This
   // isn't necessarily the final position, just where they ended up in a
   // previous layout pass.
   base::Optional<LayoutUnit> OptimisticBfcBlockOffset() const {
-    return HasRareData() ? rare_data_->optimistic_bfc_block_offset
+    return HasRareData() ? base::pass_optional(rare_data_->optimistic_bfc_block_offset)
                          : base::nullopt;
   }
 

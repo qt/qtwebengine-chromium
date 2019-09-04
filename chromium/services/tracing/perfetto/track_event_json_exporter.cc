@@ -243,7 +243,8 @@ void TrackEventJSONExporter::HandleInternedData(
     auto iter = current_state_->interned_frames_.emplace(
         frame.iid(), ProducerWriterState::Frame{
                          frame.has_rel_pc(), frame.rel_pc(),
-                         frame.function_name_id(), frame.mapping_id()});
+                         uint32_t(frame.function_name_id()),
+                         uint32_t(frame.mapping_id())});
     DCHECK(iter.second || iter.first->second.rel_pc == frame.rel_pc());
   }
   for (const auto& module_name : data.mapping_paths()) {
@@ -260,7 +261,8 @@ void TrackEventJSONExporter::HandleInternedData(
     DCHECK_EQ(mapping.path_string_ids_size(), 1);
     auto iter = current_state_->interned_mappings_.emplace(
         mapping.iid(), ProducerWriterState::Mapping{
-                           mapping.build_id(), mapping.path_string_ids(0)});
+                           uint32_t(mapping.build_id()),
+                           uint32_t(mapping.path_string_ids(0))});
     DCHECK(iter.second || iter.first->second.build_id == mapping.build_id());
   }
   for (const auto& callstack : data.callstacks()) {

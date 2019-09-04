@@ -231,9 +231,9 @@ sk_sp<SkSurface> SkiaOutputDeviceBufferQueue::Image::BeginWriteSkia() {
 
 void SkiaOutputDeviceBufferQueue::Image::EndWriteSkia() {
   GrFlushInfo flush_info = {
-      .fFlags = kNone_GrFlushFlags,
-      .fNumSemaphores = end_semaphores_.size(),
-      .fSignalSemaphores = end_semaphores_.data(),
+      /*.fFlags = */kNone_GrFlushFlags,
+      /*.fNumSemaphores =*/ end_semaphores_.size(),
+      /*.fSignalSemaphores = */end_semaphores_.data(),
   };
   sk_surface_->flush(SkSurface::BackendSurfaceAccess::kPresent, flush_info);
 

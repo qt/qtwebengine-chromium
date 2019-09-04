@@ -13,7 +13,8 @@ namespace chrome_pdf {
 namespace draw_utils {
 
 void ExpandDocumentSize(const pp::Size& rect_size, pp::Size* doc_size) {
-  int width_diff = std::max(0, rect_size.width() - doc_size->width());
+  int width_diff = rect_size.width() - doc_size->width();
+  if (width_diff < 0) width_diff = 0;
   doc_size->Enlarge(width_diff, rect_size.height());
 }
 

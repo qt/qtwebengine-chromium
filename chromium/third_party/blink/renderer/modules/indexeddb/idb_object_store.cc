@@ -556,8 +556,8 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
     if (clone.IsEmpty())
       value_wrapper.Clone(script_state, &clone);
     index_keys.emplace_back(
-        IDBIndexKeys{.id = it.key,
-                     .keys = GenerateIndexKeysForValue(
+        IDBIndexKeys{it.key,
+                     GenerateIndexKeysForValue(
                          script_state->GetIsolate(), *it.value, clone)});
   }
   // Records 1KB to 1GB.
@@ -747,9 +747,9 @@ class IndexPopulator final : public NativeEventListener {
       Vector<IDBIndexKeys> index_keys;
       index_keys.ReserveInitialCapacity(1);
       index_keys.emplace_back(IDBIndexKeys{
-          .id = IndexMetadata().id,
-          .keys = GenerateIndexKeysForValue(script_state_->GetIsolate(),
-                                            IndexMetadata(), value)});
+          IndexMetadata().id,
+          GenerateIndexKeysForValue(script_state_->GetIsolate(),
+                                    IndexMetadata(), value)});
 
       database_->Backend()->SetIndexKeys(transaction_id_, object_store_id_,
                                          IDBKey::Clone(primary_key),
