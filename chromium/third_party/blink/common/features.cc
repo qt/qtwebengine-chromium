@@ -362,5 +362,9 @@ const base::Feature kVerifyHTMLFetchedFromAppCacheBeforeDelay{
     "VerifyHTMLFetchedFromAppCacheBeforeDelay",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kHtmlImportsRequestInitiatorLock{
+    "HtmlImportsRequestInitiatorLock", base::FEATURE_ENABLED_BY_DEFAULT};
+
+
 }  // namespace features
 }  // namespace blink

@@ -111,7 +111,7 @@ BLINK_COMMON_EXPORT extern const base::FeatureParam<int>
     kBufferingBytesConsumerDelayMilliseconds;
 BLINK_COMMON_EXPORT extern const base::Feature
     kVerifyHTMLFetchedFromAppCacheBeforeDelay;
-
+BLINK_COMMON_EXPORT extern const base::Feature kHtmlImportsRequestInitiatorLock;
 }  // namespace features
 }  // namespace blink
 
