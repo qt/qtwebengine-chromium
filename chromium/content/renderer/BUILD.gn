@@ -682,11 +682,6 @@ target(link_target_type, "renderer") {
       "//third_party/webrtc_overrides:init_webrtc",
       "//third_party/webrtc_overrides:task_queue_factory",
     ]
-  } else {
-    sources += [
-      "media/webrtc_logging.h",
-      "media/webrtc_logging_noop.cc",
-    ]
   }
 
   if (enable_plugins) {

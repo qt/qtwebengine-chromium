@@ -122,7 +122,8 @@ void PepperMediaDeviceManager::EnumerateDevices(PP_DeviceType_Dev type,
       FROM_HERE, base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated,
                                 AsWeakPtr(), std::move(callback), ToMediaDeviceType(type),
                                 std::vector<blink::WebMediaDeviceInfoArray>(),
-                                std::vector<blink::mojom::VideoInputDeviceCapabilitiesPtr>()));
+                                std::vector<blink::mojom::VideoInputDeviceCapabilitiesPtr>(),
+                                std::vector<blink::mojom::AudioInputDeviceCapabilitiesPtr>()));
 #endif
 }
 

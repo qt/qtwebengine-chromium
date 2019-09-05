@@ -1181,8 +1181,6 @@ jumbo_source_set("browser") {
     "loader/upload_data_stream_builder.h",
     "loader/url_loader_factory_impl.cc",
     "loader/url_loader_factory_impl.h",
-    "loader/webrtc_connections_observer.cc",
-    "loader/webrtc_connections_observer.h",
     "loader_delegate_impl.cc",
     "loader_delegate_impl.h",
     "locks/lock_manager.cc",
@@ -1535,8 +1533,6 @@ jumbo_source_set("browser") {
     "renderer_host/input_event_shim.h",
     "renderer_host/legacy_render_widget_host_win.cc",
     "renderer_host/legacy_render_widget_host_win.h",
-    "renderer_host/media/aec_dump_manager_impl.cc",
-    "renderer_host/media/aec_dump_manager_impl.h",
     "renderer_host/media/audio_input_delegate_impl.cc",
     "renderer_host/media/audio_input_delegate_impl.h",
     "renderer_host/media/audio_input_device_manager.cc",
@@ -2081,6 +2077,10 @@ jumbo_source_set("browser") {
 
   if (enable_webrtc) {
     sources += [
+      "loader/webrtc_connections_observer.cc",
+      "loader/webrtc_connections_observer.h",
+      "renderer_host/media/aec_dump_manager_impl.cc",
+      "renderer_host/media/aec_dump_manager_impl.h",
       "renderer_host/media/ref_counted_video_source_provider.cc",
       "renderer_host/media/ref_counted_video_source_provider.h",
       "renderer_host/media/peer_connection_tracker_host.cc",

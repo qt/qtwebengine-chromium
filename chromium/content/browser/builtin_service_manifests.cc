@@ -91,12 +91,14 @@ const std::vector<service_manager::Manifest>& GetBuiltinServiceManifests() {
           resource_coordinator::GetManifest(),
           shape_detection::GetManifest(),
           tracing::GetManifest(),
+#if BUILDFLAG(ENABLE_WEBRTC)
           video_capture::GetManifest(
               features::IsVideoCaptureServiceEnabledForOutOfProcess()
                   ? service_manager::Manifest::ExecutionMode::
                         kOutOfProcessBuiltin
                   : service_manager::Manifest::ExecutionMode::
                         kInProcessBuiltin),
+#endif
 #if defined(OS_LINUX)
           font_service::GetManifest(),
 #endif

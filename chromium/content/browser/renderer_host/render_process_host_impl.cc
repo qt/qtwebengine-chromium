@@ -2242,10 +2242,12 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       base::BindRepeating(&RenderProcessHostImpl::BindVideoDecoderService,
                           base::Unretained(this)));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(&AecDumpManagerImpl::AddRequest,
                           base::Unretained(&aec_dump_manager_)));
+#endif
 
   // ---- Please do not register interfaces below this line ------
   //
@@ -4508,8 +4510,10 @@ void RenderProcessHostImpl::OnProcessLaunched() {
       observer.RenderProcessReady(this);
   }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   aec_dump_manager_.set_pid(GetProcess().Pid());
   aec_dump_manager_.AutoStart();
+#endif
 }
 
 void RenderProcessHostImpl::OnProcessLaunchFailed(int error_code) {
