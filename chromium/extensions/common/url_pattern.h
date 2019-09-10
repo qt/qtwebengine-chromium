@@ -62,6 +62,7 @@ class URLPattern {
     SCHEME_WSS = 1 << 8,
     SCHEME_DATA = 1 << 9,
     SCHEME_URN = 1 << 10,
+    SCHEME_QRC = 1 << 11,
 
     // IMPORTANT!
     // SCHEME_ALL will match every scheme, including chrome://, chrome-
