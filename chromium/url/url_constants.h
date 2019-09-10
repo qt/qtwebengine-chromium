@@ -58,6 +58,9 @@ inline constexpr char16_t kWsScheme16[] = u"ws";
 inline constexpr char kWssScheme[] = "wss";
 inline constexpr char16_t kWssScheme16[] = u"wss";
 
+inline constexpr char kQrcScheme[] = "qrc";
+inline constexpr char16_t kQrcScheme16[] = u"qrc";
+
 // Used to separate a standard scheme and the hostname: "://".
 inline constexpr char kStandardSchemeSeparator[] = "://";
 inline constexpr char16_t kStandardSchemeSeparator16[] = u"://";
