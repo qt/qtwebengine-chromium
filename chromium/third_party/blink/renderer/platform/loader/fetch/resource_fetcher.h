@@ -128,6 +128,7 @@ class PLATFORM_EXPORT ResourceFetcher
   }
   // This must be called right after construction.
   void SetResourceLoadObserver(ResourceLoadObserver* observer) {
+    DCHECK(!IsDetached());
     DCHECK(!resource_load_observer_);
     resource_load_observer_ = observer;
   }
@@ -267,6 +268,10 @@ class PLATFORM_EXPORT ResourceFetcher
       bool is_link_preload) {
     return ComputeLoadPriority(type, request, visibility_statue, defer_option,
                                speculative_preload_type, is_link_preload);
+  }
+
+  void SetShouldLogRequestAsInvalidInImportedDocument() {
+    should_log_request_as_invalid_in_imported_document_ = true;
   }
 
  private:
@@ -417,12 +422,14 @@ class PLATFORM_EXPORT ResourceFetcher
   // This is not in the bit field below because we want to use AutoReset.
   bool is_in_request_resource_ = false;
 
-  // 27 bits left
+  // 26 bits left
   bool auto_load_images_ : 1;
   bool images_enabled_ : 1;
   bool allow_stale_resources_ : 1;
   bool image_fetched_ : 1;
   bool stale_while_revalidate_enabled_ : 1;
+  // for https://crbug.com/961614
+  bool should_log_request_as_invalid_in_imported_document_ : 1;
 
   static constexpr uint32_t kKeepaliveInflightBytesQuota = 64 * 1024;
 
