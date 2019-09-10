@@ -41,6 +41,7 @@ constexpr std::array kValidSchemes = {
     url::kFileSystemScheme,    url::kWsScheme,
     url::kWssScheme,           url::kDataScheme,
     url::kUuidInPackageScheme,
+    url::kQrcScheme,
 };
 
 constexpr std::array kValidSchemeMasks = {
@@ -55,6 +56,7 @@ constexpr std::array kValidSchemeMasks = {
     URLPattern::SCHEME_WSS,
     URLPattern::SCHEME_DATA,
     URLPattern::SCHEME_UUID_IN_PACKAGE,
+    URLPattern::SCHEME_QRC,
 };
 
 static_assert(std::size(kValidSchemes) == std::size(kValidSchemeMasks),
