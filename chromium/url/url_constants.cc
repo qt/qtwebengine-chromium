@@ -55,6 +55,8 @@ const char16_t kWsScheme16[] = u"ws";
 const char kWssScheme[] = "wss";
 const char16_t kWssScheme16[] = u"wss";
 
+const char kQrcScheme[] = "qrc";
+
 const char kStandardSchemeSeparator[] = "://";
 const char16_t kStandardSchemeSeparator16[] = u"://";
 

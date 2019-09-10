@@ -59,6 +59,8 @@ COMPONENT_EXPORT(URL) extern const char16_t kWsScheme16[];
 COMPONENT_EXPORT(URL) extern const char kWssScheme[];
 COMPONENT_EXPORT(URL) extern const char16_t kWssScheme16[];
 
+COMPONENT_EXPORT(URL) extern const char kQrcScheme[];
+
 // Used to separate a standard scheme and the hostname: "://".
 COMPONENT_EXPORT(URL) extern const char kStandardSchemeSeparator[];
 COMPONENT_EXPORT(URL) extern const char16_t kStandardSchemeSeparator16[];
