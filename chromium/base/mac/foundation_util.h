@@ -53,9 +53,10 @@ typedef CR_FORWARD_ENUM(unsigned int, NSSearchPathDirectory);
 typedef unsigned int NSSearchPathDomainMask;
 #endif
 
-#if defined(OS_IOS) ||                  \
-    (defined(MAC_OS_X_VERSION_10_15) && \
-     MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_15)
+// The CSSM_DEPRECATED check is a workaround for a presumably wrong MacOSX SDK detection.
+// This macro was added to the Security.framework in the 10.15 SDK:
+// http://codeworkshop.net/objc-diff/sdkdiffs/macos/10.15/Security.html at SecBase.h
+#if defined(OS_IOS) || (defined(MAC_OS_X_VERSION_10_15) && defined(CSSM_DEPRECATED))
 typedef struct CF_BRIDGED_TYPE(id) __SecCertificate* SecCertificateRef;
 typedef struct CF_BRIDGED_TYPE(id) __SecKey* SecKeyRef;
 typedef struct CF_BRIDGED_TYPE(id) __SecPolicy* SecPolicyRef;
