@@ -53,7 +53,10 @@ typedef CR_FORWARD_ENUM(unsigned int, NSSearchPathDirectory);
 typedef unsigned int NSSearchPathDomainMask;
 #endif
 
-#if defined(OS_IOS) || defined(MAC_OS_X_VERSION_10_15)
+// The SECTYPE check is a workaround for a presumably wrong macOS SDK detection.
+// This macro was removed from Security.framework of the 10.15 SDK:
+// http://codeworkshop.net/objc-diff/sdkdiffs/macos/10.15/Security.html at SecBase.h
+#if defined(OS_IOS) || (defined(MAC_OS_X_VERSION_10_15) && !defined(SECTYPE))
 typedef struct CF_BRIDGED_TYPE(id) __SecCertificate* SecCertificateRef;
 typedef struct CF_BRIDGED_TYPE(id) __SecKey* SecKeyRef;
 typedef struct CF_BRIDGED_TYPE(id) __SecPolicy* SecPolicyRef;
