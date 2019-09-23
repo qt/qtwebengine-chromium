@@ -607,9 +607,22 @@ bool AXLayoutObject::ComputeAccessibilityIsIgnored(
   DCHECK(initialized_);
 #endif
 
+  // All nodes must have an unignored parent within their tree under
+  // kRootWebArea, so force kRootWebArea to always be unignored.
+  if (role_ == ax::mojom::Role::kRootWebArea)
+    return false;
+
   if (!layout_object_) {
     if (ignored_reasons)
       ignored_reasons->push_back(IgnoredReason(kAXNotRendered));
+    return true;
+  }
+
+  // Ignore continuations, since those are essentially duplicate copies
+  // of inline nodes with blocks inside.
+  if (layout_object_->IsElementContinuation()) {
+    if (ignored_reasons)
+      ignored_reasons->push_back(IgnoredReason(kAXUninteresting));
     return true;
   }
 
@@ -628,14 +641,6 @@ bool AXLayoutObject::ComputeAccessibilityIsIgnored(
     return true;
 
   if (layout_object_->IsAnonymousBlock() && !IsEditable()) {
-    if (ignored_reasons)
-      ignored_reasons->push_back(IgnoredReason(kAXUninteresting));
-    return true;
-  }
-
-  // Ignore continuations, since those are essentially duplicate copies
-  // of inline nodes with blocks inside.
-  if (layout_object_->IsElementContinuation()) {
     if (ignored_reasons)
       ignored_reasons->push_back(IgnoredReason(kAXUninteresting));
     return true;
@@ -2045,8 +2050,12 @@ void AXLayoutObject::AddChildren() {
   if (IsDetached())
     return;
 
+  // Avoid calling AXNodeObject logic for continuations.
+  bool is_continuation = layout_object_->IsElementContinuation();
+
   if (auto* element = DynamicTo<Element>(GetNode())) {
-    if (!IsHTMLMapElement(*element) &&   // Handled in AddImageMapChildren (img)
+    if (!is_continuation &&
+        !IsHTMLMapElement(*element) &&   // Handled in AddImageMapChildren (img)
         !IsHTMLRubyElement(*element) &&  // Special layout handling
         !IsHTMLTableElement(*element) &&  // thead/tfoot move around
         !element->IsPseudoElement()) {    // Not visited in layout traversal
@@ -2065,10 +2074,8 @@ void AXLayoutObject::AddChildren() {
   ComputeAriaOwnsChildren(owned_children);
 
   for (AXObject* obj = RawFirstChild(); obj; obj = obj->RawNextSibling()) {
-    if (!AXObjectCache().IsAriaOwned(obj)) {
-      obj->SetParent(this);
+    if (!AXObjectCache().IsAriaOwned(obj))
       AddChild(obj);
-    }
   }
 
   AddHiddenChildren();
@@ -2080,8 +2087,11 @@ void AXLayoutObject::AddChildren() {
   AddAccessibleNodeChildren();
 
   for (const auto& child : children_) {
-    if (!child->CachedParentObject())
+    if (!is_continuation && !child->CachedParentObject()) {
+      // Never set continuations as a parent object. The first layout object
+      // in the chain must be used instead.
       child->SetParent(this);
+    }
   }
 
   for (const auto& owned_child : owned_children)

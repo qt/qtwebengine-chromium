@@ -27,6 +27,9 @@ class AutomationAXTreeWrapper : public ui::AXTreeObserver {
   // child trees, if any.
   static AutomationAXTreeWrapper* GetParentOfTreeId(ui::AXTreeID tree_id);
 
+  static std::map<ui::AXTreeID, AutomationAXTreeWrapper*>&
+  GetChildTreeIDReverseMap();
+
   ui::AXTreeID tree_id() const { return tree_id_; }
   ui::AXTree* tree() { return &tree_; }
   AutomationInternalCustomBindings* owner() { return owner_; }
@@ -49,14 +52,15 @@ class AutomationAXTreeWrapper : public ui::AXTreeObserver {
 
   ui::AXTree::Selection GetUnignoredSelection();
 
-  static std::map<ui::AXTreeID, AutomationAXTreeWrapper*>&
-  GetChildTreeIDReverseMap();
+  // Returns an AXNode from the underlying tree if it both exists and is not
+  // ignored.
+  ui::AXNode* GetUnignoredNodeFromId(int32_t id);
 
  private:
   // AXTreeObserver overrides.
-  void OnNodeDataWillChange(ui::AXTree* tree,
-                            const ui::AXNodeData& old_node_data,
-                            const ui::AXNodeData& new_node_data) override;
+  void OnNodeDataChanged(ui::AXTree* tree,
+                         const ui::AXNodeData& old_node_data,
+                         const ui::AXNodeData& new_node_data) override;
   void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
   void OnAtomicUpdateFinished(ui::AXTree* tree,
                               bool root_changed,
