@@ -34,7 +34,7 @@ std::unique_ptr<net::HttpResponseInfo> CreateHttpResponseInfoAndCheckHeaders(
   response_info->remote_endpoint = response_head.remote_endpoint;
   response_info->response_time = response_head.response_time;
 
-  if (response_head.headers->response_code() / 100 != 2) {
+  if (response_head.headers && response_head.headers->response_code() / 100 != 2) {
     // Non-2XX HTTP status code is handled as an error.
     error_code = net::ERR_INVALID_RESPONSE;
     error_message = base::StringPrintf(
