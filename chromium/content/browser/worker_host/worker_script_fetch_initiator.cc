@@ -37,6 +37,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/shared_cors_origin_access_list.h"
 #include "content/public/common/content_features.h"
@@ -90,7 +91,6 @@ void WorkerScriptFetchInitiator::Start(
     const std::string& storage_domain,
     CompletionCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
   DCHECK(storage_partition);
   DCHECK(resource_type == ResourceType::kWorker ||
          resource_type == ResourceType::kSharedWorker)
@@ -124,66 +124,69 @@ void WorkerScriptFetchInitiator::Start(
           worker_process_id, storage_partition, storage_domain,
           constructor_uses_file_url, filesystem_url_support);
 
+  // NetworkService (PlzWorker):
   // Create a resource request for initiating worker script fetch from the
   // browser process.
   std::unique_ptr<network::ResourceRequest> resource_request;
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    // Determine the referrer for the worker script request based on the spec.
+    // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+    Referrer sanitized_referrer = Referrer::SanitizeForRequest(
+        script_url,
+        Referrer(outside_fetch_client_settings_object->outgoing_referrer,
+                 outside_fetch_client_settings_object->referrer_policy));
 
-  // Determine the referrer for the worker script request based on the spec.
-  // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
-  Referrer sanitized_referrer = Referrer::SanitizeForRequest(
-      script_url,
-      Referrer(outside_fetch_client_settings_object->outgoing_referrer,
-               outside_fetch_client_settings_object->referrer_policy));
 
-  resource_request = std::make_unique<network::ResourceRequest>();
-  resource_request->url = script_url;
-  resource_request->site_for_cookies = script_url;
-  resource_request->request_initiator = request_initiator;
-  resource_request->referrer = sanitized_referrer.url,
-  resource_request->referrer_policy = Referrer::ReferrerPolicyForUrlRequest(
-      outside_fetch_client_settings_object->referrer_policy);
-  resource_request->resource_type = static_cast<int>(resource_type);
+    resource_request = std::make_unique<network::ResourceRequest>();
+    resource_request->url = script_url;
+    resource_request->site_for_cookies = script_url;
+    resource_request->request_initiator = request_initiator;
+    resource_request->referrer = sanitized_referrer.url,
+    resource_request->referrer_policy = Referrer::ReferrerPolicyForUrlRequest(
+        outside_fetch_client_settings_object->referrer_policy);
+    resource_request->resource_type = static_cast<int>(resource_type);
 
-  // For a classic worker script request:
-  // https://html.spec.whatwg.org/C/#fetch-a-classic-worker-script
-  // Step 1: "Let request be a new request whose ..., mode is "same-origin",
-  // ..."
-  //
-  // For a module worker script request:
-  // https://html.spec.whatwg.org/C/#fetch-a-single-module-script
-  // Step 6: "If destination is "worker" or "sharedworker" and the top-level
-  // module fetch flag is set, then set request's mode to "same-origin"."
-  resource_request->mode = network::mojom::RequestMode::kSameOrigin;
+    // For a classic worker script request:
+    // https://html.spec.whatwg.org/C/#fetch-a-classic-worker-script
+    // Step 1: "Let request be a new request whose ..., mode is "same-origin",
+    // ..."
+    //
+    // For a module worker script request:
+    // https://html.spec.whatwg.org/C/#fetch-a-single-module-script
+    // Step 6: "If destination is "worker" or "sharedworker" and the top-level
+    // module fetch flag is set, then set request's mode to "same-origin"."
+    resource_request->mode = network::mojom::RequestMode::kSameOrigin;
 
-  // When the credentials mode is "omit", clear |allow_credentials| and set
-  // load flags to disable sending credentials according to the comments in
-  // CorsURLLoaderFactory::IsSane().
-  // TODO(https://crbug.com/799935): Unify |LOAD_DO_NOT_*| into
-  // |allow_credentials|.
-  resource_request->credentials_mode = credentials_mode;
-  if (credentials_mode == network::mojom::CredentialsMode::kOmit) {
-    resource_request->allow_credentials = false;
-    const auto load_flags_pattern = net::LOAD_DO_NOT_SAVE_COOKIES |
-                                    net::LOAD_DO_NOT_SEND_COOKIES |
-                                    net::LOAD_DO_NOT_SEND_AUTH_DATA;
-    resource_request->load_flags |= load_flags_pattern;
+    // When the credentials mode is "omit", clear |allow_credentials| and set
+    // load flags to disable sending credentials according to the comments in
+    // CorsURLLoaderFactory::IsSane().
+    // TODO(https://crbug.com/799935): Unify |LOAD_DO_NOT_*| into
+    // |allow_credentials|.
+    resource_request->credentials_mode = credentials_mode;
+    if (credentials_mode == network::mojom::CredentialsMode::kOmit) {
+      resource_request->allow_credentials = false;
+      const auto load_flags_pattern = net::LOAD_DO_NOT_SAVE_COOKIES |
+                                      net::LOAD_DO_NOT_SEND_COOKIES |
+                                      net::LOAD_DO_NOT_SEND_AUTH_DATA;
+      resource_request->load_flags |= load_flags_pattern;
+    }
+
+    switch (resource_type) {
+      case ResourceType::kWorker:
+        resource_request->fetch_request_context_type =
+            static_cast<int>(blink::mojom::RequestContextType::WORKER);
+        break;
+      case ResourceType::kSharedWorker:
+        resource_request->fetch_request_context_type =
+            static_cast<int>(blink::mojom::RequestContextType::SHARED_WORKER);
+        break;
+      default:
+        NOTREACHED() << static_cast<int>(resource_type);
+        break;
+    }
+
+    AddAdditionalRequestHeaders(resource_request.get(), browser_context);
   }
-
-  switch (resource_type) {
-    case ResourceType::kWorker:
-      resource_request->fetch_request_context_type =
-          static_cast<int>(blink::mojom::RequestContextType::WORKER);
-      break;
-    case ResourceType::kSharedWorker:
-      resource_request->fetch_request_context_type =
-          static_cast<int>(blink::mojom::RequestContextType::SHARED_WORKER);
-      break;
-    default:
-      NOTREACHED() << static_cast<int>(resource_type);
-      break;
-  }
-
-  AddAdditionalRequestHeaders(resource_request.get(), browser_context);
 
   // When navigation on UI is enabled, service worker and appcache work on the
   // UI thread.
@@ -282,6 +285,26 @@ WorkerScriptFetchInitiator::CreateFactoryBundle(
         url::kFileScheme, file_factory_ptr.PassInterface());
   }
 
+  // Use RenderProcessHost's network factory as the default factory if
+  // NetworkService is off. If NetworkService is on the default factory is
+  // set in CreateScriptLoaderOnIO().
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+    // Using an opaque origin here should be safe - the URLLoaderFactory created
+    // for such origin shouldn't have any special privileges.  Additionally, the
+    // origin should not be inspected at all in the legacy, non-NetworkService
+    // path.
+    const url::Origin kSafeOrigin = url::Origin();
+
+    mojo::PendingRemote<network::mojom::URLLoaderFactory>
+          pending_default_factory;
+    // TODO(crbug.com/955476): Populate the network isolation key.
+    RenderProcessHost::FromID(worker_process_id)
+        ->CreateURLLoaderFactory(
+            kSafeOrigin, nullptr /* preferences */, net::NetworkIsolationKey(),
+            nullptr /* header_client */, pending_default_factory.InitWithNewPipeAndPassReceiver());
+    factory_bundle->pending_default_factory() = std::move(pending_default_factory);
+  }
+
   return factory_bundle;
 }
 
@@ -291,6 +314,7 @@ void WorkerScriptFetchInitiator::AddAdditionalRequestHeaders(
     network::ResourceRequest* resource_request,
     BrowserContext* browser_context) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
 
   // TODO(nhiroki): Return early when the request is neither HTTP nor HTTPS
   // (i.e., Blob URL or Data URL). This should be checked by
@@ -326,6 +350,7 @@ void WorkerScriptFetchInitiator::CreateScriptLoaderOnUI(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_override,
     CompletionCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
 
   // Create the URL loader factory for WorkerScriptLoaderFactory to use to load
   // the main script.
@@ -390,7 +415,7 @@ void WorkerScriptFetchInitiator::CreateScriptLoaderOnUI(
           std::move(url_loader_factory)),
       std::move(throttles), std::move(resource_request),
       base::BindOnce(WorkerScriptFetchInitiator::DidCreateScriptLoader,
-                     std::move(callback),
+                     std::move(callback), nullptr /* main_script_loader_factory */,
                      std::move(subresource_loader_factories)));
 }
 
@@ -415,20 +440,22 @@ void WorkerScriptFetchInitiator::CreateScriptLoaderOnIO(
   DCHECK(resource_context);
   DCHECK(service_worker_handle_core);
 
-  auto resource_type =
-      static_cast<ResourceType>(resource_request->resource_type);
-  auto provider_type = blink::mojom::ServiceWorkerProviderType::kUnknown;
-  switch (resource_type) {
-    case ResourceType::kWorker:
-      provider_type =
-          blink::mojom::ServiceWorkerProviderType::kForDedicatedWorker;
-      break;
-    case ResourceType::kSharedWorker:
-      provider_type = blink::mojom::ServiceWorkerProviderType::kForSharedWorker;
-      break;
-    default:
-      NOTREACHED() << resource_request->resource_type;
-      break;
+  if (resource_request) {
+      auto resource_type =
+          static_cast<ResourceType>(resource_request->resource_type);
+      auto provider_type = blink::mojom::ServiceWorkerProviderType::kUnknown;
+      switch (resource_type) {
+        case ResourceType::kWorker:
+          provider_type =
+              blink::mojom::ServiceWorkerProviderType::kForDedicatedWorker;
+          break;
+        case ResourceType::kSharedWorker:
+          provider_type = blink::mojom::ServiceWorkerProviderType::kForSharedWorker;
+          break;
+        default:
+          NOTREACHED() << resource_request->resource_type;
+          break;
+      }
   }
 
   // Create the URL loader factory for WorkerScriptLoaderFactory to use to load
@@ -445,18 +472,20 @@ void WorkerScriptFetchInitiator::CreateScriptLoaderOnIO(
         std::move(url_loader_factory_override_info));
   } else {
     // Add the default factory to the bundle for browser.
-    DCHECK(factory_bundle_for_browser_info);
+    if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+        DCHECK(factory_bundle_for_browser_info);
 
-    // Get the direct network factory from |loader_factory_getter|. This doesn't
-    // support reconnection to the network service after a crash, but it's OK
-    // since it's used only for a single request to fetch the worker's main
-    // script during startup. If the network service crashes, worker startup
-    // should simply fail.
-    network::mojom::URLLoaderFactoryPtr network_factory_ptr;
-    loader_factory_getter->CloneNetworkFactory(
-        mojo::MakeRequest(&network_factory_ptr));
-    factory_bundle_for_browser_info->pending_default_factory() =
-        network_factory_ptr.PassInterface();
+        // Get the direct network factory from |loader_factory_getter|. This doesn't
+        // support reconnection to the network service after a crash, but it's OK
+        // since it's used only for a single request to fetch the worker's main
+        // script during startup. If the network service crashes, worker startup
+        // should simply fail.
+        network::mojom::URLLoaderFactoryPtr network_factory_ptr;
+        loader_factory_getter->CloneNetworkFactory(
+            mojo::MakeRequest(&network_factory_ptr));
+        factory_bundle_for_browser_info->pending_default_factory() =
+            network_factory_ptr.PassInterface();
+    }
     url_loader_factory = base::MakeRefCounted<blink::URLLoaderFactoryBundle>(
         std::move(factory_bundle_for_browser_info));
   }
@@ -476,34 +505,56 @@ void WorkerScriptFetchInitiator::CreateScriptLoaderOnIO(
       &ServiceWorkerContextWrapper::resource_context, service_worker_context);
 
   // Start loading a web worker main script.
-  // TODO(nhiroki): Figure out what we should do in |wc_getter| for loading web
-  // worker's main script. Returning the WebContents of the closest ancestor's
-  // frame is a possible option, but it doesn't work when a shared worker
-  // creates a dedicated worker after the closest ancestor's frame is gone. The
-  // frame tree node ID has the same issue.
-  base::RepeatingCallback<WebContents*()> wc_getter =
-      base::BindRepeating([]() -> WebContents* { return nullptr; });
-  std::vector<std::unique_ptr<URLLoaderThrottle>> throttles =
-      GetContentClient()->browser()->CreateURLLoaderThrottlesOnIO(
-          *resource_request, resource_context, wc_getter,
-          nullptr /* navigation_ui_data */,
-          RenderFrameHost::kNoFrameTreeNodeId);
+  if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
+      // TODO(nhiroki): Figure out what we should do in |wc_getter| for loading web
+      // worker's main script. Returning the WebContents of the closest ancestor's
+      // frame is a possible option, but it doesn't work when a shared worker
+      // creates a dedicated worker after the closest ancestor's frame is gone. The
+      // frame tree node ID has the same issue.
+      base::RepeatingCallback<WebContents*()> wc_getter =
+          base::BindRepeating([]() -> WebContents* { return nullptr; });
+      std::vector<std::unique_ptr<URLLoaderThrottle>> throttles =
+          GetContentClient()->browser()->CreateURLLoaderThrottlesOnIO(
+              *resource_request, resource_context, wc_getter,
+              nullptr /* navigation_ui_data */,
+              RenderFrameHost::kNoFrameTreeNodeId);
 
-  WorkerScriptFetcher::CreateAndStart(
+      WorkerScriptFetcher::CreateAndStart(
+          std::make_unique<WorkerScriptLoaderFactory>(
+              worker_process_id,
+              /*service_worker_handle=*/nullptr, service_worker_handle_core,
+              std::move(appcache_host),
+              base::RepeatingCallback<BrowserContext*(void)>(),
+              resource_context_getter, std::move(url_loader_factory)),
+          std::move(throttles), std::move(resource_request),
+          base::BindOnce(WorkerScriptFetchInitiator::DidCreateScriptLoader,
+                         std::move(callback), nullptr,
+                         std::move(subresource_loader_factories)));
+    return;
+  }
+
+  // Create the WorkerScriptLoaderFactory.
+  network::mojom::URLLoaderFactoryPtr main_script_loader_factory;
+  mojo::MakeStrongBinding(
       std::make_unique<WorkerScriptLoaderFactory>(
           worker_process_id,
           /*service_worker_handle=*/nullptr, service_worker_handle_core,
           std::move(appcache_host),
           base::RepeatingCallback<BrowserContext*(void)>(),
           resource_context_getter, std::move(url_loader_factory)),
-      std::move(throttles), std::move(resource_request),
-      base::BindOnce(WorkerScriptFetchInitiator::DidCreateScriptLoader,
-                     std::move(callback),
-                     std::move(subresource_loader_factories)));
+      mojo::MakeRequest(&main_script_loader_factory));
+
+  DidCreateScriptLoader(std::move(callback),
+                        std::move(main_script_loader_factory),
+                        std::move(subresource_loader_factories),
+                        nullptr /* main_script_load_params */,
+                        base::nullopt /* subresource_loader_params */,
+                        true /* success */);
 }
 
 void WorkerScriptFetchInitiator::DidCreateScriptLoader(
     CompletionCallback callback,
+    network::mojom::URLLoaderFactoryPtr main_script_loader_factory,
     std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
         subresource_loader_factories,
     blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
@@ -512,18 +563,25 @@ void WorkerScriptFetchInitiator::DidCreateScriptLoader(
   // This can be the UI thread or IO thread.
   DCHECK_CURRENTLY_ON(GetLoaderThreadID());
 
+  // NetworkService (PlzWorker):
   // If a URLLoaderFactory for AppCache is supplied, use that.
   if (subresource_loader_params &&
       subresource_loader_params->pending_appcache_loader_factory) {
+    DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
     subresource_loader_factories->pending_appcache_factory() =
         std::move(subresource_loader_params->pending_appcache_loader_factory);
   }
 
-  // Prepare the controller service worker info to pass to the renderer.
+  // NetworkService (PlzWorker):
+  // Prepare the controller service worker info to pass to the renderer. This is
+  // only provided if NetworkService is enabled. In the non-NetworkService case,
+  // the controller is sent in SetController IPCs during the request for the web
+  // worker script.
   blink::mojom::ControllerServiceWorkerInfoPtr controller;
   base::WeakPtr<ServiceWorkerObjectHost> controller_service_worker_object_host;
   if (subresource_loader_params &&
       subresource_loader_params->controller_service_worker_info) {
+    DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService));
     controller =
         std::move(subresource_loader_params->controller_service_worker_info);
     controller_service_worker_object_host =
@@ -533,7 +591,9 @@ void WorkerScriptFetchInitiator::DidCreateScriptLoader(
   RunOrPostTask(
       FROM_HERE, BrowserThread::UI,
       base::BindOnce(
-          std::move(callback), std::move(subresource_loader_factories),
+          std::move(callback),
+          std::move(main_script_loader_factory),
+          std::move(subresource_loader_factories),
           std::move(main_script_load_params), std::move(controller),
           std::move(controller_service_worker_object_host), success));
 }

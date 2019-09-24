@@ -161,6 +161,8 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
   // Called from WorkerScriptFetchInitiator. Continues starting the dedicated
   // worker in the renderer process.
   //
+  // |main_script_loader_factory| is not used when NetworkService is enabled.
+  //
   // |main_script_load_params| is sent to the renderer process and to be used to
   // load the dedicated worker main script pre-requested by the browser process.
   //
@@ -174,6 +176,7 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
   // a ServiceWorker object about the controller is prepared, it is registered
   // to |controller_service_worker_object_host|.
   void DidStartScriptLoad(
+      network::mojom::URLLoaderFactoryPtr main_script_loader_factory,
       std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
           subresource_loader_factories,
       blink::mojom::WorkerMainScriptLoadParamsPtr main_script_load_params,
@@ -183,6 +186,8 @@ class DedicatedWorkerHost : public service_manager::mojom::InterfaceProvider {
       bool success) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     DCHECK(blink::features::IsPlzDedicatedWorkerEnabled());
+    // |main_script_loader_factory| is not used when NetworkService is enabled.
+    DCHECK(!main_script_loader_factory);
 
     if (!success) {
       client_->OnScriptLoadStartFailed();
