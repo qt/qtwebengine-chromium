@@ -336,7 +336,14 @@ DownloadInterruptReason BaseFile::Open(const std::string& hash_so_far,
   if (!file_.IsValid()) {
     file_.Initialize(full_path_, base::File::FLAG_OPEN_ALWAYS |
                                      base::File::FLAG_WRITE |
-                                     base::File::FLAG_READ);
+                                     base::File::FLAG_READ
+#if defined(OS_WIN)
+          // Don't allow other process to write to the file while Chrome is
+          // writing to it. On posix systems, use FLAG_EXCLUSIVE_WRITE will
+          // cause file creation to fail if the file already exists.
+                                     | base::File::FLAG_EXCLUSIVE_WRITE
+#endif  // defined(OS_WIN)
+    );
     if (!file_.IsValid()) {
       return LogNetError("Open/Initialize File",
                          net::FileErrorToNetError(file_.error_details()));
