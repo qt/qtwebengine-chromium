@@ -141,6 +141,9 @@ class LinkedHashSetNode : public LinkedHashSetNodeBase {
   DISALLOW_NEW();
 
  public:
+  LinkedHashSetNode()
+      : LinkedHashSetNodeBase(nullptr, nullptr) {}
+
   LinkedHashSetNode(const ValueArg& value,
                     LinkedHashSetNodeBase* prev,
                     LinkedHashSetNodeBase* next)
@@ -444,8 +447,8 @@ struct LinkedHashSetTraits
   typedef ValueTraitsArg ValueTraits;
 
   // The slot is empty when the next_ field is zero so it's safe to zero
-  // the backing.
-  static const bool kEmptyValueIsZero = true;
+  // the backing, as long as it's also safe to zero the value.
+  static const bool kEmptyValueIsZero = ValueTraits::kEmptyValueIsZero;
 
   static const bool kHasIsEmptyValueFunction = true;
   static bool IsEmptyValue(const Node& node) { return !node.next_; }
