@@ -15,10 +15,8 @@
 #include "device/geolocation/wifi_data_provider_common.h"
 #include "device/geolocation/wifi_data_provider_manager.h"
 
-extern "C" NSString* const kCWScanKeyMerge;
-
 @interface CWInterface (Private)
-- (NSArray*)scanForNetworksWithParameters:(NSDictionary*)params
+- (NSSet<CWNetwork *> *)scanForNetworksWithName:(NSString *)networkName
                                     error:(NSError**)error;
 @end
 
@@ -39,9 +37,6 @@ class CoreWlanApi : public WifiDataProviderCommon::WlanApiInterface {
 
 bool CoreWlanApi::GetAccessPointData(WifiData::AccessPointDataSet* data) {
   base::mac::ScopedNSAutoreleasePool auto_pool;
-  // Initialize the scan parameters with scan key merging disabled, so we get
-  // every AP listed in the scan without any SSID de-duping logic.
-  NSDictionary* params = @{ kCWScanKeyMerge : @NO };
 
   NSSet* supported_interfaces = [CWInterface interfaceNames];
   NSUInteger interface_error_count = 0;
@@ -57,8 +52,8 @@ bool CoreWlanApi::GetAccessPointData(WifiData::AccessPointDataSet* data) {
     const base::TimeTicks start_time = base::TimeTicks::Now();
 
     NSError* err = nil;
-    NSArray* scan =
-        [corewlan_interface scanForNetworksWithParameters:params error:&err];
+    NSSet<CWNetwork *>* scan =
+        [corewlan_interface scanForNetworksWithName:nil error:&err];
     const int error_code = [err code];
     const int count = [scan count];
     // We could get an error code but count != 0 if the scan was interrupted,
