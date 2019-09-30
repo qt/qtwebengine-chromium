@@ -78,7 +78,7 @@ if (use_arm_neon_optimizations) {
     # Disabled for iPhone, as described in DDI0487C_a_armv8_arm:
     #  "All implementations of the ARMv8.1 architecture are required to
     #   implement the CRC32* instructions. These are optional in ARMv8.0."
-    if (is_clang && !is_ios) {
+    if (!is_ios) {
       defines = [ "CRC32_ARMV8_CRC32" ]
       if (is_android) {
         defines += [ "ARMV8_OS_ANDROID" ]
