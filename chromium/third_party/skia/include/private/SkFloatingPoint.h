@@ -164,11 +164,11 @@ static inline float sk_double_to_float(double x) {
     return static_cast<float>(x);
 }
 
-#define SK_FloatNaN                 std::numeric_limits<float>::quiet_NaN()
+#define SK_FloatNaN                 NAN
 #define SK_FloatInfinity            (+std::numeric_limits<float>::infinity())
 #define SK_FloatNegativeInfinity    (-std::numeric_limits<float>::infinity())
 
-#define SK_DoubleNaN                std::numeric_limits<double>::quiet_NaN()
+#define SK_DoubleNaN                NAN
 
 // Returns false if any of the floats are outside of [0...1]
 // Returns true if count is 0
