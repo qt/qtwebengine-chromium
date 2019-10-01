@@ -45,7 +45,6 @@
 #include "gpu/ipc/service/gpu_init.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "media/gpu/buildflags.h"
-#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
 #include "third_party/angle/src/gpu_info_util/SystemInfo.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/switches.h"
@@ -55,6 +54,10 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gpu_switching_manager.h"
 #include "ui/gl/init/gl_factory.h"
+
+#ifndef TOOLKIT_QT
+#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
+#endif
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -362,8 +365,10 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   gpu_process.set_main_thread(child_thread);
 
+#ifndef TOOLKIT_QT
   // Setup tracing sampler profiler as early as possible.
   tracing::TracingSamplerProfiler::CreateForCurrentThread();
+#endif
 
 #if defined(OS_ANDROID)
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(

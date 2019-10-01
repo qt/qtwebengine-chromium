@@ -2383,7 +2383,7 @@ class ComputedStyle : public ComputedStyleBase,
   void LoadDeferredImages(Document&) const;
 
   enum ColorScheme UsedColorScheme() const {
-    return DarkColorScheme() ? ColorScheme::kDark : ColorScheme::kLight;
+    return DarkColorScheme() ? kDark : kLight;
   }
 
  private:

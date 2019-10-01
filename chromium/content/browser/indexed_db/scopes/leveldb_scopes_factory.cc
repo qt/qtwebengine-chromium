@@ -26,7 +26,7 @@ DefaultLevelDBScopesFactory::CreateAndInitializeLevelDBScopes(
       std::move(level_db), options.lock_manager,
       std::move(options.failure_callback));
   leveldb::Status s = scopes->Initialize();
-  return {s.ok() ? std::move(scopes) : nullptr, s};
+  return std::make_tuple(s.ok() ? std::move(scopes) : nullptr, s);
 }
 
 }  // namespace content
