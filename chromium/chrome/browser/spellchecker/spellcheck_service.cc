@@ -67,7 +67,7 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   dictionaries_pref.Init(spellcheck::prefs::kSpellCheckDictionaries, prefs);
   std::string first_of_dictionaries;
 
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
+#if !defined(TOOLKIT_QT) && (defined(OS_MACOSX) || defined(OS_ANDROID))
   // Ensure that the renderer always knows the platform spellchecking
   // language. This language is used for initialization of the text iterator.
   // If the iterator is not initialized, then the context menu does not show
@@ -93,7 +93,7 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   }
 
   single_dictionary_pref.SetValue("");
-#endif  // defined(OS_MACOSX) || defined(OS_ANDROID)
+#endif  // !defined(TOOLKIT_QT) && (defined(OS_MACOSX) || defined(OS_ANDROID))
 
   pref_change_registrar_.Add(
       spellcheck::prefs::kSpellCheckDictionaries,
