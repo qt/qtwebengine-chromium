@@ -85,7 +85,7 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   dictionaries_pref.Init(spellcheck::prefs::kSpellCheckDictionaries, prefs);
   std::string first_of_dictionaries;
 
-#if defined(OS_MAC) || defined(OS_ANDROID)
+#if (defined(OS_MAC) || defined(OS_ANDROID)) && !defined(TOOLKIT_QT)
   // Ensure that the renderer always knows the platform spellchecking
   // language. This language is used for initialization of the text iterator.
   // If the iterator is not initialized, then the context menu does not show
