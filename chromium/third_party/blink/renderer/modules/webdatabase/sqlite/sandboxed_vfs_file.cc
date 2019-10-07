@@ -145,6 +145,7 @@ SandboxedVfsFile* SandboxedVfsFile::FromSqliteFile(sqlite3_file* sqlite_file) {
 
 int SandboxedVfsFile::Close() {
   file_.Close();
+  delete this;
   return SQLITE_OK;
 }
 
