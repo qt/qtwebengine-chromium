@@ -532,15 +532,8 @@ void FrameTreeNode::DidChangeLoadProgress(double load_progress) {
 }
 
 bool FrameTreeNode::StopLoading() {
-  if (navigation_request_) {
-    int expected_pending_nav_entry_id = navigation_request_->nav_entry_id();
-    if (navigation_request_->navigation_handle()) {
+  if (navigation_request_ && navigation_request_->IsNavigationStarted())
       navigation_request_->set_net_error(net::ERR_ABORTED);
-      expected_pending_nav_entry_id =
-          navigation_request_->navigation_handle()->pending_nav_entry_id();
-    }
-    navigator_->DiscardPendingEntryIfNeeded(expected_pending_nav_entry_id);
-  }
   ResetNavigationRequest(false, true);
 
   // TODO(nasko): see if child frames should send IPCs in site-per-process

@@ -621,6 +621,14 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateForCommit(
   return navigation_request;
 }
 
+void NavigationRequest::DropPendingEntryRef() {
+  pending_entry_ref_.reset();
+}
+
+bool NavigationRequest::IsNavigationStarted() const {
+  return state_ >= STARTED;
+}
+
 NavigationRequest::NavigationRequest(
     FrameTreeNode* frame_tree_node,
     const CommonNavigationParams& common_params,
@@ -661,7 +669,8 @@ NavigationRequest::NavigationRequest(
                            "frame_tree_node",
                            frame_tree_node_->frame_tree_node_id(), "url",
                            common_params_.url.possibly_invalid_spec());
-
+  NavigationControllerImpl* controller = static_cast<NavigationControllerImpl*>(
+      frame_tree_node_->navigator()->GetController());
   // Setup for navigation to the BundledExchanges.
   if (GetContentClient()->browser()->CanAcceptUntrustedExchangesIfNeeded() &&
       common_params_.url.SchemeIsFile() &&
@@ -722,6 +731,12 @@ NavigationRequest::NavigationRequest(
       entry->back_forward_cache_metrics()
           ->MainFrameDidStartNavigationToDocument();
     }
+
+    // If this NavigationRequest is for the current pending entry, make sure
+    // that we will discard the pending entry if all of associated its requests
+    // go away, by creating a ref to it.
+    if (entry == controller->GetPendingEntry())
+       pending_entry_ref_ = controller->ReferencePendingEntry();
   }
 
   std::string user_agent_override;
@@ -735,8 +750,7 @@ NavigationRequest::NavigationRequest(
   // Only add specific headers when creating a NavigationRequest before the
   // network request is made, not at commit time.
   if (!is_for_commit) {
-    BrowserContext* browser_context =
-        frame_tree_node_->navigator()->GetController()->GetBrowserContext();
+    BrowserContext* browser_context = controller->GetBrowserContext();
     ClientHintsControllerDelegate* client_hints_delegate =
         browser_context->GetClientHintsControllerDelegate();
     if (client_hints_delegate) {
@@ -750,8 +764,7 @@ NavigationRequest::NavigationRequest(
     headers.AddHeadersFromString(begin_params_->headers);
     AddAdditionalRequestHeaders(
         &headers, common_params_.url, common_params_.navigation_type,
-        common_params_.transition,
-        frame_tree_node_->navigator()->GetController()->GetBrowserContext(),
+        common_params_.transition, controller->GetBrowserContext(),
         common_params.method, user_agent_override,
         common_params_.has_user_gesture, common_params.initiator_origin,
         common_params_.referrer.policy,
@@ -792,6 +805,17 @@ NavigationRequest::~NavigationRequest() {
     devtools_instrumentation::OnNavigationRequestFailed(
         *this, network::URLLoaderCompletionStatus(net::ERR_ABORTED));
   }
+
+  // If this NavigationRequest is the last one referencing the pending
+  // NavigationEntry, the entry is discarded.
+  //
+  // Leaving a stale pending NavigationEntry with no matching navigation can
+  // potentially lead to URL-spoof issues.
+  //
+  // Note: Discarding the pending NavigationEntry is done before notifying the
+  // navigation finished to the observers. One class is relying on this:
+  // org.chromium.chrome.browser.toolbar.ToolbarManager
+  pending_entry_ref_.reset();
 
 #if defined(OS_ANDROID)
   if (navigation_handle_proxy_)
@@ -1515,11 +1539,9 @@ void NavigationRequest::OnRequestFailedInternal(
                                "OnRequestFailed", "error", status.error_code);
   state_ = FAILED;
 
-  int expected_pending_entry_id =
-      navigation_handle_.get() ? navigation_handle_->pending_nav_entry_id()
-                               : nav_entry_id_;
-  frame_tree_node_->navigator()->DiscardPendingEntryIfNeeded(
-      expected_pending_entry_id);
+  // Ensure the pending entry also gets discarded if it has no other active
+  // requests.
+  pending_entry_ref_.reset();
 
   net_error_ = static_cast<net::Error>(status.error_code);
 

@@ -14,6 +14,7 @@
 #include "base/optional.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
+#include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/frame_host/navigation_throttle_runner.h"
 #include "content/browser/initiator_csp_context.h"
@@ -461,6 +462,13 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate,
   const net::ProxyServer& proxy_server() { return proxy_server_; }
 
   int64_t navigation_handle_id() { return navigation_handle_id_; }
+
+  bool IsNavigationStarted() const;
+
+  // Stop referencing the pending NavigationEntry.
+  //
+  // Note: To be removed after removing DidFailProvisionalLoadWithError().
+  void DropPendingEntryRef();
 
  private:
   // TODO(clamy): Transform NavigationHandleImplTest into NavigationRequestTest
@@ -962,6 +970,11 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate,
 
   // The unique id to identify the NavigationHandle with.
   int64_t navigation_handle_id_ = 0;
+
+  // This tracks a connection between the current pending entry and this
+  // request, such that the pending entry can be discarded if no requests are
+  // left referencing it.
+  std::unique_ptr<NavigationControllerImpl::PendingEntryRef> pending_entry_ref_;
 
   base::WeakPtrFactory<NavigationRequest> weak_factory_{this};
 

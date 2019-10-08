@@ -724,7 +724,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void DidStartNavigationToPendingEntry(const GURL& url,
                                         ReloadType reload_type) override;
   bool ShouldTransferNavigation(bool is_main_frame_navigation) override;
-  bool ShouldPreserveAbortedURLs() override;
   void DidStartLoading(FrameTreeNode* frame_tree_node,
                        bool to_different_document) override;
   void DidStopLoading() override;
@@ -883,6 +882,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       const EntryChangedDetails& change_details) override;
   void NotifyNavigationListPruned(const PrunedDetails& pruned_details) override;
   void NotifyNavigationEntriesDeleted() override;
+  bool ShouldPreserveAbortedURLs() override;
 
   // Invoked before a form repost warning is shown.
   void NotifyBeforeFormRepostWarningShow() override;
