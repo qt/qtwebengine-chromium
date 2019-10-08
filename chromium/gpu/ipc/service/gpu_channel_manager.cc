@@ -367,11 +367,6 @@ GpuChannelManager::~GpuChannelManager() {
   gpu_channels_.clear();
   gpu_channels.clear();
 
-  if (default_offscreen_surface_.get()) {
-    default_offscreen_surface_->Destroy();
-    default_offscreen_surface_ = nullptr;
-  }
-
   // Inavlidate here as the |shared_context_state_| attempts to call back to
   // |this| in the middle of the deletion.
   peak_memory_monitor_.InvalidateWeakPtrs();
@@ -380,6 +375,11 @@ GpuChannelManager::~GpuChannelManager() {
   // correctly.
   if (shared_context_state_)
     shared_context_state_->MakeCurrent(nullptr);
+
+  if (default_offscreen_surface_.get()) {
+    default_offscreen_surface_->Destroy();
+    default_offscreen_surface_ = nullptr;
+  }
 }
 
 gles2::Outputter* GpuChannelManager::outputter() {
