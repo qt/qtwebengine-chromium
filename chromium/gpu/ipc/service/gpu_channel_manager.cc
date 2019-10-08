@@ -157,15 +157,15 @@ GpuChannelManager::~GpuChannelManager() {
   gpu_channels_.clear();
   gpu_channels.clear();
 
-  if (default_offscreen_surface_.get()) {
-    default_offscreen_surface_->Destroy();
-    default_offscreen_surface_ = nullptr;
-  }
-
   // Try to make the context current so that GPU resources can be destroyed
   // correctly.
   if (shared_context_state_)
     shared_context_state_->MakeCurrent(nullptr);
+
+  if (default_offscreen_surface_.get()) {
+    default_offscreen_surface_->Destroy();
+    default_offscreen_surface_ = nullptr;
+  }
 }
 
 gles2::Outputter* GpuChannelManager::outputter() {
