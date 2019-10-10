@@ -20,7 +20,7 @@
 #include "rtc_base/logging.h"
 #include "test/gtest.h"
 
-#if defined(USE_X11)
+#if defined(WEBRTC_USE_X11)
 #include "absl/memory/memory.h"
 #include "modules/desktop_capture/linux/shared_x_display.h"
 #include "modules/desktop_capture/linux/x_atom_cache.h"
@@ -84,7 +84,7 @@ TEST(WindowFinderTest, FindConsoleWindow) {
 #else
 TEST(WindowFinderTest, FindDrawerWindow) {
   WindowFinder::Options options;
-#if defined(USE_X11)
+#if defined(WEBRTC_USE_X11)
   std::unique_ptr<XAtomCache> cache;
   const auto shared_x_display = SharedXDisplay::CreateDefault();
   if (shared_x_display) {
@@ -140,7 +140,7 @@ TEST(WindowFinderTest, FindDrawerWindow) {
 
 TEST(WindowFinderTest, ShouldReturnNullWindowIfSpotIsOutOfScreen) {
   WindowFinder::Options options;
-#if defined(USE_X11)
+#if defined(WEBRTC_USE_X11)
   std::unique_ptr<XAtomCache> cache;
   const auto shared_x_display = SharedXDisplay::CreateDefault();
   if (shared_x_display) {
