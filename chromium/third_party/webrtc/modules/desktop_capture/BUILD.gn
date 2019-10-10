@@ -203,6 +203,11 @@ if (is_linux) {
       }
     }
   }
+  if (rtc_use_x11) {
+    config("rtc_x11_config") {
+      defines = [ "WEBRTC_USE_X11" ]
+    }
+  }
 }
 
 rtc_source_set("desktop_capture") {
@@ -417,6 +422,9 @@ rtc_static_library("desktop_capture_generic") {
         "linux/shared_x_util.h",
       ]
     }
+    public_configs = [
+      ":rtc_x11_config",
+    ]
   }
 
   if (!is_win && !is_mac && !rtc_use_x11_extensions && !rtc_use_pipewire) {
