@@ -640,7 +640,7 @@ void LocalFrameClientImpl::ForwardResourceTimingToParent(
 
 void LocalFrameClientImpl::DownloadURL(
     const ResourceRequest& request,
-    DownloadCrossOriginRedirects cross_origin_redirect_behavior) {
+    network::mojom::RedirectMode cross_origin_redirect_behavior) {
   if (!web_frame_->Client())
     return;
   DCHECK(web_frame_->GetFrame()->GetDocument());
@@ -649,11 +649,9 @@ void LocalFrameClientImpl::DownloadURL(
     web_frame_->GetFrame()->GetDocument()->GetPublicURLManager().Resolve(
         request.Url(), MakeRequest(&blob_url_token));
   }
-  web_frame_->Client()->DownloadURL(
-      WrappedResourceRequest(request),
-      static_cast<WebLocalFrameClient::CrossOriginRedirects>(
-          cross_origin_redirect_behavior),
-      blob_url_token.PassInterface().PassHandle());
+  web_frame_->Client()->DownloadURL(WrappedResourceRequest(request),
+                                    cross_origin_redirect_behavior,
+                                    blob_url_token.PassInterface().PassHandle());
 }
 
 void LocalFrameClientImpl::LoadErrorPage(int reason) {
@@ -1264,10 +1262,5 @@ WebLocalFrameClient::AppCacheType LocalFrameClientImpl::GetAppCacheType() {
   DCHECK(web_frame_->Client());
   return web_frame_->Client()->GetAppCacheType();
 }
-
-STATIC_ASSERT_ENUM(DownloadCrossOriginRedirects::kFollow,
-                   WebLocalFrameClient::CrossOriginRedirects::kFollow);
-STATIC_ASSERT_ENUM(DownloadCrossOriginRedirects::kNavigate,
-                   WebLocalFrameClient::CrossOriginRedirects::kNavigate);
 
 }  // namespace blink

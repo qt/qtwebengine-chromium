@@ -899,7 +899,7 @@ download::DownloadInterruptReason DownloadManagerImpl::BeginDownloadRequest(
   std::unique_ptr<ResourceHandler> handler(
       DownloadResourceHandler::CreateForNewRequest(
           url_request.get(), params->request_origin(),
-          params->download_source(), params->follow_cross_origin_redirects()));
+          params->download_source(), params->cross_origin_redirects()));
 
   ResourceDispatcherHostImpl::Get()->BeginURLRequest(
       std::move(url_request), std::move(handler), true,  // download

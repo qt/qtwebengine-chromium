@@ -21,6 +21,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/url_request.h"
 #include "services/network/public/cpp/resource_request_body.h"
+#include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -210,11 +211,13 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadUrlParameters {
     do_not_prompt_for_login_ = do_not_prompt;
   }
 
-  // If |follow_cross_origin_redirects| is true, we will follow cross origin
-  // redirects while downloading, otherwise, we'll attempt to navigate to the
-  // URL or cancel the download.
-  void set_follow_cross_origin_redirects(bool follow_cross_origin_redirects) {
-    follow_cross_origin_redirects_ = follow_cross_origin_redirects;
+  // If |cross_origin_redirects| is kFollow, we will follow cross origin
+  // redirects while downloading.  If it is kManual, then we'll attempt to
+  // navigate to the URL or cancel the download.  If it is kError, then we will
+  // fail the download (kFail).
+  void set_cross_origin_redirects(
+      network::mojom::RedirectMode cross_origin_redirects) {
+    cross_origin_redirects_ = cross_origin_redirects;
   }
 
   // Sets whether to download the response body even if the server returns
@@ -308,8 +311,8 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadUrlParameters {
   bool prompt() const { return save_info_.prompt_for_save_location; }
   const GURL& url() const { return url_; }
   bool do_not_prompt_for_login() const { return do_not_prompt_for_login_; }
-  bool follow_cross_origin_redirects() const {
-    return follow_cross_origin_redirects_;
+  network::mojom::RedirectMode cross_origin_redirects() const {
+    return cross_origin_redirects_;
   }
   bool fetch_error_body() const { return fetch_error_body_; }
   bool is_transient() const { return transient_; }
@@ -356,7 +359,7 @@ class COMPONENTS_DOWNLOAD_EXPORT DownloadUrlParameters {
   DownloadSaveInfo save_info_;
   GURL url_;
   bool do_not_prompt_for_login_;
-  bool follow_cross_origin_redirects_;
+  network::mojom::RedirectMode cross_origin_redirects_;
   bool fetch_error_body_;
   bool transient_;
   std::string guid_;

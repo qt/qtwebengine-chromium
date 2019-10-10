@@ -148,10 +148,10 @@ DownloadResourceHandler::DownloadResourceHandler(
     net::URLRequest* request,
     const std::string& request_origin,
     download::DownloadSource download_source,
-    bool follow_cross_origin_redirects)
+    network::mojom::RedirectMode cross_origin_redirects)
     : ResourceHandler(request),
       tab_info_(new DownloadTabInfo()),
-      follow_cross_origin_redirects_(follow_cross_origin_redirects),
+      cross_origin_redirects_(cross_origin_redirects),
       first_origin_(url::Origin::Create(request->url())),
       core_(request, this, false, request_origin, download_source) {
   // Do UI thread initialization for tab_info_ asap after
@@ -182,7 +182,7 @@ std::unique_ptr<ResourceHandler> DownloadResourceHandler::Create(
     net::URLRequest* request) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   std::unique_ptr<ResourceHandler> handler(new DownloadResourceHandler(
-      request, std::string(), download::DownloadSource::NAVIGATION, true));
+      request, std::string(), download::DownloadSource::NAVIGATION, network::mojom::RedirectMode::kFollow));
   return handler;
 }
 
@@ -191,10 +191,10 @@ std::unique_ptr<ResourceHandler> DownloadResourceHandler::CreateForNewRequest(
     net::URLRequest* request,
     const std::string& request_origin,
     download::DownloadSource download_source,
-    bool follow_cross_origin_redirects) {
+    network::mojom::RedirectMode cross_origin_redirects) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   std::unique_ptr<ResourceHandler> handler(new DownloadResourceHandler(
-      request, request_origin, download_source, follow_cross_origin_redirects));
+      request, request_origin, download_source, cross_origin_redirects));
   return handler;
 }
 
@@ -203,7 +203,7 @@ void DownloadResourceHandler::OnRequestRedirected(
     network::ResourceResponse* response,
     std::unique_ptr<ResourceController> controller) {
   url::Origin new_origin(url::Origin::Create(redirect_info.new_url));
-  if (!follow_cross_origin_redirects_ &&
+  if (network::mojom::RedirectMode::kFollow!=cross_origin_redirects_ &&
       !first_origin_.IsSameOriginWith(new_origin)) {
     if (redirect_info.new_url.SchemeIsHTTPOrHTTPS() ||
         GetContentClient()->browser()->IsHandledURL(redirect_info.new_url)) {
