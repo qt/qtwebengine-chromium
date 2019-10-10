@@ -283,6 +283,11 @@ if (is_linux || is_chromeos) {
       }
     }
   }
+  if (rtc_use_x11) {
+    config("rtc_x11_config") {
+      defines = [ "WEBRTC_USE_X11" ]
+    }
+  }
 }
 
 rtc_source_set("desktop_capture") {
@@ -466,6 +471,9 @@ rtc_library("desktop_capture_generic") {
       "Xrender",
       "Xrandr",
       "Xtst",
+    ]
+    public_configs += [
+      ":rtc_x11_config",
     ]
   }
 
