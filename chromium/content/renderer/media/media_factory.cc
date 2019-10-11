@@ -582,7 +582,7 @@ MediaFactory::CreateMediaStreamRendererFactory() {
   if (factory.get())
     return factory;
 #if BUILDFLAG(ENABLE_WEBRTC)
-  return std::unique_ptr<MediaStreamRendererFactoryImpl>();
+  return std::make_unique<MediaStreamRendererFactoryImpl>();
 #else
   return nullptr;
 #endif
