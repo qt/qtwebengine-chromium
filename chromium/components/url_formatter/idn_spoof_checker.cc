@@ -354,6 +354,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(base::StringPiece16 label,
     //   character. Other combining diacritical marks are not in the allowed
     //   character set.
     // - Disallow dotless i (U+0131) followed by a combining mark.
+    // - Disallow combining Kana voiced sound marks.
     // - Disallow U+0307 (dot above) after 'i', 'j', 'l' or dotless i (U+0131).
     //   Dotless j (U+0237) is not in the allowed set to begin with.
     dangerous_pattern = new icu::RegexMatcher(
@@ -368,6 +369,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(base::StringPiece16 label,
             R"([a-z]\u30fb|\u30fb[a-z]|)"
             R"([^\p{scx=latn}\p{scx=grek}\p{scx=cyrl}][\u0300-\u0339]|)"
             R"(\u0131[\u0300-\u0339]|)"
+            R"(\u3099|\u309A|)"
             R"([ijl]\u0307)",
             -1, US_INV),
         0, status);
