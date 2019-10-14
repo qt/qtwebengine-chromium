@@ -15,6 +15,7 @@
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/storage_partition_impl.h"
+#include "content/browser/webui/url_data_manager_backend.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host_factory.h"
 #include "content/public/browser/site_isolation_policy.h"
@@ -524,6 +525,12 @@ bool SiteInstanceImpl::DoesSiteRequireDedicatedProcess(
   auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
   if (policy->IsIsolatedOrigin(url::Origin::Create(site_url)))
     return true;
+
+  // Isolate WebUI pages from one another and from other kinds of schemes.
+  for (const auto& webui_scheme : URLDataManagerBackend::GetWebUISchemes()) {
+    if (site_url.SchemeIs(webui_scheme))
+      return true;
+  }
 
   // Let the content embedder enable site isolation for specific URLs. Use the
   // canonical site url for this check, so that schemes with nested origins
