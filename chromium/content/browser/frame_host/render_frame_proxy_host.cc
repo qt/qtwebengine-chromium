@@ -343,8 +343,6 @@ void RenderFrameProxyHost::OnOpenURL(
   // in the current tab.
   DCHECK_EQ(WindowOpenDisposition::CURRENT_TAB, params.disposition);
 
-  // TODO(alexmos, creis): Figure out whether |params.user_gesture| needs to be
-  // passed in as well.
   // TODO(lfg, lukasza): Remove |extra_headers| parameter from
   // RequestTransferURL method once both RenderFrameProxyHost and
   // RenderFrameHostImpl call RequestOpenURL from their OnOpenURL handlers.
@@ -356,7 +354,8 @@ void RenderFrameProxyHost::OnOpenURL(
       ui::PAGE_TRANSITION_LINK,
       params.should_replace_current_entry, params.download_policy,
       params.uses_post ? "POST" : "GET", params.resource_request_body,
-      params.extra_headers, std::move(blob_url_loader_factory));
+      params.extra_headers, std::move(blob_url_loader_factory),
+      params.user_gesture);
 }
 
 void RenderFrameProxyHost::OnCheckCompleted() {
