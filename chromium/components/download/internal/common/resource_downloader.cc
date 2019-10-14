@@ -125,6 +125,7 @@ ResourceDownloader::ResourceDownloader(
       tab_referrer_url_(tab_referrer_url),
       delegate_task_runner_(task_runner),
       url_loader_factory_getter_(std::move(url_loader_factory_getter)),
+      is_content_initiated_(false),
       weak_ptr_factory_(this) {}
 
 ResourceDownloader::~ResourceDownloader() = default;
@@ -134,6 +135,7 @@ void ResourceDownloader::Start(
     bool is_parallel_request) {
   callback_ = download_url_parameters->callback();
   guid_ = download_url_parameters->guid();
+  is_content_initiated_ = download_url_parameters->content_initiated();
 
   // Set up the URLLoaderClient.
   url_loader_client_ = std::make_unique<DownloadResponseHandler>(
@@ -208,6 +210,7 @@ void ResourceDownloader::OnResponseStarted(
   download_create_info->tab_referrer_url = tab_referrer_url_;
   download_create_info->render_process_id = render_process_id_;
   download_create_info->render_frame_id = render_frame_id_;
+  download_create_info->is_content_initiated = is_content_initiated_;
 
   delegate_task_runner_->PostTask(
       FROM_HERE,

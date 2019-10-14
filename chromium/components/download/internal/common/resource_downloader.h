@@ -141,6 +141,9 @@ class COMPONENTS_DOWNLOAD_EXPORT ResourceDownloader
   scoped_refptr<download::DownloadURLLoaderFactoryGetter>
       url_loader_factory_getter_;
 
+  // Whether download is initated by the content on the page.
+  bool is_content_initiated_;
+
   base::WeakPtrFactory<ResourceDownloader> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDownloader);
