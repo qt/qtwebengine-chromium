@@ -58,6 +58,8 @@ class CONTENT_EXPORT MediaSessionController
   void WebContentsMutedStateChanged(bool muted);
 
  private:
+  friend class MediaSessionControllerTest;
+
   const WebContentsObserver::MediaPlayerId id_;
 
   // Non-owned pointer; |media_web_contents_observer_| is the owner of |this|.
