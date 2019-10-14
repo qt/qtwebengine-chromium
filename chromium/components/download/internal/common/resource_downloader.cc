@@ -129,6 +129,7 @@ ResourceDownloader::ResourceDownloader(
       delegate_task_runner_(task_runner),
       url_loader_factory_getter_(std::move(url_loader_factory_getter)),
       url_security_policy_(url_security_policy),
+      is_content_initiated_(false),
       weak_ptr_factory_(this) {}
 
 ResourceDownloader::~ResourceDownloader() = default;
@@ -139,6 +140,7 @@ void ResourceDownloader::Start(
   callback_ = download_url_parameters->callback();
   upload_callback_ = download_url_parameters->upload_callback();
   guid_ = download_url_parameters->guid();
+  is_content_initiated_ = download_url_parameters->content_initiated();
 
   // Set up the URLLoaderClient.
   url_loader_client_ = std::make_unique<DownloadResponseHandler>(
@@ -214,6 +216,7 @@ void ResourceDownloader::OnResponseStarted(
   download_create_info->render_process_id = render_process_id_;
   download_create_info->render_frame_id = render_frame_id_;
   download_create_info->has_user_gesture = resource_request_->has_user_gesture;
+  download_create_info->is_content_initiated = is_content_initiated_;
 
   delegate_task_runner_->PostTask(
       FROM_HERE,

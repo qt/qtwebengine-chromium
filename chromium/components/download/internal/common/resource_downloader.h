@@ -154,6 +154,9 @@ class COMPONENTS_DOWNLOAD_EXPORT ResourceDownloader
   // Used to check if the URL is safe to request.
   URLSecurityPolicy url_security_policy_;
 
+  // Whether download is initated by the content on the page.
+  bool is_content_initiated_;
+
   base::WeakPtrFactory<ResourceDownloader> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDownloader);
