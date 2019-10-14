@@ -1519,8 +1519,7 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
     // Store redirect responses that were packed inside the final response.
     AddRedirectsToTimingInfo(resource, info.get());
 
-    if (resource->GetResponse().IsHTTP() &&
-        resource->GetResponse().HttpStatusCode() < 400) {
+    if (resource->GetResponse().IsHTTP()) {
       PopulateTimingInfo(info.get(), resource);
       info->SetLoadFinishTime(finish_time);
       // encodedDataLength == -1 means "not available".
