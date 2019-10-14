@@ -75,8 +75,6 @@ IndexedDBCursor::IndexedDBCursor(
 }
 
 IndexedDBCursor::~IndexedDBCursor() {
-  if (transaction_)
-    transaction_->UnregisterOpenCursor(this);
   // Call to make sure we complete our lifetime trace.
   Close();
 }
@@ -352,6 +350,8 @@ void IndexedDBCursor::Close() {
   closed_ = true;
   cursor_.reset();
   saved_cursor_.reset();
+  if (transaction_)
+    transaction_->UnregisterOpenCursor(this);
   transaction_ = nullptr;
 }
 
