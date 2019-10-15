@@ -1030,6 +1030,21 @@ const IDNTestCase idn_cases[] = {
 
     // Modifier-letter-voicing should be blocked (wwwˬtest.com).
     {"xn--wwwtest-2be.com", L"www\x02ectest.com", false},
+
+    // U+4E00 and U+3127 should be blocked when next to non-CJK.
+    {"xn--ipaddress-w75n.com", L"ip一address.com", false},
+    {"xn--ipaddress-wx5h.com", L"ipㄧaddress.com", false},
+    // These are allowed because 一 is not immediately next to non-CJK.
+    {"xn--gamer-fg1hz05u.com", L"一生gamer.com", true},
+    {"xn--gamer-kg1hy05u.com", L"gamer生一.com", true},
+    {"xn--4gqz91g.com", L"一猫.com", true},
+    {"xn--4fkv10r.com", L"ㄧ猫.com", true},
+    // U+4E00 with another ideograph.
+    {"xn--4gqc.com", L"一丁.com", true},
+
+    // Kana voiced sound marks are not allowed.
+    {"xn--google-1m4e.com", L"google\x3099.com", false},
+    {"xn--google-8m4e.com", L"google\x309A.com", false},
 };
 
 struct AdjustOffsetCase {
