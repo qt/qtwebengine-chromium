@@ -134,7 +134,11 @@ bool ReplacementAppsHandler::Parse(Extension* extension,
 base::span<const char* const> ReplacementAppsHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kReplacementWebApp,
                                           keys::kReplacementAndroidApp};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 2);
+#endif
 }
 
 }  // namespace extensions

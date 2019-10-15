@@ -388,7 +388,12 @@ base::span<const char* const> BackgroundManifestHandler::Keys() const {
       keys::kBackgroundPersistent,          keys::kBackgroundScripts,
       keys::kBackgroundServiceWorkerScript, keys::kPlatformAppBackgroundPage,
       keys::kPlatformAppBackgroundScripts};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 7);
+#endif
+
 }
 
 }  // namespace extensions

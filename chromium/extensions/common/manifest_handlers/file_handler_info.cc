@@ -225,7 +225,11 @@ bool FileHandlersParser::Parse(Extension* extension, base::string16* error) {
 
 base::span<const char* const> FileHandlersParser::Keys() const {
   static constexpr const char* kKeys[] = {keys::kFileHandlers};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 }  // namespace extensions
