@@ -89,7 +89,11 @@ bool NaClModulesHandler::Parse(Extension* extension, base::string16* error) {
 
 base::span<const char* const> NaClModulesHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kNaClModules};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 }  // namespace extensions

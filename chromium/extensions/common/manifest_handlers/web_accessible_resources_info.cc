@@ -94,7 +94,11 @@ bool WebAccessibleResourcesHandler::Parse(Extension* extension,
 
 base::span<const char* const> WebAccessibleResourcesHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kWebAccessibleResources};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 }  // namespace extensions

@@ -358,7 +358,11 @@ base::span<const char* const> CSPHandler::Keys() const {
   static constexpr const char* kKeys[] = {
       keys::kContentSecurityPolicy, keys::kPlatformAppContentSecurityPolicy,
       keys::kSandboxedPagesCSP};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 3);
+#endif
 }
 
 }  // namespace extensions

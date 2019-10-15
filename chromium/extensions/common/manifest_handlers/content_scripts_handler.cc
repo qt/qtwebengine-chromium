@@ -375,7 +375,11 @@ ContentScriptsHandler::~ContentScriptsHandler() {}
 
 base::span<const char* const> ContentScriptsHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kContentScripts};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 bool ContentScriptsHandler::Parse(Extension* extension, base::string16* error) {
