@@ -240,7 +240,7 @@ void RasterDecoderTestBase::InitDecoder(const InitState& init) {
   SetupInitCapabilitiesExpectations(group_->feature_info()->IsES3Capable());
   SetupInitStateExpectations(group_->feature_info()->IsES3Capable());
 
-  if (context_->WasAllocatedUsingRobustnessExtension()) {
+  if (context_->HasRobustness()) {
     EXPECT_CALL(*gl_, GetGraphicsResetStatusARB())
         .WillOnce(Return(GL_NO_ERROR));
   }
@@ -267,7 +267,7 @@ void RasterDecoderTestBase::InitDecoder(const InitState& init) {
             gpu::ContextResult::kSuccess);
 
   EXPECT_CALL(*context_, MakeCurrent(surface_.get())).WillOnce(Return(true));
-  if (context_->WasAllocatedUsingRobustnessExtension()) {
+  if (context_->HasRobustness()) {
     EXPECT_CALL(*gl_, GetGraphicsResetStatusARB())
         .WillOnce(Return(GL_NO_ERROR));
   }
