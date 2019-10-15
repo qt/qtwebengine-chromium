@@ -605,6 +605,11 @@ bool NavigationHandleImpl::IsFormSubmission() {
   return is_form_submission_;
 }
 
+bool NavigationHandleImpl::FromDownloadCrossOriginRedirect() {
+  NavigationRequest* request = frame_tree_node_->navigation_request();
+  return request && request->from_download_cross_origin_redirect();
+}
+
 void NavigationHandleImpl::InitServiceWorkerHandle(
     ServiceWorkerContextWrapper* service_worker_context) {
   service_worker_handle_.reset(

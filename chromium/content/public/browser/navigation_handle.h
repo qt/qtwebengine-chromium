@@ -319,6 +319,10 @@ class CONTENT_EXPORT NavigationHandle {
   // deferring NavigationThrottle do the resuming.
   virtual void CallResumeForTesting() = 0;
 
+  // Whether this navigation was triggered by a x-origin redirect following a
+  // prior (most likely <a download>) download attempt.
+  virtual bool FromDownloadCrossOriginRedirect() = 0;
+
   // The NavigationData that the embedder returned from
   // ResourceDispatcherHostDelegate::GetNavigationData during commit. This will
   // be a clone of the NavigationData.

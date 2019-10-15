@@ -159,6 +159,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   const GlobalRequestID& GetGlobalRequestID() override;
   bool IsDownload() override;
   bool IsFormSubmission() override;
+  bool FromDownloadCrossOriginRedirect() override;
 
   const std::string& origin_policy() const { return origin_policy_; }
   void set_origin_policy(const std::string& origin_policy) {

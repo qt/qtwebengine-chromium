@@ -197,6 +197,10 @@ class NavigationController {
     // ContentBrowserClient::GetNavigationUIData.
     std::unique_ptr<NavigationUIData> navigation_ui_data;
 
+    // Whether this navigation was triggered by a x-origin redirect following a
+    // prior (most likely <a download>) download attempt.
+    bool from_download_cross_origin_redirect;
+
     explicit LoadURLParams(const GURL& url);
     ~LoadURLParams();
     LoadURLParams(LoadURLParams &&) = default;

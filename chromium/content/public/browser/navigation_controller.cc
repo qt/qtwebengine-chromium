@@ -23,7 +23,8 @@ NavigationController::LoadURLParams::LoadURLParams(const GURL& url)
       has_user_gesture(false),
       should_clear_history_list(false),
       started_from_context_menu(false),
-      navigation_ui_data(nullptr) {
+      navigation_ui_data(nullptr),
+      from_download_cross_origin_redirect(false) {
 }
 
 NavigationController::LoadURLParams::~LoadURLParams() {

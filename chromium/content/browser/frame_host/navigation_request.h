@@ -184,6 +184,15 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     on_start_checks_complete_closure_ = closure;
   }
 
+  bool from_download_cross_origin_redirect() const {
+    return from_download_cross_origin_redirect_;
+  }
+
+  void set_from_download_cross_origin_redirect(
+      bool from_download_cross_origin_redirect) {
+    from_download_cross_origin_redirect_ = from_download_cross_origin_redirect;
+  }
+
   int nav_entry_id() const { return nav_entry_id_; }
 
   // For automation driver-initiated navigations over the devtools protocol,
@@ -450,6 +459,10 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // TODO(clamy, ahemery): Extend to all types of navigation.
   // Only valid when PerNavigationMojoInterface is enabled.
   mojom::NavigationClientAssociatedPtr commit_navigation_client_;
+
+  // Whether this navigation was triggered by a x-origin redirect following a
+  // prior (most likely <a download>) download attempt.
+  bool from_download_cross_origin_redirect_ = false;
 
   // If set, any redirects to HTTP for this navigation will be upgraded to
   // HTTPS. This is used only on subframe navigations, when
