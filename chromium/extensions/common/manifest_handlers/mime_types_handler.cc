@@ -168,5 +168,9 @@ bool MimeTypesHandlerParser::Parse(extensions::Extension* extension,
 base::span<const char* const> MimeTypesHandlerParser::Keys() const {
   static constexpr const char* kKeys[] = {keys::kMIMETypes,
                                           keys::kMimeTypesHandler};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 2);
+#endif
 }

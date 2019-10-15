@@ -246,7 +246,11 @@ bool SharedModuleHandler::Validate(
 
 base::span<const char* const> SharedModuleHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kExport, keys::kImport};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 }  // namespace extensions
