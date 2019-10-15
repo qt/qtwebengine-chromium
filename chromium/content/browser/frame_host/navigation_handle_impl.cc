@@ -568,6 +568,10 @@ const base::Optional<url::Origin>& NavigationHandleImpl::GetInitiatorOrigin() {
   return initiator_origin_;
 }
 
+bool NavigationHandleImpl::FromDownloadCrossOriginRedirect() {
+  return navigation_request_->from_download_cross_origin_redirect();
+}
+
 bool NavigationHandleImpl::IsSignedExchangeInnerResponse() {
   return is_signed_exchange_inner_response_;
 }
