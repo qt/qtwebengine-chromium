@@ -43,7 +43,11 @@ RequirementsHandler::~RequirementsHandler() {
 
 base::span<const char* const> RequirementsHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kRequirements};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 bool RequirementsHandler::AlwaysParseForType(Manifest::Type type) const {
