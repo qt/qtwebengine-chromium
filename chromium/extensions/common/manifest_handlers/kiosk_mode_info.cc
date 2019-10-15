@@ -212,7 +212,11 @@ base::span<const char* const> KioskModeHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kKiosk, keys::kKioskEnabled,
                                           keys::kKioskOnly,
                                           keys::kKioskSecondaryApps};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 4);
+#endif
 }
 
 }  // namespace extensions
