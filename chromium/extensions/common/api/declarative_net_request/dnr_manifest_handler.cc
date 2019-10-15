@@ -155,7 +155,11 @@ bool DNRManifestHandler::Validate(const Extension* extension,
 base::span<const char* const> DNRManifestHandler::Keys() const {
   static constexpr const char* kKeys[] = {
       dnr_api::ManifestKeys::kDeclarativeNetRequest};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 }  // namespace declarative_net_request

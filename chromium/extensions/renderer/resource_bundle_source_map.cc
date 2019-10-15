@@ -46,7 +46,7 @@ ResourceBundleSourceMap::~ResourceBundleSourceMap() {
 
 void ResourceBundleSourceMap::RegisterSource(const char* const name,
                                              int resource_id) {
-  resource_map_.emplace(name, resource_id);
+  resource_map_.emplace(name, ResourceInfo(resource_id));
 }
 
 v8::Local<v8::String> ResourceBundleSourceMap::GetSource(

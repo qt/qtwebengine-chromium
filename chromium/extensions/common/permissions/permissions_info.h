@@ -21,6 +21,17 @@
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/api_permission_set.h"
 
+#if defined(__GNUC__) && __GNUC__ <= 5
+// Provide a custom hasher because GCC 5 still needs it.
+namespace std {
+  template<> struct hash<extensions::APIPermission::ID> {
+    std::size_t operator()(extensions::APIPermission::ID arg) const {
+      return static_cast<std::size_t>(arg);
+    }
+  };
+}
+#endif
+
 namespace extensions {
 
 struct Alias;

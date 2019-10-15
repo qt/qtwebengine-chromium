@@ -229,7 +229,11 @@ bool OptionsPageManifestHandler::Validate(
 
 base::span<const char* const> OptionsPageManifestHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kOptionsPage, keys::kOptionsUI};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys,2);
+#endif
 }
 
 }  // namespace extensions

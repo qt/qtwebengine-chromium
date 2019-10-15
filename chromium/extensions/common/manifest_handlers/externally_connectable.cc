@@ -83,7 +83,11 @@ bool ExternallyConnectableHandler::Parse(Extension* extension,
 
 base::span<const char* const> ExternallyConnectableHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kExternallyConnectable};
+#if !defined(__GNUC__) || __GNUC__ > 5
   return kKeys;
+#else
+  return base::make_span(kKeys, 1);
+#endif
 }
 
 // static
