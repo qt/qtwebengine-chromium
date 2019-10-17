@@ -82,7 +82,6 @@
 #include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
 #include "storage/browser/blob/blob_url_loader_factory.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
-#include "url/origin.h"
 
 #if defined(USE_X11)
 #include "base/nix/xdg_util.h"
@@ -218,6 +217,7 @@ class DownloadItemFactoryImpl : public download::DownloadItemFactory {
       const GURL& site_url,
       const GURL& tab_url,
       const GURL& tab_refererr_url,
+      const base::Optional<url::Origin>& request_initiator,
       const std::string& mime_type,
       const std::string& original_mime_type,
       base::Time start_time,
@@ -237,10 +237,10 @@ class DownloadItemFactoryImpl : public download::DownloadItemFactory {
       override {
     return new download::DownloadItemImpl(
         delegate, guid, download_id, current_path, target_path, url_chain,
-        referrer_url, site_url, tab_url, tab_refererr_url, mime_type,
-        original_mime_type, start_time, end_time, etag, last_modified,
-        received_bytes, total_bytes, 0 /* auto_resume_count */, hash, state,
-        danger_type, interrupt_reason, false /* paused */,
+        referrer_url, site_url, tab_url, tab_refererr_url, request_initiator,
+        mime_type, original_mime_type, start_time, end_time, etag,
+        last_modified, received_bytes, total_bytes, 0 /* auto_resume_count */, hash,
+        state, danger_type, interrupt_reason, false /* paused */,
         false /* allow_metered */, opened, last_access_time, transient,
         received_slices);
   }
@@ -971,6 +971,7 @@ download::DownloadItem* DownloadManagerImpl::CreateDownloadItem(
     const GURL& site_url,
     const GURL& tab_url,
     const GURL& tab_refererr_url,
+    const base::Optional<url::Origin>& request_initiator,
     const std::string& mime_type,
     const std::string& original_mime_type,
     base::Time start_time,
@@ -1006,10 +1007,10 @@ download::DownloadItem* DownloadManagerImpl::CreateDownloadItem(
 #endif
   auto item = base::WrapUnique(item_factory_->CreatePersistedItem(
       this, guid, id, current_path, target_path, url_chain, referrer_url,
-      site_url, tab_url, tab_refererr_url, mime_type, original_mime_type,
-      start_time, end_time, etag, last_modified, received_bytes, total_bytes,
-      hash, state, danger_type, interrupt_reason, opened, last_access_time,
-      transient, received_slices));
+      site_url, tab_url, tab_refererr_url, request_initiator, mime_type,
+      original_mime_type, start_time, end_time, etag, last_modified,
+      received_bytes, total_bytes, hash, state, danger_type, interrupt_reason,
+      opened, last_access_time, transient, received_slices));
   if (in_progress_download) {
     // If the download item from history db is already in terminal state,
     // remove it from the in-progress db. Otherwise, use the in-progress db one.
