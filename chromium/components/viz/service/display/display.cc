@@ -85,6 +85,7 @@ gfx::PresentationFeedback SanitizePresentationFeedback(
     return gfx::PresentationFeedback::Failure();
   }
 
+#ifndef TOOLKIT_QT
   const auto difference = feedback.timestamp - draw_time;
   if (difference.InMinutes() > 3) {
     UMA_HISTOGRAM_CUSTOM_TIMES(
@@ -97,6 +98,7 @@ gfx::PresentationFeedback SanitizePresentationFeedback(
       DCHECK(false);
     }
   }
+#endif
   return feedback;
 }
 
