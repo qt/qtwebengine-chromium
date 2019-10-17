@@ -3320,7 +3320,9 @@ bool PepperPluginInstanceImpl::IsMouseLocked() {
 }
 
 bool PepperPluginInstanceImpl::LockMouse() {
-  return GetMouseLockDispatcher()->LockMouse(GetOrCreateLockTargetAdapter());
+  WebLocalFrame* requester_frame = container_->GetDocument().GetFrame();
+  return GetMouseLockDispatcher()->LockMouse(GetOrCreateLockTargetAdapter(),
+                                             requester_frame);
 }
 
 MouseLockDispatcher::LockTarget*
