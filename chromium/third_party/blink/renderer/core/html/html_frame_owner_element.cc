@@ -296,8 +296,7 @@ void HTMLFrameOwnerElement::SetEmbeddedContentView(
 
   GetDocument().GetRootScrollerController().DidUpdateIFrameFrameView(*this);
 
-  LayoutEmbeddedContent* layout_embedded_content =
-      ToLayoutEmbeddedContent(GetLayoutObject());
+  LayoutEmbeddedContent* layout_embedded_content = GetLayoutEmbeddedContent();
   if (!layout_embedded_content)
     return;
 
@@ -324,8 +323,7 @@ EmbeddedContentView* HTMLFrameOwnerElement::ReleaseEmbeddedContentView() {
     return nullptr;
   if (embedded_content_view_->IsAttached())
     embedded_content_view_->DetachFromLayout();
-  LayoutEmbeddedContent* layout_embedded_content =
-      ToLayoutEmbeddedContent(GetLayoutObject());
+  LayoutEmbeddedContent* layout_embedded_content = GetLayoutEmbeddedContent();
   if (layout_embedded_content) {
     if (AXObjectCache* cache = GetDocument().ExistingAXObjectCache())
       cache->ChildrenChanged(layout_embedded_content);
