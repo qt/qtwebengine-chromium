@@ -942,7 +942,7 @@ void CPVT_GenerateAP::GenerateFormAP(CPDF_Document* pDoc,
     return;
 
   CPDF_Dictionary* pDRFontDict = pDRDict->GetDictFor("Font");
-  if (!pDRFontDict)
+  if (!ValidateFontResourceDict(pDRFontDict))
     return;
 
   CPDF_Dictionary* pFontDict = pDRFontDict->GetDictFor(font_name);
@@ -1067,13 +1067,15 @@ void CPVT_GenerateAP::GenerateFormAP(CPDF_Document* pDoc,
   }
   CPDF_Dictionary* pStreamDict = pNormalStream->GetDict();
   if (pStreamDict) {
-    pStreamDict->SetMatrixFor("Matrix", matrix);
-    pStreamDict->SetRectFor("BBox", rcBBox);
     CPDF_Dictionary* pStreamResList = pStreamDict->GetDictFor("Resources");
     if (pStreamResList) {
       CPDF_Dictionary* pStreamResFontList = pStreamResList->GetDictFor("Font");
-      if (!pStreamResFontList)
+      if (pStreamResFontList) {
+        if (!ValidateFontResourceDict(pStreamResFontList))
+          return;
+      } else {
         pStreamResFontList = pStreamResList->SetNewFor<CPDF_Dictionary>("Font");
+      }
       if (!pStreamResFontList->KeyExist(font_name)) {
         pStreamResFontList->SetNewFor<CPDF_Reference>(font_name, pDoc,
                                                       pFontDict->GetObjNum());
@@ -1081,6 +1083,8 @@ void CPVT_GenerateAP::GenerateFormAP(CPDF_Document* pDoc,
     } else {
       pStreamDict->SetFor("Resources", pFormDict->GetDictFor("DR")->Clone());
     }
+    pStreamDict->SetMatrixFor("Matrix", matrix);
+    pStreamDict->SetRectFor("BBox", rcBBox);
   }
   switch (type) {
     case CPVT_GenerateAP::kTextField: {
@@ -1304,28 +1308,33 @@ void CPVT_GenerateAP::GenerateFormAP(CPDF_Document* pDoc,
     }
   }
 
-  if (pNormalStream) {
-    pNormalStream->SetDataFromStringstreamAndRemoveFilter(&sAppStream);
-    pStreamDict = pNormalStream->GetDict();
-    if (pStreamDict) {
-      pStreamDict->SetMatrixFor("Matrix", matrix);
-      pStreamDict->SetRectFor("BBox", rcBBox);
-      CPDF_Dictionary* pStreamResList = pStreamDict->GetDictFor("Resources");
-      if (pStreamResList) {
-        CPDF_Dictionary* pStreamResFontList =
-            pStreamResList->GetDictFor("Font");
-        if (!pStreamResFontList) {
-          pStreamResFontList =
-              pStreamResList->SetNewFor<CPDF_Dictionary>("Font");
-        }
-        if (!pStreamResFontList->KeyExist(font_name)) {
-          pStreamResFontList->SetNewFor<CPDF_Reference>(font_name, pDoc,
-                                                        pFontDict->GetObjNum());
-        }
-      } else {
-        pStreamDict->SetFor("Resources", pFormDict->GetDictFor("DR")->Clone());
-      }
-    }
+  if (!pNormalStream)
+    return;
+
+  pNormalStream->SetDataFromStringstreamAndRemoveFilter(&sAppStream);
+  pStreamDict = pNormalStream->GetDict();
+  if (!pStreamDict)
+    return;
+
+  pStreamDict->SetMatrixFor("Matrix", matrix);
+  pStreamDict->SetRectFor("BBox", rcBBox);
+  CPDF_Dictionary* pStreamResList = pStreamDict->GetDictFor("Resources");
+  if (!pStreamResList) {
+    pStreamDict->SetFor("Resources", pFormDict->GetDictFor("DR")->Clone());
+    return;
+  }
+
+  CPDF_Dictionary* pStreamResFontList = pStreamResList->GetDictFor("Font");
+  if (pStreamResFontList) {
+    if (!ValidateFontResourceDict(pStreamResFontList))
+      return;
+  } else {
+    pStreamResFontList = pStreamResList->SetNewFor<CPDF_Dictionary>("Font");
+  }
+
+  if (!pStreamResFontList->KeyExist(font_name)) {
+    pStreamResFontList->SetNewFor<CPDF_Reference>(font_name, pDoc,
+                                                  pFontDict->GetObjNum());
   }
 }
 
