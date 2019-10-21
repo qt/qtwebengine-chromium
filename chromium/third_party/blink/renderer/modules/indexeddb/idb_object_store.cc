@@ -418,6 +418,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
 
   v8::Isolate* isolate = script_state->GetIsolate();
   DCHECK(isolate->InContext());
+  transaction_->SetActiveDuringSerialization(false);
   // TODO(crbug.com/719053): This wasm behavior differs from other browsers.
   SerializedScriptValue::SerializeOptions::WasmSerializationPolicy wasm_policy =
       ExecutionContext::From(script_state)->IsSecureContext()
@@ -425,6 +426,7 @@ IDBRequest* IDBObjectStore::DoPut(ScriptState* script_state,
           : SerializedScriptValue::SerializeOptions::kBlockedInNonSecureContext;
   IDBValueWrapper value_wrapper(isolate, value.V8Value(), wasm_policy,
                                 exception_state);
+  transaction_->SetActiveDuringSerialization(true);
   if (exception_state.HadException())
     return nullptr;
 
