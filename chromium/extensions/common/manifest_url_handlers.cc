@@ -164,7 +164,6 @@ base::span<const char* const> UpdateURLHandler::Keys() const {
   return base::make_span(kKeys, 1);
 #endif
 }
-}
 
 AboutPageHandler::AboutPageHandler() {
 }
@@ -220,7 +219,6 @@ base::span<const char* const> AboutPageHandler::Keys() const {
 #else
   return base::make_span(kKeys, 1);
 #endif
-}
 }
 
 }  // namespace extensions
