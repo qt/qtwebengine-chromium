@@ -521,7 +521,7 @@ bool CookieMonster::IsCookieableScheme(const std::string& scheme) {
 }
 
 const char* const CookieMonster::kDefaultCookieableSchemes[] = {"http", "https",
-                                                                "ws", "wss"};
+                                                                "ws", "wss", "qrc"};
 const int CookieMonster::kDefaultCookieableSchemesCount =
     base::size(kDefaultCookieableSchemes);
 
