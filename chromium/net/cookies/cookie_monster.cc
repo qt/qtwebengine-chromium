@@ -558,7 +558,7 @@ void CookieMonster::SetPersistSessionCookies(bool persist_session_cookies) {
 }
 
 const char* const CookieMonster::kDefaultCookieableSchemes[] = {"http", "https",
-                                                                "ws", "wss"};
+                                                                "ws", "wss", "qrc"};
 const int CookieMonster::kDefaultCookieableSchemesCount =
     std::size(kDefaultCookieableSchemes);
 
