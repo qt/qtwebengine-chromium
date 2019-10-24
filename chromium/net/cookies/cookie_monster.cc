@@ -690,7 +690,7 @@ void CookieMonster::SetPersistSessionCookies(bool persist_session_cookies) {
 
 // static
 std::vector<std::string> CookieMonster::GetDefaultCookieableSchemes() {
-  return std::vector<std::string>{"http", "https", "ws", "wss"};
+  return std::vector<std::string>{"http", "https", "ws", "wss", "qrc"};
 }
 
 CookieChangeDispatcher& CookieMonster::GetChangeDispatcher() {
