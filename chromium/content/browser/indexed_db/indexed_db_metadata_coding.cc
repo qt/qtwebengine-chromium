@@ -554,6 +554,7 @@ Status IndexedDBMetadataCoding::CreateDatabase(
   // Note: |version| is not stored on purpose.
   metadata->name = name;
   metadata->id = row_id;
+  metadata->max_object_store_id = 0;
 
   return s;
 }

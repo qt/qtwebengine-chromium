@@ -429,7 +429,7 @@ class IndexedDBDatabase::DeleteRequest
     int64_t old_version = db_->metadata_.version;
     db_->metadata_.id = kInvalidId;
     db_->metadata_.version = IndexedDBDatabaseMetadata::NO_VERSION;
-    db_->metadata_.max_object_store_id = kInvalidId;
+    db_->metadata_.max_object_store_id = 0;
     db_->metadata_.object_stores.clear();
     callbacks_->OnSuccess(old_version);
     std::move(on_database_deleted_).Run();
