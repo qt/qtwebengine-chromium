@@ -50,8 +50,8 @@ class IDNSpoofChecker {
   // Returns true if |label| is safe to display as Unicode. In the event of
   // library failure, all IDN inputs will be treated as unsafe.
   // See the function body for details on the specific safety checks performed.
-  bool SafeToDisplayAsUnicode(base::StringPiece16 label, bool is_tld_ascii);
-
+  bool SafeToDisplayAsUnicode(base::StringPiece16 label,
+                              base::StringPiece top_level_domain);
   // Returns true if |hostname| or the last few components of |hostname| looks
   // similar to one of top domains listed in top_domains/alexa_domains.list. Two
   // checks are done:
