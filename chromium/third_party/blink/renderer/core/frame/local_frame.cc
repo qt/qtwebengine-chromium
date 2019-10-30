@@ -860,8 +860,9 @@ bool LocalFrame::ShouldReuseDefaultView(
   // be considered when deciding whether to reuse it.
   // Spec:
   // https://html.spec.whatwg.org/multipage/browsing-the-web.html#initialise-the-document-object
-  if (csp &&
-      SecurityContext::IsSandboxed(kSandboxOrigin, csp->GetSandboxMask())) {
+  SandboxFlags flags = Loader().EffectiveSandboxFlags();
+  if ((csp && SecurityContext::IsSandboxed(kSandboxOrigin, csp->GetSandboxMask())) ||
+       SecurityContext::IsSandboxed(kSandboxOrigin, flags)) {
     return false;
   }
 
