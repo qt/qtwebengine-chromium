@@ -97,6 +97,8 @@ void ConvolverHandler::SetBuffer(AudioBuffer* buffer,
   DCHECK(IsMainThread());
 
   if (!buffer) {
+    BaseAudioContext::GraphAutoLocker context_locker(Context());
+    MutexLocker locker(process_lock_);
     reverb_.reset();
     buffer_ = buffer;
     return;
