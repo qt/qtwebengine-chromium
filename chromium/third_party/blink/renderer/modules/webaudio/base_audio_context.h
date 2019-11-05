@@ -143,6 +143,8 @@ class MODULES_EXPORT BaseAudioContext
                             float sample_rate,
                             ExceptionState&);
 
+  virtual bool IsPullingAudioGraph() const = 0;
+
   // Asynchronous audio file data decoding.
   ScriptPromise decodeAudioData(ScriptState*,
                                 DOMArrayBuffer* audio_data,

@@ -50,7 +50,8 @@ DefaultAudioDestinationHandler::DefaultAudioDestinationHandler(
     AudioNode& node,
     const WebAudioLatencyHint& latency_hint)
     : AudioDestinationHandler(node),
-      latency_hint_(latency_hint) {
+      latency_hint_(latency_hint),
+      allow_pulling_audio_graph_(false) {
   // Node-specific default channel count and mixing rules.
   channel_count_ = 2;
   SetInternalChannelCountMode(kExplicit);
@@ -182,17 +183,24 @@ void DefaultAudioDestinationHandler::Render(
     return;
   }
 
-  // Renders the graph by pulling all the input(s) to this node. This will in
-  // turn pull on their input(s), all the way backwards through the graph.
-  AudioBus* rendered_bus = Input(0).Pull(destination_bus, number_of_frames);
+  // Only pull on the audio graph if we have not stopped the destination.  It
+  // takes time for the destination to stop, but we want to stop pulling before
+  // the destination has actually stopped.
+  if (IsPullingAudioGraphAllowed()) {
 
-  if (!rendered_bus) {
-    destination_bus->Zero();
-  } else if (rendered_bus != destination_bus) {
+    // Renders the graph by pulling all the input(s) to this node. This will in
+    // turn pull on their input(s), all the way backwards through the graph.
+    AudioBus* rendered_bus = Input(0).Pull(destination_bus, number_of_frames);
+
+    if (!rendered_bus) {
+      destination_bus->Zero();
+    } else if (rendered_bus != destination_bus) {
     // in-place processing was not possible - so copy
-    destination_bus->CopyFrom(*rendered_bus);
+      destination_bus->CopyFrom(*rendered_bus);
+    }
+  } else {
+     destination_bus->Zero();
   }
-
   // Processes "automatic" nodes that are not connected to anything.
   Context()->GetDeferredTaskHandler().ProcessAutomaticPullNodes(
       number_of_frames);
@@ -219,6 +227,7 @@ void DefaultAudioDestinationHandler::CreateDestination() {
 }
 
 void DefaultAudioDestinationHandler::StartDestination() {
+  DCHECK(IsMainThread());
   DCHECK(!destination_->IsPlaying());
 
   AudioWorklet* audio_worklet = Context()->audioWorklet();
@@ -232,9 +241,17 @@ void DefaultAudioDestinationHandler::StartDestination() {
   } else {
     destination_->Start();
   }
+
+  // Allow the graph to be pulled once the destination actually starts
+  // requesting data.
+  EnablePullingAudioGraph();
 }
 
 void DefaultAudioDestinationHandler::StopDestination() {
+  DCHECK(IsMainThread());
+  // Stop pulling on the graph, even if the destination is still requesting data
+  // for a while. (It may take a bit of time for the destination to stop.)
+  DisablePullingAudioGraph();
   DCHECK(destination_->IsPlaying());
 
   destination_->Stop();

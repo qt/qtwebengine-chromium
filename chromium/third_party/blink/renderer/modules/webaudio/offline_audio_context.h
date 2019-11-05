@@ -71,6 +71,8 @@ class MODULES_EXPORT OfflineAudioContext final : public BaseAudioContext {
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(complete);
 
+  bool IsPullingAudioGraph() const final;
+
   // Fire completion event when the rendering is finished.
   void FireCompletionEvent();
 

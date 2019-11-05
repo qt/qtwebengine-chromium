@@ -231,6 +231,21 @@ ScriptPromise AudioContext::resumeContext(ScriptState* script_state) {
   return promise;
 }
 
+bool AudioContext::IsPullingAudioGraph() const {
+  DCHECK(IsMainThread());
+
+  if (!destination())
+    return false;
+
+  DefaultAudioDestinationHandler& destination_handler =
+      static_cast<DefaultAudioDestinationHandler&>(
+          destination()->GetAudioDestinationHandler());
+
+  // The realtime context is pulling on the audio graph if the realtime
+  // destination allows it.
+  return destination_handler.IsPullingAudioGraphAllowed();
+}
+
 void AudioContext::getOutputTimestamp(ScriptState* script_state,
                                       AudioTimestamp& result) {
   DCHECK(IsMainThread());

@@ -46,6 +46,9 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext {
   bool HasRealtimeConstraint() final { return true; }
 
   void getOutputTimestamp(ScriptState*, AudioTimestamp&);
+
+  bool IsPullingAudioGraph() const final;
+
   double baseLatency() const;
 
   // Called by handlers of AudioScheduledSourceNode and AudioBufferSourceNode to
