@@ -370,47 +370,43 @@ void CRYPT_SHA1Start(CRYPT_sha1_context* s) {
 void CRYPT_SHA1Update(CRYPT_sha1_context* s,
                       const uint8_t* data,
                       uint32_t size) {
-  unsigned char* q = (unsigned char*)data;
-  unsigned int wordblock[16];
-  int len = size;
-  unsigned int lenw = len;
-  int i;
-  s->lenlo += lenw;
-  s->lenhi += (s->lenlo < lenw);
-  if (s->blkused && s->blkused + len < 64) {
-    memcpy(s->block + s->blkused, q, len);
-    s->blkused += len;
-  } else {
-    while (s->blkused + len >= 64) {
-      memcpy(s->block + s->blkused, q, 64 - s->blkused);
-      q += 64 - s->blkused;
-      len -= 64 - s->blkused;
-      for (i = 0; i < 16; i++) {
-        wordblock[i] = (((unsigned int)s->block[i * 4 + 0]) << 24) |
-                       (((unsigned int)s->block[i * 4 + 1]) << 16) |
-                       (((unsigned int)s->block[i * 4 + 2]) << 8) |
-                       (((unsigned int)s->block[i * 4 + 3]) << 0);
-      }
-      SHATransform(s->h, wordblock);
-      s->blkused = 0;
-    }
-    memcpy(s->block, q, len);
-    s->blkused = len;
+   s->lenlo += size;
+   s->lenhi += (s->lenlo < size);  // Unsigned, so well-defined.
+   if (s->blkused && size < 64 - s->blkused) {
+    memcpy(s->block + s->blkused, data, size);
+    s->blkused += size;
+    return;
+   }
+
+   uint32_t wordblock[16];
+   while (size >= 64 - s->blkused) {
+     memcpy(s->block + s->blkused, data, 64 - s->blkused);
+     data += 64 - s->blkused;
+     size -= 64 - s->blkused;
+     for (int i = 0; i < 16; i++) {
+       wordblock[i] = (((uint32_t)s->block[i * 4 + 0]) << 24) |
+                     (((uint32_t)s->block[i * 4 + 1]) << 16) |
+                     (((uint32_t)s->block[i * 4 + 2]) << 8) |
+                     (((uint32_t)s->block[i * 4 + 3]) << 0);
+     }
+    SHATransform(s->h, wordblock);
+    s->blkused = 0;
   }
+  memcpy(s->block, data, size);
+  s->blkused = size;
 }
 
 void CRYPT_SHA1Finish(CRYPT_sha1_context* s, uint8_t digest[20]) {
-  int i;
-  int pad;
-  unsigned char c[64];
-  unsigned int lenhi, lenlo;
+   uint32_t lenhi = (s->lenhi << 3) | (s->lenlo >> (32 - 3));
+   uint32_t lenlo = (s->lenlo << 3);
+   uint8_t c[64];
+   uint8_t pad;
+
   if (s->blkused >= 56) {
     pad = 56 + 64 - s->blkused;
   } else {
     pad = 56 - s->blkused;
   }
-  lenhi = (s->lenhi << 3) | (s->lenlo >> (32 - 3));
-  lenlo = (s->lenlo << 3);
   memset(c, 0, pad);
   c[0] = 0x80;
   CRYPT_SHA1Update(s, c, pad);
@@ -423,7 +419,7 @@ void CRYPT_SHA1Finish(CRYPT_sha1_context* s, uint8_t digest[20]) {
   c[6] = (lenlo >> 8) & 0xFF;
   c[7] = (lenlo >> 0) & 0xFF;
   CRYPT_SHA1Update(s, c, 8);
-  for (i = 0; i < 5; i++) {
+  for (int i = 0; i < 5; i++) {
     digest[i * 4] = (s->h[i] >> 24) & 0xFF;
     digest[i * 4 + 1] = (s->h[i] >> 16) & 0xFF;
     digest[i * 4 + 2] = (s->h[i] >> 8) & 0xFF;
