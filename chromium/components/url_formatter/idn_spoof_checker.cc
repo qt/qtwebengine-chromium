@@ -283,7 +283,8 @@ IDNSpoofChecker::~IDNSpoofChecker() {
 
 bool IDNSpoofChecker::SafeToDisplayAsUnicode(
     base::StringPiece16 label,
-    base::StringPiece top_level_domain) {
+    base::StringPiece top_level_domain,
+    base::StringPiece16 top_level_domain_unicode) {
   UErrorCode status = U_ZERO_ERROR;
   int32_t result =
       uspoof_check(checker_, (const UChar*)label.data(),
@@ -293,7 +294,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(
   if (U_FAILURE(status) || (result & USPOOF_ALL_CHECKS))
     return false;
 
-  icu::UnicodeString label_string(FALSE, (const UChar*)label.data(),
+  icu::UnicodeString label_string(FALSE /* isTerminated */, label.data(),
                                   base::checked_cast<int32_t>(label.size()));
 
   // A punycode label with 'xn--' prefix is not subject to the URL
@@ -311,7 +312,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(
     return false;
 
   // Disallow Icelandic confusables for domains outside Iceland's ccTLD (.is).
-  if (label_string.length() > 1 && top_level_domain != ".is" &&
+  if (label_string.length() > 1 && top_level_domain != "is" &&
       icelandic_characters_.containsSome(label_string))
     return false;
 
@@ -337,9 +338,11 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(
   if (result == USPOOF_SINGLE_SCRIPT_RESTRICTIVE &&
       kana_letters_exceptions_.containsNone(label_string) &&
       combining_diacritics_exceptions_.containsNone(label_string)) {
-    bool is_tld_ascii = !top_level_domain.starts_with(".xn--");
-    // Check Cyrillic confusable only for ASCII TLDs.
-    return !is_tld_ascii || !IsMadeOfLatinAlikeCyrillic(label_string);
+    // Check Cyrillic confusable only for TLDs where Cyrillic characters are
+    // uncommon.
+    return IsCyrillicTopLevelDomain(top_level_domain,
+                                    top_level_domain_unicode) ||
+           !IsMadeOfLatinAlikeCyrillic(label_string);
   }
 
   // Additional checks for |label| with multiple scripts, one of which is Latin.
@@ -537,6 +540,21 @@ void IDNSpoofChecker::SetAllowedUnicodeSet(UErrorCode* status) {
   allowed_set.remove(0xA720u, 0xA7FFu);  // Latin Extended-D
 
   uspoof_setAllowedUnicodeSet(checker_, &allowed_set, status);
+}
+
+bool IDNSpoofChecker::IsCyrillicTopLevelDomain(
+    base::StringPiece tld,
+    base::StringPiece16 tld_unicode) const {
+  icu::UnicodeString tld_string(
+      FALSE /* isTerminated */, tld_unicode.data(),
+      base::checked_cast<int32_t>(tld_unicode.size()));
+  if (cyrillic_letters_.containsSome(tld_string)) {
+    return true;
+  }
+  // These ASCII TLDs contain a large number of domains with Cyrillic
+  // characters.
+  return tld == "bg" || tld == "by" || tld == "kz" || tld == "pyc" ||
+         tld == "ru" || tld == "su" || tld == "ua" || tld == "uz";
 }
 
 // static
