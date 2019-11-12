@@ -119,7 +119,7 @@ NavigationParams InterceptNavigationThrottle::GetNavigationParams(
       navigation_handle()->GetURL(), navigation_handle()->GetReferrer(),
       navigation_handle()->HasUserGesture(), navigation_handle()->IsPost(),
       navigation_handle()->GetPageTransition(), is_redirect,
-      navigation_handle()->IsExternalProtocol(), true,
+      navigation_handle()->IsExternalProtocol(), navigation_handle()->IsInMainFrame(),
       navigation_handle()->IsRendererInitiated(),
       navigation_handle()->GetBaseURLForDataURL());
 }
