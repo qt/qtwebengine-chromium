@@ -6,6 +6,7 @@
 #define SERVICES_SHAPE_DETECTION_DETECTION_UTILS_MAC_H_
 
 #import <CoreImage/CoreImage.h>
+#import <Vision/Vision.h>
 #include <memory>
 
 #include "base/callback.h"
