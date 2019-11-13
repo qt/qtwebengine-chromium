@@ -336,15 +336,13 @@ macro NewJSObject(implicit context: Context)(): JSObject {
   };
 }
 
-extern macro HasPrototypeSlot(JSFunction): bool;
+type JSFunctionWithPrototypeSlot extends JSFunction;
 
 macro GetDerivedMap(implicit context: Context)(
     target: JSFunction, newTarget: JSReceiver): Map {
   try {
-    const constructor = Cast<JSFunction>(newTarget) otherwise SlowPath;
-    if (!HasPrototypeSlot(constructor)) {
-      goto SlowPath;
-    }
+    const constructor =
+         Cast<JSFunctionWithPrototypeSlot>(newTarget) otherwise SlowPath;
     assert(IsConstructor(constructor));
     const map =
         Cast<Map>(constructor.prototype_or_initial_map) otherwise SlowPath;
@@ -1814,6 +1812,9 @@ extern macro HeapObjectToString(HeapObject): String
     labels CastError;
 extern macro HeapObjectToConstructor(HeapObject): Constructor
     labels CastError;
+extern macro HeapObjectToJSFunctionWithPrototypeSlot(HeapObject):
+    JSFunctionWithPrototypeSlot
+    labels CastError;
 extern macro HeapObjectToHeapNumber(HeapObject): HeapNumber
     labels CastError;
 extern macro HeapObjectToSloppyArgumentsElements(HeapObject):
@@ -1965,6 +1966,11 @@ Cast<DirectString>(o: HeapObject): DirectString
 Cast<Constructor>(o: HeapObject): Constructor
     labels CastError {
   return HeapObjectToConstructor(o) otherwise CastError;
+}
+
+Cast<JSFunctionWithPrototypeSlot>(o: HeapObject): JSFunctionWithPrototypeSlot
+    labels CastError {
+  return HeapObjectToJSFunctionWithPrototypeSlot(o) otherwise CastError;
 }
 
 Cast<HeapNumber>(o: HeapObject): HeapNumber

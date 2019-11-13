@@ -182,15 +182,14 @@ compiler::TNode<JSObject> ConstructorBuiltinsAssembler::EmitFastNewObject(
     SloppyTNode<Context> context, SloppyTNode<JSFunction> target,
     SloppyTNode<JSReceiver> new_target, Label* call_runtime) {
   // Verify that the new target is a JSFunction.
-  Label fast(this), end(this);
-  GotoIf(HasInstanceType(new_target, JS_FUNCTION_TYPE), &fast);
-  Goto(call_runtime);
-
-  BIND(&fast);
+  Label end(this);
+  TNode<JSFunction> new_target_func =
+      HeapObjectToJSFunctionWithPrototypeSlot(new_target, call_runtime);
+  // Fast path.
 
   // Load the initial map and verify that it's in fact a map.
   Node* initial_map =
-      LoadObjectField(new_target, JSFunction::kPrototypeOrInitialMapOffset);
+      LoadJSFunctionPrototypeOrInitialMap(new_target_func);
   GotoIf(TaggedIsSmi(initial_map), call_runtime);
   GotoIf(DoesntHaveInstanceType(initial_map, MAP_TYPE), call_runtime);
 
