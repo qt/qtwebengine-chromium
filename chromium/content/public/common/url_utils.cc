@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/feature_list.h"
 #include "base/strings/string_piece.h"
@@ -18,6 +19,7 @@
 #include "third_party/blink/public/common/chrome_debug_urls.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace content {
 
@@ -70,27 +72,39 @@ bool IsURLHandledByNetworkStack(const GURL& url) {
 }
 
 bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
-  static const auto kUnsafeSchemes = base::MakeFixedFlatSet<base::StringPiece>({
-    url::kAboutScheme, url::kFileScheme, url::kFileSystemScheme,
-        url::kBlobScheme,
+  static const auto kUnsafeSchemes =
+      base::MakeFixedFlatSet<base::StringPiece>({
+        url::kAboutScheme,
+            url::kJavaScriptScheme, url::kBlobScheme,
 #if !defined(CHROMECAST_BUILD)
         url::kDataScheme,
 #endif
 #if BUILDFLAG(IS_ANDROID)
         url::kContentScheme,
 #endif
-  });
-  if (HasWebUIScheme(to_url))
-    return false;
-  if (!kUnsafeSchemes.contains(to_url.scheme_piece()))
-    return true;
+      });
   if (from_url.is_empty())
     return false;
-  if (from_url.SchemeIsFile() && to_url.SchemeIsFile())
+  if (base::Contains(url::GetLocalSchemes(), to_url.scheme_piece())) {
+#if defined(TOOLKIT_QT)
+    if (auto *cs = url::CustomScheme::FindScheme(from_url.scheme_piece())) {
+      if (cs->flags & (url::CustomScheme::Local | url::CustomScheme::LocalAccessAllowed))
+        return true;
+    }
+#endif
+    return base::Contains(url::GetLocalSchemes(), from_url.scheme_piece());
+  }
+#if defined(TOOLKIT_QT)
+  if (from_url.IsCustom())
     return true;
-  if (from_url.SchemeIsFileSystem() && to_url.SchemeIsFileSystem())
-    return true;
-  return false;
+#endif
+  if (HasWebUIScheme(to_url))
+    return false;
+  if (kUnsafeSchemes.contains(to_url.scheme_piece()))
+    return false;
+  if (to_url.SchemeIsFileSystem())
+    return from_url.SchemeIsFileSystem();
+  return true;
 }
 
 }  // namespace content
