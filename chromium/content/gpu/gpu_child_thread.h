@@ -59,6 +59,8 @@ class GpuChildThread : public ChildThreadImpl,
 
   void Init(const base::Time& process_start_time);
 
+  viz::VizMainImpl *viz_main() { return &viz_main_; }
+
  private:
   GpuChildThread(base::RepeatingClosure quit_closure,
                  const ChildThreadImpl::Options& options,

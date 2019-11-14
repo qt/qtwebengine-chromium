@@ -122,6 +122,10 @@ class VizMainImpl : public mojom::VizMain {
   // Cleanly exits the process.
   void ExitProcess();
 
+  VizCompositorThreadRunner* viz_compositor_thread_runner() {
+    return viz_compositor_thread_runner_;
+  }
+
  private:
   void CreateFrameSinkManagerInternal(mojom::FrameSinkManagerParamsPtr params);
 
