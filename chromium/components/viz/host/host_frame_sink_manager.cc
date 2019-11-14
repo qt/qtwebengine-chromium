@@ -86,7 +86,13 @@ void HostFrameSinkManager::InvalidateFrameSinkId(
   DCHECK(data.IsFrameSinkRegistered());
 
   const bool destroy_synchronously =
+#if defined(TOOLKIT_QT)
+      // NOTE(juvaldma): It should not be necessary to wait for the destruction to
+      // take effect since even our root GL context is offscreen.
+      false;
+#else
       data.has_created_compositor_frame_sink && data.is_root;
+#endif
 
   data.has_created_compositor_frame_sink = false;
   data.client = nullptr;

@@ -187,11 +187,17 @@ class GPU_IPC_SERVICE_EXPORT GpuChannel : public IPC::Listener,
   void HandleMessageHelper(const IPC::Message& msg);
 
   // Message handlers for control messages.
+#if defined(TOOLKIT_QT)
+public:
+#endif
   void OnCreateCommandBuffer(const GPUCreateCommandBufferConfig& init_params,
                              int32_t route_id,
                              base::UnsafeSharedMemoryRegion shared_state_shm,
                              gpu::ContextResult* result,
                              gpu::Capabilities* capabilities);
+#if defined(TOOLKIT_QT)
+private:
+#endif
   void OnDestroyCommandBuffer(int32_t route_id);
   void OnCreateStreamTexture(int32_t stream_id, bool* succeeded);
   bool CreateSharedImageStub();

@@ -3421,12 +3421,23 @@ void LayerTreeHostImpl::ReleaseLayerTreeFrameSink() {
   resource_pool_ = nullptr;
   ClearUIResources();
 
+  // NOTE(juvaldma): This was deleted once already with
+  //
+  //   https://chromium-review.googlesource.com/c/chromium/src/+/1062730
+  //
+  // and then reverted with
+  //
+  //   https://chromium-review.googlesource.com/c/chromium/src/+/1154198/
+  //
+  // since it caused hangs with Android. Hopefully it's not needed.
+#if !defined(TOOLKIT_QT)
   if (layer_tree_frame_sink_->context_provider()) {
     // TODO(ericrk): Remove this once all uses of ContextGL from LTFS are
     // removed.
     auto* gl = layer_tree_frame_sink_->context_provider()->ContextGL();
     gl->Finish();
   }
+#endif
 
   // Release any context visibility before we destroy the LayerTreeFrameSink.
   SetContextVisibility(false);
