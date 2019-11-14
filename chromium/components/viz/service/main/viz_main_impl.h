@@ -145,6 +145,10 @@ class VizMainImpl : public mojom::VizMain,
   // is terminated immediately with the specified exit code.
   void ExitProcess(base::Optional<ExitCode> immediate_exit_code);
 
+  VizCompositorThreadRunner* viz_compositor_thread_runner() {
+    return viz_compositor_thread_runner_;
+  }
+
  private:
   void CreateFrameSinkManagerInternal(mojom::FrameSinkManagerParamsPtr params);
 

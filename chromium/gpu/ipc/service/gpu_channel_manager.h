@@ -197,6 +197,12 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
 
   void LoseAllContexts();
 
+#ifdef TOOLKIT_QT
+  const scoped_refptr<base::SingleThreadTaskRunner>& task_runner() const {
+    return task_runner_;
+  }
+#endif // TOOLKIT_QT
+
  private:
   friend class GpuChannelManagerTest;
 

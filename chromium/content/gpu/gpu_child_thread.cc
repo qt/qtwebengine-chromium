@@ -49,6 +49,33 @@
 #include "media/mojo/clients/mojo_android_overlay.h"
 #endif
 
+#if defined(TOOLKIT_QT)
+// Used from //gpu/ipc/client/command_buffer_proxy_impl.cc
+bool CreateCommandBufferSyncQt(
+    const GPUCreateCommandBufferConfig &init_params,
+    int channel_id,
+    int32_t route_id,
+    base::UnsafeSharedMemoryRegion *region,
+    gpu::ContextResult *result,
+    gpu::Capabilities *capabilities)
+{
+  content::GpuChildThread* child_thread = content::GpuChildThread::instance();
+  if (child_thread) {
+    gpu::GpuChannelManager* gpu_channel_manager =
+        child_thread->gpu_channel_manager();
+    // With in-process UI-thread GPU, sync IPC would deadlock; so call directly:
+    if (gpu_channel_manager->task_runner()->BelongsToCurrentThread()) {
+      gpu::GpuChannel* gpu_channel =
+          gpu_channel_manager->LookupChannel(channel_id);
+      gpu_channel->OnCreateCommandBuffer(
+          init_params, route_id, std::move(*region), result, capabilities);
+      return true;
+    }
+  }
+  return false;
+}
+#endif
+
 namespace content {
 namespace {
 
