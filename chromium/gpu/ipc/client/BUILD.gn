@@ -42,6 +42,7 @@ source_set("ipc_client_sources") {
     "//ui/gfx:color_space",
     "//ui/gfx/geometry",
     "//ui/gl",
+    "//third_party/dawn/src/dawn:dawn_headers",
   ]
   public_deps = [
     "//ipc",

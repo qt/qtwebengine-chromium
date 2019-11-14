@@ -39,6 +39,12 @@
 #include "ui/gfx/gpu_fence.h"
 #include "ui/gl/gl_bindings.h"
 
+#if defined(TOOLKIT_QT)
+#include "content/gpu/gpu_child_thread.h"
+#include "gpu/ipc/service/gpu_channel.h"
+#include "gpu/ipc/service/gpu_channel_manager.h"
+#endif
+
 namespace gpu {
 
 CommandBufferProxyImpl::CommandBufferProxyImpl(
@@ -117,20 +123,37 @@ ContextResult CommandBufferProxyImpl::Initialize(
   // so it won't cause additional jank.
   // TODO(piman): Make this asynchronous (http://crbug.com/125248).
   ContextResult result = ContextResult::kSuccess;
-  bool sent = channel->Send(new GpuChannelMsg_CreateCommandBuffer(
-      init_params, route_id_, std::move(region), &result, &capabilities_));
-  if (!sent) {
-    channel->RemoveRoute(route_id_);
-    LOG(ERROR) << "ContextResult::kTransientFailure: "
-                  "Failed to send GpuChannelMsg_CreateCommandBuffer.";
-    return ContextResult::kTransientFailure;
+  bool create_async = true;
+#if defined(TOOLKIT_QT)
+  content::GpuChildThread* child_thread = content::GpuChildThread::instance();
+  if (child_thread) {
+    gpu::GpuChannelManager* gpu_channel_manager =
+        child_thread->gpu_channel_manager();
+    gpu::GpuChannel* gpu_channel =
+        gpu_channel_manager->LookupChannel(channel->channel_id());
+    // With in-process UI-thread GPU, sync IPC would deadlock; so call directly:
+    if (gpu_channel->task_runner()->BelongsToCurrentThread()) {
+      gpu_channel->OnCreateCommandBuffer(
+          init_params, route_id_, std::move(region), &result, &capabilities_);
+      create_async = false;
+    }
+  }
+#endif
+  if (create_async) {
+    bool sent = channel->Send(new GpuChannelMsg_CreateCommandBuffer(
+        init_params, route_id_, std::move(region), &result, &capabilities_));
+    if (!sent) {
+      channel->RemoveRoute(route_id_);
+      LOG(ERROR) << "ContextResult::kTransientFailure: "
+                    "Failed to send GpuChannelMsg_CreateCommandBuffer.";
+      return ContextResult::kTransientFailure;
+    }
   }
   if (result != ContextResult::kSuccess) {
     DLOG(ERROR) << "Failure processing GpuChannelMsg_CreateCommandBuffer.";
     channel->RemoveRoute(route_id_);
     return result;
   }
-
   channel_ = std::move(channel);
   return result;
 }
