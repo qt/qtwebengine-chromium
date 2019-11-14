@@ -21,6 +21,7 @@
 #include "url/gurl.h"
 #include "url/url_constants.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace content {
 
@@ -81,8 +82,6 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
   static constexpr auto kUnsafeSchemes =
       base::MakeFixedFlatSet<std::string_view>({
           url::kAboutScheme,
-          url::kFileScheme,
-          url::kFileSystemScheme,
           url::kBlobScheme,
 #if !defined(CHROMECAST_BUILD)
           url::kDataScheme,
@@ -91,17 +90,28 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
           url::kContentScheme,
 #endif
       });
-  if (HasWebUIScheme(to_url))
-    return false;
-  if (!kUnsafeSchemes.contains(to_url.scheme_piece()))
-    return true;
   if (from_url.is_empty())
     return false;
-  if (from_url.SchemeIsFile() && to_url.SchemeIsFile())
+  if (base::Contains(url::GetLocalSchemes(), to_url.scheme_piece())) {
+#if defined(TOOLKIT_QT)
+    if (auto *cs = url::CustomScheme::FindScheme(from_url.scheme_piece())) {
+      if (cs->flags & (url::CustomScheme::Local | url::CustomScheme::LocalAccessAllowed))
+        return true;
+    }
+#endif
+    return base::Contains(url::GetLocalSchemes(), from_url.scheme_piece());
+  }
+#if defined(TOOLKIT_QT)
+  if (from_url.IsCustom())
     return true;
-  if (from_url.SchemeIsFileSystem() && to_url.SchemeIsFileSystem())
-    return true;
-  return false;
+#endif
+  if (HasWebUIScheme(to_url))
+    return false;
+  if (kUnsafeSchemes.contains(to_url.scheme_piece()))
+    return false;
+  if (to_url.SchemeIsFileSystem())
+    return from_url.SchemeIsFileSystem();
+  return true;
 }
 
 }  // namespace content
