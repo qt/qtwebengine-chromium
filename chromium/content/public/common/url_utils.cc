@@ -64,7 +64,7 @@ bool IsURLHandledByNetworkStack(const GURL& url) {
 
 bool IsURLHandledByNetworkService(const GURL& url) {
   return url.SchemeIsHTTPOrHTTPS() || url.SchemeIsWSOrWSS() ||
-         url.SchemeIs(url::kFtpScheme) || url.SchemeIs(url::kGopherScheme);
+         url.SchemeIs(url::kFtpScheme);
 }
 
 bool IsRendererDebugURL(const GURL& url) {
@@ -117,6 +117,7 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
       kUnsafeSchemes(base::flat_set<base::StringPiece>({
         url::kAboutScheme, url::kFileScheme,
             url::kFileSystemScheme, url::kBlobScheme,
+            url::kJavaScriptScheme,
 #if !defined(CHROMECAST_BUILD)
             url::kDataScheme,
 #endif
@@ -124,17 +125,22 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
             url::kContentScheme,
 #endif
       }));
+#if defined(TOOLKIT_QT)
+  if (from_url.IsCustom())
+    return true;
+#endif
   if (HasWebUIScheme(to_url))
     return false;
-  if (!kUnsafeSchemes->contains(to_url.scheme_piece()))
-    return true;
-  if (from_url.is_empty())
+  if (kUnsafeSchemes->contains(to_url.scheme_piece()))
     return false;
-  if (from_url.SchemeIsFile() && to_url.SchemeIsFile())
-    return true;
-  if (from_url.SchemeIsFileSystem() && to_url.SchemeIsFileSystem())
-    return true;
-  return false;
+  for (const auto& local_scheme : url::GetLocalSchemes()) {
+    if (to_url.SchemeIs(local_scheme)) {
+      return from_url.SchemeIs(local_scheme);
+    }
+  }
+  if (to_url.SchemeIsFileSystem())
+    return from_url.SchemeIsFileSystem();
+  return true;
 }
 
 }  // namespace content
