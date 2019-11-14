@@ -37,6 +37,17 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gpu_preference.h"
 
+#if defined(TOOLKIT_QT)
+// Defined in //content/gpu/gpu_child_thread.cc.
+extern bool CreateCommandBufferSyncQt(
+    const GPUCreateCommandBufferConfig &init_params,
+    int channel_id,
+    int32_t route_id,
+    base::UnsafeSharedMemoryRegion *region,
+    gpu::ContextResult *result,
+    gpu::Capabilities *capabilities);
+#endif
+
 namespace gpu {
 
 CommandBufferProxyImpl::CommandBufferProxyImpl(
@@ -115,20 +126,28 @@ ContextResult CommandBufferProxyImpl::Initialize(
   // so it won't cause additional jank.
   // TODO(piman): Make this asynchronous (http://crbug.com/125248).
   ContextResult result = ContextResult::kSuccess;
-  bool sent = channel->Send(new GpuChannelMsg_CreateCommandBuffer(
-      init_params, route_id_, std::move(region), &result, &capabilities_));
-  if (!sent) {
-    channel->RemoveRoute(route_id_);
-    LOG(ERROR) << "ContextResult::kTransientFailure: "
-                  "Failed to send GpuChannelMsg_CreateCommandBuffer.";
-    return ContextResult::kTransientFailure;
+  bool create_async = !CreateCommandBufferSyncQt(
+      init_params,
+      channel->channel_id(),
+      route_id_,
+      &region,
+      &result,
+      &capabilities_);
+  if (create_async) {
+    bool sent = channel->Send(new GpuChannelMsg_CreateCommandBuffer(
+        init_params, route_id_, std::move(region), &result, &capabilities_));
+    if (!sent) {
+      channel->RemoveRoute(route_id_);
+      LOG(ERROR) << "ContextResult::kTransientFailure: "
+                    "Failed to send GpuChannelMsg_CreateCommandBuffer.";
+      return ContextResult::kTransientFailure;
+    }
   }
   if (result != ContextResult::kSuccess) {
     DLOG(ERROR) << "Failure processing GpuChannelMsg_CreateCommandBuffer.";
     channel->RemoveRoute(route_id_);
     return result;
   }
-
   channel_ = std::move(channel);
   return result;
 }
