@@ -529,10 +529,7 @@ NavigationControllerImpl::NavigationControllerImpl(
 }
 
 NavigationControllerImpl::~NavigationControllerImpl() {
-  // The NavigationControllerImpl might be called inside its delegate
-  // destructor. Calling it is not valid anymore.
-  delegate_ = nullptr;
-  DiscardNonCommittedEntries();
+  DiscardNonCommittedEntriesInternal();
 }
 
 WebContents* NavigationControllerImpl::GetWebContents() {
@@ -596,7 +593,7 @@ void NavigationControllerImpl::Reload(ReloadType reload_type,
     // should also update the current_index.
     current_index = pending_entry_index_;
   } else {
-    DiscardNonCommittedEntries();
+    DiscardNonCommittedEntriesInternal();
     current_index = GetCurrentEntryIndex();
     if (current_index != -1) {
       entry = GetEntryAtIndex(current_index);
@@ -622,7 +619,7 @@ void NavigationControllerImpl::Reload(ReloadType reload_type,
     delegate_->ActivateAndShowRepostFormWarningDialog();
   } else {
     if (!IsInitialNavigation())
-      DiscardNonCommittedEntries();
+      DiscardNonCommittedEntriesInternal();
 
     pending_entry_ = entry;
     pending_entry_index_ = current_index;
@@ -666,7 +663,7 @@ NavigationControllerImpl::GetEntryWithUniqueID(int nav_entry_id) const {
 
 void NavigationControllerImpl::SetPendingEntry(
     std::unique_ptr<NavigationEntryImpl> entry) {
-  DiscardNonCommittedEntries();
+  DiscardNonCommittedEntriesInternal();
   pending_entry_ = entry.release();
   DCHECK_EQ(-1, pending_entry_index_);
   NotificationService::current()->Notify(
@@ -1090,8 +1087,10 @@ bool NavigationControllerImpl::RendererDidNavigate(
       // discard it and make sure it is removed from the URL bar.  After that,
       // there is nothing we can do with this navigation, so we just return to
       // the caller that nothing has happened.
-      if (pending_entry_)
+      if (pending_entry_) {
         DiscardNonCommittedEntries();
+        delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_URL);
+      }
       return false;
     default:
       NOTREACHED();
@@ -1112,7 +1111,7 @@ bool NavigationControllerImpl::RendererDidNavigate(
   // TODO(pbos): Consider a CHECK here that verifies that the pending entry has
   // been cleared instead of protecting against it.
   if (!keep_pending_entry)
-    DiscardNonCommittedEntries();
+    DiscardNonCommittedEntriesInternal();
 
   // All committed entries should have nonempty content state so WebKit doesn't
   // get confused when we go back to them (see the function for details).
@@ -1472,7 +1471,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   // navigation. Now we know that the renderer has updated its state accordingly
   // and it is safe to also clear the browser side history.
   if (params.history_list_was_cleared) {
-    DiscardNonCommittedEntries();
+    DiscardNonCommittedEntriesInternal();
     entries_.clear();
     last_committed_entry_index_ = -1;
   }
@@ -1667,7 +1666,7 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   // Note that we need to use the "internal" version since we don't want to
   // actually change any other state, just kill the pointer.
   if (!keep_pending_entry)
-    DiscardNonCommittedEntries();
+    DiscardNonCommittedEntriesInternal();
 
   // If a transient entry was removed, the indices might have changed, so we
   // have to query the entry index again.
@@ -1828,7 +1827,7 @@ bool NavigationControllerImpl::RendererDidNavigateAutoSubframe(
       // We only need to discard the pending entry in this history navigation
       // case.  For newly created subframes, there was no pending entry.
       last_committed_entry_index_ = entry_index;
-      DiscardNonCommittedEntries();
+      DiscardNonCommittedEntriesInternal();
 
       // History navigations should send a commit notification.
       send_commit_notification = true;
@@ -2398,6 +2397,17 @@ void NavigationControllerImpl::RemoveEntryAtIndexInternal(int index) {
     last_committed_entry_index_--;
 }
 
+void NavigationControllerImpl::DiscardNonCommittedEntries() {
+  bool transient = transient_entry_index_ != -1;
+  DiscardNonCommittedEntriesInternal();
+
+  // If there was a transient entry, invalidate everything so the new active
+  // entry state is shown.
+  if (transient) {
+    delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
+  }
+}
+
 NavigationEntryImpl* NavigationControllerImpl::GetPendingEntry() {
   // If there is no pending_entry_, there should be no pending_entry_index_.
   DCHECK(pending_entry_ || pending_entry_index_ == -1);
@@ -2432,7 +2442,7 @@ void NavigationControllerImpl::InsertOrReplaceEntry(
   if (pending_entry_ && pending_entry_index_ == -1)
     entry->set_unique_id(pending_entry_->GetUniqueID());
 
-  DiscardNonCommittedEntries();
+  DiscardNonCommittedEntriesInternal();
 
   int current_size = static_cast<int>(entries_.size());
 
@@ -3290,11 +3300,9 @@ void NavigationControllerImpl::FinishRestore(int selected_index,
   last_committed_entry_index_ = selected_index;
 }
 
-void NavigationControllerImpl::DiscardNonCommittedEntries() {
+void NavigationControllerImpl::DiscardNonCommittedEntriesInternal() {
   DiscardPendingEntry(false);
   DiscardTransientEntry();
-  if (delegate_)
-    delegate_->NotifyNavigationStateChanged(INVALIDATE_TYPE_ALL);
 }
 
 void NavigationControllerImpl::DiscardTransientEntry() {
