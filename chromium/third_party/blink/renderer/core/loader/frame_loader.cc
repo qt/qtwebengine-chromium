@@ -671,8 +671,10 @@ bool FrameLoader::PrepareRequestForThisFrame(FrameLoadRequest& request) {
     return true;
 
   KURL url = request.GetResourceRequest().Url();
-  if (frame_->GetScriptController().ExecuteScriptIfJavaScriptURL(url, nullptr))
-    return false;
+  if (request.OriginDocument()->CanExecuteScripts(kAboutToExecuteScript)) {
+    if (frame_->GetScriptController().ExecuteScriptIfJavaScriptURL(url, nullptr))
+      return false;
+  }
 
   if (!request.OriginDocument()->GetSecurityOrigin()->CanDisplay(url)) {
     request.OriginDocument()->AddConsoleMessage(ConsoleMessage::Create(
