@@ -6,7 +6,6 @@
 #define SERVICES_SHAPE_DETECTION_DETECTION_UTILS_MAC_H_
 
 #import <CoreImage/CoreImage.h>
-#import <Vision/Vision.h>
 #include <memory>
 
 #include "base/callback.h"
@@ -16,6 +15,10 @@
 #include "base/macros.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/rect_f.h"
+
+#if defined(MAC_OS_X_VERSION_10_13) && MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_13
+#import <Vision/Vision.h>
+#endif
 
 namespace shape_detection {
 
