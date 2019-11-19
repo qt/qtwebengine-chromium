@@ -7123,6 +7123,13 @@ Reduction JSCallReducer::ReduceRegExpPrototypeTest(Node* node) {
       break;
   }
 
+  if (regexp_maps.size() != 1) return NoChange();
+
+  if (native_context()->regexp_function() && native_context()->regexp_function()->has_initial_map()) {
+    Handle<Map> regexp_initial_map(native_context()->regexp_function()->initial_map(), isolate());
+    if (!regexp_maps[0].equals(regexp_initial_map)) return NoChange();
+  }
+
   for (auto map : regexp_maps) {
     if (map->instance_type() != JS_REGEXP_TYPE) return NoChange();
   }
