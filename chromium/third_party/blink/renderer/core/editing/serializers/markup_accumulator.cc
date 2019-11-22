@@ -46,7 +46,7 @@
 
 namespace blink {
 
-MarkupAccumulator::MarkupAccumulator(EAbsoluteURLs resolve_urls_method,
+MarkupAccumulator::MarkupAccumulator(AbsoluteURLs resolve_urls_method,
                                      SerializationType serialization_type)
     : formatter_(resolve_urls_method, serialization_type) {}
 

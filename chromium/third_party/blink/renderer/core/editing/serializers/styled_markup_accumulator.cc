@@ -52,18 +52,17 @@ size_t TotalLength(const Vector<String>& strings) {
 using namespace HTMLNames;
 
 StyledMarkupAccumulator::StyledMarkupAccumulator(
-    EAbsoluteURLs should_resolve_urls,
     const TextOffset& start,
     const TextOffset& end,
     Document* document,
-    EAnnotateForInterchange should_annotate,
-    ConvertBlocksToInlines convert_blocks_to_inlines)
-    : formatter_(should_resolve_urls),
+    const CreateMarkupOptions& options)
+    : formatter_(options.ShouldResolveURLs(),
+                 document->IsHTMLDocument() ? SerializationType::kAsOwnerDocument
+                                            : SerializationType::kForcedXML),
       start_(start),
       end_(end),
       document_(document),
-      should_annotate_(should_annotate),
-      convert_blocks_to_inlines_(convert_blocks_to_inlines) {}
+      options_(options) {}
 
 void StyledMarkupAccumulator::AppendEndTag(const Element& element) {
   AppendEndMarkup(result_, element);
@@ -225,7 +224,7 @@ String StyledMarkupAccumulator::StringValueForRange(const Text& node) {
 }
 
 bool StyledMarkupAccumulator::ShouldAnnotate() const {
-  return should_annotate_ == kAnnotateForInterchange;
+  return options_.ShouldAnnotateForInterchange();
 }
 
 void StyledMarkupAccumulator::PushMarkup(const String& str) {

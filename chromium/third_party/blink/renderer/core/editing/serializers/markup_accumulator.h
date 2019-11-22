@@ -44,7 +44,7 @@ class MarkupAccumulator {
   STACK_ALLOCATED();
 
  public:
-  MarkupAccumulator(EAbsoluteURLs,
+  MarkupAccumulator(AbsoluteURLs,
                     SerializationType = SerializationType::kAsOwnerDocument);
   virtual ~MarkupAccumulator();
 

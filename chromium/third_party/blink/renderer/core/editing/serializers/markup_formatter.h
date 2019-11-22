@@ -90,7 +90,7 @@ class MarkupFormatter final {
                                           const String& data);
   static void AppendXMLDeclaration(StringBuilder&, const Document&);
 
-  MarkupFormatter(EAbsoluteURLs,
+  MarkupFormatter(AbsoluteURLs,
                   SerializationType = SerializationType::kAsOwnerDocument);
   ~MarkupFormatter();
 
@@ -118,7 +118,7 @@ class MarkupFormatter final {
                                      const Element&,
                                      const Attribute&);
 
-  const EAbsoluteURLs resolve_urls_method_;
+  const AbsoluteURLs resolve_urls_method_;
   SerializationType serialization_type_;
 
   DISALLOW_COPY_AND_ASSIGN(MarkupFormatter);

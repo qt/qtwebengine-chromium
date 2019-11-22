@@ -935,9 +935,11 @@ String FrameSelection::SelectedHTMLForClipboard() const {
       ComputeVisibleSelectionInFlatTree();
   const EphemeralRangeInFlatTree& range =
       visible_selection.ToNormalizedEphemeralRange();
-  return CreateMarkup(
-      range.StartPosition(), range.EndPosition(), kAnnotateForInterchange,
-      ConvertBlocksToInlines::kNotConvert, kResolveNonLocalURLs);
+  return CreateMarkup(range.StartPosition(), range.EndPosition(),
+                      CreateMarkupOptions::Builder()
+                          .SetShouldAnnotateForInterchange(true)
+                          .SetShouldResolveURLs(kResolveNonLocalURLs)
+                          .Build());
 }
 
 String FrameSelection::SelectedText(
