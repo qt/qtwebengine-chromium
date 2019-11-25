@@ -32,5 +32,11 @@ CreateMarkupOptions::Builder::SetShouldConvertBlocksToInlines(
   data_.should_convert_blocks_to_inlines_ = convert_blocks_to_inlines;
   return *this;
 }
+CreateMarkupOptions::Builder&
+CreateMarkupOptions::Builder::SetIsForMarkupSanitization(
+    bool is_for_sanitization) {
+  data_.is_for_markup_sanitization_ = is_for_sanitization;
+  return *this;
+}
 
 }  // namespace blink
