@@ -45,6 +45,7 @@
 #include "third_party/blink/renderer/core/editing/visible_units.h"
 #include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
+#include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -96,11 +97,13 @@ class StyledMarkupTraverser {
  private:
   bool ShouldAnnotate() const;
   bool ShouldConvertBlocksToInlines() const;
+  bool IsForMarkupSanitization() const;
   void AppendStartMarkup(Node&);
   void AppendEndMarkup(Node&);
   EditingStyle* CreateInlineStyle(Element&);
   bool NeedsInlineStyle(const Element&);
   bool ShouldApplyWrappingStyle(const Node&) const;
+  bool ShouldSerializeUnrenderedElement(const Node&) const;
 
   StyledMarkupAccumulator* accumulator_;
   Member<Node> last_closed_;
@@ -111,6 +114,11 @@ class StyledMarkupTraverser {
 template <typename Strategy>
 bool StyledMarkupTraverser<Strategy>::ShouldAnnotate() const {
   return accumulator_->ShouldAnnotate();
+}
+
+template <typename Strategy>
+bool StyledMarkupTraverser<Strategy>::IsForMarkupSanitization() const {
+  return accumulator_ && accumulator_->IsForMarkupSanitization();
 }
 
 template <typename Strategy>
@@ -354,10 +362,7 @@ Node* StyledMarkupTraverser<Strategy>::Traverse(Node* start_node,
         continue;
       }
 
-      if (!n->GetLayoutObject() &&
-          (!n->IsElementNode() || !ToElement(n)->HasDisplayContentsStyle()) &&
-          !EnclosingElementWithTag(FirstPositionInOrBeforeNode(*n),
-                                   selectTag)) {
+      if (n->GetLayoutObject() || ShouldSerializeUnrenderedElement(*n)) {
         next = Strategy::NextSkippingChildren(*n);
         // Don't skip over pastEnd.
         if (past_end && Strategy::IsDescendantOf(*past_end, *n))
@@ -492,6 +497,11 @@ void StyledMarkupTraverser<Strategy>::AppendStartMarkup(Node& node) {
         inline_style->ForceInline();
         // FIXME: Should this be included in forceInline?
         inline_style->Style()->SetProperty(CSSPropertyFloat, CSSValueNone);
+
+        if (IsForMarkupSanitization()) {
+          EditingStyleUtilities::StripUAStyleRulesForMarkupSanitization(
+              inline_style);
+        }
       }
       accumulator_->AppendTextWithInlineStyle(text, inline_style);
       break;
@@ -547,7 +557,29 @@ EditingStyle* StyledMarkupTraverser<Strategy>::CreateInlineStyle(
   if (element.IsHTMLElement() && ShouldAnnotate())
     inline_style->MergeStyleFromRulesForSerialization(&ToHTMLElement(element));
 
+  if (IsForMarkupSanitization())
+    EditingStyleUtilities::StripUAStyleRulesForMarkupSanitization(inline_style);
+
   return inline_style;
+}
+
+template <typename Strategy>
+bool StyledMarkupTraverser<Strategy>::ShouldSerializeUnrenderedElement(
+    const Node& node) const {
+  DCHECK(!node.GetLayoutObject());
+  if (node.IsElementNode() && ToElement(node).HasDisplayContentsStyle())
+    return true;
+  if (EnclosingElementWithTag(FirstPositionInOrBeforeNode(node),
+                              HTMLNames::selectTag)) {
+    return true;
+  }
+  if (IsForMarkupSanitization()) {
+    // During sanitization, iframes in the staging document haven't loaded and
+    // are hence not rendered. They should still be serialized.
+    if (IsHTMLIFrameElement(node))
+      return true;
+  }
+  return false;
 }
 
 template class StyledMarkupSerializer<EditingStrategy>;
