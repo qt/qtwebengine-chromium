@@ -126,6 +126,8 @@ class CORE_EXPORT CSSParserContext
   // TODO(yoichio): Remove when CustomElementsV0 is removed. crrev.com/660759.
   bool CustomElementsV0Enabled() const;
 
+  bool IsForMarkupSanitization() const;
+
   void Trace(blink::Visitor*);
 
  private:
