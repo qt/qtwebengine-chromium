@@ -156,6 +156,7 @@ bool StructTraits<
                                     network::ResourceRequest* out) {
   if (!data.ReadMethod(&out->method) || !data.ReadUrl(&out->url) ||
       !data.ReadSiteForCookies(&out->site_for_cookies) ||
+      !data.ReadFirstPartyUrl(&out->first_party_url) ||
       !data.ReadTopFrameOrigin(&out->top_frame_origin) ||
       !data.ReadTrustedNetworkIsolationKey(
           &out->trusted_network_isolation_key) ||

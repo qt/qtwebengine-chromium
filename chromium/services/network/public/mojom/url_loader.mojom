@@ -102,6 +102,9 @@ struct URLRequest {
   // done if there really is no way to determine the correct value.
   url.mojom.Url site_for_cookies;
 
+  // Top-level frame URL for QtWebEngine.
+  url.mojom.Url first_party_url;
+
   // A non-null |top_frame_origin| contains the origin of the top frame of the
   // page making the request. |top_frame_origin| depends on the context making
   // the request.
