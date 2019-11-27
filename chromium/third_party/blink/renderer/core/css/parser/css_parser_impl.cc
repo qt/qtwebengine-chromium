@@ -260,9 +260,14 @@ void CSSParserImpl::ParseStyleSheet(const String& string,
         new CSSLazyParsingState(context, string, parser.style_sheet_);
   }
   bool first_rule_valid = parser.ConsumeRuleList(
-      stream, kTopLevelRuleList, [&style_sheet](StyleRuleBase* rule) {
+      stream, kTopLevelRuleList, [&style_sheet, context](StyleRuleBase* rule) {
         if (rule->IsCharsetRule())
           return;
+        if (rule->IsImportRule()) {
+          if (context->IsForMarkupSanitization()) {
+            return;
+          }
+        }
         style_sheet->ParserAppendRule(rule);
       });
   style_sheet->SetHasSyntacticallyValidCSSHeader(first_rule_valid);

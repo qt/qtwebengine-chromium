@@ -797,6 +797,8 @@ static Document* CreateStagingDocumentForMarkupSanitization() {
   DCHECK(document->IsHTMLDocument());
   DCHECK(document->body());
 
+  document->SetIsForMarkupSanitization(true);
+
   return document;
 }
 

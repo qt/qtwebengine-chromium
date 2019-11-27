@@ -110,6 +110,8 @@ class CORE_EXPORT CSSParserContext
     return should_check_content_security_policy_;
   }
 
+  bool IsForMarkupSanitization() const;
+
   void Trace(blink::Visitor*);
 
  private:

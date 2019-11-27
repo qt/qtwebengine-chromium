@@ -1451,6 +1451,13 @@ class CORE_EXPORT Document : public ContainerNode,
 
   bool IsVerticalScrollEnforced() const { return is_vertical_scroll_enforced_; }
 
+  // We setup a dummy document to sanitize clipboard markup before pasting.
+  // Sets and indicates whether this is the dummy document.
+  void SetIsForMarkupSanitization(bool is_for_sanitization) {
+    is_for_markup_sanitization_ = is_for_sanitization;
+  }
+  bool IsForMarkupSanitization() const { return is_for_markup_sanitization_; }
+
  protected:
   Document(const DocumentInit&, DocumentClassFlags = kDefaultDocumentClass);
 
@@ -1877,6 +1884,8 @@ class CORE_EXPORT Document : public ContainerNode,
 
   // This is set through feature policy 'vertical-scroll'.
   bool is_vertical_scroll_enforced_ = false;
+
+  bool is_for_markup_sanitization_ = false;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT Supplement<Document>;
