@@ -188,6 +188,14 @@ HTMLTreeBuilderSimulator::SimulatedToken HTMLTreeBuilderSimulator::Simulate(
     }
   }
 
+  if (token.GetType() == HTMLToken::kEndTag && InForeignContent()) {
+    const String& tag_name = token.Data();
+    if (ThreadSafeMatch(tag_name, pTag) ||
+        ThreadSafeMatch(tag_name, brTag)) {
+      namespace_stack_.pop_back();
+    }
+  }
+
   if (token.GetType() == HTMLToken::kEndTag ||
       (token.GetType() == HTMLToken::kStartTag && token.SelfClosing() &&
        InForeignContent())) {

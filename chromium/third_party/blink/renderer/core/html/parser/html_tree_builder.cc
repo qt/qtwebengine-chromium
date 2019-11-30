@@ -2691,6 +2691,12 @@ void HTMLTreeBuilder::ProcessTokenInForeignContent(AtomicHTMLToken* token) {
         tree_.OpenElements()->Pop();
         return;
       }
+      if (token->GetName() == brTag || token->GetName() == pTag) {
+        ParseError(token);
+        tree_.OpenElements()->PopUntilForeignContentScopeMarker();
+        ProcessEndTag(token);
+        return;
+      }
       if (!tree_.CurrentStackItem()->IsInHTMLNamespace()) {
         // FIXME: This code just wants an Element* iterator, instead of an
         // ElementRecord*
