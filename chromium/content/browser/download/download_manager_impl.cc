@@ -192,7 +192,10 @@ DownloadItemImpl* DownloadManagerImpl::CreateActiveItem(
     uint32_t id,
     const DownloadCreateInfo& info) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(!base::ContainsKey(downloads_, id));
+
+  if (base::ContainsKey(downloads_, id))
+    return nullptr;
+
   net::NetLogWithSource net_log =
       net::NetLogWithSource::Make(net_log_, net::NetLogSourceType::DOWNLOAD);
   DownloadItemImpl* download =
@@ -352,6 +355,13 @@ void DownloadManagerImpl::StartDownloadWithId(
       return;
     }
     download = item_iterator->second.get();
+  }
+
+  if (!download) {
+    if (!on_started.is_null())
+      on_started.Run(nullptr, DOWNLOAD_INTERRUPT_REASON_USER_CANCELED);
+
+    return;
   }
 
   base::FilePath default_download_directory;
