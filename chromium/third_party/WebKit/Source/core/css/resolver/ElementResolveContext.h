@@ -45,7 +45,7 @@ class CORE_EXPORT ElementResolveContext {
 
   Element* element() const { return m_element; }
   const ContainerNode* parentNode() const { return m_parentNode; }
-  const ComputedStyle* rootElementStyle() const { return m_rootElementStyle; }
+  const ComputedStyle* rootElementStyle() const { return m_rootElementStyle.get(); }
   const ComputedStyle* parentStyle() const {
     return parentNode() ? parentNode()->computedStyle() : nullptr;
   }
@@ -57,7 +57,7 @@ class CORE_EXPORT ElementResolveContext {
  private:
   Member<Element> m_element;
   Member<ContainerNode> m_parentNode;
-  const ComputedStyle* m_rootElementStyle;
+  RefPtr<const ComputedStyle> m_rootElementStyle;
   EInsideLink m_elementLinkState;
   bool m_distributedToInsertionPoint;
 };
