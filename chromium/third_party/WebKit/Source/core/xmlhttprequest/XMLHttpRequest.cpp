@@ -244,7 +244,6 @@ XMLHttpRequest::XMLHttpRequest(
       m_error(false),
       m_uploadEventsAllowed(true),
       m_uploadComplete(false),
-      m_sameOriginRequest(true),
       m_downloadingToFile(false),
       m_responseTextOverflow(false),
       m_sendFlag(false) {}
@@ -948,7 +947,7 @@ void XMLHttpRequest::createRequest(PassRefPtr<EncodedFormData> httpBody,
     }
   }
 
-  m_sameOriginRequest = getSecurityOrigin()->canRequestNoSuborigin(m_url);
+  const bool sameOriginRequest = getSecurityOrigin()->canRequestNoSuborigin(m_url);
 
   // Per https://w3c.github.io/webappsec-suborigins/#security-model-opt-outs,
   // credentials are forced when credentials mode is "same-origin", the
@@ -962,14 +961,14 @@ void XMLHttpRequest::createRequest(PassRefPtr<EncodedFormData> httpBody,
        SecurityOrigin::create(m_url)->isSameSchemeHostPort(
            getSecurityOrigin()));
 
-  if (!m_sameOriginRequest && includeCredentials)
+  if (!sameOriginRequest && includeCredentials)
     UseCounter::count(&executionContext,
                       UseCounter::XMLHttpRequestCrossOriginWithCredentials);
 
   // We also remember whether upload events should be allowed for this request
   // in case the upload listeners are added after the request is started.
   m_uploadEventsAllowed =
-      m_sameOriginRequest || uploadEvents ||
+      sameOriginRequest || uploadEvents ||
       !FetchUtils::isSimpleRequest(m_method, m_requestHeaders);
 
   ResourceRequest request(m_url);
@@ -1010,7 +1009,7 @@ void XMLHttpRequest::createRequest(PassRefPtr<EncodedFormData> httpBody,
 
   ResourceLoaderOptions resourceLoaderOptions;
   resourceLoaderOptions.allowCredentials =
-      (m_sameOriginRequest || includeCredentials) ? AllowStoredCredentials
+      (sameOriginRequest || includeCredentials) ? AllowStoredCredentials
                                                   : DoNotAllowStoredCredentials;
   resourceLoaderOptions.credentialsRequested =
       includeCredentials ? ClientRequestedCredentials
@@ -1370,7 +1369,8 @@ String XMLHttpRequest::getAllResponseHeaders() const {
         !getSecurityOrigin()->canLoadLocalResources())
       continue;
 
-    if (!m_sameOriginRequest &&
+    if (m_response.serviceWorkerResponseType() ==
+         WebServiceWorkerResponseType::WebServiceWorkerResponseTypeCORS &&
         !isOnAccessControlResponseHeaderWhitelist(it->key) &&
         !accessControlExposeHeaderSet.contains(it->key))
       continue;
@@ -1402,7 +1402,9 @@ const AtomicString& XMLHttpRequest::getResponseHeader(
   HTTPHeaderSet accessControlExposeHeaderSet;
   extractCorsExposedHeaderNamesList(m_response, accessControlExposeHeaderSet);
 
-  if (!m_sameOriginRequest && !isOnAccessControlResponseHeaderWhitelist(name) &&
+  if (m_response.serviceWorkerResponseType() ==
+         WebServiceWorkerResponseType::WebServiceWorkerResponseTypeCORS &&
+      !isOnAccessControlResponseHeaderWhitelist(name) &&
       !accessControlExposeHeaderSet.contains(name)) {
     logConsoleError(getExecutionContext(),
                     "Refused to get unsafe header \"" + name + "\"");

@@ -338,7 +338,6 @@ class XMLHttpRequest final : public XMLHttpRequestEventTarget,
   bool m_error;
   bool m_uploadEventsAllowed;
   bool m_uploadComplete;
-  bool m_sameOriginRequest;
   // True iff the ongoing resource loading is using the downloadToFile
   // option.
   bool m_downloadingToFile;
