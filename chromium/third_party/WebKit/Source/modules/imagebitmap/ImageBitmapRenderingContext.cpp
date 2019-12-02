@@ -40,6 +40,10 @@ void ImageBitmapRenderingContext::transferFromImageBitmap(
     return;
   }
 
+  if (imageBitmap->wouldTaintOrigin(nullptr)) {
+    canvas()->setOriginTainted();
+  }
+
   m_image = imageBitmap->bitmapImage();
   if (!m_image)
     return;
