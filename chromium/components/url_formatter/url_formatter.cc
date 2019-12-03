@@ -415,6 +415,7 @@ bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
     // - Disallow combining diacritical mark (U+0300-U+0339) after a non-LGC
     //   character. Other combining diacritical marks are not in the allowed
     //   character set.
+    // - Disallow combining Kana voiced sound marks.
     // - Disallow U+0307 (dot above) after 'i', 'j', 'l' or dotless i (U+0131).
     //   Dotless j (U+0237) is not in the allowed set to begin with.
     dangerous_pattern = new icu::RegexMatcher(
@@ -428,6 +429,7 @@ bool IDNSpoofChecker::Check(base::StringPiece16 label, bool is_tld_ascii) {
             "^[\\p{scx=hira}]+[\\u30d8-\\u30da][\\p{scx=hira}]+$|"
             "[a-z]\\u30fb|\\u30fb[a-z]|"
             "[^\\p{scx=latn}\\p{scx=grek}\\p{scx=cyrl}][\\u0300-\\u0339]|"
+            "\\u3099|\\u309A|"
             "[ijl\\u0131]\\u0307",
             -1, US_INV),
         0, status);
