@@ -36,13 +36,13 @@
 #include "core/xml/XPathVariableReference.h"
 #include "wtf/allocator/Partitions.h"
 
-void* yyFastMalloc(size_t size)
-{
-    return WTF::Partitions::fastMalloc(size, nullptr);
-}
-
-#define YYMALLOC yyFastMalloc
-#define YYFREE WTF::Partitions::fastFree
+// The union below must be located on the stack because it contains raw
+// pointers to Oilpan objects. crbug.com/961413
+#define YYSTACK_USE_ALLOCA 1
+// Bison's bug? YYSTACK_ALLOC is not defined if _MSC_VER.
+#if defined(_MSC_VER)
+#define YYSTACK_ALLOC _alloca
+#endif
 
 #define YYENABLE_NLS 0
 #define YYLTYPE_IS_TRIVIAL 1
