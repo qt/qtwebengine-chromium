@@ -24,6 +24,7 @@
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfapi/render/cpdf_textrenderer.h"
 #include "core/fpdfapi/render/cpdf_type3cache.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/cfx_facecache.h"
 #include "core/fxge/cfx_fxgedevice.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -281,8 +282,18 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
         int origin_x = FXSYS_round(matrix.e);
         int origin_y = FXSYS_round(matrix.f);
         if (glyphs.empty()) {
-          m_pDevice->SetBitMask(&pBitmap->m_Bitmap, origin_x + pBitmap->m_Left,
-                                origin_y - pBitmap->m_Top, fill_argb);
+          FX_SAFE_INT32 left = origin_x;
+          left += pBitmap->m_Left;
+          if (!left.IsValid())
+            continue;
+
+          FX_SAFE_INT32 top = origin_y;
+          top -= pBitmap->m_Top;
+          if (!top.IsValid())
+            continue;
+
+          m_pDevice->SetBitMask(&pBitmap->m_Bitmap, left.ValueOrDie(),
+                                top.ValueOrDie(), fill_argb);
         } else {
           glyphs[iChar].m_pGlyph = pBitmap;
           glyphs[iChar].m_OriginX = origin_x;
