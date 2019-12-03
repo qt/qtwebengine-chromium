@@ -103,6 +103,7 @@ class MEDIA_MOJO_EXPORT MojoCdmService
 
   base::WeakPtr<MojoCdmServiceContext> context_;
 
+  bool has_initialize_been_called_ = false;
   CdmFactory* cdm_factory_;
   scoped_refptr<MediaKeys> cdm_;
 

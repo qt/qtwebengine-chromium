@@ -106,7 +106,9 @@ void MojoCdmService::Initialize(const std::string& key_system,
                                 mojom::CdmConfigPtr cdm_config,
                                 const InitializeCallback& callback) {
   DVLOG(1) << __FUNCTION__ << ": " << key_system;
-  DCHECK(!cdm_);
+
+  CHECK(!has_initialize_been_called_) << "Initialize should only happen once";
+  has_initialize_been_called_ = true;
 
   auto weak_this = weak_factory_.GetWeakPtr();
   cdm_factory_->Create(
@@ -188,6 +190,7 @@ void MojoCdmService::OnCdmCreated(const InitializeCallback& callback,
     return;
   }
 
+  CHECK(!cdm_) << "CDM should only be created once.";
   cdm_ = cdm;
   cdm_id_ = next_cdm_id_++;
 
