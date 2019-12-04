@@ -53,6 +53,7 @@ class MediaSessionControllerTest : public RenderViewHostImplTestHarness {
     controller_->OnSetVolumeMultiplier(controller_->get_player_id_for_testing(),
                                        multiplier);
   }
+  void ResetHasSessionBit() { controller_->has_session_ = false; }
 
   template <typename T>
   bool ReceivedMessagePlayPause() {
@@ -212,6 +213,18 @@ TEST_F(MediaSessionControllerTest, Reinitialize) {
   EXPECT_TRUE(media_session()->IsSuspended());
   EXPECT_FALSE(media_session()->IsControllable());
   EXPECT_EQ(current_player_id, controller_->get_player_id_for_testing());
+}
+
+TEST_F(MediaSessionControllerTest, RemovePlayerIfSessionReset) {
+  ASSERT_TRUE(controller_->Initialize(
+      true, false, media::MediaContentType::Persistent, nullptr));
+  EXPECT_TRUE(media_session()->IsActive());
+
+  ResetHasSessionBit();
+  EXPECT_TRUE(media_session()->IsActive());
+
+  controller_.reset();
+  EXPECT_FALSE(media_session()->IsActive());
 }
 
 }  // namespace content

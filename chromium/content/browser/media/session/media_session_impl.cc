@@ -531,7 +531,8 @@ bool MediaSessionImpl::AddPepperPlayer(MediaSessionPlayerObserver* observer,
                                        int player_id) {
   bool success =
       RequestSystemAudioFocus(AudioFocusManager::AudioFocusType::Gain);
-  DCHECK(success);
+  if (!success)
+    return false;
 
   pepper_players_.insert(PlayerIdentifier(observer, player_id));
 

@@ -167,7 +167,7 @@ class MediaSessionImpl : public MediaSession,
   }
 
   // Returns whether the session has Pepper instances.
-  bool HasPepper() const;
+  CONTENT_EXPORT bool HasPepper() const;
 
   // WebContentsObserver implementation
   void WebContentsDestroyed() override;

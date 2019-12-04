@@ -55,6 +55,8 @@ class CONTENT_EXPORT MediaSessionController
   int get_player_id_for_testing() const { return player_id_; }
 
  private:
+  friend class MediaSessionControllerTest;
+
   const WebContentsObserver::MediaPlayerId id_;
 
   // Non-owned pointer; |media_web_contents_observer_| is the owner of |this|.

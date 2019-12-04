@@ -23,8 +23,6 @@ MediaSessionController::MediaSessionController(
 }
 
 MediaSessionController::~MediaSessionController() {
-  if (!has_session_)
-    return;
   media_session_->RemovePlayer(this, player_id_);
 }
 
@@ -56,10 +54,8 @@ bool MediaSessionController::Initialize(
   // Don't bother with a MediaSession for remote players or without audio.  If
   // we already have a session from a previous call, release it.
   if (!has_audio || is_remote) {
-    if (has_session_) {
-      has_session_ = false;
-      media_session_->RemovePlayer(this, player_id_);
-    }
+    has_session_ = false;
+    media_session_->RemovePlayer(this, player_id_);
     return true;
   }
 
