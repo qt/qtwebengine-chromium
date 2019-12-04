@@ -379,10 +379,18 @@ bool SiteInstanceImpl::DoesSiteRequireDedicatedProcess(
   if (SiteIsolationPolicy::UseDedicatedProcessesForAllSites())
     return true;
 
+  GURL site_url = GetSiteForURL(browser_context, url);
+  std::vector<std::string> additional_webui_schemes;
+  additional_webui_schemes.push_back(kChromeUIScheme);
+  GetContentClient()->browser()->GetAdditionalWebUISchemes(&additional_webui_schemes);
+  for (const auto& webui_scheme : additional_webui_schemes) {
+    if (site_url.SchemeIs(webui_scheme))
+      return true;
+  }
+
   // Let the content embedder enable site isolation for specific URLs. Use the
   // canonical site url for this check, so that schemes with nested origins
   // (blob and filesystem) work properly.
-  GURL site_url = GetSiteForURL(browser_context, url);
   if (GetContentClient()->IsSupplementarySiteIsolationModeEnabled() &&
       GetContentClient()->browser()->DoesSiteRequireDedicatedProcess(
           browser_context, site_url)) {
