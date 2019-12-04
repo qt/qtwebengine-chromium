@@ -1152,8 +1152,7 @@ void ResourceFetcher::didFinishLoading(Resource* resource,
       info->addRedirect(responses[i], crossOrigin);
     }
 
-    if (resource->response().isHTTP() &&
-        resource->response().httpStatusCode() < 400) {
+    if (resource->response().isHTTP()) {
       populateResourceTiming(info.get(), resource);
       info->setLoadFinishTime(finishTime);
       // encodedDataLength == -1 means "not available".
