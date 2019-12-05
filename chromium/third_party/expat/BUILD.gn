@@ -9,7 +9,7 @@ import("//testing/libfuzzer/fuzzer_test.gni")
 # let's not pull it in twice.
 # Chromecast doesn't ship expat as a system library.
 # Libfuzzer and AFL need to build library from sources.
-if (is_linux && !is_chromecast && !use_libfuzzer && !use_afl) {
+if (is_linux && !is_chromecast && !use_fuzzing_engine) {
   config("expat_config") {
     libs = [ "expat" ]
   }
@@ -33,8 +33,15 @@ if (is_linux && !is_chromecast && !use_libfuzzer && !use_afl) {
 
     public_configs = [ ":expat_config" ]
 
+    # TODO(thakis): Remove this once clang no longer crashes when building
+    # libexpat with -Oz.
+    configs -= [ "//build/config/compiler:default_optimization" ]
+    configs += [ "//build/config/compiler:optimize_max" ]
+
     defines = [ "_LIB" ]
     if (is_win) {
+      # expat expects to define WIN32_LEAN_AND_MEAN itself
+      configs -= [ "//build/config/win:lean_and_mean" ]
       defines += [ "COMPILED_FROM_DSP" ]
     } else {
       defines += [ "HAVE_EXPAT_CONFIG_H" ]
@@ -49,5 +56,6 @@ fuzzer_test("expat_xml_parse_fuzzer") {
   deps = [
     ":expat",
   ]
-  dict = "//testing/libfuzzer/fuzzers/dicts/xml.dict"
+  dict = "//third_party/libxml/fuzz/xml.dict"
+  seed_corpus = "//third_party/libxml/fuzz/seed_corpus"
 }
