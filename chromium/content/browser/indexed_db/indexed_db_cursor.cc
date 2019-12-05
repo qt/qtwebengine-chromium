@@ -15,8 +15,21 @@
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
+#include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBDatabaseException.h"
 
 namespace content {
+namespace {
+// This should never be script visible: the cursor should either be closed when
+// it hits the end of the range (and script throws an error before the call
+// could be made), if the transaction has finished (ditto), or if there's an
+// incoming request from the front end but the transaction has aborted on the
+// back end; in that case the tx will already have sent an abort to the request
+// so this would be ignored.
+IndexedDBDatabaseError CreateCursorClosedError() {
+  return IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
+                                "The cursor has been closed.");
+}
+} // namespace
 
 IndexedDBCursor::IndexedDBCursor(
     std::unique_ptr<IndexedDBBackingStore::Cursor> cursor,
@@ -32,13 +45,19 @@ IndexedDBCursor::IndexedDBCursor(
 }
 
 IndexedDBCursor::~IndexedDBCursor() {
-  transaction_->UnregisterOpenCursor(this);
+   // Call to make sure we complete our lifetime trace.
+   Close();
 }
 
 void IndexedDBCursor::Continue(std::unique_ptr<IndexedDBKey> key,
                                std::unique_ptr<IndexedDBKey> primary_key,
                                scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBCursor::Continue");
+
+  if (closed_) {
+    callbacks->OnError(CreateCursorClosedError());
+    return;
+  }
 
   transaction_->ScheduleTask(
       task_type_,
@@ -52,6 +71,11 @@ void IndexedDBCursor::Continue(std::unique_ptr<IndexedDBKey> key,
 void IndexedDBCursor::Advance(uint32_t count,
                               scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBCursor::Advance");
+
+  if (closed_) {
+    callbacks->OnError(CreateCursorClosedError());
+    return;
+  }
 
   transaction_->ScheduleTask(
       task_type_,
@@ -103,6 +127,11 @@ void IndexedDBCursor::PrefetchContinue(
     int number_to_fetch,
     scoped_refptr<IndexedDBCallbacks> callbacks) {
   IDB_TRACE("IndexedDBCursor::PrefetchContinue");
+
+  if (closed_) {
+    callbacks->OnError(CreateCursorClosedError());
+    return;
+  }
 
   transaction_->ScheduleTask(
       task_type_,
@@ -198,10 +227,14 @@ leveldb::Status IndexedDBCursor::PrefetchReset(int used_prefetches,
 }
 
 void IndexedDBCursor::Close() {
+  if (closed_)
+    return;
   IDB_TRACE("IndexedDBCursor::Close");
   closed_ = true;
   cursor_.reset();
   saved_cursor_.reset();
+  if (transaction_)
+    transaction_->UnregisterOpenCursor(this);
 }
 
 }  // namespace content
