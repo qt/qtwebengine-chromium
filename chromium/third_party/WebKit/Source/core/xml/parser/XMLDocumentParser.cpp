@@ -73,7 +73,9 @@
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
 #include "wtf/text/UTF8.h"
+#if defined(LIBXML_CATALOG_ENABLED)
 #include <libxml/catalog.h>
+#endif
 #include <libxml/parser.h>
 #include <libxml/parserInternals.h>
 #include <libxslt/xslt.h>
@@ -699,7 +701,9 @@ static void initializeLibXMLIfNecessary() {
   // We don't want libxml to try and load catalogs.
   // FIXME: It's not nice to set global settings in libxml, embedders of Blink
   // could be trying to use libxml themselves.
+#if defined(LIBXML_CATALOG_ENABLED)
   xmlCatalogSetDefaults(XML_CATA_ALLOW_NONE);
+#endif
   xmlInitParser();
   xmlRegisterInputCallbacks(matchFunc, openFunc, readFunc, closeFunc);
   xmlRegisterOutputCallbacks(matchFunc, openFunc, writeFunc, closeFunc);

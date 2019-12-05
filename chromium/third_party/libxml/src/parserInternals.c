@@ -10,7 +10,7 @@
 #define IN_LIBXML
 #include "libxml.h"
 
-#if defined(WIN32) && !defined (__CYGWIN__)
+#if defined(_WIN32) && !defined (__CYGWIN__)
 #define XML_DIR_SEP '\\'
 #else
 #define XML_DIR_SEP '/'
@@ -32,7 +32,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef HAVE_ZLIB_H
+#ifdef LIBXML_ZLIB_ENABLED
 #include <zlib.h>
 #endif
 
@@ -435,8 +435,6 @@ xmlNextChar(xmlParserCtxtPtr ctxt)
 
     if ((*ctxt->input->cur == 0) &&
         (xmlParserInputGrow(ctxt->input, INPUT_CHUNK) <= 0)) {
-        if ((ctxt->instate != XML_PARSER_COMMENT))
-            xmlPopInput(ctxt);
         return;
     }
 
@@ -470,8 +468,8 @@ xmlNextChar(xmlParserCtxtPtr ctxt)
 
         c = *cur;
         if (c & 0x80) {
-        if (c == 0xC0)
-	    goto encoding_error;
+            if (c == 0xC0)
+	        goto encoding_error;
             if (cur[1] == 0) {
                 xmlParserInputGrow(ctxt->input, INPUT_CHUNK);
                 cur = ctxt->input->cur;
@@ -523,8 +521,6 @@ xmlNextChar(xmlParserCtxtPtr ctxt)
             ctxt->input->cur++;
 
         ctxt->nbChars++;
-        if (*ctxt->input->cur == 0)
-            xmlParserInputGrow(ctxt->input, INPUT_CHUNK);
     } else {
         /*
          * Assume it's a fixed length encoding (1) with
@@ -538,14 +534,9 @@ xmlNextChar(xmlParserCtxtPtr ctxt)
             ctxt->input->col++;
         ctxt->input->cur++;
         ctxt->nbChars++;
-        if (*ctxt->input->cur == 0)
-            xmlParserInputGrow(ctxt->input, INPUT_CHUNK);
     }
-    if ((*ctxt->input->cur == '%') && (!ctxt->html))
-        xmlParserHandlePEReference(ctxt);
-    if ((*ctxt->input->cur == 0) &&
-        (xmlParserInputGrow(ctxt->input, INPUT_CHUNK) <= 0))
-        xmlPopInput(ctxt);
+    if (*ctxt->input->cur == 0)
+        xmlParserInputGrow(ctxt->input, INPUT_CHUNK);
     return;
 encoding_error:
     /*
@@ -1101,8 +1092,15 @@ xmlSwitchEncoding(xmlParserCtxtPtr ctxt, xmlCharEncoding enc)
 	        break;
 	}
     }
-    if (handler == NULL)
+    /*
+     * TODO: We could recover from errors in external entites if we
+     * didn't stop the parser. But most callers of this function don't
+     * check the return value.
+     */
+    if (handler == NULL) {
+        xmlStopParser(ctxt);
 	return(-1);
+    }
     ctxt->charset = XML_CHAR_ENCODING_UTF8;
     ret = xmlSwitchToEncodingInt(ctxt, handler, len);
     if ((ret < 0) || (ctxt->errNo == XML_I18N_CONV_FAILED)) {
@@ -1226,6 +1224,7 @@ xmlSwitchInputEncodingInt(xmlParserCtxtPtr ctxt, xmlParserInputPtr input,
                  */
                 nbchars = xmlCharEncFirstLineInput(input->buf, len);
             }
+            xmlBufResetInput(input->buf->buffer, input);
             if (nbchars < 0) {
                 xmlErrInternal(ctxt,
                                "switching encoding: encoder error\n",
@@ -1233,7 +1232,6 @@ xmlSwitchInputEncodingInt(xmlParserCtxtPtr ctxt, xmlParserInputPtr input,
                 return (-1);
             }
 	    input->buf->rawconsumed += use - xmlBufUse(input->buf->raw);
-            xmlBufResetInput(input->buf->buffer, input);
         }
         return (0);
     } else if (input->length == 0) {
@@ -1242,8 +1240,18 @@ xmlSwitchInputEncodingInt(xmlParserCtxtPtr ctxt, xmlParserInputPtr input,
 	 * size to be able to convert the buffer.
 	 */
 	xmlErrInternal(ctxt, "switching encoding : no input\n", NULL);
+        /*
+         * Callers assume that the input buffer takes ownership of the
+         * encoding handler. xmlCharEncCloseFunc frees unregistered
+         * handlers and avoids a memory leak.
+         */
+        xmlCharEncCloseFunc(handler);
 	return (-1);
     }
+    /*
+     * We should actually raise an error here, see issue #34.
+     */
+    xmlCharEncCloseFunc(handler);
     return (0);
 }
 
@@ -1369,8 +1377,13 @@ xmlNewInputStream(xmlParserCtxtPtr ctxt) {
      * should not happen while parsing which is the situation where
      * the id is actually needed.
      */
-    if (ctxt != NULL)
+    if (ctxt != NULL) {
+        if (ctxt->input_id >= INT_MAX) {
+            xmlErrMemory(ctxt, "Input ID overflow\n");
+            return(NULL);
+        }
         input->id = ctxt->input_id++;
+    }
 
     return(input);
 }
@@ -1797,7 +1810,7 @@ xmlFreeParserCtxt(xmlParserCtxtPtr ctxt)
     if (ctxt->pushTab != NULL) xmlFree(ctxt->pushTab);
     if (ctxt->attallocs != NULL) xmlFree(ctxt->attallocs);
     if (ctxt->attsDefault != NULL)
-        xmlHashFree(ctxt->attsDefault, (xmlHashDeallocator) xmlFree);
+        xmlHashFree(ctxt->attsDefault, xmlHashDefaultDeallocator);
     if (ctxt->attsSpecial != NULL)
         xmlHashFree(ctxt->attsSpecial, NULL);
     if (ctxt->freeElems != NULL) {

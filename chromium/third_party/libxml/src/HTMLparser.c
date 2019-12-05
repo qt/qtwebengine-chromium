@@ -26,7 +26,7 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#ifdef HAVE_ZLIB_H
+#ifdef LIBXML_ZLIB_ENABLED
 #include <zlib.h>
 #endif
 
@@ -1084,7 +1084,7 @@ static const char * const htmlStartClose[] = {
 "menu",		"p", "head", "ul", NULL,
 "p",		"p", "head", "h1", "h2", "h3", "h4", "h5", "h6", FONTSTYLE, NULL,
 "div",		"p", "head", NULL,
-"noscript",	"p", NULL,
+"noscript",	"script", NULL,
 "center",	"font", "b", "i", "p", "head", NULL,
 "a",		"a", "head", NULL,
 "caption",	"p", NULL,
@@ -2528,8 +2528,12 @@ htmlParseNameComplex(xmlParserCtxtPtr ctxt) {
 	}
     }
 
-    if (ctxt->input->base > ctxt->input->cur - len)
-	return(NULL);
+    if (ctxt->input->cur - ctxt->input->base < len) {
+        /* Sanity check */
+	htmlParseErr(ctxt, XML_ERR_INTERNAL_ERROR,
+                     "unexpected change of input buffer", NULL, NULL);
+        return (NULL);
+    }
 
     return(xmlDictLookup(ctxt->dict, ctxt->input->cur - len, len));
 }
@@ -3632,12 +3636,12 @@ htmlCheckEncodingDirect(htmlParserCtxtPtr ctxt, const xmlChar *encoding) {
 	    processed = ctxt->input->cur - ctxt->input->base;
 	    xmlBufShrink(ctxt->input->buf->buffer, processed);
 	    nbchars = xmlCharEncInput(ctxt->input->buf, 1);
+            xmlBufResetInput(ctxt->input->buf->buffer, ctxt->input);
 	    if (nbchars < 0) {
 		htmlParseErr(ctxt, XML_ERR_INVALID_ENCODING,
 		             "htmlCheckEncoding: encoder error\n",
 			     NULL, NULL);
 	    }
-            xmlBufResetInput(ctxt->input->buf->buffer, ctxt->input);
 	}
     }
 }
@@ -4444,7 +4448,7 @@ static void
 htmlParseElementInternal(htmlParserCtxtPtr ctxt) {
     const xmlChar *name;
     const htmlElemDesc * info;
-    htmlParserNodeInfo node_info = { 0, };
+    htmlParserNodeInfo node_info = { NULL, 0, 0, 0, 0 };
     int failed;
 
     if ((ctxt == NULL) || (ctxt->input == NULL)) {
@@ -4941,6 +4945,7 @@ htmlInitParserCtxt(htmlParserCtxtPtr ctxt)
     ctxt->wellFormed = 1;
     ctxt->replaceEntities = 0;
     ctxt->linenumbers = xmlLineNumbersDefaultValue;
+    ctxt->keepBlanks = xmlKeepBlanksDefaultValue;
     ctxt->html = 1;
     ctxt->vctxt.finishDtd = XML_CTXT_FINISH_DTD_0;
     ctxt->vctxt.userData = ctxt;
@@ -6273,7 +6278,8 @@ htmlCreatePushParserCtxt(htmlSAXHandlerPtr sax, void *user_data,
  */
 
 htmlDocPtr
-htmlSAXParseDoc(xmlChar *cur, const char *encoding, htmlSAXHandlerPtr sax, void *userData) {
+htmlSAXParseDoc(const xmlChar *cur, const char *encoding,
+                htmlSAXHandlerPtr sax, void *userData) {
     htmlDocPtr ret;
     htmlParserCtxtPtr ctxt;
 
@@ -6312,7 +6318,7 @@ htmlSAXParseDoc(xmlChar *cur, const char *encoding, htmlSAXHandlerPtr sax, void 
  */
 
 htmlDocPtr
-htmlParseDoc(xmlChar *cur, const char *encoding) {
+htmlParseDoc(const xmlChar *cur, const char *encoding) {
     return(htmlSAXParseDoc(cur, encoding, NULL, NULL));
 }
 
@@ -6668,7 +6674,7 @@ htmlCtxtReset(htmlParserCtxtPtr ctxt)
     xmlInitNodeInfoSeq(&ctxt->node_seq);
 
     if (ctxt->attsDefault != NULL) {
-        xmlHashFree(ctxt->attsDefault, (xmlHashDeallocator) xmlFree);
+        xmlHashFree(ctxt->attsDefault, xmlHashDefaultDeallocator);
         ctxt->attsDefault = NULL;
     }
     if (ctxt->attsSpecial != NULL) {
