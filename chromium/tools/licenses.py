@@ -27,7 +27,11 @@ import subprocess
 import sys
 import tempfile
 
+# TODO(agrieve): Move build_utils.WriteDepFile into a non-android directory.
 _REPOSITORY_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.join(_REPOSITORY_ROOT, 'build/android/gyp'))
+from util import build_utils
+
 
 # Paths from the root of the tree to directories to skip.
 PRUNE_PATHS = set([
@@ -609,18 +613,15 @@ def GenerateCredits(
         for key, val in env.items():
             if escape:
                 val = cgi.escape(val)
-                val = val.replace("*/", "* /")
             template = template.replace('{{%s}}' % key, val)
         return template
 
     def MetadataToTemplateEntry(metadata, entry_template):
         env = {
             'name': metadata['Name'],
-            'name-sanitized': metadata['Name'].replace(' ', '-'),
             'url': metadata['URL'],
             'license': open(metadata['License File'], 'rb').read(),
-            'license-type': metadata['License']
-       }
+        }
         return {
             'name': metadata['Name'],
             'content': EvaluateTemplate(entry_template, env),
@@ -652,7 +653,6 @@ def GenerateCredits(
     chromium_license_metadata = {
         'Name': 'The Chromium Project',
         'URL': 'http://www.chromium.org',
-        'License': 'BSD 3-clause "New" or "Revised" License',
         'License File': os.path.join(_REPOSITORY_ROOT, 'LICENSE') }
     entries.append(MetadataToTemplateEntry(chromium_license_metadata,
         entry_template))
@@ -699,6 +699,19 @@ def GenerateCredits(
           output.write(template_contents)
     else:
       print(template_contents)
+
+    if depfile:
+      assert output_file
+      # Add in build.ninja so that the target will be considered dirty whenever
+      # gn gen is run. Otherwise, it will fail to notice new files being added.
+      # This is still no perfect, as it will fail if no build files are changed,
+      # but a new README.chromium / LICENSE is added. This shouldn't happen in
+      # practice however.
+      license_file_list = (entry['license_file'] for entry in entries)
+      license_file_list = (os.path.relpath(p) for p in license_file_list)
+      license_file_list = sorted(set(license_file_list))
+      build_utils.WriteDepfile(depfile, output_file,
+                               license_file_list + ['build.ninja'])
 
     return True
 
@@ -764,6 +777,7 @@ def main():
     parser.add_argument('command',
                         choices=['help', 'scan', 'credits', 'license_file'])
     parser.add_argument('output_file', nargs='?')
+    build_utils.AddDepfileOption(parser)
     args = parser.parse_args()
 
     if args.command == 'scan':
@@ -772,7 +786,7 @@ def main():
     elif args.command == 'credits':
         if not GenerateCredits(args.file_template, args.entry_template,
                                args.output_file, args.target_os,
-                               args.gn_out_dir, args.gn_target):
+                               args.gn_out_dir, args.gn_target, args.depfile):
             return 1
     elif args.command == 'license_file':
         try:
