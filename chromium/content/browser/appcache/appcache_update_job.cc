@@ -167,7 +167,8 @@ int64_t ComputeAppCacheResponsePadding(const GURL& response_url,
 
   return storage::ComputeResponsePadding(response_url.spec(),
                                          storage::GetDefaultPaddingKey(),
-                                         /*has_metadata=*/false);
+                                         /*has_metadata=*/false,
+                                         /*loaded_with_credentials=*/false);
 }
 
 }  // namespace
