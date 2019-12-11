@@ -764,9 +764,8 @@ void RenderThreadImpl::Init() {
 
 #if BUILDFLAG(ENABLE_WEBRTC)
   audio_input_ipc_factory_.emplace(main_thread_runner(), GetIOTaskRunner());
-
-  audio_output_ipc_factory_.emplace(GetIOTaskRunner());
 #endif
+  audio_output_ipc_factory_.emplace(GetIOTaskRunner());
 
   registry->AddInterface(base::BindRepeating(&SharedWorkerFactoryImpl::Create),
                          base::ThreadTaskRunnerHandle::Get());

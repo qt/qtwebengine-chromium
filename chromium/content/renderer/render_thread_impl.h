@@ -601,10 +601,10 @@ class CONTENT_EXPORT RenderThreadImpl
   // Provides AudioInputIPC objects for audio input devices. Initialized in
   // Init.
   base::Optional<AudioInputIPCFactory> audio_input_ipc_factory_;
+#endif
   // Provides AudioOutputIPC objects for audio output devices. Initialized in
   // Init.
   base::Optional<AudioOutputIPCFactory> audio_output_ipc_factory_;
-#endif
 
   // Used on the render thread.
   std::unique_ptr<VideoCaptureImplManager> vc_manager_;
