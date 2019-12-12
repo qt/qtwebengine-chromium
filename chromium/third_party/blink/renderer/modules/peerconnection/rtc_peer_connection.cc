@@ -637,12 +637,13 @@ void RTCPeerConnection::Dispose() {
 }
 
 ScriptPromise RTCPeerConnection::createOffer(ScriptState* script_state,
-                                             const RTCOfferOptions& options) {
+                                             const RTCOfferOptions& options,
+                                             ExceptionState& exception_state) {
   if (signaling_state_ ==
       webrtc::PeerConnectionInterface::SignalingState::kClosed) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
-                                           kSignalingStateClosedMessage));
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      kSignalingStateClosedMessage);
+    return ScriptPromise();
   }
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
@@ -723,12 +724,13 @@ ScriptPromise RTCPeerConnection::createOffer(
 }
 
 ScriptPromise RTCPeerConnection::createAnswer(ScriptState* script_state,
-                                              const RTCAnswerOptions& options) {
+                                              const RTCAnswerOptions& options,
+                                              ExceptionState& exception_state) {
   if (signaling_state_ ==
       webrtc::PeerConnectionInterface::SignalingState::kClosed) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
-                                           kSignalingStateClosedMessage));
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      kSignalingStateClosedMessage);
+    return ScriptPromise();
   }
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
@@ -826,12 +828,16 @@ DOMException* RTCPeerConnection::checkSdpForStateErrors(
 
 ScriptPromise RTCPeerConnection::setLocalDescription(
     ScriptState* script_state,
-    const RTCSessionDescriptionInit& session_description_init) {
+    const RTCSessionDescriptionInit& session_description_init,
+    ExceptionState& exception_state) {
   String sdp;
   DOMException* exception = checkSdpForStateErrors(
       ExecutionContext::From(script_state), session_description_init, &sdp);
   if (exception) {
-    return ScriptPromise::RejectWithDOMException(script_state, exception);
+    exception_state.ThrowDOMException(
+        static_cast<DOMExceptionCode>(exception->code()),
+        exception->message());
+    return ScriptPromise();
   }
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
@@ -893,12 +899,13 @@ RTCSessionDescription* RTCPeerConnection::localDescription() {
 
 ScriptPromise RTCPeerConnection::setRemoteDescription(
     ScriptState* script_state,
-    const RTCSessionDescriptionInit& session_description_init) {
+    const RTCSessionDescriptionInit& session_description_init,
+    ExceptionState& exception_state) {
   if (signaling_state_ ==
       webrtc::PeerConnectionInterface::SignalingState::kClosed) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
-                                           kSignalingStateClosedMessage));
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      kSignalingStateClosedMessage);
+    return ScriptPromise();
   }
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
@@ -1058,10 +1065,9 @@ ScriptPromise RTCPeerConnection::generateCertificate(
         key_params =
             WebRTCKeyParams::CreateRSA(modulus_length, public_exponent);
       } else {
-        return ScriptPromise::RejectWithDOMException(
-            script_state,
-            DOMException::Create(DOMExceptionCode::kNotSupportedError,
-                                 unsupported_params_string));
+        exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                          unsupported_params_string);
+        return ScriptPromise();
       }
       break;
     case kWebCryptoAlgorithmIdEcdsa:
@@ -1071,19 +1077,17 @@ ScriptPromise RTCPeerConnection::generateCertificate(
           kWebCryptoNamedCurveP256) {
         key_params = WebRTCKeyParams::CreateECDSA(kWebRTCECCurveNistP256);
       } else {
-        return ScriptPromise::RejectWithDOMException(
-            script_state,
-            DOMException::Create(DOMExceptionCode::kNotSupportedError,
-                                 unsupported_params_string));
+        exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                          unsupported_params_string);
+        return ScriptPromise();
       }
       break;
     default:
-      return ScriptPromise::RejectWithDOMException(
-          script_state,
-          DOMException::Create(DOMExceptionCode::kNotSupportedError,
-                               "The 1st argument provided is an "
-                               "AlgorithmIdentifier, but the "
-                               "algorithm is not supported."));
+      exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                        "The 1st argument provided is an "
+                                        "AlgorithmIdentifier, but the "
+                                        "algorithm is not supported.");
+      return ScriptPromise();
       break;
   }
   DCHECK(key_params.has_value());
@@ -1094,9 +1098,9 @@ ScriptPromise RTCPeerConnection::generateCertificate(
   // |keyParams| was successfully constructed, but does the certificate
   // generator support these parameters?
   if (!certificate_generator->IsSupportedKeyParams(key_params.value())) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(DOMExceptionCode::kNotSupportedError,
-                                           unsupported_params_string));
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                      unsupported_params_string);
+    return ScriptPromise();
   }
 
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
@@ -1129,9 +1133,9 @@ ScriptPromise RTCPeerConnection::addIceCandidate(
     ExceptionState& exception_state) {
   if (signaling_state_ ==
       webrtc::PeerConnectionInterface::SignalingState::kClosed) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
-                                           kSignalingStateClosedMessage));
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      kSignalingStateClosedMessage);
+    return ScriptPromise();
   }
 
   if (IsIceCandidateMissingSdp(candidate)) {
@@ -1400,12 +1404,12 @@ ScriptPromise RTCPeerConnection::getStats(ScriptState* script_state,
   // "getStats(optional MediaStreamTrack? selector)". null is a valid selector
   // value, but a value of the wrong type isn't.
   if (first_argument->IsNullOrUndefined())
-    return PromiseBasedGetStats(script_state, nullptr);
+    return PromiseBasedGetStats(script_state, nullptr, exception_state);
 
   MediaStreamTrack* track =
       V8MediaStreamTrack::ToImplWithTypeCheck(isolate, first_argument);
   if (track)
-    return PromiseBasedGetStats(script_state, track);
+    return PromiseBasedGetStats(script_state, track, exception_state);
 
   exception_state.ThrowTypeError(
       "The argument provided as parameter 1 is neither a callback (function) "
@@ -1434,17 +1438,17 @@ ScriptPromise RTCPeerConnection::LegacyCallbackBasedGetStats(
 
 ScriptPromise RTCPeerConnection::PromiseBasedGetStats(
     ScriptState* script_state,
-    MediaStreamTrack* selector) {
+    MediaStreamTrack* selector,
+    ExceptionState& exception_state) {
   if (!selector) {
     ExecutionContext* context = ExecutionContext::From(script_state);
     UseCounter::Count(context, WebFeature::kRTCPeerConnectionGetStats);
 
     if (!peer_handler_) {
       LOG(ERROR) << "Internal error: peer_handler_ has been discarded";
-      return ScriptPromise::RejectWithDOMException(
-          script_state,
-          DOMException::Create(DOMExceptionCode::kOperationError,
-                               "Internal error: release in progress"));
+      exception_state.ThrowDOMException(DOMExceptionCode::kOperationError,
+                                        "Internal error: release in progress");
+      return ScriptPromise();
     }
     ScriptPromiseResolver* resolver =
         ScriptPromiseResolver::Create(script_state);
@@ -1472,17 +1476,16 @@ ScriptPromise RTCPeerConnection::PromiseBasedGetStats(
     }
   }
   if (track_uses == 0u) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(DOMExceptionCode::kInvalidAccessError,
-                             "There is no sender or receiver for the track."));
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidAccessError,
+        "There is no sender or receiver for the track.");
+    return ScriptPromise();
   }
   if (track_uses > 1u) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state,
-        DOMException::Create(
-            DOMExceptionCode::kInvalidAccessError,
-            "There are more than one sender or receiver for the track."));
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidAccessError,
+        "There are more than one sender or receiver for the track.");
+    return ScriptPromise();
   }
   // There is just one use of the track, a sender or receiver.
   if (track_sender) {
