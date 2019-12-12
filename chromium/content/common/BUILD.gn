@@ -34,7 +34,7 @@ buildflag_header("buildflags") {
   ]
 }
 
-source_set("common") {
+static_library("common") {
   # Targets external to content should always link to the public API.
   # In addition, targets outside of the content component (shell and tests)
   # must not link to this because it will duplicate the code in the component
