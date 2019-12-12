@@ -27,7 +27,7 @@ import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 import("//build/config/deprecated_default_sources_assignment_filter.gni")
 set_sources_assignment_filter(deprecated_default_sources_assignment_filter)
 
-source_set("browser") {
+static_library("browser") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
   visibility = [
