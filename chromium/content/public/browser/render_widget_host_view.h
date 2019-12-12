@@ -31,6 +31,9 @@ class Size;
 namespace ui {
 enum class DomCode;
 class TextInputClient;
+#if defined(TOOLKIT_QT)
+class Compositor;
+#endif
 }
 
 namespace viz {
@@ -108,6 +111,10 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // renderer in IPC messages.
   virtual gfx::NativeView GetNativeView() = 0;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() = 0;
+
+#if defined(TOOLKIT_QT)
+  virtual ui::Compositor *GetCompositor() { return nullptr; }
+#endif
 
   // Returns a ui::TextInputClient to support text input or nullptr if this RWHV
   // doesn't support text input.
