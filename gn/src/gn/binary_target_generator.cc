@@ -94,6 +94,7 @@ bool BinaryTargetGenerator::FillSources() {
   for (std::size_t i = 0; i < target_->sources().size(); ++i) {
     const auto& source = target_->sources()[i];
     const SourceFile::Type source_type = source.GetType();
+#if 0
     switch (source_type) {
       case SourceFile::SOURCE_CPP:
       case SourceFile::SOURCE_MODULEMAP:
@@ -121,6 +122,7 @@ bool BinaryTargetGenerator::FillSources() {
                     Target::GetStringForOutputType(target_->output_type()) +
                     ". " + source.value() + " is not one of the valid types.");
     }
+#endif
 
     target_->source_types_used().Set(source_type);
   }
