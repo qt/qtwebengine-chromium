@@ -185,16 +185,18 @@ void SSLManager::DidCommitProvisionalLoad(const LoadCommittedDetails& details) {
   int add_content_status_flags = 0;
   int remove_content_status_flags = 0;
 
-  if (!details.is_main_frame) {
-    // If it wasn't a main-frame navigation, then carry over content
-    // status flags. (For example, the mixed content flag shouldn't
-    // clear because of a frame navigation.)
+  if (!details.is_main_frame || details.is_same_document) {
+    // For subframe navigations, and for same-document main-frame navigations,
+    // carry over content status flags from the previously committed entry. For
+    // example, the mixed content flag shouldn't clear because of a subframe
+    // navigation, or because of a back/forward navigation that doesn't leave
+    // the current document. (See https://crbug.com/959571.)
     NavigationEntryImpl* previous_entry =
         controller_->GetEntryAtIndex(details.previous_entry_index);
     if (previous_entry) {
       add_content_status_flags = previous_entry->GetSSL().content_status;
     }
-  } else if (!details.is_same_document) {
+  } else {
     // For main-frame non-same-page navigations, clear content status
     // flags. These flags are set based on the content on the page, and thus
     // should reflect the current content, even if the navigation was to an
