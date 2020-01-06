@@ -741,7 +741,9 @@ void CPDF_Creator::InitID() {
   m_pIDArray->Add(m_pIDArray->GetObjectAt(0)->Clone());
   if (m_pEncryptDict) {
     ASSERT(m_pParser);
-    if (m_pEncryptDict->GetStringFor("Filter") == "Standard") {
+    int revision = m_pEncryptDict->GetIntegerFor("R");
+    if ((revision == 2 || revision == 3) &&
+        m_pEncryptDict->GetStringFor("Filter") == "Standard") {
       ByteString user_pass = m_pParser->GetPassword();
       m_pSecurityHandler = pdfium::MakeUnique<CPDF_SecurityHandler>();
       m_pSecurityHandler->OnCreate(m_pEncryptDict.Get(), m_pIDArray.get(),
