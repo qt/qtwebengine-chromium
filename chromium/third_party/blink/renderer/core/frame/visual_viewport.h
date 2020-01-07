@@ -91,10 +91,9 @@ struct PaintPropertyTreeBuilderFragmentContext;
 //     +- PLC::m_layerForVerticalScrollbar
 //     +- PLC::m_layerForScrollCorner (non-overlay only)
 //
-class CORE_EXPORT VisualViewport final
-    : public GarbageCollectedFinalized<VisualViewport>,
-      public GraphicsLayerClient,
-      public ScrollableArea {
+class CORE_EXPORT VisualViewport : public GarbageCollectedFinalized<VisualViewport>,
+                                   public GraphicsLayerClient,
+                                   public ScrollableArea {
   USING_GARBAGE_COLLECTED_MIXIN(VisualViewport);
 
  public:
@@ -191,6 +190,9 @@ class CORE_EXPORT VisualViewport final
                        ScrollType,
                        ScrollBehavior,
                        ScrollCallback on_finish) override;
+  void SetScrollOffset(const ScrollOffset&,
+                       ScrollType,
+                       ScrollBehavior = kScrollBehaviorInstant) override;
   PhysicalRect ScrollIntoView(const PhysicalRect&,
                               const WebScrollIntoViewParams&) override;
   bool IsThrottled() const override {
@@ -228,7 +230,8 @@ class CORE_EXPORT VisualViewport final
   CompositorAnimationTimeline* GetCompositorAnimationTimeline() const override;
   IntRect VisibleContentRect(
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
-  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() const final;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner()
+      const override;
 
   // VisualViewport scrolling may involve pinch zoom and gets routed through
   // WebViewImpl explicitly rather than via ScrollingCoordinator::DidScroll

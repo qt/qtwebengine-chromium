@@ -50,9 +50,6 @@ class CORE_EXPORT ElementFragmentAnchor final : public FragmentAnchor {
   // so we can't do it in Invoke.
   void PerformPreRafActions() override;
 
-  // We can dispose of the fragment once load has been completed.
-  void DidCompleteLoad() override;
-
   void Trace(blink::Visitor*) override;
 
  private:

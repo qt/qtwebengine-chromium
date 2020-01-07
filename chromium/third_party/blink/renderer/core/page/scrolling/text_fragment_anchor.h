@@ -44,8 +44,6 @@ class CORE_EXPORT TextFragmentAnchor final : public FragmentAnchor,
 
   void PerformPreRafActions() override;
 
-  void DidCompleteLoad() override;
-
   void Trace(blink::Visitor*) override;
 
   // TextFragmentFinder::Client interface

@@ -51,7 +51,6 @@ class CORE_EXPORT FragmentAnchor
 
   virtual void DidScroll(ScrollType type) = 0;
   virtual void PerformPreRafActions() = 0;
-  virtual void DidCompleteLoad() = 0;
 
   virtual void Trace(blink::Visitor*) {}
 };
