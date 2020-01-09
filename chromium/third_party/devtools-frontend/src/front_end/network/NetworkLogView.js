@@ -1853,7 +1853,7 @@ Network.NetworkLogView = class extends UI.VBox {
 
     if (request.requestMethod !== inferredMethod) {
       command.push('-X');
-      command.push(request.requestMethod);
+      command.push(escapeString(request.requestMethod));
     }
 
     const requestHeaders = request.requestHeaders();
