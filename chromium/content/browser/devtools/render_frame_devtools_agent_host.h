@@ -32,6 +32,7 @@ namespace content {
 class BrowserContext;
 class DevToolsFrameTraceRecorder;
 class FrameTreeNode;
+class NavigationRequest;
 class NavigationHandleImpl;
 class RenderFrameHostImpl;
 struct DevToolsFrameMetadata;
@@ -69,6 +70,9 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
       RenderFrameHost* frame_host,
       const DevToolsFrameMetadata& frame_metadata);
   FrameTreeNode* frame_tree_node() { return frame_tree_node_; }
+
+  void OnNavigationRequestWillBeSent(
+      const NavigationRequest& navigation_request);
 
   // DevToolsAgentHost overrides.
   void DisconnectWebContents() override;
