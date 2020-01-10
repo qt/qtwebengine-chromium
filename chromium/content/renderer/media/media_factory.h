@@ -41,6 +41,7 @@ class LayerTreeSettings;
 namespace media {
 class CdmFactory;
 class DecoderFactory;
+class DefaultDecoderFactory;
 class MediaLog;
 class MediaObserver;
 class RemotePlaybackClientWrapper;
@@ -179,7 +180,7 @@ class MediaFactory {
   media::RendererWebMediaPlayerDelegate* media_player_delegate_ = nullptr;
 
   // The CDM and decoder factory attached to this frame, lazily initialized.
-  std::unique_ptr<media::DecoderFactory> decoder_factory_;
+  std::unique_ptr<media::DefaultDecoderFactory> decoder_factory_;
   std::unique_ptr<media::CdmFactory> cdm_factory_;
 
   // Media resource cache, lazily initialized.
