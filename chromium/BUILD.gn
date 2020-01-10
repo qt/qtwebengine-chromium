@@ -225,7 +225,7 @@ group("gn_all") {
       "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
       "//third_party/smhasher:pmurhash",
     ]
-  } else if (is_ios) {
+  } else if (is_ios && !use_qt) {
     deps += [
       "//ios:all",
       "//third_party/crashpad/crashpad:crashpad_tests",

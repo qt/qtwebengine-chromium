@@ -166,7 +166,7 @@ source_set("fxge") {
     sources += [ "fx_ge_linux.cpp" ]
   }
 
-  if (is_mac) {
+  if (is_mac || is_ios) {
     sources += [
       "apple/apple_int.h",
       "apple/fx_apple_platform.cpp",

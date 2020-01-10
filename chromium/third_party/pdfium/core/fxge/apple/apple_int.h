@@ -8,14 +8,17 @@
 #define CORE_FXGE_APPLE_APPLE_INT_H_
 
 #include "core/fxcrt/fx_system.h"
-
-#include <Carbon/Carbon.h>
-
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/fx_dib.h"
 #include "core/fxge/renderdevicedriver_iface.h"
+
+#if !defined(OS_IOS)
+#include <Carbon/Carbon.h>
+#else
+class CGPoint;
+#endif
 
 class CQuartz2D {
  public:
