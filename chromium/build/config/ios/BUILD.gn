@@ -86,27 +86,28 @@ config("compiler") {
 # that is iOS-only. Please see that target for advice on what should go in
 # :runtime_library vs. :compiler.
 config("runtime_library") {
-  if (ios_enable_relative_sdk_path) {
-    sysroot_flags = [
-      "-isysroot",
-      rebase_path(sysroot, root_build_dir),
-    ]
-  } else {
-    sysroot_flags = [
-      "-isysroot",
-      sysroot,
-    ]
-  }
+
   if (use_qt_fat_lib) {
     common_flags = [
       "-Xarch_arm64",
-      sysroot_flags,
+      "-isysroot" + sysroot,
       "-Xarch_x86_64",
       "-isysroot" + additional_target_sysroot[0],
     ]
     common_flags += [ "-Xarch_x86_64","-mios-simulator-version-min=$ios_deployment_target" ]
     common_flags += [ "-Xarch_arm64","-miphoneos-version-min=$ios_deployment_target" ]
   } else {
+    if (ios_enable_relative_sdk_path) {
+      sysroot_flags = [
+        "-isysroot",
+        rebase_path(sysroot, root_build_dir),
+      ]
+    } else {
+      sysroot_flags = [
+        "-isysroot",
+        sysroot,
+      ]
+    }
 
     common_flags = sysroot_flags
 

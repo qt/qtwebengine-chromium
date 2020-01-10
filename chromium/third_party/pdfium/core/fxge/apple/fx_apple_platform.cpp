@@ -27,6 +27,10 @@
 
 #ifndef _SKIA_SUPPORT_
 
+#if defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 namespace {
 
 void DoNothing(void* info, const void* data, size_t size) {}
