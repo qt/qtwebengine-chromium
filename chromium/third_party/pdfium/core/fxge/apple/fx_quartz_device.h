@@ -7,11 +7,16 @@
 #ifndef CORE_FXGE_APPLE_FX_QUARTZ_DEVICE_H_
 #define CORE_FXGE_APPLE_FX_QUARTZ_DEVICE_H_
 
-#include <Carbon/Carbon.h>
 #include <stdint.h>
 
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/dib/fx_dib.h"
+
+#if !defined(OS_IOS)
+#include <Carbon/Carbon.h>
+#else
+class CGPoint;
+#endif
 
 class CFX_DIBitmap;
 class CFX_Matrix;

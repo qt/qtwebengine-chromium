@@ -17,6 +17,10 @@
 #include "core/fxge/agg/fx_agg_driver.h"
 #endif
 
+#if defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 #ifndef CGFLOAT_IS_DOUBLE
 #error Expected CGFLOAT_IS_DOUBLE to be defined by CoreGraphics headers
 #endif
