@@ -6,11 +6,15 @@
 # implementation. Use the meta target //third_party:jpeg instead.
 
 import("//build/config/sanitizers/sanitizers.gni")
+import("//build/config/features.gni")
+
 if (current_cpu == "arm") {
   import("//build/config/arm.gni")
 }
 
+if (!use_qt) {
 assert(!is_ios, "This is not used on iOS, don't drag it in unintentionally")
+}
 
 source_set("libjpeg_headers") {
   sources = [

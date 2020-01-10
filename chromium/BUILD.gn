@@ -217,7 +217,7 @@ group("gn_all") {
       "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
       "//third_party/smhasher:pmurhash",
     ]
-  } else if (is_ios) {
+  } else if (is_ios && !use_qt) {
     deps += [ "//ios:all" ]
   } else if (is_fuchsia) {
     deps += [

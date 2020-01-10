@@ -19,6 +19,11 @@
 #include "core/fxge/apple/apple_int.h"
 #endif
 
+#if defined(OS_IOS)
+#include <CoreFoundation/CFString.h>
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 namespace {
 
 #if defined(OS_MACOSX)

@@ -7,6 +7,7 @@
 #ifndef CORE_FXCRT_FX_SYSTEM_H_
 #define CORE_FXCRT_FX_SYSTEM_H_
 
+#include "build/build_config.h"
 #include <assert.h>
 #include <math.h>
 #include <stdarg.h>
@@ -48,7 +49,9 @@
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
 
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
+#if !defined(OS_IOS)
 #include <Carbon/Carbon.h>
+#endif
 #include <libkern/OSAtomic.h>
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
 
