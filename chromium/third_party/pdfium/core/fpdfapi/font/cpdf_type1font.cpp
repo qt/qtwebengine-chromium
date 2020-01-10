@@ -22,6 +22,11 @@
 #include <Carbon/Carbon.h>
 #endif  // BUILDFLAG(IS_APPLE)
 
+#if defined(OS_IOS)
+#include <CoreFoundation/CFString.h>
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 namespace {
 
 #if BUILDFLAG(IS_APPLE)
