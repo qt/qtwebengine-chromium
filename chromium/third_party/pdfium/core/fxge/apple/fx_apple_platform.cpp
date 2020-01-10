@@ -15,6 +15,10 @@
 #include "core/fxge/fx_font.h"
 #include "core/fxge/systemfontinfo_iface.h"
 
+#if defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 namespace {
 
 struct Substs {
