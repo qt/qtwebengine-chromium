@@ -17,6 +17,11 @@
 #include "core/fxge/apple/fx_mac_impl.h"
 #endif
 
+#if defined(OS_IOS)
+#include <CoreFoundation/CFString.h>
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 namespace {
 
 #if defined(OS_APPLE)
