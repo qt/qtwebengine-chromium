@@ -12,6 +12,9 @@ declare_args() {
   # toolchain.
   target_sysroot = ""
 
+  # used for fat library on ios
+  additional_target_sysroot = []
+
   # The path to directory containing linux sysroot images.
   target_sysroot_dir = "//build/linux"
 
