@@ -22,6 +22,7 @@ declare_args() {
   # That is not a limitation for now as Xcode mandates the presence of bitcode
   # only when building bitcode-enabled projects for real devices (ARM CPUs).
   enable_ios_bitcode = false
+  use_qt_fat_lib = false
 }
 
 # This is included by reference in the //build/config/compiler config that
@@ -58,6 +59,12 @@ config("compiler") {
       "-target",
       "armv7-apple-ios$ios_deployment_target",
     ]
+    if (use_qt_fat_lib) {
+      common_ios_flags += [
+        "-arch",
+        "i386",
+      ]
+    }
   } else if (current_cpu == "arm64") {
     common_ios_flags += [
       "-arch",
@@ -67,6 +74,12 @@ config("compiler") {
       "-target",
       "arm64-apple-ios$ios_deployment_target",
     ]
+    if (use_qt_fat_lib) {
+      common_ios_flags += [
+        "-arch",
+        "x86_64",
+      ]
+    }
   }
 
   swiftflags += [
@@ -95,7 +108,7 @@ config("compiler") {
 # :runtime_library vs. :compiler.
 config("runtime_library") {
   if (ios_enable_relative_sdk_path) {
-    common_flags = [
+    sysroot_flags = [
       "-isysroot",
       rebase_path(sysroot, root_build_dir),
     ]
@@ -104,7 +117,7 @@ config("runtime_library") {
       rebase_path(sysroot, root_build_dir),
     ]
   } else {
-    common_flags = [
+    sysroot_flags = [
       "-isysroot",
       sysroot,
     ]
@@ -113,11 +126,24 @@ config("runtime_library") {
       sysroot,
     ]
   }
-
-  if (use_ios_simulator) {
-    common_flags += [ "-mios-simulator-version-min=$ios_deployment_target" ]
+  if (use_qt_fat_lib) {
+    common_flags = [
+      "-Xarch_arm64",
+      sysroot_flags,
+      "-Xarch_x86_64",
+      "-isysroot" + additional_target_sysroot[0],
+    ]
+    common_flags += [ "-Xarch_x86_64","-mios-simulator-version-min=$ios_deployment_target" ]
+    common_flags += [ "-Xarch_arm64","-miphoneos-version-min=$ios_deployment_target" ]
   } else {
-    common_flags += [ "-miphoneos-version-min=$ios_deployment_target" ]
+
+    common_flags = sysroot_flags
+
+    if (use_ios_simulator) {
+      common_flags += [ "-mios-simulator-version-min=$ios_deployment_target" ]
+    } else {
+      common_flags += [ "-miphoneos-version-min=$ios_deployment_target" ]
+    }
   }
 
   if (use_xcode_clang && enable_ios_bitcode && !use_ios_simulator) {
