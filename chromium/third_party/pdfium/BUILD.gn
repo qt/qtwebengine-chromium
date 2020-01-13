@@ -209,6 +209,10 @@ config("pdfium_common_config") {
     }
   }
 
+  if (is_ios) {
+    defines += [ "MEMORY_TOOL_REPLACES_ALLOCATOR" ]
+  }
+
   if (is_clang) {
     # Override -Wno-c++11-narrowing.
     cflags += [ "-Wc++11-narrowing" ]
