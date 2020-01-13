@@ -6,9 +6,11 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/v8_target_cpu.gni")
 
 # TODO(thakis): Remove all uses of these, then remove the variables.
-arm_fpu = "neon"
-arm_use_neon = true
-arm_optionally_use_neon = false
+declare_args() {
+  arm_fpu = "neon"
+  arm_use_neon = true
+  arm_optionally_use_neon = false
+}
 
 # These are primarily relevant in current_cpu == "arm" contexts, where
 # ARM code is being compiled.  But they can also be relevant in the
