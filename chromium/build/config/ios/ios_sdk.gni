@@ -5,6 +5,7 @@
 import("//build/config/ios/ios_sdk_overrides.gni")
 import("//build/toolchain/goma.gni")
 import("//build/toolchain/toolchain.gni")
+import("//build/config/sysroot.gni")
 
 assert(use_system_xcode, "Hermetic xcode doesn't work for ios.")
 
@@ -115,6 +116,7 @@ if (ios_sdk_path == "") {
     ios_sdk_path = _ios_sdk_result.sdk_path
     ios_sdk_platform_path = _ios_sdk_result.sdk_platform_path
   }
+  assert(ios_sdk_path == target_sysroot, "qt ios sdk path != gn ios sdk path")
   ios_sdk_version = _ios_sdk_result.sdk_version
   ios_sdk_build = _ios_sdk_result.sdk_build
   xcode_version = _ios_sdk_result.xcode_version
