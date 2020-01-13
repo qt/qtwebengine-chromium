@@ -8,7 +8,7 @@
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/features.gni")
 
-if (current_cpu == "arm") {
+if (current_cpu == "arm" || current_cpu == "arm64") {
   import("//build/config/arm.gni")
 }
 
@@ -159,7 +159,7 @@ static_library("simd") {
       "simd/arm/arm/jsimd_neon.S",
       "simd/arm/common/jdsample-neon.c",
     ]
-  } else if (current_cpu == "arm64") {
+  } else if (current_cpu == "arm64" && arm_use_neon) {
     sources = [
       "simd/arm/arm64/jsimd.c",
       "simd/arm/arm64/jsimd_neon.S",
