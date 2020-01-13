@@ -116,6 +116,8 @@ class WebSocket::WebSocketEventHandler final
  private:
   WebSocket* const impl_;
 
+  mojom::WebSocketHandshakeResponsePtr response_ = nullptr;
+
   DISALLOW_COPY_AND_ASSIGN(WebSocketEventHandler);
 };
 
@@ -168,7 +170,7 @@ void WebSocket::WebSocketEventHandler::OnAddChannelResponse(
   DVLOG(3) << "receive_quota_threshold is " << receive_quota_threshold;
   impl_->handshake_client_->OnConnectionEstablished(
       std::move(websocket_to_pass), selected_protocol, extensions,
-      receive_quota_threshold);
+      std::move(response_), receive_quota_threshold);
   impl_->handshake_client_ = nullptr;
   impl_->auth_handler_ = nullptr;
   impl_->header_client_ = nullptr;
@@ -305,7 +307,7 @@ void WebSocket::WebSocketEventHandler::OnFinishOpeningHandshake(
   headers_text.append("\r\n");
   response_to_pass->headers_text = headers_text;
 
-  impl_->handshake_client_->OnResponseReceived(std::move(response_to_pass));
+  response_ = std::move(response_to_pass);
 }
 
 void WebSocket::WebSocketEventHandler::OnSSLCertificateError(

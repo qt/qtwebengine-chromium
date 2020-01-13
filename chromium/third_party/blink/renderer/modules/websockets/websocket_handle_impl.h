@@ -70,11 +70,10 @@ class WebSocketHandleImpl
   // network::mojom::blink::WebSocketHandshakeClient methods:
   void OnOpeningHandshakeStarted(
       network::mojom::blink::WebSocketHandshakeRequestPtr) override;
-  void OnResponseReceived(
-      network::mojom::blink::WebSocketHandshakeResponsePtr) override;
   void OnConnectionEstablished(network::mojom::blink::WebSocketPtr websocket,
                                const String& selected_protocol,
                                const String& extensions,
+                               network::mojom::blink::WebSocketHandshakeResponsePtr,
                                uint64_t receive_quota_threshold) override;
   // network::mojom::blink::WebSocketClient methods:
   void OnDataFrame(bool fin,

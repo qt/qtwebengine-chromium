@@ -142,23 +142,19 @@ void WebSocketHandleImpl::OnOpeningHandshakeStarted(
   channel_->DidStartOpeningHandshake(this, std::move(request));
 }
 
-void WebSocketHandleImpl::OnResponseReceived(
-    network::mojom::blink::WebSocketHandshakeResponsePtr response) {
-  NETWORK_DVLOG(1) << this << " OnResponseReceived("
-                   << response->url.GetString() << ")";
-  channel_->DidFinishOpeningHandshake(this, std::move(response));
-}
-
 void WebSocketHandleImpl::OnConnectionEstablished(
     network::mojom::blink::WebSocketPtr websocket,
     const String& protocol,
     const String& extensions,
+    network::mojom::blink::WebSocketHandshakeResponsePtr response,
     uint64_t receive_quota_threshold) {
   NETWORK_DVLOG(1) << this << " OnConnectionEstablished(" << protocol << ", "
                    << extensions << ", " << receive_quota_threshold << ")";
 
   if (!channel_)
     return;
+
+  channel_->DidFinishOpeningHandshake(this, std::move(response));
 
   // From now on, we will detect mojo errors via |client_binding_|.
   handshake_client_binding_.Close();

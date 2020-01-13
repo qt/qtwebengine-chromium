@@ -59,11 +59,10 @@ class WebRequestProxyingWebSocket
   // network::mojom::WebSocketHandshakeClient methods:
   void OnOpeningHandshakeStarted(
       network::mojom::WebSocketHandshakeRequestPtr request) override;
-  void OnResponseReceived(
-      network::mojom::WebSocketHandshakeResponsePtr response) override;
   void OnConnectionEstablished(network::mojom::WebSocketPtr websocket,
                                const std::string& selected_protocol,
                                const std::string& extensions,
+                               network::mojom::WebSocketHandshakeResponsePtr response,
                                uint64_t receive_quota_threshold) override;
 
   // network::mojom::AuthenticationHandler method:
@@ -104,6 +103,8 @@ class WebRequestProxyingWebSocket
   void OnHeadersReceivedCompleteForAuth(const net::AuthChallengeInfo& auth_info,
                                         int rv);
 
+  void ContinueToCompleted();
+
   void PauseIncomingMethodCallProcessing();
   void ResumeIncomingMethodCallProcessing();
   void OnError(int result);
@@ -130,7 +131,11 @@ class WebRequestProxyingWebSocket
 
   GURL redirect_url_;
   bool is_done_ = false;
-  bool waiting_for_header_client_headers_received_ = false;
+  network::mojom::WebSocketPtr websocket_;
+  std::string selected_protocol_;
+  std::string extensions_;
+  network::mojom::WebSocketHandshakeResponsePtr handshake_response_ = nullptr;
+  uint64_t receive_quota_threshold_;
 
   WebRequestInfo info_;
 
