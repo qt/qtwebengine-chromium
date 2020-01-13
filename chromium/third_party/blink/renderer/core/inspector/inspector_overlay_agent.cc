@@ -158,11 +158,13 @@ class InspectorOverlayAgent::InspectorPageOverlayDelegate final
   explicit InspectorPageOverlayDelegate(InspectorOverlayAgent& overlay)
       : overlay_(&overlay) {}
 
-  void PaintPageOverlay(const PageOverlay&,
+  void PaintPageOverlay(const PageOverlay& page_overlay,
                         GraphicsContext& graphics_context,
                         const IntSize& web_view_size) const override {
     if (overlay_->IsEmpty())
       return;
+
+    page_overlay.Invalidate();
 
     LocalFrameView* view = overlay_->OverlayMainFrame()->View();
     DCHECK(!view->NeedsLayout());
