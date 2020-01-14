@@ -156,6 +156,8 @@ void BaseAudioContext::Clear() {
 void BaseAudioContext::Uninitialize() {
   DCHECK(IsMainThread());
 
+  MutexLocker locker(GetTearDownMutex());
+
   if (!IsDestinationInitialized())
     return;
 
