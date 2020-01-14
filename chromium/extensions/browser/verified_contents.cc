@@ -18,6 +18,7 @@
 #include "build/build_config.h"
 #include "components/crx_file/id_util.h"
 #include "crypto/signature_verifier.h"
+#include "extensions/browser/content_verifier/content_verifier_utils.h"
 #include "extensions/common/extension.h"
 
 namespace {
@@ -93,21 +94,6 @@ class ScopedUMARecorder {
 
   DISALLOW_COPY_AND_ASSIGN(ScopedUMARecorder);
 };
-
-#if defined(OS_WIN)
-// Returns true if |path| ends with (.| )+.
-// |out_path| will contain "." and/or " " suffix removed from |path|.
-bool TrimDotSpaceSuffix(const base::FilePath::StringType& path,
-                        base::FilePath::StringType* out_path) {
-  base::FilePath::StringType::size_type trim_pos =
-      path.find_last_not_of(FILE_PATH_LITERAL(". "));
-  if (trim_pos == base::FilePath::StringType::npos)
-    return false;
-
-  *out_path = path.substr(0, trim_pos + 1);
-  return true;
-}
-#endif  // defined(OS_WIN)
 
 }  // namespace
 
@@ -225,9 +211,11 @@ std::unique_ptr<VerifiedContents> VerifiedContents::Create(
       // that any filename with (.| )+ suffix can be matched later, see
       // HasTreeHashRoot() and TreeHashRootEquals().
       base::FilePath::StringType trimmed_path;
-      if (TrimDotSpaceSuffix(lowercase_file_path, &trimmed_path))
+      if (content_verifier_utils::TrimDotSpaceSuffix(lowercase_file_path,
+                                                     &trimmed_path)) {
         verified_contents->root_hashes_.insert(
             std::make_pair(trimmed_path, i->second));
+     }
 #endif  // defined(OS_WIN)
     }
 
@@ -246,7 +234,7 @@ bool VerifiedContents::HasTreeHashRoot(
 
 #if defined(OS_WIN)
   base::FilePath::StringType trimmed_path;
-  if (TrimDotSpaceSuffix(path, &trimmed_path))
+  if (content_verifier_utils::TrimDotSpaceSuffix(path, &trimmed_path))
     return base::Contains(root_hashes_, trimmed_path);
 #endif  // defined(OS_WIN)
   return false;
@@ -261,8 +249,10 @@ bool VerifiedContents::TreeHashRootEquals(const base::FilePath& relative_path,
 
 #if defined(OS_WIN)
   base::FilePath::StringType trimmed_relative_path;
-  if (TrimDotSpaceSuffix(normalized_relative_path, &trimmed_relative_path))
+  if (content_verifier_utils::TrimDotSpaceSuffix(normalized_relative_path,
+                                                 &trimmed_relative_path)) {
     return TreeHashRootEqualsImpl(trimmed_relative_path, expected);
+  }
 #endif  // defined(OS_WIN)
   return false;
 }
