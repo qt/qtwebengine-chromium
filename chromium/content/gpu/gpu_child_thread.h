@@ -65,6 +65,8 @@ class GpuChildThread : public ChildThreadImpl,
     return viz_main_.gpu_service()->gpu_channel_manager();
   }
 
+  viz::VizMainImpl *viz_main() { return &viz_main_; }
+
  private:
   GpuChildThread(base::RepeatingClosure quit_closure,
                  const ChildThreadImpl::Options& options,

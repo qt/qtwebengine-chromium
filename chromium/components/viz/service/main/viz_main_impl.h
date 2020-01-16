@@ -130,6 +130,10 @@ class VizMainImpl : public mojom::VizMain {
   // Cleanly exits the process.
   void ExitProcess();
 
+  VizCompositorThreadRunner* viz_compositor_thread_runner() {
+    return viz_compositor_thread_runner_.get();
+  }
+
  private:
   // Initializes GPU's UkmRecorder if GPU is running in it's own process.
   void CreateUkmRecorderIfNeeded(service_manager::Connector* connector);
