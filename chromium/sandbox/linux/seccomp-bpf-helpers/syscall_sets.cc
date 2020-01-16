@@ -34,9 +34,10 @@ bool SyscallSets::IsAllowedGettime(int sysno) {
       return true;
     case __NR_adjtimex:         // Privileged.
     case __NR_clock_adjtime:    // Privileged.
-    case __NR_clock_getres:     // Could be allowed.
-    case __NR_clock_gettime:
-    case __NR_clock_nanosleep:  // Could be allowed.
+    case __NR_clock_getres:     // Allowed only on Android with parameters
+                                // filtered by RestrictClokID().
+    case __NR_clock_gettime:    // Parameters filtered by RestrictClockID().
+    case __NR_clock_nanosleep:  // Parameters filtered by RestrictClockID().
     case __NR_clock_settime:    // Privileged.
 #if defined(__i386__) || defined(__mips32__)
     case __NR_ftime:  // Obsolete.
