@@ -45,19 +45,6 @@ namespace content {
 
 namespace {
 
-// Helper function used to identify 'isPattern' annotations.
-bool HasPatternMatchingAnnotation(const wchar_t* line_p,
-                                  const wchar_t* line_end) {
-  // Skip whitespace separating the resource url from the annotation.
-  // Note: trailing whitespace has already been trimmed from the line.
-  while (line_p < line_end && (*line_p == '\t' || *line_p == ' '))
-    ++line_p;
-  if (line_p == line_end)
-    return false;
-  std::wstring annotation(line_p, line_end - line_p);
-  return annotation == L"isPattern";
-}
-
 bool ScopeMatches(const GURL& manifest_url, const GURL& namespace_url) {
   return base::StartsWith(namespace_url.spec(),
                           manifest_url.GetWithoutFilename().spec(),
@@ -222,10 +209,9 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       if (mode == EXPLICIT) {
         manifest.explicit_urls.insert(url.spec());
       } else {
-        bool is_pattern = HasPatternMatchingAnnotation(line_p, line_end);
-        manifest.online_whitelist_namespaces.push_back(
+        manifest.online_whitelist_namespaces.emplace_back(
             AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, url, GURL(),
-                is_pattern));
+                              /*is_pattern=*/false));
       }
     } else if (mode == INTERCEPT) {
       if (parse_mode != PARSE_MANIFEST_ALLOWING_DANGEROUS_FEATURES) {
@@ -300,9 +286,10 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
       if (manifest_url.GetOrigin() != target_url.GetOrigin())
         continue;
 
-      bool is_pattern = HasPatternMatchingAnnotation(line_p, line_end);
-      manifest.intercept_namespaces.push_back(AppCacheNamespace(
-          APPCACHE_INTERCEPT_NAMESPACE, namespace_url, target_url, is_pattern));
+      manifest.intercept_namespaces.emplace_back(APPCACHE_INTERCEPT_NAMESPACE,
+                                                 namespace_url, target_url,
+                                                 /*is_pattern=*/false);
+      continue;
     } else if (mode == FALLBACK) {
       const wchar_t* line_p = line.c_str();
       const wchar_t* line_end = line_p + line.length();
@@ -367,13 +354,12 @@ bool ParseManifest(const GURL& manifest_url, const char* data, int length,
         continue;
       }
 
-      bool is_pattern = HasPatternMatchingAnnotation(line_p, line_end);
-
-      // Store regardless of duplicate namespace URL. Only first match
-      // will ever be used.
-      manifest.fallback_namespaces.push_back(
-          AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, namespace_url,
-                    fallback_url, is_pattern));
+      // Store regardless of duplicate namespace URL. Only the first match will
+      // ever be used.
+      manifest.fallback_namespaces.emplace_back(APPCACHE_FALLBACK_NAMESPACE,
+                                                namespace_url, fallback_url,
+                                                /*is_pattern=*/false);
+      continue;
     } else {
       NOTREACHED();
     }
