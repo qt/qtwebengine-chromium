@@ -168,11 +168,11 @@ void RtpPacket::CopyAndZeroMutableExtensions(
         break;
       }
       case RTPExtensionType::kRtpExtensionVideoTiming: {
-        // Nullify 3 last entries: packetization delay and 2 network timestamps.
-        // Each of them is 2 bytes.
+        // Nullify last entries, starting at pacer delay.
+        // These are set by pacer and SFUs
         memset(buffer.data() + extension.offset +
                    VideoSendTiming::kPacerExitDeltaOffset,
-               0, 6);
+               0, extension.length - VideoSendTiming::kPacerExitDeltaOffset);
         break;
       }
       case RTPExtensionType::kRtpExtensionTransportSequenceNumber:
