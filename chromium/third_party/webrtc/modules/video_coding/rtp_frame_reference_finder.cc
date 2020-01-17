@@ -281,6 +281,9 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp8(
       codec_header.tl0PicIdx == kNoTl0PicIdx) {
     return ManageFramePidOrSeqNum(frame, codec_header.pictureId);
   }
+  // Protect against corrupted packets with arbitrary large temporal idx.
+  if (codec_header.temporalIdx >= kMaxTemporalLayers)
+    return kDrop;
 
   frame->id.picture_id = codec_header.pictureId % kPicIdLength;
 
@@ -430,6 +433,10 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameVp9(
       codec_header.temporal_idx == kNoTemporalIdx) {
     return ManageFramePidOrSeqNum(frame, codec_header.picture_id);
   }
+
+  // Protect against corrupted packets with arbitrary large temporal idx.
+  if (codec_header.temporal_idx >= kMaxTemporalLayers)
+    return kDrop;
 
   frame->id.spatial_layer = codec_header.spatial_idx;
   frame->inter_layer_predicted = codec_header.inter_layer_predicted;
@@ -685,6 +692,10 @@ RtpFrameReferenceFinder::FrameDecision RtpFrameReferenceFinder::ManageFrameH264(
 
   if (tid == kNoTemporalIdx)
     return ManageFramePidOrSeqNum(std::move(frame), kNoPictureId);
+
+  // Protect against corrupted packets with arbitrary large temporal idx.
+  if (tid >= kMaxTemporalLayers)
+    return kDrop;
 
   frame->id.picture_id = frame->last_seq_num();
 
