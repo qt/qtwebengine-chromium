@@ -58,6 +58,13 @@ OfflineAudioContext* OfflineAudioContext::Create(
     return nullptr;
   }
 
+  if (document->IsDetached()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        "Cannot create OfflineAudioContext on a detached document.");
+    return nullptr;
+  }
+
   if (!number_of_frames) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
@@ -470,6 +477,15 @@ void OfflineAudioContext::RejectPendingResolvers() {
   DCHECK_EQ(resume_resolvers_.size(), 0u);
 
   RejectPendingDecodeAudioDataResolvers();
+}
+
+bool OfflineAudioContext::IsPullingAudioGraph() const {
+  DCHECK(IsMainThread());
+
+  // For an offline context, we're rendering only while the context is running.
+  // Unlike an AudioContext, there's no audio device that keeps pulling on graph
+  // after the context has finished rendering.
+  return ContextState() == BaseAudioContext::kRunning;
 }
 
 bool OfflineAudioContext::ShouldSuspend() {

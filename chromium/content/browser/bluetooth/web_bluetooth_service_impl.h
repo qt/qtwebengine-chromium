@@ -16,6 +16,7 @@
 #include "content/browser/bluetooth/bluetooth_allowed_devices.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/bluetooth_scanning_prompt.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
@@ -71,6 +72,11 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   // Sets the connection error handler for WebBluetoothServiceImpl's Binding.
   void SetClientConnectionErrorHandler(base::OnceClosure closure);
 
+  // Checks the current requesting and embedding origins as well as the policy
+  // or global Web Bluetooth block to determine if Web Bluetooth is allowed.
+  // Returns |SUCCESS| if Bluetooth is allowed.
+  blink::mojom::WebBluetoothResult GetBluetoothAllowed();
+
   // Returns whether the device is paired with the |render_frame_host_|'s
   // GetLastCommittedOrigin().
   bool IsDevicePaired(const std::string& device_address);
@@ -82,6 +88,8 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
       BluetoothDeviceScanningPromptController* prompt_controller);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
+                           ClearStateDuringRequestDevice);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest, PermissionAllowed);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            PermissionPromptCanceled);
@@ -179,6 +187,7 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
       const std::vector<uint8_t>& value);
 
   // WebBluetoothService methods:
+  void GetAvailability(GetAvailabilityCallback callback) override;
   void RequestDevice(blink::mojom::WebBluetoothRequestDeviceOptionsPtr options,
                      RequestDeviceCallback callback) override;
   void RemoteServerConnect(
@@ -231,13 +240,13 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   void RequestDeviceImpl(
       blink::mojom::WebBluetoothRequestDeviceOptionsPtr options,
       RequestDeviceCallback callback,
-      device::BluetoothAdapter* adapter);
+      scoped_refptr<device::BluetoothAdapter> adapter);
 
   void RequestScanningStartImpl(
       blink::mojom::WebBluetoothScanClientAssociatedPtr client,
       blink::mojom::WebBluetoothRequestLEScanOptionsPtr options,
       RequestScanningStartCallback callback,
-      device::BluetoothAdapter* adapter);
+      scoped_refptr<device::BluetoothAdapter> adapter);
 
   void OnStartDiscoverySession(
       blink::mojom::WebBluetoothScanClientAssociatedPtr client,
