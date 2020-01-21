@@ -311,6 +311,8 @@ class MODULES_EXPORT BaseAudioContext
   // Does nothing when the worklet global scope does not exist.
   void UpdateWorkletGlobalScopeOnRenderingThread();
 
+  Mutex& GetTearDownMutex() const { return tear_down_mutex_; }
+
  protected:
   enum ContextType { kRealtimeContext, kOfflineContext };
 
@@ -447,6 +449,12 @@ class MODULES_EXPORT BaseAudioContext
   // This cannot be nullptr once it is assigned from AudioWorkletThread until
   // the BaseAudioContext goes away.
   WorkerThread* audio_worklet_thread_ = nullptr;
+
+  // Due to the multi-threading architecture of WebAudio, it is possible that
+  // object allocated by the main thread still can be accessed by the audio
+  // rendering thread while this context is torn down (GCed) by
+  // |Uninitialize()|.
+  mutable Mutex tear_down_mutex_;
 };
 
 }  // namespace blink
