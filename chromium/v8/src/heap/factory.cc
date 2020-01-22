@@ -3939,6 +3939,7 @@ Handle<Map> Factory::CreateSloppyFunctionMap(
         prototype_string(), function_prototype_accessor(), attribs);
     map->AppendDescriptor(&d);
   }
+  DCHECK_EQ(0, map->instance_descriptors()->NumberOfSlackDescriptors());
   DCHECK_EQ(inobject_properties_count, field_index);
   return map;
 }
@@ -3949,10 +3950,15 @@ Handle<Map> Factory::CreateStrictFunctionMap(
   int header_size = has_prototype ? JSFunction::kSizeWithPrototype
                                   : JSFunction::kSizeWithoutPrototype;
   int inobject_properties_count = 0;
-  if (IsFunctionModeWithName(function_mode)) ++inobject_properties_count;
+  // length and prototype accessors or just length accessor.
+  int descriptors_count = IsFunctionModeWithPrototype(function_mode) ? 2 : 1;
+  if (IsFunctionModeWithName(function_mode)) {
+    ++inobject_properties_count;  // name property.
+  } else {
+    ++descriptors_count;  // name accessor.
+  }
   if (IsFunctionModeWithHomeObject(function_mode)) ++inobject_properties_count;
-  int descriptors_count = (IsFunctionModeWithPrototype(function_mode) ? 3 : 2) +
-                          inobject_properties_count;
+  descriptors_count += inobject_properties_count;
 
   Handle<Map> map = NewMap(
       JS_FUNCTION_TYPE, header_size + inobject_properties_count * kPointerSize,
@@ -4016,6 +4022,7 @@ Handle<Map> Factory::CreateStrictFunctionMap(
     map->AppendDescriptor(&d);
   }
   DCHECK_EQ(inobject_properties_count, field_index);
+  DCHECK_EQ(0, map->instance_descriptors()->NumberOfSlackDescriptors());
   return map;
 }
 
