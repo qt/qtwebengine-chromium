@@ -4,34 +4,26 @@
 
 #include "cast/common/mdns/mdns_receiver.h"
 
+#include "cast/common/mdns/mdns_records.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/api/time.h"
-#include "platform/test/mock_udp_socket.h"
+#include "platform/test/fake_udp_socket.h"
 
 namespace cast {
 namespace mdns {
 
-using ::testing::_;
-using ::testing::Return;
-using MockUdpSocket = openscreen::platform::MockUdpSocket;
+using openscreen::IPAddress;
+using openscreen::IPEndpoint;
+using openscreen::platform::FakeUdpSocket;
+using openscreen::platform::TaskRunner;
+using openscreen::platform::UdpPacket;
+using testing::_;
+using testing::Return;
 
-// TODO(yakimakha): Update tests to use a fake NetworkRunner when implemented
-class MockNetworkRunner : public NetworkRunner {
+class MockMdnsReceiverDelegate {
  public:
-  MOCK_METHOD2(ReadRepeatedly, Error(UdpSocket*, UdpReadCallback*));
-  MOCK_METHOD1(CancelRead, Error(UdpSocket*));
-
-  void PostPackagedTask(Task task) override {}
-  void PostPackagedTaskWithDelay(
-      Task task,
-      openscreen::platform::Clock::duration delay) override {}
-};
-
-class MockMdnsReceiverDelegate : public MdnsReceiver::Delegate {
- public:
-  MOCK_METHOD2(OnQueryReceived, void(const MdnsMessage&, const IPEndpoint&));
-  MOCK_METHOD2(OnResponseReceived, void(const MdnsMessage&, const IPEndpoint&));
+  MOCK_METHOD(void, OnMessageReceived, (const MdnsMessage&));
 };
 
 TEST(MdnsReceiverTest, ReceiveQuery) {
@@ -52,14 +44,13 @@ TEST(MdnsReceiverTest, ReceiveQuery) {
   };
   // clang-format on
 
-  std::unique_ptr<openscreen::platform::MockUdpSocket> socket_info =
-      MockUdpSocket::CreateDefault(openscreen::IPAddress::Version::kV4);
-  MockNetworkRunner runner;
+  std::unique_ptr<FakeUdpSocket> socket_info =
+      FakeUdpSocket::CreateDefault(openscreen::IPAddress::Version::kV4);
   MockMdnsReceiverDelegate delegate;
-  MdnsReceiver receiver(socket_info.get(), &runner, &delegate);
-
-  EXPECT_CALL(runner, ReadRepeatedly(socket_info.get(), _))
-      .WillOnce(Return(Error::Code::kNone));
+  MdnsReceiver receiver(socket_info.get());
+  receiver.SetQueryCallback([&delegate](const MdnsMessage& message) {
+    delegate.OnMessageReceived(message);
+  });
   receiver.Start();
 
   MdnsQuestion question(DomainName{"testing", "local"}, DnsType::kA,
@@ -76,11 +67,9 @@ TEST(MdnsReceiverTest, ReceiveQuery) {
                  .port = kDefaultMulticastPort});
 
   // Imitate a call to OnRead from NetworkRunner by calling it manually here
-  EXPECT_CALL(delegate, OnQueryReceived(message, packet.source())).Times(1);
-  receiver.OnRead(std::move(packet), &runner);
+  EXPECT_CALL(delegate, OnMessageReceived(message)).Times(1);
+  receiver.OnRead(socket_info.get(), std::move(packet));
 
-  EXPECT_CALL(runner, CancelRead(socket_info.get()))
-      .WillOnce(Return(Error::Code::kNone));
   receiver.Stop();
 }
 
@@ -110,18 +99,17 @@ TEST(MdnsReceiverTest, ReceiveResponse) {
   };
   // clang-format on
 
-  std::unique_ptr<openscreen::platform::MockUdpSocket> socket_info =
-      MockUdpSocket::CreateDefault(openscreen::IPAddress::Version::kV6);
-  MockNetworkRunner runner;
+  std::unique_ptr<FakeUdpSocket> socket_info =
+      FakeUdpSocket::CreateDefault(openscreen::IPAddress::Version::kV6);
   MockMdnsReceiverDelegate delegate;
-  MdnsReceiver receiver(socket_info.get(), &runner, &delegate);
-
-  EXPECT_CALL(runner, ReadRepeatedly(socket_info.get(), _))
-      .WillOnce(Return(Error::Code::kNone));
+  MdnsReceiver receiver(socket_info.get());
+  receiver.SetResponseCallback([&delegate](const MdnsMessage& message) {
+    delegate.OnMessageReceived(message);
+  });
   receiver.Start();
 
   MdnsRecord record(DomainName{"testing", "local"}, DnsType::kA, DnsClass::kIN,
-                    RecordType::kShared, 120,
+                    RecordType::kShared, std::chrono::seconds(120),
                     ARecordRdata(IPAddress{172, 0, 0, 1}));
   MdnsMessage message(1, MessageType::Response);
   message.AddAnswer(record);
@@ -136,11 +124,9 @@ TEST(MdnsReceiverTest, ReceiveResponse) {
                  .port = kDefaultMulticastPort});
 
   // Imitate a call to OnRead from NetworkRunner by calling it manually here
-  EXPECT_CALL(delegate, OnResponseReceived(message, packet.source())).Times(1);
-  receiver.OnRead(std::move(packet), &runner);
+  EXPECT_CALL(delegate, OnMessageReceived(message)).Times(1);
+  receiver.OnRead(socket_info.get(), std::move(packet));
 
-  EXPECT_CALL(runner, CancelRead(socket_info.get()))
-      .WillOnce(Return(Error::Code::kNone));
   receiver.Stop();
 }
 

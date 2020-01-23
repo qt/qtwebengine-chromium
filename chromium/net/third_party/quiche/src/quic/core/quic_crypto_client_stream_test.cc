@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_decrypter.h"
@@ -15,7 +16,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/crypto_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_stream_peer.h"
@@ -48,9 +48,12 @@ class QuicCryptoClientStreamTest : public QuicTest {
     // Advance the time, because timers do not like uninitialized times.
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
 
-    session_ = QuicMakeUnique<TestQuicSpdyClientSession>(
+    session_ = std::make_unique<TestQuicSpdyClientSession>(
         connection_, DefaultQuicConfig(), supported_versions_, server_id_,
         &crypto_config_);
+    EXPECT_CALL(*session_, GetAlpnsToOffer())
+        .WillRepeatedly(testing::Return(std::vector<std::string>(
+            {AlpnForVersion(connection_->version())})));
   }
 
   void CompleteCryptoHandshake() {
@@ -62,7 +65,8 @@ class QuicCryptoClientStreamTest : public QuicTest {
     stream()->CryptoConnect();
     QuicConfig config;
     crypto_test_utils::HandshakeWithFakeServer(
-        &config, &server_helper_, &alarm_factory_, connection_, stream());
+        &config, &server_helper_, &alarm_factory_, connection_, stream(),
+        AlpnForVersion(connection_->version()));
   }
 
   QuicCryptoClientStream* stream() {
@@ -92,15 +96,39 @@ TEST_F(QuicCryptoClientStreamTest, ConnectedAfterSHLO) {
 }
 
 TEST_F(QuicCryptoClientStreamTest, ConnectedAfterTlsHandshake) {
-  SetQuicFlag(FLAGS_quic_supports_tls_handshake, true);
+  SetQuicReloadableFlag(quic_supports_tls_handshake, true);
   supported_versions_.clear();
-  for (QuicTransportVersion transport_version :
-       AllSupportedTransportVersions()) {
-    supported_versions_.push_back(
-        ParsedQuicVersion(PROTOCOL_TLS1_3, transport_version));
+  for (ParsedQuicVersion version : AllSupportedVersions()) {
+    if (version.handshake_protocol != PROTOCOL_TLS1_3) {
+      continue;
+    }
+    supported_versions_.push_back(version);
   }
   CreateConnection();
   CompleteCryptoHandshake();
+  EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->handshake_confirmed());
+}
+
+TEST_F(QuicCryptoClientStreamTest,
+       ProofVerifyDetailsAvailableAfterTlsHandshake) {
+  SetQuicReloadableFlag(quic_supports_tls_handshake, true);
+  supported_versions_.clear();
+  for (ParsedQuicVersion version : AllSupportedVersions()) {
+    if (version.handshake_protocol != PROTOCOL_TLS1_3) {
+      continue;
+    }
+    supported_versions_.push_back(version);
+  }
+  CreateConnection();
+
+  EXPECT_CALL(*session_, OnProofVerifyDetailsAvailable(testing::_));
+  stream()->CryptoConnect();
+  QuicConfig config;
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, &server_helper_, &alarm_factory_, connection_, stream(),
+      AlpnForVersion(connection_->version()));
   EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
   EXPECT_TRUE(stream()->encryption_established());
   EXPECT_TRUE(stream()->handshake_confirmed());
@@ -280,8 +308,8 @@ TEST_F(QuicCryptoClientStreamTest, ServerConfigUpdateWithCert) {
   // Note: relies on the callback being invoked synchronously
   bool ok = false;
   crypto_config.BuildServerConfigUpdateMessage(
-      session_->connection()->transport_version(), stream()->chlo_hash(),
-      tokens, QuicSocketAddress(QuicIpAddress::Loopback6(), 1234),
+      session_->transport_version(), stream()->chlo_hash(), tokens,
+      QuicSocketAddress(QuicIpAddress::Loopback6(), 1234),
       QuicIpAddress::Loopback6(), connection_->clock(),
       QuicRandom::GetInstance(), &cache, stream()->crypto_negotiated_params(),
       &network_params,
@@ -315,7 +343,6 @@ TEST_F(QuicCryptoClientStreamTest, ServerConfigUpdateBeforeHandshake) {
 }
 
 TEST_F(QuicCryptoClientStreamTest, PreferredVersion) {
-  SetQuicReloadableFlag(quic_fix_get_packet_header_size, true);
   // This mimics the case where client receives version negotiation packet, such
   // that, the preferred version is different from the packets' version.
   connection_ = new PacketSavingConnection(
@@ -323,7 +350,7 @@ TEST_F(QuicCryptoClientStreamTest, PreferredVersion) {
       ParsedVersionOfIndex(supported_versions_, 1));
   connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
 
-  session_ = QuicMakeUnique<TestQuicSpdyClientSession>(
+  session_ = std::make_unique<TestQuicSpdyClientSession>(
       connection_, DefaultQuicConfig(), supported_versions_, server_id_,
       &crypto_config_);
   CompleteCryptoHandshake();

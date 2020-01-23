@@ -9,10 +9,10 @@
  */
 #include "call/rtp_transport_controller_send.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/types/optional.h"
 #include "api/transport/goog_cc_factory.h"
 #include "api/transport/network_types.h"
@@ -20,6 +20,7 @@
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "call/rtp_video_sender.h"
+#include "logging/rtc_event_log/events/rtc_event_remote_estimate.h"
 #include "logging/rtc_event_log/events/rtc_event_route_change.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -72,7 +73,7 @@ RtpTransportControllerSend::RtpTransportControllerSend(
       observer_(nullptr),
       controller_factory_override_(controller_factory),
       controller_factory_fallback_(
-          absl::make_unique<GoogCcNetworkControllerFactory>(predictor_factory)),
+          std::make_unique<GoogCcNetworkControllerFactory>(predictor_factory)),
       process_interval_(controller_factory_fallback_->GetProcessInterval()),
       last_report_block_time_(Timestamp::ms(clock_->TimeInMilliseconds())),
       reset_feedback_on_route_change_(
@@ -112,7 +113,7 @@ RtpVideoSenderInterface* RtpTransportControllerSend::CreateRtpVideoSender(
     RtcEventLog* event_log,
     std::unique_ptr<FecController> fec_controller,
     const RtpSenderFrameEncryptionConfig& frame_encryption_config) {
-  video_rtp_senders_.push_back(absl::make_unique<RtpVideoSender>(
+  video_rtp_senders_.push_back(std::make_unique<RtpVideoSender>(
       clock_, suspended_ssrcs, states, rtp_config, rtcp_report_interval_ms,
       send_transport, observers,
       // TODO(holmer): Remove this circular dependency by injecting
@@ -140,8 +141,7 @@ void RtpTransportControllerSend::UpdateControlState() {
   absl::optional<TargetTransferRate> update = control_handler_->GetUpdate();
   if (!update)
     return;
-  retransmission_rate_limiter_.SetMaxRate(
-      update->network_estimate.bandwidth.bps());
+  retransmission_rate_limiter_.SetMaxRate(update->target_rate.bps());
   // We won't create control_handler_ until we have an observers.
   RTC_DCHECK(observer_ != nullptr);
   observer_->OnTargetTransferRate(*update);
@@ -184,15 +184,11 @@ RtpPacketSender* RtpTransportControllerSend::packet_sender() {
 }
 
 void RtpTransportControllerSend::SetAllocatedSendBitrateLimits(
-    int min_send_bitrate_bps,
-    int max_padding_bitrate_bps,
-    int max_total_bitrate_bps) {
+    BitrateAllocationLimits limits) {
   RTC_DCHECK_RUN_ON(&task_queue_);
-  streams_config_.min_total_allocated_bitrate =
-      DataRate::bps(min_send_bitrate_bps);
-  streams_config_.max_padding_rate = DataRate::bps(max_padding_bitrate_bps);
-  streams_config_.max_total_allocated_bitrate =
-      DataRate::bps(max_total_bitrate_bps);
+  streams_config_.min_total_allocated_bitrate = limits.min_allocatable_rate;
+  streams_config_.max_padding_rate = limits.max_padding_rate;
+  streams_config_.max_total_allocated_bitrate = limits.max_allocatable_rate;
   UpdateStreamsConfig();
 }
 void RtpTransportControllerSend::SetPacingFactor(float pacing_factor) {
@@ -265,7 +261,7 @@ void RtpTransportControllerSend::OnNetworkRouteChanged(
     transport_overhead_bytes_per_packet_ = network_route.packet_overhead;
 
     if (event_log_) {
-      event_log_->Log(absl::make_unique<RtcEventRouteChange>(
+      event_log_->Log(std::make_unique<RtcEventRouteChange>(
           network_route.connected, network_route.packet_overhead));
     }
     NetworkRouteChange msg;
@@ -476,6 +472,10 @@ void RtpTransportControllerSend::OnTransportFeedback(
 
 void RtpTransportControllerSend::OnRemoteNetworkEstimate(
     NetworkStateEstimate estimate) {
+  if (event_log_) {
+    event_log_->Log(std::make_unique<RtcEventRemoteEstimate>(
+        estimate.link_capacity_lower, estimate.link_capacity_upper));
+  }
   estimate.update_time = Timestamp::ms(clock_->TimeInMilliseconds());
   task_queue_.PostTask([this, estimate] {
     RTC_DCHECK_RUN_ON(&task_queue_);
@@ -490,7 +490,7 @@ void RtpTransportControllerSend::MaybeCreateControllers() {
 
   if (!network_available_ || !observer_)
     return;
-  control_handler_ = absl::make_unique<CongestionControlHandler>();
+  control_handler_ = std::make_unique<CongestionControlHandler>();
 
   initial_config_.constraints.at_time =
       Timestamp::ms(clock_->TimeInMilliseconds());

@@ -110,7 +110,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   virtual void OnBodyAvailable() = 0;
 
   // Writes the headers contained in |header_block| on the dedicated headers
-  // stream or on this stream, depending on VersionUsesQpack().
+  // stream or on this stream, depending on VersionUsesHttp3().  Returns the
+  // number of bytes sent, including data sent on the encoder stream when using
+  // QPACK.
   virtual size_t WriteHeaders(
       spdy::SpdyHeaderBlock header_block,
       bool fin,
@@ -120,8 +122,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   void WriteOrBufferBody(QuicStringPiece data, bool fin);
 
   // Writes the trailers contained in |trailer_block| on the dedicated headers
-  // stream or on this stream, depending on VersionUsesQpack().  Trailers will
-  // always have the FIN flag set.
+  // stream or on this stream, depending on VersionUsesHttp3().  Trailers will
+  // always have the FIN flag set.  Returns the number of bytes sent, including
+  // data sent on the encoder stream when using QPACK.
   virtual size_t WriteTrailers(
       spdy::SpdyHeaderBlock trailer_block,
       QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
@@ -256,9 +259,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   bool OnHeadersFrameStart(QuicByteCount header_length);
   bool OnHeadersFramePayload(QuicStringPiece payload);
   bool OnHeadersFrameEnd();
-  bool OnPushPromiseFrameStart(PushId push_id,
-                               QuicByteCount header_length,
-                               QuicByteCount push_id_length);
+  bool OnPushPromiseFrameStart(QuicByteCount header_length);
+  bool OnPushPromiseFramePushId(PushId push_id, QuicByteCount push_id_length);
   bool OnPushPromiseFramePayload(QuicStringPiece payload);
   bool OnPushPromiseFrameEnd();
   bool OnUnknownFrameStart(uint64_t frame_type, QuicByteCount header_length);

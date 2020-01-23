@@ -8,8 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
+
 #include "absl/algorithm/container.h"
-#include "absl/memory/memory.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/test/simulated_network.h"
 #include "api/test/video/function_video_encoder_factory.h"
 #include "call/fake_network_pipe.h"
@@ -56,7 +58,7 @@ TEST_F(StatsEndToEndTest, GetStats) {
     StatsObserver()
         : EndToEndTest(kLongTimeoutMs),
           encoder_factory_([]() {
-            return absl::make_unique<test::DelayedEncoder>(
+            return std::make_unique<test::DelayedEncoder>(
                 Clock::GetRealTimeClock(), 10);
           }),
           send_stream_(nullptr),
@@ -231,17 +233,17 @@ TEST_F(StatsEndToEndTest, GetStats) {
       return true;
     }
 
-    test::PacketTransport* CreateSendTransport(
-        test::DEPRECATED_SingleThreadedTaskQueueForTesting* task_queue,
+    std::unique_ptr<test::PacketTransport> CreateSendTransport(
+        TaskQueueBase* task_queue,
         Call* sender_call) override {
       BuiltInNetworkBehaviorConfig network_config;
       network_config.loss_percent = 5;
-      return new test::PacketTransport(
+      return std::make_unique<test::PacketTransport>(
           task_queue, sender_call, this, test::PacketTransport::kSender,
           payload_type_map_,
-          absl::make_unique<FakeNetworkPipe>(
+          std::make_unique<FakeNetworkPipe>(
               Clock::GetRealTimeClock(),
-              absl::make_unique<SimulatedNetwork>(network_config)));
+              std::make_unique<SimulatedNetwork>(network_config)));
     }
     void ModifySenderBitrateConfig(
         BitrateConstraints* bitrate_config) override {
@@ -529,9 +531,9 @@ TEST_F(StatsEndToEndTest, MAYBE_ContentTypeSwitches) {
     CreateSenderCall(send_config);
     CreateReceiverCall(recv_config);
 
-    receive_transport_.reset(test.CreateReceiveTransport(&task_queue_));
-    send_transport_.reset(
-        test.CreateSendTransport(&task_queue_, sender_call_.get()));
+    receive_transport_ = test.CreateReceiveTransport(&task_queue_);
+    send_transport_ =
+        test.CreateSendTransport(&task_queue_, sender_call_.get());
     send_transport_->SetReceiver(receiver_call_->Receiver());
     receive_transport_->SetReceiver(sender_call_->Receiver());
 
@@ -719,18 +721,18 @@ TEST_F(StatsEndToEndTest, CallReportsRttForSender) {
     BuiltInNetworkBehaviorConfig config;
     config.queue_delay_ms = kSendDelayMs;
     CreateCalls();
-    sender_transport = absl::make_unique<test::DirectTransport>(
+    sender_transport = std::make_unique<test::DirectTransport>(
         &task_queue_,
-        absl::make_unique<FakeNetworkPipe>(
+        std::make_unique<FakeNetworkPipe>(
             Clock::GetRealTimeClock(),
-            absl::make_unique<SimulatedNetwork>(config)),
+            std::make_unique<SimulatedNetwork>(config)),
         sender_call_.get(), payload_type_map_);
     config.queue_delay_ms = kReceiveDelayMs;
-    receiver_transport = absl::make_unique<test::DirectTransport>(
+    receiver_transport = std::make_unique<test::DirectTransport>(
         &task_queue_,
-        absl::make_unique<FakeNetworkPipe>(
+        std::make_unique<FakeNetworkPipe>(
             Clock::GetRealTimeClock(),
-            absl::make_unique<SimulatedNetwork>(config)),
+            std::make_unique<SimulatedNetwork>(config)),
         receiver_call_.get(), payload_type_map_);
     sender_transport->SetReceiver(receiver_call_->Receiver());
     receiver_transport->SetReceiver(sender_call_->Receiver());

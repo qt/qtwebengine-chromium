@@ -35,15 +35,17 @@ namespace utils {
       public:
         ComboRenderPipelineDescriptor(const dawn::Device& device);
 
-        dawn::PipelineStageDescriptor cFragmentStage;
+        ComboRenderPipelineDescriptor(const ComboRenderPipelineDescriptor&) = delete;
+        ComboRenderPipelineDescriptor& operator=(const ComboRenderPipelineDescriptor&) = delete;
+        ComboRenderPipelineDescriptor(ComboRenderPipelineDescriptor&&) = delete;
+        ComboRenderPipelineDescriptor& operator=(ComboRenderPipelineDescriptor&&) = delete;
+
+        dawn::ProgrammableStageDescriptor cFragmentStage;
 
         ComboVertexInputDescriptor cVertexInput;
         dawn::RasterizationStateDescriptor cRasterizationState;
-        std::array<dawn::ColorStateDescriptor*, kMaxColorAttachments> cColorStates;
+        std::array<dawn::ColorStateDescriptor, kMaxColorAttachments> cColorStates;
         dawn::DepthStencilStateDescriptor cDepthStencilState;
-
-      private:
-        dawn::ColorStateDescriptor mColorStates[kMaxColorAttachments];
     };
 
 }  // namespace utils

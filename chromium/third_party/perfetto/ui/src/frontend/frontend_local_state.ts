@@ -16,15 +16,16 @@ import {Actions} from '../common/actions';
 import {
   FrontendLocalState as FrontendState,
   OmniboxState,
+  SelectedTimeRange,
   Timestamped,
-  VisibleState
+  VisibleState,
 } from '../common/state';
 import {TimeSpan} from '../common/time';
 
 import {globals} from './globals';
 import {TimeScale} from './time_scale';
 
-function chooseLastest<T extends Timestamped<{}>>(current: T, next: T): T {
+function chooseLatest<T extends Timestamped<{}>>(current: T, next: T): T {
   if (next !== current && next.lastUpdate > current.lastUpdate) {
     return next;
   }
@@ -61,6 +62,20 @@ function debounce(f: Function, ms: number): Function {
   };
 }
 
+// Calculate the space a scrollbar takes up so that we can subtract it from
+// the canvas width.
+function calculateScrollbarWidth() {
+  const outer = document.createElement('div');
+  outer.style.overflowY = 'scroll';
+  const inner = document.createElement('div');
+  outer.appendChild(inner);
+  document.body.appendChild(outer);
+  const width =
+      outer.getBoundingClientRect().width - inner.getBoundingClientRect().width;
+  document.body.removeChild(outer);
+  return width;
+}
+
 /**
  * State that is shared between several frontend components, but not the
  * controller. This state is updated at 60fps.
@@ -80,10 +95,13 @@ export class FrontendLocalState {
   visibleTracks = new Set<string>();
   prevVisibleTracks = new Set<string>();
   searchIndex = -1;
+  scrollToTrackId: undefined|string|number = undefined;
+  private scrollBarWidth: undefined|number = undefined;
 
   private _omniboxState: OmniboxState = {
     lastUpdate: 0,
     omnibox: '',
+    mode: 'SEARCH',
   };
 
   private _visibleState: VisibleState = {
@@ -93,9 +111,20 @@ export class FrontendLocalState {
     resolution: 1,
   };
 
+  private _selectedTimeRange: SelectedTimeRange = {
+    lastUpdate: 0,
+  };
+
   // TODO: there is some redundancy in the fact that both |visibleWindowTime|
   // and a |timeScale| have a notion of time range. That should live in one
   // place only.
+
+  getScrollbarWidth() {
+    if (this.scrollBarWidth === undefined) {
+      this.scrollBarWidth = calculateScrollbarWidth();
+    }
+    return this.scrollBarWidth;
+  }
 
   togglePerfDebug() {
     this.perfDebug = !this.perfDebug;
@@ -137,6 +166,7 @@ export class FrontendLocalState {
 
   setSearchIndex(index: number) {
     this.searchIndex = index;
+    globals.rafScheduler.scheduleRedraw();
   }
 
   toggleSidebar() {
@@ -161,20 +191,49 @@ export class FrontendLocalState {
   }
 
   mergeState(state: FrontendState): void {
-    this._omniboxState = chooseLastest(this._omniboxState, state.omniboxState);
-    this._visibleState = chooseLastest(this._visibleState, state.visibleState);
-    this.updateLocalTime(
-        new TimeSpan(this._visibleState.startSec, this._visibleState.endSec));
+    this._omniboxState = chooseLatest(this._omniboxState, state.omniboxState);
+    this._visibleState = chooseLatest(this._visibleState, state.visibleState);
+    this._selectedTimeRange =
+        chooseLatest(this._selectedTimeRange, state.selectedTimeRange);
+    if (this._visibleState === state.visibleState) {
+      this.updateLocalTime(
+          new TimeSpan(this._visibleState.startSec, this._visibleState.endSec));
+    }
   }
 
-  private debouncedSetOmnibox = debounce(() => {
+  private selectTimeRangeDebounced = debounce(() => {
+    globals.dispatch(Actions.selectTimeRange(this._selectedTimeRange));
+  }, 20);
+
+  selectTimeRange(startSec: number, endSec: number) {
+    this._selectedTimeRange = {startSec, endSec, lastUpdate: Date.now() / 1000};
+    this.selectTimeRangeDebounced();
+    globals.rafScheduler.scheduleRedraw();
+  }
+
+  removeTimeRange() {
+    this._selectedTimeRange = {
+      startSec: undefined,
+      endSec: undefined,
+      lastUpdate: Date.now() / 1000
+    };
+    this.selectTimeRangeDebounced();
+    globals.rafScheduler.scheduleRedraw();
+  }
+
+  get selectedTimeRange(): SelectedTimeRange {
+    return this._selectedTimeRange;
+  }
+
+  private setOmniboxDebounced = debounce(() => {
     globals.dispatch(Actions.setOmnibox(this._omniboxState));
   }, 20);
 
-  set omnibox(value: string) {
+  setOmnibox(value: string, mode: 'SEARCH'|'COMMAND') {
     this._omniboxState.omnibox = value;
+    this._omniboxState.mode = mode;
     this._omniboxState.lastUpdate = Date.now() / 1000;
-    this.debouncedSetOmnibox();
+    this.setOmniboxDebounced();
   }
 
   get omnibox(): string {

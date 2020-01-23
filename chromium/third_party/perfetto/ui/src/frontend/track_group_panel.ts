@@ -64,21 +64,22 @@ export class TrackGroupPanel extends Panel<Attrs> {
     }
     return m(
         `.track-group-panel[collapsed=${collapsed}]`,
+        {id: 'track_' + this.trackGroupId},
         m('.shell',
+          {
+            onclick: (e: MouseEvent) => {
+              globals.dispatch(Actions.toggleTrackGroupCollapsed({
+                trackGroupId: attrs.trackGroupId,
+              })),
+                  e.stopPropagation();
+            }
+          },
           m('h1',
             {
               title: name,
             },
             name),
           m('.fold-button',
-            {
-              onclick: (e: MouseEvent) => {
-                globals.dispatch(Actions.toggleTrackGroupCollapsed({
-                  trackGroupId: attrs.trackGroupId,
-                })),
-                e.stopPropagation();
-              }
-            },
             m('i.material-icons',
               this.trackGroupState.collapsed ? 'expand_more' : 'expand_less'))),
         this.summaryTrack ? m(TrackContent, {track: this.summaryTrack}) : null);
@@ -134,6 +135,16 @@ export class TrackGroupPanel extends Panel<Attrs> {
                             size.height,
                             `rgb(52,69,150)`);
     }
+    if (globals.frontendLocalState.selectedTimeRange.startSec !== undefined &&
+        globals.frontendLocalState.selectedTimeRange.endSec !== undefined) {
+      drawVerticalSelection(
+          ctx,
+          localState.timeScale,
+          globals.frontendLocalState.selectedTimeRange.startSec,
+          globals.frontendLocalState.selectedTimeRange.endSec,
+          size.height,
+          `rgba(0,0,0,0.5)`);
+    }
     if (globals.state.currentSelection !== null) {
       if (globals.state.currentSelection.kind === 'NOTE') {
         const note = globals.state.notes[globals.state.currentSelection.id];
@@ -142,15 +153,6 @@ export class TrackGroupPanel extends Panel<Attrs> {
                                note.timestamp,
                                size.height,
                                note.color);
-      }
-      if (globals.state.currentSelection.kind === 'TIMESPAN') {
-        drawVerticalSelection(
-            ctx,
-            localState.timeScale,
-            globals.state.currentSelection.startTs,
-            globals.state.currentSelection.endTs,
-            size.height,
-            `rgba(0,0,0,0.5)`);
       }
       if (globals.state.currentSelection.kind === 'SLICE' &&
           globals.sliceDetails.wakeupTs !== undefined) {

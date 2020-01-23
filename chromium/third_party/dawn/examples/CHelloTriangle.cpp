@@ -31,6 +31,7 @@ void init() {
     {
         DawnSwapChainDescriptor descriptor;
         descriptor.nextInChain = nullptr;
+        descriptor.label = nullptr;
         descriptor.implementation = GetSwapChainImplementation();
         swapchain = dawnDeviceCreateSwapChain(device, &descriptor);
     }
@@ -59,13 +60,14 @@ void init() {
 
     {
         DawnRenderPipelineDescriptor descriptor;
+        descriptor.label = nullptr;
         descriptor.nextInChain = nullptr;
 
         descriptor.vertexStage.nextInChain = nullptr;
         descriptor.vertexStage.module = vsModule;
         descriptor.vertexStage.entryPoint = "main";
 
-        DawnPipelineStageDescriptor fragmentStage;
+        DawnProgrammableStageDescriptor fragmentStage;
         fragmentStage.nextInChain = nullptr;
         fragmentStage.module = fsModule;
         fragmentStage.entryPoint = "main";
@@ -85,11 +87,11 @@ void init() {
         colorStateDescriptor.writeMask = DAWN_COLOR_WRITE_MASK_ALL;
 
         descriptor.colorStateCount = 1;
-        DawnColorStateDescriptor* colorStatesPtr[] = {&colorStateDescriptor};
-        descriptor.colorStates = colorStatesPtr;
+        descriptor.colorStates = &colorStateDescriptor;
 
         DawnPipelineLayoutDescriptor pl;
         pl.nextInChain = nullptr;
+        pl.label = nullptr;
         pl.bindGroupLayoutCount = 0;
         pl.bindGroupLayouts = nullptr;
         descriptor.layout = dawnDeviceCreatePipelineLayout(device, &pl);
@@ -127,8 +129,9 @@ void frame() {
     DawnTexture backbuffer = dawnSwapChainGetNextTexture(swapchain);
     DawnTextureView backbufferView = dawnTextureCreateView(backbuffer, nullptr);
     DawnRenderPassDescriptor renderpassInfo;
+    renderpassInfo.nextInChain = nullptr;
+    renderpassInfo.label = nullptr;
     DawnRenderPassColorAttachmentDescriptor colorAttachment;
-    DawnRenderPassColorAttachmentDescriptor* colorAttachments = {&colorAttachment};
     {
         colorAttachment.attachment = backbufferView;
         colorAttachment.resolveTarget = nullptr;
@@ -136,7 +139,7 @@ void frame() {
         colorAttachment.loadOp = DAWN_LOAD_OP_CLEAR;
         colorAttachment.storeOp = DAWN_STORE_OP_STORE;
         renderpassInfo.colorAttachmentCount = 1;
-        renderpassInfo.colorAttachments = &colorAttachments;
+        renderpassInfo.colorAttachments = &colorAttachment;
         renderpassInfo.depthStencilAttachment = nullptr;
     }
     DawnCommandBuffer commands;

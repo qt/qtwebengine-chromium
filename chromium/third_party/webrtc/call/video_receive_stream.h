@@ -20,10 +20,10 @@
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
 #include "api/crypto/frame_decryptor_interface.h"
-#include "api/media_transport_config.h"
-#include "api/media_transport_interface.h"
 #include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
+#include "api/transport/media/media_transport_config.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "api/transport/rtp/rtp_source.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame.h"
@@ -172,18 +172,6 @@ class VideoReceiveStream {
         // (RFC 3611) should be enabled.
         bool receiver_reference_time_report = false;
       } rtcp_xr;
-
-      // TODO(nisse): This remb setting is currently set but never
-      // applied. REMB logic is now the responsibility of
-      // PacketRouter, and it will generate REMB feedback if
-      // OnReceiveBitrateChanged is used, which depends on how the
-      // estimators belonging to the ReceiveSideCongestionController
-      // are configured. Decide if this setting should be deleted, and
-      // if it needs to be replaced by a setting in PacketRouter to
-      // disable REMB feedback.
-
-      // See draft-alvestrand-rmcat-remb for information.
-      bool remb = false;
 
       // See draft-holmer-rmcat-transport-wide-cc-extensions for details.
       bool transport_cc = false;

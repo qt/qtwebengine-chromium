@@ -14,11 +14,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <set>
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "api/transport/field_trial_based_config.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/dlrr.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
@@ -43,7 +43,7 @@ RtpRtcp::Configuration::Configuration(Configuration&& rhs) = default;
 
 std::unique_ptr<RtpRtcp> RtpRtcp::Create(const Configuration& configuration) {
   RTC_DCHECK(configuration.clock);
-  return absl::make_unique<ModuleRtpRtcpImpl>(configuration);
+  return std::make_unique<ModuleRtpRtcpImpl>(configuration);
 }
 
 ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
@@ -175,10 +175,6 @@ int ModuleRtpRtcpImpl::RtxSendStatus() const {
   return rtp_sender_ ? rtp_sender_->RtxStatus() : kRtxOff;
 }
 
-void ModuleRtpRtcpImpl::SetRtxSsrc(uint32_t ssrc) {
-  rtp_sender_->SetRtxSsrc(ssrc);
-}
-
 void ModuleRtpRtcpImpl::SetRtxSendPayloadType(int payload_type,
                                               int associated_payload_type) {
   rtp_sender_->SetRtxPayloadType(payload_type, associated_payload_type);
@@ -240,18 +236,6 @@ RtpState ModuleRtpRtcpImpl::GetRtxState() const {
   return rtp_sender_->GetRtxRtpState();
 }
 
-uint32_t ModuleRtpRtcpImpl::SSRC() const {
-  return rtcp_sender_.SSRC();
-}
-
-void ModuleRtpRtcpImpl::SetSSRC(const uint32_t ssrc) {
-  if (rtp_sender_) {
-    rtp_sender_->SetSSRC(ssrc);
-  }
-  rtcp_sender_.SetSSRC(ssrc);
-  SetRtcpReceiverSsrcs(ssrc);
-}
-
 void ModuleRtpRtcpImpl::SetRid(const std::string& rid) {
   if (rtp_sender_) {
     rtp_sender_->SetRid(rid);
@@ -305,11 +289,6 @@ int32_t ModuleRtpRtcpImpl::SetSendingStatus(const bool sending) {
     // Sends RTCP BYE when going from true to false
     if (rtcp_sender_.SetSendingStatus(GetFeedbackState(), sending) != 0) {
       RTC_LOG(LS_WARNING) << "Failed to send RTCP BYE";
-    }
-    if (sending && rtp_sender_) {
-      // Update Rtcp receiver config, to track Rtx config changes from
-      // the SetRtxStatus and SetRtxSsrc methods.
-      SetRtcpReceiverSsrcs(rtp_sender_->SSRC());
     }
   }
   return 0;
@@ -538,14 +517,19 @@ int32_t ModuleRtpRtcpImpl::RegisterSendRtpHeaderExtension(
   return rtp_sender_->RegisterRtpHeaderExtension(type, id);
 }
 
-bool ModuleRtpRtcpImpl::RegisterRtpHeaderExtension(const std::string& uri,
+void ModuleRtpRtcpImpl::RegisterRtpHeaderExtension(absl::string_view uri,
                                                    int id) {
-  return rtp_sender_->RegisterRtpHeaderExtension(uri, id);
+  bool registered = rtp_sender_->RegisterRtpHeaderExtension(uri, id);
+  RTC_CHECK(registered);
 }
 
 int32_t ModuleRtpRtcpImpl::DeregisterSendRtpHeaderExtension(
     const RTPExtensionType type) {
   return rtp_sender_->DeregisterRtpHeaderExtension(type);
+}
+void ModuleRtpRtcpImpl::DeregisterSendRtpHeaderExtension(
+    absl::string_view uri) {
+  rtp_sender_->DeregisterRtpHeaderExtension(uri);
 }
 
 // (TMMBR) Temporary Max Media Bit Rate.
@@ -647,14 +631,9 @@ void ModuleRtpRtcpImpl::SetReportBlockDataObserver(
   return rtcp_receiver_.SetReportBlockDataObserver(observer);
 }
 
-bool ModuleRtpRtcpImpl::SendFeedbackPacket(
-    const rtcp::TransportFeedback& packet) {
-  return rtcp_sender_.SendFeedbackPacket(packet);
-}
-
-bool ModuleRtpRtcpImpl::SendNetworkStateEstimatePacket(
-    const rtcp::RemoteEstimate& packet) {
-  return rtcp_sender_.SendNetworkStateEstimatePacket(packet);
+void ModuleRtpRtcpImpl::SendCombinedRtcpPacket(
+    std::vector<std::unique_ptr<rtcp::RtcpPacket>> rtcp_packets) {
+  rtcp_sender_.SendCombinedRtcpPacket(std::move(rtcp_packets));
 }
 
 int32_t ModuleRtpRtcpImpl::SendLossNotification(uint16_t last_decoded_seq_num,
@@ -750,17 +729,6 @@ std::vector<rtcp::TmmbItem> ModuleRtpRtcpImpl::BoundingSet(bool* tmmbr_owner) {
   return rtcp_receiver_.BoundingSet(tmmbr_owner);
 }
 
-void ModuleRtpRtcpImpl::SetRtcpReceiverSsrcs(uint32_t main_ssrc) {
-  std::set<uint32_t> ssrcs;
-  ssrcs.insert(main_ssrc);
-  if (RtxSendStatus() != kRtxOff)
-    ssrcs.insert(rtp_sender_->RtxSsrc());
-  absl::optional<uint32_t> flexfec_ssrc = FlexfecSsrc();
-  if (flexfec_ssrc)
-    ssrcs.insert(*flexfec_ssrc);
-  rtcp_receiver_.SetSsrcs(main_ssrc, ssrcs);
-}
-
 void ModuleRtpRtcpImpl::set_rtt_ms(int64_t rtt_ms) {
   rtc::CritScope cs(&critical_section_rtt_);
   rtt_ms_ = rtt_ms;
@@ -771,16 +739,6 @@ void ModuleRtpRtcpImpl::set_rtt_ms(int64_t rtt_ms) {
 int64_t ModuleRtpRtcpImpl::rtt_ms() const {
   rtc::CritScope cs(&critical_section_rtt_);
   return rtt_ms_;
-}
-
-void ModuleRtpRtcpImpl::RegisterSendChannelRtpStatisticsCallback(
-    StreamDataCountersCallback* callback) {
-  rtp_sender_->RegisterRtpStatisticsCallback(callback);
-}
-
-StreamDataCountersCallback*
-ModuleRtpRtcpImpl::GetSendChannelRtpStatisticsCallback() const {
-  return rtp_sender_->GetRtpStatisticsCallback();
 }
 
 void ModuleRtpRtcpImpl::SetVideoBitrateAllocation(

@@ -48,6 +48,10 @@ class QUIC_EXPORT_PRIVATE QpackHeaderTable {
     // registered with.  After this call the Observer automatically gets
     // deregistered.
     virtual void OnInsertCountReachedThreshold() = 0;
+
+    // Called when QpackHeaderTable is destroyed to let the Observer know that
+    // it must not call UnregisterObserver().
+    virtual void Cancel() = 0;
   };
 
   QpackHeaderTable();
@@ -96,8 +100,15 @@ class QUIC_EXPORT_PRIVATE QpackHeaderTable {
 
   // Register an observer to be notified when inserted_entry_count() reaches
   // |required_insert_count|.  After the notification, |observer| automatically
-  // gets unregistered.
-  void RegisterObserver(Observer* observer, uint64_t required_insert_count);
+  // gets unregistered.  Each observer must only be registered at most once.
+  void RegisterObserver(uint64_t required_insert_count, Observer* observer);
+
+  // Unregister previously registered observer.  Must be called with the same
+  // |required_insert_count| value that |observer| was registered with.  Must be
+  // called before an observer still waiting for notification is destroyed,
+  // unless QpackHeaderTable already called Observer::Cancel(), in which case
+  // this method must not be called.
+  void UnregisterObserver(uint64_t required_insert_count, Observer* observer);
 
   // Used on request streams to encode and decode Required Insert Count.
   uint64_t max_entries() const { return max_entries_; }
@@ -179,21 +190,8 @@ class QUIC_EXPORT_PRIVATE QpackHeaderTable {
   // The number of entries dropped from the dynamic table.
   uint64_t dropped_entry_count_;
 
-  // Data structure to hold an Observer and its threshold.
-  struct ObserverWithThreshold {
-    Observer* observer;
-    uint64_t required_insert_count;
-    bool operator>(const ObserverWithThreshold& other) const;
-  };
-
-  // Use std::greater so that entry with smallest |required_insert_count|
-  // is on top.
-  using ObserverHeap = std::priority_queue<ObserverWithThreshold,
-                                           std::vector<ObserverWithThreshold>,
-                                           std::greater<ObserverWithThreshold>>;
-
-  // Observers waiting to be notified.
-  ObserverHeap observers_;
+  // Observers waiting to be notified, sorted by required insert count.
+  std::multimap<uint64_t, Observer*> observers_;
 };
 
 }  // namespace quic

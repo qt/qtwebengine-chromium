@@ -72,7 +72,8 @@ class PacedSender : public Module,
 
   // Adds the packet to the queue and calls PacketRouter::SendPacket() when
   // it's time to send.
-  void EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) override;
+  void EnqueuePackets(
+      std::vector<std::unique_ptr<RtpPacketToSend>> packet) override;
 
   // Methods implementing RtpPacketPacer:
 
@@ -99,7 +100,6 @@ class PacedSender : public Module,
   // Returns the time since the oldest queued packet was enqueued.
   TimeDelta OldestPacketWaitTime() const override;
 
-  size_t QueueSizePackets() const override;
   DataSize QueueSizeData() const override;
 
   // Returns the time when the first packet was sent;

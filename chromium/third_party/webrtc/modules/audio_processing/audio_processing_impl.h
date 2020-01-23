@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "api/function_view.h"
+#include "modules/audio_processing/agc/gain_control.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/include/aec_dump.h"
 #include "modules/audio_processing/include/audio_processing.h"
@@ -114,16 +115,6 @@ class AudioProcessingImpl : public AudioProcessing {
 
   AudioProcessingStats GetStatistics(bool has_remote_tracks) const override;
 
-  // Methods returning pointers to APM submodules.
-  // No locks are aquired in those, as those locks
-  // would offer no protection (the submodules are
-  // created only once in a single-treaded manner
-  // during APM creation).
-  GainControl* gain_control() const override;
-  LevelEstimator* level_estimator() const override;
-  NoiseSuppression* noise_suppression() const override;
-  VoiceDetection* voice_detection() const override;
-
   // TODO(peah): Remove MutateConfig once the new API allows that.
   void MutateConfig(rtc::FunctionView<void(AudioProcessing::Config*)> mutator);
   AudioProcessing::Config GetConfig() const override;
@@ -182,12 +173,11 @@ class AudioProcessingImpl : public AudioProcessing {
                 bool gain_controller2_enabled,
                 bool pre_amplifier_enabled,
                 bool echo_controller_enabled,
-                bool voice_activity_detector_enabled,
-                bool private_voice_detector_enabled,
-                bool level_estimator_enabled,
+                bool voice_detector_enabled,
                 bool transient_suppressor_enabled);
     bool CaptureMultiBandSubModulesActive() const;
-    bool CaptureMultiBandProcessingActive() const;
+    bool CaptureMultiBandProcessingPresent() const;
+    bool CaptureMultiBandProcessingActive(bool ec_processing_active) const;
     bool CaptureFullBandProcessingActive() const;
     bool CaptureAnalyzerActive() const;
     bool RenderMultiBandSubModulesActive() const;
@@ -208,9 +198,7 @@ class AudioProcessingImpl : public AudioProcessing {
     bool gain_controller2_enabled_ = false;
     bool pre_amplifier_enabled_ = false;
     bool echo_controller_enabled_ = false;
-    bool level_estimator_enabled_ = false;
-    bool voice_activity_detector_enabled_ = false;
-    bool private_voice_detector_enabled_ = false;
+    bool voice_detector_enabled_ = false;
     bool transient_suppressor_enabled_ = false;
     bool first_update_ = true;
   };
@@ -239,13 +227,19 @@ class AudioProcessingImpl : public AudioProcessing {
   void InitializeResidualEchoDetector()
       RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_render_, crit_capture_);
   void InitializeHighPassFilter() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
+  void InitializeVoiceDetector() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializeEchoController()
       RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_render_, crit_capture_);
   void InitializeGainController2() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
+  void InitializeNoiseSuppressor() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializePreAmplifier() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializePostProcessor() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializeAnalyzer() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
   void InitializePreProcessor() RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_render_);
+
+  // Sample rate used for the fullband processing.
+  int proc_fullband_sample_rate_hz() const
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_capture_);
 
   // Empties and handles the respective RuntimeSetting queues.
   void HandleCaptureRuntimeSettings()
@@ -354,9 +348,10 @@ class AudioProcessingImpl : public AudioProcessing {
                  bool use_experimental_agc,
                  bool use_experimental_agc_agc2_level_estimation,
                  bool use_experimental_agc_agc2_digital_adaptive,
-                 bool use_experimental_agc_process_before_aec)
-        :  // Format of processing streams at input/output call sites.
-          agc_startup_min_volume(agc_startup_min_volume),
+                 bool use_experimental_agc_process_before_aec,
+                 bool experimental_multi_channel_render_support,
+                 bool experimental_multi_channel_capture_support)
+        : agc_startup_min_volume(agc_startup_min_volume),
           agc_clipped_level_min(agc_clipped_level_min),
           use_experimental_agc(use_experimental_agc),
           use_experimental_agc_agc2_level_estimation(
@@ -364,14 +359,19 @@ class AudioProcessingImpl : public AudioProcessing {
           use_experimental_agc_agc2_digital_adaptive(
               use_experimental_agc_agc2_digital_adaptive),
           use_experimental_agc_process_before_aec(
-              use_experimental_agc_process_before_aec) {}
+              use_experimental_agc_process_before_aec),
+          experimental_multi_channel_render_support(
+              experimental_multi_channel_render_support),
+          experimental_multi_channel_capture_support(
+              experimental_multi_channel_capture_support) {}
     int agc_startup_min_volume;
     int agc_clipped_level_min;
     bool use_experimental_agc;
     bool use_experimental_agc_agc2_level_estimation;
     bool use_experimental_agc_agc2_digital_adaptive;
     bool use_experimental_agc_process_before_aec;
-
+    bool experimental_multi_channel_render_support;
+    bool experimental_multi_channel_capture_support;
   } constants_;
 
   struct ApmCaptureState {
@@ -383,6 +383,7 @@ class AudioProcessingImpl : public AudioProcessing {
     bool key_pressed;
     bool transient_suppressor_enabled;
     std::unique_ptr<AudioBuffer> capture_audio;
+    std::unique_ptr<AudioBuffer> capture_fullband_audio;
     // Only the rate and samples fields of capture_processing_format_ are used
     // because the capture processing number of channels is mutable and is
     // tracked by the capture_audio_.
@@ -399,7 +400,6 @@ class AudioProcessingImpl : public AudioProcessing {
       size_t num_keyboard_frames = 0;
       const float* keyboard_data = nullptr;
     } keyboard_info;
-    AudioFrame::VADActivity vad_activity = AudioFrame::kVadUnknown;
   } capture_ RTC_GUARDED_BY(crit_capture_);
 
   struct ApmCaptureNonLockedState {

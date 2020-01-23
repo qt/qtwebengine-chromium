@@ -268,6 +268,7 @@ add_library(
   ecdh_extra/ecdh_extra.c
   ecdsa_extra/ecdsa_asn1.c
   ec_extra/ec_asn1.c
+  ec_extra/ec_derive.c
   err/err.c
   err_data.c
   engine/engine.c
@@ -424,13 +425,17 @@ add_library(
 )
 
 if(FIPS_SHARED)
+  set(EXTRA_INJECT_HASH_ARGS)
+  if(ANDROID)
+    set(EXTRA_INJECT_HASH_ARGS "-sha256")
+  endif()
   # Rewrite libcrypto.so to inject the correct module hash value. This assumes
   # UNIX-style library naming, but we only support FIPS mode on Linux anyway.
   add_custom_command(
     TARGET crypto POST_BUILD
     COMMAND ${GO_EXECUTABLE} run
     ${CMAKE_CURRENT_SOURCE_DIR}/../util/fipstools/inject_hash/inject_hash.go
-    -o libcrypto.so -in-object libcrypto.so
+    -o libcrypto.so -in-object libcrypto.so ${EXTRA_INJECT_HASH_ARGS}
     # The DEPENDS argument to a POST_BUILD rule appears to be ignored. Thus
     # go_executable isn't used (as it doesn't get built), but we list this
     # dependency anyway in case it starts working in some CMake version.

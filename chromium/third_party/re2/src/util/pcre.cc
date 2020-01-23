@@ -35,9 +35,10 @@
 // not exceed main thread stacks.  Note that other threads
 // often have smaller stacks, and therefore tightening
 // regexp_stack_limit may frequently be necessary.
-DEFINE_int32(regexp_stack_limit, 256<<10, "default PCRE stack limit (bytes)");
-DEFINE_int32(regexp_match_limit, 1000000,
-             "default PCRE match limit (function calls)");
+DEFINE_FLAG(int, regexp_stack_limit, 256 << 10,
+            "default PCRE stack limit (bytes)");
+DEFINE_FLAG(int, regexp_match_limit, 1000000,
+            "default PCRE match limit (function calls)");
 
 #ifndef USEPCRE
 
@@ -523,12 +524,12 @@ int PCRE::TryMatch(const StringPiece& text,
 
   int match_limit = match_limit_;
   if (match_limit <= 0) {
-    match_limit = FLAGS_regexp_match_limit;
+    match_limit = GetFlag(FLAGS_regexp_match_limit);
   }
 
   int stack_limit = stack_limit_;
   if (stack_limit <= 0) {
-    stack_limit = FLAGS_regexp_stack_limit;
+    stack_limit = GetFlag(FLAGS_regexp_stack_limit);
   }
 
   pcre_extra extra = { 0 };

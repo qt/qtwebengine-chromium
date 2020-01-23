@@ -32,9 +32,9 @@
 #include "Pipeline/SpirvShader.hpp"
 #include "Vertex.hpp"
 
-#include "Yarn/Containers.hpp"
-#include "Yarn/Defer.hpp"
-#include "Yarn/Trace.hpp"
+#include "marl/containers.h"
+#include "marl/defer.h"
+#include "marl/trace.h"
 
 #undef max
 
@@ -53,13 +53,17 @@ namespace sw
 		case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
 		{
 			auto index = start;
+			auto pointBatch = &(batch[0][0]);
 			for(unsigned int i = 0; i < triangleCount; i++)
 			{
-				batch[i][0] = indices[index];
-				batch[i][1] = indices[index];
-				batch[i][2] = indices[index];
+				*pointBatch++ = indices[index++];
+			}
 
-				index += 1;
+			// Repeat the last index to allow for SIMD width overrun.
+			index--;
+			for(unsigned int i = 0; i < 3; i++)
+			{
+				*pointBatch++ = indices[index];
 			}
 			break;
 		}
@@ -159,6 +163,18 @@ namespace sw
 		drawTickets.take().wait();
 	}
 
+	// Renderer objects have to be mem aligned to the alignment provided in the class declaration
+	void* Renderer::operator new(size_t size)
+	{
+		ASSERT(size == sizeof(Renderer));  // This operator can't be called from a derived class
+		return vk::allocate(sizeof(Renderer), alignof(Renderer), vk::DEVICE_MEMORY, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+	}
+
+	void Renderer::operator delete(void* mem)
+	{
+		vk::deallocate(mem, vk::DEVICE_MEMORY);
+	}
+
 	void Renderer::draw(const sw::Context* context, VkIndexType indexType, unsigned int count, int baseVertex,
 			TaskEvents *events, int instanceID, int viewID, void *indexBuffer,
 			PushConstantStorage const & pushConstants, bool update)
@@ -166,7 +182,7 @@ namespace sw
 		if(count == 0) { return; }
 
 		auto id = nextDrawID++;
-		YARN_SCOPED_EVENT("draw %d", id);
+		MARL_SCOPED_EVENT("draw %d", id);
 
 		#ifndef NDEBUG
 		{
@@ -186,16 +202,16 @@ namespace sw
 			return;
 		}
 
-		yarn::Pool<sw::DrawCall>::Loan draw;
+		marl::Pool<sw::DrawCall>::Loan draw;
 		{
-			YARN_SCOPED_EVENT("drawCallPool.borrow()");
+			MARL_SCOPED_EVENT("drawCallPool.borrow()");
 			draw = drawCallPool.borrow();
 		}
 		draw->id = id;
 
 		if(update)
 		{
-			YARN_SCOPED_EVENT("update");
+			MARL_SCOPED_EVENT("update");
 			vertexState = VertexProcessor::update(context);
 			setupState = SetupProcessor::update(context);
 			pixelState = PixelProcessor::update(context);
@@ -261,6 +277,7 @@ namespace sw
 		for(int i = 0; i < MAX_INTERFACE_COMPONENTS/4; i++)
 		{
 			data->input[i] = context->input[i].buffer;
+			data->robustnessSize[i] = context->input[i].robustnessSize;
 			data->stride[i] = context->input[i].vertexStride;
 		}
 
@@ -313,16 +330,17 @@ namespace sw
 			float N = viewport.minDepth;
 			float F = viewport.maxDepth;
 			float Z = F - N;
+			constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
 
 			if(context->isDrawTriangle(false))
 			{
 				N += context->depthBias;
 			}
 
-			data->Wx16 = replicate(W * 16);
-			data->Hx16 = replicate(H * 16);
-			data->X0x16 = replicate(X0 * 16 - 8);
-			data->Y0x16 = replicate(Y0 * 16 - 8);
+			data->WxF = replicate(W * subPixF);
+			data->HxF = replicate(H * subPixF);
+			data->X0xF = replicate(X0 * subPixF - subPixF / 2);
+			data->Y0xF = replicate(Y0 * subPixF - subPixF / 2);
 			data->halfPixelX = replicate(0.5f / W);
 			data->halfPixelY = replicate(0.5f / H);
 			data->viewportHeight = abs(viewport.height);
@@ -416,7 +434,7 @@ namespace sw
 		pixelRoutine.reset();
 	}
 
-	void DrawCall::run(const yarn::Loan<DrawCall>& draw, yarn::Ticket::Queue* tickets, yarn::Ticket::Queue clusterQueues[MaxClusterCount])
+	void DrawCall::run(const marl::Loan<DrawCall>& draw, marl::Ticket::Queue* tickets, marl::Ticket::Queue clusterQueues[MaxClusterCount])
 	{
 		draw->setup();
 
@@ -425,8 +443,8 @@ namespace sw
 		auto const numBatches = draw->numBatches;
 
 		auto ticket = tickets->take();
-		auto finally = yarn::make_shared_finally([draw, ticket] {
-			YARN_SCOPED_EVENT("FINISH draw %d", draw->id);
+		auto finally = marl::make_shared_finally([draw, ticket] {
+			MARL_SCOPED_EVENT("FINISH draw %d", draw->id);
 			draw->teardown();
 			ticket.done();
 		});
@@ -443,7 +461,7 @@ namespace sw
 				batch->clusterTickets[cluster] = std::move(clusterQueues[cluster].take());
 			}
 
-			yarn::schedule([draw, batch, finally] {
+			marl::schedule([draw, batch, finally] {
 
 				processVertices(draw.get(), batch.get());
 
@@ -468,11 +486,11 @@ namespace sw
 
 	void DrawCall::processVertices(DrawCall* draw, BatchData* batch)
 	{
-		YARN_SCOPED_EVENT("VERTEX draw %d, batch %d", draw->id, batch->id);
+		MARL_SCOPED_EVENT("VERTEX draw %d, batch %d", draw->id, batch->id);
 
 		unsigned int triangleIndices[MaxBatchSize + 1][3];  // One extra for SIMD width overrun. TODO: Adjust to dynamic batch size.
 		{
-			YARN_SCOPED_EVENT("processPrimitiveVertices");
+			MARL_SCOPED_EVENT("processPrimitiveVertices");
 			processPrimitiveVertices(
 				triangleIndices,
 				draw->data->indices,
@@ -484,7 +502,8 @@ namespace sw
 
 		auto& vertexTask = batch->vertexTask;
 		vertexTask.primitiveStart = batch->firstPrimitive;
-		vertexTask.vertexCount = batch->numPrimitives * 3;
+		// We're only using batch compaction for points, not lines
+		vertexTask.vertexCount = batch->numPrimitives * ((draw->topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) ? 1 : 3);
 		if (vertexTask.vertexCache.drawCall != draw->id)
 		{
 			vertexTask.vertexCache.clear();
@@ -496,21 +515,21 @@ namespace sw
 
 	void DrawCall::processPrimitives(DrawCall* draw, BatchData* batch)
 	{
-		YARN_SCOPED_EVENT("PRIMITIVES draw %d batch %d", draw->id, batch->id);
+		MARL_SCOPED_EVENT("PRIMITIVES draw %d batch %d", draw->id, batch->id);
 		auto triangles = &batch->triangles[0];
 		auto primitives = &batch->primitives[0];
 		batch->numVisible = draw->setupPrimitives(triangles, primitives, draw, batch->numPrimitives);
 	}
 
-	void DrawCall::processPixels(const yarn::Loan<DrawCall>& draw, const yarn::Loan<BatchData>& batch, const std::shared_ptr<yarn::Finally>& finally)
+	void DrawCall::processPixels(const marl::Loan<DrawCall>& draw, const marl::Loan<BatchData>& batch, const std::shared_ptr<marl::Finally>& finally)
 	{
 		struct Data
 		{
-			Data(const yarn::Loan<DrawCall>& draw, const yarn::Loan<BatchData>& batch, const std::shared_ptr<yarn::Finally>& finally)
+			Data(const marl::Loan<DrawCall>& draw, const marl::Loan<BatchData>& batch, const std::shared_ptr<marl::Finally>& finally)
 				: draw(draw), batch(batch), finally(finally) {}
-			yarn::Loan<DrawCall> draw;
-			yarn::Loan<BatchData> batch;
-			std::shared_ptr<yarn::Finally> finally;
+			marl::Loan<DrawCall> draw;
+			marl::Loan<BatchData> batch;
+			std::shared_ptr<marl::Finally> finally;
 		};
 		auto data = std::make_shared<Data>(draw, batch, finally);
 		for (int cluster = 0; cluster < MaxClusterCount; cluster++)
@@ -519,7 +538,7 @@ namespace sw
 			{
 				auto& draw = data->draw;
 				auto& batch = data->batch;
-				YARN_SCOPED_EVENT("PIXEL draw %d, batch %d, cluster %d", draw->id, batch->id, cluster);
+				MARL_SCOPED_EVENT("PIXEL draw %d, batch %d, cluster %d", draw->id, batch->id, cluster);
 				draw->pixelPointer(&batch->primitives.front(), batch->numVisible, cluster, MaxClusterCount, draw->data);
 				batch->clusterTickets[cluster].done();
 			});
@@ -528,7 +547,7 @@ namespace sw
 
 	void Renderer::synchronize()
 	{
-		YARN_SCOPED_EVENT("synchronize");
+		MARL_SCOPED_EVENT("synchronize");
 		auto ticket = drawTickets.take();
 		ticket.wait();
 		device->updateSamplingRoutineConstCache();
@@ -578,10 +597,14 @@ namespace sw
 			}
 		}
 
-		// Repeat the last index to allow for SIMD width overrun.
-		triangleIndicesOut[triangleCount][0] = triangleIndicesOut[triangleCount - 1][2];
-		triangleIndicesOut[triangleCount][1] = triangleIndicesOut[triangleCount - 1][2];
-		triangleIndicesOut[triangleCount][2] = triangleIndicesOut[triangleCount - 1][2];
+		// setBatchIndices() takes care of the point case, since it's different due to the compaction
+		if (topology != VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+		{
+			// Repeat the last index to allow for SIMD width overrun.
+			triangleIndicesOut[triangleCount][0] = triangleIndicesOut[triangleCount - 1][2];
+			triangleIndicesOut[triangleCount][1] = triangleIndicesOut[triangleCount - 1][2];
+			triangleIndicesOut[triangleCount][2] = triangleIndicesOut[triangleCount - 1][2];
+		}
 	}
 
 	int DrawCall::setupSolidTriangles(Triangle *triangles, Primitive *primitives, const DrawCall *drawCall, int count)
@@ -777,8 +800,10 @@ namespace sw
 			return false;
 		}
 
-		const float W = data.Wx16[0] * (1.0f / 16.0f);
-		const float H = data.Hx16[0] * (1.0f / 16.0f);
+		constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
+
+		const float W = data.WxF[0] * (1.0f / subPixF);
+		const float H = data.HxF[0] * (1.0f / subPixF);
 
 		float dx = W * (P1.x / P1.w - P0.x / P0.w);
 		float dy = H * (P1.y / P1.w - P0.y / P0.w);
@@ -1007,8 +1032,10 @@ namespace sw
 			triangle.v1 = triangle.v0;
 			triangle.v2 = triangle.v0;
 
-			triangle.v1.projected.x += iround(16 * 0.5f * pSize);
-			triangle.v2.projected.y -= iround(16 * 0.5f * pSize) * (data.Hx16[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
+			constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
+
+			triangle.v1.projected.x += iround(subPixF * 0.5f * pSize);
+			triangle.v2.projected.y -= iround(subPixF * 0.5f * pSize) * (data.HxF[0] > 0.0f ? 1 : -1);   // Both Direct3D and OpenGL expect (0, 0) in the top-left corner
 			return setupRoutine(&primitive, &triangle, &polygon, &data);
 		}
 
@@ -1036,10 +1063,11 @@ namespace sw
 		for(uint32_t i = 0; i < vk::MAX_VERTEX_INPUT_BINDINGS; i++)
 		{
 			auto &attrib = inputs[i];
-			if (attrib.count && attrib.instanceStride)
+			if (attrib.count && attrib.instanceStride && (attrib.instanceStride < attrib.robustnessSize))
 			{
 				// Under the casts: attrib.buffer += attrib.instanceStride
 				attrib.buffer = (void const *)((uintptr_t)attrib.buffer + attrib.instanceStride);
+				attrib.robustnessSize -= attrib.instanceStride;
 			}
 		}
 	}

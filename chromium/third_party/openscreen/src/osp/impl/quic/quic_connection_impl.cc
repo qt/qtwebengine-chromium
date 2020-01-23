@@ -31,16 +31,10 @@ int UdpTransport::Write(const char* buffer,
                         size_t buffer_length,
                         const PacketInfo& info) {
   TRACE_SCOPED(TraceCategory::Quic, "UdpTransport::Write");
-  switch (socket_->SendMessage(buffer, buffer_length, destination_).code()) {
-    case Error::Code::kNone:
-      OSP_DCHECK_LE(buffer_length,
-                    static_cast<size_t>(std::numeric_limits<int>::max()));
-      return static_cast<int>(buffer_length);
-    case Error::Code::kAgain:
-      return 0;
-    default:
-      return -1;
-  }
+  socket_->SendMessage(buffer, buffer_length, destination_);
+  OSP_DCHECK_LE(buffer_length,
+                static_cast<size_t>(std::numeric_limits<int>::max()));
+  return static_cast<int>(buffer_length);
 }
 
 QuicStreamImpl::QuicStreamImpl(QuicStream::Delegate* delegate,
@@ -82,11 +76,26 @@ void QuicStreamImpl::OnBufferChanged(::quic::QuartcStream* stream) {}
 // Passes a received UDP packet to the QUIC implementation.  If this contains
 // any stream data, it will be passed automatically to the relevant
 // QuicStream::Delegate objects.
-void QuicConnectionImpl::OnRead(platform::UdpPacket data,
-                                platform::NetworkRunner* network_runner) {
+void QuicConnectionImpl::OnRead(platform::UdpSocket* socket,
+                                ErrorOr<platform::UdpPacket> data) {
   TRACE_SCOPED(TraceCategory::Quic, "QuicConnectionImpl::OnRead");
-  session_->OnTransportReceived(reinterpret_cast<const char*>(data.data()),
-                                data.size());
+  if (data.is_error()) {
+    TRACE_SET_RESULT(data.error());
+    return;
+  }
+
+  session_->OnTransportReceived(
+      reinterpret_cast<const char*>(data.value().data()), data.value().size());
+}
+
+void QuicConnectionImpl::OnSendError(platform::UdpSocket* socket, Error error) {
+  // TODO(issue/67): Implement this method.
+  OSP_UNIMPLEMENTED();
+}
+
+void QuicConnectionImpl::OnError(platform::UdpSocket* socket, Error error) {
+  // TODO(issue/67): Implement this method.
+  OSP_UNIMPLEMENTED();
 }
 
 QuicConnectionImpl::QuicConnectionImpl(

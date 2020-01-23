@@ -817,7 +817,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
         bool usesFragCoord  = false;
 
         // Search for the gl_PointCoord usage, if its used, we need to flip the y coordinate.
-        for (const Varying &inputVarying : mInputVaryings)
+        for (const ShaderVariable &inputVarying : mInputVaryings)
         {
             if (!inputVarying.isBuiltIn())
             {
@@ -846,7 +846,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
         bool hasGLFragColor = false;
         bool hasGLFragData  = false;
 
-        for (const OutputVariable &outputVar : mOutputVariables)
+        for (const ShaderVariable &outputVar : mOutputVariables)
         {
             if (outputVar.name == "gl_FragColor")
             {
@@ -919,6 +919,14 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
         {
             return false;
         }
+    }
+    else if (getShaderType() == GL_GEOMETRY_SHADER)
+    {
+        AddANGLEPositionVarying(root, &getSymbolTable());
+
+        WriteGeometryShaderLayoutQualifiers(
+            sink, getGeometryShaderInputPrimitiveType(), getGeometryShaderInvocations(),
+            getGeometryShaderOutputPrimitiveType(), getGeometryShaderMaxVertices());
     }
     else
     {

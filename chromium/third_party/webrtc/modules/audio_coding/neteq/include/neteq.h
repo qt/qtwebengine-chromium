@@ -143,6 +143,13 @@ class NetEq {
 
   enum ReturnCodes { kOK = 0, kFail = -1 };
 
+  // Return type for GetDecoderFormat.
+  struct DecoderFormat {
+    int sample_rate_hz;
+    int num_channels;
+    SdpAudioFormat sdp_format;
+  };
+
   // Creates a new NetEq object, with parameters set in |config|. The |config|
   // object will only have to be valid for the duration of the call to this
   // method.
@@ -153,13 +160,17 @@ class NetEq {
 
   virtual ~NetEq() {}
 
-  // Inserts a new packet into NetEq. The |receive_timestamp| is an indication
-  // of the time when the packet was received, and should be measured with
-  // the same tick rate as the RTP timestamp of the current payload.
+  // Inserts a new packet into NetEq.
   // Returns 0 on success, -1 on failure.
   virtual int InsertPacket(const RTPHeader& rtp_header,
-                           rtc::ArrayView<const uint8_t> payload,
-                           uint32_t receive_timestamp) = 0;
+                           rtc::ArrayView<const uint8_t> payload) = 0;
+
+  // Deprecated. Use the version without the `receive_timestamp` argument.
+  int InsertPacket(const RTPHeader& rtp_header,
+                   rtc::ArrayView<const uint8_t> payload,
+                   uint32_t /*receive_timestamp*/) {
+    return InsertPacket(rtp_header, payload);
+  }
 
   // Lets NetEq know that a packet arrived with an empty payload. This typically
   // happens when empty packets are used for probing the network channel, and
@@ -261,7 +272,7 @@ class NetEq {
 
   // Returns the decoder info for the given payload type. Returns empty if no
   // such payload type was registered.
-  virtual absl::optional<SdpAudioFormat> GetDecoderFormat(
+  virtual absl::optional<DecoderFormat> GetDecoderFormat(
       int payload_type) const = 0;
 
   // Flushes both the packet buffer and the sync buffer.

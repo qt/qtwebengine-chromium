@@ -10,9 +10,9 @@
 
 #include "test/single_threaded_task_queue.h"
 
+#include <memory>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/time_utils.h"
@@ -20,15 +20,12 @@
 namespace webrtc {
 namespace test {
 
-DEPRECATED_SingleThreadedTaskQueueForTesting::QueuedTask::QueuedTask(
+DEPRECATED_SingleThreadedTaskQueueForTesting::StoredTask::StoredTask(
     DEPRECATED_SingleThreadedTaskQueueForTesting::TaskId task_id,
-    int64_t earliest_execution_time,
-    DEPRECATED_SingleThreadedTaskQueueForTesting::Task task)
-    : task_id(task_id),
-      earliest_execution_time(earliest_execution_time),
-      task(task) {}
+    std::unique_ptr<QueuedTask> task)
+    : task_id(task_id), task(std::move(task)) {}
 
-DEPRECATED_SingleThreadedTaskQueueForTesting::QueuedTask::~QueuedTask() =
+DEPRECATED_SingleThreadedTaskQueueForTesting::StoredTask::~StoredTask() =
     default;
 
 DEPRECATED_SingleThreadedTaskQueueForTesting::
@@ -43,13 +40,8 @@ DEPRECATED_SingleThreadedTaskQueueForTesting::
 }
 
 DEPRECATED_SingleThreadedTaskQueueForTesting::TaskId
-DEPRECATED_SingleThreadedTaskQueueForTesting::PostTask(Task task) {
-  return PostDelayedTask(task, 0);
-}
-
-DEPRECATED_SingleThreadedTaskQueueForTesting::TaskId
-DEPRECATED_SingleThreadedTaskQueueForTesting::PostDelayedTask(
-    Task task,
+DEPRECATED_SingleThreadedTaskQueueForTesting::PostDelayed(
+    std::unique_ptr<QueuedTask> task,
     int64_t delay_ms) {
   int64_t earliest_exec_time = rtc::TimeAfter(delay_ms);
 
@@ -60,14 +52,11 @@ DEPRECATED_SingleThreadedTaskQueueForTesting::PostDelayedTask(
   TaskId id = next_task_id_++;
 
   // Insert after any other tasks with an earlier-or-equal target time.
-  auto it = tasks_.begin();
-  for (; it != tasks_.end(); it++) {
-    if (earliest_exec_time < (*it)->earliest_execution_time) {
-      break;
-    }
-  }
-  tasks_.insert(it,
-                absl::make_unique<QueuedTask>(id, earliest_exec_time, task));
+  // Note: multimap has promise "The order of the key-value pairs whose keys
+  // compare equivalent is the order of insertion and does not change."
+  tasks_.emplace(std::piecewise_construct,
+                 std::forward_as_tuple(earliest_exec_time),
+                 std::forward_as_tuple(id, std::move(task)));
 
   // This class is optimized for simplicty, not for performance. This will wake
   // the thread up even if the next task in the queue is only scheduled for
@@ -78,23 +67,10 @@ DEPRECATED_SingleThreadedTaskQueueForTesting::PostDelayedTask(
   return id;
 }
 
-void DEPRECATED_SingleThreadedTaskQueueForTesting::SendTask(Task task) {
-  RTC_DCHECK(!IsCurrent());
-  rtc::Event done;
-  if (PostTask([&task, &done]() {
-        task();
-        done.Set();
-      }) == kInvalidTaskId) {
-    return;
-  }
-  // Give up after 30 seconds, warn after 10.
-  RTC_CHECK(done.Wait(30000, 10000));
-}
-
 bool DEPRECATED_SingleThreadedTaskQueueForTesting::CancelTask(TaskId task_id) {
   rtc::CritScope lock(&cs_);
   for (auto it = tasks_.begin(); it != tasks_.end(); it++) {
-    if ((*it)->task_id == task_id) {
+    if (it->second.task_id == task_id) {
       tasks_.erase(it);
       return true;
     }
@@ -137,6 +113,7 @@ void DEPRECATED_SingleThreadedTaskQueueForTesting::Run(void* obj) {
 }
 
 void DEPRECATED_SingleThreadedTaskQueueForTesting::RunLoop() {
+  CurrentTaskQueueSetter set_current(this);
   while (true) {
     std::unique_ptr<QueuedTask> queued_task;
 
@@ -152,11 +129,13 @@ void DEPRECATED_SingleThreadedTaskQueueForTesting::RunLoop() {
         return;
       }
       if (!tasks_.empty()) {
-        int64_t remaining_delay_ms = rtc::TimeDiff(
-            tasks_.front()->earliest_execution_time, rtc::TimeMillis());
+        auto next_delayed_task = tasks_.begin();
+        int64_t earliest_exec_time = next_delayed_task->first;
+        int64_t remaining_delay_ms =
+            rtc::TimeDiff(earliest_exec_time, rtc::TimeMillis());
         if (remaining_delay_ms <= 0) {
-          queued_task = std::move(tasks_.front());
-          tasks_.pop_front();
+          queued_task = std::move(next_delayed_task->second.task);
+          tasks_.erase(next_delayed_task);
         } else {
           wait_time = rtc::saturated_cast<int>(remaining_delay_ms);
         }
@@ -164,11 +143,18 @@ void DEPRECATED_SingleThreadedTaskQueueForTesting::RunLoop() {
     }
 
     if (queued_task) {
-      queued_task->task();
+      if (!queued_task->Run()) {
+        queued_task.release();
+      }
     } else {
       wake_up_.Wait(wait_time);
     }
   }
+}
+
+void DEPRECATED_SingleThreadedTaskQueueForTesting::Delete() {
+  Stop();
+  delete this;
 }
 
 }  // namespace test

@@ -25,13 +25,14 @@
 #include "dawn_native/d3d12/CommandAllocatorManager.h"
 #include "dawn_native/d3d12/CommandBufferD3D12.h"
 #include "dawn_native/d3d12/ComputePipelineD3D12.h"
+#include "dawn_native/d3d12/D3D12Error.h"
 #include "dawn_native/d3d12/DescriptorHeapAllocator.h"
 #include "dawn_native/d3d12/PipelineLayoutD3D12.h"
 #include "dawn_native/d3d12/PlatformFunctions.h"
 #include "dawn_native/d3d12/QueueD3D12.h"
 #include "dawn_native/d3d12/RenderPipelineD3D12.h"
 #include "dawn_native/d3d12/ResourceAllocator.h"
-#include "dawn_native/d3d12/ResourceHeapD3D12.h"
+#include "dawn_native/d3d12/ResourceAllocatorManagerD3D12.h"
 #include "dawn_native/d3d12/SamplerD3D12.h"
 #include "dawn_native/d3d12/ShaderModuleD3D12.h"
 #include "dawn_native/d3d12/StagingBufferD3D12.h"
@@ -39,10 +40,6 @@
 #include "dawn_native/d3d12/TextureD3D12.h"
 
 namespace dawn_native { namespace d3d12 {
-
-    void ASSERT_SUCCESS(HRESULT hr) {
-        ASSERT(SUCCEEDED(hr));
-    }
 
     Device::Device(Adapter* adapter, const DeviceDescriptor* descriptor)
         : DeviceBase(adapter, descriptor) {
@@ -60,10 +57,14 @@ namespace dawn_native { namespace d3d12 {
         D3D12_COMMAND_QUEUE_DESC queueDesc = {};
         queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        ASSERT_SUCCESS(mD3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCommandQueue)));
+        DAWN_TRY(
+            CheckHRESULT(mD3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCommandQueue)),
+                         "D3D12 create command queue"));
 
-        ASSERT_SUCCESS(mD3d12Device->CreateFence(mLastSubmittedSerial, D3D12_FENCE_FLAG_NONE,
-                                                 IID_PPV_ARGS(&mFence)));
+        DAWN_TRY(CheckHRESULT(mD3d12Device->CreateFence(mLastSubmittedSerial, D3D12_FENCE_FLAG_NONE,
+                                                        IID_PPV_ARGS(&mFence)),
+                              "D3D12 create fence"));
+
         mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         ASSERT(mFenceEvent != nullptr);
 
@@ -72,8 +73,9 @@ namespace dawn_native { namespace d3d12 {
         mDescriptorHeapAllocator = std::make_unique<DescriptorHeapAllocator>(this);
         mMapRequestTracker = std::make_unique<MapRequestTracker>(this);
         mResourceAllocator = std::make_unique<ResourceAllocator>(this);
+        mResourceAllocatorManager = std::make_unique<ResourceAllocatorManager>(this);
 
-        NextSerial();
+        DAWN_TRY(NextSerial());
 
         // Initialize indirect commands
         D3D12_INDIRECT_ARGUMENT_DESC argumentDesc = {};
@@ -104,14 +106,15 @@ namespace dawn_native { namespace d3d12 {
 
     Device::~Device() {
         // Immediately forget about all pending commands
-        if (mPendingCommands.open) {
-            mPendingCommands.commandList->Close();
-            mPendingCommands.open = false;
-            mPendingCommands.commandList = nullptr;
-        }
-        NextSerial();
-        WaitForSerial(mLastSubmittedSerial);  // Wait for all in-flight commands to finish executing
-        TickImpl();                           // Call tick one last time so resources are cleaned up
+        mPendingCommands.Release();
+
+        ConsumedError(NextSerial());
+        // Wait for all in-flight commands to finish executing
+        ConsumedError(WaitForSerial(mLastSubmittedSerial));
+
+        // Call tick one last time so resources are cleaned up. Ignore the return value so we can
+        // continue shutting down in an orderly fashion.
+        ConsumedError(TickImpl());
 
         // Free services explicitly so that they can free D3D12 resources before destruction of the
         // device.
@@ -133,7 +136,7 @@ namespace dawn_native { namespace d3d12 {
         mUsedComObjectRefs.ClearUpTo(mCompletedSerial);
 
         ASSERT(mUsedComObjectRefs.Empty());
-        ASSERT(mPendingCommands.commandList == nullptr);
+        ASSERT(!mPendingCommands.IsOpen());
     }
 
     ComPtr<ID3D12Device> Device::GetD3D12Device() const {
@@ -176,27 +179,17 @@ namespace dawn_native { namespace d3d12 {
         return mResourceAllocator.get();
     }
 
-    void Device::OpenCommandList(ComPtr<ID3D12GraphicsCommandList>* commandList) {
-        ComPtr<ID3D12GraphicsCommandList>& cmdList = *commandList;
-        if (!cmdList) {
-            ASSERT_SUCCESS(mD3d12Device->CreateCommandList(
-                0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-                mCommandAllocatorManager->ReserveCommandAllocator().Get(), nullptr,
-                IID_PPV_ARGS(&cmdList)));
-        } else {
-            ASSERT_SUCCESS(
-                cmdList->Reset(mCommandAllocatorManager->ReserveCommandAllocator().Get(), nullptr));
-        }
+    CommandAllocatorManager* Device::GetCommandAllocatorManager() const {
+        return mCommandAllocatorManager.get();
     }
 
-    ComPtr<ID3D12GraphicsCommandList> Device::GetPendingCommandList() {
+    ResultOrError<CommandRecordingContext*> Device::GetPendingCommandContext() {
         // Callers of GetPendingCommandList do so to record commands. Only reserve a command
         // allocator when it is needed so we don't submit empty command lists
-        if (!mPendingCommands.open) {
-            OpenCommandList(&mPendingCommands.commandList);
-            mPendingCommands.open = true;
+        if (!mPendingCommands.IsOpen()) {
+            DAWN_TRY(mPendingCommands.Open(mD3d12Device.Get(), mCommandAllocatorManager.get()));
         }
-        return mPendingCommands.commandList;
+        return &mPendingCommands;
     }
 
     Serial Device::GetCompletedCommandSerial() const {
@@ -211,56 +204,64 @@ namespace dawn_native { namespace d3d12 {
         return mLastSubmittedSerial + 1;
     }
 
-    void Device::TickImpl() {
+    MaybeError Device::TickImpl() {
         // Perform cleanup operations to free unused objects
         mCompletedSerial = mFence->GetCompletedValue();
 
         // Uploader should tick before the resource allocator
-        // as it enqueues resources to be released.
-        mDynamicUploader->Tick(mCompletedSerial);
+        // as it enqueued resources to be released.
+        mDynamicUploader->Deallocate(mCompletedSerial);
 
         mResourceAllocator->Tick(mCompletedSerial);
-        mCommandAllocatorManager->Tick(mCompletedSerial);
-        mDescriptorHeapAllocator->Tick(mCompletedSerial);
+        DAWN_TRY(mCommandAllocatorManager->Tick(mCompletedSerial));
+        mDescriptorHeapAllocator->Deallocate(mCompletedSerial);
         mMapRequestTracker->Tick(mCompletedSerial);
         mUsedComObjectRefs.ClearUpTo(mCompletedSerial);
-        ExecuteCommandLists({});
-        NextSerial();
+        DAWN_TRY(ExecuteCommandContext(nullptr));
+        DAWN_TRY(NextSerial());
+        return {};
     }
 
-    void Device::NextSerial() {
+    MaybeError Device::NextSerial() {
         mLastSubmittedSerial++;
-        ASSERT_SUCCESS(mCommandQueue->Signal(mFence.Get(), mLastSubmittedSerial));
+        return CheckHRESULT(mCommandQueue->Signal(mFence.Get(), mLastSubmittedSerial),
+                            "D3D12 command queue signal fence");
     }
 
-    void Device::WaitForSerial(uint64_t serial) {
+    MaybeError Device::WaitForSerial(uint64_t serial) {
         mCompletedSerial = mFence->GetCompletedValue();
         if (mCompletedSerial < serial) {
-            ASSERT_SUCCESS(mFence->SetEventOnCompletion(serial, mFenceEvent));
+            DAWN_TRY(CheckHRESULT(mFence->SetEventOnCompletion(serial, mFenceEvent),
+                                  "D3D12 set event on completion"));
             WaitForSingleObject(mFenceEvent, INFINITE);
         }
+        return {};
     }
 
     void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
         mUsedComObjectRefs.Enqueue(object, GetPendingCommandSerial());
     }
 
-    void Device::ExecuteCommandLists(std::initializer_list<ID3D12CommandList*> commandLists) {
+    MaybeError Device::ExecuteCommandContext(CommandRecordingContext* commandContext) {
+        UINT numLists = 0;
+        std::array<ID3D12CommandList*, 2> d3d12CommandLists;
+
         // If there are pending commands, prepend them to ExecuteCommandLists
-        if (mPendingCommands.open) {
-            std::vector<ID3D12CommandList*> lists(commandLists.size() + 1);
-            mPendingCommands.commandList->Close();
-            mPendingCommands.open = false;
-            lists[0] = mPendingCommands.commandList.Get();
-            std::copy(commandLists.begin(), commandLists.end(), lists.begin() + 1);
-            mCommandQueue->ExecuteCommandLists(static_cast<UINT>(commandLists.size() + 1),
-                                               lists.data());
-            mPendingCommands.commandList = nullptr;
-        } else {
-            std::vector<ID3D12CommandList*> lists(commandLists);
-            mCommandQueue->ExecuteCommandLists(static_cast<UINT>(commandLists.size()),
-                                               lists.data());
+        if (mPendingCommands.IsOpen()) {
+            ID3D12GraphicsCommandList* d3d12CommandList;
+            DAWN_TRY_ASSIGN(d3d12CommandList, mPendingCommands.Close());
+            d3d12CommandLists[numLists++] = d3d12CommandList;
         }
+        if (commandContext != nullptr) {
+            ID3D12GraphicsCommandList* d3d12CommandList;
+            DAWN_TRY_ASSIGN(d3d12CommandList, commandContext->Close());
+            d3d12CommandLists[numLists++] = d3d12CommandList;
+        }
+        if (numLists > 0) {
+            mCommandQueue->ExecuteCommandLists(numLists, d3d12CommandLists.data());
+        }
+
+        return {};
     }
 
     ResultOrError<BindGroupBase*> Device::CreateBindGroupImpl(
@@ -286,14 +287,14 @@ namespace dawn_native { namespace d3d12 {
     }
     ResultOrError<PipelineLayoutBase*> Device::CreatePipelineLayoutImpl(
         const PipelineLayoutDescriptor* descriptor) {
-        return new PipelineLayout(this, descriptor);
+        return PipelineLayout::Create(this, descriptor);
     }
     ResultOrError<QueueBase*> Device::CreateQueueImpl() {
         return new Queue(this);
     }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
-        return new RenderPipeline(this, descriptor);
+        return RenderPipeline::Create(this, descriptor);
     }
     ResultOrError<SamplerBase*> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
         return new Sampler(this, descriptor);
@@ -307,7 +308,7 @@ namespace dawn_native { namespace d3d12 {
         return new SwapChain(this, descriptor);
     }
     ResultOrError<TextureBase*> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
-        return new Texture(this, descriptor);
+        return Texture::Create(this, descriptor);
     }
     ResultOrError<TextureViewBase*> Device::CreateTextureViewImpl(
         TextureBase* texture,
@@ -318,6 +319,7 @@ namespace dawn_native { namespace d3d12 {
     ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
         std::unique_ptr<StagingBufferBase> stagingBuffer =
             std::make_unique<StagingBuffer>(size, this);
+        DAWN_TRY(stagingBuffer->Initialize());
         return std::move(stagingBuffer);
     }
 
@@ -326,59 +328,30 @@ namespace dawn_native { namespace d3d12 {
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
-        ToBackend(destination)
-            ->TransitionUsageNow(GetPendingCommandList(), dawn::BufferUsage::CopyDst);
+        CommandRecordingContext* commandRecordingContext;
+        DAWN_TRY_ASSIGN(commandRecordingContext, GetPendingCommandContext());
 
-        GetPendingCommandList()->CopyBufferRegion(
+        ToBackend(destination)
+            ->TransitionUsageNow(commandRecordingContext, dawn::BufferUsage::CopyDst);
+
+        commandRecordingContext->GetCommandList()->CopyBufferRegion(
             ToBackend(destination)->GetD3D12Resource().Get(), destinationOffset,
             ToBackend(source)->GetResource(), sourceOffset, size);
 
         return {};
     }
 
-    size_t Device::GetD3D12HeapTypeToIndex(D3D12_HEAP_TYPE heapType) const {
-        ASSERT(heapType > 0);
-        ASSERT(static_cast<uint32_t>(heapType) <= kNumHeapTypes);
-        return heapType - 1;
+    void Device::DeallocateMemory(ResourceHeapAllocation& allocation) {
+        mResourceAllocatorManager->DeallocateMemory(allocation);
     }
 
-    void Device::DeallocateMemory(ResourceMemoryAllocation& allocation) {
-        CommittedResourceAllocator* allocator = nullptr;
-        D3D12_HEAP_PROPERTIES heapProp;
-        ToBackend(allocation.GetResourceHeap())
-            ->GetD3D12Resource()
-            ->GetHeapProperties(&heapProp, nullptr);
-        const size_t heapTypeIndex = GetD3D12HeapTypeToIndex(heapProp.Type);
-        ASSERT(heapTypeIndex < kNumHeapTypes);
-        allocator = mDirectResourceAllocators[heapTypeIndex].get();
-        allocator->Deallocate(allocation);
-
-        // Invalidate the underlying resource heap in case the client accidentally
-        // calls DeallocateMemory again using the same allocation.
-        allocation.Invalidate();
-    }
-
-    ResultOrError<ResourceMemoryAllocation> Device::AllocateMemory(
+    ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
         D3D12_HEAP_TYPE heapType,
         const D3D12_RESOURCE_DESC& resourceDescriptor,
         D3D12_RESOURCE_STATES initialUsage,
         D3D12_HEAP_FLAGS heapFlags) {
-        const size_t heapTypeIndex = GetD3D12HeapTypeToIndex(heapType);
-        ASSERT(heapTypeIndex < kNumHeapTypes);
-
-        // Get the direct allocator using a tightly sized heap (aka CreateCommittedResource).
-        CommittedResourceAllocator* allocator = mDirectResourceAllocators[heapTypeIndex].get();
-        if (allocator == nullptr) {
-            mDirectResourceAllocators[heapTypeIndex] =
-                std::make_unique<CommittedResourceAllocator>(this, heapType);
-            allocator = mDirectResourceAllocators[heapTypeIndex].get();
-        }
-
-        ResourceMemoryAllocation allocation;
-        DAWN_TRY_ASSIGN(allocation,
-                        allocator->Allocate(resourceDescriptor, initialUsage, heapFlags));
-
-        return allocation;
+        return mResourceAllocatorManager->AllocateMemory(heapType, resourceDescriptor, initialUsage,
+                                                         heapFlags);
     }
 
     TextureBase* Device::WrapSharedHandle(const TextureDescriptor* descriptor,
@@ -402,6 +375,6 @@ namespace dawn_native { namespace d3d12 {
             return nullptr;
         }
 
-        return new Texture(this, descriptor, d3d12Resource.Get());
+        return new Texture(this, descriptor, std::move(d3d12Resource));
     }
 }}  // namespace dawn_native::d3d12

@@ -8461,3 +8461,7 @@ ret
 .size poly_Rq_mul,.-poly_Rq_mul
 
 #endif
+
+#if defined(__ELF__)
+.section	.note.GNU-stack,"",@progbits
+#endif

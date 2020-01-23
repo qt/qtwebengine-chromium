@@ -293,12 +293,6 @@ typedef struct TplDepStats {
 
   int ref_frame_index;
   int_mv mv;
-
-#if CONFIG_NON_GREEDY_MV
-  int ready[3];
-  int64_t sse_arr[3];
-  double feature_score;
-#endif
 } TplDepStats;
 
 #if CONFIG_NON_GREEDY_MV
@@ -321,19 +315,10 @@ typedef struct TplDepFrame {
   int base_qindex;
 #if CONFIG_NON_GREEDY_MV
   int lambda;
-  int_mv *pyramid_mv_arr[3][SQUARE_BLOCK_SIZES];
   int *mv_mode_arr[3];
   double *rd_diff_arr[3];
 #endif
 } TplDepFrame;
-
-#if CONFIG_NON_GREEDY_MV
-static INLINE int_mv *get_pyramid_mv(const TplDepFrame *tpl_frame, int rf_idx,
-                                     BLOCK_SIZE bsize, int mi_row, int mi_col) {
-  return &tpl_frame->pyramid_mv_arr[rf_idx][get_square_block_idx(bsize)]
-                                   [mi_row * tpl_frame->stride + mi_col];
-}
-#endif
 
 #define TPL_DEP_COST_SCALE_LOG2 4
 
@@ -520,15 +505,6 @@ typedef struct EncFrameBuf {
 
 // Maximum operating frame buffer size needed for a GOP using ARF reference.
 #define MAX_ARF_GOP_SIZE (2 * MAX_LAG_BUFFERS)
-#if CONFIG_NON_GREEDY_MV
-typedef struct FEATURE_SCORE_LOC {
-  int visited;
-  double feature_score;
-  int mi_row;
-  int mi_col;
-} FEATURE_SCORE_LOC;
-#endif
-
 #define MAX_KMEANS_GROUPS 8
 
 typedef struct KMEANS_DATA {
@@ -538,6 +514,7 @@ typedef struct KMEANS_DATA {
 } KMEANS_DATA;
 
 typedef struct VP9_COMP {
+  FRAME_INFO frame_info;
   QUANTS quants;
   ThreadData td;
   MB_MODE_INFO_EXT *mbmi_ext_base;
@@ -576,11 +553,8 @@ typedef struct VP9_COMP {
   int kmeans_count_ls[MAX_KMEANS_GROUPS];
   int kmeans_ctr_num;
 #if CONFIG_NON_GREEDY_MV
+  MotionFieldInfo motion_field_info;
   int tpl_ready;
-  int feature_score_loc_alloc;
-  FEATURE_SCORE_LOC *feature_score_loc_arr;
-  FEATURE_SCORE_LOC **feature_score_loc_sort;
-  FEATURE_SCORE_LOC **feature_score_loc_heap;
   int_mv *select_mv_arr;
 #endif
 

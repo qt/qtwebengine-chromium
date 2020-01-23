@@ -208,9 +208,9 @@ int CheckPDFiumCApi() {
     CHK(FPDFPath_SetMatrix);
     CHK(FPDFTextObj_GetFontName);
     CHK(FPDFTextObj_GetFontSize);
+    CHK(FPDFTextObj_GetMatrix);
     CHK(FPDFTextObj_GetText);
-    CHK(FPDFText_GetMatrix);
-    CHK(FPDFText_GetTextRenderMode);
+    CHK(FPDFTextObj_GetTextRenderMode);
     CHK(FPDFText_LoadFont);
     CHK(FPDFText_LoadStandardFont);
     CHK(FPDFText_SetText);
@@ -336,12 +336,17 @@ int CheckPDFiumCApi() {
     CHK(FPDFText_GetCharBox);
     CHK(FPDFText_GetCharIndexAtPos);
     CHK(FPDFText_GetCharOrigin);
+    CHK(FPDFText_GetFillColor);
     CHK(FPDFText_GetFontInfo);
     CHK(FPDFText_GetFontSize);
+    CHK(FPDFText_GetFontWeight);
+    CHK(FPDFText_GetLooseCharBox);
     CHK(FPDFText_GetRect);
     CHK(FPDFText_GetSchCount);
     CHK(FPDFText_GetSchResultIndex);
+    CHK(FPDFText_GetStrokeColor);
     CHK(FPDFText_GetText);
+    CHK(FPDFText_GetTextRenderMode);
     CHK(FPDFText_GetUnicode);
     CHK(FPDFText_LoadPage);
 

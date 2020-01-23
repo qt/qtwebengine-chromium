@@ -58,6 +58,7 @@ namespace dawn_native { namespace opengl {
         // in D3D12, Metal and Vulkan, so we should normalize it in shaders in all backends.
         // See the documentation of spirv_cross::CompilerGLSL::Options::vertex::fixup_clipspace for
         // more details.
+        options.vertex.flip_vert_y = true;
         options.vertex.fixup_clipspace = true;
 
         // TODO(cwallez@chromium.org): discover the backing context version and use that.
@@ -67,28 +68,6 @@ namespace dawn_native { namespace opengl {
         options.version = 440;
 #endif
         compiler.set_common_options(options);
-
-        // Rename the push constant block to be prefixed with the shader stage type so that uniform
-        // names don't match between the FS and the VS.
-        const auto& resources = compiler.get_shader_resources();
-        if (resources.push_constant_buffers.size() > 0) {
-            const char* prefix = nullptr;
-            switch (compiler.get_execution_model()) {
-                case spv::ExecutionModelVertex:
-                    prefix = "vs_";
-                    break;
-                case spv::ExecutionModelFragment:
-                    prefix = "fs_";
-                    break;
-                case spv::ExecutionModelGLCompute:
-                    prefix = "cs_";
-                    break;
-                default:
-                    UNREACHABLE();
-            }
-            auto interfaceBlock = resources.push_constant_buffers[0];
-            compiler.set_name(interfaceBlock.id, prefix + interfaceBlock.name);
-        }
 
         ExtractSpirvInfo(compiler);
 

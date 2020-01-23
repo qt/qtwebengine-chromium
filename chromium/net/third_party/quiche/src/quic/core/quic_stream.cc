@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "net/third_party/quiche/src/quic/core/quic_error_codes.h"
 #include "net/third_party/quiche/src/quic/core/quic_flow_controller.h"
 #include "net/third_party/quiche/src/quic/core/quic_session.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
@@ -24,16 +25,78 @@ namespace quic {
 
 namespace {
 
-size_t GetInitialStreamFlowControlWindowToSend(QuicSession* session) {
-  return session->config()->GetInitialStreamFlowControlWindowToSend();
+size_t DefaultFlowControlWindow(ParsedQuicVersion version) {
+  if (!version.AllowsLowFlowControlLimits()) {
+    return kDefaultFlowControlSendWindow;
+  }
+  return 0;
 }
 
-size_t GetReceivedFlowControlWindow(QuicSession* session) {
-  if (session->config()->HasReceivedInitialStreamFlowControlWindowBytes()) {
-    return session->config()->ReceivedInitialStreamFlowControlWindowBytes();
+size_t GetInitialStreamFlowControlWindowToSend(QuicSession* session,
+                                               QuicStreamId stream_id) {
+  ParsedQuicVersion version = session->connection()->version();
+  if (version.handshake_protocol != PROTOCOL_TLS1_3) {
+    return session->config()->GetInitialStreamFlowControlWindowToSend();
   }
 
-  return kDefaultFlowControlSendWindow;
+  // Unidirectional streams (v99 only).
+  if (VersionHasIetfQuicFrames(version.transport_version) &&
+      !QuicUtils::IsBidirectionalStreamId(stream_id)) {
+    return session->config()
+        ->GetInitialMaxStreamDataBytesUnidirectionalToSend();
+  }
+
+  if (QuicUtils::IsOutgoingStreamId(version, stream_id,
+                                    session->perspective())) {
+    return session->config()
+        ->GetInitialMaxStreamDataBytesOutgoingBidirectionalToSend();
+  }
+
+  return session->config()
+      ->GetInitialMaxStreamDataBytesIncomingBidirectionalToSend();
+}
+
+size_t GetReceivedFlowControlWindow(QuicSession* session,
+                                    QuicStreamId stream_id) {
+  ParsedQuicVersion version = session->connection()->version();
+  if (version.handshake_protocol != PROTOCOL_TLS1_3) {
+    if (session->config()->HasReceivedInitialStreamFlowControlWindowBytes()) {
+      return session->config()->ReceivedInitialStreamFlowControlWindowBytes();
+    }
+
+    return DefaultFlowControlWindow(version);
+  }
+
+  // Unidirectional streams (v99 only).
+  if (VersionHasIetfQuicFrames(version.transport_version) &&
+      !QuicUtils::IsBidirectionalStreamId(stream_id)) {
+    if (session->config()
+            ->HasReceivedInitialMaxStreamDataBytesUnidirectional()) {
+      return session->config()
+          ->ReceivedInitialMaxStreamDataBytesUnidirectional();
+    }
+
+    return DefaultFlowControlWindow(version);
+  }
+
+  if (QuicUtils::IsOutgoingStreamId(version, stream_id,
+                                    session->perspective())) {
+    if (session->config()
+            ->HasReceivedInitialMaxStreamDataBytesOutgoingBidirectional()) {
+      return session->config()
+          ->ReceivedInitialMaxStreamDataBytesOutgoingBidirectional();
+    }
+
+    return DefaultFlowControlWindow(version);
+  }
+
+  if (session->config()
+          ->HasReceivedInitialMaxStreamDataBytesIncomingBidirectional()) {
+    return session->config()
+        ->ReceivedInitialMaxStreamDataBytesIncomingBidirectional();
+  }
+
+  return DefaultFlowControlWindow(version);
 }
 
 }  // namespace
@@ -50,8 +113,8 @@ PendingStream::PendingStream(QuicStreamId id, QuicSession* session)
       flow_controller_(session,
                        id,
                        /*is_connection_flow_controller*/ false,
-                       GetReceivedFlowControlWindow(session),
-                       GetInitialStreamFlowControlWindowToSend(session),
+                       GetReceivedFlowControlWindow(session, id),
+                       GetInitialStreamFlowControlWindowToSend(session, id),
                        kStreamReceiveWindowLimit,
                        session_->flow_controller()->auto_tune_receive_window(),
                        session_->flow_controller()),
@@ -105,6 +168,12 @@ void PendingStream::OnStreamFrame(const QuicStreamFrame& frame) {
     CloseConnectionWithDetails(
         QUIC_STREAM_LENGTH_OVERFLOW,
         "Peer sends more data than allowed on this stream.");
+    return;
+  }
+
+  if (GetQuicReloadableFlag(quic_rst_if_stream_frame_beyond_close_offset) &&
+      frame.offset + frame.data_length > sequencer_.close_offset()) {
+    Reset(QUIC_DATA_AFTER_CLOSE_OFFSET);
     return;
   }
 
@@ -206,8 +275,8 @@ QuicOptional<QuicFlowController> FlowController(QuicStreamId id,
   return QuicFlowController(
       session, id,
       /*is_connection_flow_controller*/ false,
-      GetReceivedFlowControlWindow(session),
-      GetInitialStreamFlowControlWindowToSend(session),
+      GetReceivedFlowControlWindow(session, id),
+      GetInitialStreamFlowControlWindowToSend(session, id),
       kStreamReceiveWindowLimit,
       session->flow_controller()->auto_tune_receive_window(),
       session->flow_controller());
@@ -270,8 +339,7 @@ QuicStream::QuicStream(QuicStreamId id,
       buffered_data_threshold_(GetQuicFlag(FLAGS_quic_buffered_data_threshold)),
       is_static_(is_static),
       deadline_(QuicTime::Zero()),
-      type_(VersionHasIetfQuicFrames(
-                session->connection()->transport_version()) &&
+      type_(VersionHasIetfQuicFrames(session->transport_version()) &&
                     type != CRYPTO
                 ? QuicUtils::GetStreamType(id_,
                                            perspective_,
@@ -333,6 +401,15 @@ void QuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
                    frame.data_length, ". ", sequencer_.DebugString()));
     return;
   }
+
+  if (GetQuicReloadableFlag(quic_rst_if_stream_frame_beyond_close_offset)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_rst_if_stream_frame_beyond_close_offset);
+    if (frame.offset + frame.data_length > sequencer_.close_offset()) {
+      Reset(QUIC_DATA_AFTER_CLOSE_OFFSET);
+      return;
+    }
+  }
+
   if (frame.fin) {
     fin_received_ = true;
     if (fin_sent_) {
@@ -701,7 +778,7 @@ bool QuicStream::HasBufferedData() const {
 }
 
 QuicTransportVersion QuicStream::transport_version() const {
-  return session_->connection()->transport_version();
+  return session_->transport_version();
 }
 
 HandshakeProtocol QuicStream::handshake_protocol() const {
@@ -747,9 +824,7 @@ void QuicStream::OnClose() {
 }
 
 void QuicStream::OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) {
-  if (GetQuicReloadableFlag(quic_no_window_update_on_read_only_stream) &&
-      type_ == READ_UNIDIRECTIONAL) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_no_window_update_on_read_only_stream);
+  if (type_ == READ_UNIDIRECTIONAL) {
     CloseConnectionWithDetails(
         QUIC_WINDOW_UPDATE_RECEIVED_ON_READ_UNIDIRECTIONAL_STREAM,
         "WindowUpdateFrame received on READ_UNIDIRECTIONAL stream.");

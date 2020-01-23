@@ -46,7 +46,11 @@ source_set("dawn_platform") {
 config("libdawn_native_internal") {
   configs = [ "${dawn_root}/src/common:dawn_internal" ]
 
-  # Suppress warnings that Metal isn't in the deployment target of Chrome
+  # Suppress warnings that Metal isn't in the deployment target of Chrome:
+  # initialization of the Metal backend is behind a IsMetalSupported check so
+  # Dawn won't call Metal functions on macOS 10.10.
+  # TODO(cwallez@chromium.org): Consider using API_AVAILABLE annotations on all
+  # metal code in dawn once crbug.com/1004024 is sorted out.
   if (is_mac) {
     cflags_objcc = [ "-Wno-unguarded-availability" ]
   }
@@ -55,11 +59,11 @@ config("libdawn_native_internal") {
 dawn_json_generator("libdawn_native_utils_gen") {
   target = "dawn_native_utils"
   outputs = [
-    "dawn_native/ProcTable.cpp",
-    "dawn_native/dawn_structs_autogen.h",
-    "dawn_native/dawn_structs_autogen.cpp",
-    "dawn_native/ValidationUtils_autogen.h",
-    "dawn_native/ValidationUtils_autogen.cpp",
+    "src/dawn_native/ProcTable.cpp",
+    "src/dawn_native/dawn_structs_autogen.h",
+    "src/dawn_native/dawn_structs_autogen.cpp",
+    "src/dawn_native/ValidationUtils_autogen.h",
+    "src/dawn_native/ValidationUtils_autogen.cpp",
   ]
 }
 
@@ -74,9 +78,9 @@ if (dawn_enable_opengl) {
                   root_build_dir),
     ]
     outputs = [
-      "dawn_native/opengl/OpenGLFunctionsBase_autogen.cpp",
-      "dawn_native/opengl/OpenGLFunctionsBase_autogen.h",
-      "dawn_native/opengl/opengl_platform_autogen.h",
+      "src/dawn_native/opengl/OpenGLFunctionsBase_autogen.cpp",
+      "src/dawn_native/opengl/OpenGLFunctionsBase_autogen.h",
+      "src/dawn_native/opengl/opengl_platform_autogen.h",
     ]
   }
 }
@@ -85,7 +89,7 @@ if (dawn_enable_opengl) {
 # dependencies of libdawn_native
 source_set("libdawn_native_headers") {
   public_deps = [
-    "${dawn_root}/src/dawn:dawn_headers",
+    "${dawn_root}/src/dawn:dawncpp_headers",
   ]
   all_dependent_configs = [ "${dawn_root}/src/common:dawn_public_include_dirs" ]
   sources = [
@@ -136,8 +140,11 @@ source_set("libdawn_native_sources") {
     "src/dawn_native/BindGroup.h",
     "src/dawn_native/BindGroupLayout.cpp",
     "src/dawn_native/BindGroupLayout.h",
+    "src/dawn_native/BindGroupTracker.h",
     "src/dawn_native/BuddyAllocator.cpp",
     "src/dawn_native/BuddyAllocator.h",
+    "src/dawn_native/BuddyMemoryAllocator.cpp",
+    "src/dawn_native/BuddyMemoryAllocator.h",
     "src/dawn_native/Buffer.cpp",
     "src/dawn_native/Buffer.h",
     "src/dawn_native/CommandAllocator.cpp",
@@ -166,6 +173,10 @@ source_set("libdawn_native_sources") {
     "src/dawn_native/Error.h",
     "src/dawn_native/ErrorData.cpp",
     "src/dawn_native/ErrorData.h",
+    "src/dawn_native/ErrorScope.cpp",
+    "src/dawn_native/ErrorScope.h",
+    "src/dawn_native/ErrorScopeTracker.cpp",
+    "src/dawn_native/ErrorScopeTracker.h",
     "src/dawn_native/Extensions.cpp",
     "src/dawn_native/Extensions.h",
     "src/dawn_native/Fence.cpp",
@@ -177,6 +188,7 @@ source_set("libdawn_native_sources") {
     "src/dawn_native/Forward.h",
     "src/dawn_native/Instance.cpp",
     "src/dawn_native/Instance.h",
+    "src/dawn_native/MemoryAllocator.h",
     "src/dawn_native/ObjectBase.cpp",
     "src/dawn_native/ObjectBase.h",
     "src/dawn_native/PassResourceUsage.h",
@@ -207,8 +219,8 @@ source_set("libdawn_native_sources") {
     "src/dawn_native/ResourceHeap.h",
     "src/dawn_native/ResourceMemoryAllocation.cpp",
     "src/dawn_native/ResourceMemoryAllocation.h",
-    "src/dawn_native/RingBuffer.cpp",
-    "src/dawn_native/RingBuffer.h",
+    "src/dawn_native/RingBufferAllocator.cpp",
+    "src/dawn_native/RingBufferAllocator.h",
     "src/dawn_native/Sampler.cpp",
     "src/dawn_native/Sampler.h",
     "src/dawn_native/ShaderModule.cpp",
@@ -242,10 +254,14 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/d3d12/CommandAllocatorManager.h",
       "src/dawn_native/d3d12/CommandBufferD3D12.cpp",
       "src/dawn_native/d3d12/CommandBufferD3D12.h",
+      "src/dawn_native/d3d12/CommandRecordingContext.cpp",
+      "src/dawn_native/d3d12/CommandRecordingContext.h",
       "src/dawn_native/d3d12/CommittedResourceAllocatorD3D12.cpp",
       "src/dawn_native/d3d12/CommittedResourceAllocatorD3D12.h",
       "src/dawn_native/d3d12/ComputePipelineD3D12.cpp",
       "src/dawn_native/d3d12/ComputePipelineD3D12.h",
+      "src/dawn_native/d3d12/D3D12Error.cpp",
+      "src/dawn_native/d3d12/D3D12Error.h",
       "src/dawn_native/d3d12/D3D12Info.cpp",
       "src/dawn_native/d3d12/D3D12Info.h",
       "src/dawn_native/d3d12/DescriptorHeapAllocator.cpp",
@@ -265,8 +281,10 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/d3d12/RenderPipelineD3D12.h",
       "src/dawn_native/d3d12/ResourceAllocator.cpp",
       "src/dawn_native/d3d12/ResourceAllocator.h",
-      "src/dawn_native/d3d12/ResourceHeapD3D12.cpp",
-      "src/dawn_native/d3d12/ResourceHeapD3D12.h",
+      "src/dawn_native/d3d12/ResourceAllocatorManagerD3D12.cpp",
+      "src/dawn_native/d3d12/ResourceAllocatorManagerD3D12.h",
+      "src/dawn_native/d3d12/ResourceHeapAllocationD3D12.cpp",
+      "src/dawn_native/d3d12/ResourceHeapAllocationD3D12.h",
       "src/dawn_native/d3d12/SamplerD3D12.cpp",
       "src/dawn_native/d3d12/SamplerD3D12.h",
       "src/dawn_native/d3d12/ShaderModuleD3D12.cpp",
@@ -395,6 +413,7 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/vulkan/BufferVk.h",
       "src/dawn_native/vulkan/CommandBufferVk.cpp",
       "src/dawn_native/vulkan/CommandBufferVk.h",
+      "src/dawn_native/vulkan/CommandRecordingContext.h",
       "src/dawn_native/vulkan/ComputePipelineVk.cpp",
       "src/dawn_native/vulkan/ComputePipelineVk.h",
       "src/dawn_native/vulkan/DeviceVk.cpp",
@@ -405,6 +424,8 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/vulkan/Forward.h",
       "src/dawn_native/vulkan/MemoryAllocator.cpp",
       "src/dawn_native/vulkan/MemoryAllocator.h",
+      "src/dawn_native/vulkan/MemoryResourceAllocatorVk.cpp",
+      "src/dawn_native/vulkan/MemoryResourceAllocatorVk.h",
       "src/dawn_native/vulkan/NativeSwapChainImplVk.cpp",
       "src/dawn_native/vulkan/NativeSwapChainImplVk.h",
       "src/dawn_native/vulkan/PipelineLayoutVk.cpp",
@@ -415,6 +436,8 @@ source_set("libdawn_native_sources") {
       "src/dawn_native/vulkan/RenderPassCache.h",
       "src/dawn_native/vulkan/RenderPipelineVk.cpp",
       "src/dawn_native/vulkan/RenderPipelineVk.h",
+      "src/dawn_native/vulkan/ResourceMemoryVk.cpp",
+      "src/dawn_native/vulkan/ResourceMemoryVk.h",
       "src/dawn_native/vulkan/SamplerVk.cpp",
       "src/dawn_native/vulkan/SamplerVk.h",
       "src/dawn_native/vulkan/ShaderModuleVk.cpp",
@@ -442,10 +465,25 @@ source_set("libdawn_native_sources") {
         "src/dawn_native/vulkan/external_memory/MemoryServiceOpaqueFD.cpp",
         "src/dawn_native/vulkan/external_semaphore/SemaphoreServiceOpaqueFD.cpp",
       ]
+    } else if (is_fuchsia) {
+      sources += [
+        "src/dawn_native/vulkan/external_memory/MemoryServiceZirconHandle.cpp",
+        "src/dawn_native/vulkan/external_semaphore/SemaphoreServiceZirconHandle.cpp",
+      ]
     } else {
       sources += [
         "src/dawn_native/vulkan/external_memory/MemoryServiceNull.cpp",
         "src/dawn_native/vulkan/external_semaphore/SemaphoreServiceNull.cpp",
+      ]
+    }
+    if (build_with_chromium && is_fuchsia) {
+      # Necessary to ensure that the Vulkan libraries will be in the
+      # final Fuchsia package.
+      data_deps = [
+        # NOTE: The line below is a work around for http://crbug.com/1001081
+        "//third_party/fuchsia-sdk/sdk:trace_engine",
+        "//third_party/fuchsia-sdk:vulkan_base",
+        "//third_party/fuchsia-sdk:vulkan_validation",
       ]
     }
   }
@@ -495,18 +533,18 @@ dawn_component("libdawn_native") {
 dawn_json_generator("libdawn_wire_gen") {
   target = "dawn_wire"
   outputs = [
-    "dawn_wire/WireCmd_autogen.h",
-    "dawn_wire/WireCmd_autogen.cpp",
-    "dawn_wire/client/ApiObjects_autogen.h",
-    "dawn_wire/client/ApiProcs_autogen.cpp",
-    "dawn_wire/client/ApiProcs_autogen.h",
-    "dawn_wire/client/ClientBase_autogen.h",
-    "dawn_wire/client/ClientHandlers_autogen.cpp",
-    "dawn_wire/client/ClientPrototypes_autogen.inc",
-    "dawn_wire/server/ServerBase_autogen.h",
-    "dawn_wire/server/ServerDoers_autogen.cpp",
-    "dawn_wire/server/ServerHandlers_autogen.cpp",
-    "dawn_wire/server/ServerPrototypes_autogen.inc",
+    "src/dawn_wire/WireCmd_autogen.h",
+    "src/dawn_wire/WireCmd_autogen.cpp",
+    "src/dawn_wire/client/ApiObjects_autogen.h",
+    "src/dawn_wire/client/ApiProcs_autogen.cpp",
+    "src/dawn_wire/client/ApiProcs_autogen.h",
+    "src/dawn_wire/client/ClientBase_autogen.h",
+    "src/dawn_wire/client/ClientHandlers_autogen.cpp",
+    "src/dawn_wire/client/ClientPrototypes_autogen.inc",
+    "src/dawn_wire/server/ServerBase_autogen.h",
+    "src/dawn_wire/server/ServerDoers_autogen.cpp",
+    "src/dawn_wire/server/ServerHandlers_autogen.cpp",
+    "src/dawn_wire/server/ServerPrototypes_autogen.inc",
   ]
 }
 
@@ -556,6 +594,52 @@ dawn_component("libdawn_wire") {
 }
 
 ###############################################################################
+# GLFW wrapping target
+###############################################################################
+
+# GLFW does not support ChromeOS, Android or Fuchsia, so provide a small mock
+# library that can be linked into the Dawn tests on these platforms. Otherwise,
+# use the real library from third_party/.
+if (is_win || (is_linux && !is_chromeos) || is_mac) {
+  group("dawn_glfw") {
+    public_deps = [
+      "third_party:glfw",
+    ]
+  }
+} else if (is_fuchsia) {
+  # The mock implementation of GLFW on Fuchsia
+  config("dawn_glfw_public_config") {
+    # Allow inclusion of <GLFW/glfw3.h>
+    include_dirs = [ "${dawn_glfw_dir}/include" ]
+
+    # The GLFW/glfw3.h header includes <GL/gl.h> by default, but the latter
+    # does not exist on Fuchsia. Defining GLFW_INCLUDE_NONE helps work around
+    # the issue, but it needs to be defined for any file that includes the
+    # header.
+    defines = [
+      "GLFW_INCLUDE_NONE",
+      "GLFW_INCLUDE_VULKAN",
+    ]
+  }
+
+  static_library("dawn_glfw") {
+    sources = [
+      # NOTE: The header below is required to pass "gn check".
+      "${dawn_glfw_dir}/include/GLFW/glfw3.h",
+      "src/utils/Glfw3Fuchsia.cpp",
+    ]
+    public_configs = [ ":dawn_glfw_public_config" ]
+    deps = [
+      "${dawn_root}/src/common",
+    ]
+  }
+} else {
+  # Just skip GLFW on other systems
+  group("dawn_glfw") {
+  }
+}
+
+###############################################################################
 # Utils for tests and samples
 ###############################################################################
 
@@ -585,7 +669,7 @@ static_library("dawn_utils") {
   }
 
   public_deps = [
-    "${dawn_root}/src/dawn:dawn_headers",
+    "${dawn_root}/src/dawn:dawncpp_headers",
   ]
 
   deps = [
@@ -609,9 +693,9 @@ static_library("dawn_bindings") {
   ]
 
   deps = [
+    ":dawn_glfw",
     ":libdawn_native",
     "${dawn_root}/src/common",
-    "third_party:glfw",
   ]
   libs = []
 
@@ -652,8 +736,8 @@ static_library("dawn_bindings") {
 dawn_json_generator("mock_dawn_gen") {
   target = "mock_dawn"
   outputs = [
-    "mock/mock_dawn.h",
-    "mock/mock_dawn.cpp",
+    "src/dawn/mock_dawn.h",
+    "src/dawn/mock_dawn.cpp",
   ]
 }
 
@@ -667,7 +751,8 @@ test("dawn_unittests") {
     ":libdawn_wire",
     ":mock_dawn_gen",
     "${dawn_root}/src/common",
-    "${dawn_root}/src/dawn:libdawn",
+    "${dawn_root}/src/dawn:dawncpp",
+    "${dawn_root}/src/dawn:libdawn_proc",
     "third_party:gmock_and_gtest",
   ]
 
@@ -685,16 +770,18 @@ test("dawn_unittests") {
   sources += [
     "src/tests/unittests/BitSetIteratorTests.cpp",
     "src/tests/unittests/BuddyAllocatorTests.cpp",
+    "src/tests/unittests/BuddyMemoryAllocatorTests.cpp",
     "src/tests/unittests/CommandAllocatorTests.cpp",
     "src/tests/unittests/EnumClassBitmasksTests.cpp",
     "src/tests/unittests/ErrorTests.cpp",
     "src/tests/unittests/ExtensionTests.cpp",
+    "src/tests/unittests/GetProcAddressTests.cpp",
     "src/tests/unittests/MathTests.cpp",
     "src/tests/unittests/ObjectBaseTests.cpp",
     "src/tests/unittests/PerStageTests.cpp",
     "src/tests/unittests/RefCountedTests.cpp",
     "src/tests/unittests/ResultTests.cpp",
-    "src/tests/unittests/RingBufferTests.cpp",
+    "src/tests/unittests/RingBufferAllocatorTests.cpp",
     "src/tests/unittests/SerialMapTests.cpp",
     "src/tests/unittests/SerialQueueTests.cpp",
     "src/tests/unittests/ToBackendTests.cpp",
@@ -707,6 +794,7 @@ test("dawn_unittests") {
     "src/tests/unittests/validation/DebugMarkerValidationTests.cpp",
     "src/tests/unittests/validation/DrawIndirectValidationTests.cpp",
     "src/tests/unittests/validation/DynamicStateCommandValidationTests.cpp",
+    "src/tests/unittests/validation/ErrorScopeValidationTests.cpp",
     "src/tests/unittests/validation/FenceValidationTests.cpp",
     "src/tests/unittests/validation/QueueSubmitValidationTests.cpp",
     "src/tests/unittests/validation/RenderBundleValidationTests.cpp",
@@ -756,7 +844,8 @@ source_set("dawn_end2end_tests_sources") {
     ":libdawn_native",
     ":libdawn_wire",
     "${dawn_root}/src/common",
-    "${dawn_root}/src/dawn:libdawn",
+    "${dawn_root}/src/dawn:dawncpp",
+    "${dawn_root}/src/dawn:libdawn_proc",
     "third_party:gmock_and_gtest",
   ]
 
@@ -819,7 +908,7 @@ source_set("dawn_end2end_tests_sources") {
   }
 
   if (dawn_enable_opengl) {
-    deps += [ "third_party:glfw" ]
+    deps += [ ":dawn_glfw" ]
   }
 }
 
@@ -833,7 +922,8 @@ source_set("dawn_white_box_tests_sources") {
     ":libdawn_native_sources",
     ":libdawn_wire",
     "${dawn_root}/src/common",
-    "${dawn_root}/src/dawn:libdawn",
+    "${dawn_root}/src/dawn:dawncpp",
+    "${dawn_root}/src/dawn:libdawn_proc",
     "third_party:gmock_and_gtest",
   ]
 
@@ -850,7 +940,7 @@ source_set("dawn_white_box_tests_sources") {
   }
 
   if (dawn_enable_opengl) {
-    deps += [ "third_party:glfw" ]
+    deps += [ ":dawn_glfw" ]
   }
 
   libs = []
@@ -866,7 +956,8 @@ test("dawn_end2end_tests") {
     ":libdawn_native",
     ":libdawn_wire",
     "${dawn_root}/src/common",
-    "${dawn_root}/src/dawn:libdawn",
+    "${dawn_root}/src/dawn:dawncpp",
+    "${dawn_root}/src/dawn:libdawn_proc",
     "third_party:gmock_and_gtest",
   ]
 
@@ -886,7 +977,7 @@ test("dawn_end2end_tests") {
   }
 
   if (dawn_enable_opengl) {
-    deps += [ "third_party:glfw" ]
+    deps += [ ":dawn_glfw" ]
   }
 }
 
@@ -898,7 +989,8 @@ test("dawn_perf_tests") {
     ":libdawn_native",
     ":libdawn_wire",
     "${dawn_root}/src/common",
-    "${dawn_root}/src/dawn:libdawn",
+    "${dawn_root}/src/dawn:dawncpp",
+    "${dawn_root}/src/dawn:libdawn_proc",
     "third_party:gmock_and_gtest",
   ]
 
@@ -926,7 +1018,7 @@ test("dawn_perf_tests") {
   }
 
   if (dawn_enable_opengl) {
-    deps += [ "third_party:glfw" ]
+    deps += [ ":dawn_glfw" ]
   }
 }
 
@@ -970,12 +1062,13 @@ if (dawn_standalone) {
     # Export all of these as public deps so that `gn check` allows includes
     public_deps = [
       ":dawn_bindings",
+      ":dawn_glfw",
       ":dawn_utils",
       ":libdawn_native",
       ":libdawn_wire",
       "${dawn_root}/src/common",
-      "${dawn_root}/src/dawn:libdawn",
-      "third_party:glfw",
+      "${dawn_root}/src/dawn:dawncpp",
+      "${dawn_root}/src/dawn:libdawn_proc",
     ]
     public_configs = [ "${dawn_root}/src/common:dawn_internal" ]
   }

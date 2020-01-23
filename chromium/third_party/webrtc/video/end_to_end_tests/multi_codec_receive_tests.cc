@@ -8,11 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "absl/memory/memory.h"
+#include <memory>
+
 #include "api/test/simulated_network.h"
 #include "api/test/video/function_video_encoder_factory.h"
 #include "call/fake_network_pipe.h"
 #include "call/simulated_network.h"
+#include "modules/include/module_common_types_public.h"
 #include "modules/video_coding/codecs/h264/include/h264.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
@@ -60,10 +62,11 @@ class FrameObserver : public test::RtpRtcpObserver,
  public:
   FrameObserver() : test::RtpRtcpObserver(test::CallTest::kDefaultTimeoutMs) {}
 
-  void Reset() {
+  void Reset(uint8_t expected_payload_type) {
     rtc::CritScope lock(&crit_);
     num_sent_frames_ = 0;
     num_rendered_frames_ = 0;
+    expected_payload_type_ = expected_payload_type;
   }
 
  private:
@@ -78,13 +81,13 @@ class FrameObserver : public test::RtpRtcpObserver,
     if ((length - header.headerLength) == header.paddingLength)
       return SEND_PACKET;  // Skip padding, may be sent after OnFrame is called.
 
+    if (expected_payload_type_ &&
+        header.payloadType != expected_payload_type_.value()) {
+      return DROP_PACKET;  // All frames sent.
+    }
+
     if (!last_timestamp_ || header.timestamp != *last_timestamp_) {
       // New frame.
-      if (last_payload_type_) {
-        bool new_payload_type = header.payloadType != *last_payload_type_;
-        EXPECT_EQ(num_sent_frames_ == 0, new_payload_type)
-            << "Payload type should change after reset.";
-      }
       // Sent enough frames?
       if (num_sent_frames_ >= kFramesToObserve)
         return DROP_PACKET;
@@ -94,7 +97,6 @@ class FrameObserver : public test::RtpRtcpObserver,
     }
 
     last_timestamp_ = header.timestamp;
-    last_payload_type_ = header.payloadType;
     return SEND_PACKET;
   }
 
@@ -114,8 +116,8 @@ class FrameObserver : public test::RtpRtcpObserver,
   }
 
   rtc::CriticalSection crit_;
-  absl::optional<uint32_t> last_timestamp_;
-  absl::optional<uint8_t> last_payload_type_;
+  absl::optional<uint32_t> last_timestamp_;  // Only accessed from pacer thread.
+  absl::optional<uint8_t> expected_payload_type_ RTC_GUARDED_BY(crit_);
   int num_sent_frames_ RTC_GUARDED_BY(crit_) = 0;
   int num_rendered_frames_ RTC_GUARDED_BY(crit_) = 0;
   std::vector<uint32_t> sent_timestamps_ RTC_GUARDED_BY(crit_);
@@ -131,16 +133,16 @@ class MultiCodecReceiveTest : public test::CallTest {
       send_transport_.reset(new test::PacketTransport(
           &task_queue_, sender_call_.get(), &observer_,
           test::PacketTransport::kSender, kPayloadTypeMap,
-          absl::make_unique<FakeNetworkPipe>(
-              Clock::GetRealTimeClock(), absl::make_unique<SimulatedNetwork>(
+          std::make_unique<FakeNetworkPipe>(
+              Clock::GetRealTimeClock(), std::make_unique<SimulatedNetwork>(
                                              BuiltInNetworkBehaviorConfig()))));
       send_transport_->SetReceiver(receiver_call_->Receiver());
 
       receive_transport_.reset(new test::PacketTransport(
           &task_queue_, receiver_call_.get(), &observer_,
           test::PacketTransport::kReceiver, kPayloadTypeMap,
-          absl::make_unique<FakeNetworkPipe>(
-              Clock::GetRealTimeClock(), absl::make_unique<SimulatedNetwork>(
+          std::make_unique<FakeNetworkPipe>(
+              Clock::GetRealTimeClock(), std::make_unique<SimulatedNetwork>(
                                              BuiltInNetworkBehaviorConfig()))));
       receive_transport_->SetReceiver(sender_call_->Receiver());
     });
@@ -211,6 +213,8 @@ void MultiCodecReceiveTest::RunTestWithCodecs(
     ConfigureEncoder(configs[0]);
     CreateMatchingReceiveConfigs(receive_transport_.get());
     video_receive_configs_[0].renderer = &observer_;
+    // Disable to avoid post-decode frame dropping in VideoRenderFrames.
+    video_receive_configs_[0].enable_prerenderer_smoothing = false;
     ConfigureDecoders(configs);
     CreateVideoStreams();
     CreateFrameGeneratorCapturer(kFps, kWidth, kHeight);
@@ -222,7 +226,7 @@ void MultiCodecReceiveTest::RunTestWithCodecs(
     // Recreate VideoSendStream with new config (codec, temporal layers).
     task_queue_.SendTask([this, i, &configs]() {
       DestroyVideoSendStreams();
-      observer_.Reset();
+      observer_.Reset(PayloadNameToPayloadType(configs[i].payload_name));
 
       ConfigureEncoder(configs[i]);
       CreateVideoSendStreams();

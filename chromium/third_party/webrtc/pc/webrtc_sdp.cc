@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "api/candidate.h"
 #include "api/crypto_params.h"
@@ -239,6 +238,9 @@ static const char kMediaTransportSettingLine[] = "x-mt";
 
 // This is a non-standardized setting for plugin transports.
 static const char kOpaqueTransportParametersLine[] = "x-opaque";
+
+// This is a non-standardized setting for plugin transports.
+static const char kAltProtocolLine[] = "x-alt-protocol";
 
 // RTP payload type is in the 0-127 range. Use -1 to indicate "all" payload
 // types.
@@ -547,6 +549,14 @@ static void AddOpaqueTransportLine(
   InitAttrLine(kOpaqueTransportParametersLine, &os);
   os << kSdpDelimiterColon << params.protocol << kSdpDelimiterColon
      << rtc::Base64::Encode(params.parameters);
+  AddLine(os.str(), message);
+}
+
+static void AddAltProtocolLine(const std::string& protocol,
+                               std::string* message) {
+  rtc::StringBuilder os;
+  InitAttrLine(kAltProtocolLine, &os);
+  os << kSdpDelimiterColon << protocol;
   AddLine(os.str(), message);
 }
 
@@ -987,7 +997,7 @@ bool SdpDeserialize(const std::string& message,
   TransportDescription session_td("", "");
   RtpHeaderExtensions session_extmaps;
   rtc::SocketAddress session_connection_addr;
-  auto desc = absl::make_unique<cricket::SessionDescription>();
+  auto desc = std::make_unique<cricket::SessionDescription>();
   size_t current_pos = 0;
 
   // Session Description
@@ -1539,6 +1549,10 @@ void BuildMediaDescription(const ContentInfo* content_info,
       AddOpaqueTransportLine(*transport_info->description.opaque_parameters,
                              message);
     }
+  }
+
+  if (media_desc->alt_protocol()) {
+    AddAltProtocolLine(*media_desc->alt_protocol(), message);
   }
 
   // RFC 3388
@@ -2150,6 +2164,12 @@ bool ParseOpaqueTransportLine(const std::string& line,
   return true;
 }
 
+bool ParseAltProtocolLine(const std::string& line,
+                          std::string* protocol,
+                          SdpParseError* error) {
+  return GetValue(line, kAltProtocolLine, protocol, error);
+}
+
 bool ParseSessionDescription(const std::string& message,
                              size_t* pos,
                              std::string* session_id,
@@ -2658,7 +2678,7 @@ static std::unique_ptr<C> ParseContentDescription(
     TransportDescription* transport,
     std::vector<std::unique_ptr<JsepIceCandidate>>* candidates,
     webrtc::SdpParseError* error) {
-  auto media_desc = absl::make_unique<C>();
+  auto media_desc = std::make_unique<C>();
   if (!ParseContent(message, media_type, mline_index, protocol, payload_types,
                     pos, content_name, bundle_only, msid_signaling,
                     media_desc.get(), transport, candidates, error)) {
@@ -2771,7 +2791,7 @@ bool ParseMediaDescription(
         // The draft-26 format is:
         // m=application <port> UDP/DTLS/SCTP webrtc-datachannel
         // use_sctpmap should be false.
-        auto data_desc = absl::make_unique<SctpDataContentDescription>();
+        auto data_desc = std::make_unique<SctpDataContentDescription>();
         // Default max message size is 64K
         // according to draft-ietf-mmusic-sctp-sdp-26
         data_desc->set_max_message_size(kDefaultSctpMaxMessageSize);
@@ -3181,6 +3201,12 @@ bool ParseContent(const std::string& message,
               &transport->opaque_parameters->parameters, error)) {
         return false;
       }
+    } else if (HasAttribute(line, kAltProtocolLine)) {
+      std::string alt_protocol;
+      if (!ParseAltProtocolLine(line, &alt_protocol, error)) {
+        return false;
+      }
+      media_desc->set_alt_protocol(alt_protocol);
     } else if (HasAttribute(line, kAttributeFmtp)) {
       if (!ParseFmtpAttributes(line, media_type, media_desc, error)) {
         return false;
@@ -3457,7 +3483,7 @@ bool ParseContent(const std::string& message,
     RTC_DCHECK(candidate.password().empty());
     candidate.set_password(transport->ice_pwd);
     candidates->push_back(
-        absl::make_unique<JsepIceCandidate>(mline_id, mline_index, candidate));
+        std::make_unique<JsepIceCandidate>(mline_id, mline_index, candidate));
   }
 
   return true;

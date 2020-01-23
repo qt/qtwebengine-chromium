@@ -12,9 +12,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
-#include "absl/memory/memory.h"
 #include "api/units/time_delta.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/mocks/mock_rtp_rtcp.h"
@@ -52,15 +52,13 @@ constexpr int kProbeMinBytes = 1000;
 class PacketRouterTest : public ::testing::Test {
  public:
   PacketRouterTest() {
-    const int kTransportSequenceNumberExtensionId = 1;
-    extension_manager.Register(kRtpExtensionTransportSequenceNumber,
-                               kTransportSequenceNumberExtensionId);
+    extension_manager.Register<TransportSequenceNumber>(/*id=*/1);
   }
 
  protected:
   std::unique_ptr<RtpPacketToSend> BuildRtpPacket(uint32_t ssrc) {
     std::unique_ptr<RtpPacketToSend> packet =
-        absl::make_unique<RtpPacketToSend>(&extension_manager);
+        std::make_unique<RtpPacketToSend>(&extension_manager);
     packet->SetSsrc(ssrc);
     return packet;
   }
@@ -91,9 +89,10 @@ TEST_F(PacketRouterTest, Sanity_NoModuleRegistered_SendRemb) {
 }
 
 TEST_F(PacketRouterTest, Sanity_NoModuleRegistered_SendTransportFeedback) {
-  rtcp::TransportFeedback feedback;
+  std::vector<std::unique_ptr<rtcp::RtcpPacket>> feedback;
+  feedback.push_back(std::make_unique<rtcp::TransportFeedback>());
 
-  EXPECT_FALSE(packet_router_.SendTransportFeedback(&feedback));
+  EXPECT_FALSE(packet_router_.SendCombinedRtcpPacket(std::move(feedback)));
 }
 
 TEST_F(PacketRouterTest, GeneratePaddingPicksCorrectModule) {
@@ -227,32 +226,48 @@ TEST_F(PacketRouterTest, PadsOnLastActiveMediaStream) {
   packet_router_.RemoveSendRtpModule(&rtp_3);
 }
 
-TEST_F(PacketRouterTest, AllocateSequenceNumbers) {
+TEST_F(PacketRouterTest, AllocatesTransportSequenceNumbers) {
   const uint16_t kStartSeq = 0xFFF0;
   const size_t kNumPackets = 32;
+  const uint16_t kSsrc1 = 1234;
 
-  packet_router_.SetTransportWideSequenceNumber(kStartSeq - 1);
+  PacketRouter packet_router(kStartSeq - 1);
+  NiceMock<MockRtpRtcp> rtp_1;
+  EXPECT_CALL(rtp_1, SSRC()).WillRepeatedly(Return(kSsrc1));
+  EXPECT_CALL(rtp_1, TrySendPacket).WillRepeatedly(Return(true));
+  packet_router.AddSendRtpModule(&rtp_1, false);
 
   for (size_t i = 0; i < kNumPackets; ++i) {
-    uint16_t seq = packet_router_.AllocateSequenceNumber();
+    auto packet = BuildRtpPacket(kSsrc1);
+    EXPECT_TRUE(packet->ReserveExtension<TransportSequenceNumber>());
+    packet_router.SendPacket(std::move(packet), PacedPacketInfo());
     uint32_t expected_unwrapped_seq = static_cast<uint32_t>(kStartSeq) + i;
-    EXPECT_EQ(static_cast<uint16_t>(expected_unwrapped_seq & 0xFFFF), seq);
+    EXPECT_EQ(static_cast<uint16_t>(expected_unwrapped_seq & 0xFFFF),
+              packet_router.CurrentTransportSequenceNumber());
   }
+
+  packet_router.RemoveSendRtpModule(&rtp_1);
 }
 
 TEST_F(PacketRouterTest, SendTransportFeedback) {
   NiceMock<MockRtpRtcp> rtp_1;
   NiceMock<MockRtpRtcp> rtp_2;
 
+  ON_CALL(rtp_1, RTCP()).WillByDefault(Return(RtcpMode::kCompound));
+  ON_CALL(rtp_2, RTCP()).WillByDefault(Return(RtcpMode::kCompound));
+
   packet_router_.AddSendRtpModule(&rtp_1, false);
   packet_router_.AddReceiveRtpModule(&rtp_2, false);
 
-  rtcp::TransportFeedback feedback;
-  EXPECT_CALL(rtp_1, SendFeedbackPacket(_)).Times(1).WillOnce(Return(true));
-  packet_router_.SendTransportFeedback(&feedback);
+  std::vector<std::unique_ptr<rtcp::RtcpPacket>> feedback;
+  feedback.push_back(std::make_unique<rtcp::TransportFeedback>());
+  EXPECT_CALL(rtp_1, SendCombinedRtcpPacket).Times(1);
+  packet_router_.SendCombinedRtcpPacket(std::move(feedback));
   packet_router_.RemoveSendRtpModule(&rtp_1);
-  EXPECT_CALL(rtp_2, SendFeedbackPacket(_)).Times(1).WillOnce(Return(true));
-  packet_router_.SendTransportFeedback(&feedback);
+  EXPECT_CALL(rtp_2, SendCombinedRtcpPacket).Times(1);
+  std::vector<std::unique_ptr<rtcp::RtcpPacket>> new_feedback;
+  new_feedback.push_back(std::make_unique<rtcp::TransportFeedback>());
+  packet_router_.SendCombinedRtcpPacket(std::move(new_feedback));
   packet_router_.RemoveReceiveRtpModule(&rtp_2);
 }
 
@@ -267,7 +282,7 @@ TEST_F(PacketRouterTest, SendPacketWithoutTransportSequenceNumbers) {
   // Send a packet without TransportSequenceNumber extension registered,
   // packets sent should not have the extension set.
   RtpHeaderExtensionMap extension_manager;
-  auto packet = absl::make_unique<RtpPacketToSend>(&extension_manager);
+  auto packet = std::make_unique<RtpPacketToSend>(&extension_manager);
   packet->SetSsrc(kSsrc1);
   EXPECT_CALL(
       rtp_1,

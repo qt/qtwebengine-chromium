@@ -13,7 +13,6 @@
 #include <memory>
 #include <string>
 
-#include "absl/memory/memory.h"
 #include "api/task_queue/default_task_queue_factory.h"
 #include "call/rtp_transport_controller_send.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
@@ -137,7 +136,7 @@ class RtpVideoSenderTestFixture {
                      VideoEncoderConfig::ContentType::kRealtimeVideo),
         retransmission_rate_limiter_(&clock_, kRetransmitWindowSizeMs) {
     std::map<uint32_t, RtpState> suspended_ssrcs;
-    router_ = absl::make_unique<RtpVideoSender>(
+    router_ = std::make_unique<RtpVideoSender>(
         &clock_, suspended_ssrcs, suspended_payload_states, config_.rtp,
         config_.rtcp_report_interval_ms, &transport_,
         CreateObservers(&call_stats_, &encoder_feedback_, &stats_proxy_,
@@ -145,7 +144,7 @@ class RtpVideoSenderTestFixture {
                         frame_count_observer, &stats_proxy_, &stats_proxy_,
                         &send_delay_stats_),
         &transport_controller_, &event_log_, &retransmission_rate_limiter_,
-        absl::make_unique<FecControllerDefault>(&clock_), nullptr,
+        std::make_unique<FecControllerDefault>(&clock_), nullptr,
         CryptoOptions{});
   }
   RtpVideoSenderTestFixture(
@@ -522,14 +521,13 @@ TEST(RtpVideoSenderTest, EarlyRetransmits) {
                                  kPayloadType, {});
   test.router()->SetActive(true);
 
-  constexpr uint8_t kPayload = 'a';
+  const uint8_t kPayload[1] = {'a'};
   EncodedImage encoded_image;
   encoded_image.SetTimestamp(1);
   encoded_image.capture_time_ms_ = 2;
   encoded_image._frameType = VideoFrameType::kVideoFrameKey;
-  encoded_image.Allocate(1);
-  encoded_image.data()[0] = kPayload;
-  encoded_image.set_size(1);
+  encoded_image.SetEncodedData(
+      EncodedImageBuffer::Create(kPayload, sizeof(kPayload)));
   encoded_image.SetSpatialIndex(0);
 
   CodecSpecificInfo codec_specific;
@@ -631,19 +629,22 @@ TEST(RtpVideoSenderTest, EarlyRetransmits) {
 TEST(RtpVideoSenderTest, CanSetZeroBitrateWithOverhead) {
   test::ScopedFieldTrials trials("WebRTC-SendSideBwe-WithOverhead/Enabled/");
   RtpVideoSenderTestFixture test({kSsrc1}, {kRtxSsrc1}, kPayloadType, {});
+  BitrateAllocationUpdate update;
+  update.target_bitrate = DataRate::Zero();
+  update.packet_loss_ratio = 0;
+  update.round_trip_time = TimeDelta::Zero();
 
-  test.router()->OnBitrateUpdated(/*bitrate_bps*/ 0,
-                                  /*fraction_loss*/ 0,
-                                  /*rtt*/ 0,
-                                  /*framerate*/ 0);
+  test.router()->OnBitrateUpdated(update, /*framerate*/ 0);
 }
 
 TEST(RtpVideoSenderTest, CanSetZeroBitrateWithoutOverhead) {
   RtpVideoSenderTestFixture test({kSsrc1}, {kRtxSsrc1}, kPayloadType, {});
 
-  test.router()->OnBitrateUpdated(/*bitrate_bps*/ 0,
-                                  /*fraction_loss*/ 0,
-                                  /*rtt*/ 0,
-                                  /*framerate*/ 0);
+  BitrateAllocationUpdate update;
+  update.target_bitrate = DataRate::Zero();
+  update.packet_loss_ratio = 0;
+  update.round_trip_time = TimeDelta::Zero();
+
+  test.router()->OnBitrateUpdated(update, /*framerate*/ 0);
 }
 }  // namespace webrtc

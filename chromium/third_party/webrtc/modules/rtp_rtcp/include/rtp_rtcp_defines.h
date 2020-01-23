@@ -14,6 +14,7 @@
 #include <stddef.h>
 
 #include <list>
+#include <memory>
 #include <vector>
 
 #include "absl/strings/string_view.h"
@@ -23,7 +24,6 @@
 #include "api/audio_codecs/audio_format.h"
 #include "api/rtp_headers.h"
 #include "api/transport/network_types.h"
-#include "modules/include/module_common_types.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/remote_estimate.h"
 #include "system_wrappers/include/clock.h"
 
@@ -314,10 +314,8 @@ class TransportFeedbackObserver {
 class RtcpFeedbackSenderInterface {
  public:
   virtual ~RtcpFeedbackSenderInterface() = default;
-  virtual uint32_t SSRC() const = 0;
-  virtual bool SendFeedbackPacket(const rtcp::TransportFeedback& feedback) = 0;
-  virtual bool SendNetworkStateEstimatePacket(
-      const rtcp::RemoteEstimate& packet) = 0;
+  virtual void SendCombinedRtcpPacket(
+      std::vector<std::unique_ptr<rtcp::RtcpPacket>> rtcp_packets) = 0;
   virtual void SetRemb(int64_t bitrate_bps, std::vector<uint32_t> ssrcs) = 0;
   virtual void UnsetRemb() = 0;
 };
@@ -492,13 +490,5 @@ class SendPacketObserver {
                             int64_t capture_time_ms,
                             uint32_t ssrc) = 0;
 };
-
-// Status returned from TimeToSendPacket() family of callbacks.
-enum class RtpPacketSendResult {
-  kSuccess,               // Packet sent OK.
-  kTransportUnavailable,  // Network unavailable, try again later.
-  kPacketNotFound  // SSRC/sequence number does not map to an available packet.
-};
-
 }  // namespace webrtc
 #endif  // MODULES_RTP_RTCP_INCLUDE_RTP_RTCP_DEFINES_H_

@@ -54,10 +54,6 @@ namespace dawn_native { namespace metal {
 
         // If these options are changed, the values in DawnSPIRVCrossMSLFastFuzzer.cpp need to be
         // updated.
-        spirv_cross::CompilerGLSL::Options options_glsl;
-        options_glsl.vertex.flip_vert_y = true;
-        compiler.spirv_cross::CompilerGLSL::set_common_options(options_glsl);
-
         spirv_cross::CompilerMSL::Options options_msl;
 
         // Disable PointSize builtin for https://bugs.chromium.org/p/dawn/issues/detail?id=146
@@ -76,17 +72,6 @@ namespace dawn_native { namespace metal {
         // By default SPIRV-Cross will give MSL resources indices in increasing order.
         // To make the MSL indices match the indices chosen in the PipelineLayout, we build
         // a table of MSLResourceBinding to give to SPIRV-Cross.
-
-        // Reserve index 0 for buffers for the push constants buffer.
-        for (auto stage : IterateStages(kAllStages)) {
-            spirv_cross::MSLResourceBinding binding;
-            binding.stage = SpirvExecutionModelForStage(stage);
-            binding.desc_set = spirv_cross::kPushConstDescSet;
-            binding.binding = spirv_cross::kPushConstBinding;
-            binding.msl_buffer = 0;
-
-            compiler.add_msl_resource_binding(binding);
-        }
 
         // Create one resource binding entry per stage per binding.
         for (uint32_t group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {

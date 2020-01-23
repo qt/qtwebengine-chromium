@@ -49,6 +49,10 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR("Setting attribute offset out of bounds");
             }
 
+            if (attribute->offset % 4 != 0) {
+                return DAWN_VALIDATION_ERROR("Attribute offset needs to be a multiple of 4 bytes");
+            }
+
             if ((*attributesSetMask)[attribute->shaderLocation]) {
                 return DAWN_VALIDATION_ERROR("Setting already set attribute");
             }
@@ -67,7 +71,7 @@ namespace dawn_native {
 
             if (buffer->stride % 4 != 0) {
                 return DAWN_VALIDATION_ERROR(
-                    "Stride of Vertex buffer needs to be multiple of 4 bytes");
+                    "Stride of Vertex buffer needs to be a multiple of 4 bytes");
             }
 
             for (uint32_t i = 0; i < buffer->attributeCount; ++i) {
@@ -117,22 +121,28 @@ namespace dawn_native {
         }
 
         MaybeError ValidateColorStateDescriptor(const DeviceBase* device,
-                                                const ColorStateDescriptor* descriptor) {
-            if (descriptor->nextInChain != nullptr) {
+                                                const ColorStateDescriptor& descriptor,
+                                                Format::Type fragmentOutputBaseType) {
+            if (descriptor.nextInChain != nullptr) {
                 return DAWN_VALIDATION_ERROR("nextInChain must be nullptr");
             }
-            DAWN_TRY(ValidateBlendOperation(descriptor->alphaBlend.operation));
-            DAWN_TRY(ValidateBlendFactor(descriptor->alphaBlend.srcFactor));
-            DAWN_TRY(ValidateBlendFactor(descriptor->alphaBlend.dstFactor));
-            DAWN_TRY(ValidateBlendOperation(descriptor->colorBlend.operation));
-            DAWN_TRY(ValidateBlendFactor(descriptor->colorBlend.srcFactor));
-            DAWN_TRY(ValidateBlendFactor(descriptor->colorBlend.dstFactor));
-            DAWN_TRY(ValidateColorWriteMask(descriptor->writeMask));
+            DAWN_TRY(ValidateBlendOperation(descriptor.alphaBlend.operation));
+            DAWN_TRY(ValidateBlendFactor(descriptor.alphaBlend.srcFactor));
+            DAWN_TRY(ValidateBlendFactor(descriptor.alphaBlend.dstFactor));
+            DAWN_TRY(ValidateBlendOperation(descriptor.colorBlend.operation));
+            DAWN_TRY(ValidateBlendFactor(descriptor.colorBlend.srcFactor));
+            DAWN_TRY(ValidateBlendFactor(descriptor.colorBlend.dstFactor));
+            DAWN_TRY(ValidateColorWriteMask(descriptor.writeMask));
 
             const Format* format;
-            DAWN_TRY_ASSIGN(format, device->GetInternalFormat(descriptor->format));
+            DAWN_TRY_ASSIGN(format, device->GetInternalFormat(descriptor.format));
             if (!format->IsColor() || !format->isRenderable) {
                 return DAWN_VALIDATION_ERROR("Color format must be color renderable");
+            }
+            if (fragmentOutputBaseType != Format::Type::Other &&
+                fragmentOutputBaseType != format->type) {
+                return DAWN_VALIDATION_ERROR(
+                    "Color format must match the fragment stage output type");
             }
 
             return {};
@@ -283,10 +293,10 @@ namespace dawn_native {
         }
 
         DAWN_TRY(ValidatePrimitiveTopology(descriptor->primitiveTopology));
-        DAWN_TRY(ValidatePipelineStageDescriptor(device, &descriptor->vertexStage,
-                                                 descriptor->layout, SingleShaderStage::Vertex));
-        DAWN_TRY(ValidatePipelineStageDescriptor(device, descriptor->fragmentStage,
-                                                 descriptor->layout, SingleShaderStage::Fragment));
+        DAWN_TRY(ValidateProgrammableStageDescriptor(
+            device, &descriptor->vertexStage, descriptor->layout, SingleShaderStage::Vertex));
+        DAWN_TRY(ValidateProgrammableStageDescriptor(
+            device, descriptor->fragmentStage, descriptor->layout, SingleShaderStage::Fragment));
 
         if (descriptor->rasterizationState) {
             DAWN_TRY(ValidateRasterizationStateDescriptor(descriptor->rasterizationState));
@@ -310,8 +320,12 @@ namespace dawn_native {
             return DAWN_VALIDATION_ERROR("Should have at least one attachment");
         }
 
+        ASSERT(descriptor->fragmentStage != nullptr);
+        const ShaderModuleBase::FragmentOutputBaseTypes& fragmentOutputBaseTypes =
+            descriptor->fragmentStage->module->GetFragmentOutputBaseTypes();
         for (uint32_t i = 0; i < descriptor->colorStateCount; ++i) {
-            DAWN_TRY(ValidateColorStateDescriptor(device, descriptor->colorStates[i]));
+            DAWN_TRY(ValidateColorStateDescriptor(device, descriptor->colorStates[i],
+                                                  fragmentOutputBaseTypes[i]));
         }
 
         if (descriptor->depthStencilState) {
@@ -420,7 +434,7 @@ namespace dawn_native {
         }
 
         for (uint32_t i : IterateBitSet(mAttachmentState->GetColorAttachmentsMask())) {
-            mColorStates[i] = *descriptor->colorStates[i];
+            mColorStates[i] = descriptor->colorStates[i];
         }
 
         // TODO(cwallez@chromium.org): Check against the shader module that the correct color

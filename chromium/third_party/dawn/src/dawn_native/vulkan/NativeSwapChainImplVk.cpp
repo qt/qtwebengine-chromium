@@ -24,8 +24,30 @@ namespace dawn_native { namespace vulkan {
 
     namespace {
 
+        bool chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes,
+                                   bool turnOffVsync,
+                                   VkPresentModeKHR* presentMode) {
+            if (turnOffVsync) {
+                for (const auto& availablePresentMode : availablePresentModes) {
+                    if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                        *presentMode = availablePresentMode;
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            *presentMode = VK_PRESENT_MODE_FIFO_KHR;
+            return true;
+        }
+
         bool ChooseSurfaceConfig(const VulkanSurfaceInfo& info,
-                                 NativeSwapChainImpl::ChosenConfig* config) {
+                                 NativeSwapChainImpl::ChosenConfig* config,
+                                 bool turnOffVsync) {
+            VkPresentModeKHR presentMode;
+            if (!chooseSwapPresentMode(info.presentModes, turnOffVsync, &presentMode)) {
+                return false;
+            }
             // TODO(cwallez@chromium.org): For now this is hardcoded to what works with one NVIDIA
             // driver. Need to generalize
             config->nativeFormat = VK_FORMAT_B8G8R8A8_UNORM;
@@ -35,11 +57,11 @@ namespace dawn_native { namespace vulkan {
             // TODO(cwallez@chromium.org): This is upside down compared to what we want, at least
             // on Linux
             config->preTransform = info.capabilities.currentTransform;
-            config->presentMode = VK_PRESENT_MODE_FIFO_KHR;
+            config->presentMode = presentMode;
             config->compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+
             return true;
         }
-
     }  // anonymous namespace
 
     NativeSwapChainImpl::NativeSwapChainImpl(Device* device, VkSurfaceKHR surface)
@@ -63,7 +85,7 @@ namespace dawn_native { namespace vulkan {
             ASSERT(false);
         }
 
-        if (!ChooseSurfaceConfig(mInfo, &mConfig)) {
+        if (!ChooseSurfaceConfig(mInfo, &mConfig, mDevice->IsToggleEnabled(Toggle::TurnOffVsync))) {
             ASSERT(false);
         }
     }
@@ -132,7 +154,7 @@ namespace dawn_native { namespace vulkan {
 
         // Do the initial layout transition for all these images from an undefined layout to
         // present so that it matches the "present" usage after the first GetNextTexture.
-        VkCommandBuffer commands = mDevice->GetPendingCommandBuffer();
+        CommandRecordingContext* recordingContext = mDevice->GetPendingRecordingContext();
         for (VkImage image : mSwapChainImages) {
             VkImageMemoryBarrier barrier;
             barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -150,9 +172,9 @@ namespace dawn_native { namespace vulkan {
             barrier.subresourceRange.baseArrayLayer = 0;
             barrier.subresourceRange.layerCount = 1;
 
-            mDevice->fn.CmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                           VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0,
-                                           nullptr, 1, &barrier);
+            mDevice->fn.CmdPipelineBarrier(
+                recordingContext->commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
         }
 
         if (oldSwapchain != VK_NULL_HANDLE) {

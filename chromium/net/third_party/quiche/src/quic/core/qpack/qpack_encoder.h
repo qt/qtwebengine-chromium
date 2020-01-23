@@ -16,6 +16,7 @@
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_header_table.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_exported_stats.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 
 namespace spdy {
@@ -49,9 +50,12 @@ class QUIC_EXPORT_PRIVATE QpackEncoder
   QpackEncoder(DecoderStreamErrorDelegate* decoder_stream_error_delegate);
   ~QpackEncoder() override;
 
-  // Encode a header list.
+  // Encode a header list.  If |encoder_stream_sent_byte_count| is not null,
+  // |*encoder_stream_sent_byte_count| will be set to the number of bytes sent
+  // on the encoder stream to insert dynamic table entries.
   std::string EncodeHeaderList(QuicStreamId stream_id,
-                               const spdy::SpdyHeaderBlock& header_list);
+                               const spdy::SpdyHeaderBlock& header_list,
+                               QuicByteCount* encoder_stream_sent_byte_count);
 
   // Set maximum dynamic table capacity to |maximum_dynamic_table_capacity|,
   // measured in bytes.  Called when SETTINGS_QPACK_MAX_TABLE_CAPACITY is
@@ -120,14 +124,18 @@ class QUIC_EXPORT_PRIVATE QpackEncoder
   // Performs first pass of two-pass encoding: represent each header field in
   // |*header_list| as a reference to an existing entry, the name of an existing
   // entry with a literal value, or a literal name and value pair.  Sends
-  // necessary instructions on the encoder stream.  Records absolute indices of
-  // referred dynamic table entries in |*referred_indices|.  Returns list of
-  // header field representations, with all dynamic table entries referred to
-  // with absolute indices.  Returned Instructions object may have
-  // QuicStringPieces pointing to strings owned by |*header_list|.
-  Instructions FirstPassEncode(
-      const spdy::SpdyHeaderBlock& header_list,
-      QpackBlockingManager::IndexSet* referred_indices);
+  // necessary instructions on the encoder stream coalesced in a single write.
+  // Records absolute indices of referred dynamic table entries in
+  // |*referred_indices|.  If |encoder_stream_sent_byte_count| is not null, then
+  // sets |*encoder_stream_sent_byte_count| to the number of bytes sent on the
+  // encoder stream to insert dynamic table entries.  Returns list of header
+  // field representations, with all dynamic table entries referred to with
+  // absolute indices.  Returned Instructions object may have QuicStringPieces
+  // pointing to strings owned by |*header_list|.
+  Instructions FirstPassEncode(QuicStreamId stream_id,
+                               const spdy::SpdyHeaderBlock& header_list,
+                               QpackBlockingManager::IndexSet* referred_indices,
+                               QuicByteCount* encoder_stream_sent_byte_count);
 
   // Performs second pass of two-pass encoding: serializes representations
   // generated in first pass, transforming absolute indices of dynamic table
@@ -141,6 +149,7 @@ class QUIC_EXPORT_PRIVATE QpackEncoder
   QpackHeaderTable header_table_;
   uint64_t maximum_blocked_streams_;
   QpackBlockingManager blocking_manager_;
+  int header_list_count_;
 };
 
 }  // namespace quic

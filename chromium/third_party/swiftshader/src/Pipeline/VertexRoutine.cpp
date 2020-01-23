@@ -60,16 +60,21 @@ namespace sw
 			If(tagCache[cacheIndex] != index)
 			{
 				readInput(batch);
-				program(batch);
+				program(batch, vertexCount);
 				computeClipFlags();
 
 				writeCache(vertexCache, tagCache, batch);
 			}
 
 			Pointer<Byte> cacheEntry = vertexCache + cacheIndex * UInt((int)sizeof(Vertex));
-			writeVertex(vertex, cacheEntry);
 
-			vertex += sizeof(Vertex);
+			// For points, vertexCount is 1 per primitive, so duplicate vertex for all 3 vertices of the primitive
+			for(int i = 0; i < (state.isPoint ? 3 : 1); i++)
+			{
+				writeVertex(vertex, cacheEntry);
+				vertex += sizeof(Vertex);
+			}
+
 			batch = Pointer<UInt>(Pointer<Byte>(batch) + sizeof(uint32_t));
 			vertexCount--;
 		}
@@ -89,8 +94,13 @@ namespace sw
 			{
 				Pointer<Byte> input = *Pointer<Pointer<Byte>>(data + OFFSET(DrawData, input) + sizeof(void*) * (i / 4));
 				UInt stride = *Pointer<UInt>(data + OFFSET(DrawData, stride) + sizeof(uint32_t) * (i / 4));
+				UInt robustnessSize(0);
+				if(state.robustBufferAccess)
+				{
+					robustnessSize = *Pointer<UInt>(data + OFFSET(DrawData, robustnessSize) + sizeof(uint32_t) * (i / 4));
+				}
 
-				auto value = readStream(input, stride, state.input[i / 4], batch);
+				auto value = readStream(input, stride, state.input[i / 4], batch, state.robustBufferAccess, robustnessSize);
 				routine.inputs[i + 0] = value.x;
 				routine.inputs[i + 1] = value.y;
 				routine.inputs[i + 2] = value.z;
@@ -132,14 +142,28 @@ namespace sw
 		clipFlags |= Pointer<Int>(constants + OFFSET(Constants,fini))[SignMask(finiteXYZ)];
 	}
 
-	Vector4f VertexRoutine::readStream(Pointer<Byte> &buffer, UInt &stride, const Stream &stream, Pointer<UInt> &batch)
+	Vector4f VertexRoutine::readStream(Pointer<Byte> &buffer, UInt &stride, const Stream &stream, Pointer<UInt> &batch,
+	                                   bool robustBufferAccess, UInt & robustnessSize)
 	{
 		Vector4f v;
+		UInt4 offsets = *Pointer<UInt4>(As<Pointer<UInt4>>(batch)) * UInt4(stride);
 
-		Pointer<Byte> source0 = buffer + batch[0] * stride;
-		Pointer<Byte> source1 = buffer + batch[1] * stride;
-		Pointer<Byte> source2 = buffer + batch[2] * stride;
-		Pointer<Byte> source3 = buffer + batch[3] * stride;
+		Pointer<Byte> source0 = buffer + offsets.x;
+		Pointer<Byte> source1 = buffer + offsets.y;
+		Pointer<Byte> source2 = buffer + offsets.z;
+		Pointer<Byte> source3 = buffer + offsets.w;
+
+		UInt4 zero(0);
+		if (robustBufferAccess)
+		{
+			// TODO(b/141124876): Optimize for wide-vector gather operations.
+			UInt4 limits = offsets + UInt4(stream.bytesPerAttrib());
+			Pointer<Byte> zeroSource = As<Pointer<Byte>>(&zero);
+			source0 = IfThenElse(limits.x <= robustnessSize, source0, zeroSource);
+			source1 = IfThenElse(limits.y <= robustnessSize, source1, zeroSource);
+			source2 = IfThenElse(limits.z <= robustnessSize, source2, zeroSource);
+			source3 = IfThenElse(limits.w <= robustnessSize, source3, zeroSource);
+		}
 
 		bool isNativeFloatAttrib = (stream.attribType == SpirvShader::ATTRIBTYPE_FLOAT) || stream.normalized;
 
@@ -519,8 +543,8 @@ namespace sw
 		Float4 rhw = Float4(1.0f) / w;
 
 		Vector4f proj;
-		proj.x = As<Float4>(RoundInt(*Pointer<Float4>(data + OFFSET(DrawData,X0x16)) + pos.x * rhw * *Pointer<Float4>(data + OFFSET(DrawData,Wx16))));
-		proj.y = As<Float4>(RoundInt(*Pointer<Float4>(data + OFFSET(DrawData,Y0x16)) + pos.y * rhw * *Pointer<Float4>(data + OFFSET(DrawData,Hx16))));
+		proj.x = As<Float4>(RoundInt(*Pointer<Float4>(data + OFFSET(DrawData,X0xF)) + pos.x * rhw * *Pointer<Float4>(data + OFFSET(DrawData,WxF))));
+		proj.y = As<Float4>(RoundInt(*Pointer<Float4>(data + OFFSET(DrawData,Y0xF)) + pos.y * rhw * *Pointer<Float4>(data + OFFSET(DrawData,HxF))));
 		proj.z = pos.z * rhw;
 		proj.w = rhw;
 

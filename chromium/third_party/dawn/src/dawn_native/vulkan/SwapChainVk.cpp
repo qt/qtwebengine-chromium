@@ -19,6 +19,11 @@
 
 namespace dawn_native { namespace vulkan {
 
+    // static
+    SwapChain* SwapChain::Create(Device* device, const SwapChainDescriptor* descriptor) {
+        return new SwapChain(device, descriptor);
+    }
+
     SwapChain::SwapChain(Device* device, const SwapChainDescriptor* descriptor)
         : SwapChainBase(device, descriptor) {
         const auto& im = GetImplementation();
@@ -46,7 +51,7 @@ namespace dawn_native { namespace vulkan {
         return new Texture(ToBackend(GetDevice()), descriptor, nativeTexture);
     }
 
-    void SwapChain::OnBeforePresent(TextureBase* texture) {
+    MaybeError SwapChain::OnBeforePresent(TextureBase* texture) {
         Device* device = ToBackend(GetDevice());
 
         // Perform the necessary pipeline barriers for the texture to be used with the usage
@@ -54,7 +59,9 @@ namespace dawn_native { namespace vulkan {
         CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
         ToBackend(texture)->TransitionUsageNow(recordingContext, mTextureUsage);
 
-        device->SubmitPendingCommands();
+        DAWN_TRY(device->SubmitPendingCommands());
+
+        return {};
     }
 
 }}  // namespace dawn_native::vulkan

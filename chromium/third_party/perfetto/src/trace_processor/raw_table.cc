@@ -85,7 +85,7 @@ void RawTable::FormatSystraceArgs(NullTermStringView event_name,
   auto ub = std::find(lb, set_ids.end(), arg_set_id + 1);
 
   auto start_row = static_cast<uint32_t>(std::distance(set_ids.begin(), lb));
-
+  auto end_row = static_cast<uint32_t>(std::distance(set_ids.begin(), ub));
   using ValueWriter = std::function<void(const Variadic&)>;
   auto write_value = [this, writer](const Variadic& value) {
     switch (value.type) {
@@ -227,7 +227,11 @@ void RawTable::FormatSystraceArgs(NullTermStringView event_name,
           writer->AppendUnsignedInt(value.uint_value & ((1 << 20) - 1));
         });
     writer->AppendString(" ino ");
-    write_value_at_index(MFA::kIInoFieldNumber - 1, write_value);
+    write_value_at_index(MFA::kIInoFieldNumber - 1,
+                         [writer](const Variadic& value) {
+                           PERFETTO_DCHECK(value.type == Variadic::Type::kUint);
+                           writer->AppendHexInt(value.uint_value);
+                         });
     writer->AppendString(" page=0000000000000000");
     writer->AppendString(" pfn=");
     write_value_at_index(MFA::kPfnFieldNumber - 1, write_value);
@@ -239,9 +243,9 @@ void RawTable::FormatSystraceArgs(NullTermStringView event_name,
                          });
     return;
   } else if (event_name == "print") {
-    using P = protos::pbzero::PrintFtraceEvent;
-
-    uint32_t arg_row = start_row + P::kBufFieldNumber - 1;
+    // 'ip' may be the first field or it may be dropped. We only care
+    // about the 'buf' field which will always appear last.
+    uint32_t arg_row = end_row - 1;
     const auto& args = storage_->args();
     const auto& value = args.arg_values()[arg_row];
     const auto& str = storage_->GetString(value.string_value);

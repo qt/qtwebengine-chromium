@@ -14,7 +14,7 @@
 #include <memory>
 #include <vector>
 
-#include "absl/memory/memory.h"
+#include "api/task_queue/task_queue_test.h"
 #include "rtc_base/event.h"
 #include "test/gtest.h"
 
@@ -61,7 +61,7 @@ TEST(DEPRECATED_SingleThreadedTaskQueueForTestingTest,
 
   std::vector<std::unique_ptr<rtc::Event>> done_events;
   for (size_t i = 0; i < kCount; i++) {
-    done_events.emplace_back(absl::make_unique<rtc::Event>());
+    done_events.emplace_back(std::make_unique<rtc::Event>());
   }
 
   // To avoid the tasks which comprise the actual test from running before they
@@ -334,7 +334,7 @@ TEST(DEPRECATED_SingleThreadedTaskQueueForTestingTest, SendTask) {
 TEST(DEPRECATED_SingleThreadedTaskQueueForTestingTest,
      DestructTaskQueueWhileTasksPending) {
   auto task_queue =
-      absl::make_unique<DEPRECATED_SingleThreadedTaskQueueForTesting>(
+      std::make_unique<DEPRECATED_SingleThreadedTaskQueueForTesting>(
           "task_queue");
 
   std::atomic<size_t> counter(0);
@@ -352,6 +352,22 @@ TEST(DEPRECATED_SingleThreadedTaskQueueForTestingTest,
 
   EXPECT_LT(counter, tasks);
 }
+
+class SingleThreadedTaskQueueForTestingFactory : public TaskQueueFactory {
+ public:
+  std::unique_ptr<TaskQueueBase, TaskQueueDeleter> CreateTaskQueue(
+      absl::string_view /* name */,
+      Priority /*priority*/) const override {
+    return std::unique_ptr<TaskQueueBase, TaskQueueDeleter>(
+        new DEPRECATED_SingleThreadedTaskQueueForTesting("noname"));
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    DeprecatedSingleThreadedTaskQueueForTesting,
+    TaskQueueTest,
+    ::testing::Values(
+        std::make_unique<SingleThreadedTaskQueueForTestingFactory>));
 
 }  // namespace
 }  // namespace test

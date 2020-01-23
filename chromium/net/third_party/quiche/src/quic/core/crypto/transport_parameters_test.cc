@@ -5,18 +5,22 @@
 #include "net/third_party/quiche/src/quic/core/crypto/transport_parameters.h"
 
 #include <cstring>
+#include <utility>
 
 #include "third_party/boringssl/src/include/openssl/mem.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_ip_address.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
 
 namespace quic {
 namespace test {
 namespace {
+
+using testing::Pair;
+using testing::UnorderedElementsAre;
+
 const ParsedQuicVersion kVersion(PROTOCOL_TLS1_3, QUIC_VERSION_99);
 const QuicVersionLabel kFakeVersionLabel = 0x01234567;
 const QuicVersionLabel kFakeVersionLabel2 = 0x89ABCDEF;
@@ -47,6 +51,12 @@ const std::vector<uint8_t> kFakePreferredStatelessResetToken(
     kFakePreferredStatelessResetTokenData,
     kFakePreferredStatelessResetTokenData +
         sizeof(kFakeStatelessResetTokenData));
+const auto kCustomParameter1 =
+    static_cast<TransportParameters::TransportParameterId>(0xffcd);
+const char* kCustomParameter1Value = "foo";
+const auto kCustomParameter2 =
+    static_cast<TransportParameters::TransportParameterId>(0xff34);
+const char* kCustomParameter2Value = "bar";
 
 QuicSocketAddress CreateFakeV4SocketAddress() {
   QuicIpAddress ipv4_address;
@@ -73,7 +83,7 @@ CreateFakePreferredAddress() {
   preferred_address.ipv6_socket_address = CreateFakeV6SocketAddress();
   preferred_address.connection_id = kFakePreferredConnectionId;
   preferred_address.stateless_reset_token = kFakePreferredStatelessResetToken;
-  return QuicMakeUnique<TransportParameters::PreferredAddress>(
+  return std::make_unique<TransportParameters::PreferredAddress>(
       preferred_address);
 }
 
@@ -101,6 +111,8 @@ TEST_F(TransportParametersTest, RoundTripClient) {
   orig_params.disable_migration = kFakeDisableMigration;
   orig_params.active_connection_id_limit.set_value(
       kFakeActiveConnectionIdLimit);
+  orig_params.custom_parameters[kCustomParameter1] = kCustomParameter1Value;
+  orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
 
   std::vector<uint8_t> serialized;
   ASSERT_TRUE(SerializeTransportParameters(kVersion, orig_params, &serialized));
@@ -134,6 +146,10 @@ TEST_F(TransportParametersTest, RoundTripClient) {
   EXPECT_EQ(kFakeDisableMigration, new_params.disable_migration);
   EXPECT_EQ(kFakeActiveConnectionIdLimit,
             new_params.active_connection_id_limit.value());
+  EXPECT_THAT(
+      new_params.custom_parameters,
+      UnorderedElementsAre(Pair(kCustomParameter1, kCustomParameter1Value),
+                           Pair(kCustomParameter2, kCustomParameter2Value)));
 }
 
 TEST_F(TransportParametersTest, RoundTripServer) {
@@ -205,6 +221,7 @@ TEST_F(TransportParametersTest, RoundTripServer) {
             new_params.preferred_address->stateless_reset_token);
   EXPECT_EQ(kFakeActiveConnectionIdLimit,
             new_params.active_connection_id_limit.value());
+  EXPECT_EQ(0u, new_params.custom_parameters.size());
 }
 
 TEST_F(TransportParametersTest, IsValid) {
@@ -594,7 +611,7 @@ TEST_F(TransportParametersTest, CryptoHandshakeMessageRoundtrip) {
   orig_params.version = kFakeVersionLabel;
   orig_params.max_packet_size.set_value(kFakeMaxPacketSize);
 
-  orig_params.google_quic_params = QuicMakeUnique<CryptoHandshakeMessage>();
+  orig_params.google_quic_params = std::make_unique<CryptoHandshakeMessage>();
   const std::string kTestString = "test string";
   orig_params.google_quic_params->SetStringPiece(42, kTestString);
   const uint32_t kTestValue = 12;

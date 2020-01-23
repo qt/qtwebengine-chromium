@@ -59,22 +59,10 @@ class QuicPacketGeneratorPeer;
 
 class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
  public:
-  class QUIC_EXPORT_PRIVATE DelegateInterface
-      : public QuicPacketCreator::DelegateInterface {
-   public:
-    ~DelegateInterface() override {}
-    // Consults delegate whether a packet should be generated.
-    virtual bool ShouldGeneratePacket(HasRetransmittableData retransmittable,
-                                      IsHandshake handshake) = 0;
-    // Called when there is data to be sent. Retrieves updated ACK frame from
-    // the delegate.
-    virtual const QuicFrames MaybeBundleAckOpportunistically() = 0;
-  };
-
   QuicPacketGenerator(QuicConnectionId server_connection_id,
                       QuicFramer* framer,
                       QuicRandom* random_generator,
-                      DelegateInterface* delegate);
+                      QuicPacketCreator::DelegateInterface* delegate);
   QuicPacketGenerator(const QuicPacketGenerator&) = delete;
   QuicPacketGenerator& operator=(const QuicPacketGenerator&) = delete;
 
@@ -172,6 +160,11 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   void UpdatePacketNumberLength(QuicPacketNumber least_packet_awaited_by_peer,
                                 QuicPacketCount max_packets_in_flight);
 
+  // Skip |count| packet numbers.
+  void SkipNPacketNumbers(QuicPacketCount count,
+                          QuicPacketNumber least_packet_awaited_by_peer,
+                          QuicPacketCount max_packets_in_flight);
+
   // Set the minimum number of bytes for the server connection id length;
   void SetServerConnectionIdLength(uint32_t length);
 
@@ -232,13 +225,9 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
     packet_creator_.set_debug_delegate(debug_delegate);
   }
 
-  void set_fully_pad_crypto_hadshake_packets(bool new_value) {
-    fully_pad_crypto_handshake_packets_ = new_value;
-  }
+  void set_fully_pad_crypto_handshake_packets(bool new_value);
 
-  bool fully_pad_crypto_handshake_packets() const {
-    return fully_pad_crypto_handshake_packets_;
-  }
+  bool fully_pad_crypto_handshake_packets() const;
 
  private:
   friend class test::QuicPacketGeneratorPeer;
@@ -254,7 +243,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   // delegate_ and flushes it.
   void MaybeBundleAckOpportunistically();
 
-  DelegateInterface* delegate_;
+  QuicPacketCreator::DelegateInterface* delegate_;
 
   QuicPacketCreator packet_creator_;
 

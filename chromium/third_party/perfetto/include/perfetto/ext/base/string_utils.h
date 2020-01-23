@@ -20,17 +20,38 @@
 #include <string>
 #include <vector>
 
+#include "perfetto/ext/base/string_view.h"
+
 namespace perfetto {
 namespace base {
+
+inline char Lowercase(char c) {
+  return ('A' <= c && c <= 'Z') ? (c -= 'A' - 'a') : c;
+}
+
+inline char Uppercase(char c) {
+  return ('a' <= c && c <= 'z') ? (c += 'A' - 'a') : c;
+}
 
 bool StartsWith(const std::string& str, const std::string& prefix);
 bool EndsWith(const std::string& str, const std::string& suffix);
 bool Contains(const std::string& haystack, const std::string& needle);
+size_t Find(const StringView& needle, const StringView& haystack);
 bool CaseInsensitiveEqual(const std::string& first, const std::string& second);
 std::string Join(const std::vector<std::string>& parts,
                  const std::string& delim);
 std::vector<std::string> SplitString(const std::string& text,
                                      const std::string& delimiter);
+std::string StripPrefix(const std::string& str, const std::string& prefix);
+std::string StripSuffix(const std::string& str, const std::string& suffix);
+std::string ToUpper(const std::string& str);
+std::string StripChars(const std::string& str,
+                       const std::string& chars,
+                       char replacement);
+std::string ToHex(const char* data, size_t size);
+inline std::string ToHex(const std::string& s) {
+  return ToHex(s.c_str(), s.size());
+}
 
 }  // namespace base
 }  // namespace perfetto

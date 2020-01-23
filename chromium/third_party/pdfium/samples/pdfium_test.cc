@@ -18,6 +18,10 @@
 #define _SKIA_SUPPORT_
 #endif
 
+#if defined PDF_ENABLE_SKIA_PATHS && !defined _SKIA_SUPPORT_PATHS_
+#define _SKIA_SUPPORT_PATHS_
+#endif
+
 #include "public/cpp/fpdf_scopers.h"
 #include "public/fpdf_annot.h"
 #include "public/fpdf_attachment.h"
@@ -910,6 +914,15 @@ void ShowConfig() {
   config.append("ASAN");
   maybe_comma = ",";
 #endif  // PDF_ENABLE_ASAN
+#if defined(PDF_ENABLE_SKIA)
+  config.append(maybe_comma);
+  config.append("SKIA");
+  maybe_comma = ",";
+#elif defined(PDF_ENABLE_SKIA_PATHS)
+  config.append(maybe_comma);
+  config.append("SKIAPATHS");
+  maybe_comma = ",";
+#endif
   printf("%s\n", config.c_str());
 }
 
@@ -992,11 +1005,10 @@ int main(int argc, const char* argv[]) {
 #ifdef PDF_ENABLE_V8
   std::unique_ptr<v8::Platform> platform;
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  v8::StartupData natives;
   v8::StartupData snapshot;
   if (!options.disable_javascript) {
     platform = InitializeV8ForPDFiumWithStartupData(
-        options.exe_path, options.bin_directory, &natives, &snapshot);
+        options.exe_path, options.bin_directory, &snapshot);
   }
 #else   // V8_USE_EXTERNAL_STARTUP_DATA
   if (!options.disable_javascript)
@@ -1079,7 +1091,6 @@ int main(int argc, const char* argv[]) {
   if (!options.disable_javascript) {
     v8::V8::ShutdownPlatform();
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
-    free(const_cast<char*>(natives.data));
     free(const_cast<char*>(snapshot.data));
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
   }

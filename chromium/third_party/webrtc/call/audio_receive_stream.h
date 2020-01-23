@@ -21,9 +21,9 @@
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
 #include "api/crypto/frame_decryptor_interface.h"
-#include "api/media_transport_config.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
+#include "api/transport/media/media_transport_config.h"
 #include "api/transport/rtp/rtp_source.h"
 #include "call/rtp_config.h"
 
@@ -36,7 +36,8 @@ class AudioReceiveStream {
     Stats();
     ~Stats();
     uint32_t remote_ssrc = 0;
-    int64_t bytes_rcvd = 0;
+    int64_t payload_bytes_rcvd = 0;
+    int64_t header_and_padding_bytes_rcvd = 0;
     uint32_t packets_rcvd = 0;
     uint64_t fec_packets_received = 0;
     uint64_t fec_packets_discarded = 0;

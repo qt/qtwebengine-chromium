@@ -23,10 +23,14 @@ export type Timestamped<T> = {
   [P in keyof T]: T[P];
 }&{lastUpdate: number};
 
-export type OmniboxState = Timestamped<{omnibox: string;}>;
+export type OmniboxState =
+    Timestamped<{omnibox: string; mode: 'SEARCH' | 'COMMAND'}>;
 
 export type VisibleState =
     Timestamped<{startSec: number; endSec: number; resolution: number;}>;
+
+export type SelectedTimeRange =
+    Timestamped<{startSec?: number; endSec?: number;}>;
 
 export const MAX_TIME = 180;
 
@@ -75,6 +79,7 @@ export interface TraceTime {
 export interface FrontendLocalState {
   omniboxState: OmniboxState;
   visibleState: VisibleState;
+  selectedTimeRange: SelectedTimeRange;
 }
 
 export interface Status {
@@ -97,19 +102,33 @@ export interface NoteSelection {
 
 export interface SliceSelection {
   kind: 'SLICE';
-  utid: number;
   id: number;
+}
+
+export interface CounterSelection {
+  kind: 'COUNTER';
+  leftTs: number;
+  rightTs: number;
+  id: number;
+}
+
+export interface HeapProfileSelection {
+  kind: 'HEAP_PROFILE';
+  id: number;
+  upid: number;
+  ts: number;
+}
+
+export interface HeapProfileFlamegraph {
+  kind: 'HEAP_PROFILE_FLAMEGRAPH';
+  id: number;
+  upid: number;
+  ts: number;
 }
 
 export interface ChromeSliceSelection {
   kind: 'CHROME_SLICE';
   id: number;
-}
-
-export interface TimeSpanSelection {
-  kind: 'TIMESPAN';
-  startTs: number;
-  endTs: number;
 }
 
 export interface ThreadStateSelection {
@@ -121,8 +140,8 @@ export interface ThreadStateSelection {
   cpu: number;
 }
 
-type Selection = NoteSelection|SliceSelection|ChromeSliceSelection|
-    TimeSpanSelection|ThreadStateSelection;
+type Selection = NoteSelection|SliceSelection|CounterSelection|
+    HeapProfileSelection|ChromeSliceSelection|ThreadStateSelection;
 
 export interface LogsPagination {
   offset: number;
@@ -162,6 +181,7 @@ export interface State {
   notes: ObjectById<Note>;
   status: Status;
   currentSelection: Selection|null;
+  currentHeapProfileFlamegraph: HeapProfileFlamegraph|null;
 
   logsPagination: LogsPagination;
 
@@ -184,6 +204,7 @@ export interface State {
    * Trace recording
    */
   recordingInProgress: boolean;
+  recordingCancelled: boolean;
   extensionInstalled: boolean;
   androidDeviceConnected?: AdbRecordingTarget;
   availableDevices: AdbRecordingTarget[];
@@ -237,7 +258,6 @@ export interface RecordConfig {
   screenRecord: boolean;
 
   gpuFreq: boolean;
-  gpuSched: boolean;
 
   ftrace: boolean;
   atrace: boolean;
@@ -287,7 +307,6 @@ export function createEmptyRecordConfig(): RecordConfig {
     screenRecord: false,
 
     gpuFreq: false,
-    gpuSched: false,
 
     ftrace: false,
     atrace: false,
@@ -347,12 +366,16 @@ export function createEmptyState(): State {
       omniboxState: {
         lastUpdate: 0,
         omnibox: '',
+        mode: 'SEARCH',
       },
 
       visibleState: {
         ...defaultTraceTime,
         lastUpdate: 0,
         resolution: 0,
+      },
+      selectedTimeRange: {
+        lastUpdate: 0,
       },
     },
 
@@ -363,6 +386,7 @@ export function createEmptyState(): State {
 
     status: {msg: '', timestamp: 0},
     currentSelection: null,
+    currentHeapProfileFlamegraph: null,
 
     video: null,
     videoEnabled: false,
@@ -371,10 +395,24 @@ export function createEmptyState(): State {
     scrubbingEnabled: false,
     flagPauseEnabled: false,
     recordingInProgress: false,
+    recordingCancelled: false,
     extensionInstalled: false,
     androidDeviceConnected: undefined,
     availableDevices: [],
 
     chromeCategories: undefined,
   };
+}
+
+export function getContainingTrackId(state: State, trackId: string): null|
+    string {
+  const track = state.tracks[trackId];
+  if (!track) {
+    return null;
+  }
+  const parentId = track.trackGroup;
+  if (!parentId) {
+    return null;
+  }
+  return parentId;
 }

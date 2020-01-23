@@ -26,29 +26,6 @@ namespace dawn_native {
 
     namespace {
 
-        inline MaybeError PushDebugMarkerStack(unsigned int* counter) {
-            *counter += 1;
-            return {};
-        }
-
-        inline MaybeError PopDebugMarkerStack(unsigned int* counter) {
-            if (*counter == 0) {
-                return DAWN_VALIDATION_ERROR("Pop must be balanced by a corresponding Push.");
-            } else {
-                *counter -= 1;
-            }
-
-            return {};
-        }
-
-        inline MaybeError ValidateDebugGroups(const unsigned int counter) {
-            if (counter != 0) {
-                return DAWN_VALIDATION_ERROR("Each Push must be balanced by a corresponding Pop.");
-            }
-
-            return {};
-        }
-
         void TrackBindGroupResourceUsage(BindGroupBase* group,
                                          PassResourceUsageTracker* usageTracker) {
             const auto& layoutInfo = group->GetLayout()->GetBindingInfo();
@@ -88,7 +65,7 @@ namespace dawn_native {
                                                       PassResourceUsageTracker* usageTracker,
                                                       CommandBufferStateTracker* commandBufferState,
                                                       const AttachmentState* attachmentState,
-                                                      unsigned int* debugGroupStackSize,
+                                                      uint64_t* debugGroupStackSize,
                                                       const char* disallowedMessage) {
             switch (type) {
                 case Command::Draw: {
@@ -122,13 +99,14 @@ namespace dawn_native {
 
                 case Command::PopDebugGroup: {
                     commands->NextCommand<PopDebugGroupCmd>();
-                    DAWN_TRY(PopDebugMarkerStack(debugGroupStackSize));
+                    DAWN_TRY(ValidateCanPopDebugGroup(*debugGroupStackSize));
+                    *debugGroupStackSize -= 1;
                 } break;
 
                 case Command::PushDebugGroup: {
                     PushDebugGroupCmd* cmd = commands->NextCommand<PushDebugGroupCmd>();
                     commands->NextData<char>(cmd->length + 1);
-                    DAWN_TRY(PushDebugMarkerStack(debugGroupStackSize));
+                    *debugGroupStackSize += 1;
                 } break;
 
                 case Command::SetRenderPipeline: {
@@ -158,15 +136,11 @@ namespace dawn_native {
                     commandBufferState->SetIndexBuffer();
                 } break;
 
-                case Command::SetVertexBuffers: {
-                    SetVertexBuffersCmd* cmd = commands->NextCommand<SetVertexBuffersCmd>();
-                    auto buffers = commands->NextData<Ref<BufferBase>>(cmd->count);
-                    commands->NextData<uint64_t>(cmd->count);
+                case Command::SetVertexBuffer: {
+                    SetVertexBufferCmd* cmd = commands->NextCommand<SetVertexBufferCmd>();
 
-                    for (uint32_t i = 0; i < cmd->count; ++i) {
-                        usageTracker->BufferUsedAs(buffers[i].Get(), dawn::BufferUsage::Vertex);
-                    }
-                    commandBufferState->SetVertexBuffer(cmd->startSlot, cmd->count);
+                    usageTracker->BufferUsedAs(cmd->buffer.Get(), dawn::BufferUsage::Vertex);
+                    commandBufferState->SetVertexBuffer(cmd->slot);
                 } break;
 
                 default:
@@ -178,12 +152,26 @@ namespace dawn_native {
 
     }  // namespace
 
+    MaybeError ValidateCanPopDebugGroup(uint64_t debugGroupStackSize) {
+        if (debugGroupStackSize == 0) {
+            return DAWN_VALIDATION_ERROR("Pop must be balanced by a corresponding Push.");
+        }
+        return {};
+    }
+
+    MaybeError ValidateFinalDebugGroupStackSize(uint64_t debugGroupStackSize) {
+        if (debugGroupStackSize != 0) {
+            return DAWN_VALIDATION_ERROR("Each Push must be balanced by a corresponding Pop.");
+        }
+        return {};
+    }
+
     MaybeError ValidateRenderBundle(CommandIterator* commands,
                                     const AttachmentState* attachmentState,
                                     PassResourceUsage* resourceUsage) {
         PassResourceUsageTracker usageTracker;
         CommandBufferStateTracker commandBufferState;
-        unsigned int debugGroupStackSize = 0;
+        uint64_t debugGroupStackSize = 0;
 
         Command type;
         while (commands->NextCommandId(&type)) {
@@ -192,7 +180,7 @@ namespace dawn_native {
                                                  "Command disallowed inside a render bundle"));
         }
 
-        DAWN_TRY(ValidateDebugGroups(debugGroupStackSize));
+        DAWN_TRY(ValidateFinalDebugGroupStackSize(debugGroupStackSize));
         DAWN_TRY(usageTracker.ValidateRenderPassUsages());
         ASSERT(resourceUsage != nullptr);
         *resourceUsage = usageTracker.AcquireResourceUsage();
@@ -205,7 +193,7 @@ namespace dawn_native {
                                   std::vector<PassResourceUsage>* perPassResourceUsages) {
         PassResourceUsageTracker usageTracker;
         CommandBufferStateTracker commandBufferState;
-        unsigned int debugGroupStackSize = 0;
+        uint64_t debugGroupStackSize = 0;
 
         // Track usage of the render pass attachments
         for (uint32_t i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
@@ -231,8 +219,7 @@ namespace dawn_native {
                 case Command::EndRenderPass: {
                     commands->NextCommand<EndRenderPassCmd>();
 
-                    DAWN_TRY(ValidateDebugGroups(debugGroupStackSize));
-
+                    DAWN_TRY(ValidateFinalDebugGroupStackSize(debugGroupStackSize));
                     DAWN_TRY(usageTracker.ValidateRenderPassUsages());
                     ASSERT(perPassResourceUsages != nullptr);
                     perPassResourceUsages->push_back(usageTracker.AcquireResourceUsage());
@@ -299,7 +286,7 @@ namespace dawn_native {
                                    std::vector<PassResourceUsage>* perPassResourceUsages) {
         PassResourceUsageTracker usageTracker;
         CommandBufferStateTracker commandBufferState;
-        unsigned int debugGroupStackSize = 0;
+        uint64_t debugGroupStackSize = 0;
 
         Command type;
         while (commands->NextCommandId(&type)) {
@@ -307,8 +294,7 @@ namespace dawn_native {
                 case Command::EndComputePass: {
                     commands->NextCommand<EndComputePassCmd>();
 
-                    DAWN_TRY(ValidateDebugGroups(debugGroupStackSize));
-
+                    DAWN_TRY(ValidateFinalDebugGroupStackSize(debugGroupStackSize));
                     DAWN_TRY(usageTracker.ValidateComputePassUsages());
                     ASSERT(perPassResourceUsages != nullptr);
                     perPassResourceUsages->push_back(usageTracker.AcquireResourceUsage());
@@ -334,13 +320,14 @@ namespace dawn_native {
 
                 case Command::PopDebugGroup: {
                     commands->NextCommand<PopDebugGroupCmd>();
-                    DAWN_TRY(PopDebugMarkerStack(&debugGroupStackSize));
+                    DAWN_TRY(ValidateCanPopDebugGroup(debugGroupStackSize));
+                    debugGroupStackSize--;
                 } break;
 
                 case Command::PushDebugGroup: {
                     PushDebugGroupCmd* cmd = commands->NextCommand<PushDebugGroupCmd>();
                     commands->NextData<char>(cmd->length + 1);
-                    DAWN_TRY(PushDebugMarkerStack(&debugGroupStackSize));
+                    debugGroupStackSize++;
                 } break;
 
                 case Command::SetComputePipeline: {

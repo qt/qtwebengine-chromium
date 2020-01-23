@@ -48,12 +48,12 @@ class PERFETTO_EXPORT TraceProcessor {
 
     // Forwards the iterator to the next result row and returns a boolean of
     // whether there is a next row. If this method returns false,
-    // |GetLastError()| should be called to check if there was an error. If
+    // |Status()| should be called to check if there was an error. If
     // there was no error, this means the EOF was reached.
     bool Next();
 
     // Returns the value associated with the column |col|. Any call to
-    // |Get()| must be preceeded by a call to |Next()| returning
+    // |Get()| must be preceded by a call to |Next()| returning
     // kHasNext. |col| must be less than the number returned by |ColumnCount()|.
     SqlValue Get(uint32_t col);
 

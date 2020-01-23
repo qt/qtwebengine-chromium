@@ -75,9 +75,11 @@ struct PERFETTO_EXPORT SqlValue {
       case Type::kNull:
         return 0;
       case Type::kLong:
-        return signbit(long_value - value.long_value);
-      case Type::kDouble:
-        return signbit(double_value - value.double_value);
+        return static_cast<int>(long_value - value.long_value);
+      case Type::kDouble: {
+        double diff = double_value - value.double_value;
+        return diff < 0 ? -1 : (diff > 0 ? 1 : 0);
+      }
       case Type::kString:
         return strcmp(string_value, value.string_value);
       case Type::kBytes: {
@@ -85,7 +87,7 @@ struct PERFETTO_EXPORT SqlValue {
         int ret = memcmp(bytes_value, value.bytes_value, bytes);
         if (ret != 0)
           return ret;
-        return signbit(bytes_count - value.bytes_count);
+        return static_cast<int>(bytes_count - value.bytes_count);
       }
     }
     PERFETTO_FATAL("For GCC");

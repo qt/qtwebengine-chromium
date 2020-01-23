@@ -22,7 +22,7 @@
 #include "Pipeline/ComputeProgram.hpp"
 #include "Pipeline/SpirvShader.hpp"
 
-#include "Yarn/Trace.hpp"
+#include "marl/trace.h"
 
 #include "spirv-tools/optimizer.hpp"
 
@@ -193,7 +193,8 @@ std::vector<uint32_t> preprocessSpirv(
 	}
 
 	// Full optimization list taken from spirv-opt.
-	opt.RegisterPass(spvtools::CreateDeadBranchElimPass())
+	opt.RegisterPass(spvtools::CreateWrapOpKillPass())
+		.RegisterPass(spvtools::CreateDeadBranchElimPass())
 		.RegisterPass(spvtools::CreateMergeReturnPass())
 		.RegisterPass(spvtools::CreateInlineExhaustivePass())
 		.RegisterPass(spvtools::CreateAggressiveDCEPass())
@@ -259,7 +260,7 @@ std::shared_ptr<sw::SpirvShader> createShader(const vk::PipelineCache::SpirvShad
 
 std::shared_ptr<sw::ComputeProgram> createProgram(const vk::PipelineCache::ComputeProgramKey& key)
 {
-	YARN_SCOPED_EVENT("createProgram");
+	MARL_SCOPED_EVENT("createProgram");
 
 	vk::DescriptorSet::Bindings descriptorSets;  // FIXME(b/129523279): Delay code generation until invoke time.
 	// TODO(b/119409619): use allocator.
@@ -283,6 +284,8 @@ Pipeline::Pipeline(PipelineLayout const *layout, const Device *device)
 GraphicsPipeline::GraphicsPipeline(const VkGraphicsPipelineCreateInfo* pCreateInfo, void* mem, const Device *device)
 	: Pipeline(vk::Cast(pCreateInfo->layout), device)
 {
+	context.robustBufferAccess = robustBufferAccess;
+
 	if(((pCreateInfo->flags &
 		~(VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT |
 	      VK_PIPELINE_CREATE_DERIVATIVE_BIT |

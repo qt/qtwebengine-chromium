@@ -18,7 +18,6 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_expect_bug.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
@@ -162,11 +161,18 @@ struct TestParams {
   Perspective perspective;
 };
 
+// Used by ::testing::PrintToStringParamName().
+std::string PrintToString(const TestParams& tp) {
+  return QuicStrCat(
+      ParsedQuicVersionToString(tp.version), "_",
+      (tp.perspective == Perspective::IS_CLIENT ? "client" : "server"));
+}
+
 std::vector<TestParams> GetTestParams() {
   std::vector<TestParams> params;
   ParsedQuicVersionVector all_supported_versions = AllSupportedVersions();
   for (size_t i = 0; i < all_supported_versions.size(); ++i) {
-    if (VersionUsesQpack(all_supported_versions[i].transport_version)) {
+    if (VersionUsesHttp3(all_supported_versions[i].transport_version)) {
       continue;
     }
     for (Perspective p : {Perspective::IS_SERVER, Perspective::IS_CLIENT}) {
@@ -202,7 +208,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
     deframer_ = std::unique_ptr<http2::Http2DecoderAdapter>(
         new http2::Http2DecoderAdapter());
     deframer_->set_visitor(&visitor_);
-    EXPECT_EQ(transport_version(), session_.connection()->transport_version());
+    EXPECT_EQ(transport_version(), session_.transport_version());
     EXPECT_TRUE(headers_stream_ != nullptr);
     connection_->AdvanceTime(QuicTime::Delta::FromMilliseconds(1));
     client_id_1_ = GetNthClientInitiatedBidirectionalStreamId(
@@ -258,7 +264,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
   }
 
   void SaveToHandler(size_t size, const QuicHeaderList& header_list) {
-    headers_handler_ = QuicMakeUnique<TestHeadersHandler>();
+    headers_handler_ = std::make_unique<TestHeadersHandler>();
     headers_handler_->OnHeaderBlockStart();
     for (const auto& p : header_list) {
       headers_handler_->OnHeader(p.first, p.second);
@@ -304,7 +310,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
                             /*parent_stream_id=*/0,
                             /*exclusive=*/false, fin, kFrameComplete));
     }
-    headers_handler_ = QuicMakeUnique<TestHeadersHandler>();
+    headers_handler_ = std::make_unique<TestHeadersHandler>();
     EXPECT_CALL(visitor_, OnHeaderFrameStart(stream_id))
         .WillOnce(Return(headers_handler_.get()));
     EXPECT_CALL(visitor_, OnHeaderFrameEnd(stream_id)).Times(1);
@@ -321,6 +327,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
   }
 
   void CheckHeaders() {
+    ASSERT_TRUE(headers_handler_);
     EXPECT_EQ(headers_, headers_handler_->decoded_block());
     headers_handler_.reset();
   }
@@ -373,7 +380,8 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
 // Run all tests with each version and perspective (client or server).
 INSTANTIATE_TEST_SUITE_P(Tests,
                          QuicHeadersStreamTest,
-                         ::testing::ValuesIn(GetTestParams()));
+                         ::testing::ValuesIn(GetTestParams()),
+                         ::testing::PrintToStringParamName());
 
 TEST_P(QuicHeadersStreamTest, StreamId) {
   EXPECT_EQ(QuicUtils::GetHeadersStreamId(connection_->transport_version()),
@@ -397,7 +405,7 @@ TEST_P(QuicHeadersStreamTest, WriteHeaders) {
 }
 
 TEST_P(QuicHeadersStreamTest, WritePushPromises) {
-  session_.set_max_allowed_push_id(kMaxQuicStreamId);
+  session_.SetMaxAllowedPushId(kMaxQuicStreamId);
 
   for (QuicStreamId stream_id = client_id_1_; stream_id < client_id_3_;
        stream_id += next_stream_id_) {
@@ -415,7 +423,7 @@ TEST_P(QuicHeadersStreamTest, WritePushPromises) {
       // Parse the outgoing data and check that it matches was was written.
       EXPECT_CALL(visitor_,
                   OnPushPromise(stream_id, promised_stream_id, kFrameComplete));
-      headers_handler_ = QuicMakeUnique<TestHeadersHandler>();
+      headers_handler_ = std::make_unique<TestHeadersHandler>();
       EXPECT_CALL(visitor_, OnHeaderFrameStart(stream_id))
           .WillOnce(Return(headers_handler_.get()));
       EXPECT_CALL(visitor_, OnHeaderFrameEnd(stream_id)).Times(1);
@@ -734,7 +742,7 @@ TEST_P(QuicHeadersStreamTest, NoConnectionLevelFlowControl) {
 
 TEST_P(QuicHeadersStreamTest, HpackDecoderDebugVisitor) {
   auto hpack_decoder_visitor =
-      QuicMakeUnique<StrictMock<MockQuicHpackDebugVisitor>>();
+      std::make_unique<StrictMock<MockQuicHpackDebugVisitor>>();
   {
     InSequence seq;
     // Number of indexed representations generated in headers below.
@@ -787,7 +795,7 @@ TEST_P(QuicHeadersStreamTest, HpackDecoderDebugVisitor) {
 
 TEST_P(QuicHeadersStreamTest, HpackEncoderDebugVisitor) {
   auto hpack_encoder_visitor =
-      QuicMakeUnique<StrictMock<MockQuicHpackDebugVisitor>>();
+      std::make_unique<StrictMock<MockQuicHpackDebugVisitor>>();
   if (perspective() == Perspective::IS_SERVER) {
     InSequence seq;
     for (int i = 1; i < 4; i++) {

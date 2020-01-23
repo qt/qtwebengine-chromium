@@ -38,6 +38,10 @@ namespace dawn_native {
             DAWN_TRY(ValidateBindingType(binding.type));
             DAWN_TRY(ValidateTextureComponentType(binding.textureComponentType));
 
+            if (binding.textureDimension != dawn::TextureViewDimension::Undefined) {
+                DAWN_TRY(ValidateTextureViewDimension(binding.textureDimension));
+            }
+
             if (binding.binding >= kMaxBindingsPerGroup) {
                 return DAWN_VALIDATION_ERROR("some binding index exceeds the maximum value");
             }
@@ -45,24 +49,20 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR("some binding index was specified more than once");
             }
 
-            if (binding.visibility == dawn::ShaderStage::None) {
-                return DAWN_VALIDATION_ERROR("Visibility of bindings can't be None");
-            }
-
             switch (binding.type) {
                 case dawn::BindingType::UniformBuffer:
-                    if (binding.dynamic) {
+                    if (binding.hasDynamicOffset) {
                         ++dynamicUniformBufferCount;
                     }
                     break;
                 case dawn::BindingType::StorageBuffer:
-                    if (binding.dynamic) {
+                    if (binding.hasDynamicOffset) {
                         ++dynamicStorageBufferCount;
                     }
                     break;
                 case dawn::BindingType::SampledTexture:
                 case dawn::BindingType::Sampler:
-                    if (binding.dynamic) {
+                    if (binding.hasDynamicOffset) {
                         return DAWN_VALIDATION_ERROR("Samplers and textures cannot be dynamic");
                     }
                     break;
@@ -96,11 +96,11 @@ namespace dawn_native {
     namespace {
         size_t HashBindingInfo(const BindGroupLayoutBase::LayoutBindingInfo& info) {
             size_t hash = Hash(info.mask);
-            HashCombine(&hash, info.dynamic, info.multisampled);
+            HashCombine(&hash, info.hasDynamicOffset, info.multisampled);
 
             for (uint32_t binding : IterateBitSet(info.mask)) {
                 HashCombine(&hash, info.visibilities[binding], info.types[binding],
-                            info.textureComponentTypes[binding]);
+                            info.textureComponentTypes[binding], info.textureDimensions[binding]);
             }
 
             return hash;
@@ -108,14 +108,16 @@ namespace dawn_native {
 
         bool operator==(const BindGroupLayoutBase::LayoutBindingInfo& a,
                         const BindGroupLayoutBase::LayoutBindingInfo& b) {
-            if (a.mask != b.mask || a.dynamic != b.dynamic || a.multisampled != b.multisampled) {
+            if (a.mask != b.mask || a.hasDynamicOffset != b.hasDynamicOffset ||
+                a.multisampled != b.multisampled) {
                 return false;
             }
 
             for (uint32_t binding : IterateBitSet(a.mask)) {
                 if ((a.visibilities[binding] != b.visibilities[binding]) ||
                     (a.types[binding] != b.types[binding]) ||
-                    (a.textureComponentTypes[binding] != b.textureComponentTypes[binding])) {
+                    (a.textureComponentTypes[binding] != b.textureComponentTypes[binding]) ||
+                    (a.textureDimensions[binding] != b.textureDimensions[binding])) {
                     return false;
                 }
             }
@@ -138,8 +140,13 @@ namespace dawn_native {
             mBindingInfo.types[index] = binding.type;
             mBindingInfo.textureComponentTypes[index] = binding.textureComponentType;
 
-            if (binding.dynamic) {
-                mBindingInfo.dynamic.set(index);
+            if (binding.textureDimension == dawn::TextureViewDimension::Undefined) {
+                mBindingInfo.textureDimensions[index] = dawn::TextureViewDimension::e2D;
+            } else {
+                mBindingInfo.textureDimensions[index] = binding.textureDimension;
+            }
+            if (binding.hasDynamicOffset) {
+                mBindingInfo.hasDynamicOffset.set(index);
                 switch (binding.type) {
                     case dawn::BindingType::UniformBuffer:
                         ++mDynamicUniformBufferCount;

@@ -141,7 +141,7 @@ void initRender() {
     descriptor.cVertexInput.cAttributes[2].format = dawn::VertexFormat::Float2;
     descriptor.depthStencilState = &descriptor.cDepthStencilState;
     descriptor.cDepthStencilState.format = dawn::TextureFormat::Depth24PlusStencil8;
-    descriptor.cColorStates[0]->format = GetPreferredSwapChainTextureFormat();
+    descriptor.cColorStates[0].format = GetPreferredSwapChainTextureFormat();
 
     renderPipeline = device.CreateRenderPipeline(&descriptor);
 }
@@ -262,14 +262,13 @@ void initSim() {
 }
 
 dawn::CommandBuffer createCommandBuffer(const dawn::Texture backbuffer, size_t i) {
-    static const uint64_t zeroOffsets[1] = {0};
     auto& bufferDst = particleBuffers[(i + 1) % 2];
     dawn::CommandEncoder encoder = device.CreateCommandEncoder();
 
     {
         dawn::ComputePassEncoder pass = encoder.BeginComputePass();
         pass.SetPipeline(updatePipeline);
-        pass.SetBindGroup(0, updateBGs[i], 0, nullptr);
+        pass.SetBindGroup(0, updateBGs[i]);
         pass.Dispatch(kNumParticles, 1, 1);
         pass.EndPass();
     }
@@ -278,8 +277,8 @@ dawn::CommandBuffer createCommandBuffer(const dawn::Texture backbuffer, size_t i
         utils::ComboRenderPassDescriptor renderPass({backbuffer.CreateView()}, depthStencilView);
         dawn::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
         pass.SetPipeline(renderPipeline);
-        pass.SetVertexBuffers(0, 1, &bufferDst, zeroOffsets);
-        pass.SetVertexBuffers(1, 1, &modelBuffer, zeroOffsets);
+        pass.SetVertexBuffer(0, bufferDst);
+        pass.SetVertexBuffer(1, modelBuffer);
         pass.Draw(3, kNumParticles, 0, 0);
         pass.EndPass();
     }

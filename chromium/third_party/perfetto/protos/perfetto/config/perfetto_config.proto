@@ -40,9 +40,6 @@ enum AndroidLogPriority {
 
 // Begin of protos/perfetto/common/data_source_descriptor.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos
-// to reflect changes in the corresponding C++ headers.
-
 // This message is sent from Producer(s) to the tracing Service when registering
 // to advertise their capabilities. It describes the structure of tracing
 // protos that will be produced by the data source and the supported filters.
@@ -75,24 +72,27 @@ message DataSourceDescriptor {
 // Begin of protos/perfetto/common/gpu_counter_descriptor.proto
 
 // Description of GPU counters.
-// This message is sent by a GPU counter producer to specify the counters available in the hardware.
+// This message is sent by a GPU counter producer to specify the counters
+// available in the hardware.
 message GpuCounterDescriptor {
   message GpuCounterSpec {
     optional uint32 counter_id = 1;
     optional string name = 2;
     optional string description = 3;
-    reserved 4;
+    reserved 4;  // MeasureUnit unit (deprecated)
     oneof peak_value {
       int64 int_peak_value = 5;
       double double_peak_value = 6;
     };
     repeated MeasureUnit numerator_units = 7;
     repeated MeasureUnit denominator_units = 8;
+    optional bool select_by_default = 9;
   }
   repeated GpuCounterSpec specs = 1;
 
-  // Allow producer to group counters into block to represent counter islands.  A capacity may be
-  // specified to indicate the number of counters that can be enable simultaneously in that block.
+  // Allow producer to group counters into block to represent counter islands.
+  // A capacity may be specified to indicate the number of counters that can be
+  // enable simultaneously in that block.
   message GpuCounterBlock {
     // required. Unique ID for the counter group.
     optional uint32 block_id = 1;
@@ -106,6 +106,18 @@ message GpuCounterDescriptor {
     repeated uint32 counter_ids = 5;
   }
   repeated GpuCounterBlock blocks = 2;
+
+  // optional.  Minimum sampling period supported by the producer in
+  // nanoseconds.
+  optional uint64 min_sampling_period_ns = 3;
+
+  // optional.  Maximum sampling period supported by the producer in
+  // nanoseconds.
+  optional uint64 max_sampling_period_ns = 4;
+
+  // optional.  The producer supports counter sampling by instrumenting the
+  // command buffer.
+  optional bool supports_instrumented_sampling = 5;
 
   enum MeasureUnit {
     NONE = 0;
@@ -452,9 +464,6 @@ message TraceStats {
 
 // Begin of protos/perfetto/common/tracing_service_state.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 // Reports the state of the tracing service. Used to gather details about the
 // data sources connected.
 // See ConsumerPort::QueryServiceState().
@@ -518,9 +527,6 @@ message AndroidLogConfig {
 
 // Begin of protos/perfetto/config/chrome/chrome_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 message ChromeConfig {
   optional string trace_config = 1;
 
@@ -532,9 +538,6 @@ message ChromeConfig {
 // End of protos/perfetto/config/chrome/chrome_config.proto
 
 // Begin of protos/perfetto/config/data_source_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
 
 // The configuration that is passed to each data source when starting tracing.
 message DataSourceConfig {
@@ -584,6 +587,7 @@ message DataSourceConfig {
   optional ProcessStatsConfig process_stats_config = 103 [lazy = true];
   optional SysStatsConfig sys_stats_config = 104 [lazy = true];
   optional HeapprofdConfig heapprofd_config = 105 [lazy = true];
+  optional JavaHprofConfig java_hprof_config = 110 [lazy = true];
   optional AndroidPowerConfig android_power_config = 106 [lazy = true];
   optional AndroidLogConfig android_log_config = 107 [lazy = true];
   optional GpuCounterConfig gpu_counter_config = 108 [lazy = true];
@@ -614,9 +618,6 @@ message DataSourceConfig {
 
 // Begin of protos/perfetto/config/ftrace/ftrace_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 message FtraceConfig {
   repeated string ftrace_events = 1;
   repeated string atrace_categories = 2;
@@ -624,14 +625,25 @@ message FtraceConfig {
   // *Per-CPU* buffer size.
   optional uint32 buffer_size_kb = 10;
   optional uint32 drain_period_ms = 11;
+
+  // Configuration for compact encoding of scheduler events. If enabled, this
+  // records a small subset of fields of selected scheduling events, and
+  // encodes them in a denser proto format than normal. This is useful due to
+  // scheduling events being abundant in a typical trace, and dominating its
+  // size via a combination of unnecessary data being retained, and proto
+  // format overheads.
+  // TODO(rsavitski): unstable, do not use.
+  message CompactSchedConfig {
+    // If true, and sched_switch ftrace event is enabled, record those events
+    // in the compact format.
+    optional bool enabled = 1;
+  }
+  optional CompactSchedConfig compact_sched = 12;
 }
 
 // End of protos/perfetto/config/ftrace/ftrace_config.proto
 
 // Begin of protos/perfetto/config/inode_file/inode_file_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
 
 message InodeFileConfig {
   message MountPointMappingEntry {
@@ -683,9 +695,6 @@ message AndroidPowerConfig {
 
 // Begin of protos/perfetto/config/process_stats/process_stats_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 message ProcessStatsConfig {
   enum Quirks {
     QUIRKS_UNSPECIFIED = 0;
@@ -730,9 +739,6 @@ message ProcessStatsConfig {
 
 // Begin of protos/perfetto/config/sys_stats/sys_stats_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 // This file defines the configuration for the Linux /proc poller data source,
 // which injects counters in the trace.
 // Counters that are needed in the trace must be explicitly listed in the
@@ -775,9 +781,6 @@ message SysStatsConfig {
 // End of protos/perfetto/config/sys_stats/sys_stats_config.proto
 
 // Begin of protos/perfetto/config/test_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
 
 // The configuration for a fake producer used in tests.
 message TestConfig {
@@ -826,9 +829,6 @@ message TestConfig {
 // End of protos/perfetto/config/test_config.proto
 
 // Begin of protos/perfetto/config/trace_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos
-// to reflect changes in the corresponding C++ headers.
 
 // The overall config that is used when starting a new tracing session through
 // ProducerPort::StartTracing().
@@ -1213,10 +1213,37 @@ message HeapprofdConfig {
 
 // End of protos/perfetto/config/profiling/heapprofd_config.proto
 
-// Begin of protos/perfetto/config/gpu/gpu_counter_config.proto
+// Begin of protos/perfetto/config/profiling/java_hprof_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
+// Configuration for go/heapprofd.
+message JavaHprofConfig {
+  // If dump_interval_ms != 0, the following configuration is used.
+  message ContinuousDumpConfig {
+    // ms to wait before first continuous dump.
+    // A dump is always created at the beginning of the trace.
+    optional uint32 dump_phase_ms = 1;
+    // ms to wait between following dumps.
+    optional uint32 dump_interval_ms = 2;
+  };
+
+  // This input is normalized in the following way: if it contains slashes,
+  // everything up to the last slash is discarded. If it contains "@",
+  // everything after the first @ is discared.
+  // E.g. /system/bin/surfaceflinger@1.0 normalizes to surfaceflinger.
+  // This transformation is also applied to the processes' command lines when
+  // matching.
+  repeated string process_cmdline = 1;
+
+  // For watermark based triggering or local debugging.
+  repeated uint64 pid = 2;
+
+  // Dump at a predefined interval.
+  optional ContinuousDumpConfig continuous_dump_config = 3;
+}
+
+// End of protos/perfetto/config/profiling/java_hprof_config.proto
+
+// Begin of protos/perfetto/config/gpu/gpu_counter_config.proto
 
 message GpuCounterConfig {
   // Desired sampling interval for counters.
@@ -1225,6 +1252,12 @@ message GpuCounterConfig {
   // List of counters to be sampled. Counter IDs correspond to the ones
   // described in GpuCounterSpec in the data source descriptor.
   repeated uint32 counter_ids = 2;
+
+  // Sample counters by instrumenting command buffers.
+  optional bool instrumented_sampling = 3;
+
+  // Fix gpu clock rate during trace session.
+  optional bool fix_gpu_clock = 4;
 }
 
 // End of protos/perfetto/config/gpu/gpu_counter_config.proto

@@ -47,6 +47,8 @@ struct RTC_EXPORT EchoCanceller3Config {
       int converged;
     } delay_selection_thresholds = {5, 20};
     bool use_external_delay_estimator = false;
+    bool downmix_before_delay_estimation = true;
+    bool log_warning_on_delay_changes = false;
   } delay;
 
   struct Filter {
@@ -85,6 +87,8 @@ struct RTC_EXPORT EchoCanceller3Config {
     float max_h = 1.5f;
     bool onset_detection = true;
     size_t num_sections = 1;
+    bool clamp_quality_estimate_to_zero = true;
+    bool clamp_quality_estimate_to_one = true;
   } erle;
 
   struct EpStrength {

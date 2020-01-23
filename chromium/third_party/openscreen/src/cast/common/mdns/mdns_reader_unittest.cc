@@ -12,7 +12,11 @@
 namespace cast {
 namespace mdns {
 
+using openscreen::IPAddress;
+
 namespace {
+
+constexpr std::chrono::seconds kTtl{120};
 
 template <class T>
 void TestReadEntrySucceeds(const uint8_t* data,
@@ -377,7 +381,7 @@ TEST(MdnsReaderTest, ReadMdnsRecord_ARecordRdata) {
   // clang-format on
   TestReadEntrySucceeds(kTestRecord, sizeof(kTestRecord),
                         MdnsRecord(DomainName{"testing", "local"}, DnsType::kA,
-                                   DnsClass::kIN, RecordType::kUnique, 120,
+                                   DnsClass::kIN, RecordType::kUnique, kTtl,
                                    ARecordRdata(IPAddress{8, 8, 8, 8})));
 }
 
@@ -401,7 +405,7 @@ TEST(MdnsReaderTest, ReadMdnsRecord_UnknownRecordType) {
       kTestRecord, sizeof(kTestRecord),
       MdnsRecord(DomainName{"testing", "local"},
                  static_cast<DnsType>(5) /*CNAME class*/, DnsClass::kIN,
-                 RecordType::kUnique, 120,
+                 RecordType::kUnique, kTtl,
                  RawRecordRdata(kCnameRdata, sizeof(kCnameRdata))));
 }
 
@@ -435,12 +439,12 @@ TEST(MdnsReaderTest, ReadMdnsRecord_CompressedNames) {
   EXPECT_TRUE(reader.Read(&record));
   EXPECT_EQ(record,
             MdnsRecord(DomainName{"testing", "local"}, DnsType::kPTR,
-                       DnsClass::kIN, RecordType::kShared, 120,
+                       DnsClass::kIN, RecordType::kShared, kTtl,
                        PtrRecordRdata(DomainName{"ptr", "testing", "local"})));
   EXPECT_TRUE(reader.Read(&record));
   EXPECT_EQ(record, MdnsRecord(DomainName{"one", "two", "testing", "local"},
                                DnsType::kA, DnsClass::kIN, RecordType::kUnique,
-                               120, ARecordRdata(IPAddress{8, 8, 8, 8})));
+                               kTtl, ARecordRdata(IPAddress{8, 8, 8, 8})));
 }
 
 TEST(MdnsReaderTest, ReadMdnsRecord_MissingRdata) {
@@ -562,10 +566,10 @@ TEST(MdnsReaderTest, ReadMdnsMessage) {
   // clang-format on
 
   MdnsRecord record1(DomainName{"record1"}, DnsType::kPTR, DnsClass::kIN,
-                     RecordType::kShared, 120,
+                     RecordType::kShared, kTtl,
                      PtrRecordRdata(DomainName{"testing", "local"}));
   MdnsRecord record2(DomainName{"record2"}, DnsType::kA, DnsClass::kIN,
-                     RecordType::kShared, 120,
+                     RecordType::kShared, kTtl,
                      ARecordRdata(IPAddress{172, 0, 0, 1}));
   MdnsMessage message(1, MessageType::Response, std::vector<MdnsQuestion>{},
                       std::vector<MdnsRecord>{record1},

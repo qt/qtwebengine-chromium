@@ -68,7 +68,6 @@ rtc_source_set("video_test_common") {
     "../rtc_base:rtc_task_queue",
     "../rtc_base/task_utils:repeating_task",
     "../system_wrappers",
-    "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
@@ -84,6 +83,7 @@ if (!build_with_chromium) {
       deps = [
         ":video_test_common",
         "../api:libjingle_peerconnection_api",
+        "../api:media_stream_interface",
         "../api:scoped_refptr",
         "../modules/video_capture:video_capture_module",
         "../rtc_base",
@@ -143,7 +143,6 @@ rtc_source_set("rtp_test_utils") {
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
     "../rtc_base/system:arch",
-    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 
@@ -170,6 +169,7 @@ rtc_source_set("perf_test") {
     "../api:array_view",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+    "../rtc_base:rtc_numerics",
   ]
 }
 
@@ -253,7 +253,9 @@ if (rtc_include_tests) {
 
     deps = [
       ":field_trial",
+      ":fileutils_override_api",
       ":perf_test",
+      ":resources_dir_flag",
       ":test_support",
       "../rtc_base",
       "../rtc_base:checks",
@@ -262,13 +264,6 @@ if (rtc_include_tests) {
       "//testing/gtest",
       "//third_party/abseil-cpp/absl/flags:flag",
       "//third_party/abseil-cpp/absl/flags:parse",
-      "//third_party/abseil-cpp/absl/memory",
-
-      # TODO(bugs.webrtc.org/9792): This is needed for downstream projects on
-      # Android, where it's replaced by an internal version of fileutils that
-      # has a certain flag. Remove this once the internal fileutils has been
-      # eliminated.
-      "../test:fileutils",
     ]
   }
 
@@ -313,7 +308,6 @@ if (rtc_include_tests) {
       "../rtc_base:checks",
       "../rtc_base:rtc_base_approved",
       "../system_wrappers",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/libyuv",
     ]
 
@@ -383,6 +377,7 @@ if (rtc_include_tests) {
       "../api:create_simulcast_test_fixture_api",
       "../api:scoped_refptr",
       "../api:simulcast_test_fixture_api",
+      "../api/task_queue:task_queue_test",
       "../api/test/video:function_video_factory",
       "../api/video:builtin_video_bitrate_allocator_factory",
       "../api/video:video_frame",
@@ -402,7 +397,6 @@ if (rtc_include_tests) {
       "//testing/gmock",
       "//testing/gtest",
       "//third_party/abseil-cpp/absl/flags:flag",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/strings",
     ]
     sources = [
@@ -499,6 +493,18 @@ rtc_source_set("fileutils") {
   if (is_win) {
     deps += [ "../rtc_base" ]
   }
+}
+
+rtc_source_set("resources_dir_flag") {
+  testonly = true
+  visibility = [ "*" ]
+  sources = [
+    "testsupport/resources_dir_flag.cc",
+    "testsupport/resources_dir_flag.h",
+  ]
+  deps = [
+    "//third_party/abseil-cpp/absl/flags:flag",
+  ]
 }
 
 # We separate header into own target to make it possible for downstream
@@ -604,11 +610,14 @@ rtc_source_set("direct_transport") {
     ":rtp_test_utils",
     "../api:simulated_network_api",
     "../api:transport_api",
+    "../api/task_queue",
+    "../api/units:time_delta",
     "../call:call_interfaces",
     "../call:simulated_packet_receiver",
     "../modules/rtp_rtcp",
     "../rtc_base:rtc_base_approved",
     "../rtc_base/synchronization:sequence_checker",
+    "../rtc_base/task_utils:repeating_task",
     "../system_wrappers",
     "//third_party/abseil-cpp/absl/memory",
   ]
@@ -625,10 +634,12 @@ rtc_source_set("single_threaded_task_queue") {
     "single_threaded_task_queue.h",
   ]
   deps = [
+    "../api/task_queue",
     "../rtc_base:checks",
     "../rtc_base:deprecation",
     "../rtc_base:rtc_base_approved",
-    "//third_party/abseil-cpp/absl/memory",
+    "../rtc_base:task_queue_for_test",
+    "../rtc_base/task_utils:to_queued_task",
   ]
 }
 
@@ -670,7 +681,6 @@ rtc_source_set("fake_video_codecs") {
     "../rtc_base:rtc_task_queue",
     "../rtc_base/synchronization:sequence_checker",
     "../system_wrappers",
-    "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
@@ -788,7 +798,6 @@ rtc_source_set("test_common") {
     "../system_wrappers:field_trial",
     "../video",
     "//testing/gtest",
-    "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
   if (!is_android && !build_with_chromium) {
@@ -918,7 +927,6 @@ rtc_source_set("copy_to_file_audio_capturer") {
     "../common_audio",
     "../modules/audio_device:audio_device_impl",
     "../rtc_base:rtc_base_approved",
-    "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
 }
@@ -933,7 +941,6 @@ rtc_source_set("copy_to_file_audio_capturer_unittest") {
     ":fileutils",
     ":test_support",
     "../modules/audio_device:audio_device_impl",
-    "//third_party/abseil-cpp/absl/memory",
   ]
 }
 

@@ -16,7 +16,7 @@
 
 namespace dawn {
 
-    {% for type in by_category["enum"] + by_category["bitmask"] %}
+    {% for type in by_category["enum"] %}
         {% set CppType = as_cppType(type.name) %}
         {% set CType = as_cType(type.name) %}
 
@@ -29,6 +29,18 @@ namespace dawn {
 
     {% endfor %}
 
+    {% for type in by_category["bitmask"] %}
+        {% set CppType = as_cppType(type.name) %}
+        {% set CType = as_cType(type.name) + "Flags" %}
+
+        static_assert(sizeof({{CppType}}) == sizeof({{CType}}), "sizeof mismatch for {{CppType}}");
+        static_assert(alignof({{CppType}}) == alignof({{CType}}), "alignof mismatch for {{CppType}}");
+
+        {% for value in type.values %}
+            static_assert(static_cast<uint32_t>({{CppType}}::{{as_cppEnum(value.name)}}) == {{as_cEnum(type.name, value.name)}}, "value mismatch for {{CppType}}::{{as_cppEnum(value.name)}}");
+        {% endfor %}
+
+    {% endfor %}
 
     {% for type in by_category["structure"] %}
         {% set CppType = as_cppType(type.name) %}
@@ -112,5 +124,9 @@ namespace dawn {
         }
 
     {% endfor %}
+
+    Proc GetProcAddress(Device const& device, const char* procName) {
+        return reinterpret_cast<Proc>(DawnGetProcAddress(device.Get(), procName));
+    }
 
 }

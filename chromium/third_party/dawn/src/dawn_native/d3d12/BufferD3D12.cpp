@@ -17,8 +17,9 @@
 #include "common/Assert.h"
 #include "common/Constants.h"
 #include "common/Math.h"
+#include "dawn_native/d3d12/CommandRecordingContext.h"
+#include "dawn_native/d3d12/D3D12Error.h"
 #include "dawn_native/d3d12/DeviceD3D12.h"
-#include "dawn_native/d3d12/ResourceHeapD3D12.h"
 
 namespace dawn_native { namespace d3d12 {
 
@@ -125,13 +126,14 @@ namespace dawn_native { namespace d3d12 {
     }
 
     ComPtr<ID3D12Resource> Buffer::GetD3D12Resource() const {
-        return ToBackend(mResourceAllocation.GetResourceHeap())->GetD3D12Resource();
+        return mResourceAllocation.GetD3D12Resource();
     }
 
     // When true is returned, a D3D12_RESOURCE_BARRIER has been created and must be used in a
     // ResourceBarrier call. Failing to do so will cause the tracked state to become invalid and can
     // cause subsequent errors.
-    bool Buffer::TransitionUsageAndGetResourceBarrier(D3D12_RESOURCE_BARRIER* barrier,
+    bool Buffer::TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
+                                                      D3D12_RESOURCE_BARRIER* barrier,
                                                       dawn::BufferUsage newUsage) {
         // Resources in upload and readback heaps must be kept in the COPY_SOURCE/DEST state
         if (mFixedResourceState) {
@@ -188,17 +190,17 @@ namespace dawn_native { namespace d3d12 {
         return true;
     }
 
-    void Buffer::TransitionUsageNow(ComPtr<ID3D12GraphicsCommandList> commandList,
+    void Buffer::TransitionUsageNow(CommandRecordingContext* commandContext,
                                     dawn::BufferUsage usage) {
         D3D12_RESOURCE_BARRIER barrier;
 
-        if (TransitionUsageAndGetResourceBarrier(&barrier, usage)) {
-            commandList->ResourceBarrier(1, &barrier);
+        if (TransitionUsageAndGetResourceBarrier(commandContext, &barrier, usage)) {
+            commandContext->GetCommandList()->ResourceBarrier(1, &barrier);
         }
     }
 
     D3D12_GPU_VIRTUAL_ADDRESS Buffer::GetVA() const {
-        return ToBackend(mResourceAllocation.GetResourceHeap())->GetGPUPointer();
+        return mResourceAllocation.GetGPUPointer();
     }
 
     void Buffer::OnMapCommandSerialFinished(uint32_t mapSerial, void* data, bool isWrite) {
@@ -216,8 +218,9 @@ namespace dawn_native { namespace d3d12 {
 
     MaybeError Buffer::MapAtCreationImpl(uint8_t** mappedPointer) {
         mWrittenMappedRange = {0, GetSize()};
-        ASSERT_SUCCESS(GetD3D12Resource()->Map(0, &mWrittenMappedRange,
-                                               reinterpret_cast<void**>(mappedPointer)));
+        DAWN_TRY(CheckHRESULT(GetD3D12Resource()->Map(0, &mWrittenMappedRange,
+                                                      reinterpret_cast<void**>(mappedPointer)),
+                              "D3D12 map at creation"));
         return {};
     }
 
@@ -225,7 +228,9 @@ namespace dawn_native { namespace d3d12 {
         mWrittenMappedRange = {};
         D3D12_RANGE readRange = {0, GetSize()};
         char* data = nullptr;
-        ASSERT_SUCCESS(GetD3D12Resource()->Map(0, &readRange, reinterpret_cast<void**>(&data)));
+        DAWN_TRY(
+            CheckHRESULT(GetD3D12Resource()->Map(0, &readRange, reinterpret_cast<void**>(&data)),
+                         "D3D12 map read async"));
         // There is no need to transition the resource to a new state: D3D12 seems to make the GPU
         // writes available when the fence is passed.
         MapRequestTracker* tracker = ToBackend(GetDevice())->GetMapRequestTracker();
@@ -236,8 +241,9 @@ namespace dawn_native { namespace d3d12 {
     MaybeError Buffer::MapWriteAsyncImpl(uint32_t serial) {
         mWrittenMappedRange = {0, GetSize()};
         char* data = nullptr;
-        ASSERT_SUCCESS(
-            GetD3D12Resource()->Map(0, &mWrittenMappedRange, reinterpret_cast<void**>(&data)));
+        DAWN_TRY(CheckHRESULT(
+            GetD3D12Resource()->Map(0, &mWrittenMappedRange, reinterpret_cast<void**>(&data)),
+            "D3D12 map write async"));
         // There is no need to transition the resource to a new state: D3D12 seems to make the CPU
         // writes available on queue submission.
         MapRequestTracker* tracker = ToBackend(GetDevice())->GetMapRequestTracker();

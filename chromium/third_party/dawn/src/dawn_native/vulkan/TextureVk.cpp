@@ -26,6 +26,7 @@
 #include "dawn_native/vulkan/FencedDeleter.h"
 #include "dawn_native/vulkan/StagingBufferVk.h"
 #include "dawn_native/vulkan/UtilsVulkan.h"
+#include "dawn_native/vulkan/VulkanError.h"
 
 namespace dawn_native { namespace vulkan {
 
@@ -395,8 +396,31 @@ namespace dawn_native { namespace vulkan {
         return {};
     }
 
-    Texture::Texture(Device* device, const TextureDescriptor* descriptor)
-        : TextureBase(device, descriptor, TextureState::OwnedInternal) {
+    // static
+    ResultOrError<Texture*> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
+        std::unique_ptr<Texture> texture =
+            std::make_unique<Texture>(device, descriptor, TextureState::OwnedInternal);
+        DAWN_TRY(texture->InitializeAsInternalTexture());
+        return texture.release();
+    }
+
+    // static
+    ResultOrError<Texture*> Texture::CreateFromExternal(Device* device,
+                                                        const ExternalImageDescriptor* descriptor,
+                                                        const TextureDescriptor* textureDescriptor,
+                                                        VkSemaphore signalSemaphore,
+                                                        VkDeviceMemory externalMemoryAllocation,
+                                                        std::vector<VkSemaphore> waitSemaphores) {
+        std::unique_ptr<Texture> texture =
+            std::make_unique<Texture>(device, textureDescriptor, TextureState::OwnedInternal);
+        DAWN_TRY(texture->InitializeFromExternal(
+            descriptor, signalSemaphore, externalMemoryAllocation, std::move((waitSemaphores))));
+        return texture.release();
+    }
+
+    MaybeError Texture::InitializeAsInternalTexture() {
+        Device* device = ToBackend(GetDevice());
+
         // Create the Vulkan image "container". We don't need to check that the format supports the
         // combination of sample, usage etc. because validation should have been done in the Dawn
         // frontend already based on the minimum supported formats in the Vulkan spec
@@ -428,29 +452,30 @@ namespace dawn_native { namespace vulkan {
         // also required for the implementation of robust resource initialization.
         createInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-        if (device->fn.CreateImage(device->GetVkDevice(), &createInfo, nullptr, &mHandle) !=
-            VK_SUCCESS) {
-            ASSERT(false);
-        }
+        DAWN_TRY(CheckVkSuccess(
+            device->fn.CreateImage(device->GetVkDevice(), &createInfo, nullptr, &mHandle),
+            "CreateImage"));
 
         // Create the image memory and associate it with the container
         VkMemoryRequirements requirements;
         device->fn.GetImageMemoryRequirements(device->GetVkDevice(), mHandle, &requirements);
 
         if (!device->GetMemoryAllocator()->Allocate(requirements, false, &mMemoryAllocation)) {
-            ASSERT(false);
+            return DAWN_OUT_OF_MEMORY_ERROR("Failed to allocate texture");
         }
 
-        if (device->fn.BindImageMemory(device->GetVkDevice(), mHandle,
-                                       mMemoryAllocation.GetMemory(),
-                                       mMemoryAllocation.GetMemoryOffset()) != VK_SUCCESS) {
-            ASSERT(false);
-        }
+        DAWN_TRY(CheckVkSuccess(device->fn.BindImageMemory(device->GetVkDevice(), mHandle,
+                                                           mMemoryAllocation.GetMemory(),
+                                                           mMemoryAllocation.GetMemoryOffset()),
+                                "BindImageMemory"));
+
         if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-            device->ConsumedError(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
-                                               0, GetNumMipLevels(), 0, GetArrayLayers(),
-                                               TextureBase::ClearValue::NonZero));
+            DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(), 0,
+                                  GetNumMipLevels(), 0, GetArrayLayers(),
+                                  TextureBase::ClearValue::NonZero));
         }
+
+        return {};
     }
 
     // With this constructor, the lifetime of the resource is externally managed.
@@ -458,18 +483,14 @@ namespace dawn_native { namespace vulkan {
         : TextureBase(device, descriptor, TextureState::OwnedExternal), mHandle(nativeImage) {
     }
 
-    // Internally managed, but imported from file descriptor
-    Texture::Texture(Device* device,
-                     const ExternalImageDescriptor* descriptor,
-                     const TextureDescriptor* textureDescriptor,
-                     VkSemaphore signalSemaphore,
-                     VkDeviceMemory externalMemoryAllocation,
-                     std::vector<VkSemaphore> waitSemaphores)
-        : TextureBase(device, textureDescriptor, TextureState::OwnedInternal),
-          mExternalAllocation(externalMemoryAllocation),
-          mExternalState(ExternalState::PendingAcquire),
-          mSignalSemaphore(signalSemaphore),
-          mWaitRequirements(std::move(waitSemaphores)) {
+    // Internally managed, but imported from external handle
+    MaybeError Texture::InitializeFromExternal(const ExternalImageDescriptor* descriptor,
+                                               VkSemaphore signalSemaphore,
+                                               VkDeviceMemory externalMemoryAllocation,
+                                               std::vector<VkSemaphore> waitSemaphores) {
+        mExternalState = ExternalState::PendingAcquire;
+        Device* device = ToBackend(GetDevice());
+
         VkImageCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         createInfo.pNext = nullptr;
@@ -494,10 +515,9 @@ namespace dawn_native { namespace vulkan {
         // also required for the implementation of robust resource initialization.
         createInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-        if (device->fn.CreateImage(device->GetVkDevice(), &createInfo, nullptr, &mHandle) !=
-            VK_SUCCESS) {
-            ASSERT(false);
-        }
+        DAWN_TRY(CheckVkSuccess(
+            device->fn.CreateImage(device->GetVkDevice(), &createInfo, nullptr, &mHandle),
+            "CreateImage"));
 
         // Create the image memory and associate it with the container
         VkMemoryRequirements requirements;
@@ -505,15 +525,21 @@ namespace dawn_native { namespace vulkan {
 
         ASSERT(requirements.size <= descriptor->allocationSize);
 
-        if (device->fn.BindImageMemory(device->GetVkDevice(), mHandle, mExternalAllocation, 0) !=
-            VK_SUCCESS) {
-            ASSERT(false);
-        }
+        DAWN_TRY(CheckVkSuccess(
+            device->fn.BindImageMemory(device->GetVkDevice(), mHandle, externalMemoryAllocation, 0),
+            "BindImageMemory (external)"));
 
         // Don't clear imported texture if already cleared
         if (descriptor->isCleared) {
-            SetIsSubresourceContentInitialized(0, 1, 0, 1);
+            SetIsSubresourceContentInitialized(true, 0, 1, 0, 1);
         }
+
+        // Success, acquire all the external objects.
+        mExternalAllocation = externalMemoryAllocation;
+        mSignalSemaphore = signalSemaphore;
+        mWaitRequirements = std::move(waitSemaphores);
+
+        return {};
     }
 
     MaybeError Texture::SignalAndDestroy(VkSemaphore* outSignalSemaphore) {
@@ -536,7 +562,7 @@ namespace dawn_native { namespace vulkan {
 
         // Queue submit to signal we are done with the texture
         device->GetPendingRecordingContext()->signalSemaphores.push_back(mSignalSemaphore);
-        device->SubmitPendingCommands();
+        DAWN_TRY(device->SubmitPendingCommands());
 
         // Write out the signal semaphore
         *outSignalSemaphore = mSignalSemaphore;
@@ -670,8 +696,9 @@ namespace dawn_native { namespace vulkan {
                                                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                                      clearDepthStencilValue, 1, &range);
             } else {
+                float fClearColor = static_cast<float>(clearColor);
                 VkClearColorValue clearColorValue = {
-                    {clearColor, clearColor, clearColor, clearColor}};
+                    {fClearColor, fClearColor, fClearColor, fClearColor}};
                 device->fn.CmdClearColorImage(recordingContext->commandBuffer, GetHandle(),
                                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                               &clearColorValue, 1, &range);
@@ -687,10 +714,10 @@ namespace dawn_native { namespace vulkan {
                 return DAWN_OUT_OF_MEMORY_ERROR("Unable to allocate buffer.");
             }
             uint32_t bufferSize = static_cast<uint32_t>(bufferSize64);
-            DynamicUploader* uploader = nullptr;
-            DAWN_TRY_ASSIGN(uploader, device->GetDynamicUploader());
+            DynamicUploader* uploader = device->GetDynamicUploader();
             UploadHandle uploadHandle;
-            DAWN_TRY_ASSIGN(uploadHandle, uploader->Allocate(bufferSize));
+            DAWN_TRY_ASSIGN(uploadHandle,
+                            uploader->Allocate(bufferSize, device->GetPendingCommandSerial()));
             std::fill(reinterpret_cast<uint32_t*>(uploadHandle.mappedBuffer),
                       reinterpret_cast<uint32_t*>(uploadHandle.mappedBuffer + bufferSize),
                       clearColor);
@@ -701,25 +728,30 @@ namespace dawn_native { namespace vulkan {
             bufferCopy.offset = uploadHandle.startOffset;
             bufferCopy.rowPitch = rowPitch;
 
-            dawn_native::TextureCopy textureCopy;
-            textureCopy.texture = this;
-            textureCopy.origin = {0, 0, 0};
-            textureCopy.mipLevel = baseMipLevel;
-            textureCopy.arrayLayer = baseArrayLayer;
-
             Extent3D copySize = {GetSize().width, GetSize().height, 1};
 
-            VkBufferImageCopy region =
-                ComputeBufferImageCopyRegion(bufferCopy, textureCopy, copySize);
+            for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
+                for (uint32_t layer = baseArrayLayer; layer < baseArrayLayer + layerCount;
+                     ++layer) {
+                    dawn_native::TextureCopy textureCopy;
+                    textureCopy.texture = this;
+                    textureCopy.origin = {0, 0, 0};
+                    textureCopy.mipLevel = level;
+                    textureCopy.arrayLayer = layer;
 
-            // copy the clear buffer to the texture image
-            device->fn.CmdCopyBufferToImage(
-                recordingContext->commandBuffer,
-                ToBackend(uploadHandle.stagingBuffer)->GetBufferHandle(), GetHandle(),
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+                    VkBufferImageCopy region =
+                        ComputeBufferImageCopyRegion(bufferCopy, textureCopy, copySize);
+
+                    // copy the clear buffer to the texture image
+                    device->fn.CmdCopyBufferToImage(
+                        recordingContext->commandBuffer,
+                        ToBackend(uploadHandle.stagingBuffer)->GetBufferHandle(), GetHandle(),
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+                }
+            }
         }
         if (clearValue == TextureBase::ClearValue::Zero) {
-            SetIsSubresourceContentInitialized(baseMipLevel, levelCount, baseArrayLayer,
+            SetIsSubresourceContentInitialized(true, baseMipLevel, levelCount, baseArrayLayer,
                                                layerCount);
             device->IncrementLazyClearCountForTesting();
         }
@@ -750,10 +782,16 @@ namespace dawn_native { namespace vulkan {
         }
     }
 
-    // TODO(jiawei.shao@intel.com): create texture view by TextureViewDescriptor
-    TextureView::TextureView(TextureBase* texture, const TextureViewDescriptor* descriptor)
-        : TextureViewBase(texture, descriptor) {
-        Device* device = ToBackend(texture->GetDevice());
+    // static
+    ResultOrError<TextureView*> TextureView::Create(TextureBase* texture,
+                                                    const TextureViewDescriptor* descriptor) {
+        std::unique_ptr<TextureView> view = std::make_unique<TextureView>(texture, descriptor);
+        DAWN_TRY(view->Initialize(descriptor));
+        return view.release();
+    }
+
+    MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
+        Device* device = ToBackend(GetTexture()->GetDevice());
 
         VkImageViewCreateInfo createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -770,10 +808,9 @@ namespace dawn_native { namespace vulkan {
         createInfo.subresourceRange.baseArrayLayer = descriptor->baseArrayLayer;
         createInfo.subresourceRange.layerCount = descriptor->arrayLayerCount;
 
-        if (device->fn.CreateImageView(device->GetVkDevice(), &createInfo, nullptr, &mHandle) !=
-            VK_SUCCESS) {
-            ASSERT(false);
-        }
+        return CheckVkSuccess(
+            device->fn.CreateImageView(device->GetVkDevice(), &createInfo, nullptr, &mHandle),
+            "CreateImageView");
     }
 
     TextureView::~TextureView() {

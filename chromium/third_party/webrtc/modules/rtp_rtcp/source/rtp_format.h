@@ -42,7 +42,6 @@ class RtpPacketizer {
       PayloadSizeLimits limits,
       // Codec-specific details.
       const RTPVideoHeader& rtp_video_header,
-      VideoFrameType frame_type,
       const RTPFragmentationHeader* fragmentation);
 
   virtual ~RtpPacketizer() = default;
@@ -70,12 +69,6 @@ class RtpDepacketizer {
   struct ParsedPayload {
     RTPVideoHeader& video_header() { return video; }
     const RTPVideoHeader& video_header() const { return video; }
-
-    // TODO(bugs.webrtc.org/10397): These are temporary accessors, to enable
-    // move of the frame_type member to inside RTPVideoHeader, without breaking
-    // downstream code.
-    VideoFrameType FrameType() const { return video_header().frame_type; }
-    void SetFrameType(VideoFrameType type) { video_header().frame_type = type; }
 
     RTPVideoHeader video;
 

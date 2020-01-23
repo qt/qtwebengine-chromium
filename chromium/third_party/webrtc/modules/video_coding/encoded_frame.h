@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "api/video/encoded_image.h"
-#include "modules/include/module_common_types.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_coding_defines.h"
 
@@ -111,16 +111,6 @@ class VCMEncodedFrame : protected EncodedImage {
     _codecSpecificInfo = *codec_specific;
   }
 
-  /**
-   * Verifies that current allocated buffer size is larger than or equal to the
-   * input size.
-   * If the current buffer size is smaller, a new allocation is made and the old
-   * buffer data
-   * is copied to the new buffer.
-   * Buffer size is updated to minimumSize.
-   */
-  void VerifyAndAllocate(size_t minimumSize);
-
  protected:
   void Reset();
 
@@ -131,11 +121,6 @@ class VCMEncodedFrame : protected EncodedImage {
   bool _missingFrame;
   CodecSpecificInfo _codecSpecificInfo;
   webrtc::VideoCodecType _codec;
-
-  // Video rotation is only set along with the last packet for each frame
-  // (same as marker bit). This |_rotation_set| is only for debugging purpose
-  // to ensure we don't set it twice for a frame.
-  bool _rotation_set;
 };
 
 }  // namespace webrtc

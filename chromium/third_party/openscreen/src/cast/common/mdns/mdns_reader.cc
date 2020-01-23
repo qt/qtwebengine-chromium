@@ -4,7 +4,6 @@
 
 #include "cast/common/mdns/mdns_reader.h"
 
-#include "cast/common/mdns/mdns_constants.h"
 #include "platform/api/logging.h"
 
 namespace cast {
@@ -202,8 +201,8 @@ bool MdnsReader::Read(MdnsRecord* out) {
   if (Read(&name) && Read(&type) && Read(&rrclass) && Read(&ttl) &&
       Read(static_cast<DnsType>(type), &rdata)) {
     *out = MdnsRecord(std::move(name), static_cast<DnsType>(type),
-                      GetDnsClass(rrclass), GetRecordType(rrclass), ttl,
-                      std::move(rdata));
+                      GetDnsClass(rrclass), GetRecordType(rrclass),
+                      std::chrono::seconds(ttl), std::move(rdata));
     cursor.Commit();
     return true;
   }

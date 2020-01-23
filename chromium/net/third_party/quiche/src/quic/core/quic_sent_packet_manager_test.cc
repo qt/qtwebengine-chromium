@@ -5,11 +5,11 @@
 #include "net/third_party/quiche/src/quic/core/quic_sent_packet_manager.h"
 
 #include <memory>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/quic_pending_retransmission.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_config_peer.h"
@@ -379,7 +379,10 @@ class QuicSentPacketManagerTest : public QuicTestWithParam<bool> {
   StrictMock<MockSessionNotifier> notifier_;
 };
 
-INSTANTIATE_TEST_SUITE_P(Tests, QuicSentPacketManagerTest, testing::Bool());
+INSTANTIATE_TEST_SUITE_P(Tests,
+                         QuicSentPacketManagerTest,
+                         ::testing::Bool(),
+                         ::testing::PrintToStringParamName());
 
 TEST_P(QuicSentPacketManagerTest, IsUnacked) {
   VerifyUnackedPackets(nullptr, 0);
@@ -734,7 +737,7 @@ TEST_P(QuicSentPacketManagerTest, RetransmitTwiceThenAckFirst) {
 }
 
 TEST_P(QuicSentPacketManagerTest, AckOriginalTransmission) {
-  auto loss_algorithm = QuicMakeUnique<MockLossAlgorithm>();
+  auto loss_algorithm = std::make_unique<MockLossAlgorithm>();
   QuicSentPacketManagerPeer::SetLossAlgorithm(&manager_, loss_algorithm.get());
 
   SendDataPacket(1);
@@ -774,8 +777,15 @@ TEST_P(QuicSentPacketManagerTest, AckOriginalTransmission) {
     uint64_t acked[] = {3};
     ExpectAcksAndLosses(false, acked, QUIC_ARRAYSIZE(acked), nullptr, 0);
     EXPECT_CALL(*loss_algorithm, DetectLosses(_, _, _, _, _, _));
-    EXPECT_CALL(*loss_algorithm,
-                SpuriousRetransmitDetected(_, _, _, QuicPacketNumber(5)));
+    if (GetQuicReloadableFlag(quic_detect_spurious_loss) &&
+        manager_.session_decides_what_to_write()) {
+      EXPECT_CALL(*loss_algorithm,
+                  SpuriousLossDetected(_, _, _, QuicPacketNumber(3),
+                                       QuicPacketNumber(4)));
+    } else {
+      EXPECT_CALL(*loss_algorithm,
+                  SpuriousRetransmitDetected(_, _, _, QuicPacketNumber(5)));
+    }
     manager_.OnAckFrameStart(QuicPacketNumber(4), QuicTime::Delta::Infinite(),
                              clock_.Now());
     manager_.OnAckRange(QuicPacketNumber(3), QuicPacketNumber(5));
@@ -1125,9 +1135,7 @@ TEST_P(QuicSentPacketManagerTest, CryptoHandshakeTimeout) {
     EXPECT_FALSE(manager_.HasPendingRetransmissions());
   }
   // Expect all 4 handshake packets to be in flight and 3 data packets.
-  if (GetQuicReloadableFlag(quic_loss_removes_from_inflight)) {
-    EXPECT_EQ(7 * kDefaultLength, manager_.GetBytesInFlight());
-  }
+  EXPECT_EQ(7 * kDefaultLength, manager_.GetBytesInFlight());
   EXPECT_TRUE(manager_.HasUnackedCryptoPackets());
 
   // The second retransmits 2 packets.
@@ -1144,25 +1152,18 @@ TEST_P(QuicSentPacketManagerTest, CryptoHandshakeTimeout) {
     RetransmitNextPacket(9);
     EXPECT_FALSE(manager_.HasPendingRetransmissions());
   }
-  if (GetQuicReloadableFlag(quic_loss_removes_from_inflight)) {
-    EXPECT_EQ(9 * kDefaultLength, manager_.GetBytesInFlight());
-  }
+  EXPECT_EQ(9 * kDefaultLength, manager_.GetBytesInFlight());
   EXPECT_TRUE(manager_.HasUnackedCryptoPackets());
 
   // Now ack the two crypto packets and the speculatively encrypted request,
   // and ensure the first four crypto packets get abandoned, but not lost.
-  if (GetQuicReloadableFlag(quic_loss_removes_from_inflight)) {
-    // Crypto packets remain in flight, so any that aren't acked will be lost.
-    uint64_t acked[] = {3, 4, 5, 8, 9};
-    uint64_t lost[] = {1, 2, 6};
-    ExpectAcksAndLosses(true, acked, QUIC_ARRAYSIZE(acked), lost,
-                        QUIC_ARRAYSIZE(lost));
-    if (manager_.session_decides_what_to_write()) {
-      EXPECT_CALL(notifier_, OnFrameLost(_)).Times(3);
-    }
-  } else {
-    uint64_t acked[] = {3, 4, 5, 8, 9};
-    ExpectAcksAndLosses(true, acked, QUIC_ARRAYSIZE(acked), nullptr, 0);
+  // Crypto packets remain in flight, so any that aren't acked will be lost.
+  uint64_t acked[] = {3, 4, 5, 8, 9};
+  uint64_t lost[] = {1, 2, 6};
+  ExpectAcksAndLosses(true, acked, QUIC_ARRAYSIZE(acked), lost,
+                      QUIC_ARRAYSIZE(lost));
+  if (manager_.session_decides_what_to_write()) {
+    EXPECT_CALL(notifier_, OnFrameLost(_)).Times(3);
   }
   if (manager_.session_decides_what_to_write()) {
     EXPECT_CALL(notifier_, HasUnackedCryptoData())
@@ -1297,13 +1298,8 @@ TEST_P(QuicSentPacketManagerTest, CryptoHandshakeSpuriousRetransmission) {
                                    ENCRYPTION_INITIAL));
 
   EXPECT_FALSE(manager_.HasUnackedCryptoPackets());
-  if (GetQuicReloadableFlag(quic_loss_removes_from_inflight)) {
-    uint64_t unacked[] = {1, 3};
-    VerifyUnackedPackets(unacked, QUIC_ARRAYSIZE(unacked));
-  } else {
-    uint64_t unacked[] = {3};
-    VerifyUnackedPackets(unacked, QUIC_ARRAYSIZE(unacked));
-  }
+  uint64_t unacked[] = {1, 3};
+  VerifyUnackedPackets(unacked, QUIC_ARRAYSIZE(unacked));
 }
 
 TEST_P(QuicSentPacketManagerTest, CryptoHandshakeTimeoutUnsentDataPacket) {
@@ -1926,10 +1922,8 @@ TEST_P(QuicSentPacketManagerTest, TLPRWithoutPendingStreamData) {
   rtt_stats->set_initial_rtt(QuicTime::Delta::FromMilliseconds(100));
   QuicTime::Delta srtt = rtt_stats->initial_rtt();
   QuicTime::Delta expected_tlp_delay = 0.5 * srtt;
-  if (GetQuicReloadableFlag(quic_ignore_tlpr_if_no_pending_stream_data)) {
-    // With no pending stream data, TLPR is ignored.
-    expected_tlp_delay = 2 * srtt;
-  }
+  // With no pending stream data, TLPR is ignored.
+  expected_tlp_delay = 2 * srtt;
   EXPECT_CALL(notifier_, HasUnackedStreamData()).WillRepeatedly(Return(false));
   EXPECT_EQ(expected_tlp_delay,
             manager_.GetRetransmissionTime() - clock_.Now());
@@ -2122,7 +2116,7 @@ TEST_P(QuicSentPacketManagerTest, RetransmissionDelay) {
 }
 
 TEST_P(QuicSentPacketManagerTest, GetLossDelay) {
-  auto loss_algorithm = QuicMakeUnique<MockLossAlgorithm>();
+  auto loss_algorithm = std::make_unique<MockLossAlgorithm>();
   QuicSentPacketManagerPeer::SetLossAlgorithm(&manager_, loss_algorithm.get());
 
   EXPECT_CALL(*loss_algorithm, GetLossTimeout())
@@ -2166,6 +2160,101 @@ TEST_P(QuicSentPacketManagerTest, NegotiateTimeLossDetectionFromOptions) {
 
   EXPECT_EQ(kTime, QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
                        ->GetLossDetectionType());
+}
+
+TEST_P(QuicSentPacketManagerTest, NegotiateIetfLossDetectionFromOptions) {
+  SetQuicReloadableFlag(quic_enable_ietf_loss_detection, true);
+  EXPECT_EQ(kNack, QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                       ->GetLossDetectionType());
+
+  QuicConfig config;
+  QuicTagVector options;
+  options.push_back(kILD0);
+  QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  EXPECT_EQ(kIetfLossDetection,
+            QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                ->GetLossDetectionType());
+  EXPECT_EQ(3, QuicSentPacketManagerPeer::GetReorderingShift(&manager_));
+  EXPECT_FALSE(
+      QuicSentPacketManagerPeer::AdaptiveReorderingThresholdEnabled(&manager_));
+}
+
+TEST_P(QuicSentPacketManagerTest,
+       NegotiateIetfLossDetectionOneFourthRttFromOptions) {
+  SetQuicReloadableFlag(quic_enable_ietf_loss_detection, true);
+  EXPECT_EQ(kNack, QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                       ->GetLossDetectionType());
+
+  QuicConfig config;
+  QuicTagVector options;
+  options.push_back(kILD1);
+  QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  EXPECT_EQ(kIetfLossDetection,
+            QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                ->GetLossDetectionType());
+  EXPECT_EQ(kDefaultLossDelayShift,
+            QuicSentPacketManagerPeer::GetReorderingShift(&manager_));
+  EXPECT_FALSE(
+      QuicSentPacketManagerPeer::AdaptiveReorderingThresholdEnabled(&manager_));
+}
+
+TEST_P(QuicSentPacketManagerTest,
+       NegotiateIetfLossDetectionAdaptiveReorderingThreshold) {
+  SetQuicReloadableFlag(quic_enable_ietf_loss_detection, true);
+  SetQuicReloadableFlag(quic_detect_spurious_loss, true);
+  EXPECT_EQ(kNack, QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                       ->GetLossDetectionType());
+  EXPECT_FALSE(
+      QuicSentPacketManagerPeer::AdaptiveReorderingThresholdEnabled(&manager_));
+
+  QuicConfig config;
+  QuicTagVector options;
+  options.push_back(kILD2);
+  QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  EXPECT_EQ(kIetfLossDetection,
+            QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                ->GetLossDetectionType());
+  EXPECT_EQ(3, QuicSentPacketManagerPeer::GetReorderingShift(&manager_));
+  EXPECT_TRUE(
+      QuicSentPacketManagerPeer::AdaptiveReorderingThresholdEnabled(&manager_));
+}
+
+TEST_P(QuicSentPacketManagerTest,
+       NegotiateIetfLossDetectionAdaptiveReorderingThreshold2) {
+  SetQuicReloadableFlag(quic_enable_ietf_loss_detection, true);
+  SetQuicReloadableFlag(quic_detect_spurious_loss, true);
+  EXPECT_EQ(kNack, QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                       ->GetLossDetectionType());
+  EXPECT_FALSE(
+      QuicSentPacketManagerPeer::AdaptiveReorderingThresholdEnabled(&manager_));
+
+  QuicConfig config;
+  QuicTagVector options;
+  options.push_back(kILD3);
+  QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  EXPECT_EQ(kIetfLossDetection,
+            QuicSentPacketManagerPeer::GetLossAlgorithm(&manager_)
+                ->GetLossDetectionType());
+  EXPECT_EQ(kDefaultLossDelayShift,
+            QuicSentPacketManagerPeer::GetReorderingShift(&manager_));
+  EXPECT_TRUE(
+      QuicSentPacketManagerPeer::AdaptiveReorderingThresholdEnabled(&manager_));
 }
 
 TEST_P(QuicSentPacketManagerTest, NegotiateCongestionControlFromOptions) {
@@ -3093,7 +3182,7 @@ TEST_P(QuicSentPacketManagerTest, SendOneProbePacket) {
 TEST_P(QuicSentPacketManagerTest, DisableHandshakeModeClient) {
   QuicSentPacketManagerPeer::SetPerspective(&manager_, Perspective::IS_CLIENT);
   manager_.SetSessionDecideWhatToWrite(true);
-  manager_.DisableHandshakeMode();
+  manager_.EnableIetfPtoAndLossDetection();
   // Send CHLO.
   SendCryptoPacket(1);
   EXPECT_NE(QuicTime::Zero(), manager_.GetRetransmissionTime());
@@ -3116,7 +3205,7 @@ TEST_P(QuicSentPacketManagerTest, DisableHandshakeModeClient) {
 
 TEST_P(QuicSentPacketManagerTest, DisableHandshakeModeServer) {
   manager_.SetSessionDecideWhatToWrite(true);
-  manager_.DisableHandshakeMode();
+  manager_.EnableIetfPtoAndLossDetection();
   // Send SHLO.
   SendCryptoPacket(1);
   EXPECT_NE(QuicTime::Zero(), manager_.GetRetransmissionTime());

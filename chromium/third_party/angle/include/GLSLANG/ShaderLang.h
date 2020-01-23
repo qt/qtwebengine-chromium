@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 215
+#define ANGLE_SH_VERSION 217
 
 enum ShShaderSpec
 {
@@ -69,6 +69,10 @@ enum ShShaderOutput
 
     // Output specialized GLSL to be fed to glslang for Vulkan SPIR.
     SH_GLSL_VULKAN_OUTPUT = 0x8B4B,
+
+    // Output specialized GLSL to be fed to glslang for Vulkan SPIR to be cross compiled to Metal
+    // later.
+    SH_GLSL_METAL_OUTPUT = 0x8B4C,
 };
 
 // Compile options.
@@ -613,12 +617,12 @@ const std::map<std::string, std::string> *GetNameHashingMap(const ShHandle handl
 // Returns NULL on failure.
 // Parameters:
 // handle: Specifies the compiler
-const std::vector<sh::Uniform> *GetUniforms(const ShHandle handle);
-const std::vector<sh::Varying> *GetVaryings(const ShHandle handle);
-const std::vector<sh::Varying> *GetInputVaryings(const ShHandle handle);
-const std::vector<sh::Varying> *GetOutputVaryings(const ShHandle handle);
-const std::vector<sh::Attribute> *GetAttributes(const ShHandle handle);
-const std::vector<sh::OutputVariable> *GetOutputVariables(const ShHandle handle);
+const std::vector<sh::ShaderVariable> *GetUniforms(const ShHandle handle);
+const std::vector<sh::ShaderVariable> *GetVaryings(const ShHandle handle);
+const std::vector<sh::ShaderVariable> *GetInputVaryings(const ShHandle handle);
+const std::vector<sh::ShaderVariable> *GetOutputVaryings(const ShHandle handle);
+const std::vector<sh::ShaderVariable> *GetAttributes(const ShHandle handle);
+const std::vector<sh::ShaderVariable> *GetOutputVariables(const ShHandle handle);
 const std::vector<sh::InterfaceBlock> *GetInterfaceBlocks(const ShHandle handle);
 const std::vector<sh::InterfaceBlock> *GetUniformBlocks(const ShHandle handle);
 const std::vector<sh::InterfaceBlock> *GetShaderStorageBlocks(const ShHandle handle);

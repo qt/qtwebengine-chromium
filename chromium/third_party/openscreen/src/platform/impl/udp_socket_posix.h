@@ -5,7 +5,9 @@
 #ifndef PLATFORM_IMPL_UDP_SOCKET_POSIX_H_
 #define PLATFORM_IMPL_UDP_SOCKET_POSIX_H_
 
+#include "absl/types/optional.h"
 #include "platform/api/udp_socket.h"
+#include "platform/impl/socket_handle_posix.h"
 
 namespace openscreen {
 namespace platform {
@@ -16,35 +18,37 @@ struct UdpSocketPosix : public UdpSocket {
   // exist for the duration of this socket's lifetime.
   UdpSocketPosix(TaskRunner* task_runner,
                  Client* client,
-                 int fd,
+                 SocketHandle handle,
                  const IPEndpoint& local_endpoint);
 
   ~UdpSocketPosix() override;
 
-  // Performs a non-blocking read on the socket, returning the number of bytes
-  // received. Note that a non-Error return value of 0 is a valid result,
-  // indicating an empty message has been received. Also note that
-  // Error::Code::kAgain might be returned if there is no message currently
-  // ready for receive, which can be expected during normal operation.
-  virtual ErrorOr<UdpPacket> ReceiveMessage();
+  // Performs a non-blocking read on the socket and then process the read packet
+  // using this socket's Client.
+  virtual void ReceiveMessage();
 
   // Implementations of UdpSocket methods.
   bool IsIPv4() const override;
   bool IsIPv6() const override;
   IPEndpoint GetLocalEndpoint() const override;
-  Error Bind() override;
-  Error SetMulticastOutboundInterface(NetworkInterfaceIndex ifindex) override;
-  Error JoinMulticastGroup(const IPAddress& address,
-                           NetworkInterfaceIndex ifindex) override;
-  Error SendMessage(const void* data,
-                    size_t length,
-                    const IPEndpoint& dest) override;
-  Error SetDscp(DscpMode state) override;
+  void Bind() override;
+  void SetMulticastOutboundInterface(NetworkInterfaceIndex ifindex) override;
+  void JoinMulticastGroup(const IPAddress& address,
+                          NetworkInterfaceIndex ifindex) override;
+  void SendMessage(const void* data,
+                   size_t length,
+                   const IPEndpoint& dest) override;
+  void SetDscp(DscpMode state) override;
 
-  int GetFd() const { return fd_; }
+  const SocketHandle& GetHandle() const;
 
  private:
-  const int fd_;
+  void Close() override;
+
+  // Creates an error to be used in above methods.
+  Error CreateError(Error::Code code);
+
+  const SocketHandle handle_;
 
   // Cached value of current local endpoint. This can change (e.g., when the
   // operating system auto-assigns a free local port when Bind() is called). If

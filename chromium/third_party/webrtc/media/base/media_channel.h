@@ -22,9 +22,9 @@
 #include "api/audio_options.h"
 #include "api/crypto/frame_decryptor_interface.h"
 #include "api/crypto/frame_encryptor_interface.h"
-#include "api/media_transport_config.h"
 #include "api/rtc_error.h"
 #include "api/rtp_parameters.h"
+#include "api/transport/media/media_transport_config.h"
 #include "api/transport/rtp/rtp_source.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_sink_interface.h"
@@ -202,9 +202,6 @@ class MediaChannel : public sigslot::has_slots<> {
   // Called when a RTP packet is received.
   virtual void OnPacketReceived(rtc::CopyOnWriteBuffer packet,
                                 int64_t packet_time_us) = 0;
-  // Called when a RTCP packet is received.
-  virtual void OnRtcpReceived(rtc::CopyOnWriteBuffer packet,
-                              int64_t packet_time_us) = 0;
   // Called when the socket's ability to send has changed.
   virtual void OnReadyToSend(bool ready) = 0;
   // Called when the network route used for sending packets changed.
@@ -227,6 +224,8 @@ class MediaChannel : public sigslot::has_slots<> {
   // ssrc must be the first SSRC of the media stream if the stream uses
   // multiple SSRCs.
   virtual bool RemoveRecvStream(uint32_t ssrc) = 0;
+  // Resets any cached StreamParams for an unsignaled RecvStream.
+  virtual void ResetUnsignaledRecvStream() = 0;
   // Returns the absoulte sendtime extension id value from media channel.
   virtual int GetRtpSendTimeExtnId() const;
   // Set the frame encryptor to use on all outgoing frames. This is optional.
@@ -394,7 +393,13 @@ struct MediaSenderInfo {
       return 0;
     }
   }
-  int64_t bytes_sent = 0;
+  // TODO(bugs.webrtc.org/10525): Unused, delete as soon as downstream code is
+  // updated.
+  int64_t bytes_sent;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcsentrtpstreamstats-bytessent
+  int64_t payload_bytes_sent = 0;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-headerbytessent
+  int64_t header_and_padding_bytes_sent = 0;
   // https://w3c.github.io/webrtc-stats/#dom-rtcoutboundrtpstreamstats-retransmittedbytessent
   uint64_t retransmitted_bytes_sent = 0;
   int packets_sent = 0;
@@ -448,7 +453,13 @@ struct MediaReceiverInfo {
     }
   }
 
-  int64_t bytes_rcvd = 0;
+  // TODO(bugs.webrtc.org/10525): Unused, delete as soon as downstream code is
+  // updated.
+  int64_t bytes_rcvd;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-bytesreceived
+  int64_t payload_bytes_rcvd = 0;
+  // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-headerbytesreceived
+  int64_t header_and_padding_bytes_rcvd = 0;
   int packets_rcvd = 0;
   int packets_lost = 0;
   // TODO(bugs.webrtc.org/10679): Unused, delete as soon as downstream code is

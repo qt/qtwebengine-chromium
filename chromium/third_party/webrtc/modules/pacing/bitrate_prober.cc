@@ -13,8 +13,8 @@
 #include <algorithm>
 
 #include "absl/memory/memory.h"
+#include "api/rtc_event_log/rtc_event.h"
 #include "api/rtc_event_log/rtc_event_log.h"
-#include "logging/rtc_event_log/events/rtc_event.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_cluster_created.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -146,7 +146,9 @@ int BitrateProber::TimeUntilNextProbe(int64_t now_ms) {
 PacedPacketInfo BitrateProber::CurrentCluster() const {
   RTC_DCHECK(!clusters_.empty());
   RTC_DCHECK(probing_state_ == ProbingState::kActive);
-  return clusters_.front().pace_info;
+  PacedPacketInfo info = clusters_.front().pace_info;
+  info.probe_cluster_bytes_sent = clusters_.front().sent_bytes;
+  return info;
 }
 
 // Probe size is recommended based on the probe bitrate required. We choose

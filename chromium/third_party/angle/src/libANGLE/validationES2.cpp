@@ -727,6 +727,36 @@ bool ValidateES2CopyTexImageParameters(Context *context,
                     return false;
                 }
                 break;
+            case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
+            case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
+            case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:
+            case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:
+                if (context->getExtensions().compressedTexturePVRTC)
+                {
+                    context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
+                    return false;
+                }
+                else
+                {
+                    context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                    return false;
+                }
+                break;
+            case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:
+            case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:
+            case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:
+            case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:
+                if (context->getExtensions().compressedTexturePVRTCsRGB)
+                {
+                    context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
+                    return false;
+                }
+                else
+                {
+                    context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                    return false;
+                }
+                break;
             case GL_DEPTH_COMPONENT:
             case GL_DEPTH_COMPONENT16:
             case GL_DEPTH_COMPONENT32_OES:
@@ -1563,6 +1593,36 @@ bool ValidateES2TexImageParametersBase(Context *context,
                     return false;
                 }
                 break;
+            case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
+            case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
+            case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:
+            case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:
+                if (context->getExtensions().compressedTexturePVRTC)
+                {
+                    context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
+                    return false;
+                }
+                else
+                {
+                    context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                    return false;
+                }
+                break;
+            case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:
+            case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:
+            case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:
+            case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:
+                if (context->getExtensions().compressedTexturePVRTCsRGB)
+                {
+                    context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
+                    return false;
+                }
+                else
+                {
+                    context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                    return false;
+                }
+                break;
             case GL_DEPTH_COMPONENT:
             case GL_DEPTH_STENCIL_OES:
                 if (!context->getExtensions().depthTextureANGLE &&
@@ -1942,6 +2002,26 @@ bool ValidateES2TexStorageParameters(Context *context,
                 return false;
             }
             break;
+        case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
+        case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
+        case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:
+        case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:
+            if (!context->getExtensions().compressedTexturePVRTC)
+            {
+                context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                return false;
+            }
+            break;
+        case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:
+        case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:
+        case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:
+        case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:
+            if (!context->getExtensions().compressedTexturePVRTCsRGB)
+            {
+                context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                return false;
+            }
+            break;
         case GL_RGBA32F_EXT:
         case GL_RGB32F_EXT:
         case GL_ALPHA32F_EXT:
@@ -2039,7 +2119,7 @@ bool ValidateES2TexStorageParameters(Context *context,
     }
 
     gl::Texture *texture = context->getTextureByType(target);
-    if (!texture || texture->id() == 0)
+    if (!texture || texture->id().value == 0)
     {
         context->validationError(GL_INVALID_OPERATION, kMissingTexture);
         return false;
@@ -4896,6 +4976,23 @@ bool ValidateRequestExtensionANGLE(Context *context, const GLchar *name)
     return true;
 }
 
+bool ValidateDisableExtensionANGLE(Context *context, const GLchar *name)
+{
+    if (!context->getExtensions().requestExtension)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    if (!context->isExtensionDisablable(name))
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotDisablable);
+        return false;
+    }
+
+    return true;
+}
+
 bool ValidateActiveTexture(Context *context, GLenum texture)
 {
     if (context->getClientMajorVersion() < 2)
@@ -7253,6 +7350,78 @@ bool ValidateFramebufferTexture2DMultisampleEXT(Context *context,
                                                 GLint level,
                                                 GLsizei samples)
 {
+    if (!context->getExtensions().multisampledRenderToTexture)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    if (samples < 0)
+    {
+        return false;
+    }
+
+    // EXT_multisampled_render_to_texture states that the value of samples
+    // must be less than or equal to MAX_SAMPLES_EXT (Context::getCaps().maxSamples)
+    // otherwise GL_INVALID_VALUE is generated.
+    if (static_cast<GLuint>(samples) > context->getCaps().maxSamples)
+    {
+        context->validationError(GL_INVALID_VALUE, kSamplesOutOfRange);
+        return false;
+    }
+
+    if (!ValidFramebufferTarget(context, target))
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidFramebufferTarget);
+        return false;
+    }
+
+    if (attachment != GL_COLOR_ATTACHMENT0)
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidAttachment);
+        return false;
+    }
+
+    TextureTarget textargetPacked = FromGLenum<TextureTarget>(textarget);
+    if (!ValidTexture2DDestinationTarget(context, textargetPacked))
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidTextureTarget);
+        return false;
+    }
+
+    if (texture != 0)
+    {
+        TextureID texturePacked = FromGL<TextureID>(texture);
+        Texture *tex            = context->getTexture(texturePacked);
+
+        if (tex == nullptr)
+        {
+            context->validationError(GL_INVALID_OPERATION, kMissingTexture);
+            return false;
+        }
+
+        if (level < 0)
+        {
+            context->validationError(GL_INVALID_VALUE, kInvalidMipLevel);
+            return false;
+        }
+
+        // EXT_multisampled_render_to_texture returns INVALID_OPERATION when a sample number higher
+        // than the maximum sample number supported by this format is passed.
+        // The TextureCaps::getMaxSamples method is only guarenteed to be valid when the context is
+        // ES3.
+        if (context->getClientMajorVersion() >= 3)
+        {
+            GLenum internalformat = tex->getFormat(textargetPacked, level).info->internalFormat;
+            const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
+            if (static_cast<GLuint>(samples) > formatCaps.getMaxSamples())
+            {
+                context->validationError(GL_INVALID_OPERATION, kSamplesOutOfRange);
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -7263,6 +7432,40 @@ bool ValidateRenderbufferStorageMultisampleEXT(Context *context,
                                                GLsizei width,
                                                GLsizei height)
 {
+    if (!context->getExtensions().multisampledRenderToTexture)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+    if (!ValidateRenderbufferStorageParametersBase(context, target, samples, internalformat, width,
+                                                   height))
+    {
+        return false;
+    }
+
+    // EXT_multisampled_render_to_texture states that the value of samples
+    // must be less than or equal to MAX_SAMPLES_EXT (Context::getCaps().maxSamples)
+    // otherwise GL_INVALID_VALUE is generated.
+    if (static_cast<GLuint>(samples) > context->getCaps().maxSamples)
+    {
+        context->validationError(GL_INVALID_VALUE, kSamplesOutOfRange);
+        return false;
+    }
+
+    // EXT_multisampled_render_to_texture returns GL_OUT_OF_MEMORY on failure to create
+    // the specified storage. This is different than ES 3.0 in which a sample number higher
+    // than the maximum sample number supported by this format generates a GL_INVALID_VALUE.
+    // The TextureCaps::getMaxSamples method is only guarenteed to be valid when the context is ES3.
+    if (context->getClientMajorVersion() >= 3)
+    {
+        const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
+        if (static_cast<GLuint>(samples) > formatCaps.getMaxSamples())
+        {
+            context->validationError(GL_OUT_OF_MEMORY, kSamplesOutOfRange);
+            return false;
+        }
+    }
+
     return true;
 }
 

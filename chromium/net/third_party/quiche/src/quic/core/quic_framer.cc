@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_framer.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_handshake.h"
@@ -39,7 +40,6 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_map_util.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_stack_trace.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_text_utils.h"
@@ -424,14 +424,22 @@ QuicFramer::QuicFramer(const ParsedQuicVersionVector& supported_versions,
           expected_server_connection_id_length),
       expected_client_connection_id_length_(0),
       supports_multiple_packet_number_spaces_(false),
+      framer_doesnt_create_initial_encrypter_(
+          GetQuicReloadableFlag(quic_framer_doesnt_create_initial_encrypter)),
       last_written_packet_number_length_(0),
       peer_ack_delay_exponent_(kDefaultAckDelayExponent),
       local_ack_delay_exponent_(kDefaultAckDelayExponent),
       current_received_frame_type_(0) {
   DCHECK(!supported_versions.empty());
   version_ = supported_versions_[0];
-  decrypter_[ENCRYPTION_INITIAL] = QuicMakeUnique<NullDecrypter>(perspective);
-  encrypter_[ENCRYPTION_INITIAL] = QuicMakeUnique<NullEncrypter>(perspective);
+  if (!framer_doesnt_create_initial_encrypter_) {
+    decrypter_[ENCRYPTION_INITIAL] =
+        std::make_unique<NullDecrypter>(perspective);
+    encrypter_[ENCRYPTION_INITIAL] =
+        std::make_unique<NullEncrypter>(perspective);
+  } else {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_framer_doesnt_create_initial_encrypter);
+  }
 }
 
 QuicFramer::~QuicFramer() {}
@@ -524,17 +532,14 @@ size_t QuicFramer::GetConnectionCloseFrameSize(
   const size_t truncated_error_string_size = TruncatedErrorStringSize(
       GenerateErrorString(frame.error_details, frame.extracted_error_code));
 
-  uint64_t close_code = 0;
-  if (frame.close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE) {
-    close_code = static_cast<uint64_t>(frame.transport_error_code);
-  } else if (frame.close_type == IETF_QUIC_APPLICATION_CONNECTION_CLOSE) {
-    close_code = static_cast<uint64_t>(frame.application_error_code);
-  }
-
   const size_t frame_size =
       truncated_error_string_size +
       QuicDataWriter::GetVarInt62Len(truncated_error_string_size) +
-      kQuicFrameTypeSize + QuicDataWriter::GetVarInt62Len(close_code);
+      kQuicFrameTypeSize +
+      QuicDataWriter::GetVarInt62Len(
+          (frame.close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE)
+              ? frame.transport_error_code
+              : frame.application_error_code);
   if (frame.close_type == IETF_QUIC_APPLICATION_CONNECTION_CLOSE) {
     return frame_size;
   }
@@ -858,6 +863,10 @@ size_t QuicFramer::BuildDataPacket(const QuicPacketHeader& header,
                                    char* buffer,
                                    size_t packet_length,
                                    EncryptionLevel level) {
+  QUIC_BUG_IF(header.version_flag &&
+              VersionHasIetfInvariantHeader(transport_version()) &&
+              header.long_packet_type == RETRY && !frames.empty())
+      << "IETF RETRY packets cannot contain frames " << header;
   QuicDataWriter writer(packet_length, buffer);
   size_t length_field_offset = 0;
   if (!AppendPacketHeader(header, &writer, &length_field_offset)) {
@@ -875,9 +884,6 @@ size_t QuicFramer::BuildDataPacket(const QuicPacketHeader& header,
     }
     return writer.length();
   }
-  // TODO(dschinazi) if we enable long header lengths before v99, we need to
-  // add support for fixing up lengths in QuicFramer::BuildDataPacket.
-  DCHECK(!QuicVersionHasLongHeaderLengths(transport_version()));
 
   size_t i = 0;
   for (const QuicFrame& frame : frames) {
@@ -1012,6 +1018,10 @@ size_t QuicFramer::BuildDataPacket(const QuicPacketHeader& header,
     ++i;
   }
 
+  if (!WriteIetfLongHeaderLength(header, &writer, length_field_offset, level)) {
+    return 0;
+  }
+
   return writer.length();
 }
 
@@ -1052,7 +1062,9 @@ size_t QuicFramer::AppendIetfFrames(const QuicFrames& frames,
       case STOP_WAITING_FRAME:
         set_detailed_error(
             "Attempt to append STOP WAITING frame in IETF QUIC.");
-        return RaiseError(QUIC_INTERNAL_ERROR);
+        RaiseError(QUIC_INTERNAL_ERROR);
+        QUIC_BUG << detailed_error();
+        return 0;
       case MTU_DISCOVERY_FRAME:
         // MTU discovery frames are serialized as ping frames.
         QUIC_FALLTHROUGH_INTENDED;
@@ -1075,7 +1087,9 @@ size_t QuicFramer::AppendIetfFrames(const QuicFrames& frames,
         break;
       case GOAWAY_FRAME:
         set_detailed_error("Attempt to append GOAWAY frame in IETF QUIC.");
-        return RaiseError(QUIC_INTERNAL_ERROR);
+        RaiseError(QUIC_INTERNAL_ERROR);
+        QUIC_BUG << detailed_error();
+        return 0;
       case WINDOW_UPDATE_FRAME:
         // Depending on whether there is a stream ID or not, will be either a
         // MAX STREAM DATA frame or a MAX DATA frame.
@@ -1100,13 +1114,13 @@ size_t QuicFramer::AppendIetfFrames(const QuicFrames& frames,
         break;
       case MAX_STREAMS_FRAME:
         if (!AppendMaxStreamsFrame(frame.max_streams_frame, writer)) {
-          QUIC_BUG << "AppendMaxStreamsFrame failed" << detailed_error();
+          QUIC_BUG << "AppendMaxStreamsFrame failed: " << detailed_error();
           return 0;
         }
         break;
       case STREAMS_BLOCKED_FRAME:
         if (!AppendStreamsBlockedFrame(frame.streams_blocked_frame, writer)) {
-          QUIC_BUG << "AppendStreamsBlockedFrame failed" << detailed_error();
+          QUIC_BUG << "AppendStreamsBlockedFrame failed: " << detailed_error();
           return 0;
         }
         break;
@@ -1163,102 +1177,15 @@ size_t QuicFramer::AppendIetfFrames(const QuicFrames& frames,
         }
         break;
       default:
-        RaiseError(QUIC_INVALID_FRAME_DATA);
         set_detailed_error("Tried to append unknown frame type.");
-        QUIC_BUG << "QUIC_INVALID_FRAME_DATA";
+        RaiseError(QUIC_INVALID_FRAME_DATA);
+        QUIC_BUG << "QUIC_INVALID_FRAME_DATA: " << frame.type;
         return 0;
     }
     ++i;
   }
 
   return writer->length();
-}
-
-size_t QuicFramer::BuildConnectivityProbingPacket(
-    const QuicPacketHeader& header,
-    char* buffer,
-    size_t packet_length,
-    EncryptionLevel level) {
-  QuicFrames frames;
-
-  // Write a PING frame, which has no data payload.
-  QuicPingFrame ping_frame;
-  frames.push_back(QuicFrame(ping_frame));
-
-  // Add padding to the rest of the packet.
-  QuicPaddingFrame padding_frame;
-  frames.push_back(QuicFrame(padding_frame));
-
-  return BuildDataPacket(header, frames, buffer, packet_length, level);
-}
-
-size_t QuicFramer::BuildPaddedPathChallengePacket(
-    const QuicPacketHeader& header,
-    char* buffer,
-    size_t packet_length,
-    QuicPathFrameBuffer* payload,
-    QuicRandom* randomizer,
-    EncryptionLevel level) {
-  if (!VersionHasIetfQuicFrames(version_.transport_version)) {
-    QUIC_BUG << "Attempt to build a PATH_CHALLENGE Connectivity Probing "
-                "packet and not doing IETF QUIC";
-    return 0;
-  }
-  QuicFrames frames;
-
-  // Write a PATH_CHALLENGE frame, which has a random 8-byte payload
-  randomizer->RandBytes(payload->data(), payload->size());
-
-  QuicPathChallengeFrame path_challenge_frame(0, *payload);
-  frames.push_back(QuicFrame(&path_challenge_frame));
-
-  // Add padding to the rest of the packet in order to assess Path MTU
-  // characteristics.
-  QuicPaddingFrame padding_frame;
-  frames.push_back(QuicFrame(padding_frame));
-
-  return BuildDataPacket(header, frames, buffer, packet_length, level);
-}
-
-size_t QuicFramer::BuildPathResponsePacket(
-    const QuicPacketHeader& header,
-    char* buffer,
-    size_t packet_length,
-    const QuicDeque<QuicPathFrameBuffer>& payloads,
-    const bool is_padded,
-    EncryptionLevel level) {
-  if (payloads.empty()) {
-    QUIC_BUG
-        << "Attempt to generate connectivity response with no request payloads";
-    return 0;
-  }
-  if (!VersionHasIetfQuicFrames(version_.transport_version)) {
-    QUIC_BUG << "Attempt to build a PATH_RESPONSE Connectivity Probing "
-                "packet and not doing IETF QUIC";
-    return 0;
-  }
-
-  std::vector<std::unique_ptr<QuicPathResponseFrame>> path_response_frames;
-  for (const QuicPathFrameBuffer& payload : payloads) {
-    // Note that the control frame ID can be 0 since this is not retransmitted.
-    path_response_frames.push_back(
-        QuicMakeUnique<QuicPathResponseFrame>(0, payload));
-  }
-
-  QuicFrames frames;
-  for (const std::unique_ptr<QuicPathResponseFrame>& path_response_frame :
-       path_response_frames) {
-    frames.push_back(QuicFrame(path_response_frame.get()));
-  }
-
-  if (is_padded) {
-    // Add padding to the rest of the packet in order to assess Path MTU
-    // characteristics.
-    QuicPaddingFrame padding_frame;
-    frames.push_back(QuicFrame(padding_frame));
-  }
-
-  return BuildDataPacket(header, frames, buffer, packet_length, level);
 }
 
 // static
@@ -1303,7 +1230,7 @@ std::unique_ptr<QuicEncryptedPacket> QuicFramer::BuildPublicResetPacket(
     return nullptr;
   }
 
-  return QuicMakeUnique<QuicEncryptedPacket>(buffer.release(), len, true);
+  return std::make_unique<QuicEncryptedPacket>(buffer.release(), len, true);
 }
 
 // static
@@ -1337,7 +1264,7 @@ std::unique_ptr<QuicEncryptedPacket> QuicFramer::BuildIetfStatelessResetPacket(
                          sizeof(stateless_reset_token))) {
     return nullptr;
   }
-  return QuicMakeUnique<QuicEncryptedPacket>(buffer.release(), len, true);
+  return std::make_unique<QuicEncryptedPacket>(buffer.release(), len, true);
 }
 
 // static
@@ -1411,7 +1338,7 @@ std::unique_ptr<QuicEncryptedPacket> QuicFramer::BuildVersionNegotiationPacket(
     }
   }
 
-  return QuicMakeUnique<QuicEncryptedPacket>(buffer.release(), len, true);
+  return std::make_unique<QuicEncryptedPacket>(buffer.release(), len, true);
 }
 
 // static
@@ -1460,7 +1387,7 @@ QuicFramer::BuildIetfVersionNegotiationPacket(
     }
   }
 
-  return QuicMakeUnique<QuicEncryptedPacket>(buffer.release(), len, true);
+  return std::make_unique<QuicEncryptedPacket>(buffer.release(), len, true);
 }
 
 bool QuicFramer::ProcessPacket(const QuicEncryptedPacket& packet) {
@@ -1772,16 +1699,12 @@ bool QuicFramer::ProcessIetfDataPacket(QuicDataReader* encrypted_reader,
         return true;
       }
       if (hp_removal_failed) {
-        if (GetQuicRestartFlag(quic_framer_uses_undecryptable_upcall)) {
-          QUIC_RESTART_FLAG_COUNT_N(quic_framer_uses_undecryptable_upcall, 5,
-                                    7);
           const EncryptionLevel decryption_level = GetEncryptionLevel(*header);
           const bool has_decryption_key =
               decrypter_[decryption_level] != nullptr;
           visitor_->OnUndecryptablePacket(
               QuicEncryptedPacket(encrypted_reader->FullPayload()),
               decryption_level, has_decryption_key);
-        }
         set_detailed_error("Unable to decrypt header protection.");
         return RaiseError(QUIC_DECRYPTION_FAILURE);
       }
@@ -1840,15 +1763,12 @@ bool QuicFramer::ProcessIetfDataPacket(QuicDataReader* encrypted_reader,
       visitor_->OnAuthenticatedIetfStatelessResetPacket(packet);
       return true;
     }
-    if (GetQuicRestartFlag(quic_framer_uses_undecryptable_upcall)) {
-      QUIC_RESTART_FLAG_COUNT_N(quic_framer_uses_undecryptable_upcall, 6, 7);
       const EncryptionLevel decryption_level = GetEncryptionLevel(*header);
       const bool has_decryption_key = version_.KnowsWhichDecrypterToUse() &&
                                       decrypter_[decryption_level] != nullptr;
       visitor_->OnUndecryptablePacket(
           QuicEncryptedPacket(encrypted_reader->FullPayload()),
           decryption_level, has_decryption_key);
-    }
     set_detailed_error("Unable to decrypt payload.");
     RecordDroppedPacketReason(DroppedPacketReason::DECRYPTION_FAILURE);
     return RaiseError(QUIC_DECRYPTION_FAILURE);
@@ -1930,8 +1850,6 @@ bool QuicFramer::ProcessDataPacket(QuicDataReader* encrypted_reader,
   EncryptionLevel decrypted_level;
   if (!DecryptPayload(encrypted, associated_data, *header, decrypted_buffer,
                       buffer_length, &decrypted_length, &decrypted_level)) {
-    if (GetQuicRestartFlag(quic_framer_uses_undecryptable_upcall)) {
-      QUIC_RESTART_FLAG_COUNT_N(quic_framer_uses_undecryptable_upcall, 7, 7);
       const EncryptionLevel decryption_level = decrypter_level_;
       // This version uses trial decryption so we always report to our visitor
       // that we are not certain we have the correct decryption key.
@@ -1939,7 +1857,6 @@ bool QuicFramer::ProcessDataPacket(QuicDataReader* encrypted_reader,
       visitor_->OnUndecryptablePacket(
           QuicEncryptedPacket(encrypted_reader->FullPayload()),
           decryption_level, has_decryption_key);
-    }
     RecordDroppedPacketReason(DroppedPacketReason::DECRYPTION_FAILURE);
     set_detailed_error("Unable to decrypt payload.");
     return RaiseError(QUIC_DECRYPTION_FAILURE);
@@ -2154,6 +2071,11 @@ bool QuicFramer::AppendIetfPacketHeader(const QuicPacketHeader& header,
   }
 
   if (header.version_flag) {
+    DCHECK_NE(VERSION_NEGOTIATION, header.long_packet_type)
+        << "QuicFramer::AppendIetfPacketHeader does not support sending "
+           "version negotiation packets, use "
+           "QuicFramer::BuildVersionNegotiationPacket instead "
+        << header;
     // Append version for long header.
     QuicVersionLabel version_label = CreateQuicVersionLabel(version_);
     if (!writer->WriteUInt32(version_label)) {
@@ -2179,6 +2101,10 @@ bool QuicFramer::AppendIetfPacketHeader(const QuicPacketHeader& header,
     last_serialized_client_connection_id_ =
         GetClientConnectionIdAsSender(header, perspective_);
   }
+
+  // TODO(b/141924462) Remove this QUIC_BUG once we do support sending RETRY.
+  QUIC_BUG_IF(header.version_flag && header.long_packet_type == RETRY)
+      << "Sending IETF RETRY packets is not currently supported " << header;
 
   if (QuicVersionHasLongHeaderLengths(transport_version()) &&
       header.version_flag) {
@@ -4104,8 +4030,8 @@ void QuicFramer::SetDecrypter(EncryptionLevel level,
   DCHECK_GE(level, decrypter_level_);
   DCHECK(!version_.KnowsWhichDecrypterToUse());
   QUIC_DVLOG(1) << ENDPOINT << "Setting decrypter from level "
-                << QuicUtils::EncryptionLevelToString(decrypter_level_)
-                << " to " << QuicUtils::EncryptionLevelToString(level);
+                << EncryptionLevelToString(decrypter_level_) << " to "
+                << EncryptionLevelToString(level);
   decrypter_[decrypter_level_] = nullptr;
   decrypter_[level] = std::move(decrypter);
   decrypter_level_ = level;
@@ -4118,9 +4044,8 @@ void QuicFramer::SetAlternativeDecrypter(
   DCHECK_NE(level, decrypter_level_);
   DCHECK(!version_.KnowsWhichDecrypterToUse());
   QUIC_DVLOG(1) << ENDPOINT << "Setting alternative decrypter from level "
-                << QuicUtils::EncryptionLevelToString(
-                       alternative_decrypter_level_)
-                << " to " << QuicUtils::EncryptionLevelToString(level);
+                << EncryptionLevelToString(alternative_decrypter_level_)
+                << " to " << EncryptionLevelToString(level);
   if (alternative_decrypter_level_ != NUM_ENCRYPTION_LEVELS) {
     decrypter_[alternative_decrypter_level_] = nullptr;
   }
@@ -4133,14 +4058,14 @@ void QuicFramer::InstallDecrypter(EncryptionLevel level,
                                   std::unique_ptr<QuicDecrypter> decrypter) {
   DCHECK(version_.KnowsWhichDecrypterToUse());
   QUIC_DVLOG(1) << ENDPOINT << "Installing decrypter at level "
-                << QuicUtils::EncryptionLevelToString(level);
+                << EncryptionLevelToString(level);
   decrypter_[level] = std::move(decrypter);
 }
 
 void QuicFramer::RemoveDecrypter(EncryptionLevel level) {
   DCHECK(version_.KnowsWhichDecrypterToUse());
   QUIC_DVLOG(1) << ENDPOINT << "Removing decrypter at level "
-                << QuicUtils::EncryptionLevelToString(level);
+                << EncryptionLevelToString(level);
   decrypter_[level] = nullptr;
 }
 
@@ -4165,8 +4090,16 @@ void QuicFramer::SetEncrypter(EncryptionLevel level,
   DCHECK_GE(level, 0);
   DCHECK_LT(level, NUM_ENCRYPTION_LEVELS);
   QUIC_DVLOG(1) << ENDPOINT << "Setting encrypter at level "
-                << QuicUtils::EncryptionLevelToString(level);
+                << EncryptionLevelToString(level);
   encrypter_[level] = std::move(encrypter);
+}
+
+void QuicFramer::SetInitialObfuscators(QuicConnectionId connection_id) {
+  CrypterPair crypters;
+  CryptoUtils::CreateInitialObfuscators(perspective_, version_, connection_id,
+                                        &crypters);
+  encrypter_[ENCRYPTION_INITIAL] = std::move(crypters.encrypter);
+  decrypter_[ENCRYPTION_INITIAL] = std::move(crypters.decrypter);
 }
 
 size_t QuicFramer::EncryptInPlace(EncryptionLevel level,
@@ -4179,7 +4112,7 @@ size_t QuicFramer::EncryptInPlace(EncryptionLevel level,
   if (encrypter_[level] == nullptr) {
     QUIC_BUG << ENDPOINT
              << "Attempted to encrypt in place without encrypter at level "
-             << QuicUtils::EncryptionLevelToString(level);
+             << EncryptionLevelToString(level);
     RaiseError(QUIC_ENCRYPTION_FAILURE);
     return 0;
   }
@@ -4303,7 +4236,7 @@ bool QuicFramer::RemoveHeaderProtection(QuicDataReader* reader,
     QUIC_DVLOG(1)
         << ENDPOINT
         << "No decrypter available for removing header protection at level "
-        << QuicUtils::EncryptionLevelToString(expected_decryption_level);
+        << EncryptionLevelToString(expected_decryption_level);
     return false;
   }
 
@@ -4424,7 +4357,7 @@ size_t QuicFramer::EncryptPayload(EncryptionLevel level,
   DCHECK(packet_number.IsInitialized());
   if (encrypter_[level] == nullptr) {
     QUIC_BUG << ENDPOINT << "Attempted to encrypt without encrypter at level "
-             << QuicUtils::EncryptionLevelToString(level);
+             << EncryptionLevelToString(level);
     RaiseError(QUIC_ENCRYPTION_FAILURE);
     return 0;
   }
@@ -5695,14 +5628,10 @@ bool QuicFramer::AppendIetfConnectionCloseFrame(
     return false;
   }
 
-  uint64_t close_code = 0;
-  if (frame.close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE) {
-    close_code = static_cast<uint64_t>(frame.transport_error_code);
-  } else if (frame.close_type == IETF_QUIC_APPLICATION_CONNECTION_CLOSE) {
-    close_code = static_cast<uint64_t>(frame.application_error_code);
-  }
-
-  if (!writer->WriteVarInt62(close_code)) {
+  if (!writer->WriteVarInt62(
+          (frame.close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE)
+              ? frame.transport_error_code
+              : frame.application_error_code)) {
     set_detailed_error("Can not write connection close frame error code");
     return false;
   }
@@ -5734,32 +5663,18 @@ bool QuicFramer::ProcessIetfConnectionCloseFrame(
     QuicConnectionCloseType type,
     QuicConnectionCloseFrame* frame) {
   frame->close_type = type;
-  uint64_t error_code;
 
+  uint64_t error_code;
   if (!reader->ReadVarInt62(&error_code)) {
     set_detailed_error("Unable to read connection close error code.");
     return false;
   }
 
-  // TODO(fkastenholz): When error codes uniformly go to uint64, remove the
-  // range check.
   if (frame->close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE) {
-    if (error_code > 0xffff) {
-      frame->transport_error_code =
-          static_cast<QuicIetfTransportErrorCodes>(0xffff);
-      QUIC_DLOG(ERROR) << "Transport error code " << error_code << " > 0xffff";
-    } else {
-      frame->transport_error_code =
-          static_cast<QuicIetfTransportErrorCodes>(error_code);
-    }
+    frame->transport_error_code =
+        static_cast<QuicIetfTransportErrorCodes>(error_code);
   } else if (frame->close_type == IETF_QUIC_APPLICATION_CONNECTION_CLOSE) {
-    if (error_code > 0xffff) {
-      frame->application_error_code = 0xffff;
-      QUIC_DLOG(ERROR) << "Application error code " << error_code
-                       << " > 0xffff";
-    } else {
-      frame->application_error_code = static_cast<uint16_t>(error_code);
-    }
+    frame->application_error_code = error_code;
   }
 
   if (type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE) {
@@ -6222,91 +6137,11 @@ void QuicFramer::EnableMultiplePacketNumberSpacesSupport() {
 }
 
 // static
-QuicErrorCode QuicFramer::ProcessPacketDispatcher(
-    const QuicEncryptedPacket& packet,
-    uint8_t expected_destination_connection_id_length,
-    PacketHeaderFormat* format,
-    bool* version_flag,
-    QuicVersionLabel* version_label,
-    QuicConnectionId* destination_connection_id,
-    QuicConnectionId* source_connection_id,
-    std::string* detailed_error) {
-  DCHECK(!GetQuicReloadableFlag(quic_use_parse_public_header));
-  QuicDataReader reader(packet.data(), packet.length());
-
-  *source_connection_id = EmptyQuicConnectionId();
-  uint8_t first_byte;
-  if (!reader.ReadBytes(&first_byte, 1)) {
-    *detailed_error = "Unable to read first byte.";
-    return QUIC_INVALID_PACKET_HEADER;
-  }
-  uint8_t destination_connection_id_length = 0, source_connection_id_length = 0;
-  if (!QuicUtils::IsIetfPacketHeader(first_byte)) {
-    *format = GOOGLE_QUIC_PACKET;
-    *version_flag = (first_byte & PACKET_PUBLIC_FLAGS_VERSION) != 0;
-    destination_connection_id_length =
-        first_byte & PACKET_PUBLIC_FLAGS_8BYTE_CONNECTION_ID;
-    if (destination_connection_id_length == 0 ||
-        !reader.ReadConnectionId(destination_connection_id,
-                                 destination_connection_id_length)) {
-      *detailed_error = "Unable to read ConnectionId.";
-      return QUIC_INVALID_PACKET_HEADER;
-    }
-    if (*version_flag && !ProcessVersionLabel(&reader, version_label)) {
-      *detailed_error = "Unable to read protocol version.";
-      return QUIC_INVALID_PACKET_HEADER;
-    }
-    return QUIC_NO_ERROR;
-  }
-
-  *format = GetIetfPacketHeaderFormat(first_byte);
-  QUIC_DVLOG(1) << "Dispatcher: Processing IETF QUIC packet, format: "
-                << *format;
-  *version_flag = *format == IETF_QUIC_LONG_HEADER_PACKET;
-  if (*format == IETF_QUIC_LONG_HEADER_PACKET) {
-    if (!ProcessVersionLabel(&reader, version_label)) {
-      *detailed_error = "Unable to read protocol version.";
-      return QUIC_INVALID_PACKET_HEADER;
-    }
-    // Set should_update_expected_server_connection_id_length to true to bypass
-    // connection ID lengths validation.
-    uint8_t unused_expected_server_connection_id_length = 0;
-    if (!ProcessAndValidateIetfConnectionIdLength(
-            &reader, ParseQuicVersionLabel(*version_label),
-            Perspective::IS_SERVER,
-            /*should_update_expected_server_connection_id_length=*/true,
-            &unused_expected_server_connection_id_length,
-            &destination_connection_id_length, &source_connection_id_length,
-            detailed_error)) {
-      return QUIC_INVALID_PACKET_HEADER;
-    }
-  } else {
-    // For short header packets, expected_destination_connection_id_length
-    // is used to determine the destination_connection_id_length.
-    destination_connection_id_length =
-        expected_destination_connection_id_length;
-    DCHECK_EQ(0, source_connection_id_length);
-  }
-  // Read destination connection ID.
-  if (!reader.ReadConnectionId(destination_connection_id,
-                               destination_connection_id_length)) {
-    *detailed_error = "Unable to read destination connection ID.";
-    return QUIC_INVALID_PACKET_HEADER;
-  }
-  // Read source connection ID.
-  if (!reader.ReadConnectionId(source_connection_id,
-                               source_connection_id_length)) {
-    *detailed_error = "Unable to read source connection ID.";
-    return QUIC_INVALID_PACKET_HEADER;
-  }
-  return QUIC_NO_ERROR;
-}
-
-// static
 QuicErrorCode QuicFramer::ParsePublicHeaderDispatcher(
     const QuicEncryptedPacket& packet,
     uint8_t expected_destination_connection_id_length,
     PacketHeaderFormat* format,
+    QuicLongHeaderType* long_packet_type,
     bool* version_present,
     bool* has_length_prefix,
     QuicVersionLabel* version_label,
@@ -6325,12 +6160,11 @@ QuicErrorCode QuicFramer::ParsePublicHeaderDispatcher(
   const bool ietf_format = QuicUtils::IsIetfPacketHeader(first_byte);
   uint8_t unused_first_byte;
   QuicVariableLengthIntegerLength retry_token_length_length;
-  QuicLongHeaderType unused_log_packet_type;
-  const QuicErrorCode error_code = ParsePublicHeader(
+  QuicErrorCode error_code = ParsePublicHeader(
       &reader, expected_destination_connection_id_length, ietf_format,
       &unused_first_byte, format, version_present, has_length_prefix,
       version_label, parsed_version, destination_connection_id,
-      source_connection_id, &unused_log_packet_type, &retry_token_length_length,
+      source_connection_id, long_packet_type, &retry_token_length_length,
       retry_token, detailed_error);
   *retry_token_present =
       retry_token_length_length != VARIABLE_LENGTH_INTEGER_LENGTH_0;
@@ -6370,6 +6204,8 @@ QuicErrorCode QuicFramer::ParsePublicHeaderGoogleQuic(
 
 namespace {
 
+const QuicVersionLabel kProxVersionLabel = 0x50524F58;  // "PROX"
+
 inline bool PacketHasLengthPrefixedConnectionIds(
     const QuicDataReader& reader,
     ParsedQuicVersion parsed_version,
@@ -6400,7 +6236,7 @@ inline bool PacketHasLengthPrefixedConnectionIds(
 
   // Check for munged packets with version tag PROX.
   if ((connection_id_length_byte & 0x0f) == 0 &&
-      connection_id_length_byte >= 0x20 && version_label == 0x50524F58) {
+      connection_id_length_byte >= 0x20 && version_label == kProxVersionLabel) {
     return false;
   }
 
@@ -6410,6 +6246,7 @@ inline bool PacketHasLengthPrefixedConnectionIds(
 inline bool ParseLongHeaderConnectionIds(
     QuicDataReader* reader,
     bool has_length_prefix,
+    QuicVersionLabel version_label,
     QuicConnectionId* destination_connection_id,
     QuicConnectionId* source_connection_id,
     std::string* detailed_error) {
@@ -6419,6 +6256,16 @@ inline bool ParseLongHeaderConnectionIds(
       return false;
     }
     if (!reader->ReadLengthPrefixedConnectionId(source_connection_id)) {
+      if (GetQuicReloadableFlag(quic_parse_prox_source_connection_id) &&
+          version_label == kProxVersionLabel) {
+        QUIC_RELOADABLE_FLAG_COUNT(quic_parse_prox_source_connection_id);
+        // The "PROX" version does not follow the length-prefixed invariants,
+        // and can therefore attempt to read a payload byte and interpret it
+        // as the source connection ID length, which could fail to parse.
+        // In that scenario we keep the source connection ID empty but mark
+        // parsing as successful.
+        return true;
+      }
       *detailed_error = "Unable to read source connection ID.";
       return false;
     }
@@ -6529,7 +6376,7 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
       *reader, *parsed_version, *version_label, *first_byte);
 
   // Parse connection IDs.
-  if (!ParseLongHeaderConnectionIds(reader, *has_length_prefix,
+  if (!ParseLongHeaderConnectionIds(reader, *has_length_prefix, *version_label,
                                     destination_connection_id,
                                     source_connection_id, detailed_error)) {
     return QUIC_INVALID_PACKET_HEADER;
@@ -6737,27 +6584,6 @@ bool QuicFramer::ParseServerVersionNegotiationProbeResponse(
     return false;
   }
 
-  if (!use_length_prefix && source_connection_id.length() == 0) {
-    // We received a bad response due to b/139330014.
-    // Reparse the packet assuming length prefixes.
-    // This is a temporary client-side workaround until cl/263172621 is
-    // deployed on production servers.
-    // TODO(dschinazi): remove this client-side workaround once the server-side
-    // fix is deployed.
-    QuicDataReader reader2(packet_bytes, packet_length);
-    uint8_t type_byte2 = 0;
-    uint32_t version2 = 0;
-    QuicConnectionId destination_connection_id2, source_connection_id2;
-    if (reader2.ReadUInt8(&type_byte2) && reader2.ReadUInt32(&version2) &&
-        reader2.ReadLengthPrefixedConnectionId(&destination_connection_id2) &&
-        reader2.ReadLengthPrefixedConnectionId(&source_connection_id2) &&
-        (type_byte2 & 0x80) != 0 && version2 == 0 &&
-        destination_connection_id2.length() == 0 &&
-        source_connection_id2.length() != 0) {
-      source_connection_id = source_connection_id2;
-    }
-  }
-
   memcpy(source_connection_id_bytes, source_connection_id.data(),
          source_connection_id.length());
   *source_connection_id_length_out = source_connection_id.length();
@@ -6777,7 +6603,12 @@ void MaybeExtractQuicErrorCode(QuicConnectionCloseFrame* frame) {
   uint64_t extracted_error_code;
   if (ed.size() < 2 || !QuicTextUtils::IsAllDigits(ed[0]) ||
       !QuicTextUtils::StringToUint64(ed[0], &extracted_error_code)) {
-    frame->extracted_error_code = QUIC_IETF_GQUIC_ERROR_MISSING;
+    if (frame->close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE &&
+        frame->transport_error_code == NO_IETF_QUIC_ERROR) {
+      frame->extracted_error_code = QUIC_NO_ERROR;
+    } else {
+      frame->extracted_error_code = QUIC_IETF_GQUIC_ERROR_MISSING;
+    }
     return;
   }
   // Return the error code (numeric) and the error details string without the

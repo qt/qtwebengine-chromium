@@ -399,9 +399,14 @@ if (!build_with_chromium) {
 
     deps = [
       ":webrtc_common",
+      "api:create_peerconnection_factory",
       "api:libjingle_peerconnection_api",
+      "api:rtc_error",
       "api:transport_api",
+      "api/crypto",
       "api/rtc_event_log:rtc_event_log_factory",
+      "api/task_queue",
+      "api/task_queue:default_task_queue_factory",
       "audio",
       "call",
       "common_audio",
@@ -536,7 +541,6 @@ if (rtc_include_tests) {
   rtc_test("slow_tests") {
     testonly = true
     deps = [
-      "modules/congestion_controller/goog_cc:goog_cc_slow_tests",
       "rtc_base/task_utils:repeating_task_unittests",
       "test:test_main",
     ]

@@ -419,8 +419,13 @@ void CommandBuffer::ExecutionState::bindVertexInputs(sw::Context& context, int f
 		if (attrib.count)
 		{
 			const auto &vertexInput = vertexInputBindings[attrib.binding];
-			attrib.buffer = vertexInput.buffer ? vertexInput.buffer->getOffsetPointer(
-					attrib.offset + vertexInput.offset + attrib.vertexStride * firstVertex + attrib.instanceStride * firstInstance) : nullptr;
+			VkDeviceSize offset = attrib.offset + vertexInput.offset +
+			                      attrib.vertexStride * firstVertex +
+			                      attrib.instanceStride * firstInstance;
+			attrib.buffer = vertexInput.buffer ? vertexInput.buffer->getOffsetPointer(offset) : nullptr;
+
+			VkDeviceSize size = vertexInput.buffer ? vertexInput.buffer->getSize() : 0;
+			attrib.robustnessSize = (size > offset) ? size - offset : 0;
 		}
 	}
 }
@@ -526,12 +531,12 @@ struct DrawBase : public CommandBuffer::Command
 
 		// Apply either pipeline state or dynamic state
 		executionState.renderer->setScissor(pipeline->hasDynamicState(VK_DYNAMIC_STATE_SCISSOR) ?
-											executionState.dynamicState.scissor : pipeline->getScissor());
+		                                    executionState.dynamicState.scissor : pipeline->getScissor());
 		executionState.renderer->setViewport(pipeline->hasDynamicState(VK_DYNAMIC_STATE_VIEWPORT) ?
-											 executionState.dynamicState.viewport : pipeline->getViewport());
+		                                     executionState.dynamicState.viewport : pipeline->getViewport());
 		executionState.renderer->setBlendConstant(pipeline->hasDynamicState(VK_DYNAMIC_STATE_BLEND_CONSTANTS) ?
-												  executionState.dynamicState.blendConstants
-																											  : pipeline->getBlendConstants());
+		                                          executionState.dynamicState.blendConstants : pipeline->getBlendConstants());
+
 		if (pipeline->hasDynamicState(VK_DYNAMIC_STATE_DEPTH_BIAS))
 		{
 			// If the depth bias clamping feature is not enabled, depthBiasClamp must be 0.0
@@ -1108,7 +1113,7 @@ struct WriteTimeStamp : public CommandBuffer::Command
 			// Everything else is deferred to the Renderer; we will treat those stages all as if they were
 			// `bottom of pipe`.
 			//
-			// FIXME(chrisforbes): once Yarn is integrated, do this in a task so we don't have to stall here.
+			// FIXME(chrisforbes): once Marl is integrated, do this in a task so we don't have to stall here.
 			executionState.renderer->synchronize();
 		}
 

@@ -22,8 +22,8 @@
 #include "api/call/audio_sink.h"
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
-#include "api/media_transport_config.h"
-#include "api/media_transport_interface.h"
+#include "api/transport/media/media_transport_config.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "api/transport/rtp/rtp_source.h"
 #include "call/rtp_packet_sink_interface.h"
 #include "call/syncable.h"
@@ -54,7 +54,8 @@ struct CallReceiveStatistics {
   unsigned int cumulativeLost;
   unsigned int jitterSamples;
   int64_t rttMs;
-  size_t bytesReceived;
+  int64_t payload_bytes_rcvd = 0;
+  int64_t header_and_padding_bytes_rcvd = 0;
   int packetsReceived;
   // The capture ntp time (in local timebase) of the first played out audio
   // frame.

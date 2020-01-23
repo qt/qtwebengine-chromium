@@ -37,6 +37,8 @@ spirv_tools_dir = glslang_spirv_tools_dir
 
 config("glslang_public") {
   include_dirs = [ "." ]
+
+  defines = [ "ENABLE_HLSL=1" ]
 }
 
 source_set("glslang_sources") {
@@ -129,9 +131,25 @@ source_set("glslang_sources") {
     "glslang/MachineIndependent/reflection.h",
     "glslang/OSDependent/osinclude.h",
     "glslang/Public/ShaderLang.h",
+    "hlsl/hlslAttributes.cpp",
+    "hlsl/hlslAttributes.h",
+    "hlsl/hlslGrammar.cpp",
+    "hlsl/hlslGrammar.h",
+    "hlsl/hlslOpMap.cpp",
+    "hlsl/hlslOpMap.h",
+    "hlsl/hlslParseHelper.cpp",
+    "hlsl/hlslParseHelper.h",
+    "hlsl/hlslParseables.cpp",
+    "hlsl/hlslParseables.h",
+    "hlsl/hlslScanContext.cpp",
+    "hlsl/hlslScanContext.h",
+    "hlsl/hlslTokenStream.cpp",
+    "hlsl/hlslTokenStream.h",
+    "hlsl/hlslTokens.h",
   ]
 
   defines = [ "ENABLE_OPT=1" ]
+
   if (is_win) {
     sources += [ "glslang/OSDependent/Windows/ossource.cpp" ]
     defines += [ "GLSLANG_OSINCLUDE_WIN32" ]
@@ -141,7 +159,7 @@ source_set("glslang_sources") {
   }
 
   if (is_clang) {
-    cflags_cc = [
+    cflags = [
       "-Wno-extra-semi",
       "-Wno-ignored-qualifiers",
       "-Wno-implicit-fallthrough",
@@ -149,12 +167,13 @@ source_set("glslang_sources") {
       "-Wno-sign-compare",
       "-Wno-unused-variable",
       "-Wno-missing-field-initializers",
+      "-Wno-newline-eof",
     ]
   }
   if (is_win && !is_clang) {
     cflags = [
-      "/wd4018", # signed/unsigned mismatch
-      "/wd4189", # local variable is initialized but not referenced
+      "/wd4018",  # signed/unsigned mismatch
+      "/wd4189",  # local variable is initialized but not referenced
     ]
   }
 
@@ -162,6 +181,9 @@ source_set("glslang_sources") {
     "${spirv_tools_dir}:spvtools_opt",
     "${spirv_tools_dir}:spvtools_val",
   ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
 }
 
 source_set("glslang_default_resource_limits_sources") {
@@ -169,8 +191,13 @@ source_set("glslang_default_resource_limits_sources") {
     "StandAlone/ResourceLimits.cpp",
     "StandAlone/ResourceLimits.h",
   ]
-  deps = [ ":glslang_sources" ]
+  deps = [
+    ":glslang_sources",
+  ]
   public_configs = [ ":glslang_public" ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
 }
 
 executable("glslang_validator") {
@@ -186,6 +213,9 @@ executable("glslang_validator") {
     ":glslang_default_resource_limits_sources",
     ":glslang_sources",
   ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
 }
 
 executable("spirv-remap") {
@@ -196,4 +226,7 @@ executable("spirv-remap") {
   deps = [
     ":glslang_sources",
   ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
 }

@@ -178,6 +178,11 @@ void shaderc_spvc_compile_options_set_validate(
   options->validate = b;
 }
 
+void shaderc_spvc_compile_options_set_optimize(
+    shaderc_spvc_compile_options_t options, bool b) {
+  options->optimize = b;
+}
+
 size_t shaderc_spvc_compile_options_set_for_fuzzing(
     shaderc_spvc_compile_options_t options, const uint8_t* data, size_t size) {
   if (!data || size < sizeof(*options)) return 0;
@@ -289,8 +294,16 @@ shaderc_spvc_compilation_result_t shaderc_spvc_compile_into_vulkan(
     return result;
   }
 
-  // No generation step since output for this compile method is the binary
-  // SPIR-V.
+  // No actual generation since output for this compile method is the binary
+  // SPIR-V, but need to produce a compiler so that reflection can be performed
+  result = spvc_private::generate_vulkan_shader(result->binary_output.data(),
+                                                result->binary_output.size(),
+                                                options, result);
+  if (result->status != shaderc_compilation_status_success) {
+    result->messages.append(
+        "Unable to generate compiler for reflection of Vulkan shader.\n");
+  }
+
   return result;
 }
 

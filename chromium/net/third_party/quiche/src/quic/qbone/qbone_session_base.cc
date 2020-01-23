@@ -4,10 +4,11 @@
 
 #include "net/third_party/quiche/src/quic/qbone/qbone_session_base.h"
 
+#include <utility>
+
 #include "net/third_party/quiche/src/quic/core/quic_data_reader.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_exported_stats.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/qbone/qbone_constants.h"
 
 namespace quic {
@@ -81,6 +82,11 @@ void QboneSessionBase::OnStreamFrame(const QuicStreamFrame& frame) {
   QuicSession::OnStreamFrame(frame);
 }
 
+void QboneSessionBase::OnMessageReceived(QuicStringPiece message) {
+  ++num_message_packets_;
+  ProcessPacketFromPeer(message);
+}
+
 QuicStream* QboneSessionBase::CreateIncomingStream(QuicStreamId id) {
   return ActivateDataStream(CreateDataStream(id));
 }
@@ -104,10 +110,10 @@ std::unique_ptr<QuicStream> QboneSessionBase::CreateDataStream(
 
   if (IsIncomingStream(id)) {
     ++num_streamed_packets_;
-    return QuicMakeUnique<QboneReadOnlyStream>(id, this);
+    return std::make_unique<QboneReadOnlyStream>(id, this);
   }
 
-  return QuicMakeUnique<QboneWriteOnlyStream>(id, this);
+  return std::make_unique<QboneWriteOnlyStream>(id, this);
 }
 
 QuicStream* QboneSessionBase::ActivateDataStream(
@@ -122,6 +128,23 @@ QuicStream* QboneSessionBase::ActivateDataStream(
 }
 
 void QboneSessionBase::SendPacketToPeer(QuicStringPiece packet) {
+  if (crypto_stream_ == nullptr) {
+    QUIC_BUG << "Attempting to send packet before encryption established";
+    return;
+  }
+
+  if (send_packets_as_messages_) {
+    QuicMemSlice slice(connection()->helper()->GetStreamSendBufferAllocator(),
+                       packet.size());
+    memcpy(const_cast<char*>(slice.data()), packet.data(), packet.size());
+    if (SendMessage(QuicMemSliceSpan(&slice)).status ==
+        MESSAGE_STATUS_SUCCESS) {
+      return;
+    }
+    // If SendMessage() fails for any reason, fall back to ephemeral streams.
+    num_fallback_to_stream_++;
+  }
+
   // Qbone streams are ephemeral.
   QuicStream* stream = CreateOutgoingStream();
   if (!stream) {
@@ -140,6 +163,14 @@ uint64_t QboneSessionBase::GetNumEphemeralPackets() const {
 
 uint64_t QboneSessionBase::GetNumStreamedPackets() const {
   return num_streamed_packets_;
+}
+
+uint64_t QboneSessionBase::GetNumMessagePackets() const {
+  return num_message_packets_;
+}
+
+uint64_t QboneSessionBase::GetNumFallbackToStream() const {
+  return num_fallback_to_stream_;
 }
 
 void QboneSessionBase::set_writer(QbonePacketWriter* writer) {

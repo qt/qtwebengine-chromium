@@ -48,12 +48,14 @@ inline bool operator!=(const TraceIdHierarchy& lhs,
 // BitFlags to represent the supported tracing categories.
 // NOTE: These are currently placeholder values and later changes should feel
 // free to edit them.
+// TODO(rwkeane): Rename SSL to either Ssl or kSsl
 struct TraceCategory {
   enum Value : uint64_t {
     Any = std::numeric_limits<uint64_t>::max(),
     mDNS = 0x01 << 0,
     Quic = 0x01 << 1,
-    Presentation = 0x01 << 2,
+    SSL = 0x01 << 2,
+    Presentation = 0x01 << 3,
   };
 };
 

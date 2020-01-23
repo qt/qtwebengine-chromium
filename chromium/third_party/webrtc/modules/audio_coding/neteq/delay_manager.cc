@@ -15,10 +15,10 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <memory>
 #include <numeric>
 #include <string>
 
-#include "absl/memory/memory.h"
 #include "modules/audio_coding/neteq/delay_peak_detector.h"
 #include "modules/audio_coding/neteq/histogram.h"
 #include "modules/audio_coding/neteq/statistics_calculator.h"
@@ -39,6 +39,7 @@ constexpr int kMaxHistoryMs = 2000;  // Oldest packet to include in history to
                                      // calculate relative packet arrival delay.
 constexpr int kDelayBuckets = 100;
 constexpr int kBucketSizeMs = 20;
+constexpr int kDecelerationTargetLevelOffsetMs = 85 << 8;  // In Q8.
 
 int PercentileToQuantile(double percentile) {
   return static_cast<int>((1 << 30) * percentile / 100.0 + 0.5);
@@ -77,29 +78,6 @@ DelayHistogramConfig GetDelayHistogramConfig() {
                    << " start_forget_weight="
                    << config.start_forget_weight.value_or(0);
   return config;
-}
-
-absl::optional<int> GetDecelerationTargetLevelOffsetMs() {
-  constexpr char kDecelerationTargetLevelOffsetFieldTrial[] =
-      "WebRTC-Audio-NetEqDecelerationTargetLevelOffset";
-  if (!webrtc::field_trial::IsEnabled(
-          kDecelerationTargetLevelOffsetFieldTrial)) {
-    return absl::nullopt;
-  }
-
-  const auto field_trial_string = webrtc::field_trial::FindFullName(
-      kDecelerationTargetLevelOffsetFieldTrial);
-  int deceleration_target_level_offset_ms = -1;
-  sscanf(field_trial_string.c_str(), "Enabled-%d",
-         &deceleration_target_level_offset_ms);
-  if (deceleration_target_level_offset_ms >= 0) {
-    RTC_LOG(LS_INFO) << "NetEq deceleration_target_level_offset "
-                     << "in milliseconds "
-                     << deceleration_target_level_offset_ms;
-    // Convert into Q8.
-    return deceleration_target_level_offset_ms << 8;
-  }
-  return absl::nullopt;
 }
 
 absl::optional<int> GetExtraDelayMs() {
@@ -153,14 +131,10 @@ DelayManager::DelayManager(size_t max_packets_in_buffer,
       frame_length_change_experiment_(
           field_trial::IsEnabled("WebRTC-Audio-NetEqFramelengthExperiment")),
       enable_rtx_handling_(enable_rtx_handling),
-      deceleration_target_level_offset_ms_(
-          GetDecelerationTargetLevelOffsetMs()),
       extra_delay_ms_(GetExtraDelayMs()) {
   assert(peak_detector);  // Should never be NULL.
   RTC_CHECK(histogram_);
   RTC_DCHECK_GE(base_minimum_delay_ms_, 0);
-  RTC_DCHECK(!deceleration_target_level_offset_ms_ ||
-             *deceleration_target_level_offset_ms_ >= 0);
 
   Reset();
 }
@@ -175,9 +149,9 @@ std::unique_ptr<DelayManager> DelayManager::Create(
   const HistogramMode mode = RELATIVE_ARRIVAL_DELAY;
   DelayHistogramConfig config = GetDelayHistogramConfig();
   const int quantile = config.quantile;
-  std::unique_ptr<Histogram> histogram = absl::make_unique<Histogram>(
+  std::unique_ptr<Histogram> histogram = std::make_unique<Histogram>(
       kDelayBuckets, config.forget_factor, config.start_forget_weight);
-  return absl::make_unique<DelayManager>(
+  return std::make_unique<DelayManager>(
       max_packets_in_buffer, base_minimum_delay_ms, quantile, mode,
       enable_rtx_handling, peak_detector, tick_timer, statistics,
       std::move(histogram));
@@ -437,10 +411,10 @@ void DelayManager::BufferLimits(int target_level,
   // |target_level| is in Q8 already.
   *lower_limit = (target_level * 3) / 4;
 
-  if (deceleration_target_level_offset_ms_ && packet_len_ms_ > 0) {
-    *lower_limit = std::max(
-        *lower_limit,
-        target_level - *deceleration_target_level_offset_ms_ / packet_len_ms_);
+  if (packet_len_ms_ > 0) {
+    *lower_limit =
+        std::max(*lower_limit, target_level - kDecelerationTargetLevelOffsetMs /
+                                                  packet_len_ms_);
   }
 
   int window_20ms = 0x7FFF;  // Default large value for legacy bit-exactness.
@@ -549,4 +523,5 @@ int DelayManager::MaxBufferTimeQ75() const {
   const int max_buffer_time = max_packets_in_buffer_ * packet_len_ms_;
   return rtc::dchecked_cast<int>(3 * max_buffer_time / 4);
 }
+
 }  // namespace webrtc

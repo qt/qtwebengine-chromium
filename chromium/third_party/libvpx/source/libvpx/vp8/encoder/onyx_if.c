@@ -38,7 +38,7 @@
 #include "vpx_ports/system_state.h"
 #include "vpx_ports/vpx_timer.h"
 #include "vpx_util/vpx_write_yuv_frame.h"
-#if ARCH_ARM
+#if VPX_ARCH_ARM
 #include "vpx_ports/arm.h"
 #endif
 #if CONFIG_MULTI_RES_ENCODING
@@ -2043,7 +2043,7 @@ struct VP8_COMP *vp8_create_compressor(VP8_CONFIG *oxcf) {
   cpi->fn_ptr[BLOCK_4X4].sdx8f = vpx_sad4x4x8;
   cpi->fn_ptr[BLOCK_4X4].sdx4df = vpx_sad4x4x4d;
 
-#if ARCH_X86 || ARCH_X86_64
+#if VPX_ARCH_X86 || VPX_ARCH_X86_64
   cpi->fn_ptr[BLOCK_16X16].copymem = vp8_copy32xn;
   cpi->fn_ptr[BLOCK_16X8].copymem = vp8_copy32xn;
   cpi->fn_ptr[BLOCK_8X16].copymem = vp8_copy32xn;
@@ -3958,7 +3958,10 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
     vp8_encode_frame(cpi);
 
     if (cpi->pass == 0 && cpi->oxcf.end_usage == USAGE_STREAM_FROM_SERVER) {
-      if (vp8_drop_encodedframe_overshoot(cpi, Q)) return;
+      if (vp8_drop_encodedframe_overshoot(cpi, Q)) {
+        vpx_clear_system_state();
+        return;
+      }
       if (cm->frame_type != KEY_FRAME)
         cpi->last_pred_err_mb =
             (int)(cpi->mb.prediction_error / cpi->common.MBs);

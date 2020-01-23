@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/crypto/null_decrypter.h"
@@ -36,7 +37,7 @@ namespace quic {
 namespace test {
 namespace {
 
-class MockDelegate : public QuicPacketGenerator::DelegateInterface {
+class MockDelegate : public QuicPacketCreator::DelegateInterface {
  public:
   MockDelegate() {}
   MockDelegate(const MockDelegate&) = delete;
@@ -108,7 +109,7 @@ class TestPacketGenerator : public QuicPacketGenerator {
   TestPacketGenerator(QuicConnectionId connection_id,
                       QuicFramer* framer,
                       QuicRandom* random_generator,
-                      DelegateInterface* delegate,
+                      QuicPacketCreator::DelegateInterface* delegate,
                       SimpleDataProducer* producer)
       : QuicPacketGenerator(connection_id, framer, random_generator, delegate),
         ack_frame_(InitAckFrame(1)),
@@ -207,13 +208,13 @@ class QuicPacketGeneratorTest : public QuicTest {
     EXPECT_CALL(delegate_, GetPacketBuffer()).WillRepeatedly(Return(nullptr));
     creator_->SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
-        QuicMakeUnique<NullEncrypter>(Perspective::IS_CLIENT));
+        std::make_unique<NullEncrypter>(Perspective::IS_CLIENT));
     creator_->set_encryption_level(ENCRYPTION_FORWARD_SECURE);
     framer_.set_data_producer(&producer_);
     if (simple_framer_.framer()->version().KnowsWhichDecrypterToUse()) {
       simple_framer_.framer()->InstallDecrypter(
           ENCRYPTION_FORWARD_SECURE,
-          QuicMakeUnique<NullDecrypter>(Perspective::IS_SERVER));
+          std::make_unique<NullDecrypter>(Perspective::IS_SERVER));
     }
     generator_.AttachPacketFlusher();
   }
@@ -516,7 +517,7 @@ TEST_F(QuicPacketGeneratorTest, ConsumeData_Handshake) {
 // Test the behavior of ConsumeData when the data is for the crypto handshake
 // stream, but padding is disabled.
 TEST_F(QuicPacketGeneratorTest, ConsumeData_Handshake_PaddingDisabled) {
-  generator_.set_fully_pad_crypto_hadshake_packets(false);
+  generator_.set_fully_pad_crypto_handshake_packets(false);
 
   delegate_.SetCanWriteAnything();
 
@@ -677,7 +678,7 @@ TEST_F(QuicPacketGeneratorTest, ConsumeData_FramesPreviouslyQueued) {
   EXPECT_TRUE(generator_.HasPendingFrames());
   EXPECT_TRUE(generator_.HasRetransmittableFrames());
 
-  creator_->Flush();
+  creator_->FlushCurrentPacket();
   EXPECT_FALSE(generator_.HasPendingFrames());
   EXPECT_FALSE(generator_.HasRetransmittableFrames());
 
@@ -1290,11 +1291,11 @@ TEST_F(QuicPacketGeneratorTest, ConnectionCloseFrameLargerThanPacketSize) {
   delegate_.SetCanWriteAnything();
   char buf[2000] = {};
   QuicStringPiece error_details(buf, 2000);
+  const QuicErrorCode kQuicErrorCode = QUIC_PACKET_WRITE_ERROR;
+
   QuicConnectionCloseFrame* frame = new QuicConnectionCloseFrame(
-      QUIC_PACKET_WRITE_ERROR, std::string(error_details));
-  if (VersionHasIetfQuicFrames(framer_.transport_version())) {
-    frame->close_type = IETF_QUIC_TRANSPORT_CONNECTION_CLOSE;
-  }
+      framer_.transport_version(), kQuicErrorCode, std::string(error_details),
+      /*transport_close_frame_type=*/0);
   generator_.ConsumeRetransmittableControlFrame(QuicFrame(frame),
                                                 /*bundle_ack=*/false);
   EXPECT_TRUE(generator_.HasPendingFrames());

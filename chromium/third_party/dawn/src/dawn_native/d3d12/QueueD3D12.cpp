@@ -15,6 +15,7 @@
 #include "dawn_native/d3d12/QueueD3D12.h"
 
 #include "dawn_native/d3d12/CommandBufferD3D12.h"
+#include "dawn_native/d3d12/D3D12Error.h"
 #include "dawn_native/d3d12/DeviceD3D12.h"
 
 namespace dawn_native { namespace d3d12 {
@@ -22,20 +23,21 @@ namespace dawn_native { namespace d3d12 {
     Queue::Queue(Device* device) : QueueBase(device) {
     }
 
-    void Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
+    MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
         Device* device = ToBackend(GetDevice());
 
         device->Tick();
 
-        device->OpenCommandList(&mCommandList);
+        DAWN_TRY(mCommandContext.Open(device->GetD3D12Device().Get(),
+                                      device->GetCommandAllocatorManager()));
         for (uint32_t i = 0; i < commandCount; ++i) {
-            ToBackend(commands[i])->RecordCommands(mCommandList, i);
+            DAWN_TRY(ToBackend(commands[i])->RecordCommands(&mCommandContext, i));
         }
-        ASSERT_SUCCESS(mCommandList->Close());
 
-        device->ExecuteCommandLists({mCommandList.Get()});
+        DAWN_TRY(device->ExecuteCommandContext(&mCommandContext));
 
-        device->NextSerial();
+        DAWN_TRY(device->NextSerial());
+        return {};
     }
 
 }}  // namespace dawn_native::d3d12

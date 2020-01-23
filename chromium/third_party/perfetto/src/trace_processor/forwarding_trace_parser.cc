@@ -24,6 +24,7 @@
 #include "src/trace_processor/proto_trace_parser.h"
 #include "src/trace_processor/proto_trace_tokenizer.h"
 #include "src/trace_processor/systrace_trace_parser.h"
+#include "src/trace_processor/trace_sorter.h"
 
 // JSON parsing and exporting is only supported in the standalone and
 // Chromium builds.
@@ -143,13 +144,13 @@ TraceType GuessTraceType(const uint8_t* data, size_t size) {
       base::StartsWith(start, "<html>"))
     return kSystraceTraceType;
 
+  // Ctrace is deflate'ed systrace.
+  if (start.find("TRACE:") != std::string::npos)
+    return kCtraceTraceType;
+
   // Systrace with no header or leading HTML.
   if (base::StartsWith(start, " "))
     return kSystraceTraceType;
-
-  // Ctrace is deflate'ed systrace.
-  if (base::StartsWith(start, "TRACE:"))
-    return kCtraceTraceType;
 
   // gzip'ed trace containing one of the other formats.
   if (base::StartsWith(start, "\x1f\x8b"))

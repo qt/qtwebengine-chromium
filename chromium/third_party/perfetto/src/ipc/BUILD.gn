@@ -29,8 +29,9 @@ source_set("ipc") {
     "../base:unix_socket",
   ]
   deps = [
-    ":wire_protocol",
     "../../gn:default_deps",
+    "../../gn:protobuf_lite",
+    "../../protos/perfetto/ipc:wire_protocol",
     "../base",
   ]
   sources = [
@@ -52,8 +53,8 @@ perfetto_fuzzer_test("buffered_frame_deserializer_fuzzer") {
   ]
   deps = [
     ":ipc",
-    ":wire_protocol",
     "../../gn:default_deps",
+    "../../protos/perfetto/ipc:wire_protocol",
   ]
 }
 
@@ -62,9 +63,9 @@ perfetto_unittest_source_set("unittests") {
   deps = [
     ":ipc",
     ":test_messages",
-    ":wire_protocol",
     "../../gn:default_deps",
     "../../gn:gtest_and_gmock",
+    "../../protos/perfetto/ipc:wire_protocol",
     "../base",
     "../base:test_support",
   ]
@@ -77,14 +78,6 @@ perfetto_unittest_source_set("unittests") {
   ]
 }
 
-perfetto_proto_library("wire_protocol") {
-  proto_generators = [ "lite" ]
-  sources = [
-    "wire_protocol.proto",
-  ]
-  proto_path = perfetto_root_path
-}
-
 ipc_library("test_messages") {
   sources = [
     "test/client_unittest_messages.proto",
@@ -93,4 +86,13 @@ ipc_library("test_messages") {
   ]
   proto_in_dir = perfetto_root_path
   proto_out_dir = perfetto_root_path
+}
+
+# This is used by Bazel BUILD rules.
+static_library("perfetto_ipc") {
+  complete_static_lib = true
+  deps = [
+    ":ipc",
+    "../../gn:default_deps",
+  ]
 }

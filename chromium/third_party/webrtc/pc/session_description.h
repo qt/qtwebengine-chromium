@@ -33,6 +33,7 @@
 #include "pc/simulcast_description.h"
 #include "rtc_base/deprecation.h"
 #include "rtc_base/socket_address.h"
+#include "rtc_base/system/rtc_export.h"
 
 namespace cricket {
 
@@ -249,6 +250,13 @@ class MediaContentDescription {
     receive_rids_ = rids;
   }
 
+  virtual const absl::optional<std::string>& alt_protocol() const {
+    return alt_protocol_;
+  }
+  virtual void set_alt_protocol(const absl::optional<std::string>& protocol) {
+    alt_protocol_ = protocol;
+  }
+
  protected:
   bool rtcp_mux_ = false;
   bool rtcp_reduced_size_ = false;
@@ -270,6 +278,8 @@ class MediaContentDescription {
 
   SimulcastDescription simulcast_;
   std::vector<RidDescription> receive_rids_;
+
+  absl::optional<std::string> alt_protocol_;
 };
 
 // TODO(bugs.webrtc.org/8620): Remove this alias once downstream projects have
@@ -411,7 +421,7 @@ constexpr MediaProtocolType NS_JINGLE_DRAFT_SCTP = MediaProtocolType::kSctp;
 // Represents a session description section. Most information about the section
 // is stored in the description, which is a subclass of MediaContentDescription.
 // Owns the description.
-class ContentInfo {
+class RTC_EXPORT ContentInfo {
  public:
   explicit ContentInfo(MediaProtocolType type) : type(type) {}
   ~ContentInfo();

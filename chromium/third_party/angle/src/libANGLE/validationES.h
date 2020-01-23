@@ -547,6 +547,14 @@ ANGLE_INLINE bool ValidateVertexFormat(Context *context,
                 return false;
             }
             break;
+        case VertexAttribTypeCase::ValidSize3or4:
+            if (size != 3 && size != 4)
+            {
+                context->validationError(GL_INVALID_OPERATION,
+                                         err::kInvalidVertexAttribSize1010102);
+                return false;
+            }
+            break;
     }
 
     return true;
@@ -606,7 +614,9 @@ bool ValidateGetInternalFormativBase(Context *context,
                                      GLsizei bufSize,
                                      GLsizei *numParams);
 
-bool ValidateFramebufferNotMultisampled(Context *context, Framebuffer *framebuffer);
+bool ValidateFramebufferNotMultisampled(Context *context,
+                                        Framebuffer *framebuffer,
+                                        bool needResourceSamples);
 
 bool ValidateMultitextureUnit(Context *context, GLenum texture);
 

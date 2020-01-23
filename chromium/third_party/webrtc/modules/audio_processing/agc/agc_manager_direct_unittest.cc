@@ -10,8 +10,10 @@
 
 #include "modules/audio_processing/agc/agc_manager_direct.h"
 
+#include "modules/audio_processing/agc/gain_control.h"
 #include "modules/audio_processing/agc/mock_agc.h"
 #include "modules/audio_processing/include/mock_audio_processing.h"
+#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -30,6 +32,28 @@ const int kSamplesPerChannel = kSampleRateHz / 100;
 const int kInitialVolume = 128;
 constexpr int kClippedMin = 165;  // Arbitrary, but different from the default.
 const float kAboveClippedThreshold = 0.2f;
+const int kMinMicLevel = 12;
+
+class MockGainControl : public GainControl {
+ public:
+  virtual ~MockGainControl() {}
+  MOCK_METHOD1(Enable, int(bool enable));
+  MOCK_CONST_METHOD0(is_enabled, bool());
+  MOCK_METHOD1(set_stream_analog_level, int(int level));
+  MOCK_CONST_METHOD0(stream_analog_level, int());
+  MOCK_METHOD1(set_mode, int(Mode mode));
+  MOCK_CONST_METHOD0(mode, Mode());
+  MOCK_METHOD1(set_target_level_dbfs, int(int level));
+  MOCK_CONST_METHOD0(target_level_dbfs, int());
+  MOCK_METHOD1(set_compression_gain_db, int(int gain));
+  MOCK_CONST_METHOD0(compression_gain_db, int());
+  MOCK_METHOD1(enable_limiter, int(bool enable));
+  MOCK_CONST_METHOD0(is_limiter_enabled, bool());
+  MOCK_METHOD2(set_analog_level_limits, int(int minimum, int maximum));
+  MOCK_CONST_METHOD0(analog_level_minimum, int());
+  MOCK_CONST_METHOD0(analog_level_maximum, int());
+  MOCK_CONST_METHOD0(stream_is_saturated, bool());
+};
 
 class TestVolumeCallbacks : public VolumeCallbacks {
  public:
@@ -89,7 +113,7 @@ class AgcManagerDirectTest : public ::testing::Test {
   }
 
   MockAgc* agc_;
-  test::MockGainControl gctrl_;
+  MockGainControl gctrl_;
   TestVolumeCallbacks volume_;
   AgcManagerDirect manager_;
 };
@@ -684,7 +708,7 @@ TEST_F(AgcManagerDirectTest, TakesNoActionOnZeroMicVolume) {
 
 TEST(AgcManagerDirectStandaloneTest, DisableDigitalDisablesDigital) {
   auto agc = std::unique_ptr<Agc>(new ::testing::NiceMock<MockAgc>());
-  test::MockGainControl gctrl;
+  MockGainControl gctrl;
   TestVolumeCallbacks volume;
 
   AgcManagerDirect manager(agc.release(), &gctrl, &volume, kInitialVolume,
@@ -698,6 +722,60 @@ TEST(AgcManagerDirectStandaloneTest, DisableDigitalDisablesDigital) {
   EXPECT_CALL(gctrl, enable_limiter(false));
 
   manager.Initialize();
+}
+
+TEST(AgcManagerDirectStandaloneTest, AgcMinMicLevelExperiment) {
+  auto agc_man = std::unique_ptr<AgcManagerDirect>(new AgcManagerDirect(
+      nullptr, nullptr, nullptr, kInitialVolume, kClippedMin, true, true));
+  EXPECT_EQ(agc_man->min_mic_level(), kMinMicLevel);
+  EXPECT_EQ(agc_man->startup_min_level(), kInitialVolume);
+  {
+    test::ScopedFieldTrials field_trial(
+        "WebRTC-Audio-AgcMinMicLevelExperiment/Disabled/");
+    agc_man.reset(new AgcManagerDirect(
+        nullptr, nullptr, nullptr, kInitialVolume, kClippedMin, true, true));
+    EXPECT_EQ(agc_man->min_mic_level(), kMinMicLevel);
+    EXPECT_EQ(agc_man->startup_min_level(), kInitialVolume);
+  }
+  {
+    // Valid range of field-trial parameter is [0,255].
+    test::ScopedFieldTrials field_trial(
+        "WebRTC-Audio-AgcMinMicLevelExperiment/Enabled-256/");
+    agc_man.reset(new AgcManagerDirect(
+        nullptr, nullptr, nullptr, kInitialVolume, kClippedMin, true, true));
+    EXPECT_EQ(agc_man->min_mic_level(), kMinMicLevel);
+    EXPECT_EQ(agc_man->startup_min_level(), kInitialVolume);
+  }
+  {
+    test::ScopedFieldTrials field_trial(
+        "WebRTC-Audio-AgcMinMicLevelExperiment/Enabled--1/");
+    agc_man.reset(new AgcManagerDirect(
+        nullptr, nullptr, nullptr, kInitialVolume, kClippedMin, true, true));
+    EXPECT_EQ(agc_man->min_mic_level(), kMinMicLevel);
+    EXPECT_EQ(agc_man->startup_min_level(), kInitialVolume);
+  }
+  {
+    // Verify that a valid experiment changes the minimum microphone level.
+    // The start volume is larger than the min level and should therefore not
+    // be changed.
+    test::ScopedFieldTrials field_trial(
+        "WebRTC-Audio-AgcMinMicLevelExperiment/Enabled-50/");
+    agc_man.reset(new AgcManagerDirect(
+        nullptr, nullptr, nullptr, kInitialVolume, kClippedMin, true, true));
+    EXPECT_EQ(agc_man->min_mic_level(), 50);
+    EXPECT_EQ(agc_man->startup_min_level(), kInitialVolume);
+  }
+  {
+    // Use experiment to reduce the default minimum microphone level, start at
+    // a lower level and ensure that the startup level is increased to the min
+    // level set by the experiment.
+    test::ScopedFieldTrials field_trial(
+        "WebRTC-Audio-AgcMinMicLevelExperiment/Enabled-50/");
+    agc_man.reset(new AgcManagerDirect(nullptr, nullptr, nullptr, 30,
+                                       kClippedMin, true, true));
+    EXPECT_EQ(agc_man->min_mic_level(), 50);
+    EXPECT_EQ(agc_man->startup_min_level(), 50);
+  }
 }
 
 }  // namespace webrtc

@@ -106,6 +106,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glBindVertexBuffers";
         case EntryPoint::Bitmap:
             return "glBitmap";
+        case EntryPoint::BlendBarrier:
+            return "glBlendBarrier";
         case EntryPoint::BlendColor:
             return "glBlendColor";
         case EntryPoint::BlendEquation:
@@ -472,6 +474,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glDisable";
         case EntryPoint::DisableClientState:
             return "glDisableClientState";
+        case EntryPoint::DisableExtensionANGLE:
+            return "glDisableExtensionANGLE";
         case EntryPoint::DisableVertexArrayAttrib:
             return "glDisableVertexArrayAttrib";
         case EntryPoint::DisableVertexAttribArray:
@@ -1690,6 +1694,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glPopMatrix";
         case EntryPoint::PopName:
             return "glPopName";
+        case EntryPoint::PrimitiveBoundingBox:
+            return "glPrimitiveBoundingBox";
         case EntryPoint::PrimitiveRestartIndex:
             return "glPrimitiveRestartIndex";
         case EntryPoint::PrioritizeTextures:

@@ -144,6 +144,15 @@ static bool RequireExtOrExtOrExt(const Version &, const Extensions &extensions)
     return extensions.*bool1 || extensions.*bool2 || extensions.*bool3;
 }
 
+static bool UnsizedHalfFloatOESRGBATextureAttachmentSupport(const Version &clientVersion,
+                                                            const Extensions &extensions)
+{
+    // dEQP requires ES3 + EXT_color_buffer_half_float for rendering to RGB[A] + HALF_FLOAT_OES
+    // textures but WebGL allows it with just ES 2.0
+    return (clientVersion.major >= 3 || extensions.webglCompatibility) &&
+           extensions.colorBufferHalfFloat;
+}
+
 // R8, RG8
 static bool SizedRGSupport(const Version &clientVersion, const Extensions &extensions)
 {
@@ -381,6 +390,11 @@ GLenum InternalFormat::getReadPixelsType(const Version &version) const
         default:
             return type;
     }
+}
+
+bool InternalFormat::supportSubImage() const
+{
+    return !CompressedFormatRequiresWholeImage(internalFormat);
 }
 
 bool InternalFormat::isRequiredRenderbufferFormat(const Version &version) const
@@ -923,6 +937,20 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     AddCompressedFormat(&map, GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT_EXT,   4,  4, 1, 128, 4, false, RequireExt<&Extensions::textureCompressionBPTC>, AlwaysSupported, NeverSupported,      NeverSupported);
     AddCompressedFormat(&map, GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT, 4,  4, 1, 128, 4, false, RequireExt<&Extensions::textureCompressionBPTC>, AlwaysSupported, NeverSupported,      NeverSupported);
 
+    // From GL_IMG_texture_compression_pvrtc
+    //                       | Internal format                       | W | H | D | BS |CC| SRGB | Texture supported                                 | Filterable     | Texture attachment | Renderbuffer |
+    AddCompressedFormat(&map, GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG,      1,  1,  1,   1, 3, false, RequireExt<&Extensions::compressedTexturePVRTC>,    AlwaysSupported, NeverSupported,      NeverSupported);
+    AddCompressedFormat(&map, GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG,      1,  1,  1,   1, 3, false, RequireExt<&Extensions::compressedTexturePVRTC>,    AlwaysSupported, NeverSupported,      NeverSupported);
+    AddCompressedFormat(&map, GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG,     1,  1,  1,   1, 4, false, RequireExt<&Extensions::compressedTexturePVRTC>,    AlwaysSupported, NeverSupported,      NeverSupported);
+    AddCompressedFormat(&map, GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG,     1,  1,  1,   1, 4, false, RequireExt<&Extensions::compressedTexturePVRTC>,    AlwaysSupported, NeverSupported,      NeverSupported);
+
+    // From GL_EXT_pvrtc_sRGB
+    //                       | Internal format                             | W | H | D | BS |CC| SRGB | Texture supported                                     | Filterable     | Texture attachment | Renderbuffer |
+    AddCompressedFormat(&map, GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT,           1,  1,  1,   1, 3,  true, RequireExt<&Extensions::compressedTexturePVRTCsRGB>,    AlwaysSupported, NeverSupported,      NeverSupported);
+    AddCompressedFormat(&map, GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT,           1,  1,  1,   1, 3,  true, RequireExt<&Extensions::compressedTexturePVRTCsRGB>,    AlwaysSupported, NeverSupported,      NeverSupported);
+    AddCompressedFormat(&map, GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT,     1,  1,  1,   1, 4,  true, RequireExt<&Extensions::compressedTexturePVRTCsRGB>,    AlwaysSupported, NeverSupported,      NeverSupported);
+    AddCompressedFormat(&map, GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT,     1,  1,  1,   1, 4,  true, RequireExt<&Extensions::compressedTexturePVRTCsRGB>,    AlwaysSupported, NeverSupported,      NeverSupported);
+
     // For STENCIL_INDEX8 we chose a normalized component type for the following reasons:
     // - Multisampled buffer are disallowed for non-normalized integer component types and we want to support it for STENCIL_INDEX8
     // - All other stencil formats (all depth-stencil) are either float or normalized
@@ -997,21 +1025,21 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     AddRGBAFormat(&map, GL_RGBA_INTEGER, false, 10, 10, 10,  2, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT_2_10_10_10_REV, GL_UNSIGNED_INT, false, RequireES<3, 0>,    NeverSupported, NeverSupported,      NeverSupported);
 
     // Unsized floating point formats
-    //                 |Internal format |sized | R | G | B | A |S | Format | Type                           | Comp    | SRGB | Texture supported                                                      | Filterable                                     | Texture attachment                                                                  | Renderbuffer |
-    AddRGBAFormat(&map, GL_RED,          false, 16,  0,  0,  0, 0, GL_RED,  GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RG,           false, 16, 16,  0,  0, 0, GL_RG,   GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RED,          false, 16,  0,  0,  0, 0, GL_RED,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>, RequireExt<&Extensions::textureHalfFloatLinear>, NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RG,           false, 16, 16,  0,  0, 0, GL_RG,   GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>, RequireExt<&Extensions::textureHalfFloatLinear>, NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                               RequireExt<&Extensions::textureHalfFloatLinear>, RequireExtAndExt<&Extensions::colorBufferHalfFloat, &Extensions::webglCompatibility>, NeverSupported);
-    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                               RequireExt<&Extensions::textureHalfFloatLinear>, RequireExt<&Extensions::colorBufferHalfFloat>,                                        NeverSupported);
-    AddRGBAFormat(&map, GL_RED,          false, 32,  0,  0,  0, 0, GL_RED,  GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloat, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinear>,     NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RG,           false, 32, 32,  0,  0, 0, GL_RG,   GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloat, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinear>,     NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RGB,          false, 32, 32, 32,  0, 0, GL_RGB,  GL_FLOAT,                        GL_FLOAT, false, RequireExt<&Extensions::textureFloat>,                                   RequireExt<&Extensions::textureFloatLinear>,     NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RGB,          false,  9,  9,  9,  0, 5, GL_RGB,  GL_UNSIGNED_INT_5_9_9_9_REV,     GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RGB,          false, 11, 11, 10,  0, 0, GL_RGB,  GL_UNSIGNED_INT_10F_11F_11F_REV, GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                                                       NeverSupported);
-    AddRGBAFormat(&map, GL_RGBA,         false, 32, 32, 32, 32, 0, GL_RGBA, GL_FLOAT,                        GL_FLOAT, false, RequireExt<&Extensions::textureFloat>,                                   RequireExt<&Extensions::textureFloatLinear>,     NeverSupported,                                                                       NeverSupported);
+    //                 |Internal format |sized | R | G | B | A |S | Format | Type                           | Comp    | SRGB | Texture supported                                                      | Filterable                                     | Texture attachment                            | Renderbuffer |
+    AddRGBAFormat(&map, GL_RED,          false, 16,  0,  0,  0, 0, GL_RED,  GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                 NeverSupported);
+    AddRGBAFormat(&map, GL_RG,           false, 16, 16,  0,  0, 0, GL_RG,   GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                 NeverSupported);
+    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                 NeverSupported);
+    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                 NeverSupported);
+    AddRGBAFormat(&map, GL_RED,          false, 16,  0,  0,  0, 0, GL_RED,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>, RequireExt<&Extensions::textureHalfFloatLinear>, AlwaysSupported,                                NeverSupported);
+    AddRGBAFormat(&map, GL_RG,           false, 16, 16,  0,  0, 0, GL_RG,   GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>, RequireExt<&Extensions::textureHalfFloatLinear>, AlwaysSupported,                                NeverSupported);
+    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                               RequireExt<&Extensions::textureHalfFloatLinear>, UnsizedHalfFloatOESRGBATextureAttachmentSupport, NeverSupported);
+    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                               RequireExt<&Extensions::textureHalfFloatLinear>, UnsizedHalfFloatOESRGBATextureAttachmentSupport, NeverSupported);
+    AddRGBAFormat(&map, GL_RED,          false, 32,  0,  0,  0, 0, GL_RED,  GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloat, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinear>,     AlwaysSupported,                                NeverSupported);
+    AddRGBAFormat(&map, GL_RG,           false, 32, 32,  0,  0, 0, GL_RG,   GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloat, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinear>,     AlwaysSupported,                                NeverSupported);
+    AddRGBAFormat(&map, GL_RGB,          false, 32, 32, 32,  0, 0, GL_RGB,  GL_FLOAT,                        GL_FLOAT, false, RequireExt<&Extensions::textureFloat>,                                   RequireExt<&Extensions::textureFloatLinear>,     NeverSupported,                                 NeverSupported);
+    AddRGBAFormat(&map, GL_RGB,          false,  9,  9,  9,  0, 5, GL_RGB,  GL_UNSIGNED_INT_5_9_9_9_REV,     GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                 NeverSupported);
+    AddRGBAFormat(&map, GL_RGB,          false, 11, 11, 10,  0, 0, GL_RGB,  GL_UNSIGNED_INT_10F_11F_11F_REV, GL_FLOAT, false, NeverSupported,                                                          NeverSupported,                                  NeverSupported,                                 NeverSupported);
+    AddRGBAFormat(&map, GL_RGBA,         false, 32, 32, 32, 32, 0, GL_RGBA, GL_FLOAT,                        GL_FLOAT, false, RequireExt<&Extensions::textureFloat>,                                   RequireExt<&Extensions::textureFloatLinear>,     NeverSupported,                                 NeverSupported);
 
     // Unsized luminance alpha formats
     //                 | Internal format   |sized | L | A | Format            | Type             | Component type        | Texture supported                        | Filterable                                     | Texture attachment | Renderbuffer |
@@ -1203,11 +1231,23 @@ bool InternalFormat::computeDepthPitch(GLsizei height,
                                        GLuint rowPitch,
                                        GLuint *resultOut) const
 {
-    GLuint rows =
-        (imageHeight > 0 ? static_cast<GLuint>(imageHeight) : static_cast<GLuint>(height));
+    CheckedNumeric<GLuint> pixelsHeight(imageHeight > 0 ? static_cast<GLuint>(imageHeight)
+                                                        : static_cast<GLuint>(height));
+
+    CheckedNumeric<GLuint> rowCount;
+    if (compressed)
+    {
+        CheckedNumeric<GLuint> checkedBlockHeight(compressedBlockHeight);
+        rowCount = (pixelsHeight + checkedBlockHeight - 1u) / checkedBlockHeight;
+    }
+    else
+    {
+        rowCount = pixelsHeight;
+    }
+
     CheckedNumeric<GLuint> checkedRowPitch(rowPitch);
 
-    return CheckedMathResult(checkedRowPitch * rows, resultOut);
+    return CheckedMathResult(checkedRowPitch * rowCount, resultOut);
 }
 
 bool InternalFormat::computeDepthPitch(GLenum formatType,
@@ -1327,6 +1367,27 @@ GLenum GetUnsizedFormat(GLenum internalFormat)
     }
 
     return internalFormat;
+}
+
+bool CompressedFormatRequiresWholeImage(GLenum internalFormat)
+{
+    // List of compressed texture format that require that the sub-image size is equal to texture's
+    // respective mip level's size
+    switch (internalFormat)
+    {
+        case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
+        case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
+        case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:
+        case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:
+        case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:
+        case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:
+        case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:
+        case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:
+            return true;
+
+        default:
+            return false;
+    }
 }
 
 const FormatSet &GetAllSizedInternalFormats()
@@ -1612,6 +1673,7 @@ angle::FormatID GetVertexFormatID(VertexAttribType type,
 #endif
             }
         case VertexAttribType::HalfFloat:
+        case VertexAttribType::HalfFloatOES:
             switch (components)
             {
                 case 1:
@@ -1657,6 +1719,49 @@ angle::FormatID GetVertexFormatID(VertexAttribType type,
             if (normalized)
                 return angle::FormatID::R10G10B10A2_UNORM;
             return angle::FormatID::R10G10B10A2_USCALED;
+        case VertexAttribType::Int1010102:
+            switch (components)
+            {
+                case 3:
+                    if (pureInteger)
+                        return angle::FormatID::X2R10G10B10_SINT_VERTEX;
+                    if (normalized)
+                        return angle::FormatID::X2R10G10B10_SNORM_VERTEX;
+                    return angle::FormatID::X2R10G10B10_SSCALED_VERTEX;
+                case 4:
+                    if (pureInteger)
+                        return angle::FormatID::A2R10G10B10_SINT_VERTEX;
+                    if (normalized)
+                        return angle::FormatID::A2R10G10B10_SNORM_VERTEX;
+                    return angle::FormatID::A2R10G10B10_SSCALED_VERTEX;
+                default:
+                    UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return angle::FormatID::NONE;
+#endif
+            }
+        case VertexAttribType::UnsignedInt1010102:
+            switch (components)
+            {
+                case 3:
+                    if (pureInteger)
+                        return angle::FormatID::X2R10G10B10_UINT_VERTEX;
+                    if (normalized)
+                        return angle::FormatID::X2R10G10B10_UNORM_VERTEX;
+                    return angle::FormatID::X2R10G10B10_USCALED_VERTEX;
+
+                case 4:
+                    if (pureInteger)
+                        return angle::FormatID::A2R10G10B10_UINT_VERTEX;
+                    if (normalized)
+                        return angle::FormatID::A2R10G10B10_UNORM_VERTEX;
+                    return angle::FormatID::A2R10G10B10_USCALED_VERTEX;
+                default:
+                    UNREACHABLE();
+#if !UNREACHABLE_IS_NORETURN
+                    return angle::FormatID::NONE;
+#endif
+            }
         default:
             UNREACHABLE();
 #if !UNREACHABLE_IS_NORETURN
@@ -2144,6 +2249,61 @@ const VertexFormat &GetVertexFormatFromID(angle::FormatID vertexFormatID)
             static const VertexFormat format(GL_UNSIGNED_INT_2_10_10_10_REV, GL_FALSE, 4, true);
             return format;
         }
+        case angle::FormatID::A2R10G10B10_SSCALED_VERTEX:
+        {
+            static const VertexFormat format(GL_INT_10_10_10_2_OES, GL_FALSE, 4, false);
+            return format;
+        }
+        case angle::FormatID::A2R10G10B10_USCALED_VERTEX:
+        {
+            static const VertexFormat format(GL_UNSIGNED_INT_10_10_10_2_OES, GL_FALSE, 4, false);
+            return format;
+        }
+        case angle::FormatID::A2R10G10B10_SNORM_VERTEX:
+        {
+            static const VertexFormat format(GL_INT_10_10_10_2_OES, GL_TRUE, 4, false);
+            return format;
+        }
+        case angle::FormatID::A2R10G10B10_UNORM_VERTEX:
+        {
+            static const VertexFormat format(GL_UNSIGNED_INT_10_10_10_2_OES, GL_TRUE, 4, false);
+            return format;
+        }
+        case angle::FormatID::A2R10G10B10_SINT_VERTEX:
+        {
+            static const VertexFormat format(GL_INT_10_10_10_2_OES, GL_FALSE, 4, true);
+            return format;
+        }
+        case angle::FormatID::A2R10G10B10_UINT_VERTEX:
+        {
+            static const VertexFormat format(GL_UNSIGNED_INT_10_10_10_2_OES, GL_FALSE, 4, true);
+            return format;
+        }
+        case angle::FormatID::X2R10G10B10_SSCALED_VERTEX:
+        {
+            static const VertexFormat format(GL_INT_10_10_10_2_OES, GL_FALSE, 4, false);
+            return format;
+        }
+        case angle::FormatID::X2R10G10B10_USCALED_VERTEX:
+        {
+            static const VertexFormat format(GL_UNSIGNED_INT_10_10_10_2_OES, GL_FALSE, 4, false);
+            return format;
+        }
+        case angle::FormatID::X2R10G10B10_SNORM_VERTEX:
+        {
+            static const VertexFormat format(GL_INT_10_10_10_2_OES, GL_TRUE, 4, false);
+            return format;
+        }
+        case angle::FormatID::X2R10G10B10_UNORM_VERTEX:
+        {
+            static const VertexFormat format(GL_UNSIGNED_INT_10_10_10_2_OES, GL_TRUE, 4, false);
+            return format;
+        }
+        case angle::FormatID::X2R10G10B10_SINT_VERTEX:
+        {
+            static const VertexFormat format(GL_INT_10_10_10_2_OES, GL_FALSE, 4, true);
+            return format;
+        }
         default:
         {
             static const VertexFormat format(GL_NONE, GL_FALSE, 0, false);
@@ -2214,6 +2374,18 @@ size_t GetVertexFormatSize(angle::FormatID vertexFormatID)
         case angle::FormatID::R10G10B10A2_UNORM:
         case angle::FormatID::R10G10B10A2_SINT:
         case angle::FormatID::R10G10B10A2_UINT:
+        case angle::FormatID::A2R10G10B10_SSCALED_VERTEX:
+        case angle::FormatID::A2R10G10B10_USCALED_VERTEX:
+        case angle::FormatID::A2R10G10B10_SINT_VERTEX:
+        case angle::FormatID::A2R10G10B10_UINT_VERTEX:
+        case angle::FormatID::A2R10G10B10_SNORM_VERTEX:
+        case angle::FormatID::A2R10G10B10_UNORM_VERTEX:
+        case angle::FormatID::X2R10G10B10_SSCALED_VERTEX:
+        case angle::FormatID::X2R10G10B10_USCALED_VERTEX:
+        case angle::FormatID::X2R10G10B10_SINT_VERTEX:
+        case angle::FormatID::X2R10G10B10_UINT_VERTEX:
+        case angle::FormatID::X2R10G10B10_SNORM_VERTEX:
+        case angle::FormatID::X2R10G10B10_UNORM_VERTEX:
             return 4;
 
         case angle::FormatID::R16G16B16_SSCALED:

@@ -143,15 +143,11 @@ angle::Result OffscreenSurfaceVk::AttachmentImage::initialize(DisplayVk *display
 
     VkExtent3D extents = {std::max(static_cast<uint32_t>(width), 1u),
                           std::max(static_cast<uint32_t>(height), 1u), 1u};
-    ANGLE_TRY(image.init(displayVk, gl::TextureType::_2D, extents, vkFormat, samples, usage, 1, 1));
+    ANGLE_TRY(
+        image.init(displayVk, gl::TextureType::_2D, extents, vkFormat, samples, usage, 0, 0, 1, 1));
 
     VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     ANGLE_TRY(image.initMemory(displayVk, renderer->getMemoryProperties(), flags));
-
-    VkImageAspectFlags aspect = vk::GetFormatAspectFlags(textureFormat);
-
-    ANGLE_TRY(image.initImageView(displayVk, gl::TextureType::_2D, aspect, gl::SwizzleState(),
-                                  &imageView, 0, 1));
 
     // Clear the image if it has emulated channels.
     image.stageClearIfEmulatedFormat(gl::ImageIndex::Make2D(0), vkFormat);
@@ -162,32 +158,20 @@ angle::Result OffscreenSurfaceVk::AttachmentImage::initialize(DisplayVk *display
 void OffscreenSurfaceVk::AttachmentImage::destroy(const egl::Display *display)
 {
     DisplayVk *displayVk = vk::GetImpl(display);
-
-    std::vector<vk::GarbageObjectBase> garbageObjects;
-    image.releaseImage(displayVk, &garbageObjects);
-    image.releaseStagingBuffer(displayVk, &garbageObjects);
+    VkDevice device      = displayVk->getDevice();
 
     // It should be safe to immediately destroy the backing images of a surface on surface
-    // destruction.
-    // If this assumption is broken, we could track the last submit fence for the last context that
-    // used this surface to garbage collect the surfaces.
-    for (vk::GarbageObjectBase &garbage : garbageObjects)
-    {
-        garbage.destroy(displayVk->getDevice());
-    }
-
-    imageView.destroy(displayVk->getDevice());
+    // destruction. If this assumption is incorrect, we could use the last submit serial
+    // to determine when to destroy the surface.
+    image.destroy(device);
+    imageViews.destroy(device);
 }
 
 OffscreenSurfaceVk::OffscreenSurfaceVk(const egl::SurfaceState &surfaceState,
                                        EGLint width,
                                        EGLint height)
     : SurfaceVk(surfaceState), mWidth(width), mHeight(height)
-{
-    mColorRenderTarget.init(&mColorAttachment.image, &mColorAttachment.imageView, nullptr, 0, 0);
-    mDepthStencilRenderTarget.init(&mDepthStencilAttachment.image,
-                                   &mDepthStencilAttachment.imageView, nullptr, 0, 0);
-}
+{}
 
 OffscreenSurfaceVk::~OffscreenSurfaceVk() {}
 
@@ -210,12 +194,15 @@ angle::Result OffscreenSurfaceVk::initializeImpl(DisplayVk *displayVk)
     {
         ANGLE_TRY(mColorAttachment.initialize(
             displayVk, mWidth, mHeight, renderer->getFormat(config->renderTargetFormat), samples));
+        mColorRenderTarget.init(&mColorAttachment.image, &mColorAttachment.imageViews, 0, 0);
     }
 
     if (config->depthStencilFormat != GL_NONE)
     {
         ANGLE_TRY(mDepthStencilAttachment.initialize(
             displayVk, mWidth, mHeight, renderer->getFormat(config->depthStencilFormat), samples));
+        mDepthStencilRenderTarget.init(&mDepthStencilAttachment.image,
+                                       &mDepthStencilAttachment.imageViews, 0, 0);
     }
 
     return angle::Result::Continue;
@@ -370,7 +357,7 @@ SwapchainImage::~SwapchainImage() = default;
 
 SwapchainImage::SwapchainImage(SwapchainImage &&other)
     : image(std::move(other.image)),
-      imageView(std::move(other.imageView)),
+      imageViews(std::move(other.imageViews)),
       framebuffer(std::move(other.framebuffer)),
       presentHistory(std::move(other.presentHistory)),
       currentPresentHistoryIndex(other.currentPresentHistoryIndex)
@@ -412,12 +399,7 @@ WindowSurfaceVk::WindowSurfaceVk(const egl::SurfaceState &surfaceState,
       mCompositeAlpha(VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR),
       mCurrentSwapHistoryIndex(0),
       mCurrentSwapchainImageIndex(0)
-{
-    // Initialize the color render target with the multisampled targets.  If not multisampled, the
-    // render target will be updated to refer to a swapchain image on every acquire.
-    mColorRenderTarget.init(&mColorImageMS, &mColorImageViewMS, nullptr, 0, 0);
-    mDepthStencilRenderTarget.init(&mDepthStencilImage, &mDepthStencilImageView, nullptr, 0, 0);
-}
+{}
 
 WindowSurfaceVk::~WindowSurfaceVk()
 {
@@ -779,13 +761,13 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
         const VkImageUsageFlags usage = kSurfaceVKColorImageUsageFlags;
 
         ANGLE_TRY(mColorImageMS.init(context, gl::TextureType::_2D, vkExtents, format, samples,
-                                     usage, 1, 1));
+                                     usage, 0, 0, 1, 1));
         ANGLE_TRY(mColorImageMS.initMemory(context, renderer->getMemoryProperties(),
                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
-        ANGLE_TRY(mColorImageMS.initImageView(context, gl::TextureType::_2D,
-                                              VK_IMAGE_ASPECT_COLOR_BIT, gl::SwizzleState(),
-                                              &mColorImageViewMS, 0, 1));
+        // Initialize the color render target with the multisampled targets.  If not multisampled,
+        // the render target will be updated to refer to a swapchain image on every acquire.
+        mColorRenderTarget.init(&mColorImageMS, &mColorImageMSViews, 0, 0);
 
         // Clear the image if it has emulated channels.
         mColorImageMS.stageClearIfEmulatedFormat(gl::ImageIndex::Make2D(0), format);
@@ -800,13 +782,6 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
 
         if (!mColorImageMS.valid())
         {
-            // If the multisampled image is used, we don't need a view on the swapchain image, as
-            // it's only used as a resolve destination.  This has the added benefit that we can't
-            // accidentally use this image.
-            ANGLE_TRY(member.image.initImageView(context, gl::TextureType::_2D,
-                                                 VK_IMAGE_ASPECT_COLOR_BIT, gl::SwizzleState(),
-                                                 &member.imageView, 0, 1));
-
             // Clear the image if it has emulated channels.  If a multisampled image exists, this
             // image will be unused until a pre-present resolve, at which point it will be fully
             // initialized and wouldn't need a clear.
@@ -822,15 +797,11 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
         const VkImageUsageFlags dsUsage = kSurfaceVKDepthStencilImageUsageFlags;
 
         ANGLE_TRY(mDepthStencilImage.init(context, gl::TextureType::_2D, vkExtents, dsFormat,
-                                          samples, dsUsage, 1, 1));
+                                          samples, dsUsage, 0, 0, 1, 1));
         ANGLE_TRY(mDepthStencilImage.initMemory(context, renderer->getMemoryProperties(),
                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
-        const VkImageAspectFlags aspect = vk::GetDepthStencilAspectFlags(dsFormat.imageFormat());
-
-        ANGLE_TRY(mDepthStencilImage.initImageView(context, gl::TextureType::_2D, aspect,
-                                                   gl::SwizzleState(), &mDepthStencilImageView, 0,
-                                                   1));
+        mDepthStencilRenderTarget.init(&mDepthStencilImage, &mDepthStencilImageViews, 0, 0);
 
         // We will need to pass depth/stencil image views to the RenderTargetVk in the future.
 
@@ -894,38 +865,31 @@ angle::Result WindowSurfaceVk::checkForOutOfDateSwapchain(ContextVk *contextVk,
 
 void WindowSurfaceVk::releaseSwapchainImages(ContextVk *contextVk)
 {
+    RendererVk *renderer = contextVk->getRenderer();
+
     if (mDepthStencilImage.valid())
     {
-        Serial depthStencilSerial = mDepthStencilImage.getStoredQueueSerial();
-        mDepthStencilImage.releaseImage(contextVk);
-        mDepthStencilImage.releaseStagingBuffer(contextVk);
-
-        if (mDepthStencilImageView.valid())
-        {
-            contextVk->releaseObject(depthStencilSerial, &mDepthStencilImageView);
-        }
+        mDepthStencilImage.releaseImage(renderer);
+        mDepthStencilImage.releaseStagingBuffer(renderer);
+        mDepthStencilImageViews.release(contextVk);
     }
 
     if (mColorImageMS.valid())
     {
-        Serial serial = mColorImageMS.getStoredQueueSerial();
-        mColorImageMS.releaseImage(contextVk);
-        mColorImageMS.releaseStagingBuffer(contextVk);
-
-        contextVk->releaseObject(serial, &mColorImageViewMS);
-        contextVk->releaseObject(serial, &mFramebufferMS);
+        mColorImageMS.releaseImage(renderer);
+        mColorImageMS.releaseStagingBuffer(renderer);
+        mColorImageMSViews.release(contextVk);
+        contextVk->addGarbage(&mFramebufferMS);
     }
 
     for (SwapchainImage &swapchainImage : mSwapchainImages)
     {
-        Serial imageSerial = swapchainImage.image.getStoredQueueSerial();
-
         // We don't own the swapchain image handles, so we just remove our reference to it.
         swapchainImage.image.resetImageWeakReference();
         swapchainImage.image.destroy(contextVk->getDevice());
 
-        contextVk->releaseObject(imageSerial, &swapchainImage.imageView);
-        contextVk->releaseObject(imageSerial, &swapchainImage.framebuffer);
+        swapchainImage.imageViews.release(contextVk);
+        contextVk->addGarbage(&swapchainImage.framebuffer);
 
         // present history must have already been taken care of.
         for (ImagePresentHistory &presentHistory : swapchainImage.presentHistory)
@@ -940,49 +904,21 @@ void WindowSurfaceVk::releaseSwapchainImages(ContextVk *contextVk)
 
 void WindowSurfaceVk::destroySwapChainImages(DisplayVk *displayVk)
 {
-    std::vector<vk::GarbageObjectBase> garbageObjects;
-    if (mDepthStencilImage.valid())
-    {
-        mDepthStencilImage.releaseImage(displayVk, &garbageObjects);
-        mDepthStencilImage.releaseStagingBuffer(displayVk, &garbageObjects);
-
-        if (mDepthStencilImageView.valid())
-        {
-            mDepthStencilImageView.dumpResources(&garbageObjects);
-        }
-    }
-
-    if (mColorImageMS.valid())
-    {
-        mColorImageMS.releaseImage(displayVk, &garbageObjects);
-        mColorImageMS.releaseImage(displayVk, &garbageObjects);
-
-        mColorImageViewMS.dumpResources(&garbageObjects);
-        mFramebufferMS.dumpResources(&garbageObjects);
-    }
-
     VkDevice device = displayVk->getDevice();
 
-    for (vk::GarbageObjectBase &garbage : garbageObjects)
-    {
-        garbage.destroy(device);
-    }
+    mDepthStencilImage.destroy(device);
+    mDepthStencilImageViews.destroy(device);
+    mColorImageMS.destroy(device);
+    mColorImageMSViews.destroy(device);
+    mFramebufferMS.destroy(device);
 
     for (SwapchainImage &swapchainImage : mSwapchainImages)
     {
         // We don't own the swapchain image handles, so we just remove our reference to it.
         swapchainImage.image.resetImageWeakReference();
         swapchainImage.image.destroy(device);
-
-        if (swapchainImage.imageView.valid())
-        {
-            swapchainImage.imageView.destroy(device);
-        }
-
-        if (swapchainImage.framebuffer.valid())
-        {
-            swapchainImage.framebuffer.destroy(device);
-        }
+        swapchainImage.imageViews.destroy(device);
+        swapchainImage.framebuffer.destroy(device);
 
         for (ImagePresentHistory &presentHistory : swapchainImage.presentHistory)
         {
@@ -1053,7 +989,7 @@ angle::Result WindowSurfaceVk::present(ContextVk *contextVk,
                                    multisampledTransition);
 
         // Setup graph dependency between the swapchain image and the multisampled one.
-        image.image.addReadDependency(&mColorImageMS);
+        image.image.addReadDependency(contextVk, &mColorImageMS);
 
         VkImageResolve resolveRegion                = {};
         resolveRegion.srcSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1230,23 +1166,12 @@ VkResult WindowSurfaceVk::nextSwapchainImage(vk::Context *context)
 
     SwapchainImage &image = mSwapchainImages[mCurrentSwapchainImageIndex];
 
-    // This swap chain image is new, reset any dependency information it has.
-    //
-    // When the Vulkan backend is multithreading, different contexts can have very different current
-    // serials.  If a surface is rendered to by multiple contexts in different frames, the last
-    // context to write a particular swap chain image has no bearing on the current context writing
-    // to that image.
-    //
-    // Clear the image's queue serial because it's possible that it appears to be in the future to
-    // the next context that writes to the image.
-    image.image.resetQueueSerial();
-
     // Update RenderTarget pointers to this swapchain image if not multisampling.  Note: a possible
     // optimization is to defer the |vkAcquireNextImageKHR| call itself to |present()| if
     // multisampling, as the swapchain image is essentially unused until then.
     if (!mColorImageMS.valid())
     {
-        mColorRenderTarget.updateSwapchainImage(&image.image, &image.imageView);
+        mColorRenderTarget.updateSwapchainImage(&image.image, &image.imageViews);
     }
 
     return VK_SUCCESS;
@@ -1343,7 +1268,7 @@ EGLint WindowSurfaceVk::getSwapBehavior() const
     return EGL_BUFFER_DESTROYED;
 }
 
-angle::Result WindowSurfaceVk::getCurrentFramebuffer(vk::Context *context,
+angle::Result WindowSurfaceVk::getCurrentFramebuffer(ContextVk *contextVk,
                                                      const vk::RenderPass &compatibleRenderPass,
                                                      vk::Framebuffer **framebufferOut)
 {
@@ -1361,7 +1286,14 @@ angle::Result WindowSurfaceVk::getCurrentFramebuffer(vk::Context *context,
     VkFramebufferCreateInfo framebufferInfo = {};
 
     const gl::Extents extents             = mColorRenderTarget.getExtents();
-    std::array<VkImageView, 2> imageViews = {{VK_NULL_HANDLE, mDepthStencilImageView.getHandle()}};
+    std::array<VkImageView, 2> imageViews = {};
+
+    if (mDepthStencilImage.valid())
+    {
+        const vk::ImageView *imageView = nullptr;
+        ANGLE_TRY(mDepthStencilRenderTarget.getImageView(contextVk, &imageView));
+        imageViews[1] = imageView->getHandle();
+    }
 
     framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.flags           = 0;
@@ -1375,16 +1307,22 @@ angle::Result WindowSurfaceVk::getCurrentFramebuffer(vk::Context *context,
     if (isMultiSampled())
     {
         // If multisampled, there is only a single color image and framebuffer.
-        imageViews[0] = mColorImageViewMS.getHandle();
-        ANGLE_VK_TRY(context, mFramebufferMS.init(context->getDevice(), framebufferInfo));
+        const vk::ImageView *imageView = nullptr;
+        ANGLE_TRY(mColorRenderTarget.getImageView(contextVk, &imageView));
+        imageViews[0] = imageView->getHandle();
+        ANGLE_VK_TRY(contextVk, mFramebufferMS.init(contextVk->getDevice(), framebufferInfo));
     }
     else
     {
         for (SwapchainImage &swapchainImage : mSwapchainImages)
         {
-            imageViews[0] = swapchainImage.imageView.getHandle();
-            ANGLE_VK_TRY(context,
-                         swapchainImage.framebuffer.init(context->getDevice(), framebufferInfo));
+            const vk::ImageView *imageView = nullptr;
+            ANGLE_TRY(swapchainImage.imageViews.getLevelLayerDrawImageView(
+                contextVk, swapchainImage.image, 0, 0, &imageView));
+
+            imageViews[0] = imageView->getHandle();
+            ANGLE_VK_TRY(contextVk,
+                         swapchainImage.framebuffer.init(contextVk->getDevice(), framebufferInfo));
         }
     }
 
@@ -1447,7 +1385,10 @@ angle::Result WindowSurfaceVk::updateAndDrawOverlay(ContextVk *contextVk,
     }
 
     // Draw overlay
-    ANGLE_TRY(overlayVk->onPresent(contextVk, &image->image, &image->imageView));
+    const vk::ImageView *imageView = nullptr;
+    ANGLE_TRY(
+        image->imageViews.getLevelLayerDrawImageView(contextVk, image->image, 0, 0, &imageView));
+    ANGLE_TRY(overlayVk->onPresent(contextVk, &image->image, imageView));
 
     overlay->getRunningGraphWidget(gl::WidgetId::VulkanCommandGraphSize)->next();
 

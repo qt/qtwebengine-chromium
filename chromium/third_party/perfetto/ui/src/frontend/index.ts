@@ -28,8 +28,18 @@ import {
   LogExistsKey
 } from '../common/logs';
 import {CurrentSearchResults, SearchSummary} from '../common/search_data';
+import {
+  HeapProfileFlamegraphKey
+} from '../tracks/heap_profile_flamegraph/common';
 
-import {globals, QuantizedLoad, SliceDetails, ThreadDesc} from './globals';
+import {
+  CounterDetails,
+  globals,
+  HeapProfileDetails,
+  QuantizedLoad,
+  SliceDetails,
+  ThreadDesc
+} from './globals';
 import {HomePage} from './home_page';
 import {openBufferWithLegacyTraceViewer} from './legacy_trace_viewer';
 import {postMessageHandler} from './post_message_handler';
@@ -88,6 +98,8 @@ class FrontendApi {
     if ([LogExistsKey, LogBoundsKey, LogEntriesKey].includes(args.id)) {
       const data = globals.trackDataStore.get(LogExistsKey) as LogExists;
       if (data && data.exists) globals.rafScheduler.scheduleFullRedraw();
+    } else if (HeapProfileFlamegraphKey === args.id) {
+      globals.rafScheduler.scheduleFullRedraw();
     } else {
       globals.rafScheduler.scheduleRedraw();
     }
@@ -109,6 +121,27 @@ class FrontendApi {
   publishSliceDetails(click: SliceDetails) {
     globals.sliceDetails = click;
     this.redraw();
+  }
+
+  publishCounterDetails(click: CounterDetails) {
+    globals.counterDetails = click;
+    this.redraw();
+  }
+
+  publishHeapDumpDetails(click: HeapProfileDetails) {
+    globals.heapDumpDetails = click;
+    this.redraw();
+  }
+
+  publishFileDownload(args: {file: File, name?: string}) {
+    const url = URL.createObjectURL(args.file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = args.name !== undefined ? args.name : args.file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   publishLoading(loading: boolean) {
@@ -231,7 +264,12 @@ function main() {
   }
 
   updateAvailableAdbDevices();
-
+  try {
+    navigator.usb.addEventListener('connect', updateAvailableAdbDevices);
+    navigator.usb.addEventListener('disconnect', updateAvailableAdbDevices);
+  } catch (e) {
+    console.error('WebUSB API not supported');
+  }
   // This forwards the messages from the controller to the extension
   extensionLocalChannel.port2.onmessage = ({data}) => {
     if (extensionPort) extensionPort.postMessage(data);

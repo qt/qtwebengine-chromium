@@ -150,6 +150,7 @@ namespace dawn_native { namespace null {
     ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
         std::unique_ptr<StagingBufferBase> stagingBuffer =
             std::make_unique<StagingBuffer>(size, this);
+        DAWN_TRY(stagingBuffer->Initialize());
         return std::move(stagingBuffer);
     }
 
@@ -196,8 +197,9 @@ namespace dawn_native { namespace null {
         return mLastSubmittedSerial + 1;
     }
 
-    void Device::TickImpl() {
+    MaybeError Device::TickImpl() {
         SubmitPendingOperations();
+        return {};
     }
 
     void Device::AddPendingOperation(std::unique_ptr<PendingOperation> operation) {
@@ -317,8 +319,9 @@ namespace dawn_native { namespace null {
     Queue::~Queue() {
     }
 
-    void Queue::SubmitImpl(uint32_t, CommandBufferBase* const*) {
+    MaybeError Queue::SubmitImpl(uint32_t, CommandBufferBase* const*) {
         ToBackend(GetDevice())->SubmitPendingOperations();
+        return {};
     }
 
     // SwapChain
@@ -336,7 +339,8 @@ namespace dawn_native { namespace null {
         return GetDevice()->CreateTexture(descriptor);
     }
 
-    void SwapChain::OnBeforePresent(TextureBase*) {
+    MaybeError SwapChain::OnBeforePresent(TextureBase*) {
+        return {};
     }
 
     // NativeSwapChainImpl

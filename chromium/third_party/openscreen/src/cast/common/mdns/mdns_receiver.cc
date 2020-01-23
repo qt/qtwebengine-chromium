@@ -10,13 +10,8 @@
 namespace cast {
 namespace mdns {
 
-MdnsReceiver::MdnsReceiver(UdpSocket* socket,
-                           NetworkRunner* network_runner,
-                           Delegate* delegate)
-    : socket_(socket), network_runner_(network_runner), delegate_(delegate) {
+MdnsReceiver::MdnsReceiver(UdpSocket* socket) : socket_(socket) {
   OSP_DCHECK(socket_);
-  OSP_DCHECK(network_runner_);
-  OSP_DCHECK(delegate_);
 }
 
 MdnsReceiver::~MdnsReceiver() {
@@ -25,40 +20,63 @@ MdnsReceiver::~MdnsReceiver() {
   }
 }
 
-Error MdnsReceiver::Start() {
-  if (state_ == State::kRunning) {
-    return Error::Code::kNone;
-  }
-  Error result = network_runner_->ReadRepeatedly(socket_, this);
-  if (result.ok()) {
-    state_ = State::kRunning;
-  }
-  return result;
+void MdnsReceiver::SetQueryCallback(
+    std::function<void(const MdnsMessage&)> callback) {
+  // This check verifies that either new or stored callback has a target. It
+  // will fail in case multiple objects try to set or clear the callback.
+  OSP_DCHECK(static_cast<bool>(query_callback_) != static_cast<bool>(callback));
+  query_callback_ = callback;
 }
 
-Error MdnsReceiver::Stop() {
-  if (state_ == State::kStopped) {
-    return Error::Code::kNone;
-  }
-  Error result = network_runner_->CancelRead(socket_);
-  if (result.ok()) {
-    state_ = State::kStopped;
-  }
-  return result;
+void MdnsReceiver::SetResponseCallback(
+    std::function<void(const MdnsMessage&)> callback) {
+  // This check verifies that either new or stored callback has a target. It
+  // will fail in case multiple objects try to set or clear the callback.
+  OSP_DCHECK(static_cast<bool>(response_callback_) !=
+             static_cast<bool>(callback));
+  response_callback_ = callback;
 }
 
-void MdnsReceiver::OnRead(UdpPacket packet, NetworkRunner* network_runner) {
+void MdnsReceiver::Start() {
+  state_ = State::kRunning;
+}
+
+void MdnsReceiver::Stop() {
+  state_ = State::kStopped;
+}
+
+void MdnsReceiver::OnRead(UdpSocket* socket,
+                          ErrorOr<UdpPacket> packet_or_error) {
+  if (state_ != State::kRunning || packet_or_error.is_error()) {
+    return;
+  }
+
+  UdpPacket packet = std::move(packet_or_error.value());
+
   TRACE_SCOPED(TraceCategory::mDNS, "MdnsReceiver::OnRead");
   MdnsReader reader(packet.data(), packet.size());
   MdnsMessage message;
   if (!reader.Read(&message)) {
     return;
   }
-  if (message.type() == MessageType::Response) {
-    delegate_->OnResponseReceived(message, packet.source());
-  } else {
-    delegate_->OnQueryReceived(message, packet.source());
+
+  std::function<void(const MdnsMessage&)> callback =
+      (message.type() == MessageType::Response) ? response_callback_
+                                                : query_callback_;
+
+  if (callback) {
+    callback(message);
   }
+}
+
+void MdnsReceiver::OnError(UdpSocket* socket, Error error) {
+  // This method should never be called for MdnsReciever.
+  OSP_UNIMPLEMENTED();
+}
+
+void MdnsReceiver::OnSendError(UdpSocket* socket, Error error) {
+  // This method should never be called for MdnsReciever.
+  OSP_UNIMPLEMENTED();
 }
 
 }  // namespace mdns

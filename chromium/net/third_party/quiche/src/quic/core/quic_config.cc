@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_handshake_message.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
@@ -18,7 +19,6 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_macros.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_uint128.h"
@@ -407,6 +407,11 @@ QuicConfig::QuicConfig()
       max_incoming_bidirectional_streams_(kMIBS, PRESENCE_REQUIRED),
       bytes_for_connection_id_(kTCID, PRESENCE_OPTIONAL),
       initial_round_trip_time_us_(kIRTT, PRESENCE_OPTIONAL),
+      initial_max_stream_data_bytes_incoming_bidirectional_(0,
+                                                            PRESENCE_OPTIONAL),
+      initial_max_stream_data_bytes_outgoing_bidirectional_(0,
+                                                            PRESENCE_OPTIONAL),
+      initial_max_stream_data_bytes_unidirectional_(0, PRESENCE_OPTIONAL),
       initial_stream_flow_control_window_bytes_(kSFCW, PRESENCE_OPTIONAL),
       initial_session_flow_control_window_bytes_(kCFCW, PRESENCE_OPTIONAL),
       connection_migration_disabled_(kNCMR, PRESENCE_OPTIONAL),
@@ -513,15 +518,15 @@ void QuicConfig::SetMaxIncomingBidirectionalStreamsToSend(
   max_incoming_bidirectional_streams_.SetSendValue(max_streams);
 }
 
-uint32_t QuicConfig::GetMaxIncomingBidirectionalStreamsToSend() {
+uint32_t QuicConfig::GetMaxIncomingBidirectionalStreamsToSend() const {
   return max_incoming_bidirectional_streams_.GetSendValue();
 }
 
-bool QuicConfig::HasReceivedMaxIncomingBidirectionalStreams() {
+bool QuicConfig::HasReceivedMaxIncomingBidirectionalStreams() const {
   return max_incoming_bidirectional_streams_.HasReceivedValue();
 }
 
-uint32_t QuicConfig::ReceivedMaxIncomingBidirectionalStreams() {
+uint32_t QuicConfig::ReceivedMaxIncomingBidirectionalStreams() const {
   return max_incoming_bidirectional_streams_.GetReceivedValue();
 }
 
@@ -530,15 +535,15 @@ void QuicConfig::SetMaxIncomingUnidirectionalStreamsToSend(
   max_incoming_unidirectional_streams_.SetSendValue(max_streams);
 }
 
-uint32_t QuicConfig::GetMaxIncomingUnidirectionalStreamsToSend() {
+uint32_t QuicConfig::GetMaxIncomingUnidirectionalStreamsToSend() const {
   return max_incoming_unidirectional_streams_.GetSendValue();
 }
 
-bool QuicConfig::HasReceivedMaxIncomingUnidirectionalStreams() {
+bool QuicConfig::HasReceivedMaxIncomingUnidirectionalStreams() const {
   return max_incoming_unidirectional_streams_.HasReceivedValue();
 }
 
-uint32_t QuicConfig::ReceivedMaxIncomingUnidirectionalStreams() {
+uint32_t QuicConfig::ReceivedMaxIncomingUnidirectionalStreams() const {
   return max_incoming_unidirectional_streams_.GetReceivedValue();
 }
 
@@ -562,7 +567,7 @@ void QuicConfig::SetAckDelayExponentToSend(uint32_t exponent) {
   ack_delay_exponent_.SetSendValue(exponent);
 }
 
-uint32_t QuicConfig::GetAckDelayExponentToSend() {
+uint32_t QuicConfig::GetAckDelayExponentToSend() const {
   return ack_delay_exponent_.GetSendValue();
 }
 
@@ -631,6 +636,78 @@ bool QuicConfig::HasReceivedInitialStreamFlowControlWindowBytes() const {
 
 uint32_t QuicConfig::ReceivedInitialStreamFlowControlWindowBytes() const {
   return initial_stream_flow_control_window_bytes_.GetReceivedValue();
+}
+
+void QuicConfig::SetInitialMaxStreamDataBytesIncomingBidirectionalToSend(
+    uint32_t window_bytes) {
+  initial_max_stream_data_bytes_incoming_bidirectional_.SetSendValue(
+      window_bytes);
+}
+
+uint32_t QuicConfig::GetInitialMaxStreamDataBytesIncomingBidirectionalToSend()
+    const {
+  if (initial_max_stream_data_bytes_incoming_bidirectional_.HasSendValue()) {
+    return initial_max_stream_data_bytes_incoming_bidirectional_.GetSendValue();
+  }
+  return initial_stream_flow_control_window_bytes_.GetSendValue();
+}
+
+bool QuicConfig::HasReceivedInitialMaxStreamDataBytesIncomingBidirectional()
+    const {
+  return initial_max_stream_data_bytes_incoming_bidirectional_
+      .HasReceivedValue();
+}
+
+uint32_t QuicConfig::ReceivedInitialMaxStreamDataBytesIncomingBidirectional()
+    const {
+  return initial_max_stream_data_bytes_incoming_bidirectional_
+      .GetReceivedValue();
+}
+
+void QuicConfig::SetInitialMaxStreamDataBytesOutgoingBidirectionalToSend(
+    uint32_t window_bytes) {
+  initial_max_stream_data_bytes_outgoing_bidirectional_.SetSendValue(
+      window_bytes);
+}
+
+uint32_t QuicConfig::GetInitialMaxStreamDataBytesOutgoingBidirectionalToSend()
+    const {
+  if (initial_max_stream_data_bytes_outgoing_bidirectional_.HasSendValue()) {
+    return initial_max_stream_data_bytes_outgoing_bidirectional_.GetSendValue();
+  }
+  return initial_stream_flow_control_window_bytes_.GetSendValue();
+}
+
+bool QuicConfig::HasReceivedInitialMaxStreamDataBytesOutgoingBidirectional()
+    const {
+  return initial_max_stream_data_bytes_outgoing_bidirectional_
+      .HasReceivedValue();
+}
+
+uint32_t QuicConfig::ReceivedInitialMaxStreamDataBytesOutgoingBidirectional()
+    const {
+  return initial_max_stream_data_bytes_outgoing_bidirectional_
+      .GetReceivedValue();
+}
+
+void QuicConfig::SetInitialMaxStreamDataBytesUnidirectionalToSend(
+    uint32_t window_bytes) {
+  initial_max_stream_data_bytes_unidirectional_.SetSendValue(window_bytes);
+}
+
+uint32_t QuicConfig::GetInitialMaxStreamDataBytesUnidirectionalToSend() const {
+  if (initial_max_stream_data_bytes_unidirectional_.HasSendValue()) {
+    return initial_max_stream_data_bytes_unidirectional_.GetSendValue();
+  }
+  return initial_stream_flow_control_window_bytes_.GetSendValue();
+}
+
+bool QuicConfig::HasReceivedInitialMaxStreamDataBytesUnidirectional() const {
+  return initial_max_stream_data_bytes_unidirectional_.HasReceivedValue();
+}
+
+uint32_t QuicConfig::ReceivedInitialMaxStreamDataBytesUnidirectional() const {
+  return initial_max_stream_data_bytes_unidirectional_.GetReceivedValue();
 }
 
 void QuicConfig::SetInitialSessionFlowControlWindowToSend(
@@ -834,7 +911,7 @@ QuicErrorCode QuicConfig::ProcessPeerHello(
 
 bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
   params->idle_timeout_milliseconds.set_value(
-      idle_network_timeout_seconds_.GetUint32() * kNumMillisPerSecond);
+      idle_network_timeout_seconds_.GetMax() * kNumMillisPerSecond);
 
   if (stateless_reset_token_.HasSendValue()) {
     QuicUint128 stateless_reset_token = stateless_reset_token_.GetSendValue();
@@ -846,22 +923,28 @@ bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
 
   params->max_packet_size.set_value(kMaxIncomingPacketSize);
   params->initial_max_data.set_value(
-      initial_session_flow_control_window_bytes_.GetSendValue());
+      GetInitialSessionFlowControlWindowToSend());
+  // The max stream data bidirectional transport parameters can be either local
+  // or remote. A stream is local iff it is initiated by the endpoint that sent
+  // the transport parameter (see the Transport Parameter Definitions section of
+  // draft-ietf-quic-transport). In this function we are sending transport
+  // parameters, so a local stream is one we initiated, which means an outgoing
+  // stream.
   params->initial_max_stream_data_bidi_local.set_value(
-      initial_stream_flow_control_window_bytes_.GetSendValue());
+      GetInitialMaxStreamDataBytesOutgoingBidirectionalToSend());
   params->initial_max_stream_data_bidi_remote.set_value(
-      initial_stream_flow_control_window_bytes_.GetSendValue());
+      GetInitialMaxStreamDataBytesIncomingBidirectionalToSend());
   params->initial_max_stream_data_uni.set_value(
-      initial_stream_flow_control_window_bytes_.GetSendValue());
+      GetInitialMaxStreamDataBytesUnidirectionalToSend());
   params->initial_max_streams_bidi.set_value(
-      max_incoming_bidirectional_streams_.GetSendValue());
+      GetMaxIncomingBidirectionalStreamsToSend());
   params->initial_max_streams_uni.set_value(
-      max_incoming_unidirectional_streams_.GetSendValue());
+      GetMaxIncomingUnidirectionalStreamsToSend());
   if (GetQuicReloadableFlag(quic_negotiate_ack_delay_time)) {
     QUIC_RELOADABLE_FLAG_COUNT_N(quic_negotiate_ack_delay_time, 3, 4);
     params->max_ack_delay.set_value(kDefaultDelayedAckTimeMs);
   }
-  params->ack_delay_exponent.set_value(ack_delay_exponent_.GetSendValue());
+  params->ack_delay_exponent.set_value(GetAckDelayExponentToSend());
   params->disable_migration =
       connection_migration_disabled_.HasSendValue() &&
       connection_migration_disabled_.GetSendValue() != 0;
@@ -875,17 +958,18 @@ bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
       preferred_address.ipv4_socket_address = socket_address;
     }
     params->preferred_address =
-        QuicMakeUnique<TransportParameters::PreferredAddress>(
+        std::make_unique<TransportParameters::PreferredAddress>(
             preferred_address);
   }
 
   if (!params->google_quic_params) {
-    params->google_quic_params = QuicMakeUnique<CryptoHandshakeMessage>();
+    params->google_quic_params = std::make_unique<CryptoHandshakeMessage>();
   }
   silent_close_.ToHandshakeMessage(params->google_quic_params.get());
   initial_round_trip_time_us_.ToHandshakeMessage(
       params->google_quic_params.get());
   connection_options_.ToHandshakeMessage(params->google_quic_params.get());
+  params->custom_parameters = custom_transport_parameters_to_send_;
 
   return true;
 }
@@ -900,9 +984,9 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
   // An idle timeout of zero indicates it is disabled (in other words, it is
   // set to infinity). When the idle timeout is very high, we set it to our
   // preferred maximum and still probe that often.
-  if (idle_timeout_seconds > kMaximumIdleTimeoutSecs ||
+  if (idle_timeout_seconds > idle_network_timeout_seconds_.GetMax() ||
       idle_timeout_seconds == 0) {
-    idle_timeout_seconds = kMaximumIdleTimeoutSecs;
+    idle_timeout_seconds = idle_network_timeout_seconds_.GetMax();
   }
   QuicErrorCode error = idle_network_timeout_seconds_.ReceiveValue(
       idle_timeout_seconds, hello_type, error_details);
@@ -940,9 +1024,22 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
       std::min<uint64_t>(params.initial_max_streams_uni.value(),
                          std::numeric_limits<uint32_t>::max()));
 
-  initial_stream_flow_control_window_bytes_.SetReceivedValue(
+  // The max stream data bidirectional transport parameters can be either local
+  // or remote. A stream is local iff it is initiated by the endpoint that sent
+  // the transport parameter (see the Transport Parameter Definitions section of
+  // draft-ietf-quic-transport). However in this function we are processing
+  // received transport parameters, so a local stream is one initiated by our
+  // peer, which means an incoming stream.
+  initial_max_stream_data_bytes_incoming_bidirectional_.SetReceivedValue(
       std::min<uint64_t>(params.initial_max_stream_data_bidi_local.value(),
                          std::numeric_limits<uint32_t>::max()));
+  initial_max_stream_data_bytes_outgoing_bidirectional_.SetReceivedValue(
+      std::min<uint64_t>(params.initial_max_stream_data_bidi_remote.value(),
+                         std::numeric_limits<uint32_t>::max()));
+  initial_max_stream_data_bytes_unidirectional_.SetReceivedValue(
+      std::min<uint64_t>(params.initial_max_stream_data_uni.value(),
+                         std::numeric_limits<uint32_t>::max()));
+
   if (GetQuicReloadableFlag(quic_negotiate_ack_delay_time)) {
     QUIC_RELOADABLE_FLAG_COUNT_N(quic_negotiate_ack_delay_time, 4, 4);
     max_ack_delay_ms_.SetReceivedValue(std::min<uint32_t>(
@@ -986,6 +1083,9 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
     }
   }
 
+  received_custom_transport_parameters_ = params.custom_parameters;
+
+  *error_details = "";
   return QUIC_NO_ERROR;
 }
 

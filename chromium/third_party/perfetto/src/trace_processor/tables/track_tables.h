@@ -24,14 +24,35 @@ namespace perfetto {
 namespace trace_processor {
 namespace tables {
 
-#define PERFETTO_TP_GPU_TRACKS_DEF(NAME, PARENT, C) \
-  NAME(GpuTrackTable)                               \
-  PERFETTO_TP_ROOT_TABLE(PARENT, C)                 \
-  C(uint32_t, track_id)                             \
-  C(StringPool::Id, scope)                          \
+#define PERFETTO_TP_TRACK_TABLE_DEF(NAME, PARENT, C) \
+  NAME(TrackTable, "track")                          \
+  PERFETTO_TP_ROOT_TABLE(PARENT, C)                  \
+  C(StringPool::Id, name)                            \
+  C(base::Optional<uint32_t>, source_arg_set_id)
+
+PERFETTO_TP_TABLE(PERFETTO_TP_TRACK_TABLE_DEF);
+
+#define PERFETTO_TP_PROCESS_TRACK_TABLE_DEF(NAME, PARENT, C) \
+  NAME(ProcessTrackTable, "process_track")                   \
+  PARENT(PERFETTO_TP_TRACK_TABLE_DEF, C)                     \
+  C(uint32_t, upid)
+
+PERFETTO_TP_TABLE(PERFETTO_TP_PROCESS_TRACK_TABLE_DEF);
+
+#define PERFETTO_TP_THREAD_TRACK_TABLE_DEF(NAME, PARENT, C) \
+  NAME(ThreadTrackTable, "thread_track")                    \
+  PARENT(PERFETTO_TP_TRACK_TABLE_DEF, C)                    \
+  C(uint32_t, utid)
+
+PERFETTO_TP_TABLE(PERFETTO_TP_THREAD_TRACK_TABLE_DEF);
+
+#define PERFETTO_TP_GPU_TRACK_DEF(NAME, PARENT, C) \
+  NAME(GpuTrackTable, "gpu_track")                 \
+  PARENT(PERFETTO_TP_TRACK_TABLE_DEF, C)           \
+  C(StringPool::Id, scope)                         \
   C(base::Optional<int64_t>, context_id)
 
-PERFETTO_TP_TABLE(PERFETTO_TP_GPU_TRACKS_DEF);
+PERFETTO_TP_TABLE(PERFETTO_TP_GPU_TRACK_DEF);
 
 }  // namespace tables
 }  // namespace trace_processor

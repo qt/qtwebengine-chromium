@@ -60,8 +60,7 @@ class RenderbufferVk : public RenderbufferImpl
 
     bool mOwnsImage;
     vk::ImageHelper *mImage;
-    vk::ImageView mImageView;
-    vk::ImageView mCubeImageFetchView;
+    vk::ImageViewHelper mImageViews;
     RenderTargetVk mRenderTarget;
 };
 

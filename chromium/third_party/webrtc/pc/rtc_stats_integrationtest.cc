@@ -797,6 +797,8 @@ class RTCStatsReportVerifier {
           inbound_stream.fec_packets_discarded);
     }
     verifier.TestMemberIsNonNegative<uint64_t>(inbound_stream.bytes_received);
+    verifier.TestMemberIsNonNegative<uint64_t>(
+        inbound_stream.header_bytes_received);
     // packets_lost is defined as signed, but this should never happen in
     // this test. See RFC 3550.
     verifier.TestMemberIsNonNegative<int32_t>(inbound_stream.packets_lost);
@@ -855,6 +857,8 @@ class RTCStatsReportVerifier {
     verifier.TestMemberIsNonNegative<uint64_t>(
         outbound_stream.retransmitted_packets_sent);
     verifier.TestMemberIsNonNegative<uint64_t>(outbound_stream.bytes_sent);
+    verifier.TestMemberIsNonNegative<uint64_t>(
+        outbound_stream.header_bytes_sent);
     verifier.TestMemberIsNonNegative<uint64_t>(
         outbound_stream.retransmitted_bytes_sent);
     verifier.TestMemberIsUndefined(outbound_stream.target_bitrate);
@@ -928,7 +932,10 @@ class RTCStatsReportVerifier {
   bool VerifyRTCAudioSourceStats(const RTCAudioSourceStats& audio_source) {
     RTCStatsVerifier verifier(report_, &audio_source);
     VerifyRTCMediaSourceStats(audio_source, &verifier);
-    verifier.TestMemberIsPositive<double>(audio_source.audio_level);
+    // Audio level, unlike audio energy, only gets updated at a certain
+    // frequency, so we don't require that one to be positive to avoid a race
+    // (https://crbug.com/webrtc/10962).
+    verifier.TestMemberIsNonNegative<double>(audio_source.audio_level);
     verifier.TestMemberIsPositive<double>(audio_source.total_audio_energy);
     verifier.TestMemberIsPositive<double>(audio_source.total_samples_duration);
     return verifier.ExpectAllMembersSuccessfullyTested();

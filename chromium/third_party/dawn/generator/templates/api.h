@@ -23,24 +23,29 @@
 
 const uint64_t DAWN_WHOLE_SIZE = 0xffffffffffffffffULL; // UINT64_MAX
 
+typedef uint32_t WGPUFlags;
+
 {% for type in by_category["object"] %}
     typedef struct {{as_cType(type.name)}}Impl* {{as_cType(type.name)}};
 {% endfor %}
 
 {% for type in by_category["enum"] + by_category["bitmask"] %}
-    typedef enum {
+    typedef enum {{as_cType(type.name)}} {
         {% for value in type.values %}
             {{as_cEnum(type.name, value.name)}} = 0x{{format(value.value, "08X")}},
         {% endfor %}
         {{as_cEnum(type.name, Name("force32"))}} = 0x7FFFFFFF
     } {{as_cType(type.name)}};
+    {% if type.category == "bitmask" %}
+        typedef WGPUFlags {{as_cType(type.name)}}Flags;
+    {% endif %}
 
 {% endfor %}
 
 {% for type in by_category["structure"] %}
     typedef struct {{as_cType(type.name)}} {
         {% if type.extensible %}
-            const void* nextInChain;
+            void const * nextInChain;
         {% endif %}
         {% for member in type.members %}
             {{as_annotated_cType(member)}};
@@ -49,8 +54,11 @@ const uint64_t DAWN_WHOLE_SIZE = 0xffffffffffffffffULL; // UINT64_MAX
 
 {% endfor %}
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Custom types depending on the target language
-typedef void (*DawnErrorCallback)(DawnErrorType type, const char* message, void* userdata);
 typedef void (*DawnBufferCreateMappedCallback)(DawnBufferMapAsyncStatus status,
                                                DawnCreateBufferMappedResult result,
                                                void* userdata);
@@ -63,10 +71,13 @@ typedef void (*DawnBufferMapWriteCallback)(DawnBufferMapAsyncStatus status,
                                            uint64_t dataLength,
                                            void* userdata);
 typedef void (*DawnFenceOnCompletionCallback)(DawnFenceCompletionStatus status, void* userdata);
+typedef void (*DawnErrorCallback)(DawnErrorType type, const char* message, void* userdata);
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+typedef void (*DawnProc)();
+
+#if !defined(DAWN_SKIP_PROCS)
+
+typedef DawnProc (*DawnProcGetProcAddress)(DawnDevice device, const char* procName);
 
 {% for type in by_category["object"] %}
     // Procs of {{type.name.CamelCase()}}
@@ -80,21 +91,11 @@ extern "C" {
     {% endfor %}
 
 {% endfor %}
+#endif  // !defined(DAWN_SKIP_PROCS)
 
-struct DawnProcTable_s {
-    {% for type in by_category["object"] %}
-        {% for method in native_methods(type) %}
-            {{as_cProc(type.name, method.name)}} {{as_varName(type.name, method.name)}};
-        {% endfor %}
+#if !defined(DAWN_SKIP_DECLARATIONS)
 
-    {% endfor %}
-};
-typedef struct DawnProcTable_s DawnProcTable;
-
-// Stuff below is for convenience and will forward calls to a static DawnProcTable.
-
-// Set which DawnProcTable will be used
-DAWN_EXPORT void dawnSetProcs(const DawnProcTable* procs);
+DAWN_EXPORT DawnProc DawnGetProcAddress(DawnDevice device, const char* procName);
 
 {% for type in by_category["object"] %}
     // Methods of {{type.name.CamelCase()}}
@@ -108,6 +109,7 @@ DAWN_EXPORT void dawnSetProcs(const DawnProcTable* procs);
     {% endfor %}
 
 {% endfor %}
+#endif  // !defined(DAWN_SKIP_DECLARATIONS)
 
 #ifdef __cplusplus
 } // extern "C"

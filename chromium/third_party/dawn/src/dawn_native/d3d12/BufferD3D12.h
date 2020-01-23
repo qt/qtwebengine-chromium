@@ -18,11 +18,12 @@
 #include "common/SerialQueue.h"
 #include "dawn_native/Buffer.h"
 
-#include "dawn_native/ResourceMemoryAllocation.h"
+#include "dawn_native/d3d12/ResourceHeapAllocationD3D12.h"
 #include "dawn_native/d3d12/d3d12_platform.h"
 
 namespace dawn_native { namespace d3d12 {
 
+    class CommandRecordingContext;
     class Device;
 
     class Buffer : public BufferBase {
@@ -36,10 +37,10 @@ namespace dawn_native { namespace d3d12 {
         ComPtr<ID3D12Resource> GetD3D12Resource() const;
         D3D12_GPU_VIRTUAL_ADDRESS GetVA() const;
         void OnMapCommandSerialFinished(uint32_t mapSerial, void* data, bool isWrite);
-        bool TransitionUsageAndGetResourceBarrier(D3D12_RESOURCE_BARRIER* barrier,
+        bool TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
+                                                  D3D12_RESOURCE_BARRIER* barrier,
                                                   dawn::BufferUsage newUsage);
-        void TransitionUsageNow(ComPtr<ID3D12GraphicsCommandList> commandList,
-                                dawn::BufferUsage usage);
+        void TransitionUsageNow(CommandRecordingContext* commandContext, dawn::BufferUsage usage);
 
       private:
         // Dawn API
@@ -51,7 +52,7 @@ namespace dawn_native { namespace d3d12 {
         bool IsMapWritable() const override;
         virtual MaybeError MapAtCreationImpl(uint8_t** mappedPointer) override;
 
-        ResourceMemoryAllocation mResourceAllocation;
+        ResourceHeapAllocation mResourceAllocation;
         bool mFixedResourceState = false;
         dawn::BufferUsage mLastUsage = dawn::BufferUsage::None;
         Serial mLastUsedSerial = UINT64_MAX;

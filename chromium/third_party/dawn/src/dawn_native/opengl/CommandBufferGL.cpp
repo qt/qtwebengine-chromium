@@ -15,6 +15,7 @@
 #include "dawn_native/opengl/CommandBufferGL.h"
 
 #include "dawn_native/BindGroup.h"
+#include "dawn_native/BindGroupTracker.h"
 #include "dawn_native/CommandEncoder.h"
 #include "dawn_native/Commands.h"
 #include "dawn_native/RenderBundle.h"
@@ -141,19 +142,13 @@ namespace dawn_native { namespace opengl {
                 mIndexBuffer = ToBackend(buffer);
             }
 
-            void OnSetVertexBuffers(uint32_t startSlot,
-                                    uint32_t count,
-                                    Ref<BufferBase>* buffers,
-                                    uint64_t* offsets) {
-                for (uint32_t i = 0; i < count; ++i) {
-                    uint32_t slot = startSlot + i;
-                    mVertexBuffers[slot] = ToBackend(buffers[i].Get());
-                    mVertexBufferOffsets[slot] = offsets[i];
-                }
+            void OnSetVertexBuffer(uint32_t slot, BufferBase* buffer, uint64_t offset) {
+                mVertexBuffers[slot] = ToBackend(buffer);
+                mVertexBufferOffsets[slot] = offset;
 
                 // Use 64 bit masks and make sure there are no shift UB
                 static_assert(kMaxVertexBuffers <= 8 * sizeof(unsigned long long) - 1, "");
-                mDirtyVertexBuffers |= ((1ull << count) - 1ull) << startSlot;
+                mDirtyVertexBuffers |= 1ull << slot;
             }
 
             void OnSetPipeline(RenderPipelineBase* pipeline) {
@@ -215,88 +210,109 @@ namespace dawn_native { namespace opengl {
             RenderPipelineBase* mLastPipeline = nullptr;
         };
 
-        // Handles SetBindGroup commands with the specifics of translating to OpenGL texture and
-        // buffer units
-        void ApplyBindGroup(const OpenGLFunctions& gl,
-                            uint32_t index,
-                            BindGroupBase* group,
-                            PipelineLayout* pipelineLayout,
-                            PipelineGL* pipeline,
-                            uint32_t dynamicOffsetCount,
-                            uint64_t* dynamicOffsets) {
-            const auto& indices = pipelineLayout->GetBindingIndexInfo()[index];
-            const auto& layout = group->GetLayout()->GetBindingInfo();
-            uint32_t currentDynamicIndex = 0;
+        class BindGroupTracker : public BindGroupTrackerBase<BindGroupBase*, false> {
+          public:
+            void OnSetPipeline(RenderPipeline* pipeline) {
+                BindGroupTrackerBase::OnSetPipeline(pipeline);
+                mPipeline = pipeline;
+            }
 
-            for (uint32_t bindingIndex : IterateBitSet(layout.mask)) {
-                switch (layout.types[bindingIndex]) {
-                    case dawn::BindingType::UniformBuffer: {
-                        BufferBinding binding = group->GetBindingAsBufferBinding(bindingIndex);
-                        GLuint buffer = ToBackend(binding.buffer)->GetHandle();
-                        GLuint uboIndex = indices[bindingIndex];
-                        GLuint offset = binding.offset;
+            void OnSetPipeline(ComputePipeline* pipeline) {
+                BindGroupTrackerBase::OnSetPipeline(pipeline);
+                mPipeline = pipeline;
+            }
 
-                        if (layout.dynamic[bindingIndex]) {
-                            offset += dynamicOffsets[currentDynamicIndex];
-                            ++currentDynamicIndex;
-                        }
+            void Apply(const OpenGLFunctions& gl) {
+                for (uint32_t index : IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
+                    ApplyBindGroup(gl, index, mBindGroups[index], mDynamicOffsetCounts[index],
+                                   mDynamicOffsets[index].data());
+                }
+                DidApply();
+            }
 
-                        gl.BindBufferRange(GL_UNIFORM_BUFFER, uboIndex, buffer, offset,
-                                           binding.size);
-                    } break;
+          private:
+            void ApplyBindGroup(const OpenGLFunctions& gl,
+                                uint32_t index,
+                                BindGroupBase* group,
+                                uint32_t dynamicOffsetCount,
+                                uint64_t* dynamicOffsets) {
+                const auto& indices = ToBackend(mPipelineLayout)->GetBindingIndexInfo()[index];
+                const auto& layout = group->GetLayout()->GetBindingInfo();
+                uint32_t currentDynamicIndex = 0;
 
-                    case dawn::BindingType::Sampler: {
-                        Sampler* sampler = ToBackend(group->GetBindingAsSampler(bindingIndex));
-                        GLuint samplerIndex = indices[bindingIndex];
+                for (uint32_t bindingIndex : IterateBitSet(layout.mask)) {
+                    switch (layout.types[bindingIndex]) {
+                        case dawn::BindingType::UniformBuffer: {
+                            BufferBinding binding = group->GetBindingAsBufferBinding(bindingIndex);
+                            GLuint buffer = ToBackend(binding.buffer)->GetHandle();
+                            GLuint uboIndex = indices[bindingIndex];
+                            GLuint offset = binding.offset;
 
-                        for (PipelineGL::SamplerUnit unit :
-                             pipeline->GetTextureUnitsForSampler(samplerIndex)) {
-                            // Only use filtering for certain texture units, because int and uint
-                            // texture are only complete without filtering
-                            if (unit.shouldUseFiltering) {
-                                gl.BindSampler(unit.unit, sampler->GetFilteringHandle());
-                            } else {
-                                gl.BindSampler(unit.unit, sampler->GetNonFilteringHandle());
+                            if (layout.hasDynamicOffset[bindingIndex]) {
+                                offset += dynamicOffsets[currentDynamicIndex];
+                                ++currentDynamicIndex;
                             }
-                        }
-                    } break;
 
-                    case dawn::BindingType::SampledTexture: {
-                        TextureView* view = ToBackend(group->GetBindingAsTextureView(bindingIndex));
-                        GLuint handle = view->GetHandle();
-                        GLenum target = view->GetGLTarget();
-                        GLuint viewIndex = indices[bindingIndex];
+                            gl.BindBufferRange(GL_UNIFORM_BUFFER, uboIndex, buffer, offset,
+                                               binding.size);
+                        } break;
 
-                        for (auto unit : pipeline->GetTextureUnitsForTextureView(viewIndex)) {
-                            gl.ActiveTexture(GL_TEXTURE0 + unit);
-                            gl.BindTexture(target, handle);
-                        }
-                    } break;
+                        case dawn::BindingType::Sampler: {
+                            Sampler* sampler = ToBackend(group->GetBindingAsSampler(bindingIndex));
+                            GLuint samplerIndex = indices[bindingIndex];
 
-                    case dawn::BindingType::StorageBuffer: {
-                        BufferBinding binding = group->GetBindingAsBufferBinding(bindingIndex);
-                        GLuint buffer = ToBackend(binding.buffer)->GetHandle();
-                        GLuint ssboIndex = indices[bindingIndex];
-                        GLuint offset = binding.offset;
+                            for (PipelineGL::SamplerUnit unit :
+                                 mPipeline->GetTextureUnitsForSampler(samplerIndex)) {
+                                // Only use filtering for certain texture units, because int and
+                                // uint texture are only complete without filtering
+                                if (unit.shouldUseFiltering) {
+                                    gl.BindSampler(unit.unit, sampler->GetFilteringHandle());
+                                } else {
+                                    gl.BindSampler(unit.unit, sampler->GetNonFilteringHandle());
+                                }
+                            }
+                        } break;
 
-                        if (layout.dynamic[bindingIndex]) {
-                            offset += dynamicOffsets[currentDynamicIndex];
-                            ++currentDynamicIndex;
-                        }
+                        case dawn::BindingType::SampledTexture: {
+                            TextureView* view =
+                                ToBackend(group->GetBindingAsTextureView(bindingIndex));
+                            GLuint handle = view->GetHandle();
+                            GLenum target = view->GetGLTarget();
+                            GLuint viewIndex = indices[bindingIndex];
 
-                        gl.BindBufferRange(GL_SHADER_STORAGE_BUFFER, ssboIndex, buffer, offset,
-                                           binding.size);
-                    } break;
+                            for (auto unit : mPipeline->GetTextureUnitsForTextureView(viewIndex)) {
+                                gl.ActiveTexture(GL_TEXTURE0 + unit);
+                                gl.BindTexture(target, handle);
+                            }
+                        } break;
 
-                    case dawn::BindingType::StorageTexture:
-                    case dawn::BindingType::ReadonlyStorageBuffer:
-                        UNREACHABLE();
-                        break;
+                        case dawn::BindingType::StorageBuffer: {
+                            BufferBinding binding = group->GetBindingAsBufferBinding(bindingIndex);
+                            GLuint buffer = ToBackend(binding.buffer)->GetHandle();
+                            GLuint ssboIndex = indices[bindingIndex];
+                            GLuint offset = binding.offset;
 
-                        // TODO(shaobo.yan@intel.com): Implement dynamic buffer offset.
+                            if (layout.hasDynamicOffset[bindingIndex]) {
+                                offset += dynamicOffsets[currentDynamicIndex];
+                                ++currentDynamicIndex;
+                            }
+
+                            gl.BindBufferRange(GL_SHADER_STORAGE_BUFFER, ssboIndex, buffer, offset,
+                                               binding.size);
+                        } break;
+
+                        case dawn::BindingType::StorageTexture:
+                        case dawn::BindingType::ReadonlyStorageBuffer:
+                            UNREACHABLE();
+                            break;
+
+                            // TODO(shaobo.yan@intel.com): Implement dynamic buffer offset.
+                    }
                 }
             }
-        }
+
+            PipelineGL* mPipeline = nullptr;
+        };
 
         void ResolveMultisampledRenderTargets(const OpenGLFunctions& gl,
                                               const BeginRenderPassCmd* renderPass) {
@@ -391,12 +407,10 @@ namespace dawn_native { namespace opengl {
         auto TransitionForPass = [](const PassResourceUsage& usages) {
             for (size_t i = 0; i < usages.textures.size(); i++) {
                 Texture* texture = ToBackend(usages.textures[i]);
-                // We count the lazy clears for non output attachment textures and depth stencil
-                // textures in order to match the backdoor lazy clear counts in Vulkan and D3D12.
+                // We count the lazy clears for non output attachment textures in order to match the
+                // backdoor lazy clear counts in Vulkan and D3D12.
                 bool isLazyClear =
-                    ((!(usages.textureUsages[i] & dawn::TextureUsage::OutputAttachment) &&
-                      texture->GetFormat().IsColor()) ||
-                     texture->GetFormat().HasDepthOrStencil());
+                    !(usages.textureUsages[i] & dawn::TextureUsage::OutputAttachment);
                 texture->EnsureSubresourceContentInitialized(
                     0, texture->GetNumMipLevels(), 0, texture->GetArrayLayers(), isLazyClear);
             }
@@ -447,8 +461,8 @@ namespace dawn_native { namespace opengl {
                     GLenum target = texture->GetGLTarget();
                     const GLFormat& format = texture->GetGLFormat();
                     if (IsCompleteSubresourceCopiedTo(texture, copySize, dst.mipLevel)) {
-                        texture->SetIsSubresourceContentInitialized(dst.mipLevel, 1, dst.arrayLayer,
-                                                                    1);
+                        texture->SetIsSubresourceContentInitialized(true, dst.mipLevel, 1,
+                                                                    dst.arrayLayer, 1);
                     } else {
                         texture->EnsureSubresourceContentInitialized(dst.mipLevel, 1,
                                                                      dst.arrayLayer, 1);
@@ -459,22 +473,20 @@ namespace dawn_native { namespace opengl {
                     gl.BindTexture(target, texture->GetHandle());
 
                     const Format& formatInfo = texture->GetFormat();
-                    gl.PixelStorei(
-                        GL_UNPACK_ROW_LENGTH,
-                        src.rowPitch / texture->GetFormat().blockByteSize * formatInfo.blockWidth);
+                    gl.PixelStorei(GL_UNPACK_ROW_LENGTH,
+                                   src.rowPitch / formatInfo.blockByteSize * formatInfo.blockWidth);
                     gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, src.imageHeight);
 
-                    if (texture->GetFormat().isCompressed) {
+                    if (formatInfo.isCompressed) {
                         gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, formatInfo.blockByteSize);
                         gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, formatInfo.blockWidth);
                         gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, formatInfo.blockHeight);
                         gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_DEPTH, 1);
 
                         ASSERT(texture->GetDimension() == dawn::TextureDimension::e2D);
-                        uint64_t copyDataSize =
-                            (copySize.width / texture->GetFormat().blockWidth) *
-                            (copySize.height / texture->GetFormat().blockHeight) *
-                            texture->GetFormat().blockByteSize;
+                        uint64_t copyDataSize = (copySize.width / formatInfo.blockWidth) *
+                                                (copySize.height / formatInfo.blockHeight) *
+                                                formatInfo.blockByteSize;
                         Extent3D copyExtent = ComputeTextureCopyExtent(dst, copySize);
 
                         if (texture->GetArrayLayers() > 1) {
@@ -591,7 +603,7 @@ namespace dawn_native { namespace opengl {
                     srcTexture->EnsureSubresourceContentInitialized(src.mipLevel, 1, src.arrayLayer,
                                                                     1);
                     if (IsCompleteSubresourceCopiedTo(dstTexture, copySize, dst.mipLevel)) {
-                        dstTexture->SetIsSubresourceContentInitialized(dst.mipLevel, 1,
+                        dstTexture->SetIsSubresourceContentInitialized(true, dst.mipLevel, 1,
                                                                        dst.arrayLayer, 1);
                     } else {
                         dstTexture->EnsureSubresourceContentInitialized(dst.mipLevel, 1,
@@ -612,6 +624,7 @@ namespace dawn_native { namespace opengl {
     void CommandBuffer::ExecuteComputePass() {
         const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
         ComputePipeline* lastPipeline = nullptr;
+        BindGroupTracker bindGroupTracker = {};
 
         Command type;
         while (mCommands.NextCommandId(&type)) {
@@ -623,6 +636,8 @@ namespace dawn_native { namespace opengl {
 
                 case Command::Dispatch: {
                     DispatchCmd* dispatch = mCommands.NextCommand<DispatchCmd>();
+                    bindGroupTracker.Apply(gl);
+
                     gl.DispatchCompute(dispatch->x, dispatch->y, dispatch->z);
                     // TODO(cwallez@chromium.org): add barriers to the API
                     gl.MemoryBarrier(GL_ALL_BARRIER_BITS);
@@ -630,6 +645,7 @@ namespace dawn_native { namespace opengl {
 
                 case Command::DispatchIndirect: {
                     DispatchIndirectCmd* dispatch = mCommands.NextCommand<DispatchIndirectCmd>();
+                    bindGroupTracker.Apply(gl);
 
                     uint64_t indirectBufferOffset = dispatch->indirectOffset;
                     Buffer* indirectBuffer = ToBackend(dispatch->indirectBuffer.Get());
@@ -644,6 +660,8 @@ namespace dawn_native { namespace opengl {
                     SetComputePipelineCmd* cmd = mCommands.NextCommand<SetComputePipelineCmd>();
                     lastPipeline = ToBackend(cmd->pipeline).Get();
                     lastPipeline->ApplyNow();
+
+                    bindGroupTracker.OnSetPipeline(lastPipeline);
                 } break;
 
                 case Command::SetBindGroup: {
@@ -652,9 +670,8 @@ namespace dawn_native { namespace opengl {
                     if (cmd->dynamicOffsetCount > 0) {
                         dynamicOffsets = mCommands.NextData<uint64_t>(cmd->dynamicOffsetCount);
                     }
-                    ApplyBindGroup(gl, cmd->index, cmd->group.Get(),
-                                   ToBackend(lastPipeline->GetLayout()), lastPipeline,
-                                   cmd->dynamicOffsetCount, dynamicOffsets);
+                    bindGroupTracker.OnSetBindGroup(cmd->index, cmd->group.Get(),
+                                                    cmd->dynamicOffsetCount, dynamicOffsets);
                 } break;
 
                 case Command::InsertDebugMarker:
@@ -760,28 +777,49 @@ namespace dawn_native { namespace opengl {
         {
             for (uint32_t i :
                  IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
-                const auto& attachmentInfo = renderPass->colorAttachments[i];
+                auto* attachmentInfo = &renderPass->colorAttachments[i];
+                TextureView* view = ToBackend(attachmentInfo->view.Get());
 
                 // Load op - color
                 // TODO(cwallez@chromium.org): Choose the clear function depending on the
                 // componentType: things work for now because the clear color is always a float, but
                 // when that's fixed will lose precision on integer formats when converting to
                 // float.
-                if (attachmentInfo.loadOp == dawn::LoadOp::Clear) {
+                if (attachmentInfo->loadOp == dawn::LoadOp::Clear) {
                     gl.ColorMaski(i, true, true, true, true);
-                    gl.ClearBufferfv(GL_COLOR, i, &attachmentInfo.clearColor.r);
+                    gl.ClearBufferfv(GL_COLOR, i, &attachmentInfo->clearColor.r);
+                }
+
+                switch (attachmentInfo->storeOp) {
+                    case dawn::StoreOp::Store: {
+                        view->GetTexture()->SetIsSubresourceContentInitialized(
+                            true, view->GetBaseMipLevel(), view->GetLevelCount(),
+                            view->GetBaseArrayLayer(), view->GetLayerCount());
+                    } break;
+
+                    case dawn::StoreOp::Clear: {
+                        // TODO(natlee@microsoft.com): call glDiscard to do optimization
+                        view->GetTexture()->SetIsSubresourceContentInitialized(
+                            false, view->GetBaseMipLevel(), view->GetLevelCount(),
+                            view->GetBaseArrayLayer(), view->GetLayerCount());
+                    } break;
+
+                    default:
+                        UNREACHABLE();
+                        break;
                 }
             }
 
             if (renderPass->attachmentState->HasDepthStencilAttachment()) {
-                const auto& attachmentInfo = renderPass->depthStencilAttachment;
-                const Format& attachmentFormat = attachmentInfo.view->GetTexture()->GetFormat();
+                auto* attachmentInfo = &renderPass->depthStencilAttachment;
+                const Format& attachmentFormat = attachmentInfo->view->GetTexture()->GetFormat();
+                TextureView* view = ToBackend(attachmentInfo->view.Get());
 
                 // Load op - depth/stencil
                 bool doDepthClear = attachmentFormat.HasDepth() &&
-                                    (attachmentInfo.depthLoadOp == dawn::LoadOp::Clear);
+                                    (attachmentInfo->depthLoadOp == dawn::LoadOp::Clear);
                 bool doStencilClear = attachmentFormat.HasStencil() &&
-                                      (attachmentInfo.stencilLoadOp == dawn::LoadOp::Clear);
+                                      (attachmentInfo->stencilLoadOp == dawn::LoadOp::Clear);
 
                 if (doDepthClear) {
                     gl.DepthMask(GL_TRUE);
@@ -791,13 +829,25 @@ namespace dawn_native { namespace opengl {
                 }
 
                 if (doDepthClear && doStencilClear) {
-                    gl.ClearBufferfi(GL_DEPTH_STENCIL, 0, attachmentInfo.clearDepth,
-                                     attachmentInfo.clearStencil);
+                    gl.ClearBufferfi(GL_DEPTH_STENCIL, 0, attachmentInfo->clearDepth,
+                                     attachmentInfo->clearStencil);
                 } else if (doDepthClear) {
-                    gl.ClearBufferfv(GL_DEPTH, 0, &attachmentInfo.clearDepth);
+                    gl.ClearBufferfv(GL_DEPTH, 0, &attachmentInfo->clearDepth);
                 } else if (doStencilClear) {
-                    const GLint clearStencil = attachmentInfo.clearStencil;
+                    const GLint clearStencil = attachmentInfo->clearStencil;
                     gl.ClearBufferiv(GL_STENCIL, 0, &clearStencil);
+                }
+
+                if (attachmentInfo->depthStoreOp == dawn::StoreOp::Store &&
+                    attachmentInfo->stencilStoreOp == dawn::StoreOp::Store) {
+                    view->GetTexture()->SetIsSubresourceContentInitialized(
+                        true, view->GetBaseMipLevel(), view->GetLevelCount(),
+                        view->GetBaseArrayLayer(), view->GetLayerCount());
+                } else if (attachmentInfo->depthStoreOp == dawn::StoreOp::Clear &&
+                           attachmentInfo->stencilStoreOp == dawn::StoreOp::Clear) {
+                    view->GetTexture()->SetIsSubresourceContentInitialized(
+                        false, view->GetBaseMipLevel(), view->GetLevelCount(),
+                        view->GetBaseArrayLayer(), view->GetLayerCount());
                 }
             }
         }
@@ -806,12 +856,14 @@ namespace dawn_native { namespace opengl {
         uint64_t indexBufferBaseOffset = 0;
 
         InputBufferTracker inputBuffers;
+        BindGroupTracker bindGroupTracker = {};
 
         auto DoRenderBundleCommand = [&](CommandIterator* iter, Command type) {
             switch (type) {
                 case Command::Draw: {
                     DrawCmd* draw = iter->NextCommand<DrawCmd>();
                     inputBuffers.Apply(gl);
+                    bindGroupTracker.Apply(gl);
 
                     if (draw->firstInstance > 0) {
                         gl.DrawArraysInstancedBaseInstance(
@@ -828,6 +880,7 @@ namespace dawn_native { namespace opengl {
                 case Command::DrawIndexed: {
                     DrawIndexedCmd* draw = iter->NextCommand<DrawIndexedCmd>();
                     inputBuffers.Apply(gl);
+                    bindGroupTracker.Apply(gl);
 
                     dawn::IndexFormat indexFormat =
                         lastPipeline->GetVertexInputDescriptor()->indexFormat;
@@ -853,6 +906,7 @@ namespace dawn_native { namespace opengl {
                 case Command::DrawIndirect: {
                     DrawIndirectCmd* draw = iter->NextCommand<DrawIndirectCmd>();
                     inputBuffers.Apply(gl);
+                    bindGroupTracker.Apply(gl);
 
                     uint64_t indirectBufferOffset = draw->indirectOffset;
                     Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
@@ -866,6 +920,7 @@ namespace dawn_native { namespace opengl {
                 case Command::DrawIndexedIndirect: {
                     DrawIndexedIndirectCmd* draw = iter->NextCommand<DrawIndexedIndirectCmd>();
                     inputBuffers.Apply(gl);
+                    bindGroupTracker.Apply(gl);
 
                     dawn::IndexFormat indexFormat =
                         lastPipeline->GetVertexInputDescriptor()->indexFormat;
@@ -894,6 +949,7 @@ namespace dawn_native { namespace opengl {
                     lastPipeline->ApplyNow(persistentPipelineState);
 
                     inputBuffers.OnSetPipeline(lastPipeline);
+                    bindGroupTracker.OnSetPipeline(lastPipeline);
                 } break;
 
                 case Command::SetBindGroup: {
@@ -902,9 +958,8 @@ namespace dawn_native { namespace opengl {
                     if (cmd->dynamicOffsetCount > 0) {
                         dynamicOffsets = iter->NextData<uint64_t>(cmd->dynamicOffsetCount);
                     }
-                    ApplyBindGroup(gl, cmd->index, cmd->group.Get(),
-                                   ToBackend(lastPipeline->GetLayout()), lastPipeline,
-                                   cmd->dynamicOffsetCount, dynamicOffsets);
+                    bindGroupTracker.OnSetBindGroup(cmd->index, cmd->group.Get(),
+                                                    cmd->dynamicOffsetCount, dynamicOffsets);
                 } break;
 
                 case Command::SetIndexBuffer: {
@@ -913,11 +968,9 @@ namespace dawn_native { namespace opengl {
                     inputBuffers.OnSetIndexBuffer(cmd->buffer.Get());
                 } break;
 
-                case Command::SetVertexBuffers: {
-                    SetVertexBuffersCmd* cmd = iter->NextCommand<SetVertexBuffersCmd>();
-                    auto buffers = iter->NextData<Ref<BufferBase>>(cmd->count);
-                    auto offsets = iter->NextData<uint64_t>(cmd->count);
-                    inputBuffers.OnSetVertexBuffers(cmd->startSlot, cmd->count, buffers, offsets);
+                case Command::SetVertexBuffer: {
+                    SetVertexBufferCmd* cmd = iter->NextCommand<SetVertexBufferCmd>();
+                    inputBuffers.OnSetVertexBuffer(cmd->slot, cmd->buffer.Get(), cmd->offset);
                 } break;
 
                 default:

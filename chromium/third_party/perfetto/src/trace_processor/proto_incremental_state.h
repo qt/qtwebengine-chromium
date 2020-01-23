@@ -18,133 +18,126 @@
 #define SRC_TRACE_PROCESSOR_PROTO_INCREMENTAL_STATE_H_
 
 #include <stdint.h>
+#include <string.h>
 
 #include <map>
 #include <unordered_map>
+#include <vector>
 
-#include "perfetto/ext/base/optional.h"
 #include "perfetto/protozero/proto_decoder.h"
+#include "src/trace_processor/stack_profile_tracker.h"
 #include "src/trace_processor/trace_blob_view.h"
+#include "src/trace_processor/trace_processor_context.h"
 #include "src/trace_processor/trace_storage.h"
-
-#include "protos/perfetto/trace/profiling/profile_common.pbzero.h"
-#include "protos/perfetto/trace/track_event/debug_annotation.pbzero.h"
-#include "protos/perfetto/trace/track_event/log_message.pbzero.h"
-#include "protos/perfetto/trace/track_event/source_location.pbzero.h"
-#include "protos/perfetto/trace/track_event/task_execution.pbzero.h"
-#include "protos/perfetto/trace/track_event/track_event.pbzero.h"
 
 namespace perfetto {
 namespace trace_processor {
 
-// Specialization of member types is forbidden inside their parent class, so
-// define the StorageReferences class outside in an internal namespace.
-namespace proto_incremental_state_internal {
+struct DefaultFieldName;
+struct BuildIdFieldName;
+struct MappingPathsFieldName;
+struct FunctionNamesFieldName;
+struct VulkanAnnotationsFieldName;
 
-template <typename MessageType>
-struct StorageReferences;
-
-template <>
-struct StorageReferences<protos::pbzero::InternedString> {};
-template <>
-struct StorageReferences<protos::pbzero::Mapping> {};
-template <>
-struct StorageReferences<protos::pbzero::Frame> {};
-template <>
-struct StorageReferences<protos::pbzero::Callstack> {};
-
-template <>
-struct StorageReferences<protos::pbzero::EventCategory> {
-  StringId name_id;
-};
-
-template <>
-struct StorageReferences<protos::pbzero::EventName> {
-  StringId name_id;
-};
-
-template <>
-struct StorageReferences<protos::pbzero::DebugAnnotationName> {
-  StringId name_id;
-};
-
-template <>
-struct StorageReferences<protos::pbzero::SourceLocation> {
-  StringId file_name_id;
-  StringId function_name_id;
-  uint32_t line_number;
-};
-
-template <>
-struct StorageReferences<protos::pbzero::LogMessageBody> {
-  StringId body_id;
-};
-
-}  // namespace proto_incremental_state_internal
+#if PERFETTO_DCHECK_IS_ON() && defined(__GNUC__)
+// When called from GetOrCreateDecoder(), __PRETTY_FUNCTION__ (supported by GCC
+// + clang) should include the stringified name of the MessageType.
+#define PERFETTO_TYPE_IDENTIFIER __PRETTY_FUNCTION__
+#else  // PERFETTO_DCHECK_IS_ON() && defined(__GNUC__)
+#define PERFETTO_TYPE_IDENTIFIER nullptr
+#endif  // PERFETTO_DCHECK_IS_ON() && defined(__GNUC__)
 
 // Stores per-packet-sequence incremental state during trace parsing, such as
 // reference timestamps for delta timestamp calculation and interned messages.
 class ProtoIncrementalState {
  public:
-  template <typename MessageType>
-  using StorageReferences =
-      proto_incremental_state_internal::StorageReferences<MessageType>;
+  ProtoIncrementalState(TraceProcessorContext* context) : context_(context) {}
 
   // Entry in an interning index, refers to the interned message.
-  template <typename MessageType>
-  struct InternedDataView {
-    InternedDataView(TraceBlobView msg) : message(std::move(msg)) {}
+  struct InternedMessageView {
+    InternedMessageView(TraceBlobView msg) : message(std::move(msg)) {}
 
-    typename MessageType::Decoder CreateDecoder() const {
-      return typename MessageType::Decoder(message.data(), message.length());
+    template <typename MessageType>
+    typename MessageType::Decoder* GetOrCreateDecoder() {
+      if (!decoder) {
+        // Lazy init the decoder and save it away, so that we don't have to
+        // reparse the message every time we access the interning entry.
+        decoder = std::unique_ptr<void, std::function<void(void*)>>(
+            new typename MessageType::Decoder(message.data(), message.length()),
+            [](void* obj) {
+              delete reinterpret_cast<typename MessageType::Decoder*>(obj);
+            });
+        decoder_type = PERFETTO_TYPE_IDENTIFIER;
+      }
+      // Verify that the type of the decoder didn't change.
+      if (PERFETTO_TYPE_IDENTIFIER &&
+          strcmp(decoder_type,
+                 // GCC complains if this arg can be null.
+                 PERFETTO_TYPE_IDENTIFIER ? PERFETTO_TYPE_IDENTIFIER : "") !=
+              0) {
+        PERFETTO_FATAL(
+            "Interning entry accessed under different types! previous type: "
+            "%s. new type: %s.",
+            decoder_type, __PRETTY_FUNCTION__);
+      }
+      return reinterpret_cast<typename MessageType::Decoder*>(decoder.get());
     }
 
     TraceBlobView message;
+    std::unique_ptr<void, std::function<void(void*)>> decoder;
 
-    // If the data in this entry was already stored into the trace storage, this
-    // field contains message-type-specific references into the storage which
-    // can be used to look up the entry's data (e.g. indexes of interned
-    // strings).
-    base::Optional<StorageReferences<MessageType>> storage_refs;
+   private:
+    const char* decoder_type = nullptr;
   };
 
-  template <typename MessageType>
-  using InternedDataMap =
-      std::unordered_map<uint64_t, InternedDataView<MessageType>>;
+  using InternedMessageMap =
+      std::unordered_map<uint64_t /*iid*/, InternedMessageView>;
+  using InternedFieldMap =
+      std::unordered_map<uint32_t /*field_id*/, InternedMessageMap>;
+  using InternedDataGenerationList = std::vector<InternedFieldMap>;
 
   class PacketSequenceState {
    public:
+    PacketSequenceState(TraceProcessorContext* context)
+        : context_(context), stack_profile_tracker_(context) {
+      interned_data_.emplace_back();
+    }
+
     int64_t IncrementAndGetTrackEventTimeNs(int64_t delta_ns) {
-      PERFETTO_DCHECK(IsTrackEventStateValid());
+      PERFETTO_DCHECK(track_event_timestamps_valid());
       track_event_timestamp_ns_ += delta_ns;
       return track_event_timestamp_ns_;
     }
 
     int64_t IncrementAndGetTrackEventThreadTimeNs(int64_t delta_ns) {
-      PERFETTO_DCHECK(IsTrackEventStateValid());
+      PERFETTO_DCHECK(track_event_timestamps_valid());
       track_event_thread_timestamp_ns_ += delta_ns;
       return track_event_thread_timestamp_ns_;
     }
 
     int64_t IncrementAndGetTrackEventThreadInstructionCount(int64_t delta) {
-      PERFETTO_DCHECK(IsTrackEventStateValid());
+      PERFETTO_DCHECK(track_event_timestamps_valid());
       track_event_thread_instruction_count_ += delta;
       return track_event_thread_instruction_count_;
     }
 
     void OnPacketLoss() {
       packet_loss_ = true;
-      thread_descriptor_seen_ = false;
+      track_event_timestamps_valid_ = false;
     }
 
-    void OnIncrementalStateCleared() { packet_loss_ = false; }
+    void OnIncrementalStateCleared() {
+      packet_loss_ = false;
+      interned_data_.emplace_back();  // Bump generation number
+    }
 
     void SetThreadDescriptor(int32_t pid,
                              int32_t tid,
                              int64_t timestamp_ns,
                              int64_t thread_timestamp_ns,
                              int64_t thread_instruction_count) {
-      thread_descriptor_seen_ = true;
+      track_event_timestamps_valid_ = true;
+      pid_and_tid_valid_ = true;
       pid_ = pid;
       tid_ = tid;
       track_event_timestamp_ns_ = timestamp_ns;
@@ -154,17 +147,77 @@ class ProtoIncrementalState {
 
     bool IsIncrementalStateValid() const { return !packet_loss_; }
 
-    bool IsTrackEventStateValid() const {
-      return IsIncrementalStateValid() && thread_descriptor_seen_;
+    StackProfileTracker& stack_profile_tracker() {
+      return stack_profile_tracker_;
     }
+
+    // Returns the index of the current generation in the
+    // InternedDataGenerationList.
+    size_t current_generation() const { return interned_data_.size() - 1; }
+
+    bool track_event_timestamps_valid() const {
+      return track_event_timestamps_valid_;
+    }
+
+    bool pid_and_tid_valid() const { return pid_and_tid_valid_; }
 
     int32_t pid() const { return pid_; }
     int32_t tid() const { return tid_; }
 
-    template <typename MessageType>
-    InternedDataMap<MessageType>* GetInternedDataMap();
+    void InternMessage(uint32_t field_id, TraceBlobView message) {
+      constexpr auto kIidFieldNumber = 1;
+
+      uint64_t iid = 0;
+      auto message_start = message.data();
+      auto message_size = message.length();
+      protozero::ProtoDecoder decoder(message_start, message_size);
+
+      auto field = decoder.FindField(kIidFieldNumber);
+      if (PERFETTO_UNLIKELY(!field)) {
+        PERFETTO_DLOG("Interned message without interning_id");
+        context_->storage->IncrementStats(
+            stats::interned_data_tokenizer_errors);
+        return;
+      }
+      iid = field.as_uint64();
+
+      auto* map = &interned_data_.back()[field_id];
+      auto res = map->emplace(iid, InternedMessageView(std::move(message)));
+
+      // If a message with this ID is already interned in the same generation,
+      // its data should not have changed (this is forbidden by the InternedData
+      // proto).
+      // TODO(eseckler): This DCHECK assumes that the message is encoded the
+      // same way if it is re-emitted.
+      PERFETTO_DCHECK(res.second ||
+                      (res.first->second.message.length() == message_size &&
+                       memcmp(res.first->second.message.data(), message_start,
+                              message_size) == 0));
+    }
+
+    template <uint32_t FieldId, typename MessageType>
+    typename MessageType::Decoder* LookupInternedMessage(size_t generation,
+                                                         uint64_t iid) {
+      PERFETTO_CHECK(generation <= interned_data_.size());
+      auto* field_map = &interned_data_[generation];
+      auto field_it = field_map->find(FieldId);
+      if (field_it != field_map->end()) {
+        auto* message_map = &field_it->second;
+        auto it = message_map->find(iid);
+        if (it != message_map->end()) {
+          return it->second.GetOrCreateDecoder<MessageType>();
+        }
+      }
+      context_->storage->IncrementStats(stats::interned_data_tokenizer_errors);
+      PERFETTO_DLOG("Could not find interning entry for field ID %" PRIu32
+                    ", generation %zu, and IID %" PRIu64,
+                    FieldId, generation, iid);
+      return nullptr;
+    }
 
    private:
+    TraceProcessorContext* context_;
+
     // If true, incremental state on the sequence is considered invalid until we
     // see the next packet with incremental_state_cleared. We assume that we
     // missed some packets at the beginning of the trace.
@@ -172,11 +225,15 @@ class ProtoIncrementalState {
 
     // We can only consider TrackEvent delta timestamps to be correct after we
     // have observed a thread descriptor (since the last packet loss).
-    bool thread_descriptor_seen_ = false;
+    bool track_event_timestamps_valid_ = false;
 
-    // Process/thread ID of the packet sequence. Used as default values for
-    // TrackEvents that don't specify a pid/tid override. Only valid while
-    // |seen_thread_descriptor_| is true.
+    // |pid_| and |tid_| are only valid after we parsed at least one
+    // ThreadDescriptor packet on the sequence.
+    bool pid_and_tid_valid_ = false;
+
+    // Process/thread ID of the packet sequence set by a ThreadDescriptor
+    // packet. Used as default values for TrackEvents that don't specify a
+    // pid/tid override. Only valid after |pid_and_tid_valid_| is set to true.
     int32_t pid_ = 0;
     int32_t tid_ = 0;
 
@@ -186,16 +243,8 @@ class ProtoIncrementalState {
     int64_t track_event_thread_timestamp_ns_ = 0;
     int64_t track_event_thread_instruction_count_ = 0;
 
-    InternedDataMap<protos::pbzero::EventCategory> event_categories_;
-    InternedDataMap<protos::pbzero::EventName> event_names_;
-    InternedDataMap<protos::pbzero::DebugAnnotationName>
-        debug_annotation_names_;
-    InternedDataMap<protos::pbzero::SourceLocation> source_locations_;
-    InternedDataMap<protos::pbzero::InternedString> interned_strings_;
-    InternedDataMap<protos::pbzero::LogMessageBody> interned_log_messages_;
-    InternedDataMap<protos::pbzero::Mapping> mappings_;
-    InternedDataMap<protos::pbzero::Frame> frames_;
-    InternedDataMap<protos::pbzero::Callstack> callstacks_;
+    InternedDataGenerationList interned_data_;
+    StackProfileTracker stack_profile_tracker_;
   };
 
   // Returns the PacketSequenceState for the packet sequence with the given id.
@@ -204,7 +253,7 @@ class ProtoIncrementalState {
   PacketSequenceState* GetOrCreateStateForPacketSequence(uint32_t sequence_id) {
     auto& ptr = packet_sequence_states_[sequence_id];
     if (!ptr)
-      ptr.reset(new PacketSequenceState());
+      ptr.reset(new PacketSequenceState(context_));
     return ptr.get();
   }
 
@@ -213,71 +262,10 @@ class ProtoIncrementalState {
   // valid even if the map rehashes.
   std::map<uint32_t, std::unique_ptr<PacketSequenceState>>
       packet_sequence_states_;
+
+  TraceProcessorContext* context_;
 };
 
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::EventCategory>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::EventCategory>() {
-  return &event_categories_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::EventName>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::EventName>() {
-  return &event_names_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<
-    protos::pbzero::DebugAnnotationName>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::DebugAnnotationName>() {
-  return &debug_annotation_names_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::SourceLocation>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::SourceLocation>() {
-  return &source_locations_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::LogMessageBody>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::LogMessageBody>() {
-  return &interned_log_messages_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::InternedString>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::InternedString>() {
-  return &interned_strings_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::Mapping>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::Mapping>() {
-  return &mappings_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::Frame>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::Frame>() {
-  return &frames_;
-}
-
-template <>
-inline ProtoIncrementalState::InternedDataMap<protos::pbzero::Callstack>*
-ProtoIncrementalState::PacketSequenceState::GetInternedDataMap<
-    protos::pbzero::Callstack>() {
-  return &callstacks_;
-}
 }  // namespace trace_processor
 }  // namespace perfetto
 

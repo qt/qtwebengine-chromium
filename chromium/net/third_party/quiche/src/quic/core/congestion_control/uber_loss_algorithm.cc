@@ -81,4 +81,27 @@ void UberLossAlgorithm::SpuriousRetransmitDetected(
                                   spurious_retransmission);
 }
 
+void UberLossAlgorithm::SpuriousLossDetected(
+    const QuicUnackedPacketMap& unacked_packets,
+    const RttStats& rtt_stats,
+    QuicTime ack_receive_time,
+    QuicPacketNumber packet_number,
+    QuicPacketNumber previous_largest_acked) {
+  general_loss_algorithms_[unacked_packets.GetPacketNumberSpace(packet_number)]
+      .SpuriousLossDetected(unacked_packets, rtt_stats, ack_receive_time,
+                            packet_number, previous_largest_acked);
+}
+
+void UberLossAlgorithm::SetReorderingShift(int reordering_shift) {
+  for (int8_t i = INITIAL_DATA; i < NUM_PACKET_NUMBER_SPACES; ++i) {
+    general_loss_algorithms_[i].set_reordering_shift(reordering_shift);
+  }
+}
+
+void UberLossAlgorithm::EnableAdaptiveReorderingThreshold() {
+  for (int8_t i = INITIAL_DATA; i < NUM_PACKET_NUMBER_SPACES; ++i) {
+    general_loss_algorithms_[i].enable_adaptive_reordering_threshold();
+  }
+}
+
 }  // namespace quic

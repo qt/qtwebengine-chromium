@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/tls_client_connection.h"
 #include "net/third_party/quiche/src/quic/core/crypto/tls_server_connection.h"
@@ -11,7 +12,6 @@
 #include "net/third_party/quiche/src/quic/core/tls_server_handshaker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_expect_bug.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/crypto_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/fake_proof_source.h"
@@ -63,7 +63,7 @@ class FakeProofVerifier : public ProofVerifier {
                                         cert_sct, context, error_details,
                                         details, std::move(callback));
     }
-    pending_ops_.push_back(QuicMakeUnique<VerifyChainPendingOp>(
+    pending_ops_.push_back(std::make_unique<VerifyChainPendingOp>(
         hostname, certs, ocsp_response, cert_sct, context, error_details,
         details, std::move(callback), verifier_.get()));
     return QUIC_PENDING;
@@ -125,7 +125,7 @@ class FakeProofVerifier : public ProofVerifier {
       QuicAsyncStatus status = delegate_->VerifyCertChain(
           hostname_, certs_, ocsp_response_, cert_sct_, context_,
           error_details_, details_,
-          QuicMakeUnique<FailingProofVerifierCallback>());
+          std::make_unique<FailingProofVerifierCallback>());
       ASSERT_NE(status, QUIC_PENDING);
       callback_->Run(status == QUIC_SUCCESS, *error_details_, details_);
     }
@@ -210,6 +210,15 @@ class TestQuicCryptoStream : public QuicCryptoStream {
   std::vector<std::pair<std::string, EncryptionLevel>> pending_writes_;
 };
 
+class MockProofHandler : public QuicCryptoClientStream::ProofHandler {
+ public:
+  MockProofHandler() = default;
+  ~MockProofHandler() override {}
+
+  MOCK_METHOD1(OnProofValid, void(const QuicCryptoClientConfig::CachedState&));
+  MOCK_METHOD1(OnProofVerifyDetailsAvailable, void(const ProofVerifyDetails&));
+};
+
 class TestQuicCryptoClientStream : public TestQuicCryptoStream {
  public:
   explicit TestQuicCryptoClientStream(QuicSession* session)
@@ -223,12 +232,14 @@ class TestQuicCryptoClientStream : public TestQuicCryptoStream {
             proof_verifier_.get(),
             ssl_ctx_.get(),
             crypto_test_utils::ProofVerifyContextForTesting(),
+            &proof_handler_,
             "quic-tester")) {}
 
   ~TestQuicCryptoClientStream() override = default;
 
   TlsHandshaker* handshaker() const override { return handshaker_.get(); }
   TlsClientHandshaker* client_handshaker() const { return handshaker_.get(); }
+  const MockProofHandler& proof_handler() { return proof_handler_; }
 
   bool CryptoConnect() { return handshaker_->CryptoConnect(); }
 
@@ -238,6 +249,7 @@ class TestQuicCryptoClientStream : public TestQuicCryptoStream {
 
  private:
   std::unique_ptr<FakeProofVerifier> proof_verifier_;
+  MockProofHandler proof_handler_;
   bssl::UniquePtr<SSL_CTX> ssl_ctx_;
   std::unique_ptr<TlsClientHandshaker> handshaker_;
 };
@@ -294,7 +306,7 @@ class TlsHandshakerTest : public QuicTest {
             {ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_99)})),
         client_session_(client_conn_, /*create_mock_crypto_stream=*/false),
         server_session_(server_conn_, /*create_mock_crypto_stream=*/false) {
-    SetQuicFlag(FLAGS_quic_supports_tls_handshake, true);
+    SetQuicReloadableFlag(quic_supports_tls_handshake, true);
     client_stream_ = new TestQuicCryptoClientStream(&client_session_);
     client_session_.SetCryptoStream(client_stream_);
     server_stream_ =
@@ -315,6 +327,34 @@ class TlsHandshakerTest : public QuicTest {
             [default_alpn](const std::vector<QuicStringPiece>& alpns) {
               return std::find(alpns.begin(), alpns.end(), default_alpn);
             });
+  }
+
+  void ExpectHandshakeSuccessful() {
+    EXPECT_TRUE(client_stream_->handshake_confirmed());
+    EXPECT_TRUE(client_stream_->encryption_established());
+    EXPECT_TRUE(server_stream_->handshake_confirmed());
+    EXPECT_TRUE(server_stream_->encryption_established());
+    EXPECT_TRUE(client_conn_->IsHandshakeConfirmed());
+    EXPECT_TRUE(server_conn_->IsHandshakeConfirmed());
+
+    const auto& client_crypto_params =
+        client_stream_->crypto_negotiated_params();
+    const auto& server_crypto_params =
+        server_stream_->crypto_negotiated_params();
+    // The TLS params should be filled in on the client.
+    EXPECT_NE(0, client_crypto_params.cipher_suite);
+    EXPECT_NE(0, client_crypto_params.key_exchange_group);
+    EXPECT_NE(0, client_crypto_params.peer_signature_algorithm);
+
+    // The cipher suite and key exchange group should match on the client and
+    // server.
+    EXPECT_EQ(client_crypto_params.cipher_suite,
+              server_crypto_params.cipher_suite);
+    EXPECT_EQ(client_crypto_params.key_exchange_group,
+              server_crypto_params.key_exchange_group);
+    // We don't support client certs on the server (yet), so the server
+    // shouldn't have a peer signature algorithm to report.
+    EXPECT_EQ(0, server_crypto_params.peer_signature_algorithm);
   }
 
   MockQuicConnectionHelper conn_helper_;
@@ -341,15 +381,11 @@ TEST_F(TlsHandshakerTest, CryptoHandshake) {
               OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED));
   EXPECT_CALL(server_session_,
               OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED));
+  EXPECT_CALL(client_stream_->proof_handler(), OnProofVerifyDetailsAvailable);
   client_stream_->CryptoConnect();
   ExchangeHandshakeMessages(client_stream_, server_stream_);
 
-  EXPECT_TRUE(client_stream_->handshake_confirmed());
-  EXPECT_TRUE(client_stream_->encryption_established());
-  EXPECT_TRUE(server_stream_->handshake_confirmed());
-  EXPECT_TRUE(server_stream_->encryption_established());
-  EXPECT_TRUE(client_conn_->IsHandshakeConfirmed());
-  EXPECT_FALSE(server_conn_->IsHandshakeConfirmed());
+  ExpectHandshakeSuccessful();
 }
 
 TEST_F(TlsHandshakerTest, HandshakeWithAsyncProofSource) {
@@ -369,10 +405,7 @@ TEST_F(TlsHandshakerTest, HandshakeWithAsyncProofSource) {
 
   ExchangeHandshakeMessages(client_stream_, server_stream_);
 
-  EXPECT_TRUE(client_stream_->handshake_confirmed());
-  EXPECT_TRUE(client_stream_->encryption_established());
-  EXPECT_TRUE(server_stream_->handshake_confirmed());
-  EXPECT_TRUE(server_stream_->encryption_established());
+  ExpectHandshakeSuccessful();
 }
 
 TEST_F(TlsHandshakerTest, CancelPendingProofSource) {
@@ -401,6 +434,8 @@ TEST_F(TlsHandshakerTest, HandshakeWithAsyncProofVerifier) {
   FakeProofVerifier* proof_verifier = client_stream_->GetFakeProofVerifier();
   proof_verifier->Activate();
 
+  EXPECT_CALL(client_stream_->proof_handler(), OnProofVerifyDetailsAvailable);
+
   // Start handshake.
   client_stream_->CryptoConnect();
   ExchangeHandshakeMessages(client_stream_, server_stream_);
@@ -410,10 +445,7 @@ TEST_F(TlsHandshakerTest, HandshakeWithAsyncProofVerifier) {
 
   ExchangeHandshakeMessages(client_stream_, server_stream_);
 
-  EXPECT_TRUE(client_stream_->handshake_confirmed());
-  EXPECT_TRUE(client_stream_->encryption_established());
-  EXPECT_TRUE(server_stream_->handshake_confirmed());
-  EXPECT_TRUE(server_stream_->encryption_established());
+  ExpectHandshakeSuccessful();
 }
 
 TEST_F(TlsHandshakerTest, ClientConnectionClosedOnTlsError) {
@@ -551,12 +583,7 @@ TEST_F(TlsHandshakerTest, CustomALPNNegotiation) {
   client_stream_->CryptoConnect();
   ExchangeHandshakeMessages(client_stream_, server_stream_);
 
-  EXPECT_TRUE(client_stream_->handshake_confirmed());
-  EXPECT_TRUE(client_stream_->encryption_established());
-  EXPECT_TRUE(server_stream_->handshake_confirmed());
-  EXPECT_TRUE(server_stream_->encryption_established());
-  EXPECT_TRUE(client_conn_->IsHandshakeConfirmed());
-  EXPECT_FALSE(server_conn_->IsHandshakeConfirmed());
+  ExpectHandshakeSuccessful();
 }
 
 }  // namespace

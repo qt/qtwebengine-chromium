@@ -21,7 +21,7 @@
 #include "absl/strings/match.h"
 #include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/call/audio_sink.h"
-#include "api/media_transport_interface.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "media/base/audio_source.h"
 #include "media/base/media_constants.h"
 #include "media/base/stream_params.h"
@@ -141,6 +141,18 @@ absl::optional<std::string> GetAudioNetworkAdaptorConfig(
   return absl::nullopt;
 }
 
+// Returns its smallest positive argument. If neither argument is positive,
+// returns an arbitrary nonpositive value.
+int MinPositive(int a, int b) {
+  if (a <= 0) {
+    return b;
+  }
+  if (b <= 0) {
+    return a;
+  }
+  return std::min(a, b);
+}
+
 // |max_send_bitrate_bps| is the bitrate from "b=" in SDP.
 // |rtp_max_bitrate_bps| is the bitrate from RtpSender::SetParameters.
 absl::optional<int> ComputeSendBitrate(int max_send_bitrate_bps,
@@ -148,10 +160,9 @@ absl::optional<int> ComputeSendBitrate(int max_send_bitrate_bps,
                                        const webrtc::AudioCodecSpec& spec) {
   // If application-configured bitrate is set, take minimum of that and SDP
   // bitrate.
-  const int bps =
-      rtp_max_bitrate_bps
-          ? webrtc::MinPositive(max_send_bitrate_bps, *rtp_max_bitrate_bps)
-          : max_send_bitrate_bps;
+  const int bps = rtp_max_bitrate_bps
+                      ? MinPositive(max_send_bitrate_bps, *rtp_max_bitrate_bps)
+                      : max_send_bitrate_bps;
   if (bps <= 0) {
     return spec.info.default_bitrate_bps;
   }
@@ -419,7 +430,6 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
             << "Disabling NS since built-in NS will be used instead";
       }
     }
-    webrtc::apm_helpers::SetNsStatus(apm(), *options.noise_suppression);
   }
 
   if (options.stereo_swapping) {
@@ -489,6 +499,14 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     apm_config.residual_echo_detector.enabled = *options.residual_echo_detector;
   }
 
+  if (options.noise_suppression) {
+    const bool enabled = *options.noise_suppression;
+    apm_config.noise_suppression.enabled = enabled;
+    apm_config.noise_suppression.level =
+        webrtc::AudioProcessing::Config::NoiseSuppression::Level::kHigh;
+    RTC_LOG(LS_INFO) << "NS set to " << enabled;
+  }
+
   if (options.typing_detection) {
     RTC_LOG(LS_INFO) << "Typing detection is enabled? "
                      << *options.typing_detection;
@@ -520,6 +538,12 @@ RtpCapabilities WebRtcVoiceEngine::GetCapabilities() const {
       webrtc::RtpExtension(webrtc::RtpExtension::kAbsSendTimeUri, id++));
   capabilities.header_extensions.push_back(webrtc::RtpExtension(
       webrtc::RtpExtension::kTransportSequenceNumberUri, id++));
+  capabilities.header_extensions.push_back(
+      webrtc::RtpExtension(webrtc::RtpExtension::kMidUri, id++));
+  capabilities.header_extensions.push_back(
+      webrtc::RtpExtension(webrtc::RtpExtension::kRidUri, id++));
+  capabilities.header_extensions.push_back(
+      webrtc::RtpExtension(webrtc::RtpExtension::kRepairedRidUri, id++));
   return capabilities;
 }
 
@@ -1830,10 +1854,6 @@ bool WebRtcVoiceMediaChannel::AddRecvStream(const StreamParams& sp) {
   }
 
   const uint32_t ssrc = sp.first_ssrc();
-  if (ssrc == 0) {
-    RTC_DLOG(LS_WARNING) << "AddRecvStream with ssrc==0 is not supported.";
-    return false;
-  }
 
   // If this stream was previously received unsignaled, we promote it, possibly
   // recreating the AudioReceiveStream, if stream ids have changed.
@@ -1869,13 +1889,6 @@ bool WebRtcVoiceMediaChannel::RemoveRecvStream(uint32_t ssrc) {
   RTC_DCHECK(worker_thread_checker_.IsCurrent());
   RTC_LOG(LS_INFO) << "RemoveRecvStream: " << ssrc;
 
-  if (ssrc == 0) {
-    // This indicates that we need to remove the unsignaled stream parameters
-    // that are cached.
-    unsignaled_stream_params_ = StreamParams();
-    return true;
-  }
-
   const auto it = recv_streams_.find(ssrc);
   if (it == recv_streams_.end()) {
     RTC_LOG(LS_WARNING) << "Try to remove stream with ssrc " << ssrc
@@ -1889,6 +1902,12 @@ bool WebRtcVoiceMediaChannel::RemoveRecvStream(uint32_t ssrc) {
   delete it->second;
   recv_streams_.erase(it);
   return true;
+}
+
+void WebRtcVoiceMediaChannel::ResetUnsignaledRecvStream() {
+  RTC_DCHECK(worker_thread_checker_.IsCurrent());
+  RTC_LOG(LS_INFO) << "ResetUnsignaledRecvStream.";
+  unsignaled_stream_params_ = StreamParams();
 }
 
 bool WebRtcVoiceMediaChannel::SetLocalSource(uint32_t ssrc,
@@ -2088,15 +2107,6 @@ void WebRtcVoiceMediaChannel::OnPacketReceived(rtc::CopyOnWriteBuffer packet,
   RTC_DCHECK_NE(webrtc::PacketReceiver::DELIVERY_UNKNOWN_SSRC, delivery_result);
 }
 
-void WebRtcVoiceMediaChannel::OnRtcpReceived(rtc::CopyOnWriteBuffer packet,
-                                             int64_t packet_time_us) {
-  RTC_DCHECK(worker_thread_checker_.IsCurrent());
-
-  // Forward packet to Call as well.
-  call_->Receiver()->DeliverPacket(webrtc::MediaType::AUDIO, packet,
-                                   packet_time_us);
-}
-
 void WebRtcVoiceMediaChannel::OnNetworkRouteChanged(
     const std::string& transport_name,
     const rtc::NetworkRoute& network_route) {
@@ -2161,7 +2171,8 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
         stream.second->GetStats(recv_streams_.size() > 0);
     VoiceSenderInfo sinfo;
     sinfo.add_ssrc(stats.local_ssrc);
-    sinfo.bytes_sent = stats.bytes_sent;
+    sinfo.payload_bytes_sent = stats.payload_bytes_sent;
+    sinfo.header_and_padding_bytes_sent = stats.header_and_padding_bytes_sent;
     sinfo.retransmitted_bytes_sent = stats.retransmitted_bytes_sent;
     sinfo.packets_sent = stats.packets_sent;
     sinfo.retransmitted_packets_sent = stats.retransmitted_packets_sent;
@@ -2204,7 +2215,8 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
     webrtc::AudioReceiveStream::Stats stats = stream.second->GetStats();
     VoiceReceiverInfo rinfo;
     rinfo.add_ssrc(stats.remote_ssrc);
-    rinfo.bytes_rcvd = stats.bytes_rcvd;
+    rinfo.payload_bytes_rcvd = stats.payload_bytes_rcvd;
+    rinfo.header_and_padding_bytes_rcvd = stats.header_and_padding_bytes_rcvd;
     rinfo.packets_rcvd = stats.packets_rcvd;
     rinfo.fec_packets_received = stats.fec_packets_received;
     rinfo.fec_packets_discarded = stats.fec_packets_discarded;

@@ -894,6 +894,15 @@ bool ValidCompressedSubImageSize(const Context *context,
         return false;
     }
 
+    bool fillsEntireMip =
+        xoffset == 0 && yoffset == 0 && static_cast<size_t>(width) == textureWidth &&
+        static_cast<size_t>(height) == textureHeight && static_cast<size_t>(depth) == textureDepth;
+
+    if (CompressedFormatRequiresWholeImage(internalFormat))
+    {
+        return fillsEntireMip;
+    }
+
     if (CompressedSubTextureFormatRequiresExactSize(internalFormat))
     {
         if (xoffset % formatInfo.compressedBlockWidth != 0 ||
@@ -905,10 +914,6 @@ bool ValidCompressedSubImageSize(const Context *context,
 
         // Allowed to either have data that is a multiple of block size or is smaller than the block
         // size but fills the entire mip
-        bool fillsEntireMip = xoffset == 0 && yoffset == 0 &&
-                              static_cast<size_t>(width) == textureWidth &&
-                              static_cast<size_t>(height) == textureHeight &&
-                              static_cast<size_t>(depth) == textureDepth;
         bool sizeMultipleOfBlockSize = (width % formatInfo.compressedBlockWidth) == 0 &&
                                        (height % formatInfo.compressedBlockHeight) == 0 &&
                                        (depth % formatInfo.compressedBlockDepth) == 0;
@@ -1205,8 +1210,8 @@ bool ValidateRenderbufferStorageParametersBase(Context *context,
         return false;
     }
 
-    GLuint handle = context->getState().getRenderbufferId();
-    if (handle == 0)
+    RenderbufferID id = context->getState().getRenderbufferId();
+    if (id.value == 0)
     {
         context->validationError(GL_INVALID_OPERATION, kInvalidRenderbufferTarget);
         return false;
@@ -1325,7 +1330,9 @@ bool ValidateBlitFramebufferParameters(Context *context,
         return false;
     }
 
-    if (!ValidateFramebufferNotMultisampled(context, drawFramebuffer))
+    // Not allow blitting to MS buffers, therefore if renderToTextureSamples exist,
+    // consider it MS. needResourceSamples = false
+    if (!ValidateFramebufferNotMultisampled(context, drawFramebuffer, false))
     {
         return false;
     }
@@ -2476,8 +2483,10 @@ bool ValidateCopyTexImageParametersBase(Context *context,
         return false;
     }
 
+    // needResourceSamples = true. Treat renderToTexture textures as single sample since they will
+    // be resolved before copying
     if (!readFramebuffer->isDefault() &&
-        !ValidateFramebufferNotMultisampled(context, readFramebuffer))
+        !ValidateFramebufferNotMultisampled(context, readFramebuffer, true))
     {
         return false;
     }
@@ -3889,6 +3898,14 @@ bool ValidateGetFramebufferAttachmentParameterivBase(Context *context,
         case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR:
             if (clientVersion < 3 ||
                 !(context->getExtensions().multiview || context->getExtensions().multiview2))
+            {
+                context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                return false;
+            }
+            break;
+
+        case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_SAMPLES_EXT:
+            if (!context->getExtensions().multisampledRenderToTexture)
             {
                 context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
                 return false;
@@ -5441,8 +5458,10 @@ bool ValidateReadPixelsBase(Context *context,
         return false;
     }
 
+    // needIntrinsic = true. Treat renderToTexture textures as single sample since they will be
+    // resolved before reading.
     if (!readFramebuffer->isDefault() &&
-        !ValidateFramebufferNotMultisampled(context, readFramebuffer))
+        !ValidateFramebufferNotMultisampled(context, readFramebuffer, true))
     {
         return false;
     }
@@ -6297,9 +6316,13 @@ bool ValidateGetInternalFormativBase(Context *context,
     return true;
 }
 
-bool ValidateFramebufferNotMultisampled(Context *context, Framebuffer *framebuffer)
+bool ValidateFramebufferNotMultisampled(Context *context,
+                                        Framebuffer *framebuffer,
+                                        bool needResourceSamples)
 {
-    if (framebuffer->getSamples(context) != 0)
+    int samples = needResourceSamples ? framebuffer->getResourceSamples(context)
+                                      : framebuffer->getSamples(context);
+    if (samples != 0)
     {
         context->validationError(GL_INVALID_OPERATION, kInvalidMultisampledFramebufferOperation);
         return false;
@@ -6361,7 +6384,7 @@ bool ValidateTexStorageMultisample(Context *context,
     }
 
     Texture *texture = context->getTextureByType(target);
-    if (!texture || texture->id() == 0)
+    if (!texture || texture->id().value == 0)
     {
         context->validationError(GL_INVALID_OPERATION, kZeroBoundToTarget);
         return false;

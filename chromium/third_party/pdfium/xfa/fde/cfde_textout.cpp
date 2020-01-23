@@ -114,6 +114,9 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
     bRet = device->DrawNormalText(iCurCount, pCurCP, font, -fFontSize, matrix,
                                   color, FXTEXT_CLEARTYPE);
   }
+#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+  device->Flush(false);
+#endif
 
   return bRet;
 }
@@ -365,7 +368,7 @@ bool CFDE_TextOut::RetrievePieces(CFX_BreakType dwBreakStatus,
                                   int32_t* pPieceWidths) {
   float fLineStep = (m_fLineSpace > m_fFontSize) ? m_fLineSpace : m_fFontSize;
   bool bNeedReload = false;
-  int32_t iLineWidth = FXSYS_round(rect.Width() * 20000.0f);
+  int32_t iLineWidth = FXSYS_roundf(rect.Width() * 20000.0f);
   int32_t iCount = m_pTxtBreak->CountBreakPieces();
   for (int32_t i = 0; i < iCount; i++) {
     const CFX_BreakPiece* pPiece = m_pTxtBreak->GetBreakPieceUnstable(i);

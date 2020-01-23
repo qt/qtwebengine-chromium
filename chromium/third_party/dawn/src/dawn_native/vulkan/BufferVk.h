@@ -19,6 +19,7 @@
 
 #include "common/SerialQueue.h"
 #include "common/vulkan_platform.h"
+#include "dawn_native/ResourceMemoryAllocation.h"
 #include "dawn_native/vulkan/MemoryAllocator.h"
 
 namespace dawn_native { namespace vulkan {
@@ -28,7 +29,7 @@ namespace dawn_native { namespace vulkan {
 
     class Buffer : public BufferBase {
       public:
-        Buffer(Device* device, const BufferDescriptor* descriptor);
+        static ResultOrError<Buffer*> Create(Device* device, const BufferDescriptor* descriptor);
         ~Buffer();
 
         void OnMapReadCommandSerialFinished(uint32_t mapSerial, const void* data);
@@ -42,6 +43,9 @@ namespace dawn_native { namespace vulkan {
         void TransitionUsageNow(CommandRecordingContext* recordingContext, dawn::BufferUsage usage);
 
       private:
+        using BufferBase::BufferBase;
+        MaybeError Initialize();
+
         // Dawn API
         MaybeError MapReadAsyncImpl(uint32_t serial) override;
         MaybeError MapWriteAsyncImpl(uint32_t serial) override;
@@ -52,7 +56,7 @@ namespace dawn_native { namespace vulkan {
         MaybeError MapAtCreationImpl(uint8_t** mappedPointer) override;
 
         VkBuffer mHandle = VK_NULL_HANDLE;
-        DeviceMemoryAllocation mMemoryAllocation;
+        ResourceMemoryAllocation mMemoryAllocation;
 
         dawn::BufferUsage mLastUsage = dawn::BufferUsage::None;
     };

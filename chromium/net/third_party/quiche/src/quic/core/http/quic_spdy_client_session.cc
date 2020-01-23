@@ -5,6 +5,7 @@
 #include "net/third_party/quiche/src/quic/core/http/quic_spdy_client_session.h"
 
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_spdy_client_stream.h"
@@ -53,7 +54,7 @@ bool QuicSpdyClientSession::ShouldCreateOutgoingBidirectionalStream() {
     return false;
   }
   if (!GetQuicReloadableFlag(quic_use_common_stream_check) &&
-      !VersionHasIetfQuicFrames(connection()->transport_version())) {
+      !VersionHasIetfQuicFrames(transport_version())) {
     if (GetNumOpenOutgoingStreams() >=
         stream_id_manager().max_open_outgoing_streams()) {
       QUIC_DLOG(INFO) << "Failed to create a new outgoing stream. "
@@ -100,7 +101,7 @@ QuicSpdyClientSession::CreateOutgoingUnidirectionalStream() {
 
 std::unique_ptr<QuicSpdyClientStream>
 QuicSpdyClientSession::CreateClientStream() {
-  return QuicMakeUnique<QuicSpdyClientStream>(
+  return std::make_unique<QuicSpdyClientStream>(
       GetNextOutgoingBidirectionalStreamId(), this, BIDIRECTIONAL);
 }
 
@@ -136,9 +137,8 @@ bool QuicSpdyClientSession::ShouldCreateIncomingStream(QuicStreamId id) {
                     << "Already received goaway.";
     return false;
   }
-  if (QuicUtils::IsClientInitiatedStreamId(connection()->transport_version(),
-                                           id) ||
-      (VersionHasIetfQuicFrames(connection()->transport_version()) &&
+  if (QuicUtils::IsClientInitiatedStreamId(transport_version(), id) ||
+      (VersionHasIetfQuicFrames(transport_version()) &&
        QuicUtils::IsBidirectionalStreamId(id))) {
     QUIC_LOG(WARNING) << "Received invalid push stream id " << id;
     connection()->CloseConnection(
@@ -170,7 +170,7 @@ QuicSpdyStream* QuicSpdyClientSession::CreateIncomingStream(QuicStreamId id) {
 
 std::unique_ptr<QuicCryptoClientStreamBase>
 QuicSpdyClientSession::CreateQuicCryptoStream() {
-  return QuicMakeUnique<QuicCryptoClientStream>(
+  return std::make_unique<QuicCryptoClientStream>(
       server_id_, this,
       crypto_config_->proof_verifier()->CreateDefaultContext(), crypto_config_,
       this);

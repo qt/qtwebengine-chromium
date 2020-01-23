@@ -42,6 +42,8 @@
 #include "libANGLE/trace.h"
 
 #if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
+#    include <versionhelpers.h>
+
 #    include "libANGLE/renderer/d3d/DisplayD3D.h"
 #endif
 
@@ -78,6 +80,10 @@
 #        error Unsupported Vulkan platform.
 #    endif
 #endif  // defined(ANGLE_ENABLE_VULKAN)
+
+#if defined(ANGLE_ENABLE_METAL)
+#    include "libANGLE/renderer/metal/DisplayMtl.h"
+#endif  // defined(ANGLE_ENABLE_METAL)
 
 namespace egl
 {
@@ -174,6 +180,14 @@ EGLAttrib GetDisplayTypeFromEnvironment()
     {
         return EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE;
     }
+#endif
+
+#if defined(ANGLE_ENABLE_METAL)
+    if (rx::DisplayMtl::IsMetalAvailable())
+    {
+        return EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE;
+    }
+    // else fallthrough to below
 #endif
 
 #if defined(ANGLE_ENABLE_D3D11)
@@ -282,7 +296,17 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap, const D
             UNREACHABLE();
 #endif  // defined(ANGLE_ENABLE_VULKAN)
             break;
-
+        case EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE:
+#if defined(ANGLE_ENABLE_METAL)
+            if (rx::DisplayMtl::IsMetalAvailable())
+            {
+                impl = new rx::DisplayMtl(state);
+                break;
+            }
+#endif
+            // No display available
+            UNREACHABLE();
+            break;
         case EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE:
 #if defined(ANGLE_ENABLE_NULL)
             impl = new rx::DisplayNULL(state);
@@ -924,7 +948,8 @@ Error Display::createContext(const Config *configuration,
     if (usesProgramCacheControl)
     {
         bool programCacheControlEnabled =
-            mAttributeMap.get(EGL_CONTEXT_PROGRAM_BINARY_CACHE_ENABLED_ANGLE, GL_FALSE);
+            (mAttributeMap.get(EGL_CONTEXT_PROGRAM_BINARY_CACHE_ENABLED_ANGLE, GL_FALSE) ==
+             GL_TRUE);
         // A program cache size of zero indicates it should be disabled.
         if (!programCacheControlEnabled || mMemoryProgramCache.maxSize() == 0)
         {
@@ -1222,6 +1247,10 @@ static ClientExtensions GenerateClientExtensions()
     extensions.platformDevice   = true;
 #endif
 
+#if defined(ANGLE_ENABLE_D3D11)
+    extensions.platformANGLED3D11ON12 = IsWindows10OrGreater();
+#endif
+
 #if defined(ANGLE_ENABLE_OPENGL)
     extensions.platformANGLEOpenGL = true;
 
@@ -1240,7 +1269,12 @@ static ClientExtensions GenerateClientExtensions()
 #endif
 
 #if defined(ANGLE_ENABLE_VULKAN)
-    extensions.platformANGLEVulkan = true;
+    extensions.platformANGLEVulkan                = true;
+    extensions.platformANGLEDeviceTypeSwiftShader = true;
+#endif
+
+#if defined(ANGLE_ENABLE_METAL)
+    extensions.platformANGLEMetal = true;
 #endif
 
 #if defined(ANGLE_USE_X11)
@@ -1367,7 +1401,7 @@ bool Display::isValidNativeDisplay(EGLNativeDisplayType display)
         return true;
     }
 
-#if defined(ANGLE_PLATFORM_WINDOWS) && !defined(ANGLE_ENABLE_WINDOWS_STORE)
+#if defined(ANGLE_PLATFORM_WINDOWS) && !defined(ANGLE_ENABLE_WINDOWS_UWP)
     if (display == EGL_SOFTWARE_DISPLAY_ANGLE || display == EGL_D3D11_ELSE_D3D9_DISPLAY_ANGLE ||
         display == EGL_D3D11_ONLY_DISPLAY_ANGLE)
     {
@@ -1387,8 +1421,8 @@ void Display::initVendorString()
 void Display::initializeFrontendFeatures()
 {
     // Enable on all Impls
-    mFrontendFeatures.loseContextOnOutOfMemory.enabled          = true;
-    mFrontendFeatures.scalarizeVecAndMatConstructorArgs.enabled = true;
+    ANGLE_FEATURE_CONDITION((&mFrontendFeatures), loseContextOnOutOfMemory, true);
+    ANGLE_FEATURE_CONDITION((&mFrontendFeatures), scalarizeVecAndMatConstructorArgs, true);
 
     mImplementation->initializeFrontendFeatures(&mFrontendFeatures);
 
@@ -1540,6 +1574,9 @@ const char *Display::queryStringi(const EGLint name, const EGLint index)
             break;
         case EGL_FEATURE_STATUS_ANGLE:
             result = angle::FeatureStatusToString(mFeatures[index]->enabled);
+            break;
+        case EGL_FEATURE_CONDITION_ANGLE:
+            result = mFeatures[index]->condition;
             break;
         default:
             UNREACHABLE();

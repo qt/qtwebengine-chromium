@@ -20,7 +20,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/video/video_bitrate_allocation.h"
@@ -379,8 +378,8 @@ class VideoCodecTestFixtureImpl::CpuProcessTime final {
 };
 
 VideoCodecTestFixtureImpl::VideoCodecTestFixtureImpl(Config config)
-    : encoder_factory_(absl::make_unique<InternalEncoderFactory>()),
-      decoder_factory_(absl::make_unique<InternalDecoderFactory>()),
+    : encoder_factory_(std::make_unique<InternalEncoderFactory>()),
+      decoder_factory_(std::make_unique<InternalDecoderFactory>()),
       config_(config) {}
 
 VideoCodecTestFixtureImpl::VideoCodecTestFixtureImpl(
@@ -448,7 +447,7 @@ void VideoCodecTestFixtureImpl::ProcessAllFrames(
   }
 
   // Wait until we know that the last frame has been sent for encode.
-  task_queue->SendTask([] {});
+  task_queue->SendTask([] {}, RTC_FROM_HERE);
 
   // Give the VideoProcessor pipeline some time to process the last frame,
   // and then release the codecs.
@@ -461,7 +460,6 @@ void VideoCodecTestFixtureImpl::AnalyzeAllFrames(
     const std::vector<RateControlThresholds>* rc_thresholds,
     const std::vector<QualityThresholds>* quality_thresholds,
     const BitstreamThresholds* bs_thresholds) {
-  rtc::StringBuilder log_output;
 
   for (size_t rate_profile_idx = 0; rate_profile_idx < rate_profiles.size();
        ++rate_profile_idx) {
@@ -474,14 +472,14 @@ void VideoCodecTestFixtureImpl::AnalyzeAllFrames(
 
     VideoStatistics send_stat = stats_.SliceAndCalcAggregatedVideoStatistic(
         first_frame_num, last_frame_num);
-    log_output << "==> Send stats\n";
-    log_output << send_stat.ToString("send_") << "\n\n";
+    RTC_LOG(LS_INFO) << "==> Send stats";
+    RTC_LOG(LS_INFO) << send_stat.ToString("send_") << "\n";
 
     std::vector<VideoStatistics> layer_stats =
         stats_.SliceAndCalcLayerVideoStatistic(first_frame_num, last_frame_num);
-    log_output << "==> Receive stats\n";
+    RTC_LOG(LS_INFO) << "==> Receive stats";
     for (const auto& layer_stat : layer_stats) {
-      log_output << layer_stat.ToString("recv_") << "\n\n";
+      RTC_LOG(LS_INFO) << layer_stat.ToString("recv_") << "\n";
 
       // For perf dashboard.
       char modifier_buf[256];
@@ -533,15 +531,14 @@ void VideoCodecTestFixtureImpl::AnalyzeAllFrames(
   }
 
   if (config_.print_frame_level_stats) {
-    log_output << "==> Frame stats\n";
+    RTC_LOG(LS_INFO) << "==> Frame stats";
     std::vector<VideoCodecTestStats::FrameStatistics> frame_stats =
         stats_.GetFrameStatistics();
     for (const auto& frame_stat : frame_stats) {
-      log_output << frame_stat.ToString() << "\n";
+      RTC_LOG(LS_INFO) << frame_stat.ToString();
     }
   }
 
-  RTC_LOG(LS_INFO) << log_output.str();
   cpu_process_time_->Print();
 }
 
@@ -689,22 +686,26 @@ void VideoCodecTestFixtureImpl::SetUpAndInitObjects(
 
   cpu_process_time_.reset(new CpuProcessTime(config_));
 
-  task_queue->SendTask([this]() {
-    CreateEncoderAndDecoder();
-    processor_ = absl::make_unique<VideoProcessor>(
-        encoder_.get(), &decoders_, source_frame_reader_.get(), config_,
-        &stats_, &encoded_frame_writers_,
-        decoded_frame_writers_.empty() ? nullptr : &decoded_frame_writers_);
-  });
+  task_queue->SendTask(
+      [this]() {
+        CreateEncoderAndDecoder();
+        processor_ = std::make_unique<VideoProcessor>(
+            encoder_.get(), &decoders_, source_frame_reader_.get(), config_,
+            &stats_, &encoded_frame_writers_,
+            decoded_frame_writers_.empty() ? nullptr : &decoded_frame_writers_);
+      },
+      RTC_FROM_HERE);
 }
 
 void VideoCodecTestFixtureImpl::ReleaseAndCloseObjects(
     TaskQueueForTest* task_queue) {
-  task_queue->SendTask([this]() {
-    processor_.reset();
-    // The VideoProcessor must be destroyed before the codecs.
-    DestroyEncoderAndDecoder();
-  });
+  task_queue->SendTask(
+      [this]() {
+        processor_.reset();
+        // The VideoProcessor must be destroyed before the codecs.
+        DestroyEncoderAndDecoder();
+      },
+      RTC_FROM_HERE);
 
   source_frame_reader_->Close();
 
@@ -721,22 +722,20 @@ void VideoCodecTestFixtureImpl::ReleaseAndCloseObjects(
 
 void VideoCodecTestFixtureImpl::PrintSettings(
     TaskQueueForTest* task_queue) const {
-  rtc::StringBuilder log_output;
+  RTC_LOG(LS_INFO) << "==> Config";
+  RTC_LOG(LS_INFO) << config_.ToString();
 
-  log_output << "==> Config\n";
-  log_output << config_.ToString() << "\n";
-
-  log_output << "==> Codec names\n";
+  RTC_LOG(LS_INFO) << "==> Codec names";
   std::string encoder_name;
   std::string decoder_name;
-  task_queue->SendTask([this, &encoder_name, &decoder_name] {
-    encoder_name = encoder_->GetEncoderInfo().implementation_name;
-    decoder_name = decoders_.at(0)->ImplementationName();
-  });
-  log_output << "enc_impl_name: " << encoder_name << "\n";
-  log_output << "dec_impl_name: " << decoder_name << "\n";
-
-  RTC_LOG(LS_INFO) << log_output.str();
+  task_queue->SendTask(
+      [this, &encoder_name, &decoder_name] {
+        encoder_name = encoder_->GetEncoderInfo().implementation_name;
+        decoder_name = decoders_.at(0)->ImplementationName();
+      },
+      RTC_FROM_HERE);
+  RTC_LOG(LS_INFO) << "enc_impl_name: " << encoder_name;
+  RTC_LOG(LS_INFO) << "dec_impl_name: " << decoder_name;
 }
 
 }  // namespace test

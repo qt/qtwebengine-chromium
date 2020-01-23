@@ -17,6 +17,8 @@
 import './android_log/frontend';
 import './chrome_slices/frontend';
 import './counter/frontend';
+import './heap_profile/frontend';
+import './heap_profile_flamegraph/frontend';
 import './cpu_freq/frontend';
 import './gpu_freq/frontend';
 import './cpu_slices/frontend';
@@ -24,3 +26,4 @@ import './process_scheduling/frontend';
 import './process_summary/frontend';
 import './thread_state/frontend';
 import './vsync/frontend';
+import './async_slices/frontend';

@@ -92,7 +92,7 @@ class QpackDecoderTest : public QuicTestWithParam<FragmentMode> {
   std::unique_ptr<QpackProgressiveDecoder> progressive_decoder_;
 };
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          QpackDecoderTest,
                          Values(FragmentMode::kSingleChunk,
                                 FragmentMode::kOctetByOctet));
@@ -816,7 +816,6 @@ TEST_P(QpackDecoderTest, BlockedDecodingAndEvictedEntries) {
   // At most three non-empty entries fit in the dynamic table.
   DecodeEncoderStreamData(QuicTextUtils::HexDecode("3f61"));
 
-  StartDecoding();
   DecodeHeaderBlock(QuicTextUtils::HexDecode(
       "0700"   // Required Insert Count 6 and Delta Base 0.
                // Base is 6 + 0 = 6.
@@ -852,6 +851,29 @@ TEST_P(QpackDecoderTest, TooManyBlockedStreams) {
 
   auto progressive_decoder2 = CreateProgressiveDecoder(/* stream_id = */ 2);
   progressive_decoder2->Decode(data);
+}
+
+TEST_P(QpackDecoderTest, InsertCountIncrement) {
+  DecodeEncoderStreamData(QuicTextUtils::HexDecode(
+      "3fe107"          // Set dynamic table capacity to 1024.
+      "6294e703626172"  // Add literal entry with name "foo" and value "bar".
+      "00"));           // Duplicate entry.
+
+  EXPECT_CALL(handler_, OnHeaderDecoded(Eq("foo"), Eq("bar")));
+  EXPECT_CALL(handler_, OnDecodingCompleted());
+
+  // Decoder received two insertions, but Header Acknowledgement only increases
+  // Known Insert Count to one.  Decoder should send an Insert Count Increment
+  // instruction with increment of one to update Known Insert Count to two.
+  EXPECT_CALL(decoder_stream_sender_delegate_,
+              WriteStreamData(Eq(QuicTextUtils::HexDecode(
+                  "81"       // Header Acknowledgement on stream 1
+                  "01"))));  // Insert Count Increment with increment of one
+
+  DecodeHeaderBlock(QuicTextUtils::HexDecode(
+      "0200"   // Required Insert Count 1 and Delta Base 0.
+               // Base is 1 + 0 = 1.
+      "80"));  // Dynamic table entry with relative index 0, absolute index 0.
 }
 
 }  // namespace

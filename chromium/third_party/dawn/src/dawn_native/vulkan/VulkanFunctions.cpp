@@ -103,6 +103,12 @@ namespace dawn_native { namespace vulkan {
             GET_INSTANCE_PROC(GetPhysicalDeviceSurfacePresentModesKHR);
         }
 
+#ifdef VK_USE_PLATFORM_FUCHSIA
+        if (globalInfo.fuchsiaImagePipeSurface) {
+            GET_INSTANCE_PROC(CreateImagePipeSurfaceFUCHSIA);
+        }
+#endif
+
         return {};
     }
 
@@ -249,6 +255,18 @@ namespace dawn_native { namespace vulkan {
             GET_DEVICE_PROC(ImportSemaphoreFdKHR);
             GET_DEVICE_PROC(GetSemaphoreFdKHR);
         }
+
+#if VK_USE_PLATFORM_FUCHSIA
+        if (usedKnobs.externalMemoryZirconHandle) {
+            GET_DEVICE_PROC(GetMemoryZirconHandleFUCHSIA);
+            GET_DEVICE_PROC(GetMemoryZirconHandlePropertiesFUCHSIA);
+        }
+
+        if (usedKnobs.externalSemaphoreZirconHandle) {
+            GET_DEVICE_PROC(ImportSemaphoreZirconHandleFUCHSIA);
+            GET_DEVICE_PROC(GetSemaphoreZirconHandleFUCHSIA);
+        }
+#endif
 
         if (usedKnobs.swapchain) {
             GET_DEVICE_PROC(CreateSwapchainKHR);

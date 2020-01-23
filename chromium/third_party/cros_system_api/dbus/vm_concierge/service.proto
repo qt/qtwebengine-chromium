@@ -118,6 +118,9 @@ message StartVmRequest {
 
   // Allow untrusted VMs to be started.
   bool allow_untrusted = 10;
+
+  // Enable audio capture in the started Vm.
+  bool enable_audio_capture = 11;
 }
 
 // Information that must be included with every StartPluginVm request.
@@ -162,6 +165,13 @@ message StartArcVmRequest {
 
   // Parameters to pass to the ARCVM's init process.
   repeated string params = 5;
+
+  // Path to Android fstab.
+  string fstab = 6;
+
+  // The number of CPUs to give to the VM.  Cannot be larger than the number of
+  // CPUs on the device and cannot be 0.
+  uint32 cpus = 7;
 }
 
 enum VmStatus {
@@ -195,6 +205,22 @@ message StartVmResponse {
   VmStatus status = 4;
 }
 
+// Message used in the signal for when a VM has started.
+message VmStartedSignal {
+  // The name of the VM which has started.
+  string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
+
+  // Information about the VM that was started, if successful.
+  VmInfo vm_info = 3;
+
+  // Status of the VM. If VM_STATUS_RUNNING, it is not necessary to wait for a
+  // TremplinStartedSignal before starting a container in the VM.
+  VmStatus status = 4;
+}
+
 // Information that must be included with every StopVm dbus message.
 message StopVmRequest {
   // The name of the VM to be stopped.
@@ -211,6 +237,15 @@ message StopVmResponse {
 
   // The failure_reason if the requested VM could not be stopped.
   string failure_reason = 2;
+}
+
+// Message used in the signal for when a VM has stopped.
+message VmStoppedSignal {
+  // The name of the VM which has stopped.
+  string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
 }
 
 // Response to a SyncTimes RPC.

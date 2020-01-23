@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "api/units/data_rate.h"
 #include "api/video/video_bitrate_allocator.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_sink_interface.h"
@@ -27,16 +28,17 @@
 #include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/utility/frame_dropper.h"
 #include "modules/video_coding/utility/quality_scaler.h"
-#include "modules/video_coding/video_coding_impl.h"
 #include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "rtc_base/experiments/balanced_degradation_settings.h"
 #include "rtc_base/experiments/quality_scaler_settings.h"
 #include "rtc_base/experiments/rate_control_settings.h"
+#include "rtc_base/numerics/exp_filter.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/rate_statistics.h"
 #include "rtc_base/synchronization/sequence_checker.h"
 #include "rtc_base/task_queue.h"
+#include "system_wrappers/include/clock.h"
 #include "video/encoder_bitrate_adjuster.h"
 #include "video/frame_encode_metadata_writer.h"
 #include "video/overuse_frame_detector.h"
@@ -119,7 +121,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
     int pixel_count() const { return width * height; }
   };
 
-  struct EncoderRateSettings : public VideoEncoder::RateControlParameters {
+  struct EncoderRateSettings {
     EncoderRateSettings();
     EncoderRateSettings(const VideoBitrateAllocation& bitrate,
                         double framerate_fps,
@@ -129,6 +131,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
     bool operator==(const EncoderRateSettings& rhs) const;
     bool operator!=(const EncoderRateSettings& rhs) const;
 
+    VideoEncoder::RateControlParameters rate_control;
     // This is the scalar target bitrate before the VideoBitrateAllocator, i.e.
     // the |target_bitrate| argument of the OnBitrateUpdated() method. This is
     // needed because the bitrate allocator may truncate the total bitrate and a
@@ -139,8 +142,6 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
     DataRate stable_encoder_target;
   };
 
-  void ConfigureEncoderOnTaskQueue(VideoEncoderConfig config,
-                                   size_t max_data_payload_length);
   void ReconfigureEncoder() RTC_RUN_ON(&encoder_queue_);
 
   void ConfigureQualityScaler(const VideoEncoder::EncoderInfo& encoder_info);
@@ -222,6 +223,8 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   void UpdateAdaptationStats(AdaptReason reason) RTC_RUN_ON(&encoder_queue_);
   VideoStreamEncoderObserver::AdaptationSteps GetActiveCounts(
       AdaptReason reason) RTC_RUN_ON(&encoder_queue_);
+  bool CanAdaptUpResolution(int pixels, uint32_t bitrate_bps) const
+      RTC_RUN_ON(&encoder_queue_);
   void RunPostEncode(EncodedImage encoded_image,
                      int64_t time_sent_us,
                      int temporal_index);
@@ -385,6 +388,42 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // that updated that buffer.
   std::array<std::array<int64_t, kMaxEncoderBuffers>, kMaxSimulcastStreams>
       encoder_buffer_state_ RTC_GUARDED_BY(encoded_image_lock_);
+
+  struct EncoderSwitchExperiment {
+    struct Thresholds {
+      absl::optional<DataRate> bitrate;
+      absl::optional<int> pixel_count;
+    };
+
+    // Codec --> switching thresholds
+    std::map<VideoCodecType, Thresholds> codec_thresholds;
+
+    // To smooth out the target bitrate so that we don't trigger a switch
+    // too easily.
+    rtc::ExpFilter bitrate_filter{1.0};
+
+    // Codec/implementation to switch to
+    std::string to_codec;
+    absl::optional<std::string> to_param;
+    absl::optional<std::string> to_value;
+
+    // Thresholds for the currently used codecs.
+    Thresholds current_thresholds;
+
+    // Updates the |bitrate_filter|, so not const.
+    bool IsBitrateBelowThreshold(const DataRate& target_bitrate);
+    bool IsPixelCountBelowThreshold(int pixel_count) const;
+    void SetCodec(VideoCodecType codec);
+  };
+
+  EncoderSwitchExperiment ParseEncoderSwitchFieldTrial() const;
+
+  EncoderSwitchExperiment encoder_switch_experiment_
+      RTC_GUARDED_BY(&encoder_queue_);
+
+  // An encoder switch is only requested once, this variable is used to keep
+  // track of whether a request has been made or not.
+  bool encoder_switch_requested_ RTC_GUARDED_BY(&encoder_queue_);
 
   // All public methods are proxied to |encoder_queue_|. It must must be
   // destroyed first to make sure no tasks are run that use other members.

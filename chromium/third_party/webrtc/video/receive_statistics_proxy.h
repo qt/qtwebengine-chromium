@@ -18,6 +18,7 @@
 
 #include "absl/types/optional.h"
 #include "call/video_receive_stream.h"
+#include "modules/include/module_common_types.h"
 #include "modules/video_coding/include/video_coding_defines.h"
 #include "rtc_base/critical_section.h"
 #include "rtc_base/numerics/histogram_percentile_counter.h"
@@ -127,6 +128,11 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   void UpdateFramerate(int64_t now_ms) const
       RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
+  void UpdateDecodeTimeHistograms(int width,
+                                  int height,
+                                  int decode_time_ms) const
+      RTC_EXCLUSIVE_LOCKS_REQUIRED(crit_);
+
   Clock* const clock_;
   // Ownership of this object lies with the owner of the ReceiveStatisticsProxy
   // instance.  Lifetime is guaranteed to outlive |this|.
@@ -137,6 +143,7 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   // then no longer store a pointer to the object).
   const VideoReceiveStream::Config& config_;
   const int64_t start_ms_;
+  const bool enable_decode_time_histograms_;
 
   rtc::CriticalSection crit_;
   int64_t last_sample_time_ RTC_GUARDED_BY(crit_);

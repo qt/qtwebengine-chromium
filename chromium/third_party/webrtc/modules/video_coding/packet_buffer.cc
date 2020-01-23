@@ -22,7 +22,6 @@
 #include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "modules/video_coding/frame_object.h"
-#include "rtc_base/atomic_ops.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/mod_ops.h"
@@ -31,15 +30,6 @@
 
 namespace webrtc {
 namespace video_coding {
-
-rtc::scoped_refptr<PacketBuffer> PacketBuffer::Create(
-    Clock* clock,
-    size_t start_buffer_size,
-    size_t max_buffer_size,
-    OnAssembledFrameCallback* assembled_frame_callback) {
-  return rtc::scoped_refptr<PacketBuffer>(new PacketBuffer(
-      clock, start_buffer_size, max_buffer_size, assembled_frame_callback));
-}
 
 PacketBuffer::PacketBuffer(Clock* clock,
                            size_t start_buffer_size,
@@ -346,7 +336,7 @@ std::vector<std::unique_ptr<RtpFrameObject>> PacketBuffer::FindFrames(
         if (!is_h264 && sequence_buffer_[start_index].frame_begin)
           break;
 
-        if (is_h264 && !is_h264_keyframe) {
+        if (is_h264) {
           const auto* h264_header = absl::get_if<RTPVideoHeaderH264>(
               &data_buffer_[start_index].video_header.video_type_header);
           if (!h264_header || h264_header->nalus_length >= kMaxNalusPerPacket)
@@ -436,10 +426,22 @@ std::vector<std::unique_ptr<RtpFrameObject>> PacketBuffer::FindFrames(
       missing_packets_.erase(missing_packets_.begin(),
                              missing_packets_.upper_bound(seq_num));
 
-      found_frames.emplace_back(
-          new RtpFrameObject(this, start_seq_num, seq_num, frame_size,
-                             max_nack_count, min_recv_time, max_recv_time,
-                             RtpPacketInfos(std::move(packet_infos))));
+      const VCMPacket* first_packet = GetPacket(start_seq_num);
+      const VCMPacket* last_packet = GetPacket(seq_num);
+      auto frame = std::make_unique<RtpFrameObject>(
+          start_seq_num, seq_num, last_packet->markerBit, max_nack_count,
+          min_recv_time, max_recv_time, first_packet->timestamp,
+          first_packet->ntp_time_ms_, last_packet->video_header.video_timing,
+          first_packet->payloadType, first_packet->codec(),
+          last_packet->video_header.rotation,
+          last_packet->video_header.content_type, first_packet->video_header,
+          last_packet->video_header.color_space,
+          first_packet->generic_descriptor,
+          RtpPacketInfos(std::move(packet_infos)),
+          GetEncodedImageBuffer(frame_size, start_seq_num, seq_num));
+
+      found_frames.emplace_back(std::move(frame));
+
       ClearInterval(start_seq_num, seq_num);
     }
     ++seq_num;
@@ -447,42 +449,28 @@ std::vector<std::unique_ptr<RtpFrameObject>> PacketBuffer::FindFrames(
   return found_frames;
 }
 
-bool PacketBuffer::GetBitstream(const RtpFrameObject& frame,
-                                uint8_t* destination) {
-  rtc::CritScope lock(&crit_);
+rtc::scoped_refptr<EncodedImageBuffer> PacketBuffer::GetEncodedImageBuffer(
+    size_t frame_size,
+    uint16_t first_seq_num,
+    uint16_t last_seq_num) {
+  size_t index = first_seq_num % size_;
+  size_t end = (last_seq_num + 1) % size_;
 
-  size_t index = frame.first_seq_num() % size_;
-  size_t end = (frame.last_seq_num() + 1) % size_;
-  uint16_t seq_num = frame.first_seq_num();
-  uint32_t timestamp = frame.Timestamp();
-  uint8_t* destination_end = destination + frame.size();
+  auto buffer = EncodedImageBuffer::Create(frame_size);
+  size_t offset = 0;
 
   do {
-    // Check both seq_num and timestamp to handle the case when seq_num wraps
-    // around too quickly for high packet rates.
-    if (!sequence_buffer_[index].used ||
-        sequence_buffer_[index].seq_num != seq_num ||
-        data_buffer_[index].timestamp != timestamp) {
-      return false;
-    }
+    RTC_DCHECK(sequence_buffer_[index].used);
 
-    RTC_DCHECK_EQ(data_buffer_[index].seqNum, sequence_buffer_[index].seq_num);
     size_t length = data_buffer_[index].sizeBytes;
-    if (destination + length > destination_end) {
-      RTC_LOG(LS_WARNING) << "Frame (" << frame.id.picture_id << ":"
-                          << static_cast<int>(frame.id.spatial_layer) << ")"
-                          << " bitstream buffer is not large enough.";
-      return false;
-    }
+    RTC_CHECK_LE(offset + length, buffer->size());
+    memcpy(buffer->data() + offset, data_buffer_[index].dataPtr, length);
+    offset += length;
 
-    const uint8_t* source = data_buffer_[index].dataPtr;
-    memcpy(destination, source, length);
-    destination += length;
     index = (index + 1) % size_;
-    ++seq_num;
   } while (index != end);
 
-  return true;
+  return buffer;
 }
 
 VCMPacket* PacketBuffer::GetPacket(uint16_t seq_num) {
@@ -492,18 +480,6 @@ VCMPacket* PacketBuffer::GetPacket(uint16_t seq_num) {
     return nullptr;
   }
   return &data_buffer_[index];
-}
-
-int PacketBuffer::AddRef() const {
-  return rtc::AtomicOps::Increment(&ref_count_);
-}
-
-int PacketBuffer::Release() const {
-  int count = rtc::AtomicOps::Decrement(&ref_count_);
-  if (!count) {
-    delete this;
-  }
-  return count;
 }
 
 void PacketBuffer::UpdateMissingPackets(uint16_t seq_num) {

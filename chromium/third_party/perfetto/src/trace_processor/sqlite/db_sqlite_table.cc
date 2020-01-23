@@ -32,6 +32,17 @@ FilterOp SqliteOpToFilterOp(int sqlite_op) {
       return FilterOp::kGt;
     case SQLITE_INDEX_CONSTRAINT_LT:
       return FilterOp::kLt;
+    case SQLITE_INDEX_CONSTRAINT_ISNOT:
+    case SQLITE_INDEX_CONSTRAINT_NE:
+      return FilterOp::kNe;
+    case SQLITE_INDEX_CONSTRAINT_GE:
+      return FilterOp::kGe;
+    case SQLITE_INDEX_CONSTRAINT_LE:
+      return FilterOp::kLe;
+    case SQLITE_INDEX_CONSTRAINT_ISNULL:
+      return FilterOp::kIsNull;
+    case SQLITE_INDEX_CONSTRAINT_ISNOTNULL:
+      return FilterOp::kIsNotNull;
     default:
       PERFETTO_FATAL("Currently unsupported constraint");
   }
@@ -100,9 +111,41 @@ util::Status DbSqliteTable::Init(int, const char* const*, Schema* schema) {
   return util::OkStatus();
 }
 
-int DbSqliteTable::BestIndex(const QueryConstraints&, BestIndexInfo*) {
-  // TODO(lalitm): add proper cost estimation by looking at the columns.
+int DbSqliteTable::BestIndex(const QueryConstraints& qc, BestIndexInfo* info) {
+  // TODO(lalitm): investigate SQLITE_INDEX_SCAN_UNIQUE for id columns.
+  info->estimated_cost = static_cast<uint32_t>(EstimateCost(qc));
   return SQLITE_OK;
+}
+
+double DbSqliteTable::EstimateCost(const QueryConstraints& qc) {
+  // Currently our cost estimation algorithm is quite simplistic but is good
+  // enough for the simplest cases.
+  // TODO(lalitm): flesh out this algorithm to cover more complex cases.
+
+  // If we have no constraints, we always return the size of the table as we
+  // want to discourage the query planner from taking this road.
+  const auto& constraints = qc.constraints();
+  if (constraints.empty())
+    return table_->size();
+
+  // This means we have at least one constraint. Check if any of the constraints
+  // is an equality constraint on an id column.
+  auto id_filter = [this](const QueryConstraints::Constraint& c) {
+    uint32_t col_idx = static_cast<uint32_t>(c.iColumn);
+    const auto& col = table_->GetColumn(col_idx);
+    return sqlite_utils::IsOpEq(c.op) && col.IsId();
+  };
+
+  // If we have a eq constraint on an id column, we return 0 as it's an O(1)
+  // operation regardless of all the other constriants.
+  auto it = std::find_if(constraints.begin(), constraints.end(), id_filter);
+  if (it != constraints.end())
+    return 1;
+
+  // Otherwise, we divide the number of rows in the table by the number of
+  // constraints as a simple way of indiciating the more constraints we have
+  // the better we can do.
+  return table_->size() / constraints.size();
 }
 
 std::unique_ptr<SqliteTable::Cursor> DbSqliteTable::CreateCursor() {

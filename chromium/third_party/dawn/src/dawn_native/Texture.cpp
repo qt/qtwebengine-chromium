@@ -235,6 +235,11 @@ namespace dawn_native {
 
         DAWN_TRY(ValidateTextureFormat(descriptor->format));
 
+        DAWN_TRY(ValidateTextureAspect(descriptor->aspect));
+        if (descriptor->aspect != dawn::TextureAspect::All) {
+            return DAWN_VALIDATION_ERROR("Texture aspect must be 'all'");
+        }
+
         // TODO(jiawei.shao@intel.com): check stuff based on resource limits
         if (descriptor->arrayLayerCount == 0 || descriptor->mipLevelCount == 0) {
             return DAWN_VALIDATION_ERROR("Cannot create an empty texture view");
@@ -407,7 +412,8 @@ namespace dawn_native {
         return true;
     }
 
-    void TextureBase::SetIsSubresourceContentInitialized(uint32_t baseMipLevel,
+    void TextureBase::SetIsSubresourceContentInitialized(bool isInitialized,
+                                                         uint32_t baseMipLevel,
                                                          uint32_t levelCount,
                                                          uint32_t baseArrayLayer,
                                                          uint32_t layerCount) {
@@ -417,7 +423,7 @@ namespace dawn_native {
                  ++arrayLayer) {
                 uint32_t subresourceIndex = GetSubresourceIndex(mipLevel, arrayLayer);
                 ASSERT(subresourceIndex < mIsSubresourceContentInitializedAtIndex.size());
-                mIsSubresourceContentInitializedAtIndex[subresourceIndex] = true;
+                mIsSubresourceContentInitializedAtIndex[subresourceIndex] = isInitialized;
             }
         }
     }
@@ -492,6 +498,7 @@ namespace dawn_native {
         : ObjectBase(texture->GetDevice()),
           mTexture(texture),
           mFormat(GetDevice()->GetValidInternalFormat(descriptor->format)),
+          mDimension(descriptor->dimension),
           mBaseMipLevel(descriptor->baseMipLevel),
           mMipLevelCount(descriptor->mipLevelCount),
           mBaseArrayLayer(descriptor->baseArrayLayer),
@@ -520,6 +527,11 @@ namespace dawn_native {
     const Format& TextureViewBase::GetFormat() const {
         ASSERT(!IsError());
         return mFormat;
+    }
+
+    dawn::TextureViewDimension TextureViewBase::GetDimension() const {
+        ASSERT(!IsError());
+        return mDimension;
     }
 
     uint32_t TextureViewBase::GetBaseMipLevel() const {

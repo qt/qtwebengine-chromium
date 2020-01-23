@@ -472,7 +472,7 @@ void Shader::resolveCompile()
         {
             mState.mAllAttributes    = GetShaderVariables(sh::GetAttributes(compilerHandle));
             mState.mActiveAttributes = GetActiveShaderVariables(&mState.mAllAttributes);
-            mState.mInputVaryings = GetShaderVariables(sh::GetInputVaryings(compilerHandle));
+            mState.mInputVaryings    = GetShaderVariables(sh::GetInputVaryings(compilerHandle));
             // TODO(jmadill): Figure out why we only sort in the FS, and if we need to.
             std::sort(mState.mInputVaryings.begin(), mState.mInputVaryings.end(), CompareShaderVar);
             mState.mActiveOutputVariables =
@@ -559,19 +559,19 @@ int Shader::getShaderVersion()
     return mState.mShaderVersion;
 }
 
-const std::vector<sh::Varying> &Shader::getInputVaryings()
+const std::vector<sh::ShaderVariable> &Shader::getInputVaryings()
 {
     resolveCompile();
     return mState.getInputVaryings();
 }
 
-const std::vector<sh::Varying> &Shader::getOutputVaryings()
+const std::vector<sh::ShaderVariable> &Shader::getOutputVaryings()
 {
     resolveCompile();
     return mState.getOutputVaryings();
 }
 
-const std::vector<sh::Uniform> &Shader::getUniforms()
+const std::vector<sh::ShaderVariable> &Shader::getUniforms()
 {
     resolveCompile();
     return mState.getUniforms();
@@ -589,19 +589,19 @@ const std::vector<sh::InterfaceBlock> &Shader::getShaderStorageBlocks()
     return mState.getShaderStorageBlocks();
 }
 
-const std::vector<sh::Attribute> &Shader::getActiveAttributes()
+const std::vector<sh::ShaderVariable> &Shader::getActiveAttributes()
 {
     resolveCompile();
     return mState.getActiveAttributes();
 }
 
-const std::vector<sh::Attribute> &Shader::getAllAttributes()
+const std::vector<sh::ShaderVariable> &Shader::getAllAttributes()
 {
     resolveCompile();
     return mState.getAllAttributes();
 }
 
-const std::vector<sh::OutputVariable> &Shader::getActiveOutputVariables()
+const std::vector<sh::ShaderVariable> &Shader::getActiveOutputVariables()
 {
     resolveCompile();
     return mState.getActiveOutputVariables();
@@ -610,7 +610,8 @@ const std::vector<sh::OutputVariable> &Shader::getActiveOutputVariables()
 std::string Shader::getTransformFeedbackVaryingMappedName(const std::string &tfVaryingName)
 {
     // TODO(jiawei.shao@intel.com): support transform feedback on geometry shader.
-    ASSERT(mState.getShaderType() == ShaderType::Vertex);
+    ASSERT(mState.getShaderType() == ShaderType::Vertex ||
+           mState.getShaderType() == ShaderType::Geometry);
     const auto &varyings = getOutputVaryings();
     auto bracketPos      = tfVaryingName.find("[");
     if (bracketPos != std::string::npos)

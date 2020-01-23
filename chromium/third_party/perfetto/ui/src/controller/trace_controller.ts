@@ -33,6 +33,10 @@ import {SLICE_TRACK_KIND} from '../tracks/chrome_slices/common';
 import {CPU_FREQ_TRACK_KIND} from '../tracks/cpu_freq/common';
 import {CPU_SLICE_TRACK_KIND} from '../tracks/cpu_slices/common';
 import {GPU_FREQ_TRACK_KIND} from '../tracks/gpu_freq/common';
+import {HEAP_PROFILE_TRACK_KIND} from '../tracks/heap_profile/common';
+import {
+  HEAP_PROFILE_FLAMEGRAPH_TRACK_KIND
+} from '../tracks/heap_profile_flamegraph/common';
 import {
   PROCESS_SCHEDULING_TRACK_KIND
 } from '../tracks/process_scheduling/common';
@@ -56,6 +60,11 @@ declare interface FileReaderSync { readAsArrayBuffer(blob: Blob): ArrayBuffer; }
 
 declare var FileReaderSync:
     {prototype: FileReaderSync; new (): FileReaderSync;};
+
+interface ThreadSliceTrack {
+  maxDepth: number;
+  trackId: number;
+}
 
 // TraceController handles handshakes with the frontend for everything that
 // concerns a single trace. It owns the WASM trace processor engine, handles
@@ -162,11 +171,11 @@ export class TraceController extends Controller<States> {
       }
     } else if (engineCfg.source instanceof ArrayBuffer) {
       this.updateStatus(`${statusHeader} 0 %`);
-      const buffer = engineCfg.source;
+      const buffer = new Uint8Array(engineCfg.source);
       const SLICE_SIZE = 1024 * 1024;
       for (let off = 0; off < buffer.byteLength; off += SLICE_SIZE) {
-        const slice = buffer.slice(off, off + SLICE_SIZE);
-        await this.engine.parse(new Uint8Array(slice));
+        const slice = buffer.subarray(off, off + SLICE_SIZE);
+        await this.engine.parse(slice);
         const progress =
             Math.round((off + slice.byteLength) / buffer.byteLength * 100);
         this.updateStatus(`${statusHeader} ${progress} %`);
@@ -217,8 +226,9 @@ export class TraceController extends Controller<States> {
 
     // We don't know the resolution at this point. However this will be
     // replaced in 50ms so a guess is fine.
+    const resolution = (traceTime.end - traceTime.start) / 1000;
     actions.push(Actions.setVisibleTraceTime(
-        {...traceTimeState, lastUpdate: Date.now() / 1000, resolution: 0.008}));
+        {...traceTimeState, lastUpdate: Date.now() / 1000, resolution}));
 
     globals.dispatchMultiple(actions);
 
@@ -305,6 +315,46 @@ export class TraceController extends Controller<States> {
       }
     }
 
+
+    const upidToProcessTracks = new Map();
+    const rawProcessTracks = await engine.query(`
+      select id, upid, process_track.name, max(depth) as maxDepth
+      from process_track
+      inner join slice on slice.track_id = process_track.id
+      group by track_id
+    `);
+    for (let i = 0; i < rawProcessTracks.numRecords; i++) {
+      const trackId = rawProcessTracks.columns[0].longValues![i];
+      const upid = rawProcessTracks.columns[1].longValues![i];
+      const name = rawProcessTracks.columns[2].stringValues![i];
+      const maxDepth = rawProcessTracks.columns[3].longValues![i];
+      const track = {
+        engineId: this.engineId,
+        kind: 'AsyncSliceTrack',
+        name,
+        config: {
+          trackId,
+          maxDepth,
+        },
+      };
+
+      const tracks = upidToProcessTracks.get(upid);
+      if (tracks) {
+        tracks.push(track);
+      } else {
+        upidToProcessTracks.set(upid, [track]);
+      }
+    }
+
+    const heapProfiles = await engine.query(`
+      select distinct(upid) from heap_profile_allocation`);
+
+    const heapUpids: Set<number> = new Set();
+    for (let i = 0; i < heapProfiles.numRecords; i++) {
+      const upid = heapProfiles.columns[0].longValues![i];
+      heapUpids.add(+upid);
+    }
+
     const maxGpuFreq = await engine.query(`
      select max(value)
      from counters
@@ -379,14 +429,19 @@ export class TraceController extends Controller<States> {
 
     // Local experiments shows getting maxDepth separately is ~2x faster than
     // joining with threads and processes.
-    const maxDepthQuery =
-        await engine.query('select utid, max(depth) from slices group by utid');
+    const maxDepthQuery = await engine.query(`
+          select thread_track.utid, thread_track.id, max(depth) as maxDepth
+          from slice
+          inner join thread_track on slice.track_id = thread_track.id
+          group by thread_track.id
+        `);
 
-    const utidToMaxDepth = new Map<number, number>();
+    const utidToThreadTrack = new Map<number, ThreadSliceTrack>();
     for (let i = 0; i < maxDepthQuery.numRecords; i++) {
       const utid = maxDepthQuery.columns[0].longValues![i] as number;
-      const maxDepth = maxDepthQuery.columns[1].longValues![i] as number;
-      utidToMaxDepth.set(utid, maxDepth);
+      const trackId = maxDepthQuery.columns[1].longValues![i] as number;
+      const maxDepth = maxDepthQuery.columns[2].longValues![i] as number;
+      utidToThreadTrack.set(utid, {maxDepth, trackId});
     }
 
     // Return all threads
@@ -436,10 +491,12 @@ export class TraceController extends Controller<States> {
           await engine.query(`select count(1) from sched where utid = ${utid}`);
       const threadHasSched = threadSched.columns[0].longValues![0] > 0;
 
-      const maxDepth = utid === null ? undefined : utidToMaxDepth.get(utid);
-      if (maxDepth === undefined &&
+      const threadTrack =
+          utid === null ? undefined : utidToThreadTrack.get(utid);
+      if (threadTrack === undefined &&
           (upid === null || counterUpids[upid] === undefined) &&
-          counterUtids[utid] === undefined && !threadHasSched) {
+          counterUtids[utid] === undefined && !threadHasSched &&
+          (upid === null || upid !== null && !heapUpids.has(upid))) {
         continue;
       }
 
@@ -467,11 +524,16 @@ export class TraceController extends Controller<States> {
           config: {pidForColor, upid, utid},
         });
 
+        const name = upid === null ?
+            `${threadName} ${tid}` :
+            `${
+                processName === null && heapUpids.has(upid) ?
+                    'Heap Profile for' :
+                    processName} ${pid}`;
         addTrackGroupActions.push(Actions.addTrackGroup({
           engineId: this.engineId,
           summaryTrackId,
-          name: upid === null ? `${threadName} ${tid}` :
-                                `${processName} ${pid}`,
+          name,
           id: pUuid,
           collapsed: true,
         }));
@@ -491,6 +553,30 @@ export class TraceController extends Controller<States> {
                 }
               });
             });
+          }
+
+          if (heapUpids.has(upid)) {
+            tracksToAdd.push({
+              engineId: this.engineId,
+              kind: HEAP_PROFILE_TRACK_KIND,
+              name: `Heap Profile`,
+              trackGroup: pUuid,
+              config: {upid}
+            });
+
+            tracksToAdd.push({
+              engineId: this.engineId,
+              kind: HEAP_PROFILE_FLAMEGRAPH_TRACK_KIND,
+              name: `Heap Profile Flamegraph`,
+              trackGroup: pUuid,
+              config: {upid}
+            });
+          }
+
+          if (upidToProcessTracks.has(upid)) {
+            for (const track of upidToProcessTracks.get(upid)) {
+              tracksToAdd.push(Object.assign(track, {trackGroup: pUuid}));
+            }
           }
         }
       }
@@ -519,13 +605,18 @@ export class TraceController extends Controller<States> {
         });
       }
 
-      if (maxDepth !== undefined) {
+      if (threadTrack !== undefined) {
         tracksToAdd.push({
           engineId: this.engineId,
           kind: SLICE_TRACK_KIND,
           name: `${threadName} [${tid}]`,
           trackGroup: pUuid,
-          config: {upid, utid, maxDepth},
+          config: {
+            upid,
+            utid,
+            maxDepth: threadTrack.maxDepth,
+            trackId: threadTrack.trackId
+          },
         });
       }
     }
@@ -603,13 +694,21 @@ export class TraceController extends Controller<States> {
     // Slices overview.
     const traceStartNs = toNs(traceTime.start);
     const stepSecNs = toNs(stepSec);
-    const sliceSummaryQuery = await engine.query(
-        `select bucket, upid, sum(utid_sum) / cast(${stepSecNs} as float) ` +
-        `as upid_sum from thread inner join ` +
-        `(select cast((ts - ${traceStartNs})/${stepSecNs} as int) as bucket, ` +
-        `sum(dur) as utid_sum, ref as utid from internal_slice ` +
-        `where ref_type = 'utid' group by bucket, ref) ` +
-        `using(utid) group by bucket, upid`);
+    const sliceSummaryQuery = await engine.query(`select
+           bucket,
+           upid,
+           sum(utid_sum) / cast(${stepSecNs} as float) as upid_sum
+         from thread
+         inner join (
+           select
+             cast((ts - ${traceStartNs})/${stepSecNs} as int) as bucket
+             sum(dur) as utid_sum,
+             utid
+           from slice
+           inner join thread_track on slice.track_id = thread_track.id
+           group by bucket, utid
+         ) using(utid)
+         group by bucket, upid`);
 
     const slicesData: {[key: string]: QuantizedLoad[]} = {};
     for (let i = 0; i < sliceSummaryQuery.numRecords; i++) {

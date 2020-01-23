@@ -14,6 +14,7 @@
 
 import("../../gn/fuzzer.gni")
 import("../../gn/perfetto.gni")
+import("../../gn/perfetto_host_executable.gni")
 import("../../gn/test.gni")
 import("../../gn/wasm.gni")
 
@@ -82,10 +83,12 @@ source_set("lib") {
     "fuchsia_trace_tokenizer.h",
     "fuchsia_trace_utils.cc",
     "fuchsia_trace_utils.h",
-    "graphics_frame_event_parser.cc",
-    "graphics_frame_event_parser.h",
+    "graphics_event_parser.cc",
+    "graphics_event_parser.h",
     "gzip_trace_parser.cc",
     "gzip_trace_parser.h",
+    "heap_graph_tracker.cc",
+    "heap_graph_tracker.h",
     "heap_profile_allocation_table.cc",
     "heap_profile_allocation_table.h",
     "heap_profile_tracker.cc",
@@ -106,6 +109,7 @@ source_set("lib") {
     "proto_trace_tokenizer.h",
     "raw_table.cc",
     "raw_table.h",
+    "read_trace.cc",
     "row_iterators.cc",
     "row_iterators.h",
     "sched_slice_table.cc",
@@ -147,6 +151,7 @@ source_set("lib") {
     "systrace_trace_parser.h",
     "thread_table.cc",
     "thread_table.h",
+    "timestamped_trace_piece.h",
     "trace_blob_view.h",
     "trace_parser.h",
     "trace_processor.cc",
@@ -158,12 +163,12 @@ source_set("lib") {
     "trace_sorter.h",
     "trace_storage.cc",
     "trace_storage.h",
-    "track_table.cc",
-    "track_table.h",
+    "track_tracker.cc",
+    "track_tracker.h",
     "variadic.h",
     "virtual_destructors.cc",
-    "virtual_track_tracker.cc",
-    "virtual_track_tracker.h",
+    "vulkan_memory_tracker.cc",
+    "vulkan_memory_tracker.h",
     "window_operator_table.cc",
     "window_operator_table.h",
   ]
@@ -230,12 +235,11 @@ source_set("common") {
   ]
 }
 
-executable("trace_processor_shell") {
-  testonly = true  # We need this for proto full.
+perfetto_host_executable("trace_processor_shell") {
   deps = [
     ":lib",
     "../../gn:default_deps",
-    "../../gn:protobuf_full",
+    "../../gn:protoc_lib",
     "../base",
     "metrics:lib",
   ]

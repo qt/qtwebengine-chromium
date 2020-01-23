@@ -4,22 +4,24 @@
 
 #include "cast/common/mdns/mdns_records.h"
 
+#include <atomic>
+
 #include "absl/strings/match.h"
 #include "absl/strings/str_join.h"
 
 namespace cast {
 namespace mdns {
 
+bool IsValidDomainLabel(absl::string_view label) {
+  const size_t label_size = label.size();
+  return label_size > 0 && label_size <= kMaxLabelLength;
+}
+
 DomainName::DomainName(const std::vector<absl::string_view>& labels)
     : DomainName(labels.begin(), labels.end()) {}
 
 DomainName::DomainName(std::initializer_list<absl::string_view> labels)
     : DomainName(labels.begin(), labels.end()) {}
-
-bool IsValidDomainLabel(absl::string_view label) {
-  const size_t label_size = label.size();
-  return label_size > 0 && label_size <= kMaxLabelLength;
-}
 
 std::string DomainName::ToString() const {
   return absl::StrJoin(labels_, ".");
@@ -36,10 +38,6 @@ bool DomainName::operator!=(const DomainName& rhs) const {
 
 size_t DomainName::MaxWireSize() const {
   return max_wire_size_;
-}
-
-std::ostream& operator<<(std::ostream& stream, const DomainName& domain_name) {
-  return stream << domain_name.ToString();
 }
 
 RawRecordRdata::RawRecordRdata(std::vector<uint8_t> rdata)
@@ -160,17 +158,18 @@ size_t TxtRecordRdata::MaxWireSize() const {
 
 MdnsRecord::MdnsRecord(DomainName name,
                        DnsType dns_type,
-                       DnsClass record_class,
+                       DnsClass dns_class,
                        RecordType record_type,
-                       uint32_t ttl,
+                       std::chrono::seconds ttl,
                        Rdata rdata)
     : name_(std::move(name)),
       dns_type_(dns_type),
-      record_class_(record_class),
+      dns_class_(dns_class),
       record_type_(record_type),
       ttl_(ttl),
       rdata_(std::move(rdata)) {
   OSP_DCHECK(!name_.empty());
+  OSP_DCHECK_LE(ttl_.count(), std::numeric_limits<uint32_t>::max());
   OSP_DCHECK((dns_type == DnsType::kSRV &&
               absl::holds_alternative<SrvRecordRdata>(rdata_)) ||
              (dns_type == DnsType::kA &&
@@ -185,7 +184,7 @@ MdnsRecord::MdnsRecord(DomainName name,
 }
 
 bool MdnsRecord::operator==(const MdnsRecord& rhs) const {
-  return dns_type_ == rhs.dns_type_ && record_class_ == rhs.record_class_ &&
+  return dns_type_ == rhs.dns_type_ && dns_class_ == rhs.dns_class_ &&
          record_type_ == rhs.record_type_ && ttl_ == rhs.ttl_ &&
          name_ == rhs.name_ && rdata_ == rhs.rdata_;
 }
@@ -196,23 +195,23 @@ bool MdnsRecord::operator!=(const MdnsRecord& rhs) const {
 
 size_t MdnsRecord::MaxWireSize() const {
   auto wire_size_visitor = [](auto&& arg) { return arg.MaxWireSize(); };
-  return name_.MaxWireSize() + sizeof(dns_type_) + sizeof(record_class_) +
-         sizeof(ttl_) + absl::visit(wire_size_visitor, rdata_);
+  // NAME size, 2-byte TYPE, 2-byte CLASS, 4-byte TTL, RDATA size
+  return name_.MaxWireSize() + absl::visit(wire_size_visitor, rdata_) + 8;
 }
 
 MdnsQuestion::MdnsQuestion(DomainName name,
                            DnsType dns_type,
-                           DnsClass record_class,
+                           DnsClass dns_class,
                            ResponseType response_type)
     : name_(std::move(name)),
       dns_type_(dns_type),
-      record_class_(record_class),
+      dns_class_(dns_class),
       response_type_(response_type) {
   OSP_CHECK(!name_.empty());
 }
 
 bool MdnsQuestion::operator==(const MdnsQuestion& rhs) const {
-  return dns_type_ == rhs.dns_type_ && record_class_ == rhs.record_class_ &&
+  return dns_type_ == rhs.dns_type_ && dns_class_ == rhs.dns_class_ &&
          response_type_ == rhs.response_type_ && name_ == rhs.name_;
 }
 
@@ -221,7 +220,8 @@ bool MdnsQuestion::operator!=(const MdnsQuestion& rhs) const {
 }
 
 size_t MdnsQuestion::MaxWireSize() const {
-  return name_.MaxWireSize() + sizeof(dns_type_) + sizeof(record_class_);
+  // NAME size, 2-byte TYPE, 2-byte CLASS
+  return name_.MaxWireSize() + 4;
 }
 
 MdnsMessage::MdnsMessage(uint16_t id, MessageType type)
@@ -295,6 +295,11 @@ void MdnsMessage::AddAdditionalRecord(MdnsRecord record) {
   OSP_DCHECK(additional_records_.size() < std::numeric_limits<uint16_t>::max());
   max_wire_size_ += record.MaxWireSize();
   additional_records_.emplace_back(std::move(record));
+}
+
+uint16_t CreateMessageId() {
+  static std::atomic<uint16_t> id(0);
+  return id++;
 }
 
 }  // namespace mdns

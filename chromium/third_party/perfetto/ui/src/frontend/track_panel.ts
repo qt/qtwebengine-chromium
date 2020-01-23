@@ -14,12 +14,13 @@
 
 import * as m from 'mithril';
 
-import {Actions, DeferredAction} from '../common/actions';
+import {Actions} from '../common/actions';
 import {TrackState} from '../common/state';
 
 import {globals} from './globals';
 import {drawGridLines} from './gridline_helper';
 import {Panel, PanelSize} from './panel';
+import {verticalScrollToTrack} from './scroll_helper';
 import {Track} from './track';
 import {TRACK_SHELL_WIDTH} from './track_constants';
 import {trackRegistry} from './track_registry';
@@ -33,6 +34,7 @@ function isPinned(id: string) {
 }
 
 interface TrackShellAttrs {
+  track: Track;
   trackState: TrackState;
 }
 
@@ -64,9 +66,15 @@ class TrackShell implements m.ClassComponent<TrackShellAttrs> {
             title: attrs.trackState.name,
           },
           attrs.trackState.name),
+        attrs.track.getTrackShellButtons(),
         m(TrackButton, {
-          action: Actions.toggleTrackPinned({trackId: attrs.trackState.id}),
+          action: () => {
+            globals.dispatch(
+                Actions.toggleTrackPinned({trackId: attrs.trackState.id}));
+          },
           i: isPinned(attrs.trackState.id) ? 'star' : 'star_border',
+          tooltip: isPinned(attrs.trackState.id) ? 'Unpin' : 'Pin to top',
+          selected: isPinned(attrs.trackState.id),
         }));
   }
 
@@ -139,12 +147,20 @@ export class TrackContent implements m.ClassComponent<TrackContentAttrs> {
         attrs.track.onMouseOut();
         globals.rafScheduler.scheduleRedraw();
       },
-      onclick: (e:MouseEvent) => {
-        // If we are selecting a timespan - do not pass the click to the track.
-        const selection = globals.state.currentSelection;
-        if (selection && selection.kind === 'TIMESPAN') return;
-
-        if (attrs.track.onMouseClick({x: e.layerX, y: e.layerY})) {
+      onclick: (e: MouseEvent) => {
+        // If we are selecting a time range - do not pass the click to the
+        // track.
+        if (e.shiftKey) return;
+        // If the click is outside of the current time range, clear it.
+        const clickTime =
+            globals.frontendLocalState.timeScale.pxToTime(e.layerX);
+        const start = globals.frontendLocalState.selectedTimeRange.startSec;
+        const end = globals.frontendLocalState.selectedTimeRange.endSec;
+        if (start !== undefined && end !== undefined &&
+            (clickTime < start || clickTime > end)) {
+          globals.frontendLocalState.removeTimeRange();
+          e.stopPropagation();
+        } else if (attrs.track.onMouseClick({x: e.layerX, y: e.layerY})) {
           e.stopPropagation();
         }
         globals.rafScheduler.scheduleRedraw();
@@ -164,25 +180,37 @@ class TrackComponent implements m.ClassComponent<TrackComponentAttrs> {
         {
           style: {
             height: `${attrs.track.getHeight()}px`,
-          }
+          },
+          id: 'track_' + attrs.trackState.id,
         },
         [
-          m(TrackShell, {trackState: attrs.trackState}),
+          m(TrackShell, {track: attrs.track, trackState: attrs.trackState}),
           m(TrackContent, {track: attrs.track})
         ]);
   }
+
+  onupdate({attrs}: m.CVnode<TrackComponentAttrs>) {
+    if (globals.frontendLocalState.scrollToTrackId === attrs.trackState.id) {
+      verticalScrollToTrack(attrs.trackState.id);
+      globals.frontendLocalState.scrollToTrackId = undefined;
+    }
+  }
 }
 
-interface TrackButtonAttrs {
-  action: DeferredAction;
+export interface TrackButtonAttrs {
+  action: () => void;
   i: string;
+  tooltip: string;
+  selected: boolean;
 }
-class TrackButton implements m.ClassComponent<TrackButtonAttrs> {
+export class TrackButton implements m.ClassComponent<TrackButtonAttrs> {
   view({attrs}: m.CVnode<TrackButtonAttrs>) {
     return m(
         'i.material-icons.track-button',
         {
-          onclick: () => globals.dispatch(attrs.action),
+          class: `${attrs.selected ? 'show' : ''}`,
+          onclick: attrs.action,
+          title: attrs.tooltip,
         },
         attrs.i);
   }
@@ -238,7 +266,16 @@ export class TrackPanel extends Panel<TrackPanelAttrs> {
                              size.height,
                              `rgb(52,69,150)`);
     }
-
+    if (globals.frontendLocalState.selectedTimeRange.startSec !== undefined &&
+        globals.frontendLocalState.selectedTimeRange.endSec !== undefined) {
+      drawVerticalSelection(
+          ctx,
+          localState.timeScale,
+          globals.frontendLocalState.selectedTimeRange.startSec,
+          globals.frontendLocalState.selectedTimeRange.endSec,
+          size.height,
+          `rgba(0,0,0,0.5)`);
+    }
     if (globals.state.currentSelection !== null) {
       if (globals.state.currentSelection.kind === 'NOTE') {
         const note = globals.state.notes[globals.state.currentSelection.id];
@@ -247,15 +284,6 @@ export class TrackPanel extends Panel<TrackPanelAttrs> {
                                note.timestamp,
                                size.height,
                                note.color);
-      }
-      if (globals.state.currentSelection.kind === 'TIMESPAN') {
-        drawVerticalSelection(
-            ctx,
-            localState.timeScale,
-            globals.state.currentSelection.startTs,
-            globals.state.currentSelection.endTs,
-            size.height,
-            `rgba(0,0,0,0.5)`);
       }
       if (globals.state.currentSelection.kind === 'SLICE' &&
           globals.sliceDetails.wakeupTs !== undefined) {

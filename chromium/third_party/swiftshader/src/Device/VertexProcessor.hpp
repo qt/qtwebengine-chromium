@@ -68,6 +68,8 @@ namespace sw
 					return count != 0;
 				}
 
+				unsigned int bytesPerAttrib() const;
+
 				StreamType type    : BITS(STREAMTYPE_LAST);
 				unsigned int count : 3;
 				bool normalized    : 1;
@@ -75,6 +77,8 @@ namespace sw
 			};
 
 			Input input[MAX_INTERFACE_COMPONENTS / 4];
+			bool robustBufferAccess : 1;
+			bool isPoint : 1;
 		};
 
 		struct State : States

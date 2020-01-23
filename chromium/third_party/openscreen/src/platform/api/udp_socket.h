@@ -5,12 +5,14 @@
 #ifndef PLATFORM_API_UDP_SOCKET_H_
 #define PLATFORM_API_UDP_SOCKET_H_
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 
 #include "platform/api/network_interface.h"
-#include "platform/api/udp_read_callback.h"
+#include "platform/api/udp_packet.h"
 #include "platform/base/error.h"
 #include "platform/base/ip_address.h"
 #include "platform/base/macros.h"
@@ -39,6 +41,17 @@ using UdpSocketUniquePtr = std::unique_ptr<UdpSocket>;
 class UdpSocket {
  public:
   virtual ~UdpSocket();
+
+  class LifetimeObserver {
+   public:
+    virtual ~LifetimeObserver() = default;
+
+    // Function to call upon creation of a new UdpSocket.
+    virtual void OnCreate(UdpSocket* socket) = 0;
+
+    // Function to call upon deletion of a UdpSocket.
+    virtual void OnDestroy(UdpSocket* socket) = 0;
+  };
 
   // Client for the UdpSocket class.
   class Client {
@@ -75,6 +88,11 @@ class UdpSocket {
     kLowPriority = 0x20
   };
 
+  // The LifetimeObserver set here must exist during ANY future UdpSocket
+  // creations. SetLifetimeObserver(nullptr) must be called before any future
+  // socket creations on destructions after the observer is destroyed
+  static void SetLifetimeObserver(LifetimeObserver* observer);
+
   using Version = IPAddress::Version;
 
   // Creates a new, scoped UdpSocket within the IPv4 or IPv6 family.
@@ -101,31 +119,25 @@ class UdpSocket {
   // local endpoint's port is zero, the operating system will automatically find
   // a free local port and bind to it. Future calls to local_endpoint() will
   // reflect the resolved port.
-  virtual Error Bind() = 0;
+  virtual void Bind() = 0;
 
   // Sets the device to use for outgoing multicast packets on the socket.
-  virtual Error SetMulticastOutboundInterface(
-      NetworkInterfaceIndex ifindex) = 0;
+  virtual void SetMulticastOutboundInterface(NetworkInterfaceIndex ifindex) = 0;
 
   // Joins to the multicast group at the given address, using the specified
   // interface.
-  virtual Error JoinMulticastGroup(const IPAddress& address,
-                                   NetworkInterfaceIndex ifindex) = 0;
+  virtual void JoinMulticastGroup(const IPAddress& address,
+                                  NetworkInterfaceIndex ifindex) = 0;
 
   // Sends a message and returns the number of bytes sent, on success.
   // Error::Code::kAgain might be returned to indicate the operation would
   // block, which can be expected during normal operation.
-  virtual Error SendMessage(const void* data,
-                            size_t length,
-                            const IPEndpoint& dest) = 0;
+  virtual void SendMessage(const void* data,
+                           size_t length,
+                           const IPEndpoint& dest) = 0;
 
   // Sets the DSCP value to use for all messages sent from this socket.
-  virtual Error SetDscp(DscpMode state) = 0;
-
-  // Sets the callback that should be called upon deletion of this socket. This
-  // allows other objects to observe the socket's destructor and act when it is
-  // called.
-  void SetDeletionCallback(std::function<void(UdpSocket*)> callback);
+  virtual void SetDscp(DscpMode state) = 0;
 
  protected:
   // Creates a new UdpSocket. The provided client and task_runner must exist for
@@ -134,14 +146,34 @@ class UdpSocket {
 
   // Methods to take care of posting UdpSocket::Client callbacks for client_ to
   // task_runner_.
+  // NOTE: OnError(...) will close the socket in addition to returning the
+  // error.
   void OnError(Error error);
   void OnSendError(Error error);
   void OnRead(ErrorOr<UdpPacket> read_data);
 
+  // Closes an open socket when a non-recoverable error occurs.
+  void CloseIfError(const Error& error);
+
+  // Closes an open socket.
+  // NOTE: Concrete implementations of UdpSocket must call this method in their
+  // destructor.
+  void CloseIfOpen();
+
+  // Returns whether the socket is currently closed.
+  // NOTE: This must be checked before calling any operation on the socket.
+  bool is_closed() { return is_closed_.load(); }
+
  private:
-  // This callback allows other objects to observe the socket's destructor and
-  // act when it is called.
-  std::function<void(UdpSocket*)> deletion_callback_;
+  static std::atomic<LifetimeObserver*> lifetime_observer_;
+
+  // Closes this socket.
+  // NOTE: This method will only be called once.
+  virtual void Close() {}
+
+  // Atomically keeps track of if the socket is closed, so that threading
+  // across different implementations isn't a problem.
+  std::atomic_bool is_closed_{false};
 
   // Client to use for callbacks.
   // NOTE: client_ can be nullptr if the user does not want any callbacks (for

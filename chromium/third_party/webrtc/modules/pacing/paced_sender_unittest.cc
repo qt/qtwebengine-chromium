@@ -16,7 +16,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/utility/include/mock/mock_process_thread.h"
 #include "system_wrappers/include/clock.h"
@@ -53,7 +52,7 @@ class MockCallback : public PacketRouter {
 };
 
 std::unique_ptr<RtpPacketToSend> BuildRtpPacket(RtpPacketToSend::Type type) {
-  auto packet = absl::make_unique<RtpPacketToSend>(nullptr);
+  auto packet = std::make_unique<RtpPacketToSend>(nullptr);
   packet->set_packet_type(type);
   switch (type) {
     case RtpPacketToSend::Type::kAudio:
@@ -89,9 +88,11 @@ TEST(PacedSenderTest, PacesPackets) {
   static constexpr size_t kPacketsToSend = 42;
   pacer.SetPacingRates(DataRate::bps(kDefaultPacketSize * 8 * kPacketsToSend),
                        DataRate::Zero());
+  std::vector<std::unique_ptr<RtpPacketToSend>> packets;
   for (size_t i = 0; i < kPacketsToSend; ++i) {
-    pacer.EnqueuePacket(BuildRtpPacket(RtpPacketToSend::Type::kVideo));
+    packets.emplace_back(BuildRtpPacket(RtpPacketToSend::Type::kVideo));
   }
+  pacer.EnqueuePackets(std::move(packets));
 
   // Expect all of them to be sent.
   size_t packets_sent = 0;

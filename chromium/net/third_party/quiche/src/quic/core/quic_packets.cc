@@ -4,13 +4,14 @@
 
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 
+#include <utility>
+
 #include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_utils.h"
@@ -127,12 +128,9 @@ size_t GetPacketHeaderSize(
         size += kConnectionIdLengthSize;
       }
       DCHECK(QuicVersionHasLongHeaderLengths(version) ||
-             !GetQuicReloadableFlag(quic_fix_get_packet_header_size) ||
              retry_token_length_length + retry_token_length + length_length ==
                  0);
-      if (QuicVersionHasLongHeaderLengths(version) ||
-          !GetQuicReloadableFlag(quic_fix_get_packet_header_size)) {
-        QUIC_RELOADABLE_FLAG_COUNT_N(quic_fix_get_packet_header_size, 1, 3);
+      if (QuicVersionHasLongHeaderLengths(version)) {
         size += retry_token_length_length + retry_token_length + length_length;
       }
       return size;
@@ -339,7 +337,7 @@ QuicEncryptedPacket::QuicEncryptedPacket(QuicStringPiece data)
 std::unique_ptr<QuicEncryptedPacket> QuicEncryptedPacket::Clone() const {
   char* buffer = new char[this->length()];
   memcpy(buffer, this->data(), this->length());
-  return QuicMakeUnique<QuicEncryptedPacket>(buffer, this->length(), true);
+  return std::make_unique<QuicEncryptedPacket>(buffer, this->length(), true);
 }
 
 std::ostream& operator<<(std::ostream& os, const QuicEncryptedPacket& s) {
@@ -410,12 +408,12 @@ std::unique_ptr<QuicReceivedPacket> QuicReceivedPacket::Clone() const {
   if (this->packet_headers()) {
     char* headers_buffer = new char[this->headers_length()];
     memcpy(headers_buffer, this->packet_headers(), this->headers_length());
-    return QuicMakeUnique<QuicReceivedPacket>(
+    return std::make_unique<QuicReceivedPacket>(
         buffer, this->length(), receipt_time(), true, ttl(), ttl() >= 0,
         headers_buffer, this->headers_length(), true);
   }
 
-  return QuicMakeUnique<QuicReceivedPacket>(
+  return std::make_unique<QuicReceivedPacket>(
       buffer, this->length(), receipt_time(), true, ttl(), ttl() >= 0);
 }
 
@@ -505,6 +503,7 @@ ReceivedPacketInfo::ReceivedPacketInfo(const QuicSocketAddress& self_address,
       peer_address(peer_address),
       packet(packet),
       form(GOOGLE_QUIC_PACKET),
+      long_packet_type(INVALID_PACKET_TYPE),
       version_flag(false),
       use_length_prefix(false),
       version_label(0),

@@ -209,7 +209,7 @@ TracingServiceImpl::ConnectProducer(Producer* producer,
   endpoint->shmem_page_size_hint_bytes_ = shared_memory_page_size_hint_bytes;
   task_runner_->PostTask(std::bind(&Producer::OnConnect, endpoint->producer_));
 
-  return std::move(endpoint);
+  return std::unique_ptr<ProducerEndpoint>(std::move(endpoint));
 }
 
 void TracingServiceImpl::DisconnectProducer(ProducerID id) {
@@ -253,7 +253,7 @@ TracingServiceImpl::ConnectConsumer(Consumer* consumer, uid_t uid) {
   auto it_and_inserted = consumers_.emplace(endpoint.get());
   PERFETTO_DCHECK(it_and_inserted.second);
   task_runner_->PostTask(std::bind(&Consumer::OnConnect, endpoint->consumer_));
-  return std::move(endpoint);
+  return std::unique_ptr<ConsumerEndpoint>(std::move(endpoint));
 }
 
 void TracingServiceImpl::DisconnectConsumer(ConsumerEndpointImpl* consumer) {
@@ -334,9 +334,9 @@ bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
   PERFETTO_DCHECK_THREAD(thread_checker_);
   PERFETTO_DLOG("Enabling tracing for consumer %p",
                 reinterpret_cast<void*>(consumer));
-  if (cfg.lockdown_mode() == TraceConfig::LockdownModeOperation::LOCKDOWN_SET)
+  if (cfg.lockdown_mode() == TraceConfig::LOCKDOWN_SET)
     lockdown_mode_ = true;
-  if (cfg.lockdown_mode() == TraceConfig::LockdownModeOperation::LOCKDOWN_CLEAR)
+  if (cfg.lockdown_mode() == TraceConfig::LOCKDOWN_CLEAR)
     lockdown_mode_ = false;
   TracingSession* tracing_session =
       GetTracingSession(consumer->tracing_session_id_);
@@ -2149,7 +2149,7 @@ void TracingServiceImpl::UpdateMemoryGuardrail() {
 }
 
 void TracingServiceImpl::SnapshotSyncMarker(std::vector<TracePacket>* packets) {
-  // The sync markes is used to tokenize large traces efficiently.
+  // The sync marks are used to tokenize large traces efficiently.
   // See description in trace_packet.proto.
   if (sync_marker_packet_size_ == 0) {
     // Serialize the marker and the uid separately to guarantee that the marker
@@ -2529,11 +2529,9 @@ void TracingServiceImpl::ConsumerEndpointImpl::OnDataSourceInstanceStateChange(
   change->set_producer_name(producer.name_);
   change->set_data_source_name(instance.data_source_name);
   if (instance.state == DataSourceInstance::STARTED) {
-    change->set_state(ObservableEvents::DataSourceInstanceStateChange::
-                          DATA_SOURCE_INSTANCE_STATE_STARTED);
+    change->set_state(ObservableEvents::DATA_SOURCE_INSTANCE_STATE_STARTED);
   } else {
-    change->set_state(ObservableEvents::DataSourceInstanceStateChange::
-                          DATA_SOURCE_INSTANCE_STATE_STOPPED);
+    change->set_state(ObservableEvents::DATA_SOURCE_INSTANCE_STATE_STOPPED);
   }
 }
 

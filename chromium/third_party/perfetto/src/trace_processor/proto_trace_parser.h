@@ -22,16 +22,19 @@
 #include <array>
 #include <memory>
 
+#include "perfetto/ext/base/optional.h"
 #include "perfetto/ext/base/string_view.h"
 #include "perfetto/protozero/field.h"
 #include "src/trace_processor/ftrace_descriptors.h"
-#include "src/trace_processor/graphics_frame_event_parser.h"
+#include "src/trace_processor/graphics_event_parser.h"
 #include "src/trace_processor/proto_incremental_state.h"
 #include "src/trace_processor/slice_tracker.h"
+#include "src/trace_processor/timestamped_trace_piece.h"
 #include "src/trace_processor/trace_blob_view.h"
 #include "src/trace_processor/trace_parser.h"
 #include "src/trace_processor/trace_storage.h"
 
+#include "protos/perfetto/trace/trace_packet.pbzero.h"
 #include "protos/perfetto/trace/track_event/track_event.pbzero.h"
 
 namespace perfetto {
@@ -47,11 +50,10 @@ class ProtoTraceParser : public TraceParser {
   ~ProtoTraceParser() override;
 
   // TraceParser implementation.
-  void ParseTracePacket(int64_t timestamp,
-                        TraceSorter::TimestampedTracePiece) override;
+  void ParseTracePacket(int64_t timestamp, TimestampedTracePiece) override;
   void ParseFtracePacket(uint32_t cpu,
                          int64_t timestamp,
-                         TraceSorter::TimestampedTracePiece) override;
+                         TimestampedTracePiece) override;
 
   void ParseProcessTree(ConstBytes);
   void ParseProcessStats(int64_t timestamp, ConstBytes);
@@ -96,57 +98,61 @@ class ProtoTraceParser : public TraceParser {
   void ParseFtraceStats(ConstBytes);
   void ParseProfilePacket(int64_t ts,
                           ProtoIncrementalState::PacketSequenceState*,
+                          size_t sequence_state_generation,
                           ConstBytes);
   void ParseStreamingProfilePacket(ProtoIncrementalState::PacketSequenceState*,
+                                   size_t sequence_state_generation,
                                    ConstBytes);
-  void ParseProfiledFrameSymbols(ProtoIncrementalState::PacketSequenceState*,
-                                 ConstBytes);
   void ParseSystemInfo(ConstBytes);
   void ParseTrackEvent(int64_t ts,
                        int64_t tts,
                        int64_t ticount,
                        ProtoIncrementalState::PacketSequenceState*,
+                       size_t sequence_state_generation,
                        ConstBytes);
   void ParseLegacyEventAsRawEvent(
       int64_t ts,
       int64_t tts,
       int64_t ticount,
-      UniqueTid utid,
+      base::Optional<UniqueTid> utid,
       StringId category_id,
       StringId name_id,
       const protos::pbzero::TrackEvent::LegacyEvent::Decoder& legacy_event,
       SliceTracker::SetArgsCallback args_callback);
-  void ParseDebugAnnotationArgs(
-      ConstBytes debug_annotation,
-      ProtoIncrementalState::PacketSequenceState* sequence_state,
-      ArgsTracker* args_tracker,
-      RowId row);
+  void ParseDebugAnnotationArgs(ConstBytes debug_annotation,
+                                ProtoIncrementalState::PacketSequenceState*,
+                                size_t sequence_state_generation,
+                                ArgsTracker* args_tracker,
+                                RowId row);
   void ParseNestedValueArgs(ConstBytes nested_value,
                             base::StringView flat_key,
                             base::StringView key,
                             ArgsTracker* args_tracker,
                             RowId row);
-  void ParseTaskExecutionArgs(
-      ConstBytes task_execution,
-      ProtoIncrementalState::PacketSequenceState* sequence_state,
-      ArgsTracker* args_tracker,
-      RowId row);
+  void ParseTaskExecutionArgs(ConstBytes task_execution,
+                              ProtoIncrementalState::PacketSequenceState*,
+                              size_t sequence_state_generation,
+                              ArgsTracker* args_tracker,
+                              RowId row);
   void ParseChromeBenchmarkMetadata(ConstBytes);
-  void ParseChromeEvents(ConstBytes);
+  void ParseChromeEvents(int64_t ts, ConstBytes);
   void ParseMetatraceEvent(int64_t ts, ConstBytes);
-  void ParseGpuCounterEvent(int64_t ts, ConstBytes);
-  void ParseGpuRenderStageEvent(int64_t ts, ConstBytes);
+  void ParseTraceConfig(ConstBytes);
+  void ParseStatsdMetadata(ConstBytes);
   void ParseAndroidPackagesList(ConstBytes);
   void ParseLogMessage(ConstBytes,
                        ProtoIncrementalState::PacketSequenceState*,
+                       size_t sequence_state_generation,
                        int64_t,
-                       uint32_t,
+                       base::Optional<UniqueTid>,
                        ArgsTracker*,
                        RowId);
+  void ParseModuleSymbols(ConstBytes);
+  void ParseHeapGraph(int64_t ts, ConstBytes);
 
  private:
   TraceProcessorContext* context_;
-  std::unique_ptr<GraphicsFrameEventParser> graphics_frame_event_parser_;
+  std::unique_ptr<GraphicsEventParser> graphics_event_parser_;
 
   const StringId utid_name_id_;
   const StringId sched_wakeup_name_id_;
@@ -196,6 +202,7 @@ class ProtoTraceParser : public TraceParser {
   const StringId legacy_event_thread_instruction_count_key_id_;
   const StringId legacy_event_thread_instruction_delta_key_id_;
   const StringId legacy_event_use_async_tts_key_id_;
+  const StringId legacy_event_unscoped_id_key_id_;
   const StringId legacy_event_global_id_key_id_;
   const StringId legacy_event_local_id_key_id_;
   const StringId legacy_event_id_scope_key_id_;
@@ -209,9 +216,6 @@ class ProtoTraceParser : public TraceParser {
   std::vector<StringId> vmstat_strs_id_;
   std::vector<StringId> rss_members_;
   std::vector<StringId> power_rails_strs_id_;
-  std::unordered_map<uint32_t, const TraceStorage::CounterDefinitions::Id> gpu_counter_ids_;
-  std::vector<StringId> gpu_hw_queue_ids_;
-  std::vector<StringId> gpu_render_stage_ids_;
 
   struct FtraceMessageStrings {
     // The string id of name of the event field (e.g. sched_switch's id).

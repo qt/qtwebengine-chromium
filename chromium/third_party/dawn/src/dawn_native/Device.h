@@ -35,6 +35,8 @@ namespace dawn_native {
     class AdapterBase;
     class AttachmentState;
     class AttachmentStateBlueprint;
+    class ErrorScope;
+    class ErrorScopeTracker;
     class FenceSignalTracker;
     class DynamicUploader;
     class StagingBufferBase;
@@ -54,11 +56,22 @@ namespace dawn_native {
             return false;
         }
 
+        template <typename T>
+        bool ConsumedError(ResultOrError<T> resultOrError, T* result) {
+            if (DAWN_UNLIKELY(resultOrError.IsError())) {
+                ConsumeError(resultOrError.AcquireError());
+                return true;
+            }
+            *result = resultOrError.AcquireSuccess();
+            return false;
+        }
+
         MaybeError ValidateObject(const ObjectBase* object) const;
 
         AdapterBase* GetAdapter() const;
         dawn_platform::Platform* GetPlatform() const;
 
+        ErrorScopeTracker* GetErrorScopeTracker() const;
         FenceSignalTracker* GetFenceSignalTracker() const;
 
         // Returns the Format corresponding to the dawn::TextureFormat or an error if the format
@@ -78,7 +91,7 @@ namespace dawn_native {
         virtual Serial GetCompletedCommandSerial() const = 0;
         virtual Serial GetLastSubmittedCommandSerial() const = 0;
         virtual Serial GetPendingCommandSerial() const = 0;
-        virtual void TickImpl() = 0;
+        virtual MaybeError TickImpl() = 0;
 
         // Many Dawn objects are completely immutable once created which means that if two
         // creations are given the same arguments, they can return the same object. Reusing
@@ -146,11 +159,14 @@ namespace dawn_native {
         TextureViewBase* CreateTextureView(TextureBase* texture,
                                            const TextureViewDescriptor* descriptor);
 
+        void InjectError(dawn::ErrorType type, const char* message);
+
         void Tick();
 
         void SetUncapturedErrorCallback(dawn::ErrorCallback callback, void* userdata);
         void PushErrorScope(dawn::ErrorFilter filter);
         bool PopErrorScope(dawn::ErrorCallback callback, void* userdata);
+        ErrorScope* GetCurrentErrorScope();
 
         void Reference();
         void Release();
@@ -163,7 +179,7 @@ namespace dawn_native {
                                                    uint64_t destinationOffset,
                                                    uint64_t size) = 0;
 
-        ResultOrError<DynamicUploader*> GetDynamicUploader() const;
+        DynamicUploader* GetDynamicUploader() const;
 
         std::vector<const char*> GetEnabledExtensions() const;
         std::vector<const char*> GetTogglesUsed() const;
@@ -230,10 +246,14 @@ namespace dawn_native {
 
         void ApplyExtensions(const DeviceDescriptor* deviceDescriptor);
 
-        void ConsumeError(ErrorData* error);
         void SetDefaultToggles();
 
+        void ConsumeError(ErrorData* error);
+
         AdapterBase* mAdapter = nullptr;
+
+        Ref<ErrorScope> mRootErrorScope;
+        Ref<ErrorScope> mCurrentErrorScope;
 
         // The object caches aren't exposed in the header as they would require a lot of
         // additional includes.
@@ -247,11 +267,10 @@ namespace dawn_native {
             void* userdata;
         };
 
+        std::unique_ptr<ErrorScopeTracker> mErrorScopeTracker;
         std::unique_ptr<FenceSignalTracker> mFenceSignalTracker;
         std::vector<DeferredCreateBufferMappedAsync> mDeferredCreateBufferMappedAsyncResults;
 
-        dawn::ErrorCallback mErrorCallback = nullptr;
-        void* mErrorUserdata = 0;
         uint32_t mRefCount = 1;
 
         FormatTable mFormatTable;

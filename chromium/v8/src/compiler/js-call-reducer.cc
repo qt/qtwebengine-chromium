@@ -473,10 +473,10 @@ Reduction JSCallReducer::ReduceFunctionPrototypeBind(Node* node) {
     if (receiver_map.NumberOfOwnDescriptors() < minimum_nof_descriptors) {
       return inference.NoChange();
     }
-    if (!receiver_map.serialized_own_descriptor(
-            JSFunction::kLengthDescriptorIndex) ||
-        !receiver_map.serialized_own_descriptor(
-            JSFunction::kNameDescriptorIndex)) {
+    const InternalIndex kLengthIndex(JSFunction::kLengthDescriptorIndex);
+    const InternalIndex kNameIndex(JSFunction::kNameDescriptorIndex);
+    if (!receiver_map.serialized_own_descriptor(kLengthIndex) ||
+        !receiver_map.serialized_own_descriptor(kNameIndex)) {
       TRACE_BROKER_MISSING(broker(),
                            "serialized descriptors on map " << receiver_map);
       return inference.NoChange();
@@ -485,14 +485,10 @@ Reduction JSCallReducer::ReduceFunctionPrototypeBind(Node* node) {
     StringRef length_string(broker(), roots.length_string_handle());
     StringRef name_string(broker(), roots.name_string_handle());
 
-    if (!receiver_map.GetPropertyKey(JSFunction::kLengthDescriptorIndex)
-             .equals(length_string) ||
-        !receiver_map.GetStrongValue(JSFunction::kLengthDescriptorIndex)
-             .IsAccessorInfo() ||
-        !receiver_map.GetPropertyKey(JSFunction::kNameDescriptorIndex)
-             .equals(name_string) ||
-        !receiver_map.GetStrongValue(JSFunction::kNameDescriptorIndex)
-             .IsAccessorInfo()) {
+    if (!receiver_map.GetPropertyKey(kLengthIndex).equals(length_string) ||
+        !receiver_map.GetStrongValue(kLengthIndex).IsAccessorInfo() ||
+        !receiver_map.GetPropertyKey(kNameIndex).equals(name_string) ||
+        !receiver_map.GetStrongValue(kNameIndex).IsAccessorInfo()) {
       return inference.NoChange();
     }
   }
@@ -3013,12 +3009,13 @@ Reduction JSCallReducer::ReduceCallOrConstructWithArrayLikeOrSpread(
          node->opcode() == IrOpcode::kJSConstructWithArrayLike ||
          node->opcode() == IrOpcode::kJSConstructWithSpread);
 
-  // Check if {arguments_list} is an arguments object, and {node} is the only
-  // value user of {arguments_list} (except for value uses in frame states).
   Node* arguments_list = NodeProperties::GetValueInput(node, arity);
   if (arguments_list->opcode() != IrOpcode::kJSCreateArguments) {
     return NoChange();
   }
+
+  // Check if {node} is the only value user of {arguments_list} (except for
+  // value uses in frame states). If not, we give up for now.
   for (Edge edge : arguments_list->use_edges()) {
     if (!NodeProperties::IsValueEdge(edge)) continue;
     Node* const user = edge.from();
@@ -3704,7 +3701,7 @@ Reduction JSCallReducer::ReduceJSCall(Node* node,
     case Builtins::kMapIteratorPrototypeNext:
       return ReduceCollectionIteratorPrototypeNext(
           node, OrderedHashMap::kEntrySize, factory()->empty_ordered_hash_map(),
-          FIRST_MAP_ITERATOR_TYPE, LAST_MAP_ITERATOR_TYPE);
+          FIRST_JS_MAP_ITERATOR_TYPE, LAST_JS_MAP_ITERATOR_TYPE);
     case Builtins::kSetPrototypeEntries:
       return ReduceCollectionIteration(node, CollectionKind::kSet,
                                        IterationKind::kEntries);
@@ -3716,7 +3713,7 @@ Reduction JSCallReducer::ReduceJSCall(Node* node,
     case Builtins::kSetIteratorPrototypeNext:
       return ReduceCollectionIteratorPrototypeNext(
           node, OrderedHashSet::kEntrySize, factory()->empty_ordered_hash_set(),
-          FIRST_SET_ITERATOR_TYPE, LAST_SET_ITERATOR_TYPE);
+          FIRST_JS_SET_ITERATOR_TYPE, LAST_JS_SET_ITERATOR_TYPE);
     case Builtins::kDatePrototypeGetTime:
       return ReduceDatePrototypeGetTime(node);
     case Builtins::kDateNow:
@@ -5676,8 +5673,6 @@ Reduction JSCallReducer::ReducePromiseConstructor(Node* node) {
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* control = NodeProperties::GetControlInput(node);
 
-  if (!FLAG_experimental_inline_promise_constructor) return NoChange();
-
   // Only handle builtins Promises, not subclasses.
   if (target != new_target) return NoChange();
 
@@ -7103,11 +7098,14 @@ Reduction JSCallReducer::ReduceRegExpPrototypeTest(Node* node) {
   Node* control = NodeProperties::GetControlInput(node);
   Node* regexp = NodeProperties::GetValueInput(node, 1);
 
+  // Only the initial JSRegExp map is valid here, since the following lastIndex
+  // check as well as the lowered builtin call rely on a known location of the
+  // lastIndex field.
+  Handle<Map> regexp_initial_map =
+      native_context().regexp_function().initial_map().object();
+
   MapInference inference(broker(), regexp, effect);
-  if (!inference.HaveMaps() ||
-      !inference.AllOfInstanceTypes(InstanceTypeChecker::IsJSRegExp)) {
-    return inference.NoChange();
-  }
+  if (!inference.Is(regexp_initial_map)) return inference.NoChange();
   MapHandles const& regexp_maps = inference.GetMaps();
 
   ZoneVector<PropertyAccessInfo> access_infos(graph()->zone());

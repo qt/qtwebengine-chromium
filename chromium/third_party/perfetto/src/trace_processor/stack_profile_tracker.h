@@ -60,6 +60,12 @@ class StackProfileTracker {
  public:
   using SourceStringId = uint64_t;
 
+  enum class InternedStringType {
+    kMappingPath,
+    kBuildId,
+    kFunctionName,
+  };
+
   struct SourceMapping {
     SourceStringId build_id = 0;
     uint64_t exact_offset = 0;
@@ -67,7 +73,7 @@ class StackProfileTracker {
     uint64_t start = 0;
     uint64_t end = 0;
     uint64_t load_bias = 0;
-    SourceStringId name_id = 0;
+    std::vector<SourceStringId> name_ids;
   };
   using SourceMappingId = uint64_t;
 
@@ -97,7 +103,9 @@ class StackProfileTracker {
    public:
     virtual ~InternLookup();
 
-    virtual base::Optional<StringId> GetString(SourceStringId) const = 0;
+    virtual base::Optional<base::StringView> GetString(
+        SourceStringId,
+        InternedStringType) const = 0;
     virtual base::Optional<SourceMapping> GetMapping(SourceMappingId) const = 0;
     virtual base::Optional<SourceFrame> GetFrame(SourceFrameId) const = 0;
     virtual base::Optional<SourceCallstack> GetCallstack(
@@ -107,7 +115,7 @@ class StackProfileTracker {
   explicit StackProfileTracker(TraceProcessorContext* context);
   ~StackProfileTracker();
 
-  void AddString(SourceStringId, StringId);
+  void AddString(SourceStringId, base::StringView);
   int64_t AddMapping(SourceMappingId,
                      const SourceMapping&,
                      const InternLookup* intern_lookup = nullptr);
@@ -117,13 +125,6 @@ class StackProfileTracker {
   int64_t AddCallstack(SourceCallstackId,
                        const SourceCallstack&,
                        const InternLookup* intern_lookup = nullptr);
-
-  // Mutates the frame row in place and remaps it to a different string id.
-  // Used for symbolication.
-  // Must be called after FinalizeProfile.
-  void SetFrameName(SourceFrameId source_frame_id,
-                    SourceStringId function_name_id,
-                    const InternLookup* intern_lookup);
 
   int64_t GetDatabaseFrameIdForTesting(SourceFrameId);
 
@@ -137,8 +138,13 @@ class StackProfileTracker {
   // This is to support both ProfilePackets that contain the interned data
   // (for Android Q) and where the interned data is kept globally in
   // InternedData (for versions newer than Q).
-  base::Optional<StringId> FindString(SourceStringId,
-                                      const InternLookup* intern_lookup);
+  base::Optional<StringId> FindAndInternString(
+      SourceStringId,
+      const InternLookup* intern_lookup,
+      InternedStringType type);
+  base::Optional<std::string> FindString(SourceStringId,
+                                         const InternLookup* intern_lookup,
+                                         InternedStringType type);
   base::Optional<int64_t> FindMapping(SourceMappingId,
                                       const InternLookup* intern_lookup);
   base::Optional<int64_t> FindFrame(SourceFrameId,
@@ -150,7 +156,9 @@ class StackProfileTracker {
   void ClearIndices();
 
  private:
-  std::unordered_map<SourceStringId, StringId> string_map_;
+  StringId GetEmptyStringId();
+
+  std::unordered_map<SourceStringId, std::string> string_map_;
   std::unordered_map<SourceMappingId, int64_t> mappings_;
   std::unordered_map<SourceFrameId, int64_t> frames_;
   std::unordered_map<SourceCallstack, int64_t> callstacks_from_frames_;
@@ -163,7 +171,7 @@ class StackProfileTracker {
       callsite_idx_;
 
   TraceProcessorContext* const context_;
-  const StringId empty_;
+  StringId empty_;
 };
 
 }  // namespace trace_processor

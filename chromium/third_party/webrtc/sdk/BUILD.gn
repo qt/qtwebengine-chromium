@@ -330,6 +330,7 @@ if (is_ios || is_mac) {
         ":native_video",
         ":videoframebuffer_objc",
         "../api:libjingle_peerconnection_api",
+        "../api:media_stream_interface",
         "../api/video:video_frame",
         "../api/video:video_frame_i420",
         "../api/video:video_rtp_headers",
@@ -732,6 +733,7 @@ if (is_ios || is_mac) {
         ":native_api",
         ":videoframebuffer_objc",
         "../api:libjingle_peerconnection_api",
+        "../api:media_stream_interface",
       ]
     }
 
@@ -750,7 +752,7 @@ if (is_ios || is_mac) {
 
       deps = [
         ":base_objc",
-        "../api:libjingle_peerconnection_api",
+        "../api:media_stream_interface",
         "../rtc_base:checks",
       ]
     }
@@ -920,6 +922,7 @@ if (is_ios || is_mac) {
         ":videosource_objc",
         ":videotoolbox_objc",
         "../api:libjingle_peerconnection_api",
+        "../api:media_stream_interface",
         "../api:rtc_event_log_output_file",
         "../api:rtc_stats_api",
         "../api:rtp_parameters",
@@ -927,8 +930,11 @@ if (is_ios || is_mac) {
         "../api/audio_codecs:audio_codecs_api",
         "../api/audio_codecs:builtin_audio_decoder_factory",
         "../api/audio_codecs:builtin_audio_encoder_factory",
+        "../api/crypto:frame_decryptor_interface",
+        "../api/crypto:frame_encryptor_interface",
         "../api/rtc_event_log:rtc_event_log_factory",
         "../api/task_queue:default_task_queue_factory",
+        "../api/transport/media:media_transport_interface",
         "../api/video:video_frame",
         "../api/video:video_rtp_headers",
         "../api/video_codecs:video_codecs_api",
@@ -944,7 +950,6 @@ if (is_ios || is_mac) {
         "../rtc_base:checks",
         "../system_wrappers:field_trial",
         "../system_wrappers:metrics",
-        "//third_party/abseil-cpp/absl/memory",
       ]
 
       if (is_ios) {
@@ -1085,6 +1090,7 @@ if (is_ios || is_mac) {
             ":videosource_objc",
             ":videotoolbox_objc",
             "../api:scoped_refptr",
+            "../api/task_queue:default_task_queue_factory",
             "../api/video:video_frame_i420",
             "../common_video",
             "../media:rtc_media_base",
@@ -1203,6 +1209,7 @@ if (is_ios || is_mac) {
           "../api/audio_codecs:audio_codecs_api",
           "../api/audio_codecs:builtin_audio_decoder_factory",
           "../api/audio_codecs:builtin_audio_encoder_factory",
+          "../api/transport/media:media_transport_interface",
           "../api/video_codecs:video_codecs_api",
           "../media:rtc_media_base",
           "../modules:module_api",
@@ -1563,6 +1570,7 @@ if (is_ios || is_mac) {
         ":native_video",
         ":videoframebuffer_objc",
         "../api:libjingle_peerconnection_api",
+        "../api:media_stream_interface",
         "../api:scoped_refptr",
         "../api/video:video_frame",
         "../api/video:video_rtp_headers",
@@ -1612,7 +1620,6 @@ if (is_ios || is_mac) {
         "../modules/video_coding:video_codec_interface",
         "../rtc_base",
         "../rtc_base:checks",
-        "//third_party/abseil-cpp/absl/memory",
       ]
     }
 

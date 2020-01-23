@@ -21,8 +21,9 @@
 #include "dawn_native/Device.h"
 #include "dawn_native/metal/Forward.h"
 
+#import <IOSurface/IOSurfaceRef.h>
 #import <Metal/Metal.h>
-#import <QuartzCore/CAMetalLayer.h>
+#import <QuartzCore/QuartzCore.h>
 
 #include <atomic>
 #include <memory>
@@ -42,9 +43,10 @@ namespace dawn_native { namespace metal {
 
         Serial GetCompletedCommandSerial() const final override;
         Serial GetLastSubmittedCommandSerial() const final override;
-        void TickImpl() override;
+        MaybeError TickImpl() override;
 
         id<MTLDevice> GetMTLDevice();
+        id<MTLCommandQueue> GetMTLQueue();
 
         id<MTLCommandBuffer> GetPendingCommandBuffer();
         Serial GetPendingCommandSerial() const override;

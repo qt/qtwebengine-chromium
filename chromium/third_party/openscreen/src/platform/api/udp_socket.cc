@@ -12,43 +12,73 @@ namespace platform {
 UdpSocket::UdpSocket(TaskRunner* task_runner, Client* client)
     : client_(client), task_runner_(task_runner) {
   OSP_CHECK(task_runner_);
-  deletion_callback_ = [](UdpSocket* socket) {};
+  if (lifetime_observer_.load()) {
+    lifetime_observer_.load()->OnCreate(this);
+  }
 }
 
 UdpSocket::~UdpSocket() {
-  deletion_callback_(this);
+  OSP_DCHECK(is_closed_);
 }
 
-void UdpSocket::SetDeletionCallback(std::function<void(UdpSocket*)> callback) {
-  deletion_callback_ = callback;
+// static
+void UdpSocket::SetLifetimeObserver(LifetimeObserver* observer) {
+  lifetime_observer_.store(observer);
 }
+
+// static
+std::atomic<UdpSocket::LifetimeObserver*> UdpSocket::lifetime_observer_{
+    nullptr};
 
 void UdpSocket::OnError(Error error) {
+  CloseIfError(error);
+
   if (!client_) {
     return;
   }
 
   task_runner_->PostTask([e = std::move(error), this]() mutable {
+    // TODO(issues/71): |this| may be invalid at this point.
     this->client_->OnError(this, std::move(e));
   });
 }
+
 void UdpSocket::OnSendError(Error error) {
   if (!client_) {
     return;
   }
 
   task_runner_->PostTask([e = std::move(error), this]() mutable {
+    // TODO(issues/71): |this| may be invalid at this point.
     this->client_->OnSendError(this, std::move(e));
   });
 }
+
 void UdpSocket::OnRead(ErrorOr<UdpPacket> read_data) {
   if (!client_) {
     return;
   }
 
   task_runner_->PostTask([data = std::move(read_data), this]() mutable {
+    // TODO(issues/71): |this| may be invalid at this point.
     this->client_->OnRead(this, std::move(data));
   });
+}
+
+void UdpSocket::CloseIfError(const Error& error) {
+  if (error.code() != Error::Code::kNone &&
+      error.code() != Error::Code::kAgain) {
+    CloseIfOpen();
+  }
+}
+
+void UdpSocket::CloseIfOpen() {
+  if (!is_closed_.exchange(true)) {
+    if (lifetime_observer_.load()) {
+      lifetime_observer_.load()->OnDestroy(this);
+    }
+    Close();
+  }
 }
 
 }  // namespace platform

@@ -23,23 +23,36 @@ using ::testing::StrictMock;
 struct TestParams {
   TestParams(const ParsedQuicVersion& version, Perspective perspective)
       : version(version), perspective(perspective) {
-    QUIC_LOG(INFO) << "TestParams: version: "
-                   << ParsedQuicVersionToString(version)
-                   << ", perspective: " << perspective;
+    QUIC_LOG(INFO) << "TestParams: " << *this;
   }
 
   TestParams(const TestParams& other)
       : version(other.version), perspective(other.perspective) {}
 
+  friend std::ostream& operator<<(std::ostream& os, const TestParams& tp) {
+    os << "{ version: " << ParsedQuicVersionToString(tp.version)
+       << ", perspective: "
+       << (tp.perspective == Perspective::IS_CLIENT ? "client" : "server")
+       << "}";
+    return os;
+  }
+
   ParsedQuicVersion version;
   Perspective perspective;
 };
+
+// Used by ::testing::PrintToStringParamName().
+std::string PrintToString(const TestParams& tp) {
+  return QuicStrCat(
+      ParsedQuicVersionToString(tp.version), "_",
+      (tp.perspective == Perspective::IS_CLIENT ? "client" : "server"));
+}
 
 std::vector<TestParams> GetTestParams() {
   std::vector<TestParams> params;
   ParsedQuicVersionVector all_supported_versions = AllSupportedVersions();
   for (const auto& version : AllSupportedVersions()) {
-    if (!VersionHasStreamType(version.transport_version)) {
+    if (!VersionUsesHttp3(version.transport_version)) {
       continue;
     }
     for (Perspective p : {Perspective::IS_SERVER, Perspective::IS_CLIENT}) {
@@ -120,7 +133,8 @@ class QuicReceiveControlStreamTest : public QuicTestWithParam<TestParams> {
 
 INSTANTIATE_TEST_SUITE_P(Tests,
                          QuicReceiveControlStreamTest,
-                         ::testing::ValuesIn(GetTestParams()));
+                         ::testing::ValuesIn(GetTestParams()),
+                         ::testing::PrintToStringParamName());
 
 TEST_P(QuicReceiveControlStreamTest, ResetControlStream) {
   EXPECT_TRUE(receive_control_stream_->is_static());
@@ -216,6 +230,7 @@ TEST_P(QuicReceiveControlStreamTest, ReceivePriorityFrame) {
   if (perspective() == Perspective::IS_CLIENT) {
     return;
   }
+  SetQuicFlag(FLAGS_quic_allow_http3_priority, true);
   struct PriorityFrame frame;
   frame.prioritized_type = REQUEST_STREAM;
   frame.dependency_type = ROOT_OF_TREE;
@@ -242,7 +257,10 @@ TEST_P(QuicReceiveControlStreamTest, PushPromiseOnControlStreamShouldClose) {
                         length);
   // TODO(lassey) Check for HTTP_WRONG_STREAM error code.
   EXPECT_CALL(*connection_, CloseConnection(QUIC_HTTP_DECODER_ERROR, _, _))
-      .Times(AtLeast(1));
+      .WillOnce(
+          Invoke(connection_, &MockQuicConnection::ReallyCloseConnection));
+  EXPECT_CALL(*connection_, SendConnectionClosePacket(_, _));
+  EXPECT_CALL(session_, OnConnectionClosed(_, _));
   receive_control_stream_->OnStreamFrame(frame);
 }
 

@@ -171,6 +171,10 @@ void Aec3ConfigFromJsonString(absl::string_view json_string,
 
     ReadParam(section, "use_external_delay_estimator",
               &cfg.delay.use_external_delay_estimator);
+    ReadParam(section, "downmix_before_delay_estimation",
+              &cfg.delay.downmix_before_delay_estimation);
+    ReadParam(section, "log_warning_on_delay_changes",
+              &cfg.delay.log_warning_on_delay_changes);
   }
 
   if (rtc::GetValueFromJsonObject(aec3_root, "filter", &section)) {
@@ -195,6 +199,10 @@ void Aec3ConfigFromJsonString(absl::string_view json_string,
     ReadParam(section, "max_h", &cfg.erle.max_h);
     ReadParam(section, "onset_detection", &cfg.erle.onset_detection);
     ReadParam(section, "num_sections", &cfg.erle.num_sections);
+    ReadParam(section, "clamp_quality_estimate_to_zero",
+              &cfg.erle.clamp_quality_estimate_to_zero);
+    ReadParam(section, "clamp_quality_estimate_to_one",
+              &cfg.erle.clamp_quality_estimate_to_one);
   }
 
   if (rtc::GetValueFromJsonObject(aec3_root, "ep_strength", &section)) {
@@ -350,8 +358,15 @@ std::string Aec3ConfigToJsonString(const EchoCanceller3Config& config) {
   ost << "\"initial\": " << config.delay.delay_selection_thresholds.initial
       << ",";
   ost << "\"converged\": " << config.delay.delay_selection_thresholds.converged;
-  ost << "}";
+  ost << "},";
 
+  ost << "\"use_external_delay_estimator\": "
+      << (config.delay.use_external_delay_estimator ? "true" : "false") << ",";
+  ost << "\"downmix_before_delay_estimation\": "
+      << (config.delay.downmix_before_delay_estimation ? "true" : "false")
+      << ",";
+  ost << "\"log_warning_on_delay_changes\": "
+      << (config.delay.log_warning_on_delay_changes ? "true" : "false");
   ost << "},";
 
   ost << "\"filter\": {";
@@ -402,7 +417,11 @@ std::string Aec3ConfigToJsonString(const EchoCanceller3Config& config) {
   ost << "\"max_h\": " << config.erle.max_h << ",";
   ost << "\"onset_detection\": "
       << (config.erle.onset_detection ? "true" : "false") << ",";
-  ost << "\"num_sections\": " << config.erle.num_sections;
+  ost << "\"num_sections\": " << config.erle.num_sections << ",";
+  ost << "\"clamp_quality_estimate_to_zero\": "
+      << (config.erle.clamp_quality_estimate_to_zero ? "true" : "false") << ",";
+  ost << "\"clamp_quality_estimate_to_one\": "
+      << (config.erle.clamp_quality_estimate_to_one ? "true" : "false");
   ost << "},";
 
   ost << "\"ep_strength\": {";

@@ -135,7 +135,7 @@ void init() {
     descriptor.cVertexInput.cAttributes[0].format = dawn::VertexFormat::Float4;
     descriptor.depthStencilState = &descriptor.cDepthStencilState;
     descriptor.cDepthStencilState.format = dawn::TextureFormat::Depth24PlusStencil8;
-    descriptor.cColorStates[0]->format = GetPreferredSwapChainTextureFormat();
+    descriptor.cColorStates[0].format = GetPreferredSwapChainTextureFormat();
 
     pipeline = device.CreateRenderPipeline(&descriptor);
 
@@ -156,14 +156,13 @@ void frame() {
     dawn::Texture backbuffer = swapchain.GetNextTexture();
     utils::ComboRenderPassDescriptor renderPass({backbuffer.CreateView()}, depthStencilView);
 
-    static const uint64_t vertexBufferOffsets[1] = {0};
     dawn::CommandEncoder encoder = device.CreateCommandEncoder();
     {
         dawn::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
         pass.SetPipeline(pipeline);
-        pass.SetBindGroup(0, bindGroup, 0, nullptr);
-        pass.SetVertexBuffers(0, 1, &vertexBuffer, vertexBufferOffsets);
-        pass.SetIndexBuffer(indexBuffer, 0);
+        pass.SetBindGroup(0, bindGroup);
+        pass.SetVertexBuffer(0, vertexBuffer);
+        pass.SetIndexBuffer(indexBuffer);
         pass.DrawIndexed(3, 1, 0, 0, 0);
         pass.EndPass();
     }

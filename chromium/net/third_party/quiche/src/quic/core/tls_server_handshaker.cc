@@ -12,7 +12,6 @@
 #include "net/third_party/quiche/src/quic/core/crypto/quic_crypto_server_config.h"
 #include "net/third_party/quiche/src/quic/core/crypto/transport_parameters.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 
 namespace quic {
 
@@ -263,6 +262,15 @@ void TlsServerHandshaker::FinishHandshake() {
   encryption_established_ = true;
   handshake_confirmed_ = true;
   session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
+
+  // Fill crypto_negotiated_params_:
+  const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
+  if (cipher) {
+    crypto_negotiated_params_->cipher_suite = SSL_CIPHER_get_value(cipher);
+  }
+  crypto_negotiated_params_->key_exchange_group = SSL_get_curve_id(ssl());
+
+  session()->connection()->OnHandshakeComplete();
 }
 
 ssl_private_key_result_t TlsServerHandshaker::PrivateKeySign(

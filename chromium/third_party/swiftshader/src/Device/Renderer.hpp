@@ -24,9 +24,9 @@
 #include "Device/Config.hpp"
 #include "Vulkan/VkDescriptorSet.hpp"
 
-#include "Yarn/Pool.hpp"
-#include "Yarn/Finally.hpp"
-#include "Yarn/Ticket.hpp"
+#include "marl/pool.h"
+#include "marl/finally.h"
+#include "marl/ticket.h"
 
 #include <atomic>
 #include <list>
@@ -66,6 +66,7 @@ namespace sw
 		vk::DescriptorSet::DynamicOffsets descriptorDynamicOffsets = {};
 
 		const void *input[MAX_INTERFACE_COMPONENTS / 4];
+		unsigned int robustnessSize[MAX_INTERFACE_COMPONENTS / 4];
 		unsigned int stride[MAX_INTERFACE_COMPONENTS / 4];
 		const void *indices;
 
@@ -78,10 +79,10 @@ namespace sw
 		PixelProcessor::Factor factor;
 		unsigned int occlusion[MaxClusterCount];   // Number of pixels passing depth test
 
-		float4 Wx16;
-		float4 Hx16;
-		float4 X0x16;
-		float4 Y0x16;
+		float4 WxF;
+		float4 HxF;
+		float4 X0xF;
+		float4 Y0xF;
 		float4 halfPixelX;
 		float4 halfPixelY;
 		float viewportHeight;
@@ -116,7 +117,7 @@ namespace sw
 	{
 		struct BatchData
 		{
-			using Pool = yarn::BoundedPool<BatchData, MaxBatchCount, yarn::PoolPolicy::Preserve>;
+			using Pool = marl::BoundedPool<BatchData, MaxBatchCount, marl::PoolPolicy::Preserve>;
 
 			TriangleBatch triangles;
 			PrimitiveBatch primitives;
@@ -125,19 +126,19 @@ namespace sw
 			unsigned int firstPrimitive;
 			unsigned int numPrimitives;
 			int numVisible;
-			yarn::Ticket clusterTickets[MaxClusterCount];
+			marl::Ticket clusterTickets[MaxClusterCount];
 		};
 
-		using Pool = yarn::BoundedPool<DrawCall, MaxDrawCount, yarn::PoolPolicy::Preserve>;
+		using Pool = marl::BoundedPool<DrawCall, MaxDrawCount, marl::PoolPolicy::Preserve>;
 		using SetupFunction = int(*)(Triangle *triangles, Primitive *primitives, const DrawCall *drawCall, int count);
 
 		DrawCall();
 		~DrawCall();
 
-		static void run(const yarn::Loan<DrawCall>& draw, yarn::Ticket::Queue* tickets, yarn::Ticket::Queue clusterQueues[MaxClusterCount]);
+		static void run(const marl::Loan<DrawCall>& draw, marl::Ticket::Queue* tickets, marl::Ticket::Queue clusterQueues[MaxClusterCount]);
 		static void processVertices(DrawCall* draw, BatchData* batch);
 		static void processPrimitives(DrawCall* draw, BatchData* batch);
-		static void processPixels(const yarn::Loan<DrawCall>& draw, const yarn::Loan<BatchData>& batch, const std::shared_ptr<yarn::Finally>& finally);
+		static void processPixels(const marl::Loan<DrawCall>& draw, const marl::Loan<BatchData>& batch, const std::shared_ptr<marl::Finally>& finally);
 		void setup();
 		void teardown();
 
@@ -189,12 +190,15 @@ namespace sw
 		static bool setupPoint(Primitive &primitive, Triangle &triangle, const DrawCall &draw);
 	};
 
-	class Renderer : public VertexProcessor, public PixelProcessor, public SetupProcessor
+	class alignas(16) Renderer : public VertexProcessor, public PixelProcessor, public SetupProcessor
 	{
 	public:
 		Renderer(vk::Device* device);
 
 		virtual ~Renderer();
+
+		void* operator new(size_t size);
+		void operator delete(void* mem);
 
 		bool hasOcclusionQuery() const { return occlusionQuery != nullptr; }
 
@@ -223,8 +227,8 @@ namespace sw
 		std::atomic<int> nextDrawID = {0};
 
 		vk::Query *occlusionQuery = nullptr;
-		yarn::Ticket::Queue drawTickets;
-		yarn::Ticket::Queue clusterQueues[MaxClusterCount];
+		marl::Ticket::Queue drawTickets;
+		marl::Ticket::Queue clusterQueues[MaxClusterCount];
 
 		VertexProcessor::State vertexState;
 		SetupProcessor::State setupState;

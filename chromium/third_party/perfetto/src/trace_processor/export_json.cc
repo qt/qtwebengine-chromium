@@ -14,21 +14,54 @@
  * limitations under the License.
  */
 
+#include "perfetto/base/build_config.h"
+#if PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
+
 #include <inttypes.h>
 #include <json/reader.h>
 #include <json/value.h>
 #include <json/writer.h>
 #include <stdio.h>
 #include <cstring>
+#include <vector>
 
 #include "perfetto/ext/base/string_splitter.h"
 #include "src/trace_processor/export_json.h"
 #include "src/trace_processor/metadata.h"
 #include "src/trace_processor/trace_storage.h"
 
+namespace perfetto {
+namespace trace_processor {
+namespace json {
+
 namespace {
 
 using IndexMap = perfetto::trace_processor::TraceStorage::Stats::IndexMap;
+
+const char kLegacyEventArgsKey[] = "legacy_event";
+const char kLegacyEventCategoryKey[] = "category";
+const char kLegacyEventNameKey[] = "name";
+const char kLegacyEventPhaseKey[] = "phase";
+const char kLegacyEventDurationNsKey[] = "duration_ns";
+const char kLegacyEventThreadTimestampNsKey[] = "thread_timestamp_ns";
+const char kLegacyEventThreadDurationNsKey[] = "thread_duration_ns";
+const char kLegacyEventThreadInstructionCountKey[] = "thread_instruction_count";
+const char kLegacyEventThreadInstructionDeltaKey[] = "thread_instruction_delta";
+const char kLegacyEventUseAsyncTtsKey[] = "use_async_tts";
+const char kLegacyEventUnscopedIdKey[] = "unscoped_id";
+const char kLegacyEventGlobalIdKey[] = "global_id";
+const char kLegacyEventLocalIdKey[] = "local_id";
+const char kLegacyEventIdScopeKey[] = "id_scope";
+const char kLegacyEventBindIdKey[] = "bind_id";
+const char kLegacyEventBindToEnclosingKey[] = "bind_to_enclosing";
+const char kLegacyEventFlowDirectionKey[] = "flow_direction";
+const char kFlowDirectionValueIn[] = "in";
+const char kFlowDirectionValueOut[] = "out";
+const char kFlowDirectionValueInout[] = "inout";
+
+const char* GetNonNullString(const TraceStorage* storage, StringId id) {
+  return id == kNullStringId ? "" : storage->GetString(id).c_str();
+}
 
 class TraceFormatWriter {
  public:
@@ -108,11 +141,24 @@ class TraceFormatWriter {
     system_trace_data_ += data;
   }
 
+  void AddUserTraceData(const std::string& data) { user_trace_data_ += data; }
+
  private:
   void WriteHeader() { fputs("{\"traceEvents\":[\n", output_); }
 
   void WriteFooter() {
     Json::FastWriter writer;
+    if (!user_trace_data_.empty()) {
+      Json::Reader reader;
+      Json::Value result;
+      if (reader.parse(user_trace_data_, result)) {
+        WriteCommonEvent(result);
+      } else {
+        PERFETTO_DLOG(
+            "can't parse legacy user json trace export, skipping. data: %s",
+            user_trace_data_.c_str());
+      }
+    }
     fputs("]", output_);
     if (!system_trace_data_.empty()) {
       fputs(",\"systemTraceEvents\":\n", output_);
@@ -130,6 +176,7 @@ class TraceFormatWriter {
   bool first_event_;
   Json::Value metadata_;
   std::string system_trace_data_;
+  std::string user_trace_data_;
 };
 
 std::string PrintUint64(uint64_t x) {
@@ -137,14 +184,6 @@ std::string PrintUint64(uint64_t x) {
   sprintf(hex_str, "0x%" PRIx64, x);
   return hex_str;
 }
-
-}  // anonymous namespace
-
-namespace perfetto {
-namespace trace_processor {
-namespace json {
-
-namespace {
 
 class ArgsBuilder {
  public:
@@ -158,7 +197,7 @@ class ArgsBuilder {
     args_sets_.resize(args.set_ids().back() + 1, empty_value);
     for (size_t i = 0; i < args.args_count(); ++i) {
       ArgSetId set_id = args.set_ids()[i];
-      const char* key = storage_->GetString(args.keys()[i]).c_str();
+      const char* key = GetNonNullString(storage_, args.keys()[i]);
       Variadic value = args.arg_values()[i];
       AppendArg(set_id, key, VariadicToJson(value));
     }
@@ -177,7 +216,7 @@ class ArgsBuilder {
       case Variadic::kUint:
         return Json::UInt64(variadic.uint_value);
       case Variadic::kString:
-        return storage_->GetString(variadic.string_value).c_str();
+        return GetNonNullString(storage_, variadic.string_value);
       case Variadic::kReal:
         return variadic.real_value;
       case Variadic::kPointer:
@@ -187,8 +226,7 @@ class ArgsBuilder {
       case Variadic::kJson:
         Json::Reader reader;
         Json::Value result;
-        reader.parse(storage_->GetString(variadic.string_value).c_str(),
-                     result);
+        reader.parse(GetNonNullString(storage_, variadic.json_value), result);
         return result;
     }
     PERFETTO_FATAL("Not reached");  // For gcc.
@@ -250,12 +288,39 @@ class ArgsBuilder {
   std::vector<Json::Value> args_sets_;
 };
 
+void ConvertLegacyFlowEventArgs(const Json::Value& legacy_args,
+                                Json::Value* event) {
+  if (legacy_args.isMember(kLegacyEventIdScopeKey))
+    (*event)["scope"] = legacy_args[kLegacyEventIdScopeKey];
+
+  if (legacy_args.isMember(kLegacyEventBindIdKey)) {
+    (*event)["bind_id"] =
+        PrintUint64(legacy_args[kLegacyEventBindIdKey].asUInt64());
+  }
+
+  if (legacy_args.isMember(kLegacyEventBindToEnclosingKey))
+    (*event)["bp"] = "e";
+
+  if (legacy_args.isMember(kLegacyEventFlowDirectionKey)) {
+    const char* val = legacy_args[kLegacyEventFlowDirectionKey].asCString();
+    if (strcmp(val, kFlowDirectionValueIn) == 0) {
+      (*event)["flow_in"] = true;
+    } else if (strcmp(val, kFlowDirectionValueOut) == 0) {
+      (*event)["flow_out"] = true;
+    } else {
+      PERFETTO_DCHECK(strcmp(val, kFlowDirectionValueInout) == 0);
+      (*event)["flow_in"] = true;
+      (*event)["flow_out"] = true;
+    }
+  }
+}
+
 ResultCode ExportThreadNames(const TraceStorage* storage,
                              TraceFormatWriter* writer) {
   for (UniqueTid i = 1; i < storage->thread_count(); ++i) {
     auto thread = storage->GetThread(i);
     if (!thread.name_id.is_null()) {
-      const char* thread_name = storage->GetString(thread.name_id).c_str();
+      const char* thread_name = GetNonNullString(storage, thread.name_id);
       uint32_t pid = thread.upid ? storage->GetProcess(*thread.upid).pid : 0;
       writer->WriteMetadataEvent("thread_name", thread_name, thread.tid, pid);
     }
@@ -268,7 +333,7 @@ ResultCode ExportProcessNames(const TraceStorage* storage,
   for (UniquePid i = 1; i < storage->process_count(); ++i) {
     auto process = storage->GetProcess(i);
     if (!process.name_id.is_null()) {
-      const char* process_name = storage->GetString(process.name_id).c_str();
+      const char* process_name = GetNonNullString(storage, process.name_id);
       writer->WriteMetadataEvent("process_name", process_name, 0, process.pid);
     }
   }
@@ -282,28 +347,36 @@ ResultCode ExportSlices(const TraceStorage* storage,
   for (uint32_t i = 0; i < slices.slice_count(); ++i) {
     Json::Value event;
     event["ts"] = Json::Int64(slices.start_ns()[i] / 1000);
-    event["cat"] = storage->GetString(slices.categories()[i]).c_str();
-    event["name"] = storage->GetString(slices.names()[i]).c_str();
+    event["cat"] = GetNonNullString(storage, slices.categories()[i]);
+    event["name"] = GetNonNullString(storage, slices.names()[i]);
     event["pid"] = 0;
     const Json::Value& args = args_builder.GetArgs(slices.arg_set_ids()[i]);
     if (!args.empty()) {
-      event["args"] = args;
+      event["args"] = args;  // Makes a copy of |args|.
+
+      if (event["args"].isMember(kLegacyEventArgsKey)) {
+        ConvertLegacyFlowEventArgs(event["args"][kLegacyEventArgsKey], &event);
+
+        if (event["args"].empty())
+          event.removeMember("args");
+      }
     }
 
     if (slices.types()[i] == RefType::kRefTrack) {  // Async event.
       TrackId track_id = static_cast<TrackId>(slices.refs()[i]);
-      base::Optional<uint32_t> opt_row =
-          storage->virtual_tracks().FindRowForTrackId(track_id);
-      PERFETTO_DCHECK(opt_row.has_value());
 
-      VirtualTrackScope scope = storage->virtual_tracks().scopes()[*opt_row];
-      UniquePid upid = storage->virtual_tracks().upids()[*opt_row];
+      // TODO(lalitm): add a check here for looking up source_arg_set_id
+      // and checking that this track originated from Chrome.
 
-      if (scope == VirtualTrackScope::kGlobal) {
-        event["id2"]["global"] = PrintUint64(*opt_row);
-      } else {
-        event["id2"]["local"] = PrintUint64(*opt_row);
+      const auto& process_track = storage->process_track_table();
+      auto opt_process_row =
+          process_track.id().IndexOf(SqlValue::Long(track_id));
+      if (opt_process_row.has_value()) {
+        uint32_t upid = process_track.upid()[*opt_process_row];
+        event["id2"]["local"] = PrintUint64(track_id);
         event["pid"] = storage->GetProcess(upid).pid;
+      } else {
+        event["id2"]["global"] = PrintUint64(track_id);
       }
 
       const auto& virtual_track_slices = storage->virtual_track_slices();
@@ -318,8 +391,6 @@ ResultCode ExportSlices(const TraceStorage* storage,
             virtual_track_slices.thread_timestamp_ns()[*vtrack_slice_row];
         thread_duration_ns =
             virtual_track_slices.thread_duration_ns()[*vtrack_slice_row];
-        thread_ts_ns =
-            virtual_track_slices.thread_timestamp_ns()[*vtrack_slice_row];
         thread_instruction_count =
             virtual_track_slices.thread_instruction_counts()[*vtrack_slice_row];
         thread_instruction_delta =
@@ -444,28 +515,6 @@ ResultCode ExportSlices(const TraceStorage* storage,
 Json::Value ConvertLegacyRawEventToJson(const TraceStorage* storage,
                                         const ArgsBuilder& args_builder,
                                         uint32_t index) {
-  const char kLegacyEventArgsKey[] = "legacy_event";
-  const char kLegacyEventCategoryKey[] = "category";
-  const char kLegacyEventNameKey[] = "name";
-  const char kLegacyEventPhaseKey[] = "phase";
-  const char kLegacyEventDurationNsKey[] = "duration_ns";
-  const char kLegacyEventThreadTimestampNsKey[] = "thread_timestamp_ns";
-  const char kLegacyEventThreadDurationNsKey[] = "thread_duration_ns";
-  const char kLegacyEventThreadInstructionCountKey[] =
-      "thread_instruction_count";
-  const char kLegacyEventThreadInstructionDeltaKey[] =
-      "thread_instruction_delta";
-  const char kLegacyEventUseAsyncTtsKey[] = "use_async_tts";
-  const char kLegacyEventGlobalIdKey[] = "global_id";
-  const char kLegacyEventLocalIdKey[] = "local_id";
-  const char kLegacyEventIdScopeKey[] = "id_scope";
-  const char kLegacyEventBindIdKey[] = "bind_id";
-  const char kLegacyEventBindToEnclosingKey[] = "bind_to_enclosing";
-  const char kLegacyEventFlowDirectionKey[] = "flow_direction";
-  const char kFlowDirectionValueIn[] = "in";
-  const char kFlowDirectionValueOut[] = "out";
-  const char kFlowDirectionValueInout[] = "inout";
-
   const auto& events = storage->raw_events();
 
   Json::Value event;
@@ -479,10 +528,9 @@ Json::Value ConvertLegacyRawEventToJson(const TraceStorage* storage,
   }
 
   // Raw legacy events store all other params in the arg set. Make a copy of
-  // the converted args here and remove these params.
-  Json::Value args = args_builder.GetArgs(events.arg_set_ids()[index]);
-  Json::Value legacy_args = args[kLegacyEventArgsKey];
-  args.removeMember(kLegacyEventArgsKey);
+  // the converted args here, parse, and then remove the legacy params.
+  event["args"] = args_builder.GetArgs(events.arg_set_ids()[index]);
+  const Json::Value& legacy_args = event["args"][kLegacyEventArgsKey];
 
   PERFETTO_DCHECK(legacy_args.isMember(kLegacyEventCategoryKey));
   event["cat"] = legacy_args[kLegacyEventCategoryKey];
@@ -493,9 +541,8 @@ Json::Value ConvertLegacyRawEventToJson(const TraceStorage* storage,
   PERFETTO_DCHECK(legacy_args.isMember(kLegacyEventPhaseKey));
   event["ph"] = legacy_args[kLegacyEventPhaseKey];
 
-  if (legacy_args.isMember(kLegacyEventDurationNsKey)) {
+  if (legacy_args.isMember(kLegacyEventDurationNsKey))
     event["dur"] = legacy_args[kLegacyEventDurationNsKey].asInt64() / 1000;
-  }
 
   if (legacy_args.isMember(kLegacyEventThreadTimestampNsKey)) {
     event["tts"] =
@@ -507,16 +554,18 @@ Json::Value ConvertLegacyRawEventToJson(const TraceStorage* storage,
         legacy_args[kLegacyEventThreadDurationNsKey].asInt64() / 1000;
   }
 
-  if (legacy_args.isMember(kLegacyEventThreadInstructionCountKey)) {
+  if (legacy_args.isMember(kLegacyEventThreadInstructionCountKey))
     event["ticount"] = legacy_args[kLegacyEventThreadInstructionCountKey];
-  }
 
-  if (legacy_args.isMember(kLegacyEventThreadInstructionDeltaKey)) {
+  if (legacy_args.isMember(kLegacyEventThreadInstructionDeltaKey))
     event["tidelta"] = legacy_args[kLegacyEventThreadInstructionDeltaKey];
-  }
 
-  if (legacy_args.isMember(kLegacyEventUseAsyncTtsKey)) {
+  if (legacy_args.isMember(kLegacyEventUseAsyncTtsKey))
     event["use_async_tts"] = legacy_args[kLegacyEventUseAsyncTtsKey];
+
+  if (legacy_args.isMember(kLegacyEventUnscopedIdKey)) {
+    event["id"] =
+        PrintUint64(legacy_args[kLegacyEventUnscopedIdKey].asUInt64());
   }
 
   if (legacy_args.isMember(kLegacyEventGlobalIdKey)) {
@@ -529,35 +578,11 @@ Json::Value ConvertLegacyRawEventToJson(const TraceStorage* storage,
         PrintUint64(legacy_args[kLegacyEventLocalIdKey].asUInt64());
   }
 
-  if (legacy_args.isMember(kLegacyEventIdScopeKey)) {
-    event["scope"] = legacy_args[kLegacyEventIdScopeKey];
-  }
+  ConvertLegacyFlowEventArgs(legacy_args, &event);
 
-  if (legacy_args.isMember(kLegacyEventBindIdKey)) {
-    event["bind_id"] =
-        PrintUint64(legacy_args[kLegacyEventBindIdKey].asUInt64());
-  }
-
-  if (legacy_args.isMember(kLegacyEventBindToEnclosingKey)) {
-    event["bp"] = "e";
-  }
-
-  if (legacy_args.isMember(kLegacyEventFlowDirectionKey)) {
-    const char* val = legacy_args[kLegacyEventFlowDirectionKey].asCString();
-    if (strcmp(val, kFlowDirectionValueIn) == 0) {
-      event["flow_in"] = true;
-    } else if (strcmp(val, kFlowDirectionValueOut) == 0) {
-      event["flow_out"] = true;
-    } else {
-      PERFETTO_DCHECK(strcmp(val, kFlowDirectionValueInout) == 0);
-      event["flow_in"] = true;
-      event["flow_out"] = true;
-    }
-  }
-
-  if (!args.empty()) {
-    event["args"] = args;
-  }
+  event["args"].removeMember(kLegacyEventArgsKey);
+  if (event["args"].empty())
+    event.removeMember("args");
 
   return event;
 }
@@ -589,13 +614,87 @@ ResultCode ExportRawEvents(const TraceStorage* storage,
                events.name_ids()[i] == *raw_legacy_user_trace_event_id) {
       Json::Value args = args_builder.GetArgs(events.arg_set_ids()[i]);
       PERFETTO_DCHECK(args.isMember("data"));
-      writer->WriteCommonEvent(args["data"]);
+      writer->AddUserTraceData(args["data"].asString());
     } else if (raw_chrome_metadata_event_id &&
                events.name_ids()[i] == *raw_chrome_metadata_event_id) {
       Json::Value args = args_builder.GetArgs(events.arg_set_ids()[i]);
       writer->MergeMetadata(args);
     }
   }
+  return kResultOk;
+}
+
+ResultCode ExportCpuProfileSamples(const TraceStorage* storage,
+                                   TraceFormatWriter* writer) {
+  const TraceStorage::CpuProfileStackSamples& samples =
+      storage->cpu_profile_stack_samples();
+  for (uint32_t i = 0; i < samples.size(); ++i) {
+    Json::Value event;
+    event["ts"] = Json::Int64(samples.timestamps()[i] / 1000);
+
+    UniqueTid utid = static_cast<UniqueTid>(samples.utids()[i]);
+    auto thread = storage->GetThread(utid);
+    event["tid"] = thread.tid;
+    if (thread.upid)
+      event["pid"] = storage->GetProcess(*thread.upid).pid;
+
+    event["ph"] = "I";
+    event["cat"] = "disabled_by_default-cpu_profiler";
+    event["name"] = "StackCpuSampling";
+    event["scope"] = "t";
+
+    std::vector<std::string> callstack;
+    const TraceStorage::StackProfileCallsites& callsites =
+        storage->stack_profile_callsites();
+    int64_t maybe_callsite_id = samples.callsite_ids()[i];
+    PERFETTO_DCHECK(maybe_callsite_id >= 0 &&
+                    maybe_callsite_id < callsites.size());
+    while (maybe_callsite_id >= 0) {
+      size_t callsite_id = static_cast<size_t>(maybe_callsite_id);
+
+      const TraceStorage::StackProfileFrames& frames =
+          storage->stack_profile_frames();
+      PERFETTO_DCHECK(callsites.frame_ids()[callsite_id] >= 0 &&
+                      callsites.frame_ids()[callsite_id] < frames.size());
+      size_t frame_id = static_cast<size_t>(callsites.frame_ids()[callsite_id]);
+
+      const TraceStorage::StackProfileMappings& mappings =
+          storage->stack_profile_mappings();
+      PERFETTO_DCHECK(frames.mappings()[frame_id] >= 0 &&
+                      frames.mappings()[frame_id] < mappings.size());
+      size_t mapping_id = static_cast<size_t>(frames.mappings()[frame_id]);
+
+      NullTermStringView symbol_name;
+      uint32_t symbol_set_id = frames.symbol_set_ids()[frame_id];
+      if (symbol_set_id) {
+        symbol_name =
+            storage->GetString(storage->symbol_table().name()[symbol_set_id]);
+      }
+
+      char frame_entry[1024];
+      snprintf(
+          frame_entry, sizeof(frame_entry), "%s - %s [%s]\n",
+          (symbol_name.empty()
+               ? PrintUint64(static_cast<uint64_t>(frames.rel_pcs()[frame_id]))
+                     .c_str()
+               : symbol_name.c_str()),
+          GetNonNullString(storage, mappings.names()[mapping_id]),
+          GetNonNullString(storage, mappings.build_ids()[mapping_id]));
+
+      callstack.emplace_back(frame_entry);
+
+      maybe_callsite_id = callsites.parent_callsite_ids()[callsite_id];
+    }
+
+    std::string merged_callstack;
+    for (auto entry = callstack.rbegin(); entry != callstack.rend(); ++entry) {
+      merged_callstack += *entry;
+    }
+
+    event["args"]["frames"] = merged_callstack;
+    writer->WriteCommonEvent(event);
+  }
+
   return kResultOk;
 }
 
@@ -611,12 +710,12 @@ ResultCode ExportMetadata(const TraceStorage* storage,
       case metadata::benchmark_description:
         writer->AppendTelemetryMetadataString(
             "benchmarkDescriptions",
-            storage->GetString(values[pos].string_value).c_str());
+            GetNonNullString(storage, values[pos].string_value));
         break;
 
       case metadata::benchmark_name:
         writer->AppendTelemetryMetadataString(
-            "benchmarks", storage->GetString(values[pos].string_value).c_str());
+            "benchmarks", GetNonNullString(storage, values[pos].string_value));
         break;
 
       case metadata::benchmark_start_time_us:
@@ -633,12 +732,12 @@ ResultCode ExportMetadata(const TraceStorage* storage,
 
       case metadata::benchmark_label:
         writer->AppendTelemetryMetadataString(
-            "labels", storage->GetString(values[pos].string_value).c_str());
+            "labels", GetNonNullString(storage, values[pos].string_value));
         break;
 
       case metadata::benchmark_story_name:
         writer->AppendTelemetryMetadataString(
-            "stories", storage->GetString(values[pos].string_value).c_str());
+            "stories", GetNonNullString(storage, values[pos].string_value));
         break;
 
       case metadata::benchmark_story_run_index:
@@ -653,11 +752,12 @@ ResultCode ExportMetadata(const TraceStorage* storage,
 
       case metadata::benchmark_story_tags:  // repeated
         writer->AppendTelemetryMetadataString(
-            "storyTags", storage->GetString(values[pos].string_value).c_str());
+            "storyTags", GetNonNullString(storage, values[pos].string_value));
         break;
 
       default:
-        PERFETTO_DFATAL("unexpected metadata key");
+        PERFETTO_DLOG("Ignoring metadata key %zu",
+                      static_cast<size_t>(keys[pos]));
         break;
     }
   }
@@ -736,7 +836,7 @@ ResultCode ExportStats(const TraceStorage* storage, TraceFormatWriter* writer) {
   return kResultOk;
 }
 
-}  // anonymous namespace
+}  // namespace
 
 ResultCode ExportJson(const TraceStorage* storage, FILE* output) {
   TraceFormatWriter writer(output);
@@ -758,6 +858,10 @@ ResultCode ExportJson(const TraceStorage* storage, FILE* output) {
   if (code != kResultOk)
     return code;
 
+  code = ExportCpuProfileSamples(storage, &writer);
+  if (code != kResultOk)
+    return code;
+
   code = ExportMetadata(storage, &writer);
   if (code != kResultOk)
     return code;
@@ -772,3 +876,5 @@ ResultCode ExportJson(const TraceStorage* storage, FILE* output) {
 }  // namespace json
 }  // namespace trace_processor
 }  // namespace perfetto
+
+#endif  // PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)

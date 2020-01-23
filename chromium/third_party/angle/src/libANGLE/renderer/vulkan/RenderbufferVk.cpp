@@ -73,22 +73,15 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
 
         VkExtent3D extents = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1u};
         ANGLE_TRY(mImage->init(contextVk, gl::TextureType::_2D, extents, vkFormat,
-                               static_cast<uint32_t>(samples), usage, 1, 1));
+                               static_cast<uint32_t>(samples), usage, 0, 0, 1, 1));
 
         VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         ANGLE_TRY(mImage->initMemory(contextVk, renderer->getMemoryProperties(), flags));
 
-        VkImageAspectFlags aspect = vk::GetFormatAspectFlags(textureFormat);
-
-        // Note that LUMA textures are not color-renderable, so a read-view with swizzle is not
-        // needed.
-        ANGLE_TRY(mImage->initImageView(contextVk, gl::TextureType::_2D, aspect, gl::SwizzleState(),
-                                        &mImageView, 0, 1));
-
         // Clear the renderbuffer if it has emulated channels.
         mImage->stageClearIfEmulatedFormat(gl::ImageIndex::Make2D(0), vkFormat);
 
-        mRenderTarget.init(mImage, &mImageView, nullptr, 0, 0);
+        mRenderTarget.init(mImage, &mImageViews, 0, 0);
     }
 
     return angle::Result::Continue;
@@ -168,22 +161,15 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
                                      rendererQueueFamilyIndex, commandBuffer);
     }
 
-    ANGLE_TRY(mImage->initLayerImageView(contextVk, imageVk->getImageTextureType(), aspect,
-                                         gl::SwizzleState(), &mImageView, imageVk->getImageLevel(),
-                                         1, imageVk->getImageLayer(), 1));
+    gl::TextureType viewType = imageVk->getImageTextureType();
 
     if (imageVk->getImageTextureType() == gl::TextureType::CubeMap)
     {
-        gl::TextureType arrayType = vk::Get2DTextureType(imageVk->getImage()->getLayerCount(),
-                                                         imageVk->getImage()->getSamples());
-        ANGLE_TRY(mImage->initLayerImageView(contextVk, arrayType, aspect, gl::SwizzleState(),
-                                             &mCubeImageFetchView, imageVk->getImageLevel(), 1,
-                                             imageVk->getImageLayer(), 1));
+        viewType = vk::Get2DTextureType(imageVk->getImage()->getLayerCount(),
+                                        imageVk->getImage()->getSamples());
     }
 
-    mRenderTarget.init(mImage, &mImageView,
-                       mCubeImageFetchView.valid() ? &mCubeImageFetchView : nullptr,
-                       imageVk->getImageLevel(), imageVk->getImageLayer());
+    mRenderTarget.init(mImage, &mImageViews, imageVk->getImageLevel(), imageVk->getImageLayer());
 
     return angle::Result::Continue;
 }
@@ -225,16 +211,17 @@ void RenderbufferVk::releaseImage(ContextVk *contextVk)
 {
     if (mImage && mOwnsImage)
     {
-        mImage->releaseImage(contextVk);
-        mImage->releaseStagingBuffer(contextVk);
+        RendererVk *renderer = contextVk->getRenderer();
+
+        mImage->releaseImage(renderer);
+        mImage->releaseStagingBuffer(renderer);
     }
     else
     {
         mImage = nullptr;
     }
 
-    contextVk->releaseObject(contextVk->getCurrentQueueSerial(), &mImageView);
-    contextVk->releaseObject(contextVk->getCurrentQueueSerial(), &mCubeImageFetchView);
+    mImageViews.release(contextVk);
 }
 
 }  // namespace rx

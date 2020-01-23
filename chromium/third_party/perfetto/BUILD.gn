@@ -106,9 +106,15 @@ if (perfetto_build_standalone) {
     "protos/perfetto/config:merged_config",
     "protos/perfetto/trace:merged_trace",  # For syntax-checking the proto.
 
+    # For checking all generated xxx.gen.{cc,h} files without waiting for
+    # embedders to try to use them and fail.
+    "protos/perfetto/trace:cpp",
+    "protos/perfetto/config:cpp",
+    "protos/perfetto/common:cpp",
+
     # The diff testing framework depends on these descriptors.
-    "protos/perfetto/metrics:descriptor",
-    "protos/perfetto/trace:descriptor",
+    "protos/perfetto/metrics:descriptor($host_toolchain)",
+    "protos/perfetto/trace:descriptor($host_toolchain)",
 
     # Used in the when updating the ftrace protos
     "protos/perfetto/trace/ftrace:descriptor",
@@ -210,6 +216,7 @@ if (build_with_chromium) {
     configs += [ "//build/config/compiler:no_chromium_code" ]
     public_deps = [
       "include/perfetto/ext/tracing/core",
+      "protos/perfetto/common:zero",
       "protos/perfetto/trace:zero",
       "protos/perfetto/trace/chrome:zero",
       "protos/perfetto/trace/interned_data:zero",

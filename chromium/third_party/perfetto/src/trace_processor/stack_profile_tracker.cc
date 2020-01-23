@@ -19,49 +19,44 @@
 #include "src/trace_processor/trace_processor_context.h"
 
 #include "perfetto/base/logging.h"
+#include "perfetto/ext/base/string_utils.h"
 
 namespace perfetto {
 namespace trace_processor {
-namespace {
-
-std::string ToHex(const char* build_id, size_t size) {
-  std::string hex_build_id(2 * size + 1, 'x');
-  for (size_t i = 0; i < size; ++i) {
-    // snprintf prints 3 characters, the two hex digits and a null byte. As we
-    // write left to write, we keep overwriting the nullbytes, except for the
-    // last call to snprintf.
-    snprintf(&(hex_build_id[2 * i]), 3, "%02hhx", build_id[i]);
-  }
-  // Remove the trailing nullbyte produced by the last snprintf.
-  hex_build_id.resize(2 * size);
-  return hex_build_id;
-}
-
-}  // namespace
 
 StackProfileTracker::InternLookup::~InternLookup() = default;
 
 StackProfileTracker::StackProfileTracker(TraceProcessorContext* context)
-    : context_(context), empty_(context_->storage->InternString({"", 0})) {}
+    : context_(context), empty_(kNullStringId) {}
 
 StackProfileTracker::~StackProfileTracker() = default;
 
-void StackProfileTracker::AddString(SourceStringId id, StringId str) {
-  string_map_.emplace(id, str);
+StringId StackProfileTracker::GetEmptyStringId() {
+  if (empty_ == kNullStringId) {
+    empty_ = context_->storage->InternString({"", 0});
+  }
+
+  return empty_;
+}
+
+void StackProfileTracker::AddString(SourceStringId id, base::StringView str) {
+  string_map_.emplace(id, str.ToStdString());
 }
 
 int64_t StackProfileTracker::AddMapping(SourceMappingId id,
                                         const SourceMapping& mapping,
                                         const InternLookup* intern_lookup) {
-  auto opt_name_id = FindString(mapping.name_id, intern_lookup);
-  if (!opt_name_id) {
-    context_->storage->IncrementStats(stats::stackprofile_invalid_string_id);
-    PERFETTO_DFATAL("Invalid string.");
-    return -1;
+  std::string path;
+  for (SourceStringId str_id : mapping.name_ids) {
+    auto opt_str =
+        FindString(str_id, intern_lookup, InternedStringType::kMappingPath);
+    if (!opt_str)
+      break;
+    path += "/" + *opt_str;
   }
-  const StringId name_id = opt_name_id.value();
 
-  auto opt_build_id = FindString(mapping.build_id, intern_lookup);
+  auto opt_build_id = FindAndInternString(mapping.build_id, intern_lookup,
+                                          InternedStringType::kBuildId);
   if (!opt_build_id) {
     context_->storage->IncrementStats(stats::stackprofile_invalid_string_id);
     PERFETTO_DFATAL("Invalid string.");
@@ -70,10 +65,10 @@ int64_t StackProfileTracker::AddMapping(SourceMappingId id,
   const StringId raw_build_id = opt_build_id.value();
   NullTermStringView raw_build_id_str =
       context_->storage->GetString(raw_build_id);
-  StringId build_id = empty_;
+  StringId build_id = GetEmptyStringId();
   if (raw_build_id_str.size() > 0) {
     std::string hex_build_id =
-        ToHex(raw_build_id_str.c_str(), raw_build_id_str.size());
+        base::ToHex(raw_build_id_str.c_str(), raw_build_id_str.size());
     build_id = context_->storage->InternString(base::StringView(hex_build_id));
   }
 
@@ -84,7 +79,7 @@ int64_t StackProfileTracker::AddMapping(SourceMappingId id,
       static_cast<int64_t>(mapping.start),
       static_cast<int64_t>(mapping.end),
       static_cast<int64_t>(mapping.load_bias),
-      name_id};
+      context_->storage->InternString(base::StringView(path))};
 
   int64_t cur_row;
   auto it = mapping_idx_.find(row);
@@ -101,7 +96,8 @@ int64_t StackProfileTracker::AddMapping(SourceMappingId id,
 int64_t StackProfileTracker::AddFrame(SourceFrameId id,
                                       const SourceFrame& frame,
                                       const InternLookup* intern_lookup) {
-  auto opt_str_id = FindString(frame.name_id, intern_lookup);
+  auto opt_str_id = FindAndInternString(frame.name_id, intern_lookup,
+                                        InternedStringType::kFunctionName);
   if (!opt_str_id) {
     context_->storage->IncrementStats(stats::stackprofile_invalid_string_id);
     PERFETTO_DFATAL("Invalid string.");
@@ -183,28 +179,43 @@ int64_t StackProfileTracker::GetDatabaseFrameIdForTesting(
   return it->second;
 }
 
-base::Optional<StringId> StackProfileTracker::FindString(
+base::Optional<StringId> StackProfileTracker::FindAndInternString(
     SourceStringId id,
-    const InternLookup* intern_lookup) {
-  base::Optional<StringId> res;
-  if (id == 0) {
-    res = empty_;
-    return res;
-  }
+    const InternLookup* intern_lookup,
+    StackProfileTracker::InternedStringType type) {
+  if (id == 0)
+    return GetEmptyStringId();
+
+  auto opt_str = FindString(id, intern_lookup, type);
+  if (!opt_str)
+    return GetEmptyStringId();
+
+  return context_->storage->InternString(base::StringView(*opt_str));
+}
+
+base::Optional<std::string> StackProfileTracker::FindString(
+    SourceStringId id,
+    const InternLookup* intern_lookup,
+    StackProfileTracker::InternedStringType type) {
+  if (id == 0)
+    return "";
 
   auto it = string_map_.find(id);
   if (it == string_map_.end()) {
     if (intern_lookup) {
-      auto interned_str = intern_lookup->GetString(id);
-      if (interned_str)
-        return interned_str;
+      auto str = intern_lookup->GetString(id, type);
+      if (!str) {
+        context_->storage->IncrementStats(
+            stats::stackprofile_invalid_string_id);
+        PERFETTO_DFATAL("Invalid string.");
+        return base::nullopt;
+      }
+      return str->ToStdString();
     }
-    context_->storage->IncrementStats(stats::stackprofile_invalid_string_id);
-    PERFETTO_DFATAL("Invalid string.");
-    return res;
+    return base::nullopt;
   }
-  res = it->second;
-  return res;
+
+  return it->second;
 }
 
 base::Optional<int64_t> StackProfileTracker::FindMapping(
@@ -276,29 +287,7 @@ void StackProfileTracker::ClearIndices() {
   mappings_.clear();
   callstacks_from_frames_.clear();
   callstacks_.clear();
-  // We intentionally hold on to the frames_ mappings - we will use them
-  // if we encounter any ProfiledFrameSymbols packets for symbolizing.
-}
-
-void StackProfileTracker::SetFrameName(SourceFrameId source_frame_id,
-                                       SourceStringId function_name_id,
-                                       const InternLookup* intern_lookup) {
-  auto maybe_frame_row = FindFrame(source_frame_id, intern_lookup);
-  if (!maybe_frame_row) {
-    context_->storage->IncrementStats(stats::stackprofile_invalid_frame_id);
-    PERFETTO_DFATAL_OR_ELOG("Unknown frame iid %" PRIu64 " in symbols.",
-                            source_frame_id);
-  }
-  auto maybe_name_id = FindString(function_name_id, intern_lookup);
-  if (!maybe_name_id) {
-    context_->storage->IncrementStats(stats::stackprofile_invalid_string_id);
-    PERFETTO_DFATAL_OR_ELOG("Invalid string iid %" PRIu64 " in symbols.",
-                            function_name_id);
-  }
-
-  size_t frame_row = static_cast<size_t>(*maybe_frame_row);
-  context_->storage->mutable_stack_profile_frames()->SetFrameName(
-      frame_row, *maybe_name_id);
+  frames_.clear();
 }
 
 }  // namespace trace_processor

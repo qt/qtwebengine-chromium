@@ -11,11 +11,12 @@
 #include "p2p/base/p2p_transport_channel.h"
 
 #include <iterator>
+#include <memory>
 #include <set>
 #include <utility>
 
 #include "absl/algorithm/container.h"
-#include "absl/memory/memory.h"
+#include "absl/strings/match.h"
 #include "api/candidate.h"
 #include "logging/rtc_event_log/ice_logger.h"
 #include "p2p/base/candidate_pair_interface.h"
@@ -23,6 +24,7 @@
 #include "p2p/base/port.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/crc32.h"
+#include "rtc_base/experiments/struct_parameters_parser.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/net_helper.h"
 #include "rtc_base/net_helpers.h"
@@ -153,7 +155,7 @@ P2PTransportChannel::P2PTransportChannel(
       config_.regather_all_networks_interval_range,
       config_.regather_on_failed_networks_interval_or_default());
   regathering_controller_ =
-      absl::make_unique<webrtc::BasicRegatheringController>(
+      std::make_unique<webrtc::BasicRegatheringController>(
           regathering_config, this, network_thread_);
   // We populate the change in the candidate filter to the session taken by
   // the transport.
@@ -694,6 +696,21 @@ void P2PTransportChannel::SetIceConfig(const IceConfig& config) {
     RTC_LOG(LS_INFO) << "Set WebRTC-TurnAddMultiMapping: Enabled";
   }
 
+  webrtc::StructParametersParser::Create(
+      "skip_relay_to_non_relay_connections",
+      &field_trials_.skip_relay_to_non_relay_connections,
+      "max_outstanding_pings", &field_trials_.max_outstanding_pings)
+      ->Parse(webrtc::field_trial::FindFullName("WebRTC-IceFieldTrials"));
+
+  if (field_trials_.skip_relay_to_non_relay_connections) {
+    RTC_LOG(LS_INFO) << "Set skip_relay_to_non_relay_connections";
+  }
+
+  if (field_trials_.max_outstanding_pings.has_value()) {
+    RTC_LOG(LS_INFO) << "Set max_outstanding_pings: "
+                     << *field_trials_.max_outstanding_pings;
+  }
+
   webrtc::BasicRegatheringController::Config regathering_config(
       config_.regather_all_networks_interval_range,
       config_.regather_on_failed_networks_interval_or_default());
@@ -1026,7 +1043,7 @@ void P2PTransportChannel::OnUnknownAddress(PortInterface* port,
     if (port_muxed) {
       RTC_LOG(LS_INFO) << "Connection already exists for peer reflexive "
                           "candidate: "
-                       << remote_candidate.ToString();
+                       << remote_candidate.ToSensitiveString();
       return;
     } else {
       RTC_NOTREACHED();
@@ -1049,7 +1066,7 @@ void P2PTransportChannel::OnUnknownAddress(PortInterface* port,
   RTC_LOG(LS_INFO) << "Adding connection from "
                    << (remote_candidate_is_new ? "peer reflexive"
                                                : "resurrected")
-                   << " candidate: " << remote_candidate.ToString();
+                   << " candidate: " << remote_candidate.ToSensitiveString();
   AddConnection(connection);
   connection->HandleBindingRequest(stun_msg);
 
@@ -1259,7 +1276,7 @@ void P2PTransportChannel::RemoveRemoteCandidate(
                      });
   if (iter != remote_candidates_.end()) {
     RTC_LOG(LS_VERBOSE) << "Removed remote candidate "
-                        << cand_to_remove.ToString();
+                        << cand_to_remove.ToSensitiveString();
     remote_candidates_.erase(iter, remote_candidates_.end());
   }
 }
@@ -1323,6 +1340,17 @@ bool P2PTransportChannel::CreateConnection(PortInterface* port,
   if (!port->SupportsProtocol(remote_candidate.protocol())) {
     return false;
   }
+
+  if (field_trials_.skip_relay_to_non_relay_connections) {
+    if ((port->Type() != remote_candidate.type()) &&
+        (port->Type() == RELAY_PORT_TYPE ||
+         remote_candidate.type() == RELAY_PORT_TYPE)) {
+      RTC_LOG(LS_INFO) << ToString() << ": skip creating connection "
+                       << port->Type() << " to " << remote_candidate.type();
+      return false;
+    }
+  }
+
   // Look for an existing connection with this remote address.  If one is not
   // found or it is found but the existing remote candidate has an older
   // generation, then we can create a new connection for this address.
@@ -1352,8 +1380,9 @@ bool P2PTransportChannel::CreateConnection(PortInterface* port,
   if (!remote_candidate.IsEquivalent(connection->remote_candidate())) {
     RTC_LOG(INFO) << "Attempt to change a remote candidate."
                      " Existing remote candidate: "
-                  << connection->remote_candidate().ToString()
-                  << "New remote candidate: " << remote_candidate.ToString();
+                  << connection->remote_candidate().ToSensitiveString()
+                  << "New remote candidate: "
+                  << remote_candidate.ToSensitiveString();
   }
   return false;
 }
@@ -1415,7 +1444,8 @@ void P2PTransportChannel::RememberRemoteCandidate(
 
   // Make sure this candidate is not a duplicate.
   if (IsDuplicateRemoteCandidate(remote_candidate)) {
-    RTC_LOG(INFO) << "Duplicate candidate: " << remote_candidate.ToString();
+    RTC_LOG(INFO) << "Duplicate candidate: "
+                  << remote_candidate.ToSensitiveString();
     return;
   }
 
@@ -1677,6 +1707,7 @@ int P2PTransportChannel::CompareConnectionStates(
       return b_is_better;
     }
   }
+
   return 0;
 }
 
@@ -2179,6 +2210,12 @@ bool P2PTransportChannel::IsPingable(const Connection* conn,
     return false;
   }
 
+  // If we sent a number of pings wo/ reply, skip sending more
+  // until we get one.
+  if (conn->TooManyOutstandingPings(field_trials_.max_outstanding_pings)) {
+    return false;
+  }
+
   // If the channel is weakly connected, ping all connections.
   if (weak()) {
     return true;
@@ -2664,10 +2701,9 @@ Candidate P2PTransportChannel::SanitizeLocalCandidate(
 Candidate P2PTransportChannel::SanitizeRemoteCandidate(
     const Candidate& c) const {
   RTC_DCHECK_RUN_ON(network_thread_);
-  // If the remote endpoint signaled us a hostname host candidate, we assume it
+  // If the remote endpoint signaled us an mDNS candidate, we assume it
   // is supposed to be sanitized.
-  bool use_hostname_address =
-      c.type() == LOCAL_PORT_TYPE && !c.address().hostname().empty();
+  bool use_hostname_address = absl::EndsWith(c.address().hostname(), LOCAL_TLD);
   // Remove the address for prflx remote candidates. See
   // https://w3c.github.io/webrtc-stats/#dom-rtcicecandidatestats.
   use_hostname_address |= c.type() == PRFLX_PORT_TYPE;

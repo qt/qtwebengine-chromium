@@ -24,12 +24,13 @@ import tempfile
 import subprocess
 import hashlib
 import textwrap
+from compat import iteritems
 
 SOURCE_TARGET = {
     'protos/perfetto/config/perfetto_config.proto':
-            'src/perfetto_cmd/perfetto_config.descriptor.h',
+        'src/perfetto_cmd/perfetto_config.descriptor.h',
     'protos/perfetto/metrics/metrics.proto':
-            'src/trace_processor/metrics/metrics.descriptor.h',
+        'src/trace_processor/metrics/metrics.descriptor.h',
 }
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -39,18 +40,15 @@ SCRIPT_PATH = 'tools/gen_binary_descriptors'
 
 def hash_path(path):
   hash = hashlib.sha1()
-  with open(os.path.join(ROOT_DIR, path)) as f:
+  with open(os.path.join(ROOT_DIR, path), 'rb') as f:
     hash.update(f.read())
   return hash.hexdigest()
 
 
 def find_protoc():
-  for root, dirs, files in os.walk(ROOT_DIR):
+  for root, _, files in os.walk(os.path.join(ROOT_DIR, 'out')):
     if 'protoc' in files:
       return os.path.join(root, 'protoc')
-    for name in ('src', 'buildtools'):
-      if name in dirs:
-        dirs.remove(name)
   return None
 
 
@@ -61,7 +59,7 @@ def check(source, target):
   with open(target, 'rb') as f:
     s = f.read()
 
-  hashes = re.findall(r'// SHA1\((.*)\)\n// (.*)\n', s)
+  hashes = re.findall(r'// SHA1\((.*)\)\n// (.*)\n', s.decode())
   assert sorted([SCRIPT_PATH, source]) == sorted([key for key, _ in hashes])
   for path, expected_sha1 in hashes:
     actual_sha1 = hash_path(os.path.join(ROOT_DIR, path))
@@ -81,16 +79,20 @@ def generate(source, target, protoc_path):
         '--proto_path=.',
         '--descriptor_set_out={}'.format(fdescriptor.name),
         source,
-    ], cwd=ROOT_DIR)
+    ],
+                          cwd=ROOT_DIR)
 
     s = fdescriptor.read()
     proto_name = source_name[:-len('.proto')].title().replace("_", "")
     constant_name = 'k' + proto_name + 'Descriptor'
-    binary = '{' + ', '.join('{0:#04x}'.format(ord(c)) for c in s) + '}'
-    binary = textwrap.fill(binary,
-        width=80,
-        initial_indent='    ',
-        subsequent_indent='     ')
+    try:
+      ord(s[0])
+      ordinal = ord
+    except TypeError:
+      ordinal = lambda x: x
+    binary = '{' + ', '.join('{0:#04x}'.format(ordinal(c)) for c in s) + '}'
+    binary = textwrap.fill(
+        binary, width=80, initial_indent='    ', subsequent_indent='     ')
     include_guard = target.replace('/', '_').replace('.', '_').upper() + '_'
 
     with open(os.path.join(ROOT_DIR, target), 'wb') as f:
@@ -121,17 +123,17 @@ constexpr std::array<uint8_t, {size}> {constant_name}{{
 }}  // namespace perfetto
 
 #endif  // {include_guard}
-""".format(**{
-        'proto_name': proto_name,
-        'size': len(s),
-        'constant_name': constant_name,
-        'binary': binary,
-        'include_guard': include_guard,
-        'script_path': SCRIPT_PATH,
-        'script_hash': hash_path(__file__),
-        'source_path': source,
-        'source_hash': hash_path(os.path.join(source)),
-      }))
+""".format(
+          proto_name=proto_name,
+          size=len(s),
+          constant_name=constant_name,
+          binary=binary,
+          include_guard=include_guard,
+          script_path=SCRIPT_PATH,
+          script_hash=hash_path(__file__),
+          source_path=source,
+          source_hash=hash_path(os.path.join(source)),
+      ).encode())
 
 
 def main():
@@ -141,9 +143,9 @@ def main():
   args = parser.parse_args()
 
   try:
-    for source, target in SOURCE_TARGET.iteritems():
+    for source, target in iteritems(SOURCE_TARGET):
       if args.check_only:
-          check(source, target)
+        check(source, target)
       else:
         protoc = args.protoc or find_protoc()
         assert protoc, 'protoc not found specific (--protoc PROTOC_PATH)'
@@ -156,6 +158,7 @@ def main():
       raise
     print('Error: {}'.format(e))
     return 1
+
 
 if __name__ == '__main__':
   exit(main())

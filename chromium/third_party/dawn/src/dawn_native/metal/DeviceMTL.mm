@@ -76,10 +76,15 @@ namespace dawn_native { namespace metal {
     }
 
     void Device::InitTogglesFromDriver() {
+#if defined(DAWN_PLATFORM_MACOS)
+        if (@available(macOS 10.12, *)) {
+            bool emulateStoreAndMSAAResolve =
+                ![mMtlDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2];
+            SetToggle(Toggle::EmulateStoreAndMSAAResolve, emulateStoreAndMSAAResolve);
+        }
+#endif
+
         // TODO(jiawei.shao@intel.com): check iOS feature sets
-        bool emulateStoreAndMSAAResolve =
-            ![mMtlDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2];
-        SetToggle(Toggle::EmulateStoreAndMSAAResolve, emulateStoreAndMSAAResolve);
 
         // TODO(jiawei.shao@intel.com): tighten this workaround when the driver bug is fixed.
         SetToggle(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
@@ -148,10 +153,10 @@ namespace dawn_native { namespace metal {
         return mLastSubmittedSerial + 1;
     }
 
-    void Device::TickImpl() {
+    MaybeError Device::TickImpl() {
         Serial completedSerial = GetCompletedCommandSerial();
 
-        mDynamicUploader->Tick(completedSerial);
+        mDynamicUploader->Deallocate(completedSerial);
         mMapTracker->Tick(completedSerial);
 
         if (mPendingCommands != nil) {
@@ -162,10 +167,16 @@ namespace dawn_native { namespace metal {
             mCompletedSerial++;
             mLastSubmittedSerial++;
         }
+
+        return {};
     }
 
     id<MTLDevice> Device::GetMTLDevice() {
         return mMtlDevice;
+    }
+
+    id<MTLCommandQueue> Device::GetMTLQueue() {
+        return mCommandQueue;
     }
 
     id<MTLCommandBuffer> Device::GetPendingCommandBuffer() {
@@ -236,6 +247,7 @@ namespace dawn_native { namespace metal {
     ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
         std::unique_ptr<StagingBufferBase> stagingBuffer =
             std::make_unique<StagingBuffer>(size, this);
+        DAWN_TRY(stagingBuffer->Initialize());
         return std::move(stagingBuffer);
     }
 

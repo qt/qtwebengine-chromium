@@ -544,6 +544,8 @@ if (current_os == "linux" || is_android) {
       "src/jni/pc/audio.h",
       "src/jni/pc/logging.cc",
       "src/jni/pc/video.h",
+      "src/jni/scoped_java_ref_counted.cc",
+      "src/jni/scoped_java_ref_counted.h",
     ]
 
     deps = [
@@ -556,7 +558,6 @@ if (current_os == "linux" || is_android) {
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers:metrics",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
@@ -674,6 +675,7 @@ if (current_os == "linux" || is_android) {
       ":native_api_jni",
       ":videoframe_jni",
       "../../api:libjingle_peerconnection_api",
+      "../../api:media_stream_interface",
       "../../api/task_queue",
       "../../api/video:encoded_image",
       "../../api/video:video_frame",
@@ -759,8 +761,10 @@ if (current_os == "linux" || is_android) {
       "..:media_constraints",
       "../../api:callfactory_api",
       "../../api:libjingle_peerconnection_api",
+      "../../api:media_stream_interface",
       "../../api:rtc_event_log_output_file",
       "../../api:rtp_parameters",
+      "../../api/crypto:options",
       "../../api/rtc_event_log:rtc_event_log_factory",
       "../../api/task_queue:default_task_queue_factory",
       "../../api/video_codecs:video_codecs_api",
@@ -794,7 +798,6 @@ if (current_os == "linux" || is_android) {
       ":base_jni",
       ":generated_java_audio_jni",
       ":java_audio_device_module",
-      "//third_party/abseil-cpp/absl/memory",
     ]
   }
 
@@ -895,7 +898,6 @@ if (current_os == "linux" || is_android) {
       ":native_api_jni",
       "//rtc_base",
       "//rtc_base:checks",
-      "//third_party/abseil-cpp/absl/memory",
     ]
   }
 
@@ -919,7 +921,6 @@ if (current_os == "linux" || is_android) {
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers",
       "../../system_wrappers:metrics",
-      "//third_party/abseil-cpp/absl/memory",
     ]
     if (rtc_enable_android_aaudio) {
       deps += [ ":aaudio_audio_device_module" ]
@@ -943,7 +944,6 @@ if (current_os == "linux" || is_android) {
       "//api/video_codecs:video_codecs_api",
       "//rtc_base:checks",
       "//rtc_base:rtc_base_approved",
-      "//third_party/abseil-cpp/absl/memory",
     ]
   }
 
@@ -975,6 +975,7 @@ if (current_os == "linux" || is_android) {
       "../../rtc_base:criticalsection",
       "../../rtc_base:logging",
       "../../rtc_base:stringutils",
+      "//third_party/abseil-cpp/absl/base:core_headers",
     ]
   }
 
@@ -994,11 +995,11 @@ if (current_os == "linux" || is_android) {
       ":video_jni",
       ":videoframe_jni",
       "//api:libjingle_peerconnection_api",
+      "//api:media_stream_interface",
       "//api/video:video_frame",
       "//api/video:video_rtp_headers",
       "//rtc_base",
       "//rtc_base:rtc_base_approved",
-      "//third_party/abseil-cpp/absl/memory",
     ]
   }
 
@@ -1086,7 +1087,6 @@ if (current_os == "linux" || is_android) {
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers:metrics",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
@@ -1163,7 +1163,6 @@ if (current_os == "linux" || is_android) {
       "../../modules/audio_device:audio_device_buffer",
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
-      "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
@@ -1203,6 +1202,7 @@ if (current_os == "linux" || is_android) {
     sources = [
       "api/org/webrtc/NetworkMonitor.java",
       "api/org/webrtc/NetworkMonitorAutoDetect.java",
+      "api/org/webrtc/RefCounted.java",
       "src/java/org/webrtc/Histogram.java",
       "src/java/org/webrtc/JniCommon.java",
     ]

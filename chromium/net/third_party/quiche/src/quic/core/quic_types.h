@@ -157,6 +157,9 @@ enum TransmissionType : int8_t {
   LAST_TRANSMISSION_TYPE = PROBING_RETRANSMISSION,
 };
 
+QUIC_EXPORT_PRIVATE std::string TransmissionTypeToString(
+    TransmissionType transmission_type);
+
 enum HasRetransmittableData : uint8_t {
   NO_RETRANSMITTABLE_DATA,
   HAS_RETRANSMITTABLE_DATA,
@@ -383,10 +386,11 @@ enum CongestionControlType {
 };
 
 enum LossDetectionType : uint8_t {
-  kNack,          // Used to mimic TCP's loss detection.
-  kTime,          // Time based loss detection.
-  kAdaptiveTime,  // Adaptive time based loss detection.
-  kLazyFack,      // Nack based but with FACK disabled for the first ack.
+  kNack,               // Used to mimic TCP's loss detection.
+  kTime,               // Time based loss detection.
+  kAdaptiveTime,       // Adaptive time based loss detection.
+  kLazyFack,           // Nack based but with FACK disabled for the first ack.
+  kIetfLossDetection,  // IETF style loss detection.
 };
 
 // EncryptionLevel enumerates the stages of encryption that a QUIC connection
@@ -405,6 +409,8 @@ enum EncryptionLevel : int8_t {
 inline bool EncryptionLevelIsValid(EncryptionLevel level) {
   return ENCRYPTION_INITIAL <= level && level < NUM_ENCRYPTION_LEVELS;
 }
+
+QUIC_EXPORT_PRIVATE std::string EncryptionLevelToString(EncryptionLevel level);
 
 enum AddressChangeType : uint8_t {
   // IP address and port remain unchanged.
@@ -466,6 +472,9 @@ enum PacketHeaderFormat : uint8_t {
   GOOGLE_QUIC_PACKET,
 };
 
+QUIC_EXPORT_PRIVATE std::string PacketHeaderFormatToString(
+    PacketHeaderFormat format);
+
 // Information about a newly acknowledged packet.
 struct AckedPacket {
   AckedPacket(QuicPacketNumber packet_number,
@@ -508,8 +517,7 @@ struct LostPacket {
 // A vector of lost packets.
 typedef std::vector<LostPacket> LostPacketVector;
 
-// TODO(fkastenholz): Change this to uint64_t to reflect -22 of the ID.
-enum QuicIetfTransportErrorCodes : uint16_t {
+enum QuicIetfTransportErrorCodes : uint64_t {
   NO_IETF_QUIC_ERROR = 0x0,
   INTERNAL_ERROR = 0x1,
   SERVER_BUSY_ERROR = 0x2,
@@ -555,6 +563,9 @@ enum QuicLongHeaderType : uint8_t {
 
   INVALID_PACKET_TYPE,
 };
+
+QUIC_EXPORT_PRIVATE std::string QuicLongHeaderTypeToString(
+    QuicLongHeaderType type);
 
 enum QuicPacketHeaderTypeFlags : uint8_t {
   // Bit 2: Reserved for experimentation for short header.
@@ -629,6 +640,9 @@ enum PacketNumberSpace : uint8_t {
 
   NUM_PACKET_NUMBER_SPACES,
 };
+
+QUIC_EXPORT_PRIVATE std::string PacketNumberSpaceToString(
+    PacketNumberSpace packet_number_space);
 
 enum AckMode { TCP_ACKING, ACK_DECIMATION, ACK_DECIMATION_WITH_REORDERING };
 

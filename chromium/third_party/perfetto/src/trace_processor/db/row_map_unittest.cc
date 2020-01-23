@@ -27,12 +27,12 @@ namespace {
 
 std::shared_ptr<RowMap> BitVectorRowMap() {
   BitVector bv;
-  bv.Append(true);
-  bv.Append(false);
-  bv.Append(true);
-  bv.Append(true);
-  bv.Append(false);
-  bv.Append(true);
+  bv.AppendTrue();
+  bv.AppendFalse();
+  bv.AppendTrue();
+  bv.AppendTrue();
+  bv.AppendFalse();
+  bv.AppendTrue();
   return std::shared_ptr<RowMap>(new RowMap(std::move(bv)));
 }
 
@@ -64,37 +64,38 @@ TEST_P(RowMapUnittest, Add) {
   ASSERT_EQ(row_map.IndexOf(3u), 2u);
   ASSERT_EQ(row_map.IndexOf(5u), 3u);
   ASSERT_EQ(row_map.IndexOf(10u), 4u);
+  ASSERT_FALSE(row_map.IndexOf(6u));
 }
 
 TEST_P(RowMapUnittest, SelectRowsBitVector) {
   RowMap row_map = GetParam()->Copy();
 
   BitVector picker_bv;
-  picker_bv.Append(true);
-  picker_bv.Append(false);
-  picker_bv.Append(false);
-  picker_bv.Append(true);
+  picker_bv.AppendTrue();
+  picker_bv.AppendFalse();
+  picker_bv.AppendFalse();
+  picker_bv.AppendTrue();
   RowMap picker(std::move(picker_bv));
 
-  row_map.SelectRows(picker);
+  auto res = row_map.SelectRows(picker);
 
-  ASSERT_EQ(row_map.size(), 2u);
-  ASSERT_EQ(row_map.Get(0u), 0u);
-  ASSERT_EQ(row_map.Get(1u), 5u);
+  ASSERT_EQ(res.size(), 2u);
+  ASSERT_EQ(res.Get(0u), 0u);
+  ASSERT_EQ(res.Get(1u), 5u);
 }
 
 TEST_P(RowMapUnittest, SelectRowsRowVector) {
   RowMap row_map = GetParam()->Copy();
   RowMap picker(std::vector<uint32_t>{1u, 0u, 3u, 0u, 0u});
 
-  row_map.SelectRows(picker);
+  auto res = row_map.SelectRows(picker);
 
-  ASSERT_EQ(row_map.size(), 5u);
-  ASSERT_EQ(row_map.Get(0u), 2u);
-  ASSERT_EQ(row_map.Get(1u), 0u);
-  ASSERT_EQ(row_map.Get(2u), 5u);
-  ASSERT_EQ(row_map.Get(3u), 0u);
-  ASSERT_EQ(row_map.Get(4u), 0u);
+  ASSERT_EQ(res.size(), 5u);
+  ASSERT_EQ(res.Get(0u), 2u);
+  ASSERT_EQ(res.Get(1u), 0u);
+  ASSERT_EQ(res.Get(2u), 5u);
+  ASSERT_EQ(res.Get(3u), 0u);
+  ASSERT_EQ(res.Get(4u), 0u);
 }
 
 TEST_P(RowMapUnittest, RemoveIf) {

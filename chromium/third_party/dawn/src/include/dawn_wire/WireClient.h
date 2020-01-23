@@ -15,9 +15,11 @@
 #ifndef DAWNWIRE_WIRECLIENT_H_
 #define DAWNWIRE_WIRECLIENT_H_
 
-#include <memory>
-
+#include "dawn/dawn_proc_table.h"
 #include "dawn_wire/Wire.h"
+
+#include <memory>
+#include <vector>
 
 namespace dawn_wire {
 
@@ -44,7 +46,8 @@ namespace dawn_wire {
 
         DawnDevice GetDevice() const;
         DawnProcTable GetProcs() const;
-        const char* HandleCommands(const char* commands, size_t size) override final;
+        const volatile char* HandleCommands(const volatile char* commands,
+                                            size_t size) override final;
 
         ReservedTexture ReserveTexture(DawnDevice device);
 
@@ -118,8 +121,10 @@ namespace dawn_wire {
                 virtual ~WriteHandle();
             };
         };
-    }  // namespace client
 
+        // Backdoor to get the order of the ProcMap for testing
+        DAWN_WIRE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
+    }  // namespace client
 }  // namespace dawn_wire
 
 #endif  // DAWNWIRE_WIRECLIENT_H_

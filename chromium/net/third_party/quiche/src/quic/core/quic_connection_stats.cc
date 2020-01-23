@@ -29,7 +29,7 @@ QuicConnectionStats::QuicConnectionStats()
       slowstart_duration(QuicTime::Delta::Zero()),
       slowstart_start_time(QuicTime::Zero()),
       packets_dropped(0),
-      undecryptable_packets_received(0),
+      undecryptable_packets_received_before_handshake_complete(0),
       crypto_retransmit_count(0),
       loss_timeout_count(0),
       tlp_count(0),
@@ -47,7 +47,8 @@ QuicConnectionStats::QuicConnectionStats()
       connection_creation_time(QuicTime::Zero()),
       blocked_frames_received(0),
       blocked_frames_sent(0),
-      num_connectivity_probing_received(0) {}
+      num_connectivity_probing_received(0),
+      retry_packet_processed(false) {}
 
 QuicConnectionStats::QuicConnectionStats(const QuicConnectionStats& other) =
     default;
@@ -73,7 +74,8 @@ std::ostream& operator<<(std::ostream& os, const QuicConnectionStats& s) {
   os << " slowstart_packets_lost: " << s.slowstart_packets_lost;
   os << " slowstart_bytes_lost: " << s.slowstart_bytes_lost;
   os << " packets_dropped: " << s.packets_dropped;
-  os << " undecryptable_packets_received: " << s.undecryptable_packets_received;
+  os << " undecryptable_packets_received_before_handshake_complete: "
+     << s.undecryptable_packets_received_before_handshake_complete;
   os << " crypto_retransmit_count: " << s.crypto_retransmit_count;
   os << " loss_timeout_count: " << s.loss_timeout_count;
   os << " tlp_count: " << s.tlp_count;
@@ -93,7 +95,10 @@ std::ostream& operator<<(std::ostream& os, const QuicConnectionStats& s) {
   os << " blocked_frames_received: " << s.blocked_frames_received;
   os << " blocked_frames_sent: " << s.blocked_frames_sent;
   os << " num_connectivity_probing_received: "
-     << s.num_connectivity_probing_received << " }";
+     << s.num_connectivity_probing_received;
+  os << " retry_packet_processed: "
+     << (s.retry_packet_processed ? "yes" : "no");
+  os << " }";
 
   return os;
 }

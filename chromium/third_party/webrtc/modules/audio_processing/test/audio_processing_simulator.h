@@ -57,7 +57,6 @@ struct SimulationSettings {
   absl::optional<bool> use_hpf;
   absl::optional<bool> use_ns;
   absl::optional<bool> use_ts;
-  absl::optional<bool> use_ie;
   absl::optional<bool> use_vad;
   absl::optional<bool> use_le;
   absl::optional<bool> use_all;
@@ -79,11 +78,12 @@ struct SimulationSettings {
   AudioProcessing::Config::GainController2::LevelEstimator
       agc2_adaptive_level_estimator;
   absl::optional<float> pre_amplifier_gain_factor;
-  absl::optional<int> vad_likelihood;
   absl::optional<int> ns_level;
+  absl::optional<int> maximum_internal_processing_rate;
   absl::optional<bool> use_refined_adaptive_filter;
   int initial_mic_level;
   bool simulate_mic_gain = false;
+  absl::optional<bool> experimental_multi_channel;
   absl::optional<int> simulated_mic_kind;
   bool report_performance = false;
   absl::optional<std::string> performance_report_output_filename;

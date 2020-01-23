@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_stream_sequencer_buffer_peer.h"
@@ -67,8 +66,9 @@ class QuicStreamSequencerBufferTest : public QuicTest {
 
  protected:
   void Initialize() {
-    buffer_ = QuicMakeUnique<QuicStreamSequencerBuffer>((max_capacity_bytes_));
-    helper_ = QuicMakeUnique<QuicStreamSequencerBufferPeer>((buffer_.get()));
+    buffer_ =
+        std::make_unique<QuicStreamSequencerBuffer>((max_capacity_bytes_));
+    helper_ = std::make_unique<QuicStreamSequencerBufferPeer>((buffer_.get()));
   }
 
   // Use 2.5 here to make sure the buffer has more than one block and its end

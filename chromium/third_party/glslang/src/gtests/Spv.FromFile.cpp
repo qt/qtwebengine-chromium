@@ -72,12 +72,8 @@ using OpenGLSemantics = GlslangTest<::testing::TestWithParam<std::string>>;
 using VulkanAstSemantics = GlslangTest<::testing::TestWithParam<std::string>>;
 using HlslIoMap = GlslangTest<::testing::TestWithParam<IoMapData>>;
 using GlslIoMap = GlslangTest<::testing::TestWithParam<IoMapData>>;
-#ifdef AMD_EXTENSIONS
 using CompileVulkanToSpirvTestAMD = GlslangTest<::testing::TestWithParam<std::string>>;
-#endif
-#ifdef NV_EXTENSIONS
 using CompileVulkanToSpirvTestNV = GlslangTest<::testing::TestWithParam<std::string>>;
-#endif
 using CompileUpgradeTextureToSampledTextureAndDropSamplersTest = GlslangTest<::testing::TestWithParam<std::string>>;
 
 // Compiling GLSL to SPIR-V under Vulkan semantics. Expected to successfully
@@ -179,7 +175,6 @@ TEST_P(GlslIoMap, FromFile)
                                  GetParam().flattenUniforms);
 }
 
-#ifdef AMD_EXTENSIONS
 // Compiling GLSL to SPIR-V under Vulkan semantics (AMD extensions enabled).
 // Expected to successfully generate SPIR-V.
 TEST_P(CompileVulkanToSpirvTestAMD, FromFile)
@@ -188,9 +183,7 @@ TEST_P(CompileVulkanToSpirvTestAMD, FromFile)
                             Source::GLSL, Semantics::Vulkan, glslang::EShTargetVulkan_1_0, glslang::EShTargetSpv_1_0,
                             Target::Spv);
 }
-#endif
 
-#ifdef NV_EXTENSIONS
 // Compiling GLSL to SPIR-V under Vulkan semantics (NV extensions enabled).
 // Expected to successfully generate SPIR-V.
 TEST_P(CompileVulkanToSpirvTestNV, FromFile)
@@ -199,7 +192,6 @@ TEST_P(CompileVulkanToSpirvTestNV, FromFile)
                             Source::GLSL, Semantics::Vulkan, glslang::EShTargetVulkan_1_0, glslang::EShTargetSpv_1_0,
                             Target::Spv);
 }
-#endif
 
 TEST_P(CompileUpgradeTextureToSampledTextureAndDropSamplersTest, FromFile)
 {
@@ -292,6 +284,7 @@ INSTANTIATE_TEST_CASE_P(
         "spv.bufferhandle7.frag",
         "spv.bufferhandle8.frag",
         "spv.bufferhandle9.frag",
+        "spv.bufferhandleUvec2.frag",
         "spv.bufferhandle_Error.frag",
         "spv.builtInXFB.vert",
         "spv.conditionalDemote.frag",
@@ -333,6 +326,7 @@ INSTANTIATE_TEST_CASE_P(
         "spv.GeometryShaderPassthrough.geom",
         "spv.interpOps.frag",
         "spv.int64.frag",
+        "spv.intcoopmat.comp",
         "spv.intOps.vert",
         "spv.layoutNested.vert",
         "spv.length.frag",
@@ -466,6 +460,22 @@ INSTANTIATE_TEST_CASE_P(
         "spv.subgroupShuffleRelative.comp",
         "spv.subgroupQuad.comp",
         "spv.subgroupVote.comp",
+        "spv.subgroupExtendedTypesArithmetic.comp",
+        "spv.subgroupExtendedTypesArithmeticNeg.comp",
+        "spv.subgroupExtendedTypesBallot.comp",
+        "spv.subgroupExtendedTypesBallotNeg.comp",
+        "spv.subgroupExtendedTypesClustered.comp",
+        "spv.subgroupExtendedTypesClusteredNeg.comp",
+        "spv.subgroupExtendedTypesPartitioned.comp",
+        "spv.subgroupExtendedTypesPartitionedNeg.comp",
+        "spv.subgroupExtendedTypesShuffle.comp",
+        "spv.subgroupExtendedTypesShuffleNeg.comp",
+        "spv.subgroupExtendedTypesShuffleRelative.comp",
+        "spv.subgroupExtendedTypesShuffleRelativeNeg.comp",
+        "spv.subgroupExtendedTypesQuad.comp",
+        "spv.subgroupExtendedTypesQuadNeg.comp",
+        "spv.subgroupExtendedTypesVote.comp",
+        "spv.subgroupExtendedTypesVoteNeg.comp",
         "spv.vulkan110.storageBuffer.vert",
     })),
     FileNameAsCustomTestSuffix
@@ -572,7 +582,6 @@ INSTANTIATE_TEST_CASE_P(
     FileNameAsCustomTestSuffix
 );
 
-#ifdef AMD_EXTENSIONS
 INSTANTIATE_TEST_CASE_P(
     Glsl, CompileVulkanToSpirvTestAMD,
     ::testing::ValuesIn(std::vector<std::string>({
@@ -588,9 +597,7 @@ INSTANTIATE_TEST_CASE_P(
     })),
     FileNameAsCustomTestSuffix
 );
-#endif
 
-#ifdef NV_EXTENSIONS
 INSTANTIATE_TEST_CASE_P(
     Glsl, CompileVulkanToSpirvTestNV,
     ::testing::ValuesIn(std::vector<std::string>({
@@ -638,7 +645,6 @@ INSTANTIATE_TEST_CASE_P(
 })),
 FileNameAsCustomTestSuffix
 );
-#endif
 
 INSTANTIATE_TEST_CASE_P(
     Glsl, CompileUpgradeTextureToSampledTextureAndDropSamplersTest,

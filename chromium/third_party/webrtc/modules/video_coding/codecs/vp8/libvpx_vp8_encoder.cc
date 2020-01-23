@@ -21,14 +21,12 @@
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "api/scoped_refptr.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame_buffer.h"
 #include "api/video/video_timing.h"
 #include "api/video_codecs/vp8_temporal_layers.h"
 #include "api/video_codecs/vp8_temporal_layers_factory.h"
-#include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/include/video_error_codes.h"
@@ -229,7 +227,7 @@ std::unique_ptr<VideoEncoder> VP8Encoder::Create() {
 std::unique_ptr<VideoEncoder> VP8Encoder::Create(
     std::unique_ptr<Vp8FrameBufferControllerFactory>
         frame_buffer_controller_factory) {
-  return absl::make_unique<LibvpxVp8Encoder>(
+  return std::make_unique<LibvpxVp8Encoder>(
       std::move(frame_buffer_controller_factory));
 }
 
@@ -538,11 +536,6 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
     downsampling_factors_[number_of_streams - 1].den = 1;
   }
   for (int i = 0; i < number_of_streams; ++i) {
-    // allocate memory for encoded image
-    size_t frame_capacity =
-        CalcBufferSize(VideoType::kI420, codec_.width, codec_.height);
-    encoded_images_[i].SetEncodedData(
-        EncodedImageBuffer::Create(frame_capacity));
     encoded_images_[i]._completeFrame = true;
   }
   // populate encoder configuration with default values
@@ -1137,16 +1130,20 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
     encoded_images_[encoder_idx]._frameType = VideoFrameType::kVideoFrameDelta;
     CodecSpecificInfo codec_specific;
     const vpx_codec_cx_pkt_t* pkt = NULL;
+
+    // TODO(nisse): Introduce some buffer cache or buffer pool, to reduce
+    // allocations and/or copy operations.
+    auto buffer = EncodedImageBuffer::Create();
+
     while ((pkt = libvpx_->codec_get_cx_data(&encoders_[encoder_idx], &iter)) !=
            NULL) {
       switch (pkt->kind) {
         case VPX_CODEC_CX_FRAME_PKT: {
-          const size_t size = encoded_images_[encoder_idx].size();
+          const size_t size = buffer->size();
           const size_t new_size = pkt->data.frame.sz + size;
-          encoded_images_[encoder_idx].Allocate(new_size);
-          memcpy(&encoded_images_[encoder_idx].data()[size],
-                 pkt->data.frame.buf, pkt->data.frame.sz);
-          encoded_images_[encoder_idx].set_size(new_size);
+          buffer->Realloc(new_size);
+          memcpy(&buffer->data()[size], pkt->data.frame.buf,
+                 pkt->data.frame.sz);
           break;
         }
         default:
@@ -1159,6 +1156,7 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
           encoded_images_[encoder_idx]._frameType =
               VideoFrameType::kVideoFrameKey;
         }
+        encoded_images_[encoder_idx].SetEncodedData(buffer);
         encoded_images_[encoder_idx].SetSpatialIndex(stream_idx);
         PopulateCodecSpecific(&codec_specific, *pkt, stream_idx, encoder_idx,
                               input_image.timestamp());
@@ -1213,6 +1211,7 @@ VideoEncoder::EncoderInfo LibvpxVp8Encoder::GetEncoderInfo() const {
       rate_control_settings_.LibvpxVp8TrustedRateController();
   info.is_hardware_accelerated = false;
   info.has_internal_source = false;
+  info.supports_simulcast = true;
 
   const bool enable_scaling = encoders_.size() == 1 &&
                               vpx_configs_[0].rc_dropframe_thresh > 0 &&

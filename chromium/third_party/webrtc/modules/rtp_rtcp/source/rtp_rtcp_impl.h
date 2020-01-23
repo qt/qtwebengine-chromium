@@ -22,7 +22,6 @@
 #include "absl/types/optional.h"
 #include "api/rtp_headers.h"
 #include "api/video/video_bitrate_allocation.h"
-#include "modules/include/module_common_types.h"
 #include "modules/include/module_fec_types.h"
 #include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
@@ -72,9 +71,9 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
   // Register RTP header extension.
   int32_t RegisterSendRtpHeaderExtension(RTPExtensionType type,
                                          uint8_t id) override;
-  bool RegisterRtpHeaderExtension(const std::string& uri, int id) override;
-
+  void RegisterRtpHeaderExtension(absl::string_view uri, int id) override;
   int32_t DeregisterSendRtpHeaderExtension(RTPExtensionType type) override;
+  void DeregisterSendRtpHeaderExtension(absl::string_view uri) override;
 
   bool SupportsPadding() const override;
   bool SupportsRtxPayloadPadding() const override;
@@ -95,10 +94,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
   RtpState GetRtpState() const override;
   RtpState GetRtxState() const override;
 
-  uint32_t SSRC() const override;
-
-  // Configure SSRC, default is a random number.
-  void SetSSRC(uint32_t ssrc) override;
+  uint32_t SSRC() const override { return rtcp_sender_.SSRC(); }
 
   void SetRid(const std::string& rid) override;
 
@@ -110,8 +106,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   void SetRtxSendStatus(int mode) override;
   int RtxSendStatus() const override;
-
-  void SetRtxSsrc(uint32_t ssrc) override;
 
   void SetRtxSendPayloadType(int payload_type,
                              int associated_payload_type) override;
@@ -235,9 +229,9 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   void SetReportBlockDataObserver(ReportBlockDataObserver* observer) override;
 
-  bool SendFeedbackPacket(const rtcp::TransportFeedback& packet) override;
-  bool SendNetworkStateEstimatePacket(
-      const rtcp::RemoteEstimate& packet) override;
+  void SendCombinedRtcpPacket(
+      std::vector<std::unique_ptr<rtcp::RtcpPacket>> rtcp_packets) override;
+
   // (APP) Application specific data.
   int32_t SetRTCPApplicationSpecificData(uint8_t sub_type,
                                          uint32_t name,
@@ -265,11 +259,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
                    uint32_t* video_rate,
                    uint32_t* fec_rate,
                    uint32_t* nackRate) const override;
-
-  void RegisterSendChannelRtpStatisticsCallback(
-      StreamDataCountersCallback* callback) override;
-  StreamDataCountersCallback* GetSendChannelRtpStatisticsCallback()
-      const override;
 
   void OnReceivedNack(
       const std::vector<uint16_t>& nack_sequence_numbers) override;
@@ -300,7 +289,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
  private:
   FRIEND_TEST_ALL_PREFIXES(RtpRtcpImplTest, Rtt);
   FRIEND_TEST_ALL_PREFIXES(RtpRtcpImplTest, RttForReceiverOnly);
-  void SetRtcpReceiverSsrcs(uint32_t main_ssrc);
 
   void set_rtt_ms(int64_t rtt_ms);
   int64_t rtt_ms() const;

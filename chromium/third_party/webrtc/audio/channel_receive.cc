@@ -17,7 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "api/crypto/frame_decryptor_interface.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "audio/audio_level.h"
@@ -44,7 +43,6 @@
 #include "rtc_base/race_checker.h"
 #include "rtc_base/thread_checker.h"
 #include "rtc_base/time_utils.h"
-#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -57,11 +55,6 @@ constexpr double kAudioSampleDurationSeconds = 0.01;
 // Video Sync.
 constexpr int kVoiceEngineMinMinPlayoutDelayMs = 0;
 constexpr int kVoiceEngineMaxMinPlayoutDelayMs = 10000;
-
-// Field trial which controls whether to report standard-compliant bytes
-// sent/received per stream.  If enabled, padding and headers are not included
-// in bytes sent or received.
-constexpr char kUseStandardBytesStats[] = "WebRTC-UseStandardBytesStats";
 
 RTPHeader CreateRTPHeaderForMediaTransportFrame(
     const MediaTransportEncodedAudioFrame& frame,
@@ -279,8 +272,6 @@ class ChannelReceive : public ChannelReceiveInterface,
   // E2EE Audio Frame Decryption
   rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor_;
   webrtc::CryptoOptions crypto_options_;
-
-  const bool use_standard_bytes_stats_;
 };
 
 void ChannelReceive::OnReceivedPayloadData(
@@ -339,7 +330,7 @@ AudioMixer::Source::AudioFrameInfo ChannelReceive::GetAudioFrameWithInfo(
   RTC_DCHECK_RUNS_SERIALIZED(&audio_thread_race_checker_);
   audio_frame->sample_rate_hz_ = sample_rate_hz;
 
-  event_log_->Log(absl::make_unique<RtcEventAudioPlayout>(remote_ssrc_));
+  event_log_->Log(std::make_unique<RtcEventAudioPlayout>(remote_ssrc_));
 
   // Get 10ms raw PCM data from the ACM (mixer limits output frequency)
   bool muted;
@@ -485,9 +476,7 @@ ChannelReceive::ChannelReceive(
       associated_send_channel_(nullptr),
       media_transport_config_(media_transport_config),
       frame_decryptor_(frame_decryptor),
-      crypto_options_(crypto_options),
-      use_standard_bytes_stats_(
-          webrtc::field_trial::IsEnabled(kUseStandardBytesStats)) {
+      crypto_options_(crypto_options) {
   // TODO(nisse): Use _moduleProcessThreadPtr instead?
   module_process_thread_checker_.Detach();
 
@@ -735,16 +724,17 @@ CallReceiveStatistics ChannelReceive::GetRTCPStatistics() const {
 
   // --- Data counters
   if (statistician) {
-    if (use_standard_bytes_stats_) {
-      stats.bytesReceived = rtp_stats.packet_counter.payload_bytes;
-    } else {
-      stats.bytesReceived = rtp_stats.packet_counter.TotalBytes();
-    }
+    stats.payload_bytes_rcvd = rtp_stats.packet_counter.payload_bytes;
+
+    stats.header_and_padding_bytes_rcvd =
+        rtp_stats.packet_counter.header_bytes +
+        rtp_stats.packet_counter.padding_bytes;
     stats.packetsReceived = rtp_stats.packet_counter.packets;
     stats.last_packet_received_timestamp_ms =
         rtp_stats.last_packet_received_timestamp_ms;
   } else {
-    stats.bytesReceived = 0;
+    stats.payload_bytes_rcvd = 0;
+    stats.header_and_padding_bytes_rcvd = 0;
     stats.packetsReceived = 0;
     stats.last_packet_received_timestamp_ms = absl::nullopt;
   }
@@ -889,6 +879,9 @@ int ChannelReceive::GetRtpTimestampRateHz() const {
   // TODO(ossu): Zero clockrate can only happen if we've added an external
   // decoder for a format we don't support internally. Remove once that way of
   // adding decoders is gone!
+  // TODO(kwiberg): `decoder->second.clockrate_hz` is an RTP clockrate as it
+  // should, but `acm_receiver_.last_output_sample_rate_hz()` is a codec sample
+  // rate, which is not always the same thing.
   return (decoder && decoder->second.clockrate_hz != 0)
              ? decoder->second.clockrate_hz
              : acm_receiver_.last_output_sample_rate_hz();
@@ -949,7 +942,7 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
     absl::optional<AudioCodecPairId> codec_pair_id,
     rtc::scoped_refptr<FrameDecryptorInterface> frame_decryptor,
     const webrtc::CryptoOptions& crypto_options) {
-  return absl::make_unique<ChannelReceive>(
+  return std::make_unique<ChannelReceive>(
       clock, module_process_thread, audio_device_module, media_transport_config,
       rtcp_send_transport, rtc_event_log, local_ssrc, remote_ssrc,
       jitter_buffer_max_packets, jitter_buffer_fast_playout,

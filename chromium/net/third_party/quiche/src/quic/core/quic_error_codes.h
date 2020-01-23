@@ -54,6 +54,8 @@ enum QuicRstStreamErrorCode {
   QUIC_HEADERS_TOO_LARGE,
   // The data is not likely arrive in time.
   QUIC_STREAM_TTL_EXPIRED,
+  // The stream received data that goes beyond its close offset.
+  QUIC_DATA_AFTER_CLOSE_OFFSET,
   // No error. Used as bound while iterating.
   QUIC_STREAM_LAST_ERROR,
 };
@@ -337,13 +339,18 @@ enum QuicErrorCode {
   // There are too many buffered control frames in control frame manager.
   QUIC_TOO_MANY_BUFFERED_CONTROL_FRAMES = 124,
 
+  // QuicTransport received invalid client indication.
+  QUIC_TRANSPORT_INVALID_CLIENT_INDICATION = 125,
+
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 125,
+  QUIC_LAST_ERROR = 126,
 };
-// QuicErrorCodes is encoded as a single octet on-the-wire.
-static_assert(static_cast<int>(QUIC_LAST_ERROR) <=
-                  std::numeric_limits<uint8_t>::max(),
-              "QuicErrorCode exceeds single octet");
+// QuicErrorCodes is encoded as four octets on-the-wire when doing Google QUIC,
+// or a varint62 when doing IETF QUIC. Ensure that its value does not exceed
+// the smaller of the two limits.
+static_assert(static_cast<uint64_t>(QUIC_LAST_ERROR) <=
+                  static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()),
+              "QuicErrorCode exceeds four octets");
 
 // Returns the name of the QuicRstStreamErrorCode as a char*
 QUIC_EXPORT_PRIVATE const char* QuicRstStreamErrorCodeToString(

@@ -36,7 +36,8 @@ class TraceProcessorIntegrationTest : public ::testing::Test {
 
  protected:
   util::Status LoadTrace(const char* name, int min_chunk_size = 512) {
-    base::ScopedFstream f(fopen(base::GetTestDataPath(name).c_str(), "rb"));
+    base::ScopedFstream f(fopen(
+        base::GetTestDataPath(std::string("test/data/") + name).c_str(), "rb"));
     std::minstd_rand0 rnd_engine(0);
     std::uniform_int_distribution<> dist(min_chunk_size, 1024);
     while (!feof(*f)) {
@@ -112,9 +113,60 @@ TEST_F(TraceProcessorIntegrationTest, TraceBounds) {
   ASSERT_FALSE(it.Next());
 }
 
+TEST_F(TraceProcessorIntegrationTest, Hash) {
+  auto it = Query("select HASH()");
+  ASSERT_TRUE(it.Next());
+  ASSERT_EQ(it.Get(0).long_value, static_cast<int64_t>(0xcbf29ce484222325));
+
+  it = Query("select HASH('test')");
+  ASSERT_TRUE(it.Next());
+  ASSERT_EQ(it.Get(0).long_value, static_cast<int64_t>(0xf9e6e6ef197c2b25));
+
+  it = Query("select HASH('test', 1)");
+  ASSERT_TRUE(it.Next());
+  ASSERT_EQ(it.Get(0).long_value, static_cast<int64_t>(0xa9cb070fdc15f7a4));
+}
+
 // TODO(hjd): Add trace to test_data.
 TEST_F(TraceProcessorIntegrationTest, DISABLED_AndroidBuildTrace) {
   ASSERT_TRUE(LoadTrace("android_build_trace.json", strlen("[\n{")).ok());
+}
+
+TEST_F(TraceProcessorIntegrationTest, DISABLED_Clusterfuzz14357) {
+  ASSERT_TRUE(LoadTrace("clusterfuzz_14357", 4096).ok());
+}
+
+TEST_F(TraceProcessorIntegrationTest, DISABLED_Clusterfuzz14730) {
+  ASSERT_TRUE(LoadTrace("clusterfuzz_14730", 4096).ok());
+}
+
+TEST_F(TraceProcessorIntegrationTest, DISABLED_Clusterfuzz14753) {
+  ASSERT_TRUE(LoadTrace("clusterfuzz_14753", 4096).ok());
+}
+
+TEST_F(TraceProcessorIntegrationTest, Clusterfuzz14762) {
+  ASSERT_TRUE(LoadTrace("clusterfuzz_14762", 4096 * 1024).ok());
+  auto it = Query("select sum(value) from stats where severity = 'error';");
+  ASSERT_TRUE(it.Next());
+  ASSERT_GT(it.Get(0).long_value, 0);
+}
+
+TEST_F(TraceProcessorIntegrationTest, Clusterfuzz14767) {
+  ASSERT_TRUE(LoadTrace("clusterfuzz_14767", 4096 * 1024).ok());
+  auto it = Query("select sum(value) from stats where severity = 'error';");
+  ASSERT_TRUE(it.Next());
+  ASSERT_GT(it.Get(0).long_value, 0);
+}
+
+TEST_F(TraceProcessorIntegrationTest, DISABLED_Clusterfuzz14799) {
+  ASSERT_TRUE(LoadTrace("clusterfuzz_14799", 4096 * 1024).ok());
+  auto it = Query("select sum(value) from stats where severity = 'error';");
+  ASSERT_TRUE(it.Next());
+  ASSERT_GT(it.Get(0).long_value, 0);
+}
+
+TEST_F(TraceProcessorIntegrationTest, DISABLED_Clusterfuzz15252) {
+  ASSERT_TRUE(LoadTrace("clusterfuzz_15252", 4096).ok());
 }
 
 }  // namespace

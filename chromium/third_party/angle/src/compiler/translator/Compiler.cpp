@@ -384,7 +384,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
     TParseContext parseContext(mSymbolTable, mExtensionBehavior, mShaderType, mShaderSpec,
                                compileOptions, !IsDesktopGLSpec(mShaderSpec), &mDiagnostics,
-                               getResources());
+                               getResources(), getOutputType());
 
     parseContext.setFragmentPrecisionHighOnESSL1(mResources.FragmentPrecisionHigh == 1);
 
@@ -1348,7 +1348,7 @@ bool TCompiler::initializeOutputVariables(TIntermBlock *root)
     InitVariableList list;
     if (mShaderType == GL_VERTEX_SHADER || mShaderType == GL_GEOMETRY_SHADER_EXT)
     {
-        for (const sh::Varying &var : mOutputVaryings)
+        for (const sh::ShaderVariable &var : mOutputVaryings)
         {
             list.push_back(var);
             if (var.name == "gl_Position")
@@ -1361,7 +1361,7 @@ bool TCompiler::initializeOutputVariables(TIntermBlock *root)
     else
     {
         ASSERT(mShaderType == GL_FRAGMENT_SHADER);
-        for (const sh::OutputVariable &var : mOutputVariables)
+        for (const sh::ShaderVariable &var : mOutputVariables)
         {
             list.push_back(var);
         }

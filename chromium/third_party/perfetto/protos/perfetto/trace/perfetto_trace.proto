@@ -40,9 +40,6 @@ enum AndroidLogPriority {
 
 // Begin of protos/perfetto/common/data_source_descriptor.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos
-// to reflect changes in the corresponding C++ headers.
-
 // This message is sent from Producer(s) to the tracing Service when registering
 // to advertise their capabilities. It describes the structure of tracing
 // protos that will be produced by the data source and the supported filters.
@@ -75,24 +72,27 @@ message DataSourceDescriptor {
 // Begin of protos/perfetto/common/gpu_counter_descriptor.proto
 
 // Description of GPU counters.
-// This message is sent by a GPU counter producer to specify the counters available in the hardware.
+// This message is sent by a GPU counter producer to specify the counters
+// available in the hardware.
 message GpuCounterDescriptor {
   message GpuCounterSpec {
     optional uint32 counter_id = 1;
     optional string name = 2;
     optional string description = 3;
-    reserved 4;
+    reserved 4;  // MeasureUnit unit (deprecated)
     oneof peak_value {
       int64 int_peak_value = 5;
       double double_peak_value = 6;
     };
     repeated MeasureUnit numerator_units = 7;
     repeated MeasureUnit denominator_units = 8;
+    optional bool select_by_default = 9;
   }
   repeated GpuCounterSpec specs = 1;
 
-  // Allow producer to group counters into block to represent counter islands.  A capacity may be
-  // specified to indicate the number of counters that can be enable simultaneously in that block.
+  // Allow producer to group counters into block to represent counter islands.
+  // A capacity may be specified to indicate the number of counters that can be
+  // enable simultaneously in that block.
   message GpuCounterBlock {
     // required. Unique ID for the counter group.
     optional uint32 block_id = 1;
@@ -106,6 +106,18 @@ message GpuCounterDescriptor {
     repeated uint32 counter_ids = 5;
   }
   repeated GpuCounterBlock blocks = 2;
+
+  // optional.  Minimum sampling period supported by the producer in
+  // nanoseconds.
+  optional uint64 min_sampling_period_ns = 3;
+
+  // optional.  Maximum sampling period supported by the producer in
+  // nanoseconds.
+  optional uint64 max_sampling_period_ns = 4;
+
+  // optional.  The producer supports counter sampling by instrumenting the
+  // command buffer.
+  optional bool supports_instrumented_sampling = 5;
 
   enum MeasureUnit {
     NONE = 0;
@@ -451,9 +463,6 @@ message TraceStats {
 // End of protos/perfetto/common/trace_stats.proto
 
 // Begin of protos/perfetto/common/tracing_service_state.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
 
 // Reports the state of the tracing service. Used to gather details about the
 // data sources connected.
@@ -2277,9 +2286,6 @@ message FtraceEvent {
     SysExitFtraceEvent sys_exit = 330;
     ZeroFtraceEvent zero = 331;
     GpuFrequencyFtraceEvent gpu_frequency = 332;
-    GpuSchedEnqueueFtraceEvent gpu_sched_enqueue = 333;
-    GpuSchedSubmitFtraceEvent gpu_sched_submit = 334;
-    GpuSchedCompleteFtraceEvent gpu_sched_complete = 335;
   }
 }
 
@@ -2287,12 +2293,38 @@ message FtraceEvent {
 
 // Begin of protos/perfetto/trace/ftrace/ftrace_event_bundle.proto
 
-// One parsed page from per-cpu ftrace buffer.
+// The result of tracing one or more ftrace data pages from a single per-cpu
+// kernel ring buffer. If collating multiple pages' worth of events, all of
+// them come from contiguous pages, with no kernel data loss in between.
 message FtraceEventBundle {
   optional uint32 cpu = 1;
   repeated FtraceEvent event = 2;
-  // True if this cpu's ftrace kernel buffer lost events since the last read.
+  // Set to true if there was data loss between the last time we've read from
+  // the corresponding per-cpu kernel buffer, and the earliest event recorded
+  // in this bundle.
   optional bool lost_events = 3;
+
+  // Optionally-enabled compact encoding of a batch of scheduling events. Only
+  // a subset of events & their fields is recorded.
+  // All fields (except comms) are stored in a structure-of-arrays form, one
+  // entry in each repeated field per event.
+  // TODO(rsavitski): unstable, do not use.
+  message CompactSched {
+    // Delta-encoded timestamps across all sched_switch events within this
+    // bundle. The first is absolute, each next one is relative to its
+    // predecessor.
+    repeated uint64 switch_timestamp = 1 [packed = true];
+    repeated int64 switch_prev_state = 2 [packed = true];
+    repeated int32 switch_next_pid = 3 [packed = true];
+    repeated int32 switch_next_prio = 4 [packed = true];
+
+    // Interned table of unique comm strings for this bundle.
+    repeated string switch_next_comm_table = 5;
+    // One per event, index into |switch_next_comm_table| corresponding to the
+    // next_comm field of the event.
+    repeated uint32 switch_next_comm_index = 6 [packed = true];
+  }
+  optional CompactSched compact_sched = 4;
 }
 
 // End of protos/perfetto/trace/ftrace/ftrace_event_bundle.proto
@@ -2373,31 +2405,6 @@ message GenericFtraceEvent {
 }
 
 // End of protos/perfetto/trace/ftrace/generic.proto
-
-// Begin of protos/perfetto/trace/ftrace/gpu.proto
-
-message GpuSchedEnqueueFtraceEvent {
-  optional uint32 ctx_id = 1;
-  optional uint32 job_id = 2;
-  optional uint32 priority = 3;
-  optional uint32 submission_id = 4;
-}
-message GpuSchedSubmitFtraceEvent {
-  optional uint32 ctx_id = 1;
-  optional uint32 hwqueue_id = 2;
-  optional uint32 job_id = 3;
-  optional uint32 priority = 4;
-  optional uint32 submission_id = 5;
-}
-message GpuSchedCompleteFtraceEvent {
-  optional uint32 ctx_id = 1;
-  optional uint32 job_id = 2;
-  optional string msg = 3;
-  optional uint32 priority = 4;
-  optional uint32 submission_id = 5;
-}
-
-// End of protos/perfetto/trace/ftrace/gpu.proto
 
 // Begin of protos/perfetto/trace/ftrace/kmem.proto
 
@@ -2876,7 +2883,7 @@ message MmVmscanKswapdSleepFtraceEvent {
 // emitted proactively in advance of referring to them in later packets.
 //
 // Next reserved id: 8 (up to 15).
-// Next id: 22.
+// Next id: 23.
 message InternedData {
   // Each field's message type needs to specify an |iid| field, which is the ID
   // of the entry in the field's interning index. Each field constructs its own
@@ -2910,6 +2917,9 @@ message InternedData {
   repeated Frame frames = 6;
   // A callstack of a program.
   repeated Callstack callstacks = 7;
+
+  // Additional Vulkan information sent in a VulkanMemoryEvent message
+  repeated InternedString vulkan_memory_keys = 22;
 }
 
 // End of protos/perfetto/trace/interned_data/interned_data.proto
@@ -2994,6 +3004,30 @@ message PowerRails {
 
 // Begin of protos/perfetto/trace/profiling/heap_graph.proto
 
+message HeapGraphRoot {
+  enum Type {
+    ROOT_UNKNOWN = 0;
+    ROOT_JNI_GLOBAL = 1;
+    ROOT_JNI_LOCAL = 2;
+    ROOT_JAVA_FRAME = 3;
+    ROOT_NATIVE_STACK = 4;
+    ROOT_STICKY_CLASS = 5;
+    ROOT_THREAD_BLOCK = 6;
+    ROOT_MONITOR_USED = 7;
+    ROOT_THREAD_OBJECT = 8;
+    ROOT_INTERNED_STRING = 9;
+    ROOT_FINALIZING = 10;
+    ROOT_DEBUGGER = 11;
+    ROOT_REFERENCE_CLEANUP = 12;
+    ROOT_VM_INTERNAL = 13;
+    ROOT_JNI_MONITOR = 14;
+  };
+  // Objects retained by this root.
+  repeated uint64 object_ids = 1;
+
+  optional Type root_type = 2;
+}
+
 message HeapGraphObject {
   optional uint64 id = 1;
 
@@ -3014,8 +3048,18 @@ message HeapGraphObject {
 message HeapGraph {
   optional int32 pid = 1;
 
-  // Live objects at the time this dump was taken.
+  // This contains all objects at the time this dump was taken. Some of these
+  // will be live, some of those unreachable (garbage). To find the live
+  // objects, the client needs to build the transitive closure of objects
+  // reachable from |roots|.
+  // All objects not contained within that transitive closure are garbage that
+  // has not yet been collected.
   repeated HeapGraphObject objects = 2;
+
+  // Roots at the time this dump was taken.
+  // All live objects are reachable from the roots. All other objects are
+  // garbage.
+  repeated HeapGraphRoot roots = 7;
 
   // Type names used in managed heap graph.
   repeated InternedString type_names = 3;
@@ -3030,6 +3074,9 @@ message HeapGraph {
 // End of protos/perfetto/trace/profiling/heap_graph.proto
 
 // Begin of protos/perfetto/trace/profiling/profile_common.proto
+
+// TODO(fmayer): Figure out naming thoroughout this file to get a
+// nomenclature that works between Windows and Linux.
 
 // The interning fields in this file can refer to 2 different intern tables,
 // depending on the message they are used in. If the interned fields are present
@@ -3060,11 +3107,68 @@ message ProfiledFrameSymbols {
   repeated uint32 line_number = 4;
 }
 
+message Line {
+  optional string function_name = 1;
+  optional string source_file_name = 2;
+  optional uint32 line_number = 3;
+}
+
+// Symbols for a given address in a module.
+message AddressSymbols {
+  optional uint64 address = 1;
+
+  // Source lines that correspond to this address.
+  //
+  // These are repeated because when inlining happens, multiple functions'
+  // frames can be at a single address. Imagine function Foo calling the
+  // std::vector<int> constructor, which gets inlined at 0xf00. We then get
+  // both Foo and the std::vector<int> constructor when we symbolize the
+  // address.
+  repeated Line lines = 2;
+}
+
+// Symbols for addresses seen in a module.
+message ModuleSymbols {
+  // Fully qualified path to the mapping.
+  // E.g. /system/lib64/libc.so.
+  optional string path = 1;
+
+  // .note.gnu.build-id on Linux (not hex encoded).
+  // uuid on MacOS.
+  // Module GUID on Windows.
+  optional string build_id = 2;
+  repeated AddressSymbols address_symbols = 3;
+}
+
 message Mapping {
   optional uint64 iid = 1;       // Interning key.
   optional uint64 build_id = 2;  // Interning key.
-  // TODO(fmayer): Document difference between those two.
-  optional uint64 exact_offset = 8;
+
+  // The linker may create multiple memory mappings for the same shared
+  // library.
+  // This is so that the ELF header is mapped as read only, while the
+  // executable memory is mapped as executable only.
+  // The details of this depend on the linker, a possible mapping of an ELF
+  // file is this:
+  //         +----------------------+
+  // ELF     |xxxxxxxxxyyyyyyyyyyyyy|
+  //         +---------+------------+
+  //         |         |
+  //         | read    | executable
+  //         v mapping v mapping
+  //         +----------------------+
+  // Memory  |xxxxxxxxx|yyyyyyyyyyyy|
+  //         +------------------+---+
+  //         ^         ^        ^
+  //         +         +        +
+  //       start     exact    relpc
+  //       offset   offset    0x1800
+  //       0x0000   0x1000
+  //
+  // exact_offset is the offset into the library file of this mapping.
+  // start_offset is the offset into the library file of the first mapping
+  // for that library. For native libraries (.so files) this should be 0.
+  optional uint64 exact_offset = 8;  // This is not set on Android 10.
   optional uint64 start_offset = 3;
   optional uint64 start = 4;
   optional uint64 end = 5;
@@ -3288,6 +3392,9 @@ message ProcessTree {
     // No longer used as of Apr 2018, when the dedicated |threads| field was
     // introduced in ProcessTree.
     repeated Thread threads_deprecated = 4 [deprecated = true];
+
+    // The uid for the process, as per /proc/pid/status.
+    optional int32 uid = 5;
   }
 
   // List of processes and threads in the client. These lists are incremental
@@ -3403,7 +3510,7 @@ message Trace {
 // TracePacket(s).
 //
 // Next reserved id: 13 (up to 15).
-// Next id: 61.
+// Next id: 64.
 message TracePacket {
   // The timestamp of the TracePacket.
   // By default this timestamps refers to the trace clock (CLOCK_BOOTTIME on
@@ -3451,9 +3558,12 @@ message TracePacket {
     StreamingProfilePacket streaming_profile_packet = 54;
     HeapGraph heap_graph = 56;
     GraphicsFrameEvent graphics_frame_event = 57;
+    // removed field with id 62
+    GpuLog gpu_log = 63;
 
     // Only used in profile packets.
     ProfiledFrameSymbols profiled_frame_symbols = 55;
+    ModuleSymbols module_symbols = 61;
 
     // Only used by TrackEvent.
     TrackDescriptor track_descriptor = 60;
@@ -3505,6 +3615,7 @@ message TracePacket {
   // it (since the last reset of interning state). It may also be emitted
   // proactively in advance of referring to them in later packets.
   optional InternedData interned_data = 12;
+
 
   enum SequenceFlags {
     SEQ_UNSPECIFIED = 0;
@@ -4054,9 +4165,33 @@ message GpuCounterEvent {
     }
   }
   repeated GpuCounter counters = 2;
+
+  // optional. Identifier for GPU in a multi-gpu device.
+  optional int32 gpu_id = 3;
 }
 
 // End of protos/perfetto/trace/gpu/gpu_counter_event.proto
+
+// Begin of protos/perfetto/trace/gpu/gpu_log.proto
+
+// Message for logging events GPU data producer.
+message GpuLog {
+  enum Severity {
+    LOG_SEVERITY_UNSPECIFIED = 0;
+    LOG_SEVERITY_VERBOSE = 1;
+    LOG_SEVERITY_DEBUG = 2;
+    LOG_SEVERITY_INFO = 3;
+    LOG_SEVERITY_WARNING = 4;
+    LOG_SEVERITY_ERROR = 5;
+  };
+  optional Severity severity = 1;
+
+  optional string tag = 2;
+
+  optional string log_message = 3;
+}
+
+// End of protos/perfetto/trace/gpu/gpu_log.proto
 
 // Begin of protos/perfetto/trace/gpu/gpu_render_stage_event.proto
 
@@ -4065,8 +4200,8 @@ message GpuRenderStageEvent {
   // required. Unique ID for the event.
   optional uint64 event_id = 1;
 
-  // optional. Duration in GPU clock.  If unset, this is a single time point
-  // event.
+  // optional. Duration of the event.  This should be in the same clock domain as the timestamp of
+  // the packet.  If unset, this is a single time point event.
   optional uint64 duration = 2;
 
   // required. ID to a hardware queue description in the specifications.
@@ -4078,10 +4213,10 @@ message GpuRenderStageEvent {
   // required. GL context/VK device.
   optional uint64 context = 5;
 
-  // optional. The surface or render target for this event.
-  optional uint64 surface_id = 8;
+  // optional. The render target for this event.
+  optional uint64 render_target_handle = 8;
 
-  // optional. Render pass handle.
+  // optional. The Vulkan render pass handle.
   optional uint64 render_pass_handle = 9;
 
   // optional. Submission ID generated by the UMD.
@@ -4109,23 +4244,19 @@ message GpuRenderStageEvent {
       optional string description = 2;
     }
 
-    // Labels to categorize the hw Queue this event goes on
+    // Labels to categorize the hw Queue this event goes on.
     repeated Description hw_queue = 2;
 
-    // Labels to categorize render stage(binning, render, compute etc)
+    // Labels to categorize render stage(binning, render, compute etc).
     repeated Description stage = 3;
   }
   optional Specifications specifications = 7;
 
-  // optional.  If True, duration must not be set and a GpuRenderStageEndEvent is expected.
-  optional bool begin_event = 11;
+  // optional. Identifier for GPU in a multi-gpu device.
+  optional int32 gpu_id = 11;
 
   // Extension for vendor's custom proto.
   extensions 100;
-}
-
-// Message to signal the end of the last render stage event that had set begin_event.
-message GpuRenderStageEndEvent {
 }
 
 // End of protos/perfetto/trace/gpu/gpu_render_stage_event.proto
@@ -4149,9 +4280,6 @@ message AndroidLogConfig {
 
 // Begin of protos/perfetto/config/chrome/chrome_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 message ChromeConfig {
   optional string trace_config = 1;
 
@@ -4163,9 +4291,6 @@ message ChromeConfig {
 // End of protos/perfetto/config/chrome/chrome_config.proto
 
 // Begin of protos/perfetto/config/data_source_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
 
 // The configuration that is passed to each data source when starting tracing.
 message DataSourceConfig {
@@ -4215,6 +4340,7 @@ message DataSourceConfig {
   optional ProcessStatsConfig process_stats_config = 103 [lazy = true];
   optional SysStatsConfig sys_stats_config = 104 [lazy = true];
   optional HeapprofdConfig heapprofd_config = 105 [lazy = true];
+  optional JavaHprofConfig java_hprof_config = 110 [lazy = true];
   optional AndroidPowerConfig android_power_config = 106 [lazy = true];
   optional AndroidLogConfig android_log_config = 107 [lazy = true];
   optional GpuCounterConfig gpu_counter_config = 108 [lazy = true];
@@ -4245,9 +4371,6 @@ message DataSourceConfig {
 
 // Begin of protos/perfetto/config/ftrace/ftrace_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 message FtraceConfig {
   repeated string ftrace_events = 1;
   repeated string atrace_categories = 2;
@@ -4255,14 +4378,25 @@ message FtraceConfig {
   // *Per-CPU* buffer size.
   optional uint32 buffer_size_kb = 10;
   optional uint32 drain_period_ms = 11;
+
+  // Configuration for compact encoding of scheduler events. If enabled, this
+  // records a small subset of fields of selected scheduling events, and
+  // encodes them in a denser proto format than normal. This is useful due to
+  // scheduling events being abundant in a typical trace, and dominating its
+  // size via a combination of unnecessary data being retained, and proto
+  // format overheads.
+  // TODO(rsavitski): unstable, do not use.
+  message CompactSchedConfig {
+    // If true, and sched_switch ftrace event is enabled, record those events
+    // in the compact format.
+    optional bool enabled = 1;
+  }
+  optional CompactSchedConfig compact_sched = 12;
 }
 
 // End of protos/perfetto/config/ftrace/ftrace_config.proto
 
 // Begin of protos/perfetto/config/inode_file/inode_file_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
 
 message InodeFileConfig {
   message MountPointMappingEntry {
@@ -4314,9 +4448,6 @@ message AndroidPowerConfig {
 
 // Begin of protos/perfetto/config/process_stats/process_stats_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 message ProcessStatsConfig {
   enum Quirks {
     QUIRKS_UNSPECIFIED = 0;
@@ -4361,9 +4492,6 @@ message ProcessStatsConfig {
 
 // Begin of protos/perfetto/config/sys_stats/sys_stats_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
-
 // This file defines the configuration for the Linux /proc poller data source,
 // which injects counters in the trace.
 // Counters that are needed in the trace must be explicitly listed in the
@@ -4406,9 +4534,6 @@ message SysStatsConfig {
 // End of protos/perfetto/config/sys_stats/sys_stats_config.proto
 
 // Begin of protos/perfetto/config/test_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
 
 // The configuration for a fake producer used in tests.
 message TestConfig {
@@ -4457,9 +4582,6 @@ message TestConfig {
 // End of protos/perfetto/config/test_config.proto
 
 // Begin of protos/perfetto/config/trace_config.proto
-
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos
-// to reflect changes in the corresponding C++ headers.
 
 // The overall config that is used when starting a new tracing session through
 // ProducerPort::StartTracing().
@@ -4844,10 +4966,37 @@ message HeapprofdConfig {
 
 // End of protos/perfetto/config/profiling/heapprofd_config.proto
 
-// Begin of protos/perfetto/config/gpu/gpu_counter_config.proto
+// Begin of protos/perfetto/config/profiling/java_hprof_config.proto
 
-// When editing this file run ./tools/gen_tracing_cpp_headers_from_protos.py
-// to reflect changes in the corresponding C++ headers.
+// Configuration for go/heapprofd.
+message JavaHprofConfig {
+  // If dump_interval_ms != 0, the following configuration is used.
+  message ContinuousDumpConfig {
+    // ms to wait before first continuous dump.
+    // A dump is always created at the beginning of the trace.
+    optional uint32 dump_phase_ms = 1;
+    // ms to wait between following dumps.
+    optional uint32 dump_interval_ms = 2;
+  };
+
+  // This input is normalized in the following way: if it contains slashes,
+  // everything up to the last slash is discarded. If it contains "@",
+  // everything after the first @ is discared.
+  // E.g. /system/bin/surfaceflinger@1.0 normalizes to surfaceflinger.
+  // This transformation is also applied to the processes' command lines when
+  // matching.
+  repeated string process_cmdline = 1;
+
+  // For watermark based triggering or local debugging.
+  repeated uint64 pid = 2;
+
+  // Dump at a predefined interval.
+  optional ContinuousDumpConfig continuous_dump_config = 3;
+}
+
+// End of protos/perfetto/config/profiling/java_hprof_config.proto
+
+// Begin of protos/perfetto/config/gpu/gpu_counter_config.proto
 
 message GpuCounterConfig {
   // Desired sampling interval for counters.
@@ -4856,6 +5005,12 @@ message GpuCounterConfig {
   // List of counters to be sampled. Counter IDs correspond to the ones
   // described in GpuCounterSpec in the data source descriptor.
   repeated uint32 counter_ids = 2;
+
+  // Sample counters by instrumenting command buffers.
+  optional bool instrumented_sampling = 3;
+
+  // Fix gpu clock rate during trace session.
+  optional bool fix_gpu_clock = 4;
 }
 
 // End of protos/perfetto/config/gpu/gpu_counter_config.proto

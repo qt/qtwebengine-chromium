@@ -4,9 +4,10 @@
 
 #include "net/third_party/quiche/src/quic/qbone/platform/netlink.h"
 
+#include <utility>
+
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_containers.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/qbone/platform/mock_kernel.h"
 #include "net/third_party/quiche/src/quic/qbone/qbone_constants.h"
@@ -243,7 +244,7 @@ void CreateRtmsg(struct nlmsghdr* nlm,
 }
 
 TEST_F(NetlinkTest, GetLinkInfoWorks) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   uint8_t hwaddr[] = {'a', 'b', 'c', 'd', 'e', 'f'};
   uint8_t bcaddr[] = {'c', 'b', 'a', 'f', 'e', 'd'};
@@ -283,7 +284,7 @@ TEST_F(NetlinkTest, GetLinkInfoWorks) {
 }
 
 TEST_F(NetlinkTest, GetAddressesWorks) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   QuicUnorderedSet<std::string> addresses = {QuicIpAddress::Any4().ToString(),
                                              QuicIpAddress::Any6().ToString()};
@@ -350,7 +351,7 @@ TEST_F(NetlinkTest, GetAddressesWorks) {
 }
 
 TEST_F(NetlinkTest, ChangeLocalAddressAdd) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   QuicIpAddress ip = QuicIpAddress::Any6();
   ExpectNetlinkPacket(
@@ -427,7 +428,7 @@ TEST_F(NetlinkTest, ChangeLocalAddressAdd) {
 }
 
 TEST_F(NetlinkTest, ChangeLocalAddressRemove) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   QuicIpAddress ip = QuicIpAddress::Any4();
   ExpectNetlinkPacket(
@@ -480,7 +481,7 @@ TEST_F(NetlinkTest, ChangeLocalAddressRemove) {
 }
 
 TEST_F(NetlinkTest, GetRouteInfoWorks) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   QuicIpAddress destination;
   ASSERT_TRUE(destination.FromString("f800::2"));
@@ -514,7 +515,7 @@ TEST_F(NetlinkTest, GetRouteInfoWorks) {
 }
 
 TEST_F(NetlinkTest, ChangeRouteAdd) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   QuicIpAddress preferred_ip;
   preferred_ip.FromString("ff80:dead:beef::1");
@@ -596,7 +597,7 @@ TEST_F(NetlinkTest, ChangeRouteAdd) {
 }
 
 TEST_F(NetlinkTest, ChangeRouteRemove) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   QuicIpAddress preferred_ip;
   preferred_ip.FromString("ff80:dead:beef::1");
@@ -678,7 +679,7 @@ TEST_F(NetlinkTest, ChangeRouteRemove) {
 }
 
 TEST_F(NetlinkTest, ChangeRouteReplace) {
-  auto netlink = QuicMakeUnique<Netlink>(&mock_kernel_);
+  auto netlink = std::make_unique<Netlink>(&mock_kernel_);
 
   QuicIpAddress preferred_ip;
   preferred_ip.FromString("ff80:dead:beef::1");

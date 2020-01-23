@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "perfetto/base/logging.h"
+#include "perfetto/ext/base/optional.h"
 #include "src/trace_processor/db/bit_vector.h"
 
 namespace perfetto {
@@ -68,12 +69,17 @@ class RowMap {
   }
 
   // Returns the first index of the given |row| in the RowMap.
-  uint32_t IndexOf(uint32_t row) const {
+  base::Optional<uint32_t> IndexOf(uint32_t row) const {
     if (compact_) {
-      return bit_vector_.GetNumBitsSet(row);
+      return row < bit_vector_.size() && bit_vector_.IsSet(row)
+                 ? base::make_optional(bit_vector_.GetNumBitsSet(row))
+                 : base::nullopt;
     } else {
       auto it = std::find(index_vector_.begin(), index_vector_.end(), row);
-      return static_cast<uint32_t>(std::distance(index_vector_.begin(), it));
+      return it != index_vector_.end()
+                 ? base::make_optional(static_cast<uint32_t>(
+                       std::distance(index_vector_.begin(), it)))
+                 : base::nullopt;
     }
   }
 
@@ -82,7 +88,7 @@ class RowMap {
     if (compact_) {
       if (row >= bit_vector_.size())
         bit_vector_.Resize(row + 1, false);
-      bit_vector_.Set(row, true);
+      bit_vector_.Set(row);
     } else {
       index_vector_.emplace_back(row);
     }
@@ -98,17 +104,24 @@ class RowMap {
   // this  : [0, 10, 11, 11, 4]
   //
   // Conceptually, we are performing the following algorithm:
+  // RowMap rm = Copy()
   // for (idx : picker)
-  //   this[i++] = this[idx]
-  void SelectRows(const RowMap& picker);
+  //   rm[i++] = this[idx]
+  // return rm;
+  RowMap SelectRows(const RowMap& picker) const;
 
   // Removes any row where |p(row)| returns false from this RowMap.
   template <typename Predicate>
   void RemoveIf(Predicate p) {
     if (compact_) {
       const auto& bv = bit_vector_;
-      for (uint32_t i = bv.NextSet(0); i < bv.size(); i = bv.NextSet(i + 1)) {
-        bit_vector_.Set(i, !p(i));
+      uint32_t removed = 0;
+      for (uint32_t i = 0, size = bv.GetNumBitsSet(); i < size; ++i) {
+        uint32_t idx = bv.IndexOfNthSet(i - removed);
+        if (p(idx)) {
+          removed++;
+          bit_vector_.Clear(idx);
+        }
       }
     } else {
       auto it = std::remove_if(index_vector_.begin(), index_vector_.end(), p);

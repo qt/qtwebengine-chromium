@@ -83,7 +83,7 @@ void InitMinimumTextureCapsMap(const Version &clientVersion,
                                const Extensions &extensions,
                                TextureCapsMap *capsMap);
 
-// Returns true if all the formats required to support GL_CHROMIUM_compressed_texture_etc are
+// Returns true if all the formats required to support GL_ANGLE_compressed_texture_etc are
 // present. Does not determine if they are natively supported without decompression.
 bool DetermineCompressedTextureETCSupport(const TextureCapsMap &textureCaps);
 
@@ -234,12 +234,18 @@ struct Extensions
     // OES_compressed_EAC_RG11_signed_texture
     bool compressedEACRG11SignedTexture = false;
 
-    // GL_CHROMIUM_compressed_texture_etc
+    // ANGLE_compressed_texture_etc
     // ONLY exposed if ETC texture formats are natively supported without decompression
     // Backends should enable this extension explicitly. It is not enabled with
     // setTextureExtensionSupport, use DetermineCompressedTextureETCSupport to check if all of the
     // individual formats required to support this extension are available.
     bool compressedTextureETC = false;
+
+    // GL_IMG_texture_compression_pvrtc
+    bool compressedTexturePVRTC = false;
+
+    // GL_EXT_pvrtc_sRGB
+    bool compressedTexturePVRTCsRGB = false;
 
     // GL_EXT_sRGB
     // Implies that TextureCaps for GL_SRGB8_ALPHA8 and GL_SRGB8 exist
@@ -384,6 +390,9 @@ struct Extensions
 
     // GL_OES_vertex_array_object
     bool vertexArrayObject = false;
+
+    // GL_OES_vertex_type_10_10_10_2
+    bool vertexAttribType1010102 = false;
 
     // GL_KHR_debug
     bool debug                     = false;
@@ -536,8 +545,10 @@ struct Extensions
 
 struct ExtensionInfo
 {
-    // If this extension can be enabled with glRequestExtension (GL_ANGLE_request_extension)
+    // If this extension can be enabled or disabled  with glRequestExtension
+    // (GL_ANGLE_request_extension)
     bool Requestable = false;
+    bool Disablable  = false;
 
     // Pointer to a boolean member of the Extensions struct
     typedef bool(Extensions::*ExtensionBool);
@@ -925,6 +936,9 @@ struct DisplayExtensions
 
     // EGL_ANGLE_create_context_backwards_compatible
     bool createContextBackwardsCompatible = false;
+
+    // EGL_KHR_no_config_context
+    bool noConfigContext = false;
 };
 
 struct DeviceExtensions
@@ -936,6 +950,9 @@ struct DeviceExtensions
 
     // EGL_ANGLE_device_d3d
     bool deviceD3D = false;
+
+    // EGL_ANGLE_device_cgl
+    bool deviceCGL = false;
 };
 
 struct ClientExtensions
@@ -961,6 +978,9 @@ struct ClientExtensions
     // EGL_ANGLE_platform_angle_d3d
     bool platformANGLED3D = false;
 
+    // EGL_ANGLE_platform_angle_d3d11on12
+    bool platformANGLED3D11ON12 = false;
+
     // EGL_ANGLE_platform_angle_opengl
     bool platformANGLEOpenGL = false;
 
@@ -969,6 +989,9 @@ struct ClientExtensions
 
     // EGL_ANGLE_platform_angle_vulkan
     bool platformANGLEVulkan = false;
+
+    // EGL_ANGLE_platform_angle_metal
+    bool platformANGLEMetal = false;
 
     // EGL_ANGLE_platform_angle_context_virtualization
     bool platformANGLEContextVirtualization = false;
@@ -996,6 +1019,9 @@ struct ClientExtensions
 
     // EGL_ANGLE_feature_control
     bool featureControlANGLE = false;
+
+    // EGL_ANGLE_platform_angle_device_type_swiftshader
+    bool platformANGLEDeviceTypeSwiftShader = false;
 };
 
 }  // namespace egl

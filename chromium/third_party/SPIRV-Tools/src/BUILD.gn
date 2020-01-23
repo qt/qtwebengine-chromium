@@ -288,7 +288,10 @@ config("spvtools_internal_config") {
   configs = [ ":spvtools_public_config" ]
 
   if (is_clang) {
-    cflags = [ "-Wno-implicit-fallthrough" ]
+    cflags = [
+      "-Wno-implicit-fallthrough",
+      "-Wno-newline-eof",
+    ]
   }
 }
 
@@ -407,7 +410,6 @@ static_library("spvtools_val") {
     "source/val/validate_composites.cpp",
     "source/val/validate_constants.cpp",
     "source/val/validate_conversion.cpp",
-    "source/val/validate_datarules.cpp",
     "source/val/validate_debug.cpp",
     "source/val/validate_decorations.cpp",
     "source/val/validate_derivatives.cpp",
@@ -565,8 +567,6 @@ static_library("spvtools_opt") {
     "source/opt/local_single_block_elim_pass.h",
     "source/opt/local_single_store_elim_pass.cpp",
     "source/opt/local_single_store_elim_pass.h",
-    "source/opt/local_ssa_elim_pass.cpp",
-    "source/opt/local_ssa_elim_pass.h",
     "source/opt/log.h",
     "source/opt/loop_dependence.cpp",
     "source/opt/loop_dependence.h",
@@ -734,10 +734,6 @@ static_library("spvtools_reduce") {
     "source/reduce/remove_function_reduction_opportunity_finder.h",
     "source/reduce/remove_instruction_reduction_opportunity.cpp",
     "source/reduce/remove_instruction_reduction_opportunity.h",
-    "source/reduce/remove_opname_instruction_reduction_opportunity_finder.cpp",
-    "source/reduce/remove_opname_instruction_reduction_opportunity_finder.h",
-    "source/reduce/remove_relaxed_precision_decoration_opportunity_finder.cpp",
-    "source/reduce/remove_relaxed_precision_decoration_opportunity_finder.h",
     "source/reduce/remove_selection_reduction_opportunity.cpp",
     "source/reduce/remove_selection_reduction_opportunity.h",
     "source/reduce/remove_selection_reduction_opportunity_finder.cpp",
@@ -876,6 +872,7 @@ source_set("spvtools_util_cli_consumer") {
     "tools/util/cli_consumer.cpp",
     "tools/util/cli_consumer.h",
   ]
+  deps = [ ":spvtools_headers" ]
   configs += [ ":spvtools_internal_config" ]
 }
 

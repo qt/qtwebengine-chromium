@@ -26,7 +26,7 @@
 #include "dawn_native/PipelineLayout.h"
 #include "dawn_native/Queue.h"
 #include "dawn_native/RenderPipeline.h"
-#include "dawn_native/RingBuffer.h"
+#include "dawn_native/RingBufferAllocator.h"
 #include "dawn_native/Sampler.h"
 #include "dawn_native/ShaderModule.h"
 #include "dawn_native/StagingBuffer.h"
@@ -92,7 +92,7 @@ namespace dawn_native { namespace null {
         Serial GetCompletedCommandSerial() const final override;
         Serial GetLastSubmittedCommandSerial() const final override;
         Serial GetPendingCommandSerial() const override;
-        void TickImpl() override;
+        MaybeError TickImpl() override;
 
         void AddPendingOperation(std::unique_ptr<PendingOperation> operation);
         void SubmitPendingOperations();
@@ -191,7 +191,7 @@ namespace dawn_native { namespace null {
         ~Queue();
 
       private:
-        void SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) override;
+        MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) override;
     };
 
     class SwapChain : public SwapChainBase {
@@ -201,7 +201,7 @@ namespace dawn_native { namespace null {
 
       protected:
         TextureBase* GetNextTextureImpl(const TextureDescriptor* descriptor) override;
-        void OnBeforePresent(TextureBase*) override;
+        MaybeError OnBeforePresent(TextureBase*) override;
     };
 
     class NativeSwapChainImpl {

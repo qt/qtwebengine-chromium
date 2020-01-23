@@ -8,6 +8,12 @@
 
 import("../../../webrtc.gni")
 
+rtc_source_set("gain_control_interface") {
+  sources = [
+    "gain_control.h",
+  ]
+}
+
 rtc_source_set("agc") {
   sources = [
     "agc_manager_direct.cc",
@@ -15,10 +21,10 @@ rtc_source_set("agc") {
   ]
   configs += [ "..:apm_debug_dump" ]
   deps = [
+    ":gain_control_interface",
     ":gain_map",
     ":level_estimation",
     "..:apm_logging",
-    "..:gain_control_interface",
     "../../../common_audio",
     "../../../common_audio:common_audio_c",
     "../../../rtc_base:checks",
@@ -26,6 +32,7 @@ rtc_source_set("agc") {
     "../../../rtc_base:logging",
     "../../../rtc_base:macromagic",
     "../../../rtc_base:safe_minmax",
+    "../../../system_wrappers:field_trial",
     "../../../system_wrappers:metrics",
     "../agc2:level_estimation_agc",
     "../vad",
@@ -100,8 +107,10 @@ if (rtc_include_tests) {
 
     deps = [
       ":agc",
+      ":gain_control_interface",
       ":level_estimation",
       "..:mocks",
+      "../../../test:field_trial",
       "../../../test:fileutils",
       "../../../test:test_support",
       "//testing/gtest",

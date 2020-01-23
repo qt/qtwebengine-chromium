@@ -19,9 +19,9 @@
 
 #include "common/SerialQueue.h"
 #include "dawn_native/Device.h"
-#include "dawn_native/d3d12/CommittedResourceAllocatorD3D12.h"
+#include "dawn_native/d3d12/CommandRecordingContext.h"
 #include "dawn_native/d3d12/Forward.h"
-#include "dawn_native/d3d12/d3d12_platform.h"
+#include "dawn_native/d3d12/ResourceHeapAllocationD3D12.h"
 
 #include <memory>
 
@@ -32,8 +32,13 @@ namespace dawn_native { namespace d3d12 {
     class MapRequestTracker;
     class PlatformFunctions;
     class ResourceAllocator;
+    class ResourceAllocatorManager;
 
-    void ASSERT_SUCCESS(HRESULT hr);
+#define ASSERT_SUCCESS(hr)            \
+    {                                 \
+        HRESULT succeeded = hr;       \
+        ASSERT(SUCCEEDED(succeeded)); \
+    }
 
     // Definition of backend types
     class Device : public DeviceBase {
@@ -48,7 +53,7 @@ namespace dawn_native { namespace d3d12 {
 
         Serial GetCompletedCommandSerial() const final override;
         Serial GetLastSubmittedCommandSerial() const final override;
-        void TickImpl() override;
+        MaybeError TickImpl() override;
 
         ComPtr<ID3D12Device> GetD3D12Device() const;
         ComPtr<ID3D12CommandQueue> GetCommandQueue() const;
@@ -60,20 +65,20 @@ namespace dawn_native { namespace d3d12 {
         DescriptorHeapAllocator* GetDescriptorHeapAllocator() const;
         MapRequestTracker* GetMapRequestTracker() const;
         ResourceAllocator* GetResourceAllocator() const;
+        CommandAllocatorManager* GetCommandAllocatorManager() const;
 
         const PlatformFunctions* GetFunctions() const;
         ComPtr<IDXGIFactory4> GetFactory() const;
 
-        void OpenCommandList(ComPtr<ID3D12GraphicsCommandList>* commandList);
-        ComPtr<ID3D12GraphicsCommandList> GetPendingCommandList();
+        ResultOrError<CommandRecordingContext*> GetPendingCommandContext();
         Serial GetPendingCommandSerial() const override;
 
-        void NextSerial();
-        void WaitForSerial(Serial serial);
+        MaybeError NextSerial();
+        MaybeError WaitForSerial(Serial serial);
 
         void ReferenceUntilUnused(ComPtr<IUnknown> object);
 
-        void ExecuteCommandLists(std::initializer_list<ID3D12CommandList*> commandLists);
+        MaybeError ExecuteCommandContext(CommandRecordingContext* commandContext);
 
         ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
         MaybeError CopyFromStagingToBuffer(StagingBufferBase* source,
@@ -82,13 +87,13 @@ namespace dawn_native { namespace d3d12 {
                                            uint64_t destinationOffset,
                                            uint64_t size) override;
 
-        ResultOrError<ResourceMemoryAllocation> AllocateMemory(
+        ResultOrError<ResourceHeapAllocation> AllocateMemory(
             D3D12_HEAP_TYPE heapType,
             const D3D12_RESOURCE_DESC& resourceDescriptor,
             D3D12_RESOURCE_STATES initialUsage,
             D3D12_HEAP_FLAGS heapFlags);
 
-        void DeallocateMemory(ResourceMemoryAllocation& allocation);
+        void DeallocateMemory(ResourceHeapAllocation& allocation);
 
         TextureBase* WrapSharedHandle(const TextureDescriptor* descriptor, HANDLE sharedHandle);
 
@@ -115,8 +120,6 @@ namespace dawn_native { namespace d3d12 {
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) override;
 
-        size_t GetD3D12HeapTypeToIndex(D3D12_HEAP_TYPE heapType) const;
-
         Serial mCompletedSerial = 0;
         Serial mLastSubmittedSerial = 0;
         ComPtr<ID3D12Fence> mFence;
@@ -129,10 +132,7 @@ namespace dawn_native { namespace d3d12 {
         ComPtr<ID3D12CommandSignature> mDrawIndirectSignature;
         ComPtr<ID3D12CommandSignature> mDrawIndexedIndirectSignature;
 
-        struct PendingCommandList {
-            ComPtr<ID3D12GraphicsCommandList> commandList;
-            bool open = false;
-        } mPendingCommands;
+        CommandRecordingContext mPendingCommands;
 
         SerialQueue<ComPtr<IUnknown>> mUsedComObjectRefs;
 
@@ -140,20 +140,7 @@ namespace dawn_native { namespace d3d12 {
         std::unique_ptr<DescriptorHeapAllocator> mDescriptorHeapAllocator;
         std::unique_ptr<MapRequestTracker> mMapRequestTracker;
         std::unique_ptr<ResourceAllocator> mResourceAllocator;
-
-        static constexpr uint32_t kNumHeapTypes = 4u;  // Number of D3D12_HEAP_TYPE
-
-        static_assert(D3D12_HEAP_TYPE_READBACK <= kNumHeapTypes,
-                      "Readback heap type enum exceeds max heap types");
-        static_assert(D3D12_HEAP_TYPE_UPLOAD <= kNumHeapTypes,
-                      "Upload heap type enum exceeds max heap types");
-        static_assert(D3D12_HEAP_TYPE_DEFAULT <= kNumHeapTypes,
-                      "Default heap type enum exceeds max heap types");
-        static_assert(D3D12_HEAP_TYPE_CUSTOM <= kNumHeapTypes,
-                      "Custom heap type enum exceeds max heap types");
-
-        std::array<std::unique_ptr<CommittedResourceAllocator>, kNumHeapTypes>
-            mDirectResourceAllocators;
+        std::unique_ptr<ResourceAllocatorManager> mResourceAllocatorManager;
 
         dawn_native::PCIInfo mPCIInfo;
     };

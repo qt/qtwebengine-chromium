@@ -14,15 +14,14 @@
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "api/fec_controller.h"
 #include "api/media_stream_proxy.h"
 #include "api/media_stream_track_proxy.h"
-#include "api/media_transport_interface.h"
 #include "api/network_state_predictor.h"
 #include "api/peer_connection_factory_proxy.h"
 #include "api/peer_connection_proxy.h"
 #include "api/rtc_event_log/rtc_event_log.h"
+#include "api/transport/media/media_transport_interface.h"
 #include "api/turn_customizer.h"
 #include "api/units/data_rate.h"
 #include "api/video_track_source_proxy.h"
@@ -135,8 +134,8 @@ bool PeerConnectionFactory::Initialize() {
     return false;
   }
 
-  channel_manager_ = absl::make_unique<cricket::ChannelManager>(
-      std::move(media_engine_), absl::make_unique<cricket::RtpDataEngine>(),
+  channel_manager_ = std::make_unique<cricket::ChannelManager>(
+      std::move(media_engine_), std::make_unique<cricket::RtpDataEngine>(),
       worker_thread_, network_thread_);
 
   channel_manager_->SetVideoRtxEnabled(true);
@@ -229,7 +228,7 @@ PeerConnectionFactory::CreatePeerConnection(
     std::unique_ptr<cricket::PortAllocator> allocator,
     std::unique_ptr<rtc::RTCCertificateGeneratorInterface> cert_generator,
     PeerConnectionObserver* observer) {
-  // Convert the legacy API into the new depnedency structure.
+  // Convert the legacy API into the new dependency structure.
   PeerConnectionDependencies dependencies(observer);
   dependencies.allocator = std::move(allocator);
   dependencies.cert_generator = std::move(cert_generator);
@@ -242,18 +241,28 @@ PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration,
     PeerConnectionDependencies dependencies) {
   RTC_DCHECK(signaling_thread_->IsCurrent());
+  RTC_DCHECK(!(dependencies.allocator && dependencies.packet_socket_factory))
+      << "You can't set both allocator and packet_socket_factory; "
+         "the former is going away (see bugs.webrtc.org/7447";
 
   // Set internal defaults if optional dependencies are not set.
   if (!dependencies.cert_generator) {
     dependencies.cert_generator =
-        absl::make_unique<rtc::RTCCertificateGenerator>(signaling_thread_,
-                                                        network_thread_);
+        std::make_unique<rtc::RTCCertificateGenerator>(signaling_thread_,
+                                                       network_thread_);
   }
   if (!dependencies.allocator) {
+    rtc::PacketSocketFactory* packet_socket_factory;
+    if (dependencies.packet_socket_factory)
+      packet_socket_factory = dependencies.packet_socket_factory.get();
+    else
+      packet_socket_factory = default_socket_factory_.get();
+
     network_thread_->Invoke<void>(RTC_FROM_HERE, [this, &configuration,
-                                                  &dependencies]() {
-      dependencies.allocator = absl::make_unique<cricket::BasicPortAllocator>(
-          default_network_manager_.get(), default_socket_factory_.get(),
+                                                  &dependencies,
+                                                  &packet_socket_factory]() {
+      dependencies.allocator = std::make_unique<cricket::BasicPortAllocator>(
+          default_network_manager_.get(), packet_socket_factory,
           configuration.turn_customizer);
     });
   }
@@ -313,7 +322,7 @@ rtc::scoped_refptr<AudioTrackInterface> PeerConnectionFactory::CreateAudioTrack(
 std::unique_ptr<cricket::SctpTransportInternalFactory>
 PeerConnectionFactory::CreateSctpTransportInternalFactory() {
 #ifdef HAVE_SCTP
-  return absl::make_unique<cricket::SctpTransportFactory>(network_thread());
+  return std::make_unique<cricket::SctpTransportFactory>(network_thread());
 #else
   return nullptr;
 #endif
@@ -331,7 +340,7 @@ std::unique_ptr<RtcEventLog> PeerConnectionFactory::CreateRtcEventLog_w() {
     encoding_type = RtcEventLog::EncodingType::NewFormat;
   return event_log_factory_
              ? event_log_factory_->CreateRtcEventLog(encoding_type)
-             : absl::make_unique<RtcEventLogNull>();
+             : std::make_unique<RtcEventLogNull>();
 }
 
 std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(

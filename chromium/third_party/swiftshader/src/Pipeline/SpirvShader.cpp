@@ -773,11 +773,11 @@ namespace sw
 				break;
 			case spv::OpConstantFalse:
 			case spv::OpSpecConstantFalse:
-				CreateConstant(insn).constantValue[0] = 0;		// represent boolean false as zero
+				CreateConstant(insn).constantValue[0] = 0;    // Represent Boolean false as zero.
 				break;
 			case spv::OpConstantTrue:
 			case spv::OpSpecConstantTrue:
-				CreateConstant(insn).constantValue[0] = ~0u;	// represent boolean true as all bits set
+				CreateConstant(insn).constantValue[0] = ~0u;  // Represent Boolean true as all bits set.
 				break;
 			case spv::OpConstantNull:
 			case spv::OpUndef:
@@ -802,7 +802,9 @@ namespace sw
 					auto &constituent = getObject(insn.word(i + 3));
 					auto &constituentTy = getType(constituent.type);
 					for (auto j = 0u; j < constituentTy.sizeInComponents; j++)
+					{
 						object.constantValue[offset++] = constituent.constantValue[j];
+					}
 				}
 
 				auto objectId = Object::ID(insn.word(2));
@@ -915,10 +917,13 @@ namespace sw
 				break;
 
 			case spv::OpFunctionParameter:
-			case spv::OpFunctionCall:
 				// These should have all been removed by preprocessing passes. If we see them here,
 				// our assumptions are wrong and we will probably generate wrong code.
 				UNREACHABLE("%s should have already been lowered.", OpcodeName(opcode).c_str());
+				break;
+
+			case spv::OpFunctionCall:
+				// TODO(b/141246700): Add full support for spv::OpFunctionCall
 				break;
 
 			case spv::OpFConvert:
@@ -2691,6 +2696,9 @@ namespace sw
 		case spv::OpReturn:
 			return EmitReturn(insn, state);
 
+		case spv::OpFunctionCall:
+			return EmitFunctionCall(insn, state);
+
 		case spv::OpKill:
 			return EmitKill(insn, state);
 
@@ -2997,12 +3005,12 @@ namespace sw
 		if (object.kind == Object::Kind::Constant)
 		{
 			// Constant source data.
-			auto src = reinterpret_cast<float *>(object.constantValue.get());
+			const uint32_t *src = object.constantValue.get();
 			VisitMemoryObject(pointerId, [&](uint32_t i, uint32_t offset)
 			{
 				auto p = ptr + offset;
 				if (interleavedByLane) { p = interleaveByLane(p); }
-				SIMD::Store(p, SIMD::Float(src[i]), robustness, mask, atomic, memoryOrder);
+				SIMD::Store(p, SIMD::Int(src[i]), robustness, mask, atomic, memoryOrder);
 			});
 		}
 		else
@@ -4229,7 +4237,7 @@ namespace sw
 				auto in = significand.Float(i);
 				auto significandExponent = Exponent(in);
 				auto combinedExponent = exponent.Int(i) + significandExponent;
-				auto isSignificandZero     = SIMD::UInt(CmpEQ(significand.Int(0), SIMD::Int(0)));
+				auto isSignificandZero     = SIMD::UInt(CmpEQ(significand.Int(i), SIMD::Int(0)));
 				auto isSignificandInf      = SIMD::UInt(IsInf(in));
 				auto isSignificandNaN      = SIMD::UInt(IsNan(in));
 				auto isExponentNotTooSmall = SIMD::UInt(CmpGE(combinedExponent, SIMD::Int(-126)));
@@ -4247,7 +4255,7 @@ namespace sw
 				// If the input significand is zero, inf or nan, just return the
 				// input significand.
 				auto passthrough = isSignificandZero | isSignificandInf | isSignificandNaN;
-				v = (v & ~passthrough) | (significand.UInt(0) & passthrough);
+				v = (v & ~passthrough) | (significand.UInt(i) & passthrough);
 
 				dst.move(i, As<SIMD::Float>(v));
 			}
@@ -4831,6 +4839,44 @@ namespace sw
 		return EmitResult::Terminator;
 	}
 
+	SpirvShader::EmitResult SpirvShader::EmitFunctionCall(InsnIterator insn, EmitState *state) const
+	{
+		auto functionId = Function::ID(insn.word(3));
+		const auto& functionIt = functions.find(functionId);
+		ASSERT(functionIt != functions.end());
+		auto& function = functionIt->second;
+
+		// TODO(b/141246700): Add full support for spv::OpFunctionCall
+		// The only supported function is a single OpKill wrapped in a
+		// function, as a result of the "wrap OpKill" SPIRV-Tools pass
+		ASSERT(function.blocks.size() == 1);
+		spv::Op wrapOpKill[] = { spv::OpLabel, spv::OpKill };
+
+		for (auto block : function.blocks)
+		{
+			int insnNumber = 0;
+			for (auto blockInsn : block.second)
+			{
+				if (insnNumber > 1)
+				{
+					UNIMPLEMENTED("Function block number of instructions: %d", insnNumber);
+					return EmitResult::Continue;
+				}
+				if (blockInsn.opcode() != wrapOpKill[insnNumber++])
+				{
+					UNIMPLEMENTED("Function block instruction %d : %s", insnNumber - 1, OpcodeName(blockInsn.opcode()).c_str());
+					return EmitResult::Continue;
+				}
+				if (blockInsn.opcode() == spv::OpKill)
+				{
+					EmitInstruction(blockInsn, state);
+				}
+			}
+		}
+
+		return EmitResult::Continue;
+	}
+
 	SpirvShader::EmitResult SpirvShader::EmitPhi(InsnIterator insn, EmitState *state) const
 	{
 		auto &function = getFunction(state->function);
@@ -5106,7 +5152,7 @@ namespace sw
 
 			for(uint32_t j = 0; j < offsetType.sizeInComponents; j++, i++)
 			{
-				in[i] = offsetValue.Float(j);  // Integer values, but transfered as float.
+				in[i] = As<SIMD::Float>(offsetValue.Int(j));  // Integer values, but transfered as float.
 			}
 		}
 

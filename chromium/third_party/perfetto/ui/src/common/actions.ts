@@ -15,7 +15,7 @@
 import {Draft} from 'immer';
 
 import {assertExists} from '../base/logging';
-import {ConvertTrace} from '../controller/trace_converter';
+import {ConvertTrace, ConvertTraceToPprof} from '../controller/trace_converter';
 
 import {
   AdbRecordingTarget,
@@ -24,8 +24,10 @@ import {
   OmniboxState,
   RecordConfig,
   SCROLLING_TRACK_GROUP,
+  SelectedTimeRange,
   State,
   Status,
+  TargetOs,
   TraceTime,
   TrackState,
   VisibleState,
@@ -46,11 +48,19 @@ function clearTraceState(state: StateDraft) {
   const nextId = state.nextId;
   const recordConfig = state.recordConfig;
   const route = state.route;
+  const androidDeviceConnected = state.androidDeviceConnected;
+  const extensionInstalled = state.extensionInstalled;
+  const availableDevices = state.availableDevices;
+  const chromeCategories = state.chromeCategories;
 
   Object.assign(state, createEmptyState());
   state.nextId = nextId;
   state.recordConfig = recordConfig;
   state.route = route;
+  state.androidDeviceConnected = androidDeviceConnected;
+  state.extensionInstalled = extensionInstalled;
+  state.availableDevices = availableDevices;
+  state.chromeCategories = chromeCategories;
 }
 
 export const StateActions = {
@@ -86,9 +96,19 @@ export const StateActions = {
     state.videoEnabled = true;
   },
 
+  // TODO(b/141359485): Actions should only modify state.
   convertTraceToJson(
-      _: StateDraft, args: {file: File, truncate?: 'start'|'end'}): void {
+      _: StateDraft, args: {file: Blob, truncate?: 'start'|'end'}): void {
     ConvertTrace(args.file, args.truncate);
+  },
+
+  convertTraceToPprof(_: StateDraft, args: {
+    pid: number,
+    src: string|File|ArrayBuffer,
+    ts1: number,
+    ts2?: number
+  }): void {
+    ConvertTraceToPprof(args.pid, args.src, args.ts1, args.ts2);
   },
 
   openTraceFromUrl(state: StateDraft, args: {url: string}): void {
@@ -151,6 +171,11 @@ export const StateActions = {
 
   setVisibleTracks(state: StateDraft, args: {tracks: string[]}) {
     state.visibleTracks = args.tracks;
+  },
+
+  updateTrackConfig(state: StateDraft, args: {id: string, config: {}}) {
+    if (state.tracks[args.id] === undefined) return;
+    state.tracks[args.id].config = args.config;
   },
 
   executeQuery(
@@ -351,25 +376,42 @@ export const StateActions = {
     }
   },
 
-  selectSlice(state: StateDraft, args: {utid: number, id: number}): void {
+  selectSlice(state: StateDraft, args: {id: number}): void {
     state.currentSelection = {
       kind: 'SLICE',
-      utid: args.utid,
       id: args.id,
     };
   },
 
-  selectChromeSlice(state: StateDraft, args: {slice_id: number}): void {
-    state.currentSelection = {kind: 'CHROME_SLICE', id: args.slice_id};
+  selectCounter(
+      state: StateDraft, args: {leftTs: number, rightTs: number, id: number}):
+      void {
+        state.currentSelection = {
+          kind: 'COUNTER',
+          leftTs: args.leftTs,
+          rightTs: args.rightTs,
+          id: args.id
+        };
+      },
+
+  selectHeapProfile(
+      state: StateDraft, args: {id: number, upid: number, ts: number}): void {
+    state.currentSelection =
+        {kind: 'HEAP_PROFILE', id: args.id, upid: args.upid, ts: args.ts};
   },
 
-  selectTimeSpan(
-      state: StateDraft, args: {startTs: number, endTs: number}): void {
-    state.currentSelection = {
-      kind: 'TIMESPAN',
-      startTs: args.startTs,
-      endTs: args.endTs,
+  showHeapProfileFlamegraph(
+      state: StateDraft, args: {id: number, upid: number, ts: number}): void {
+    state.currentHeapProfileFlamegraph = {
+      kind: 'HEAP_PROFILE_FLAMEGRAPH',
+      id: args.id,
+      upid: args.upid,
+      ts: args.ts
     };
+  },
+
+  selectChromeSlice(state: StateDraft, args: {id: number}): void {
+    state.currentSelection = {kind: 'CHROME_SLICE', id: args.id};
   },
 
   selectThreadState(
@@ -398,10 +440,16 @@ export const StateActions = {
   startRecording(state: StateDraft): void {
     state.recordingInProgress = true;
     state.lastRecordingError = undefined;
+    state.recordingCancelled = false;
   },
 
   stopRecording(state: StateDraft): void {
     state.recordingInProgress = false;
+  },
+
+  cancelRecording(state: StateDraft): void {
+    state.recordingInProgress = false;
+    state.recordingCancelled = true;
   },
 
   setExtensionAvailable(state: StateDraft, args: {available: boolean}): void {
@@ -414,6 +462,8 @@ export const StateActions = {
 
   setAndroidDevice(state: StateDraft, args: {target?: AdbRecordingTarget}):
       void {
+        state.recordConfig.targetOS =
+            args.target ? args.target.os as TargetOs : 'Q';
         state.androidDeviceConnected = args.target;
       },
 
@@ -424,6 +474,10 @@ export const StateActions = {
 
   setOmnibox(state: StateDraft, args: OmniboxState): void {
     state.frontendLocalState.omniboxState = args;
+  },
+
+  selectTimeRange(state: StateDraft, args: SelectedTimeRange): void {
+    state.frontendLocalState.selectedTimeRange = args;
   },
 
   setVisibleTraceTime(state: StateDraft, args: VisibleState): void {

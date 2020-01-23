@@ -8,10 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "absl/memory/memory.h"
+#include <memory>
+
+#include "api/task_queue/task_queue_base.h"
 #include "call/call.h"
 #include "call/fake_network_pipe.h"
 #include "call/simulated_network.h"
+#include "modules/include/module_common_types_public.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "test/call_test.h"
 #include "test/field_trial.h"
@@ -38,15 +41,15 @@ TEST_F(TransportFeedbackEndToEndTest, AssignsTransportSequenceNumbers) {
   class RtpExtensionHeaderObserver : public test::DirectTransport {
    public:
     RtpExtensionHeaderObserver(
-        test::DEPRECATED_SingleThreadedTaskQueueForTesting* task_queue,
+        TaskQueueBase* task_queue,
         Call* sender_call,
         const uint32_t& first_media_ssrc,
         const std::map<uint32_t, uint32_t>& ssrc_map,
         const std::map<uint8_t, MediaType>& payload_type_map)
         : DirectTransport(task_queue,
-                          absl::make_unique<FakeNetworkPipe>(
+                          std::make_unique<FakeNetworkPipe>(
                               Clock::GetRealTimeClock(),
-                              absl::make_unique<SimulatedNetwork>(
+                              std::make_unique<SimulatedNetwork>(
                                   BuiltInNetworkBehaviorConfig())),
                           sender_call,
                           payload_type_map),
@@ -216,18 +219,19 @@ TEST_F(TransportFeedbackEndToEndTest, AssignsTransportSequenceNumbers) {
       receive_config->renderer = &fake_renderer_;
     }
 
-    test::DirectTransport* CreateSendTransport(
-        test::DEPRECATED_SingleThreadedTaskQueueForTesting* task_queue,
+    std::unique_ptr<test::DirectTransport> CreateSendTransport(
+        TaskQueueBase* task_queue,
         Call* sender_call) override {
       std::map<uint8_t, MediaType> payload_type_map =
           MultiStreamTester::payload_type_map_;
       RTC_DCHECK(payload_type_map.find(kSendRtxPayloadType) ==
                  payload_type_map.end());
       payload_type_map[kSendRtxPayloadType] = MediaType::VIDEO;
-      observer_ = new RtpExtensionHeaderObserver(
+      auto observer = std::make_unique<RtpExtensionHeaderObserver>(
           task_queue, sender_call, first_media_ssrc_, rtx_to_media_ssrcs_,
           payload_type_map);
-      return observer_;
+      observer_ = observer.get();
+      return observer;
     }
 
    private:

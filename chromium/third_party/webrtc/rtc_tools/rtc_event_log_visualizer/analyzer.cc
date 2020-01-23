@@ -14,10 +14,11 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 
-#include "absl/memory/memory.h"
+#include "absl/algorithm/container.h"
 #include "absl/strings/string_view.h"
 #include "api/function_view.h"
 #include "api/transport/field_trial_based_config.h"
@@ -1168,7 +1169,7 @@ void EventLogAnalyzer::CreateGoogCcSimulationGraph(Plot* plot) {
                            PointStyle::kHighlight);
 
   LogBasedNetworkControllerSimulation simulation(
-      absl::make_unique<GoogCcNetworkControllerFactory>(),
+      std::make_unique<GoogCcNetworkControllerFactory>(),
       [&](const NetworkControlUpdate& update, Timestamp at_time) {
         if (update.target_rate) {
           target_rates.points.emplace_back(
@@ -1275,7 +1276,7 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
   // GoogCcNetworkController since that would lead to duplicate outputs.
   AcknowledgedBitrateEstimator acknowledged_bitrate_estimator(
       &field_trial_config_,
-      absl::make_unique<BitrateEstimator>(&field_trial_config_));
+      std::make_unique<BitrateEstimator>(&field_trial_config_));
 #endif  // !(BWE_TEST_LOGGING_COMPILE_TIME_ENABLE)
   int64_t time_us =
       std::min({NextRtpTime(), NextRtcpTime(), NextProcessTime()});
@@ -1455,7 +1456,13 @@ void EventLogAnalyzer::CreateNetworkDelayFeedbackGraph(Plot* plot) {
   int64_t min_rtt_ms = std::numeric_limits<int64_t>::max();
 
   int64_t prev_y = 0;
-  for (auto packet : GetNetworkTrace(parsed_log_)) {
+  std::vector<MatchedSendArrivalTimes> matched_rtp_rtcp =
+      GetNetworkTrace(parsed_log_);
+  absl::c_stable_sort(matched_rtp_rtcp, [](const MatchedSendArrivalTimes& a,
+                                           const MatchedSendArrivalTimes& b) {
+    return a.feedback_arrival_time_ms < b.feedback_arrival_time_ms;
+  });
+  for (const auto& packet : matched_rtp_rtcp) {
     if (packet.arrival_time_ms == PacketFeedback::kNotReceived)
       continue;
     float x = config_.GetCallTimeSec(1000 * packet.feedback_arrival_time_ms);
@@ -1880,10 +1887,10 @@ class ReplacementAudioDecoderFactory : public AudioDecoderFactory {
   std::unique_ptr<AudioDecoder> MakeAudioDecoder(
       const SdpAudioFormat& format,
       absl::optional<AudioCodecPairId> codec_pair_id) override {
-    auto replacement_file = absl::make_unique<test::ResampleInputAudioFile>(
+    auto replacement_file = std::make_unique<test::ResampleInputAudioFile>(
         replacement_file_name_, file_sample_rate_hz_);
     replacement_file->set_output_rate_hz(48000);
-    return absl::make_unique<test::FakeDecodeFromFile>(
+    return std::make_unique<test::FakeDecodeFromFile>(
         std::move(replacement_file), 48000, false);
   }
 

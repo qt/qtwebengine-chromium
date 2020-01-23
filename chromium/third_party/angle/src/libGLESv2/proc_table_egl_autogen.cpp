@@ -18,6 +18,7 @@
 #include "libGLESv2/entry_points_gles_2_0_autogen.h"
 #include "libGLESv2/entry_points_gles_3_0_autogen.h"
 #include "libGLESv2/entry_points_gles_3_1_autogen.h"
+#include "libGLESv2/entry_points_gles_3_2_autogen.h"
 #include "libGLESv2/entry_points_gles_ext_autogen.h"
 #include "platform/Platform.h"
 
@@ -372,6 +373,8 @@ ProcEntry g_procTable[] = {
     {"glDisableClientState", P(gl::DisableClientState)},
     {"glDisableClientStateContextANGLE", P(gl::DisableClientStateContextANGLE)},
     {"glDisableContextANGLE", P(gl::DisableContextANGLE)},
+    {"glDisableExtensionANGLE", P(gl::DisableExtensionANGLE)},
+    {"glDisableExtensionANGLEContextANGLE", P(gl::DisableExtensionANGLEContextANGLE)},
     {"glDisableVertexAttribArray", P(gl::DisableVertexAttribArray)},
     {"glDisableVertexAttribArrayContextANGLE", P(gl::DisableVertexAttribArrayContextANGLE)},
     {"glDiscardFramebufferEXT", P(gl::DiscardFramebufferEXT)},
@@ -1512,5 +1515,5 @@ ProcEntry g_procTable[] = {
     {"glWeightPointerOES", P(gl::WeightPointerOES)},
     {"glWeightPointerOESContextANGLE", P(gl::WeightPointerOESContextANGLE)}};
 
-size_t g_numProcs = 1414;
+size_t g_numProcs = 1416;
 }  // namespace egl

@@ -36,8 +36,8 @@ rtc_source_set("rtc_event_log_factory") {
   deps = [
     ":rtc_event_log",
     "../../rtc_base:checks",
+    "../../rtc_base/system:rtc_export",
     "../task_queue",
-    "//third_party/abseil-cpp/absl/memory",
   ]
 
   if (rtc_enable_protobuf) {

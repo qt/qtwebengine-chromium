@@ -23,7 +23,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_sent_packet_manager.h"
 #include "net/third_party/quiche/src/quic/core/quic_simple_buffer_allocator.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_mem_slice_storage.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/mock_clock.h"
@@ -82,11 +81,25 @@ QuicEncryptedPacket* ConstructEncryptedPacket(
     bool reset_flag,
     uint64_t packet_number,
     const std::string& data,
+    bool full_padding,
     QuicConnectionIdIncluded destination_connection_id_included,
     QuicConnectionIdIncluded source_connection_id_included,
     QuicPacketNumberLength packet_number_length,
     ParsedQuicVersionVector* versions,
     Perspective perspective);
+
+QuicEncryptedPacket* ConstructEncryptedPacket(
+    QuicConnectionId destination_connection_id,
+    QuicConnectionId source_connection_id,
+    bool version_flag,
+    bool reset_flag,
+    uint64_t packet_number,
+    const std::string& data,
+    bool full_padding,
+    QuicConnectionIdIncluded destination_connection_id_included,
+    QuicConnectionIdIncluded source_connection_id_included,
+    QuicPacketNumberLength packet_number_length,
+    ParsedQuicVersionVector* versions);
 
 // Create an encrypted packet for testing.
 // If versions == nullptr, uses &AllSupportedVersions().
@@ -190,6 +203,11 @@ QuicAckFrame InitAckFrame(QuicPacketNumber largest_acked);
 // ack blocks of width 1 packet, starting from |least_unacked| + 2.
 QuicAckFrame MakeAckFrameWithAckBlocks(size_t num_ack_blocks,
                                        uint64_t least_unacked);
+
+// Returns the encryption level that corresponds to the header type in
+// |header|. If the header is for GOOGLE_QUIC_PACKET instead of an
+// IETF-invariants packet, this function returns ENCRYPTION_INITIAL.
+EncryptionLevel HeaderToEncryptionLevel(const QuicPacketHeader& header);
 
 // Returns a QuicPacket that is owned by the caller, and
 // is populated with the fields in |header| and |frames|, or is nullptr if the
@@ -629,7 +647,6 @@ class MockQuicSession : public QuicSession {
                void(QuicStreamId stream_id, spdy::SpdyPriority priority));
   MOCK_METHOD3(OnStreamHeadersComplete,
                void(QuicStreamId stream_id, bool fin, size_t frame_len));
-  MOCK_CONST_METHOD0(IsCryptoHandshakeConfirmed, bool());
   MOCK_CONST_METHOD0(ShouldKeepConnectionAlive, bool());
   MOCK_METHOD2(SendStopSending, void(uint16_t code, QuicStreamId stream_id));
   MOCK_METHOD1(OnCryptoHandshakeEvent, void(QuicSession::CryptoHandshakeEvent));
@@ -690,8 +707,6 @@ class MockQuicSpdySession : public QuicSpdySession {
     QuicSession::OnConnectionClosed(frame, source);
   }
 
-  using QuicSession::RegisterStaticStream;
-
   // From QuicSession.
   MOCK_METHOD2(OnConnectionClosed,
                void(const QuicConnectionCloseFrame& frame,
@@ -727,7 +742,6 @@ class MockQuicSpdySession : public QuicSpdySession {
                     bool fin,
                     size_t frame_len,
                     const QuicHeaderList& header_list));
-  MOCK_CONST_METHOD0(IsCryptoHandshakeConfirmed, bool());
   MOCK_METHOD2(OnPromiseHeaders,
                void(QuicStreamId stream_id, QuicStringPiece headers_data));
   MOCK_METHOD3(OnPromiseHeadersComplete,
@@ -771,6 +785,9 @@ class TestQuicSpdyServerSession : public QuicServerSessionBase {
   MOCK_METHOD1(CreateIncomingStream, QuicSpdyStream*(PendingStream* stream));
   MOCK_METHOD0(CreateOutgoingBidirectionalStream, QuicSpdyStream*());
   MOCK_METHOD0(CreateOutgoingUnidirectionalStream, QuicSpdyStream*());
+  MOCK_CONST_METHOD1(SelectAlpn,
+                     std::vector<QuicStringPiece>::const_iterator(
+                         const std::vector<QuicStringPiece>&));
   QuicCryptoServerStreamBase* CreateQuicCryptoServerStream(
       const QuicCryptoServerConfig* crypto_config,
       QuicCompressedCertsCache* compressed_certs_cache) override;
@@ -839,6 +856,7 @@ class TestQuicSpdyClientSession : public QuicSpdyClientSessionBase {
   MOCK_METHOD1(ShouldCreateIncomingStream, bool(QuicStreamId id));
   MOCK_METHOD0(ShouldCreateOutgoingBidirectionalStream, bool());
   MOCK_METHOD0(ShouldCreateOutgoingUnidirectionalStream, bool());
+  MOCK_CONST_METHOD0(GetAlpnsToOffer, std::vector<std::string>());
 
   // Override to not send max header list size.
   void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) override;
@@ -953,6 +971,12 @@ class MockLossAlgorithm : public LossDetectionInterface {
                     QuicTime,
                     const RttStats&,
                     QuicPacketNumber));
+  MOCK_METHOD5(SpuriousLossDetected,
+               void(const QuicUnackedPacketMap&,
+                    const RttStats&,
+                    QuicTime,
+                    QuicPacketNumber,
+                    QuicPacketNumber));
 };
 
 class MockAckListener : public QuicAckListenerInterface {
@@ -1013,11 +1037,24 @@ class MockQuicConnectionDebugVisitor : public QuicConnectionDebugVisitor {
 
   MOCK_METHOD1(OnStreamFrame, void(const QuicStreamFrame&));
 
+  MOCK_METHOD1(OnCryptoFrame, void(const QuicCryptoFrame&));
+
   MOCK_METHOD1(OnStopWaitingFrame, void(const QuicStopWaitingFrame&));
 
   MOCK_METHOD1(OnRstStreamFrame, void(const QuicRstStreamFrame&));
 
   MOCK_METHOD1(OnConnectionCloseFrame, void(const QuicConnectionCloseFrame&));
+
+  MOCK_METHOD1(OnBlockedFrame, void(const QuicBlockedFrame&));
+
+  MOCK_METHOD1(OnNewConnectionIdFrame, void(const QuicNewConnectionIdFrame&));
+
+  MOCK_METHOD1(OnRetireConnectionIdFrame,
+               void(const QuicRetireConnectionIdFrame&));
+
+  MOCK_METHOD1(OnNewTokenFrame, void(const QuicNewTokenFrame&));
+
+  MOCK_METHOD1(OnMessageFrame, void(const QuicMessageFrame&));
 
   MOCK_METHOD1(OnStopSendingFrame, void(const QuicStopSendingFrame&));
 
@@ -1060,6 +1097,10 @@ class MockPacketCreatorDelegate : public QuicPacketCreator::DelegateInterface {
   MOCK_METHOD0(GetPacketBuffer, char*());
   MOCK_METHOD1(OnSerializedPacket, void(SerializedPacket* packet));
   MOCK_METHOD2(OnUnrecoverableError, void(QuicErrorCode, const std::string&));
+  MOCK_METHOD2(ShouldGeneratePacket,
+               bool(HasRetransmittableData retransmittable,
+                    IsHandshake handshake));
+  MOCK_METHOD0(MaybeBundleAckOpportunistically, const QuicFrames());
 };
 
 class MockSessionNotifier : public SessionNotifierInterface {
@@ -1207,6 +1248,10 @@ MATCHER_P(ReceivedPacketInfoEquals, info, "") {
 
 MATCHER_P(ReceivedPacketInfoConnectionIdEquals, destination_connection_id, "") {
   return arg.destination_connection_id == destination_connection_id;
+}
+
+MATCHER_P2(InRange, min, max, "") {
+  return arg >= min && arg <= max;
 }
 
 }  // namespace test

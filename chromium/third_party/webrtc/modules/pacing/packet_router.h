@@ -22,6 +22,7 @@
 #include "api/transport/network_types.h"
 #include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/rtp_rtcp/source/rtcp_packet.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "rtc_base/constructor_magic.h"
 #include "rtc_base/critical_section.h"
@@ -30,9 +31,6 @@
 namespace webrtc {
 
 class RtpRtcp;
-namespace rtcp {
-class TransportFeedback;
-}  // namespace rtcp
 
 // PacketRouter keeps track of rtp send modules to support the pacer.
 // In addition, it handles feedback messages, which are sent on a send
@@ -43,6 +41,7 @@ class PacketRouter : public RemoteBitrateObserver,
                      public TransportFeedbackSenderInterface {
  public:
   PacketRouter();
+  explicit PacketRouter(uint16_t start_transport_seq);
   ~PacketRouter() override;
 
   void AddSendRtpModule(RtpRtcp* rtp_module, bool remb_candidate);
@@ -58,8 +57,12 @@ class PacketRouter : public RemoteBitrateObserver,
   virtual std::vector<std::unique_ptr<RtpPacketToSend>> GeneratePadding(
       size_t target_size_bytes);
 
+  // TODO(bugs.webrtc.org/11036): Remove when downstream usage is gone.
   void SetTransportWideSequenceNumber(uint16_t sequence_number);
+  // TODO(bugs.webrtc.org/11036): Make private when downstream usage is gone.
   uint16_t AllocateSequenceNumber();
+
+  uint16_t CurrentTransportSequenceNumber() const;
 
   // Called every time there is a new bitrate estimate for a receive channel
   // group. This call will trigger a new RTCP REMB packet if the bitrate
@@ -76,8 +79,9 @@ class PacketRouter : public RemoteBitrateObserver,
   // Send REMB feedback.
   bool SendRemb(int64_t bitrate_bps, const std::vector<uint32_t>& ssrcs);
 
-  // Send transport feedback packet to send-side.
-  bool SendTransportFeedback(rtcp::TransportFeedback* packet) override;
+  // Sends |packets| in one or more IP packets.
+  bool SendCombinedRtcpPacket(
+      std::vector<std::unique_ptr<rtcp::RtcpPacket>> packets) override;
 
  private:
   RtpRtcp* FindRtpModule(uint32_t ssrc)
@@ -127,7 +131,7 @@ class PacketRouter : public RemoteBitrateObserver,
   RtcpFeedbackSenderInterface* active_remb_module_
       RTC_GUARDED_BY(modules_crit_);
 
-  volatile int transport_seq_;
+  int transport_seq_ RTC_GUARDED_BY(modules_crit_);
 
   RTC_DISALLOW_COPY_AND_ASSIGN(PacketRouter);
 };

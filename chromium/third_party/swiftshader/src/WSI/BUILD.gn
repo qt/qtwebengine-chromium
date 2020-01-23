@@ -24,6 +24,8 @@ swiftshader_source_set("WSI") {
 
   if (is_linux) {
     sources += [
+      "XcbSurfaceKHR.cpp",
+      "XcbSurfaceKHR.hpp",
       "XlibSurfaceKHR.cpp",
       "XlibSurfaceKHR.hpp",
       "libX11.cpp",
@@ -45,6 +47,7 @@ swiftshader_source_set("WSI") {
   ]
 
   deps = [
+    "../../third_party/marl:Marl_headers",
     "../Vulkan:swiftshader_libvulkan_headers",
   ]
 }

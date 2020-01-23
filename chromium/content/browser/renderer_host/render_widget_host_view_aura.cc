@@ -138,6 +138,22 @@ using blink::WebTouchEvent;
 
 namespace content {
 
+namespace {
+
+mojom::FrameInputHandler* GetFrameInputHandlerForFocusedFrame(
+    RenderWidgetHostImpl* host) {
+  if (!host || !host->delegate()) {
+    return nullptr;
+  }
+  RenderFrameHostImpl* render_frame_host =
+      host->delegate()->GetFocusedFrameFromFocusedDelegate();
+  if (!render_frame_host)
+    return nullptr;
+  return render_frame_host->GetFrameInputHandler();
+}
+
+}  // namespace
+
 #if defined(OS_WIN)
 
 // This class implements the ui::InputMethodKeyboardControllerObserver interface
@@ -1488,11 +1504,7 @@ bool RenderWidgetHostViewAura::ChangeTextDirectionAndLayoutAlignment(
 
 void RenderWidgetHostViewAura::ExtendSelectionAndDelete(
     size_t before, size_t after) {
-  RenderFrameHostImpl* render_frame_host =
-      host()->delegate()->GetFocusedFrameFromFocusedDelegate();
-  if (!render_frame_host)
-    return;
-  auto* input_handler = render_frame_host->GetFrameInputHandler();
+  auto* input_handler = GetFrameInputHandlerForFocusedFrame(host());
   if (!input_handler)
     return;
   input_handler->ExtendSelectionAndDelete(before, after);
@@ -1544,10 +1556,7 @@ bool RenderWidgetHostViewAura::ShouldDoLearning() {
 bool RenderWidgetHostViewAura::SetCompositionFromExistingText(
     const gfx::Range& range,
     const std::vector<ui::ImeTextSpan>& ui_ime_text_spans) {
-  RenderFrameHostImpl* frame = GetFocusedFrame();
-  if (!frame)
-    return false;
-  auto* input_handler = frame->GetFrameInputHandler();
+  auto* input_handler = GetFrameInputHandlerForFocusedFrame(host());
   if (!input_handler)
     return false;
   input_handler->SetCompositionFromExistingText(range.start(), range.end(),
@@ -2304,18 +2313,6 @@ void RenderWidgetHostViewAura::UpdateLegacyWin() {
 }
 #endif
 
-void RenderWidgetHostViewAura::SchedulePaintIfNotInClip(
-    const gfx::Rect& rect,
-    const gfx::Rect& clip) {
-  if (!clip.IsEmpty()) {
-    gfx::Rect to_paint = gfx::SubtractRects(rect, clip);
-    if (!to_paint.IsEmpty())
-      window_->SchedulePaintInRect(to_paint);
-  } else {
-    window_->SchedulePaintInRect(rect);
-  }
-}
-
 void RenderWidgetHostViewAura::AddedToRootWindow() {
   window_->GetHost()->AddObserver(this);
   UpdateScreenInfo(window_);
@@ -2527,7 +2524,7 @@ void RenderWidgetHostViewAura::OnTextSelectionChanged(
   if (GetInputMethod())
     GetInputMethod()->OnCaretBoundsChanged(this);
 
-#if defined(USE_X11)
+#if defined(USE_X11) || (defined(USE_OZONE) && !defined(OS_CHROMEOS))
   const TextInputManager::TextSelection* selection =
       GetTextInputManager()->GetTextSelection(focused_view);
   if (selection->selected_text().length()) {
@@ -2535,7 +2532,7 @@ void RenderWidgetHostViewAura::OnTextSelectionChanged(
     ui::ScopedClipboardWriter clipboard_writer(ui::ClipboardBuffer::kSelection);
     clipboard_writer.WriteText(selection->selected_text());
   }
-#endif  // defined(USE_X11)
+#endif  // defined(USE_X11) || (defined(USE_OZONE) && !defined(OS_CHROMEOS))
 }
 
 void RenderWidgetHostViewAura::SetPopupChild(
@@ -2635,9 +2632,19 @@ bool RenderWidgetHostViewAura::CanSynchronizeVisualProperties() {
   return !needs_to_update_display_metrics_;
 }
 
-void RenderWidgetHostViewAura::CancelActiveTouches() {
+std::vector<std::unique_ptr<ui::TouchEvent>>
+RenderWidgetHostViewAura::ExtractAndCancelActiveTouches() {
   aura::Env* env = aura::Env::GetInstance();
-  env->gesture_recognizer()->CancelActiveTouches(window());
+  std::vector<std::unique_ptr<ui::TouchEvent>> touches =
+      env->gesture_recognizer()->ExtractTouches(window());
+  CancelActiveTouches();
+  return touches;
+}
+
+void RenderWidgetHostViewAura::TransferTouches(
+    const std::vector<std::unique_ptr<ui::TouchEvent>>& touches) {
+  aura::Env* env = aura::Env::GetInstance();
+  env->gesture_recognizer()->TransferTouches(window(), touches);
 }
 
 void RenderWidgetHostViewAura::InvalidateLocalSurfaceIdOnEviction() {
@@ -2650,6 +2657,11 @@ void RenderWidgetHostViewAura::ProcessDisplayMetricsChanged() {
   current_cursor_.SetDisplayInfo(
       display::Screen::GetScreen()->GetDisplayNearestWindow(window_));
   UpdateCursorIfOverSelf();
+}
+
+void RenderWidgetHostViewAura::CancelActiveTouches() {
+  aura::Env* env = aura::Env::GetInstance();
+  env->gesture_recognizer()->CancelActiveTouches(window());
 }
 
 }  // namespace content

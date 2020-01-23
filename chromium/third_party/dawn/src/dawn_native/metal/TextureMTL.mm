@@ -14,9 +14,8 @@
 
 #include "dawn_native/metal/TextureMTL.h"
 
+#include "common/Platform.h"
 #include "dawn_native/metal/DeviceMTL.h"
-
-#include <IOSurface/IOSurface.h>
 
 namespace dawn_native { namespace metal {
 
@@ -121,6 +120,14 @@ namespace dawn_native { namespace metal {
                     return DAWN_VALIDATION_ERROR("Unsupported IOSurface format");
             }
         }
+
+#if defined(DAWN_PLATFORM_MACOS)
+        MTLStorageMode kIOSurfaceStorageMode = MTLStorageModeManaged;
+#elif defined(DAWN_PLATFORM_IOS)
+        MTLStorageMode kIOSurfaceStorageMode = MTLStorageModePrivate;
+#else
+#    error "Unsupported Apple platform."
+#endif
     }
 
     MTLPixelFormat MetalPixelFormat(dawn::TextureFormat format) {
@@ -207,6 +214,7 @@ namespace dawn_native { namespace metal {
             case dawn::TextureFormat::Depth24PlusStencil8:
                 return MTLPixelFormatDepth32Float_Stencil8;
 
+#if defined(DAWN_PLATFORM_MACOS)
             case dawn::TextureFormat::BC1RGBAUnorm:
                 return MTLPixelFormatBC1_RGBA;
             case dawn::TextureFormat::BC1RGBAUnormSrgb:
@@ -235,6 +243,7 @@ namespace dawn_native { namespace metal {
                 return MTLPixelFormatBC7_RGBAUnorm;
             case dawn::TextureFormat::BC7RGBAUnormSrgb:
                 return MTLPixelFormatBC7_RGBAUnorm_sRGB;
+#endif
 
             default:
                 UNREACHABLE();
@@ -322,7 +331,7 @@ namespace dawn_native { namespace metal {
                      uint32_t plane)
         : TextureBase(device, descriptor, TextureState::OwnedInternal) {
         MTLTextureDescriptor* mtlDesc = CreateMetalTextureDescriptor(descriptor);
-        mtlDesc.storageMode = MTLStorageModeManaged;
+        mtlDesc.storageMode = kIOSurfaceStorageMode;
         mMtlTexture = [device->GetMTLDevice() newTextureWithDescriptor:mtlDesc
                                                              iosurface:ioSurface
                                                                  plane:plane];

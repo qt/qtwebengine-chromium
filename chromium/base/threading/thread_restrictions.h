@@ -179,9 +179,6 @@ class HistoryReportJniBridge;
 namespace gpu {
 class GpuChannelHost;
 }
-namespace leveldb {
-class LevelDBMojoProxy;
-}
 namespace leveldb_env {
 class DBTracker;
 }
@@ -189,12 +186,16 @@ namespace media {
 class AudioInputDevice;
 class AudioOutputDevice;
 class BlockingUrlProtocol;
+class PaintCanvasVideoRenderer;
 }
 namespace memory_instrumentation {
 class OSMetrics;
 }
 namespace midi {
 class TaskService;  // https://crbug.com/796830
+}
+namespace module_installer {
+class ScopedAllowModulePakLoad;
 }
 namespace mojo {
 class CoreLibraryInitializer;
@@ -204,6 +205,7 @@ class ScopedIPCSupport;
 }
 }
 namespace printing {
+class PrintJobWorker;
 class PrinterQuery;
 }
 namespace rlz_lib {
@@ -260,6 +262,10 @@ class VrShell;
 namespace web {
 class WebMainLoop;
 class WebSubThread;
+}
+
+namespace weblayer {
+class ProfileImpl;
 }
 
 namespace webrtc {
@@ -349,11 +355,14 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class cronet::CronetPrefsManager;
   friend class cronet::CronetURLRequestContext;
   friend class memory_instrumentation::OSMetrics;
+  friend class module_installer::ScopedAllowModulePakLoad;
   friend class mojo::CoreLibraryInitializer;
+  friend class printing::PrintJobWorker;
   friend class resource_coordinator::TabManagerDelegate;  // crbug.com/778703
   friend class ui::MaterialDesignController;
   friend class web::WebSubThread;
   friend class StackSamplingProfiler;
+  friend class weblayer::ProfileImpl;
 
   ScopedAllowBlocking() EMPTY_BODY_IF_DCHECK_IS_OFF;
   ~ScopedAllowBlocking() EMPTY_BODY_IF_DCHECK_IS_OFF;
@@ -407,7 +416,6 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
   friend class functions::ExecScriptScopedAllowBaseSyncPrimitives;
   friend class history_report::HistoryReportJniBridge;
   friend class internal::TaskTracker;
-  friend class leveldb::LevelDBMojoProxy;
   friend class leveldb_env::DBTracker;
   friend class media::BlockingUrlProtocol;
   friend class mojo::core::ScopedIPCSupport;
@@ -475,6 +483,7 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
   friend class content::SynchronousCompositorSyncCallBridge;
   friend class media::AudioInputDevice;
   friend class media::AudioOutputDevice;
+  friend class media::PaintCanvasVideoRenderer;
   friend class mojo::SyncCallRestrictions;
   friend class net::NetworkConfigWatcherMacThread;
   friend class viz::HostGpuMemoryBufferManager;

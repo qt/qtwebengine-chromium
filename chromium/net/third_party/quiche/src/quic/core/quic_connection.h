@@ -26,6 +26,7 @@
 
 #include "net/third_party/quiche/src/quic/core/crypto/quic_decrypter.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_encrypter.h"
+#include "net/third_party/quiche/src/quic/core/frames/quic_max_streams_frame.h"
 #include "net/third_party/quiche/src/quic/core/proto/cached_network_parameters_proto.h"
 #include "net/third_party/quiche/src/quic/core/quic_alarm.h"
 #include "net/third_party/quiche/src/quic/core/quic_alarm_factory.h"
@@ -33,6 +34,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection_stats.h"
 #include "net/third_party/quiche/src/quic/core/quic_framer.h"
+#include "net/third_party/quiche/src/quic/core/quic_mtu_discovery.h"
 #include "net/third_party/quiche/src/quic/core/quic_one_block_arena.h"
 #include "net/third_party/quiche/src/quic/core/quic_packet_creator.h"
 #include "net/third_party/quiche/src/quic/core/quic_packet_generator.h"
@@ -57,35 +59,6 @@ class QuicRandom;
 namespace test {
 class QuicConnectionPeer;
 }  // namespace test
-
-// The initial number of packets between MTU probes.  After each attempt the
-// number is doubled.
-const QuicPacketCount kPacketsBetweenMtuProbesBase = 100;
-
-// The number of MTU probes that get sent before giving up.
-const size_t kMtuDiscoveryAttempts = 3;
-
-// Ensure that exponential back-off does not result in an integer overflow.
-// The number of packets can be potentially capped, but that is not useful at
-// current kMtuDiscoveryAttempts value, and hence is not implemented at present.
-static_assert(kMtuDiscoveryAttempts + 8 < 8 * sizeof(QuicPacketNumber),
-              "The number of MTU discovery attempts is too high");
-static_assert(kPacketsBetweenMtuProbesBase < (1 << 8),
-              "The initial number of packets between MTU probes is too high");
-
-// The incresed packet size targeted when doing path MTU discovery.
-const QuicByteCount kMtuDiscoveryTargetPacketSizeHigh = 1450;
-const QuicByteCount kMtuDiscoveryTargetPacketSizeLow = 1430;
-
-static_assert(kMtuDiscoveryTargetPacketSizeLow <= kMaxOutgoingPacketSize,
-              "MTU discovery target is too large");
-static_assert(kMtuDiscoveryTargetPacketSizeHigh <= kMaxOutgoingPacketSize,
-              "MTU discovery target is too large");
-
-static_assert(kMtuDiscoveryTargetPacketSizeLow > kDefaultMaxPacketSize,
-              "MTU discovery target does not exceed the default packet size");
-static_assert(kMtuDiscoveryTargetPacketSizeHigh > kDefaultMaxPacketSize,
-              "MTU discovery target does not exceed the default packet size");
 
 // Class that receives callbacks from the connection when frames are received
 // and when other interesting events happen.
@@ -241,6 +214,9 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // Called when a StreamFrame has been parsed.
   virtual void OnStreamFrame(const QuicStreamFrame& /*frame*/) {}
 
+  // Called when a CRYPTO frame containing handshake data is received.
+  virtual void OnCryptoFrame(const QuicCryptoFrame& /*frame*/) {}
+
   // Called when a StopWaitingFrame has been parsed.
   virtual void OnStopWaitingFrame(const QuicStopWaitingFrame& /*frame*/) {}
 
@@ -268,6 +244,17 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
 
   // Called when a BlockedFrame has been parsed.
   virtual void OnBlockedFrame(const QuicBlockedFrame& /*frame*/) {}
+
+  // Called when a NewConnectionIdFrame has been parsed.
+  virtual void OnNewConnectionIdFrame(
+      const QuicNewConnectionIdFrame& /*frame*/) {}
+
+  // Called when a RetireConnectionIdFrame has been parsed.
+  virtual void OnRetireConnectionIdFrame(
+      const QuicRetireConnectionIdFrame& /*frame*/) {}
+
+  // Called when a NewTokenFrame has been parsed.
+  virtual void OnNewTokenFrame(const QuicNewTokenFrame& /*frame*/) {}
 
   // Called when a MessageFrame has been parsed.
   virtual void OnMessageFrame(const QuicMessageFrame& /*frame*/) {}
@@ -305,6 +292,19 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
 
   // Called when a StopSendingFrame has been parsed.
   virtual void OnStopSendingFrame(const QuicStopSendingFrame& /*frame*/) {}
+
+  // Called when a PathChallengeFrame has been parsed.
+  virtual void OnPathChallengeFrame(const QuicPathChallengeFrame& /*frame*/) {}
+
+  // Called when a PathResponseFrame has been parsed.
+  virtual void OnPathResponseFrame(const QuicPathResponseFrame& /*frame*/) {}
+
+  // Called when a StreamsBlockedFrame has been parsed.
+  virtual void OnStreamsBlockedFrame(const QuicStreamsBlockedFrame& /*frame*/) {
+  }
+
+  // Called when a MaxStreamsFrame has been parsed.
+  virtual void OnMaxStreamsFrame(const QuicMaxStreamsFrame& /*frame*/) {}
 };
 
 class QUIC_EXPORT_PRIVATE QuicConnectionHelperInterface {
@@ -324,7 +324,7 @@ class QUIC_EXPORT_PRIVATE QuicConnectionHelperInterface {
 class QUIC_EXPORT_PRIVATE QuicConnection
     : public QuicFramerVisitorInterface,
       public QuicBlockedWriterInterface,
-      public QuicPacketGenerator::DelegateInterface,
+      public QuicPacketCreator::DelegateInterface,
       public QuicSentPacketManager::NetworkChangeVisitor {
  public:
   // Constructs a new QuicConnection for |connection_id| and
@@ -595,7 +595,12 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   }
 
   // Testing only.
-  size_t NumQueuedPackets() const { return queued_packets_.size(); }
+  size_t NumQueuedPackets() const {
+    if (treat_queued_packets_as_sent_) {
+      return buffered_packets_.size();
+    }
+    return queued_packets_.size();
+  }
 
   // Returns true if the underlying UDP socket is writable, there is
   // no queued data and the connection is not congestion-control
@@ -806,8 +811,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // This setting should never be set to false in public facing endpoints. It
   // can only be set to false if there is some other mechanism of preventing
   // amplification attacks, such as ICE (plus its a non-standard quic).
-  void set_fully_pad_crypto_hadshake_packets(bool new_value) {
-    packet_generator_.set_fully_pad_crypto_hadshake_packets(new_value);
+  void set_fully_pad_crypto_handshake_packets(bool new_value) {
+    packet_generator_.set_fully_pad_crypto_handshake_packets(new_value);
   }
 
   bool fully_pad_during_crypto_handshake() const {
@@ -966,6 +971,33 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   typedef std::list<SerializedPacket> QueuedPacketList;
 
+  // Indicates the fate of a serialized packet in WritePacket().
+  enum SerializedPacketFate : uint8_t {
+    COALESCE,        // Try to coalesce packet.
+    BUFFER,          // Buffer packet in buffered_packets_.
+    SEND_TO_WRITER,  // Send packet to writer.
+  };
+
+  // BufferedPacket stores necessary information (encrypted buffer and self/peer
+  // addresses) of those packets which are serialized but failed to send because
+  // socket is blocked. From unacked packet map and send algorithm's
+  // perspective, buffered packets are treated as sent.
+  struct BufferedPacket {
+    BufferedPacket(const SerializedPacket& packet,
+                   const QuicSocketAddress& self_address,
+                   const QuicSocketAddress& peer_address);
+    BufferedPacket(const BufferedPacket& other) = delete;
+    BufferedPacket(const BufferedPacket&& other) = delete;
+
+    ~BufferedPacket();
+
+    // encrypted_buffer is owned by buffered packet.
+    QuicStringPiece encrypted_buffer;
+    // Self and peer addresses when the packet is serialized.
+    const QuicSocketAddress self_address;
+    const QuicSocketAddress peer_address;
+  };
+
   // Notifies the visitor of the close and marks the connection as disconnected.
   // Does not send a connection close frame to the peer. It should only be
   // called by CloseConnection or OnConnectionCloseFrame, OnPublicResetPacket,
@@ -1114,6 +1146,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // and flags.
   void MaybeEnableMultiplePacketNumberSpacesSupport();
 
+  // Returns packet fate when trying to write a packet.
+  SerializedPacketFate DeterminePacketFate();
+
   // Returns the encryption level the connection close packet should be sent at,
   // which is the highest encryption level that peer can guarantee to process.
   EncryptionLevel GetConnectionCloseEncryptionLevel() const;
@@ -1244,6 +1279,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // unacked_packets_ if they are to be retransmitted.  Packets encrypted_buffer
   // fields are owned by the QueuedPacketList, in order to ensure they outlast
   // the original scope of the SerializedPacket.
+  // TODO(fayang): Remove this when deprecating
+  // quic_treat_queued_packets_as_sent.
   QueuedPacketList queued_packets_;
 
   // Contains the connection close packets if the connection has been closed.
@@ -1463,6 +1500,24 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // packet has been successfully processed. Only used when
   // EnforceAntiAmplificationLimit returns true.
   bool address_validated_;
+
+  // If true, skip packet number before sending the last PTO retransmission.
+  bool skip_packet_number_for_pto_;
+
+  // Used to store content of packets which cannot be sent because of write
+  // blocked. Packets' encrypted buffers are copied and owned by
+  // buffered_packets_. From unacked_packet_map (and congestion control)'s
+  // perspective, those packets are considered sent. This is only used when
+  // treat_queued_packets_as_sent_ is true.
+  std::list<BufferedPacket> buffered_packets_;
+
+  // Latched value of quic_treat_queued_packets_as_sent.
+  const bool treat_queued_packets_as_sent_;
+
+  // Latched value of quic_mtu_discovery_v2.
+  const bool mtu_discovery_v2_;
+  // Only used if quic_mtu_discovery_v2 is true.
+  QuicConnectionMtuDiscoverer mtu_discoverer_;
 };
 
 }  // namespace quic

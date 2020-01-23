@@ -20,6 +20,7 @@
 #include "src/trace_processor/chunked_trace_reader.h"
 #include "src/trace_processor/clock_tracker.h"
 #include "src/trace_processor/event_tracker.h"
+#include "src/trace_processor/heap_graph_tracker.h"
 #include "src/trace_processor/heap_profile_tracker.h"
 #include "src/trace_processor/json_trace_parser.h"
 #include "src/trace_processor/process_tracker.h"
@@ -29,7 +30,8 @@
 #include "src/trace_processor/syscall_tracker.h"
 #include "src/trace_processor/systrace_parser.h"
 #include "src/trace_processor/trace_sorter.h"
-#include "src/trace_processor/virtual_track_tracker.h"
+#include "src/trace_processor/track_tracker.h"
+#include "src/trace_processor/vulkan_memory_tracker.h"
 
 namespace perfetto {
 namespace trace_processor {

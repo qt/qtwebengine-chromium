@@ -45,10 +45,10 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_METHOD1(SetExtmapAllowMixed, void(bool extmap_allow_mixed));
   MOCK_METHOD2(RegisterSendRtpHeaderExtension,
                int32_t(RTPExtensionType type, uint8_t id));
-  MOCK_METHOD2(RegisterRtpHeaderExtension,
-               bool(const std::string& uri, int id));
+  MOCK_METHOD2(RegisterRtpHeaderExtension, void(absl::string_view uri, int id));
   MOCK_METHOD1(DeregisterSendRtpHeaderExtension,
                int32_t(RTPExtensionType type));
+  MOCK_METHOD1(DeregisterSendRtpHeaderExtension, void(absl::string_view uri));
   MOCK_CONST_METHOD0(SupportsPadding, bool());
   MOCK_CONST_METHOD0(SupportsRtxPayloadPadding, bool());
   MOCK_CONST_METHOD0(StartTimestamp, uint32_t());
@@ -150,6 +150,9 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_METHOD1(SendFeedbackPacket, bool(const rtcp::TransportFeedback& packet));
   MOCK_METHOD1(SendNetworkStateEstimatePacket,
                bool(const rtcp::RemoteEstimate& packet));
+  MOCK_METHOD1(
+      SendCombinedRtcpPacket,
+      void(std::vector<std::unique_ptr<rtcp::RtcpPacket>> rtcp_packets));
   MOCK_METHOD1(SetTargetSendBitrate, void(uint32_t bitrate_bps));
   MOCK_METHOD4(SendLossNotification,
                int32_t(uint16_t last_decoded_seq_num,
@@ -157,10 +160,6 @@ class MockRtpRtcp : public RtpRtcp {
                        bool decodability_flag,
                        bool buffering_allowed));
   MOCK_METHOD0(Process, void());
-  MOCK_METHOD1(RegisterSendChannelRtpStatisticsCallback,
-               void(StreamDataCountersCallback*));
-  MOCK_CONST_METHOD0(GetSendChannelRtpStatisticsCallback,
-                     StreamDataCountersCallback*());
   MOCK_METHOD1(SetVideoBitrateAllocation, void(const VideoBitrateAllocation&));
   MOCK_METHOD0(RtpSender, RTPSender*());
   MOCK_CONST_METHOD0(RtpSender, const RTPSender*());

@@ -104,6 +104,12 @@ namespace dawn_native {
             return mPointee;
         }
 
+        T* Detach() {
+            T* pointee = mPointee;
+            mPointee = nullptr;
+            return pointee;
+        }
+
       private:
         void Reference() const {
             if (mPointee != nullptr) {
@@ -119,6 +125,13 @@ namespace dawn_native {
         // static_assert(std::is_base_of<RefCounted, T>::value, "");
         T* mPointee = nullptr;
     };
+
+    template <typename T>
+    Ref<T> AcquireRef(T* pointee) {
+        Ref<T> ref(pointee);
+        ref->Release();
+        return ref;
+    }
 
 }  // namespace dawn_native
 

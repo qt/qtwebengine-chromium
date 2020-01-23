@@ -616,7 +616,7 @@ void TextureState::clearImageDescs()
 }
 
 Texture::Texture(rx::GLImplFactory *factory, TextureID id, TextureType type)
-    : RefCountObject(id.value),
+    : RefCountObject(id),
       mState(type),
       mTexture(factory->createTexture(mState)),
       mImplObserver(this, rx::kTextureImageImplObserverMessageIndex),
@@ -1266,10 +1266,11 @@ angle::Result Texture::setStorage(Context *context,
     ANGLE_TRY(releaseTexImageInternal(context));
     ANGLE_TRY(orphanImages(context));
 
-    ANGLE_TRY(mTexture->setStorage(context, type, levels, internalFormat, size));
-
     mState.mImmutableFormat = true;
     mState.mImmutableLevels = static_cast<GLuint>(levels);
+
+    ANGLE_TRY(mTexture->setStorage(context, type, levels, internalFormat, size));
+
     mState.clearImageDescs();
     mState.setImageDescChain(0, static_cast<GLuint>(levels - 1), size, Format(internalFormat),
                              InitState::MayNeedInit);
@@ -1673,7 +1674,7 @@ void Texture::onDetach(const Context *context)
 
 GLuint Texture::getId() const
 {
-    return id();
+    return id().value;
 }
 
 GLuint Texture::getNativeID() const
@@ -1839,14 +1840,28 @@ angle::Result Texture::handleMipmapGenerationHint(Context *context, int level)
 
 void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message)
 {
-    ASSERT(message == angle::SubjectMessage::SubjectChanged);
-    mDirtyBits.set(DIRTY_BIT_IMPLEMENTATION);
-    signalDirtyState(DIRTY_BIT_IMPLEMENTATION);
-
-    // Notify siblings that we are dirty.
-    if (index == rx::kTextureImageImplObserverMessageIndex)
+    switch (message)
     {
-        notifySiblings(message);
+        case angle::SubjectMessage::ContentsChanged:
+            // ContentsChange is originates from TextureStorage11::resolveAndReleaseTexture
+            // which resolves the underlying multisampled texture if it exists and so
+            // Texture will signal dirty storage to invalidate its own cache and the
+            // attached framebuffer's cache.
+            signalDirtyStorage(InitState::Initialized);
+            return;
+        case angle::SubjectMessage::SubjectChanged:
+            mDirtyBits.set(DIRTY_BIT_IMPLEMENTATION);
+            signalDirtyState(DIRTY_BIT_IMPLEMENTATION);
+
+            // Notify siblings that we are dirty.
+            if (index == rx::kTextureImageImplObserverMessageIndex)
+            {
+                notifySiblings(message);
+            }
+            return;
+        default:
+            return;
     }
 }
+
 }  // namespace gl

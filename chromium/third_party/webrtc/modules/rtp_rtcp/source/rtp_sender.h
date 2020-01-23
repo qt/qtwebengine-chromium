@@ -67,9 +67,6 @@ class RTPSender {
   uint32_t TimestampOffset() const;
   void SetTimestampOffset(uint32_t timestamp);
 
-  // TODO(bugs.webrtc.org/10774): Remove.
-  void SetSSRC(uint32_t ssrc);
-
   void SetRid(const std::string& rid);
 
   void SetMid(const std::string& mid);
@@ -85,12 +82,14 @@ class RTPSender {
 
   // RTP header extension
   int32_t RegisterRtpHeaderExtension(RTPExtensionType type, uint8_t id);
-  bool RegisterRtpHeaderExtension(const std::string& uri, int id);
+  bool RegisterRtpHeaderExtension(absl::string_view uri, int id);
   bool IsRtpHeaderExtensionRegistered(RTPExtensionType type) const;
   int32_t DeregisterRtpHeaderExtension(RTPExtensionType type);
+  void DeregisterRtpHeaderExtension(absl::string_view uri);
 
-  // Returns an RtpPacketSendResult indicating success, network unavailable,
-  // or packet not found.
+  // Tries to send packet to transport. Also updates any timing extensions,
+  // calls observers waiting for packet send events, and updates stats.
+  // Returns true if packet belongs to this RTP module, false otherwise.
   bool TrySendPacket(RtpPacketToSend* packet,
                      const PacedPacketInfo& pacing_info);
   bool SupportsPadding() const;
@@ -115,10 +114,10 @@ class RTPSender {
   // RTX.
   void SetRtxStatus(int mode);
   int RtxStatus() const;
-  uint32_t RtxSsrc() const;
-
-  // TODO(bugs.webrtc.org/10774): Remove.
-  void SetRtxSsrc(uint32_t ssrc);
+  uint32_t RtxSsrc() const {
+    RTC_DCHECK(rtx_ssrc_);
+    return *rtx_ssrc_;
+  }
 
   void SetRtxPayloadType(int payload_type, int associated_payload_type);
 
@@ -142,16 +141,17 @@ class RTPSender {
   // Including RTP headers.
   size_t MaxRtpPacketSize() const;
 
-  uint32_t SSRC() const;
+  uint32_t SSRC() const { return ssrc_; }
 
-  absl::optional<uint32_t> FlexfecSsrc() const;
+  absl::optional<uint32_t> FlexfecSsrc() const { return flexfec_ssrc_; }
 
   // Sends packet to |transport_| or to the pacer, depending on configuration.
+  // TODO(bugs.webrtc.org/XXX): Remove in favor of EnqueuePackets().
   bool SendToNetwork(std::unique_ptr<RtpPacketToSend> packet);
 
-  // Called on update of RTP statistics.
-  void RegisterRtpStatisticsCallback(StreamDataCountersCallback* callback);
-  StreamDataCountersCallback* GetRtpStatisticsCallback() const;
+  // Pass a set of packets to RtpPacketSender instance, for paced or immediate
+  // sending to the network.
+  void EnqueuePackets(std::vector<std::unique_ptr<RtpPacketToSend>> packets);
 
   uint32_t BitrateSent() const;
 
@@ -179,7 +179,8 @@ class RTPSender {
     explicit NonPacedPacketSender(RTPSender* rtp_sender);
     virtual ~NonPacedPacketSender();
 
-    void EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) override;
+    void EnqueuePackets(
+        std::vector<std::unique_ptr<RtpPacketToSend>> packets) override;
 
    private:
     uint16_t transport_sequence_number_;
@@ -218,6 +219,8 @@ class RTPSender {
 
   const bool audio_configured_;
 
+  const uint32_t ssrc_;
+  const absl::optional<uint32_t> rtx_ssrc_;
   const absl::optional<uint32_t> flexfec_ssrc_;
 
   const std::unique_ptr<NonPacedPacketSender> non_paced_packet_sender_;
@@ -247,8 +250,7 @@ class RTPSender {
   uint64_t total_packet_send_delay_ms_ RTC_GUARDED_BY(statistics_crit_);
   StreamDataCounters rtp_stats_ RTC_GUARDED_BY(statistics_crit_);
   StreamDataCounters rtx_rtp_stats_ RTC_GUARDED_BY(statistics_crit_);
-  StreamDataCountersCallback* rtp_stats_callback_
-      RTC_GUARDED_BY(statistics_crit_);
+  StreamDataCountersCallback* const rtp_stats_callback_;
   RateStatistics total_bitrate_sent_ RTC_GUARDED_BY(statistics_crit_);
   RateStatistics nack_bitrate_sent_ RTC_GUARDED_BY(statistics_crit_);
   SendSideDelayObserver* const send_side_delay_observer_;
@@ -261,9 +263,6 @@ class RTPSender {
   bool sequence_number_forced_ RTC_GUARDED_BY(send_critsect_);
   uint16_t sequence_number_ RTC_GUARDED_BY(send_critsect_);
   uint16_t sequence_number_rtx_ RTC_GUARDED_BY(send_critsect_);
-  // Must be explicitly set by the application, use of absl::optional
-  // only to keep track of correct use.
-  absl::optional<uint32_t> ssrc_ RTC_GUARDED_BY(send_critsect_);
   // RID value to send in the RID or RepairedRID header extension.
   std::string rid_ RTC_GUARDED_BY(send_critsect_);
   // MID value to send in the MID header extension.
@@ -279,7 +278,6 @@ class RTPSender {
   bool last_packet_marker_bit_ RTC_GUARDED_BY(send_critsect_);
   std::vector<uint32_t> csrcs_ RTC_GUARDED_BY(send_critsect_);
   int rtx_ RTC_GUARDED_BY(send_critsect_);
-  absl::optional<uint32_t> ssrc_rtx_ RTC_GUARDED_BY(send_critsect_);
   // Mapping rtx_payload_type_map_[associated] = rtx.
   std::map<int8_t, int8_t> rtx_payload_type_map_ RTC_GUARDED_BY(send_critsect_);
   size_t rtp_overhead_bytes_per_packet_ RTC_GUARDED_BY(send_critsect_);

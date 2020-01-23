@@ -5,14 +5,14 @@
       "site" : "github",
       "subrepo" : "KhronosGroup/SPIRV-Tools",
       "subdir" : "External/spirv-tools",
-      "commit" : "aa9e8f538041db3055ea443080e0ccc315fa114f"
+      "commit" : "c3ca04741945c332ddbeb7d7125dbae2809b7195"
     },
     {
       "name" : "spirv-tools/external/spirv-headers",
       "site" : "github",
       "subrepo" : "KhronosGroup/SPIRV-Headers",
       "subdir" : "External/spirv-tools/external/spirv-headers",
-      "commit" : "45c2cc37276d69e5b257507d97fd90d2a5684ccc"
+      "commit" : "b252a50953ac4375cb1864e94f4b0234db9d215d"
     }
   ]
 }

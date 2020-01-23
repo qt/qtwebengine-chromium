@@ -913,7 +913,7 @@ void AppWindow::NavigationStateChanged(content::WebContents* source,
 void AppWindow::EnterFullscreenModeForTab(
     content::WebContents* source,
     const GURL& origin,
-    const blink::WebFullscreenOptions& options) {
+    const blink::mojom::FullscreenOptions& options) {
   ToggleFullscreenModeForTab(source, true);
 }
 
@@ -947,10 +947,10 @@ bool AppWindow::IsFullscreenForTabOrPending(
   return IsHtmlApiFullscreen();
 }
 
-blink::WebDisplayMode AppWindow::GetDisplayMode(
+blink::mojom::DisplayMode AppWindow::GetDisplayMode(
     const content::WebContents* source) {
-  return IsFullscreen() ? blink::kWebDisplayModeFullscreen
-                        : blink::kWebDisplayModeStandalone;
+  return IsFullscreen() ? blink::mojom::DisplayMode::kFullscreen
+                        : blink::mojom::DisplayMode::kStandalone;
 }
 
 WindowController* AppWindow::GetExtensionWindowController() const {

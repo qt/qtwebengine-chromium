@@ -56,7 +56,7 @@ const VkPhysicalDeviceFeatures& PhysicalDevice::getFeatures() const
 		VK_FALSE,  // textureCompressionBC
 		VK_FALSE,  // occlusionQueryPrecise
 		VK_FALSE,  // pipelineStatisticsQuery
-		VK_FALSE,  // vertexPipelineStoresAndAtomics
+		VK_TRUE,   // vertexPipelineStoresAndAtomics
 		VK_TRUE,   // fragmentStoresAndAtomics
 		VK_FALSE,  // shaderTessellationAndGeometryPointSize
 		VK_FALSE,  // shaderImageGatherExtended
@@ -160,7 +160,7 @@ const VkPhysicalDeviceLimits& PhysicalDevice::getLimits() const
 		0, // sparseAddressSpaceSize (unsupported)
 		MAX_BOUND_DESCRIPTOR_SETS, // maxBoundDescriptorSets
 		16, // maxPerStageDescriptorSamplers
-		12, // maxPerStageDescriptorUniformBuffers
+		14, // maxPerStageDescriptorUniformBuffers
 		4, // maxPerStageDescriptorStorageBuffers
 		16, // maxPerStageDescriptorSampledImages
 		4, // maxPerStageDescriptorStorageImages
@@ -178,7 +178,7 @@ const VkPhysicalDeviceLimits& PhysicalDevice::getLimits() const
 		vk::MAX_VERTEX_INPUT_BINDINGS, // maxVertexInputBindings
 		2047, // maxVertexInputAttributeOffset
 		2048, // maxVertexInputBindingStride
-		64, // maxVertexOutputComponents
+		sw::MAX_INTERFACE_COMPONENTS, // maxVertexOutputComponents
 		0, // maxTessellationGenerationLevel (unsupported)
 		0, // maxTessellationPatchSize (unsupported)
 		0, // maxTessellationControlPerVertexInputComponents (unsupported)
@@ -192,7 +192,7 @@ const VkPhysicalDeviceLimits& PhysicalDevice::getLimits() const
 		0, // maxGeometryOutputComponents (unsupported)
 		0, // maxGeometryOutputVertices (unsupported)
 		0, // maxGeometryTotalOutputComponents (unsupported)
-		64, // maxFragmentInputComponents
+		sw::MAX_INTERFACE_COMPONENTS, // maxFragmentInputComponents
 		4, // maxFragmentOutputAttachments
 		1, // maxFragmentDualSrcAttachments
 		4, // maxFragmentCombinedOutputResources
@@ -200,7 +200,7 @@ const VkPhysicalDeviceLimits& PhysicalDevice::getLimits() const
 		{ 65535, 65535, 65535 }, // maxComputeWorkGroupCount[3]
 		128, // maxComputeWorkGroupInvocations
 		{ 128, 128, 64, }, // maxComputeWorkGroupSize[3]
-		4, // subPixelPrecisionBits
+		vk::SUBPIXEL_PRECISION_BITS, // subPixelPrecisionBits
 		4, // subTexelPrecisionBits
 		4, // mipmapPrecisionBits
 		UINT32_MAX, // maxDrawIndexedIndexValue
@@ -357,9 +357,26 @@ void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalFenceInfo* pExt
 
 void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalSemaphoreInfo* pExternalSemaphoreInfo, VkExternalSemaphoreProperties* pExternalSemaphoreProperties) const
 {
+#if SWIFTSHADER_EXTERNAL_SEMAPHORE_LINUX_MEMFD
+	if (pExternalSemaphoreInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT)
+	{
+		pExternalSemaphoreProperties->compatibleHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+		pExternalSemaphoreProperties->exportFromImportedHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+		pExternalSemaphoreProperties->externalSemaphoreFeatures = VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT;
+		return;
+	}
+#endif
 	pExternalSemaphoreProperties->compatibleHandleTypes = 0;
 	pExternalSemaphoreProperties->exportFromImportedHandleTypes = 0;
 	pExternalSemaphoreProperties->externalSemaphoreFeatures = 0;
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDeviceDriverPropertiesKHR* properties) const
+{
+	properties->driverID = VK_DRIVER_ID_GOOGLE_SWIFTSHADER_KHR;
+	strcpy(properties->driverName, "SwiftShader driver");
+	strcpy(properties->driverInfo, "");
+	properties->conformanceVersion = {1, 1, 3, 3};
 }
 
 bool PhysicalDevice::hasFeatures(const VkPhysicalDeviceFeatures& requestedFeatures) const
@@ -451,8 +468,10 @@ void PhysicalDevice::getFormatProperties(Format format, VkFormatProperties* pFor
 	case VK_FORMAT_R32G32B32A32_UINT:
 	case VK_FORMAT_R32G32B32A32_SINT:
 	case VK_FORMAT_R32G32B32A32_SFLOAT:
+	case VK_FORMAT_S8_UINT:
 	case VK_FORMAT_D16_UNORM:
 	case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D32_SFLOAT_S8_UINT:
 		pFormatProperties->optimalTilingFeatures |=
 			VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 			VK_FORMAT_FEATURE_BLIT_SRC_BIT |
@@ -557,6 +576,7 @@ void PhysicalDevice::getFormatProperties(Format format, VkFormatProperties* pFor
 			VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
 			VK_FORMAT_FEATURE_BLIT_DST_BIT;
 		break;
+	case VK_FORMAT_S8_UINT:
 	case VK_FORMAT_D16_UNORM:
 	case VK_FORMAT_D32_SFLOAT: // Note: either VK_FORMAT_D32_SFLOAT or VK_FORMAT_X8_D24_UNORM_PACK32 must be supported
 	case VK_FORMAT_D32_SFLOAT_S8_UINT: // Note: either VK_FORMAT_D24_UNORM_S8_UINT or VK_FORMAT_D32_SFLOAT_S8_UINT must be supported

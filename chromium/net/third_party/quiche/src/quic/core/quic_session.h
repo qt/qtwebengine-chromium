@@ -41,9 +41,11 @@ namespace test {
 class QuicSessionPeer;
 }  // namespace test
 
-class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
-                                        public SessionNotifierInterface,
-                                        public QuicStreamFrameDataProducer {
+class QUIC_EXPORT_PRIVATE QuicSession
+    : public QuicConnectionVisitorInterface,
+      public SessionNotifierInterface,
+      public QuicStreamFrameDataProducer,
+      public QuicStreamIdManager::DelegateInterface {
  public:
   // An interface from the session to the entity owning the session.
   // This lets the session notify its owner (the Dispatcher) when the connection
@@ -147,6 +149,16 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   bool HasUnackedCryptoData() const override;
   bool HasUnackedStreamData() const override;
 
+  // QuicStreamIdManager::DelegateInterface methods:
+  void OnError(QuicErrorCode error_code, std::string error_details) override;
+  void SendMaxStreams(QuicStreamCount stream_count,
+                      bool unidirectional) override;
+  void SendStreamsBlocked(QuicStreamCount stream_count,
+                          bool unidirectional) override;
+  // The default implementation does nothing. Subclasses should override if
+  // for example they queue up stream requests.
+  void OnCanCreateNewOutgoingStream(bool unidirectional) override;
+
   // Called on every incoming packet. Passes |packet| through to |connection_|.
   virtual void ProcessUdpPacket(const QuicSocketAddress& self_address,
                                 const QuicSocketAddress& peer_address,
@@ -210,12 +222,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Sends a WINDOW_UPDATE frame.
   virtual void SendWindowUpdate(QuicStreamId id, QuicStreamOffset byte_offset);
 
-  // Send a MAX_STREAMS frame.
-  void SendMaxStreams(QuicStreamCount stream_count, bool unidirectional);
-
-  // Send a STREAMS_BLOCKED frame.
-  void SendStreamsBlocked(QuicStreamCount stream_count, bool unidirectional);
-
   // Create and transmit a STOP_SENDING frame
   virtual void SendStopSending(uint16_t code, QuicStreamId stream_id);
 
@@ -228,7 +234,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   // For a client, returns true if the server has confirmed our handshake. For
   // a server, returns true if a full, valid client hello has been received.
-  virtual bool IsCryptoHandshakeConfirmed() const;
+  bool IsCryptoHandshakeConfirmed() const;
 
   // Called by the QuicCryptoStream when a new QuicConfig has been negotiated.
   virtual void OnConfigNegotiated();
@@ -347,6 +353,9 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   // Returns the Google QUIC error code
   QuicErrorCode error() const { return on_closed_frame_.extracted_error_code; }
+  const std::string& error_details() const {
+    return on_closed_frame_.error_details;
+  }
   uint64_t transport_close_frame_type() const {
     return on_closed_frame_.transport_close_frame_type;
   }
@@ -400,14 +409,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   const ParsedQuicVersionVector& supported_versions() const {
     return supported_versions_;
   }
-
-  // Called when new outgoing streams are available to be opened. This occurs
-  // when an extant, open, stream is moved to draining or closed. The default
-  // implementation does nothing. |unidirectional| indicates whether
-  // unidirectional or bidirectional streams are now available. If both become
-  // available at the same time then there will be two calls to this method, one
-  // with unidirectional==true, the other with it ==false.
-  virtual void OnCanCreateNewOutgoingStream(bool unidirectional);
 
   QuicStreamId next_outgoing_bidirectional_stream_id() const;
   QuicStreamId next_outgoing_unidirectional_stream_id() const;
@@ -517,15 +518,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Returns the number of open dynamic streams.
   uint64_t GetNumOpenDynamicStreams() const;
 
-  // Returns existing stream with id = |stream_id|. If no such stream exists,
-  // and |stream_id| is a peer-created id, then a new stream is created and
-  // returned. However if |stream_id| is a locally-created id and no such stream
-  // exists, the connection is closed.
-  // Caller does not own the returned stream.
-  // TODO(renjietang): Remove this method after
-  // quic_inline_getorcreatedynamicstream is deprecated.
-  QuicStream* GetOrCreateDynamicStream(QuicStreamId stream_id);
-
   // Performs the work required to close |stream_id|.  If |locally_reset|
   // then the stream has been reset by this endpoint, not by the peer.
   virtual void CloseStreamInner(QuicStreamId stream_id, bool locally_reset);
@@ -544,12 +536,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // ProcessPendingStream().
   virtual bool UsesPendingStreams() const { return false; }
 
-  // Transfer ownership of |stream| to stream_map_, and register
-  // |stream| as static in stream id manager. |stream_already_counted| is true
-  // if |stream| is created from pending stream and is already known as an open
-  // stream.
-  void RegisterStaticStream(std::unique_ptr<QuicStream> stream);
-
   StreamMap& stream_map() { return stream_map_; }
   const StreamMap& stream_map() const { return stream_map_; }
 
@@ -559,10 +545,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   void set_largest_peer_created_stream_id(
       QuicStreamId largest_peer_created_stream_id);
-
-  void set_error(QuicErrorCode error) {
-    on_closed_frame_.extracted_error_code = error;
-  }
 
   QuicWriteBlockedList* write_blocked_streams() {
     return &write_blocked_streams_;
@@ -578,7 +560,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Returns true if the stream is a static stream.
   bool IsStaticStream(QuicStreamId id) const;
 
-  // Close connection when receive a frame for a locally-created nonexistant
+  // Close connection when receive a frame for a locally-created nonexistent
   // stream.
   // Prerequisite: IsClosedStream(stream_id) == false
   // Server session might need to override this method to allow server push
@@ -614,7 +596,7 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
     return false;
   }
 
-  bool IsHandshakeConfirmed() { return is_handshake_confirmed_; }
+  bool IsHandshakeConfirmed() const { return is_handshake_confirmed_; }
 
  private:
   friend class test::QuicSessionPeer;
@@ -622,6 +604,20 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Called in OnConfigNegotiated when we receive a new stream level flow
   // control window in a negotiated config. Closes the connection if invalid.
   void OnNewStreamFlowControlWindow(QuicStreamOffset new_window);
+
+  // Called in OnConfigNegotiated when we receive a new unidirectional stream
+  // flow control window in a negotiated config.
+  void OnNewStreamUnidirectionalFlowControlWindow(QuicStreamOffset new_window);
+
+  // Called in OnConfigNegotiated when we receive a new outgoing bidirectional
+  // stream flow control window in a negotiated config.
+  void OnNewStreamOutgoingBidirectionalFlowControlWindow(
+      QuicStreamOffset new_window);
+
+  // Called in OnConfigNegotiated when we receive a new incoming bidirectional
+  // stream flow control window in a negotiated config.
+  void OnNewStreamIncomingBidirectionalFlowControlWindow(
+      QuicStreamOffset new_window);
 
   // Called in OnConfigNegotiated when we receive a new connection level flow
   // control window in a negotiated config. Closes the connection if invalid.
@@ -662,11 +658,6 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
   // Creates or gets pending strea, feed it with |frame|, and closes the pending
   // stream.
   void PendingStreamOnRstStream(const QuicRstStreamFrame& frame);
-
-  bool ignore_tlpr_if_no_pending_stream_data() const {
-    return connection_->sent_packet_manager()
-        .ignore_tlpr_if_no_pending_stream_data();
-  }
 
   // Keep track of highest received byte offset of locally closed streams, while
   // waiting for a definitive final highest offset from the peer.
@@ -777,6 +768,9 @@ class QUIC_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface,
 
   // The number of expected static streams.
   QuicStreamCount num_expected_unidirectional_static_streams_;
+
+  // If true, enables round robin scheduling.
+  bool enable_round_robin_scheduling_;
 };
 
 }  // namespace quic

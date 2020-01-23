@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "third_party/boringssl/src/include/openssl/bn.h"
 #include "third_party/boringssl/src/include/openssl/ec.h"
@@ -25,10 +26,10 @@
 #include "net/third_party/quiche/src/quic/core/quic_crypto_stream.h"
 #include "net/third_party/quiche/src/quic/core/quic_server_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
+#include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_clock.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_text_utils.h"
@@ -44,6 +45,8 @@ namespace test {
 namespace crypto_test_utils {
 
 namespace {
+
+using testing::_;
 
 // CryptoFramerVisitor is a framer visitor that records handshake messages.
 class CryptoFramerVisitor : public CryptoFramerVisitorInterface {
@@ -130,7 +133,7 @@ class FullChloGenerator {
 
   std::unique_ptr<ValidateClientHelloCallback>
   GetValidateClientHelloCallback() {
-    return QuicMakeUnique<ValidateClientHelloCallback>(this);
+    return std::make_unique<ValidateClientHelloCallback>(this);
   }
 
  private:
@@ -164,7 +167,7 @@ class FullChloGenerator {
   };
 
   std::unique_ptr<ProcessClientHelloCallback> GetProcessClientHelloCallback() {
-    return QuicMakeUnique<ProcessClientHelloCallback>(this);
+    return std::make_unique<ProcessClientHelloCallback>(this);
   }
 
   void ProcessClientHelloDone(std::unique_ptr<CryptoHandshakeMessage> rej) {
@@ -210,7 +213,8 @@ int HandshakeWithFakeServer(QuicConfig* server_quic_config,
                             MockQuicConnectionHelper* helper,
                             MockAlarmFactory* alarm_factory,
                             PacketSavingConnection* client_conn,
-                            QuicCryptoClientStream* client) {
+                            QuicCryptoClientStream* client,
+                            std::string alpn) {
   PacketSavingConnection* server_conn = new PacketSavingConnection(
       helper, alarm_factory, Perspective::IS_SERVER,
       ParsedVersionOfIndex(client_conn->supported_versions(), 0));
@@ -234,6 +238,10 @@ int HandshakeWithFakeServer(QuicConfig* server_quic_config,
       .Times(testing::AnyNumber());
   EXPECT_CALL(*server_conn, OnCanWrite()).Times(testing::AnyNumber());
   EXPECT_CALL(*client_conn, OnCanWrite()).Times(testing::AnyNumber());
+  EXPECT_CALL(server_session, SelectAlpn(_))
+      .WillRepeatedly([alpn](const std::vector<QuicStringPiece>& alpns) {
+        return std::find(alpns.cbegin(), alpns.cend(), alpn);
+      });
 
   // The client's handshake must have been started already.
   CHECK_NE(0u, client_conn->encrypted_packets_.size());
@@ -250,7 +258,8 @@ int HandshakeWithFakeClient(MockQuicConnectionHelper* helper,
                             PacketSavingConnection* server_conn,
                             QuicCryptoServerStream* server,
                             const QuicServerId& server_id,
-                            const FakeClientOptions& options) {
+                            const FakeClientOptions& options,
+                            std::string alpn) {
   ParsedQuicVersionVector supported_versions = AllSupportedVersions();
   if (options.only_tls_versions) {
     supported_versions.clear();
@@ -275,6 +284,14 @@ int HandshakeWithFakeClient(MockQuicConnectionHelper* helper,
   EXPECT_CALL(client_session, OnProofVerifyDetailsAvailable(testing::_))
       .Times(testing::AnyNumber());
   EXPECT_CALL(*client_conn, OnCanWrite()).Times(testing::AnyNumber());
+  if (!alpn.empty()) {
+    EXPECT_CALL(client_session, GetAlpnsToOffer())
+        .WillRepeatedly(testing::Return(std::vector<std::string>({alpn})));
+  } else {
+    EXPECT_CALL(client_session, GetAlpnsToOffer())
+        .WillRepeatedly(testing::Return(std::vector<std::string>(
+            {AlpnForVersion(client_conn->version())})));
+  }
   client_session.GetMutableCryptoStream()->CryptoConnect();
   CHECK_EQ(1u, client_conn->encrypted_packets_.size());
 
@@ -303,12 +320,10 @@ void SendHandshakeMessageToStream(QuicCryptoStream* stream,
                                   Perspective /*perspective*/) {
   const QuicData& data = message.GetSerialized();
   QuicSession* session = QuicStreamPeer::session(stream);
-  if (!QuicVersionUsesCryptoFrames(
-          session->connection()->transport_version())) {
-    QuicStreamFrame frame(QuicUtils::GetCryptoStreamId(
-                              session->connection()->transport_version()),
-                          false, stream->crypto_bytes_read(),
-                          data.AsStringPiece());
+  if (!QuicVersionUsesCryptoFrames(session->transport_version())) {
+    QuicStreamFrame frame(
+        QuicUtils::GetCryptoStreamId(session->transport_version()), false,
+        stream->crypto_bytes_read(), data.AsStringPiece());
     stream->OnStreamFrame(frame);
   } else {
     EncryptionLevel level = session->connection()->last_decrypted_level();

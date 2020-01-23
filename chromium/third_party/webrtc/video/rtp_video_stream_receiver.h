@@ -273,8 +273,14 @@ class RtpVideoStreamReceiver : public LossNotificationSender,
   std::unique_ptr<NackModule> nack_module_;
   std::unique_ptr<LossNotificationController> loss_notification_controller_;
 
-  rtc::scoped_refptr<video_coding::PacketBuffer> packet_buffer_;
-  std::unique_ptr<video_coding::RtpFrameReferenceFinder> reference_finder_;
+  video_coding::PacketBuffer packet_buffer_;
+
+  rtc::CriticalSection reference_finder_lock_;
+  std::unique_ptr<video_coding::RtpFrameReferenceFinder> reference_finder_
+      RTC_GUARDED_BY(reference_finder_lock_);
+  absl::optional<VideoCodecType> current_codec_;
+  uint32_t last_assembled_frame_rtp_timestamp_;
+
   rtc::CriticalSection last_seq_num_cs_;
   std::map<int64_t, uint16_t> last_seq_num_for_pic_id_
       RTC_GUARDED_BY(last_seq_num_cs_);
@@ -311,6 +317,8 @@ class RtpVideoStreamReceiver : public LossNotificationSender,
       RTC_PT_GUARDED_BY(network_tc_);
   std::atomic<bool> frames_decryptable_;
   absl::optional<ColorSpace> last_color_space_;
+
+  int64_t last_completed_picture_id_ = 0;
 };
 
 }  // namespace webrtc

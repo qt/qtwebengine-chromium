@@ -32,7 +32,7 @@ class QpackRoundTripTest : public QuicTestWithParam<FragmentMode> {
     QpackEncoder encoder(&decoder_stream_error_delegate);
     encoder.set_qpack_stream_sender_delegate(&encoder_stream_sender_delegate);
     std::string encoded_header_block =
-        encoder.EncodeHeaderList(/* stream_id = */ 1, header_list);
+        encoder.EncodeHeaderList(/* stream_id = */ 1, header_list, nullptr);
 
     TestHeadersHandler handler;
     NoopEncoderStreamErrorDelegate encoder_stream_error_delegate;
@@ -51,7 +51,7 @@ class QpackRoundTripTest : public QuicTestWithParam<FragmentMode> {
   }
 };
 
-INSTANTIATE_TEST_SUITE_P(,
+INSTANTIATE_TEST_SUITE_P(All,
                          QpackRoundTripTest,
                          Values(FragmentMode::kSingleChunk,
                                 FragmentMode::kOctetByOctet));

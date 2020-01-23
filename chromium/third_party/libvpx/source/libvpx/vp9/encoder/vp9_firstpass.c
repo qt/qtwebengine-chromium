@@ -220,14 +220,14 @@ static void subtract_stats(FIRSTPASS_STATS *section,
 // bars and partially discounts other 0 energy areas.
 #define MIN_ACTIVE_AREA 0.5
 #define MAX_ACTIVE_AREA 1.0
-static double calculate_active_area(const VP9_COMP *cpi,
+static double calculate_active_area(const FRAME_INFO *frame_info,
                                     const FIRSTPASS_STATS *this_frame) {
   double active_pct;
 
   active_pct =
       1.0 -
       ((this_frame->intra_skip_pct / 2) +
-       ((this_frame->inactive_zone_rows * 2) / (double)cpi->common.mb_rows));
+       ((this_frame->inactive_zone_rows * 2) / (double)frame_info->mb_rows));
   return fclamp(active_pct, MIN_ACTIVE_AREA, MAX_ACTIVE_AREA);
 }
 
@@ -260,8 +260,8 @@ static double calculate_mod_frame_score(const VP9_COMP *cpi,
   // remaining active MBs. The correction here assumes that coding
   // 0.5N blocks of complexity 2X is a little easier than coding N
   // blocks of complexity X.
-  modified_score *=
-      pow(calculate_active_area(cpi, this_frame), ACT_AREA_CORRECTION);
+  modified_score *= pow(calculate_active_area(&cpi->frame_info, this_frame),
+                        ACT_AREA_CORRECTION);
 
   return modified_score;
 }
@@ -284,8 +284,8 @@ static double calculate_norm_frame_score(const VP9_COMP *cpi,
   // remaining active MBs. The correction here assumes that coding
   // 0.5N blocks of complexity 2X is a little easier than coding N
   // blocks of complexity X.
-  modified_score *=
-      pow(calculate_active_area(cpi, this_frame), ACT_AREA_CORRECTION);
+  modified_score *= pow(calculate_active_area(&cpi->frame_info, this_frame),
+                        ACT_AREA_CORRECTION);
 
   // Normalize to a midpoint score.
   modified_score /= DOUBLE_DIVIDE_CHECK(twopass->mean_mod_score);
@@ -1747,15 +1747,16 @@ void vp9_init_second_pass(VP9_COMP *cpi) {
 #define LOW_CODED_ERR_PER_MB 10.0
 #define NCOUNT_FRAME_II_THRESH 6.0
 
-static double get_sr_decay_rate(const VP9_COMP *cpi,
+static double get_sr_decay_rate(const FRAME_INFO *frame_info,
                                 const FIRSTPASS_STATS *frame) {
   double sr_diff = (frame->sr_coded_error - frame->coded_error);
   double sr_decay = 1.0;
   double modified_pct_inter;
   double modified_pcnt_intra;
   const double motion_amplitude_part =
-      frame->pcnt_motion * ((frame->mvc_abs + frame->mvr_abs) /
-                            (cpi->initial_height + cpi->initial_width));
+      frame->pcnt_motion *
+      ((frame->mvc_abs + frame->mvr_abs) /
+       (frame_info->frame_height + frame_info->frame_width));
 
   modified_pct_inter = frame->pcnt_inter;
   if ((frame->coded_error > LOW_CODED_ERR_PER_MB) &&
@@ -1779,17 +1780,17 @@ static double get_sr_decay_rate(const VP9_COMP *cpi,
 static double get_zero_motion_factor(const VP9_COMP *cpi,
                                      const FIRSTPASS_STATS *frame) {
   const double zero_motion_pct = frame->pcnt_inter - frame->pcnt_motion;
-  double sr_decay = get_sr_decay_rate(cpi, frame);
+  double sr_decay = get_sr_decay_rate(&cpi->frame_info, frame);
   return VPXMIN(sr_decay, zero_motion_pct);
 }
 
 #define ZM_POWER_FACTOR 0.75
 
-static double get_prediction_decay_rate(const VP9_COMP *cpi,
-                                        const FIRSTPASS_STATS *next_frame) {
-  const double sr_decay_rate = get_sr_decay_rate(cpi, next_frame);
+static double get_prediction_decay_rate(const FRAME_INFO *frame_info,
+                                        const FIRSTPASS_STATS *frame_stats) {
+  const double sr_decay_rate = get_sr_decay_rate(frame_info, frame_stats);
   const double zero_motion_factor =
-      (0.95 * pow((next_frame->pcnt_inter - next_frame->pcnt_motion),
+      (0.95 * pow((frame_stats->pcnt_inter - frame_stats->pcnt_motion),
                   ZM_POWER_FACTOR));
 
   return VPXMAX(zero_motion_factor,
@@ -1831,19 +1832,24 @@ static int detect_transition_to_still(VP9_COMP *cpi, int frame_interval,
 // This function detects a flash through the high relative pcnt_second_ref
 // score in the frame following a flash frame. The offset passed in should
 // reflect this.
-static int detect_flash(const TWO_PASS *twopass, int offset) {
-  const FIRSTPASS_STATS *const next_frame = read_frame_stats(twopass, offset);
-
+static int detect_flash_from_frame_stats(const FIRSTPASS_STATS *frame_stats) {
   // What we are looking for here is a situation where there is a
   // brief break in prediction (such as a flash) but subsequent frames
   // are reasonably well predicted by an earlier (pre flash) frame.
   // The recovery after a flash is indicated by a high pcnt_second_ref
   // useage or a second ref coded error notabley lower than the last
   // frame coded error.
-  return next_frame != NULL &&
-         ((next_frame->sr_coded_error < next_frame->coded_error) ||
-          ((next_frame->pcnt_second_ref > next_frame->pcnt_inter) &&
-           (next_frame->pcnt_second_ref >= 0.5)));
+  if (frame_stats == NULL) {
+    return 0;
+  }
+  return (frame_stats->sr_coded_error < frame_stats->coded_error) ||
+         ((frame_stats->pcnt_second_ref > frame_stats->pcnt_inter) &&
+          (frame_stats->pcnt_second_ref >= 0.5));
+}
+
+static int detect_flash(const TWO_PASS *twopass, int offset) {
+  const FIRSTPASS_STATS *const next_frame = read_frame_stats(twopass, offset);
+  return detect_flash_from_frame_stats(next_frame);
 }
 
 // Update the motion related elements to the GF arf boost calculation.
@@ -1876,13 +1882,15 @@ static void accumulate_frame_motion_stats(const FIRSTPASS_STATS *stats,
 
 #define BASELINE_ERR_PER_MB 12500.0
 #define GF_MAX_BOOST 96.0
-static double calc_frame_boost(VP9_COMP *cpi, const FIRSTPASS_STATS *this_frame,
+static double calc_frame_boost(const FRAME_INFO *frame_info,
+                               const FIRSTPASS_STATS *this_frame,
+                               int avg_frame_qindex,
                                double this_frame_mv_in_out) {
   double frame_boost;
-  const double lq = vp9_convert_qindex_to_q(
-      cpi->rc.avg_frame_qindex[INTER_FRAME], cpi->common.bit_depth);
+  const double lq =
+      vp9_convert_qindex_to_q(avg_frame_qindex, frame_info->bit_depth);
   const double boost_q_correction = VPXMIN((0.5 + (lq * 0.015)), 1.5);
-  const double active_area = calculate_active_area(cpi, this_frame);
+  const double active_area = calculate_active_area(frame_info, this_frame);
 
   // Underlying boost factor is based on inter error ratio.
   frame_boost = (BASELINE_ERR_PER_MB * active_area) /
@@ -1921,7 +1929,8 @@ static double calc_kf_frame_boost(VP9_COMP *cpi,
   const double lq = vp9_convert_qindex_to_q(
       cpi->rc.avg_frame_qindex[INTER_FRAME], cpi->common.bit_depth);
   const double boost_q_correction = VPXMIN((0.50 + (lq * 0.015)), 2.00);
-  const double active_area = calculate_active_area(cpi, this_frame);
+  const double active_area =
+      calculate_active_area(&cpi->frame_info, this_frame);
 
   // Underlying boost factor is based on inter error ratio.
   frame_boost = (kf_err_per_mb(cpi) * active_area) /
@@ -1947,7 +1956,9 @@ static double calc_kf_frame_boost(VP9_COMP *cpi,
 }
 
 static int calc_arf_boost(VP9_COMP *cpi, int f_frames, int b_frames) {
+  const FRAME_INFO *frame_info = &cpi->frame_info;
   TWO_PASS *const twopass = &cpi->twopass;
+  const int avg_inter_frame_qindex = cpi->rc.avg_frame_qindex[INTER_FRAME];
   int i;
   double boost_score = 0.0;
   double mv_ratio_accumulator = 0.0;
@@ -1961,6 +1972,7 @@ static int calc_arf_boost(VP9_COMP *cpi, int f_frames, int b_frames) {
   // Search forward from the proposed arf/next gf position.
   for (i = 0; i < f_frames; ++i) {
     const FIRSTPASS_STATS *this_frame = read_frame_stats(twopass, i);
+    const FIRSTPASS_STATS *next_frame = read_frame_stats(twopass, i + 1);
     if (this_frame == NULL) break;
 
     // Update the motion related elements to the boost calculation.
@@ -1970,17 +1982,19 @@ static int calc_arf_boost(VP9_COMP *cpi, int f_frames, int b_frames) {
 
     // We want to discount the flash frame itself and the recovery
     // frame that follows as both will have poor scores.
-    flash_detected = detect_flash(twopass, i) || detect_flash(twopass, i + 1);
+    flash_detected = detect_flash_from_frame_stats(this_frame) ||
+                     detect_flash_from_frame_stats(next_frame);
 
     // Accumulate the effect of prediction quality decay.
     if (!flash_detected) {
-      decay_accumulator *= get_prediction_decay_rate(cpi, this_frame);
+      decay_accumulator *= get_prediction_decay_rate(frame_info, this_frame);
       decay_accumulator = decay_accumulator < MIN_DECAY_FACTOR
                               ? MIN_DECAY_FACTOR
                               : decay_accumulator;
     }
-    boost_score += decay_accumulator *
-                   calc_frame_boost(cpi, this_frame, this_frame_mv_in_out);
+    boost_score += decay_accumulator * calc_frame_boost(frame_info, this_frame,
+                                                        avg_inter_frame_qindex,
+                                                        this_frame_mv_in_out);
   }
 
   arf_boost = (int)boost_score;
@@ -1996,6 +2010,7 @@ static int calc_arf_boost(VP9_COMP *cpi, int f_frames, int b_frames) {
   // Search backward towards last gf position.
   for (i = -1; i >= -b_frames; --i) {
     const FIRSTPASS_STATS *this_frame = read_frame_stats(twopass, i);
+    const FIRSTPASS_STATS *next_frame = read_frame_stats(twopass, i + 1);
     if (this_frame == NULL) break;
 
     // Update the motion related elements to the boost calculation.
@@ -2005,17 +2020,19 @@ static int calc_arf_boost(VP9_COMP *cpi, int f_frames, int b_frames) {
 
     // We want to discount the the flash frame itself and the recovery
     // frame that follows as both will have poor scores.
-    flash_detected = detect_flash(twopass, i) || detect_flash(twopass, i + 1);
+    flash_detected = detect_flash_from_frame_stats(this_frame) ||
+                     detect_flash_from_frame_stats(next_frame);
 
     // Cumulative effect of prediction quality decay.
     if (!flash_detected) {
-      decay_accumulator *= get_prediction_decay_rate(cpi, this_frame);
+      decay_accumulator *= get_prediction_decay_rate(frame_info, this_frame);
       decay_accumulator = decay_accumulator < MIN_DECAY_FACTOR
                               ? MIN_DECAY_FACTOR
                               : decay_accumulator;
     }
-    boost_score += decay_accumulator *
-                   calc_frame_boost(cpi, this_frame, this_frame_mv_in_out);
+    boost_score += decay_accumulator * calc_frame_boost(frame_info, this_frame,
+                                                        avg_inter_frame_qindex,
+                                                        this_frame_mv_in_out);
   }
   arf_boost += (int)boost_score;
 
@@ -2559,6 +2576,7 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
 
   i = 0;
   while (i < rc->static_scene_max_gf_interval && i < rc->frames_to_key) {
+    const FIRSTPASS_STATS *next_next_frame;
     ++i;
 
     // Accumulate error score of frames in this gf group.
@@ -2576,7 +2594,8 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
 
     // Test for the case where there is a brief flash but the prediction
     // quality back to an earlier frame is then restored.
-    flash_detected = detect_flash(twopass, 0);
+    next_next_frame = read_frame_stats(twopass, 0);
+    flash_detected = detect_flash_from_frame_stats(next_next_frame);
 
     // Update the motion related elements to the boost calculation.
     accumulate_frame_motion_stats(
@@ -2592,7 +2611,8 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     // Accumulate the effect of prediction quality decay.
     if (!flash_detected) {
       last_loop_decay_rate = loop_decay_rate;
-      loop_decay_rate = get_prediction_decay_rate(cpi, &next_frame);
+      loop_decay_rate =
+          get_prediction_decay_rate(&cpi->frame_info, &next_frame);
 
       // Break clause to detect very still sections after motion. For example,
       // a static image after a fade or other transition.
@@ -3043,7 +3063,8 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
         break;
 
       // How fast is the prediction quality decaying?
-      loop_decay_rate = get_prediction_decay_rate(cpi, twopass->stats_in);
+      loop_decay_rate =
+          get_prediction_decay_rate(&cpi->frame_info, twopass->stats_in);
 
       // We want to know something about the recent past... rather than
       // as used elsewhere where we are concerned with decay in prediction

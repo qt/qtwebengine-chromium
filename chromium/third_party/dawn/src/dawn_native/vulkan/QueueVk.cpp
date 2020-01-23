@@ -20,23 +20,27 @@
 
 namespace dawn_native { namespace vulkan {
 
-    Queue::Queue(Device* device) : QueueBase(device) {
+    // static
+    Queue* Queue::Create(Device* device) {
+        return new Queue(device);
     }
 
     Queue::~Queue() {
     }
 
-    void Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
+    MaybeError Queue::SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands) {
         Device* device = ToBackend(GetDevice());
 
         device->Tick();
 
         CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
         for (uint32_t i = 0; i < commandCount; ++i) {
-            ToBackend(commands[i])->RecordCommands(recordingContext);
+            DAWN_TRY(ToBackend(commands[i])->RecordCommands(recordingContext));
         }
 
-        device->SubmitPendingCommands();
+        DAWN_TRY(device->SubmitPendingCommands());
+
+        return {};
     }
 
 }}  // namespace dawn_native::vulkan

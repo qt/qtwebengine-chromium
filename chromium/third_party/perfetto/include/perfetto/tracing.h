@@ -18,11 +18,12 @@
 #define INCLUDE_PERFETTO_TRACING_H_
 
 // This headers wraps all the headers necessary to use the public Perfetto
-// Tracing API. Embedders should preferrably use this one header to avoid having
+// Tracing API. Embedders should preferably use this one header to avoid having
 // to figure out the various set of header required for each class.
 // The only exception to this should be large projects where build time is a
 // concern (e.g. chromium), which migh prefer sticking to strict IWYU.
 
+#include "perfetto/tracing/buffer_exhausted_policy.h"
 #include "perfetto/tracing/core/data_source_config.h"
 #include "perfetto/tracing/core/data_source_descriptor.h"
 #include "perfetto/tracing/core/trace_config.h"

@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_utils.h"
@@ -17,7 +18,6 @@
 #include "net/third_party/quiche/src/quic/core/tls_client_handshaker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
 
 namespace quic {
@@ -37,14 +37,14 @@ QuicCryptoClientStream::QuicCryptoClientStream(
   DCHECK_EQ(Perspective::IS_CLIENT, session->connection()->perspective());
   switch (session->connection()->version().handshake_protocol) {
     case PROTOCOL_QUIC_CRYPTO:
-      handshaker_ = QuicMakeUnique<QuicCryptoClientHandshaker>(
+      handshaker_ = std::make_unique<QuicCryptoClientHandshaker>(
           server_id, this, session, std::move(verify_context), crypto_config,
           proof_handler);
       break;
     case PROTOCOL_TLS1_3:
-      handshaker_ = QuicMakeUnique<TlsClientHandshaker>(
+      handshaker_ = std::make_unique<TlsClientHandshaker>(
           this, session, server_id, crypto_config->proof_verifier(),
-          crypto_config->ssl_ctx(), std::move(verify_context),
+          crypto_config->ssl_ctx(), std::move(verify_context), proof_handler,
           crypto_config->user_agent_id());
       break;
     case PROTOCOL_UNSUPPORTED:

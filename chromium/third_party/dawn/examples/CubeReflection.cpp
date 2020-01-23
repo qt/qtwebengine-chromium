@@ -210,7 +210,7 @@ void init() {
     descriptor.vertexInput = &vertexInput;
     descriptor.depthStencilState = &descriptor.cDepthStencilState;
     descriptor.cDepthStencilState.format = dawn::TextureFormat::Depth24PlusStencil8;
-    descriptor.cColorStates[0]->format = GetPreferredSwapChainTextureFormat();
+    descriptor.cColorStates[0].format = GetPreferredSwapChainTextureFormat();
     descriptor.cDepthStencilState.depthWriteEnabled = true;
     descriptor.cDepthStencilState.depthCompare = dawn::CompareFunction::Less;
 
@@ -223,7 +223,7 @@ void init() {
     pDescriptor.vertexInput = &vertexInput;
     pDescriptor.depthStencilState = &pDescriptor.cDepthStencilState;
     pDescriptor.cDepthStencilState.format = dawn::TextureFormat::Depth24PlusStencil8;
-    pDescriptor.cColorStates[0]->format = GetPreferredSwapChainTextureFormat();
+    pDescriptor.cColorStates[0].format = GetPreferredSwapChainTextureFormat();
     pDescriptor.cDepthStencilState.stencilFront.passOp = dawn::StencilOperation::Replace;
     pDescriptor.cDepthStencilState.stencilBack.passOp = dawn::StencilOperation::Replace;
     pDescriptor.cDepthStencilState.depthCompare = dawn::CompareFunction::Less;
@@ -237,7 +237,7 @@ void init() {
     rfDescriptor.vertexInput = &vertexInput;
     rfDescriptor.depthStencilState = &rfDescriptor.cDepthStencilState;
     rfDescriptor.cDepthStencilState.format = dawn::TextureFormat::Depth24PlusStencil8;
-    rfDescriptor.cColorStates[0]->format = GetPreferredSwapChainTextureFormat();
+    rfDescriptor.cColorStates[0].format = GetPreferredSwapChainTextureFormat();
     rfDescriptor.cDepthStencilState.stencilFront.compare = dawn::CompareFunction::Equal;
     rfDescriptor.cDepthStencilState.stencilBack.compare = dawn::CompareFunction::Equal;
     rfDescriptor.cDepthStencilState.stencilFront.passOp = dawn::StencilOperation::Replace;
@@ -255,12 +255,11 @@ void frame() {
     s.a = (s.a + 1) % 256;
     s.b += 0.01f;
     if (s.b >= 1.0f) {s.b = 0.0f;}
-    static const uint64_t vertexBufferOffsets[1] = {0};
 
     cameraData.view = glm::lookAt(
         glm::vec3(8.f * std::sin(glm::radians(s.b * 360.f)), 2.f, 8.f * std::cos(glm::radians(s.b * 360.f))),
         glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, -1.0f, 0.0f)
+        glm::vec3(0.0f, 1.0f, 0.0f)
     );
 
     cameraBuffer.SetSubData(0, sizeof(CameraData), &cameraData);
@@ -272,20 +271,20 @@ void frame() {
     {
         dawn::RenderPassEncoder pass = encoder.BeginRenderPass(&renderPass);
         pass.SetPipeline(pipeline);
-        pass.SetBindGroup(0, bindGroup[0], 0, nullptr);
-        pass.SetVertexBuffers(0, 1, &vertexBuffer, vertexBufferOffsets);
-        pass.SetIndexBuffer(indexBuffer, 0);
+        pass.SetBindGroup(0, bindGroup[0]);
+        pass.SetVertexBuffer(0, vertexBuffer);
+        pass.SetIndexBuffer(indexBuffer);
         pass.DrawIndexed(36, 1, 0, 0, 0);
 
         pass.SetStencilReference(0x1);
         pass.SetPipeline(planePipeline);
-        pass.SetBindGroup(0, bindGroup[0], 0, nullptr);
-        pass.SetVertexBuffers(0, 1, &planeBuffer, vertexBufferOffsets);
+        pass.SetBindGroup(0, bindGroup[0]);
+        pass.SetVertexBuffer(0, planeBuffer);
         pass.DrawIndexed(6, 1, 0, 0, 0);
 
         pass.SetPipeline(reflectionPipeline);
-        pass.SetVertexBuffers(0, 1, &vertexBuffer, vertexBufferOffsets);
-        pass.SetBindGroup(0, bindGroup[1], 0, nullptr);
+        pass.SetVertexBuffer(0, vertexBuffer);
+        pass.SetBindGroup(0, bindGroup[1]);
         pass.DrawIndexed(36, 1, 0, 0, 0);
 
         pass.EndPass();

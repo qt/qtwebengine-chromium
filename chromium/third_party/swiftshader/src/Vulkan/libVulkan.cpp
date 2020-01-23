@@ -68,8 +68,8 @@
 
 #include "Reactor/Nucleus.hpp"
 
-#include "Yarn/Scheduler.hpp"
-#include "Yarn/Thread.hpp"
+#include "marl/scheduler.h"
+#include "marl/thread.h"
 
 #include "System/CPUID.hpp"
 
@@ -120,15 +120,23 @@ void setCPUDefaults()
 	sw::CPUID::setEnableSSE(true);
 }
 
-yarn::Scheduler* getOrCreateScheduler()
+std::shared_ptr<marl::Scheduler> getOrCreateScheduler()
 {
-	static auto scheduler = std::unique_ptr<yarn::Scheduler>(new yarn::Scheduler());
-	scheduler->setThreadInitializer([] {
-		sw::CPUID::setFlushToZero(true);
-		sw::CPUID::setDenormalsAreZero(true);
-	});
-	scheduler->setWorkerThreadCount(std::min<size_t>(yarn::Thread::numLogicalCPUs(), 16));
-	return scheduler.get();
+	static std::mutex mutex;
+	static std::weak_ptr<marl::Scheduler> schedulerWeak;
+	std::unique_lock<std::mutex> lock(mutex);
+	auto scheduler = schedulerWeak.lock();
+	if (!scheduler)
+	{
+		scheduler = std::make_shared<marl::Scheduler>();
+		scheduler->setThreadInitializer([] {
+			sw::CPUID::setFlushToZero(true);
+			sw::CPUID::setDenormalsAreZero(true);
+		});
+		scheduler->setWorkerThreadCount(std::min<size_t>(marl::Thread::numLogicalCPUs(), 16));
+		schedulerWeak = scheduler;
+	}
+	return scheduler;
 }
 
 // initializeLibrary() is called by vkCreateInstance() to perform one-off global
@@ -186,6 +194,8 @@ static const VkExtensionProperties instanceExtensionProperties[] =
 
 static const VkExtensionProperties deviceExtensionProperties[] =
 {
+	{ VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME, VK_KHR_DRIVER_PROPERTIES_SPEC_VERSION },
+	// Vulkan 1.1 promoted extensions
 	{ VK_KHR_16BIT_STORAGE_EXTENSION_NAME, VK_KHR_16BIT_STORAGE_SPEC_VERSION },
 	{ VK_KHR_BIND_MEMORY_2_EXTENSION_NAME, VK_KHR_BIND_MEMORY_2_SPEC_VERSION },
 	{ VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_KHR_DEDICATED_ALLOCATION_SPEC_VERSION },
@@ -206,6 +216,7 @@ static const VkExtensionProperties deviceExtensionProperties[] =
 	{ VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME, VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_SPEC_VERSION },
 	// Only 1.1 core version of this is supported. The extension has additional requirements
 	//{ VK_KHR_VARIABLE_POINTERS_EXTENSION_NAME, VK_KHR_VARIABLE_POINTERS_SPEC_VERSION },
+	{ VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME, VK_EXT_QUEUE_FAMILY_FOREIGN_SPEC_VERSION },
 #ifndef __ANDROID__
 	// We fully support the KHR_swapchain v70 additions, so just track the spec version.
 	{ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION },
@@ -216,6 +227,9 @@ static const VkExtensionProperties deviceExtensionProperties[] =
 	// order to support passing VkBindImageMemorySwapchainInfoKHR
 	// (from KHR_swapchain v70) to vkBindImageMemory2.
 	{ VK_ANDROID_NATIVE_BUFFER_EXTENSION_NAME, 7 },
+#endif
+#if SWIFTSHADER_EXTERNAL_SEMAPHORE_LINUX_MEMFD
+	{ VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_SPEC_VERSION },
 #endif
 };
 
@@ -934,9 +948,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSemaphore(VkDevice device, const VkSemaph
 	TRACE("(VkDevice device = %p, const VkSemaphoreCreateInfo* pCreateInfo = %p, const VkAllocationCallbacks* pAllocator = %p, VkSemaphore* pSemaphore = %p)",
 	      device, pCreateInfo, pAllocator, pSemaphore);
 
-	if(pCreateInfo->pNext || pCreateInfo->flags)
+	if(pCreateInfo->flags)
 	{
-		UNIMPLEMENTED("pCreateInfo->pNext || pCreateInfo->flags");
+		UNIMPLEMENTED("pCreateInfo->flags");
 	}
 
 	return vk::Semaphore::Create(pAllocator, pCreateInfo, pSemaphore);
@@ -949,6 +963,35 @@ VKAPI_ATTR void VKAPI_CALL vkDestroySemaphore(VkDevice device, VkSemaphore semap
 
 	vk::destroy(semaphore, pAllocator);
 }
+
+#if SWIFTSHADER_EXTERNAL_SEMAPHORE_LINUX_MEMFD
+VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreFdKHR(VkDevice device, const VkSemaphoreGetFdInfoKHR* pGetFdInfo, int* pFd)
+{
+	TRACE("(VkDevice device = %p, const VkSemaphoreGetFdInfoKHR* pGetFdInfo = %p, int* pFd = %p)",
+	      device, static_cast<const void*>(pGetFdInfo), static_cast<void*>(pFd));
+
+	if (pGetFdInfo->handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT)
+	{
+		UNIMPLEMENTED("pGetFdInfo->handleType");
+	}
+
+	return vk::Cast(pGetFdInfo->semaphore)->exportFd(pFd);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkImportSemaphoreFdKHR(VkDevice device, const VkImportSemaphoreFdInfoKHR* pImportSemaphoreInfo)
+{
+	TRACE("(VkDevice device = %p, const VkImportSemaphoreFdInfoKHR* pImportSemaphoreInfo = %p",
+	      device, static_cast<const void*>(pImportSemaphoreInfo));
+
+	if (pImportSemaphoreInfo->handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT)
+	{
+		UNIMPLEMENTED("pImportSemaphoreInfo->handleType");
+	}
+	bool temporaryImport = (pImportSemaphoreInfo->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT) != 0;
+
+	return vk::Cast(pImportSemaphoreInfo->semaphore)->importFd(pImportSemaphoreInfo->fd, temporaryImport);
+}
+#endif  // SWIFTSHADER_EXTERNAL_SEMAPHORE_LINUX_MEMFD
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateEvent(VkDevice device, const VkEventCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkEvent* pEvent)
 {
@@ -2417,6 +2460,12 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT:
 			ASSERT(!HasExtensionProperty(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME, deviceExtensionProperties,
 			                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES_KHR:
+			{
+				auto& properties = *reinterpret_cast<VkPhysicalDeviceDriverPropertiesKHR*>(extensionProperties);
+				vk::Cast(physicalDevice)->getProperties(&properties);
+			}
 			break;
 #ifdef __ANDROID__
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENTATION_PROPERTIES_ANDROID:

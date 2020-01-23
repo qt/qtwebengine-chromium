@@ -23,6 +23,7 @@ export interface Data extends TrackData {
 
   timestamps: Float64Array;
   values: Float64Array;
+  ids: Float64Array;
 }
 
 export interface Config {
@@ -30,4 +31,5 @@ export interface Config {
   maximumValue?: number;
   minimumValue?: number;
   ref: number;
+  scale?: 'DEFAULT'|'RELATIVE';
 }

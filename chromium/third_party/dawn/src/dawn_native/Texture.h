@@ -62,7 +62,8 @@ namespace dawn_native {
                                              uint32_t levelCount,
                                              uint32_t baseArrayLayer,
                                              uint32_t layerCount) const;
-        void SetIsSubresourceContentInitialized(uint32_t baseMipLevel,
+        void SetIsSubresourceContentInitialized(bool isInitialized,
+                                                uint32_t baseMipLevel,
                                                 uint32_t levelCount,
                                                 uint32_t baseArrayLayer,
                                                 uint32_t layerCount);
@@ -115,6 +116,7 @@ namespace dawn_native {
         TextureBase* GetTexture();
 
         const Format& GetFormat() const;
+        dawn::TextureViewDimension GetDimension() const;
         uint32_t GetBaseMipLevel() const;
         uint32_t GetLevelCount() const;
         uint32_t GetBaseArrayLayer() const;
@@ -127,6 +129,7 @@ namespace dawn_native {
 
         // TODO(cwallez@chromium.org): This should be deduplicated in the Device
         const Format& mFormat;
+        dawn::TextureViewDimension mDimension;
         uint32_t mBaseMipLevel;
         uint32_t mMipLevelCount;
         uint32_t mBaseArrayLayer;

@@ -302,6 +302,14 @@ void CaptureRequestExtensionANGLE_name(const Context *context,
     UNIMPLEMENTED();
 }
 
+void CaptureDisableExtensionANGLE_name(const Context *context,
+                                       bool isCallValid,
+                                       const GLchar *name,
+                                       ParamCapture *paramCapture)
+{
+    UNIMPLEMENTED();
+}
+
 void CaptureGetBooleanvRobustANGLE_length(const Context *context,
                                           bool isCallValid,
                                           GLenum pname,
@@ -2177,7 +2185,7 @@ void CaptureDeleteQueriesEXT_idsPacked(const Context *context,
                                        const QueryID *ids,
                                        ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureMemory(ids, sizeof(QueryID) * n, paramCapture);
 }
 
 void CaptureGenQueriesEXT_idsPacked(const Context *context,
@@ -2186,7 +2194,7 @@ void CaptureGenQueriesEXT_idsPacked(const Context *context,
                                     QueryID *ids,
                                     ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureGenHandles(n, ids, paramCapture);
 }
 
 void CaptureGetQueryObjecti64vEXT_params(const Context *context,

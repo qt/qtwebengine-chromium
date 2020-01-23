@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 
+#include "net/third_party/quiche/src/quic/core/http/http_frames.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_header_list.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_headers_stream.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_receive_control_stream.h"
@@ -50,6 +51,30 @@ class QUIC_EXPORT_PRIVATE QuicHpackDebugVisitor {
   // the time since the corresponding entry was added to the dynamic
   // table.
   virtual void OnUseEntry(QuicTime::Delta elapsed) = 0;
+};
+
+class QUIC_EXPORT_PRIVATE Http3DebugVisitor {
+ public:
+  Http3DebugVisitor();
+  Http3DebugVisitor(const Http3DebugVisitor&) = delete;
+  Http3DebugVisitor& operator=(const Http3DebugVisitor&) = delete;
+
+  virtual ~Http3DebugVisitor();
+
+  // Called when peer's control stream type is received.
+  virtual void OnPeerControlStreamCreated(QuicStreamId /*stream_id*/) = 0;
+
+  // Called when peer's QPACK encoder stream type is received.
+  virtual void OnPeerQpackEncoderStreamCreated(QuicStreamId /*stream_id*/) = 0;
+
+  // Called when peer's QPACK decoder stream type is received.
+  virtual void OnPeerQpackDecoderStreamCreated(QuicStreamId /*stream_id*/) = 0;
+
+  // Called when SETTINGS frame is received.
+  virtual void OnSettingsFrameReceived(const SettingsFrame& /*frame*/) = 0;
+
+  // Called when SETTINGS frame is sent.
+  virtual void OnSettingsFrameSent(const SettingsFrame& /*frame*/) = 0;
 };
 
 // A QUIC session for HTTP.
@@ -134,9 +159,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
                                 QuicStreamId promised_stream_id,
                                 spdy::SpdyHeaderBlock headers);
 
-  // Sends SETTINGS_MAX_HEADER_LIST_SIZE SETTINGS frame.
-  void SendMaxHeaderListSize(size_t value);
-
   QpackEncoder* qpack_encoder();
   QpackDecoder* qpack_decoder();
   QuicHeadersStream* headers_stream() { return headers_stream_; }
@@ -203,11 +225,35 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // those streams are not initialized yet.
   void OnCanCreateNewOutgoingStream(bool unidirectional) override;
 
-  void set_max_allowed_push_id(QuicStreamId max_allowed_push_id);
+  void SetMaxAllowedPushId(QuicStreamId max_allowed_push_id);
 
   QuicStreamId max_allowed_push_id() { return max_allowed_push_id_; }
 
   int32_t destruction_indicator() const { return destruction_indicator_; }
+
+  void set_debug_visitor(Http3DebugVisitor* debug_visitor) {
+    debug_visitor_ = debug_visitor;
+  }
+
+  Http3DebugVisitor* debug_visitor() { return debug_visitor_; }
+
+  // Log header compression ratio histogram.
+  // |using_qpack| is true for QPACK, false for HPACK.
+  // |is_sent| is true for sent headers, false for received ones.
+  // Ratio is recorded as percentage.  Smaller value means more efficient
+  // compression.  Compressed size might be larger than uncompressed size, but
+  // recorded ratio is trunckated at 200%.
+  // Uncompressed size can be zero for an empty header list, and compressed size
+  // can be zero for an empty header list when using HPACK.  (QPACK always emits
+  // a header block prefix of at least two bytes.)  This method records nothing
+  // if either |compressed| or |uncompressed| is not positive.
+  // In order for measurements for different protocol to be comparable, the
+  // caller must ensure that uncompressed size is the total length of header
+  // names and values without any overhead.
+  static void LogHeaderCompressionRatioHistogram(bool using_qpack,
+                                                 bool is_sent,
+                                                 QuicByteCount compressed,
+                                                 QuicByteCount uncompressed);
 
  protected:
   // Override CreateIncomingStream(), CreateOutgoingBidirectionalStream() and
@@ -278,7 +324,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   void set_max_uncompressed_header_bytes(
       size_t set_max_uncompressed_header_bytes);
 
-  void SendMaxPushId(QuicStreamId max_allowed_push_id);
+  void SendMaxPushId();
 
  private:
   friend class test::QuicSpdySessionPeer;
@@ -299,6 +345,10 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   void CloseConnectionOnDuplicateHttp3UnidirectionalStreams(
       QuicStringPiece type);
+
+  // Sends any data which should be sent at the start of a connection,
+  // including the initial SETTINGS frame, etc.
+  void SendInitialData();
 
   std::unique_ptr<QpackEncoder> qpack_encoder_;
   std::unique_ptr<QpackDecoder> qpack_decoder_;
@@ -321,6 +371,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // https://quicwg.org/base-drafts/draft-ietf-quic-qpack.html#maximum-dynamic-table-capacity
   // for the decoding context.  Value will be sent via
   // SETTINGS_QPACK_MAX_TABLE_CAPACITY.
+  // |qpack_maximum_dynamic_table_capacity_| also serves as an upper bound for
+  // the dynamic table capacity of the encoding context, to limit memory usage
+  // if a larger SETTINGS_QPACK_MAX_TABLE_CAPACITY value is received.
   uint64_t qpack_maximum_dynamic_table_capacity_;
 
   // Maximum number of blocked streams as defined at
@@ -360,6 +413,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // constructor. As long as it is not the assigned value, that would indicate
   // an use-after-free.
   int32_t destruction_indicator_;
+
+  // Not owned by the session.
+  Http3DebugVisitor* debug_visitor_;
 };
 
 }  // namespace quic

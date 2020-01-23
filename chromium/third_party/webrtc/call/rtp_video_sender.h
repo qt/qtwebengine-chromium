@@ -136,10 +136,7 @@ class RtpVideoSender : public RtpVideoSenderInterface,
       size_t transport_overhead_bytes_per_packet) override;
   // Implements OverheadObserver.
   void OnOverheadChanged(size_t overhead_bytes_per_packet) override;
-  void OnBitrateUpdated(uint32_t bitrate_bps,
-                        uint8_t fraction_loss,
-                        int64_t rtt,
-                        int framerate) override;
+  void OnBitrateUpdated(BitrateAllocationUpdate update, int framerate) override;
   uint32_t GetPayloadBitrateBps() const override;
   uint32_t GetProtectionBitrateBps() const override;
   void SetEncodingData(size_t width,
@@ -186,6 +183,7 @@ class RtpVideoSender : public RtpVideoSenderInterface,
   const std::vector<webrtc_internal_rtp_video_sender::RtpStreamSender>
       rtp_streams_;
   const RtpConfig rtp_config_;
+  const absl::optional<VideoCodecType> codec_type_;
   RtpTransportControllerSendInterface* const transport_;
 
   // When using the generic descriptor we want all simulcast streams to share

@@ -306,7 +306,7 @@ bool ShouldUseDebugLayers(const egl::AttributeMap &attribs)
     EGLAttrib debugSetting =
         attribs.get(EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE, EGL_DONT_CARE);
 
-// Prefer to enable debug layers if compiling in Debug, and disabled in Release.
+    // Prefer to enable debug layers when available.
 #if defined(ANGLE_ENABLE_ASSERTS)
     return (debugSetting != EGL_FALSE);
 #else

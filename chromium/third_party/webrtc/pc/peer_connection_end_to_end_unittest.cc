@@ -10,7 +10,6 @@
 
 #include <memory>
 
-#include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "api/audio_codecs/L16/audio_decoder_L16.h"
 #include "api/audio_codecs/L16/audio_encoder_L16.h"
@@ -223,7 +222,7 @@ std::unique_ptr<webrtc::AudioDecoder> CreateForwardingMockDecoder(
 
   const auto dec = real_decoder.get();  // For lambda capturing.
   auto mock_decoder =
-      absl::make_unique<ForwardingMockDecoder>(std::move(real_decoder));
+      std::make_unique<ForwardingMockDecoder>(std::move(real_decoder));
   EXPECT_CALL(*mock_decoder, Channels())
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke([dec] { return dec->Channels(); }));
@@ -241,15 +240,6 @@ std::unique_ptr<webrtc::AudioDecoder> CreateForwardingMockDecoder(
   EXPECT_CALL(*mock_decoder, HasDecodePlc()).WillRepeatedly(Invoke([dec] {
     return dec->HasDecodePlc();
   }));
-  EXPECT_CALL(*mock_decoder, IncomingPacket(_, _, _, _, _))
-      .Times(AtLeast(1))
-      .WillRepeatedly(Invoke([dec](const uint8_t* payload, size_t payload_len,
-                                   uint16_t rtp_sequence_number,
-                                   uint32_t rtp_timestamp,
-                                   uint32_t arrival_timestamp) {
-        return dec->IncomingPacket(payload, payload_len, rtp_sequence_number,
-                                   rtp_timestamp, arrival_timestamp);
-      }));
   EXPECT_CALL(*mock_decoder, PacketDuration(_, _))
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke([dec](const uint8_t* encoded, size_t encoded_len) {

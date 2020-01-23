@@ -5,6 +5,7 @@
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_framer.h"
 
 #include <string>
+#include <utility>
 
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/quic_data_reader.h"
@@ -12,7 +13,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_fallthrough.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 
@@ -32,7 +32,7 @@ class OneShotVisitor : public CryptoFramerVisitorInterface {
   void OnError(CryptoFramer* /*framer*/) override { error_ = true; }
 
   void OnHandshakeMessage(const CryptoHandshakeMessage& message) override {
-    out_ = QuicMakeUnique<CryptoHandshakeMessage>(message);
+    out_ = std::make_unique<CryptoHandshakeMessage>(message);
   }
 
   bool error() const { return error_; }
@@ -230,7 +230,7 @@ std::unique_ptr<QuicData> CryptoFramer::ConstructHandshakeMessage(
     }
   }
 
-  return QuicMakeUnique<QuicData>(buffer.release(), len, true);
+  return std::make_unique<QuicData>(buffer.release(), len, true);
 }
 
 void CryptoFramer::Clear() {
