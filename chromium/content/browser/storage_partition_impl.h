@@ -382,6 +382,10 @@ class CONTENT_EXPORT StoragePartitionImpl
 
   std::vector<std::string> GetCorsExemptHeaderList();
 
+#ifdef TOOLKIT_QT
+  void ResetNetworkContext() { InitNetworkContext(); }
+#endif
+
   // Empties the collection |pending_trust_token_issuance_callbacks_| of
   // callbacks pending responses from |local_trust_token_fulfiller_|, providing
   // each callback a suitable error response.
