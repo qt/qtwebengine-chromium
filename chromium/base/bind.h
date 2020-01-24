@@ -192,13 +192,19 @@ struct InvokeFuncImpl;
 
 template <typename Invoker>
 struct InvokeFuncImpl<true, Invoker> {
-  static constexpr auto Value = &Invoker::RunOnce;
+  static constexpr decltype(&Invoker::RunOnce) Value = &Invoker::RunOnce;
 };
+
+template<typename Invoker>
+constexpr decltype(&Invoker::RunOnce) InvokeFuncImpl<true, Invoker>::Value;
 
 template <typename Invoker>
 struct InvokeFuncImpl<false, Invoker> {
-  static constexpr auto Value = &Invoker::Run;
+  static constexpr decltype(&Invoker::Run) Value = &Invoker::Run;
 };
+
+template<typename Invoker>
+constexpr decltype(&Invoker::Run) InvokeFuncImpl<false, Invoker>::Value;
 
 template <template <typename> class CallbackT,
           typename Functor,

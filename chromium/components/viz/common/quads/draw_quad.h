@@ -73,7 +73,7 @@ class VIZ_COMMON_EXPORT DrawQuad {
 
   bool IsDebugQuad() const { return material == Material::kDebugBorder; }
 
-  bool ShouldDrawWithBlending() const {
+  bool ShouldDrawWithBlending(bool=false) const {
     return needs_blending || shared_quad_state->opacity < 1.0f ||
            shared_quad_state->blend_mode != SkBlendMode::kSrcOver ||
            !shared_quad_state->rounded_corner_bounds.IsEmpty();

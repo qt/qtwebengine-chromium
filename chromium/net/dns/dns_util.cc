@@ -144,7 +144,7 @@ const std::vector<DohUpgradeEntry>& GetDohUpgradeList() {
   // DohProviderId histogram suffix list in
   // tools/metrics/histograms/histograms.xml.
   static const base::NoDestructor<std::vector<DohUpgradeEntry>>
-      upgradable_servers({
+      upgradable_servers(std::vector<DohUpgradeEntry>{
           DohUpgradeEntry(
               "CleanBrowsingAdult",
               {"185.228.168.10", "185.228.169.11", "2a0d:2a00:1::1",

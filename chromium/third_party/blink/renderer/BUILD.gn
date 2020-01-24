@@ -40,7 +40,11 @@ config("inside_blink") {
     "BLINK_IMPLEMENTATION=1",
     "INSIDE_BLINK",
   ]
-  if (is_win) {
+  if (is_clang || !is_win) {
+    cflags += [
+      "-Wno-unused-variable",
+    ]
+  } else {
     cflags += [
       "/wd4101",
     ]
