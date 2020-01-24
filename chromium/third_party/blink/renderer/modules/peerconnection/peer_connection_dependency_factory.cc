@@ -173,7 +173,8 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
 
 #if BUILDFLAG(RTC_USE_H264) && BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
   // Building /w |rtc_use_h264|, is the corresponding run-time feature enabled?
-  if (base::FeatureList::IsEnabled(kWebRtcH264WithOpenH264FFmpeg)) {
+  if (base::FeatureList::IsEnabled(
+          blink::features::kWebRtcH264WithOpenH264FFmpeg)) {
     // |H264DecoderImpl| may be used which depends on FFmpeg, therefore we need
     // to initialize FFmpeg before going further.
     media::FFmpegGlue::InitializeFFmpeg();
