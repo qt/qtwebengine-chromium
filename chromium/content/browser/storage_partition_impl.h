@@ -304,6 +304,10 @@ class CONTENT_EXPORT StoragePartitionImpl
           test_origin_policy_manager);
   void ResetOriginPolicyManagerForBrowserProcessForTesting();
 
+#ifdef TOOLKIT_QT
+  void ResetNetworkContext() { InitNetworkContext(); }
+#endif
+
  private:
   class DataDeletionHelper;
   class QuotaManagedDataDeletionHelper;
