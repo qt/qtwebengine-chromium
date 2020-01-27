@@ -612,15 +612,10 @@ void CppObjGenerator::GenClassDecl(const Descriptor* msg, Printer* p) const {
                GetCppType(field, false), "n", field->lowercase_name());
       p->Print("void clear_$n$() { $n$_.clear(); }\n", "n",
                field->lowercase_name());
-      if (field->type() != FieldDescriptor::TYPE_MESSAGE) {
-        p->Print("void add_$n$($t$ value) { $n$_.emplace_back(value); }\n", "t",
-                 GetCppType(field, false), "n", field->lowercase_name());
-      }
-      // TODO(primiano): this should be done only for TYPE_MESSAGE. Unfortuntely
-      // we didn't realize before and now we have a bunch of code that does:
-      // *msg->add_int_value() = 42 instead of msg->add_int_value(42).
-      p->Print("$t$* add_$n$() { $n$_.emplace_back(); return &$n$_.back(); }\n",
-               "t", GetCppType(field, false), "n", field->lowercase_name());
+
+      p->Print(
+          "$t$* add_$n$(); \n", "t", GetCppType(field, false),
+          "n", field->lowercase_name());
     }
   }
   p->Outdent();
@@ -685,6 +680,20 @@ void CppObjGenerator::GenClassDef(const Descriptor* msg, Printer* p) const {
   p->Print("\n}\n\n");
 
   std::string proto_type = GetFullName(msg, true);
+
+  // Non-inline accessors:
+  for (int i = 0; i < msg->field_count(); i++) {
+    const FieldDescriptor* field = msg->field(i);
+    if (!field->options().lazy() && field->is_repeated()) {
+      p->Print("$t$* $f$::add_$n$() {\n", "f", full_name, "t",
+               GetCppType(field, false), "n", field->lowercase_name());
+      p->Indent();
+      p->Print("$n$_.emplace_back();\n", "n", field->lowercase_name());
+      p->Print("return &$n$_.back();\n", "n", field->lowercase_name());
+      p->Outdent();
+      p->Print("}\n\n");
+    }
+  }
 
   // Generate the ParseFromArray() method definition.
   p->Print("bool $f$::ParseFromArray(const void* raw, size_t size) {\n", "f",
