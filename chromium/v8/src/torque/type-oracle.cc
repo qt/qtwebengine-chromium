@@ -18,8 +18,9 @@ TypeOracle::GetAggregateTypes() {
 
 // static
 void TypeOracle::FinalizeAggregateTypes() {
-  for (const std::unique_ptr<AggregateType>& p : Get().aggregate_types_) {
-    p->Finalize();
+  auto it = Get().aggregate_types_.begin();
+  for (; it != Get().aggregate_types_.end(); ++it) {
+    (*it)->Finalize();
   }
 }
 
