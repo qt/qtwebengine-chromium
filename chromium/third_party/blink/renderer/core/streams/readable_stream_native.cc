@@ -708,7 +708,9 @@ class ReadableStreamNative::TeeEngine::PullAlgorithm final
         //        b. Perform ! ReadableStreamDefaultControllerClose(branch2.
         //           [[readableStreamController]]).
         for (int branch = 0; branch < 2; ++branch) {
-          if (!engine_->canceled_[branch]) {
+          if (!engine_->canceled_[branch] &&
+              ReadableStreamDefaultController::CanCloseOrEnqueue(
++                 engine_->controller_[branch])) {
             ReadableStreamDefaultController::Close(
                 script_state, engine_->controller_[branch]);
           }
@@ -734,7 +736,9 @@ class ReadableStreamNative::TeeEngine::PullAlgorithm final
       //       ReadableStreamDefaultControllerEnqueue(branch2.
       //       [[readableStreamController]], value2).
       for (int branch = 0; branch < 2; ++branch) {
-        if (!engine_->canceled_[branch]) {
+        if (!engine_->canceled_[branch] &&
+            ReadableStreamDefaultController::CanCloseOrEnqueue(
+                engine_->controller_[branch])) {
           ReadableStreamDefaultController::Enqueue(script_state,
                                                    engine_->controller_[branch],
                                                    value, exception_state);
@@ -1532,7 +1536,9 @@ void ReadableStreamNative::Close(ScriptState* script_state,
   // 5. If ! IsReadableStreamDefaultReader(reader) is true,
   //   a. Repeat for each readRequest that is an element of reader.
   //      [[readRequests]],
-  for (StreamPromiseResolver* promise : reader->read_requests_) {
+  HeapDeque<Member<StreamPromiseResolver>> requests;
+  requests.Swap(reader->read_requests_);
+  for (StreamPromiseResolver* promise : requests) {
     //   i. Resolve readRequest.[[promise]] with !
     //      ReadableStreamCreateReadResult(undefined, true, reader.
     //      [[forAuthorCode]]).
@@ -1543,7 +1549,7 @@ void ReadableStreamNative::Close(ScriptState* script_state,
   }
 
   //   b. Set reader.[[readRequests]] to an empty List.
-  reader->read_requests_.clear();
+  //      This is not required since we've already called Swap().
 
   // 6. Resolve reader.[[closedPromise]] with undefined.
   reader->closed_promise_->ResolveWithUndefined(script_state);
