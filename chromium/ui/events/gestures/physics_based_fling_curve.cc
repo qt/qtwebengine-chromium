@@ -4,6 +4,8 @@
 
 #include "ui/events/gestures/physics_based_fling_curve.h"
 
+#include <algorithm>
+
 namespace {
 
 // These constants are defined based on UX experiment.

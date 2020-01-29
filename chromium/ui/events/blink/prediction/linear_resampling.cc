@@ -8,6 +8,8 @@
 
 #include "ui/events/blink/prediction/predictor_factory.h"
 
+#include <algorithm>
+
 namespace ui {
 
 namespace {

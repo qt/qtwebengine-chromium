@@ -10,6 +10,8 @@
 #include "base/numerics/math_constants.h"
 #include "ui/events/blink/prediction/predictor_factory.h"
 
+#include <algorithm>
+
 namespace {
 
 // Influence of acceleration during each prediction sample

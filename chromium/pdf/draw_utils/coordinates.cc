@@ -4,11 +4,14 @@
 
 #include "pdf/draw_utils/coordinates.h"
 
+#include <algorithm>
 #include <math.h>
 #include <algorithm>
 
 #include "base/logging.h"
 #include "ppapi/cpp/point.h"
+
+#include <algorithm>
 
 namespace chrome_pdf {
 namespace draw_utils {
