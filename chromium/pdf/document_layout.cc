@@ -12,6 +12,8 @@
 #include "ppapi/cpp/var.h"
 #include "ppapi/cpp/var_dictionary.h"
 
+#include <algorithm>
+
 namespace chrome_pdf {
 
 namespace {
