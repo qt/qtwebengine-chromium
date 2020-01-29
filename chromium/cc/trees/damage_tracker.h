@@ -5,6 +5,7 @@
 #ifndef CC_TREES_DAMAGE_TRACKER_H_
 #define CC_TREES_DAMAGE_TRACKER_H_
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 

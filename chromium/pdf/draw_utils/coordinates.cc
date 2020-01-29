@@ -4,6 +4,7 @@
 
 #include "pdf/draw_utils/coordinates.h"
 
+#include <algorithm>
 #include <math.h>
 #include <algorithm>
 
@@ -12,6 +13,8 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/size_f.h"
+
+#include <algorithm>
 
 namespace chrome_pdf {
 namespace draw_utils {
