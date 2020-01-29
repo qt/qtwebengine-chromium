@@ -84,7 +84,7 @@ void DataURLLoaderFactory::CreateLoaderAndStart(
 
   client->OnStartLoadingResponseBody(std::move(consumer));
 
-  auto write_data = std::make_unique<WriteData>();
+  auto write_data = new WriteData();
   write_data->client = std::move(client);
   write_data->data = std::move(data);
   write_data->producer =
@@ -96,7 +96,7 @@ void DataURLLoaderFactory::CreateLoaderAndStart(
       std::make_unique<mojo::StringDataSource>(
           string_piece, mojo::StringDataSource::AsyncWritingMode::
                             STRING_STAYS_VALID_UNTIL_COMPLETION),
-      base::BindOnce(OnWrite, std::move(write_data)));
+      base::BindOnce(OnWrite, std::unique_ptr<WriteData>(write_data)));
 }
 
 void DataURLLoaderFactory::Clone(
