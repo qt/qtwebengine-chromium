@@ -8,6 +8,8 @@
 
 #include "base/check_op.h"
 
+#include <algorithm>
+
 namespace ui {
 
 namespace {

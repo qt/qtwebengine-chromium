@@ -8,6 +8,8 @@
 
 #include "ui/base/ui_base_features.h"
 
+#include <algorithm>
+
 namespace ui {
 
 namespace {
