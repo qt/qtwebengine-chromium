@@ -10,6 +10,8 @@
 #include "base/numerics/math_constants.h"
 #include "ui/base/ui_base_features.h"
 
+#include <algorithm>
+
 namespace {
 
 // Influence of acceleration during each prediction sample

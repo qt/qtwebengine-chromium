@@ -11,6 +11,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "ui/base/ui_base_features.h"
 
+#include <algorithm>
+
 namespace ui {
 
 namespace {
