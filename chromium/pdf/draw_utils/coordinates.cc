@@ -9,6 +9,8 @@
 #include "base/logging.h"
 #include "ppapi/cpp/point.h"
 
+#include <algorithm>
+
 namespace chrome_pdf {
 namespace draw_utils {
 
