@@ -154,47 +154,38 @@ void LevelDBDatabaseImpl::Write(
 
 void LevelDBDatabaseImpl::Get(const std::vector<uint8_t>& key,
                               GetCallback callback) {
-  struct GetResult {
-    Status status;
-    storage::DomStorageDatabase::Value value;
-  };
   RunDatabaseTask(base::BindOnce(
                       [](const std::vector<uint8_t>& key,
                          const storage::DomStorageDatabase& db) {
-                        GetResult result;
-                        result.status = db.Get(key, &result.value);
+                        std::pair<Status, storage::DomStorageDatabase::Value> result;
+                        result.first = db.Get(key, &result.second);
                         return result;
                       },
                       key),
                   base::BindOnce(
-                      [](GetCallback callback, GetResult result) {
-                        std::move(callback).Run(result.status, result.value);
+                      [](GetCallback callback, std::pair<Status, storage::DomStorageDatabase::Value> result) {
+                        std::move(callback).Run(result.first, result.second);
                       },
                       std::move(callback)));
 }
 
 void LevelDBDatabaseImpl::GetPrefixed(const std::vector<uint8_t>& key_prefix,
                                       GetPrefixedCallback callback) {
-  struct GetPrefixedResult {
-    Status status;
-    std::vector<storage::DomStorageDatabase::KeyValuePair> entries;
-  };
-
   RunDatabaseTask(
       base::BindOnce(
           [](const std::vector<uint8_t>& prefix,
              const storage::DomStorageDatabase& db) {
-            GetPrefixedResult result;
-            result.status = db.GetPrefixed(prefix, &result.entries);
+            std::pair<Status,std::vector<storage::DomStorageDatabase::KeyValuePair>> result;
+            result.first = db.GetPrefixed(prefix, &result.second);
             return result;
           },
           key_prefix),
       base::BindOnce(
-          [](GetPrefixedCallback callback, GetPrefixedResult result) {
+          [](GetPrefixedCallback callback, std::pair<Status,std::vector<storage::DomStorageDatabase::KeyValuePair>> result) {
             std::vector<mojom::KeyValuePtr> entries;
-            for (auto& entry : result.entries)
+            for (auto& entry : result.second)
               entries.push_back(mojom::KeyValue::New(entry.key, entry.value));
-            std::move(callback).Run(result.status, std::move(entries));
+            std::move(callback).Run(result.first, std::move(entries));
           },
           std::move(callback)));
 }

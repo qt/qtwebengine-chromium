@@ -480,7 +480,7 @@ constexpr span<T> make_span(T* begin, T* end) noexcept {
 
 template <typename T, size_t N>
 constexpr span<T, N> make_span(T (&array)[N]) noexcept {
-  return array;
+  return span<T, N>(array);
 }
 
 template <typename T, size_t N>

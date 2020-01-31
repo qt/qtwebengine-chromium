@@ -96,6 +96,8 @@ class ReceiverSetBase {
   using PreDispatchCallback = base::RepeatingCallback<void(const Context&)>;
 
   ReceiverSetBase() = default;
+  ReceiverSetBase(ReceiverSetBase&&) = default;
+  ReceiverSetBase& operator=(ReceiverSetBase&&) = default;
 
   // Sets a callback to be invoked any time a receiver in the set is
   // disconnected. The callback is invoked *after* the receiver in question

@@ -1099,7 +1099,7 @@ SkColor NativeThemeBase::OutlineColor(SkScalar* hsv1, SkScalar* hsv2) const {
   SkScalar min_diff =
       base::ClampToRange((hsv1[1] + hsv2[1]) * 1.2f, 0.28f, 0.5f);
   SkScalar diff =
-      base::ClampToRange(fabs(hsv1[2] - hsv2[2]) / 2, min_diff, 0.5f);
+      base::ClampToRange(fabsf(hsv1[2] - hsv2[2]) / 2, min_diff, 0.5f);
 
   if (hsv1[2] + hsv2[2] > 1.0)
     diff = -diff;

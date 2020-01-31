@@ -696,15 +696,15 @@ std::string* MakeCheckOpString<std::string, std::string>(
 // condition is false.
 #define DEFINE_CHECK_OP_IMPL(name, op)                                 \
   template <class t1, class t2>                                        \
-  constexpr std::string* Check##name##Impl(const t1& v1, const t2& v2, \
-                                           const char* names) {        \
+  std::string* Check##name##Impl(const t1& v1, const t2& v2,           \
+                                 const char* names) {                  \
     if (!!ANALYZER_ASSUME_TRUE(v1 op v2))                              \
       return nullptr;                                                  \
     else                                                               \
       return ::logging::MakeCheckOpString(v1, v2, names);              \
   }                                                                    \
-  constexpr std::string* Check##name##Impl(int v1, int v2,             \
-                                           const char* names) {        \
+  inline std::string* Check##name##Impl(int v1, int v2,                \
+                                        const char* names) {           \
     if (!!ANALYZER_ASSUME_TRUE(v1 op v2))                              \
       return nullptr;                                                  \
     else                                                               \

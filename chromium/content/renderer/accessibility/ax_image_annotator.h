@@ -64,6 +64,7 @@ class CONTENT_EXPORT AXImageAnnotator : public base::CheckedObserver {
   // Keeps track of the image data and the automatic annotation for each image.
   class ImageInfo final {
    public:
+    ImageInfo() = default;
     ImageInfo(const blink::WebAXObject& image);
     virtual ~ImageInfo();
     ImageInfo(ImageInfo&&) = default;

@@ -94,7 +94,7 @@ DefaultLevelDBFactory::OpenLevelDBState(
 
   if (file_name.empty()) {
     if (!create_if_missing)
-      return {nullptr, leveldb::Status::NotFound("", ""), false};
+      return std::make_tuple(nullptr, leveldb::Status::NotFound("", ""), false);
 
     std::unique_ptr<leveldb::Env> in_memory_env =
         leveldb_chrome::NewMemEnv("indexed-db", LevelDBEnv::Get());
@@ -127,7 +127,7 @@ DefaultLevelDBFactory::OpenLevelDBState(
   std::tie(db, status) = OpenDB(options, file_name.AsUTF8Unsafe());
   if (!status.ok()) {
     if (!create_if_missing)
-      return {nullptr, leveldb::Status::NotFound("", ""), false};
+      return std::make_tuple(nullptr, leveldb::Status::NotFound("", ""), false);
 
     ReportLevelDBError("WebCore.IndexedDB.LevelDBOpenErrors", status);
 

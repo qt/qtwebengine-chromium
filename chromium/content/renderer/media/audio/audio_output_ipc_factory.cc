@@ -75,7 +75,7 @@ void AudioOutputIPCFactory::RegisterRemoteFactoryOnIOThread(
         factory_pending_remote) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
   std::pair<StreamFactoryMap::iterator, bool> emplace_result =
-      factory_remotes_.emplace(frame_id, std::move(factory_pending_remote));
+      factory_remotes_.emplace(frame_id, mojo::Remote<mojom::RendererAudioOutputStreamFactory>(std::move(factory_pending_remote)));
 
   DCHECK(emplace_result.second) << "Attempt to register a factory for a "
                                    "frame which already has a factory "

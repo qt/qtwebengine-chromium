@@ -80,7 +80,7 @@ void AXImageAnnotator::OnImageAdded(blink::WebAXObject& image) {
   if (image_id.empty())
     return;
 
-  image_annotations_.emplace(image.AxID(), image);
+  image_annotations_[image.AxID()] = ImageInfo(image);
   ImageInfo& image_info = image_annotations_.at(image.AxID());
   // Fetch image annotation.
   annotator_->AnnotateImage(image_id, preferred_language_,

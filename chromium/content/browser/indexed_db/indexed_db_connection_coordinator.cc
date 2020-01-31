@@ -362,7 +362,7 @@ class IndexedDBConnectionCoordinator::OpenRequest
     pending_.reset();
     // The tasks_available_callback_ is NOT run here, because we are assuming
     // the caller is doing their own cleanup & execution for ForceClose.
-    return {true, status};
+    return std::make_tuple(true, status);
   }
 
  private:
@@ -495,7 +495,7 @@ class IndexedDBConnectionCoordinator::DeleteRequest
 
   // The delete requests should always be run during force close.
   std::tuple<bool, leveldb::Status> ShouldPruneForForceClose() override {
-    return {false, leveldb::Status::OK()};
+    return std::make_tuple(false, leveldb::Status::OK());
   }
 
  private:
@@ -617,7 +617,7 @@ void IndexedDBConnectionCoordinator::OnUpgradeTransactionFinished(
 std::tuple<IndexedDBConnectionCoordinator::ExecuteTaskResult, leveldb::Status>
 IndexedDBConnectionCoordinator::ExecuteTask(bool has_connections) {
   if (request_queue_.empty())
-    return {ExecuteTaskResult::kDone, leveldb::Status()};
+    return std::make_tuple(ExecuteTaskResult::kDone, leveldb::Status());
 
   auto& request = request_queue_.front();
   if (request->state() == RequestState::kNotStarted) {
@@ -628,11 +628,11 @@ IndexedDBConnectionCoordinator::ExecuteTask(bool has_connections) {
   switch (request->state()) {
     case RequestState::kNotStarted:
       NOTREACHED();
-      return {ExecuteTaskResult::kError, leveldb::Status::OK()};
+      return std::make_tuple(ExecuteTaskResult::kError, leveldb::Status::OK());
     case RequestState::kPendingNoConnections:
     case RequestState::kPendingLocks:
     case RequestState::kPendingTransactionComplete:
-      return {ExecuteTaskResult::kPendingAsyncWork, leveldb::Status()};
+      return std::make_tuple(ExecuteTaskResult::kPendingAsyncWork, leveldb::Status());
     case RequestState::kDone: {
       // Move |request_to_discard| out of |request_queue_| then
       // |request_queue_.pop()|. We do this because |request_to_discard|'s dtor
@@ -642,9 +642,9 @@ IndexedDBConnectionCoordinator::ExecuteTask(bool has_connections) {
       auto request_to_discard = std::move(request_queue_.front());
       request_queue_.pop();
       request_to_discard.reset();
-      return {request_queue_.empty() ? ExecuteTaskResult::kDone
+      return std::make_tuple(request_queue_.empty() ? ExecuteTaskResult::kDone
                                      : ExecuteTaskResult::kMoreTasks,
-              leveldb::Status::OK()};
+              leveldb::Status::OK());
     }
     case RequestState::kError: {
       leveldb::Status status = request->status();
@@ -656,7 +656,7 @@ IndexedDBConnectionCoordinator::ExecuteTask(bool has_connections) {
       auto request_to_discard = std::move(request_queue_.front());
       request_queue_.pop();
       request_to_discard.reset();
-      return {ExecuteTaskResult::kError, status};
+      return std::make_tuple(ExecuteTaskResult::kError, status);
     }
   }
   NOTREACHED();

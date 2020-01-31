@@ -342,10 +342,10 @@ constexpr int64_t SaturatedAdd(int64_t value, TimeDelta delta) {
   // Treat Min/Max() as +/- infinity (additions involving two infinities are
   // only valid if signs match).
   if (delta.is_max()) {
-    CHECK_GT(value, std::numeric_limits<int64_t>::min());
+//    CHECK_GT(value, std::numeric_limits<int64_t>::min());
     return std::numeric_limits<int64_t>::max();
   } else if (delta.is_min()) {
-    CHECK_LT(value, std::numeric_limits<int64_t>::max());
+//    CHECK_LT(value, std::numeric_limits<int64_t>::max());
     return std::numeric_limits<int64_t>::min();
   }
 
@@ -356,10 +356,10 @@ constexpr int64_t SaturatedSub(int64_t value, TimeDelta delta) {
   // Treat Min/Max() as +/- infinity (subtractions involving two infinities are
   // only valid if signs are opposite).
   if (delta.is_max()) {
-    CHECK_LT(value, std::numeric_limits<int64_t>::max());
+//    CHECK_LT(value, std::numeric_limits<int64_t>::max());
     return std::numeric_limits<int64_t>::min();
   } else if (delta.is_min()) {
-    CHECK_GT(value, std::numeric_limits<int64_t>::min());
+//    CHECK_GT(value, std::numeric_limits<int64_t>::min());
     return std::numeric_limits<int64_t>::max();
   }
 

@@ -736,8 +736,8 @@ IndexedDBFactoryImpl::GetOrOpenOriginFactory(
     ReportOpenStatus(indexed_db::INDEXED_DB_BACKING_STORE_OPEN_NO_RECOVERY,
                      origin);
 
-    return {IndexedDBOriginStateHandle(), s, CreateDefaultError(),
-            data_loss_info, /*was_cold_open=*/true};
+    return std::make_tuple(IndexedDBOriginStateHandle(), s, CreateDefaultError(),
+            data_loss_info, /*was_cold_open=*/true);
   }
 
   if (!is_incognito_and_in_memory)
@@ -853,7 +853,7 @@ IndexedDBFactoryImpl::OpenAndVerifyIndexedDBBackingStore(
   std::tie(scopes, status) = scopes_factory->CreateAndInitializeLevelDBScopes(
       std::move(scopes_options), state);
   if (UNLIKELY(!status.ok()))
-    return {nullptr, status, std::move(data_loss_info), /*is_disk_full=*/false};
+    return std::make_tuple(nullptr, status, std::move(data_loss_info), /*is_disk_full=*/false);
 
   std::unique_ptr<TransactionalLevelDBDatabase> database =
       leveldb_factory_->CreateLevelDBDatabase(
