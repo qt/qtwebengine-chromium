@@ -2918,6 +2918,7 @@ jumbo_static_library("browser") {
       "//third_party/libaddressinput:util",
       "//third_party/libphonenumber",
       "//third_party/smhasher:murmurhash2",
+      "//url:origin_android",
     ]
 
     deps -= [ "//components/storage_monitor" ]
