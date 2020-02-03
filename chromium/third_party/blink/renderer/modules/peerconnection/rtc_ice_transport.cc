@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_transport.h"
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/web/modules/peerconnection/peer_connection_dependency_factory.h"
 #include "third_party/blink/public/web/web_local_frame.h"
@@ -64,17 +65,23 @@ class DtlsIceTransportAdapterCrossThreadFactory
       rtc::scoped_refptr<webrtc::IceTransportInterface> ice_transport)
       : ice_transport_(ice_transport) {}
   void InitializeOnMainThread(LocalFrame& frame) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(!worker_thread_rtc_thread_);
     worker_thread_rtc_thread_ = PeerConnectionDependencyFactory::GetInstance()
                                     ->GetWebRtcWorkerThreadRtcThread();
+#endif
   }
 
   std::unique_ptr<IceTransportAdapter> ConstructOnWorkerThread(
       IceTransportAdapter::Delegate* delegate) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(ice_transport_);
     DCHECK(worker_thread_rtc_thread_);
     return std::make_unique<IceTransportAdapterImpl>(
         delegate, std::move(ice_transport_), worker_thread_rtc_thread_);
+#else
+    return nullptr;
+#endif
   }
 
  private:
@@ -86,6 +93,7 @@ class DefaultIceTransportAdapterCrossThreadFactory
     : public IceTransportAdapterCrossThreadFactory {
  public:
   void InitializeOnMainThread(LocalFrame& frame) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(!port_allocator_);
     DCHECK(!worker_thread_rtc_thread_);
     DCHECK(!async_resolver_factory_);
@@ -95,21 +103,25 @@ class DefaultIceTransportAdapterCrossThreadFactory
     rtc_dependency_factory->EnsureInitialized();
     port_allocator_ = rtc_dependency_factory->CreatePortAllocator(
         frame.Client()->GetWebFrame());
-
     async_resolver_factory_ =
         Platform::Current()->CreateWebRtcAsyncResolverFactory();
     worker_thread_rtc_thread_ = PeerConnectionDependencyFactory::GetInstance()
                                     ->GetWebRtcWorkerThreadRtcThread();
+#endif
   }
 
   std::unique_ptr<IceTransportAdapter> ConstructOnWorkerThread(
       IceTransportAdapter::Delegate* delegate) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(port_allocator_);
     DCHECK(worker_thread_rtc_thread_);
     DCHECK(async_resolver_factory_);
     return std::make_unique<IceTransportAdapterImpl>(
         delegate, std::move(port_allocator_),
         std::move(async_resolver_factory_), worker_thread_rtc_thread_);
+#else
+    return nullptr;
+#endif
   }
 
  private:

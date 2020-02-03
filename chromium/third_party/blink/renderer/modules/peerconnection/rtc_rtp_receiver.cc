@@ -4,10 +4,10 @@
 
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_receiver.h"
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/web_media_stream.h"
 #include "third_party/blink/public/platform/web_media_stream_track.h"
 #include "third_party/blink/public/platform/web_rtc_rtp_source.h"
-#include "third_party/blink/public/web/modules/peerconnection/peer_connection_dependency_factory.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_dtls_transport.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h"
@@ -19,6 +19,10 @@
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/webrtc/api/rtp_parameters.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/blink/public/web/modules/peerconnection/peer_connection_dependency_factory.h"
+#endif
 
 namespace blink {
 
@@ -178,6 +182,7 @@ void RTCRtpReceiver::Trace(blink::Visitor* visitor) {
 }
 
 RTCRtpCapabilities* RTCRtpReceiver::getCapabilities(const String& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (kind != "audio" && kind != "video")
     return nullptr;
 
@@ -224,6 +229,9 @@ RTCRtpCapabilities* RTCRtpReceiver::getCapabilities(const String& kind) {
   capabilities->setHeaderExtensions(header_extensions);
 
   return capabilities;
+#else
+  return nullptr;
+#endif
 }
 
 RTCRtpReceiveParameters* RTCRtpReceiver::getParameters() {

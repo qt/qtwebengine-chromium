@@ -529,6 +529,7 @@ RendererBlinkPlatformImpl::SharedMainThreadContextProvider() {
   return RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 bool RendererBlinkPlatformImpl::RTCSmoothnessAlgorithmEnabled() {
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableRTCSmoothnessAlgorithm);
@@ -544,7 +545,6 @@ RendererBlinkPlatformImpl::CreateRTCPeerConnectionHandler(
   // PeerConnectionDependencyFactory::CreateRTCPeerConnectionHandler
   // when it the file gets Onion soup'ed.
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   // Save histogram data so we can see how much PeerConnection is used.
   // The histogram counts the number of calls to the JS API
   // RTCPeerConnection.
@@ -554,55 +554,39 @@ RendererBlinkPlatformImpl::CreateRTCPeerConnectionHandler(
       blink::PeerConnectionDependencyFactory::GetInstance();
   return std::make_unique<RTCPeerConnectionHandler>(
       client, rtc_dependency_factory, task_runner);
-#else
-  return nullptr;
-#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 //------------------------------------------------------------------------------
 
 scoped_refptr<base::SingleThreadTaskRunner>
 RendererBlinkPlatformImpl::GetWebRtcWorkerThread() {
-#if BUILDFLAG(ENABLE_WEBRTC)
   auto* rtc_dependency_factory =
       blink::PeerConnectionDependencyFactory::GetInstance();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->GetWebRtcWorkerThread();
-#else
-  return nullptr;
-#endif
 }
 
 std::unique_ptr<cricket::PortAllocator>
 RendererBlinkPlatformImpl::CreateWebRtcPortAllocator(
     blink::WebLocalFrame* frame) {
-#if BUILDFLAG(ENABLE_WEBRTC)
   auto* rtc_dependency_factory =
       blink::PeerConnectionDependencyFactory::GetInstance();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->CreatePortAllocator(frame);
-#else
-  return nullptr;
-#endif
 }
 
 std::unique_ptr<webrtc::AsyncResolverFactory>
 RendererBlinkPlatformImpl::CreateWebRtcAsyncResolverFactory() {
-#if BUILDFLAG(ENABLE_WEBRTC)
   auto* rtc_dependency_factory =
       blink::PeerConnectionDependencyFactory::GetInstance();
   rtc_dependency_factory->EnsureInitialized();
   return rtc_dependency_factory->CreateAsyncResolverFactory();
-#else
-  return nullptr;
-#endif
 }
 
 //------------------------------------------------------------------------------
 
 base::Optional<double>
 RendererBlinkPlatformImpl::GetWebRtcMaxCaptureFrameRate() {
-#if BUILDFLAG(ENABLE_WEBRTC)
   const std::string max_fps_str =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kWebRtcMaxCaptureFramerate);
@@ -611,7 +595,6 @@ RendererBlinkPlatformImpl::GetWebRtcMaxCaptureFrameRate() {
     if (base::StringToDouble(max_fps_str, &value) && value >= 0.0)
       return value;
   }
-#endif
   return base::nullopt;
 }
 
@@ -736,10 +719,8 @@ base::Optional<int> RendererBlinkPlatformImpl::GetAgcStartupMinimumVolume() {
 
 void RendererBlinkPlatformImpl::TrackGetUserMedia(
     const blink::WebUserMediaRequest& web_request) {
-#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl::current()->peer_connection_tracker()->TrackGetUserMedia(
       web_request);
-#endif
 }
 
 bool RendererBlinkPlatformImpl::IsWebRtcHWH264DecodingEnabled(
@@ -782,6 +763,7 @@ bool RendererBlinkPlatformImpl::AllowsLoopbackInPeerConnection() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kAllowLoopbackInPeerConnection);
 }
+#endif // BUILDFLAG(ENABLE_WEBRTC)
 
 blink::WebVideoCaptureImplManager*
 RendererBlinkPlatformImpl::GetVideoCaptureImplManager() {

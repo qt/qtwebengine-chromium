@@ -236,7 +236,7 @@ base::UnguessableToken PepperMediaDeviceManager::GetSessionID(
       return base::UnguessableToken();
   }
 #else
-  return 0;
+  return base::UnguessableToken();
 #endif
 }
 

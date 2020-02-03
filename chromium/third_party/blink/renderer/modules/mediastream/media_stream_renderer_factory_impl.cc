@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/modules/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -32,11 +33,15 @@ namespace {
 // Note that if there are more than one open capture devices the function
 // will not be able to pick an appropriate device and return 0.
 base::UnguessableToken GetSessionIdForWebRtcAudioRenderer() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   WebRtcAudioDeviceImpl* audio_device =
       PeerConnectionDependencyFactory::GetInstance()->GetWebRtcAudioDevice();
   return audio_device
              ? audio_device->GetAuthorizedDeviceSessionIdForAudioRenderer()
              : base::UnguessableToken();
+#else
+  return base::UnguessableToken();
+#endif
 }
 
 }  // namespace

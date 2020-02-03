@@ -115,7 +115,7 @@ void GenerateCertificateWithOptionalExpiration(
   request->GenerateCertificateAsync(key_params, expires_ms,
                                     std::move(completion_callback));
 #else
-  observer->onError();
+  std::move(completion_callback).Run(nullptr);
 #endif
 }
 
