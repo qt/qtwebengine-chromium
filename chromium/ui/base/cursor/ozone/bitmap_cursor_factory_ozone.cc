@@ -8,6 +8,8 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/cursor/cursors_aura.h"
 
+#include <algorithm>
+
 namespace ui {
 
 namespace {
