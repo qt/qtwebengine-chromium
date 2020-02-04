@@ -3890,18 +3890,18 @@ void RenderFrameImpl::CommitSameDocumentNavigation(
         InternalDocumentStateData::FromDocumentState(original_document_state));
     // This is a browser-initiated same-document navigation (as opposed to a
     // fragment link click), therefore |was_initiated_in_this_frame| is false.
+    auto url = common_params->url;
+    if (!common_params->base_url_for_data_url.is_empty() &&
+        !common_params->history_url_for_data_url.is_empty() &&
+        common_params->url.SchemeIs(url::kDataScheme))
+      url = common_params->history_url_for_data_url;
+
     internal_data->set_navigation_state(NavigationState::CreateBrowserInitiated(
         std::move(common_params), std::move(commit_params),
         base::TimeTicks(),  // Not used for same-document navigation.
         mojom::FrameNavigationControl::CommitNavigationCallback(),
         mojom::NavigationClient::CommitNavigationCallback(), nullptr,
         false /* was_initiated_in_this_frame */));
-
-    auto url = common_params->url;
-    if (!common_params->base_url_for_data_url.is_empty() &&
-        !common_params->history_url_for_data_url.is_empty() &&
-        common_params->url.SchemeIs(url::kDataScheme))
-      url = common_params->history_url_for_data_url;
 
     // Load the request.
     commit_status = frame_->CommitSameDocumentNavigation(
