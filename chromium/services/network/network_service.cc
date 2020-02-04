@@ -375,10 +375,12 @@ std::unique_ptr<NetworkService> NetworkService::CreateForTesting() {
 }
 
 void NetworkService::RegisterNetworkContext(NetworkContext* network_context) {
+#ifndef TOOLKIT_QT
   // If IsPrimaryNetworkContext() is true, there must be no other
   // NetworkContexts created yet.
   DCHECK(!network_context->IsPrimaryNetworkContext() ||
          network_contexts_.empty());
+#endif
 
   DCHECK_EQ(0u, network_contexts_.count(network_context));
   network_contexts_.insert(network_context);
@@ -399,10 +401,12 @@ void NetworkService::RegisterNetworkContext(NetworkContext* network_context) {
 }
 
 void NetworkService::DeregisterNetworkContext(NetworkContext* network_context) {
+#ifndef TOOLKIT_QT
   // If the NetworkContext is the primary network context, all other
   // NetworkContexts must already have been destroyed.
   DCHECK(!network_context->IsPrimaryNetworkContext() ||
          network_contexts_.size() == 1);
+#endif
 
   DCHECK_EQ(1u, network_contexts_.count(network_context));
   network_contexts_.erase(network_context);
@@ -467,9 +471,11 @@ void NetworkService::SetSSLKeyLogFile(base::File file) {
 void NetworkService::CreateNetworkContext(
     mojo::PendingReceiver<mojom::NetworkContext> receiver,
     mojom::NetworkContextParamsPtr params) {
+#ifndef TOOLKIT_QT
   // Only the first created NetworkContext can have |primary_next_context| set
   // to true.
   DCHECK(!params->primary_network_context || network_contexts_.empty());
+#endif
 
   owned_network_contexts_.emplace(std::make_unique<NetworkContext>(
       this, std::move(receiver), std::move(params),
@@ -785,8 +791,10 @@ void NetworkService::DestroyNetworkContexts() {
 void NetworkService::OnNetworkContextConnectionClosed(
     NetworkContext* network_context) {
   if (network_context->IsPrimaryNetworkContext()) {
+#ifndef TOOLKIT_QT
     DestroyNetworkContexts();
     return;
+#endif
   }
 
   auto it = owned_network_contexts_.find(network_context);
