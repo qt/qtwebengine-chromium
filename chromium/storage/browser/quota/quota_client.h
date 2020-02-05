@@ -38,7 +38,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaClient
   virtual void OnQuotaManagerDestroyed() = 0;
 
  protected:
-  friend class RefCountedThreadSafe<QuotaClient>;
+  friend class base::RefCountedThreadSafe<QuotaClient>;
 
   ~QuotaClient() override = default;
 };

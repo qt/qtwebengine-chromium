@@ -911,7 +911,7 @@ class CORE_EXPORT NGConstraintSpace final {
 
     base::Optional<LayoutUnit> OptimisticBfcBlockOffset() const {
       return data_union_type == kBlockData
-                 ? block_data_.optimistic_bfc_block_offset
+                 ? base::pass_optional(block_data_.optimistic_bfc_block_offset)
                  : base::nullopt;
     }
 
@@ -921,8 +921,9 @@ class CORE_EXPORT NGConstraintSpace final {
     }
 
     base::Optional<LayoutUnit> ForcedBfcBlockOffset() const {
-      return data_union_type == kBlockData ? block_data_.forced_bfc_block_offset
-                                           : base::nullopt;
+      return data_union_type == kBlockData
+                 ? base::pass_optional(block_data_.forced_bfc_block_offset)
+                 : base::nullopt;
     }
 
     void SetForcedBfcBlockOffset(LayoutUnit forced_bfc_block_offset) {

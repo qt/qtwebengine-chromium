@@ -179,6 +179,8 @@ class FullScreenPowerPointHandler : public FullScreenApplicationHandler {
   }
 };
 
+constexpr char FullScreenPowerPointHandler::kDocumentTitleSeparator[];
+
 class OpenOfficeApplicationHandler : public FullScreenApplicationHandler {
  public:
   explicit OpenOfficeApplicationHandler(DesktopCapturer::SourceId sourceId)

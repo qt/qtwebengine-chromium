@@ -208,7 +208,8 @@
   // constant expression of type std::size_t and its value shall be greater than
   // zero.
   const int argc = {{non_variadic_arguments|length}} + {{variadic_argument.name}}.size();
-  v8::Local<v8::Value> argv[std::max(1, argc)];
+  std::vector<v8::Local<v8::Value>> argvector(std::max(1, argc));
+  v8::Local<v8::Value>* argv = argvector.data();
   {% for argument in non_variadic_arguments %}
   argv[{{loop.index0}}] = {{argument.v8_name}};
   {% endfor %}

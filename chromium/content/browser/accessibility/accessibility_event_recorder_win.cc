@@ -332,6 +332,7 @@ HRESULT AccessibilityEventRecorderWin::AccessibleObjectFromWindowWrapper(
     DWORD dw_id,
     REFIID riid,
     void** ppv_object) {
+#ifndef TOOLKIT_QT
   HRESULT hr = ::AccessibleObjectFromWindow(hwnd, dw_id, riid, ppv_object);
   if (SUCCEEDED(hr))
     return hr;
@@ -351,6 +352,9 @@ HRESULT AccessibilityEventRecorderWin::AccessibleObjectFromWindowWrapper(
   obj->AddRef();
   *ppv_object = obj;
   return S_OK;
+#else
+  return E_FAIL;
+#endif
 }
 
 }  // namespace content

@@ -272,6 +272,7 @@ std::vector<SpellCheckResult> BackgroundHelper::RequestTextCheckForAllLanguages(
   return final_results;
 }
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
 spellcheck::PerLanguageSuggestions BackgroundHelper::GetPerLanguageSuggestions(
     const base::string16& word) {
   DCHECK(background_task_runner_->RunsTasksInCurrentSequence());
@@ -287,6 +288,7 @@ spellcheck::PerLanguageSuggestions BackgroundHelper::GetPerLanguageSuggestions(
 
   return suggestions;
 }
+#endif
 
 void BackgroundHelper::FillSuggestionList(
     const std::string& lang_tag,
@@ -529,6 +531,7 @@ void WindowsSpellChecker::RequestTextCheck(
       std::move(callback));
 }
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
 void WindowsSpellChecker::GetPerLanguageSuggestions(
     const base::string16& word,
     spellcheck_platform::GetSuggestionsCallback callback) {
@@ -539,6 +542,7 @@ void WindowsSpellChecker::GetPerLanguageSuggestions(
           base::Unretained(background_helper_.get()), word),
       std::move(callback));
 }
+#endif
 
 void WindowsSpellChecker::AddWordForAllLanguages(const base::string16& word) {
   background_task_runner_->PostTask(
