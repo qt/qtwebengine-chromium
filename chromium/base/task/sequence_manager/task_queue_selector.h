@@ -288,7 +288,7 @@ class BASE_EXPORT TaskQueueSelector : public WorkQueueSets::Observer {
           0,
 
           // kVeryHighPriority
-          kMaxVeryHighPriorityStarvationScore,
+          int64_t(kMaxVeryHighPriorityStarvationScore),
 
           // kHighPriority
           int64_t(kMaxHighPriorityStarvationScore),

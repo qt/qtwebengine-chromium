@@ -245,8 +245,8 @@ void Dualshock4Controller::SetVibrationBluetooth(double strong_magnitude,
   control_report[2] = 0x20;  // unknown
   control_report[3] = 0xf1;  // motor only, don't update LEDs
   control_report[4] = 0x04;  // unknown
-  control_report[6] = uint8_t{weak_magnitude * kRumbleMagnitudeMax};
-  control_report[7] = uint8_t{strong_magnitude * kRumbleMagnitudeMax};
+  control_report[6] = uint8_t(weak_magnitude * kRumbleMagnitudeMax);
+  control_report[7] = uint8_t(strong_magnitude * kRumbleMagnitudeMax);
   control_report[21] = 0x43;  // volume left
   control_report[22] = 0x43;  // volume right
   control_report[24] = 0x4d;  // volume speaker

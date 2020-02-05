@@ -140,10 +140,10 @@ bool PdfAXActionTarget::ScrollToMakeVisibleWithSubFocus(
   pdf_action_data.vertical_scroll_alignment =
       ConvertAXScrollToPdfScrollAlignment(vertical_scroll_alignment);
   pdf_action_data.target_rect = {
-      {target_plugin_node_.data().relative_bounds.bounds.x(),
-       target_plugin_node_.data().relative_bounds.bounds.y()},
-      {target_plugin_node_.data().relative_bounds.bounds.width(),
-       target_plugin_node_.data().relative_bounds.bounds.height()}};
+      {int32_t(target_plugin_node_.data().relative_bounds.bounds.x()),
+       int32_t(target_plugin_node_.data().relative_bounds.bounds.y())},
+      {int32_t(target_plugin_node_.data().relative_bounds.bounds.width()),
+       int32_t(target_plugin_node_.data().relative_bounds.bounds.height())}};
   pdf_accessibility_tree_source_->HandleAction(pdf_action_data);
   return true;
 }
