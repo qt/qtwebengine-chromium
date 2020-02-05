@@ -4,6 +4,7 @@
 
 #include "pdf/draw_utils/coordinates.h"
 
+#include <algorithm>
 #include <math.h>
 
 #include "base/logging.h"
