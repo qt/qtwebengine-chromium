@@ -11,11 +11,11 @@ namespace features {
 const base::Feature kQuotaExpandPoolSize{"QuotaExpandPoolSize",
                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
-constexpr base::FeatureParam<double> kExperimentalPoolSizeRatio{
+const base::FeatureParam<double> kExperimentalPoolSizeRatio{
     &kQuotaExpandPoolSize, "PoolSizeRatio", 0.8};
 
-constexpr base::FeatureParam<double> kPerHostRatio{&kQuotaExpandPoolSize,
-                                                   "PerHostRatio", 0.75};
+const base::FeatureParam<double> kPerHostRatio{&kQuotaExpandPoolSize,
+                                               "PerHostRatio", 0.75};
 
 // StaticHostQuota enables a simpler per-host quota model, where the quota is
 // only based on disk capacity (partition size). When the flag is disabled, the

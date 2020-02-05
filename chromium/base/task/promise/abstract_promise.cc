@@ -691,10 +691,10 @@ BasePromise::BasePromise(
     : abstract_promise_(std::move(abstract_promise)) {}
 
 BasePromise::BasePromise(const BasePromise& other) = default;
-BasePromise::BasePromise(BasePromise&& other) = default;
+BasePromise::BasePromise(BasePromise&& other) noexcept = default;
 
 BasePromise& BasePromise::operator=(const BasePromise& other) = default;
-BasePromise& BasePromise::operator=(BasePromise&& other) = default;
+BasePromise& BasePromise::operator=(BasePromise&& other) noexcept = default;
 
 BasePromise::~BasePromise() = default;
 
@@ -720,11 +720,11 @@ WrappedPromise::WrappedPromise(const Location& from_here, OnceClosure task)
               std::move(task)))) {}
 
 WrappedPromise::WrappedPromise(const WrappedPromise& other) = default;
-WrappedPromise::WrappedPromise(WrappedPromise&& other) = default;
+WrappedPromise::WrappedPromise(WrappedPromise&& other) noexcept = default;
 
 WrappedPromise& WrappedPromise::operator=(const WrappedPromise& other) =
     default;
-WrappedPromise& WrappedPromise::operator=(WrappedPromise&& other) = default;
+WrappedPromise& WrappedPromise::operator=(WrappedPromise&& other) noexcept = default;
 
 WrappedPromise::~WrappedPromise() = default;
 
