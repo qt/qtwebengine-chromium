@@ -149,7 +149,7 @@ config("compiler") {
     ldflags += [ "/TIMESTAMP:" + build_timestamp ]
 
     # Don't look for libpaths in %LIB%, similar to /X in cflags above.
-    ldflags += [ "/lldignoreenv" ]
+#    ldflags += [ "/lldignoreenv" ]
   }
 
   if (!is_debug && !is_component_build) {

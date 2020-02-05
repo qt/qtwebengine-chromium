@@ -3941,7 +3941,7 @@ jumbo_static_library("browser") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     sources += [
       "badging/badge_manager_delegate_win.cc",
       "badging/badge_manager_delegate_win.h",

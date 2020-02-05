@@ -190,8 +190,8 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
   // If image is lazy decoded, call readPixels() to trigger decoding.
   if (skia_image->isLazyGenerated()) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
-    uint8_t pixel[info.bytesPerPixel()];
-    skia_image->readPixels(info, pixel, info.minRowBytes(), 0, 0);
+    std::vector<uint8_t> pixel(info.bytesPerPixel());
+    skia_image->readPixels(info, pixel.data(), info.minRowBytes(), 0, 0);
   }
 
   // For kHTMLCanvasToBlobCallback and kOffscreenCanvasConvertToBlobPromise

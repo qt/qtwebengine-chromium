@@ -776,7 +776,7 @@ jumbo_component("views") {
           "widget/desktop_aura/x11_topmost_window_finder.cc",
           "widget/desktop_aura/x11_whole_screen_move_loop.cc",
         ]
-      } else if (is_win) {
+      } else if (is_win && !use_qt) {
         public += [ "widget/desktop_aura/desktop_window_tree_host_win.h" ]
         sources += [
           "widget/desktop_aura/desktop_drag_drop_client_win.cc",
