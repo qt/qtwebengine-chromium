@@ -79,7 +79,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaClient
       PerformStorageCleanupCallback callback) = 0;
 
  protected:
-  friend class RefCountedThreadSafe<QuotaClient>;
+  friend class base::RefCountedThreadSafe<QuotaClient>;
 
   virtual ~QuotaClient() = default;
 };

@@ -90,7 +90,9 @@ config("compiler") {
     cflags += [ "/D__WRL_ENABLE_FUNCTION_STATICS__" ]
 
     # Tell clang which version of MSVC to emulate.
-    cflags += [ "-fmsc-version=1916" ]
+    if (!ninja_use_custom_environment_files) {
+      cflags += [ "-fmsc-version=1916" ]
+    }
 
     # Emit table of address-taken functions for Control-Flow Guard (CFG).
     # This is needed to allow functions to be called by code that is built
@@ -155,7 +157,7 @@ config("compiler") {
     ldflags += [ "/TIMESTAMP:" + build_timestamp ]
 
     # Don't look for libpaths in %LIB%, similar to /X in cflags above.
-    ldflags += [ "/lldignoreenv" ]
+#    ldflags += [ "/lldignoreenv" ]
   }
 
   if (!is_debug && !is_component_build) {

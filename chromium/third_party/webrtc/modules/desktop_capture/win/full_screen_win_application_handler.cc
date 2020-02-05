@@ -170,6 +170,8 @@ class FullScreenPowerPointHandler : public FullScreenApplicationHandler {
   }
 };
 
+constexpr char FullScreenPowerPointHandler::kDocumentTitleSeparator[];
+
 std::wstring GetPathByWindowId(HWND window_id) {
   DWORD process_id = WindowProcessId(window_id);
   HANDLE process =

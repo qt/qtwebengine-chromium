@@ -200,7 +200,7 @@ ui::AXMode BrowserAccessibilityStateImpl::GetAccessibilityMode() {
   return accessibility_mode_;
 }
 
-#if !defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_MAC)
+#if (!defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_MAC)) || defined(TOOLKIT_QT)
 void BrowserAccessibilityStateImpl::PlatformInitialize() {}
 
 void BrowserAccessibilityStateImpl::

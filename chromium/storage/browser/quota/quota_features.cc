@@ -16,9 +16,9 @@ const base::Feature kIncognitoDynamicQuota{"IncognitoDynamicQuota",
 // Dynamic quota for incognito mode would be set by a random fraction of
 // physical memory, between |IncognitoQuotaRatioLowerBound| and
 // |IncognitoQuotaRatioUpperBound|.
-constexpr base::FeatureParam<double> kIncognitoQuotaRatioLowerBound{
+const base::FeatureParam<double> kIncognitoQuotaRatioLowerBound{
     &kIncognitoDynamicQuota, "IncognitoQuotaRatioLowerBound", 0.15};
-constexpr base::FeatureParam<double> kIncognitoQuotaRatioUpperBound{
+const base::FeatureParam<double> kIncognitoQuotaRatioUpperBound{
     &kIncognitoDynamicQuota, "IncognitoQuotaRatioUpperBound", 0.2};
 
 // Enables Storage Pressure Event.
