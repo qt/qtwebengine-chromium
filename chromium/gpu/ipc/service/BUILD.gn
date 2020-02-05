@@ -94,6 +94,11 @@ component("service") {
       "gpu_memory_buffer_factory_dxgi.h",
       "image_transport_surface_win.cc",
     ]
+    if (use_qt) {
+      sources -= [
+        "image_transport_surface_win.cc",
+      ]
+    }
   }
   if (is_mac) {
     sources += [

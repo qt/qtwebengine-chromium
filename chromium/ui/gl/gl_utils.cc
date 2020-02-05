@@ -57,7 +57,11 @@ void Hang() {
     base::debug::Alias(&do_not_delete_me);
     ++do_not_delete_me;
 
+#ifdef _MSC_VER
+    _ReadWriteBarrier();
+#else
     __asm__ volatile("");
+#endif
   }
 }
 

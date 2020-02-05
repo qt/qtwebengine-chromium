@@ -4479,7 +4479,7 @@ static_library("browser") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     libs += [
       "secur32.lib",
 

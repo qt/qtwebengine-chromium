@@ -12,6 +12,7 @@
 #include "src/base/macros.h"
 #include "src/common/checks.h"
 #include "src/common/globals.h"
+#include "src/objects/objects.h"
 #include "src/zone/zone.h"
 
 namespace v8 {
@@ -24,7 +25,6 @@ class LocalHeap;
 class LocalIsolate;
 template <typename T>
 class MaybeHandle;
-class Object;
 class OrderedHashMap;
 class OrderedHashSet;
 class OrderedNameDictionary;

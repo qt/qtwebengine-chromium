@@ -149,7 +149,7 @@ class COMPONENT_EXPORT(TRACING_CPP) TraceEventDataSource
  public:
   struct SessionFlags {
     // True if startup tracing is enabled for the current tracing session.
-    bool is_startup_tracing : 1;
+    uint32_t is_startup_tracing : 1;
 
     // This ID is incremented whenever a new tracing session is started (either
     // when startup tracing is enabled or when the service tells us to start the
