@@ -31,7 +31,7 @@ enum CrossThreadnessPersistentConfiguration {
 
 template <CrossThreadnessPersistentConfiguration>
 struct PersistentMutexTraits {
-  struct [[maybe_unused]] Locker{};
+  struct Locker{};
   static void AssertAcquired() {}
 };
 

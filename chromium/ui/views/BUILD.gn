@@ -783,7 +783,7 @@ jumbo_component("views") {
           ]
           configs += [ "//build/config/linux/atk" ]
         }
-      } else if (is_win) {
+      } else if (is_win && !use_qt) {
         public += [ "widget/desktop_aura/desktop_window_tree_host_win.h" ]
         sources += [
           "widget/desktop_aura/desktop_drag_drop_client_win.cc",
