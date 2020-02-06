@@ -181,7 +181,7 @@ GPUInfo::GPUDevice& GPUInfo::GPUDevice::operator=(
   device_string = std::move(other.device_string);
   driver_vendor = std::move(other.driver_vendor);
   driver_version = std::move(other.driver_version);
-  driver_date = std::move(other.driver_date);
+  cuda_compute_capability_major = std::move(other.cuda_compute_capability_major);
   return *this;
 }
 
