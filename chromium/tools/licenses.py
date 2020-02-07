@@ -613,15 +613,18 @@ def GenerateCredits(
         for key, val in env.items():
             if escape:
                 val = cgi.escape(val)
+                val = val.replace("*/", "* /")
             template = template.replace('{{%s}}' % key, val)
         return template
 
     def MetadataToTemplateEntry(metadata, entry_template):
         env = {
             'name': metadata['Name'],
+            'name-sanitized': metadata['Name'].replace(' ', '-'),
             'url': metadata['URL'],
             'license': open(metadata['License File'], 'rb').read(),
-        }
+            'license-type': metadata['License']
+       }
         return {
             'name': metadata['Name'],
             'content': EvaluateTemplate(entry_template, env),
@@ -653,6 +656,7 @@ def GenerateCredits(
     chromium_license_metadata = {
         'Name': 'The Chromium Project',
         'URL': 'http://www.chromium.org',
+        'License': 'BSD 3-clause "New" or "Revised" License',
         'License File': os.path.join(_REPOSITORY_ROOT, 'LICENSE') }
     entries.append(MetadataToTemplateEntry(chromium_license_metadata,
         entry_template))
