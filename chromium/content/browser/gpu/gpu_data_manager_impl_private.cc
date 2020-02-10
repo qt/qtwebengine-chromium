@@ -369,6 +369,7 @@ bool GpuDataManagerImplPrivate::GpuProcessStartAllowed() const {
   if (GpuAccessAllowed(nullptr))
     return true;
 
+#if !defined(TOOLKIT_QT)
 #if defined(USE_X11) || defined(OS_MACOSX) || defined(OS_FUCHSIA)
   // If GPU access is disabled with OOP-D we run the display compositor in:
   //   Browser process: Windows
@@ -376,6 +377,7 @@ bool GpuDataManagerImplPrivate::GpuProcessStartAllowed() const {
   //   N/A: Android and Chrome OS (GPU access can't be disabled)
   if (features::IsVizDisplayCompositorEnabled())
     return true;
+#endif
 #endif
 
   return false;
