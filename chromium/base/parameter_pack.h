@@ -47,22 +47,48 @@ inline constexpr size_t count(std::initializer_list<T> ilist, T value) {
   return c;
 }
 
+template <class... Ts >
+struct if_all;
+
+template <>
+struct if_all<>
+    : std::integral_constant<bool, true> {};
+
+template <class T, class... Ts >
+struct if_all<T, Ts...>
+    : std::conditional<T::value, if_all<Ts...>, std::integral_constant<bool, false>>::type {};
+
+
+template <class... Ts >
+struct if_any;
+
+template <>
+struct if_any<>
+    : std::integral_constant<bool, false> {};
+
+template <class T, class... Ts >
+struct if_any<T, Ts...>
+    : std::conditional<T::value, std::integral_constant<bool, true>, if_any<Ts...>>::type {};
+
 constexpr size_t pack_npos = -1;
 
 template <typename... Ts>
 struct ParameterPack {
   // Checks if |Type| occurs in the parameter pack.
   template <typename Type>
-  using HasType = bool_constant<any_of({std::is_same<Type, Ts>::value...})>;
+  using HasType = bool_constant<if_any<std::is_same<Type, Ts>...>::value>;
 
   // Checks if the parameter pack only contains |Type|.
   template <typename Type>
-  using OnlyHasType = bool_constant<all_of({std::is_same<Type, Ts>::value...})>;
+  using OnlyHasType = bool_constant<if_all<std::is_same<Type, Ts>...>::value>;
 
+  // Breaks build with MSVC 2017 but it is not used.
+#if !defined(COMPILER_MSVC)
   // Checks if |Type| occurs only once in the parameter pack.
   template <typename Type>
   using IsUniqueInPack =
       bool_constant<count({std::is_same<Type, Ts>::value...}, true) == 1>;
+#endif
 
   // Returns the zero-based index of |Type| within |Pack...| or |pack_npos| if
   // it's not within the pack.
@@ -83,7 +109,7 @@ struct ParameterPack {
 
   // Checks if every type in the parameter pack is the same.
   using IsAllSameType =
-      bool_constant<all_of({std::is_same<NthType<0>, Ts>::value...})>;
+      bool_constant<if_all<std::is_same<NthType<0>, Ts>...>::value>;
 };
 
 }  // namespace base

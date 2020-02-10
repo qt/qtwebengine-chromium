@@ -2601,8 +2601,6 @@ constexpr const ImmutableString yuv_2_rgb("yuv_2_rgb");
 namespace BuiltInVariable
 {
 
-constexpr const unsigned int kArraySize4[1] = {4};
-
 constexpr const TVariable kangle_BaseInstance(
     BuiltInId::angle_BaseInstance,
     BuiltInName::angle_BaseInstance,
@@ -3323,7 +3321,7 @@ constexpr const TVariable kpt10Dx4(
     BuiltInName::_empty,
     SymbolType::BuiltIn,
     TExtension::UNDEFINED,
-    StaticType::GetArray<EbtInt, EbpUndefined, EvqGlobal, 2, 1, kArraySize4, 1>());
+    StaticType::GetArray4<EbtInt, EbpUndefined, EvqGlobal, 2, 1>());
 constexpr const TVariable kpt10E(BuiltInId::pt10E,
                                  BuiltInName::_empty,
                                  SymbolType::BuiltIn,

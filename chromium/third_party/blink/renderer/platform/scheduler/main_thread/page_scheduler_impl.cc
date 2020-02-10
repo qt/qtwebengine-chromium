@@ -969,11 +969,14 @@ void PageSchedulerImpl::PageLifecycleStateTracker::SetPageLifecycleState(
     return;
   base::Optional<PageLifecycleStateTransition> transition =
       ComputePageLifecycleStateTransition(current_state_, new_state);
+#if !defined(OS_WIN) || !defined(TOOLKIT_QT)
+  // ### For some reason MSVC2017 just can't handle this
   if (transition) {
     UMA_HISTOGRAM_ENUMERATION(
         kHistogramPageLifecycleStateTransition,
         static_cast<PageLifecycleStateTransition>(transition.value()));
   }
+#endif
   current_state_ = new_state;
 }
 

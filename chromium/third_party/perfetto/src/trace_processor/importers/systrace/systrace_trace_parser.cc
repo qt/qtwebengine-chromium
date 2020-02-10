@@ -22,6 +22,7 @@
 #include "src/trace_processor/importers/common/process_tracker.h"
 #include "src/trace_processor/trace_sorter.h"
 
+#include <cctype>
 #include <inttypes.h>
 #include <cctype>
 #include <string>

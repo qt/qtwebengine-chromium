@@ -190,6 +190,20 @@ constexpr const TType *GetArray()
                                    arraySizes, numArraySizes>;
 }
 
+constexpr const unsigned int kArraySize4[1] = {4};
+template <TBasicType basicType,
+          TPrecision precision,
+          TQualifier qualifier,
+          unsigned char primarySize,
+          unsigned char secondarySize>
+constexpr const TType *GetArray4()
+{
+    static_assert(1 <= primarySize && primarySize <= 4, "primarySize out of bounds");
+    static_assert(1 <= secondarySize && secondarySize <= 4, "secondarySize out of bounds");
+    return &Helpers::arrayInstance<basicType, precision, qualifier, primarySize, secondarySize,
+                                   kArraySize4, 1>;
+}
+
 //
 // Overloads
 //
