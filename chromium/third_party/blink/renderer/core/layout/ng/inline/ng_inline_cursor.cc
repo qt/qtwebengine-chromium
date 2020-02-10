@@ -54,7 +54,7 @@ void NGInlineCursor::SetRoot(const NGPhysicalBoxFragment& box_fragment,
 
 void NGInlineCursor::SetRoot(const NGPaintFragment& root_paint_fragment) {
   DCHECK(&root_paint_fragment);
-  DCHECK(!HasRoot());
+  // DCHECK(!HasRoot());
   root_paint_fragment_ = &root_paint_fragment;
   current_.paint_fragment_ = root_paint_fragment.FirstChild();
 }
