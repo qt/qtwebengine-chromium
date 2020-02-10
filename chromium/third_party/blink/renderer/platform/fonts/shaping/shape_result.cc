@@ -1130,9 +1130,11 @@ void ShapeResult::InsertRun(scoped_refptr<ShapeResult::RunInfo> run) {
     return run->start_index_ > start_index;
   };
 
-  Vector<scoped_refptr<RunInfo>>::iterator iterator = std::lower_bound(
-      runs_.begin(), runs_.end(), run->start_index_,
-      HB_DIRECTION_IS_FORWARD(run->direction_) ? ltr_comparer : rtl_comparer);
+  Vector<scoped_refptr<RunInfo>>::iterator iterator;
+  if (HB_DIRECTION_IS_FORWARD(run->direction_))
+    iterator = std::lower_bound(runs_.begin(), runs_.end(), run->start_index_, ltr_comparer);
+  else
+    iterator = std::lower_bound(runs_.begin(), runs_.end(), run->start_index_, rtl_comparer);
   if (iterator != runs_.end())
     runs_.insert(iterator - runs_.begin(), std::move(run));
 

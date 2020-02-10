@@ -271,6 +271,7 @@ class span : public internal::ExtentStorage<Extent> {
 
   // Conversion from a container that has compatible base::data() and integral
   // base::size().
+#ifndef _MSC_VER
   template <
       typename Container,
       typename =
@@ -289,6 +290,18 @@ class span : public internal::ExtentStorage<Extent> {
   constexpr span(const Container& container) noexcept
       : span(base::data(container), base::size(container)) {}
 
+#else
+  // Visual Studio has problems with the double declarations above.
+  template <
+      typename Container,
+      typename = internal::EnableIfSpanCompatibleContainer<Container&, T>>
+  constexpr span(Container& container) noexcept
+      : span(base::data(container), base::size(container)) {}
+  template <typename Container,
+            typename = internal::EnableIfSpanCompatibleContainer<const Container&, T>>
+  constexpr span(const Container& container) noexcept
+      : span(base::data(container), base::size(container)) {}
+#endif
   constexpr span(const span& other) noexcept = default;
 
   // Conversions from spans of compatible types and extents: this allows a
