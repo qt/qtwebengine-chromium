@@ -200,10 +200,12 @@ struct RequiredEnumTraitFilter : public BasicTraitFilter<ArgType> {
 
 // Note EmptyTrait is always regarded as valid to support filtering.
 template <class ValidTraits, class T>
-inline constexpr bool IsValidTrait() {
-  return std::is_constructible<ValidTraits, T>::value ||
-         std::is_same<T, EmptyTrait>::value;
-}
+struct IsValidTrait
+    : std::is_constructible<ValidTraits, T> {};
+
+template <class T>
+struct IsValidTrait<EmptyTrait, T>
+    : std::integral_constant<bool, true> {};
 
 // Tests whether a given trait type is valid or invalid by testing whether it is
 // convertible to the provided ValidTraits type. To use, define a ValidTraits
@@ -221,12 +223,11 @@ inline constexpr bool IsValidTrait() {
 //   MoreValidTraits(MyOtherTrait);
 //   ...
 // };
+
 template <class ValidTraits, class... ArgTypes>
 struct AreValidTraits
     : std::integral_constant<bool,
-                             all_of(
-                                 {IsValidTrait<ValidTraits, ArgTypes>()...})> {
-};
+                             if_all<IsValidTrait<ValidTraits, ArgTypes>...>::value> {};
 
 // Helper to make getting an enum from a trait more readable.
 template <typename Enum, typename... Args>

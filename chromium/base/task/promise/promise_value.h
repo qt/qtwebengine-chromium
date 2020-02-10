@@ -43,8 +43,8 @@ struct Resolved {
   // Conversion constructor accepts any arguments except Resolved<T>.
   template <
       typename... Args,
-      std::enable_if_t<!all_of(
-          {std::is_same<Resolved, std::decay_t<Args>>::value...})>* = nullptr>
+      std::enable_if_t<!if_all<
+          std::is_same<Resolved, std::decay_t<Args>>...>::value>* = nullptr>
   Resolved(Args&&... args) noexcept : value(std::forward<Args>(args)...) {}
 
   T value;
@@ -75,8 +75,8 @@ struct Rejected {
   // Conversion constructor accepts any arguments except Rejected<T>.
   template <
       typename... Args,
-      std::enable_if_t<!all_of(
-          {std::is_same<Rejected, std::decay_t<Args>>::value...})>* = nullptr>
+      std::enable_if_t<!if_all<
+          std::is_same<Rejected, std::decay_t<Args>>...>::value>* = nullptr>
   Rejected(Args&&... args) noexcept : value(std::forward<Args>(args)...) {
     static_assert(!std::is_same<T, NoReject>::value,
                   "Can't have Rejected<NoReject>");

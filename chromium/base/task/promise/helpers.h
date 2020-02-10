@@ -165,9 +165,9 @@ struct UseMoveSemantics : public std::integral_constant<bool, UseMove<T>()> {
 // to be moved according to UseMove<>.
 template <typename... Ts>
 struct UseMoveSemantics<std::tuple<Ts...>>
-    : public std::integral_constant<bool, any_of({UseMove<Ts>()...})> {
+    : public if_any<UseMoveSemantics<Ts>...> {
   static constexpr PromiseExecutor::ArgumentPassingType argument_passing_type =
-      any_of({UseMove<Ts>()...})
+      if_any<UseMoveSemantics<Ts>...>::value
           ? PromiseExecutor::ArgumentPassingType::kMove
           : PromiseExecutor::ArgumentPassingType::kNormal;
 };
