@@ -92,7 +92,7 @@ struct PaintPropertyTreeBuilderFragmentContext;
 //  +- horizontal_scrollbar_effect_node_
 //  +- vertical_scrollbar_effect_node_
 //
-class CORE_EXPORT VisualViewport final
+class CORE_EXPORT VisualViewport
     : public GarbageCollected<VisualViewport>,
       public ScrollableArea {
   USING_GARBAGE_COLLECTED_MIXIN(VisualViewport);
@@ -178,6 +178,9 @@ class CORE_EXPORT VisualViewport final
                        ScrollType,
                        ScrollBehavior,
                        ScrollCallback on_finish) override;
+  void SetScrollOffset(const ScrollOffset&,
+                       ScrollType,
+                       ScrollBehavior = kScrollBehaviorInstant) override;
   PhysicalRect ScrollIntoView(const PhysicalRect&,
                               const WebScrollIntoViewParams&) override;
   bool IsThrottled() const override {
@@ -213,7 +216,8 @@ class CORE_EXPORT VisualViewport final
   CompositorAnimationTimeline* GetCompositorAnimationTimeline() const override;
   IntRect VisibleContentRect(
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
-  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner() const final;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTimerTaskRunner()
+      const override;
   WebColorScheme UsedColorScheme() const override;
 
   // VisualViewport scrolling may involve pinch zoom and gets routed through
