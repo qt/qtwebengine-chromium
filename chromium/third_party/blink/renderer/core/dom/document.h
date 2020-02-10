@@ -1630,6 +1630,8 @@ class CORE_EXPORT Document : public ContainerNode,
     return use_count_fragment_directive_;
   }
 
+  void ApplyScrollRestorationLogic();
+
  protected:
   void ClearXMLVersion() { xml_version_ = String(); }
 

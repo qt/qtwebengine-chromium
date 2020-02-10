@@ -556,6 +556,16 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   void DisposeImpl() override;
 
+  void SetPendingHistoryRestoreScrollOffset(
+      const HistoryItem::ViewState& view_state,
+      bool should_restore_scroll) override {
+    if (!should_restore_scroll)
+      return;
+    pending_view_state_ = view_state;
+  }
+
+  bool ApplyPendingHistoryRestoreScrollOffset() override;
+
  private:
   bool NeedsScrollbarReconstruction() const;
 
@@ -722,6 +732,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   ScrollingBackgroundDisplayItemClient
       scrolling_background_display_item_client_;
+  base::Optional<HistoryItem::ViewState> pending_view_state_;
 };
 
 DEFINE_TYPE_CASTS(PaintLayerScrollableArea,
