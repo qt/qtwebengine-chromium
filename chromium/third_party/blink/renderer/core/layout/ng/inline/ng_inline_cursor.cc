@@ -37,7 +37,7 @@ void NGInlineCursor::SetRoot(const NGFragmentItems& items) {
 
 void NGInlineCursor::SetRoot(const NGPaintFragment& root_paint_fragment) {
   DCHECK(&root_paint_fragment);
-  DCHECK(!HasRoot());
+  // DCHECK(!HasRoot());
   root_paint_fragment_ = &root_paint_fragment;
   current_paint_fragment_ = root_paint_fragment.FirstChild();
 }
