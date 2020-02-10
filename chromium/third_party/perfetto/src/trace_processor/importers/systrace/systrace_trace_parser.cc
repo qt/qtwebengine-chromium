@@ -19,6 +19,7 @@
 #include "perfetto/ext/base/string_utils.h"
 #include "src/trace_processor/trace_sorter.h"
 
+#include <cctype>
 #include <inttypes.h>
 #include <cctype>
 #include <string>

@@ -204,8 +204,8 @@ class ReusingTextShaper final {
       return shape_results;
     for (const NGInlineItem *item = std::lower_bound(
              reusable_items_->begin(), reusable_items_->end(), start_offset,
-             [](const NGInlineItem&item, unsigned offset) {
-               return item.EndOffset() <= offset;
+             [](const NGInlineItem& this_item, unsigned offset) {
+               return this_item.EndOffset() <= offset;
              });
          item != reusable_items_->end(); ++item) {
       if (end_offset <= item->StartOffset())

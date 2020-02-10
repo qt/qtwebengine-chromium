@@ -220,9 +220,10 @@ using IsValidTrait = disjunction<std::is_constructible<ValidTraits, T>,
 //   MoreValidTraits(MyOtherTrait);
 //   ...
 // };
+
 template <class ValidTraits, class... ArgTypes>
 using AreValidTraits =
-    bool_constant<all_of({IsValidTrait<ValidTraits, ArgTypes>::value...})>;
+    bool_constant<if_all<IsValidTrait<ValidTraits, ArgTypes>...>::value>;
 
 // Helper to make getting an enum from a trait more readable.
 template <typename Enum, typename... Args>
