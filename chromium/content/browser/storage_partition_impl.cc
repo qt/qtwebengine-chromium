@@ -2609,11 +2609,15 @@ void StoragePartitionImpl::GetQuotaSettings(
 }
 
 void StoragePartitionImpl::InitNetworkContext() {
+  if (network_context_.is_bound()) {
+    network_context_.set_disconnect_handler(base::OnceClosure());
+    network_context_.reset();
+    network_context_client_receiver_.reset();
+  }
   network_context_ = GetContentClient()->browser()->CreateNetworkContext(
       browser_context_, is_in_memory_, relative_partition_path_);
   DCHECK(network_context_);
 
-  network_context_client_receiver_.reset();
   network_context_->SetClient(
       network_context_client_receiver_.BindNewPipeAndPassRemote());
   network_context_.set_disconnect_handler(base::BindOnce(
