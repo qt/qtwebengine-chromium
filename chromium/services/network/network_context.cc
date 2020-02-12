@@ -1247,6 +1247,11 @@ void NetworkContext::SetAcceptLanguage(const std::string& new_accept_language) {
   user_agent_settings_->set_accept_language(new_accept_language);
 }
 
+void NetworkContext::SetUserAgent(const std::string& new_user_agent) {
+  DCHECK(user_agent_settings_);
+  user_agent_settings_->set_user_agent(new_user_agent);
+}
+
 void NetworkContext::SetEnableReferrers(bool enable_referrers) {
   // This may only be called on NetworkContexts created with the constructor
   // that calls MakeURLRequestContext().
