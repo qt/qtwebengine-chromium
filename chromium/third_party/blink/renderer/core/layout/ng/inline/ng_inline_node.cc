@@ -1791,7 +1791,7 @@ static LayoutUnit ComputeContentSize(
     }
     *max_size_out = max_size_from_min_size.Finish(items_data.items.end());
     // Check the max size matches to the value computed from 2 pass.
-#if DCHECK_IS_ON()
+#if DCHECK_IS_ON() && !defined(TOOLKIT_QT)
     LayoutUnit content_size = ComputeContentSize(
         node, container_writing_mode, space, float_input,
         NGLineBreakerMode::kMaxContent, max_size_cache, nullptr, nullptr);
