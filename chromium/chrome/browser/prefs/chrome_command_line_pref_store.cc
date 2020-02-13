@@ -20,19 +20,26 @@
 #include "build/build_config.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_sync/browser_sync_switches.h"
-#include "components/language/core/browser/pref_names.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
-#include "components/safe_browsing/core/common/safebrowsing_switches.h"
-#include "components/sync/base/pref_names.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/public/common/content_switches.h"
 #include "net/base/port_util.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 #include "ui/gl/gl_switches.h"
+
+#if BUILDFLAG(ENABLE_SPELLCHECK)
+#include "components/language/core/browser/pref_names.h"
+#endif
+
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/browser_sync/browser_sync_switches.h"
+#include "components/language/core/browser/pref_names.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+#include "components/safe_browsing/core/common/safebrowsing_switches.h"
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_pref_names.h"
@@ -47,8 +54,10 @@
 
 const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::string_switch_map_[] = {
+#if BUILDFLAG(ENABLE_SPELLCHECK)
         {switches::kLang, language::prefs::kApplicationLocale},
         {switches::kAcceptLang, language::prefs::kSelectedLanguages},
+#endif
         {switches::kAuthServerAllowlist, prefs::kAuthServerAllowlist},
         {switches::kSSLVersionMin, prefs::kSSLVersionMin},
         {switches::kSSLVersionMax, prefs::kSSLVersionMax},
@@ -68,7 +77,9 @@ const CommandLinePrefStore::SwitchToPreferenceMapEntry
 const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::path_switch_map_[] = {
       { switches::kDiskCacheDir, prefs::kDiskCacheDir },
+#if !BUILDFLAG(IS_QTWEBENGINE)
       { switches::kLocalSyncBackendDir, syncer::prefs::kLocalSyncBackendDir },
+#endif
 };
 
 const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
@@ -82,17 +93,19 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
         {switches::kAllowCrossOriginAuthPrompt,
          prefs::kAllowCrossOriginAuthPrompt, true},
         {switches::kDisablePrintPreview, prefs::kPrintPreviewDisabled, true},
+#if !BUILDFLAG(IS_QTWEBENGINE)
         {safe_browsing::switches::kSbEnableEnhancedProtection,
          prefs::kSafeBrowsingEnhanced, true},
-#if BUILDFLAG(IS_CHROMEOS)
         {ash::switches::kEnableTouchpadThreeFingerClick,
          ash::prefs::kEnableTouchpadThreeFingerClick, true},
         {switches::kEnableUnifiedDesktop,
          prefs::kUnifiedDesktopEnabledByDefault, true},
         {ash::switches::kEnableCastReceiver, prefs::kCastReceiverEnabled, true},
 #endif
+#if !BUILDFLAG(IS_QTWEBENGINE)
         {switches::kEnableLocalSyncBackend,
          syncer::prefs::kEnableLocalSyncBackend, true},
+#endif
 #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
         {switches::kUseSystemDefaultPrinter,
          prefs::kPrintPreviewUseSystemDefaultPrinter, true},
