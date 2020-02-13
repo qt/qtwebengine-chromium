@@ -12,6 +12,7 @@
 #include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "third_party/blink/renderer/core/dom/text_diff_range.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -2309,7 +2310,7 @@ static LayoutUnit ComputeContentSize(InlineNode node,
     }
     *max_size_out = max_size_from_min_size.Finish();
 
-#if EXPENSIVE_DCHECKS_ARE_ON()
+#if EXPENSIVE_DCHECKS_ARE_ON() && !BUILDFLAG(IS_QTWEBENGINE)
     // Check the max size matches to the value computed from 2 pass.
     LayoutUnit content_size = ComputeContentSize(
         node, container_writing_mode, space, float_input,
