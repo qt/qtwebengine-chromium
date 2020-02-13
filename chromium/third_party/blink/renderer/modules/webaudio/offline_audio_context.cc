@@ -319,8 +319,9 @@ ScriptPromise OfflineAudioContext::resumeContext(ScriptState* script_state) {
     return promise;
   }
 
-  // If the context is in a closed state, reject the promise.
-  if (ContextState() == AudioContextState::kClosed) {
+  // If the context is in a closed state or it really is closed (cleared),
+  // reject the promise.
+  if (IsContextClosed()) {
     resolver->Reject(
         DOMException::Create(DOMExceptionCode::kInvalidStateError,
                              "cannot resume a closed offline context"));
