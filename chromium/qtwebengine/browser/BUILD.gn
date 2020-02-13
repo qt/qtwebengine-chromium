@@ -62,6 +62,7 @@ source_set("qtwebengine_packaged_service_manifests") {
 
   deps = [
     "//base",
+    "//components/spellcheck:buildflags",
     "//services/service_manager/public/cpp",
   ]
   if (enable_spellcheck) {
@@ -77,6 +78,7 @@ source_set("qtwebengine_renderer_manifest") {
 
   deps = [
     "//base",
+    "//components/spellcheck:buildflags",
     "//services/service_manager/public/cpp",
   ]
   if (enable_spellcheck) {
