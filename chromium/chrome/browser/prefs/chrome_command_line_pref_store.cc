@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "ash/constants/ash_switches.h"
 #include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
@@ -21,32 +20,41 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/ash/borealis/borealis_prefs.h"
-#include "chrome/browser/ash/borealis/borealis_switches.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_sync/browser_sync_switches.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
-#include "components/language/core/browser/pref_names.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
-#include "components/safe_browsing/core/common/safebrowsing_switches.h"
-#include "components/sync/base/pref_names.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/public/common/content_switches.h"
 #include "net/base/port_util.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 
+#if BUILDFLAG(ENABLE_SPELLCHECK)
+#include "components/language/core/browser/pref_names.h"
+#endif
+
+#if !defined(TOOLKIT_QT)
+#include "components/browser_sync/browser_sync_switches.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_switches.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+#include "components/safe_browsing/core/common/safebrowsing_switches.h"
+#include "components/sync/base/pref_names.h"
+#endif
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/constants/ash_switches.h"
+#include "chrome/browser/ash/borealis/borealis_prefs.h"
+#include "chrome/browser/ash/borealis/borealis_switches.h"
 #endif
 
 const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::string_switch_map_[] = {
+#if BUILDFLAG(ENABLE_SPELLCHECK)
         {switches::kLang, language::prefs::kApplicationLocale},
+#endif
         {switches::kAuthServerAllowlist, prefs::kAuthServerAllowlist},
         {switches::kSSLVersionMin, prefs::kSSLVersionMin},
         {switches::kSSLVersionMax, prefs::kSSLVersionMax},
@@ -64,7 +72,9 @@ const CommandLinePrefStore::SwitchToPreferenceMapEntry
 const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::path_switch_map_[] = {
       { switches::kDiskCacheDir, prefs::kDiskCacheDir },
+#if !defined(TOOLKIT_QT)
       { switches::kLocalSyncBackendDir, syncer::prefs::kLocalSyncBackendDir },
+#endif
 };
 
 const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
@@ -78,8 +88,10 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
         {switches::kAllowCrossOriginAuthPrompt,
          prefs::kAllowCrossOriginAuthPrompt, true},
         {switches::kDisablePrintPreview, prefs::kPrintPreviewDisabled, true},
+#if !defined(TOOLKIT_QT)
         {safe_browsing::switches::kSbEnableEnhancedProtection,
          prefs::kSafeBrowsingEnhanced, true},
+#endif
 #if BUILDFLAG(IS_CHROMEOS_ASH)
         {chromeos::switches::kEnableTouchpadThreeFingerClick,
          prefs::kEnableTouchpadThreeFingerClick, true},
@@ -88,8 +100,10 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
         {chromeos::switches::kEnableCastReceiver, prefs::kCastReceiverEnabled,
          true},
 #endif
+#if !defined(TOOLKIT_QT)
         {switches::kEnableLocalSyncBackend,
          syncer::prefs::kEnableLocalSyncBackend, true},
+#endif
 #if !BUILDFLAG(IS_CHROMEOS_ASH) && !defined(OS_ANDROID)
         {switches::kUseSystemDefaultPrinter,
          prefs::kPrintPreviewUseSystemDefaultPrinter, true},
