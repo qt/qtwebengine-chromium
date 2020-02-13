@@ -2013,7 +2013,7 @@ static LayoutUnit ComputeContentSize(InlineNode node,
     }
     *max_size_out = max_size_from_min_size.Finish(items_data.items.end());
 
-#if EXPENSIVE_DCHECKS_ARE_ON()
+#if EXPENSIVE_DCHECKS_ARE_ON() && !defined(TOOLKIT_QT)
     // Check the max size matches to the value computed from 2 pass.
     LayoutUnit content_size = ComputeContentSize(
         node, container_writing_mode, space, float_input,
