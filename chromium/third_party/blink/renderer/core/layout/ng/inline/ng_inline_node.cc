@@ -1296,12 +1296,14 @@ static LayoutUnit ComputeContentSize(
 
   if (mode == NGLineBreakerMode::kMinContent) {
     *max_size_out = max_size_from_min_size.Finish(items_data.items.end());
+#ifndef TOOLKIT_QT
     // Check the max size matches to the value computed from 2 pass.
     DCHECK_EQ(**max_size_out,
               ComputeContentSize(node, container_writing_mode, input,
                                  NGLineBreakerMode::kMaxContent, max_size_cache,
                                  nullptr))
         << node.GetLayoutBox();
+#endif
   }
 
   return result;
