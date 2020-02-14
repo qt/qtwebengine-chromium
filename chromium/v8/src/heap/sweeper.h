@@ -90,7 +90,8 @@ class Sweeper {
   void ScheduleIncrementalSweepingTask();
 
   int RawSweep(Page* p, FreeListRebuildingMode free_list_mode,
-               FreeSpaceTreatmentMode free_space_mode);
+               FreeSpaceTreatmentMode free_space_mode,
+               const base::MutexGuard& page_guard);
 
   // After calling this function sweeping is considered to be in progress
   // and the main thread can sweep lazily, but the background sweeper tasks
