@@ -47,6 +47,7 @@ config("inside_blink") {
   } else {
     cflags += [
       "/wd4101",
+      "/wd4805",
     ]
   }
   if (is_clang) {
