@@ -30,5 +30,11 @@ const base::Feature kNestedWorkers{"NestedWorkers",
 const base::Feature kServiceWorkerServicification{
     "ServiceWorkerServicification", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// The kill-switch for the fix for https://crbug.com/1051439.
+// TODO(crbug.com/1053369): Remove this around M84.
+const base::Feature kSuppressContentTypeForBeaconMadeWithArrayBufferView{
+    "SuppressContentTypeForBeaconMadeWithArrayBufferView",
+    base::FEATURE_ENABLED_BY_DEFAULT};
+
 }  // namespace features
 }  // namespace blink

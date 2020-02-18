@@ -18,6 +18,9 @@ BLINK_COMMON_EXPORT extern const base::Feature kMojoBlobURLs;
 BLINK_COMMON_EXPORT extern const base::Feature kServiceWorkerServicification;
 BLINK_COMMON_EXPORT extern const base::Feature kNestedWorkers;
 
+BLINK_COMMON_EXPORT extern const base::Feature
+    kSuppressContentTypeForBeaconMadeWithArrayBufferView;
+
 }  // namespace features
 }  // namespace blink
 
