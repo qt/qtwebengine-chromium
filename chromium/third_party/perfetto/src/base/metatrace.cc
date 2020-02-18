@@ -84,11 +84,9 @@ void Disable() {
 
 // static
 void RingBuffer::Reset() {
-  static_assert(PERFETTO_IS_TRIVIALLY_CONSTRUCTIBLE(Record) &&
-                    std::is_trivially_destructible<Record>::value,
-                "Record must be trivial");
-  memset(&records_[0], 0, sizeof(records_));
-  memset(&bankruptcy_record_, 0, sizeof(bankruptcy_record_));
+  bankruptcy_record_.clear();
+  for (Record& record : records_)
+    record.clear();
   wr_index_ = 0;
   rd_index_ = 0;
   has_overruns_ = false;
