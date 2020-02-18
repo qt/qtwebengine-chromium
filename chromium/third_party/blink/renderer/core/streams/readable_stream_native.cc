@@ -1333,7 +1333,7 @@ void ReadableStreamNative::Initialize(ReadableStreamNative* stream) {
   // initialised correctly.
   // https://streams.spec.whatwg.org/#initialize-readable-stream
   // 1. Set stream.[[state]] to "readable".
-  DCHECK_EQ(stream->state_, kReadable);
+  CHECK_EQ(stream->state_, kReadable);
   // 2. Set stream.[[reader]] and stream.[[storedError]] to undefined.
   DCHECK(!stream->reader_);
   DCHECK(stream->stored_error_.IsEmpty());
@@ -1452,7 +1452,7 @@ StreamPromiseResolver* ReadableStreamNative::AddReadRequest(
   DCHECK(stream->reader_);
 
   // 2. Assert: stream.[[state]] is "readable".
-  DCHECK_EQ(stream->state_, kReadable);
+  CHECK_EQ(stream->state_, kReadable);
 
   // 3. Let promise be a new promise.
   auto* promise = MakeGarbageCollected<StreamPromiseResolver>(script_state);
@@ -1519,7 +1519,7 @@ void ReadableStreamNative::Close(ScriptState* script_state,
                                  ReadableStreamNative* stream) {
   // https://streams.spec.whatwg.org/#readable-stream-close
   // 1. Assert: stream.[[state]] is "readable".
-  DCHECK_EQ(stream->state_, kReadable);
+  CHECK_EQ(stream->state_, kReadable);
 
   // 2. Set stream.[[state]] to "closed".
   stream->state_ = kClosed;
@@ -1606,7 +1606,7 @@ void ReadableStreamNative::Error(ScriptState* script_state,
                                  v8::Local<v8::Value> e) {
   // https://streams.spec.whatwg.org/#readable-stream-error
   // 2. Assert: stream.[[state]] is "readable".
-  DCHECK_EQ(stream->state_, kReadable);
+  CHECK_EQ(stream->state_, kReadable);
   auto* isolate = script_state->GetIsolate();
 
   // 3. Set stream.[[state]] to "errored".

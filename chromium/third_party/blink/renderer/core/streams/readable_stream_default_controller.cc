@@ -110,7 +110,7 @@ void ReadableStreamDefaultController::Close(
 
   // 2. Assert: ! ReadableStreamDefaultControllerCanCloseOrEnqueue(controller)
   //    is true.
-  DCHECK(CanCloseOrEnqueue(controller));
+  CHECK(CanCloseOrEnqueue(controller));
 
   // 3. Set controller.[[closeRequested]] to true.
   controller->is_close_requested_ = true;
@@ -136,7 +136,7 @@ void ReadableStreamDefaultController::Enqueue(
 
   // 2. Assert: ! ReadableStreamDefaultControllerCanCloseOrEnqueue(controller)
   //    is true.
-  DCHECK(CanCloseOrEnqueue(controller));
+  CHECK(CanCloseOrEnqueue(controller));
 
   // 3. If ! IsReadableStreamLocked(stream) is true and !
   //    ReadableStreamGetNumReadRequests(stream) > 0, perform !
@@ -261,7 +261,7 @@ const char* ReadableStreamDefaultController::EnqueueExceptionMessage(
   if (state == ReadableStreamNative::kErrored) {
     return "Cannot enqueue a chunk into an errored readable stream";
   }
-  DCHECK(state == ReadableStreamNative::kClosed);
+  CHECK(state == ReadableStreamNative::kClosed);
   return "Cannot enqueue a chunk into a closed readable stream";
 }
 
