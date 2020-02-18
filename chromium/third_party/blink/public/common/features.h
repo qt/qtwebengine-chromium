@@ -152,6 +152,9 @@ BLINK_COMMON_EXPORT extern const base::Feature kLowLatencyCanvas2dImageChromium;
 BLINK_COMMON_EXPORT extern const base::Feature kLowLatencyCanvas2dSwapChain;
 BLINK_COMMON_EXPORT extern const base::Feature kLowLatencyWebGLSwapChain;
 
+BLINK_COMMON_EXPORT extern const base::Feature
+    kSuppressContentTypeForBeaconMadeWithArrayBufferView;
+
 }  // namespace features
 }  // namespace blink
 
