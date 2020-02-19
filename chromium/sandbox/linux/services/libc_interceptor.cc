@@ -38,6 +38,7 @@
 #include "base/sanitizer_buildflags.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 
 #if BUILDFLAG(USING_SANITIZER) && !defined(COMPONENT_BUILD)
 // Sanitizers may override certain libc functions with a weak symbol that points
@@ -271,6 +272,7 @@ static void InitLibcLocaltimeFunctionsImpl() {
   g_libc_localtime64_r =
       reinterpret_cast<LocaltimeRFunction>(dlsym(RTLD_NEXT, "localtime64_r"));
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!g_libc_localtime || !g_libc_localtime_r) {
     // https://bugs.chromium.org/p/chromium/issues/detail?id=16800
     //
@@ -282,6 +284,7 @@ static void InitLibcLocaltimeFunctionsImpl() {
                   " time related functions to misbehave. "
                   "https://bugs.chromium.org/p/chromium/issues/detail?id=16800";
   }
+#endif
 
   if (!g_libc_localtime)
     g_libc_localtime = gmtime;
