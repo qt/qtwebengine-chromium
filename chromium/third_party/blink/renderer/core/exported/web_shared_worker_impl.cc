@@ -151,6 +151,7 @@ void WebSharedWorkerImpl::ConnectTaskOnWorkerThread(
 void WebSharedWorkerImpl::StartWorkerContext(
     const WebURL& script_request_url,
     const WebString& name,
+    WebSecurityOrigin constructor_origin,
     const WebString& user_agent,
     const WebString& content_security_policy,
     network::mojom::ContentSecurityPolicyType policy_type,
@@ -161,6 +162,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
     mojo::ScopedMessagePipeHandle browser_interface_broker,
     bool pause_worker_context_on_start) {
   DCHECK(IsMainThread());
+  CHECK(constructor_origin.Get()->CanAccessSharedWorkers());
 
   // Creates 'outside settings' used in the "Processing model" algorithm in the
   // HTML spec:
@@ -169,15 +171,13 @@ void WebSharedWorkerImpl::StartWorkerContext(
   // TODO(nhiroki): According to the spec, the 'outside settings' should
   // correspond to the Document that called 'new SharedWorker()'. The browser
   // process should pass it up to here.
-  scoped_refptr<const SecurityOrigin> starter_origin =
-      SecurityOrigin::Create(script_request_url);
   auto* outside_settings_object =
       MakeGarbageCollected<FetchClientSettingsObjectSnapshot>(
           /*global_object_url=*/script_request_url,
-          /*base_url=*/script_request_url, starter_origin,
+          /*base_url=*/script_request_url, constructor_origin,
           network::mojom::ReferrerPolicy::kDefault,
           /*outgoing_referrer=*/String(),
-          CalculateHttpsState(starter_origin.get()),
+          CalculateHttpsState(constructor_origin.Get()),
           AllowedByNosniff::MimeTypeCheck::kLaxForWorker,
           creation_address_space,
           /*insecure_request_policy=*/kBlockAllMixedContent,
@@ -191,11 +191,10 @@ void WebSharedWorkerImpl::StartWorkerContext(
   // fetch (https://crbug.com/824646).
   mojom::ScriptType script_type = mojom::ScriptType::kClassic;
 
-  bool starter_secure_context =
-      starter_origin->IsPotentiallyTrustworthy() ||
-      SchemeRegistry::SchemeShouldBypassSecureContextCheck(
-          starter_origin->Protocol());
-
+  bool constructor_secure_context =
+      constructor_origin.IsPotentiallyTrustworthy() ||
+       SchemeRegistry::SchemeShouldBypassSecureContextCheck(
+          constructor_origin.Protocol());
   auto worker_settings = std::make_unique<WorkerSettings>(
       false /* disable_reading_from_canvas */,
       false /* strict_mixed_content_checking */,
@@ -211,7 +210,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
       OffMainThreadWorkerScriptFetchOption::kEnabled, name, user_agent,
       std::move(web_worker_fetch_context), Vector<CSPHeaderAndType>(),
       outside_settings_object->GetReferrerPolicy(),
-      outside_settings_object->GetSecurityOrigin(), starter_secure_context,
+      outside_settings_object->GetSecurityOrigin(), constructor_secure_context,
       outside_settings_object->GetHttpsState(),
       MakeGarbageCollected<WorkerClients>(),
       std::make_unique<SharedWorkerContentSettingsProxy>(

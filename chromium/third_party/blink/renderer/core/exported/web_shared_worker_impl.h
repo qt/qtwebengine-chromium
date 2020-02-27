@@ -69,6 +69,7 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
   void StartWorkerContext(
       const WebURL&,
       const WebString& name,
+      WebSecurityOrigin constructor_origin,
       const WebString& user_agent,
       const WebString& content_security_policy,
       network::mojom::ContentSecurityPolicyType,
