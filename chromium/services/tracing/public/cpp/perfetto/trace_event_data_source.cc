@@ -522,14 +522,11 @@ void TraceEventDataSource::Flush(
 }
 
 void TraceEventDataSource::ClearIncrementalState() {
-#ifndef TOOLKIT_QT
   TrackEventThreadLocalEventSink::ClearIncrementalState();
-#endif
 }
 
 ThreadLocalEventSink* TraceEventDataSource::CreateThreadLocalEventSink(
     bool thread_will_flush) {
-#ifndef TOOLKIT_QT
   // The call to CreateTraceWriter() below posts a task which is not allowed
   // while holding |lock_|. Since we have to call it while holding |lock_|, we
   // defer the task posting until after the lock is released.
@@ -555,9 +552,6 @@ ThreadLocalEventSink* TraceEventDataSource::CreateThreadLocalEventSink(
   return new TrackEventThreadLocalEventSink(std::move(trace_writer), session_id,
                                             disable_interning_,
                                             privacy_filtering_enabled_);
-#else
-  return nullptr;
-#endif
 }
 
 // static
