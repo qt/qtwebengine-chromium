@@ -47,7 +47,7 @@ class COMPONENT_EXPORT(TRACING_CPP) InterningIndex {
   //     InterningIndex<char*, std::string> index(1000, 100);
   template <typename... SizeType>
   InterningIndex(SizeType... max_entry_counts)
-      : entry_caches_(std::make_tuple<IndexCache<ValueTypes>...>(max_entry_counts...)) {}
+      : entry_caches_(max_entry_counts...) {}
 
   // Returns the entry for the given interned |value|, adding it to the index if
   // it didn't exist previously or was evicted from the index. Entries may be

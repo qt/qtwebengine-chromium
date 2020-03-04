@@ -12,13 +12,10 @@
 #include "components/tracing/common/trace_to_console.h"
 #include "components/tracing/common/tracing_switches.h"
 #include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
+#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
 #include "services/tracing/public/cpp/trace_event_agent.h"
 #include "services/tracing/public/cpp/trace_event_args_whitelist.h"
 #include "services/tracing/public/cpp/tracing_features.h"
-
-#ifndef TOOLKIT_QT
-#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
-#endif
 
 namespace tracing {
 namespace {
@@ -45,7 +42,6 @@ void EnableStartupTracingIfNeeded() {
   // Ensure TraceLog is initialized first.
   // https://crbug.com/764357
   auto* trace_log = TraceLog::GetInstance();
-#ifndef TOOLKIT_QT
   auto* startup_config = TraceStartupConfig::GetInstance();
 
   if (startup_config->IsEnabled()) {
@@ -82,9 +78,7 @@ void EnableStartupTracingIfNeeded() {
     if (!trace_config.event_filters().empty())
       modes |= TraceLog::FILTERING_MODE;
     trace_log->SetEnabled(trace_config, modes);
-  } else
-#endif
-    if (command_line.HasSwitch(switches::kTraceToConsole)) {
+  } else if (command_line.HasSwitch(switches::kTraceToConsole)) {
     // TODO(eseckler): Remove ability to trace to the console, perfetto doesn't
     // support this and noone seems to use it.
     TraceConfig trace_config = GetConfigForTraceToConsole();

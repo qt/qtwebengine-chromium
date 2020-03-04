@@ -20,12 +20,9 @@
 #include "build/build_config.h"
 #include "services/tracing/public/cpp/perfetto/perfetto_traced_process.h"
 #include "services/tracing/public/cpp/perfetto/trace_event_data_source.h"
+#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
 #include "services/tracing/public/cpp/trace_event_args_whitelist.h"
 #include "services/tracing/public/cpp/tracing_features.h"
-
-#ifndef TOOLKIT_QT
-#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
-#endif
 
 namespace {
 
@@ -61,9 +58,7 @@ TraceEventAgent::TraceEventAgent()
 
   PerfettoTracedProcess::Get()->AddDataSource(
       TraceEventDataSource::GetInstance());
-#ifndef TOOLKIT_QT
   TracingSamplerProfiler::RegisterDataSource();
-#endif
 }
 
 TraceEventAgent::~TraceEventAgent() = default;
