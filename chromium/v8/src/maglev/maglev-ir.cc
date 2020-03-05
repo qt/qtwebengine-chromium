@@ -8069,6 +8069,8 @@ template class CheckedNumberOrOddballToFloat64OrHoleyFloat64<
 template class CheckedNumberOrOddballToFloat64OrHoleyFloat64<
     CheckedNumberOrOddballToHoleyFloat64, ValueRepresentation::kHoleyFloat64>;
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

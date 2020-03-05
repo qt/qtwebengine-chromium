@@ -21,7 +21,7 @@ namespace {
 
 constexpr char kTracingCategory[] = "cc,benchmark,input,input.scrolling";
 
-bool IsTracingEnabled() {
+bool IsTracingEnabled2() {
   bool enabled;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(kTracingCategory, &enabled);
   return enabled;
@@ -221,7 +221,7 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
     std::optional<int64_t> display_trace_id) {
   // As there are multiple teardown paths for EventMetrics, we want to denote
   // the attempt to trace, even if tracing is currently disabled.
-  if (IsTracingEnabled()) {
+  if (IsTracingEnabled2()) {
     RecordEventLatencyTraceEventInternal(event_metrics, termination_time, args,
                                          stage_history, viz_breakdown,
                                          display_trace_id);
@@ -231,7 +231,7 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
 
 // static
 bool EventLatencyTracingRecorder::IsEventLatencyTracingEnabled() {
-  return IsTracingEnabled() ||
+  return IsTracingEnabled2() ||
          !base::FeatureList::IsEnabled(
              ::features::kMetricsTracingCalculationReduction);
 }

@@ -112,10 +112,10 @@ using ::attribution_reporting::SuitableOrigin;
 using ::attribution_reporting::mojom::SourceType;
 using ::attribution_reporting::mojom::TriggerDataMatching;
 
-const base::FilePath::CharType kDatabasePath[] =
+const base::FilePath::CharType kDatabasePathASS[] =
     FILE_PATH_LITERAL("Conversions");
 
-constexpr int64_t kUnsetRecordId = -1;
+constexpr int64_t kUnsetRecordIdASS = -1;
 
 void RecordInitializationStatus(
     const AttributionStorageSql::InitStatus status) {
@@ -517,7 +517,7 @@ AttributionStorageSql::ReadSourceToAttribute(StoredSource::Id source_id) {
 namespace {
 
 base::FilePath DatabasePath(const base::FilePath& user_data_directory) {
-  return user_data_directory.Append(kDatabasePath);
+  return user_data_directory.Append(kDatabasePathASS);
 }
 
 void AssignSourceForDeactivationOrDeletion(
@@ -2697,7 +2697,7 @@ AttributionStorageSql::StoreNullReport(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   return StoreAttributionReport(
-      kUnsetRecordId, trigger_time, initial_report_time, external_report_id,
+      kUnsetRecordIdASS, trigger_time, initial_report_time, external_report_id,
       trigger_debug_key, context_origin, reporting_origin,
       AttributionReport::Type::kNullAggregatable,
       SerializeNullAggregatableReportMetadata(

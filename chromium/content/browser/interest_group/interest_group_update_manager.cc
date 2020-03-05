@@ -1029,7 +1029,7 @@ void InterestGroupUpdateManager::UpdateInterestGroupByBatch(
   // If feature kGroupNIKByJoiningOriginPerOwner is not enabled, use one single
   // NIK for all storage interest groups.
   net::IsolationInfo per_update_isolation_info;
-  if (!base::FeatureList::IsEnabled(features::kGroupNIKByJoiningOrigin)) {
+  if (!base::FeatureList::IsEnabled(::features::kGroupNIKByJoiningOrigin)) {
     per_update_isolation_info =
         net::IsolationInfo::CreateTransient(/*nonce=*/std::nullopt);
   }
@@ -1047,7 +1047,7 @@ void InterestGroupUpdateManager::UpdateInterestGroupByBatch(
     resource_request->request_initiator = owner;
     resource_request->trusted_params =
         network::ResourceRequest::TrustedParams();
-    if (base::FeatureList::IsEnabled(features::kGroupNIKByJoiningOrigin)) {
+    if (base::FeatureList::IsEnabled(::features::kGroupNIKByJoiningOrigin)) {
       resource_request->trusted_params->isolation_info =
           *owners_to_update_.GetIsolationInfoByJoiningOrigin(joining_origin);
     } else {
@@ -1089,7 +1089,7 @@ void InterestGroupUpdateManager::UpdateInterestGroupByBatch(
   // process being updated in the next batch with the same isolation
   // information, clear the `joining_origin_isolation_info_map_` when mixed
   // joining origins are detected in a single update batch.
-  if (base::FeatureList::IsEnabled(features::kGroupNIKByJoiningOrigin)) {
+  if (base::FeatureList::IsEnabled(::features::kGroupNIKByJoiningOrigin)) {
     if (update_parameters.size() > 1 &&
         !update_parameters.at(0).joining_origin.IsSameOriginWith(
             update_parameters.back().joining_origin)) {
@@ -1114,7 +1114,7 @@ void InterestGroupUpdateManager::DidUpdateInterestGroupsOfOwnerDbLoad(
     return;
   }
 
-  if (!base::FeatureList::IsEnabled(features::kGroupNIKByJoiningOrigin)) {
+  if (!base::FeatureList::IsEnabled(::features::kGroupNIKByJoiningOrigin)) {
     update_parameters.resize(std::min(
         update_parameters.size(), static_cast<size_t>(max_parallel_updates_)));
     DCHECK_LE(update_parameters.size(),

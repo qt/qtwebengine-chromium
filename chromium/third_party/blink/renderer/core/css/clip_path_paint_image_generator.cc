@@ -11,15 +11,15 @@ namespace blink {
 namespace {
 
 ClipPathPaintImageGenerator::ClipPathPaintImageGeneratorCreateFunction*
-    g_create_function = nullptr;
+    g_create_function2 = nullptr;
 
 }  // namespace
 
 // static
 void ClipPathPaintImageGenerator::Init(
     ClipPathPaintImageGeneratorCreateFunction* create_function) {
-  DCHECK(!g_create_function);
-  g_create_function = create_function;
+  DCHECK(!g_create_function2);
+  g_create_function2 = create_function;
 }
 
 // static
@@ -34,9 +34,9 @@ gfx::RectF ClipPathPaintImageGenerator::GetAnimationBoundingRect() {
 
 ClipPathPaintImageGenerator* ClipPathPaintImageGenerator::Create(
     LocalFrame& local_root) {
-  DCHECK(g_create_function);
+  DCHECK(g_create_function2);
   DCHECK(local_root.IsLocalRoot());
-  return g_create_function(local_root);
+  return g_create_function2(local_root);
 }
 
 }  // namespace blink

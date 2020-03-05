@@ -1181,7 +1181,7 @@ WebViewGuest::WebViewGuest(content::RenderFrameHost* owner_rfh)
           ExtensionsAPIClient::Get()->CreateWebViewGuestDelegate(this))),
       is_spatial_navigation_enabled_(
           base::CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kEnableSpatialNavigation)) {
+              ::switches::kEnableSpatialNavigation)) {
   if (IsOwnedByControlledFrameEmbedder()) {
     page_load_metrics::MetricsWebContentsObserver::RecordFeatureUsage(
         owner_rfh, blink::mojom::WebFeature::kControlledFrameElement);

@@ -57,7 +57,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialUserEntity {
   SerializationOpts serialization_options;
 };
 
-cbor::Value AsCBOR(const PublicKeyCredentialUserEntity&);
+::cbor::Value AsCBOR(const PublicKeyCredentialUserEntity&);
 
 }  // namespace device
 

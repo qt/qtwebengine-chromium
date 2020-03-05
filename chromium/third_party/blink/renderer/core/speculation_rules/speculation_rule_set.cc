@@ -113,7 +113,7 @@ bool IsValidBrowsingContextNameOrKeyword(const String& name_or_keyword) {
 
 // If `out_error` is provided and hasn't already had a message set, sets it to
 // `message`.
-void SetParseErrorMessage(String* out_error, String message) {
+void SetParseErrorMessage2(String* out_error, String message) {
   if (out_error && out_error->IsNull()) {
     *out_error = message;
   }
@@ -137,7 +137,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
   for (wtf_size_t i = 0; i < input->size(); ++i) {
     const String& input_key = input->at(i).first;
     if (!base::Contains(kKnownKeys, input_key)) {
-      SetParseErrorMessage(
+      SetParseErrorMessage2(
           out_error, "A rule contains an unknown key: \"" + input_key + "\".");
       return nullptr;
     }
@@ -149,7 +149,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
   String source;
   if (source_value) {
     if (!source_value->AsString(&source)) {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "The value of the \"source\" key must be a string.");
       return nullptr;
     }
@@ -166,12 +166,12 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     } else if (!has_urls && has_where) {
       source = "document";
     } else if (has_urls && has_where) {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "A rule with no explicit \"source\" must specify "
                            "\"urls\" or a \"where\" condition, but not both.");
       return nullptr;
     } else {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "A rule with no explicit \"source\" must specify "
                            "one of \"urls\" or \"where\".");
       return nullptr;
@@ -179,7 +179,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
   }
 
   if (source != "list" && source != "document") {
-    SetParseErrorMessage(out_error,
+    SetParseErrorMessage2(out_error,
                          "A rule has an unknown source: \"" + source + "\".");
     return nullptr;
   }
@@ -188,7 +188,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
   if (source == "list") {
     // If input["where"] exists, then return null.
     if (input->Get("where")) {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "A list rule may not have document rule matchers.");
       return nullptr;
     }
@@ -203,7 +203,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
       // "document", then return null.
       if (!relative_to->AsString(&value) ||
           !base::Contains(kKnownRelativeToValues, value)) {
-        SetParseErrorMessage(out_error,
+        SetParseErrorMessage2(out_error,
                              "A rule has an unknown \"relative_to\" value.");
         return nullptr;
       }
@@ -219,7 +219,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     // is not a string, then return null.
     JSONArray* input_urls = input->GetArray("urls");
     if (!input_urls) {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "A list rule must have a \"urls\" array.");
       return nullptr;
     }
@@ -229,7 +229,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     for (wtf_size_t i = 0; i < input_urls->size(); ++i) {
       String url_string;
       if (!input_urls->at(i)->AsString(&url_string)) {
-        SetParseErrorMessage(out_error, "URLs must be given as strings.");
+        SetParseErrorMessage2(out_error, "URLs must be given as strings.");
         return nullptr;
       }
 
@@ -247,7 +247,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
   if (source == "document") {
     // If input["urls"] exists, then return null.
     if (input->Get("urls")) {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "A document rule cannot have a \"urls\" key.");
       return nullptr;
     }
@@ -255,7 +255,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     // "relative_to" outside the "href_matches" clause is not allowed for
     // document rules.
     if (input->Get("relative_to")) {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "A document rule cannot have \"relative_to\" "
                            "outside the \"where\" clause.");
       return nullptr;
@@ -280,7 +280,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
   // If input["requires"] exists, but is not a list, then return null.
   JSONValue* requirements = input->Get("requires");
   if (requirements && requirements->GetType() != JSONValue::kTypeArray) {
-    SetParseErrorMessage(out_error, "\"requires\" must be an array.");
+    SetParseErrorMessage2(out_error, "\"requires\" must be an array.");
     return nullptr;
   }
 
@@ -291,7 +291,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     for (wtf_size_t i = 0; i < requirements_array->size(); ++i) {
       String requirement;
       if (!requirements_array->at(i)->AsString(&requirement)) {
-        SetParseErrorMessage(out_error, "Requirements must be strings.");
+        SetParseErrorMessage2(out_error, "Requirements must be strings.");
         return nullptr;
       }
 
@@ -299,7 +299,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
         requires_anonymous_client_ip =
             SpeculationRule::RequiresAnonymousClientIPWhenCrossOrigin(true);
       } else {
-        SetParseErrorMessage(
+        SetParseErrorMessage2(
             out_error,
             "A rule has an unknown requirement: \"" + requirement + "\".");
         return nullptr;
@@ -318,11 +318,11 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     // Set targetHint to input["target_hint"].
     String target_hint_str;
     if (!target_hint_value->AsString(&target_hint_str)) {
-      SetParseErrorMessage(out_error, "\"target_hint\" must be a string.");
+      SetParseErrorMessage2(out_error, "\"target_hint\" must be a string.");
       return nullptr;
     }
     if (!IsValidBrowsingContextNameOrKeyword(target_hint_str)) {
-      SetParseErrorMessage(out_error,
+      SetParseErrorMessage2(out_error,
                            "A rule has an invalid \"target_hint\": \"" +
                                target_hint_str + "\".");
       return nullptr;
@@ -339,7 +339,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     // If input["referrer_policy"] is not a referrer policy, then return null.
     String referrer_policy_str;
     if (!referrer_policy_value->AsString(&referrer_policy_str)) {
-      SetParseErrorMessage(out_error, "A referrer policy must be a string.");
+      SetParseErrorMessage2(out_error, "A referrer policy must be a string.");
       return nullptr;
     }
 
@@ -349,7 +349,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
       if (!SecurityPolicy::ReferrerPolicyFromString(
               referrer_policy_str, kDoNotSupportReferrerPolicyLegacyKeywords,
               &referrer_policy_out)) {
-        SetParseErrorMessage(out_error,
+        SetParseErrorMessage2(out_error,
                              "A rule has an invalid referrer policy: \"" +
                                  referrer_policy_str + "\".");
         return nullptr;
@@ -366,7 +366,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
   if (JSONValue* eagerness_value = input->Get("eagerness")) {
     String eagerness_str;
     if (!eagerness_value->AsString(&eagerness_str)) {
-      SetParseErrorMessage(out_error, "Eagerness value must be a string.");
+      SetParseErrorMessage2(out_error, "Eagerness value must be a string.");
       return nullptr;
     }
 
@@ -377,7 +377,7 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
     } else if (eagerness_str == "conservative") {
       eagerness = mojom::blink::SpeculationEagerness::kConservative;
     } else {
-      SetParseErrorMessage(
+      SetParseErrorMessage2(
           out_error, "Eagerness value: \"" + eagerness_str + "\" is invalid.");
       return nullptr;
     }
@@ -394,8 +394,8 @@ SpeculationRule* ParseSpeculationRule(JSONObject* input,
       no_vary_search_value) {
     String no_vary_search_str;
     if (!no_vary_search_value->AsString(&no_vary_search_str)) {
-      SetParseErrorMessage(out_error,
-                           "expects_no_vary_search's value must be a string.");
+      SetParseErrorMessage2(out_error,
+                            "expects_no_vary_search's value must be a string.");
       return nullptr;
     }
     // Parse No-Vary-Search hint value.

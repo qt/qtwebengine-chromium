@@ -38,7 +38,7 @@ namespace autofill {
 
 namespace {
 
-constexpr char kSubmissionSourceHistogram[] =
+constexpr char kSubmissionSourceHistogramFT[] =
     "Autofill.SubmissionDetectionSource.FormTracker";
 
 bool ShouldReplaceElementsByRendererIds() {
@@ -358,7 +358,7 @@ void FormTracker::FireFormSubmission(
     // needed.
     return;
   }
-  base::UmaHistogramEnumeration(kSubmissionSourceHistogram, source);
+  base::UmaHistogramEnumeration(kSubmissionSourceHistogramFT, source);
   agent_->OnFormSubmission(source, submitted_form_element);
   switch (source) {
     case mojom::SubmissionSource::PROBABLY_FORM_SUBMITTED:

@@ -576,4 +576,6 @@ StaticCanonicalForLoopMatcher::InvertComparisonOp(CmpOp op) {
   }
 }
 
+#undef TRACE
+
 }  // namespace v8::internal::compiler::turboshaft

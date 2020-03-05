@@ -387,18 +387,18 @@ void UpdateProcessReusePolicyForProcessPerSiteWithMainFrameThreshold(
     return;
   }
   if (!base::FeatureList::IsEnabled(
-          features::kProcessPerSiteUpToMainFrameThreshold)) {
+          ::features::kProcessPerSiteUpToMainFrameThreshold)) {
     return;
   }
   if (!frame_tree_node->IsOutermostMainFrame()) {
     return;
   }
-  if (base::FeatureList::IsEnabled(features::kDisableProcessReuse)) {
+  if (base::FeatureList::IsEnabled(::features::kDisableProcessReuse)) {
     RecordProcessPerSiteWithMainFrameThresholdBlockReason(
         ProcessPerSiteWithMainFrameThresholdBlockReason::kDisableProcessResuse);
     return;
   }
-  if (!features::kProcessPerSiteMainFrameAllowDevToolsAttached.Get() &&
+  if (!::features::kProcessPerSiteMainFrameAllowDevToolsAttached.Get() &&
       RenderFrameDevToolsAgentHost::WasEverAttachedToAnyFrame()) {
     RecordProcessPerSiteWithMainFrameThresholdBlockReason(
         ProcessPerSiteWithMainFrameThresholdBlockReason::
@@ -419,7 +419,7 @@ void UpdateProcessReusePolicyForProcessPerSiteWithMainFrameThreshold(
   // for process reuse to work around the problem, unless a field parameter
   // explicitly allows it.
   const GURL& site_url = site_instance->GetSiteURL();
-  if (!features::kProcessPerSiteMainFrameAllowIPAndLocalhost.Get() &&
+  if (!::features::kProcessPerSiteMainFrameAllowIPAndLocalhost.Get() &&
       (site_url.HostIsIPAddress() || net::IsLocalHostname(site_url.host()))) {
     RecordProcessPerSiteWithMainFrameThresholdBlockReason(
         ProcessPerSiteWithMainFrameThresholdBlockReason::
@@ -627,8 +627,8 @@ void RenderFrameHostManager::InitRoot(
     const std::string& name,
     const base::UnguessableToken& devtools_frame_token) {
   bool is_legacy_browsing_context_state_mode =
-      features::GetBrowsingContextMode() ==
-      features::BrowsingContextStateImplementationType::
+      ::features::GetBrowsingContextMode() ==
+      ::features::BrowsingContextStateImplementationType::
           kLegacyOneToOneWithFrameTreeNode;
   scoped_refptr<BrowsingContextState> browsing_context_state =
       base::MakeRefCounted<BrowsingContextState>(
@@ -677,8 +677,8 @@ void RenderFrameHostManager::InitChild(
     std::string frame_name,
     std::string frame_unique_name) {
   bool is_legacy_browsing_context_state_mode =
-      features::GetBrowsingContextMode() ==
-      features::BrowsingContextStateImplementationType::
+      ::features::GetBrowsingContextMode() ==
+      ::features::BrowsingContextStateImplementationType::
           kLegacyOneToOneWithFrameTreeNode;
   scoped_refptr<BrowsingContextState> browsing_context_state =
       base::MakeRefCounted<BrowsingContextState>(
@@ -1049,14 +1049,14 @@ void RenderFrameHostManager::PrepareForCollectingPage(
   // in FrameTree (which, for example, is shared between the new page and
   // the page entering BFCache), so they have to be collected explicitly above.
   // Since proxies are not collected, we can return early here.
-  if (features::GetBrowsingContextMode() ==
-      features::BrowsingContextStateImplementationType::
+  if (::features::GetBrowsingContextMode() ==
+      ::features::BrowsingContextStateImplementationType::
           kSwapForCrossBrowsingInstanceNavigations) {
     return;
   }
 
-  DCHECK_EQ(features::GetBrowsingContextMode(),
-            features::BrowsingContextStateImplementationType::
+  DCHECK_EQ(::features::GetBrowsingContextMode(),
+            ::features::BrowsingContextStateImplementationType::
                 kLegacyOneToOneWithFrameTreeNode);
 
   // Prepare the proxies.
@@ -1774,14 +1774,14 @@ RenderFrameHostManager::GetFrameHostForNavigation(
         GetFrameHostForNavigationFailed::kBlockedByPendingCommit);
   }
 
-  if (base::FeatureList::IsEnabled(features::kDeferSpeculativeRFHCreation) &&
+  if (base::FeatureList::IsEnabled(::features::kDeferSpeculativeRFHCreation) &&
       !use_current_rfh) {
     DeferSpeculativeRFHAction defer_action =
         DeferSpeculativeRFHAction::kNotDeferred;
     if (CanIntentionallyDeferSpeculativeRFHForRequest(
             request, current_site_instance->GetBrowserContext(),
             frame_tree_node_)) {
-      if (features::kWarmupSpareProcessCreationWhenDeferRFH.Get() &&
+      if (::features::kWarmupSpareProcessCreationWhenDeferRFH.Get() &&
           !dest_site_instance->HasProcess()) {
         SpareRenderProcessHostManagerImpl::Get().WarmupSpare(
             dest_site_instance->GetBrowserContext());
@@ -2660,8 +2660,8 @@ RenderFrameHostManager::ShouldSwapBrowsingInstancesForNavigation(
             current_instance->GetRelatedActiveContentsCount()),
         51);
     if (base::FeatureList::IsEnabled(
-            features::kPrefetchStateContaminationMitigation) &&
-        features::kPrefetchStateContaminationSwapsBrowsingContextGroup.Get()) {
+            ::features::kPrefetchStateContaminationMitigation) &&
+        ::features::kPrefetchStateContaminationSwapsBrowsingContextGroup.Get()) {
       return BrowsingContextGroupSwap::CreateSecuritySwap();
     }
   }
@@ -3005,7 +3005,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
     // this decision. Certain frames have different enough workloads so that
     // it's better to avoid placing a subframe into an existing process for
     // better performance isolation.  See https://crbug.com/899418.
-    if (!base::FeatureList::IsEnabled(features::kDisableProcessReuse) &&
+    if (!base::FeatureList::IsEnabled(::features::kDisableProcessReuse) &&
         GetContentClient()
             ->browser()
             ->ShouldEmbeddedFramesTryToReuseExistingProcess(
@@ -3109,7 +3109,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
                current_instance->GetRelatedActiveContentsCount() == 1) {
       process_to_reuse = current_instance->GetProcess();
     } else if (base::FeatureList::IsEnabled(
-                   features::kProcessReuseOnPrerenderCOOPSwap) &&
+                   ::features::kProcessReuseOnPrerenderCOOPSwap) &&
                frame_tree_node_->frame_tree().is_prerendering()) {
       process_to_reuse = current_instance->GetProcess();
     }
@@ -3516,7 +3516,7 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
   // subframe into the same SiteInstance as the parent. These separate
   // SiteInstances can get assigned to the same process later.
   if (!base::FeatureList::IsEnabled(
-          features::kProcessSharingWithStrictSiteInstances)) {
+          ::features::kProcessSharingWithStrictSiteInstances)) {
     if (!frame_tree_node_->IsMainFrame()) {
       RenderFrameHostImpl* parent = frame_tree_node_->parent();
       auto& parent_isolation_context =
@@ -4086,8 +4086,8 @@ RenderFrameHostManager::CreateRenderFrameHost(
   if (!render_view_host) {
     render_view_host = frame_tree.CreateRenderViewHost(
         site_instance->group(), frame_routing_id, renderer_initiated_creation,
-        features::GetBrowsingContextMode() ==
-                features::BrowsingContextStateImplementationType::
+        ::features::GetBrowsingContextMode() ==
+                ::features::BrowsingContextStateImplementationType::
                     kSwapForCrossBrowsingInstanceNavigations
             ? browsing_context_state
             : nullptr,
@@ -4153,8 +4153,8 @@ bool RenderFrameHostManager::CreateSpeculativeRenderFrameHost(
   }
 
   scoped_refptr<BrowsingContextState> browsing_context_state;
-  if (features::GetBrowsingContextMode() ==
-      features::BrowsingContextStateImplementationType::
+  if (::features::GetBrowsingContextMode() ==
+      ::features::BrowsingContextStateImplementationType::
           kLegacyOneToOneWithFrameTreeNode) {
     browsing_context_state = render_frame_host_->browsing_context_state();
   } else {
@@ -4406,8 +4406,8 @@ void RenderFrameHostManager::CreateRenderFrameProxy(
       render_view_host = frame_tree_node_->frame_tree().CreateRenderViewHost(
           group, /*main_frame_routing_id=*/MSG_ROUTING_NONE,
           /*renderer_initiated_creation=*/false,
-          features::GetBrowsingContextMode() ==
-                  features::BrowsingContextStateImplementationType::
+          ::features::GetBrowsingContextMode() ==
+                  ::features::BrowsingContextStateImplementationType::
                       kSwapForCrossBrowsingInstanceNavigations
               ? render_frame_host_->browsing_context_state()
               : nullptr,
@@ -4859,8 +4859,8 @@ RenderFrameHostManager::GetFrameTokenForSiteInstanceGroup(
   // instance after a browsing instance swap, and we want to ensure that this
   // doesn't break anything, so we tie it to the GetBrowsingContextMode which
   // needs it and is disabled-by-default)
-  if (features::GetBrowsingContextMode() ==
-          features::BrowsingContextStateImplementationType::
+  if (::features::GetBrowsingContextMode() ==
+          ::features::BrowsingContextStateImplementationType::
               kSwapForCrossBrowsingInstanceNavigations &&
       !render_frame_host_->GetSiteInstance()
            ->group()
@@ -5008,8 +5008,8 @@ void RenderFrameHostManager::CommitPending(
     // because in the new implementation, proxies will be swapped/restored
     // whenever the RenderFrameHost (and internal BrowsingContextState) is
     // restored.
-    if (features::GetBrowsingContextMode() ==
-        features::BrowsingContextStateImplementationType::
+    if (::features::GetBrowsingContextMode() ==
+        ::features::BrowsingContextStateImplementationType::
             kLegacyOneToOneWithFrameTreeNode) {
       BrowsingContextState::RenderFrameProxyHostMap proxy_hosts_to_restore =
           pending_stored_page->TakeProxyHosts();

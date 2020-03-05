@@ -73,7 +73,7 @@ class CONTENT_EXPORT BtmDatabase {
   // This is implicitly `inline`. Don't move its definition to the .cc file.
   bool HasExpired(std::optional<base::Time> time) {
     return time.has_value() &&
-           (time.value() + features::kBtmInteractionTtl.Get()) < clock_->Now();
+           (time.value() + ::features::kBtmInteractionTtl.Get()) < clock_->Now();
   }
 
   std::optional<StateValue> Read(const std::string& site);

@@ -520,10 +520,10 @@ bool HasEnoughMemoryForAnotherMainFrame(RenderProcessHost* host,
       private_memory_footprint /
       std::max(main_frame_count, static_cast<size_t>(1));
   uint64_t process_memory_limit = base::saturated_cast<uint64_t>(
-      features::kProcessPerSiteMainFrameTotalMemoryLimit.Get());
+      ::features::kProcessPerSiteMainFrameTotalMemoryLimit.Get());
 
   double frame_size_factor =
-      features::kProcessPerSiteMainFrameSiteScalingFactor.Get();
+      ::features::kProcessPerSiteMainFrameSiteScalingFactor.Get();
   // Check that we have a factor of at least 1.
   if (frame_size_factor < 1.0f) {
     frame_size_factor = 1.0f;
@@ -566,7 +566,7 @@ bool IsBelowReuseResourceThresholds(RenderProcessHost* host,
   if (process_reuse_policy ==
           ProcessReusePolicy::REUSE_PENDING_OR_COMMITTED_SITE_SUBFRAME &&
       !base::FeatureList::IsEnabled(
-          features::kSubframeProcessReuseThresholds)) {
+          ::features::kSubframeProcessReuseThresholds)) {
     return true;
   }
 
@@ -594,7 +594,7 @@ bool IsBelowReuseResourceThresholds(RenderProcessHost* host,
     // If a threshold is specified, don't reuse `host` if it already hosts more
     // main frames (including BFCached and prerendered) than the threshold.
     size_t main_frame_threshold = base::checked_cast<size_t>(
-        features::kProcessPerSiteMainFrameThreshold.Get());
+        ::features::kProcessPerSiteMainFrameThreshold.Get());
     if (main_frame_count >= main_frame_threshold) {
       return false;
     }
@@ -624,7 +624,7 @@ bool IsBelowReuseResourceThresholds(RenderProcessHost* host,
   // would be necessarily added to `host` later if the current frame were
   // allowed to reuse it (e.g., as its subframes), etc.
   uint64_t process_memory_limit = base::saturated_cast<uint64_t>(
-      features::kSubframeProcessReuseMemoryThreshold.Get());
+      ::features::kSubframeProcessReuseMemoryThreshold.Get());
   if (host->GetPrivateMemoryFootprint() < process_memory_limit) {
     return true;
   }
@@ -1427,8 +1427,8 @@ RenderProcessHost* RenderProcessHostImpl::CreateRenderProcessHost(
   if (site_instance &&
       GetContentClient()->browser()->ShouldUseFontDataManager(
           site_instance->GetSiteURL()) &&
-      features::kFontDataServiceTypefaceType.Get() !=
-          features::FontDataServiceTypefaceType::kControlWithoutSpareRenderer) {
+      ::features::kFontDataServiceTypefaceType.Get() !=
+          ::features::FontDataServiceTypefaceType::kControlWithoutSpareRenderer) {
     flags |= RenderProcessFlags::kFontDataManager;
   }
 #endif
@@ -3113,19 +3113,19 @@ bool RenderProcessHostImpl::IsSpareProcessKeptAtAllTimes() {
   // ensure that devices with exactly 1GB of RAM won't get included because of
   // inaccuracies or off-by-one errors.
   if (base::SysInfo::AmountOfPhysicalMemoryMB() <=
-      features::kAndroidSpareRendererMemoryThreshold.Get()) {
+      ::features::kAndroidSpareRendererMemoryThreshold.Get()) {
     return false;
   }
 
   bool android_spare_process_override = base::FeatureList::IsEnabled(
-      features::kAndroidWarmUpSpareRendererWithTimeout);
+      ::features::kAndroidWarmUpSpareRendererWithTimeout);
   if (!SiteIsolationPolicy::UseDedicatedProcessesForAllSites() &&
       !android_spare_process_override) {
     return false;
   }
 
   if (!base::FeatureList::IsEnabled(
-          features::kSpareRendererForSitePerProcess) &&
+          ::features::kSpareRendererForSitePerProcess) &&
       !android_spare_process_override) {
     return false;
   }
@@ -3317,7 +3317,7 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
     command_line->AppendSwitch(switches::kDisallowV8FeatureFlagOverrides);
   }
 
-  if (features::IsTouchTextEditingRedesignEnabled()) {
+  if (::features::IsTouchTextEditingRedesignEnabled()) {
     command_line->AppendSwitchASCII(
         blink::switches::kTouchTextSelectionStrategy,
         blink::switches::kTouchTextSelectionStrategy_Direction);
@@ -4680,7 +4680,7 @@ bool RenderProcessHost::IsProcessLimitReached() {
     // users, as the experiment is configured with "starts_active" set to false
     // (meaning it only collects data from users who reach this code).
 #if !BUILDFLAG(IS_ANDROID)
-    if (base::FeatureList::IsEnabled(features::kRemoveRendererProcessLimit)) {
+    if (base::FeatureList::IsEnabled(::features::kRemoveRendererProcessLimit)) {
       // This is used for tests. To avoid changing test behaviors, don't
       // change the behavior when it is set.
       if (g_max_renderer_count_override) {
@@ -4813,7 +4813,7 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
     case ProcessReusePolicy::
         REUSE_PENDING_OR_COMMITTED_SITE_WITH_MAIN_FRAME_THRESHOLD: {
       CHECK(base::FeatureList::IsEnabled(
-          features::kProcessPerSiteUpToMainFrameThreshold));
+          ::features::kProcessPerSiteUpToMainFrameThreshold));
       render_process_host = FindReusableProcessHostForSiteInstance(
           site_instance, process_reuse_policy);
       if (render_process_host) {
@@ -4892,7 +4892,7 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
     base::UmaHistogramBoolean(
         "BrowserRenderProcessHost.ExistingRendererIsInitializedAndNotDead",
         render_process_host->IsInitializedAndNotDead());
-    if (base::FeatureList::IsEnabled(features::kEnsureExistingRendererAlive)) {
+    if (base::FeatureList::IsEnabled(::features::kEnsureExistingRendererAlive)) {
       render_process_host->Init();
     }
   }
@@ -5392,7 +5392,7 @@ void RenderProcessHostImpl::UpdateProcessPriority() {
     }
 #if BUILDFLAG(IS_MAC)
     if (base::FeatureList::IsEnabled(
-            features::kMacAllowBackgroundingRenderProcesses)) {
+            ::features::kMacAllowBackgroundingRenderProcesses)) {
       child_process_launcher_->SetProcessPriority(process_priority);
     }
 #else   // !BUILDFLAG(IS_MAC)

@@ -17,8 +17,6 @@ using LifecycleState = performance_manager::mojom::LifecycleState;
 
 namespace {
 
-const char kDescriberName[] = "FrozenFrameAggregator";
-
 bool IsFrozen(const FrameNodeImpl* frame_node) {
   return frame_node->GetLifecycleState() == LifecycleState::kFrozen;
 }
@@ -71,7 +69,7 @@ void FrozenFrameAggregator::OnFrameLifecycleStateChanged(
 void FrozenFrameAggregator::OnPassedToGraph(Graph* graph) {
   RegisterObservers(graph);
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "FrozenFrameAggregator");
 }
 
 void FrozenFrameAggregator::OnTakenFromGraph(Graph* graph) {

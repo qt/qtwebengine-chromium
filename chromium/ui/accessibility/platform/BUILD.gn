@@ -27,7 +27,7 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-component("platform") {
+jumbo_component("platform") {
   output_name = "accessibility_platform"
 
   defines = [ "IS_AX_PLATFORM_IMPL" ]

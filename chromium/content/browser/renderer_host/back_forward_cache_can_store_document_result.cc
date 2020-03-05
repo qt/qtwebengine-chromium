@@ -643,7 +643,7 @@ void BackForwardCacheCanStoreDocumentResult::NoDueToDisallowActivation(
 
 void BackForwardCacheCanStoreDocumentResult::NoDueToAXEvents(
     const std::vector<ui::AXEvent>& events) {
-  DCHECK(base::FeatureList::IsEnabled(features::kEvictOnAXEvents));
+  DCHECK(base::FeatureList::IsEnabled(::features::kEvictOnAXEvents));
   for (auto& event : events) {
     ax_events_.insert(event.event_type);
   }

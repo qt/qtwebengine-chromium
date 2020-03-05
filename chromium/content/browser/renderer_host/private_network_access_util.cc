@@ -38,24 +38,24 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
       return FeatureState::kEnabled;
     case RequestContext::kWorker:
       if (!base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForWorkers)) {
+              ::features::kPrivateNetworkAccessForWorkers)) {
         return FeatureState::kDisabled;
       }
 
       if (base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForWorkersWarningOnly)) {
+              ::features::kPrivateNetworkAccessForWorkersWarningOnly)) {
         return FeatureState::kWarningOnly;
       }
 
       return FeatureState::kEnabled;
     case RequestContext::kNavigation:
       if (!base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForNavigations)) {
+              ::features::kPrivateNetworkAccessForNavigations)) {
         return FeatureState::kDisabled;
       }
 
       if (base::FeatureList::IsEnabled(
-              features::kPrivateNetworkAccessForNavigationsWarningOnly)) {
+              ::features::kPrivateNetworkAccessForNavigationsWarningOnly)) {
         return FeatureState::kWarningOnly;
       }
 
@@ -80,7 +80,7 @@ Policy DerivePolicyForNonSecureContext(AddressSpace ip_address_space) {
       // because it is unclear why they happen in the first place. The goal is
       // to reduce instances of this happening before enabling this feature.
       return base::FeatureList::IsEnabled(
-                 features::kBlockInsecurePrivateNetworkRequestsFromUnknown)
+                 ::features::kBlockInsecurePrivateNetworkRequestsFromUnknown)
                  ? Policy::kBlock
                  : Policy::kAllow;
     case AddressSpace::kPrivate:
@@ -89,7 +89,7 @@ Policy DerivePolicyForNonSecureContext(AddressSpace ip_address_space) {
       // This is controlled separately because private network websites face
       // additional hurdles compared to public websites. See crbug.com/1234044.
       return base::FeatureList::IsEnabled(
-                 features::kBlockInsecurePrivateNetworkRequestsFromPrivate)
+                 ::features::kBlockInsecurePrivateNetworkRequestsFromPrivate)
                  ? Policy::kBlock
                  : Policy::kWarn;
     case AddressSpace::kPublic:
@@ -102,7 +102,7 @@ Policy DerivePolicyForNonSecureContext(AddressSpace ip_address_space) {
       // are never considered private network requests - they cannot target
       // more-private address spaces.
       return base::FeatureList::IsEnabled(
-                 features::kBlockInsecurePrivateNetworkRequests)
+                 ::features::kBlockInsecurePrivateNetworkRequests)
                  ? Policy::kBlock
                  : Policy::kWarn;
   }
@@ -116,12 +116,12 @@ Policy DerivePolicyForSecureContext(AddressSpace ip_address_space) {
   }
 
   if (base::FeatureList::IsEnabled(
-          features::kPrivateNetworkAccessRespectPreflightResults)) {
+          ::features::kPrivateNetworkAccessRespectPreflightResults)) {
     return Policy::kPreflightBlock;
   }
 
   if (base::FeatureList::IsEnabled(
-          features::kPrivateNetworkAccessSendPreflights)) {
+          ::features::kPrivateNetworkAccessSendPreflights)) {
     return Policy::kPreflightWarn;
   }
 

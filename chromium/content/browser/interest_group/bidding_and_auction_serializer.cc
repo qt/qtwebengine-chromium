@@ -44,7 +44,7 @@ namespace content {
 
 namespace {
 
-const size_t kFramingHeaderSize = 5;       // bytes
+const size_t kFramingHeaderSizeBAAS = 5;   // bytes
 const size_t kOhttpEncIdSize = 7;          // bytes
 const size_t kOhttpSharedSecretSize = 48;  // bytes
 const size_t kOhttpHeaderSize = kOhttpEncIdSize + kOhttpSharedSecretSize;
@@ -990,7 +990,7 @@ BiddingAndAuctionData BiddingAndAuctionSerializer::Build() {
   message_elements_size +=
       TaggedStringLength(constexpr_strlen("interestGroups"));
 
-  const size_t framing_size = kFramingHeaderSize + kOhttpHeaderSize + 1;
+  const size_t framing_size = kFramingHeaderSizeBAAS + kOhttpHeaderSize + 1;
   const base::CheckedNumeric<size_t> total_size_before_groups =
       TaggedMapLength(message_obj,
                       message_elements_size + 1 +
@@ -1063,13 +1063,13 @@ BiddingAndAuctionData BiddingAndAuctionSerializer::Build() {
     desired_size = config->request_size.value();
   }
   base::CheckedNumeric<size_t> padded_size =
-      desired_size - framing_size + kFramingHeaderSize;
+      desired_size - framing_size + kFramingHeaderSizeBAAS;
   if (!padded_size.IsValid()) {
     DLOG(ERROR) << "padded_size is invalid";
     return {};
   }
   CHECK_GE(static_cast<size_t>(padded_size.ValueOrDie()),
-           maybe_msg->size() + kFramingHeaderSize);
+           maybe_msg->size() + kFramingHeaderSizeBAAS);
 
   std::vector<uint8_t> request(padded_size.ValueOrDie());
   // first byte is version and compression
@@ -1081,7 +1081,7 @@ BiddingAndAuctionData BiddingAndAuctionSerializer::Build() {
   request[3] = (request_size >> 8) & 0xff;
   request[4] = (request_size >> 0) & 0xff;
 
-  memcpy(&request[kFramingHeaderSize], maybe_msg->data(), maybe_msg->size());
+  memcpy(&request[kFramingHeaderSizeBAAS], maybe_msg->data(), maybe_msg->size());
 
   data.request = std::move(request);
   data.group_names = std::move(groups.group_names);

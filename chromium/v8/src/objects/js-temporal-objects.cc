@@ -165,9 +165,9 @@ enum class Arithmetic { kAdd, kSubtract };
 // Enum for since/until
 enum class TimePreposition { kSince, kUntil };
 
-enum class Offset { kPrefer, kUse, kIgnore, kReject };
-V8_WARN_UNUSED_RESULT Maybe<Offset> ToTemporalOffset(
-    Isolate* isolate, DirectHandle<Object> options, Offset fallback,
+enum class OffsetAction { kPrefer, kUse, kIgnore, kReject };
+V8_WARN_UNUSED_RESULT Maybe<OffsetAction> ToTemporalOffset(
+    Isolate* isolate, DirectHandle<Object> options, OffsetAction fallback,
     const char* method_name);
 
 // sec-temporal-totemporalroundingmode
@@ -2217,18 +2217,18 @@ Maybe<ShowOverflow> ToTemporalOverflow(Isolate* isolate,
 }
 
 // #sec-temporal-totemporaloffset
-Maybe<Offset> ToTemporalOffset(Isolate* isolate, DirectHandle<Object> options,
-                               Offset fallback, const char* method_name) {
+Maybe<OffsetAction> ToTemporalOffset(Isolate* isolate, DirectHandle<Object> options,
+                               OffsetAction fallback, const char* method_name) {
   // 1. If options is undefined, return fallback.
   if (IsUndefined(*options)) return Just(fallback);
   DCHECK(IsJSReceiver(*options));
 
   // 2. Return ? GetOption(options, "offset", « String », « "prefer", "use",
   // "ignore", "reject" », fallback).
-  return GetStringOption<Offset>(
+  return GetStringOption<OffsetAction>(
       isolate, Cast<JSReceiver>(options), "offset", method_name,
       {"prefer", "use", "ignore", "reject"},
-      {Offset::kPrefer, Offset::kUse, Offset::kIgnore, Offset::kReject},
+      {OffsetAction::kPrefer, OffsetAction::kUse, OffsetAction::kIgnore, OffsetAction::kReject},
       fallback);
 }
 
@@ -8073,7 +8073,7 @@ MaybeDirectHandle<BigInt> InterpretISODateTimeOffset(
     Isolate* isolate, const DateTimeRecord& data,
     OffsetBehaviour offset_behaviour, int64_t offset_nanoseconds,
     DirectHandle<JSReceiver> time_zone, Disambiguation disambiguation,
-    Offset offset_option, MatchBehaviour match_behaviour,
+    OffsetAction offset_option, MatchBehaviour match_behaviour,
     const char* method_name);
 
 // #sec-temporal-interprettemporaldatetimefields
@@ -8287,7 +8287,7 @@ MaybeDirectHandle<Object> ToRelativeTemporalObject(
       isolate, epoch_nanoseconds,
       InterpretISODateTimeOffset(isolate, result, offset_behaviour, offset_ns,
                                  time_zone, Disambiguation::kCompatible,
-                                 Offset::kReject, match_behaviour,
+                                 OffsetAction::kReject, match_behaviour,
                                  method_name));
 
   // 12. Return ? CreateTemporalZonedDateTime(epochNanoseconds, timeZone,
@@ -15991,10 +15991,10 @@ MaybeDirectHandle<JSTemporalZonedDateTime> ToTemporalZonedDateTime(
       DirectHandle<JSTemporalZonedDateTime>());
 
   // 8. Let offset be ? ToTemporalOffset(options, "reject").
-  enum Offset offset;
+  enum OffsetAction offset;
   MAYBE_ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, offset,
-      ToTemporalOffset(isolate, options, Offset::kReject, method_name),
+      ToTemporalOffset(isolate, options, OffsetAction::kReject, method_name),
       DirectHandle<JSTemporalZonedDateTime>());
 
   // 9. Let epochNanoseconds be ? InterpretISODateTimeOffset(result.[[Year]],
@@ -16055,10 +16055,10 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalZonedDateTime::From(
 
     // c. Perform ? ToTemporalOffset(options, "reject").
     {
-      enum Offset offset;
+      enum OffsetAction offset;
       MAYBE_ASSIGN_RETURN_ON_EXCEPTION_VALUE(
           isolate, offset,
-          ToTemporalOffset(isolate, options, Offset::kReject, method_name),
+          ToTemporalOffset(isolate, options, OffsetAction::kReject, method_name),
           DirectHandle<JSTemporalZonedDateTime>());
       USE(offset);
     }
@@ -16168,7 +16168,7 @@ MaybeDirectHandle<BigInt> InterpretISODateTimeOffset(
     Isolate* isolate, const DateTimeRecord& data,
     OffsetBehaviour offset_behaviour, int64_t offset_nanoseconds,
     DirectHandle<JSReceiver> time_zone, Disambiguation disambiguation,
-    Offset offset_option, MatchBehaviour match_behaviour,
+    OffsetAction offset_option, MatchBehaviour match_behaviour,
     const char* method_name) {
   TEMPORAL_ENTER_FUNC();
 
@@ -16185,7 +16185,7 @@ MaybeDirectHandle<BigInt> InterpretISODateTimeOffset(
 
   // 4. If offsetBehaviour is wall, or offsetOption is "ignore", then
   if (offset_behaviour == OffsetBehaviour::kWall ||
-      offset_option == Offset::kIgnore) {
+      offset_option == OffsetAction::kIgnore) {
     // a. Let instant be ? BuiltinTimeZoneGetInstantFor(timeZone, dateTime,
     // disambiguation).
     DirectHandle<JSTemporalInstant> instant;
@@ -16198,7 +16198,7 @@ MaybeDirectHandle<BigInt> InterpretISODateTimeOffset(
   }
   // 5. If offsetBehaviour is exact, or offsetOption is "use", then
   if (offset_behaviour == OffsetBehaviour::kExact ||
-      offset_option == Offset::kUse) {
+      offset_option == OffsetAction::kUse) {
     // a. Let epochNanoseconds be ? GetEpochFromISOParts(year, month, day, hour,
     // minute, second, millisecond, microsecond, nanosecond).
     DirectHandle<BigInt> epoch_nanoseconds =
@@ -16220,7 +16220,7 @@ MaybeDirectHandle<BigInt> InterpretISODateTimeOffset(
   // 6. Assert: offsetBehaviour is option.
   DCHECK_EQ(offset_behaviour, OffsetBehaviour::kOption);
   // 7. Assert: offsetOption is "prefer" or "reject".
-  DCHECK(offset_option == Offset::kPrefer || offset_option == Offset::kReject);
+  DCHECK(offset_option == OffsetAction::kPrefer || offset_option == OffsetAction::kReject);
   // 8. Let possibleInstants be ? GetPossibleInstantsFor(timeZone, dateTime).
   DirectHandle<FixedArray> possible_instants;
   ASSIGN_RETURN_ON_EXCEPTION(
@@ -16258,7 +16258,7 @@ MaybeDirectHandle<BigInt> InterpretISODateTimeOffset(
     }
   }
   // 10. If offsetOption is "reject", throw a RangeError exception.
-  if (offset_option == Offset::kReject) {
+  if (offset_option == OffsetAction::kReject) {
     THROW_NEW_ERROR(isolate, NEW_TEMPORAL_INVALID_ARG_RANGE_ERROR());
   }
   // 11. Let instant be ? DisambiguatePossibleInstants(possibleInstants,
@@ -16334,10 +16334,10 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalZonedDateTime::With(
       DirectHandle<JSTemporalZonedDateTime>());
 
   // 11. Let offset be ? ToTemporalOffset(options, "prefer").
-  enum Offset offset;
+  enum OffsetAction offset;
   MAYBE_ASSIGN_RETURN_ON_EXCEPTION_VALUE(
       isolate, offset,
-      ToTemporalOffset(isolate, options, Offset::kPrefer, method_name),
+      ToTemporalOffset(isolate, options, OffsetAction::kPrefer, method_name),
       DirectHandle<JSTemporalZonedDateTime>());
 
   // 12. Let timeZone be zonedDateTime.[[TimeZone]].
@@ -17050,7 +17050,7 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalZonedDateTime::Round(
       isolate, epoch_nanoseconds,
       InterpretISODateTimeOffset(
           isolate, round_result, OffsetBehaviour::kOption, offset_nanoseconds,
-          time_zone, Disambiguation::kCompatible, Offset::kPrefer,
+          time_zone, Disambiguation::kCompatible, OffsetAction::kPrefer,
           MatchBehaviour::kMatchExactly, method_name));
 
   // 23. Return ! CreateTemporalZonedDateTime(epochNanoseconds, timeZone,
