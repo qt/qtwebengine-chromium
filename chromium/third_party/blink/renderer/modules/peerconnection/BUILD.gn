@@ -150,6 +150,12 @@ blink_modules_sources("peerconnection") {
     "webrtc_video_perf_reporter.h",
   ]
 
+  jumbo_excluded_sources = [
+    "peer_connection_tracker.cc",
+    "rtc_data_channel.cc",
+    "rtc_rtp_sender_impl.cc",
+  ]
+
   public_deps = [ "//third_party/webrtc_overrides:webrtc_component" ]
   deps = [
     "//components/webrtc:thread_wrapper",

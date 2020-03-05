@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//gpu/vulkan/features.gni")
 import("//skia/features.gni")
@@ -27,9 +26,9 @@ group("gles2") {
 }
 
 if (is_component_build) {
-  link_target_type = "jumbo_source_set"
+  link_target_type = "source_set"
 } else {
-  link_target_type = "jumbo_static_library"
+  link_target_type = "static_library"
 }
 target(link_target_type, "service_sources") {
   # External code should depend on this via //gpu/command_buffer/service above
@@ -533,7 +532,7 @@ proto_library("disk_cache_proto") {
 }
 
 if (is_android) {
-  jumbo_static_library("android_texture_owner_test_support") {
+  static_library("android_texture_owner_test_support") {
     testonly = true
     sources = [
       "mock_abstract_texture.cc",

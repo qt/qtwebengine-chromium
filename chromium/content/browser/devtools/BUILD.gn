@@ -82,7 +82,7 @@ action("concatenate_protocols") {
 }
 
 inspector_protocol_generate("protocol_sources") {
-  visibility = [ "//content/browser" ]
+  visibility = [ "//content/browser:*" ]
   deps = [ ":concatenate_protocols" ]
   inspector_protocol_dir = "//third_party/inspector_protocol"
   out_dir = target_gen_dir

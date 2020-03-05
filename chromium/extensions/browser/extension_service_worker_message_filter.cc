@@ -26,26 +26,26 @@ namespace extensions {
 
 namespace {
 
-class ShutdownNotifierFactory
+class ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter
     : public BrowserContextKeyedServiceShutdownNotifierFactory {
  public:
-  ShutdownNotifierFactory(const ShutdownNotifierFactory&) = delete;
-  ShutdownNotifierFactory& operator=(const ShutdownNotifierFactory&) = delete;
+  ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter(const ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter&) = delete;
+  ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter& operator=(const ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter&) = delete;
 
-  static ShutdownNotifierFactory* GetInstance() {
-    return base::Singleton<ShutdownNotifierFactory>::get();
+  static ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter* GetInstance() {
+    return base::Singleton<ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter>::get();
   }
 
  private:
-  friend struct base::DefaultSingletonTraits<ShutdownNotifierFactory>;
+  friend struct base::DefaultSingletonTraits<ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter>;
 
-  ShutdownNotifierFactory()
+  ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter()
       : BrowserContextKeyedServiceShutdownNotifierFactory(
             "ExtensionServiceWorkerMessageFilter") {
     DependsOn(EventRouterFactory::GetInstance());
     DependsOn(ProcessManagerFactory::GetInstance());
   }
-  ~ShutdownNotifierFactory() override = default;
+  ~ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter() override = default;
 };
 
 }  // namespace
@@ -61,7 +61,7 @@ ExtensionServiceWorkerMessageFilter::ExtensionServiceWorkerMessageFilter(
       dispatcher_(new ExtensionFunctionDispatcher(context)) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   shutdown_notifier_subscription_ =
-      ShutdownNotifierFactory::GetInstance()->Get(context)->Subscribe(
+      ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter::GetInstance()->Get(context)->Subscribe(
           base::BindRepeating(
               &ExtensionServiceWorkerMessageFilter::ShutdownOnUIThread,
               base::Unretained(this)));
@@ -77,7 +77,7 @@ void ExtensionServiceWorkerMessageFilter::OnDestruct() const {
 }
 
 void ExtensionServiceWorkerMessageFilter::EnsureShutdownNotifierFactoryBuilt() {
-  ShutdownNotifierFactory::GetInstance();
+  ShutdownNotifierFactoryForExtensionServiceWorkerMessageFilter::GetInstance();
 }
 
 ExtensionServiceWorkerMessageFilter::~ExtensionServiceWorkerMessageFilter() {}

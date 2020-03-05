@@ -68,7 +68,7 @@ DocumentMarkerVector MarkersFor(Node* node,
   return controller.MarkersFor(*text_node, DocumentMarker::MarkerTypes{type});
 }
 
-unsigned GetTextContentOffset(const Text& text, unsigned offset) {
+unsigned GetTextContentOffset2(const Text& text, unsigned offset) {
   // TODO(yoichio): Sanitize DocumentMarker around text length.
   const Position position(text, std::min(offset, text.length()));
   const NGOffsetMapping* const offset_mapping =
@@ -391,9 +391,9 @@ void NGHighlightPainter::Paint(Phase phase) {
 
   for (const DocumentMarker* marker : markers_) {
     const unsigned marker_start_offset =
-        GetTextContentOffset(text_node, marker->StartOffset());
+        GetTextContentOffset2(text_node, marker->StartOffset());
     const unsigned marker_end_offset =
-        GetTextContentOffset(text_node, marker->EndOffset());
+        GetTextContentOffset2(text_node, marker->EndOffset());
     const unsigned paint_start_offset =
         ClampOffset(marker_start_offset, fragment_item_);
     const unsigned paint_end_offset =
@@ -622,9 +622,9 @@ void NGHighlightPainter::PaintHighlightOverlays(
       }
 
       const unsigned content_start =
-          GetTextContentOffset(*text_node, marker->StartOffset());
+          GetTextContentOffset2(*text_node, marker->StartOffset());
       const unsigned content_end =
-          GetTextContentOffset(*text_node, marker->EndOffset());
+          GetTextContentOffset2(*text_node, marker->EndOffset());
       const unsigned clamped_start = ClampOffset(content_start, fragment_item_);
       const unsigned clamped_end = ClampOffset(content_end, fragment_item_);
       const unsigned length = clamped_end - clamped_start;

@@ -15,8 +15,6 @@ namespace performance_manager {
 
 namespace {
 
-const char kDescriberName[] = "PageNodeImpl";
-
 const char* FreezingVoteToString(
     absl::optional<freezing::FreezingVote> freezing_vote) {
   if (!freezing_vote)
@@ -32,7 +30,7 @@ PageNodeImplDescriber::~PageNodeImplDescriber() = default;
 
 void PageNodeImplDescriber::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "PageNodeImpl");
 }
 
 void PageNodeImplDescriber::OnTakenFromGraph(Graph* graph) {

@@ -66,6 +66,11 @@
 #include "v8/include/v8-forward.h"
 #include "v8/include/v8-persistent-handle.h"
 
+// Windows defines 'PostMessage', so we have to undef it.
+#ifdef PostMessage
+#undef PostMessage
+#endif
+
 struct PP_Point;
 
 namespace blink {

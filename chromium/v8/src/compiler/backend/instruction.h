@@ -511,9 +511,9 @@ class LocationOperand : public InstructionOperand {
     return static_cast<int64_t>(value_) >> IndexField::kShift;
   }
 
-  Register GetRegister() const {
+  v8::internal::Register GetRegister() const {
     DCHECK(IsRegister());
-    return Register::from_code(register_code());
+    return v8::internal::Register::from_code(register_code());
   }
 
   FloatRegister GetFloatRegister() const {

@@ -85,7 +85,7 @@ uint32_t GetCurrentCursorPositionInFrame(LocalFrame* local_frame) {
 }
 #endif
 
-RemoteFrame* SourceFrameForOptionalToken(
+RemoteFrame* SourceFrameForOptionalToken2(
     const absl::optional<RemoteFrameToken>& source_frame_token) {
   if (!source_frame_token)
     return nullptr;
@@ -744,7 +744,7 @@ void LocalFrameMojoHandler::AdvanceFocusInFrame(
     mojom::blink::FocusType focus_type,
     const absl::optional<RemoteFrameToken>& source_frame_token) {
   RemoteFrame* source_frame =
-      source_frame_token ? SourceFrameForOptionalToken(*source_frame_token)
+      source_frame_token ? SourceFrameForOptionalToken2(*source_frame_token)
                          : nullptr;
   if (!source_frame) {
     SetInitialFocus(focus_type == mojom::blink::FocusType::kBackward);

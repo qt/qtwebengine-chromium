@@ -207,7 +207,7 @@ CSSShadowListInterpolationType::PreInterpolationCompositeIfNeeded(
   // to disable that caching in this case.
   // TODO(crbug.com/1009230): Remove this once our interpolation code isn't
   // caching composited values.
-  conversion_checkers.push_back(std::make_unique<AlwaysInvalidateChecker>());
+  conversion_checkers.push_back(std::make_unique<blink::AlwaysInvalidateChecker>());
   auto interpolable_list = std::unique_ptr<InterpolableList>(
       To<InterpolableList>(value.interpolable_value.release()));
   if (composite == EffectModel::CompositeOperation::kCompositeAdd) {

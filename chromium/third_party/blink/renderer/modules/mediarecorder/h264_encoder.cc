@@ -24,8 +24,6 @@
 #include "third_party/openh264/src/codec/api/svc/codec_def.h"
 #include "ui/gfx/geometry/size.h"
 
-using media::VideoFrame;
-
 namespace blink {
 
 namespace {
@@ -110,7 +108,7 @@ H264Encoder::~H264Encoder() {
 }
 
 void H264Encoder::EncodeOnEncodingTaskRunner(
-    scoped_refptr<VideoFrame> frame,
+    scoped_refptr<media::VideoFrame> frame,
     base::TimeTicks capture_timestamp) {
   TRACE_EVENT0("media", "H264Encoder::EncodeOnEncodingTaskRunner");
   DCHECK(encoding_task_runner_->RunsTasksInCurrentSequence());
@@ -135,12 +133,12 @@ void H264Encoder::EncodeOnEncodingTaskRunner(
   picture.iColorFormat = EVideoFormatType::videoFormatI420;
   picture.uiTimeStamp =
       (capture_timestamp - first_frame_timestamp_).InMilliseconds();
-  picture.iStride[0] = frame->stride(VideoFrame::kYPlane);
-  picture.iStride[1] = frame->stride(VideoFrame::kUPlane);
-  picture.iStride[2] = frame->stride(VideoFrame::kVPlane);
-  picture.pData[0] = frame->visible_data(VideoFrame::kYPlane);
-  picture.pData[1] = frame->visible_data(VideoFrame::kUPlane);
-  picture.pData[2] = frame->visible_data(VideoFrame::kVPlane);
+  picture.iStride[0] = frame->stride(media::VideoFrame::kYPlane);
+  picture.iStride[1] = frame->stride(media::VideoFrame::kUPlane);
+  picture.iStride[2] = frame->stride(media::VideoFrame::kVPlane);
+  picture.pData[0] = frame->visible_data(media::VideoFrame::kYPlane);
+  picture.pData[1] = frame->visible_data(media::VideoFrame::kUPlane);
+  picture.pData[2] = frame->visible_data(media::VideoFrame::kVPlane);
 
   SFrameBSInfo info = {};
   if (openh264_encoder_->EncodeFrame(&picture, &info) != cmResultSuccess) {

@@ -198,7 +198,7 @@ jumbo_source_set("sender") {
   }
 }
 
-jubmo_source_set("test_receiver") {
+jumbo_source_set("test_receiver") {
   testonly = true
   sources = [
     "test/receiver/audio_decoder.cc",

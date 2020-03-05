@@ -28,7 +28,7 @@
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "services/network/url_loader.h"
 
-namespace keys = extension_web_request_api_constants;
+namespace keys_wri = extension_web_request_api_constants;
 
 namespace extensions {
 
@@ -128,8 +128,8 @@ std::unique_ptr<base::DictionaryValue> CreateRequestBodyData(
       &raw_data_presenter      // 2: any data at all? (Non-specific.)
   };
   // Keys for the results of the corresponding presenters.
-  static const char* const kKeys[] = {keys::kRequestBodyFormDataKey,
-                                      keys::kRequestBodyRawKey};
+  static const char* const kKeys[] = {keys_wri::kRequestBodyFormDataKey,
+                                      keys_wri::kRequestBodyRawKey};
   bool some_succeeded = false;
   if (!data_sources.empty()) {
     for (size_t i = 0; i < std::size(presenters); ++i) {
@@ -144,7 +144,7 @@ std::unique_ptr<base::DictionaryValue> CreateRequestBodyData(
   }
 
   if (!some_succeeded) {
-    request_body_data->SetStringKey(keys::kRequestBodyErrorKey,
+    request_body_data->SetStringKey(keys_wri::kRequestBodyErrorKey,
                                     "Unknown error.");
   }
 

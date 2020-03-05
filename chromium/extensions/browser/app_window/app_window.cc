@@ -240,7 +240,7 @@ gfx::Size AppWindow::CreateParams::GetWindowMaximumSize(
 
 // AppWindow
 
-AppWindow::AppWindow(BrowserContext* context,
+AppWindow::AppWindow(content::BrowserContext* context,
                      AppDelegate* app_delegate,
                      const Extension* extension)
     : browser_context_(context),
@@ -958,7 +958,7 @@ content::WebContents* AppWindow::GetAssociatedWebContents() const {
   return web_contents();
 }
 
-void AppWindow::OnExtensionUnloaded(BrowserContext* browser_context,
+void AppWindow::OnExtensionUnloaded(content::BrowserContext* browser_context,
                                     const Extension* extension,
                                     UnloadedExtensionReason reason) {
   if (extension_id_ == extension->id())

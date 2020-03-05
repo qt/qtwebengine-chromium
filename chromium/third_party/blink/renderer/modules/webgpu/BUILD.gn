@@ -86,6 +86,8 @@ blink_modules_sources("webgpu") {
     "texture_utils.cc",
     "texture_utils.h",
   ]
+  jumbo_excluded_sources = [ "dawn_enum_conversions.cc" ]
+
   deps = [
     "//gpu/command_buffer/client:webgpu_interface",
     "//services/metrics/public/cpp:ukm_builders",

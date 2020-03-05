@@ -471,8 +471,8 @@ V ReadAndIncrementOffset(Address data, size_t* offset) {
   return result;
 }
 
-constexpr int32_t kSuccess = 1;
-constexpr int32_t kOutOfBounds = 0;
+constexpr int32_t kSuccess2 = 1;
+constexpr int32_t kOutOfBounds2 = 0;
 }  // namespace
 
 int32_t memory_init_wrapper(Address data) {
@@ -487,15 +487,15 @@ int32_t memory_init_wrapper(Address data) {
   uint32_t size = ReadAndIncrementOffset<uint32_t>(data, &offset);
 
   uint64_t mem_size = instance.memory_size();
-  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds2;
 
   uint32_t seg_size = instance.data_segment_sizes()[seg_index];
-  if (!base::IsInBounds<uint32_t>(src, size, seg_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint32_t>(src, size, seg_size)) return kOutOfBounds2;
 
   byte* seg_start =
       reinterpret_cast<byte*>(instance.data_segment_starts()[seg_index]);
   std::memcpy(EffectiveAddress(instance, dst), seg_start + src, size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 int32_t memory_copy_wrapper(Address data) {
@@ -509,13 +509,13 @@ int32_t memory_copy_wrapper(Address data) {
   uintptr_t size = ReadAndIncrementOffset<uintptr_t>(data, &offset);
 
   uint64_t mem_size = instance.memory_size();
-  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
-  if (!base::IsInBounds<uint64_t>(src, size, mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds2;
+  if (!base::IsInBounds<uint64_t>(src, size, mem_size)) return kOutOfBounds2;
 
   // Use std::memmove, because the ranges can overlap.
   std::memmove(EffectiveAddress(instance, dst), EffectiveAddress(instance, src),
                size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 int32_t memory_fill_wrapper(Address data) {
@@ -531,10 +531,10 @@ int32_t memory_fill_wrapper(Address data) {
   uintptr_t size = ReadAndIncrementOffset<uintptr_t>(data, &offset);
 
   uint64_t mem_size = instance.memory_size();
-  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds2;
 
   std::memset(EffectiveAddress(instance, dst), value, size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 namespace {

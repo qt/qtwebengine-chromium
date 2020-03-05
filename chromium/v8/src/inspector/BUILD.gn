@@ -155,6 +155,7 @@ v8_source_set("inspector") {
     "value-mirror.cc",
     "value-mirror.h",
   ]
+  jumbo_excluded_sources = [ "value-mirror.cc" ]
 }
 
 #Target to generate all .cc files.

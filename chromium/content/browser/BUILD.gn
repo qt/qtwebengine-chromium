@@ -24,6 +24,90 @@ import("//printing/buildflags/buildflags.gni")
 import("//third_party/blink/public/public_features.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 
+jumbo_static_library("devtools_protocol") {
+  configs += [
+    "//build/config:precompiled_headers",
+    "//content:content_implementation",
+  ]
+
+  deps = [
+    "//base",
+    "//content/browser/devtools:devtools_background_services_proto",
+    "//content/browser/devtools:protocol_sources",
+    "//content/common:buildflags",
+    "//services/viz/privileged/mojom",
+    "//third_party/blink/public/mojom:mojom_platform",
+    "//third_party/inspector_protocol:crdtp",
+  ]
+
+  sources = [
+    "$target_gen_dir/devtools/protocol/audits.cc",
+    "$target_gen_dir/devtools/protocol/audits.h",
+    "$target_gen_dir/devtools/protocol/background_service.cc",
+    "$target_gen_dir/devtools/protocol/background_service.h",
+    "$target_gen_dir/devtools/protocol/browser.cc",
+    "$target_gen_dir/devtools/protocol/browser.h",
+    "$target_gen_dir/devtools/protocol/dom.cc",
+    "$target_gen_dir/devtools/protocol/dom.h",
+    "$target_gen_dir/devtools/protocol/emulation.cc",
+    "$target_gen_dir/devtools/protocol/emulation.h",
+    "$target_gen_dir/devtools/protocol/fetch.cc",
+    "$target_gen_dir/devtools/protocol/fetch.h",
+    "$target_gen_dir/devtools/protocol/forward.h",
+    "$target_gen_dir/devtools/protocol/input.cc",
+    "$target_gen_dir/devtools/protocol/input.h",
+    "$target_gen_dir/devtools/protocol/inspector.cc",
+    "$target_gen_dir/devtools/protocol/inspector.h",
+    "$target_gen_dir/devtools/protocol/io.cc",
+    "$target_gen_dir/devtools/protocol/io.h",
+    "$target_gen_dir/devtools/protocol/log.cc",
+    "$target_gen_dir/devtools/protocol/log.h",
+    "$target_gen_dir/devtools/protocol/memory.cc",
+    "$target_gen_dir/devtools/protocol/memory.h",
+    "$target_gen_dir/devtools/protocol/network.cc",
+    "$target_gen_dir/devtools/protocol/network.h",
+    "$target_gen_dir/devtools/protocol/overlay.cc",
+    "$target_gen_dir/devtools/protocol/overlay.h",
+    "$target_gen_dir/devtools/protocol/page.cc",
+    "$target_gen_dir/devtools/protocol/page.h",
+    "$target_gen_dir/devtools/protocol/protocol.h",
+    "$target_gen_dir/devtools/protocol/runtime.cc",
+    "$target_gen_dir/devtools/protocol/runtime.h",
+    "$target_gen_dir/devtools/protocol/schema.cc",
+    "$target_gen_dir/devtools/protocol/schema.h",
+    "$target_gen_dir/devtools/protocol/security.cc",
+    "$target_gen_dir/devtools/protocol/security.h",
+    "$target_gen_dir/devtools/protocol/service_worker.cc",
+    "$target_gen_dir/devtools/protocol/service_worker.h",
+    "$target_gen_dir/devtools/protocol/storage.cc",
+    "$target_gen_dir/devtools/protocol/storage.h",
+    "$target_gen_dir/devtools/protocol/system_info.cc",
+    "$target_gen_dir/devtools/protocol/system_info.h",
+    "$target_gen_dir/devtools/protocol/target.cc",
+    "$target_gen_dir/devtools/protocol/target.h",
+    "$target_gen_dir/devtools/protocol/tethering.cc",
+    "$target_gen_dir/devtools/protocol/tethering.h",
+    "$target_gen_dir/devtools/protocol/tracing.cc",
+    "$target_gen_dir/devtools/protocol/tracing.h",
+  ]
+  if (!is_android) {
+    # The WebAuthn devtools protocol API is not supported in Android yet.
+    sources += [
+      "$target_gen_dir/devtools/protocol/web_authn.cc",
+      "$target_gen_dir/devtools/protocol/web_authn.h",
+    ]
+  }
+
+  if (use_viz_debugger) {
+    sources += [
+      "$target_gen_dir/devtools/protocol/visual_debugger.cc",
+      "$target_gen_dir/devtools/protocol/visual_debugger.h",
+      "devtools/protocol/visual_debugger_handler.cc",
+      "devtools/protocol/visual_debugger_handler.h",
+    ]
+  }
+}
+
 jumbo_source_set("browser") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
@@ -114,8 +198,6 @@ jumbo_source_set("browser") {
     "//content/browser/cache_storage:cache_storage_proto",
     "//content/browser/content_index:content_index_proto",
     "//content/browser/cookie_store:cookie_store_proto",
-    "//content/browser/devtools:devtools_background_services_proto",
-    "//content/browser/devtools:protocol_sources",
     "//content/browser/download:proto",
     "//content/browser/file_system_access:proto",
     "//content/browser/notifications:notification_proto",
@@ -267,6 +349,7 @@ jumbo_source_set("browser") {
     "//ui/strings:ax_strings",
     "//ui/touch_selection",
     "//v8:v8_version",
+    ":devtools_protocol",
   ]
 
   if (is_chromeos) {
@@ -288,54 +371,6 @@ jumbo_source_set("browser") {
   ]
 
   sources = [
-    "$target_gen_dir/devtools/protocol/audits.cc",
-    "$target_gen_dir/devtools/protocol/audits.h",
-    "$target_gen_dir/devtools/protocol/background_service.cc",
-    "$target_gen_dir/devtools/protocol/background_service.h",
-    "$target_gen_dir/devtools/protocol/browser.cc",
-    "$target_gen_dir/devtools/protocol/browser.h",
-    "$target_gen_dir/devtools/protocol/dom.cc",
-    "$target_gen_dir/devtools/protocol/dom.h",
-    "$target_gen_dir/devtools/protocol/emulation.cc",
-    "$target_gen_dir/devtools/protocol/emulation.h",
-    "$target_gen_dir/devtools/protocol/fetch.cc",
-    "$target_gen_dir/devtools/protocol/fetch.h",
-    "$target_gen_dir/devtools/protocol/forward.h",
-    "$target_gen_dir/devtools/protocol/input.cc",
-    "$target_gen_dir/devtools/protocol/input.h",
-    "$target_gen_dir/devtools/protocol/inspector.cc",
-    "$target_gen_dir/devtools/protocol/inspector.h",
-    "$target_gen_dir/devtools/protocol/io.cc",
-    "$target_gen_dir/devtools/protocol/io.h",
-    "$target_gen_dir/devtools/protocol/log.cc",
-    "$target_gen_dir/devtools/protocol/log.h",
-    "$target_gen_dir/devtools/protocol/memory.cc",
-    "$target_gen_dir/devtools/protocol/memory.h",
-    "$target_gen_dir/devtools/protocol/network.cc",
-    "$target_gen_dir/devtools/protocol/network.h",
-    "$target_gen_dir/devtools/protocol/overlay.cc",
-    "$target_gen_dir/devtools/protocol/overlay.h",
-    "$target_gen_dir/devtools/protocol/page.cc",
-    "$target_gen_dir/devtools/protocol/page.h",
-    "$target_gen_dir/devtools/protocol/protocol.h",
-    "$target_gen_dir/devtools/protocol/runtime.cc",
-    "$target_gen_dir/devtools/protocol/runtime.h",
-    "$target_gen_dir/devtools/protocol/schema.cc",
-    "$target_gen_dir/devtools/protocol/schema.h",
-    "$target_gen_dir/devtools/protocol/security.cc",
-    "$target_gen_dir/devtools/protocol/security.h",
-    "$target_gen_dir/devtools/protocol/service_worker.cc",
-    "$target_gen_dir/devtools/protocol/service_worker.h",
-    "$target_gen_dir/devtools/protocol/storage.cc",
-    "$target_gen_dir/devtools/protocol/storage.h",
-    "$target_gen_dir/devtools/protocol/system_info.cc",
-    "$target_gen_dir/devtools/protocol/system_info.h",
-    "$target_gen_dir/devtools/protocol/target.cc",
-    "$target_gen_dir/devtools/protocol/target.h",
-    "$target_gen_dir/devtools/protocol/tethering.cc",
-    "$target_gen_dir/devtools/protocol/tethering.h",
-    "$target_gen_dir/devtools/protocol/tracing.cc",
-    "$target_gen_dir/devtools/protocol/tracing.h",
     "about_url_loader_factory.cc",
     "about_url_loader_factory.h",
     "accessibility/accessibility_tree_formatter_blink.cc",
@@ -2135,7 +2170,7 @@ jumbo_source_set("browser") {
     "worker_host/worker_script_loader_factory.h",
   ]
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     sources += [
       "../app_shim_remote_cocoa/web_drag_source_mac.h",
       "../app_shim_remote_cocoa/web_drag_source_mac.mm",
@@ -2146,6 +2181,10 @@ jumbo_source_set("browser") {
       "accessibility/browser_accessibility_manager_mac.h",
       "accessibility/browser_accessibility_manager_mac.mm",
       "accessibility/browser_accessibility_state_impl_mac.mm",
+    ]
+  }
+  if (is_mac) {
+    sources += [
       "browser_plugin/browser_plugin_popup_menu_helper_mac.h",
       "browser_plugin/browser_plugin_popup_menu_helper_mac.mm",
       "child_process_launcher_helper_mac.cc",
@@ -2255,7 +2294,7 @@ jumbo_source_set("browser") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     sources += [
       "accessibility/accessibility_tree_formatter_uia_win.cc",
       "accessibility/accessibility_tree_formatter_uia_win.h",
@@ -2268,6 +2307,10 @@ jumbo_source_set("browser") {
       "accessibility/browser_accessibility_state_impl_win.cc",
       "accessibility/browser_accessibility_win.cc",
       "accessibility/browser_accessibility_win.h",
+    ]
+  }
+  if (is_win) {
+    sources += [
       "child_process_launcher_helper_win.cc",
       "media/key_system_support_win.cc",
       "media/key_system_support_win.h",
@@ -2291,14 +2334,13 @@ jumbo_source_set("browser") {
     ]
   }
 
-  if (use_viz_debugger) {
-    sources += [
-      "$target_gen_dir/devtools/protocol/visual_debugger.cc",
-      "$target_gen_dir/devtools/protocol/visual_debugger.h",
-      "devtools/protocol/visual_debugger_handler.cc",
-      "devtools/protocol/visual_debugger_handler.h",
-    ]
-  }
+  jumbo_excluded_sources = [
+    "push_messaging/push_messaging_router.cc",
+    "renderer_host/media/media_devices_manager.cc",
+    "service_worker/service_worker_registry.cc",
+    "web_package/web_bundle_blob_data_source.cc",
+  ]
+
   if (toolkit_views) {
     deps += [ "//ui/events" ]
   }
@@ -2592,6 +2634,9 @@ jumbo_source_set("browser") {
         "media/capture/desktop_capture_device.h",
       ]
       deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
+      jumbo_excluded_sources += [
+        "media/capture/desktop_capture_device.cc",
+      ]
     }
   }
 
@@ -2911,6 +2956,12 @@ jumbo_source_set("browser") {
       "webauth/web_authentication_delegate_android.cc",
     ]
 
+    jumbo_excluded_sources += [
+      # Files with kJavaLangClass and similar constants:
+      # Bug https://crbug.com/787557.
+      "android/java/java_method.cc",  # and in gin_java_bound_object.cc.
+    ]
+
     deps += [
       ":reflection_jni_headers",
       "//build/config/freetype",
@@ -2940,10 +2991,6 @@ jumbo_source_set("browser") {
   } else {
     # Not Android.
     sources += [
-      # The WebAuthn devtools protocol API is not supported in Android yet.
-      "$target_gen_dir/devtools/protocol/web_authn.cc",
-      "$target_gen_dir/devtools/protocol/web_authn.h",
-
       # Devtools frontend not included in Android
       "devtools/devtools_frontend_host_impl.cc",
       "devtools/devtools_frontend_host_impl.h",
@@ -3234,26 +3281,12 @@ jumbo_source_set("browser") {
     ]
     if (is_win) {
       sources -= [
-        "accessibility/browser_accessibility_com_win.cc",
-        "accessibility/browser_accessibility_com_win.h",
-        "accessibility/browser_accessibility_manager_win.cc",
-        "accessibility/browser_accessibility_manager_win.h",
-        "accessibility/browser_accessibility_win.cc",
-        "accessibility/browser_accessibility_win.h",
-        "accessibility/accessibility_tree_formatter_win.cc",
         "renderer_host/legacy_render_widget_host_win.cc",
         "renderer_host/legacy_render_widget_host_win.h"
       ]
     }
     if (is_mac) {
       sources -= [
-        "accessibility/accessibility_tree_formatter_mac.mm",
-        "accessibility/browser_accessibility_cocoa.mm",
-        "accessibility/browser_accessibility_cocoa.h",
-        "accessibility/browser_accessibility_mac.mm",
-        "accessibility/browser_accessibility_mac.h",
-        "accessibility/browser_accessibility_manager_mac.mm",
-        "accessibility/browser_accessibility_manager_mac.h",
         "renderer_host/input/synthetic_gesture_target_mac.h",
         "renderer_host/input/synthetic_gesture_target_mac.mm",
         "renderer_host/native_web_keyboard_event_mac.mm",
@@ -3263,8 +3296,6 @@ jumbo_source_set("browser") {
         "web_contents/web_contents_view_mac.h",
         "web_contents/web_drag_dest_mac.h",
         "web_contents/web_drag_dest_mac.mm",
-        "../app_shim_remote_cocoa/web_drag_source_mac.h",
-        "../app_shim_remote_cocoa/web_drag_source_mac.mm",
       ]
       deps -= [
         "//components/remote_cocoa/app_shim",

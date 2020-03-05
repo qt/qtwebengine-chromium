@@ -25,7 +25,7 @@ namespace device {
 class COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialDescriptor {
  public:
   static absl::optional<PublicKeyCredentialDescriptor> CreateFromCBORValue(
-      const cbor::Value& cbor);
+      const ::cbor::Value& cbor);
 
   PublicKeyCredentialDescriptor();
   PublicKeyCredentialDescriptor(CredentialType credential_type,
@@ -54,7 +54,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialDescriptor {
 };
 
 COMPONENT_EXPORT(DEVICE_FIDO)
-cbor::Value AsCBOR(const PublicKeyCredentialDescriptor&);
+::cbor::Value AsCBOR(const PublicKeyCredentialDescriptor&);
 
 }  // namespace device
 

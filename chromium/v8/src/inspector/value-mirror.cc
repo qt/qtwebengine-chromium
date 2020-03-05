@@ -198,7 +198,7 @@ String16 abbreviateString(const String16& value, AbbreviateMode mode) {
   return String16::concat(value.substring(0, maxLength - 1), ellipsis);
 }
 
-String16 descriptionForSymbol(v8::Local<v8::Context> context,
+String16 descriptionForSymbol2(v8::Local<v8::Context> context,
                               v8::Local<v8::Symbol> symbol) {
   v8::Isolate* isolate = context->GetIsolate();
   return String16::concat(
@@ -639,7 +639,7 @@ class SymbolMirror final : public ValueMirror {
     }
     *result = RemoteObject::create()
                   .setType(RemoteObject::TypeEnum::Symbol)
-                  .setDescription(descriptionForSymbol(context, m_symbol))
+                  .setDescription(descriptionForSymbol2(context, m_symbol))
                   .build();
     return Response::Success();
   }
@@ -652,7 +652,7 @@ class SymbolMirror final : public ValueMirror {
                    .setName(name)
                    .setType(RemoteObject::TypeEnum::Symbol)
                    .setValue(abbreviateString(
-                       descriptionForSymbol(context, m_symbol), kEnd))
+                       descriptionForSymbol2(context, m_symbol), kEnd))
                    .build();
   }
 
@@ -1414,7 +1414,7 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
       name = toProtocolString(isolate, v8Name.As<v8::String>());
     } else {
       v8::Local<v8::Symbol> symbol = v8Name.As<v8::Symbol>();
-      name = descriptionForSymbol(context, symbol);
+      name = descriptionForSymbol2(context, symbol);
       symbolMirror = ValueMirror::create(context, symbol);
     }
 

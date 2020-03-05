@@ -449,6 +449,11 @@ jumbo_static_library("common") {
   # from mojom/permission_set_mojom_traits.cc.
   allow_circular_includes_from = [ ":mojom" ]
 
+  jumbo_excluded_sources = [
+    "manifest_handlers/file_handler_info.cc",
+    "manifest_handlers/permissions_parser.cc",
+  ]
+
   deps = [
     "//base",
     "//build:branding_buildflags",

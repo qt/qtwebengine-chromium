@@ -5,6 +5,7 @@
 import("//build/config/chromecast_build.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/dcheck_always_on.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//build/toolchain/toolchain.gni")
 import("//media/media_options.gni")
@@ -138,7 +139,7 @@ source_set("core_common") {
   sources = [ "core_export.h" ]
 }
 
-source_set("prerequisites") {
+jumbo_source_set("prerequisites") {
   public_deps = [
     "//services/network/public/cpp:cpp",
     "//services/network/public/mojom",
@@ -180,7 +181,7 @@ source_set("prerequisites") {
   ]
 }
 
-component("core") {
+jumbo_component("core") {
   output_name = "blink_core"
 
   visibility = []  # Allow re-assignment of list.
@@ -350,6 +351,12 @@ component("core") {
     "//third_party/blink/renderer/core/probe",
     "//third_party/blink/renderer/core/xml:xpath_generated",
   ]
+  jumbo_excluded_sources = [ ]
+  jumbo_excluded_sources += rebase_path([ "frame_fetch_context.cc" ], "", "loader")
+  jumbo_excluded_sources += rebase_path([ "image_loader.cc" ], "", "loader")
+  jumbo_excluded_sources += rebase_path([ "create_window.cc" ], "", "page")
+  jumbo_excluded_sources += rebase_path([ "link_highlight_impl.cc" ], "", "paint")
+  jumbo_excluded_sources += rebase_path([ "scroll_animator.cc" ], "", "scroll")
 
   public_configs = [ ":core_include_dirs" ]
 

@@ -13,14 +13,15 @@
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/same_party_context.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
+#include "third_party/blink/renderer/platform/wtf/assertions.h"
 
 namespace content {
 
 namespace {
 
-#define STATIC_ASSERT_ENUM(a, b)                            \
-  static_assert(static_cast<int>(a) == static_cast<int>(b), \
-                "mismatching enums: " #a)
+//#define STATIC_ASSERT_ENUM(a, b)                            \
+//  static_assert(static_cast<int>(a) == static_cast<int>(b), \
+//                "mismatching enums: " #a)
 
 STATIC_ASSERT_ENUM(network::mojom::CookieMatchType::EQUALS,
                    proto::CookieMatchType::EQUALS);

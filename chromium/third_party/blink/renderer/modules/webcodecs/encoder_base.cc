@@ -40,9 +40,9 @@
 namespace blink {
 
 namespace {
-constexpr const char kCategory[] = "media";
+constexpr const char kCategory3[] = "media";
 
-base::AtomicSequenceNumber g_sequence_num_for_counters;
+base::AtomicSequenceNumber g_sequence_num_for_counters2;
 }  // namespace
 
 // static
@@ -61,7 +61,7 @@ EncoderBase<Traits>::EncoderBase(ScriptState* script_state,
                        ExecutionContext::From(script_state)),
       state_(V8CodecState::Enum::kUnconfigured),
       script_state_(script_state),
-      trace_counter_id_(g_sequence_num_for_counters.GetNext()) {
+      trace_counter_id_(g_sequence_num_for_counters2.GetNext()) {
   auto* context = ExecutionContext::From(script_state);
   callback_runner_ = context->GetTaskRunner(TaskType::kInternalMediaRealTime);
 
@@ -199,7 +199,7 @@ void EncoderBase<Traits>::reset(ExceptionState& exception_state) {
   if (ThrowIfCodecStateClosed(state_, "reset", exception_state))
     return;
 
-  TRACE_EVENT0(kCategory, GetTraceNames()->reset.c_str());
+  TRACE_EVENT0(kCategory3, GetTraceNames()->reset.c_str());
 
   state_ = V8CodecState(V8CodecState::Enum::kUnconfigured);
   ResetInternal();
@@ -237,7 +237,7 @@ void EncoderBase<Traits>::HandleError(DOMException* ex) {
   if (state_.AsEnum() == V8CodecState::Enum::kClosed)
     return;
 
-  TRACE_EVENT0(kCategory, GetTraceNames()->handle_error.c_str());
+  TRACE_EVENT0(kCategory3, GetTraceNames()->handle_error.c_str());
 
   // Save a temp before we clear the callback.
   V8WebCodecsErrorCallback* error_callback = error_callback_.Get();
@@ -346,7 +346,7 @@ void EncoderBase<Traits>::ProcessFlush(Request* request) {
 
 template <typename Traits>
 void EncoderBase<Traits>::OnCodecReclaimed(DOMException* exception) {
-  TRACE_EVENT0(kCategory, GetTraceNames()->reclaimed.c_str());
+  TRACE_EVENT0(kCategory3, GetTraceNames()->reclaimed.c_str());
   DCHECK_EQ(state_.AsEnum(), V8CodecState::Enum::kConfigured);
   HandleError(exception);
 }
@@ -365,7 +365,7 @@ bool EncoderBase<Traits>::HasPendingActivity() const {
 
 template <typename Traits>
 void EncoderBase<Traits>::TraceQueueSizes() const {
-  TRACE_COUNTER_ID2(kCategory, GetTraceNames()->requests_counter.c_str(),
+  TRACE_COUNTER_ID2(kCategory3, GetTraceNames()->requests_counter.c_str(),
                     trace_counter_id_, "encodes", requested_encodes_, "other",
                     requests_.size() - requested_encodes_);
 }
@@ -414,7 +414,7 @@ void EncoderBase<Traits>::Request::StartTracingVideoEncode(bool is_keyframe) {
   DCHECK(!is_tracing);
   is_tracing = true;
 #endif
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(kCategory, TraceNameFromType(), this,
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(kCategory3, TraceNameFromType(), this,
                                     "key_frame", is_keyframe);
 }
 
@@ -424,7 +424,7 @@ void EncoderBase<Traits>::Request::StartTracing() {
   DCHECK(!is_tracing);
   is_tracing = true;
 #endif
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(kCategory, TraceNameFromType(), this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(kCategory3, TraceNameFromType(), this);
 }
 
 template <typename Traits>
@@ -433,7 +433,7 @@ void EncoderBase<Traits>::Request::EndTracing(bool aborted) {
   DCHECK(is_tracing);
   is_tracing = false;
 #endif
-  TRACE_EVENT_NESTABLE_ASYNC_END1(kCategory, TraceNameFromType(), this,
+  TRACE_EVENT_NESTABLE_ASYNC_END1(kCategory3, TraceNameFromType(), this,
                                   "aborted", aborted);
 }
 

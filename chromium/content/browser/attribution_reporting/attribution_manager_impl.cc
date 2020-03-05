@@ -82,7 +82,7 @@ enum class AssembleAggregatableReportStatus {
 // and recreated for the same backing storage. This uses
 // BLOCK_SHUTDOWN as some data deletion operations may be running when the
 // browser is closed, and we want to ensure all data is deleted correctly.
-base::LazyThreadPoolSequencedTaskRunner g_storage_task_runner =
+base::LazyThreadPoolSequencedTaskRunner g_storage_task_runner_attr =
     LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
         base::TaskTraits(base::TaskPriority::BEST_EFFORT,
                          base::MayBlock(),
@@ -286,7 +286,7 @@ AttributionManagerImpl::AttributionManagerImpl(
     : storage_partition_(storage_partition),
       max_pending_events_(max_pending_events),
       attribution_storage_(base::SequenceBound<AttributionStorageSql>(
-          g_storage_task_runner.Get(),
+          g_storage_task_runner_attr.Get(),
           user_data_directory,
           std::move(storage_delegate))),
       scheduler_(base::BindRepeating(&AttributionManagerImpl::GetReportsToSend,

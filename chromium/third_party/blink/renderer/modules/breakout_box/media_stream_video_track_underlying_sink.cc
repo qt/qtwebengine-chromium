@@ -37,9 +37,9 @@ const base::Feature kBreakoutBoxEagerConversion {
 #endif
 };
 
-class TransferringOptimizer : public WritableStreamTransferringOptimizer {
+class TransferringOptimizerMSVTUS : public WritableStreamTransferringOptimizer {
  public:
-  explicit TransferringOptimizer(
+  explicit TransferringOptimizerMSVTUS(
       scoped_refptr<PushableMediaStreamVideoSource::Broker> source_broker)
       : source_broker_(std::move(source_broker)) {}
   UnderlyingSinkBase* PerformInProcessOptimization(
@@ -141,7 +141,7 @@ ScriptPromise MediaStreamVideoTrackUnderlyingSink::close(
 std::unique_ptr<WritableStreamTransferringOptimizer>
 MediaStreamVideoTrackUnderlyingSink::GetTransferringOptimizer() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return std::make_unique<TransferringOptimizer>(source_broker_);
+  return std::make_unique<TransferringOptimizerMSVTUS>(source_broker_);
 }
 
 void MediaStreamVideoTrackUnderlyingSink::Disconnect() {
