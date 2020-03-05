@@ -4,7 +4,9 @@
 
 #include "third_party/blink/renderer/platform/audio/audio_delay_dsp_kernel.h"
 
+#include <emmintrin.h>
 #include <xmmintrin.h>
+#include <tuple>
 
 namespace blink {
 

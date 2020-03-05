@@ -23,7 +23,7 @@ namespace device {
 class COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialUserEntity {
  public:
   static absl::optional<PublicKeyCredentialUserEntity> CreateFromCBORValue(
-      const cbor::Value& cbor);
+      const ::cbor::Value& cbor);
 
   PublicKeyCredentialUserEntity();
   explicit PublicKeyCredentialUserEntity(std::vector<uint8_t> id);
@@ -44,7 +44,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialUserEntity {
   absl::optional<std::string> display_name;
 };
 
-cbor::Value AsCBOR(const PublicKeyCredentialUserEntity&);
+::cbor::Value AsCBOR(const PublicKeyCredentialUserEntity&);
 
 }  // namespace device
 

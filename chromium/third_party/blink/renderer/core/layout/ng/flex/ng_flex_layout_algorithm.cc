@@ -187,10 +187,10 @@ LayoutUnit NGFlexLayoutAlgorithm::MainAxisContentExtent(
 
 namespace {
 
-enum AxisEdge { kStart, kCenter, kEnd };
+enum class LocalAxisEdge { kStart, kCenter, kEnd };
 
 // Maps the resolved justify-content value to a static-position edge.
-AxisEdge MainAxisStaticPositionEdge(const ComputedStyle& style,
+LocalAxisEdge MainAxisStaticPositionEdge(const ComputedStyle& style,
                                     bool is_column) {
   const StyleContentAlignmentData justify =
       FlexLayoutAlgorithm::ResolvedJustifyContent(style);
@@ -202,23 +202,23 @@ AxisEdge MainAxisStaticPositionEdge(const ComputedStyle& style,
   DCHECK_NE(content_position, ContentPosition::kLeft);
   DCHECK_NE(content_position, ContentPosition::kRight);
   if (content_position == ContentPosition::kFlexEnd)
-    return is_reverse_flex ? AxisEdge::kStart : AxisEdge::kEnd;
+    return is_reverse_flex ? LocalAxisEdge::kStart : LocalAxisEdge::kEnd;
 
   if (content_position == ContentPosition::kCenter ||
       justify.Distribution() == ContentDistributionType::kSpaceAround ||
       justify.Distribution() == ContentDistributionType::kSpaceEvenly)
-    return AxisEdge::kCenter;
+    return LocalAxisEdge::kCenter;
 
   if (content_position == ContentPosition::kStart)
-    return AxisEdge::kStart;
+    return LocalAxisEdge::kStart;
   if (content_position == ContentPosition::kEnd)
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
 
-  return is_reverse_flex ? AxisEdge::kEnd : AxisEdge::kStart;
+  return is_reverse_flex ? LocalAxisEdge::kEnd : LocalAxisEdge::kStart;
 }
 
 // Maps the resolved alignment value to a static-position edge.
-AxisEdge CrossAxisStaticPositionEdge(const ComputedStyle& style,
+LocalAxisEdge CrossAxisStaticPositionEdge(const ComputedStyle& style,
                                      const ComputedStyle& child_style) {
   ItemPosition alignment =
       FlexLayoutAlgorithm::AlignmentForChild(style, child_style);
@@ -226,17 +226,17 @@ AxisEdge CrossAxisStaticPositionEdge(const ComputedStyle& style,
   // kFlexEnd, but not kStretch. kStretch is supposed to act like kFlexStart.
   if (style.FlexWrap() == EFlexWrap::kWrapReverse &&
       alignment == ItemPosition::kStretch) {
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
   }
 
   if (alignment == ItemPosition::kFlexEnd ||
       alignment == ItemPosition::kLastBaseline)
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
 
   if (alignment == ItemPosition::kCenter)
-    return AxisEdge::kCenter;
+    return LocalAxisEdge::kCenter;
 
-  return AxisEdge::kStart;
+  return LocalAxisEdge::kStart;
 }
 
 }  // namespace
@@ -289,8 +289,8 @@ void NGFlexLayoutAlgorithm::HandleOutOfFlowPositionedItems(
   for (LayoutBox* oof_child : oofs) {
     NGBlockNode child(oof_child);
 
-    AxisEdge main_axis_edge = MainAxisStaticPositionEdge(Style(), is_column_);
-    AxisEdge cross_axis_edge =
+    LocalAxisEdge main_axis_edge = MainAxisStaticPositionEdge(Style(), is_column_);
+    LocalAxisEdge cross_axis_edge =
         CrossAxisStaticPositionEdge(Style(), child.Style());
 
     // This code block just collects UMA stats.
@@ -321,7 +321,7 @@ void NGFlexLayoutAlgorithm::HandleOutOfFlowPositionedItems(
                             WebFeature::kFlexboxNewAbsPos);
         }
       }
-      if (main_axis_edge != AxisEdge::kStart) {
+      if (main_axis_edge != LocalAxisEdge::kStart) {
         const bool are_main_axis_insets_auto =
             is_column_
                 ? insets_in_flexbox_writing_mode.BlockStart().IsAuto() &&
@@ -335,18 +335,18 @@ void NGFlexLayoutAlgorithm::HandleOutOfFlowPositionedItems(
       }
     }
 
-    AxisEdge inline_axis_edge = is_column_ ? cross_axis_edge : main_axis_edge;
-    AxisEdge block_axis_edge = is_column_ ? main_axis_edge : cross_axis_edge;
+    LocalAxisEdge inline_axis_edge = is_column_ ? cross_axis_edge : main_axis_edge;
+    LocalAxisEdge block_axis_edge = is_column_ ? main_axis_edge : cross_axis_edge;
 
     InlineEdge inline_edge;
     BlockEdge block_edge;
     LogicalOffset offset = border_scrollbar_padding.StartOffset();
 
     // Determine the static-position based off the axis-edge.
-    if (block_axis_edge == AxisEdge::kStart) {
+    if (block_axis_edge == LocalAxisEdge::kStart) {
       DCHECK(!IsResumingLayout(BreakToken()));
       block_edge = BlockEdge::kBlockStart;
-    } else if (block_axis_edge == AxisEdge::kCenter) {
+    } else if (block_axis_edge == LocalAxisEdge::kCenter) {
       if (!should_process_block_center) {
         oof_children.emplace_back(oof_child);
         continue;
@@ -362,9 +362,9 @@ void NGFlexLayoutAlgorithm::HandleOutOfFlowPositionedItems(
       offset.block_offset += total_fragment_size.block_size;
     }
 
-    if (inline_axis_edge == AxisEdge::kStart) {
+    if (inline_axis_edge == LocalAxisEdge::kStart) {
       inline_edge = InlineEdge::kInlineStart;
-    } else if (inline_axis_edge == AxisEdge::kCenter) {
+    } else if (inline_axis_edge == LocalAxisEdge::kCenter) {
       inline_edge = InlineEdge::kInlineCenter;
       offset.inline_offset += total_fragment_size.inline_size / 2;
     } else {

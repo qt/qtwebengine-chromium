@@ -236,8 +236,6 @@ class PageLiveStateDataImpl
   const raw_ptr<const PageNode> page_node_;
 };
 
-const char kDescriberName[] = "PageLiveStateDecorator";
-
 }  // namespace
 
 PageLiveStateDecorator::PageLiveStateDecorator(
@@ -341,7 +339,7 @@ void PageLiveStateDecorator::SetContentSettings(
 
 void PageLiveStateDecorator::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "PageLiveStateDecorator");
   graph->AddPageNodeObserver(this);
 }
 

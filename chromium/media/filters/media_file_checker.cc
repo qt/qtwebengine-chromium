@@ -29,7 +29,7 @@ void OnMediaFileCheckerError(bool* called) {
   *called = false;
 }
 
-struct Decoder {
+struct DecoderStruct {
   std::unique_ptr<AVCodecContext, ScopedPtrAVFreeContext> context;
   std::unique_ptr<FFmpegDecodingLoop> loop;
 };
@@ -59,7 +59,7 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
 
   // Remember the codec context for any decodable audio or video streams.
   bool found_streams = false;
-  std::vector<Decoder> stream_contexts(format_context->nb_streams);
+  std::vector<DecoderStruct> stream_contexts(format_context->nb_streams);
   for (size_t i = 0; i < format_context->nb_streams; ++i) {
     AVCodecParameters* cp = format_context->streams[i]->codecpar;
 

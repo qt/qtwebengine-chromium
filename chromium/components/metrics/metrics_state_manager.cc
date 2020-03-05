@@ -53,7 +53,7 @@ namespace {
 // The argument used to generate a non-identifying entropy source. We want no
 // more than 13 bits of entropy, so use this max to return a number in the range
 // [0, 7999] as the entropy source (12.97 bits of entropy).
-const int kMaxLowEntropySize = 8000;
+const int kThisMaxLowEntropySize = 8000;
 
 int64_t ReadEnabledDate(PrefService* local_state) {
   return local_state->GetInt64(prefs::kMetricsReportingEnabledTimestamp);
@@ -540,7 +540,7 @@ std::unique_ptr<const variations::EntropyProviders>
 MetricsStateManager::CreateEntropyProviders() {
   return std::make_unique<variations::EntropyProviders>(
       GetHighEntropySource(),
-      base::checked_cast<uint16_t>(GetLowEntropySource()), kMaxLowEntropySize);
+      base::checked_cast<uint16_t>(GetLowEntropySource()), kThisMaxLowEntropySize);
 }
 
 // static

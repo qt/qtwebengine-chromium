@@ -23,32 +23,32 @@ namespace blink {
 
 namespace {
 
-void SetLayerNeedsRepaintOnCullRectChange(PaintLayer& layer) {
+void SetLayerNeedsRepaintOnCullRectChangeOld(PaintLayer& layer) {
   if (layer.PreviousPaintResult() == kMayBeClippedByCullRect ||
       RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled()) {
     layer.SetNeedsRepaint();
   }
 }
 
-void SetFragmentCullRect(PaintLayer& layer,
+void SetFragmentCullRectOld(PaintLayer& layer,
                          FragmentData& fragment,
                          const CullRect& cull_rect) {
   if (cull_rect == fragment.GetCullRect())
     return;
 
   fragment.SetCullRect(cull_rect);
-  SetLayerNeedsRepaintOnCullRectChange(layer);
+  SetLayerNeedsRepaintOnCullRectChangeOld(layer);
 }
 
 // Returns true if the contents cull rect changed.
-bool SetFragmentContentsCullRect(PaintLayer& layer,
+bool SetFragmentContentsCullRectOld(PaintLayer& layer,
                                  FragmentData& fragment,
                                  const CullRect& contents_cull_rect) {
   if (contents_cull_rect == fragment.GetContentsCullRect())
     return false;
 
   fragment.SetContentsCullRect(contents_cull_rect);
-  SetLayerNeedsRepaintOnCullRectChange(layer);
+  SetLayerNeedsRepaintOnCullRectChangeOld(layer);
   return true;
 }
 
@@ -163,10 +163,10 @@ void OldCullRectUpdater::UpdateInternal(const CullRect& input_cull_rect) {
   bool should_use_infinite = ShouldUseInfiniteCullRect(
       starting_layer_, subtree_should_use_infinite_cull_rect_);
   auto& fragment = object.GetMutableForPainting().FirstFragment();
-  SetFragmentCullRect(
+  SetFragmentCullRectOld(
       starting_layer_, fragment,
       should_use_infinite ? CullRect::Infinite() : input_cull_rect);
-  bool force_update_children = SetFragmentContentsCullRect(
+  bool force_update_children = SetFragmentContentsCullRectOld(
       starting_layer_, fragment,
       should_use_infinite ? CullRect::Infinite()
                           : ComputeFragmentContentsCullRect(
@@ -351,9 +351,9 @@ bool OldCullRectUpdater::UpdateForSelf(
       }
     }
 
-    SetFragmentCullRect(layer, *fragment, cull_rect);
+    SetFragmentCullRectOld(layer, *fragment, cull_rect);
     force_update_children |=
-        SetFragmentContentsCullRect(layer, *fragment, contents_cull_rect);
+        SetFragmentContentsCullRectOld(layer, *fragment, contents_cull_rect);
   }
 
   return force_update_children;

@@ -65,7 +65,7 @@ bool ShouldExposeDevice(const device::mojom::UsbDeviceInfo& device_info) {
 
 // Returns true if the given extension has permission to receive events
 // regarding this device.
-bool WillDispatchDeviceEvent(
+bool MyWillDispatchDeviceEvent(
     const device::mojom::UsbDeviceInfo& device_info,
     content::BrowserContext* browser_context,
     Feature::Context target_context,
@@ -387,7 +387,7 @@ void UsbDeviceManager::DispatchEvent(
     }
 
     event->will_dispatch_callback =
-        base::BindRepeating(&WillDispatchDeviceEvent, std::cref(device_info));
+        base::BindRepeating(&MyWillDispatchDeviceEvent, std::cref(device_info));
     event_router->BroadcastEvent(std::move(event));
   }
 }

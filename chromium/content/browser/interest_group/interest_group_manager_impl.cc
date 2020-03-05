@@ -42,7 +42,7 @@ constexpr base::TimeDelta kMaxReportingRoundDuration = base::Minutes(10);
 // The time interval to wait before sending the next report after sending one.
 constexpr base::TimeDelta kReportingInterval = base::Milliseconds(50);
 
-constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotationIGMI =
     net::DefineNetworkTrafficAnnotation("auction_report_sender", R"(
         semantics {
           sender: "Interest group based Ad Auction report"
@@ -84,7 +84,7 @@ std::unique_ptr<network::SimpleURLLoader> BuildSimpleUrlLoader(
   resource_request->trusted_params->client_security_state =
       std::move(client_security_state);
   auto simple_url_loader = network::SimpleURLLoader::Create(
-      std::move(resource_request), kTrafficAnnotation);
+      std::move(resource_request), kTrafficAnnotationIGMI);
   simple_url_loader->SetTimeoutDuration(base::Seconds(30));
   return simple_url_loader;
 }

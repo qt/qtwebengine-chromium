@@ -136,7 +136,7 @@ class FlexItem {
            NGPhysicalBoxStrut physical_margins,
            NGBoxStrut scrollbars,
            WritingMode baseline_writing_mode,
-           BaselineGroup baseline_group = BaselineGroup::kMajor,
+           BaselineGroupType baseline_group = BaselineGroupType::kMajor,
            bool depends_on_min_max_sizes = false);
 
   LayoutUnit HypotheticalMainAxisMarginBoxSize() const {
@@ -211,7 +211,7 @@ class FlexItem {
   NGPhysicalBoxStrut physical_margins_;
   const NGBoxStrut scrollbars_;
   const WritingDirectionMode baseline_writing_direction_;
-  const BaselineGroup baseline_group_;
+  const BaselineGroupType baseline_group_;
 
   LayoutUnit flexed_content_size_;
 

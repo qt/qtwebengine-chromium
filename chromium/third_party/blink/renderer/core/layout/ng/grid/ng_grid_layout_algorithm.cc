@@ -630,13 +630,13 @@ LayoutUnit NGGridLayoutAlgorithm::Baseline(
   //  alignment context along that axis"
   // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
   if (track_direction == kForColumns) {
-    return (grid_item.column_baseline_group == BaselineGroup::kMajor)
+    return (grid_item.column_baseline_group == BaselineGroupType::kMajor)
                ? layout_data.Columns()->MajorBaseline(
                      grid_item.column_set_indices.begin)
                : layout_data.Columns()->MinorBaseline(
                      grid_item.column_set_indices.end - 1);
   } else {
-    return (grid_item.row_baseline_group == BaselineGroup::kMajor)
+    return (grid_item.row_baseline_group == BaselineGroupType::kMajor)
                ? layout_data.Rows()->MajorBaseline(
                      grid_item.row_set_indices.begin)
                : layout_data.Rows()->MinorBaseline(
@@ -1501,7 +1501,7 @@ void NGGridLayoutAlgorithm::CalculateAlignmentBaselines(
     //  in first/last baseline alignment within its start-most/end-most shared
     //  alignment context along that axis"
     // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
-    if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+    if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
       track_collection->SetMajorBaseline(
           grid_item.SetIndices(track_direction).begin, candidate_baseline);
     } else {
@@ -3150,7 +3150,7 @@ void NGGridLayoutAlgorithm::PlaceGridItems(
           GetLogicalBaseline(
               baseline_fragment,
               grid_item.IsLastBaselineSpecifiedForDirection(track_direction));
-      if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+      if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
         return baseline_delta;
 
       // BaselineGroup::kMinor

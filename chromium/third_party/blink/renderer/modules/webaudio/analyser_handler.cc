@@ -14,8 +14,8 @@ namespace blink {
 
 namespace {
 
-constexpr unsigned kDefaultNumberOfInputChannels = 2;
-constexpr unsigned kDefaultNumberOfOutputChannels = 1;
+constexpr unsigned kDefaultNumberOfInputChannels2 = 2;
+constexpr unsigned kDefaultNumberOfOutputChannels2 = 1;
 
 }  // namespace
 
@@ -23,8 +23,8 @@ AnalyserHandler::AnalyserHandler(AudioNode& node, float sample_rate)
     : AudioBasicInspectorHandler(kNodeTypeAnalyser, node, sample_rate),
       analyser_(
           node.context()->GetDeferredTaskHandler().RenderQuantumFrames()) {
-  channel_count_ = kDefaultNumberOfInputChannels;
-  AddOutput(kDefaultNumberOfOutputChannels);
+  channel_count_ = kDefaultNumberOfInputChannels2;
+  AddOutput(kDefaultNumberOfOutputChannels2);
 
   Initialize();
 }

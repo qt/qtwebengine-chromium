@@ -12,8 +12,6 @@ namespace performance_manager {
 
 namespace {
 
-const char kDescriberName[] = "WorkerNode";
-
 const char* WorkerTypeToString(WorkerNode::WorkerType state) {
   switch (state) {
     case WorkerNode::WorkerType::kDedicated:
@@ -29,7 +27,7 @@ const char* WorkerTypeToString(WorkerNode::WorkerType state) {
 
 void WorkerNodeImplDescriber::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "WorkerNode");
 }
 
 void WorkerNodeImplDescriber::OnTakenFromGraph(Graph* graph) {

@@ -1677,7 +1677,7 @@ ServiceWorkerContextWrapper::GetLoaderFactoryForBrowserInitiatedRequest(
           context()->loader_factory_bundle_for_update_check()->Clone();
 
   if (base::FeatureList::IsEnabled(
-          features::kEnableServiceWorkersForChromeUntrusted) &&
+          ::features::kEnableServiceWorkersForChromeUntrusted) &&
       scope.scheme_piece() == kChromeUIUntrustedScheme) {
     // If this is a Service Worker for a WebUI, the WebUI's URLDataSource needs
     // to be registered. Registering a URLDataSource allows the

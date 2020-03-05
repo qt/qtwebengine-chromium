@@ -3782,6 +3782,8 @@ void BranchIfToBooleanTrue::GenerateCode(MaglevAssembler* masm,
             fallthrough_when_true);
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

@@ -78,7 +78,7 @@ namespace {
 using AggregatableResult = ::content::AttributionTrigger::AggregatableResult;
 using EventLevelResult = ::content::AttributionTrigger::EventLevelResult;
 
-const base::FilePath::CharType kDatabasePath[] =
+const base::FilePath::CharType kDatabasePathAttr[] =
     FILE_PATH_LITERAL("Conversions");
 
 constexpr int64_t kUnsetReportId = -1;
@@ -376,7 +376,7 @@ absl::optional<StoredSourceData> ReadSourceToAttribute(
 }
 
 base::FilePath DatabasePath(const base::FilePath& user_data_directory) {
-  return user_data_directory.Append(kDatabasePath);
+  return user_data_directory.Append(kDatabasePathAttr);
 }
 
 // These values are persisted to logs. Entries should not be renumbered and

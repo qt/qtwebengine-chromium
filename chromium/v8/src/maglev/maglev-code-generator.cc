@@ -1199,6 +1199,8 @@ MaybeHandle<Code> MaglevCodeGenerator::Generate(
   return MaglevCodeGeneratorImpl::Generate(isolate, compilation_info, graph);
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8
