@@ -646,7 +646,7 @@ int PrerenderHostRegistry::CreateAndStartHost(
         RenderFrameDevToolsAgentHost::GetFor(initiator_rfh) != nullptr;
     if (should_holdbacks_be_overridden) {
       builder.SetHoldback(false);
-    } else if (base::FeatureList::IsEnabled(features::kPrerender2Holdback)) {
+    } else if (base::FeatureList::IsEnabled(::features::kPrerender2Holdback)) {
       builder.SetHoldback(true);
     }
     // Check if the attempt is held back either due to the check above or via

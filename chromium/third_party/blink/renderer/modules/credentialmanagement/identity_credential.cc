@@ -21,7 +21,7 @@ namespace {
 using mojom::blink::LogoutRpsStatus;
 using mojom::blink::RequestTokenStatus;
 
-constexpr char kIdentityCredentialType[] = "identity";
+constexpr char kIdentityCredentialType2[] = "identity";
 
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
@@ -88,7 +88,7 @@ bool IdentityCredential::IsRejectingPromiseDueToCSP(
 }
 
 IdentityCredential::IdentityCredential(const String& token)
-    : Credential(/* id = */ "", kIdentityCredentialType), token_(token) {}
+    : Credential(/* id = */ "", kIdentityCredentialType2), token_(token) {}
 
 bool IdentityCredential::IsIdentityCredential() const {
   return true;

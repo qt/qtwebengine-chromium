@@ -312,7 +312,7 @@ base::expected<SetsAndAliases, ParseError> ParseSet(
                    exempt_from_limits
                        ? absl::nullopt
                        : absl::make_optional(
-                             features::kFirstPartySetsMaxAssociatedSites.Get()),
+                             ::features::kFirstPartySetsMaxAssociatedSites.Get()),
            },
            {
                .field_name = kFirstPartySetServiceSitesField,

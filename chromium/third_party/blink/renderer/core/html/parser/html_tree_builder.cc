@@ -77,7 +77,7 @@ static TextPosition UninitializedPositionValue1() {
                       OrdinalNumber::First());
 }
 
-static inline bool IsAllWhitespace(const StringView& string_view) {
+static inline bool IsAllWhitespaceHTB(const StringView& string_view) {
   return string_view.IsAllSpecialCharacters<IsHTMLSpace<UChar>>();
 }
 
@@ -2778,7 +2778,7 @@ void HTMLTreeBuilder::DefaultForAfterHead() {
 void HTMLTreeBuilder::DefaultForInTableText() {
   String characters = pending_table_characters_.ToString();
   pending_table_characters_.Clear();
-  if (!IsAllWhitespace(characters)) {
+  if (!IsAllWhitespaceHTB(characters)) {
     // FIXME: parse error
     HTMLConstructionSite::RedirectToFosterParentGuard redirecter(tree_);
     tree_.ReconstructTheActiveFormattingElements();

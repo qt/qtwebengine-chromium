@@ -787,7 +787,7 @@ bool CompositorAnimations::ConvertTimingForCompositor(
   // after finishing until it is removed by a subsequent main thread commit.
   // This allows developers to apply a post animation style or start a
   // subsequent animation without flicker.
-  if (base::FeatureList::IsEnabled(features::kNoPreserveLastMutation) &&
+  if (base::FeatureList::IsEnabled(::features::kNoPreserveLastMutation) &&
       is_monotonic_timeline) {
     if (animation_playback_rate >= 0) {
       switch (out.fill_mode) {

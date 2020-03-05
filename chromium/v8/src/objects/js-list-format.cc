@@ -248,7 +248,7 @@ Handle<String> IcuFieldIdToType(Isolate* isolate, int32_t field_id) {
 
 // A helper function to convert the FormattedList to a
 // MaybeHandle<JSArray> for the implementation of formatToParts.
-MaybeHandle<JSArray> FormattedListToJSArray(
+MaybeHandle<JSArray> FormattedListToJSArray2(
     Isolate* isolate, const icu::FormattedValue& formatted) {
   Handle<JSArray> array = isolate->factory()->NewJSArray(0);
   icu::ConstrainedFieldPosition cfpos;
@@ -286,7 +286,7 @@ MaybeHandle<String> JSListFormat::FormatList(Isolate* isolate,
 MaybeHandle<JSArray> JSListFormat::FormatListToParts(
     Isolate* isolate, Handle<JSListFormat> format, Handle<FixedArray> list) {
   return FormatListCommon<JSArray>(isolate, format, list,
-                                   FormattedListToJSArray);
+                                   FormattedListToJSArray2);
 }
 
 namespace {

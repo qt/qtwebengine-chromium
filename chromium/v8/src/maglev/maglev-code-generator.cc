@@ -1730,6 +1730,8 @@ void MaglevCodeGenerator::GenerateDeoptimizationData(
   deopt_data_ = NewPersistentHandleIfNeeded(local_isolate, data);
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

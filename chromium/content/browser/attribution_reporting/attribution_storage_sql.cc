@@ -88,7 +88,7 @@ using ::attribution_reporting::SuitableOrigin;
 using ::attribution_reporting::mojom::SourceRegistrationTimeConfig;
 using ::attribution_reporting::mojom::SourceType;
 
-const base::FilePath::CharType kDatabasePath[] =
+const base::FilePath::CharType kDatabasePathAttr[] =
     FILE_PATH_LITERAL("Conversions");
 
 constexpr int64_t kUnsetRecordId = -1;
@@ -311,7 +311,7 @@ void SerializeCommonAggregatableData(
     const AttributionReport::CommonAggregatableData& data,
     proto::AttributionCommonAggregatableMetadata& msg) {
   if (base::FeatureList::IsEnabled(
-          aggregation_service::kAggregationServiceMultipleCloudProviders) &&
+          ::aggregation_service::kAggregationServiceMultipleCloudProviders) &&
       data.aggregation_coordinator_origin.has_value()) {
     msg.set_coordinator_origin(
         data.aggregation_coordinator_origin->Serialize());
@@ -612,7 +612,7 @@ absl::optional<StoredSourceData> ReadSourceToAttribute(
 }
 
 base::FilePath DatabasePath(const base::FilePath& user_data_directory) {
-  return user_data_directory.Append(kDatabasePath);
+  return user_data_directory.Append(kDatabasePathAttr);
 }
 
 StorableSource::Result ThrottleResultToStorableSourceResult(

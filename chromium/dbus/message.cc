@@ -767,7 +767,7 @@ bool MessageReader::PopBool(bool* value) {
   // Like MessageWriter::AppendBool(), we should copy |value| to
   // dbus_bool_t, as dbus_message_iter_get_basic() used in PopBasic()
   // expects four bytes for DBUS_TYPE_BOOLEAN.
-  dbus_bool_t dbus_value = FALSE;
+  dbus_bool_t dbus_value = 0; //FALSE;
   const bool success = PopBasic(DBUS_TYPE_BOOLEAN, &dbus_value);
   *value = static_cast<bool>(dbus_value);
   return success;
@@ -962,7 +962,7 @@ bool MessageReader::PopVariantOfByte(uint8_t* value) {
 
 bool MessageReader::PopVariantOfBool(bool* value) {
   // See the comment at MessageReader::PopBool().
-  dbus_bool_t dbus_value = FALSE;
+  dbus_bool_t dbus_value = 0; //FALSE;
   const bool success = PopVariantOfBasic(DBUS_TYPE_BOOLEAN, &dbus_value);
   *value = static_cast<bool>(dbus_value);
   return success;

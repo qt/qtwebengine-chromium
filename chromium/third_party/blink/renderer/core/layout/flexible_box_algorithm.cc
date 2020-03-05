@@ -85,7 +85,7 @@ FlexItem::FlexItem(const FlexLayoutAlgorithm* algorithm,
                    NGPhysicalBoxStrut physical_margins,
                    NGBoxStrut scrollbars,
                    WritingMode baseline_writing_mode,
-                   BaselineGroup baseline_group,
+                   BaselineGroupType baseline_group,
                    bool depends_on_min_max_sizes)
     : algorithm_(algorithm),
       line_number_(0),
@@ -192,7 +192,7 @@ LayoutUnit FlexItem::MarginBoxAscent(bool is_last_baseline,
   if (is_wrap_reverse != is_last_baseline)
     baseline = baseline_fragment.BlockSize() - baseline;
 
-  return baseline_group_ == BaselineGroup::kMajor
+  return baseline_group_ == BaselineGroupType::kMajor
              ? FlowAwareMarginBefore() + baseline
              : FlowAwareMarginAfter() + baseline;
 }
@@ -555,7 +555,7 @@ void FlexLine::ComputeLineItemsPosition(LayoutUnit main_axis_start_offset,
       LayoutUnit descent =
           (flex_item.CrossAxisMarginExtent() + flex_item.cross_axis_size_) -
           ascent;
-      if (flex_item.baseline_group_ == BaselineGroup::kMajor) {
+      if (flex_item.baseline_group_ == BaselineGroupType::kMajor) {
         max_major_ascent_ = std::max(max_major_ascent_, ascent);
         max_major_descent = std::max(max_major_descent, descent);
         child_cross_axis_margin_box_extent =
@@ -892,7 +892,7 @@ void FlexLayoutAlgorithm::AlignChildren() {
       LayoutUnit baseline_offset;
       if (position == ItemPosition::kBaseline ||
           position == ItemPosition::kLastBaseline) {
-        bool is_major = flex_item.baseline_group_ == BaselineGroup::kMajor;
+        bool is_major = flex_item.baseline_group_ == BaselineGroupType::kMajor;
         LayoutUnit ascent = flex_item.MarginBoxAscent(
             position == ItemPosition::kLastBaseline, is_wrap_reverse);
         LayoutUnit max_ascent = is_major ? line_context.max_major_ascent_

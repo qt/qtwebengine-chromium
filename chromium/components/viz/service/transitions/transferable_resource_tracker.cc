@@ -4,7 +4,7 @@
 
 #include "components/viz/service/transitions/transferable_resource_tracker.h"
 
-#include <GLES2/gl2.h>
+#include "third_party/khronos/GLES2/gl2.h"
 
 #include <limits>
 #include <memory>

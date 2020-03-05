@@ -27,7 +27,7 @@ namespace {
 //    logged in UKM. See crbug.com/1411841#c3 to see how the sampling_likelihood
 //    default values are determined.
 constexpr base::FeatureParam<std::string> kPreloadingConfigParam{
-    &features::kPreloadingConfig, "preloading_config", R"(
+    &::features::kPreloadingConfig, "preloading_config", R"(
 [{
   "preloading_type": "Prefetch",
   "preloading_predictor": "OmniboxSearchPredictor",
@@ -84,7 +84,7 @@ PreloadingConfig::PreloadingConfig() {
 void PreloadingConfig::ParseConfig() {
   entries_.clear();
 
-  if (!base::FeatureList::IsEnabled(features::kPreloadingConfig)) {
+  if (!base::FeatureList::IsEnabled(::features::kPreloadingConfig)) {
     return;
   }
   // Throughout parsing the config, if we fail to parse, we silently skip the

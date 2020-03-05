@@ -14,7 +14,7 @@ namespace blink {
 
 namespace {
 
-constexpr unsigned kNumberOfChannels = 1;
+constexpr unsigned kNumberOfChannelsWSH = 1;
 
 }  // namespace
 
@@ -25,7 +25,7 @@ WaveShaperHandler::WaveShaperHandler(AudioNode& node, float sample_rate)
           sample_rate,
           std::make_unique<WaveShaperProcessor>(
               sample_rate,
-              kNumberOfChannels,
+              kNumberOfChannelsWSH,
               node.context()->GetDeferredTaskHandler().RenderQuantumFrames())) {
   Initialize();
 }

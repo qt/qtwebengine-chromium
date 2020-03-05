@@ -21,18 +21,18 @@ namespace base {
 namespace {
 
 ABSL_CONST_INIT thread_local SingleThreadTaskRunner::CurrentDefaultHandle*
-    current_default_handle = nullptr;
+    current_default_handleSTTR = nullptr;
 
 // This function can be removed, and the calls below replaced with direct
 // variable accesses, once the MSAN workaround is not necessary.
-SingleThreadTaskRunner::CurrentDefaultHandle* GetCurrentDefaultHandle() {
+SingleThreadTaskRunner::CurrentDefaultHandle* GetCurrentDefaultHandle2() {
   // Workaround false-positive MSAN use-of-uninitialized-value on
   // thread_local storage for loaded libraries:
   // https://github.com/google/sanitizers/issues/1265
-  MSAN_UNPOISON(&current_default_handle,
+  MSAN_UNPOISON(&current_default_handleSTTR,
                 sizeof(SingleThreadTaskRunner::CurrentDefaultHandle*));
 
-  return current_default_handle;
+  return current_default_handleSTTR;
 }
 
 }  // namespace
@@ -40,7 +40,7 @@ SingleThreadTaskRunner::CurrentDefaultHandle* GetCurrentDefaultHandle() {
 // static
 const scoped_refptr<SingleThreadTaskRunner>&
 SingleThreadTaskRunner::GetCurrentDefault() {
-  const auto* const handle = GetCurrentDefaultHandle();
+  const auto* const handle = GetCurrentDefaultHandle2();
   CHECK(handle)
       << "Error: This caller requires a single-threaded context (i.e. the "
          "current task needs to run from a SingleThreadTaskRunner). If you're "
@@ -56,12 +56,12 @@ SingleThreadTaskRunner::GetCurrentDefault() {
 
 // static
 bool SingleThreadTaskRunner::HasCurrentDefault() {
-  return !!GetCurrentDefaultHandle();
+  return !!GetCurrentDefaultHandle2();
 }
 
 SingleThreadTaskRunner::CurrentDefaultHandle::CurrentDefaultHandle(
     scoped_refptr<SingleThreadTaskRunner> task_runner)
-    : resetter_(&current_default_handle, this, nullptr),
+    : resetter_(&current_default_handleSTTR, this, nullptr),
       task_runner_(std::move(task_runner)),
       sequenced_task_runner_current_default_(task_runner_) {
   DCHECK(task_runner_->BelongsToCurrentThread());
@@ -69,7 +69,7 @@ SingleThreadTaskRunner::CurrentDefaultHandle::CurrentDefaultHandle(
 
 SingleThreadTaskRunner::CurrentDefaultHandle::~CurrentDefaultHandle() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK_EQ(GetCurrentDefaultHandle(), this);
+  DCHECK_EQ(GetCurrentDefaultHandle2(), this);
 }
 
 SingleThreadTaskRunner::CurrentHandleOverride::CurrentHandleOverride(
@@ -92,7 +92,7 @@ SingleThreadTaskRunner::CurrentHandleOverride::CurrentHandleOverride(
 #if DCHECK_IS_ON()
   expected_task_runner_before_restore_ = overriding_task_runner.get();
 #endif
-  auto* const handle = GetCurrentDefaultHandle();
+  auto* const handle = GetCurrentDefaultHandle2();
   SequencedTaskRunner::SetCurrentDefaultHandleTaskRunner(
       handle->sequenced_task_runner_current_default_, overriding_task_runner);
   handle->task_runner_.swap(overriding_task_runner);
@@ -108,7 +108,7 @@ SingleThreadTaskRunner::CurrentHandleOverride::CurrentHandleOverride(
 
 SingleThreadTaskRunner::CurrentHandleOverride::~CurrentHandleOverride() {
   if (task_runner_to_restore_) {
-    auto* const handle = GetCurrentDefaultHandle();
+    auto* const handle = GetCurrentDefaultHandle2();
 #if DCHECK_IS_ON()
     DCHECK_EQ(expected_task_runner_before_restore_, handle->task_runner_.get())
         << "Nested overrides must expire their "

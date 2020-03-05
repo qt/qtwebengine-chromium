@@ -24,7 +24,7 @@ namespace gl {
 
 namespace {
 
-bool SupportsLowLatencyPresentation() {
+bool SupportsLowLatencyPresentation2() {
   return base::FeatureList::IsEnabled(
       features::kDirectCompositionLowLatencyPresentation);
 }
@@ -170,7 +170,7 @@ void DirectCompositionSurfaceWin::SetVSyncEnabled(bool enabled) {
 void DirectCompositionSurfaceWin::OnVSync(base::TimeTicks vsync_time,
                                           base::TimeDelta interval) {
   // Main thread will run vsync callback in low latency presentation mode.
-  if (VSyncCallbackEnabled() && !SupportsLowLatencyPresentation()) {
+  if (VSyncCallbackEnabled() && !SupportsLowLatencyPresentation2()) {
     DCHECK(vsync_callback_);
     vsync_callback_.Run(vsync_time, interval);
   }
@@ -297,7 +297,7 @@ void DirectCompositionSurfaceWin::HandleVSyncOnMainThread(
   UMA_HISTOGRAM_COUNTS_100("GPU.DirectComposition.NumPendingFrames",
                            pending_frames_.size());
 
-  if (SupportsLowLatencyPresentation() && VSyncCallbackEnabled() &&
+  if (SupportsLowLatencyPresentation2() && VSyncCallbackEnabled() &&
       pending_frames_.size() < max_pending_frames_) {
     DCHECK(vsync_callback_);
     vsync_callback_.Run(vsync_time, interval);
