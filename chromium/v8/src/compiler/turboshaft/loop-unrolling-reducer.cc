@@ -608,4 +608,6 @@ StaticCanonicalForLoopMatcher::InvertComparisonOp(CmpOp op) {
   UNREACHABLE();
 }
 
+#undef TRACE
+
 }  // namespace v8::internal::compiler::turboshaft

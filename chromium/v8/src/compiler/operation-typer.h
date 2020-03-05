@@ -51,20 +51,20 @@ class V8_EXPORT_PRIVATE OperationTyper {
   OperationTyper(JSHeapBroker* broker, Zone* zone);
 
   // Typing Phi.
-  Type Merge(Type left, Type right);
+  compiler::Type Merge(compiler::Type left, compiler::Type right);
 
-  Type ToPrimitive(Type type);
-  Type ToNumber(Type type);
-  Type ToNumberConvertBigInt(Type type);
-  Type ToBigInt(Type type);
-  Type ToBigIntConvertNumber(Type type);
-  Type ToNumeric(Type type);
-  Type ToBoolean(Type type);
+  compiler::Type ToPrimitive(compiler::Type type);
+  compiler::Type ToNumber(compiler::Type type);
+  compiler::Type ToNumberConvertBigInt(compiler::Type type);
+  compiler::Type ToBigInt(compiler::Type type);
+  compiler::Type ToBigIntConvertNumber(compiler::Type type);
+  compiler::Type ToNumeric(compiler::Type type);
+  compiler::Type ToBoolean(compiler::Type type);
 
-  Type WeakenRange(Type current_range, Type previous_range);
+  compiler::Type WeakenRange(compiler::Type current_range, compiler::Type previous_range);
 
 // Unary operators.
-#define DECLARE_METHOD(Name) Type Name(Type type);
+#define DECLARE_METHOD(Name) compiler::Type Name(compiler::Type type);
   SIMPLIFIED_NUMBER_UNOP_LIST(DECLARE_METHOD)
   SIMPLIFIED_BIGINT_UNOP_LIST(DECLARE_METHOD)
   SIMPLIFIED_SPECULATIVE_NUMBER_UNOP_LIST(DECLARE_METHOD)
@@ -73,7 +73,7 @@ class V8_EXPORT_PRIVATE OperationTyper {
 #undef DECLARE_METHOD
 
 // Numeric binary operators.
-#define DECLARE_METHOD(Name) Type Name(Type lhs, Type rhs);
+#define DECLARE_METHOD(Name) compiler::Type Name(compiler::Type lhs, compiler::Type rhs);
   SIMPLIFIED_NUMBER_BINOP_LIST(DECLARE_METHOD)
   SIMPLIFIED_BIGINT_BINOP_LIST(DECLARE_METHOD)
   SIMPLIFIED_SPECULATIVE_NUMBER_BINOP_LIST(DECLARE_METHOD)
@@ -81,22 +81,22 @@ class V8_EXPORT_PRIVATE OperationTyper {
   TYPER_SUPPORTED_MACHINE_BINOP_LIST(DECLARE_METHOD)
 #undef DECLARE_METHOD
 
-  Type ChangeUint32ToUint64(Type input);
+  compiler::Type ChangeUint32ToUint64(compiler::Type input);
 
   // Comparison operators.
-  Type SameValue(Type lhs, Type rhs);
-  Type SameValueNumbersOnly(Type lhs, Type rhs);
-  Type StrictEqual(Type lhs, Type rhs);
+  compiler::Type SameValue(compiler::Type lhs, compiler::Type rhs);
+  compiler::Type SameValueNumbersOnly(compiler::Type lhs, compiler::Type rhs);
+  compiler::Type StrictEqual(compiler::Type lhs, compiler::Type rhs);
 
   // Check operators.
-  Type CheckBounds(Type index, Type length);
-  Type CheckFloat64Hole(Type type);
-  Type CheckNumber(Type type);
-  Type CheckNumberOrUndefined(Type type);
-  Type CheckNumberFitsInt32(Type type);
-  Type ConvertTaggedHoleToUndefined(Type type);
+  compiler::Type CheckBounds(compiler::Type index, compiler::Type length);
+  compiler::Type CheckFloat64Hole(compiler::Type type);
+  compiler::Type CheckNumber(compiler::Type type);
+  compiler::Type CheckNumberOrUndefined(compiler::Type type);
+  compiler::Type CheckNumberFitsInt32(compiler::Type type);
+  compiler::Type ConvertTaggedHoleToUndefined(compiler::Type type);
 
-  Type TypeTypeGuard(const Operator* sigma_op, Type input);
+  compiler::Type TypeTypeGuard(const Operator* sigma_op, compiler::Type input);
 
   enum ComparisonOutcomeFlags {
     kComparisonTrue = 1,
@@ -104,22 +104,22 @@ class V8_EXPORT_PRIVATE OperationTyper {
     kComparisonUndefined = 4
   };
 
-  Type singleton_false() const { return singleton_false_; }
-  Type singleton_true() const { return singleton_true_; }
+  compiler::Type singleton_false() const { return singleton_false_; }
+  compiler::Type singleton_true() const { return singleton_true_; }
 
  private:
   using ComparisonOutcome = base::Flags<ComparisonOutcomeFlags>;
 
   ComparisonOutcome Invert(ComparisonOutcome);
-  Type Invert(Type);
-  Type FalsifyUndefined(ComparisonOutcome);
+  compiler::Type Invert(compiler::Type);
+  compiler::Type FalsifyUndefined(ComparisonOutcome);
 
-  Type Rangify(Type);
-  Type AddRanger(double lhs_min, double lhs_max, double rhs_min,
+  compiler::Type Rangify(compiler::Type);
+  compiler::Type AddRanger(double lhs_min, double lhs_max, double rhs_min,
                  double rhs_max);
-  Type SubtractRanger(double lhs_min, double lhs_max, double rhs_min,
+  compiler::Type SubtractRanger(double lhs_min, double lhs_max, double rhs_min,
                       double rhs_max);
-  Type MultiplyRanger(double lhs_min, double lhs_max, double rhs_min,
+  compiler::Type MultiplyRanger(double lhs_min, double lhs_max, double rhs_min,
                       double rhs_max);
 
   Zone* zone() const { return zone_; }
@@ -127,17 +127,17 @@ class V8_EXPORT_PRIVATE OperationTyper {
   Zone* const zone_;
   TypeCache const* cache_;
 
-  Type infinity_;
-  Type minus_infinity_;
-  Type singleton_NaN_string_;
-  Type singleton_zero_string_;
-  Type singleton_false_;
-  Type singleton_true_;
-  Type signed32ish_;
-  Type unsigned32ish_;
-  Type singleton_empty_string_;
-  Type truish_;
-  Type falsish_;
+  compiler::Type infinity_;
+  compiler::Type minus_infinity_;
+  compiler::Type singleton_NaN_string_;
+  compiler::Type singleton_zero_string_;
+  compiler::Type singleton_false_;
+  compiler::Type singleton_true_;
+  compiler::Type signed32ish_;
+  compiler::Type unsigned32ish_;
+  compiler::Type singleton_empty_string_;
+  compiler::Type truish_;
+  compiler::Type falsish_;
 };
 
 }  // namespace compiler

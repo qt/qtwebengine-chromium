@@ -110,14 +110,14 @@ ServiceVideoCaptureProvider::ServiceVideoCaptureProvider(
     : emit_log_message_cb_(std::move(emit_log_message_cb)),
       launcher_has_connected_to_source_provider_(false) {
 #endif  // BUILDFLAG(IS_CHROMEOS)
-  if (features::IsVideoCaptureServiceEnabledForOutOfProcess()) {
+  if (::features::IsVideoCaptureServiceEnabledForOutOfProcess()) {
     service_process_observer_.emplace(
         GetUIThreadTaskRunner({}),
         base::BindRepeating(&ServiceVideoCaptureProvider::OnServiceStarted,
                             weak_ptr_factory_.GetWeakPtr()),
         base::BindRepeating(&ServiceVideoCaptureProvider::OnServiceStopped,
                             weak_ptr_factory_.GetWeakPtr()));
-  } else if (features::IsVideoCaptureServiceEnabledForBrowserProcess()) {
+  } else if (::features::IsVideoCaptureServiceEnabledForBrowserProcess()) {
     // Connect immediately and permanently when the service runs in-process.
     GetIOThreadTaskRunner({})->PostTask(
         FROM_HERE,

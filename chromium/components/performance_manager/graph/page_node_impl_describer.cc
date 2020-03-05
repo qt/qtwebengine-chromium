@@ -18,8 +18,6 @@ namespace performance_manager {
 
 namespace {
 
-const char kDescriberName[] = "PageNodeImpl";
-
 const char* PermissionStatusToString(
     std::optional<blink::mojom::PermissionStatus> permission_status) {
   if (!permission_status.has_value()) {
@@ -42,7 +40,7 @@ PageNodeImplDescriber::~PageNodeImplDescriber() = default;
 
 void PageNodeImplDescriber::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "PageNodeImpl");
 }
 
 void PageNodeImplDescriber::OnTakenFromGraph(Graph* graph) {

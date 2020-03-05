@@ -35,12 +35,12 @@ class ObservableNodeState {
   uint32_t id() const { return id_; }
   const Operator* op() const { return op_; }
   int16_t opcode() const { return op_->opcode(); }
-  Type type() const { return type_; }
+  compiler::Type type() const { return type_; }
 
  private:
   uint32_t id_;
   const Operator* op_;
-  Type type_;
+  compiler::Type type_;
 };
 
 inline bool operator==(const ObservableNodeState& lhs,

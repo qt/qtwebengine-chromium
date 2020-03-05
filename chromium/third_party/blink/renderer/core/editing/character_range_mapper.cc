@@ -7,7 +7,7 @@
 namespace blink {
 
 template <typename Strategy>
-CharacterRange CharacterRangeMapperAlgorithm<Strategy>::CreateCharacterRange(
+CharacterRangeCRM CharacterRangeMapperAlgorithm<Strategy>::CreateCharacterRange(
     const EphemeralRangeTemplate<Strategy>& scope,
     const EphemeralRangeTemplate<Strategy>& range,
     const TextIteratorBehavior& behavior) {
@@ -35,7 +35,7 @@ template <typename Strategy>
 EphemeralRangeTemplate<Strategy>
 CharacterRangeMapperAlgorithm<Strategy>::ResolveCharacterRange(
     const EphemeralRangeTemplate<Strategy>& scope,
-    const CharacterRange& range,
+    const CharacterRangeCRM& range,
     const TextIteratorBehavior& behavior) {
   DCHECK_GE(range.offset, 0);
   DCHECK_GE(range.length, 0);

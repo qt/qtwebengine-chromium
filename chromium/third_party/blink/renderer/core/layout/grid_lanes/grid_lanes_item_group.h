@@ -29,7 +29,7 @@ class GridLanesItemGroupProperties {
 
   explicit GridLanesItemGroupProperties(
       const GridSpan& item_span,
-      std::optional<BaselineGroup> baseline_group = std::nullopt)
+      std::optional<BaselineGroupType> baseline_group = std::nullopt)
       : item_span_(item_span), baseline_group_(baseline_group) {}
 
   bool operator==(const GridLanesItemGroupProperties& other) const {
@@ -60,7 +60,7 @@ class GridLanesItemGroupProperties {
     return *item_span_;
   }
 
-  const std::optional<BaselineGroup>& GetBaselineGroup() const {
+  const std::optional<BaselineGroupType>& GetBaselineGroup() const {
     return baseline_group_;
   }
 
@@ -77,7 +77,7 @@ class GridLanesItemGroupProperties {
   // are grouped by this value: `std::nullopt` groups items that do not
   // participate in baseline alignment, `kMajor` groups first baseline aligned
   // items, and `kMinor` groups last baseline aligned items.
-  std::optional<BaselineGroup> baseline_group_;
+  std::optional<BaselineGroupType> baseline_group_;
 };
 
 struct CORE_EXPORT GridLanesItemGroup

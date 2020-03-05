@@ -17,6 +17,7 @@ blink_modules_sources("permissions") {
     "permissions.cc",
     "permissions.h",
   ]
+  jumbo_excluded_sources = [ "permission_utils.cc" ]
 }
 
 source_set("unit_tests") {

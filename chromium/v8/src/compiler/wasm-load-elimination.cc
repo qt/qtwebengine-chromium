@@ -108,7 +108,7 @@ std::tuple<Node*, Node*> WasmLoadElimination::TruncateAndExtendOrType(
     return {value, effect};
   }
 
-  Type value_type = NodeProperties::GetType(value);
+  compiler::Type value_type = NodeProperties::GetType(value);
   if (!value_type.IsWasm()) {
     return {value, effect};
   }
@@ -123,7 +123,7 @@ std::tuple<Node*, Node*> WasmLoadElimination::TruncateAndExtendOrType(
     return {dead(), dead()};
   }
   if (!wasm::IsSubtypeOf(node_type.type, field_type, node_type.module)) {
-    Type type = Type::Wasm({field_type, node_type.module}, graph()->zone());
+    compiler::Type type = compiler::Type::Wasm({field_type, node_type.module}, graph()->zone());
     Node* ret =
         graph()->NewNode(common()->TypeGuard(type), value, effect, control);
     NodeProperties::SetType(ret, type);

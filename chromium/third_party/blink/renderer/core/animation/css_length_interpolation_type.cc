@@ -133,7 +133,7 @@ InterpolationValue CSSLengthInterpolationType::MaybeConvertUnderlyingValue(
 }
 
 namespace {
-class AlwaysInvalidateChecker
+class AlwaysInvalidateCheckerCLIT
     : public CSSInterpolationType::CSSConversionChecker {
  public:
   bool IsValid(const StyleResolverState& state,
@@ -163,7 +163,7 @@ CSSLengthInterpolationType::PreInterpolationCompositeIfNeeded(
   // TODO(crbug.com/1009230): Remove this once our interpolation code isn't
   // caching composited values.
   conversion_checkers.push_back(
-      MakeGarbageCollected<AlwaysInvalidateChecker>());
+      MakeGarbageCollected<AlwaysInvalidateCheckerCLIT>());
 
   InterpolableLength& length =
       To<InterpolableLength>(*value.interpolable_value);

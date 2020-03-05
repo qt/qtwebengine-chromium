@@ -115,7 +115,7 @@ constexpr auto kInputPassword = blink::mojom::FormControlType::kInputPassword;
 // The size above which we stop triggering autocomplete.
 const size_t kMaximumTextSizeForAutocomplete = 1000;
 
-constexpr char kSubmissionSourceHistogram[] =
+constexpr char kSubmissionSourceHistogramPAA[] =
     "Autofill.SubmissionDetectionSource.PasswordAutofillAgent";
 
 // Names of HTML attributes to show form and field signatures for debugging.
@@ -2104,7 +2104,7 @@ void PasswordAutofillAgent::FireHostSubmitEvent(
     case mojom::SubmissionSource::DOM_MUTATION_AFTER_AUTOFILL:
       if (auto* driver = unsafe_driver();
           driver && FrameCanAccessPasswordManager()) {
-        base::UmaHistogramEnumeration(kSubmissionSourceHistogram, source);
+        base::UmaHistogramEnumeration(kSubmissionSourceHistogramPAA, source);
         driver->DynamicFormSubmission(ToSubmissionIndicatorEvent(source));
       }
       return;
@@ -2144,7 +2144,7 @@ void PasswordAutofillAgent::OnFormSubmitted(const FormData& submitted_form) {
   processed_submitted_form->set_fields(FillNonTypedOrFilledPropertiesMasks(
       processed_submitted_form->ExtractFields(), field_data_manager()));
 
-  base::UmaHistogramEnumeration(kSubmissionSourceHistogram,
+  base::UmaHistogramEnumeration(kSubmissionSourceHistogramPAA,
                                 mojom::SubmissionSource::FORM_SUBMISSION);
   if (auto* driver = unsafe_driver()) {
     driver->PasswordFormSubmitted(*processed_submitted_form);

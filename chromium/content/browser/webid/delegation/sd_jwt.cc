@@ -23,7 +23,7 @@ namespace content::sdjwt {
 
 namespace {
 
-std::optional<std::string> Base64UrlDecode(const std::string_view& base64) {
+std::optional<std::string> Base64UrlDecodeSJ(const std::string_view& base64) {
   std::string str;
   if (!base::Base64UrlDecode(
           base64, base::Base64UrlDecodePolicy::IGNORE_PADDING, &str)) {
@@ -287,7 +287,7 @@ std::optional<base::ListValue> SdJwt::Parse(const std::string_view& sdjwt) {
         return std::nullopt;
       }
 
-      auto json = Base64UrlDecode(disclosure);
+      auto json = Base64UrlDecodeSJ(disclosure);
       if (!json) {
         // Failed to decode base64url.
         return std::nullopt;
@@ -578,7 +578,7 @@ std::optional<base::ListValue> Jwt::Parse(const std::string_view& jwt) {
     return std::nullopt;
   }
 
-  auto header = Base64UrlDecode(parts[0]);
+  auto header = Base64UrlDecodeSJ(parts[0]);
   if (!header) {
     return std::nullopt;
   }
@@ -586,7 +586,7 @@ std::optional<base::ListValue> Jwt::Parse(const std::string_view& jwt) {
   base::ListValue result;
   result.Append(*header);
 
-  auto payload = Base64UrlDecode(parts[1]);
+  auto payload = Base64UrlDecodeSJ(parts[1]);
   if (!payload) {
     return std::nullopt;
   }

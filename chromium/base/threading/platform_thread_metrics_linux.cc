@@ -24,7 +24,7 @@ namespace {
 
 // Get the total CPU from a proc stat buffer. Return value is a TimeDelta
 // converted from a number of jiffies on success or nullopt if parsing failed.
-std::optional<TimeDelta> ParseTotalCPUTimeFromStats(
+std::optional<TimeDelta> ParseTotalCPUTimeFromStatsPTML(
     span<std::string_view> proc_stats) {
   const std::optional<int64_t> utime =
       internal::GetProcStatsFieldAsOptionalInt64(proc_stats,
@@ -57,7 +57,7 @@ std::optional<TimeDelta> PlatformThreadMetrics::GetCumulativeCPUUsage() {
       !internal::ParseProcStats(buffer, &proc_stats)) {
     return std::nullopt;
   }
-  return ParseTotalCPUTimeFromStats(proc_stats);
+  return ParseTotalCPUTimeFromStatsPTML(proc_stats);
 }
 
 }  // namespace base

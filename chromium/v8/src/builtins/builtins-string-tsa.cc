@@ -17,7 +17,7 @@ namespace v8::internal {
 
 #include "src/compiler/turboshaft/define-assembler-macros.inc"
 
-using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
+// using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
 
 #ifdef V8_ENABLE_EXPERIMENTAL_TSA_BUILTINS
 

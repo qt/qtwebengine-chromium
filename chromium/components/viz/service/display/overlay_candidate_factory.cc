@@ -94,7 +94,7 @@ gfx::OverlayTransform GetOverlayTransform(const gfx::Transform& quad_transform,
   }
 }
 
-constexpr double kEpsilon = 0.0001;
+constexpr double kEpsilonOCF = 0.0001;
 
 // Determine why the transformation isn't axis aligned. A transform with z
 // components or perspective would require a full 4x4 matrix to delegate, a
@@ -113,7 +113,7 @@ OverlayCandidate::CandidateStatus GetReasonForTransformNotAxisAligned(
   // Normalize to avoid numerical issues.
   x_part.InvScale(x_part.Length());
   y_part.InvScale(y_part.Length());
-  if (std::abs(gfx::DotProduct(x_part, y_part)) > kEpsilon)
+  if (std::abs(gfx::DotProduct(x_part, y_part)) > kEpsilonOCF)
     return OverlayCandidate::CandidateStatus::kFailNotAxisAligned2dShear;
 
   return OverlayCandidate::CandidateStatus::kFailNotAxisAligned2dRotation;

@@ -18,7 +18,7 @@ namespace {
 
 using UnitType = CSSPrimitiveValue::UnitType;
 
-CSSMathExpressionNode* NumberNode(double number,
+CSSMathExpressionNode* NumberNodeIV(double number,
                                   UnitType unit_type = UnitType::kNumber) {
   return CSSMathExpressionNumericLiteral::Create(
       CSSNumericLiteralValue::Create(number, unit_type));
@@ -74,7 +74,7 @@ const CSSMathExpressionNode& InterpolableNumber::AsExpression() const {
   if (IsExpression()) {
     return *expression_;
   }
-  return *NumberNode(value_, unit_type_);
+  return *NumberNodeIV(value_, unit_type_);
 }
 
 bool InterpolableNumber::Equals(const InterpolableValue& other) const {
@@ -127,11 +127,11 @@ void InterpolableNumber::Interpolate(const InterpolableValue& to,
   }
   const CSSMathExpressionNode* blended_from =
       CSSMathExpressionOperation::CreateArithmeticOperationAndSimplifyCalcSize(
-          &AsExpression(), NumberNode(1 - progress),
+          &AsExpression(), NumberNodeIV(1 - progress),
           CSSMathOperator::kMultiply);
   const CSSMathExpressionNode* blended_to =
       CSSMathExpressionOperation::CreateArithmeticOperationAndSimplifyCalcSize(
-          &to_number.AsExpression(), NumberNode(progress),
+          &to_number.AsExpression(), NumberNodeIV(progress),
           CSSMathOperator::kMultiply);
   const CSSMathExpressionNode* result_expression =
       CSSMathExpressionOperation::CreateArithmeticOperationAndSimplifyCalcSize(
@@ -187,7 +187,7 @@ void InterpolableNumber::Scale(double scale) {
   }
   SetExpression(
       *CSSMathExpressionOperation::CreateArithmeticOperationAndSimplifyCalcSize(
-          &AsExpression(), NumberNode(scale), CSSMathOperator::kMultiply));
+          &AsExpression(), NumberNodeIV(scale), CSSMathOperator::kMultiply));
 }
 
 void InterpolableNumber::Scale(const InterpolableNumber& other) {

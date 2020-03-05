@@ -9370,6 +9370,8 @@ compiler::OptionalMapRef VirtualObject::TryGetMapFromSlot(
 }
 #undef __
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

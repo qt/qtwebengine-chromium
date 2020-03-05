@@ -41,7 +41,9 @@ IconVariantsHandler::~IconVariantsHandler() = default;
 using extensions::api::icon_variants::ManifestKeys;
 using extensions::diagnostics::icon_variants::Id;
 using extensions::diagnostics::icon_variants::Severity;
-using extensions::diagnostics::icon_variants::Feature;
+// using extensions::diagnostics::icon_variants::Feature;
+
+using FeatureIVH = extensions::diagnostics::icon_variants::Feature;
 
 namespace {
 void AddInstallWarning(Extension& extension, const std::string& warning) {
@@ -50,7 +52,7 @@ void AddInstallWarning(Extension& extension, const std::string& warning) {
 
 void AddInstallWarningForId(Extension& extension, Id id) {
   auto diagnostic = extensions::diagnostics::icon_variants::GetDiagnostic(
-      Feature::kIconVariants, id);
+      FeatureIVH::kIconVariants, id);
   if (diagnostic.severity != Severity::kWarning) {
     return;
   }
@@ -68,7 +70,7 @@ ExtensionIconVariants GetIconVariants(Extension& extension) {
   const base::ListValue* icon_variants_list =
       extension.manifest()->available_values().FindList(keys::kIconVariants);
   if (!icon_variants_list) {
-    icon_variants.AddDiagnostic(Feature::kIconVariants,
+    icon_variants.AddDiagnostic(FeatureIVH::kIconVariants,
                                 Id::kIconVariantsKeyMustBeAList);
     return icon_variants;
   }
@@ -77,7 +79,7 @@ ExtensionIconVariants GetIconVariants(Extension& extension) {
 
   // Verify `icon_variants`, e.g. that at least one `icon_variant` is valid.
   if (icon_variants.IsEmpty()) {
-    icon_variants.AddDiagnostic(Feature::kIconVariants,
+    icon_variants.AddDiagnostic(FeatureIVH::kIconVariants,
                                 Id::kIconVariantsInvalid);
   }
 

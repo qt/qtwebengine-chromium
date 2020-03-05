@@ -11,11 +11,11 @@
 
 namespace blink {
 
-struct CharacterRange {
+struct CharacterRangeCRM {
   int offset;
   int length;
 
-  bool operator==(const CharacterRange&) const = default;
+  bool operator==(const CharacterRangeCRM&) const = default;
 };
 
 // Converts between |EphemeralRange| and |CharacterRange| using a text iterator.
@@ -37,7 +37,7 @@ class CharacterRangeMapperAlgorithm {
 
   // Converts an |EphemeralRange| into a |CharacterRange| relative to the
   // |scope| range.
-  static CharacterRange CreateCharacterRange(
+  static CharacterRangeCRM CreateCharacterRange(
       const EphemeralRangeTemplate<Strategy>& scope,
       const EphemeralRangeTemplate<Strategy>& range,
       const TextIteratorBehavior& =
@@ -47,7 +47,7 @@ class CharacterRangeMapperAlgorithm {
   // an |EphemeralRange|.
   static EphemeralRangeTemplate<Strategy> ResolveCharacterRange(
       const EphemeralRangeTemplate<Strategy>& scope,
-      const CharacterRange& range,
+      const CharacterRangeCRM& range,
       const TextIteratorBehavior& =
           TextIteratorBehavior::DefaultRangeLengthBehavior());
 };

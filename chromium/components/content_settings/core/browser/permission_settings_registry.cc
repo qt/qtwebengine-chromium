@@ -19,13 +19,13 @@ namespace content_settings {
 namespace {
 
 base::LazyInstance<PermissionSettingsRegistry>::DestructorAtExit
-    g_content_settings_registry_instance = LAZY_INSTANCE_INITIALIZER;
+    g_content_settings_registry_instance_psr = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
 // static
 PermissionSettingsRegistry* PermissionSettingsRegistry::GetInstance() {
-  return g_content_settings_registry_instance.Pointer();
+  return g_content_settings_registry_instance_psr.Pointer();
 }
 
 PermissionSettingsRegistry::PermissionSettingsRegistry()

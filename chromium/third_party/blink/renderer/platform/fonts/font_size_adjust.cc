@@ -11,7 +11,7 @@ namespace blink {
 
 namespace {
 
-StringView ToString(FontSizeAdjust::Metric metric) {
+StringView ToStringFSA(FontSizeAdjust::Metric metric) {
   switch (metric) {
     case FontSizeAdjust::Metric::kCapHeight:
       return "cap-height";
@@ -45,7 +45,7 @@ String FontSizeAdjust::ToString() const {
   if (metric_ == Metric::kExHeight) {
     return adjustment;
   }
-  return StrCat({::blink::ToString(metric_), " ", adjustment});
+  return StrCat({ToStringFSA(metric_), " ", adjustment});
 }
 
 }  // namespace blink

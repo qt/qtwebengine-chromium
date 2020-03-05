@@ -15,16 +15,16 @@
 namespace ui {
 
 namespace {
-struct DisplayLinkGlobals {
-  DisplayLinkGlobals() = default;
+struct DisplayLinkGlobalsEDLM {
+  DisplayLinkGlobalsEDLM() = default;
   base::Lock lock;
 
   // Indicates whether the display creation has been logged within the
   // 'Viz.ExternalBeginFrameSourceMac.DisplayLink.Create2' histogram.
   absl::flat_hash_set<CGDirectDisplayID> recorded_displays GUARDED_BY(lock);
 
-  static DisplayLinkGlobals& Get() {
-    static base::NoDestructor<DisplayLinkGlobals> instance;
+  static DisplayLinkGlobalsEDLM& Get() {
+    static base::NoDestructor<DisplayLinkGlobalsEDLM> instance;
     return *instance;
   }
 };
@@ -34,7 +34,7 @@ struct DisplayLinkGlobals {
 void ExternalDisplayLinkMac::TryRecordDisplayLinkCreation(
     CGDirectDisplayID display_id,
     bool success) {
-  auto& globals = DisplayLinkGlobals::Get();
+  auto& globals = DisplayLinkGlobalsEDLM::Get();
   base::AutoLock lock(globals.lock);
 
   if (!VSyncProviderMac::GetInstance()->IsConnectedToBrowserOnVizThread()) {

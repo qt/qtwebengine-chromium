@@ -17,10 +17,10 @@ namespace extensions {
 
 namespace errors = manifest_errors;
 
-using ManifestKeys = api::requirements::ManifestKeys;
+using ManifestKeysRI = api::requirements::ManifestKeys;
 
 // static
-const char* RequirementsInfo::kManifestDataKey = ManifestKeys::kRequirements;
+const char* RequirementsInfo::kManifestDataKey = ManifestKeysRI::kRequirements;
 
 RequirementsInfo::RequirementsInfo() = default;
 RequirementsInfo::~RequirementsInfo() = default;
@@ -40,7 +40,7 @@ RequirementsHandler::RequirementsHandler() = default;
 RequirementsHandler::~RequirementsHandler() = default;
 
 base::span<const char* const> RequirementsHandler::Keys() const {
-  static constexpr const char* kKeys[] = {ManifestKeys::kRequirements};
+  static constexpr const char* kKeys[] = {ManifestKeysRI::kRequirements};
   return kKeys;
 }
 
@@ -49,8 +49,8 @@ bool RequirementsHandler::AlwaysParseForType(Manifest::Type type) const {
 }
 
 bool RequirementsHandler::Parse(Extension* extension, std::u16string* error) {
-  ManifestKeys manifest_keys;
-  if (!ManifestKeys::ParseFromDictionary(
+  ManifestKeysRI manifest_keys;
+  if (!ManifestKeysRI::ParseFromDictionary(
           extension->manifest()->available_values(), manifest_keys, *error)) {
     return false;
   }

@@ -170,7 +170,7 @@ bool IsFindInPageDisabled(RenderFrameHost* rfh) {
 }
 
 bool IsUnattachedGuestView(RenderFrameHost* rfh) {
-  if (base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+  if (base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
     NOTIMPLEMENTED();
     return false;
   } else {

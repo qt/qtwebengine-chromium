@@ -22,7 +22,7 @@ namespace blink {
 
 namespace {
 
-Document* GetRootDocumentOrNull(Node* node) {
+Document* GetRootDocumentOrNullLMP(Node* node) {
   if (LocalFrame* frame = node->GetDocument().GetFrame()) {
     return frame->LocalFrameRoot().GetDocument();
   }
@@ -33,7 +33,7 @@ Document* GetRootDocumentOrNull(Node* node) {
 
 // static
 void LazyMediaHelper::StartMonitoring(Element* element) {
-  if (Document* document = GetRootDocumentOrNull(element)) {
+  if (Document* document = GetRootDocumentOrNullLMP(element)) {
     document->EnsureLazyLoadMediaObserver().StartMonitoringNearViewport(
         document, element);
   }
@@ -41,7 +41,7 @@ void LazyMediaHelper::StartMonitoring(Element* element) {
 
 // static
 void LazyMediaHelper::StopMonitoring(Element* element) {
-  if (Document* document = GetRootDocumentOrNull(element)) {
+  if (Document* document = GetRootDocumentOrNullLMP(element)) {
     document->EnsureLazyLoadMediaObserver().StopMonitoring(element);
   }
 }

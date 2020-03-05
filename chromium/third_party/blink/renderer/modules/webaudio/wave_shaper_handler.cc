@@ -35,7 +35,7 @@ namespace blink {
 
 namespace {
 
-constexpr unsigned kDefaultNumberOfOutputChannels = 1;
+constexpr unsigned kDefaultNumberOfOutputChannelsWSH = 1;
 
 // Computes value of the WaveShaper
 double WaveShaperCurveValue(float input, base::span<const float> curve) {
@@ -220,7 +220,7 @@ WaveShaperHandler::WaveShaperHandler(AudioNode& node, float sample_rate)
       v2_(4 * render_quantum_frames_),
       f_(4 * render_quantum_frames_) {
   AddInput();
-  AddOutput(kDefaultNumberOfOutputChannels);
+  AddOutput(kDefaultNumberOfOutputChannelsWSH);
 
   Initialize();
 }

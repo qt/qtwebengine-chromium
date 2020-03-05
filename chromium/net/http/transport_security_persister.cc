@@ -88,7 +88,7 @@ std::optional<TransportSecurityState::HashedHost> ExternalStringToHashedDomain(
 // a single host. Version 2 is the only currently supported format.
 
 // Stored in serialized dictionary values to distinguish incompatible versions.
-const char kVersionKey[] = "version";
+const char kVersionKeyTSP[] = "version";
 const int kCurrentVersionValue = 2;
 
 // Key for the list of STS entries in top level serialized dictionary.
@@ -108,7 +108,7 @@ const char kMode[] = "mode";
 const char kForceHTTPS[] = "force-https";
 const char kDefault[] = "default";
 
-std::string LoadState(const base::FilePath& path) {
+std::string LoadStateTSP(const base::FilePath& path) {
   std::string result;
   if (!base::ReadFileToString(path, &result)) {
     return "";
@@ -221,7 +221,7 @@ TransportSecurityPersister::TransportSecurityPersister(
   transport_security_state_->SetDelegate(this);
 
   background_runner_->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(&LoadState, writer_.path()),
+      FROM_HERE, base::BindOnce(&LoadStateTSP, writer_.path()),
       base::BindOnce(&TransportSecurityPersister::CompleteLoad,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -270,7 +270,7 @@ std::optional<std::string> TransportSecurityPersister::SerializeData() {
   CHECK(foreground_runner_->RunsTasksInCurrentSequence());
 
   base::DictValue toplevel;
-  toplevel.Set(kVersionKey, kCurrentVersionValue);
+  toplevel.Set(kVersionKeyTSP, kCurrentVersionValue);
   toplevel.Set(kSTSKey, SerializeSTSData(transport_security_state_));
 
   std::string output;
@@ -301,7 +301,7 @@ void TransportSecurityPersister::Deserialize(const std::string& serialized,
     return;
   }
 
-  std::optional<int> version = value->FindInt(kVersionKey);
+  std::optional<int> version = value->FindInt(kVersionKeyTSP);
 
   // Version 2 is the only currently supported format
   if (!version || *version != kCurrentVersionValue)

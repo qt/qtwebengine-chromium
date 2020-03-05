@@ -20,8 +20,6 @@ namespace {
 
 using LoadIdleState = PageLoadTrackerDecorator::Data::LoadIdleState;
 
-const char kDescriberName[] = "PageLoadTrackerDecorator";
-
 }  // namespace
 
 // static
@@ -46,7 +44,7 @@ void PageLoadTrackerDecorator::OnNetworkAlmostIdleChanged(
 void PageLoadTrackerDecorator::OnPassedToGraph(Graph* graph) {
   RegisterObservers(graph);
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "PageLoadTrackerDecorator");
 }
 
 void PageLoadTrackerDecorator::OnTakenFromGraph(Graph* graph) {

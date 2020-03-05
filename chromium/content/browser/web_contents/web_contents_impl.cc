@@ -2443,7 +2443,7 @@ WebUI* WebContentsImpl::GetWebUI() {
 
 void WebContentsImpl::SetAlwaysSendSubresourceNotifications() {
   if (!base::FeatureList::IsEnabled(
-          features::kReduceSubresourceResponseStartedIPC)) {
+          ::features::kReduceSubresourceResponseStartedIPC)) {
     return;
   }
 
@@ -2670,7 +2670,7 @@ const std::string& WebContentsImpl::GetEncoding() {
 }
 
 void WebContentsImpl::Discard(base::OnceClosure on_discarded_cb) {
-  if (!base::FeatureList::IsEnabled(features::kWebContentsDiscard)) {
+  if (!base::FeatureList::IsEnabled(::features::kWebContentsDiscard)) {
     NOTREACHED();
   }
   if (WasDiscarded()) {
@@ -3291,7 +3291,7 @@ void WebContentsImpl::AttachInnerWebContents(
     RenderFrameHost* render_frame_host,
     bool is_full_page) {
   // Not reachable with MPArch based guest view.
-  CHECK(!base::FeatureList::IsEnabled(features::kGuestViewMPArch));
+  CHECK(!base::FeatureList::IsEnabled(::features::kGuestViewMPArch));
   AttachInnerWebContentsImpl(inner_web_contents.release(), render_frame_host,
                              is_full_page,
                              /*should_take_ownership=*/true);
@@ -3439,7 +3439,7 @@ void WebContentsImpl::DetachUnownedInnerWebContents(
 
 void WebContentsImpl::DetachUnownedInnerWebContents(
     WebContents* inner_web_contents) {
-  CHECK(base::FeatureList::IsEnabled(features::kAttachUnownedInnerWebContents));
+  CHECK(base::FeatureList::IsEnabled(::features::kAttachUnownedInnerWebContents));
   CHECK(node_.IsUnownedInnerWebContents(inner_web_contents));
 
   WebContentsImpl* inner_web_contents_impl =
@@ -3622,7 +3622,7 @@ void WebContentsImpl::ClearSurfaceEmbedConnector() {
 void WebContentsImpl::AttachGuestPage(
     std::unique_ptr<GuestPageHolder> guest_page,
     RenderFrameHost* outer_render_frame_host) {
-  CHECK(base::FeatureList::IsEnabled(features::kGuestViewMPArch));
+  CHECK(base::FeatureList::IsEnabled(::features::kGuestViewMPArch));
 
   OPTIONAL_TRACE_EVENT1("content", "WebContentsImpl::AttachGuestPage",
                         "guest_page", static_cast<void*>(guest_page.get()));
@@ -3823,7 +3823,7 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
   prefs.canvas_2d_layers_enabled =
       command_line.HasSwitch(switches::kEnableCanvas2DLayers) ||
-      base::FeatureList::IsEnabled(features::kEnableCanvas2DLayers);
+      base::FeatureList::IsEnabled(::features::kEnableCanvas2DLayers);
   prefs.antialiased_2d_canvas_disabled =
       command_line.HasSwitch(switches::kDisable2dCanvasAntialiasing);
   prefs.antialiased_clips_2d_canvas_enabled =
@@ -3852,7 +3852,7 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(
   }
 
   prefs.dont_send_key_events_to_javascript =
-      base::FeatureList::IsEnabled(features::kDontSendKeyEventsToJavascript);
+      base::FeatureList::IsEnabled(::features::kDontSendKeyEventsToJavascript);
 
 // TODO(dtapuska): Enable barrel button selection drag support on Android.
 // crbug.com/758042
@@ -3927,7 +3927,7 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(
   prefs.long_press_link_select_text = long_press_link_select_text_;
 
   if (base::FeatureList::IsEnabled(
-          features::kRestrictOrientationLockToPhones)) {
+          ::features::kRestrictOrientationLockToPhones)) {
     // Only lock fullscreen orientation if the provider allows it, and if the
     // prefs currently want to do so.  While current behavior happens to match
     // exactly with the provider claiming to support orientation lock, we still
@@ -3985,10 +3985,10 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(
   }
 
   prefs.payment_request_enabled =
-      base::FeatureList::IsEnabled(features::kWebPayments);
+      base::FeatureList::IsEnabled(::features::kWebPayments);
 
 #if BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(features::kWebauthnDisabledOnAuto) &&
+  if (base::FeatureList::IsEnabled(::features::kWebauthnDisabledOnAuto) &&
       base::android::device_info::is_automotive()) {
     prefs.disable_webauthn = true;
   }
@@ -4406,7 +4406,7 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params,
   // Checks whether the associated ssl_manager has any certificate error or HTTP
   // exceptions for any host and updates the renderer preferences.
   if (base::FeatureList::IsEnabled(
-          features::kReduceSubresourceResponseStartedIPC) &&
+          ::features::kReduceSubresourceResponseStartedIPC) &&
       GetController().ssl_manager()->HasAllowExceptionForAnyHost()) {
     renderer_preferences_.send_subresource_notification = true;
     SyncRendererPrefs();
@@ -5468,7 +5468,7 @@ bool WebContentsImpl::OnRenderFrameProxyVisibilityChanged(
   }
 
   // Not reachable with MPArch based guests.
-  CHECK(!base::FeatureList::IsEnabled(features::kGuestViewMPArch));
+  CHECK(!base::FeatureList::IsEnabled(::features::kGuestViewMPArch));
 
   DCHECK(GetOuterWebContents());
 
@@ -5555,7 +5555,7 @@ FrameTree* WebContentsImpl::CreateNewWindow(
       params.disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
 
   bool is_guest =
-      base::FeatureList::IsEnabled(features::kGuestViewMPArch)
+      base::FeatureList::IsEnabled(::features::kGuestViewMPArch)
           ? opener->GetOutermostMainFrame()->frame_tree()->is_guest()
           : IsGuest();
   // While some guest types do not have a guest SiteInstance, the ones that
@@ -5580,7 +5580,7 @@ FrameTree* WebContentsImpl::CreateNewWindow(
     site_instance = source_site_instance;
   }
 
-  if (is_guest && base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+  if (is_guest && base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
     if (auto* guest = GuestPageHolderImpl::FromRenderFrameHost(*opener)) {
       return guest->CreateNewWindow(
           params.disposition, params.target_url, params.frame_name,
@@ -5738,7 +5738,7 @@ FrameTree* WebContentsImpl::CreateNewWindow(
       return nullptr;
     }
 
-    if (base::FeatureList::IsEnabled(features::kPwaNavigationCapturing)) {
+    if (base::FeatureList::IsEnabled(::features::kPwaNavigationCapturing)) {
       // The delegate may delete |new_contents_impl| during AddNewContents().
       // If that occurs and there isn't a replacement contents returned, exit.
       // Otherwise, use the replacement web contents that was navigated in.
@@ -6742,7 +6742,7 @@ WebContents* WebContentsImpl::OpenURL(
   }
 
   if (source_render_frame_host &&
-      base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+      base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
     if (auto* guest = GuestPageHolderImpl::FromRenderFrameHost(
             *source_render_frame_host)) {
       if (auto* delegate = guest->delegate()) {
@@ -9021,9 +9021,9 @@ void WebContentsImpl::OnFirstVisuallyNonEmptyPaint(PageImpl& page) {
   }
 #if BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(
-          features::kAndroidWarmUpSpareRendererWithTimeout) &&
-      features::kAndroidSpareRendererCreationTiming.Get() ==
-          features::kAndroidSpareRendererCreationAfterFirstPaint) {
+          ::features::kAndroidWarmUpSpareRendererWithTimeout) &&
+      ::features::kAndroidSpareRendererCreationTiming.Get() ==
+          ::features::kAndroidSpareRendererCreationAfterFirstPaint) {
     WarmUpAndroidSpareRenderer();
   }
 #endif
@@ -10254,9 +10254,9 @@ void WebContentsImpl::DidStopLoading() {
 
 #if BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(
-          features::kAndroidWarmUpSpareRendererWithTimeout) &&
-      features::kAndroidSpareRendererCreationTiming.Get() ==
-          features::kAndroidSpareRendererCreationAfterLoading) {
+          ::features::kAndroidWarmUpSpareRendererWithTimeout) &&
+      ::features::kAndroidSpareRendererCreationTiming.Get() ==
+          ::features::kAndroidSpareRendererCreationAfterLoading) {
     WarmUpAndroidSpareRenderer();
   }
 #endif
@@ -10322,7 +10322,7 @@ void WebContentsImpl::ApplyAXTreeFixingResult(ui::AXTreeID tree_id,
                                               ax::mojom::Role role) {
 // The AXTreeFixing feature is not currently available on Android.
 #if !BUILDFLAG(IS_ANDROID)
-  CHECK(features::IsAXTreeFixingEnabled());
+  CHECK(::features::IsAXTreeFixingEnabled());
 
   GetPrimaryMainFrame()->ForEachRenderFrameHostImplWithAction(
       [tree_id, node_id, role](RenderFrameHostImpl* rfhi) {
@@ -10783,7 +10783,7 @@ void WebContentsImpl::SetFocusedFrame(FrameTreeNode* node,
   // TODO(https://crbug.com/376085320): MPArch based <webview> allows focus on
   // the inner frame tree node. For now, disable this DCHECK when the flag is
   // enabled.
-  DCHECK(base::FeatureList::IsEnabled(features::kGuestViewMPArch) ||
+  DCHECK(base::FeatureList::IsEnabled(::features::kGuestViewMPArch) ||
          inner_contents ||
          node->current_frame_host()
              ->inner_tree_main_frame_tree_node_id()
@@ -12200,7 +12200,7 @@ std::vector<FrameTreeNode*> WebContentsImpl::GetUnattachedOwnedNodes(
     return {};
   }
   std::vector<FrameTreeNode*> unattached_owned_nodes;
-  if (base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+  if (base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
     guest_manager->ForEachUnattachedGuestPage(
         owner->GetPage(), [&](GuestPageHolder& guest_page) {
           unattached_owned_nodes.push_back(
@@ -13037,11 +13037,11 @@ void WebContentsImpl::WarmUpAndroidSpareRenderer() {
     return;
   }
   if (!GetLastCommittedURL().SchemeIsHTTPOrHTTPS() &&
-      features::kAndroidSpareRendererOnlyWarmupAfterWebPageLoaded.Get()) {
+      ::features::kAndroidSpareRendererOnlyWarmupAfterWebPageLoaded.Get()) {
     return;
   }
   int renderer_timeout_seconds =
-      features::kAndroidSpareRendererTimeoutSeconds.Get();
+      ::features::kAndroidSpareRendererTimeoutSeconds.Get();
   if (renderer_timeout_seconds < 0) {
     SpareRenderProcessHostManagerImpl::Get().WarmupSpare(GetBrowserContext());
   } else {

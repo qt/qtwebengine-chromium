@@ -16,12 +16,12 @@
 namespace network {
 
 namespace {
-constexpr char kHeaderName[] = "document-isolation-policy";
-constexpr char kReportOnlyHeaderName[] =
+constexpr char kHeaderNameDIPP[] = "document-isolation-policy";
+constexpr char kReportOnlyHeaderNameDIPP[] =
     "document-isolation-policy-report-only";
 
 std::pair<mojom::DocumentIsolationPolicyValue, std::optional<std::string>>
-Parse(std::string_view header_value) {
+ParseDIPP(std::string_view header_value) {
   using Item = net::structured_headers::Item;
   const auto item = net::structured_headers::ParseItem(header_value);
   if (!item || item->item.Type() != net::structured_headers::Item::kTokenType) {
@@ -64,13 +64,13 @@ DocumentIsolationPolicy ParseDocumentIsolationPolicy(
     const net::HttpResponseHeaders& headers) {
   DocumentIsolationPolicy dip;
   if (std::optional<std::string> header_value =
-          headers.GetNormalizedHeader(kHeaderName)) {
-    std::tie(dip.value, dip.reporting_endpoint) = Parse(*header_value);
+          headers.GetNormalizedHeader(kHeaderNameDIPP)) {
+    std::tie(dip.value, dip.reporting_endpoint) = ParseDIPP(*header_value);
   }
   if (std::optional<std::string> header_value =
-          headers.GetNormalizedHeader(kReportOnlyHeaderName)) {
+          headers.GetNormalizedHeader(kReportOnlyHeaderNameDIPP)) {
     std::tie(dip.report_only_value, dip.report_only_reporting_endpoint) =
-        Parse(*header_value);
+        ParseDIPP(*header_value);
   }
   return dip;
 }

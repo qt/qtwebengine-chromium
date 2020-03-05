@@ -107,7 +107,7 @@ LayoutUnit GetTrackBaseline(const GridItemData& grid_item,
   const auto& [begin_set_index, end_set_index] =
       grid_item.SetIndices(track_direction);
 
-  return (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+  return (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
              ? layout_data.MajorBaseline(track_direction, begin_set_index)
              : layout_data.MinorBaseline(track_direction, end_set_index - 1);
 }
@@ -132,7 +132,7 @@ void SetTrackBaseline(const GridItemData& grid_item,
   const auto& [begin_set_index, end_set_index] =
       grid_item.SetIndices(track_direction);
 
-  if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+  if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
     layout_data.SetMajorBaseline(track_direction, begin_set_index, baseline);
   } else {
     layout_data.SetMinorBaseline(track_direction, end_set_index - 1, baseline);
@@ -175,7 +175,7 @@ LayoutUnit ComputeBaselineOffset(const GridItemData& grid_item,
       GetLogicalBaseline(baseline_fragment, font_baseline,
                          grid_item.IsLastBaselineSpecified(track_direction));
 
-  if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+  if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
     return baseline_delta;
   }
 

@@ -3141,7 +3141,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearData(
       // in executing the code. Note that the feature flag is only relevant
       // when perform_storage_cleanup is false.
       (!base::FeatureList::IsEnabled(
-           features::kDisablePartialStorageCleanupForGPUDiskCache) ||
+           ::features::kDisablePartialStorageCleanupForGPUDiskCache) ||
        perform_storage_cleanup)) {
     gpu::GpuDiskCacheFactory* gpu_cache_factory =
         GetGpuDiskCacheFactorySingleton();

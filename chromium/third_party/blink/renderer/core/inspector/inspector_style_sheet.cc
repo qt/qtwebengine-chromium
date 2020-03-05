@@ -95,7 +95,7 @@ namespace blink {
 
 namespace {
 
-static const CSSParserContext* ParserContextForDocument(
+static const CSSParserContext* ParserContextForDocumentISS(
     const Document* document) {
   // Fallback to an insecure context parser if no document is present.
   return document ? MakeGarbageCollected<CSSParserContext>(*document)
@@ -242,12 +242,12 @@ std::unique_ptr<protocol::CSS::Specificity> BuildSpecificity(
 bool VerifyRuleText(Document* document, const String& rule_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text =
       StrCat({rule_text, " div { ", bogus_property_name, ": none; }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
   unsigned rule_count = source_data.size();
 
@@ -290,11 +290,11 @@ bool VerifyStyleText(Document* document,
 
 bool VerifyNestedDeclarations(Document* document, const String& rule_text) {
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text = StrCat({".a { .b {} ", rule_text, " }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   unsigned rule_count = source_data.size();
@@ -319,11 +319,11 @@ bool VerifyNestedDeclarations(Document* document, const String& rule_text) {
 
 bool VerifyFunctionDeclarations(Document* document, const String& rule_text) {
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text = StrCat({"@function --func() { ", rule_text, " }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   unsigned rule_count = source_data.size();
@@ -348,12 +348,12 @@ bool VerifyFunctionDeclarations(Document* document, const String& rule_text) {
 
 bool VerifyPropertyNameText(Document* document, const String& name_text) {
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text =
       StrCat({"@property ", name_text, " { syntax: \"*\"; inherits: false; }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   unsigned rule_count = source_data.size();
@@ -371,12 +371,12 @@ bool VerifyPropertyNameText(Document* document, const String& name_text) {
 
 bool VerifyKeyframeKeyText(Document* document, const String& key_text) {
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text = StrCat({"@keyframes boguzAnim { ", key_text,
                         " { -webkit-boguz-propertee : none; } }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   // Exactly one should be parsed.
@@ -404,12 +404,12 @@ bool VerifyKeyframeKeyText(Document* document, const String& key_text) {
 bool VerifySelectorText(Document* document, const String& selector_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text =
       StrCat({selector_text, " { ", bogus_property_name, ": none; }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   // Exactly one rule should be parsed.
@@ -437,12 +437,12 @@ bool VerifySelectorText(Document* document, const String& selector_text) {
 bool VerifyMediaText(Document* document, const String& media_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text = StrCat(
       {"@media ", media_text, " { div { ", bogus_property_name, ": none; } }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   // Exactly one media rule should be parsed.
@@ -478,12 +478,12 @@ bool VerifyContainerQueryText(Document* document,
                               const String& container_query_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text = StrCat({"@container ", container_query_text, " { div { ",
                         bogus_property_name, ": none; } }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   // TODO(crbug.com/1146422): for now these checks are identical to
@@ -521,12 +521,12 @@ bool VerifyContainerQueryText(Document* document,
 bool VerifySupportsText(Document* document, const String& supports_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text = StrCat({"@supports ", supports_text, " { div { ",
                         bogus_property_name, ": none; } }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   // Exactly one supports rule should be parsed.
@@ -561,12 +561,12 @@ bool VerifySupportsText(Document* document, const String& supports_text) {
 bool VerifyNavigationText(Document* document, const String& navigation_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text = StrCat({"@navigation ", navigation_text, " { div { ",
                         bogus_property_name, ": none; } }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   // Exactly one navigation rule should be parsed.
@@ -601,12 +601,12 @@ bool VerifyNavigationText(Document* document, const String& navigation_text) {
 bool VerifyScopeText(Document* document, const String& scope_text) {
   DEFINE_STATIC_LOCAL(String, bogus_property_name, ("-webkit-boguz-propertee"));
   auto* style_sheet = MakeGarbageCollected<StyleSheetContents>(
-      ParserContextForDocument(document));
+      ParserContextForDocumentISS(document));
   CSSRuleSourceDataList source_data;
   String text =
       StrCat({"@scope ", scope_text, " { ", bogus_property_name, ": none; }"});
   InspectorCSSParserObserver observer(text, document, &source_data);
-  CSSParser::ParseSheetForInspector(ParserContextForDocument(document),
+  CSSParser::ParseSheetForInspector(ParserContextForDocumentISS(document),
                                     style_sheet, text, observer);
 
   // Exactly one scope rule should be parsed.
@@ -979,7 +979,7 @@ bool InspectorStyle::CheckRegisteredPropertySyntaxWithVarSubstitution(
   PropertyRegistry* empty_registry = MakeGarbageCollected<PropertyRegistry>();
   CustomProperty p(&atomic_name, empty_registry);
 
-  const CSSParserContext* parser_context = ParserContextForDocument(document);
+  const CSSParserContext* parser_context = ParserContextForDocumentISS(document);
   CSSParserLocalContext local_context =
       CSSParserLocalContext::CreateWithoutPropertyForInspector();
   const CSSValue* result =
@@ -1151,7 +1151,7 @@ InspectorStyle::LonghandProperties(
   HeapVector<CSSPropertyValue, 64> longhand_properties;
   if (To<Shorthand>(property).ParseShorthand(
           property_entry.important, stream,
-          *ParserContextForDocument(parent_style_sheet_->GetDocument()),
+          *ParserContextForDocumentISS(parent_style_sheet_->GetDocument()),
           local_context, longhand_properties)) {
     auto result =
         std::make_unique<protocol::Array<protocol::CSS::CSSProperty>>();
@@ -3107,7 +3107,7 @@ CSSRuleSourceData* InspectorStyleSheetForInlineStyle::RuleSourceData() {
     InspectorCSSParserObserver observer(text, &element_->GetDocument(),
                                         &rule_source_data_result);
     CSSParser::ParseDeclarationListForInspector(
-        ParserContextForDocument(&element_->GetDocument()), text, observer);
+        ParserContextForDocumentISS(&element_->GetDocument()), text, observer);
     rule_source_data = rule_source_data_result.front();
   }
   return rule_source_data;

@@ -76,7 +76,7 @@ struct DefaultMergeFunc {
 // are in both maps are passed to the merging function to be merged with each
 // other -- again, the LHS here is expected to be mutated.
 template <typename Key, typename Value, typename MergeFunc = DefaultMergeFunc>
-void DestructivelyIntersect(ZoneMap<Key, Value>& lhs_map,
+void DestructivelyIntersectMKNA(ZoneMap<Key, Value>& lhs_map,
                             const ZoneMap<Key, Value>& rhs_map,
                             MergeFunc&& func = DefaultMergeFunc()) {
   // Walk the two maps in lock step. This relies on the fact that ZoneMaps are
@@ -230,7 +230,7 @@ void NodeInfo::TraceSetPossibleMaps(const KnownNodeAspects& known_node_aspects,
 
 void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
   bool side_effects_require_invalidation = false;
-  DestructivelyIntersect(
+  DestructivelyIntersectMKNA(
       node_infos_, other.node_infos_,
       [&](ValueNode* node, NodeInfo& lhs, const NodeInfo& rhs) {
         if (V8_UNLIKELY(v8_flags.trace_maglev_kna)) {
@@ -243,7 +243,7 @@ void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
   if (effect_epoch_ != other.effect_epoch_) {
     effect_epoch_ = std::max(effect_epoch_, other.effect_epoch_) + 1;
   }
-  DestructivelyIntersect(
+  DestructivelyIntersectMKNA(
       available_expressions_, other.available_expressions_,
       [&](uint32_t hash, const AvailableExpression& lhs,
           const AvailableExpression& rhs) {
@@ -265,21 +265,21 @@ void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
          const ZoneMap<ValueNode*, ValueNode*>& rhs) {
         // Loaded properties are maps of maps, so just do the destructive
         // intersection recursively.
-        DestructivelyIntersect(lhs, rhs);
+        DestructivelyIntersectMKNA(lhs, rhs);
         return !lhs.empty();
       };
-  DestructivelyIntersect(loaded_constant_properties_,
-                         other.loaded_constant_properties_,
-                         merge_loaded_properties);
-  DestructivelyIntersect(loaded_properties_, other.loaded_properties_,
-                         merge_loaded_properties);
-  DestructivelyIntersect(loaded_tagged_keyed_properties_,
-                         other.loaded_tagged_keyed_properties_);
-  DestructivelyIntersect(loaded_context_constants_,
-                         other.loaded_context_constants_);
+  DestructivelyIntersectMKNA(loaded_constant_properties_,
+                             other.loaded_constant_properties_,
+                             merge_loaded_properties);
+  DestructivelyIntersectMKNA(loaded_properties_, other.loaded_properties_,
+                             merge_loaded_properties);
+  DestructivelyIntersectMKNA(loaded_tagged_keyed_properties_,
+                             other.loaded_tagged_keyed_properties_);
+  DestructivelyIntersectMKNA(loaded_context_constants_,
+                             other.loaded_context_constants_);
   may_have_aliasing_contexts_ = ContextSlotLoadsAliasMerge(
       may_have_aliasing_contexts_, other.may_have_aliasing_contexts());
-  DestructivelyIntersect(loaded_context_slots_, other.loaded_context_slots_);
+  DestructivelyIntersectMKNA(loaded_context_slots_, other.loaded_context_slots_);
 }
 
 // Loop-header variant of Merge. The forward (LHS) predecessor dominates the
@@ -352,10 +352,10 @@ void KnownNodeAspects::MergeForLoop(const KnownNodeAspects& backedge,
   auto merge_constant_properties =
       [&](PropertyKey key, ZoneMap<ValueNode*, ValueNode*>& lhs,
           const ZoneMap<ValueNode*, ValueNode*>& rhs) {
-        DestructivelyIntersect(lhs, rhs,
-                               [&](ValueNode* obj, ValueNode* l, ValueNode* r) {
-                                 return l == r || same_load(l, r);
-                               });
+        DestructivelyIntersectMKNA(
+            lhs, rhs, [&](ValueNode* obj, ValueNode* l, ValueNode* r) {
+              return l == r || same_load(l, r);
+            });
         return !lhs.empty();
       };
   auto entry_invariant = [&](PropertyKey key, ValueNode* obj) {
@@ -371,27 +371,27 @@ void KnownNodeAspects::MergeForLoop(const KnownNodeAspects& backedge,
   auto merge_loaded_properties =
       [&](PropertyKey key, ZoneMap<ValueNode*, ValueNode*>& lhs,
           const ZoneMap<ValueNode*, ValueNode*>& rhs) {
-        DestructivelyIntersect(
+        DestructivelyIntersectMKNA(
             lhs, rhs, [&](ValueNode* obj, ValueNode* l, ValueNode* r) {
               return l == r || (entry_invariant(key, obj) && same_load(l, r));
             });
         return !lhs.empty();
       };
-  DestructivelyIntersect(loaded_constant_properties_,
-                         backedge.loaded_constant_properties_,
-                         merge_constant_properties);
-  DestructivelyIntersect(loaded_properties_, backedge.loaded_properties_,
-                         merge_loaded_properties);
-  DestructivelyIntersect(loaded_tagged_keyed_properties_,
-                         backedge.loaded_tagged_keyed_properties_);
-  DestructivelyIntersect(loaded_context_constants_,
-                         backedge.loaded_context_constants_,
-                         [&](auto key, ValueNode* l, ValueNode* r) {
-                           return l == r || same_load(l, r);
-                         });
+  DestructivelyIntersectMKNA(loaded_constant_properties_,
+                             backedge.loaded_constant_properties_,
+                             merge_constant_properties);
+  DestructivelyIntersectMKNA(loaded_properties_, backedge.loaded_properties_,
+                             merge_loaded_properties);
+  DestructivelyIntersectMKNA(loaded_tagged_keyed_properties_,
+                             backedge.loaded_tagged_keyed_properties_);
+  DestructivelyIntersectMKNA(
+      loaded_context_constants_, backedge.loaded_context_constants_,
+      [&](auto key, ValueNode* l, ValueNode* r) {
+        return l == r || same_load(l, r);
+      });
   may_have_aliasing_contexts_ = ContextSlotLoadsAliasMerge(
       may_have_aliasing_contexts_, backedge.may_have_aliasing_contexts());
-  DestructivelyIntersect(
+  DestructivelyIntersectMKNA(
       loaded_context_slots_, backedge.loaded_context_slots_,
       [&](auto key, ValueNode* l, ValueNode* r) {
         return l == r || (keep_invariant_loads &&

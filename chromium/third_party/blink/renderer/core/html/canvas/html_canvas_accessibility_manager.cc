@@ -343,8 +343,8 @@ void HTMLCanvasAccessibilityManager::SetOCRDeadline() {
 }
 
 bool HTMLCanvasAccessibilityManager::ShouldRunOCR() const {
-  if (features::GetCanvasAccessibilityMode() !=
-      features::CanvasAccessibilityMode::kAdvanced) {
+  if (::features::GetCanvasAccessibilityMode() !=
+      ::features::CanvasAccessibilityMode::kAdvanced) {
     return false;
   }
   if (!NeedsA11ySupport()) {

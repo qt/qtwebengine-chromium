@@ -45,7 +45,7 @@
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
-namespace keys = extension_web_request_api_constants;
+namespace keys_wri = extension_web_request_api_constants;
 
 namespace extensions {
 
@@ -148,8 +148,8 @@ std::optional<base::DictValue> CreateRequestBodyData(
   };
   // Keys for the results of the corresponding presenters.
   static const auto kKeys = std::to_array<const char*>({
-      keys::kRequestBodyFormDataKey,
-      keys::kRequestBodyRawKey,
+      keys_wri::kRequestBodyFormDataKey,
+      keys_wri::kRequestBodyRawKey,
   });
   bool some_succeeded = false;
   if (!data_sources.empty()) {
@@ -166,7 +166,7 @@ std::optional<base::DictValue> CreateRequestBodyData(
   }
 
   if (!some_succeeded) {
-    request_body_data.Set(keys::kRequestBodyErrorKey, "Unknown error.");
+    request_body_data.Set(keys_wri::kRequestBodyErrorKey, "Unknown error.");
   }
 
   return request_body_data;

@@ -141,7 +141,7 @@ class JSONGraphWriter {
   void PrintNode(Node* node, bool is_live);
   void PrintEdges(Node* node);
   void PrintEdge(Node* from, int index, Node* to);
-  virtual std::optional<Type> GetType(Node* node);
+  virtual std::optional<internal::compiler::Type> GetType(Node* node);
 
  protected:
   std::ostream& os_;

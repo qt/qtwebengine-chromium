@@ -242,7 +242,7 @@ std::optional<SqlSharedCacheResourceId> GetSharedCacheResourceIdFromStatement(
   return meta.SetValue(key, value);
 }
 
-bool IsBrowserIdle() {
+bool IsBrowserIdleSPSB() {
   return performance_scenarios::CurrentScenariosMatch(
       performance_scenarios::ScenarioScope::kGlobal,
       performance_scenarios::kDefaultIdleScenarios);
@@ -2674,7 +2674,7 @@ SqlPersistentStore::Backend::SelectEvictionCandidates(
     size_t& scanned_count,
     bool& used_in_memory_index) {
   used_in_memory_index = false;
-  if (is_idle_time_eviction && !IsBrowserIdle()) {
+  if (is_idle_time_eviction && !IsBrowserIdleSPSB()) {
     return base::unexpected(Error::kAborted);
   }
   if (auto db_error = CheckDatabaseStatus(); db_error != Error::kOk) {
@@ -2760,7 +2760,7 @@ SqlPersistentStore::Backend::SelectEvictionCandidates(
     base::ClampedNumeric<int64_t> candidates_total_size = 0;
     while (statement.Step()) {
       scanned_count++;
-      if (is_idle_time_eviction && !IsBrowserIdle()) {
+      if (is_idle_time_eviction && !IsBrowserIdleSPSB()) {
         return base::unexpected(Error::kAborted);
       }
       const ResId res_id = ResId(statement.ColumnInt64(0));
@@ -2943,7 +2943,7 @@ SqlPersistentStore::Error SqlPersistentStore::Backend::EvictEntriesHelper(
     const auto res_id = eviction_targets.front().res_id;
     const auto entry_size_with_overhead =
         eviction_targets.front().entry_size_with_overhead;
-    if ((is_idle_time_eviction && !IsBrowserIdle()) ||
+    if ((is_idle_time_eviction && !IsBrowserIdleSPSB()) ||
         (abort_flag->data.load(std::memory_order_relaxed) &&
          remaining_mandatory_size->data.load(std::memory_order_relaxed) <= 0)) {
       break;
@@ -3201,7 +3201,7 @@ bool SqlPersistentStore::Backend::MaybeRunCheckpoint() {
     // RazeAndPoison() was called.
     return false;
   }
-  if (!IsBrowserIdle()) {
+  if (!IsBrowserIdleSPSB()) {
     // Between the time when idle was detected in the browser process and the
     // time when this backend was notified, the browser became non-idle.
     return false;
@@ -3236,7 +3236,7 @@ void SqlPersistentStore::Backend::MaybeCrashIfCorrupted(
 
 void SqlPersistentStore::Backend::OnCommitCallback(int pages) {
   TRACE_EVENT("disk_cache", "SqlBackend.OnCommitCallback");
-  const bool is_idle = IsBrowserIdle();
+  const bool is_idle = IsBrowserIdleSPSB();
   if (pages >= net::features::kSqlDiskCacheForceCheckpointThreshold.Get() ||
       (pages >= net::features::kSqlDiskCacheIdleCheckpointThreshold.Get() &&
        is_idle)) {
@@ -3319,7 +3319,7 @@ SqlPersistentStore::Backend::MaybeRunIncrementalVacuumInternal(
     return db_error;
   }
 
-  if (!IsBrowserIdle() || abort_flag->data.load(std::memory_order_relaxed)) {
+  if (!IsBrowserIdleSPSB() || abort_flag->data.load(std::memory_order_relaxed)) {
     return Error::kAborted;
   }
 
@@ -3333,7 +3333,7 @@ SqlPersistentStore::Backend::MaybeRunIncrementalVacuumInternal(
       base::StrCat({"PRAGMA incremental_vacuum(",
                     base::NumberToString(page_count_to_vacuum), ")"});
   for (int i = 0; i < iterations; ++i) {
-    if (!IsBrowserIdle() || abort_flag->data.load(std::memory_order_relaxed)) {
+    if (!IsBrowserIdleSPSB() || abort_flag->data.load(std::memory_order_relaxed)) {
       return Error::kAborted;
     }
     if (!db_.Execute(sql)) {

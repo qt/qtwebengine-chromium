@@ -7977,7 +7977,7 @@ bool AXObject::RequestCollapseAction() {
 
 struct ReplaceRangeParams {
   DOMNodeId scope_node_id;
-  CharacterRange character_range;
+  CharacterRangeCRM character_range;
   std::string replacement_string;
 };
 
@@ -8073,7 +8073,7 @@ bool AXObject::RequestReplaceRangesAction(const ui::AXActionData& action_data) {
         start_position.ToPosition(AXPositionAdjustmentBehavior::kMoveRight),
         end_position.ToPosition(AXPositionAdjustmentBehavior::kMoveLeft));
 
-    CharacterRange char_range =
+    CharacterRangeCRM char_range =
         CharacterRangeMapper::CreateCharacterRange(scope, replacement_range);
 
     replace_ranges_params.push_back(ReplaceRangeParams{

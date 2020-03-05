@@ -25,7 +25,7 @@ namespace {
 // fired this callback. In that case there is nothing to forget — the
 // WebTransport (and the incoming_stream_map_ entry plus its Mojo bindings) no
 // longer exists — so we return early instead of dereferencing nullptr.
-void ForgetStream(WebTransport* transport,
+void ForgetStreamWTRS(WebTransport* transport,
                   uint32_t stream_id,
                   std::optional<uint8_t> stop_sending_code,
                   bool has_received_close) {
@@ -48,7 +48,7 @@ WebTransportReceiveStream::WebTransportReceiveStream(
     : ReadableStream(script_state),
       incoming_stream_(MakeGarbageCollected<IncomingStream>(
           script_state,
-          BindOnce(ForgetStream, WrapWeakPersistent(web_transport), stream_id),
+          BindOnce(ForgetStreamWTRS, WrapWeakPersistent(web_transport), stream_id),
           std::move(handle))) {}
 
 WebTransportReceiveStream::~WebTransportReceiveStream() = default;

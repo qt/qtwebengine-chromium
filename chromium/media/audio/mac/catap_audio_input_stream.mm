@@ -606,7 +606,7 @@ class PropertyListenerHelper {
 
 // 0.0 is used to indicate that this device doesn't support setting the volume.
 // TODO(crbug.com/415953612): Is this okay, or do we need to support this?
-constexpr float kMaxVolume = 0.0;
+constexpr float kMaxVolumeCAIS = 0.0;
 
 CatapAudioInputStreamSource::Config::Config(
     const AudioParameters& params,
@@ -1150,7 +1150,7 @@ void CatapAudioInputStreamSource::OnCatapSample(
     while (converting_audio_fifo_->HasOutput()) {
       const AudioBus* output_bus = converting_audio_fifo_->PeekOutput();
 
-      sink_->OnData(output_bus, output_capture_time, kMaxVolume,
+      sink_->OnData(output_bus, output_capture_time, kMaxVolumeCAIS,
                     glitch_helper_.ConsumeGlitchInfo());
       converting_audio_fifo_->PopOutput();
       // Advance the timestamp for the next block (if any).
@@ -1173,7 +1173,7 @@ void CatapAudioInputStreamSource::OnCatapSample(
       // directly into the audio bus.
       audio_bus_->FromInterleaved<Float32SampleTypeTraits>(data);
     }
-    sink_->OnData(audio_bus_.get(), capture_time, kMaxVolume,
+    sink_->OnData(audio_bus_.get(), capture_time, kMaxVolumeCAIS,
                   glitch_helper_.ConsumeGlitchInfo());
   }
 
@@ -1664,7 +1664,7 @@ void CatapAudioInputStream::Close() {
 }
 
 double CatapAudioInputStream::GetMaxVolume() {
-  return kMaxVolume;
+  return kMaxVolumeCAIS;
 }
 
 void CatapAudioInputStream::SetVolume(double volume) {
@@ -1672,7 +1672,7 @@ void CatapAudioInputStream::SetVolume(double volume) {
 }
 
 double CatapAudioInputStream::GetVolume() {
-  return kMaxVolume;
+  return kMaxVolumeCAIS;
 }
 
 bool CatapAudioInputStream::IsMuted() {

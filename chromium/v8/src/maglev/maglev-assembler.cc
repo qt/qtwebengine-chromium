@@ -778,6 +778,8 @@ void MaglevAssembler::ResetLastYoungAllocation() {
 }
 #undef __
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

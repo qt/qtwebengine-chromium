@@ -97,7 +97,7 @@ wasm::TypeInModule Intersection(wasm::TypeInModule type1,
 }  // namespace
 
 Node* WasmGCOperatorReducer::SetType(Node* node, wasm::ValueType type) {
-  NodeProperties::SetType(node, Type::Wasm(type, module_, graph()->zone()));
+  NodeProperties::SetType(node, compiler::Type::Wasm(type, module_, graph()->zone()));
   return node;
 }
 
@@ -133,7 +133,7 @@ wasm::TypeInModule WasmGCOperatorReducer::ObjectTypeFromContext(
   }
   if (!IsReduced(control)) return {};
   if (allow_non_wasm && !NodeProperties::IsTyped(object)) return {};
-  Type raw_type = NodeProperties::GetType(object);
+  compiler::Type raw_type = NodeProperties::GetType(object);
   if (allow_non_wasm && !raw_type.IsWasm()) return {};
   wasm::TypeInModule type_from_node = raw_type.AsWasm();
   ControlPathTypes state = GetState(control);
@@ -360,7 +360,7 @@ Reduction WasmGCOperatorReducer::ReduceTypeGuard(Node* node) {
   wasm::TypeInModule object_type =
       ObjectTypeFromContext(object, control, /* allow_non_wasm = */ true);
   if (object_type.type.is_uninhabited()) return NoChange();
-  Type guarded_type = TypeGuardTypeOf(node->op());
+  compiler::Type guarded_type = TypeGuardTypeOf(node->op());
   if (!guarded_type.IsWasm()) return NoChange();
 
   wasm::TypeInModule new_type =

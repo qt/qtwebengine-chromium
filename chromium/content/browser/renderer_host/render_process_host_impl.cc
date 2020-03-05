@@ -541,10 +541,10 @@ bool HasEnoughMemoryForAnotherMainFrame(RenderProcessHost* host,
       private_memory_footprint /
       std::max(main_frame_count, static_cast<size_t>(1));
   uint64_t process_memory_limit = base::saturated_cast<uint64_t>(
-      features::kProcessPerSiteMainFrameTotalMemoryLimit.Get());
+      ::features::kProcessPerSiteMainFrameTotalMemoryLimit.Get());
 
   double frame_size_factor =
-      features::kProcessPerSiteMainFrameSiteScalingFactor.Get();
+      ::features::kProcessPerSiteMainFrameSiteScalingFactor.Get();
   // Check that we have a factor of at least 1.
   if (frame_size_factor < 1.0f) {
     frame_size_factor = 1.0f;
@@ -606,7 +606,7 @@ bool IsBelowReuseResourceThresholds(RenderProcessHost* host,
     // If a threshold is specified, don't reuse `host` if it already hosts more
     // main frames (including BFCached and prerendered) than the threshold.
     size_t main_frame_threshold = base::checked_cast<size_t>(
-        features::kProcessPerSiteMainFrameThreshold.Get());
+        ::features::kProcessPerSiteMainFrameThreshold.Get());
     if (main_frame_count >= main_frame_threshold) {
       return false;
     }
@@ -711,7 +711,7 @@ bool IsEmptyRendererProcessesReuseAllowed() {
     return false;
   }
   return base::FeatureList::IsEnabled(
-      features::kTrackEmptyRendererProcessesForReuse);
+      ::features::kTrackEmptyRendererProcessesForReuse);
 }
 
 class SiteProcessCountTracker : public base::SupportsUserData::Data,
@@ -1515,8 +1515,8 @@ size_t RenderProcessHost::GetMaxRendererProcessCount() {
   // processes remains reasonable, and on Android the OS takes care of that.
   // This has shown to have adversarial effects, so we fall back to desktop
   // behavior for desktop-like form factors.
-  if (base::FeatureList::IsEnabled(features::kRendererProcessLimitOnAndroid)) {
-    return features::kRendererProcessLimitOnAndroidCount.Get();
+  if (base::FeatureList::IsEnabled(::features::kRendererProcessLimitOnAndroid)) {
+    return ::features::kRendererProcessLimitOnAndroidCount.Get();
   } else {
     return std::numeric_limits<size_t>::max();
   }
@@ -1842,7 +1842,7 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
   UnregisterHost(GetID());
 
   // Remove the cache handles for the client at teardown if relevant.
-  if (features::IsShaderDiskCacheEnabled(
+  if (::features::IsShaderDiskCacheEnabled(
           base::CommandLine::ForCurrentProcess())) {
     if (GetGpuDiskCacheFactorySingleton()) {
         gpu_client_->RemoveDiskCacheHandles();
@@ -1876,7 +1876,7 @@ bool RenderProcessHostImpl::Init() {
   // `chrome://top-chrome/` with other Top Chrome WebUIs. In this case, we
   // cannot distinguish it by lock URL and must fallback to checking if it is a
   // Top Chrome WebUI process in general.
-  if (features::kInitialWebUIUseSeparateProcess.Get()) {
+  if (::features::kInitialWebUIUseSeparateProcess.Get()) {
     is_initial_web_ui = GetContentClient()->browser()->IsInitialWebUIURL(
         GetProcessLock().GetProcessLockURL());
   } else {
@@ -1967,7 +1967,7 @@ bool RenderProcessHostImpl::Init() {
   // stored on the channels. Note that we also check if the factory is
   // initialized because in tests the factory may never have been initialized.
   if (!GetBrowserContext()->IsOffTheRecord() &&
-      features::IsShaderDiskCacheEnabled(
+      ::features::IsShaderDiskCacheEnabled(
           base::CommandLine::ForCurrentProcess())) {
     if (auto* cache_factory = GetGpuDiskCacheFactorySingleton()) {
       for (const gpu::GpuDiskCacheType type : gpu::kGpuDiskCacheTypes) {
@@ -3554,19 +3554,19 @@ bool RenderProcessHostImpl::IsSpareProcessKeptAtAllTimes() {
   // inaccuracies or off-by-one errors.
   if (base::SysInfo::AmountOfTotalPhysicalMemory() <=
       base::MiBU(base::saturated_cast<uint64_t>(
-          features::kAndroidSpareRendererMemoryThreshold.Get()))) {
+          ::features::kAndroidSpareRendererMemoryThreshold.Get()))) {
     return false;
   }
 
   bool android_spare_process_override = base::FeatureList::IsEnabled(
-      features::kAndroidWarmUpSpareRendererWithTimeout);
+      ::features::kAndroidWarmUpSpareRendererWithTimeout);
   if (!SiteIsolationPolicy::UseDedicatedProcessesForAllSites() &&
       !android_spare_process_override) {
     return false;
   }
 
   if (!base::FeatureList::IsEnabled(
-          features::kSpareRendererForSitePerProcess) &&
+          ::features::kSpareRendererForSitePerProcess) &&
       !android_spare_process_override) {
     return false;
   }
@@ -3665,8 +3665,8 @@ bool RenderProcessHostImpl::IsForTopChromeWebUI() const {
 }
 
 bool RenderProcessHostImpl::ShouldSendGpuChannelEarly() const {
-  return base::FeatureList::IsEnabled(features::kSendGPUChannelEarly) &&
-         (!features::kSendGPUChannelEarlyTopChromeOnly.Get() ||
+  return base::FeatureList::IsEnabled(::features::kSendGPUChannelEarly) &&
+         (!::features::kSendGPUChannelEarlyTopChromeOnly.Get() ||
           IsForTopChromeWebUI());
 }
 
@@ -3699,8 +3699,8 @@ bool RenderProcessHostImpl::ShouldPauseChannelUntilProcessLaunched() {
   }
 
   if (base::FeatureList::IsEnabled(
-          features::kSkipIPCChannelPausingForNonGuests)) {
-    if (features::kSkipIPCChannelPausingForNonGuestsInternalWebUiOnly.Get()) {
+          ::features::kSkipIPCChannelPausingForNonGuests)) {
+    if (::features::kSkipIPCChannelPausingForNonGuestsInternalWebUiOnly.Get()) {
 #if !BUILDFLAG(IS_ANDROID)
       // Skip pausing if we're on initial WebUI, so return false in that case.
       return !IsForTopChromeWebUI();
@@ -3809,7 +3809,7 @@ void RenderProcessHostImpl::AppendRendererCommandLine(
     command_line->AppendSwitch(switches::kDisallowV8FeatureFlagOverrides);
   }
 
-  if (features::IsTouchTextEditingRedesignEnabled()) {
+  if (::features::IsTouchTextEditingRedesignEnabled()) {
     command_line->AppendSwitchASCII(
         blink::switches::kTouchTextSelectionStrategy,
         blink::switches::kTouchTextSelectionStrategy_Direction);
@@ -5276,7 +5276,7 @@ bool RenderProcessHost::IsProcessLimitReached() {
     // users, as the experiment is configured with "starts_active" set to false
     // (meaning it only collects data from users who reach this code).
 #if !BUILDFLAG(IS_ANDROID)
-    if (base::FeatureList::IsEnabled(features::kRemoveRendererProcessLimit)) {
+    if (base::FeatureList::IsEnabled(::features::kRemoveRendererProcessLimit)) {
       // This is used for tests. To avoid changing test behaviors, don't
       // change the behavior when it is set.
       if (g_max_renderer_count_override) {
@@ -5406,7 +5406,7 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
     case ProcessReusePolicy::
         kReusePendingOrCommittedSiteWithMainFrameThreshold: {
       CHECK(base::FeatureList::IsEnabled(
-          features::kProcessPerSiteUpToMainFrameThreshold));
+          ::features::kProcessPerSiteUpToMainFrameThreshold));
       [[fallthrough]];
     }
     case ProcessReusePolicy::kReusePrerenderingProcessForMainFrame: {
@@ -5489,7 +5489,7 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
     base::UmaHistogramBoolean(
         "BrowserRenderProcessHost.ExistingRendererIsInitializedAndNotDead",
         render_process_host->IsInitializedAndNotDead());
-    if (base::FeatureList::IsEnabled(features::kEnsureExistingRendererAlive)) {
+    if (base::FeatureList::IsEnabled(::features::kEnsureExistingRendererAlive)) {
       render_process_host->Init();
     }
   }
@@ -6029,7 +6029,7 @@ void RenderProcessHostImpl::UpdateProcessPriority() {
     }
 #if BUILDFLAG(IS_MAC)
     if (base::FeatureList::IsEnabled(
-            features::kMacAllowBackgroundingRenderProcesses)) {
+            ::features::kMacAllowBackgroundingRenderProcesses)) {
       child_process_launcher_->SetProcessPriority(process_priority);
     }
 #else   // !BUILDFLAG(IS_MAC)
@@ -6258,7 +6258,7 @@ bool RenderProcessHostImpl::CanUseWarmUpConnection() {
   // TODO(crbug.com/455620851): Remove the function after finishing the
   // holdback experiment.
   return base::FeatureList::IsEnabled(
-             features::kSpareRendererUseWarmupConnection) ||
+             ::features::kSpareRendererUseWarmupConnection) ||
          !HasSpareRendererPriority();
 }
 

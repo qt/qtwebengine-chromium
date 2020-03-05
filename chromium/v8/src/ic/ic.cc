@@ -573,14 +573,14 @@ bool IC::UpdateHomomorphicIC(const MaybeObjectDirectHandle& new_handler,
   }
 
   MapsAndHandlers maps_and_handlers(isolate());
-  if (state() == MONOMORPHIC || state() == POLYMORPHIC) {
+  if (state() == InlineCacheState::MONOMORPHIC || state() == InlineCacheState::POLYMORPHIC) {
     nexus()->ExtractMapsAndHandlers(&maps_and_handlers);
     for (auto [map, old_handler] : maps_and_handlers) {
       if (*old_handler != new_smi_handler) {
         return false;
       }
     }
-  } else if (state() == HOMOMORPHIC) {
+  } else if (state() == InlineCacheState::HOMOMORPHIC) {
     // TODO(leszeks): We should expect to never hit this path when the handlers
     // match, since they should be handled in the IC, but we currently do for
     // LoadIC_Megamorphic called from optimized code that saw homomorphic
@@ -602,7 +602,7 @@ bool IC::UpdateHomomorphicIC(const MaybeObjectDirectHandle& new_handler,
     }
     return false;
   } else {
-    CHECK_EQ(state(), RECOMPUTE_HANDLER);
+    CHECK_EQ(state(), InlineCacheState::RECOMPUTE_HANDLER);
   }
 
 #ifdef DEBUG

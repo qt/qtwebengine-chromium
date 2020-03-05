@@ -82,7 +82,7 @@ using TokenResult = IdpNetworkRequestManager::TokenResult;
 namespace {
 
 // Path to find the well-known file on the eTLD+1 host.
-constexpr char kWellKnownPath[] = "/.well-known/web-identity";
+constexpr char kWellKnownPathINRM[] = "/.well-known/web-identity";
 
 // Well-known file JSON keys
 constexpr char kProviderUrlListKey[] = "provider_urls";
@@ -126,7 +126,7 @@ constexpr char kBrandingIconSize[] = "size";
 
 // The id assertion endpoint contains a token result.
 constexpr char kTokenKey[] = "token";
-constexpr char kIssuanceTokenKey[] = "issuance_token";
+constexpr char kIssuanceTokenKeyINRM[] = "issuance_token";
 // The id assertion endpoint can contain a "continue_on" URL to indicate that
 // the serve wants to direct the user to continue on a pop-up
 // window before it provides a token result.
@@ -416,7 +416,7 @@ void ParseIdentityProviderMetadata(const base::DictValue& idp_metadata_value,
                               brand_icon_minimum_size, idp_metadata.config_url);
 }
 
-void OnWellKnownParsed(
+void OnWellKnownParsedINRM(
     IdpNetworkRequestManager::FetchWellKnownCallback callback,
     const GURL& well_known_url,
     FetchStatus fetch_status,
@@ -736,7 +736,7 @@ ErrorDialogType GetErrorDialogTypeAndSetTokenError(int response_code,
   return ErrorDialogType::kGenericEmptyWithoutUrl;
 }
 
-void OnTokenRequestParsed(
+void OnTokenRequestParsedINRM(
     IdpNetworkRequestManager::TokenRequestCallback callback,
     IdpNetworkRequestManager::ContinueOnCallback continue_on_callback,
     IdpNetworkRequestManager::RedirectToCallback redirect_to_callback,
@@ -769,7 +769,7 @@ void OnTokenRequestParsed(
   }
 
   const std::string* issuance_token =
-      can_use_response ? response->FindString(kIssuanceTokenKey) : nullptr;
+      can_use_response ? response->FindString(kIssuanceTokenKeyINRM) : nullptr;
 
   // continue_on_callback is only set if authz is enabled.
   const std::string* continue_on = can_use_response && continue_on_callback
@@ -1056,7 +1056,7 @@ IdpNetworkRequestManager::CreateTrafficAnnotation() {
 void IdpNetworkRequestManager::FetchWellKnown(const GURL& provider,
                                               FetchWellKnownCallback callback) {
   std::optional<GURL> apex_well_known_url =
-      ComputeWellKnownUrl(provider, kWellKnownPath);
+      ComputeWellKnownUrl(provider, kWellKnownPathINRM);
 
   if (!apex_well_known_url) {
     // Pass net::HTTP_OK as the |response_code| so we do not add a console error
@@ -1064,7 +1064,7 @@ void IdpNetworkRequestManager::FetchWellKnown(const GURL& provider,
     FetchStatus fetch_status = {ParseStatus::kHttpNotFoundError, net::HTTP_OK};
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
-        base::BindOnce(&OnWellKnownParsed, std::move(callback),
+        base::BindOnce(&OnWellKnownParsedINRM, std::move(callback),
                        /*well_known_url=*/GURL(), fetch_status, std::nullopt));
     return;
   }
@@ -1074,7 +1074,7 @@ void IdpNetworkRequestManager::FetchWellKnown(const GURL& provider,
   // a malformed response, or yields more than one provider_urls entry.
   if (IsWebIdentitySubdomainEnabled()) {
     std::optional<GURL> subdomain_well_known_url =
-        ComputeWebIdentitySubdomainWellKnownUrl(provider, kWellKnownPath);
+        ComputeWebIdentitySubdomainWellKnownUrl(provider, kWellKnownPathINRM);
     if (subdomain_well_known_url) {
       FetchWellKnownCallback fallback_callback = base::BindOnce(
           &IdpNetworkRequestManager::OnSubdomainWellKnownAttempted,
@@ -1087,7 +1087,7 @@ void IdpNetworkRequestManager::FetchWellKnown(const GURL& provider,
       DownloadJsonAndParse(
           std::move(resource_request),
           /*url_encoded_post_data=*/std::nullopt,
-          base::BindOnce(&OnWellKnownParsed, std::move(fallback_callback),
+          base::BindOnce(&OnWellKnownParsedINRM, std::move(fallback_callback),
                          *subdomain_well_known_url));
       return;
     }
@@ -1099,7 +1099,7 @@ void IdpNetworkRequestManager::FetchWellKnown(const GURL& provider,
                                           /* follow_redirects= */ true);
   DownloadJsonAndParse(std::move(resource_request),
                        /*url_encoded_post_data=*/std::nullopt,
-                       base::BindOnce(&OnWellKnownParsed, std::move(callback),
+                       base::BindOnce(&OnWellKnownParsedINRM, std::move(callback),
                                       *apex_well_known_url));
 }
 
@@ -1125,7 +1125,7 @@ void IdpNetworkRequestManager::OnSubdomainWellKnownAttempted(
                                           /*follow_redirects=*/true);
   DownloadJsonAndParse(std::move(resource_request),
                        /*url_encoded_post_data=*/std::nullopt,
-                       base::BindOnce(&OnWellKnownParsed, std::move(callback),
+                       base::BindOnce(&OnWellKnownParsedINRM, std::move(callback),
                                       apex_well_known_url));
 }
 
@@ -1208,7 +1208,7 @@ void IdpNetworkRequestManager::SendTokenRequest(
 
   DownloadJsonAndParse(
       std::move(resource_request), url_encoded_post_data,
-      base::BindOnce(&OnTokenRequestParsed, std::move(callback),
+      base::BindOnce(&OnTokenRequestParsedINRM, std::move(callback),
                      std::move(continue_on), std::move(redirect_to),
                      std::move(record_error_metrics_callback), token_url),
       // We should parse the response body for the ID assertion endpoint request

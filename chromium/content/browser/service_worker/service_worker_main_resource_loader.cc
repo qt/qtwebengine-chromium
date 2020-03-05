@@ -372,7 +372,7 @@ void ServiceWorkerMainResourceLoader::StartRequest(
           // This is done asynchronously because this is for subresources and
           // not on the critical path for main resource loading.
           if (base::FeatureList::IsEnabled(
-                  features::kServiceWorkerStaticRouterStartServiceWorker)) {
+                  ::features::kServiceWorkerStaticRouterStartServiceWorker)) {
             base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
                 FROM_HERE,
                 base::BindOnce(
@@ -499,7 +499,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
     return false;
   }
 
-  if (!base::FeatureList::IsEnabled(features::kServiceWorkerAutoPreload)) {
+  if (!base::FeatureList::IsEnabled(::features::kServiceWorkerAutoPreload)) {
     RecordAutoPreloadDispatchResult(
         ServiceWorkerAutoPreloadDispatchResult::kFeatureDisabled);
     return false;
@@ -2092,7 +2092,7 @@ void ServiceWorkerMainResourceLoader::CreateAndRunCacheMatcher(
             if (active_worker->running_status() !=
                     blink::EmbeddedWorkerStatus::kRunning &&
                 base::FeatureList::IsEnabled(
-                    features::kServiceWorkerStaticRouterStartServiceWorker)) {
+                    ::features::kServiceWorkerStaticRouterStartServiceWorker)) {
               active_worker->StartWorker(
                   ServiceWorkerMetrics::EventType::STATIC_ROUTER,
                   base::DoNothing());

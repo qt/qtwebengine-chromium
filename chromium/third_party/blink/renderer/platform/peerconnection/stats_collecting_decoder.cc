@@ -22,7 +22,7 @@ constexpr base::TimeDelta kCheckSimultaneousDecodersInterval = base::Seconds(5);
 
 // Number of StatsCollectingDecoder instances right now that have started
 // decoding.
-std::atomic_int* GetDecoderCounter() {
+std::atomic_int* GetDecoderCounter2() {
   static std::atomic_int s_counter(0);
   return &s_counter;
 }
@@ -66,7 +66,7 @@ int32_t StatsCollectingDecoder::Decode(const webrtc::EncodedImage& input_image,
     base::AutoLock auto_lock(lock_);
     if (!first_frame_decoded_) {
       first_frame_decoded_ = true;
-      ++(*GetDecoderCounter());
+      ++(*GetDecoderCounter2());
     }
     number_of_new_keyframes_ += input_image.IsKey();
   }
@@ -100,7 +100,7 @@ int32_t StatsCollectingDecoder::Release() {
     }
 
     if (first_frame_decoded_) {
-      --(*GetDecoderCounter());
+      --(*GetDecoderCounter2());
       first_frame_decoded_ = false;
     }
   }
@@ -148,13 +148,13 @@ void StatsCollectingDecoder::Decoded(webrtc::VideoFrame& decodedImage,
     if ((now - last_check_for_simultaneous_decoders_) >
         kCheckSimultaneousDecodersInterval) {
       last_check_for_simultaneous_decoders_ = now;
-      DVLOG(3) << "Simultaneous decoders: " << *GetDecoderCounter();
+      DVLOG(3) << "Simultaneous decoders: " << *GetDecoderCounter2();
       if (stats_collector_.is_active()) {
-        if (*GetDecoderCounter() > kMaximumDecodersToCollectStats) {
+        if (*GetDecoderCounter2() > kMaximumDecodersToCollectStats) {
           // Too many decoders, cancel stats collection.
           stats_collector_.Clear();
         }
-      } else if (*GetDecoderCounter() <= kMaximumDecodersToCollectStats) {
+      } else if (*GetDecoderCounter2() <= kMaximumDecodersToCollectStats) {
         // Start up stats collection since there's only a single decoder active.
         stats_collector_.Start();
       }

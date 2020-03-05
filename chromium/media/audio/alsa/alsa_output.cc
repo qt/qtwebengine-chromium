@@ -138,21 +138,21 @@ std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-constexpr SampleFormat kSampleFormat = kSampleFormatS16;
-constexpr snd_pcm_format_t kAlsaSampleFormat = SND_PCM_FORMAT_S16;
+constexpr SampleFormat kSampleFormatAO = kSampleFormatS16;
+constexpr snd_pcm_format_t kAlsaSampleFormatAO = SND_PCM_FORMAT_S16;
 
 AlsaPcmOutputStream::AlsaPcmOutputStream(const std::string& device_name,
                                          const AudioParameters& params,
                                          AlsaWrapper* wrapper,
                                          AudioManagerBase* manager)
     : requested_device_name_(device_name),
-      pcm_format_(kAlsaSampleFormat),
+      pcm_format_(kAlsaSampleFormatAO),
       channels_(params.channels()),
       channel_layout_(params.channel_layout()),
       sample_rate_(params.sample_rate()),
-      bytes_per_sample_(SampleFormatToBytesPerChannel(kSampleFormat)),
-      bytes_per_frame_(params.GetBytesPerFrame(kSampleFormat)),
-      packet_size_(params.GetBytesPerBuffer(kSampleFormat)),
+      bytes_per_sample_(SampleFormatToBytesPerChannel(kSampleFormatAO)),
+      bytes_per_frame_(params.GetBytesPerFrame(kSampleFormatAO)),
+      packet_size_(params.GetBytesPerBuffer(kSampleFormatAO)),
       latency_(std::max(
           base::Microseconds(kMinLatencyMicros),
           AudioTimestampHelper::FramesToTime(params.frames_per_buffer() * 2,

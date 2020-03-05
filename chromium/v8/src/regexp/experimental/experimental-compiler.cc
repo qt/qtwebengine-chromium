@@ -219,7 +219,7 @@ bool ExperimentalCompiler::CanBeHandled(Tree* tree, Flags flags,
   return CanBeHandledVisitor::Check(tree, flags, capture_count);
 }
 
-namespace {
+namespace experimental {
 
 // A label in bytecode which starts with no known address. The address *must*
 // be bound with `Bind` before the label goes out of scope.
@@ -1218,7 +1218,7 @@ class CompileVisitor : private Visitor {
 
 ZoneList<Instruction> ExperimentalCompiler::Compile(Tree* tree, Flags flags,
                                                     Zone* zone) {
-  return CompileVisitor::Compile(tree, flags, zone);
+  return experimental::CompileVisitor::Compile(tree, flags, zone);
 }
 
 }  // namespace regexp

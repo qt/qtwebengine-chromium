@@ -27,7 +27,7 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-component("platform") {
+jumbo_component("platform") {
   output_name = "accessibility_platform"
 
   defines = [ "IS_AX_PLATFORM_IMPL" ]
@@ -84,6 +84,10 @@ component("platform") {
     "inspect/ax_tree_formatter_base.cc",
     "inspect/ax_tree_formatter_base.h",
     "inspect/ax_tree_indexer.h",
+  ]
+
+  jumbo_excluded_sources = [
+    "ax_platform_node.cc",
   ]
 
   configs += [

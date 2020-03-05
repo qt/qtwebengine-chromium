@@ -1763,7 +1763,7 @@ NavigationRequest::NavigationRequest(
   CHECK(common_params_->method == "POST" || !common_params_->post_data);
   CHECK_EQ(common_params_->url, original_url_);
   if (base::FeatureList::IsEnabled(
-          features::kSanitizeOriginalUrlDuringNavigation)) {
+          ::features::kSanitizeOriginalUrlDuringNavigation)) {
     // TODO(crbug.com/495463654): We need to get the origin of the original_url
     // here because the NavigationRequestTest helpers directly set original_url
     // without triggering paths that may sanitize it. This will no longer be an
@@ -2845,7 +2845,7 @@ void NavigationRequest::OnFencedFrameURLMappingComplete(
   common_params_->url = mapped_url_value;
   original_url_ = mapped_url_value;
   if (base::FeatureList::IsEnabled(
-          features::kSanitizeOriginalUrlDuringNavigation)) {
+          ::features::kSanitizeOriginalUrlDuringNavigation)) {
     // It is safe to convert GURL to an Origin and back in the code below
     // because we only want to discard the rest of the URL (e.g., path and
     // params). The actual underlying Origin is not needed, which could be

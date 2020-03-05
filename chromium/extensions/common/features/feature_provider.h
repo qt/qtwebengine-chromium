@@ -17,7 +17,7 @@ class Feature;
 
 // Note: Binding code (specifically native_extension_bindings_system.cc) relies
 // on this being a sorted map.
-using FeatureMap = std::map<std::string, std::unique_ptr<const Feature>>;
+using FeatureMap = std::map<std::string, std::unique_ptr<const extensions::Feature>>;
 
 // Implemented by classes that can vend features.
 class FeatureProvider {

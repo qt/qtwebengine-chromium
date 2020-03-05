@@ -128,7 +128,7 @@ base::DictValue NetLogAltSvcParams(const AlternativeServiceInfo* alt_svc_info,
   return dict;
 }
 
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunnerHSFJC(
     net::RequestPriority priority) {
   if (features::kNetTaskSchedulerHttpStreamFactoryJobController.Get()) {
     return net::GetTaskRunner(priority);
@@ -638,7 +638,7 @@ void HttpStreamFactory::JobController::ResumeMainJobLater(
   resume_main_job_callback_.Reset(
       base::BindOnce(&HttpStreamFactory::JobController::ResumeMainJob,
                      ptr_factory_.GetWeakPtr()));
-  TaskRunner(priority_)->PostDelayedTask(
+  TaskRunnerHSFJC(priority_)->PostDelayedTask(
       FROM_HERE, resume_main_job_callback_.callback(), delay);
 }
 
@@ -799,7 +799,7 @@ void HttpStreamFactory::JobController::RunLoop(int result) {
     DCHECK(!main_job_);
     DCHECK(!alternative_job_);
     DCHECK(!dns_alpn_h3_job_);
-    TaskRunner(priority_)->PostTask(
+    TaskRunnerHSFJC(priority_)->PostTask(
         FROM_HERE,
         base::BindOnce(&HttpStreamFactory::JobController::NotifyRequestFailed,
                        ptr_factory_.GetWeakPtr(), rv));

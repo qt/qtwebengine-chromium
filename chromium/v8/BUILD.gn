@@ -3448,10 +3448,17 @@ v8_cluster_source_set("v8_initializers") {
     "src/builtins/builtins-async-iterator-gen.cc",
     "src/builtins/builtins-async-generator-gen.cc",
 
+    "src/builtins/builtins-number-tsa.cc",
+    "src/builtins/builtins-string-tsa.cc",
+
     # These source files take an unusually large amount of time to
     # compile.  Build them separately to avoid bottlenecks.
     "src/builtins/builtins-regexp-gen.cc",
     "src/codegen/code-stub-assembler.cc",
+
+    "src/interpreter/interpreter-assembler.cc",
+    "src/interpreter/interpreter-generator.cc",
+    "src/interpreter/interpreter-generator-tsa.cc",
   ]
 
   if (v8_current_cpu == "x86") {
@@ -5685,6 +5692,11 @@ if (!v8_enable_maglev) {
   ]
 }
 
+v8_compiler_jumbo_excluded_sources = [
+  "src/compiler/bytecode-analysis.cc",
+  "src/compiler/compilation-dependencies.cc",
+]
+
 if (v8_current_cpu == "x86") {
   v8_compiler_sources += [
     ### gcmole(ia32) ###
@@ -5790,6 +5802,10 @@ if (v8_enable_webassembly) {
     "src/compiler/wasm-typer.cc",
     "src/wasm/turboshaft-graph-interface.cc",
   ]
+  v8_compiler_jumbo_excluded_sources += [
+    "src/compiler/turboshaft/wasm-gc-optimize-phase.cc",
+    "src/compiler/wasm-compiler.cc",
+  ]
 }
 
 if (v8_enable_wasm_simd256_revec) {
@@ -5823,6 +5839,7 @@ v8_cluster_source_set("v8_compiler_for_mksnapshot_source_set") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   sources = v8_compiler_sources
+  jumbo_excluded_sources = v8_compiler_jumbo_excluded_sources
 
   exclude_from_cluster = exclude_from_compiler_cluster
 
@@ -5863,6 +5880,7 @@ v8_cluster_source_set("v8_compiler") {
 
   if (v8_enable_turbofan) {
     sources = v8_compiler_sources
+    jumbo_excluded_sources = v8_compiler_jumbo_excluded_sources
   } else {
     # With Turbofan disabled, we only include the stubbed-out API.
     sources = [ "src/compiler/turbofan-disabled.cc" ]
@@ -6467,6 +6485,21 @@ v8_cluster_source_set("v8_base_without_compiler") {
     ]
   }
 
+  jumbo_excluded_sources = [
+    "src/runtime/runtime-test.cc",
+    "src/regexp/regexp-compiler-tonode.cc",
+    "src/regexp/regexp-compiler.cc",
+    "src/regexp/regexp.cc",
+  ]
+
+  if (v8_enable_regexp_diagnostics) {
+    jumbo_excluded_sources += [
+      "src/regexp/regexp-dotprinter.cc",
+      "src/regexp/regexp-graph-printer.cc",
+      "src/regexp/regexp-node-printer.cc",
+    ]
+  }
+
   if (v8_enable_maglev) {
     sources += [
       "src/maglev/maglev-assembler.cc",
@@ -6506,6 +6539,10 @@ v8_cluster_source_set("v8_base_without_compiler") {
         "src/maglev/arm64/maglev-assembler-arm64.cc",
         "src/maglev/arm64/maglev-ir-arm64.cc",
       ]
+      jumbo_excluded_sources += [
+        "src/maglev/arm64/maglev-assembler-arm64.cc",
+        "src/maglev/arm64/maglev-ir-arm64.cc",
+      ]
     } else if (v8_current_cpu == "riscv64") {
       sources += [
         "src/maglev/riscv/maglev-assembler-riscv.cc",
@@ -6513,6 +6550,10 @@ v8_cluster_source_set("v8_base_without_compiler") {
       ]
     } else if (v8_current_cpu == "x64") {
       sources += [
+        "src/maglev/x64/maglev-assembler-x64.cc",
+        "src/maglev/x64/maglev-ir-x64.cc",
+      ]
+      jumbo_excluded_sources += [
         "src/maglev/x64/maglev-assembler-x64.cc",
         "src/maglev/x64/maglev-ir-x64.cc",
       ]
@@ -6604,6 +6645,14 @@ v8_cluster_source_set("v8_base_without_compiler") {
         "src/wasm/fuzzing/random-module-generation.cc",
       ]
     }
+    jumbo_excluded_sources += [
+      "src/wasm/baseline/liftoff-compiler.cc",
+      "src/wasm/function-compiler.cc",
+      "src/wasm/module-compiler.cc",
+      "src/wasm/wasm-debug.cc",
+      "src/wasm/wasm-module.cc",
+      "src/wasm/wasm-objects.cc",
+    ]
 
     if (v8_enable_drumbrake) {
       sources += [
@@ -6632,13 +6681,15 @@ v8_cluster_source_set("v8_base_without_compiler") {
     sources += [ "src/heap/reference-summarizer.cc" ]
   }
 
-  jumbo_excluded_sources = [
+  jumbo_excluded_sources += [
+    "src/execution/clobber-registers.cc", # Host asm vs target asm includes
     # TODO(mostynb@vewd.com): don't exclude these http://crbug.com/752428
     "src/profiler/heap-snapshot-generator.cc",  # Macro clash in mman-linux.h
     "src/heap/local-heap.cc",
     "src/heap/safepoint.cc",
     "src/objects/js-display-names.cc",
     "src/objects/js-relative-time-format.cc",
+    "src/utils/ostreams.cc",
 
     # These source files take an unusually large amount of time to
     # compile.  Build them separately to avoid bottlenecks.
@@ -6697,6 +6748,10 @@ v8_cluster_source_set("v8_base_without_compiler") {
         ]
       }
     }
+
+    jumbo_excluded_sources += [
+      "src/regexp/x64/regexp-macro-assembler-x64.cc",
+    ]
   } else if (v8_current_cpu == "arm") {
     sources += [
       ### gcmole(arm) ###
@@ -6760,6 +6815,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
       # TODO(mostynb@vewd.com): fix this code so it doesn't need
       # to be excluded, see the comments inside.
       "src/codegen/arm64/instructions-arm64-constants.cc",
+      "src/regexp/arm64/regexp-macro-assembler-arm64.cc",
     ]
   } else if (v8_current_cpu == "mips64" || v8_current_cpu == "mips64el") {
     sources += [

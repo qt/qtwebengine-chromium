@@ -398,7 +398,7 @@ bool SoftwareGLAllowed() {
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
   return !command_line->HasSwitch(switches::kDisableSoftwareRasterizer) &&
-         features::IsAnySoftwareGLAllowed(command_line);
+         ::features::IsAnySoftwareGLAllowed(command_line);
 }
 
 // These values are logged to UMA. Entries should not be renumbered and numeric
@@ -535,7 +535,7 @@ void GpuDataManagerImplPrivate::InitializeGpuModes() {
 #else
     // Skip hardware modes if SwiftShader-for-WebGL is in use; hardware GPU is
     // not needed in that case.
-    if (!features::IsSwiftShaderUsedForWebGLByCommandLine(command_line)) {
+    if (!::features::IsSwiftShaderUsedForWebGLByCommandLine(command_line)) {
       // If Graphite is enabled, fall back to Ganesh/GL on platforms that do not
       // support software compositing or sometimes fail dawn initialization.
       // TODO(b/323953910): Eliminate this fallback on each platform once
@@ -548,10 +548,10 @@ void GpuDataManagerImplPrivate::InitializeGpuModes() {
       // the blocklist and device support checks (like Metal/D3D11 checking)
       // to the GPU process post-initialization.
       const bool early_feature_check =
-          !base::FeatureList::IsEnabled(features::kLateGraphiteFeatureCheck);
+          !base::FeatureList::IsEnabled(::features::kLateGraphiteFeatureCheck);
       const bool can_use_graphite =
           early_feature_check
-              ? features::IsSkiaGraphiteEnabled(command_line)
+              ? ::features::IsSkiaGraphiteEnabled(command_line)
               : !command_line->HasSwitch(switches::kDisableSkiaGraphite);
       const bool can_use_vulkan = features::IsUsingVulkan();
       if (can_use_graphite) {

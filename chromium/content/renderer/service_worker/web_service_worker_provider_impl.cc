@@ -33,7 +33,7 @@ namespace content {
 namespace {
 
 template <typename T>
-static std::string MojoEnumToString(T mojo_enum) {
+static std::string MojoEnumToString2(T mojo_enum) {
   std::ostringstream oss;
   oss << mojo_enum;
   return oss.str();
@@ -211,7 +211,7 @@ void WebServiceWorkerProviderImpl::OnRegistered(
                       "WebServiceWorkerProviderImpl::OnRegistered",
                       perfetto::TerminatingFlow::FromPointer(
                           callbacks.get(), "RegisterServiceWorker"),
-                      "Error", MojoEnumToString(error), "Message",
+                      "Error", MojoEnumToString2(error), "Message",
                       error_msg ? *error_msg : "Success");
   if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
     DCHECK(error_msg);
@@ -239,7 +239,7 @@ void WebServiceWorkerProviderImpl::OnDidGetRegistration(
                       "WebServiceWorkerProviderImpl::OnDidGetRegistration",
                       perfetto::TerminatingFlow::FromPointer(callbacks.get(),
                                                              "GetRegistration"),
-                      "Error", MojoEnumToString(error), "Message",
+                      "Error", MojoEnumToString2(error), "Message",
                       error_msg ? *error_msg : "Success");
   if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
     DCHECK(error_msg);
@@ -271,7 +271,7 @@ void WebServiceWorkerProviderImpl::OnDidGetRegistrations(
                       "WebServiceWorkerProviderImpl::OnDidGetRegistrations",
                       perfetto::TerminatingFlow::FromPointer(
                           callbacks.get(), "GetRegistrations"),
-                      "Error", MojoEnumToString(error), "Message",
+                      "Error", MojoEnumToString2(error), "Message",
                       error_msg ? *error_msg : "Success");
   if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
     DCHECK(error_msg);

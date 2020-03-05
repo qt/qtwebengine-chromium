@@ -32,7 +32,7 @@ CommonOperatorReducer::CommonOperatorReducer(
       dead_(graph->NewNode(common->Dead())),
       zone_(temp_zone),
       default_branch_semantics_(default_branch_semantics) {
-  NodeProperties::SetType(dead_, Type::None());
+  NodeProperties::SetType(dead_, compiler::Type::None());
 }
 
 Reduction CommonOperatorReducer::Reduce(Node* node) {

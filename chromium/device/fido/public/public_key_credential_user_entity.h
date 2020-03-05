@@ -58,7 +58,7 @@ class COMPONENT_EXPORT(FIDO_PUBLIC) PublicKeyCredentialUserEntity {
 };
 
 COMPONENT_EXPORT(FIDO_PUBLIC)
-cbor::Value AsCBOR(const PublicKeyCredentialUserEntity&);
+::cbor::Value AsCBOR(const PublicKeyCredentialUserEntity&);
 
 }  // namespace device
 

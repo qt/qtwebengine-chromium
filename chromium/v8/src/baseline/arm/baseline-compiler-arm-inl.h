@@ -95,6 +95,8 @@ void BaselineCompiler::VerifyFrameSize() {
   __ masm()->Assert(eq, AbortReason::kUnexpectedStackPointer);
 }
 
+#undef __
+
 }  // namespace baseline
 }  // namespace internal
 }  // namespace v8

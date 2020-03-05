@@ -356,7 +356,7 @@ void RenderProcessHostImpl::IOThreadHostImpl::BindHostReceiver(
   }
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-  if (features::IsFontDataServiceEnabled()) {
+  if (::features::IsFontDataServiceEnabled()) {
     if (auto font_data_receiver =
             receiver.As<font_data_service::mojom::FontDataService>()) {
       font_data_service::FontDataServiceImpl::ConnectToFontService(

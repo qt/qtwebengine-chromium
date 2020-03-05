@@ -550,6 +550,11 @@ jumbo_source_set("browser_sources") {
     "webui_config_map.h",
     "zoom_level_delegate.h",
   ]
+  jumbo_excluded_sources = [
+    "bluetooth_delegate.cc",
+    "webid/identity_request_account.cc",
+  ]
+
   configs += [
     "//build/config:precompiled_headers",
     "//build/config/compiler:wexit_time_destructors",

@@ -10,10 +10,10 @@
 
 namespace mojo {
 
-using Traits = StructTraits<viz::mojom::FrameTimingDetailsDataView,
+using TraitsTFDMT = StructTraits<viz::mojom::FrameTimingDetailsDataView,
                             viz::FrameTimingDetails>;
 // static
-bool Traits::Read(viz::mojom::FrameTimingDetailsDataView data,
+bool TraitsTFDMT::Read(viz::mojom::FrameTimingDetailsDataView data,
                   viz::FrameTimingDetails* out) {
   return data.ReadReceivedCompositorFrameTimestamp(
              &out->received_compositor_frame_timestamp) &&

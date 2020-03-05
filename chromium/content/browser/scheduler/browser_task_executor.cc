@@ -89,7 +89,7 @@ QueueType BrowserTaskExecutor::GetQueueType(const BrowserTaskTraits& traits) {
 
     case BrowserTaskType::kNavigationNetworkResponse:
       if (base::FeatureList::IsEnabled(
-              features::kNavigationNetworkResponseQueue)) {
+              ::features::kNavigationNetworkResponseQueue)) {
         return QueueType::kNavigationNetworkResponse;
       }
       // Defer to traits.priority() below.
@@ -100,7 +100,7 @@ QueueType BrowserTaskExecutor::GetQueueType(const BrowserTaskTraits& traits) {
 
     case BrowserTaskType::kBeforeUnloadBrowserResponse:
       if (base::FeatureList::IsEnabled(
-              features::kBeforeUnloadBrowserResponseQueue)) {
+              ::features::kBeforeUnloadBrowserResponseQueue)) {
         return QueueType::kBeforeUnloadBrowserResponse;
       }
       break;

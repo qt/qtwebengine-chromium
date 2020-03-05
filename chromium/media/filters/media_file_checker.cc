@@ -32,7 +32,7 @@ void OnMediaFileCheckerError(bool* called) {
   *called = false;
 }
 
-struct Decoder {
+struct DecoderStruct {
   std::unique_ptr<AVCodecContext, ScopedPtrAVFreeContext> context;
   std::unique_ptr<FFmpegDecodingLoop> loop;
 };
@@ -63,7 +63,7 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
 
   // Remember the codec context for any decodable audio or video streams.
   bool found_streams = false;
-  std::vector<Decoder> stream_contexts(format_context->nb_streams);
+  std::vector<DecoderStruct> stream_contexts(format_context->nb_streams);
   base::span<AVStream*> format_context_span =
       AVFormatContextToSpan(format_context);
   std::ranges::transform(
@@ -75,7 +75,7 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
             cp->codec_type == AVMEDIA_TYPE_VIDEO) {
           auto context = AVStreamToAVCodecContext(stream);
           if (!context) {
-            return Decoder{};
+            return DecoderStruct{};
           }
 #if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
           const AVCodec* codec =
@@ -86,11 +86,11 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
           if (codec && avcodec_open2(context.get(), codec, nullptr) >= 0) {
             auto loop = std::make_unique<FFmpegDecodingLoop>(context.get());
             found_streams = true;
-            return Decoder{std::move(context), std::move(loop)};
+            return DecoderStruct{std::move(context), std::move(loop)};
           }
         }
 
-        return Decoder{};
+        return DecoderStruct{};
       });
 
   if (!found_streams)

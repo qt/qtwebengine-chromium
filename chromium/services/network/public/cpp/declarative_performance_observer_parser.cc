@@ -11,7 +11,7 @@ namespace network {
 
 namespace {
 
-constexpr char kReportTo[] = "report-to";
+constexpr char kReportToDPOP[] = "report-to";
 constexpr char kEntryTypes[] = "entry-types";
 constexpr char kIncludeUserTiming[] = "include-user-timing";
 constexpr char kCaptureEarlyFailures[] = "capture-early-failures";
@@ -49,8 +49,8 @@ ParseDeclarativePerformanceObserverPolicy(std::string_view header) {
 
   auto policy = mojom::DeclarativePerformanceObserverPolicy::New();
 
-  if (dict->contains(kReportTo)) {
-    const auto& member = dict->at(kReportTo);
+  if (dict->contains(kReportToDPOP)) {
+    const auto& member = dict->at(kReportToDPOP);
     if (!member.member_is_inner_list && !member.member.empty() &&
         member.member[0].item.is_string()) {
       policy->reporting_endpoint = member.member[0].item.GetString();

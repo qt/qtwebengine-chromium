@@ -29,7 +29,7 @@ namespace blink {
 namespace {
 
 // An oscillator is always mono.
-constexpr unsigned kNumberOfOutputChannels = 1;
+constexpr unsigned kNumberOfOutputChannelsOH = 1;
 
 // Convert the detune value (in cents) to a frequency scale multiplier:
 // 2^(d/1200)
@@ -168,7 +168,7 @@ OscillatorHandler::OscillatorHandler(AudioNode& node,
       detune_(&detune),
       phase_increments_(GetDeferredTaskHandler().RenderQuantumFrames()),
       detune_values_(GetDeferredTaskHandler().RenderQuantumFrames()) {
-  AddOutput(kNumberOfOutputChannels);
+  AddOutput(kNumberOfOutputChannelsOH);
   Initialize();
 }
 

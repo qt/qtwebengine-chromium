@@ -14,21 +14,21 @@ namespace compiler {
 
 namespace {
 Node* TryGetConstant(JSGraph* jsgraph, Node* node, JSHeapBroker* broker) {
-  Type type = NodeProperties::GetType(node);
+  compiler::Type type = NodeProperties::GetType(node);
   Node* result;
   if (type.IsNone()) {
     result = nullptr;
-  } else if (type.Is(Type::Null())) {
+  } else if (type.Is(compiler::Type::Null())) {
     result = jsgraph->NullConstant();
-  } else if (type.Is(Type::Undefined())) {
+  } else if (type.Is(compiler::Type::Undefined())) {
     result = jsgraph->UndefinedConstant();
-  } else if (type.Is(Type::MinusZero())) {
+  } else if (type.Is(compiler::Type::MinusZero())) {
     result = jsgraph->MinusZeroConstant();
-  } else if (type.Is(Type::NaN())) {
+  } else if (type.Is(compiler::Type::NaN())) {
     result = jsgraph->NaNConstant();
   } else if (type.IsHeapConstant()) {
     result = jsgraph->ConstantNoHole(type.AsHeapConstant()->Ref(), broker);
-  } else if (type.Is(Type::PlainNumber()) && type.Min() == type.Max()) {
+  } else if (type.Is(compiler::Type::PlainNumber()) && type.Min() == type.Max()) {
     result = jsgraph->ConstantNoHole(type.Min());
   } else {
     result = nullptr;
