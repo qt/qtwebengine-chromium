@@ -53,7 +53,7 @@ template <typename... UnboundArgs,
           typename Method,
           typename Receiver,
           typename... BoundArgs>
-auto BindOnceForRvalueMemberMethod(Method method,
+auto BindOnceForRvalueMemberMethodPULH(Method method,
                                    Receiver receiver,
                                    BoundArgs&&... bound_args) {
   return base::BindOnce(
@@ -66,7 +66,7 @@ auto BindOnceForRvalueMemberMethod(Method method,
       method, std::move(receiver), std::forward<BoundArgs>(bound_args)...);
 }
 
-BrowserContext* BrowserContextFromFrameTreeNodeId(
+BrowserContext* BrowserContextFromFrameTreeNodeIdPULH(
     FrameTreeNodeId frame_tree_node_id) {
   WebContents* web_content =
       WebContents::FromFrameTreeNodeId(frame_tree_node_id);
@@ -150,7 +150,7 @@ void PrefetchServingHandle::ContinueOnGotPrefetchToServe(
         prober->ShouldProbeOrigins()) {
       GURL probe_url = url::SchemeHostPort(state->tentative_url).GetURL();
       prober->Probe(probe_url,
-                    BindOnceForRvalueMemberMethod<PrefetchProbeResult>(
+                    BindOnceForRvalueMemberMethodPULH<PrefetchProbeResult>(
                         &PrefetchServingHandle::OnProbeComplete,
                         std::move(*this), std::move(state),
                         /*probe_start_time=*/base::TimeTicks::Now()));
@@ -176,7 +176,7 @@ void PrefetchServingHandle::ContinueOnGotPrefetchToServe(
       if (!HasIsolatedCookieCopyStarted()) {
         // Checks the same `BrowserContext` is used, just in case. We can remove
         // this `CHECK` e.g. once we remove `frame_tree_node_id` access here.
-        CHECK_EQ(BrowserContextFromFrameTreeNodeId(state->frame_tree_node_id),
+        CHECK_EQ(BrowserContextFromFrameTreeNodeIdPULH(state->frame_tree_node_id),
                  GetPrefetchContainer()->request().browser_context());
 
         // Start the cookie copy for the next redirect hop.
@@ -196,7 +196,7 @@ void PrefetchServingHandle::ContinueOnGotPrefetchToServe(
         // TODO(crbug.com/482216429): `on_cookie_copy_complete_callback_` can
         // be non-null here so probably we should make this a list of callbacks.
         current_redirect_hop.on_cookie_copy_complete_callback_ =
-            BindOnceForRvalueMemberMethod<>(
+            BindOnceForRvalueMemberMethodPULH<>(
                 &PrefetchServingHandle::OnCookieCopyComplete, std::move(*this),
                 std::move(state),
                 /*cookie_copy_start_time=*/base::TimeTicks::Now());
@@ -266,7 +266,7 @@ void PrefetchServingHandle::StartCookieValidation(
           net::CookiePartitionKey::FromNetworkIsolationKey(
               net::NetworkIsolationKey(site, site), net::SiteForCookies(site),
               site, /*main_frame_navigation=*/true)),
-      BindOnceForRvalueMemberMethod<
+      BindOnceForRvalueMemberMethodPULH<
           const std::vector<net::CookieWithAccessResult>&,
           const std::vector<net::CookieWithAccessResult>&>(
           &PrefetchServingHandle::OnGotCookiesForValidation, std::move(*this),

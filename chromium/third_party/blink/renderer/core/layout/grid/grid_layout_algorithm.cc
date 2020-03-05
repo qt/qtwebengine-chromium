@@ -807,7 +807,7 @@ LayoutUnit GetExtraMarginForBaseline(const BoxStrut& margins,
       subgridded_item->SetIndices(track_collection.Direction());
 
   const LayoutUnit extra_margin =
-      (subgridded_item->BaselineGroup(track_direction) == BaselineGroup::kMajor)
+      (subgridded_item->BaselineGroup(track_direction) == BaselineGroupType::kMajor)
           ? track_collection.StartExtraMargin(begin_set_index)
           : track_collection.EndExtraMargin(end_set_index);
 
@@ -1910,11 +1910,11 @@ ConstraintSpace GridLayoutAlgorithm::CreateConstraintSpaceForMeasure(
 
 namespace {
 
-class GapAccumulator {
+class GapGridAccumulator {
   STACK_ALLOCATED();
 
  public:
-  GapAccumulator() = default;
+  GapGridAccumulator() = default;
 
   // Builds the list of "main" gaps for Grid. In the MC (Main-Cross)
   // gap geometry model, we pick rows as the main axis (an arbitrary but
@@ -2182,7 +2182,7 @@ void GridLayoutAlgorithm::PlaceGridItems(
       container_space.GetWritingDirection();
   auto next_subgrid_subtree = layout_subtree.FirstChild();
 
-  std::optional<GapAccumulator> gap_accumulator;
+  std::optional<GapGridAccumulator> gap_accumulator;
 
   // Construct gap geometry if we have gap decoration rules or if we are in a
   // fragmentation context, because the gap geometry is needed to suppress gaps,
@@ -2195,7 +2195,7 @@ void GridLayoutAlgorithm::PlaceGridItems(
        Style().HasGapRule()) ||
       (RuntimeEnabledFeatures::CSSGridGapSuppressionEnabled() &&
        out_unfragmented_gap_geometry)) {
-    gap_accumulator = GapAccumulator();
+    gap_accumulator = GapGridAccumulator();
     gap_accumulator->BuildGapGeometry(layout_data);
 
     if (out_track_idx_to_set_idx) {

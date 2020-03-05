@@ -7193,4 +7193,6 @@ std::ostream& operator<<(std::ostream& stream, const AXObjectCacheImpl& cache) {
   return stream << "AXObjectCache: " << cache.lifecycle().ToString();
 }
 
+#undef DEBUG_STRING_CASE
+
 }  // namespace blink

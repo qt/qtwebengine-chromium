@@ -35,7 +35,7 @@ const char kReceiveFeatureReportFailed[] =
 const char kUnexpectedClose[] = "The device was closed unexpectedly.";
 const char kArrayBufferTooBig[] =
     "The provided ArrayBuffer exceeds the maximum allowed size.";
-const char kContextGone[] = "Script context has shut down.";
+const char kContextGone2[] = "Script context has shut down.";
 
 enum ReportType {
   kInput,
@@ -257,7 +257,7 @@ ScriptPromise<IDLUndefined> HIDDevice::open(ScriptState* script_state,
                                             ExceptionState& exception_state) {
   if (!GetExecutionContext()) {
     exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
-                                      kContextGone);
+                                      kContextGone2);
     return EmptyPromise();
   }
 
@@ -307,7 +307,7 @@ ScriptPromise<IDLUndefined> HIDDevice::forget(ScriptState* script_state,
                                               ExceptionState& exception_state) {
   if (!GetExecutionContext()) {
     exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
-                                      kContextGone);
+                                      kContextGone2);
     return EmptyPromise();
   }
 

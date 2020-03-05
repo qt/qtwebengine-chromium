@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
 import("//third_party/protobuf/proto_library.gni")
 
@@ -9,7 +10,7 @@ proto_library("site_data_proto") {
   sources = [ "persistence/site_data/site_data.proto" ]
 }
 
-static_library("performance_manager") {
+jumbo_static_library("performance_manager") {
   sources = [
     "binders.cc",
     "browser_child_process_host_proxy.cc",
@@ -338,6 +339,11 @@ static_library("performance_manager") {
   if (enable_guest_view) {
     deps += [ "//components/guest_view/browser" ]
   }
+
+  jumbo_excluded_sources = [
+    "decorators/site_data_recorder.cc",
+    "graph/graph_impl.cc",
+  ]
 
   if (!is_android) {
     sources += [

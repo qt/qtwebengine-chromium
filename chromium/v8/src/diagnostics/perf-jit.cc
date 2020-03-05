@@ -37,6 +37,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#undef MAP_TYPE
+
 #include <memory>
 
 #include "src/base/platform/wrappers.h"

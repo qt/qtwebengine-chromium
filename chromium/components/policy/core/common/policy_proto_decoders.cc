@@ -33,7 +33,7 @@ namespace {
 
 const char kValue[] = "Value";
 const char kLevel[] = "Level";
-const char kRecommended[] = "Recommended";
+const char kRecommendedLocal[] = "Recommended";
 
 // Returns true and sets |level| to a PolicyLevel if the policy has been set
 // at that level. Returns false if the policy is not set, or has been set at
@@ -356,7 +356,7 @@ bool ParseComponentPolicy(base::DictValue json_dict,
 
     PolicyLevel level = POLICY_LEVEL_MANDATORY;
     const std::string* level_string = description_dict.FindString(kLevel);
-    if (level_string && *level_string == kRecommended)
+    if (level_string && *level_string == kRecommendedLocal)
       level = POLICY_LEVEL_RECOMMENDED;
 
     policy->Set(policy_name, level, scope, source, std::move(value.value()),

@@ -268,7 +268,7 @@ gfx::Size AppWindow::CreateParams::GetWindowMaximumSize(
 
 // AppWindow
 
-AppWindow::AppWindow(BrowserContext* context,
+AppWindow::AppWindow(content::BrowserContext* context,
                      std::unique_ptr<AppDelegate> app_delegate,
                      const Extension* extension)
     : browser_context_(context),
@@ -1010,7 +1010,7 @@ void AppWindow::SaveWindowPosition() {
 
   gfx::Rect bounds = native_app_window_->GetRestoredBounds();
   gfx::Rect screen_bounds =
-      display::Screen::Get()->GetDisplayMatching(bounds).work_area();
+      ::display::Screen::Get()->GetDisplayMatching(bounds).work_area();
   ui::mojom::WindowShowState window_state =
       native_app_window_->GetRestoredState();
   cache->SaveGeometry(extension_id(), window_key_, bounds, screen_bounds,
@@ -1073,8 +1073,8 @@ AppWindow::CreateParams AppWindow::LoadDefaults(CreateParams params) const {
                            &cached_screen_bounds, &cached_state)) {
       // App window has cached screen bounds, make sure it fits on screen in
       // case the screen resolution changed.
-      display::Screen* screen = display::Screen::Get();
-      display::Display display = screen->GetDisplayMatching(cached_bounds);
+      ::display::Screen* screen = ::display::Screen::Get();
+      ::display::Display display = screen->GetDisplayMatching(cached_bounds);
       gfx::Rect current_screen_bounds = display.work_area();
       SizeConstraints constraints(
           params.GetWindowMinimumSize(gfx::Insets(), gfx::RoundedCornersF()),

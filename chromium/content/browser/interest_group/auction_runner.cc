@@ -761,7 +761,7 @@ void AuctionRunner::UpdateInterestGroupsPostAuction() {
   });
 
   if (base::FeatureList::IsEnabled(
-          features::kFledgeDelayPostAuctionInterestGroupUpdate)) {
+          ::features::kFledgeDelayPostAuctionInterestGroupUpdate)) {
     interest_group_manager_->UpdateInterestGroupsOfOwnersWithDelay(
         std::move(update_owners), client_security_state_.Clone(),
         std::move(user_agent_override_), std::move(attestation_callback_),

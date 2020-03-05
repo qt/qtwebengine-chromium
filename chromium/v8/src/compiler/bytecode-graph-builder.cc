@@ -3027,7 +3027,7 @@ void BytecodeGraphBuilder::VisitThrowIfNotSuperConstructor() {
   }
   NewIfTrue();
 
-  constructor = NewNode(common()->TypeGuard(Type::Callable()), constructor);
+  constructor = NewNode(common()->TypeGuard(compiler::Type::Callable()), constructor);
   environment()->BindRegister(bytecode_iterator().GetRegisterOperand(0),
                               constructor);
 }
@@ -3861,7 +3861,7 @@ void BytecodeGraphBuilder::VisitForInNext() {
 
   // We need to rename the {index} here, as in case of OSR we lose the
   // information that the {index} is always a valid unsigned Smi value.
-  index = NewNode(common()->TypeGuard(Type::UnsignedSmall()), index);
+  index = NewNode(common()->TypeGuard(compiler::Type::UnsignedSmall()), index);
 
   FeedbackSlot slot = bytecode_iterator().GetSlotOperand(3);
   JSTypeHintLowering::LoweringResult lowering = TryBuildSimplifiedForInNext(

@@ -50,7 +50,7 @@
 namespace blink {
 
 namespace {
-constexpr const char kCategory[] = "media";
+constexpr const char kCategory2[] = "media";
 
 base::AtomicSequenceNumber g_sequence_num_for_counters;
 }  // namespace
@@ -520,7 +520,7 @@ void DecoderTemplate<Traits>::Shutdown(DOMException* exception) {
   if (IsClosed())
     return;
 
-  TRACE_EVENT1(kCategory, GetTraceNames()->shutdown.c_str(), "has_exception",
+  TRACE_EVENT1(kCategory2, GetTraceNames()->shutdown.c_str(), "has_exception",
                !!exception);
 
   shutting_down_ = true;
@@ -565,7 +565,7 @@ void DecoderTemplate<Traits>::Shutdown(DOMException* exception) {
 
   DCHECK(!pending_request_);
 
-  if (TRACE_EVENT_CATEGORY_ENABLED(kCategory)) {
+  if (TRACE_EVENT_CATEGORY_ENABLED(kCategory2)) {
     for (auto& pending_decode : pending_decodes_)
       pending_decode.value->decode_trace.reset();
   }
@@ -787,12 +787,12 @@ void DecoderTemplate<Traits>::OnOutput(uint32_t reset_generation,
 
   OutputType* blink_output = std::move(output_or_error).value();
 
-  TRACE_EVENT_BEGIN1(kCategory, GetTraceNames()->output.c_str(), "timestamp",
+  TRACE_EVENT_BEGIN1(kCategory2, GetTraceNames()->output.c_str(), "timestamp",
                      blink_output->timestamp());
 
   output_cb_->InvokeAndReportException(nullptr, blink_output);
 
-  TRACE_EVENT_END0(kCategory, GetTraceNames()->output.c_str());
+  TRACE_EVENT_END0(kCategory2, GetTraceNames()->output.c_str());
 
   MarkCodecActive();
 }
@@ -800,7 +800,7 @@ void DecoderTemplate<Traits>::OnOutput(uint32_t reset_generation,
 template <typename Traits>
 void DecoderTemplate<Traits>::TraceQueueSizes() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  TRACE_COUNTER_ID2(kCategory, GetTraceNames()->requests_counter.c_str(),
+  TRACE_COUNTER_ID2(kCategory2, GetTraceNames()->requests_counter.c_str(),
                     trace_counter_id_, "decodes", num_pending_decodes_, "other",
                     requests_.size() - num_pending_decodes_);
 }
@@ -859,7 +859,7 @@ void DecoderTemplate<Traits>::Trace(Visitor* visitor) const {
 
 template <typename Traits>
 void DecoderTemplate<Traits>::OnCodecReclaimed(DOMException* exception) {
-  TRACE_EVENT0(kCategory, GetTraceNames()->reclaimed.c_str());
+  TRACE_EVENT0(kCategory2, GetTraceNames()->reclaimed.c_str());
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(is_applying_codec_pressure());
 
@@ -931,7 +931,7 @@ void DecoderTemplate<Traits>::Request::StartTracing() {
   DCHECK(!is_tracing);
   is_tracing = true;
 #endif
-  TRACE_EVENT_BEGIN(kCategory, perfetto::DynamicString(TraceNameFromType()),
+  TRACE_EVENT_BEGIN(kCategory2, perfetto::DynamicString(TraceNameFromType()),
                     perfetto::Track::FromPointer(this));
 }
 
@@ -941,7 +941,7 @@ void DecoderTemplate<Traits>::Request::EndTracing(bool shutting_down) {
   DCHECK(is_tracing);
   is_tracing = false;
 #endif
-  TRACE_EVENT_END(kCategory, perfetto::Track::FromPointer(this), "completed",
+  TRACE_EVENT_END(kCategory2, perfetto::Track::FromPointer(this), "completed",
                   !shutting_down);
 }
 

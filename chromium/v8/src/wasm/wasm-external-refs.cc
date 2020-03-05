@@ -719,8 +719,8 @@ V ReadAndIncrementOffset(Address data, size_t* offset) {
   return result;
 }
 
-constexpr int32_t kSuccess = 1;
-constexpr int32_t kOutOfBounds = 0;
+constexpr int32_t kSuccess2 = 1;
+constexpr int32_t kOutOfBounds2 = 0;
 }  // namespace
 
 void data_drop_wrapper(Address trusted_data_addr, uint32_t segment_index) {
@@ -741,18 +741,18 @@ int32_t memory_init_wrapper(Address trusted_data_addr, uint32_t mem_index,
       TrustedCast<WasmTrustedInstanceData>(Tagged<Object>{trusted_data_addr});
 
   uint64_t mem_size = trusted_data->memory_size(mem_index);
-  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds2;
 
   WireBytesRef segment_source = trusted_data->data_segments()->get(seg_index);
   if (!base::IsInBounds<uint32_t>(src, size, segment_source.length())) {
-    return kOutOfBounds;
+    return kOutOfBounds2;
   }
 
   base::Vector<const uint8_t> wire_bytes =
       trusted_data->native_module()->wire_bytes();
   const uint8_t* start = wire_bytes.data() + segment_source.offset() + src;
   std::memcpy(EffectiveAddress(trusted_data, mem_index, dst), start, size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 int32_t memory_copy_wrapper(Address trusted_data_addr, uint32_t dst_mem_index,
@@ -765,13 +765,13 @@ int32_t memory_copy_wrapper(Address trusted_data_addr, uint32_t dst_mem_index,
   size_t dst_mem_size = trusted_data->memory_size(dst_mem_index);
   size_t src_mem_size = trusted_data->memory_size(src_mem_index);
   static_assert(std::is_same_v<size_t, uintptr_t>);
-  if (!base::IsInBounds<size_t>(dst, size, dst_mem_size)) return kOutOfBounds;
-  if (!base::IsInBounds<size_t>(src, size, src_mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<size_t>(dst, size, dst_mem_size)) return kOutOfBounds2;
+  if (!base::IsInBounds<size_t>(src, size, src_mem_size)) return kOutOfBounds2;
 
   // Use std::memmove, because the ranges can overlap.
   std::memmove(EffectiveAddress(trusted_data, dst_mem_index, dst),
                EffectiveAddress(trusted_data, src_mem_index, src), size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 int32_t memory_fill_wrapper(Address trusted_data_addr, uint32_t mem_index,
@@ -782,10 +782,10 @@ int32_t memory_fill_wrapper(Address trusted_data_addr, uint32_t mem_index,
       TrustedCast<WasmTrustedInstanceData>(Tagged<Object>{trusted_data_addr});
 
   uint64_t mem_size = trusted_data->memory_size(mem_index);
-  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds2;
 
   std::memset(EffectiveAddress(trusted_data, mem_index, dst), value, size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 namespace {

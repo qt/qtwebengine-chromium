@@ -104,7 +104,8 @@ namespace autofill {
 
 namespace {
 
-using enum CallTimerState::CallSite;
+using CTS = CallTimerState::CallSite;
+// using enum CallTimerState::CallSite;
 
 // Time to wait in ms to ensure that only a single select or datalist change
 // will be acted upon, instead of multiple in close succession (debounce time).
@@ -560,7 +561,7 @@ void AutofillAgent::DidDispatchDOMContentLoadedEvent() {
   is_dom_content_loaded_ = true;
   timing_.last_dom_content_loaded = base::TimeTicks::Now();
   ExtractFormsUnthrottled(/*callback=*/{},
-                          GetCallTimerState(kDidDispatchDomContentLoadedEvent));
+                          GetCallTimerState(CTS::kDidDispatchDomContentLoadedEvent));
   password_autofill_agent_->DispatchedDOMContentLoadedEvent(
       SynchronousFormCache(form_cache_.extracted_forms()));
 
@@ -603,7 +604,7 @@ void AutofillAgent::DidChangeScrollOffsetImpl(FieldRendererId element_id) {
   if (std::optional<FormAndField> form_and_field =
           form_util::FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kDidChangeScrollOffsetImpl),
+              GetCallTimerState(CTS::kDidChangeScrollOffsetImpl),
               button_titles_cache(),
               /*form_cache=*/{})) {
     auto& [form, field] = *form_and_field;
@@ -678,7 +679,7 @@ void AutofillAgent::FocusedElementChanged(
     if (std::optional<FormAndField> form_and_field =
             form_util::FindFormAndFieldForFormControlElement(
                 control, field_data_manager(),
-                GetCallTimerState(kFocusedElementChanged),
+                GetCallTimerState(CTS::kFocusedElementChanged),
                 button_titles_cache(),
                 /*form_cache=*/{})) {
       auto& [form, field] = *form_and_field;
@@ -740,7 +741,7 @@ void AutofillAgent::HandleCaretMovedInFormField(WebElement element,
       if (std::optional<FormAndField> form_and_field =
               form_util::FindFormAndFieldForFormControlElement(
                   control, self.field_data_manager(),
-                  self.GetCallTimerState(kHandleCaretMovedInFormField),
+                  self.GetCallTimerState(CTS::kHandleCaretMovedInFormField),
                   self.button_titles_cache(),
                   /*form_cache=*/{})) {
         auto& [form, field] = *form_and_field;
@@ -947,7 +948,7 @@ void AutofillAgent::OnTextFieldValueChanged(
   if (std::optional<FormAndField> form_and_field =
           form_util::FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kOnTextFieldValueChanged),
+              GetCallTimerState(CTS::kOnTextFieldValueChanged),
               button_titles_cache(), form_cache)) {
     auto& [form, field] = *form_and_field;
     if (auto* autofill_driver = unsafe_autofill_driver()) {
@@ -964,7 +965,7 @@ void AutofillAgent::OnSelectControlSelectionChanged(
   if (std::optional<FormAndField> form_and_field =
           form_util::FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kOnProvisionallySaveForm),
+              GetCallTimerState(CTS::kOnProvisionallySaveForm),
               button_titles_cache(), form_cache)) {
     auto& [form, field] = *form_and_field;
     if (auto* autofill_driver = unsafe_autofill_driver()) {
@@ -1125,7 +1126,7 @@ void AutofillAgent::ApplyFieldsAction(
       if (extracted_form_ids.insert(filled_form_id).second) {
         std::optional<FormData> form = form_util::ExtractFormData(
             document, form_util::GetFormByRendererId(filled_form_id),
-            field_data_manager(), GetCallTimerState(kApplyFieldsAction),
+            field_data_manager(), GetCallTimerState(CTS::kApplyFieldsAction),
             button_titles_cache());
         if (!form) {
           continue;
@@ -1641,7 +1642,7 @@ void AutofillAgent::ExtractFormWithField(
           form_util::GetFormControlByRendererId(field_id)) {
     if (std::optional<FormData> form = form_util::ExtractFormData(
             document, form_control.GetOwningFormForAutofill(),
-            field_data_manager(), GetCallTimerState(kExtractForm),
+            field_data_manager(), GetCallTimerState(CTS::kExtractForm),
             button_titles_cache())) {
       std::move(callback).Run(std::move(form));
       return;
@@ -1737,7 +1738,7 @@ void AutofillAgent::OnDevToolsSessionConnectionChanged(bool attached) {
 void AutofillAgent::EmitFormIssuesToDevtools() {
   // TODO(crbug.com/1399414,crbug.com/1444566): Throttle this call if possible.
   ExtractFormsUnthrottled(/*callback=*/{},
-                          GetCallTimerState(kEmitFormIssuesToDevtools));
+                          GetCallTimerState(CTS::kEmitFormIssuesToDevtools));
 }
 
 void AutofillAgent::ExtractForms(base::OneShotTimer& timer,
@@ -1751,7 +1752,7 @@ void AutofillAgent::ExtractForms(base::OneShotTimer& timer,
   timer.Start(FROM_HERE, kFormsSeenThrottle,
               base::BindOnce(&AutofillAgent::ExtractFormsUnthrottled,
                              base::Unretained(this), std::move(callback),
-                             GetCallTimerState(kExtractForms)));
+                             GetCallTimerState(autofill::CallTimerState::CallSite::kExtractForms)));
 }
 
 void AutofillAgent::ExtractFormsAndNotifyPasswordAutofillAgent(
@@ -1775,7 +1776,7 @@ void AutofillAgent::ExtractFormsAndNotifyPasswordAutofillAgent(
               },
               base::Unretained(password_autofill_agent_.get()),
               base::Unretained(&form_cache_)),
-          GetCallTimerState(kExtractFormsAndNotifyPasswordAutofillAgent)));
+          GetCallTimerState(CTS::kExtractFormsAndNotifyPasswordAutofillAgent)));
 }
 
 void AutofillAgent::ExtractFormsUnthrottled(
@@ -1992,7 +1993,7 @@ void AutofillAgent::BatchSelectOptionChange(FieldRendererId element_id) {
   if (std::optional<FormAndField> form_and_field =
           form_util::FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kBatchSelectOptionChange),
+              GetCallTimerState(CTS::kBatchSelectOptionChange),
               button_titles_cache(), /*form_cache=*/{})) {
     auto& [form, field] = *form_and_field;
     if (auto* autofill_driver = unsafe_autofill_driver();
@@ -2093,7 +2094,7 @@ void AutofillAgent::JavaScriptChangedValue(WebFormControlElement element,
   if (std::optional<FormAndField> form_and_field =
           form_util::FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kJavaScriptChangedValue), button_titles_cache(),
+              GetCallTimerState(CTS::kJavaScriptChangedValue), button_titles_cache(),
               /*form_cache=*/{})) {
     auto& [form, field] = *form_and_field;
     if (auto* autofill_driver = unsafe_autofill_driver()) {

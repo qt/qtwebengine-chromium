@@ -13,7 +13,7 @@ namespace blink {
 
 namespace {
 
-constexpr unsigned kNumberOfOutputChannels = 1;
+constexpr unsigned kNumberOfOutputChannelsGH = 1;
 
 }  // namespace
 
@@ -25,7 +25,7 @@ GainHandler::GainHandler(AudioNode& node,
       sample_accurate_gain_values_(
           GetDeferredTaskHandler().RenderQuantumFrames()) {
   AddInput();
-  AddOutput(kNumberOfOutputChannels);
+  AddOutput(kNumberOfOutputChannelsGH);
 
   Initialize();
 }

@@ -1957,7 +1957,7 @@ ServiceWorkerContextWrapper::GetLoaderFactoryForBrowserInitiatedRequest(
     // create a `WebUI` or a `WebUIController` for WebUI Service Workers so we
     // register the URLDataSource directly.
     if (base::FeatureList::IsEnabled(
-            features::kEnableServiceWorkersForChromeScheme) &&
+            ::features::kEnableServiceWorkersForChromeScheme) &&
         scope.scheme() == kChromeUIScheme) {
       config->RegisterURLDataSource(browser_context());
       static_cast<blink::PendingURLLoaderFactoryBundle*>(
@@ -1967,7 +1967,7 @@ ServiceWorkerContextWrapper::GetLoaderFactoryForBrowserInitiatedRequest(
                                         browser_context(), kChromeUIScheme,
                                         base::flat_set<std::string>()));
     } else if (base::FeatureList::IsEnabled(
-                   features::kEnableServiceWorkersForChromeUntrusted) &&
+                   ::features::kEnableServiceWorkersForChromeUntrusted) &&
                scope.scheme() == kChromeUIUntrustedScheme) {
       config->RegisterURLDataSource(browser_context());
       static_cast<blink::PendingURLLoaderFactoryBundle*>(

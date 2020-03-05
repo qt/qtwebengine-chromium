@@ -46,9 +46,9 @@ Reduction WasmTyper::Reduce(Node* node) {
   switch (node->opcode()) {
     case IrOpcode::kTypeGuard: {
       if (!AllInputsTyped(node)) return NoChange();
-      Type guarded_type = TypeGuardTypeOf(node->op());
+      compiler::Type guarded_type = TypeGuardTypeOf(node->op());
       if (!guarded_type.IsWasm()) return NoChange();
-      Type input_type =
+      compiler::Type input_type =
           NodeProperties::GetType(NodeProperties::GetValueInput(node, 0));
       if (!input_type.IsWasm()) return NoChange();
       TypeInModule guarded_wasm_type = guarded_type.AsWasm();
@@ -99,13 +99,13 @@ Reduction WasmTyper::Reduce(Node* node) {
         break;
       }
 
-      Type first_input_type =
+      compiler::Type first_input_type =
           NodeProperties::GetType(NodeProperties::GetValueInput(node, 0));
       if (!first_input_type.IsWasm()) return NoChange();
       computed_type = first_input_type.AsWasm();
       for (int i = 1; i < node->op()->ValueInputCount(); i++) {
         Node* input = NodeProperties::GetValueInput(node, i);
-        Type input_type = NodeProperties::GetType(input);
+        compiler::Type input_type = NodeProperties::GetType(input);
         if (!input_type.IsWasm()) return NoChange();
         TypeInModule wasm_type = input_type.AsWasm();
         if (computed_type.type.is_bottom()) {
@@ -222,7 +222,7 @@ Reduction WasmTyper::Reduce(Node* node) {
             : "<untyped>",
         computed_type.type.name().c_str());
 
-  NodeProperties::SetType(node, Type::Wasm(computed_type, graph_zone_));
+  NodeProperties::SetType(node, compiler::Type::Wasm(computed_type, graph_zone_));
   return Changed(node);
 }
 

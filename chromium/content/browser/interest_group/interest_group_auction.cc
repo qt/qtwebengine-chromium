@@ -1593,7 +1593,7 @@ class InterestGroupAuction::BuyerHelper
     size_t number_of_bidder_threads = 1;
     if (num_outstanding_bids_ > 0) {
       number_of_bidder_threads += static_cast<int>(
-          features::kFledgeBidderWorkletThreadPoolSizeLogarithmicScalingFactor
+          ::features::kFledgeBidderWorkletThreadPoolSizeLogarithmicScalingFactor
               .Get() *
           std::log10(num_outstanding_bids_));
     }
@@ -5406,7 +5406,7 @@ void InterestGroupAuction::HandleUpdateIfOlderThan(
     std::string_view name,
     std::optional<base::TimeDelta> update_if_older_than) {
   if (!base::FeatureList::IsEnabled(
-          features::kInterestGroupUpdateIfOlderThan)) {
+          ::features::kInterestGroupUpdateIfOlderThan)) {
     return;
   }
   if (!update_if_older_than) {

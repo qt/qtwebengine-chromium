@@ -23,7 +23,7 @@
 
 namespace media {
 
-static const snd_pcm_format_t kAlsaSampleFormat = SND_PCM_FORMAT_S16;
+static const snd_pcm_format_t kAlsaSampleFormatAI = SND_PCM_FORMAT_S16;
 
 static constexpr int kNumPacketsInRingBuffer = 3;
 
@@ -64,7 +64,7 @@ AudioInputStream::OpenOutcome AlsaPcmInputStream::Open() {
     for (const auto* device_name : kDefaultDeviceNames) {
       device_handle_ = alsa_util::OpenCaptureDevice(
           wrapper_, device_name, params_.channels(), params_.sample_rate(),
-          kAlsaSampleFormat, buffer_us, packet_us);
+          kAlsaSampleFormatAI, buffer_us, packet_us);
 
       if (device_handle_) {
         device_name_ = device_name;
@@ -74,7 +74,7 @@ AudioInputStream::OpenOutcome AlsaPcmInputStream::Open() {
   } else {
     device_handle_ = alsa_util::OpenCaptureDevice(
         wrapper_, device_name_.c_str(), params_.channels(),
-        params_.sample_rate(), kAlsaSampleFormat, buffer_us, packet_us);
+        params_.sample_rate(), kAlsaSampleFormatAI, buffer_us, packet_us);
   }
 
   if (device_handle_) {

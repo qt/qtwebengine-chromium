@@ -634,8 +634,8 @@ void DesktopNativeWidgetAura::InitNativeWidget(Widget::InitParams params) {
           std::unique_ptr<wm::NativeCursorManager>(native_cursor_manager_));
       cursor_manager_->SetDisplay(
           display::Screen::Get()->GetDisplayNearestWindow(host_->window()));
-      if (features::IsSystemCursorSizeSupported() ||
-          features::ShouldUseCursorEventHook()) {
+      if (::features::IsSystemCursorSizeSupported() ||
+          ::features::ShouldUseCursorEventHook()) {
         native_cursor_manager_->InitSystemCursorObservers(cursor_manager_);
       }
     }

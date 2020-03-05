@@ -29,7 +29,7 @@ namespace extensions {
 
 namespace keys = manifest_keys;
 
-static base::LazyInstance<ExtensionIconSet>::DestructorAtExit g_empty_icon_set =
+static base::LazyInstance<ExtensionIconSet>::DestructorAtExit g_empty_icon_set_ic =
     LAZY_INSTANCE_INITIALIZER;
 
 IconsHandler::IconsHandler() = default;
@@ -48,7 +48,7 @@ const ExtensionIconSet& IconsInfo::GetIcons(
 
   IconsInfo* info =
       static_cast<IconsInfo*>(extension.GetManifestData(keys::kIcons));
-  return info ? info->icons : g_empty_icon_set.Get();
+  return info ? info->icons : g_empty_icon_set_ic.Get();
 }
 
 // static

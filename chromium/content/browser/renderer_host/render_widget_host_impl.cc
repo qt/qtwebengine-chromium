@@ -2208,7 +2208,7 @@ void RenderWidgetHostImpl::GetSnapshotFromBrowser(
   if (from_surface) {
     pending_surface_browser_snapshots_.insert(
         std::make_pair(snapshot_id, std::move(callback)));
-    if (base::FeatureList::IsEnabled(features::kCDPScreenshotNewSurface)) {
+    if (base::FeatureList::IsEnabled(::features::kCDPScreenshotNewSurface)) {
       // 1. Force content redraw in the renderer.
       blink_widget_->ForceRedraw(base::DoNothing());
       // 2. Force a repaint to ensure that surface is updated.

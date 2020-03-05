@@ -58,10 +58,10 @@ bool ExitIncrementalMarkingIfNeeded(MarkingConfig config, HeapBase& heap) {
   return false;
 }
 
-static constexpr size_t kDefaultDeadlineCheckInterval = 150u;
+static constexpr size_t kDefaultMarkerDeadlineCheckInterval = 150u;
 
 template <StatsCollector::ScopeId scope_id,
-          size_t kDeadlineCheckInterval = kDefaultDeadlineCheckInterval,
+          size_t kDeadlineCheckInterval = kDefaultMarkerDeadlineCheckInterval,
           typename WorklistLocal, typename Callback>
 bool DrainWorklistWithBytesAndTimeDeadline(StatsCollector* stats_collector,
                                            BasicMarkingState& marking_state,
@@ -667,7 +667,7 @@ bool MarkerBase::ProcessWorklistsWithDeadline(v8::base::TimeTicks time_deadline,
         SIZE_MAX;
     if (!DrainWorklistWithBytesAndTimeDeadline<
             StatsCollector::kMarkProcessBailOutObjects,
-            kDefaultDeadlineCheckInterval / 5>(
+            kDefaultMarkerDeadlineCheckInterval / 5>(
             stats_collector, mutator_marking_state_,
             marked_bytes_deadline_for_bailout_objects, time_deadline,
             mutator_marking_state_.concurrent_marking_bailout_worklist(),

@@ -33,7 +33,7 @@ constexpr int kSmallestRenderProcessId =
 constexpr int kMaxWorkerCountToReport = 50;
 
 // Prevent check on multiple workers per extension for testing purposes.
-bool g_allow_multiple_workers_per_extension = false;
+bool g_allow_multiple_workers_per_extensionWIS = false;
 
 static_assert(kSmallestVersionId < 0,
               "Sentinel version_id must be smaller than any valid version id.");
@@ -89,7 +89,7 @@ void WorkerIdSet::Add(const WorkerId& worker_id,
       "Extensions.ServiceWorkerBackground.WorkerCountAfterAdd", new_size,
       kMaxWorkerCountToReport);
 
-  if (!g_allow_multiple_workers_per_extension) {
+  if (!g_allow_multiple_workers_per_extensionWIS) {
     // TODO(crbug.com/40936639):Enable this CHECK once multiple active workers
     // is resolved. CHECK_LE(new_size, 1u) << "Extension with worker id " <<
     // worker_id
@@ -193,7 +193,7 @@ std::vector<WorkerId> WorkerIdSet::GetAllForTesting() const {
 // static
 base::AutoReset<bool>
 WorkerIdSet::AllowMultipleWorkersPerExtensionForTesting() {
-  return base::AutoReset<bool>(&g_allow_multiple_workers_per_extension, true);
+  return base::AutoReset<bool>(&g_allow_multiple_workers_per_extensionWIS, true);
 }
 
 }  // namespace extensions

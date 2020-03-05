@@ -172,6 +172,9 @@ blink_modules_sources("xr") {
     "xr_webgl_texture_array_swap_chain.cc",
     "xr_webgl_texture_array_swap_chain.h",
   ]
+  jumbo_excluded_sources = [
+    "xr_view_geometry.cc",
+  ]
 
   deps = [
     "//device/vr/buildflags",

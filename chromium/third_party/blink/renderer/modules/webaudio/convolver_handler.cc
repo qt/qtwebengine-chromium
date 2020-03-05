@@ -33,14 +33,14 @@ namespace {
 constexpr unsigned kMaxFftSize = 32768;
 
 constexpr unsigned kDefaultNumberOfInputChannels = 2;
-constexpr unsigned kDefaultNumberOfOutputChannels = 1;
+constexpr unsigned kDefaultNumberOfOutputChannelsCH = 1;
 
 }  // namespace
 
 ConvolverHandler::ConvolverHandler(AudioNode& node, float sample_rate)
     : AudioHandler(NodeType::kNodeTypeConvolver, node, sample_rate) {
   AddInput();
-  AddOutput(kDefaultNumberOfOutputChannels);
+  AddOutput(kDefaultNumberOfOutputChannelsCH);
 
   // Node-specific default mixing rules.
   channel_count_ = kDefaultNumberOfInputChannels;

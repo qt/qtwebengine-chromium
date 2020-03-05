@@ -177,7 +177,7 @@ bool ShouldUseIsValidRangeAndMarkable(mojom::blink::AnnotationType type) {
 // instant.
 int GetGlicSmoothScrollThresholdInDIPs() {
   const base::FeatureParam<int> glic_smooth_scroll_threshold_in_dips{
-      &features::kProgrammaticScrollAnimationOverride,
+      &::features::kProgrammaticScrollAnimationOverride,
       "glic_smooth_scroll_threshold_in_dips", 15000};
   return glic_smooth_scroll_threshold_in_dips.Get();
 }

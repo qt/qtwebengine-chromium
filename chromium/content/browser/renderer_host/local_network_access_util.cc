@@ -42,22 +42,22 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
 
       case RequestContext::kWorker:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForWorkers)) {
+                ::features::kLocalNetworkAccessForWorkers)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForWorkersWarningOnly)) {
+                ::features::kLocalNetworkAccessForWorkersWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
         return FeatureState::kEnabled;
 
       case RequestContext::kSubframeNavigation:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForSubframeNavigations)) {
+                ::features::kLocalNetworkAccessForSubframeNavigations)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::
+                ::features::
                     kLocalNetworkAccessForSubframeNavigationsWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
@@ -65,11 +65,11 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
 
       case RequestContext::kFencedFrameNavigation:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForFencedFrameNavigations)) {
+                ::features::kLocalNetworkAccessForFencedFrameNavigations)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::
+                ::features::
                     kLocalNetworkAccessForFencedFrameNavigationsWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
@@ -77,11 +77,11 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
 
       case RequestContext::kMainFrameNavigation:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForNavigations)) {
+                ::features::kLocalNetworkAccessForNavigations)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForNavigationsWarningOnly)) {
+                ::features::kLocalNetworkAccessForNavigationsWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
         return FeatureState::kEnabled;

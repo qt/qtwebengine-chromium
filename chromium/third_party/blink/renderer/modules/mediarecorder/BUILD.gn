@@ -44,4 +44,9 @@ blink_modules_sources("mediarecorder") {
     "//third_party/libyuv",
     "//third_party/opus",
   ]
+
+  jumbo_excluded_sources = [
+    "video_track_recorder.cc",
+  ]
+
 }

@@ -10,7 +10,7 @@
 namespace content {
 
 namespace {
-constexpr char kUmaPrefix[] = "Media.EME.CdmStorageManager.";
+constexpr char kUmaPrefixCSC[] = "Media.EME.CdmStorageManager.";
 
 constexpr char kIncognito[] = "Incognito";
 constexpr char kNonIncognito[] = "NonIncognito";
@@ -33,7 +33,7 @@ CdmFileIdAndContents::~CdmFileIdAndContents() = default;
 std::string GetCdmStorageManagerHistogramName(const std::string& operation,
                                               bool in_memory) {
   return base::StrCat(
-      {kUmaPrefix, operation, in_memory ? kIncognito : kNonIncognito});
+      {kUmaPrefixCSC, operation, in_memory ? kIncognito : kNonIncognito});
 }
 
 }  // namespace content

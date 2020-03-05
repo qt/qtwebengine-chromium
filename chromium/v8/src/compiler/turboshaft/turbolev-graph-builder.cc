@@ -6885,4 +6885,6 @@ std::optional<BailoutReason> TurbolevGraphBuildingPhase::Run(
 
 #include "src/compiler/turboshaft/undef-assembler-macros.inc"
 
+#undef TRACE
+
 }  // namespace v8::internal::compiler::turboshaft

@@ -51,7 +51,7 @@ GridLanesItemGroups GridLanesNode::CollectItemGroups(
     }
 
     // Determine baseline-sharing group for this item.
-    std::optional<BaselineGroup> baseline_group = std::nullopt;
+    std::optional<BaselineGroupType> baseline_group = std::nullopt;
     if (grid_lanes_item->IsBaselineAligned(grid_axis_direction)) {
       baseline_group = grid_lanes_item->BaselineGroup(grid_axis_direction);
     }

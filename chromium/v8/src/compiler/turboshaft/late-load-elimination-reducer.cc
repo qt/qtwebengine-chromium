@@ -792,3 +792,5 @@ template bool LateLoadEliminationAnalyzer::BeginBlock<false>(
     const Block* block);
 
 }  // namespace v8::internal::compiler::turboshaft
+
+#undef TRACE

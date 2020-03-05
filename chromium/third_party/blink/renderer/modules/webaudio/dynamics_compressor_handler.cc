@@ -19,7 +19,7 @@ namespace blink {
 namespace {
 
 // Set output to stereo by default.
-constexpr unsigned kDefaultNumberOfOutputChannels = 2;
+constexpr unsigned kDefaultNumberOfOutputChannelsDCH = 2;
 
 }  // namespace
 
@@ -40,7 +40,7 @@ DynamicsCompressorHandler::DynamicsCompressorHandler(
       release_(&release),
       param_values_(GetDeferredTaskHandler().RenderQuantumFrames()) {
   AddInput();
-  AddOutput(kDefaultNumberOfOutputChannels);
+  AddOutput(kDefaultNumberOfOutputChannelsDCH);
 
   SetInternalChannelCountMode(V8ChannelCountMode::Enum::kClampedMax);
 
@@ -120,7 +120,7 @@ void DynamicsCompressorHandler::Initialize() {
 
   AudioHandler::Initialize();
   dynamics_compressor_ = std::make_unique<DynamicsCompressor>(
-      Context()->sampleRate(), kDefaultNumberOfOutputChannels);
+      Context()->sampleRate(), kDefaultNumberOfOutputChannelsDCH);
 }
 
 bool DynamicsCompressorHandler::RequiresTailProcessing() const {

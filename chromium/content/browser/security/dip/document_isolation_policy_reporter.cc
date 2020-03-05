@@ -15,7 +15,7 @@ namespace content {
 
 namespace {
 
-constexpr char kType[] = "dip";
+constexpr char kTypeDIPR[] = "dip";
 
 GURL StripUsernameAndPassword(const GURL& url) {
   GURL::Replacements replacements;
@@ -85,7 +85,7 @@ void DocumentIsolationPolicyReporter::QueueAndNotify(
         blink::mojom::ReportBodyElement::New("disposition", disposition));
 
     observer_->Notify(blink::mojom::Report::New(
-        kType, context_url_, blink::mojom::ReportBody::New(std::move(list))));
+        kTypeDIPR, context_url_, blink::mojom::ReportBody::New(std::move(list))));
   }
   if (endpoint) {
     base::DictValue body_to_pass;
@@ -96,7 +96,7 @@ void DocumentIsolationPolicyReporter::QueueAndNotify(
 
     if (auto* storage_partition = storage_partition_.get()) {
       storage_partition->GetNetworkContext()->QueueReport(
-          kType, *endpoint, context_url_, reporting_source_,
+          kTypeDIPR, *endpoint, context_url_, reporting_source_,
           network_anonymization_key_, std::move(body_to_pass));
     }
   }

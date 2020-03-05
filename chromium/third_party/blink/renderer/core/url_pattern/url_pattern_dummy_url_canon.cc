@@ -65,7 +65,7 @@ String MaybeStripAfterFirstDelimiter(const String& value,
 bool ContainsForbiddenHostnameCodePoint(const String& input,
                                         const bool allow_ipv6_delimiters) {
   StringUtf8Adaptor input_utf8(input);
-  return url_pattern::ContainsForbiddenHostnameCodePoint(
+  return ::url_pattern::ContainsForbiddenHostnameCodePoint(
       input_utf8.AsStringView(), allow_ipv6_delimiters);
 }
 

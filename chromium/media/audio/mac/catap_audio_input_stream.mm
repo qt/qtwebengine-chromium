@@ -424,7 +424,7 @@ class PropertyListenerHelper {
 
 // 0.0 is used to indicate that this device doesn't support setting the volume.
 // TODO(crbug.com/415953612): Is this okay, or do we need to support this?
-constexpr float kMaxVolume = 0.0;
+constexpr float kMaxVolumeCAIS = 0.0;
 
 CatapAudioInputStreamSource::Config::Config(const AudioParameters& params,
                                             const std::string& device_id,
@@ -1232,7 +1232,7 @@ void CatapAudioInputStream::Close() {
 }
 
 double CatapAudioInputStream::GetMaxVolume() {
-  return kMaxVolume;
+  return kMaxVolumeCAIS;
 }
 
 void CatapAudioInputStream::SetVolume(double volume) {
@@ -1240,7 +1240,7 @@ void CatapAudioInputStream::SetVolume(double volume) {
 }
 
 double CatapAudioInputStream::GetVolume() {
-  return kMaxVolume;
+  return kMaxVolumeCAIS;
 }
 
 bool CatapAudioInputStream::IsMuted() {

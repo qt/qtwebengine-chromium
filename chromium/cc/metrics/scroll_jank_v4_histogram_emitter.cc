@@ -23,9 +23,9 @@ namespace cc {
 namespace {
 
 // Histogram min, max and no. of buckets.
-constexpr int kVsyncCountsMin = 1;
-constexpr int kVsyncCountsMax = 50;
-constexpr int kVsyncCountsBuckets = 25;
+constexpr int kVsyncCountsMinSJHE = 1;
+constexpr int kVsyncCountsMaxSJHE = 50;
+constexpr int kVsyncCountsBucketsSJHE = 25;
 
 constexpr const char* GetDelayedFramesPercentageFixedWindow4HistogramName(
     JankReason reason) {
@@ -214,12 +214,12 @@ void ScrollJankV4HistogramEmitter::EmitForAllScrolls::
       kDelayedFramesWindowHistogram,
       (100 * fixed_window_.delayed_frames) / kHistogramEmitFrequency);
   UMA_HISTOGRAM_CUSTOM_COUNTS(kMissedVsyncsSumInWindowHistogram,
-                              fixed_window_.missed_vsyncs, kVsyncCountsMin,
-                              kVsyncCountsMax, kVsyncCountsBuckets);
+                              fixed_window_.missed_vsyncs, kVsyncCountsMinSJHE,
+                              kVsyncCountsMaxSJHE, kVsyncCountsBucketsSJHE);
   UMA_HISTOGRAM_CUSTOM_COUNTS(kMissedVsyncsMaxInWindowHistogram,
                               fixed_window_.max_consecutive_missed_vsyncs,
-                              kVsyncCountsMin, kVsyncCountsMax,
-                              kVsyncCountsBuckets);
+                              kVsyncCountsMinSJHE, kVsyncCountsMaxSJHE,
+                              kVsyncCountsBucketsSJHE);
 
   constexpr int kMaxJankReasonIndex = static_cast<int>(JankReason::kMaxValue);
   for (int i = 0; i <= kMaxJankReasonIndex; i++) {

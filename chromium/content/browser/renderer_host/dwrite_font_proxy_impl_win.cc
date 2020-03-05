@@ -484,7 +484,7 @@ void DWriteFontProxyImpl::MatchUniqueFont(
   base::UmaHistogramEnumeration("Chrome.DWriteFontProxy.InvokedIPC",
                                 DWriteFontProxyIPC::kMatchUniqueFont);
 
-  DCHECK(base::FeatureList::IsEnabled(features::kFontSrcLocalMatching));
+  DCHECK(base::FeatureList::IsEnabled(::features::kFontSrcLocalMatching));
   callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(callback),
                                                          base::File(), 0);
   InitializeDirectWrite();

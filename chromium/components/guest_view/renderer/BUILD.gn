@@ -6,7 +6,9 @@ import("//components/guest_view/buildflags/buildflags.gni")
 
 assert(enable_guest_view)
 
-static_library("renderer") {
+import("//build/config/jumbo.gni")
+
+jumbo_static_library("renderer") {
   sources = [
     "guest_view_container.cc",
     "guest_view_container.h",

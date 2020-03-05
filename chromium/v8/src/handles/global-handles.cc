@@ -757,7 +757,7 @@ void GlobalHandles::InvokeSecondPassPhantomCallbacks() {
   if (scope.CheckReenter()) {
     TRACE_EVENT0("v8", "V8.GCPhantomHandleProcessingCallback");
     isolate()->heap()->CallGCPrologueCallbacks(
-        GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags,
+        v8::GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags,
         GCTracer::Scope::HEAP_EXTERNAL_PROLOGUE);
     {
       TRACE_GC(isolate_->heap()->tracer(),
@@ -769,7 +769,7 @@ void GlobalHandles::InvokeSecondPassPhantomCallbacks() {
       }
     }
     isolate()->heap()->CallGCEpilogueCallbacks(
-        GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags,
+        v8::GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags,
         GCTracer::Scope::HEAP_EXTERNAL_EPILOGUE);
   }
 }

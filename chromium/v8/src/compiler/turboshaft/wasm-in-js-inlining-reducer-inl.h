@@ -1495,6 +1495,8 @@ WasmInJSInliningReducer<Next>::CreateJSWasmCallBuiltinContinuationFrameState(
 
 #include "src/compiler/turboshaft/undef-assembler-macros.inc"
 
+#undef TRACE
+
 }  // namespace v8::internal::compiler::turboshaft
 
 #endif  // V8_COMPILER_TURBOSHAFT_WASM_IN_JS_INLINING_REDUCER_INL_H_

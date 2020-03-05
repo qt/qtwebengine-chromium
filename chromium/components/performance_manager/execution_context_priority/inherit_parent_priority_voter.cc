@@ -15,7 +15,7 @@ namespace performance_manager::execution_context_priority {
 
 namespace {
 
-const execution_context::ExecutionContext* GetExecutionContext(
+const execution_context::ExecutionContext* GetExecutionContextEPPV(
     const FrameNode* frame_node) {
   return execution_context::ExecutionContextRegistry::GetFromGraph(
              frame_node->GetGraph())
@@ -94,19 +94,19 @@ void InheritParentPriorityVoter::OnBeforeFrameNodeAdded(
     const PageNode* pending_page_node,
     const ProcessNode* pending_process_node,
     const FrameNode* pending_parent_or_outer_document_or_embedder) {
-  voting_channel_.SubmitVote(GetExecutionContext(frame_node),
+  voting_channel_.SubmitVote(GetExecutionContextEPPV(frame_node),
                              GetVote(frame_node, pending_parent_frame_node));
 }
 
 void InheritParentPriorityVoter::OnBeforeFrameNodeRemoved(
     const FrameNode* frame_node) {
-  voting_channel_.InvalidateVote(GetExecutionContext(frame_node));
+  voting_channel_.InvalidateVote(GetExecutionContextEPPV(frame_node));
 }
 
 void InheritParentPriorityVoter::OnIsAdFrameChanged(
     const FrameNode* frame_node) {
   voting_channel_.ChangeVote(
-      GetExecutionContext(frame_node),
+      GetExecutionContextEPPV(frame_node),
       GetVote(frame_node, frame_node->GetParentFrameNode()));
 }
 
@@ -121,7 +121,7 @@ void InheritParentPriorityVoter::OnPriorityAndReasonChanged(
 
   // Maybe change the vote for every children.
   for (const FrameNode* child_frame_node : frame_node->GetChildFrameNodes()) {
-    voting_channel_.ChangeVote(GetExecutionContext(child_frame_node),
+    voting_channel_.ChangeVote(GetExecutionContextEPPV(child_frame_node),
                                GetVote(child_frame_node, frame_node));
   }
 }

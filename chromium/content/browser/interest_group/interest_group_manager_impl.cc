@@ -76,7 +76,7 @@ constexpr base::TimeDelta kReportingInterval = base::Milliseconds(50);
 // Version of real time report.
 constexpr int kRealTimeReportDataVersion = 1;
 
-constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotationIGMI =
     net::DefineNetworkTrafficAnnotation("auction_report_sender", R"(
         semantics {
           sender: "Interest group based Ad Auction report"
@@ -220,7 +220,7 @@ std::unique_ptr<network::SimpleURLLoader> BuildSimpleUrlLoader(
     std::optional<std::vector<uint8_t>> real_time_histogram,
     std::optional<double> real_time_report_flip_probability) {
   auto simple_url_loader = network::SimpleURLLoader::Create(
-      std::move(resource_request), kTrafficAnnotation);
+      std::move(resource_request), kTrafficAnnotationIGMI);
   simple_url_loader->SetTimeoutDuration(base::Seconds(30));
   simple_url_loader->SetAllowHttpErrorResults(true);
 

@@ -27,7 +27,7 @@ constexpr base::TimeDelta kBackForwardCacheTimeout = base::Seconds(12);
 constexpr base::TimeDelta kBackForwardCacheTimeout = base::Seconds(3);
 #endif
 base::TimeDelta GetBackForwardCacheEntryTimeout() {
-  if (base::FeatureList::IsEnabled(features::kBackForwardCacheEntryTimeout)) {
+  if (base::FeatureList::IsEnabled(::features::kBackForwardCacheEntryTimeout)) {
     return kBackForwardCacheTimeout;
   } else {
     return base::TimeDelta::Max();
@@ -151,14 +151,14 @@ void PageLifecycleStateManager::SetIsInBackForwardCache(
               ->controller()
               .GetBrowserContext(),
           *navigation_request_url) &&
-      !features::kSkipPagehideInCommitForDSENavigationDelay.Get().is_zero()) {
+      !::features::kSkipPagehideInCommitForDSENavigationDelay.Get().is_zero()) {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(
             &PageLifecycleStateManager::SendUpdatesToRendererIfNeeded,
             weak_ptr_factory_.GetWeakPtr(), std::move(page_restore_params),
             base::NullCallback()),
-        features::kSkipPagehideInCommitForDSENavigationDelay.Get());
+        ::features::kSkipPagehideInCommitForDSENavigationDelay.Get());
   } else {
     SendUpdatesToRendererIfNeeded(std::move(page_restore_params),
                                   base::NullCallback());

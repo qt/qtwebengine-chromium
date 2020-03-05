@@ -644,6 +644,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo recreateMipmapLevelsBeforeGenerate = {
+        "recreateMipmapLevelsBeforeGenerate",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo disablePassthroughShaders = {
         "disablePassthroughShaders",
         FeatureCategory::OpenGLWorkarounds,
@@ -664,12 +670,6 @@ struct FeaturesGL : FeatureSetBase
 
     FeatureInfo validateMaxPerStageUniformBlocksAtCompileTime = {
         "validateMaxPerStageUniformBlocksAtCompileTime",
-        FeatureCategory::OpenGLWorkarounds,
-        &members,
-    };
-
-    FeatureInfo recreateMipmapLevelsBeforeGenerate = {
-        "recreateMipmapLevelsBeforeGenerate",
         FeatureCategory::OpenGLWorkarounds,
         &members,
     };

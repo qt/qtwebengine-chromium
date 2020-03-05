@@ -11,7 +11,7 @@
 #include "components/prefs/pref_service.h"
 
 namespace {
-const std::string_view kPrefPath = "net.known_legacy_scope_domains";
+const std::string_view kPrefPath2 = "net.known_legacy_scope_domains";
 }  // namespace
 
 namespace network {
@@ -28,17 +28,17 @@ KnownLegacyScopeDomainsPrefDelegate::~KnownLegacyScopeDomainsPrefDelegate() =
 void KnownLegacyScopeDomainsPrefDelegate::RegisterPrefs(
     PrefRegistrySimple* pref_registry) {
   // Register the pref for the known legacy scope domains as a dictionary.
-  pref_registry->RegisterDictionaryPref(kPrefPath);
+  pref_registry->RegisterDictionaryPref(kPrefPath2);
 }
 
 const base::DictValue& KnownLegacyScopeDomainsPrefDelegate::GetLegacyDomains()
     const {
-  return pref_service_->GetDict(kPrefPath);
+  return pref_service_->GetDict(kPrefPath2);
 }
 
 void KnownLegacyScopeDomainsPrefDelegate::SetLegacyDomains(
     base::DictValue dict) {
-  pref_service_->SetDict(kPrefPath, std::move(dict));
+  pref_service_->SetDict(kPrefPath2, std::move(dict));
 }
 
 void KnownLegacyScopeDomainsPrefDelegate::WaitForPrefLoad(

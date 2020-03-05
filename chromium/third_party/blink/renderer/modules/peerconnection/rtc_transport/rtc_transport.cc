@@ -45,7 +45,7 @@ using PacketSendParameters = webrtc::DatagramConnection::PacketSendParameters;
 
 // Maximum known size (SHA-512). See
 // third_party/webrtc/rtc_base/message_digest.h
-const size_t kMaxDigestSize = 64;
+const size_t kMaxDigestSizeRT = 64;
 
 class DatagramConnectionObserver : public webrtc::DatagramConnection::Observer {
  public:
@@ -348,7 +348,7 @@ RtcTransport::ParseStunServers(const RtcTransportConfig* config,
 RtcTransport::RtcTransport(PassKey, ExecutionContext* context)
     : ExecutionContextLifecycleObserver(context),
       task_runner_(context->GetTaskRunner(TaskType::kNetworking)),
-      digest_(webrtc::Buffer::CreateWithCapacity(kMaxDigestSize)) {
+      digest_(webrtc::Buffer::CreateWithCapacity(kMaxDigestSizeRT)) {
   // Should this be done async? cf
   // RTCCertificateGenerator::GenerateCertificateAsync.
   certificate_ = webrtc::RTCCertificateGenerator::GenerateCertificate(

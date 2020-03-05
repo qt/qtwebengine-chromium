@@ -241,7 +241,7 @@ int32_t CalculateCheckSum(base::span<const uint8_t> data,
   return meta.SetValue(key, value);
 }
 
-bool IsBrowserIdle() {
+bool IsBrowserIdleSPSB() {
   return performance_scenarios::CurrentScenariosMatch(
       performance_scenarios::ScenarioScope::kGlobal,
       performance_scenarios::kDefaultIdleScenarios);
@@ -2270,7 +2270,7 @@ SqlPersistentStore::Backend::SelectEvictionCandidates(
     int64_t size_to_be_removed,
     base::flat_set<ResId> excluded_res_ids,
     bool is_idle_time_eviction) {
-  if (is_idle_time_eviction && !IsBrowserIdle()) {
+  if (is_idle_time_eviction && !IsBrowserIdleSPSB()) {
     return {};
   }
   if (auto db_error = CheckDatabaseStatus(); db_error != Error::kOk) {
@@ -2289,7 +2289,7 @@ SqlPersistentStore::Backend::SelectEvictionCandidates(
     sql::Statement statement(db_.GetCachedStatement(
         SQL_FROM_HERE, GetQuery(Query::kStartEviction_SelectLiveResources)));
     while (size_to_be_removed > candidates_total_size && statement.Step()) {
-      if (is_idle_time_eviction && !IsBrowserIdle()) {
+      if (is_idle_time_eviction && !IsBrowserIdleSPSB()) {
         return {};
       }
       const ResId res_id = ResId(statement.ColumnInt64(0));
@@ -2351,7 +2351,7 @@ Error SqlPersistentStore::Backend::EvictEntriesInternal(
     int64_t bytes_usage,
     bool is_idle_time_eviction,
     bool& corruption_detected) {
-  if (is_idle_time_eviction && !IsBrowserIdle()) {
+  if (is_idle_time_eviction && !IsBrowserIdleSPSB()) {
     return Error::kAbortedDueToBrowserActivity;
   }
   sql::Transaction transaction(&db_);
@@ -2360,7 +2360,7 @@ Error SqlPersistentStore::Backend::EvictEntriesInternal(
   }
 
   for (const auto& res_id : res_ids) {
-    if (is_idle_time_eviction && !IsBrowserIdle()) {
+    if (is_idle_time_eviction && !IsBrowserIdleSPSB()) {
       return Error::kAbortedDueToBrowserActivity;
     }
     if (auto error = DeleteBlobsByResId(res_id); error != Error::kOk) {
@@ -2523,7 +2523,7 @@ bool SqlPersistentStore::Backend::MaybeRunCheckpoint() {
     // RazeAndPoison() was called.
     return false;
   }
-  if (!IsBrowserIdle()) {
+  if (!IsBrowserIdleSPSB()) {
     // Between the time when idle was detected in the browser process and the
     // time when this backend was notified, the browser became non-idle.
     return false;
@@ -2554,7 +2554,7 @@ void SqlPersistentStore::Backend::MaybeCrashIfCorrupted(
 
 void SqlPersistentStore::Backend::OnCommitCallback(int pages) {
   TRACE_EVENT("disk_cache", "SqlBackend.OnCommitCallback");
-  const bool is_idle = IsBrowserIdle();
+  const bool is_idle = IsBrowserIdleSPSB();
   if (pages >= net::features::kSqlDiskCacheForceCheckpointThreshold.Get() ||
       (pages >= net::features::kSqlDiskCacheIdleCheckpointThreshold.Get() &&
        is_idle)) {

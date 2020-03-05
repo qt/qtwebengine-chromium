@@ -21,7 +21,7 @@ DeadCodeElimination::DeadCodeElimination(Editor* editor, TFGraph* graph,
       common_(common),
       dead_(graph->NewNode(common->Dead())),
       zone_(temp_zone) {
-  NodeProperties::SetType(dead_, Type::None());
+  NodeProperties::SetType(dead_, compiler::Type::None());
 }
 
 namespace {
@@ -298,7 +298,7 @@ Reduction DeadCodeElimination::ReduceEffectNode(Node* node) {
                         : graph()->start();
     Node* unreachable =
         graph()->NewNode(common()->Unreachable(), effect, control);
-    NodeProperties::SetType(unreachable, Type::None());
+    NodeProperties::SetType(unreachable, compiler::Type::None());
     ReplaceWithValue(node, DeadValue(input), node, control);
     return Replace(unreachable);
   }
@@ -322,7 +322,7 @@ Reduction DeadCodeElimination::ReduceDeoptimizeOrReturnOrTerminateOrTailCall(
     Node* control = NodeProperties::GetControlInput(node, 0);
     if (effect->opcode() != IrOpcode::kUnreachable) {
       effect = graph()->NewNode(common()->Unreachable(), effect, control);
-      NodeProperties::SetType(effect, Type::None());
+      NodeProperties::SetType(effect, compiler::Type::None());
     }
     node->TrimInputCount(2);
     node->ReplaceInput(0, effect);
@@ -376,7 +376,7 @@ Node* DeadCodeElimination::DeadValue(Node* node, MachineRepresentation rep) {
     node = NodeProperties::GetValueInput(node, 0);
   }
   Node* dead_value = graph()->NewNode(common()->DeadValue(rep), node);
-  NodeProperties::SetType(dead_value, Type::None());
+  NodeProperties::SetType(dead_value, compiler::Type::None());
   return dead_value;
 }
 

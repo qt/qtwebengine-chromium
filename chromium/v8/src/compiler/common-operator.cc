@@ -395,9 +395,9 @@ RegionObservability RegionObservabilityOf(Operator const* op) {
   return OpParameter<RegionObservability>(op);
 }
 
-Type TypeGuardTypeOf(Operator const* op) {
+compiler::Type TypeGuardTypeOf(Operator const* op) {
   DCHECK_EQ(IrOpcode::kTypeGuard, op->opcode());
-  return OpParameter<Type>(op);
+  return OpParameter<compiler::Type>(op);
 }
 
 std::ostream& operator<<(std::ostream& os,
@@ -1032,7 +1032,7 @@ const Operator* CommonOperatorBuilder::StaticAssert(const char* source) {
 
 const Operator* CommonOperatorBuilder::SLVerifierHint(
     const Operator* semantics,
-    const std::optional<Type>& override_output_type) {
+    const std::optional<compiler::Type>& override_output_type) {
   return zone()->New<Operator1<SLVerifierHintParameters>>(
       IrOpcode::kSLVerifierHint, Operator::kNoProperties, "SLVerifierHint", 1,
       0, 0, 1, 0, 0, SLVerifierHintParameters(semantics, override_output_type));
@@ -1315,11 +1315,11 @@ const Operator* CommonOperatorBuilder::Float32Constant(float value) {
 }
 
 const Operator* CommonOperatorBuilder::Float64Constant(double value) {
-  return Float64Constant(Float64::FromBits(base::bit_cast<uint64_t>(value)));
+  return Float64Constant(v8::internal::Float64::FromBits(base::bit_cast<uint64_t>(value)));
 }
 
-const Operator* CommonOperatorBuilder::Float64Constant(Float64 value) {
-  return zone()->New<Operator1<Float64>>(           // --
+const Operator* CommonOperatorBuilder::Float64Constant(v8::internal::Float64 value) {
+  return zone()->New<Operator1<v8::internal::Float64>>(           // --
       IrOpcode::kFloat64Constant, Operator::kPure,  // opcode
       "Float64Constant",                            // name
       0, 0, 0, 1, 0, 0,                             // counts
@@ -1445,8 +1445,8 @@ const Operator* CommonOperatorBuilder::Phi(MachineRepresentation rep,
       rep);                                              // parameter
 }
 
-const Operator* CommonOperatorBuilder::TypeGuard(Type type) {
-  return zone()->New<Operator1<Type>>(        // --
+const Operator* CommonOperatorBuilder::TypeGuard(compiler::Type type) {
+  return zone()->New<Operator1<compiler::Type>>(        // --
       IrOpcode::kTypeGuard, Operator::kPure,  // opcode
       "TypeGuard",                            // name
       1, 1, 1, 1, 1, 0,                       // counts
@@ -1460,7 +1460,7 @@ const Operator* CommonOperatorBuilder::EnterMachineGraph(UseInfo use_info) {
 }
 
 const Operator* CommonOperatorBuilder::ExitMachineGraph(
-    MachineRepresentation output_representation, Type output_type) {
+    MachineRepresentation output_representation, compiler::Type output_type) {
   return zone()->New<Operator1<ExitMachineGraphParameters>>(
       IrOpcode::kExitMachineGraph, Operator::kPure, "ExitMachineGraph", 1, 0, 0,
       1, 0, 0, ExitMachineGraphParameters{output_representation, output_type});

@@ -8743,6 +8743,8 @@ compiler::OptionalMapRef VirtualObject::TryGetMapFromSlot(
   return maybe_constant->AsMap();
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

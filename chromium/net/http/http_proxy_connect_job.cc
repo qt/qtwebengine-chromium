@@ -138,7 +138,7 @@ GURL MakeProxyUrl(const HttpProxySocketParams& params) {
               params.proxy_server().host_port_pair().ToString());
 }
 
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunnerHPCJ(
     net::RequestPriority priority) {
   if (features::kNetTaskSchedulerHttpProxyConnectJob.Get()) {
     return net::GetTaskRunner(priority);
@@ -407,7 +407,7 @@ void HttpProxyConnectJob::RestartWithAuthCredentials() {
 
   // Always do this asynchronously, to avoid re-entrancy.
   next_state_ = STATE_RESTART_WITH_AUTH;
-  TaskRunner(priority())
+  TaskRunnerHPCJ(priority())
       ->PostTask(FROM_HERE, base::BindOnce(&HttpProxyConnectJob::OnIOComplete,
                                            weak_ptr_factory_.GetWeakPtr(), OK));
 }
@@ -633,7 +633,7 @@ int HttpProxyConnectJob::DoHttpProxyConnect() {
 int HttpProxyConnectJob::DoHttpProxyConnectComplete(int result) {
   // Always inform caller of auth requests asynchronously.
   if (result == ERR_PROXY_AUTH_REQUESTED) {
-    TaskRunner(priority())
+    TaskRunnerHPCJ(priority())
         ->PostTask(FROM_HERE,
                    base::BindOnce(&HttpProxyConnectJob::OnAuthChallenge,
                                   weak_ptr_factory_.GetWeakPtr()));

@@ -330,7 +330,7 @@ void ServiceWorkerMainResourceLoader::StartRequest(
           // This is done asynchronously because this is for subresources and
           // not on the critical path for main resource loading.
           if (base::FeatureList::IsEnabled(
-                  features::kServiceWorkerStaticRouterStartServiceWorker)) {
+                  ::features::kServiceWorkerStaticRouterStartServiceWorker)) {
             base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
                 FROM_HERE,
                 base::BindOnce(
@@ -400,7 +400,7 @@ void ServiceWorkerMainResourceLoader::StartRequest(
       case network::mojom::ServiceWorkerRouterSourceType::
           kRaceNetworkAndFetchEvent:
         if (base::FeatureList::IsEnabled(
-                features::
+                ::features::
                     kServiceWorkerStaticRouterRaceNetworkRequestPerformanceImprovement)) {
           active_worker->CountFeature(
               blink::mojom::WebFeature::
@@ -451,7 +451,7 @@ void ServiceWorkerMainResourceLoader::MaybeDispatchPreload(
 bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
     scoped_refptr<ServiceWorkerContextWrapper> context,
     scoped_refptr<ServiceWorkerVersion> version) {
-  if (!base::FeatureList::IsEnabled(features::kServiceWorkerAutoPreload)) {
+  if (!base::FeatureList::IsEnabled(::features::kServiceWorkerAutoPreload)) {
     return false;
   }
 
@@ -477,7 +477,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   // but not consumed, and find a way to make this limitation more relaxed to
   // improve the coverage.
   if (base::GetFieldTrialParamByFeatureAsBool(
-          features::kServiceWorkerAutoPreload, "has_web_request_api_proxy",
+          ::features::kServiceWorkerAutoPreload, "has_web_request_api_proxy",
           /*default_value=*/true) &&
       (GetContentClient()->browser()->HasWebRequestAPIProxy(
           context->browser_context()))) {
@@ -490,7 +490,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   const static base::NoDestructor<base::flat_set<std::string>> blocked_hosts(
       base::SplitString(
           base::GetFieldTrialParamValueByFeature(
-              features::kServiceWorkerAutoPreload, "blocked_hosts"),
+              ::features::kServiceWorkerAutoPreload, "blocked_hosts"),
           ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY));
   if (blocked_hosts->contains(resource_request_.url.GetHost())) {
     return false;
@@ -501,7 +501,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   // running, preload requests for both main resource and subresources are not
   // dispatched.
   if (base::GetFieldTrialParamByFeatureAsBool(
-          features::kServiceWorkerAutoPreload,
+          ::features::kServiceWorkerAutoPreload,
           "enable_only_when_service_worker_not_running",
           /*default_value=*/true) &&
       version->running_status() == blink::EmbeddedWorkerStatus::kRunning) {
@@ -525,7 +525,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   // dispatched for subresources.
   version->set_fetch_handler_bypass_option(
       base::GetFieldTrialParamByFeatureAsBool(
-          features::kServiceWorkerAutoPreload, "enable_subresource_preload",
+          ::features::kServiceWorkerAutoPreload, "enable_subresource_preload",
           /*default_value=*/false)
           ? blink::mojom::ServiceWorkerFetchHandlerBypassOption::kAutoPreload
           : blink::mojom::ServiceWorkerFetchHandlerBypassOption::kDefault);
@@ -1906,7 +1906,7 @@ void ServiceWorkerMainResourceLoader::CreateAndRunCacheMatcher(
             if (active_worker->running_status() !=
                     blink::EmbeddedWorkerStatus::kRunning &&
                 base::FeatureList::IsEnabled(
-                    features::kServiceWorkerStaticRouterStartServiceWorker)) {
+                    ::features::kServiceWorkerStaticRouterStartServiceWorker)) {
               active_worker->StartWorker(
                   ServiceWorkerMetrics::EventType::STATIC_ROUTER,
                   base::DoNothing());

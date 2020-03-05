@@ -77,7 +77,7 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
         // Add a type guard to keep type information based on the inlinee's
         // signature.
         wasm::ValueType type = body_.sig->GetParam(index - 1);
-        Type tf_type = compiler::Type::Wasm(type, module_, graph_->zone());
+        compiler::Type tf_type = compiler::Type::Wasm(type, module_, graph_->zone());
         param = gasm_.TypeGuard(tf_type, param);
       }
       parameters_[array_index] = param;
@@ -273,7 +273,7 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
           null_succeeds ? wasm::kNullable : wasm::kNonNullable, kNotShared);
       Node* type_guard =
           graph->NewNode(mcgraph_->common()->TypeGuard(
-                             Type::Wasm(result_type, module_, graph->zone())),
+                             compiler::Type::Wasm(result_type, module_, graph->zone())),
                          input.node, gasm_.effect(), gasm_.control());
       gasm_.InitializeEffectControl(type_guard, gasm_.control());
       return TypeNode(type_guard, result_type);

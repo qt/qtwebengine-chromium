@@ -33,7 +33,7 @@ namespace content {
 namespace {
 
 template <typename T>
-static std::string MojoEnumToString(T mojo_enum) {
+static std::string MojoEnumToString2(T mojo_enum) {
   std::ostringstream oss;
   oss << mojo_enum;
   return oss.str();
@@ -196,7 +196,7 @@ void WebServiceWorkerProviderImpl::OnRegistered(
     blink::mojom::ServiceWorkerRegistrationObjectInfoPtr registration) {
   // End "WebServiceWorkerProviderImpl::RegisterServiceWorker" trace event.
   TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this), "Error",
-                  MojoEnumToString(error), "Message",
+                  MojoEnumToString2(error), "Message",
                   error_msg ? *error_msg : "Success");
   if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
     DCHECK(error_msg);
@@ -222,7 +222,7 @@ void WebServiceWorkerProviderImpl::OnDidGetRegistration(
     blink::mojom::ServiceWorkerRegistrationObjectInfoPtr registration) {
   // End "WebServiceWorkerProviderImpl::GetRegistration" trace event.
   TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this), "Error",
-                  MojoEnumToString(error), "Message",
+                  MojoEnumToString2(error), "Message",
                   error_msg ? *error_msg : "Success");
   if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
     DCHECK(error_msg);
@@ -252,7 +252,7 @@ void WebServiceWorkerProviderImpl::OnDidGetRegistrations(
         infos) {
   // End "WebServiceWorkerProviderImpl::GetRegistrations" trace event.
   TRACE_EVENT_END("ServiceWorker", perfetto::Track::FromPointer(this), "Error",
-                  MojoEnumToString(error), "Message",
+                  MojoEnumToString2(error), "Message",
                   error_msg ? *error_msg : "Success");
   if (error != blink::mojom::ServiceWorkerErrorType::kNone) {
     DCHECK(error_msg);

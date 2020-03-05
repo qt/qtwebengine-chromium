@@ -27,8 +27,8 @@
 namespace media {
 
 // AAC(M4A) decoding specific constants.
-static const int kAACPrimingFrameCount = 2112;
-static const int kAACRemainderFrameCount = 519;
+static const int kAACPrimingFrameCountLAFR = 2112;
+static const int kAACRemainderFrameCountLAFR = 519;
 
 LegacyAudioFileReader::LegacyAudioFileReader(FFmpegURLProtocol* protocol)
     : protocol_(protocol) {}
@@ -181,7 +181,7 @@ base::TimeDelta LegacyAudioFileReader::GetDuration() const {
     // (See: crbug.com/513178)
     estimated_duration_us += ceil(
         1000000.0 *
-        static_cast<double>(kAACPrimingFrameCount + kAACRemainderFrameCount) /
+        static_cast<double>(kAACPrimingFrameCountLAFR + kAACRemainderFrameCountLAFR) /
         sample_rate());
   } else {
     // Add one microsecond to avoid rounding-down errors which can occur when

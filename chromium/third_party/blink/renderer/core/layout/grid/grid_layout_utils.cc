@@ -29,7 +29,7 @@ LayoutUnit GetTrackBaseline(const GridItemData& grid_item,
   const auto& [begin_set_index, end_set_index] =
       grid_item.SetIndices(track_direction);
 
-  return (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+  return (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
              ? track_collection.MajorBaseline(begin_set_index)
              : track_collection.MinorBaseline(end_set_index - 1);
 }
@@ -65,7 +65,7 @@ void StoreItemBaseline(const LogicalBoxFragment& baseline_fragment,
   const auto& [begin_set_index, end_set_index] =
       item.SetIndices(track_direction);
 
-  if (item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+  if (item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
     track_collection.SetMajorBaseline(begin_set_index, total_baseline);
   } else {
     track_collection.SetMinorBaseline(end_set_index - 1, total_baseline);
@@ -91,7 +91,7 @@ LayoutUnit ComputeBaselineOffset(
       GetLogicalBaseline(baseline_fragment, font_baseline,
                          grid_item.IsLastBaselineSpecified(track_direction));
 
-  if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+  if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
     return baseline_delta;
   }
 

@@ -22,14 +22,14 @@ namespace content {
 namespace {
 using WebContentsDevToolsMap =
     std::map<WebContents*, WebContentsDevToolsAgentHost*>;
-WebContentsDevToolsMap& GetAgentHostInstances() {
+WebContentsDevToolsMap& GetAgentHostInstancesWCDAH() {
   static base::NoDestructor<WebContentsDevToolsMap> agent_host_instances;
   return *agent_host_instances;
 }
 
 WebContentsDevToolsAgentHost* FindAgentHost(WebContents* wc) {
-  auto it = GetAgentHostInstances().find(wc);
-  return it == GetAgentHostInstances().end() ? nullptr : it->second;
+  auto it = GetAgentHostInstancesWCDAH().find(wc);
+  return it == GetAgentHostInstancesWCDAH().end() ? nullptr : it->second;
 }
 
 }  // namespace
@@ -173,13 +173,13 @@ void WebContentsDevToolsAgentHost::InnerAttach(WebContents* wc) {
   // a different host created.
   // TODO(caseq): find a better solution. See also a similar comment in
   // RenderFrameDevToolsAgentHost::SetFrameTreeNode();
-  auto prev_entry = GetAgentHostInstances().find(wc);
-  if (prev_entry != GetAgentHostInstances().end()) {
+  auto prev_entry = GetAgentHostInstancesWCDAH().find(wc);
+  if (prev_entry != GetAgentHostInstancesWCDAH().end()) {
     CHECK_NE(prev_entry->second, this);
     prev_entry->second->InnerDetach();
   }
   const bool inserted =
-      GetAgentHostInstances().insert(std::make_pair(wc, this)).second;
+      GetAgentHostInstancesWCDAH().insert(std::make_pair(wc, this)).second;
   CHECK(inserted);
   auto_attacher_->SetWebContents(wc);
   Observe(wc);
@@ -191,7 +191,7 @@ void WebContentsDevToolsAgentHost::InnerAttach(WebContents* wc) {
 void WebContentsDevToolsAgentHost::InnerDetach() {
   DCHECK_EQ(this, FindAgentHost(web_contents()));
   auto_attacher_->SetWebContents(nullptr);
-  GetAgentHostInstances().erase(web_contents());
+  GetAgentHostInstancesWCDAH().erase(web_contents());
   Observe(nullptr);
   // We may or may not be destructed here, depending on embedders
   // potentially retaining references.

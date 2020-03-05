@@ -475,9 +475,9 @@ bool IsGpuMemoryBufferCompositorResourcesEnabled() {
 #if BUILDFLAG(IS_APPLE)
   return true;
 #elif BUILDFLAG(IS_WIN)
-  return features::IsDelegatedCompositingEnabled() &&
-         features::kDelegatedCompositingModeParam.Get() ==
-             features::DelegatedCompositingMode::kFull;
+  return ::features::IsDelegatedCompositingEnabled() &&
+         ::features::kDelegatedCompositingModeParam.Get() ==
+             ::features::DelegatedCompositingMode::kFull;
 #else
   return false;
 #endif

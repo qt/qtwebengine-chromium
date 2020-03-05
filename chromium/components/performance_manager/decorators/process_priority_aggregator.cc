@@ -10,19 +10,13 @@
 
 namespace performance_manager {
 
-namespace {
-
-const char kDescriberName[] = "ProcessPriorityAggregator";
-
-}  // namespace
-
 ProcessPriorityAggregator::ProcessPriorityAggregator() = default;
 
 ProcessPriorityAggregator::~ProcessPriorityAggregator() = default;
 
 void ProcessPriorityAggregator::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "ProcessPriorityAggregator");
   graph->AddProcessNodeObserver(this);
 
   auto* registry =

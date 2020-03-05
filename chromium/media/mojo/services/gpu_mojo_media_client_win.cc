@@ -19,6 +19,7 @@
 #include "gpu/ipc/service/gpu_channel.h"
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "media/base/audio_decoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_switches.h"
 #include "media/base/offloading_audio_encoder.h"
 #include "media/base/win/media_foundation_package_runtime_locator.h"

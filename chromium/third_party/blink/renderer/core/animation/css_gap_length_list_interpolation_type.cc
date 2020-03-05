@@ -69,7 +69,7 @@ InterpolationValue GetInterpolationValueFromCSSValue(
   return InterpolationValue(InterpolableLength::MaybeConvertCSSValue(*value));
 }
 
-bool IsCompatible(const InterpolableValue* a, const InterpolableValue* b) {
+bool IsCompatibleCGLLIT(const InterpolableValue* a, const InterpolableValue* b) {
   if (a->IsGapLengthAutoRepeater() != b->IsGapLengthAutoRepeater()) {
     return false;
   }
@@ -120,7 +120,7 @@ class UnderlyingGapLengthListChecker final
 
     return ListInterpolationFunctions::InterpolableListsAreCompatible(
         underlying_list, other_list, underlying_list.length(),
-        length_matching_strategy, &IsCompatible);
+        length_matching_strategy, &IsCompatibleCGLLIT);
   }
 
   const Member<const InterpolationValueGCed> underlying_;
@@ -174,7 +174,7 @@ void CSSGapLengthListInterpolationType::Composite(
       [this, &owner, &value](UnderlyingValue& underlying_value, double fraction,
                              const InterpolableValue& interpolable_value,
                              const NonInterpolableValue*) {
-        if (!IsCompatible(&underlying_value.MutableInterpolableValue(),
+        if (!IsCompatibleCGLLIT(&underlying_value.MutableInterpolableValue(),
                           &interpolable_value)) {
           owner.Set(this, value);
           return;
@@ -362,7 +362,7 @@ PairwiseInterpolationValue CSSGapLengthListInterpolationType::MaybeMergeSingles(
   return ListInterpolationFunctions::MaybeMergeSingles(
       std::move(start), std::move(end), strategy,
       [](InterpolationValue&& start_item, InterpolationValue&& end_item) {
-        if (!IsCompatible(start_item.interpolable_value,
+        if (!IsCompatibleCGLLIT(start_item.interpolable_value,
                           end_item.interpolable_value)) {
           return PairwiseInterpolationValue(nullptr);
         }

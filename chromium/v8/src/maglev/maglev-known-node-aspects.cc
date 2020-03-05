@@ -25,7 +25,7 @@ namespace {
 // other -- again, the LHS here is expected to be mutated.
 template <typename Key, typename Value,
           typename MergeFunc = std::equal_to<Value>>
-void DestructivelyIntersect(ZoneMap<Key, Value>& lhs_map,
+void DestructivelyIntersectMKNA(ZoneMap<Key, Value>& lhs_map,
                             const ZoneMap<Key, Value>& rhs_map,
                             MergeFunc&& func = MergeFunc()) {
   // Walk the two maps in lock step. This relies on the fact that ZoneMaps are
@@ -146,7 +146,7 @@ bool SameValue(ValueNode* before, ValueNode* after) { return before == after; }
 
 void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
   bool any_merged_map_is_unstable = false;
-  DestructivelyIntersect(node_infos_, other.node_infos_,
+  DestructivelyIntersectMKNA(node_infos_, other.node_infos_,
                          [&](NodeInfo& lhs, const NodeInfo& rhs) {
                            lhs.MergeWith(rhs, zone, any_merged_map_is_unstable);
                            return !lhs.no_info_available();
@@ -155,7 +155,7 @@ void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
   if (effect_epoch_ != other.effect_epoch_) {
     effect_epoch_ = std::max(effect_epoch_, other.effect_epoch_) + 1;
   }
-  DestructivelyIntersect(
+  DestructivelyIntersectMKNA(
       available_expressions_, other.available_expressions_,
       [&](const AvailableExpression& lhs, const AvailableExpression& rhs) {
         DCHECK_IMPLIES(lhs.node == rhs.node,
@@ -176,19 +176,19 @@ void KnownNodeAspects::Merge(const KnownNodeAspects& other, Zone* zone) {
          const ZoneMap<ValueNode*, ValueNode*>& rhs) {
         // Loaded properties are maps of maps, so just do the destructive
         // intersection recursively.
-        DestructivelyIntersect(lhs, rhs);
+        DestructivelyIntersectMKNA(lhs, rhs);
         return !lhs.empty();
       };
-  DestructivelyIntersect(loaded_constant_properties_,
+  DestructivelyIntersectMKNA(loaded_constant_properties_,
                          other.loaded_constant_properties_,
                          merge_loaded_properties);
-  DestructivelyIntersect(loaded_properties_, other.loaded_properties_,
+  DestructivelyIntersectMKNA(loaded_properties_, other.loaded_properties_,
                          merge_loaded_properties);
-  DestructivelyIntersect(loaded_context_constants_,
+  DestructivelyIntersectMKNA(loaded_context_constants_,
                          other.loaded_context_constants_);
   may_have_aliasing_contexts_ = ContextSlotLoadsAliasMerge(
       may_have_aliasing_contexts_, other.may_have_aliasing_contexts());
-  DestructivelyIntersect(loaded_context_slots_, other.loaded_context_slots_);
+  DestructivelyIntersectMKNA(loaded_context_slots_, other.loaded_context_slots_);
 }
 
 void KnownNodeAspects::UpdateMayHaveAliasingContexts(

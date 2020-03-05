@@ -30,7 +30,7 @@
 namespace net {
 
 namespace {
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunnerURRJ(
     net::RequestPriority priority) {
   if (features::kNetTaskSchedulerURLRequestRedirectJob.Get()) {
     return net::GetTaskRunner(priority);
@@ -78,7 +78,7 @@ void URLRequestRedirectJob::GetLoadTimingInfo(
 void URLRequestRedirectJob::Start() {
   request()->net_log().AddEventWithStringParams(
       NetLogEventType::URL_REQUEST_REDIRECT_JOB, "reason", redirect_reason_);
-  TaskRunner(request_->priority())
+  TaskRunnerURRJ(request_->priority())
       ->PostTask(FROM_HERE, base::BindOnce(&URLRequestRedirectJob::StartAsync,
                                            weak_factory_.GetWeakPtr()));
 }

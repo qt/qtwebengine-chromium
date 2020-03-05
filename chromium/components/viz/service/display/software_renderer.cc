@@ -60,7 +60,7 @@ namespace viz {
 namespace {
 
 // Return a color filter that multiplies the incoming color by the fixed alpha
-sk_sp<SkColorFilter> MakeOpacityFilter(float alpha, sk_sp<SkColorFilter> in) {
+sk_sp<SkColorFilter> MakeOpacityFilterSR(float alpha, sk_sp<SkColorFilter> in) {
   SkColor4f alpha_as_color = {1.0, 1.0, 1.0, alpha};
   // MakeModeFilter treats fixed color as src, and input color as dst.
   // kDstIn is (srcAlpha * dstColor, srcAlpha * dstAlpha) so this makes the
@@ -470,7 +470,7 @@ void SoftwareRenderer::DrawTextureQuad(const TextureDrawQuad* quad) {
     sk_sp<SkColorFilter> cf = SkColorFilters::Blend(
         quad->background_color.toSkColor(), SkBlendMode::kDstOver);
     if (current_paint_.getAlphaf() < 1.f) {
-      cf = MakeOpacityFilter(current_paint_.getAlphaf(), std::move(cf));
+      cf = MakeOpacityFilterSR(current_paint_.getAlphaf(), std::move(cf));
       current_paint_.setAlphaf(1.f);
       DCHECK(cf);
     }

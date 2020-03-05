@@ -229,7 +229,7 @@ size_t GetSpareRPHCount() {
   if (base::SysInfo::AmountOfPhysicalMemory() < base::GiB(4)) {
     return 1u;
   }
-  return features::kMultipleSpareRPHsCount.Get();
+  return ::features::kMultipleSpareRPHsCount.Get();
 }
 
 void LogAllocationContext(const std::string& source_uma_name,
@@ -773,17 +773,17 @@ void SpareRenderProcessHostManagerImpl::PrepareForFutureRequests(
   if (RenderProcessHostImpl::IsSpareProcessKeptAtAllTimes()) {
     std::optional<base::TimeDelta> timeout = std::nullopt;
     if (base::FeatureList::IsEnabled(
-            features::kAndroidWarmUpSpareRendererWithTimeout)) {
-      if (features::kAndroidSpareRendererCreationTiming.Get() !=
-          features::kAndroidSpareRendererCreationDelayedDuringLoading) {
+            ::features::kAndroidWarmUpSpareRendererWithTimeout)) {
+      if (::features::kAndroidSpareRendererCreationTiming.Get() !=
+          ::features::kAndroidSpareRendererCreationDelayedDuringLoading) {
         // The creation of the spare renderer will be managed in
         // WebContentsImpl::DidStopLoading or
         // WebContentsImpl::OnFirstVisuallyNonEmptyPaint.
         return;
       }
-      if (features::kAndroidSpareRendererTimeoutSeconds.Get() > 0) {
+      if (::features::kAndroidSpareRendererTimeoutSeconds.Get() > 0) {
         timeout =
-            base::Seconds(features::kAndroidSpareRendererTimeoutSeconds.Get());
+            base::Seconds(::features::kAndroidSpareRendererTimeoutSeconds.Get());
       }
     }
     // Always keep around a spare process for the most recently requested

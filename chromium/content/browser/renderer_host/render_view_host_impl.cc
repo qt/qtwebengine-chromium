@@ -540,7 +540,7 @@ bool RenderViewHostImpl::CreateRenderView(
                   frame_tree_node->current_frame_host()->GetFrameToken()));
     } else if (frame_tree_->is_prerendering() &&
                (!base::FeatureList::IsEnabled(
-                    features::kPrerenderMoreCorrectSpeculativeRFHCreation) ||
+                    ::features::kPrerenderMoreCorrectSpeculativeRFHCreation) ||
                 main_rfh->lifecycle_state() ==
                     RenderFrameHostImpl::LifecycleStateImpl::kSpeculative)) {
       // During prerender, the browser may need to create new speculative local
@@ -611,7 +611,7 @@ bool RenderViewHostImpl::CreateRenderView(
   params->blink_page_broadcast =
       page_broadcast_.BindNewEndpointAndPassReceiver();
 
-  if (base::FeatureList::IsEnabled(features::kSetHistoryInfoOnViewCreation)) {
+  if (base::FeatureList::IsEnabled(::features::kSetHistoryInfoOnViewCreation)) {
     params->history_index =
         frame_tree()->controller().GetLastCommittedEntryIndex();
     params->history_length = frame_tree()->controller().GetEntryCount();

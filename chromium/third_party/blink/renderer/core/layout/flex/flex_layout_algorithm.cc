@@ -78,11 +78,11 @@ class PhysicalToFlex {
   bool is_column_;
 };
 
-class BaselineAccumulator {
+class BaselineAccumulatorFlex {
   STACK_ALLOCATED();
 
  public:
-  explicit BaselineAccumulator(const ComputedStyle& style)
+  explicit BaselineAccumulatorFlex(const ComputedStyle& style)
       : font_baseline_(style.GetFontBaseline()) {}
 
   void AccumulateItem(const LogicalBoxFragment& fragment,
@@ -388,7 +388,7 @@ LayoutUnit FlexLayoutAlgorithm::BaselineAscent(
       GetConstraintSpace().GetWritingDirection(), is_column_,
       item.initial_margins.top, item.initial_margins.right,
       item.initial_margins.bottom, item.initial_margins.left);
-  return item.baseline_group == BaselineGroup::kMajor
+  return item.baseline_group == BaselineGroupType::kMajor
              ? margins.CrossStart() + baseline
              : margins.CrossEnd() + baseline;
 }
@@ -410,7 +410,7 @@ LayoutUnit FlexLayoutAlgorithm::SynthesizedBaselineAscent(
       GetConstraintSpace().GetWritingDirection(), is_column_,
       item.initial_margins.top, item.initial_margins.right,
       item.initial_margins.bottom, item.initial_margins.left);
-  return item.baseline_group == BaselineGroup::kMajor
+  return item.baseline_group == BaselineGroupType::kMajor
              ? margins.CrossStart() + baseline
              : margins.CrossEnd() + baseline;
 }
@@ -437,49 +437,49 @@ bool FlexLayoutAlgorithm::ShouldApplyAutoMinSize(const BlockNode& child) const {
 
 namespace {
 
-enum AxisEdge { kStart, kCenter, kEnd };
+enum class LocalAxisEdge { kStart, kCenter, kEnd };
 
 // Maps the resolved justify-content value to a static-position edge.
-AxisEdge MainAxisStaticPositionEdge(
+LocalAxisEdge MainAxisStaticPositionEdge(
     const StyleContentAlignmentData& justify_content,
     bool is_reverse_direction) {
   const ContentPosition content_position = justify_content.GetPosition();
   DCHECK_NE(content_position, ContentPosition::kLeft);
   DCHECK_NE(content_position, ContentPosition::kRight);
   if (content_position == ContentPosition::kFlexEnd)
-    return is_reverse_direction ? AxisEdge::kStart : AxisEdge::kEnd;
+    return is_reverse_direction ? LocalAxisEdge::kStart : LocalAxisEdge::kEnd;
 
   if (content_position == ContentPosition::kCenter ||
       justify_content.Distribution() == ContentDistributionType::kSpaceAround ||
       justify_content.Distribution() == ContentDistributionType::kSpaceEvenly) {
-    return AxisEdge::kCenter;
+    return LocalAxisEdge::kCenter;
   }
 
   if (content_position == ContentPosition::kStart)
-    return AxisEdge::kStart;
+    return LocalAxisEdge::kStart;
   if (content_position == ContentPosition::kEnd)
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
 
-  return is_reverse_direction ? AxisEdge::kEnd : AxisEdge::kStart;
+  return is_reverse_direction ? LocalAxisEdge::kEnd : LocalAxisEdge::kStart;
 }
 
 // Maps the resolved alignment value to a static-position edge.
-AxisEdge CrossAxisStaticPositionEdge(const ItemPosition alignment,
+LocalAxisEdge CrossAxisStaticPositionEdge(const ItemPosition alignment,
                                      bool is_wrap_reverse) {
   // AlignmentForChild already accounted for wrap-reverse for kFlexStart and
   // kFlexEnd, but not kStretch. kStretch is supposed to act like kFlexStart.
   if (is_wrap_reverse && alignment == ItemPosition::kStretch) {
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
   }
 
   if (alignment == ItemPosition::kFlexEnd ||
       alignment == ItemPosition::kLastBaseline)
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
 
   if (alignment == ItemPosition::kCenter)
-    return AxisEdge::kCenter;
+    return LocalAxisEdge::kCenter;
 
-  return AxisEdge::kStart;
+  return LocalAxisEdge::kStart;
 }
 
 }  // namespace
@@ -533,7 +533,7 @@ void FlexLayoutAlgorithm::HandleOutOfFlowPositionedItems(
       ShrinkLogicalSize(total_fragment_size, border_scrollbar_padding);
 
   const StyleContentAlignmentData justify_content = ResolvedJustifyContent();
-  const AxisEdge main_axis_edge =
+  const LocalAxisEdge main_axis_edge =
       MainAxisStaticPositionEdge(justify_content, is_reverse_direction_);
 
   for (LayoutBox* oof_child : oofs) {
@@ -541,20 +541,20 @@ void FlexLayoutAlgorithm::HandleOutOfFlowPositionedItems(
 
     const ItemPosition position =
         ResolvedAlignSelf(child.Style(), /* is_out_of_flow */ true);
-    AxisEdge cross_axis_edge =
+    LocalAxisEdge cross_axis_edge =
         CrossAxisStaticPositionEdge(position, is_wrap_reverse_);
 
-    AxisEdge inline_axis_edge = is_column_ ? cross_axis_edge : main_axis_edge;
-    AxisEdge block_axis_edge = is_column_ ? main_axis_edge : cross_axis_edge;
+    LocalAxisEdge inline_axis_edge = is_column_ ? cross_axis_edge : main_axis_edge;
+    LocalAxisEdge block_axis_edge = is_column_ ? main_axis_edge : cross_axis_edge;
 
     LogicalStaticPosition static_pos;
     static_pos.offset = border_scrollbar_padding.StartOffset();
 
     // Determine the static-position based off the axis-edge.
-    if (block_axis_edge == AxisEdge::kStart) {
+    if (block_axis_edge == LocalAxisEdge::kStart) {
       DCHECK(!IsBreakInside(GetBreakToken()));
       static_pos.block_edge = BlockEdge::kBlockStart;
-    } else if (block_axis_edge == AxisEdge::kCenter) {
+    } else if (block_axis_edge == LocalAxisEdge::kCenter) {
       if (!should_process_block_center) {
         oof_children.emplace_back(oof_child);
         continue;
@@ -570,9 +570,9 @@ void FlexLayoutAlgorithm::HandleOutOfFlowPositionedItems(
       static_pos.offset.block_offset += total_fragment_size.block_size;
     }
 
-    if (inline_axis_edge == AxisEdge::kStart) {
+    if (inline_axis_edge == LocalAxisEdge::kStart) {
       static_pos.inline_edge = InlineEdge::kInlineStart;
-    } else if (inline_axis_edge == AxisEdge::kCenter) {
+    } else if (inline_axis_edge == LocalAxisEdge::kCenter) {
       static_pos.inline_edge = InlineEdge::kInlineCenter;
       static_pos.offset.inline_offset += total_fragment_size.inline_size / 2;
     } else {
@@ -1530,7 +1530,7 @@ void FlexLayoutAlgorithm::PlaceFlexItems(
                                      layout_result->GetPhysicalFragment()))
                 : SynthesizedBaselineAscent(flex_item, cross_axis_size);
         const LayoutUnit descent = cross_axis_margin_size - ascent;
-        if (flex_item.baseline_group == BaselineGroup::kMajor) {
+        if (flex_item.baseline_group == BaselineGroupType::kMajor) {
           max_major_ascent = std::max(max_major_ascent, ascent);
           max_major_descent = std::max(max_major_descent, descent);
           cross_axis_margin_size = max_major_ascent + max_major_descent;
@@ -1744,7 +1744,7 @@ LayoutResult::EStatus FlexLayoutAlgorithm::GiveItemsFinalPositionAndSize(
       InitialContentPositionOffset(align_content, cross_axis_free_space,
                                    num_lines, is_wrap_reverse_);
 
-  BaselineAccumulator baseline_accumulator(style);
+  BaselineAccumulatorFlex baseline_accumulator(style);
   LayoutResult::EStatus status = LayoutResult::kSuccess;
 
   for (wtf_size_t flex_line_idx = 0; flex_line_idx < flex_lines->size();
@@ -1913,7 +1913,7 @@ LayoutResult::EStatus FlexLayoutAlgorithm::GiveItemsFinalPositionAndSize(
             break;
           case ItemPosition::kBaseline:
           case ItemPosition::kLastBaseline: {
-            const bool is_major = item.baseline_group == BaselineGroup::kMajor;
+            const bool is_major = item.baseline_group == BaselineGroupType::kMajor;
             const LayoutUnit ascent = BaselineAscent(item, physical_fragment);
             const LayoutUnit max_ascent =
                 is_major ? flex_line.major_baseline : flex_line.minor_baseline;
@@ -2044,7 +2044,7 @@ FlexLayoutAlgorithm::GiveItemsFinalPositionAndSizeForFragmentation(
     }
   }
 
-  BaselineAccumulator baseline_accumulator(Style());
+  BaselineAccumulatorFlex baseline_accumulator(Style());
   bool broke_before_row =
       *break_before_row != FlexBreakTokenData::kNotBreakBeforeRow;
 

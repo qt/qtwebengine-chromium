@@ -31,7 +31,7 @@ class COMPONENT_EXPORT(FIDO_PUBLIC) PublicKeyCredentialParams {
   };
 
   static std::optional<PublicKeyCredentialParams> CreateFromCBORValue(
-      const cbor::Value& cbor_value);
+      const ::cbor::Value& cbor_value);
 
   explicit PublicKeyCredentialParams(
       std::vector<CredentialInfo> credential_params);
@@ -50,7 +50,7 @@ class COMPONENT_EXPORT(FIDO_PUBLIC) PublicKeyCredentialParams {
 };
 
 COMPONENT_EXPORT(FIDO_PUBLIC)
-cbor::Value AsCBOR(const PublicKeyCredentialParams&);
+::cbor::Value AsCBOR(const PublicKeyCredentialParams&);
 
 }  // namespace device
 

@@ -66,7 +66,7 @@ inline AtomicString RustStrToAtomicString(rust::Str str) {
   return AtomicString::FromUTF8(base::RustStrToStringView(str));
 }
 
-inline bool HasNoStyleInformation(Document* document) {
+inline bool HasNoStyleInformationRS(Document* document) {
   if (document->SawElementsInKnownNamespaces()) {
     return false;
   }
@@ -135,7 +135,7 @@ bool CollectElementAttributes(
   return true;
 }
 
-void SetAttributes(Element* element,
+void SetAttributesRS(Element* element,
                    Vector<Attribute, kAttributePrealloc>& attribute_vector,
                    ParserContentPolicy parser_content_policy) {
   if (!ScriptingContentIsAllowed(parser_content_policy)) {
@@ -147,7 +147,7 @@ void SetAttributes(Element* element,
 }  // namespace
 
 // FIXME: HTMLConstructionSite has a limit of 512, should these match?
-static const unsigned kMaxXMLTreeDepth = 5000;
+static const unsigned kMaxXMLTreeDepthXDP = 5000;
 
 XMLDocumentParserRs::XMLDocumentParserRs(Document& document,
                                          LocalFrameView* frame_view)
@@ -453,7 +453,7 @@ void XMLDocumentParserRs::StartElementNs(
     return;
   }
 
-  SetAttributes(new_element, prefixed_attributes, GetParserContentPolicy());
+  SetAttributesRS(new_element, prefixed_attributes, GetParserContentPolicy());
 
   if (parsing_fragment_ && encountered_namespace_reset) {
     ancestor_resetting_namespace_ = new_element;
@@ -605,7 +605,7 @@ void XMLDocumentParserRs::DocType(rust::Str name_rs,
 void XMLDocumentParserRs::EndDocument() {
   UpdateLeafTextNode();
   bool xml_viewer_mode =
-      !saw_error_ && !saw_css_ && HasNoStyleInformation(GetDocument());
+      !saw_error_ && !saw_css_ && HasNoStyleInformationRS(GetDocument());
   if (xml_viewer_mode) {
     GetDocument()->SetIsViewSource(true);
     TransformDocumentToXMLTreeView(*GetDocument());
@@ -620,7 +620,7 @@ void XMLDocumentParserRs::PushCurrentNode(ContainerNode* n) {
   DCHECK(current_node_);
   current_node_stack_.push_back(current_node_);
   current_node_ = n;
-  if (current_node_stack_.size() > kMaxXMLTreeDepth) {
+  if (current_node_stack_.size() > kMaxXMLTreeDepthXDP) {
     HandleError(XMLErrors::kErrorTypeFatal, "Excessive node nesting.",
                 GetTextPosition());
   }

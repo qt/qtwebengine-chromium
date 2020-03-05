@@ -386,7 +386,7 @@ void RenderFrameHostImpl::TearDownMojoConnection() {
   local_main_frame_host_receiver_.reset();
 
   if (broker_holder_) {
-    if (base::FeatureList::IsEnabled(features::kLazyBrowserInterfaceBroker)) {
+    if (base::FeatureList::IsEnabled(::features::kLazyBrowserInterfaceBroker)) {
       broker_holder_.reset();
     } else {
       broker_holder_->broker_receiver().reset();

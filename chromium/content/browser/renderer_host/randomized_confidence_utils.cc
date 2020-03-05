@@ -17,7 +17,7 @@ double GetConfidenceRandomizedTriggerRate() {
   int32_t state_count = 1 + (int32_t)blink::mojom::ConfidenceLevel::kMaxValue;
   double navigation_confidence_epsilon = std::max(
       0.0, std::min(g_max_navigation_confidence_epsilon,
-                    features::kNavigationConfidenceEpsilonValue.Get()));
+                    ::features::kNavigationConfidenceEpsilonValue.Get()));
   double randomized_response_rate =
       state_count /
       ((state_count - 1) + std::exp(navigation_confidence_epsilon));

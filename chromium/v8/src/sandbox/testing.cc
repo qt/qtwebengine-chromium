@@ -29,6 +29,7 @@
 #include <sys/mman.h>
 #include <sys/ucontext.h>
 #include <unistd.h>
+#undef MAP_TYPE
 
 #include "src/base/platform/platform-linux.h"
 #endif  // V8_OS_LINUX

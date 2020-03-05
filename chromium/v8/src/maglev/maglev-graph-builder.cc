@@ -18118,3 +18118,5 @@ ReduceResult MaglevGraphBuilder::BuildGetCharCodeAt(ValueNode* string,
 }
 
 }  // namespace v8::internal::maglev
+
+#undef TRACE

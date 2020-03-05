@@ -19,7 +19,7 @@
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
-namespace keys = extension_web_request_api_constants;
+namespace keys_udp = extension_web_request_api_constants;
 
 namespace {
 
@@ -73,13 +73,13 @@ std::optional<base::Value> RawDataPresenter::TakeResult() {
 }
 
 void RawDataPresenter::FeedNextBytes(base::span<const uint8_t> bytes) {
-  subtle::AppendKeyValuePair(keys::kRequestBodyRawBytesKey, base::Value(bytes),
+  subtle::AppendKeyValuePair(keys_udp::kRequestBodyRawBytesKey, base::Value(bytes),
                              list_);
 }
 
 void RawDataPresenter::FeedNextFile(const std::string& filename) {
   // Insert the file path instead of the contents, which may be too large.
-  subtle::AppendKeyValuePair(keys::kRequestBodyRawFileKey,
+  subtle::AppendKeyValuePair(keys_udp::kRequestBodyRawFileKey,
                              base::Value(filename), list_);
 }
 
