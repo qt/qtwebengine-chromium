@@ -7,7 +7,9 @@ import("//components/guest_view/buildflags/buildflags.gni")
 # depend on the extensions's gni define.
 assert(enable_guest_view)
 
-static_library("browser") {
+import("//build/config/jumbo.gni")
+
+jumbo_static_library("browser") {
   output_name = "guest_view_browser"
   sources = [
     "//components/guest_view/browser/bad_message.cc",

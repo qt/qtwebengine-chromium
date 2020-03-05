@@ -21,7 +21,7 @@
 namespace content {
 
 namespace {
-constexpr char kWindowsPlatformName[] = "windows";
+constexpr char kWindowsPlatformNameNWAFI[] = "windows";
 
 using ABI::Windows::ApplicationModel::AppInfo;
 using ABI::Windows::ApplicationModel::IAppInfo;
@@ -120,7 +120,7 @@ void NativeWinAppFetcherImpl::OnGetAppUriHandlers(
         base::win::ScopedHString(app_user_model_id_native).Get());
 
     auto application = blink::mojom::RelatedApplication::New();
-    application->platform = kWindowsPlatformName;
+    application->platform = kWindowsPlatformNameNWAFI;
     application->id = base::WideToASCII(app_user_model_id);
     found_related_apps.push_back(std::move(application));
   }

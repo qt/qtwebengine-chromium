@@ -22,8 +22,6 @@
 
 namespace blink {
 
-using PassKey = base::PassKey<Subscriber>;
-
 class Subscriber::ConsumerAbortSubscriptionAlgorithm final
     : public AbortSignal::Algorithm {
  public:

@@ -110,7 +110,7 @@ bool MethodUsesNoVarySearch(const std::string& method) {
   return method == "GET" || method == "HEAD";
 }
 
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunnerHCT(
     net::RequestPriority priority) {
   if (features::kNetTaskSchedulerHttpCacheTransaction.Get()) {
     return net::GetTaskRunner(priority);
@@ -1467,7 +1467,7 @@ void HttpCache::Transaction::AddCacheLockTimeoutHandler(ActiveEntry* entry) {
   if ((bypass_lock_for_test_ && next_state_ == STATE_ADD_TO_ENTRY_COMPLETE) ||
       (bypass_lock_after_headers_for_test_ &&
        next_state_ == STATE_FINISH_HEADERS_COMPLETE)) {
-    TaskRunner(priority_)->PostTask(
+    TaskRunnerHCT(priority_)->PostTask(
         FROM_HERE,
         base::BindOnce(&HttpCache::Transaction::OnCacheLockTimeout,
                        weak_factory_.GetWeakPtr(), entry_lock_waiting_since_));
@@ -1494,7 +1494,7 @@ void HttpCache::Transaction::AddCacheLockTimeoutHandler(ActiveEntry* entry) {
       // the cache if at all possible. See http://crbug.com/408765
       timeout_milliseconds = 25;
     }
-    TaskRunner(priority_)->PostDelayedTask(
+    TaskRunnerHCT(priority_)->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&HttpCache::Transaction::OnCacheLockTimeout,
                        weak_factory_.GetWeakPtr(), entry_lock_waiting_since_),

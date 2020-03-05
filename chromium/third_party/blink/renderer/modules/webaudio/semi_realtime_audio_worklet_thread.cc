@@ -16,11 +16,11 @@ namespace {
 
 // Use for ref-counting of all SemiRealtimeAudioWorkletThread instances in a
 // process. Incremented by the constructor and decremented by destructor.
-int ref_count = 0;
+int ref_count_SRAWT = 0;
 
-void EnsureSharedBackingThread(const ThreadCreationParams& params) {
+void EnsureSharedBackingThreadSRAWT(const ThreadCreationParams& params) {
   DCHECK(IsMainThread());
-  DCHECK_EQ(ref_count, 1);
+  DCHECK_EQ(ref_count_SRAWT, 1);
   WorkletThreadHolder<SemiRealtimeAudioWorkletThread>::EnsureInstance(params);
 }
 
@@ -49,15 +49,15 @@ SemiRealtimeAudioWorkletThread::SemiRealtimeAudioWorkletThread(
     params.base_thread_type = base::ThreadType::kDefault;
   }
 
-  if (++ref_count == 1) {
-    EnsureSharedBackingThread(params);
+  if (++ref_count_SRAWT == 1) {
+    EnsureSharedBackingThreadSRAWT(params);
   }
 }
 
 SemiRealtimeAudioWorkletThread::~SemiRealtimeAudioWorkletThread() {
   DCHECK(IsMainThread());
-  DCHECK_GT(ref_count, 0);
-  if (--ref_count == 0) {
+  DCHECK_GT(ref_count_SRAWT, 0);
+  if (--ref_count_SRAWT == 0) {
     ClearSharedBackingThread();
   }
 }
@@ -69,7 +69,7 @@ WorkerBackingThread& SemiRealtimeAudioWorkletThread::GetWorkerBackingThread() {
 
 void SemiRealtimeAudioWorkletThread::ClearSharedBackingThread() {
   DCHECK(IsMainThread());
-  CHECK_EQ(ref_count, 0);
+  CHECK_EQ(ref_count_SRAWT, 0);
   WorkletThreadHolder<SemiRealtimeAudioWorkletThread>::ClearInstance();
 }
 

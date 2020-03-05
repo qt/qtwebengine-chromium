@@ -14,7 +14,7 @@ namespace blink {
 namespace {
 
 // A ConstantSource is always mono.
-constexpr unsigned kNumberOfOutputChannels = 1;
+constexpr unsigned kNumberOfOutputChannelsCSH = 1;
 
 }  // namespace
 
@@ -26,7 +26,7 @@ ConstantSourceHandler::ConstantSourceHandler(AudioNode& node,
                                   sample_rate),
       offset_(&offset),
       sample_accurate_values_(GetDeferredTaskHandler().RenderQuantumFrames()) {
-  AddOutput(kNumberOfOutputChannels);
+  AddOutput(kNumberOfOutputChannelsCSH);
 
   Initialize();
 }

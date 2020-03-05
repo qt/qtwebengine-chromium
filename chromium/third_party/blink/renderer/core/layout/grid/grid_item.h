@@ -94,7 +94,7 @@ struct CORE_EXPORT GridItemData : public GarbageCollected<GridItemData> {
       const GridLayoutTrackCollection& track_collection,
       LayoutUnit* start_offset = nullptr) const;
 
-  enum BaselineGroup BaselineGroup(
+  enum BaselineGroupType BaselineGroup(
       GridTrackSizingDirection track_direction) const {
     return (track_direction == kForColumns) ? column_baseline_group
                                             : row_baseline_group;
@@ -267,8 +267,8 @@ struct CORE_EXPORT GridItemData : public GarbageCollected<GridItemData> {
   AutoSizeBehavior column_auto_behavior;
   AutoSizeBehavior row_auto_behavior;
 
-  enum BaselineGroup column_baseline_group;
-  enum BaselineGroup row_baseline_group;
+  enum BaselineGroupType column_baseline_group;
+  enum BaselineGroupType row_baseline_group;
 
   WritingMode column_baseline_writing_mode;
   WritingMode row_baseline_writing_mode;

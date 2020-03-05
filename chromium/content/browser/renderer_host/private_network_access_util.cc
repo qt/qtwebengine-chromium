@@ -42,22 +42,22 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
 
       case RequestContext::kWorker:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForWorkers)) {
+                ::features::kLocalNetworkAccessForWorkers)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForWorkersWarningOnly)) {
+                ::features::kLocalNetworkAccessForWorkersWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
         return FeatureState::kEnabled;
 
       case RequestContext::kSubframeNavigation:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForSubframeNavigations)) {
+                ::features::kLocalNetworkAccessForSubframeNavigations)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::
+                ::features::
                     kLocalNetworkAccessForSubframeNavigationsWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
@@ -65,11 +65,11 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
 
       case RequestContext::kFencedFrameNavigation:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForFencedFrameNavigations)) {
+                ::features::kLocalNetworkAccessForFencedFrameNavigations)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::
+                ::features::
                     kLocalNetworkAccessForFencedFrameNavigationsWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
@@ -77,11 +77,11 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
 
       case RequestContext::kMainFrameNavigation:
         if (!base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForNavigations)) {
+                ::features::kLocalNetworkAccessForNavigations)) {
           return FeatureState::kDisabled;
         }
         if (base::FeatureList::IsEnabled(
-                features::kLocalNetworkAccessForNavigationsWarningOnly)) {
+                ::features::kLocalNetworkAccessForNavigationsWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
         return FeatureState::kEnabled;
@@ -92,12 +92,12 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
         return FeatureState::kEnabled;
       case RequestContext::kWorker:
         if (!base::FeatureList::IsEnabled(
-                features::kPrivateNetworkAccessForWorkers)) {
+                ::features::kPrivateNetworkAccessForWorkers)) {
           return FeatureState::kDisabled;
         }
 
         if (base::FeatureList::IsEnabled(
-                features::kPrivateNetworkAccessForWorkersWarningOnly)) {
+                ::features::kPrivateNetworkAccessForWorkersWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
 
@@ -106,12 +106,12 @@ FeatureState FeatureStateForContext(RequestContext request_context) {
       case RequestContext::kSubframeNavigation:
       case RequestContext::kFencedFrameNavigation:
         if (!base::FeatureList::IsEnabled(
-                features::kPrivateNetworkAccessForNavigations)) {
+                ::features::kPrivateNetworkAccessForNavigations)) {
           return FeatureState::kDisabled;
         }
 
         if (base::FeatureList::IsEnabled(
-                features::kPrivateNetworkAccessForNavigationsWarningOnly)) {
+                ::features::kPrivateNetworkAccessForNavigationsWarningOnly)) {
           return FeatureState::kWarningOnly;
         }
 
@@ -141,7 +141,7 @@ Policy DerivePolicyForNonSecureContext(
       // because it is unclear why they happen in the first place. The goal is
       // to reduce instances of this happening before enabling this feature.
       return base::FeatureList::IsEnabled(
-                 features::kBlockInsecurePrivateNetworkRequestsFromUnknown)
+                 ::features::kBlockInsecurePrivateNetworkRequestsFromUnknown)
                  ? Policy::kBlock
                  : Policy::kAllow;
     case AddressSpace::kLocal:
@@ -150,7 +150,7 @@ Policy DerivePolicyForNonSecureContext(
       // This is controlled separately because private network websites face
       // additional hurdles compared to public websites. See crbug.com/1234044.
       return base::FeatureList::IsEnabled(
-                 features::kBlockInsecurePrivateNetworkRequestsFromPrivate)
+                 ::features::kBlockInsecurePrivateNetworkRequestsFromPrivate)
                  ? Policy::kBlock
                  : Policy::kWarn;
     case AddressSpace::kPublic:
@@ -163,7 +163,7 @@ Policy DerivePolicyForNonSecureContext(
       // are never considered private network requests - they cannot target
       // more-private address spaces.
       return base::FeatureList::IsEnabled(
-                 features::kBlockInsecurePrivateNetworkRequests)
+                 ::features::kBlockInsecurePrivateNetworkRequests)
                  ? Policy::kBlock
                  : Policy::kWarn;
   }
@@ -186,12 +186,12 @@ Policy DerivePolicyForSecureContext(AddressSpace ip_address_space,
   }
 
   if (base::FeatureList::IsEnabled(
-          features::kPrivateNetworkAccessRespectPreflightResults)) {
+          ::features::kPrivateNetworkAccessRespectPreflightResults)) {
     return Policy::kPreflightBlock;
   }
 
   if (base::FeatureList::IsEnabled(
-          features::kPrivateNetworkAccessSendPreflights)) {
+          ::features::kPrivateNetworkAccessSendPreflights)) {
     return Policy::kPreflightWarn;
   }
 

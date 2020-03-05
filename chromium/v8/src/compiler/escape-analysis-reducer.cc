@@ -35,8 +35,8 @@ Reduction EscapeAnalysisReducer::ReplaceNode(Node* original,
     RelaxEffectsAndControls(original);
     return Replace(replacement);
   }
-  Type const replacement_type = NodeProperties::GetType(replacement);
-  Type const original_type = NodeProperties::GetType(original);
+  compiler::Type const replacement_type = NodeProperties::GetType(replacement);
+  compiler::Type const original_type = NodeProperties::GetType(original);
   if (replacement_type.Is(original_type)) {
     RelaxEffectsAndControls(original);
     return Replace(replacement);
@@ -54,7 +54,7 @@ Reduction EscapeAnalysisReducer::ReplaceNode(Node* original,
   original->AppendInput(jsgraph()->zone(), control);
   NodeProperties::SetType(
       original,
-      Type::Intersect(original_type, replacement_type, jsgraph()->zone()));
+      compiler::Type::Intersect(original_type, replacement_type, jsgraph()->zone()));
   NodeProperties::ChangeOp(original,
                            jsgraph()->common()->TypeGuard(original_type));
   ReplaceWithValue(original, original, original, control);
@@ -66,7 +66,7 @@ Node* EscapeAnalysisReducer::ObjectIdNode(const VirtualObject* vobject) {
   if (id >= object_id_cache_.size()) object_id_cache_.resize(id + 1);
   if (!object_id_cache_[id]) {
     Node* node = jsgraph()->graph()->NewNode(jsgraph()->common()->ObjectId(id));
-    NodeProperties::SetType(node, Type::Object());
+    NodeProperties::SetType(node, compiler::Type::Object());
     object_id_cache_[id] = node;
   }
   return object_id_cache_[id];
@@ -153,12 +153,12 @@ Node* EscapeAnalysisReducer::ReduceDeoptState(Node* node, Node* effect,
     // This input order is important to match the DFS traversal used in the
     // instruction selector. Otherwise, the instruction selector might find a
     // duplicate node before the original one.
-    for (int input_id : {FrameState::kFrameStateOuterStateInput,
-                         FrameState::kFrameStateFunctionInput,
-                         FrameState::kFrameStateParametersInput,
-                         FrameState::kFrameStateContextInput,
-                         FrameState::kFrameStateLocalsInput,
-                         FrameState::kFrameStateStackInput}) {
+    for (int input_id : {compiler::FrameState::kFrameStateOuterStateInput,
+                         compiler::FrameState::kFrameStateFunctionInput,
+                         compiler::FrameState::kFrameStateParametersInput,
+                         compiler::FrameState::kFrameStateContextInput,
+                         compiler::FrameState::kFrameStateLocalsInput,
+                         compiler::FrameState::kFrameStateStackInput}) {
       Node* input = node->InputAt(input_id);
       new_node.ReplaceInput(ReduceDeoptState(input, effect, deduplicator),
                             input_id);
@@ -239,7 +239,7 @@ void EscapeAnalysisReducer::Finalize() {
             arguments_length_state = jsgraph()->graph()->NewNode(
                 jsgraph()->common()->ArgumentsLengthState());
             NodeProperties::SetType(arguments_length_state,
-                                    Type::OtherInternal());
+                                    compiler::Type::OtherInternal());
           }
           edge.UpdateTo(arguments_length_state);
           break;
@@ -289,7 +289,7 @@ void EscapeAnalysisReducer::Finalize() {
     if (!escaping_use) {
       Node* arguments_elements_state = jsgraph()->graph()->NewNode(
           jsgraph()->common()->ArgumentsElementsState(type));
-      NodeProperties::SetType(arguments_elements_state, Type::OtherInternal());
+      NodeProperties::SetType(arguments_elements_state, compiler::Type::OtherInternal());
       ReplaceWithValue(node, arguments_elements_state);
 
       for (Node* load : loads) {
@@ -300,21 +300,21 @@ void EscapeAnalysisReducer::Finalize() {
                 jsgraph()->ConstantNoHole(params.formal_parameter_count());
             NodeProperties::SetType(
                 formal_parameter_count,
-                Type::Constant(params.formal_parameter_count(),
+                compiler::Type::Constant(params.formal_parameter_count(),
                                jsgraph()->graph()->zone()));
             Node* offset_to_first_elem = jsgraph()->ConstantNoHole(
                 CommonFrameConstants::kFixedSlotCountAboveFp);
             if (!NodeProperties::IsTyped(offset_to_first_elem)) {
               NodeProperties::SetType(
                   offset_to_first_elem,
-                  Type::Constant(CommonFrameConstants::kFixedSlotCountAboveFp,
+                  compiler::Type::Constant(CommonFrameConstants::kFixedSlotCountAboveFp,
                                  jsgraph()->graph()->zone()));
             }
 
             Node* offset = jsgraph()->graph()->NewNode(
                 jsgraph()->simplified()->NumberAdd(), index,
                 offset_to_first_elem);
-            Type offset_type = op_typer.NumberAdd(
+            compiler::Type offset_type = op_typer.NumberAdd(
                 NodeProperties::GetType(index),
                 NodeProperties::GetType(offset_to_first_elem));
             NodeProperties::SetType(offset, offset_type);
@@ -331,7 +331,7 @@ void EscapeAnalysisReducer::Finalize() {
             }
             Node* frame = jsgraph()->graph()->NewNode(
                 jsgraph()->machine()->LoadFramePointer());
-            NodeProperties::SetType(frame, Type::ExternalPointer());
+            NodeProperties::SetType(frame, compiler::Type::ExternalPointer());
             NodeProperties::ReplaceValueInput(load, frame, 0);
             NodeProperties::ReplaceValueInput(load, offset, 1);
             NodeProperties::ChangeOp(
@@ -364,7 +364,7 @@ Node* NodeHashCache::Query(Node* node) {
 
 NodeHashCache::Constructor::Constructor(NodeHashCache* cache,
                                         const Operator* op, int input_count,
-                                        Node** inputs, Type type)
+                                        Node** inputs, compiler::Type type)
     : node_cache_(cache), from_(nullptr) {
   if (!node_cache_->temp_nodes_.empty()) {
     tmp_ = node_cache_->temp_nodes_.back();

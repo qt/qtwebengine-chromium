@@ -53,9 +53,9 @@ AdAuctionResultMetrics::~AdAuctionResultMetrics() {
 
 bool AdAuctionResultMetrics::ShouldRunAuction() {
   num_requested_auctions_++;
-  if (!base::FeatureList::IsEnabled(features::kFledgeLimitNumAuctions))
+  if (!base::FeatureList::IsEnabled(::features::kFledgeLimitNumAuctions))
     return true;
-  if (num_requested_auctions_ > features::kFledgeLimitNumAuctionsParam.Get()) {
+  if (num_requested_auctions_ > ::features::kFledgeLimitNumAuctionsParam.Get()) {
     num_auctions_not_run_due_to_auction_limit_++;
     return false;
   }

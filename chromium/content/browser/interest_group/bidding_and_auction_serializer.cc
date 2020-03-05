@@ -45,7 +45,7 @@ namespace content {
 
 namespace {
 
-const size_t kFramingHeaderSize = 5;       // bytes
+const size_t kFramingHeaderSizeBAAS = 5;   // bytes
 const size_t kOhttpEncIdSize = 7;          // bytes
 const size_t kOhttpSharedSecretSize = 48;  // bytes
 const size_t kOhttpHeaderSize = kOhttpEncIdSize + kOhttpSharedSecretSize;
@@ -200,7 +200,7 @@ base::CheckedNumeric<size_t> TaggedMapLength(
 }
 
 size_t GetFramingSize() {
-  return kFramingHeaderSize + kOhttpHeaderSize + 1;
+  return kFramingHeaderSizeBAAS + kOhttpHeaderSize + 1;
 }
 
 ValueAndSize SerializeAds(const std::vector<blink::InterestGroup::Ad>& ads,
@@ -1196,13 +1196,13 @@ BiddingAndAuctionSerializer::BuildRequestFromMessage(const url::Origin& seller,
     desired_size = config->request_size.value();
   }
   base::CheckedNumeric<size_t> padded_size =
-      desired_size - framing_size + kFramingHeaderSize;
+      desired_size - framing_size + kFramingHeaderSizeBAAS;
   if (!padded_size.IsValid()) {
     DLOG(ERROR) << "padded_size is invalid";
     return std::nullopt;
   }
   CHECK_GE(static_cast<size_t>(padded_size.ValueOrDie()),
-           maybe_msg->size() + kFramingHeaderSize);
+           maybe_msg->size() + kFramingHeaderSizeBAAS);
 
   std::vector<uint8_t> request(padded_size.ValueOrDie());
   base::SpanWriter<uint8_t> span_writer(request);

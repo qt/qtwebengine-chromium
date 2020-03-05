@@ -31,7 +31,7 @@
 namespace content {
 namespace {
 
-BrowserContext* BrowserContextFromFrameTreeNodeId(
+BrowserContext* BrowserContextFromFrameTreeNodeIdPULI(
     FrameTreeNodeId frame_tree_node_id) {
   WebContents* web_content =
       WebContents::FromFrameTreeNodeId(frame_tree_node_id);
@@ -76,7 +76,7 @@ PrefetchURLLoaderInterceptor::PrefetchURLLoaderInterceptor(
       serving_page_metrics_container_(
           std::move(serving_page_metrics_container)) {
   if (!features::IsPrefetchServiceWorkerEnabled(
-          BrowserContextFromFrameTreeNodeId(frame_tree_node_id_))) {
+          BrowserContextFromFrameTreeNodeIdPULI(frame_tree_node_id_))) {
     CHECK_EQ(expected_service_worker_state_,
              PrefetchServiceWorkerState::kDisallowed);
   }
@@ -292,7 +292,7 @@ void PrefetchURLLoaderInterceptor::OnGetPrefetchComplete(
                   std::move(single_request_url_loader_factory),
                   network::mojom::kBrowserProcessId),
               url_loader_factory::ContentClientParams(
-                  BrowserContextFromFrameTreeNodeId(frame_tree_node_id_),
+                  BrowserContextFromFrameTreeNodeIdPULI(frame_tree_node_id_),
                   render_frame_host,
                   render_frame_host->GetProcess()->GetDeprecatedID(),
                   url::Origin(), net::IsolationInfo(),

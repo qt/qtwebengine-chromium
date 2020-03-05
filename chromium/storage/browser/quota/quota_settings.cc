@@ -26,7 +26,7 @@ namespace storage {
 
 namespace {
 
-const int64_t kMBytes = 1024 * 1024;
+const int64_t _kMBytes = 1024 * 1024;
 const int kRandomizedPercentage = 10;
 const double kDefaultPerStorageKeyRatio = 0.75;
 const double kIncognitoQuotaRatioLowerBound = 0.15;
@@ -113,7 +113,7 @@ std::optional<QuotaSettings> CalculateNominalDynamicSettings(
   // SessionOnly (or ephemeral) origins are allotted a fraction of what
   // normal origins are provided, and the amount is capped to a hard limit.
   const double kSessionOnlyStorageKeyQuotaRatio = 0.1;  // 10%
-  const int64_t kMaxSessionOnlyStorageKeyQuota = 300 * kMBytes;
+  const int64_t kMaxSessionOnlyStorageKeyQuota = 300 * _kMBytes;
 
   QuotaSettings settings;
 

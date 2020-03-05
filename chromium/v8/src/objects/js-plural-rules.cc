@@ -224,7 +224,7 @@ MaybeDirectHandle<String> JSPluralRules::ResolvePluralRange(
 
 namespace {
 
-void CreateDataPropertyForOptions(Isolate* isolate,
+void CreateDataPropertyForOptions2(Isolate* isolate,
                                   DirectHandle<JSObject> options,
                                   DirectHandle<Object> value, const char* key) {
   DirectHandle<String> key_str =
@@ -238,11 +238,11 @@ void CreateDataPropertyForOptions(Isolate* isolate,
   USE(maybe);
 }
 
-void CreateDataPropertyForOptions(Isolate* isolate,
+void CreateDataPropertyForOptions2(Isolate* isolate,
                                   DirectHandle<JSObject> options, int value,
                                   const char* key) {
   DirectHandle<Smi> value_smi(Smi::FromInt(value), isolate);
-  CreateDataPropertyForOptions(isolate, options, value_smi, key);
+  CreateDataPropertyForOptions2(isolate, options, value_smi, key);
 }
 
 }  // namespace
@@ -253,9 +253,9 @@ DirectHandle<JSObject> JSPluralRules::ResolvedOptions(
       isolate->factory()->NewJSObject(isolate->object_function());
 
   DirectHandle<String> locale_value(plural_rules->locale(), isolate);
-  CreateDataPropertyForOptions(isolate, options, locale_value, "locale");
+  CreateDataPropertyForOptions2(isolate, options, locale_value, "locale");
 
-  CreateDataPropertyForOptions(isolate, options,
+  CreateDataPropertyForOptions2(isolate, options,
                                plural_rules->TypeAsString(isolate), "type");
 
   UErrorCode status = U_ZERO_ERROR;
@@ -264,22 +264,22 @@ DirectHandle<JSObject> JSPluralRules::ResolvedOptions(
   icu::UnicodeString skeleton = icu_number_formatter->toSkeleton(status);
   DCHECK(U_SUCCESS(status));
 
-  CreateDataPropertyForOptions(
+  CreateDataPropertyForOptions2(
       isolate, options,
       JSNumberFormat::MinimumIntegerDigitsFromSkeleton(skeleton),
       "minimumIntegerDigits");
   int32_t min = 0, max = 0;
 
   if (JSNumberFormat::SignificantDigitsFromSkeleton(skeleton, &min, &max)) {
-    CreateDataPropertyForOptions(isolate, options, min,
+    CreateDataPropertyForOptions2(isolate, options, min,
                                  "minimumSignificantDigits");
-    CreateDataPropertyForOptions(isolate, options, max,
+    CreateDataPropertyForOptions2(isolate, options, max,
                                  "maximumSignificantDigits");
   } else {
     JSNumberFormat::FractionDigitsFromSkeleton(skeleton, &min, &max);
-    CreateDataPropertyForOptions(isolate, options, min,
+    CreateDataPropertyForOptions2(isolate, options, min,
                                  "minimumFractionDigits");
-    CreateDataPropertyForOptions(isolate, options, max,
+    CreateDataPropertyForOptions2(isolate, options, max,
                                  "maximumFractionDigits");
   }
 
@@ -323,7 +323,7 @@ DirectHandle<JSObject> JSPluralRules::ResolvedOptions(
   // CreateArrayFromList(pluralCategories)).
   DirectHandle<JSArray> plural_categories_value =
       factory->NewJSArrayWithElements(plural_categories);
-  CreateDataPropertyForOptions(isolate, options, plural_categories_value,
+  CreateDataPropertyForOptions2(isolate, options, plural_categories_value,
                                "pluralCategories");
 
   CHECK(JSReceiver::CreateDataProperty(

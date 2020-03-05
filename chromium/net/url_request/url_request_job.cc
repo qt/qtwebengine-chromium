@@ -51,7 +51,7 @@ base::Value::Dict SourceStreamSetParams(SourceStream* source_stream) {
   return event_params;
 }
 
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunnerURJ(
     net::RequestPriority priority) {
   if (features::kNetTaskSchedulerURLRequestJob.Get()) {
     return net::GetTaskRunner(priority);
@@ -601,7 +601,7 @@ void URLRequestJob::OnDone(int net_error, bool notify_done) {
   if (notify_done) {
     // Complete this notification later.  This prevents us from re-entering the
     // delegate if we're done because of a synchronous call.
-    TaskRunner(request_->priority())
+    TaskRunnerURJ(request_->priority())
         ->PostTask(FROM_HERE, base::BindOnce(&URLRequestJob::NotifyDone,
                                              weak_factory_.GetWeakPtr()));
   }

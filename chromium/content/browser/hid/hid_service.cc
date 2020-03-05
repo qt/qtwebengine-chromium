@@ -29,17 +29,17 @@
 namespace content {
 
 // Deletes the HidService when the connected document is destroyed.
-class DocumentHelper
+class DocumentHelperHS
     : public content::DocumentService<blink::mojom::HidService> {
  public:
-  DocumentHelper(std::unique_ptr<HidService> parent,
+  DocumentHelperHS(std::unique_ptr<HidService> parent,
                  RenderFrameHost& render_frame_host,
                  mojo::PendingReceiver<blink::mojom::HidService> receiver)
       : DocumentService(render_frame_host, std::move(receiver)),
         parent_(std::move(parent)) {
     DCHECK(parent_);
   }
-  ~DocumentHelper() override = default;
+  ~DocumentHelperHS() override = default;
 
   // blink::mojom::HidService:
   void RegisterClient(
@@ -173,8 +173,10 @@ void HidService::Create(
   // `render_frame_host` and destroys the HidService when the Mojo connection is
   // disconnected, RenderFrameHost is deleted, or the RenderFrameHost commits a
   // cross-document navigation. It forwards its Mojo interface to HidService.
-  new DocumentHelper(std::make_unique<HidService>(render_frame_host),
+  auto a =
+  std::make_unique<DocumentHelperHS>(std::make_unique<HidService>(render_frame_host),
                      *render_frame_host, std::move(receiver));
+  a.release();
 }
 
 // static

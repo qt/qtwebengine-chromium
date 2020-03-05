@@ -712,6 +712,8 @@ void MaglevAssembler::TryMigrateInstanceAndMarkMapAsMigrationTarget(
   save_register_state.DefineSafepoint();
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

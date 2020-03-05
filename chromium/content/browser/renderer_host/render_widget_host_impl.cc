@@ -2115,7 +2115,7 @@ RenderProcessHostPriorityClient::Priority RenderWidgetHostImpl::GetPriority() {
 #endif
   };
   bool should_contribute = false;
-  if (base::FeatureList::IsEnabled(features::kSubframePriorityContribution)) {
+  if (base::FeatureList::IsEnabled(::features::kSubframePriorityContribution)) {
     should_contribute = should_contribute_priority_to_process_;
     if (owner_delegate_ && !owner_delegate_->IsMainFrameActive()) {
       // If this RenderWidgetHost is owned by a RenderViewHost which does not
@@ -2180,7 +2180,7 @@ void RenderWidgetHostImpl::GetSnapshotFromBrowser(
   if (from_surface) {
     pending_surface_browser_snapshots_.insert(
         std::make_pair(snapshot_id, std::move(callback)));
-    if (base::FeatureList::IsEnabled(features::kCDPScreenshotNewSurface)) {
+    if (base::FeatureList::IsEnabled(::features::kCDPScreenshotNewSurface)) {
       // 1. Force content redraw in the renderer.
       blink_widget_->ForceRedraw(base::DoNothing());
       // 2. Force a repaint to ensure that surface is updated.

@@ -19,7 +19,7 @@ namespace viz {
 
 namespace {
 
-constexpr DXGI_FORMAT kDXGISwapChainFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+constexpr DXGI_FORMAT kDXGISwapChainFormat_ = DXGI_FORMAT_B8G8R8A8_UNORM;
 
 D3D11_BOX ToD3D11Box(const gfx::Rect& gfx_rect) {
   D3D11_BOX d3d11_box = {.left = static_cast<UINT>(gfx_rect.x()),
@@ -92,7 +92,7 @@ bool SoftwareOutputDeviceWinSwapChain::ResizeDelegated(
 
     HRESULT hr = dxgi_swapchain_->ResizeBuffers(2, viewport_pixel_size.width(),
                                                 viewport_pixel_size.height(),
-                                                kDXGISwapChainFormat, 0);
+                                                kDXGISwapChainFormat_, 0);
     if (FAILED(hr)) {
       // If ResizeBuffers fails, the swapchain and window sizes will be out of
       // sync, causing unexpected behavior such as permanent gutters or
@@ -154,7 +154,7 @@ bool SoftwareOutputDeviceWinSwapChain::ResizeDelegated(
     DXGI_SWAP_CHAIN_DESC1 dxgi_swapchain_desc = {
         .Width = static_cast<UINT>(viewport_pixel_size.width()),
         .Height = static_cast<UINT>(viewport_pixel_size.height()),
-        .Format = kDXGISwapChainFormat,
+        .Format = kDXGISwapChainFormat_,
         .Stereo = FALSE,
         .SampleDesc = {.Count = 1, .Quality = 0},
         .BufferUsage = 0,

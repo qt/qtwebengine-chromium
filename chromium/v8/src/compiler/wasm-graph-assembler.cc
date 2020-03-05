@@ -133,7 +133,7 @@ Node* WasmGraphAssembler::Allocate(int size) {
 
 Node* WasmGraphAssembler::Allocate(Node* size) {
   return AddNode(graph()->NewNode(
-      simplified_.AllocateRaw(Type::Any(), AllocationType::kYoung), size,
+      simplified_.AllocateRaw(compiler::Type::Any(), AllocationType::kYoung), size,
       effect(), control()));
 }
 

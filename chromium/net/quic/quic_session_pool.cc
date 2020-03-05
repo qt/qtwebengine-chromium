@@ -280,7 +280,7 @@ class ServerIdOriginFilter
   const base::RepeatingCallback<bool(const GURL&)> origin_filter_;
 };
 
-std::set<std::string> HostsFromOrigins(std::set<HostPortPair> origins) {
+std::set<std::string> HostsFromOriginsQSP(std::set<HostPortPair> origins) {
   std::set<std::string> hosts;
   for (const auto& origin : origins) {
     hosts.insert(origin.host());
@@ -2371,7 +2371,7 @@ QuicSessionPool::CreateCryptoConfigHandle(QuicCryptoClientConfigKey key) {
       std::make_unique<QuicCryptoClientConfigOwner>(
           std::make_unique<ProofVerifierChromium>(
               cert_verifier_, transport_security_state_, sct_auditing_delegate_,
-              HostsFromOrigins(params_.origins_to_force_quic_on),
+              HostsFromOriginsQSP(params_.origins_to_force_quic_on),
               key.network_anonymization_key),
           std::make_unique<quic::QuicClientSessionCache>(), this);
 

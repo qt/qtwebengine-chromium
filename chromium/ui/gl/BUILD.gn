@@ -157,6 +157,10 @@ jumbo_component("gl") {
     "trace_util.h",
   ]
 
+  jumbo_excluded_sources = [
+    "presenter.cc",
+  ]
+
   configs += [
     "//build/config/compiler:wexit_time_destructors",
     "//build/config/compiler:wglobal_constructors",
@@ -197,6 +201,10 @@ jumbo_component("gl") {
     sources += [
       "gl_angle_util_vulkan.cc",
       "gl_angle_util_vulkan.h",
+    ]
+
+    jumbo_excluded_sources += [
+      "gl_angle_util_vulkan.cc",
     ]
   }
 

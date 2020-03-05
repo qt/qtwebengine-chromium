@@ -41,9 +41,9 @@ constexpr base::TimeDelta kShortVisitMaxDuration = base::Seconds(10);
 
 // State associated with navigations that BtmShortVisitObserver needs to be able
 // to discard if a navigation doesn't commit.
-class NavigationState : public NavigationHandleUserData<NavigationState> {
+class NavigationStateBSVO : public NavigationHandleUserData<NavigationStateBSVO> {
  public:
-  NavigationState(NavigationHandle& navigation_handle, base::Time started_at)
+  NavigationStateBSVO(NavigationHandle& navigation_handle, base::Time started_at)
       : started_at_(started_at) {}
 
   base::Time started_at() const { return started_at_; }
@@ -60,7 +60,7 @@ class NavigationState : public NavigationHandleUserData<NavigationState> {
   NAVIGATION_HANDLE_USER_DATA_KEY_DECL();
 };
 
-NAVIGATION_HANDLE_USER_DATA_KEY_IMPL(NavigationState);
+NAVIGATION_HANDLE_USER_DATA_KEY_IMPL(NavigationStateBSVO);
 
 // Returns the eTLD+1 of `url` (or the whole hostname if no eTLD is detected).
 std::string GetSite(const GURL& url) {
@@ -99,7 +99,7 @@ void BtmShortVisitObserver::DidStartNavigation(
   }
 
   // Record the start time of the navigation.
-  NavigationState::CreateForNavigationHandle(*navigation_handle, clock_->Now());
+  NavigationStateBSVO::CreateForNavigationHandle(*navigation_handle, clock_->Now());
 }
 
 namespace {
@@ -257,8 +257,8 @@ void BtmShortVisitObserver::DidFinishNavigation(
     }
   }
   const std::string visit_site = GetSite(visit_url);
-  NavigationState* const nav_state =
-      NavigationState::GetForNavigationHandle(*navigation_handle);
+  NavigationStateBSVO* const nav_state =
+      NavigationStateBSVO::GetForNavigationHandle(*navigation_handle);
 
   if (nav_state && prev_site_.has_value()) {
     const base::TimeDelta visit_duration =
@@ -384,8 +384,8 @@ void BtmShortVisitObserver::OnCookiesAccessed(
     return;
   }
 
-  if (NavigationState* nav_state =
-          NavigationState::GetForNavigationHandle(*navigation_handle)) {
+  if (NavigationStateBSVO* nav_state =
+          NavigationStateBSVO::GetForNavigationHandle(*navigation_handle)) {
     nav_state->RecordCookieAccess(details.url);
   }
 }

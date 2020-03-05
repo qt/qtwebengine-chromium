@@ -189,7 +189,7 @@ const base::FilePath::CharType kDatabasePath[] =
 // Version 35 adds a cache of k-anon hashes previously retrieved from the
 //  k-anonymity server with a TTL of the QueryInterval.
 
-const int kCurrentVersionNumber = 35;
+const int kCurrentVersionNumberIGS = 35;
 
 // Earliest version of the code which can use a |kCurrentVersionNumber| database
 // without failing. This is used to determine if an upgraded version of the
@@ -204,7 +204,7 @@ const int kCompatibleVersionNumber = 33;
 
 // Latest version of the database that cannot be upgraded to
 // |kCurrentVersionNumber| without razing the database.
-const int kDeprecatedVersionNumber = 5;
+const int kDeprecatedVersionNumberIGS = 5;
 
 // Truncates `in` down to the hour.
 base::Time TruncateToHour(base::Time in) {
@@ -3322,7 +3322,7 @@ bool UpgradeDB(sql::Database& db,
       if (!UpgradeV34SchemaToV35(db, meta_table)) {
         return false;
       }
-      if (!meta_table.SetVersionNumber(kCurrentVersionNumber)) {
+      if (!meta_table.SetVersionNumber(kCurrentVersionNumberIGS)) {
         return false;
       }
   }
@@ -6708,7 +6708,7 @@ base::FilePath DBPath(const base::FilePath& base) {
 
 sql::DatabaseOptions GetDatabaseOptions() {
   return sql::DatabaseOptions().set_wal_mode(base::FeatureList::IsEnabled(
-      features::kFledgeEnableWALForInterestGroupStorage));
+      ::features::kFledgeEnableWALForInterestGroupStorage));
 }
 
 void ReportCreateSchemaResult(
@@ -6757,7 +6757,7 @@ void ReportUpgradeDBResult(bool upgrade_succeeded, int db_version) {
     base::UmaHistogramEnumeration(
         "Storage.InterestGroup.InitializationResult",
         InterestGroupStorageInitializationResult::kSuccessUpgraded);
-    static_assert(kCurrentVersionNumber <= 100,
+    static_assert(kCurrentVersionNumberIGS <= 100,
                   "UmaHistogramExactLinear() only supports 100 buckets -- a "
                   "new histogram is needed for larger versions.");
     base::UmaHistogramExactLinear(
@@ -6765,7 +6765,7 @@ void ReportUpgradeDBResult(bool upgrade_succeeded, int db_version) {
         /*exclusive_max=*/101);
     base::UmaHistogramExactLinear(
         "Storage.InterestGroup.UpgradeSucceededEndVersion",
-        kCurrentVersionNumber,
+        kCurrentVersionNumberIGS,
         /*exclusive_max=*/101);
   } else {
     base::UmaHistogramEnumeration(
@@ -6775,7 +6775,7 @@ void ReportUpgradeDBResult(bool upgrade_succeeded, int db_version) {
         "Storage.InterestGroup.UpgradeFailedStartVersion", db_version,
         /*exclusive_max=*/101);
     base::UmaHistogramExactLinear(
-        "Storage.InterestGroup.UpgradeFailedEndVersion", kCurrentVersionNumber,
+        "Storage.InterestGroup.UpgradeFailedEndVersion", kCurrentVersionNumberIGS,
         /*exclusive_max=*/101);
   }
 }
@@ -6894,8 +6894,8 @@ bool InterestGroupStorage::InitializeSchema() {
 
   sql::RazeIfIncompatibleResult raze_if_incompatible_result =
       sql::MetaTable::RazeIfIncompatible(
-          db_.get(), /*lowest_supported_version=*/kDeprecatedVersionNumber + 1,
-          kCurrentVersionNumber);
+          db_.get(), /*lowest_supported_version=*/kDeprecatedVersionNumberIGS + 1,
+          kCurrentVersionNumberIGS);
   if (raze_if_incompatible_result == sql::RazeIfIncompatibleResult::kFailed) {
     base::UmaHistogramEnumeration(
         "Storage.InterestGroup.InitializationResult",
@@ -6922,7 +6922,7 @@ bool InterestGroupStorage::InitializeSchema() {
     }
   }
   const bool new_db = !has_metatable;
-  if (!meta_table.Init(db_.get(), kCurrentVersionNumber,
+  if (!meta_table.Init(db_.get(), kCurrentVersionNumberIGS,
                        kCompatibleVersionNumber)) {
     base::UmaHistogramEnumeration(
         "Storage.InterestGroup.InitializationResult",
@@ -6941,7 +6941,7 @@ bool InterestGroupStorage::InitializeSchema() {
 
   const int db_version = meta_table.GetVersionNumber();
 
-  if (db_version >= kCurrentVersionNumber) {
+  if (db_version >= kCurrentVersionNumberIGS) {
     // Getting past RazeIfIncompatible implies that
     // kCurrentVersionNumber >= meta_table.GetCompatibleVersionNumber
     // So DB is either the current database version or a future version that is
@@ -7542,7 +7542,7 @@ base::Time InterestGroupStorage::GetLastMaintenanceTimeForTesting() const {
 }
 
 /* static */ int InterestGroupStorage::GetCurrentVersionNumberForTesting() {
-  return kCurrentVersionNumber;
+  return kCurrentVersionNumberIGS;
 }
 
 /*static */ std::unique_ptr<InterestGroupStorage>

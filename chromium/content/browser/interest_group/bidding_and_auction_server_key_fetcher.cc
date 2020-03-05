@@ -482,7 +482,7 @@ void BiddingAndAuctionServerKeyFetcher::FetchKeys(
 
   state.keyset.reset();
 
-  if (base::FeatureList::IsEnabled(features::kFledgeStoreBandAKeysInDB)) {
+  if (base::FeatureList::IsEnabled(::features::kFledgeStoreBandAKeysInDB)) {
     manager_->GetBiddingAndAuctionServerKeys(
         coordinator,
         base::BindOnce(
@@ -602,7 +602,7 @@ void BiddingAndAuctionServerKeyFetcher::OnParsedKeys(
 
   BiddingAndAuctionKeySet keyset(std::move(keys));
   base::Time expiration = base::Time::Now() + kKeyRequestInterval;
-  if (base::FeatureList::IsEnabled(features::kFledgeStoreBandAKeysInDB) &&
+  if (base::FeatureList::IsEnabled(::features::kFledgeStoreBandAKeysInDB) &&
       !fetcher_state_map_.at(coordinator).debug_override) {
     manager_->SetBiddingAndAuctionServerKeys(
         coordinator, keyset.AsBinaryProto(), expiration);

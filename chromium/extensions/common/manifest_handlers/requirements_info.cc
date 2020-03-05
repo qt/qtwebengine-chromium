@@ -17,7 +17,7 @@ namespace extensions {
 
 namespace errors = manifest_errors;
 
-using ManifestKeys = api::requirements::ManifestKeys;
+using ManifestKeysRI = api::requirements::ManifestKeys;
 
 RequirementsInfo::RequirementsInfo() = default;
 RequirementsInfo::~RequirementsInfo() = default;
@@ -26,7 +26,7 @@ RequirementsInfo::~RequirementsInfo() = default;
 const RequirementsInfo& RequirementsInfo::GetRequirements(
     const Extension* extension) {
   RequirementsInfo* info = static_cast<RequirementsInfo*>(
-      extension->GetManifestData(ManifestKeys::kRequirements));
+      extension->GetManifestData(ManifestKeysRI::kRequirements));
 
   // We should be guaranteed to have requirements, since they are parsed for all
   // extension types.
@@ -38,7 +38,7 @@ RequirementsHandler::RequirementsHandler() = default;
 RequirementsHandler::~RequirementsHandler() = default;
 
 base::span<const char* const> RequirementsHandler::Keys() const {
-  static constexpr const char* kKeys[] = {ManifestKeys::kRequirements};
+  static constexpr const char* kKeys[] = {ManifestKeysRI::kRequirements};
   return kKeys;
 }
 
@@ -47,15 +47,15 @@ bool RequirementsHandler::AlwaysParseForType(Manifest::Type type) const {
 }
 
 bool RequirementsHandler::Parse(Extension* extension, std::u16string* error) {
-  ManifestKeys manifest_keys;
-  if (!ManifestKeys::ParseFromDictionary(
+  ManifestKeysRI manifest_keys;
+  if (!ManifestKeysRI::ParseFromDictionary(
           extension->manifest()->available_values(), manifest_keys, *error)) {
     return false;
   }
 
   auto requirements_info = std::make_unique<RequirementsInfo>();
   if (!manifest_keys.requirements) {
-    extension->SetManifestData(ManifestKeys::kRequirements,
+    extension->SetManifestData(ManifestKeysRI::kRequirements,
                                std::move(requirements_info));
     return true;
   }
@@ -80,7 +80,7 @@ bool RequirementsHandler::Parse(Extension* extension, std::u16string* error) {
         requirements._3d->features, api::requirements::_3DFeature::kWebgl);
   }
 
-  extension->SetManifestData(ManifestKeys::kRequirements,
+  extension->SetManifestData(ManifestKeysRI::kRequirements,
                              std::move(requirements_info));
   return true;
 }

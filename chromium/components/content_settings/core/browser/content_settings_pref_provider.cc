@@ -65,7 +65,7 @@ constexpr char kObsoletePrivateNetworkChooserDataPref[] =
 // except via enterprise policy, so it is temporarily cleaned up here to revert
 // it to its default value.
 // TODO(https://crbug.com/367181093): clean this up.
-constexpr char kBug364820109AlreadyWorkedAroundPref[] =
+constexpr char kBug364820109AlreadyWorkedAroundPref2[] =
     "profile.did_work_around_bug_364820109_exceptions";
 #endif  // !BUILDFLAG(IS_IOS)
 
@@ -108,7 +108,7 @@ void PrefProvider::RegisterProfilePrefs(
   registry->RegisterDictionaryPref(kObsoletePrivateNetworkChooserDataPref);
 #if !BUILDFLAG(IS_IOS)
   // TODO(https://crbug.com/367181093): clean this up.
-  registry->RegisterBooleanPref(kBug364820109AlreadyWorkedAroundPref, false);
+  registry->RegisterBooleanPref(kBug364820109AlreadyWorkedAroundPref2, false);
 #endif  // !BUILDFLAG(IS_IOS)
 }
 
@@ -449,7 +449,7 @@ void PrefProvider::DiscardOrMigrateObsoletePreferences() {
 
 #if !BUILDFLAG(IS_IOS)
   // TODO(https://crbug.com/367181093): clean this up.
-  prefs_->ClearPref(kBug364820109AlreadyWorkedAroundPref);
+  prefs_->ClearPref(kBug364820109AlreadyWorkedAroundPref2);
 #endif  // !BUILDFLAG(IS_IOS)
 }
 

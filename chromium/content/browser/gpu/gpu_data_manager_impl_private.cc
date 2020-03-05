@@ -396,7 +396,7 @@ bool SoftwareGLAllowed() {
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
   return !command_line->HasSwitch(switches::kDisableSoftwareRasterizer) &&
-         features::IsAnySoftwareGLAllowed(command_line);
+         ::features::IsAnySoftwareGLAllowed(command_line);
 }
 
 // These values are logged to UMA. Entries should not be renumbered and numeric
@@ -528,7 +528,7 @@ void GpuDataManagerImplPrivate::InitializeGpuModes() {
     BUILDFLAG(IS_CHROMEOS)
     NOTREACHED() << "GPU acceleration is required on certain platforms!";
 #endif
-  } else if (features::IsSkiaGraphiteEnabled(command_line)) {
+  } else if (::features::IsSkiaGraphiteEnabled(command_line)) {
     // If Graphite is enabled, fall back to Ganesh/GL on platforms that do not
     // support software compositing or sometimes fail dawn initialization.
     // TODO(b/323953910): Eliminate this fallback on each platform once Graphite
@@ -546,7 +546,7 @@ void GpuDataManagerImplPrivate::InitializeGpuModes() {
 #else
     fallback_modes_.push_back(gpu::GpuMode::HARDWARE_GL);
     // Prefer Vulkan over GL if enabled.
-    if (features::IsUsingVulkan()) {
+    if (::features::IsUsingVulkan()) {
       fallback_modes_.push_back(gpu::GpuMode::HARDWARE_VULKAN);
     }
 #endif  // BUILDFLAG(IS_FUCHSIA)

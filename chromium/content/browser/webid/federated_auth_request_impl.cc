@@ -121,7 +121,7 @@ std::string GetTopFrameOriginForDisplay(const url::Origin& top_frame_origin) {
   return FormatOriginForDisplay(top_frame_origin);
 }
 
-bool IsFrameActive(RenderFrameHost* frame) {
+bool IsFrameActiveFARI(RenderFrameHost* frame) {
   return frame && frame->IsActive();
 }
 
@@ -1099,7 +1099,7 @@ void FederatedAuthRequestImpl::MaybeShowAccountsDialog() {
   // if the RenderFrameHost is hidden because the user does not seem interested
   // in the contents of the current page.
   if (idps_user_tried_to_signin_to_.empty()) {
-    bool is_active = IsFrameActive(render_frame_host().GetMainFrame());
+    bool is_active = IsFrameActiveFARI(render_frame_host().GetMainFrame());
     fedcm_metrics_->RecordWebContentsStatusUponReadyToShowDialog(
         IsFrameVisible(render_frame_host().GetMainFrame()), is_active);
 

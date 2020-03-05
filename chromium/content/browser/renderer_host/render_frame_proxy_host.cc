@@ -68,10 +68,10 @@ using RoutingIDFrameProxyMap =
 base::LazyInstance<RoutingIDFrameProxyMap>::DestructorAtExit
     g_routing_id_frame_proxy_map = LAZY_INSTANCE_INITIALIZER;
 
-using TokenFrameMap =
+using TokenFrameProxyMap =
     absl::flat_hash_map<blink::RemoteFrameToken, RenderFrameProxyHost*>;
-TokenFrameMap& GetTokenFrameProxyMap() {
-  static base::NoDestructor<TokenFrameMap> token_frame_proxy_map;
+TokenFrameProxyMap& GetTokenFrameProxyMap() {
+  static base::NoDestructor<TokenFrameProxyMap> token_frame_proxy_map;
   return *token_frame_proxy_map;
 }
 
@@ -104,7 +104,7 @@ RenderFrameProxyHost* RenderFrameProxyHost::FromFrameToken(
     int process_id,
     const blink::RemoteFrameToken& frame_token) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  TokenFrameMap* frames = &GetTokenFrameProxyMap();
+  TokenFrameProxyMap* frames = &GetTokenFrameProxyMap();
   auto it = frames->find(frame_token);
   // The check against |process_id| isn't strictly necessary, but represents
   // an extra level of protection against a renderer trying to force a frame
@@ -119,7 +119,7 @@ RenderFrameProxyHost* RenderFrameProxyHost::FromFrameToken(
 bool RenderFrameProxyHost::IsFrameTokenInUse(
     const blink::RemoteFrameToken& frame_token) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  TokenFrameMap* frames = &GetTokenFrameProxyMap();
+  TokenFrameProxyMap* frames = &GetTokenFrameProxyMap();
   return frames->find(frame_token) != frames->end();
 }
 
@@ -585,7 +585,7 @@ void RenderFrameProxyHost::RouteMessageEvent(
   // origins once rollout is complete.
   bool should_verify_source_origin =
       base::FeatureList::IsEnabled(
-          features::kAdditionalOpaqueOriginEnforcements) ||
+          ::features::kAdditionalOpaqueOriginEnforcements) ||
       source_origin_string != u"null";
   if (should_verify_source_origin) {
     auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();

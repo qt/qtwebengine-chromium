@@ -211,7 +211,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     DCHECK_NE(rep, MachineRepresentation::kIndirectPointer);
     AddNode(simplified()->StoreField(
                 FieldAccess(BaseTaggedness::kTaggedBase, offset,
-                            MaybeHandle<Name>(), OptionalMapRef(), Type::Any(),
+                            MaybeHandle<Name>(), OptionalMapRef(), compiler::Type::Any(),
                             MachineType::TypeForRepresentation(rep),
                             write_barrier, "OptimizedStoreField")),
             object, value);
@@ -223,7 +223,7 @@ class V8_EXPORT_PRIVATE RawMachineAssembler {
     DCHECK(write_barrier == WriteBarrierKind::kNoWriteBarrier ||
            write_barrier == WriteBarrierKind::kIndirectPointerWriteBarrier);
     FieldAccess access(BaseTaggedness::kTaggedBase, offset, MaybeHandle<Name>(),
-                       OptionalMapRef(), Type::Any(),
+                       OptionalMapRef(), compiler::Type::Any(),
                        MachineType::IndirectPointer(), write_barrier,
                        "OptimizedStoreIndirectPointerField");
     access.indirect_pointer_tag = tag;

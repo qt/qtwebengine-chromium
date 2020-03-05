@@ -22,7 +22,7 @@ namespace {
 
 constexpr char kTracingCategory[] = "cc,benchmark,input,input.scrolling";
 
-bool IsTracingEnabled() {
+bool IsTracingEnabled2() {
   bool enabled;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(kTracingCategory, &enabled);
   return enabled;
@@ -224,7 +224,7 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
     event_metrics->tracing_recorded();
   };
 
-  if (!IsTracingEnabled()) {
+  if (!IsTracingEnabled2()) {
     return;
   }
 

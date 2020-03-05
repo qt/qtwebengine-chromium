@@ -110,8 +110,8 @@ class JSInliner final : public AdvancedReducer {
   // TODO(victorgomes): This function is used to create 3 *quite* different
   // artificial frame states, we should perhaps split it into three different
   // functions.
-  FrameState CreateArtificialFrameState(
-      Node* node, FrameState outer_frame_state, int parameter_count,
+  compiler::FrameState CreateArtificialFrameState(
+      Node* node, compiler::FrameState outer_frame_state, int parameter_count,
       FrameStateType frame_state_type, SharedFunctionInfoRef shared,
       OptionalBytecodeArrayRef maybe_bytecode_array, Node* context = nullptr,
       Node* callee = nullptr);

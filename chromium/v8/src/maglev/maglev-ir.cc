@@ -8634,6 +8634,8 @@ RangeType ValueNode::GetRange() const {
   }
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

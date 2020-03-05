@@ -125,9 +125,9 @@ class Dependable : public ZoneObject {
 class VirtualObject : public Dependable {
  public:
   using Id = uint32_t;
-  using const_iterator = ZoneVector<Variable>::const_iterator;
+  using const_iterator = ZoneVector<compiler::Variable>::const_iterator;
   VirtualObject(VariableTracker* var_states, Id id, int size);
-  Maybe<Variable> FieldAt(int offset) const {
+  Maybe<compiler::Variable> FieldAt(int offset) const {
     CHECK(IsAligned(offset, kTaggedSize));
     CHECK(!HasEscaped());
     if (offset >= size()) {
@@ -135,13 +135,13 @@ class VirtualObject : public Dependable {
       // code. In this case, we have to mark the object as escaping to avoid
       // dead nodes in the graph. This is a workaround that should be removed
       // once we can handle dead nodes everywhere.
-      return Nothing<Variable>();
+      return Nothing<compiler::Variable>();
     }
     return Just(fields_.at(offset / kTaggedSize));
   }
-  Maybe<Variable> FieldAt(Maybe<int> maybe_offset) const {
+  Maybe<compiler::Variable> FieldAt(Maybe<int> maybe_offset) const {
     int offset;
-    if (!maybe_offset.To(&offset)) return Nothing<Variable>();
+    if (!maybe_offset.To(&offset)) return Nothing<compiler::Variable>();
     return FieldAt(offset);
   }
   Id id() const { return id_; }
@@ -156,7 +156,7 @@ class VirtualObject : public Dependable {
  private:
   bool escaped_ = false;
   Id id_;
-  ZoneVector<Variable> fields_;
+  ZoneVector<compiler::Variable> fields_;
 };
 
 class EscapeAnalysisResult {

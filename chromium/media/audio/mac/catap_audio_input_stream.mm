@@ -198,7 +198,7 @@ void ReportHostTimeStatus(int total_callbacks,
 
 // 0.0 is used to indicate that this device doesn't support setting the volume.
 // TODO(crbug.com/415953612): Is this okay, or do we need to support this?
-constexpr float kMaxVolume = 0.0;
+constexpr float kMaxVolumeCAIS = 0.0;
 
 CatapAudioInputStream::CatapAudioInputStream(
     std::unique_ptr<CatapApi> catap_api,
@@ -491,7 +491,7 @@ void CatapAudioInputStream::Close() {
 }
 
 double CatapAudioInputStream::GetMaxVolume() {
-  return kMaxVolume;
+  return kMaxVolumeCAIS;
 }
 
 void CatapAudioInputStream::SetVolume(double volume) {
@@ -499,7 +499,7 @@ void CatapAudioInputStream::SetVolume(double volume) {
 }
 
 double CatapAudioInputStream::GetVolume() {
-  return kMaxVolume;
+  return kMaxVolumeCAIS;
 }
 
 bool CatapAudioInputStream::IsMuted() {
@@ -538,7 +538,7 @@ void CatapAudioInputStream::OnCatapSample(
     CHECK_EQ(params_.frames_per_buffer(), frames);
     audio_bus_->FromInterleaved<Float32SampleTypeTraits>(data, frames);
 
-    sink_->OnData(audio_bus_.get(), capture_time, kMaxVolume, {});
+    sink_->OnData(audio_bus_.get(), capture_time, kMaxVolumeCAIS, {});
 
     capture_time += buffer_frames_duration_;
   }

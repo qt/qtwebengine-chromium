@@ -107,7 +107,7 @@ void BrowserUIThreadScheduler::OnTaskCompleted(
 void BrowserUIThreadScheduler::
     InstallPartitionAllocSchedulerLoopQuarantineTaskObserver() {
   if (base::FeatureList::IsEnabled(
-          features::
+          ::features::
               kPartitionAllocSchedulerLoopQuarantineTaskObserverForBrowserUIThread)) {
     task_queues_.AddTaskObserver(&scheduler_loop_quarantine_task_observer_);
   }

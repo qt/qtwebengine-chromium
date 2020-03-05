@@ -129,7 +129,7 @@ class CORE_EXPORT CSSMathFunctionValue : public CSSPrimitiveValue {
   //
   // See also TryTacticTransform.
   const CSSMathFunctionValue* TransformAnchors(
-      LogicalAxis,
+      blink::LogicalAxis,
       const TryTacticTransform&,
       const WritingDirectionMode&) const;
 

@@ -1670,12 +1670,12 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void pinsrq(XMMRegister dst, Register src, uint8_t imm8);
   void pinsrq(XMMRegister dst, Operand src, uint8_t imm8);
 
-  void roundss(XMMRegister dst, XMMRegister src, RoundingMode mode);
-  void roundss(XMMRegister dst, Operand src, RoundingMode mode);
-  void roundsd(XMMRegister dst, XMMRegister src, RoundingMode mode);
-  void roundsd(XMMRegister dst, Operand src, RoundingMode mode);
-  void roundps(XMMRegister dst, XMMRegister src, RoundingMode mode);
-  void roundpd(XMMRegister dst, XMMRegister src, RoundingMode mode);
+  void roundss(XMMRegister dst, XMMRegister src, v8::internal::RoundingMode mode);
+  void roundss(XMMRegister dst, Operand src, v8::internal::RoundingMode mode);
+  void roundsd(XMMRegister dst, XMMRegister src, v8::internal::RoundingMode mode);
+  void roundsd(XMMRegister dst, Operand src, v8::internal::RoundingMode mode);
+  void roundps(XMMRegister dst, XMMRegister src, v8::internal::RoundingMode mode);
+  void roundpd(XMMRegister dst, XMMRegister src, v8::internal::RoundingMode mode);
 
   void cmpps(XMMRegister dst, XMMRegister src, int8_t cmp);
   void cmpps(XMMRegister dst, Operand src, int8_t cmp);
@@ -1955,38 +1955,38 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
     vinstr(0x2d, idst, xmm0, src, kF2, k0F, kW0);
   }
   void vroundss(XMMRegister dst, XMMRegister src1, XMMRegister src2,
-                RoundingMode mode) {
+                v8::internal::RoundingMode mode) {
     vinstr(0x0a, dst, src1, src2, k66, k0F3A, kWIG);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }
   void vroundss(XMMRegister dst, XMMRegister src1, Operand src2,
-                RoundingMode mode) {
+                v8::internal::RoundingMode mode) {
     vinstr(0x0a, dst, src1, src2, k66, k0F3A, kWIG);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }
   void vroundsd(XMMRegister dst, XMMRegister src1, XMMRegister src2,
-                RoundingMode mode) {
+                v8::internal::RoundingMode mode) {
     vinstr(0x0b, dst, src1, src2, k66, k0F3A, kWIG);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }
   void vroundsd(XMMRegister dst, XMMRegister src1, Operand src2,
-                RoundingMode mode) {
+                v8::internal::RoundingMode mode) {
     vinstr(0x0b, dst, src1, src2, k66, k0F3A, kWIG);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }
-  void vroundps(XMMRegister dst, XMMRegister src, RoundingMode mode) {
+  void vroundps(XMMRegister dst, XMMRegister src, v8::internal::RoundingMode mode) {
     vinstr(0x08, dst, xmm0, src, k66, k0F3A, kWIG);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }
-  void vroundps(YMMRegister dst, YMMRegister src, RoundingMode mode) {
+  void vroundps(YMMRegister dst, YMMRegister src, v8::internal::RoundingMode mode) {
     vinstr(0x08, dst, ymm0, src, k66, k0F3A, kWIG, AVX);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }
-  void vroundpd(XMMRegister dst, XMMRegister src, RoundingMode mode) {
+  void vroundpd(XMMRegister dst, XMMRegister src, v8::internal::RoundingMode mode) {
     vinstr(0x09, dst, xmm0, src, k66, k0F3A, kWIG);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }
-  void vroundpd(YMMRegister dst, YMMRegister src, RoundingMode mode) {
+  void vroundpd(YMMRegister dst, YMMRegister src, v8::internal::RoundingMode mode) {
     vinstr(0x09, dst, ymm0, src, k66, k0F3A, kWIG, AVX);
     emit(static_cast<uint8_t>(mode) | 0x8);  // Mask precision exception.
   }

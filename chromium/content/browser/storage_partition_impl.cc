@@ -1443,9 +1443,9 @@ void StoragePartitionImpl::Initialize(
   // traffic labels should not be sent for off-the-record profiles, unless the
   // "enable_otr_profiles" feature parameter is true.
   if (base::FeatureList::IsEnabled(
-          features::kCookieDeprecationFacilitatedTesting) &&
+          ::features::kCookieDeprecationFacilitatedTesting) &&
       (!is_in_memory() ||
-       features::kCookieDeprecationFacilitatedTestingEnableOTRProfiles.Get())) {
+       ::features::kCookieDeprecationFacilitatedTestingEnableOTRProfiles.Get())) {
     cookie_deprecation_label_manager_ =
         std::make_unique<CookieDeprecationLabelManagerImpl>(browser_context_);
   }
@@ -3122,7 +3122,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
       // in executing the code. Note that the feature flag is only relevant
       // when perform_storage_cleanup is false.
       (!base::FeatureList::IsEnabled(
-           features::kDisablePartialStorageCleanupForGPUDiskCache) ||
+           ::features::kDisablePartialStorageCleanupForGPUDiskCache) ||
        perform_storage_cleanup)) {
     gpu::GpuDiskCacheFactory* gpu_cache_factory =
         GetGpuDiskCacheFactorySingleton();

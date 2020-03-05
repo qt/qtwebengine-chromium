@@ -18,8 +18,6 @@ namespace performance_manager {
 
 namespace {
 
-const char kDescriberName[] = "FrameNodeImpl";
-
 std::string ViewportIntersectionToString(
     ViewportIntersection viewport_intersection) {
   switch (viewport_intersection) {
@@ -51,7 +49,7 @@ FrameNodeImplDescriber::~FrameNodeImplDescriber() = default;
 
 void FrameNodeImplDescriber::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "FrameNodeImpl");
 }
 
 void FrameNodeImplDescriber::OnTakenFromGraph(Graph* graph) {

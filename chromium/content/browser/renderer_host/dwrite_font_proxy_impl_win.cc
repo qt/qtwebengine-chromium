@@ -455,7 +455,7 @@ void DWriteFontProxyImpl::MatchUniqueFont(
     MatchUniqueFontCallback callback) {
   TRACE_EVENT0("dwrite,fonts", "DWriteFontProxyImpl::MatchUniqueFont");
 
-  DCHECK(base::FeatureList::IsEnabled(features::kFontSrcLocalMatching));
+  DCHECK(base::FeatureList::IsEnabled(::features::kFontSrcLocalMatching));
   callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(callback),
                                                          base::File(), 0);
   InitializeDirectWrite();

@@ -758,7 +758,7 @@ LayoutUnit Baseline(const GridItemData& grid_item,
   const auto& [begin_set_index, end_set_index] =
       grid_item.SetIndices(track_direction);
 
-  return (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+  return (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
              ? track_collection.MajorBaseline(begin_set_index)
              : track_collection.MinorBaseline(end_set_index - 1);
 }
@@ -774,7 +774,7 @@ LayoutUnit GetExtraMarginForBaseline(const BoxStrut& margins,
       subgridded_item->SetIndices(track_collection.Direction());
 
   const LayoutUnit extra_margin =
-      (subgridded_item->BaselineGroup(track_direction) == BaselineGroup::kMajor)
+      (subgridded_item->BaselineGroup(track_direction) == BaselineGroupType::kMajor)
           ? track_collection.StartExtraMargin(begin_set_index)
           : track_collection.EndExtraMargin(end_set_index);
 
@@ -1283,7 +1283,7 @@ void GridLayoutAlgorithm::ComputeGridItemBaselines(
     // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
     const auto& [begin_set_index, end_set_index] =
         grid_item.SetIndices(track_direction);
-    if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+    if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
       track_collection.SetMajorBaseline(begin_set_index, baseline);
     } else {
       track_collection.SetMinorBaseline(end_set_index - 1, baseline);
@@ -2000,11 +2000,11 @@ ConstraintSpace GridLayoutAlgorithm::CreateConstraintSpaceForMeasure(
 
 namespace {
 
-class GapAccumulator {
+class GapGridAccumulator {
   STACK_ALLOCATED();
 
  public:
-  GapAccumulator() = default;
+  GapGridAccumulator() = default;
 
   void BuildGapIntersectionPoints(const GridLayoutData& layout_data) {
     const Vector<LayoutUnit> col_tracks =
@@ -2191,11 +2191,11 @@ void GridLayoutAlgorithm::PlaceGridItems(
       container_space.GetWritingDirection();
   auto next_subgrid_subtree = layout_subtree.FirstChild();
 
-  std::optional<GapAccumulator> gap_accumulator;
+  std::optional<GapGridAccumulator> gap_accumulator;
 
   if (RuntimeEnabledFeatures::CSSGapDecorationEnabled() &&
       Style().HasGapRule()) {
-    gap_accumulator = GapAccumulator();
+    gap_accumulator = GapGridAccumulator();
     gap_accumulator->BuildGapIntersectionPoints(layout_data);
   }
 
@@ -2235,7 +2235,7 @@ void GridLayoutAlgorithm::PlaceGridItems(
       const LayoutUnit baseline_delta =
           Baseline(grid_item, layout_data, track_direction) -
           GetLogicalBaseline(grid_item, baseline_fragment, track_direction);
-      if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+      if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
         return baseline_delta;
 
       // BaselineGroup::kMinor

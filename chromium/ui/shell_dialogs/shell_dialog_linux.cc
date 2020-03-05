@@ -36,7 +36,7 @@ enum FileDialogChoice {
 #endif
 };
 
-FileDialogChoice dialog_choice_ = kUnknown;
+FileDialogChoice dialog_choice_ = FileDialogChoice::kUnknown;
 
 FileDialogChoice GetFileDialogChoice() {
 #if BUILDFLAG(USE_DBUS)
@@ -53,7 +53,7 @@ FileDialogChoice GetFileDialogChoice() {
 SelectFileDialog* CreateSelectFileDialog(
     SelectFileDialog::Listener* listener,
     std::unique_ptr<SelectFilePolicy> policy) {
-  if (dialog_choice_ == kUnknown)
+  if (dialog_choice_ == FileDialogChoice::kUnknown)
     dialog_choice_ = GetFileDialogChoice();
 
   const LinuxUi* linux_ui = LinuxUi::instance();

@@ -34,14 +34,6 @@ namespace {
 using ::IPC::ChannelMojo;
 using ::IPC::ChannelProxy;
 using ::IPC::Listener;
-using ::mojo::AssociatedReceiver;
-using ::mojo::AssociatedRemote;
-using ::mojo::PendingAssociatedReceiver;
-using ::mojo::PendingAssociatedRemote;
-using ::mojo::PendingReceiver;
-using ::mojo::PendingRemote;
-using ::mojo::Receiver;
-using ::mojo::Remote;
 
 static constexpr char kAgentSchedulingGroupHostDataKey[] =
     "AgentSchedulingGroupHostUserDataKey";
@@ -67,10 +59,10 @@ struct AgentSchedulingGroupHostUserData : public base::SupportsUserData::Data {
 #endif
 };
 
-static features::MBIMode GetMBIMode() {
-  return base::FeatureList::IsEnabled(features::kMBIMode)
-             ? features::kMBIModeParam.Get()
-             : features::MBIMode::kLegacy;
+static ::features::MBIMode GetMBIMode() {
+  return base::FeatureList::IsEnabled(::features::kMBIMode)
+             ? ::features::kMBIModeParam.Get()
+             : ::features::MBIMode::kLegacy;
 }
 
 }  // namespace
@@ -92,8 +84,8 @@ AgentSchedulingGroupHost* AgentSchedulingGroupHost::GetOrCreate(
 
   DCHECK(data);
 
-  if (GetMBIMode() == features::MBIMode::kLegacy ||
-      GetMBIMode() == features::MBIMode::kEnabledPerRenderProcessHost) {
+  if (GetMBIMode() == ::features::MBIMode::kLegacy ||
+      GetMBIMode() == ::features::MBIMode::kEnabledPerRenderProcessHost) {
     // We don't use |data->site_instance_groups| at all when
     // AgentSchedulingGroupHost is 1:1 with RenderProcessHost.
 #if DCHECK_IS_ON()
@@ -117,7 +109,7 @@ AgentSchedulingGroupHost* AgentSchedulingGroupHost::GetOrCreate(
     return data->owned_host_set.begin()->get();
   }
 
-  DCHECK_EQ(GetMBIMode(), features::MBIMode::kEnabledPerSiteInstance);
+  DCHECK_EQ(GetMBIMode(), ::features::MBIMode::kEnabledPerSiteInstance);
 
   // If we're in an MBI mode that creates multiple AgentSchedulingGroupHosts
   // per RenderProcessHost, then this will be called whenever SiteInstance needs
@@ -268,7 +260,7 @@ base::SafeRef<AgentSchedulingGroupHost> AgentSchedulingGroupHost::GetSafeRef()
 ChannelProxy* AgentSchedulingGroupHost::GetChannel() {
   DCHECK_EQ(state_, LifecycleState::kBound);
 
-  if (GetMBIMode() == features::MBIMode::kLegacy)
+  if (GetMBIMode() == ::features::MBIMode::kLegacy)
     return process_->GetChannel();
 
   DCHECK(channel_);
@@ -387,14 +379,14 @@ void AgentSchedulingGroupHost::SetUpIPC() {
   // 3. All the ASGH's other associated interfaces can now be initialized via
   //    `mojo_remote_`, and will be transitively associated with the appropriate
   //    IPC channel/pipe.
-  if (GetMBIMode() == features::MBIMode::kLegacy) {
+  if (GetMBIMode() == ::features::MBIMode::kLegacy) {
     process_->GetRendererInterface()->CreateAssociatedAgentSchedulingGroup(
         mojo_remote_.BindNewEndpointAndPassReceiver());
   } else {
     auto io_task_runner = GetIOThreadTaskRunner({});
 
     // Empty interface endpoint to pass pipes more easily.
-    PendingRemote<IPC::mojom::ChannelBootstrap> bootstrap;
+    mojo::PendingRemote<IPC::mojom::ChannelBootstrap> bootstrap;
 
     process_->GetRendererInterface()->CreateAgentSchedulingGroup(
         bootstrap.InitWithNewPipeAndPassReceiver());

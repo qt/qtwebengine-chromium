@@ -15,7 +15,7 @@
 namespace blink {
 
 namespace {
-constexpr uint32_t kVersion = 3u;
+constexpr uint32_t kVersionUA = 3u;
 
 // List of valid form factors.
 // See https://wicg.github.io/ua-client-hints/#sec-ch-ua-form-factors
@@ -79,7 +79,7 @@ std::optional<std::string> UserAgentMetadata::Marshal(
     return std::nullopt;
   }
   base::Pickle out;
-  out.WriteUInt32(kVersion);
+  out.WriteUInt32(kVersionUA);
 
   out.WriteUInt32(base::checked_cast<uint32_t>(in->brand_version_list.size()));
   for (const auto& brand_version : in->brand_version_list) {
@@ -122,7 +122,7 @@ std::optional<UserAgentMetadata> UserAgentMetadata::Demarshal(
 
   uint32_t version;
   UserAgentMetadata out;
-  if (!in.ReadUInt32(&version) || version != kVersion)
+  if (!in.ReadUInt32(&version) || version != kVersionUA)
     return std::nullopt;
 
   uint32_t brand_version_size;

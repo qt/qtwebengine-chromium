@@ -16479,3 +16479,5 @@ ValueNode* MaglevGraphBuilder::BuildSmiUntag(ValueNode* node) {
 }
 
 }  // namespace v8::internal::maglev
+
+#undef TRACE

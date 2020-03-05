@@ -45,15 +45,15 @@ std::unique_ptr<SkCodec> CreatePngDecoder(std::unique_ptr<SkStream> stream,
   return SkPngDecoder::Decode(std::move(stream), result);
 }
 
-struct PreparationOutput {
+struct PreparationOutputPC {
   std::unique_ptr<SkCodec> codec;
   SkImageInfo image_info;
 };
 
-std::optional<PreparationOutput> PrepareForPNGDecode(
+std::optional<PreparationOutputPC> PrepareForPNGDecode(
     base::span<const uint8_t> input,
     PNGCodec::ColorFormat format) {
-  PreparationOutput output;
+  PreparationOutputPC output;
 
   // Parse the input stream with the PNG decoder, yielding a SkCodec.
   auto stream = std::make_unique<SkMemoryStream>(input.data(), input.size(),
@@ -112,7 +112,7 @@ std::optional<PNGCodec::DecodeOutput> PNGCodec::Decode(
     ColorFormat format) {
   SCOPED_UMA_HISTOGRAM_TIMER_MICROS("ImageDecoder.Png.UiGfxIntoVector");
 
-  std::optional<PreparationOutput> preparation_output =
+  std::optional<PreparationOutputPC> preparation_output =
       PrepareForPNGDecode(input, format);
   if (!preparation_output) {
     return std::nullopt;
@@ -141,7 +141,7 @@ std::optional<PNGCodec::DecodeOutput> PNGCodec::Decode(
 SkBitmap PNGCodec::Decode(base::span<const uint8_t> input) {
   SCOPED_UMA_HISTOGRAM_TIMER_MICROS("ImageDecoder.Png.UiGfxIntoSkBitmap");
 
-  std::optional<PreparationOutput> preparation_output =
+  std::optional<PreparationOutputPC> preparation_output =
       PrepareForPNGDecode(input, FORMAT_SkBitmap);
   if (!preparation_output) {
     return SkBitmap();

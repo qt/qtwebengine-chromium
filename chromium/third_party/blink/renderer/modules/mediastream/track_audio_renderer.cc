@@ -23,16 +23,17 @@
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_copier_media.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 
 namespace blink {
 
-template <>
-struct CrossThreadCopier<media::AudioParameters> {
-  STATIC_ONLY(CrossThreadCopier);
-  using Type = media::AudioParameters;
-  static Type Copy(Type pointer) { return pointer; }
-};
+// template <>
+// struct CrossThreadCopier<media::AudioParameters> {
+//   STATIC_ONLY(CrossThreadCopier);
+//   using Type = media::AudioParameters;
+//   static Type Copy(Type pointer) { return pointer; }
+// };
 
 namespace {
 

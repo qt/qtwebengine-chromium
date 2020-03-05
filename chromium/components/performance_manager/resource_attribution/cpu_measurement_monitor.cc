@@ -70,7 +70,7 @@ void ValidateCPUTimeResult(const CPUTimeResult& result) {
 
 template <typename FrameOrWorkerNode>
 std::optional<OriginInBrowsingInstanceContext>
-OriginInBrowsingInstanceContextForNode(
+OriginInBrowsingInstanceContextForNodeCMM(
     const FrameOrWorkerNode* node,
     content::BrowsingInstanceId browsing_instance,
     GraphChange graph_change = NoGraphChange{}) {
@@ -740,7 +740,7 @@ void CPUMeasurementMonitor::ApplyMeasurementDeltas(
                             delta);
 
       std::optional<OriginInBrowsingInstanceContext> origin_context =
-          OriginInBrowsingInstanceContextForNode(
+          OriginInBrowsingInstanceContextForNodeCMM(
               frame_node, frame_node->GetBrowsingInstanceId(), graph_change);
       if (origin_context.has_value()) {
         ApplyOverlappingDelta(origin_context.value(), delta);
@@ -761,7 +761,7 @@ void CPUMeasurementMonitor::ApplyMeasurementDeltas(
       for (content::BrowsingInstanceId browsing_instance :
            client_browsing_instances) {
         std::optional<OriginInBrowsingInstanceContext> origin_context =
-            OriginInBrowsingInstanceContextForNode(
+            OriginInBrowsingInstanceContextForNodeCMM(
                 worker_node, browsing_instance, graph_change);
         if (origin_context.has_value()) {
           ApplyOverlappingDelta(origin_context.value(), delta);
@@ -845,7 +845,7 @@ CPUMeasurementMonitor::GetLiveOriginInBrowsingInstanceContexts() {
   std::set<OriginInBrowsingInstanceContext> live_origin_contexts;
   for (const FrameNode* frame_node : graph_->GetAllFrameNodes()) {
     std::optional<OriginInBrowsingInstanceContext> origin_context =
-        OriginInBrowsingInstanceContextForNode(
+        OriginInBrowsingInstanceContextForNodeCMM(
             frame_node, frame_node->GetBrowsingInstanceId());
     if (origin_context.has_value()) {
       live_origin_contexts.insert(origin_context.value());
@@ -858,7 +858,7 @@ CPUMeasurementMonitor::GetLiveOriginInBrowsingInstanceContexts() {
     for (content::BrowsingInstanceId browsing_instance :
          client_browsing_instances) {
       std::optional<OriginInBrowsingInstanceContext> origin_context =
-          OriginInBrowsingInstanceContextForNode(worker_node,
+          OriginInBrowsingInstanceContextForNodeCMM(worker_node,
                                                  browsing_instance);
       if (origin_context.has_value()) {
         live_origin_contexts.insert(origin_context.value());

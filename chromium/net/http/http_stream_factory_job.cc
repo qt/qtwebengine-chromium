@@ -66,7 +66,7 @@ BASE_FEATURE(kLimitEarlyPreconnectsExperiment,
              "LimitEarlyPreconnects",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
+const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunnerHSFJ(
     net::RequestPriority priority) {
   if (features::kNetTaskSchedulerHttpStreamFactoryJob.Get()) {
     return net::GetTaskRunner(priority);
@@ -539,7 +539,7 @@ void HttpStreamFactory::Job::RunLoop(int result) {
   RecordCompletionHistograms(result);
 
   if ((job_type_ == PRECONNECT) || (job_type_ == PRECONNECT_DNS_ALPN_H3)) {
-    TaskRunner(priority_)->PostTask(
+    TaskRunnerHSFJ(priority_)->PostTask(
         FROM_HERE,
         base::BindOnce(&HttpStreamFactory::Job::OnPreconnectsComplete,
                        ptr_factory_.GetWeakPtr(), result));
@@ -552,7 +552,7 @@ void HttpStreamFactory::Job::RunLoop(int result) {
     GetSSLInfo(&ssl_info);
 
     next_state_ = STATE_WAITING_USER_ACTION;
-    TaskRunner(priority_)->PostTask(
+    TaskRunnerHSFJ(priority_)->PostTask(
         FROM_HERE,
         base::BindOnce(&HttpStreamFactory::Job::OnCertificateErrorCallback,
                        ptr_factory_.GetWeakPtr(), result, ssl_info));
@@ -561,7 +561,7 @@ void HttpStreamFactory::Job::RunLoop(int result) {
 
   switch (result) {
     case ERR_SSL_CLIENT_AUTH_CERT_NEEDED:
-      TaskRunner(priority_)->PostTask(
+      TaskRunnerHSFJ(priority_)->PostTask(
           FROM_HERE,
           base::BindOnce(
               &Job::OnNeedsClientAuthCallback, ptr_factory_.GetWeakPtr(),
@@ -572,31 +572,31 @@ void HttpStreamFactory::Job::RunLoop(int result) {
       next_state_ = STATE_DONE;
       if (is_websocket_) {
         DCHECK(websocket_stream_);
-        TaskRunner(priority_)->PostTask(
+        TaskRunnerHSFJ(priority_)->PostTask(
             FROM_HERE,
             base::BindOnce(&Job::OnWebSocketHandshakeStreamReadyCallback,
                            ptr_factory_.GetWeakPtr()));
       } else if (stream_type_ == HttpStreamRequest::BIDIRECTIONAL_STREAM) {
         if (!bidirectional_stream_impl_) {
-          TaskRunner(priority_)->PostTask(
+          TaskRunnerHSFJ(priority_)->PostTask(
               FROM_HERE, base::BindOnce(&Job::OnStreamFailedCallback,
                                         ptr_factory_.GetWeakPtr(), ERR_FAILED));
         } else {
-          TaskRunner(priority_)->PostTask(
+          TaskRunnerHSFJ(priority_)->PostTask(
               FROM_HERE,
               base::BindOnce(&Job::OnBidirectionalStreamImplReadyCallback,
                              ptr_factory_.GetWeakPtr()));
         }
       } else {
         DCHECK(stream_.get());
-        TaskRunner(priority_)->PostTask(
+        TaskRunnerHSFJ(priority_)->PostTask(
             FROM_HERE, base::BindOnce(&Job::OnStreamReadyCallback,
                                       ptr_factory_.GetWeakPtr()));
       }
       return;
 
     default:
-      TaskRunner(priority_)->PostTask(
+      TaskRunnerHSFJ(priority_)->PostTask(
           FROM_HERE, base::BindOnce(&Job::OnStreamFailedCallback,
                                     ptr_factory_.GetWeakPtr(), result));
       return;
@@ -751,7 +751,7 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
             !is_blocking_request_for_session) {
           net_log_.AddEvent(NetLogEventType::HTTP_STREAM_JOB_THROTTLED);
           next_state_ = STATE_INIT_CONNECTION;
-          TaskRunner(priority_)->PostDelayedTask(
+          TaskRunnerHSFJ(priority_)->PostDelayedTask(
               FROM_HERE, resume_callback, base::Milliseconds(kHTTP2ThrottleMs));
           return ERR_IO_PENDING;
         }
