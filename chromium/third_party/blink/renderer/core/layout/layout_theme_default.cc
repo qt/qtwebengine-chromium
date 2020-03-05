@@ -66,7 +66,7 @@ String LayoutThemeDefault::ExtraDefaultStyleSheet() {
   String windows_style_sheet =
       UncompressResourceAsASCIIString(IDR_UASTYLE_THEME_WIN_CSS);
   String controls_refresh_style_sheet =
-      features::IsFormControlsRefreshEnabled()
+      ::features::IsFormControlsRefreshEnabled()
           ? UncompressResourceAsASCIIString(
                 IDR_UASTYLE_THEME_CONTROLS_REFRESH_CSS)
           : String();
@@ -108,7 +108,7 @@ Color LayoutThemeDefault::PlatformInactiveSelectionForegroundColor(
 IntSize LayoutThemeDefault::SliderTickSize() const {
   // The value should be synchronized with a -webkit-slider-container rule in
   // html.css.
-  if (features::IsFormControlsRefreshEnabled())
+  if (::features::IsFormControlsRefreshEnabled())
     return IntSize(1, 4);
   else
     return IntSize(1, 6);
@@ -117,7 +117,7 @@ IntSize LayoutThemeDefault::SliderTickSize() const {
 int LayoutThemeDefault::SliderTickOffsetFromTrackCenter() const {
   // The value should be synchronized with a -webkit-slider-container rule in
   // html.css and LayoutThemeAndroid::ExtraDefaultStyleSheet().
-  if (features::IsFormControlsRefreshEnabled())
+  if (::features::IsFormControlsRefreshEnabled())
     return 7;
   else
     return -16;

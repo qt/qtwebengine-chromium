@@ -684,7 +684,7 @@ TranslatedFrame TranslatedFrame::JavaScriptBuiltinContinuationWithCatchFrame(
 
 namespace {
 
-uint16_t InternalFormalParameterCountWithReceiver(SharedFunctionInfo sfi) {
+uint16_t InternalFormalParameterCountWithReceiver2(SharedFunctionInfo sfi) {
   static constexpr int kTheReceiver = 1;
   return sfi.internal_formal_parameter_count() + kTheReceiver;
 }
@@ -699,7 +699,7 @@ int TranslatedFrame::GetValueCount() {
   switch (kind()) {
     case kUnoptimizedFunction: {
       int parameter_count =
-          InternalFormalParameterCountWithReceiver(raw_shared_info_);
+          InternalFormalParameterCountWithReceiver2(raw_shared_info_);
       static constexpr int kTheContext = 1;
       static constexpr int kTheAccumulator = 1;
       return height() + parameter_count + kTheContext + kTheFunction +
@@ -750,7 +750,7 @@ TranslatedFrame TranslatedState::CreateNextTranslatedFrame(
       if (trace_file != nullptr) {
         std::unique_ptr<char[]> name = shared_info.DebugNameCStr();
         PrintF(trace_file, "  reading input frame %s", name.get());
-        int arg_count = InternalFormalParameterCountWithReceiver(shared_info);
+        int arg_count = InternalFormalParameterCountWithReceiver2(shared_info);
         PrintF(trace_file,
                " => bytecode_offset=%d, args=%d, height=%d, retval=%i(#%i); "
                "inputs:\n",
@@ -1986,7 +1986,7 @@ TranslatedFrame* TranslatedState::GetArgumentsInfoFromJSFrameIndex(
           *args_count = frames_[i].ValueAt(height - 1)->GetSmiValue();
           DCHECK_EQ(*args_count, 1);
         } else {
-          *args_count = InternalFormalParameterCountWithReceiver(
+          *args_count = InternalFormalParameterCountWithReceiver2(
               *frames_[i].shared_info());
         }
         return &(frames_[i]);

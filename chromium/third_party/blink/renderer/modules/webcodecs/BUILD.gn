@@ -61,6 +61,7 @@ blink_modules_sources("webcodecs") {
     "video_track_writer.cc",
     "video_track_writer.h",
   ]
+  jumbo_excluded_sources = [ "video_decoder_broker.cc" ]
   deps = [
     "//media",
     "//media/mojo:buildflags",

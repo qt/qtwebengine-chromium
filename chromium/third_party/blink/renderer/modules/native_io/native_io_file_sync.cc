@@ -28,10 +28,12 @@
 
 namespace blink {
 
+namespace j {
 // Extracts the read/write operation size from the buffer size.
-int OperationSize(const DOMArrayBufferView& buffer) {
+inline static int OperationSize(const DOMArrayBufferView& buffer) {
   // On 32-bit platforms, clamp operation sizes to 2^31-1.
   return base::saturated_cast<int>(buffer.byteLength());
+}
 }
 
 NativeIOFileSync::NativeIOFileSync(
@@ -214,7 +216,7 @@ void NativeIOFileSync::setLength(uint64_t new_length,
 uint64_t NativeIOFileSync::read(MaybeShared<DOMArrayBufferView> buffer,
                                 uint64_t file_offset,
                                 ExceptionState& exception_state) {
-  int read_size = OperationSize(*buffer);
+  int read_size = j::OperationSize(*buffer);
   char* read_data = static_cast<char*>(buffer->BaseAddressMaybeShared());
   if (!backing_file_.IsValid()) {
     ThrowNativeIOWithError(exception_state,
@@ -234,7 +236,7 @@ uint64_t NativeIOFileSync::read(MaybeShared<DOMArrayBufferView> buffer,
 uint64_t NativeIOFileSync::write(MaybeShared<DOMArrayBufferView> buffer,
                                  uint64_t file_offset,
                                  ExceptionState& exception_state) {
-  int write_size = OperationSize(*buffer);
+  int write_size = j::OperationSize(*buffer);
   char* write_data = static_cast<char*>(buffer->BaseAddressMaybeShared());
   if (!backing_file_.IsValid()) {
     ThrowNativeIOWithError(exception_state,

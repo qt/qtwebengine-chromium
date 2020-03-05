@@ -71,7 +71,7 @@ namespace blink {
 
 namespace {
 
-media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread() {
+media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread2() {
   DCHECK(IsMainThread());
   return Platform::Current()->GetGpuFactories();
 }
@@ -515,7 +515,7 @@ void VideoEncoder::ProcessConfigure(Request* request) {
   Thread::MainThread()->GetTaskRunner()->PostTaskAndReplyWithResult(
       FROM_HERE,
       ConvertToBaseOnceCallback(
-          CrossThreadBindOnce(&GetGpuFactoriesOnMainThread)),
+          CrossThreadBindOnce(&GetGpuFactoriesOnMainThread2)),
       ConvertToBaseOnceCallback(std::move(on_gpu_factories_cb)));
 }
 

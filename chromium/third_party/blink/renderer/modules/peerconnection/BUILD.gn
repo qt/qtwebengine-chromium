@@ -141,6 +141,10 @@ blink_modules_sources("peerconnection") {
     "webrtc_set_description_observer.h",
   ]
 
+  jumbo_excluded_sources = [
+    "rtc_rtp_sender_impl.cc"
+  ]
+
   public_deps = [ "//third_party/webrtc_overrides:webrtc_component" ]
   deps = [
     "//jingle:webrtc_glue",

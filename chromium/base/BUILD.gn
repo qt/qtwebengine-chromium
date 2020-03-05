@@ -969,6 +969,10 @@ jumbo_component("base") {
     }
   }
 
+  jumbo_excluded_sources = [
+      "logging.cc",
+  ]
+
   if (is_win) {
     sources += [
       "debug/close_handle_hook_win.cc",
@@ -1126,6 +1130,9 @@ jumbo_component("base") {
       "win/wrapped_window_proc.cc",
       "win/wrapped_window_proc.h",
     ]
+    jumbo_excluded_sources += [
+      "logging_win.cc",
+    ]
   }
 
   if (is_mac) {
@@ -1276,6 +1283,7 @@ jumbo_component("base") {
       "process/process_metrics_linux.cc",
       "threading/platform_thread_linux.cc",
     ]
+    jumbo_excluded_sources += [ "process/memory_linux.cc" ]
   }
 
   if (!is_nacl) {
@@ -1900,6 +1908,8 @@ jumbo_component("base") {
         "allocator/partition_allocator/thread_cache.h",
         "allocator/partition_allocator/yield_processor.h",
       ]
+      jumbo_excluded_sources += [ "allocator/partition_allocator/random.cc", ]
+
       if (is_win) {
         sources += [
           "allocator/partition_allocator/page_allocator_internals_win.h",
@@ -1935,6 +1945,11 @@ jumbo_component("base") {
       "file_descriptor_store.cc",
       "file_descriptor_store.h",
     ]
+
+    # winternl.h and NTSecAPI.h have different definitions of UNICODE_STRING.
+    # There's only one client of NTSecAPI.h in base but several of winternl.h,
+    # so exclude the NTSecAPI.h one.
+    jumbo_excluded_sources += [ "rand_util_win.cc" ]
 
     deps += [ "//base/win:base_win_buildflags" ]
 

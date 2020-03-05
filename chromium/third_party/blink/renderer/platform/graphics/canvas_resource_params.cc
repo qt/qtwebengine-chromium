@@ -20,7 +20,7 @@ namespace {
 
 // The CanvasColorSpace value definitions are specified in the CSS Color Level 4
 // specification.
-gfx::ColorSpace CanvasColorSpaceToGfxColorSpace(CanvasColorSpace color_space) {
+gfx::ColorSpace CanvasColorSpaceToGfxColorSpace2(CanvasColorSpace color_space) {
   switch (color_space) {
     case CanvasColorSpace::kSRGB:
       return gfx::ColorSpace::CreateSRGB();
@@ -67,11 +67,11 @@ gfx::ColorSpace CanvasResourceParams::GetSamplerGfxColorSpace() const {
   // TODO(ccameron): If we add support for uint8srgb as a pixel format, this
   // will need to take into account whether or not this texture will be sampled
   // in linear or nonlinear space.
-  return CanvasColorSpaceToGfxColorSpace(color_space_);
+  return CanvasColorSpaceToGfxColorSpace2(color_space_);
 }
 
 gfx::ColorSpace CanvasResourceParams::GetStorageGfxColorSpace() const {
-  return CanvasColorSpaceToGfxColorSpace(color_space_);
+  return CanvasColorSpaceToGfxColorSpace2(color_space_);
 }
 
 sk_sp<SkColorSpace> CanvasResourceParams::GetSkColorSpace() const {

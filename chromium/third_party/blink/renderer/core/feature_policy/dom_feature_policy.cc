@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/feature_policy/dom_feature_policy.h"
 
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"
+#include "third_party/blink/public/mojom/feature_policy/feature_policy_feature.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/feature_policy/feature_policy_parser.h"

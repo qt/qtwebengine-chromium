@@ -10,6 +10,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "net/http/structured_headers.h"
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"
+#include "third_party/blink/public/mojom/feature_policy/feature_policy_feature.mojom-blink.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"

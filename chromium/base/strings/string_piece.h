@@ -126,7 +126,11 @@ template <typename STRING_TYPE> class BasicStringPiece {
   // std::basic_string_view, so remove the special handling for it.
   // Note: This doesn't just use STRING_TYPE::traits_type::length(), since that
   // isn't constexpr until C++17.
+#if defined(COMPILER_GCC)
+  constexpr BasicStringPiece(const value_type* str) __attribute__((always_inline))
+#else
   constexpr BasicStringPiece(const value_type* str)
+#endif
       : ptr_(str), length_(!str ? 0 : CharTraits<value_type>::length(str)) {}
   // Explicitly disallow construction from nullptr. Note that this does not
   // catch construction from runtime strings that might be null.

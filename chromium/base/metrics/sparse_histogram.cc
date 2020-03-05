@@ -21,7 +21,7 @@
 #include "base/values.h"
 
 namespace {
-constexpr char kAsciiNewLine[] = "\n";
+constexpr char kAsciiNewLine2[] = "\n";
 }  // namespace
 
 namespace base {
@@ -175,8 +175,8 @@ void SparseHistogram::WriteAscii(std::string* output) const {
   std::unique_ptr<HistogramSamples> snapshot = SnapshotSamples();
 
   WriteAsciiHeader(*snapshot, output);
-  output->append(kAsciiNewLine);
-  WriteAsciiBody(*snapshot, true, kAsciiNewLine, output);
+  output->append(kAsciiNewLine2);
+  WriteAsciiBody(*snapshot, true, kAsciiNewLine2, output);
 }
 
 base::DictionaryValue SparseHistogram::ToGraphDict() const {
@@ -186,7 +186,7 @@ base::DictionaryValue SparseHistogram::ToGraphDict() const {
   base::DictionaryValue dict;
 
   WriteAsciiHeader(*snapshot, &header);
-  WriteAsciiBody(*snapshot, true, kAsciiNewLine, &body);
+  WriteAsciiBody(*snapshot, true, kAsciiNewLine2, &body);
   dict.SetString("header", header);
   dict.SetString("body", body);
 
