@@ -35,7 +35,7 @@ namespace blink {
 
 namespace {
 
-bool GeometryPropertiesChanged(const ComputedStyle& old_style,
+bool GeometryPropertiesChangedLSR(const ComputedStyle& old_style,
                                const ComputedStyle& new_style) {
   return old_style.X() != new_style.X() || old_style.Y() != new_style.Y() ||
          old_style.Width() != new_style.Width() ||
@@ -54,7 +54,7 @@ void LayoutSVGRect::StyleDidChange(StyleDifference diff,
   NOT_DESTROYED();
   LayoutSVGShape::StyleDidChange(diff, old_style);
 
-  if (old_style && GeometryPropertiesChanged(*old_style, StyleRef())) {
+  if (old_style && GeometryPropertiesChangedLSR(*old_style, StyleRef())) {
     SetNeedsShapeUpdate();
   }
 }

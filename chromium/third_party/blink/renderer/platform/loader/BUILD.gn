@@ -188,6 +188,11 @@ blink_platform_sources("loader") {
   sources +=
       get_target_outputs(":make_platform_loader_generated_delivery_type_names")
 
+  jumbo_excluded_sources = [
+      "fetch/url_loader/sync_load_context.cc",
+      "fetch/url_loader/resource_request_sender.cc",
+  ]
+
   deps = [
     ":make_platform_loader_generated_delivery_type_names",
     ":make_platform_loader_generated_fetch_initiator_type_names",

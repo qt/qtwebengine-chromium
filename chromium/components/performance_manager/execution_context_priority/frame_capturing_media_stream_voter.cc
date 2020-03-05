@@ -58,7 +58,7 @@ void FrameCapturingMediaStreamVoter::OnBeforeFrameNodeAdded(
     const PageNode* pending_page_node,
     const ProcessNode* pending_process_node,
     const FrameNode* pending_parent_or_outer_document_or_embedder) {
-  const Vote vote = GetVote(frame_node->IsCapturingMediaStream());
+  const Vote vote = GetVote_FCVSV(frame_node->IsCapturingMediaStream());
   voting_channel_.SubmitVote(GetExecutionContext_FCVSV(frame_node), vote);
 }
 

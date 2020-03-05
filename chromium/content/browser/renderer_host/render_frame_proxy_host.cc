@@ -69,10 +69,10 @@ typedef std::unordered_map<RenderFrameProxyHostID,
 base::LazyInstance<RoutingIDFrameProxyMap>::DestructorAtExit
     g_routing_id_frame_proxy_map = LAZY_INSTANCE_INITIALIZER;
 
-using TokenFrameMap = std::unordered_map<blink::RemoteFrameToken,
-                                         RenderFrameProxyHost*,
-                                         blink::RemoteFrameToken::Hasher>;
-base::LazyInstance<TokenFrameMap>::Leaky g_token_frame_proxy_map =
+using TokenFrameProxyMap = std::unordered_map<blink::RemoteFrameToken,
+                                              RenderFrameProxyHost*,
+                                              blink::RemoteFrameToken::Hasher>;
+base::LazyInstance<TokenFrameProxyMap>::Leaky g_token_frame_proxy_map =
     LAZY_INSTANCE_INITIALIZER;
 
 // TODO(https://crbug.com/339512240): Remove this killswitch once the
@@ -104,7 +104,7 @@ RenderFrameProxyHost* RenderFrameProxyHost::FromFrameToken(
     int process_id,
     const blink::RemoteFrameToken& frame_token) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  TokenFrameMap* frames = g_token_frame_proxy_map.Pointer();
+  TokenFrameProxyMap* frames = g_token_frame_proxy_map.Pointer();
   auto it = frames->find(frame_token);
   // The check against |process_id| isn't strictly necessary, but represents
   // an extra level of protection against a renderer trying to force a frame
@@ -119,7 +119,7 @@ RenderFrameProxyHost* RenderFrameProxyHost::FromFrameToken(
 bool RenderFrameProxyHost::IsFrameTokenInUse(
     const blink::RemoteFrameToken& frame_token) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  TokenFrameMap* frames = g_token_frame_proxy_map.Pointer();
+  TokenFrameProxyMap* frames = g_token_frame_proxy_map.Pointer();
   return frames->find(frame_token) != frames->end();
 }
 
@@ -597,7 +597,7 @@ void RenderFrameProxyHost::RouteMessageEvent(
   // origins once rollout is complete.
   bool should_verify_source_origin =
       base::FeatureList::IsEnabled(
-          features::kAdditionalOpaqueOriginEnforcements) ||
+          ::features::kAdditionalOpaqueOriginEnforcements) ||
       source_origin_string != u"null";
   if (should_verify_source_origin) {
     auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();

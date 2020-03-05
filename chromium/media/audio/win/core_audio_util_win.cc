@@ -47,7 +47,7 @@ const GUID kCommunicationsSessionId = {
 
 namespace {
 
-constexpr uint32_t KSAUDIO_SPEAKER_UNSUPPORTED = 0xFFFFFFFF;
+constexpr uint32_t KSAUDIO_SPEAKER_UNSUPPORTED_COUW = 0xFFFFFFFF;
 
 REFERENCE_TIME BufferSizeInFramesToTimeDelta(uint32_t frames,
                                              DWORD bytes_per_sec,
@@ -68,7 +68,7 @@ double GetOffloadBufferTimeIn100Ns() {
 }
 
 // TODO(henrika): add mapping for all types in the ChannelLayout enumerator.
-ChannelConfig ChannelLayoutToChannelConfig(ChannelLayout layout) {
+ChannelConfig ChannelLayoutToChannelConfigCOUW(ChannelLayout layout) {
   switch (layout) {
     case CHANNEL_LAYOUT_DISCRETE:
       DVLOG(2) << "CHANNEL_LAYOUT_DISCRETE=>KSAUDIO_SPEAKER_DIRECTOUT";
@@ -114,7 +114,7 @@ ChannelConfig ChannelLayoutToChannelConfig(ChannelLayout layout) {
       return KSAUDIO_SPEAKER_7POINT1_SURROUND;
     default:
       DVLOG(2) << "Unsupported channel layout: " << layout;
-      return KSAUDIO_SPEAKER_UNSUPPORTED;
+      return KSAUDIO_SPEAKER_UNSUPPORTED_COUW;
   }
 }
 
@@ -974,8 +974,8 @@ bool CoreAudioUtil::IsChannelLayoutSupported(const std::string& device_id,
   // but only if the wave format is extended (can contain a channel mask).
   WaveFormatWrapper format(&mix_format);
   if (format.IsExtensible()) {
-    ChannelConfig new_config = ChannelLayoutToChannelConfig(channel_layout);
-    if (new_config == KSAUDIO_SPEAKER_UNSUPPORTED) {
+    ChannelConfig new_config = ChannelLayoutToChannelConfigCOUW(channel_layout);
+    if (new_config == KSAUDIO_SPEAKER_UNSUPPORTED_COUW) {
       return false;
     }
     format.GetExtensible()->dwChannelMask = new_config;

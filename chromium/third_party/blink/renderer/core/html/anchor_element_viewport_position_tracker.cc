@@ -60,7 +60,7 @@ base::TimeDelta PostFCPObservationDelay() {
   return param.Get();
 }
 
-bool ShouldReportViewportPositions() {
+bool ShouldReportViewportPositionsAEVPT() {
   return base::FeatureList::IsEnabled(
       features::kNavigationPredictorNewViewportFeatures);
 }
@@ -242,7 +242,7 @@ void AnchorElementViewportPositionTracker::RecordPointerDown(
 }
 
 void AnchorElementViewportPositionTracker::OnScrollEnd() {
-  if (!ShouldReportViewportPositions() || !intersection_observer_) {
+  if (!ShouldReportViewportPositionsAEVPT() || !intersection_observer_) {
     return;
   }
 
@@ -308,7 +308,7 @@ void AnchorElementViewportPositionTracker::UpdateVisibleAnchors(
   }
 
   if (position_update_timer_.IsActive()) {
-    CHECK(ShouldReportViewportPositions());
+    CHECK(ShouldReportViewportPositionsAEVPT());
     position_update_timer_.Stop();
     RegisterForLifecycleNotifications();
   }
@@ -320,7 +320,7 @@ void AnchorElementViewportPositionTracker::UpdateVisibleAnchors(
 
 void AnchorElementViewportPositionTracker::PositionUpdateTimerFired(
     TimerBase*) {
-  CHECK(ShouldReportViewportPositions());
+  CHECK(ShouldReportViewportPositionsAEVPT());
   if (LocalFrameView* view = GetSupplementable()->View()) {
     view->ScheduleAnimation();
     RegisterForLifecycleNotifications();
@@ -329,7 +329,7 @@ void AnchorElementViewportPositionTracker::PositionUpdateTimerFired(
 
 void AnchorElementViewportPositionTracker::DidFinishLifecycleUpdate(
     const LocalFrameView& local_frame_view) {
-  CHECK(ShouldReportViewportPositions());
+  CHECK(ShouldReportViewportPositionsAEVPT());
   Document* document = local_frame_view.GetFrame().GetDocument();
   if (document->Lifecycle().GetState() <
       DocumentLifecycle::kAfterPerformLayout) {
@@ -347,7 +347,7 @@ void AnchorElementViewportPositionTracker::DidFinishLifecycleUpdate(
 
 void AnchorElementViewportPositionTracker::
     DispatchAnchorElementsPositionUpdates() {
-  CHECK(ShouldReportViewportPositions());
+  CHECK(ShouldReportViewportPositionsAEVPT());
 
   Screen* screen = GetSupplementable()->domWindow()->screen();
   FrameWidget* widget =

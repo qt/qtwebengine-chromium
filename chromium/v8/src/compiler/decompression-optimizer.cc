@@ -53,7 +53,7 @@ bool CanBeCompressed(Node* const node) {
          IsTaggedPhi(node) || IsWord64BitwiseOp(node);
 }
 
-void Replace(Node* const node, Node* const replacement) {
+void ReplaceDO(Node* const node, Node* const replacement) {
   for (Edge edge : node->use_edges()) {
     edge.UpdateTo(replacement);
   }
@@ -355,7 +355,7 @@ void DecompressionOptimizer::ChangeWord64BitwiseOp(Node* const node,
   for (Edge edge : node->use_edges()) {
     Node* user = edge.from();
     if (user->opcode() == IrOpcode::kTruncateInt64ToInt32) {
-      Replace(user, node);
+      ReplaceDO(user, node);
     } else {
       if (replacement == nullptr) {
         replacement =

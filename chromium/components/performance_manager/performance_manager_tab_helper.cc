@@ -196,7 +196,7 @@ void PerformanceManagerTabHelper::RenderFrameCreated(
 #if BUILDFLAG(ENABLE_GUEST_VIEW)
   else if (auto* guest = guest_view::GuestViewBase::FromRenderFrameHost(
                render_frame_host)) {
-    if (base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+    if (base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
       content::RenderFrameHost* outer_document = guest->owner_rfh();
       CHECK(outer_document);
       outer_document_for_inner_frame_root =

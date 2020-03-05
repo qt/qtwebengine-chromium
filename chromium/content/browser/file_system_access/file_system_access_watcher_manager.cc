@@ -46,7 +46,7 @@ using UsageChangeResult =
 
 namespace {
 
-storage::FileSystemURL ToFileSystemURL(storage::FileSystemContext& context,
+storage::FileSystemURL ToFileSystemURL_FSAWM(storage::FileSystemContext& context,
                                        const storage::FileSystemURL& base_url,
                                        const base::FilePath& absolute_path) {
   storage::FileSystemURL result = context.CreateCrackedFileSystemURL(
@@ -164,7 +164,7 @@ void FileSystemAccessWatcherManager::OnRawChange(
 
   std::optional<storage::FileSystemURL> moved_from_url =
       is_move_event ? std::make_optional(
-                          ToFileSystemURL(*manager_->context(), changed_url,
+                          ToFileSystemURL_FSAWM(*manager_->context(), changed_url,
                                           change_info.moved_from_path.value()))
                     : std::nullopt;
 

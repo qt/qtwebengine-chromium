@@ -131,6 +131,11 @@ jumbo_source_set("generic_sensor") {
       "platform_sensor_win.h",
     ]
 
+    jumbo_excluded_sources = [
+      "platform_sensor_provider_winrt.cc",
+      "platform_sensor_reader_winrt.cc",
+    ]
+
     libs = [
       "portabledeviceguids.lib",
       "sensorsapi.lib",

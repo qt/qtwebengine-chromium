@@ -968,6 +968,10 @@ jumbo_component("base") {
     ]
   }
 
+  jumbo_excluded_sources = [
+      "logging.cc",
+  ]
+
   if (is_linux || is_chromeos) {
     sources += [
       "debug/proc_maps_linux.cc",
@@ -986,6 +990,7 @@ jumbo_component("base") {
       "threading/thread_type_delegate.cc",
       "threading/thread_type_delegate.h",
     ]
+    jumbo_excluded_sources += [ "process/memory_linux.cc" ]
   }
 
   if (is_chromeos) {

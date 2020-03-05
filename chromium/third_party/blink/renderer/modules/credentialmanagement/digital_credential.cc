@@ -7,7 +7,7 @@
 namespace blink {
 
 namespace {
-constexpr char kDigitalCredentialType[] = "digital";
+constexpr char kDigitalCredentialTypeDC[] = "digital";
 }  // anonymous namespace
 
 DigitalCredential* DigitalCredential::Create(const String& protocol,
@@ -16,7 +16,7 @@ DigitalCredential* DigitalCredential::Create(const String& protocol,
 }
 
 DigitalCredential::DigitalCredential(const String& protocol, const String& data)
-    : Credential(/* id = */ "", kDigitalCredentialType),
+    : Credential(/* id = */ "", kDigitalCredentialTypeDC),
       protocol_(protocol),
       data_(data) {}
 

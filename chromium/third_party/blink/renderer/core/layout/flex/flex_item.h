@@ -30,7 +30,7 @@ struct FlexItem {
            uint8_t main_axis_auto_margin_count,
            ItemPosition alignment,
            WritingMode baseline_writing_mode,
-           BaselineGroup baseline_group,
+           BaselineGroupType baseline_group,
            bool is_initial_block_size_indefinite,
            bool is_used_flex_basis_indefinite,
            bool depends_on_min_max_sizes,
@@ -117,7 +117,7 @@ struct FlexItem {
 
   const ItemPosition alignment;
   const WritingDirectionMode baseline_writing_direction;
-  const BaselineGroup baseline_group;
+  const BaselineGroupType baseline_group;
 
   const bool is_initial_block_size_indefinite;
   const bool is_used_flex_basis_indefinite;

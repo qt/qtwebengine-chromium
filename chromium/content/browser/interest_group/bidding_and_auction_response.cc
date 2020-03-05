@@ -308,7 +308,7 @@ std::optional<BiddingAndAuctionResponse> BiddingAndAuctionResponse::TryParse(
 
   if (base::FeatureList::IsEnabled(blink::features::kPrivateAggregationApi) &&
       blink::features::kPrivateAggregationApiEnabledInProtectedAudience.Get() &&
-      base::FeatureList::IsEnabled(features::kEnableBandAPrivateAggregation)) {
+      base::FeatureList::IsEnabled(::features::kEnableBandAPrivateAggregation)) {
     const base::Value::List* pagg_response =
         input_dict->FindList("paggResponse");
     if (pagg_response) {
@@ -317,7 +317,7 @@ std::optional<BiddingAndAuctionResponse> BiddingAndAuctionResponse::TryParse(
     }
   }
 
-  if (base::FeatureList::IsEnabled(features::kEnableBandASampleDebugReports)) {
+  if (base::FeatureList::IsEnabled(::features::kEnableBandASampleDebugReports)) {
     base::Value::List* for_debugging_only_reports =
         input_dict->FindList("debugReports");
     if (for_debugging_only_reports) {

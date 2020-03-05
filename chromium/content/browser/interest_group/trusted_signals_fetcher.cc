@@ -56,7 +56,7 @@ namespace content {
 
 namespace {
 
-constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotationTSF =
     net::DefineNetworkTrafficAnnotation("trusted_signals_fetcher", R"(
         semantics {
           sender: "TrustedSignalsFetcher"
@@ -102,7 +102,7 @@ constexpr std::array<std::string_view, 2> kAcceptCompression = {"none", "gzip"};
 // Lengths of various components of request and response header components.
 constexpr size_t kCompressionFormatSize = 1;  // bytes
 constexpr size_t kCborStringLengthSize = 4;   // bytes
-constexpr size_t kOhttpHeaderSize = 55;       // bytes
+constexpr size_t kOhttpHeaderSizeTSF = 55;       // bytes
 
 // Creates a single entry for the "arguments" array of a partition, with a
 // single tag and an array of values.
@@ -228,10 +228,10 @@ std::string CreateRequestBodyFromCbor(cbor::Value cbor_value) {
   CHECK(maybe_cbor_bytes.has_value());
 
   std::string request_body;
-  size_t size_before_padding = kOhttpHeaderSize + kCompressionFormatSize +
+  size_t size_before_padding = kOhttpHeaderSizeTSF + kCompressionFormatSize +
                                kCborStringLengthSize + maybe_cbor_bytes->size();
   size_t size_with_padding = std::bit_ceil(size_before_padding);
-  size_t request_body_size = size_with_padding - kOhttpHeaderSize;
+  size_t request_body_size = size_with_padding - kOhttpHeaderSizeTSF;
   request_body.resize(request_body_size, 0x00);
 
   base::SpanWriter writer(base::as_writable_byte_span(request_body));
@@ -245,7 +245,7 @@ std::string CreateRequestBodyFromCbor(cbor::Value cbor_value) {
   // Add CBOR string.
   writer.Write(base::as_byte_span(*maybe_cbor_bytes));
 
-  DCHECK_EQ(writer.num_written(), size_before_padding - kOhttpHeaderSize);
+  DCHECK_EQ(writer.num_written(), size_before_padding - kOhttpHeaderSizeTSF);
 
   // TODO(crbug.com/333445540): Add encryption.
 
@@ -445,7 +445,7 @@ void TrustedSignalsFetcher::EncryptRequestBodyAndStart(
       std::move(client_security_state);
 
   simple_url_loader_ = network::SimpleURLLoader::Create(
-      std::move(resource_request), kTrafficAnnotation);
+      std::move(resource_request), kTrafficAnnotationTSF);
   simple_url_loader_->SetTimeoutDuration(
       auction_worklet::AuctionDownloader::kRequestTimeout);
   simple_url_loader_->AttachStringForUpload(

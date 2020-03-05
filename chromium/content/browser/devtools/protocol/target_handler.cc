@@ -69,7 +69,7 @@ constexpr net::NetworkTrafficAnnotationTag
           "Not implemented, only used in DevTools and is behind a switch."
       })");
 
-static const char kNotAllowedError[] = "Not allowed";
+static const char kNotAllowedErrorTH[] = "Not allowed";
 static const char kMethod[] = "method";
 static const char kResumeMethod[] = "Runtime.runIfWaitingForDebugger";
 
@@ -958,7 +958,7 @@ Response TargetHandler::SetDiscoverTargets(
     bool discover,
     std::unique_ptr<protocol::Array<protocol::Target::FilterEntry>> filter) {
   if (access_mode_ == AccessMode::kAutoAttachOnly)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   if (!discover && filter && !filter->empty()) {
     return Response::InvalidParams(
         "Filter should not be present with `discover` is off");
@@ -1065,7 +1065,7 @@ Response TargetHandler::AttachToTarget(const std::string& target_id,
                                        std::optional<bool> flatten,
                                        std::string* out_session_id) {
   if (access_mode_ == AccessMode::kAutoAttachOnly)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   // TODO(dgozman): only allow reported hosts.
   scoped_refptr<DevToolsAgentHost> agent_host =
       DevToolsAgentHost::GetForId(target_id);
@@ -1078,7 +1078,7 @@ Response TargetHandler::AttachToTarget(const std::string& target_id,
 
 Response TargetHandler::AttachToBrowserTarget(std::string* out_session_id) {
   if (access_mode_ != AccessMode::kBrowser)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   scoped_refptr<DevToolsAgentHost> agent_host =
       DevToolsAgentHost::CreateForBrowser(
           nullptr, DevToolsAgentHost::CreateServerSocketCallback());
@@ -1089,7 +1089,7 @@ Response TargetHandler::AttachToBrowserTarget(std::string* out_session_id) {
 Response TargetHandler::DetachFromTarget(std::optional<std::string> session_id,
                                          std::optional<std::string> target_id) {
   if (access_mode_ == AccessMode::kAutoAttachOnly)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   Session* session = nullptr;
   Response response =
       FindSession(std::move(session_id), std::move(target_id), &session);
@@ -1123,7 +1123,7 @@ Response TargetHandler::GetTargetInfo(
   const std::string& target_id = maybe_target_id.value_or(owner_target_id_);
   if (access_mode_ == AccessMode::kAutoAttachOnly &&
       target_id != owner_target_id_) {
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   }
   // TODO(dgozman): only allow reported hosts.
   scoped_refptr<DevToolsAgentHost> agent_host(
@@ -1136,7 +1136,7 @@ Response TargetHandler::GetTargetInfo(
 
 Response TargetHandler::ActivateTarget(const std::string& target_id) {
   if (access_mode_ == AccessMode::kAutoAttachOnly)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   // TODO(dgozman): only allow reported hosts.
   scoped_refptr<DevToolsAgentHost> agent_host(
       DevToolsAgentHost::GetForId(target_id));
@@ -1149,7 +1149,7 @@ Response TargetHandler::ActivateTarget(const std::string& target_id) {
 Response TargetHandler::CloseTarget(const std::string& target_id,
                                     bool* out_success) {
   if (access_mode_ == AccessMode::kAutoAttachOnly)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   scoped_refptr<DevToolsAgentHost> agent_host =
       DevToolsAgentHost::GetForId(target_id);
   if (!agent_host)
@@ -1164,7 +1164,7 @@ Response TargetHandler::ExposeDevToolsProtocol(
     const std::string& target_id,
     std::optional<std::string> binding_name) {
   if (access_mode_ != AccessMode::kBrowser)
-    return Response::InvalidParams(kNotAllowedError);
+    return Response::InvalidParams(kNotAllowedErrorTH);
   scoped_refptr<DevToolsAgentHost> agent_host =
       DevToolsAgentHost::GetForId(target_id);
   if (!agent_host)
@@ -1198,7 +1198,7 @@ Response TargetHandler::CreateTarget(
     std::optional<bool> for_tab,
     std::string* out_target_id) {
   if (access_mode_ == AccessMode::kAutoAttachOnly)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   DevToolsManagerDelegate* delegate =
       DevToolsManager::GetInstance()->delegate();
   if (!delegate)
@@ -1224,7 +1224,7 @@ Response TargetHandler::GetTargets(
     std::unique_ptr<protocol::Array<protocol::Target::FilterEntry>> filter,
     std::unique_ptr<protocol::Array<Target::TargetInfo>>* target_infos) {
   if (access_mode_ == AccessMode::kAutoAttachOnly)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   std::unique_ptr<TargetFilter> passed_filter =
       filter || !discover_target_filter_
           ? TargetFilter::Create(std::move(filter))
@@ -1300,7 +1300,7 @@ void TargetHandler::CreateBrowserContext(
         in_originsToGrantUniversalNetworkAccess,
     std::unique_ptr<CreateBrowserContextCallback> callback) {
   if (access_mode_ != AccessMode::kBrowser) {
-    callback->sendFailure(Response::ServerError(kNotAllowedError));
+    callback->sendFailure(Response::ServerError(kNotAllowedErrorTH));
     return;
   }
   DevToolsManagerDelegate* delegate =
@@ -1377,7 +1377,7 @@ void TargetHandler::CreateBrowserContext(
 protocol::Response TargetHandler::GetBrowserContexts(
     std::unique_ptr<protocol::Array<protocol::String>>* browser_context_ids) {
   if (access_mode_ != AccessMode::kBrowser)
-    return Response::ServerError(kNotAllowedError);
+    return Response::ServerError(kNotAllowedErrorTH);
   DevToolsManagerDelegate* delegate =
       DevToolsManager::GetInstance()->delegate();
   if (!delegate)
@@ -1395,7 +1395,7 @@ void TargetHandler::DisposeBrowserContext(
     const std::string& context_id,
     std::unique_ptr<DisposeBrowserContextCallback> callback) {
   if (access_mode_ != AccessMode::kBrowser) {
-    callback->sendFailure(Response::ServerError(kNotAllowedError));
+    callback->sendFailure(Response::ServerError(kNotAllowedErrorTH));
     return;
   }
   DevToolsManagerDelegate* delegate =

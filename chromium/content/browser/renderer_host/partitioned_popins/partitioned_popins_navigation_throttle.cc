@@ -85,7 +85,7 @@ PartitionedPopinsNavigationThrottle::PartitionedPopinsNavigationThrottle(
 
 bool PartitionedPopinsNavigationThrottle::DoesPopinPolicyBlockResponse() {
   if (base::FeatureList::IsEnabled(
-          features::kPartitionedPopinsHeaderPolicyBypass)) {
+          ::features::kPartitionedPopinsHeaderPolicyBypass)) {
     return false;
   }
   const net::HttpResponseHeaders* response_headers =

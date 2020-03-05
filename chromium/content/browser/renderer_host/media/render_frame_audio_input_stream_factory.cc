@@ -87,7 +87,7 @@ void TranslateDeviceId(const std::string& device_id,
   // If we're unable to translate the device id, |cb| will not be run.
 }
 
-void GotSaltAndOrigin(
+void GotSaltAndOrigin2(
     int process_id,
     int frame_id,
     base::OnceCallback<void(const MediaDeviceSaltAndOrigin& salt_and_origin,
@@ -106,7 +106,7 @@ void GetSaltOriginAndPermissionsOnUIThread(
                             bool has_access)> cb) {
   GetMediaDeviceSaltAndOrigin(
       GlobalRenderFrameHostId(process_id, frame_id),
-      base::BindOnce(&GotSaltAndOrigin, process_id, frame_id, std::move(cb)));
+      base::BindOnce(&GotSaltAndOrigin2, process_id, frame_id, std::move(cb)));
 }
 
 }  // namespace

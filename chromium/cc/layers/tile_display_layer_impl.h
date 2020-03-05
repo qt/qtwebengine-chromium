@@ -90,8 +90,9 @@ class CC_EXPORT TileDisplayLayerImpl : public LayerImpl {
 
   class CC_EXPORT Tiling {
    public:
-    using Tile = Tile;
-    using TileMap = std::map<TileIndex, std::unique_ptr<Tile>>;
+    using Tile = cc::TileDisplayLayerImpl::Tile;
+    using TileMap =
+        std::map<TileIndex, std::unique_ptr<cc::TileDisplayLayerImpl::Tile>>;
     using CoverageIterator = DisplayTilingCoverageIterator;
 
     explicit Tiling(TileDisplayLayerImpl& layer, float scale_key);

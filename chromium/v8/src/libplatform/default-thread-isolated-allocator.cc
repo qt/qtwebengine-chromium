@@ -16,6 +16,8 @@
 #include <unistd.h>
 #endif
 
+#undef MAP_TYPE
+
 #if V8_HAS_PKU_JIT_WRITE_PROTECT
 
 extern int pkey_alloc(unsigned int flags, unsigned int access_rights) V8_WEAK;

@@ -13,14 +13,14 @@
 namespace extensions {
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<
-    ApiResourceManager<HidConnectionResource>>>::DestructorAtExit g_factory =
+    ApiResourceManager<HidConnectionResource>>>::DestructorAtExit g_factoryHCR =
     LAZY_INSTANCE_INITIALIZER;
 
 // static
 template <>
 BrowserContextKeyedAPIFactory<ApiResourceManager<HidConnectionResource> >*
 ApiResourceManager<HidConnectionResource>::GetFactoryInstance() {
-  return &g_factory.Get();
+  return &g_factoryHCR.Get();
 }
 
 HidConnectionResource::HidConnectionResource(

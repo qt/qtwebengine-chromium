@@ -1237,4 +1237,6 @@ V<Any> WasmInJSInliningReducer<Next>::TryInlineWasmCall(
 
 #include "src/compiler/turboshaft/undef-assembler-macros.inc"
 
+#undef TRACE
+
 #endif  // V8_COMPILER_TURBOSHAFT_WASM_IN_JS_INLINING_REDUCER_INL_H_

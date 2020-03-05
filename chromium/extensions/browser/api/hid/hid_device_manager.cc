@@ -138,7 +138,7 @@ bool WillDispatchDeviceEvent(
   return false;
 }
 
-HidDeviceManager::HidManagerBinder& GetHidManagerBinderOverride() {
+HidDeviceManager::HidManagerBinder& GetHidDeviceManagerBinderOverride() {
   static base::NoDestructor<HidDeviceManager::HidManagerBinder> binder;
   return *binder;
 }
@@ -348,7 +348,7 @@ void HidDeviceManager::LazyInitialize() {
 
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     auto receiver = hid_manager_.BindNewPipeAndPassReceiver();
-    const auto& binder = GetHidManagerBinderOverride();
+    const auto& binder = GetHidDeviceManagerBinderOverride();
     if (binder) {
       binder.Run(std::move(receiver));
     } else {
@@ -370,7 +370,7 @@ void HidDeviceManager::LazyInitialize() {
 // static
 void HidDeviceManager::OverrideHidManagerBinderForTesting(
     HidManagerBinder binder) {
-  GetHidManagerBinderOverride() = std::move(binder);
+  GetHidDeviceManagerBinderOverride() = std::move(binder);
 }
 
 base::Value::List HidDeviceManager::CreateApiDeviceList(

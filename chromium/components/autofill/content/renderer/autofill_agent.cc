@@ -92,7 +92,8 @@ namespace autofill {
 
 namespace {
 
-using enum CallTimerState::CallSite;
+using CTS = CallTimerState::CallSite;
+// using enum CallTimerState::CallSite;
 
 // Used for metrics. Do not renumber.
 // This enum is supposed to identify what is being returned by
@@ -573,7 +574,7 @@ void AutofillAgent::DidDispatchDOMContentLoadedEvent() {
   is_dom_content_loaded_ = true;
   timing_.last_dom_content_loaded = base::TimeTicks::Now();
   ExtractFormsUnthrottled(/*callback=*/{},
-                          GetCallTimerState(kDidDispatchDomContentLoadedEvent));
+                          GetCallTimerState(CTS::kDidDispatchDomContentLoadedEvent));
   password_autofill_agent_->DispatchedDOMContentLoadedEvent(
       SynchronousFormCache(form_cache_.extracted_forms()));
 }
@@ -610,7 +611,7 @@ void AutofillAgent::DidChangeScrollOffsetImpl(FieldRendererId element_id) {
   if (std::optional<FormAndField> form_and_field =
           FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kDidChangeScrollOffsetImpl),
+              GetCallTimerState(CTS::kDidChangeScrollOffsetImpl),
               MaybeExtractDatalist({form_util::ExtractOption::kBounds}),
               /*form_cache=*/{})) {
     auto& [form, field] = *form_and_field;
@@ -672,7 +673,7 @@ void AutofillAgent::FocusedElementChanged(
     if (std::optional<FormAndField> form_and_field =
             FindFormAndFieldForFormControlElement(
                 control, field_data_manager(),
-                GetCallTimerState(kFocusedElementChanged),
+                GetCallTimerState(CTS::kFocusedElementChanged),
                 MaybeExtractDatalist({form_util::ExtractOption::kBounds}),
                 /*form_cache=*/{})) {
       auto& [form, field] = *form_and_field;
@@ -734,7 +735,7 @@ void AutofillAgent::HandleCaretMovedInFormField(WebElement element,
       if (std::optional<FormAndField> form_and_field =
               FindFormAndFieldForFormControlElement(
                   control, self.field_data_manager(),
-                  self.GetCallTimerState(kHandleCaretMovedInFormField),
+                  self.GetCallTimerState(CTS::kHandleCaretMovedInFormField),
                   self.MaybeExtractDatalist(
                       {form_util::ExtractOption::kBounds}),
                   /*form_cache=*/{})) {
@@ -936,7 +937,7 @@ void AutofillAgent::OnTextFieldValueChanged(
   if (std::optional<FormAndField> form_and_field =
           FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kOnTextFieldValueChanged),
+              GetCallTimerState(CTS::kOnTextFieldValueChanged),
               MaybeExtractDatalist({form_util::ExtractOption::kBounds}),
               form_cache)) {
     auto& [form, field] = *form_and_field;
@@ -954,7 +955,7 @@ void AutofillAgent::OnSelectControlSelectionChanged(
   if (std::optional<FormAndField> form_and_field =
           FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kOnProvisionallySaveForm),
+              GetCallTimerState(CTS::kOnProvisionallySaveForm),
               MaybeExtractDatalist({form_util::ExtractOption::kBounds}),
               form_cache)) {
     auto& [form, field] = *form_and_field;
@@ -1093,7 +1094,7 @@ void AutofillAgent::ApplyFieldsAction(
       if (extracted_form_ids.insert(field.host_form_id).second) {
         std::optional<FormData> form = form_util::ExtractFormData(
             document, form_util::GetFormByRendererId(field.host_form_id),
-            field_data_manager(), GetCallTimerState(kApplyFieldsAction));
+            field_data_manager(), GetCallTimerState(CTS::kApplyFieldsAction));
         if (!form) {
           continue;
         }
@@ -1487,7 +1488,7 @@ void AutofillAgent::QueryAutofillSuggestions(
   std::optional<FormAndField> form_and_field =
       form_util::FindFormAndFieldForFormControlElement(
           element, field_data_manager(),
-          GetCallTimerState(kQueryAutofillSuggestions),
+          GetCallTimerState(CTS::kQueryAutofillSuggestions),
           {form_util::ExtractOption::kDatalist,
            form_util::ExtractOption::kBounds},
           form_cache);
@@ -1548,7 +1549,7 @@ void AutofillAgent::ExtractForm(
   if (!form_id) {
     if (std::optional<FormData> form = form_util::ExtractFormData(
             document, WebFormElement(), field_data_manager(),
-            GetCallTimerState(kExtractForm), extract_options)) {
+            GetCallTimerState(CTS::kExtractForm), extract_options)) {
       std::move(callback).Run(std::move(form));
       return;
     }
@@ -1556,7 +1557,7 @@ void AutofillAgent::ExtractForm(
   if (WebFormElement form_element = form_util::GetFormByRendererId(form_id)) {
     if (std::optional<FormData> form = form_util::ExtractFormData(
             document, form_element, field_data_manager(),
-            GetCallTimerState(kExtractForm), extract_options)) {
+            GetCallTimerState(CTS::kExtractForm), extract_options)) {
       std::move(callback).Run(std::move(form));
       return;
     }
@@ -1590,7 +1591,7 @@ void AutofillAgent::ExtractLabeledTextNodeValue(
 void AutofillAgent::EmitFormIssuesToDevtools() {
   // TODO(crbug.com/1399414,crbug.com/1444566): Throttle this call if possible.
   ExtractFormsUnthrottled(/*callback=*/{},
-                          GetCallTimerState(kEmitFormIssuesToDevtools));
+                          GetCallTimerState(CTS::kEmitFormIssuesToDevtools));
 }
 
 void AutofillAgent::ExtractForms(base::OneShotTimer& timer,
@@ -1604,7 +1605,7 @@ void AutofillAgent::ExtractForms(base::OneShotTimer& timer,
   timer.Start(FROM_HERE, kFormsSeenThrottle,
               base::BindOnce(&AutofillAgent::ExtractFormsUnthrottled,
                              base::Unretained(this), std::move(callback),
-                             GetCallTimerState(kExtractForms)));
+                             GetCallTimerState(autofill::CallTimerState::CallSite::kExtractForms)));
 }
 
 void AutofillAgent::ExtractFormsAndNotifyPasswordAutofillAgent(
@@ -1630,7 +1631,7 @@ void AutofillAgent::ExtractFormsAndNotifyPasswordAutofillAgent(
               },
               base::Unretained(password_autofill_agent_.get()),
               base::Unretained(&form_cache_), element.GetDomNodeId()),
-          GetCallTimerState(kExtractFormsAndNotifyPasswordAutofillAgent)));
+          GetCallTimerState(autofill::CallTimerState::CallSite::kExtractFormsAndNotifyPasswordAutofillAgent)));
 }
 
 void AutofillAgent::ExtractFormsUnthrottled(
@@ -1831,7 +1832,7 @@ void AutofillAgent::BatchSelectOptionChange(FieldRendererId element_id) {
   if (std::optional<FormAndField> form_and_field =
           form_util::FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kBatchSelectOptionChange),
+              GetCallTimerState(CTS::kBatchSelectOptionChange),
               /*extract_options=*/{}, /*form_cache=*/{})) {
     auto& [form, field] = *form_and_field;
     if (auto* autofill_driver = unsafe_autofill_driver();
@@ -1982,7 +1983,7 @@ void AutofillAgent::JavaScriptChangedValue(WebFormControlElement element,
   if (std::optional<FormAndField> form_and_field =
           form_util::FindFormAndFieldForFormControlElement(
               element, field_data_manager(),
-              GetCallTimerState(kJavaScriptChangedValue),
+              GetCallTimerState(CTS::kJavaScriptChangedValue),
               /*extract_options=*/{}, /*form_cache=*/{})) {
     auto& [form, field] = *form_and_field;
     if (auto* autofill_driver = unsafe_autofill_driver()) {
@@ -2178,7 +2179,7 @@ std::optional<FormData> AutofillAgent::GetSubmittedForm(
               submitted_form_element.has_value()
                   ? *submitted_form_element
                   : last_interacted_form().GetForm(),
-              field_data_manager(), GetCallTimerState(kGetSubmittedForm))) {
+              field_data_manager(), GetCallTimerState(CTS::kGetSubmittedForm))) {
         LogSubmittedFormMetric(source, SubmittedFormType::kExtracted);
         return form;
       }
@@ -2198,7 +2199,7 @@ std::optional<FormData> AutofillAgent::GetSubmittedForm(
           features::kAutofillUseSubmittedFormInHtmlSubmission)) {
     if (std::optional<FormData> form = form_util::ExtractFormData(
             submitted_form_element->GetDocument(), *submitted_form_element,
-            field_data_manager(), GetCallTimerState(kGetSubmittedForm))) {
+            field_data_manager(), GetCallTimerState(autofill::CallTimerState::CallSite::kGetSubmittedForm))) {
       LogSubmittedFormMetric(source, SubmittedFormType::kExtracted);
       return form;
     }
@@ -2220,7 +2221,7 @@ std::optional<FormData> AutofillAgent::GetSubmittedForm(
     CHECK(submitted_form_element);
     std::optional<FormData> form = form_util::ExtractFormData(
         submitted_form_element->GetDocument(), *submitted_form_element,
-        field_data_manager(), GetCallTimerState(kGetSubmittedForm));
+        field_data_manager(), GetCallTimerState(autofill::CallTimerState::CallSite::kGetSubmittedForm));
     LogSubmittedFormMetric(source, form ? SubmittedFormType::kExtracted
                                         : SubmittedFormType::kNull);
     return form;
@@ -2246,7 +2247,7 @@ std::optional<FormData> AutofillAgent::GetSubmittedForm(
   // Try extracting the corresponding form.
   if (std::optional<FormData> form = form_util::ExtractFormData(
           document, last_interacted_form().GetForm(), field_data_manager(),
-          GetCallTimerState(kGetSubmittedForm));
+          GetCallTimerState(CTS::kGetSubmittedForm));
       form && (!user_edited_unowned_form ||
                !std::ranges::none_of(form->fields(), has_been_user_edited))) {
     LogSubmittedFormMetric(source, SubmittedFormType::kExtracted);

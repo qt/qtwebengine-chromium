@@ -1421,7 +1421,7 @@ bool SiteInstanceImpl::CanBePlacedInDefaultSiteInstance(
   // site to have its own SiteInstance object and logic elsewhere ensures
   // that those SiteInstances share a process.
   if (base::FeatureList::IsEnabled(
-          features::kProcessSharingWithStrictSiteInstances)) {
+          ::features::kProcessSharingWithStrictSiteInstances)) {
     return false;
   }
 
@@ -1669,7 +1669,7 @@ RenderProcessHost* SiteInstanceImpl::GetDefaultProcessForBrowsingInstance() {
   }
   if (browsing_instance_->site_instance_group_manager().default_process()) {
     DCHECK(base::FeatureList::IsEnabled(
-        features::kProcessSharingWithStrictSiteInstances));
+        ::features::kProcessSharingWithStrictSiteInstances));
     return browsing_instance_->site_instance_group_manager().default_process();
   }
   return nullptr;

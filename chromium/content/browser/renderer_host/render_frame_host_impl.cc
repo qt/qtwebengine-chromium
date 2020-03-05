@@ -3741,7 +3741,7 @@ RenderFrameHostImpl::AccessibilityGetAcceleratedWidget() {
 
 gfx::NativeViewAccessible
 RenderFrameHostImpl::AccessibilityGetNativeViewAccessible() {
-  if (base::FeatureList::IsEnabled(features::kEvictOnAXEvents) &&
+  if (base::FeatureList::IsEnabled(::features::kEvictOnAXEvents) &&
       IsInactiveAndDisallowActivation(
           DisallowActivationReasonId::kAXGetNativeView)) {
     // |AccessibilityGetNativeViewAccessible()| should be only accessible when
@@ -4197,7 +4197,7 @@ bool RenderFrameHostImpl::CreateRenderFrame(
        (navigation_request->commit_params()
             .is_cross_site_cross_browsing_context_group &&
         base::FeatureList::IsEnabled(
-            features::kClearCrossSiteCrossBrowsingContextGroupWindowName)));
+            ::features::kClearCrossSiteCrossBrowsingContextGroupWindowName)));
 
   if (should_clear_browsing_instance_name) {
     params->replication_state->name = "";
@@ -5691,7 +5691,7 @@ bool RenderFrameHostImpl::VerifyFencedFrameFocusChange(
   // TODO(crbug.com/40274134): We will later badmessage the renderer, but, for
   // now, we will dump without crashing to monitor if any legitimate cases are
   // reaching this point.
-  if (base::FeatureList::IsEnabled(features::kFencedFramesEnforceFocus)) {
+  if (base::FeatureList::IsEnabled(::features::kFencedFramesEnforceFocus)) {
     bad_message::ReceivedBadMessage(
         GetProcess(), bad_message::RFH_FOCUS_ACROSS_FENCED_BOUNDARY);
   } else {
@@ -6399,7 +6399,7 @@ void RenderFrameHostImpl::SwapOuterDelegateFrame(
   // `devtools_frame_token`) to indicate to DevTools clients that the guest has
   // been attached to this placeholder iframe.
   const bool should_swap_devtools_frame_token =
-      base::FeatureList::IsEnabled(features::kGuestViewMPArch);
+      base::FeatureList::IsEnabled(::features::kGuestViewMPArch);
   GetMojomFrameInRenderer()->Unload(
       /*is_loading=*/false,
       browsing_context_state_->current_replication_state().Clone(),
@@ -8435,14 +8435,14 @@ bool RenderFrameHostImpl::IsInactiveAndDisallowActivation(uint64_t reason) {
       // back/forward cache, because |HandleAXevents()| will continue to process
       // accessibility events without evicting unless the kEvictOnAXEvents flag
       // is on.
-      if (!base::FeatureList::IsEnabled(features::kEvictOnAXEvents))
+      if (!base::FeatureList::IsEnabled(::features::kEvictOnAXEvents))
         CHECK_NE(reason, kAXEvent);
       // This function should not be called with kAXLocationChange when the
       // page is in back/forward cache, because `HandleAXLocationChange()` will
       // continue to process accessibility location changes unless
       // kDoNotEvictOnAXLocationChange is off.
       if (base::FeatureList::IsEnabled(
-              features::kDoNotEvictOnAXLocationChange)) {
+              ::features::kDoNotEvictOnAXLocationChange)) {
         CHECK_NE(reason, kAXLocationChange);
       }
       BackForwardCacheCanStoreDocumentResult can_store_flat;
@@ -8480,7 +8480,7 @@ bool RenderFrameHostImpl::IsInactiveAndDisallowActivation(uint64_t reason) {
 
 bool RenderFrameHostImpl::IsInactiveAndDisallowActivationForAXEvents(
     const std::vector<ui::AXEvent>& events) {
-  DCHECK(base::FeatureList::IsEnabled(features::kEvictOnAXEvents));
+  DCHECK(base::FeatureList::IsEnabled(::features::kEvictOnAXEvents));
   if (lifecycle_state_ != LifecycleStateImpl::kInBackForwardCache) {
     return IsInactiveAndDisallowActivation(
         DisallowActivationReasonId::kAXEvent);
@@ -8883,7 +8883,7 @@ void RenderFrameHostImpl::MaybeIsolateForUserActivation() {
     // the isolation eligibility checks, such as having the corresponding
     // feature enabled or satisfying memory requirements.
     DCHECK(base::FeatureList::IsEnabled(
-        features::kSiteIsolationForCrossOriginOpenerPolicy));
+        ::features::kSiteIsolationForCrossOriginOpenerPolicy));
 
     bool is_same_origin_activation =
         GetParent() ? GetMainFrame()->GetLastCommittedOrigin().IsSameOriginWith(
@@ -11059,7 +11059,7 @@ void RenderFrameHostImpl::HandleAXEvents(
   // TODO(accessibility): we should probably consolidate these two params.
   updates_and_events.ax_tree_id = tree_id;
 
-  if (base::FeatureList::IsEnabled(features::kEvictOnAXEvents)) {
+  if (base::FeatureList::IsEnabled(::features::kEvictOnAXEvents)) {
     // If the flag is on, evict the bfcache entry now that AX events are
     // received.
     if (IsInactiveAndDisallowActivationForAXEvents(updates_and_events.events)) {
@@ -11163,7 +11163,7 @@ void RenderFrameHostImpl::HandleAXLocationChanges(
     return;
   }
 
-  if (!base::FeatureList::IsEnabled(features::kDoNotEvictOnAXLocationChange)) {
+  if (!base::FeatureList::IsEnabled(::features::kDoNotEvictOnAXLocationChange)) {
     // If the flag is off, we should evict the back/forward cache entry.
     if (IsInactiveAndDisallowActivation(
             DisallowActivationReasonId::kAXLocationChange)) {
@@ -13490,7 +13490,7 @@ void RenderFrameHostImpl::CreateSecurePaymentConfirmationService(
 
 void RenderFrameHostImpl::CreateWebUsbService(
     mojo::PendingReceiver<blink::mojom::WebUsbService> receiver) {
-  if (!base::FeatureList::IsEnabled(features::kWebUsb)) {
+  if (!base::FeatureList::IsEnabled(::features::kWebUsb)) {
     return;
   }
   if (!IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::kUsb)) {
@@ -15759,7 +15759,7 @@ void RenderFrameHostImpl::SendCommitNavigation(
   DCHECK_EQ(net::OK, navigation_request->GetNetErrorCode());
   if (commit_params->origin_to_commit) {
     DCHECK(
-        base::FeatureList::IsEnabled(features::kUseBrowserCalculatedOrigin) ||
+        base::FeatureList::IsEnabled(::features::kUseBrowserCalculatedOrigin) ||
         common_params->url.SchemeIs(url::kDataScheme));
     CHECK_EQ(commit_params->origin_to_commit.value(),
              navigation_request->browser_side_origin_to_commit_with_debug_info()
@@ -15798,7 +15798,7 @@ void RenderFrameHostImpl::SendCommitNavigation(
   // TODO(crbug.com/40205612): Remove the kill switch for this check.
   bool should_block_storage_access_for_pdf =
       GetSiteInstance()->GetSiteInfo().is_pdf() &&
-      base::FeatureList::IsEnabled(features::kPdfEnforcements);
+      base::FeatureList::IsEnabled(::features::kPdfEnforcements);
 
   // Make sure the origin of the isolation info and origin to commit match,
   // otherwise the cookie manager will crash. Sending the cookie manager here
@@ -16739,7 +16739,7 @@ bool ShouldVerify(const std::string& param) {
   // For other params, default to disable checking the param. However, it's
   // possible to force-enable checking the param via the VerifyDidCommitParams
   // flag's param.
-  return GetFieldTrialParamByFeatureAsBool(features::kVerifyDidCommitParams,
+  return GetFieldTrialParamByFeatureAsBool(::features::kVerifyDidCommitParams,
                                            param, false);
 #endif
 }
@@ -16788,7 +16788,7 @@ void RenderFrameHostImpl::
 #if !DCHECK_IS_ON()
   // Only check for the flag if DCHECK is not enabled, so that we will always
   // verify the params for tests.
-  if (!base::FeatureList::IsEnabled(features::kVerifyDidCommitParams))
+  if (!base::FeatureList::IsEnabled(::features::kVerifyDidCommitParams))
     return;
 #endif
   // Check if these values from DidCommitProvisionalLoadParams sent by the
@@ -17994,14 +17994,14 @@ void RenderFrameHostImpl::SetFrameTreeNode(FrameTreeNode& frame_tree_node) {
   // the new functionality for swapping BrowsingContext on cross
   // BrowsingInstance navigations, the BrowsingContextState is the only field
   // that will need to be swapped.
-  switch (features::GetBrowsingContextMode()) {
-    case (features::BrowsingContextStateImplementationType::
+  switch (::features::GetBrowsingContextMode()) {
+    case (::features::BrowsingContextStateImplementationType::
               kLegacyOneToOneWithFrameTreeNode):
       browsing_context_state_ = frame_tree_node_->render_manager()
                                     ->current_frame_host()
                                     ->browsing_context_state();
       break;
-    case (features::BrowsingContextStateImplementationType::
+    case (::features::BrowsingContextStateImplementationType::
               kSwapForCrossBrowsingInstanceNavigations):
       // TODO(crbug.com/40205442): implement functionality for swapping on cross
       // browsing instance navigations as needed. This will likely be removed
@@ -18250,7 +18250,7 @@ bool RenderFrameHostImpl::ShouldReuseCompositing(
     return false;
   }
 
-  if (!base::FeatureList::IsEnabled(features::kRenderDocumentCompositorReuse)) {
+  if (!base::FeatureList::IsEnabled(::features::kRenderDocumentCompositorReuse)) {
     return false;
   }
 

@@ -147,7 +147,7 @@ char* PrependHexAddress(char* output, const void* address) {
 std::atomic_bool g_record_crash_keys = false;
 
 #if BUILDFLAG(IS_WIN)
-bool g_explicit_high_resolution_timer_win = true;
+bool g_explicit_high_resolution_timer_win_smi = true;
 #endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace
@@ -280,7 +280,7 @@ void SequenceManagerImpl::InitializeFeatures() {
   MessagePump::InitializeFeatures();
   ThreadControllerWithMessagePumpImpl::InitializeFeatures();
 #if BUILDFLAG(IS_WIN)
-  g_explicit_high_resolution_timer_win =
+  g_explicit_high_resolution_timer_win_smi =
       FeatureList::IsEnabled(kExplicitHighResolutionTimerWin);
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -755,7 +755,7 @@ bool SequenceManagerImpl::HasPendingHighResolutionTasks() {
   // Only consider high-res tasks in the |wake_up_queue| (ignore the
   // |non_waking_wake_up_queue|).
 #if BUILDFLAG(IS_WIN)
-  if (g_explicit_high_resolution_timer_win) {
+  if (g_explicit_high_resolution_timer_win_smi) {
     std::optional<WakeUp> wake_up =
         main_thread_only().wake_up_queue->GetNextDelayedWakeUp();
     if (!wake_up) {
