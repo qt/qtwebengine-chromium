@@ -64,7 +64,7 @@ bool g_is_sweep_cancelled_tasks_enabled =
 #if BUILDFLAG(IS_WIN)
 // An atomic is used here because the flag is queried from other threads when
 // tasks are posted cross-thread, which can race with its initialization.
-std::atomic_bool g_explicit_high_resolution_timer_win{true};
+std::atomic_bool g_explicit_high_resolution_timer_win_tqi{true};
 #endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace
@@ -186,7 +186,7 @@ void TaskQueueImpl::InitializeFeatures() {
   g_is_sweep_cancelled_tasks_enabled =
       FeatureList::IsEnabled(kSweepCancelledTasks);
 #if BUILDFLAG(IS_WIN)
-  g_explicit_high_resolution_timer_win.store(
+  g_explicit_high_resolution_timer_win_tqi.store(
       FeatureList::IsEnabled(kExplicitHighResolutionTimerWin),
       std::memory_order_relaxed);
 #endif  // BUILDFLAG(IS_WIN)
@@ -1053,7 +1053,7 @@ Task TaskQueueImpl::MakeDelayedTask(PostedTask delayed_task,
   WakeUpResolution resolution = WakeUpResolution::kLow;
 #if BUILDFLAG(IS_WIN)
   const bool explicit_high_resolution_timer_win =
-      g_explicit_high_resolution_timer_win.load(std::memory_order_relaxed);
+      g_explicit_high_resolution_timer_win_tqi.load(std::memory_order_relaxed);
 #endif  // BUILDFLAG(IS_WIN)
   if (absl::holds_alternative<base::TimeDelta>(
           delayed_task.delay_or_delayed_run_time)) {

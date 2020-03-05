@@ -551,8 +551,8 @@ MetricsStateManager::CreateEntropyProviders() {
   return std::make_unique<variations::EntropyProviders>(
       GetHighEntropySource(),
       variations::ValueInRange{
-          .value = base::checked_cast<uint32_t>(GetLowEntropySource()),
-          .range = EntropyState::kMaxLowEntropySize},
+          /*.value =*/ base::checked_cast<uint32_t>(GetLowEntropySource()),
+          /*.range =*/ EntropyState::kMaxLowEntropySize},
       ShouldEnableBenchmarking(entropy_params_.force_benchmarking_mode));
 }
 

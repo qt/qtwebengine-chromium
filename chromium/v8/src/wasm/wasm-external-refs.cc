@@ -469,8 +469,8 @@ V ReadAndIncrementOffset(Address data, size_t* offset) {
   return result;
 }
 
-constexpr int32_t kSuccess = 1;
-constexpr int32_t kOutOfBounds = 0;
+constexpr int32_t kSuccess2 = 1;
+constexpr int32_t kOutOfBounds2 = 0;
 }  // namespace
 
 int32_t memory_init_wrapper(Address data) {
@@ -486,16 +486,16 @@ int32_t memory_init_wrapper(Address data) {
   uint32_t size = ReadAndIncrementOffset<uint32_t>(data, &offset);
 
   uint64_t mem_size = instance->memory_size(mem_index);
-  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds2;
 
   uint32_t seg_size = instance->data_segment_sizes()->get(seg_index);
-  if (!base::IsInBounds<uint32_t>(src, size, seg_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint32_t>(src, size, seg_size)) return kOutOfBounds2;
 
   uint8_t* seg_start = reinterpret_cast<uint8_t*>(
       instance->data_segment_starts()->get(seg_index));
   std::memcpy(EffectiveAddress(instance, mem_index, dst), seg_start + src,
               size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 int32_t memory_copy_wrapper(Address data) {
@@ -512,13 +512,13 @@ int32_t memory_copy_wrapper(Address data) {
 
   uint64_t dst_mem_size = instance->memory_size(dst_mem_index);
   uint64_t src_mem_size = instance->memory_size(src_mem_index);
-  if (!base::IsInBounds<uint64_t>(dst, size, dst_mem_size)) return kOutOfBounds;
-  if (!base::IsInBounds<uint64_t>(src, size, src_mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, dst_mem_size)) return kOutOfBounds2;
+  if (!base::IsInBounds<uint64_t>(src, size, src_mem_size)) return kOutOfBounds2;
 
   // Use std::memmove, because the ranges can overlap.
   std::memmove(EffectiveAddress(instance, dst_mem_index, dst),
                EffectiveAddress(instance, src_mem_index, src), size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 int32_t memory_fill_wrapper(Address data) {
@@ -535,10 +535,10 @@ int32_t memory_fill_wrapper(Address data) {
   uintptr_t size = ReadAndIncrementOffset<uintptr_t>(data, &offset);
 
   uint64_t mem_size = instance->memory_size(mem_index);
-  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds;
+  if (!base::IsInBounds<uint64_t>(dst, size, mem_size)) return kOutOfBounds2;
 
   std::memset(EffectiveAddress(instance, mem_index, dst), value, size);
-  return kSuccess;
+  return kSuccess2;
 }
 
 namespace {

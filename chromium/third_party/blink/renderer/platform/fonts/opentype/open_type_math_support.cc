@@ -16,7 +16,7 @@
 
 namespace {
 // HarfBuzz' hb_position_t is a 16.16 fixed-point value.
-float HarfBuzzUnitsToFloat(hb_position_t value) {
+float HarfBuzzUnitsToFloatOTMS(hb_position_t value) {
   static const float kFloatToHbRatio = 1.0f / (1 << 16);
   return kFloatToHbRatio * value;
 }
@@ -119,7 +119,7 @@ absl::optional<float> OpenTypeMathSupport::MathConstant(
     case kRadicalExtraAscender:
     case kRadicalKernBeforeDegree:
     case kRadicalKernAfterDegree:
-      return absl::optional<float>(HarfBuzzUnitsToFloat(harfbuzz_value));
+      return absl::optional<float>(HarfBuzzUnitsToFloatOTMS(harfbuzz_value));
     default:
       NOTREACHED();
   }
@@ -134,7 +134,7 @@ absl::optional<float> OpenTypeMathSupport::MathItalicCorrection(
 
   hb_font_t* const font = harfbuzz_face->GetScaledFont();
 
-  return absl::optional<float>(HarfBuzzUnitsToFloat(
+  return absl::optional<float>(HarfBuzzUnitsToFloatOTMS(
       hb_ot_math_get_glyph_italics_correction(font, glyph)));
 }
 
@@ -227,9 +227,9 @@ OpenTypeMathSupport::GetGlyphPartRecords(
       WTF::BindRepeating([](hb_ot_math_glyph_part_t record)
                              -> OpenTypeMathStretchData::GlyphPartRecord {
         return {static_cast<Glyph>(record.glyph),
-                HarfBuzzUnitsToFloat(record.start_connector_length),
-                HarfBuzzUnitsToFloat(record.end_connector_length),
-                HarfBuzzUnitsToFloat(record.full_advance),
+                HarfBuzzUnitsToFloatOTMS(record.start_connector_length),
+                HarfBuzzUnitsToFloatOTMS(record.end_connector_length),
+                HarfBuzzUnitsToFloatOTMS(record.full_advance),
                 !!(record.flags & HB_MATH_GLYPH_PART_FLAG_EXTENDER)};
       });
   Vector<OpenTypeMathStretchData::GlyphPartRecord> parts =
@@ -246,7 +246,7 @@ OpenTypeMathSupport::GetGlyphPartRecords(
     hb_ot_math_get_glyph_assembly(hb_font, base_glyph,
                                   HarfBuzzDirection(stretch_axis), 0, nullptr,
                                   nullptr, &harfbuzz_italic_correction);
-    *italic_correction = HarfBuzzUnitsToFloat(harfbuzz_italic_correction);
+    *italic_correction = HarfBuzzUnitsToFloatOTMS(harfbuzz_italic_correction);
   }
   return parts;
 }

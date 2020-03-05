@@ -132,15 +132,15 @@ void H264Encoder::EncodeFrame(scoped_refptr<media::VideoFrame> frame,
   picture.iColorFormat = EVideoFormatType::videoFormatI420;
   picture.uiTimeStamp =
       (capture_timestamp - first_frame_timestamp_).InMilliseconds();
-  picture.iStride[0] = frame->stride(VideoFrame::kYPlane);
-  picture.iStride[1] = frame->stride(VideoFrame::kUPlane);
-  picture.iStride[2] = frame->stride(VideoFrame::kVPlane);
+  picture.iStride[0] = frame->stride(media::VideoFrame::kYPlane);
+  picture.iStride[1] = frame->stride(media::VideoFrame::kUPlane);
+  picture.iStride[2] = frame->stride(media::VideoFrame::kVPlane);
   picture.pData[0] =
-      const_cast<uint8_t*>(frame->visible_data(VideoFrame::kYPlane));
+      const_cast<uint8_t*>(frame->visible_data(media::VideoFrame::kYPlane));
   picture.pData[1] =
-      const_cast<uint8_t*>(frame->visible_data(VideoFrame::kUPlane));
+      const_cast<uint8_t*>(frame->visible_data(media::VideoFrame::kUPlane));
   picture.pData[2] =
-      const_cast<uint8_t*>(frame->visible_data(VideoFrame::kVPlane));
+      const_cast<uint8_t*>(frame->visible_data(media::VideoFrame::kVPlane));
 
   SFrameBSInfo info = {};
 

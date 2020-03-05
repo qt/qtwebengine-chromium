@@ -174,3 +174,6 @@ const uint8_t* SHA256_hash(const void* data, size_t len, uint8_t* digest) {
 
 }  // namespace internal
 }  // namespace v8
+
+#undef ror
+#undef shr

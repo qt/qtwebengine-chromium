@@ -90,7 +90,7 @@ attribution_internals::mojom::WebUISourcePtr WebUISource(
       attributability);
 }
 
-void ForwardSourcesToWebUI(
+void ForwardSourcesToWebUI2(
     attribution_internals::mojom::Handler::GetActiveSourcesCallback
         web_ui_callback,
     std::vector<StoredSource> active_sources) {
@@ -203,7 +203,7 @@ attribution_internals::mojom::WebUIReportPtr WebUIReport(
       std::move(status), std::move(data));
 }
 
-void ForwardReportsToWebUI(
+void ForwardReportsToWebUI2(
     attribution_internals::mojom::Handler::GetReportsCallback web_ui_callback,
     std::vector<AttributionReport> pending_reports) {
   std::vector<attribution_internals::mojom::WebUIReportPtr> web_ui_reports;
@@ -265,7 +265,7 @@ void AttributionInternalsHandlerImpl::GetActiveSources(
   if (AttributionManager* manager =
           AttributionManager::FromWebContents(web_ui_->GetWebContents())) {
     manager->GetActiveSourcesForWebUI(
-        base::BindOnce(&ForwardSourcesToWebUI, std::move(callback)));
+        base::BindOnce(&ForwardSourcesToWebUI2, std::move(callback)));
   } else {
     std::move(callback).Run({});
   }
@@ -277,7 +277,7 @@ void AttributionInternalsHandlerImpl::GetReports(
           AttributionManager::FromWebContents(web_ui_->GetWebContents())) {
     manager->GetPendingReportsForInternalUse(
         /*limit=*/1000,
-        base::BindOnce(&ForwardReportsToWebUI, std::move(callback)));
+        base::BindOnce(&ForwardReportsToWebUI2, std::move(callback)));
   } else {
     std::move(callback).Run({});
   }

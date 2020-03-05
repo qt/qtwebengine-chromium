@@ -1743,6 +1743,8 @@ Handle<DeoptimizationData> MaglevCodeGenerator::GenerateDeoptimizationData(
   return data;
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

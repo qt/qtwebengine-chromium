@@ -25,7 +25,7 @@ namespace content {
 
 namespace {
 
-const size_t kFramingHeaderSize = 5;  // bytes
+const size_t kFramingHeaderSizeBAAS = 5;  // bytes
 
 const uint8_t kRequestVersion = 0;
 const uint8_t kRequestVersionBitOffset = 5;
@@ -249,7 +249,7 @@ BiddingAndAuctionData BiddingAndAuctionSerializer::Build() {
   absl::optional<std::vector<uint8_t>> maybe_msg = cbor::Writer::Write(message);
   DCHECK(maybe_msg);
 
-  size_t size_before_padding = kFramingHeaderSize + maybe_msg->size();
+  size_t size_before_padding = kFramingHeaderSizeBAAS + maybe_msg->size();
   size_t desired_size = absl::bit_ceil(size_before_padding);
 
   std::vector<uint8_t> request(desired_size);
@@ -261,8 +261,8 @@ BiddingAndAuctionData BiddingAndAuctionSerializer::Build() {
   request[2] = (request_size >> 16) & 0xff;
   request[3] = (request_size >> 8) & 0xff;
   request[4] = (request_size >> 0) & 0xff;
-  DCHECK_GE(request.size(), kFramingHeaderSize + maybe_msg->size());
-  memcpy(&request[kFramingHeaderSize], maybe_msg->data(), maybe_msg->size());
+  DCHECK_GE(request.size(), kFramingHeaderSizeBAAS + maybe_msg->size());
+  memcpy(&request[kFramingHeaderSizeBAAS], maybe_msg->data(), maybe_msg->size());
 
   data.request = std::move(request);
   return data;

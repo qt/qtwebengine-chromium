@@ -25,7 +25,7 @@
 namespace content {
 namespace {
 
-BrowserContext* BrowserContextFromFrameTreeNodeId(int frame_tree_node_id) {
+BrowserContext* BrowserContextFromFrameTreeNodeIdPULI(int frame_tree_node_id) {
   WebContents* web_content =
       WebContents::FromFrameTreeNodeId(frame_tree_node_id);
   if (!web_content)
@@ -171,7 +171,7 @@ void PrefetchURLLoaderInterceptor::OnGetPrefetchComplete(
   // TODO (https://crbug.com/1369766): Investigate if header_client param should
   // be non-null, and then how to utilize it.
   GetContentClient()->browser()->WillCreateURLLoaderFactory(
-      BrowserContextFromFrameTreeNodeId(frame_tree_node_id_), render_frame_host,
+      BrowserContextFromFrameTreeNodeIdPULI(frame_tree_node_id_), render_frame_host,
       render_frame_host->GetProcess()->GetID(),
       ContentBrowserClient::URLLoaderFactoryType::kNavigation, url::Origin(),
       navigation_request->GetNavigationId(),

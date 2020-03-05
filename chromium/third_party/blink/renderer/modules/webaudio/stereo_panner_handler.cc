@@ -20,8 +20,8 @@ namespace blink {
 namespace {
 
 // A PannerNode only supports 1 or 2 channels
-constexpr unsigned kMinimumOutputChannels = 1;
-constexpr unsigned kMaximumOutputChannels = 2;
+constexpr unsigned kMinimumOutputChannels_SPH = 1;
+constexpr unsigned kMaximumOutputChannels_SPH = 2;
 
 }  // namespace
 
@@ -33,11 +33,11 @@ StereoPannerHandler::StereoPannerHandler(AudioNode& node,
       sample_accurate_pan_values_(
           GetDeferredTaskHandler().RenderQuantumFrames()) {
   AddInput();
-  AddOutput(kMaximumOutputChannels);
+  AddOutput(kMaximumOutputChannels_SPH);
 
   // The node-specific default mixing rules declare that StereoPannerNode
   // can handle mono to stereo and stereo to stereo conversion.
-  channel_count_ = kMaximumOutputChannels;
+  channel_count_ = kMaximumOutputChannels_SPH;
   SetInternalChannelCountMode(kClampedMax);
   SetInternalChannelInterpretation(AudioBus::kSpeakers);
 
@@ -112,8 +112,8 @@ void StereoPannerHandler::SetChannelCount(unsigned channel_count,
   DCHECK(IsMainThread());
   BaseAudioContext::GraphAutoLocker locker(Context());
 
-  if (channel_count >= kMinimumOutputChannels &&
-      channel_count <= kMaximumOutputChannels) {
+  if (channel_count >= kMinimumOutputChannels_SPH &&
+      channel_count <= kMaximumOutputChannels_SPH) {
     if (channel_count_ != channel_count) {
       channel_count_ = channel_count;
       if (InternalChannelCountMode() != kMax) {
@@ -124,8 +124,8 @@ void StereoPannerHandler::SetChannelCount(unsigned channel_count,
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
         ExceptionMessages::IndexOutsideRange<uint32_t>(
-            "channelCount", channel_count, kMinimumOutputChannels,
-            ExceptionMessages::kInclusiveBound, kMaximumOutputChannels,
+            "channelCount", channel_count, kMinimumOutputChannels_SPH,
+            ExceptionMessages::kInclusiveBound, kMaximumOutputChannels_SPH,
             ExceptionMessages::kInclusiveBound));
   }
 }

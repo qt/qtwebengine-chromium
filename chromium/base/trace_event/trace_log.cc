@@ -166,13 +166,13 @@ bool DefaultIsTraceEventArgsAllowlisted(
 }
 
 #if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
-class PerfettoProtoAppender
+class PerfettoProtoAppenderTL
     : public base::trace_event::ConvertableToTraceFormat::ProtoAppender {
  public:
-  explicit PerfettoProtoAppender(
+  explicit PerfettoProtoAppenderTL(
       perfetto::protos::pbzero::DebugAnnotation* proto)
       : annotation_proto_(proto) {}
-  ~PerfettoProtoAppender() override = default;
+  ~PerfettoProtoAppenderTL() override = default;
 
   // ProtoAppender implementation
   void AddBuffer(uint8_t* begin, uint8_t* end) override {
@@ -194,7 +194,7 @@ class PerfettoProtoAppender
 void AddConvertableToTraceFormat(
     base::trace_event::ConvertableToTraceFormat* value,
     perfetto::protos::pbzero::DebugAnnotation* annotation) {
-  PerfettoProtoAppender proto_appender(annotation);
+  PerfettoProtoAppenderTL proto_appender(annotation);
   if (value->AppendToProto(&proto_appender)) {
     return;
   }

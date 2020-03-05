@@ -39,7 +39,7 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
-namespace {
+namespace content {
 class BrowserContext;
 }
 

@@ -25,15 +25,15 @@ namespace {
 
 const char kDescriberName[] = "ProcessPriorityAggregator";
 
-class DataImpl : public ProcessPriorityAggregator::Data,
-                 public NodeAttachedDataImpl<DataImpl> {
+class DataImplPPA : public ProcessPriorityAggregator::Data,
+                 public NodeAttachedDataImpl<DataImplPPA> {
  public:
   using StorageType = ProcessPriorityAggregatorAccess::StorageType;
 
   struct Traits : public NodeAttachedDataOwnedByNodeType<ProcessNodeImpl> {};
 
-  explicit DataImpl(const ProcessNode* process_node) {}
-  ~DataImpl() override {}
+  explicit DataImplPPA(const ProcessNode* process_node) {}
+  ~DataImplPPA() override {}
 
   static std::unique_ptr<NodeAttachedData>* GetUniquePtrStorage(
       ProcessNodeImpl* process_node) {
@@ -109,7 +109,7 @@ base::TaskPriority ProcessPriorityAggregator::Data::GetPriority() const {
 // static
 ProcessPriorityAggregator::Data* ProcessPriorityAggregator::Data::GetForTesting(
     ProcessNodeImpl* process_node) {
-  return DataImpl::Get(process_node);
+  return DataImplPPA::Get(process_node);
 }
 
 ProcessPriorityAggregator::ProcessPriorityAggregator() = default;
@@ -149,7 +149,7 @@ void ProcessPriorityAggregator::OnTakenFromGraph(Graph* graph) {
 
 base::Value::Dict ProcessPriorityAggregator::DescribeProcessNodeData(
     const ProcessNode* node) const {
-  DataImpl* data = DataImpl::Get(ProcessNodeImpl::FromNode(node));
+  DataImplPPA* data = DataImplPPA::Get(ProcessNodeImpl::FromNode(node));
   if (data == nullptr)
     return base::Value::Dict();
 
@@ -162,8 +162,8 @@ base::Value::Dict ProcessPriorityAggregator::DescribeProcessNodeData(
 void ProcessPriorityAggregator::OnProcessNodeAdded(
     const ProcessNode* process_node) {
   auto* process_node_impl = ProcessNodeImpl::FromNode(process_node);
-  DCHECK(!DataImpl::Get(process_node_impl));
-  DataImpl* data = DataImpl::GetOrCreate(process_node_impl);
+  DCHECK(!DataImplPPA::Get(process_node_impl));
+  DataImplPPA* data = DataImplPPA::GetOrCreate(process_node_impl);
   DCHECK(data->IsEmpty());
   DCHECK_EQ(base::TaskPriority::LOWEST, process_node_impl->priority());
   DCHECK_EQ(base::TaskPriority::LOWEST, data->GetPriority());
@@ -173,7 +173,7 @@ void ProcessPriorityAggregator::OnBeforeProcessNodeRemoved(
     const ProcessNode* process_node) {
 #if DCHECK_IS_ON()
   auto* process_node_impl = ProcessNodeImpl::FromNode(process_node);
-  DataImpl* data = DataImpl::Get(process_node_impl);
+  DataImplPPA* data = DataImplPPA::Get(process_node_impl);
   DCHECK(data->IsEmpty());
 #endif
 }
@@ -181,7 +181,7 @@ void ProcessPriorityAggregator::OnBeforeProcessNodeRemoved(
 void ProcessPriorityAggregator::OnExecutionContextAdded(
     const execution_context::ExecutionContext* ec) {
   auto* process_node = ProcessNodeImpl::FromNode(ec->GetProcessNode());
-  DataImpl* data = DataImpl::Get(process_node);
+  DataImplPPA* data = DataImplPPA::Get(process_node);
   data->Increment(ec->GetPriorityAndReason().priority());
   // This is a nop if the priority didn't actually change.
   process_node->set_priority(data->GetPriority());
@@ -190,7 +190,7 @@ void ProcessPriorityAggregator::OnExecutionContextAdded(
 void ProcessPriorityAggregator::OnBeforeExecutionContextRemoved(
     const execution_context::ExecutionContext* ec) {
   auto* process_node = ProcessNodeImpl::FromNode(ec->GetProcessNode());
-  DataImpl* data = DataImpl::Get(process_node);
+  DataImplPPA* data = DataImplPPA::Get(process_node);
   data->Decrement(ec->GetPriorityAndReason().priority());
   // This is a nop if the priority didn't actually change.
   process_node->set_priority(data->GetPriority());
@@ -207,7 +207,7 @@ void ProcessPriorityAggregator::OnPriorityAndReasonChanged(
   // Update the distinct frame priority counts, and set the process priority
   // accordingly.
   auto* process_node = ProcessNodeImpl::FromNode(ec->GetProcessNode());
-  DataImpl* data = DataImpl::Get(process_node);
+  DataImplPPA* data = DataImplPPA::Get(process_node);
   data->Decrement(previous_value.priority());
   data->Increment(new_value.priority());
   // This is a nop if the priority didn't actually change.

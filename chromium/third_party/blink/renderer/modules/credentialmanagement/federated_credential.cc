@@ -19,7 +19,7 @@
 namespace blink {
 
 namespace {
-constexpr char kFederatedCredentialType[] = "federated";
+constexpr char kFederatedCredentialTypeFC[] = "federated";
 }  // namespace
 
 FederatedCredential* FederatedCredential::Create(
@@ -67,7 +67,7 @@ FederatedCredential::FederatedCredential(
     scoped_refptr<const SecurityOrigin> provider_origin,
     const String& name,
     const KURL& icon_url)
-    : Credential(id, kFederatedCredentialType),
+    : Credential(id, kFederatedCredentialTypeFC),
       provider_origin_(provider_origin),
       name_(name),
       icon_url_(icon_url) {

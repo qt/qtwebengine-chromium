@@ -19,9 +19,9 @@ namespace blink {
 
 namespace {
 
-enum AxisEdge { kStart, kCenter, kEnd };
+enum AxisEdgeAbsolute { kStart, kCenter, kEnd };
 
-inline AxisEdge GetStaticPositionEdge(
+inline AxisEdgeAbsolute GetStaticPositionEdge(
     NGLogicalStaticPosition::InlineEdge inline_edge) {
   switch (inline_edge) {
     case NGLogicalStaticPosition::InlineEdge::kInlineStart:
@@ -33,7 +33,7 @@ inline AxisEdge GetStaticPositionEdge(
   }
 }
 
-inline AxisEdge GetStaticPositionEdge(
+inline AxisEdgeAbsolute GetStaticPositionEdge(
     NGLogicalStaticPosition::BlockEdge block_edge) {
   switch (block_edge) {
     case NGLogicalStaticPosition::BlockEdge::kBlockStart:
@@ -45,7 +45,7 @@ inline AxisEdge GetStaticPositionEdge(
   }
 }
 
-inline LayoutUnit StaticPositionStartInset(AxisEdge edge,
+inline LayoutUnit StaticPositionStartInset(AxisEdgeAbsolute edge,
                                            LayoutUnit static_position_offset,
                                            LayoutUnit size) {
   switch (edge) {
@@ -58,7 +58,7 @@ inline LayoutUnit StaticPositionStartInset(AxisEdge edge,
   }
 }
 
-inline LayoutUnit StaticPositionEndInset(AxisEdge edge,
+inline LayoutUnit StaticPositionEndInset(AxisEdgeAbsolute edge,
                                          LayoutUnit static_position_offset,
                                          LayoutUnit available_size,
                                          LayoutUnit size) {
@@ -79,7 +79,7 @@ std::pair<LayoutUnit, LayoutUnit> ComputeAvailableSpaceInOneAxis(
     const absl::optional<LayoutUnit>& inset_start,
     const absl::optional<LayoutUnit>& inset_end,
     const LayoutUnit static_position_offset,
-    AxisEdge static_position_edge) {
+    AxisEdgeAbsolute static_position_edge) {
   DCHECK_NE(available_size, kIndefiniteSize);
   LayoutUnit computed_offset;
   LayoutUnit computed_available_size;
@@ -135,7 +135,7 @@ void ComputeInsets(const LayoutUnit margin_percentage_resolution_size,
                    absl::optional<LayoutUnit> inset_start,
                    absl::optional<LayoutUnit> inset_end,
                    const LayoutUnit static_position_offset,
-                   AxisEdge static_position_edge,
+                   AxisEdgeAbsolute static_position_edge,
                    bool is_start_dominant,
                    bool is_block_direction,
                    LayoutUnit size,

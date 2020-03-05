@@ -32,9 +32,9 @@ namespace {
 
 // An iterator for sample vectors.
 template <typename T>
-class IteratorTemplate : public SampleCountIterator {
+class IteratorTemplateSV : public SampleCountIterator {
  public:
-  IteratorTemplate(T* counts,
+  IteratorTemplateSV(T* counts,
                    size_t counts_size,
                    const BucketRanges* bucket_ranges)
       : counts_(counts),
@@ -44,7 +44,7 @@ class IteratorTemplate : public SampleCountIterator {
     SkipEmptyBuckets();
   }
 
-  ~IteratorTemplate() override;
+  ~IteratorTemplateSV() override;
 
   // SampleCountIterator:
   bool Done() const override { return index_ >= counts_size_; }
@@ -87,14 +87,14 @@ class IteratorTemplate : public SampleCountIterator {
   size_t index_ = 0;
 };
 
-typedef IteratorTemplate<const HistogramBase::AtomicCount> SampleVectorIterator;
+typedef IteratorTemplateSV<const HistogramBase::AtomicCount> SampleVectorIteratorSV;
 
 template <>
-SampleVectorIterator::~IteratorTemplate() = default;
+SampleVectorIteratorSV::~IteratorTemplateSV() = default;
 
 // Get() for an iterator of a SampleVector.
 template <>
-void SampleVectorIterator::Get(HistogramBase::Sample* min,
+void SampleVectorIteratorSV::Get(HistogramBase::Sample* min,
                                int64_t* max,
                                HistogramBase::Count* count) {
   DCHECK(!Done());
@@ -103,11 +103,11 @@ void SampleVectorIterator::Get(HistogramBase::Sample* min,
   *count = subtle::NoBarrier_Load(&counts_[index_]);
 }
 
-typedef IteratorTemplate<HistogramBase::AtomicCount>
+typedef IteratorTemplateSV<HistogramBase::AtomicCount>
     ExtractingSampleVectorIterator;
 
 template <>
-ExtractingSampleVectorIterator::~IteratorTemplate() {
+ExtractingSampleVectorIterator::~IteratorTemplateSV() {
   // Ensure that the user has consumed all the samples in order to ensure no
   // samples are lost.
   DCHECK(Done());
@@ -228,12 +228,12 @@ std::unique_ptr<SampleCountIterator> SampleVectorBase::Iterator() const {
 
   // Handle the multi-sample case.
   if (counts() || MountExistingCountsStorage()) {
-    return std::make_unique<SampleVectorIterator>(counts(), counts_size(),
+    return std::make_unique<SampleVectorIteratorSV>(counts(), counts_size(),
                                                   bucket_ranges_);
   }
 
   // And the no-value case.
-  return std::make_unique<SampleVectorIterator>(nullptr, 0, bucket_ranges_);
+  return std::make_unique<SampleVectorIteratorSV>(nullptr, 0, bucket_ranges_);
 }
 
 std::unique_ptr<SampleCountIterator> SampleVectorBase::ExtractingIterator() {

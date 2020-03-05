@@ -6353,6 +6353,8 @@ void HandleNoHeapWritesInterrupt::GenerateCode(MaglevAssembler* masm,
   __ bind(*done);
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

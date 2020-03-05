@@ -51,11 +51,11 @@ constexpr unsigned kNumberOfRawAzimuths = 360 / kAzimuthSpacing;
 
 // Interpolates by this factor to get the total number of azimuths from every
 // azimuth loaded from resource.
-constexpr unsigned kInterpolationFactor = 8;
+constexpr unsigned kInterpolationFactorHE = 8;
 
 // Total number of azimuths after interpolation.
 constexpr unsigned kNumberOfTotalAzimuths =
-    kNumberOfRawAzimuths * kInterpolationFactor;
+    kNumberOfRawAzimuths * kInterpolationFactorHE;
 
 // Total number of components of an HRTF database.
 constexpr size_t kTotalNumberOfResponses = 240;
@@ -263,18 +263,18 @@ std::unique_ptr<HRTFElevation> HRTFElevation::CreateForSubject(
       return nullptr;
     }
 
-    interpolated_index += kInterpolationFactor;
+    interpolated_index += kInterpolationFactorHE;
   }
 
   // Now go back and interpolate intermediate azimuth values.
-  for (unsigned i = 0; i < kNumberOfTotalAzimuths; i += kInterpolationFactor) {
-    int j = (i + kInterpolationFactor) % kNumberOfTotalAzimuths;
+  for (unsigned i = 0; i < kNumberOfTotalAzimuths; i += kInterpolationFactorHE) {
+    int j = (i + kInterpolationFactorHE) % kNumberOfTotalAzimuths;
 
     // Create the interpolated convolution kernels and delays.
-    for (unsigned jj = 1; jj < kInterpolationFactor; ++jj) {
+    for (unsigned jj = 1; jj < kInterpolationFactorHE; ++jj) {
       float x =
           static_cast<float>(jj) /
-          static_cast<float>(kInterpolationFactor);  // interpolate from 0 -> 1
+          static_cast<float>(kInterpolationFactorHE);  // interpolate from 0 -> 1
 
       (*kernel_list_l)[i + jj] = HRTFKernel::CreateInterpolatedKernel(
           kernel_list_l->at(i).get(), kernel_list_l->at(j).get(), x);

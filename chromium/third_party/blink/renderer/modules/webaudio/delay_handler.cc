@@ -14,8 +14,8 @@ namespace blink {
 
 namespace {
 
-constexpr unsigned kNumberOfOutputs = 1;
-constexpr unsigned kDefaultNumberOfChannels = 1;
+constexpr unsigned kNumberOfOutputsDH = 1;
+constexpr unsigned kDefaultNumberOfChannelsDH = 1;
 
 }  // namespace
 
@@ -36,14 +36,14 @@ DelayHandler::DelayHandler(AudioNode& node,
                            AudioParamHandler& delay_time,
                            double max_delay_time)
     : AudioHandler(kNodeTypeDelay, node, sample_rate),
-      number_of_channels_(kDefaultNumberOfChannels),
+      number_of_channels_(kDefaultNumberOfChannelsDH),
       sample_rate_(sample_rate),
       render_quantum_frames_(
           node.context()->GetDeferredTaskHandler().RenderQuantumFrames()),
       delay_time_(&delay_time),
       max_delay_time_(max_delay_time) {
   AddInput();
-  AddOutput(kNumberOfOutputs);
+  AddOutput(kNumberOfOutputsDH);
   Initialize();
 }
 

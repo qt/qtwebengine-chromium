@@ -18,14 +18,14 @@ namespace {
 // to that of the iterator for PersistentSampleMap but with different data
 // structures. Changes here likely need to be duplicated there.
 template <typename T, typename I>
-class IteratorTemplate : public SampleCountIterator {
+class IteratorTemplateSM : public SampleCountIterator {
  public:
-  explicit IteratorTemplate(T& sample_counts)
+  explicit IteratorTemplateSM(T& sample_counts)
       : iter_(sample_counts.begin()), end_(sample_counts.end()) {
     SkipEmptyBuckets();
   }
 
-  ~IteratorTemplate() override;
+  ~IteratorTemplateSM() override;
 
   // SampleCountIterator:
   bool Done() const override { return iter_ == end_; }
@@ -49,13 +49,13 @@ class IteratorTemplate : public SampleCountIterator {
   const I end_;
 };
 
-typedef std::map<HistogramBase::Sample, HistogramBase::Count> SampleToCountMap;
-typedef IteratorTemplate<const SampleToCountMap,
-                         SampleToCountMap::const_iterator>
+typedef std::map<HistogramBase::Sample, HistogramBase::Count> SampleToCountMapSM;
+typedef IteratorTemplateSM<const SampleToCountMapSM,
+                         SampleToCountMapSM::const_iterator>
     SampleMapIterator;
 
 template <>
-SampleMapIterator::~IteratorTemplate() = default;
+SampleMapIterator::~IteratorTemplateSM() = default;
 
 // Get() for an iterator of a SampleMap.
 template <>
@@ -71,11 +71,11 @@ void SampleMapIterator::Get(Sample* min, int64_t* max, Count* count) {
   *count = iter_->second;
 }
 
-typedef IteratorTemplate<SampleToCountMap, SampleToCountMap::iterator>
+typedef IteratorTemplateSM<SampleToCountMapSM, SampleToCountMapSM::iterator>
     ExtractingSampleMapIterator;
 
 template <>
-ExtractingSampleMapIterator::~IteratorTemplate() {
+ExtractingSampleMapIterator::~IteratorTemplateSM() {
   // Ensure that the user has consumed all the samples in order to ensure no
   // samples are lost.
   DCHECK(Done());

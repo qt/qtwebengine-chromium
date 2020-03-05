@@ -108,7 +108,7 @@ const GpuFeatureData GetGpuFeatureData(
     {"canvas_oop_rasterization",
      SafeGetFeatureStatus(gpu_feature_info,
                           gpu::GPU_FEATURE_TYPE_CANVAS_OOP_RASTERIZATION),
-     !base::FeatureList::IsEnabled(features::kCanvasOopRasterization) ||
+     !base::FeatureList::IsEnabled(::features::kCanvasOopRasterization) ||
          command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
 #if 0
      // TODO(crbug.com/1240756): Remove the "#if 0" once OOPR-Canvas is fully
@@ -184,7 +184,7 @@ const GpuFeatureData GetGpuFeatureData(
 #if BUILDFLAG(ENABLE_VULKAN)
     {"vulkan",
      SafeGetFeatureStatus(gpu_feature_info, gpu::GPU_FEATURE_TYPE_VULKAN),
-     !features::IsUsingVulkan() &&
+     !::features::IsUsingVulkan() &&
          !command_line.HasSwitch(switches::kUseVulkan) /* disabled */,
      DisableInfo::NotProblem(), false /* fallback_to_software */},
 #endif
@@ -195,7 +195,7 @@ const GpuFeatureData GetGpuFeatureData(
     {"surface_control",
      SafeGetFeatureStatus(gpu_feature_info,
                           gpu::GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL),
-     !features::IsAndroidSurfaceControlEnabled(),
+     !::features::IsAndroidSurfaceControlEnabled(),
      DisableInfo::Problem(
          "Surface Control has been disabled by Finch trial or command line."),
      false},
@@ -208,15 +208,15 @@ const GpuFeatureData GetGpuFeatureData(
      DisableInfo::Problem(
          "WebGL2 has been disabled via blocklist or the command line."),
      false},
-    {"raw_draw", gpu::kGpuFeatureStatusEnabled, !features::IsUsingRawDraw(),
+    {"raw_draw", gpu::kGpuFeatureStatusEnabled, !::features::IsUsingRawDraw(),
      DisableInfo::NotProblem(), false},
     {"direct_rendering_display_compositor", gpu::kGpuFeatureStatusEnabled,
-     !features::IsDrDcEnabled(), DisableInfo::NotProblem(), false},
+     !::features::IsDrDcEnabled(), DisableInfo::NotProblem(), false},
     {"webgpu",
      SafeGetFeatureStatus(gpu_feature_info,
                           gpu::GPU_FEATURE_TYPE_ACCELERATED_WEBGPU),
      !command_line.HasSwitch(switches::kEnableUnsafeWebGPU) &&
-         !base::FeatureList::IsEnabled(features::kWebGPUService),
+         !base::FeatureList::IsEnabled(::features::kWebGPUService),
      DisableInfo::Problem(
          "WebGPU has been disabled via blocklist or the command line."),
      false},
@@ -454,7 +454,7 @@ bool IsZeroCopyUploadEnabled() {
 
 bool IsPartialRasterEnabled() {
   // Partial raster is not supported with RawDraw.
-  if (features::IsUsingRawDraw())
+  if (::features::IsUsingRawDraw())
     return false;
   const auto& command_line = *base::CommandLine::ForCurrentProcess();
   return !command_line.HasSwitch(blink::switches::kDisablePartialRaster);
@@ -463,7 +463,7 @@ bool IsPartialRasterEnabled() {
 bool IsGpuMemoryBufferCompositorResourcesEnabled() {
   // To use Raw Draw, the Raw Draw shared image backing should be used, so
   // not use GPU memory buffer shared image backings for compositor resources.
-  if (features::IsUsingRawDraw()) {
+  if (::features::IsUsingRawDraw()) {
     return false;
   }
   const base::CommandLine& command_line =

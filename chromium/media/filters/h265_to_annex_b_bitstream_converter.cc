@@ -14,12 +14,12 @@
 namespace media {
 namespace {
 
-static const uint8_t kStartCodePrefix[3] = {0, 0, 1};
-static const uint32_t kParamSetStartCodeSize = 1 + sizeof(kStartCodePrefix);
+static const uint8_t kStartCodePrefix2[3] = {0, 0, 1};
+static const uint32_t kParamSetStartCodeSize2 = 1 + sizeof(kStartCodePrefix2);
 
 // Helper function which determines whether NAL unit of given type marks
 // access unit boundary.
-static bool IsAccessUnitBoundaryNal(int nal_unit_type) {
+static bool IsAccessUnitBoundaryNal2(int nal_unit_type) {
   // Spec 7.4.2.4.4
   // Check if this packet marks access unit boundary by checking the
   // packet type.
@@ -64,7 +64,7 @@ uint32_t H265ToAnnexBBitstreamConverter::GetConfigSize(
 
   for (auto& nalu_array : hevc_config.arrays) {
     for (auto& nalu : nalu_array.units) {
-      config_size += kParamSetStartCodeSize + nalu.size();
+      config_size += kParamSetStartCodeSize2 + nalu.size();
     }
   }
   return config_size;
@@ -118,12 +118,12 @@ uint32_t H265ToAnnexBBitstreamConverter::CalculateNeededOutputBufferSize(
     // nal_unit_type.
     int nal_unit_type = (*input >> 1) & 0x3F;
     if (first_nal_in_this_access_unit ||
-        IsAccessUnitBoundaryNal(nal_unit_type)) {
+        IsAccessUnitBoundaryNal2(nal_unit_type)) {
       output_size += 1;  // Extra zero_byte for these nal units
       first_nal_in_this_access_unit = false;
     }
     // Start code prefix
-    output_size += sizeof(kStartCodePrefix);
+    output_size += sizeof(kStartCodePrefix2);
     // Actual NAL unit size
     output_size += nal_unit_length;
     input += nal_unit_length;
@@ -218,8 +218,8 @@ bool H265ToAnnexBBitstreamConverter::ConvertNalUnitStreamToByteStream(
     }
     uint32_t start_code_len;
     first_nal_unit_in_access_unit_
-        ? start_code_len = sizeof(kStartCodePrefix) + 1
-        : start_code_len = sizeof(kStartCodePrefix);
+        ? start_code_len = sizeof(kStartCodePrefix2) + 1
+        : start_code_len = sizeof(kStartCodePrefix2);
     if (static_cast<uint32_t>(outscan - output) + start_code_len +
             nal_unit_length >
         *output_size) {
@@ -229,7 +229,7 @@ bool H265ToAnnexBBitstreamConverter::ConvertNalUnitStreamToByteStream(
 
     // Check if this packet marks access unit boundary by checking the
     // packet type.
-    if (IsAccessUnitBoundaryNal(nal_unit_type)) {
+    if (IsAccessUnitBoundaryNal2(nal_unit_type)) {
       first_nal_unit_in_access_unit_ = true;
     }
 
@@ -243,8 +243,8 @@ bool H265ToAnnexBBitstreamConverter::ConvertNalUnitStreamToByteStream(
 
     // No need to write leading zero bits.
     // Write start-code prefix.
-    memcpy(outscan, kStartCodePrefix, sizeof(kStartCodePrefix));
-    outscan += sizeof(kStartCodePrefix);
+    memcpy(outscan, kStartCodePrefix2, sizeof(kStartCodePrefix2));
+    outscan += sizeof(kStartCodePrefix2);
     // Then write the actual NAL unit from the input buffer.
     memcpy(outscan, inscan, nal_unit_length);
     inscan += nal_unit_length;
@@ -270,8 +270,8 @@ bool H265ToAnnexBBitstreamConverter::WriteParamSet(
 
   // Verify space.
   uint32_t bytes_left = *out_size;
-  if (bytes_left < kParamSetStartCodeSize ||
-      bytes_left - kParamSetStartCodeSize < size) {
+  if (bytes_left < kParamSetStartCodeSize2 ||
+      bytes_left - kParamSetStartCodeSize2 < size) {
     return false;
   }
 
@@ -280,8 +280,8 @@ bool H265ToAnnexBBitstreamConverter::WriteParamSet(
 
   // Write the 4 byte Annex B start code.
   *buf++ = 0;  // zero byte
-  memcpy(buf, kStartCodePrefix, sizeof(kStartCodePrefix));
-  buf += sizeof(kStartCodePrefix);
+  memcpy(buf, kStartCodePrefix2, sizeof(kStartCodePrefix2));
+  buf += sizeof(kStartCodePrefix2);
 
   // Copy the data.
   memcpy(buf, &param_set[0], size);

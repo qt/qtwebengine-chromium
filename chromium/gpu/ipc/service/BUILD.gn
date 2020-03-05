@@ -127,6 +127,10 @@ jumbo_component("service") {
       "//ui/display:display",
       "//ui/display/types:types",
     ]
+    jumbo_excluded_sources = [
+      "image_transport_surface_mac.mm",
+      "image_transport_surface_overlay_mac.mm"
+    ]
     lib_dirs = [ "$mac_sdk_path/usr/lib" ]
     frameworks = [
       "CoreGraphics.framework",

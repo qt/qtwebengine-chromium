@@ -27,19 +27,19 @@ namespace content {
 
 namespace {
 
-const base::FeatureParam<base::TimeDelta> kFirstNavigationReportWindowDeadline{
+const base::FeatureParam<base::TimeDelta> kFirstNavigationReportWindowDeadlineASSM{
     &blink::features::kConversionMeasurement, "first_report_window_deadline",
     base::Days(2)};
 
-const base::FeatureParam<base::TimeDelta> kSecondNavigationReportWindowDeadline{
+const base::FeatureParam<base::TimeDelta> kSecondNavigationReportWindowDeadlineASSM{
     &blink::features::kConversionMeasurement, "second_report_window_deadline",
     base::Days(7)};
 
-const base::FeatureParam<base::TimeDelta> kFirstEventReportWindowDeadline{
+const base::FeatureParam<base::TimeDelta> kFirstEventReportWindowDeadlineASSM{
     &blink::features::kConversionMeasurement,
     "first_event_report_window_deadline", base::Days(2)};
 
-const base::FeatureParam<base::TimeDelta> kSecondEventReportWindowDeadline{
+const base::FeatureParam<base::TimeDelta> kSecondEventReportWindowDeadlineASSM{
     &blink::features::kConversionMeasurement,
     "second_event_report_window_deadline", base::Days(7)};
 
@@ -329,14 +329,14 @@ bool To56(sql::Database& db) {
     switch (source_type.value()) {
       case attribution_reporting::mojom::SourceType::kNavigation:
         max_event_level_reports = 3;
-        end_times = {kFirstNavigationReportWindowDeadline.Get(),
-                     kSecondNavigationReportWindowDeadline.Get()};
+        end_times = {kFirstNavigationReportWindowDeadlineASSM.Get(),
+                     kSecondNavigationReportWindowDeadlineASSM.Get()};
         break;
       case attribution_reporting::mojom::SourceType::kEvent:
         if (kVTCEarlyReportingWindows.Get()) {
-          base::TimeDelta first_window = kFirstEventReportWindowDeadline.Get();
+          base::TimeDelta first_window = kFirstEventReportWindowDeadlineASSM.Get();
           base::TimeDelta second_window =
-              kSecondEventReportWindowDeadline.Get();
+              kSecondEventReportWindowDeadlineASSM.Get();
           if (!first_window.is_negative() && first_window < second_window) {
             end_times = {first_window, second_window};
           }

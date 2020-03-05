@@ -757,7 +757,7 @@ namespace {
 
 // NewSpacePages with more live bytes than this threshold qualify for fast
 // evacuation.
-intptr_t NewSpacePageEvacuationThreshold() {
+intptr_t NewSpacePageEvacuationThreshold2() {
   return v8_flags.minor_ms_page_promotion_threshold *
          MemoryChunkLayout::AllocatableMemoryInDataPage() / 100;
 }
@@ -767,7 +767,7 @@ bool ShouldMovePage(Page* p, intptr_t live_bytes, intptr_t wasted_bytes) {
   Heap* heap = p->heap();
   DCHECK(!p->NeverEvacuate());
   const bool should_move_page =
-      ((live_bytes + wasted_bytes) > NewSpacePageEvacuationThreshold() ||
+      ((live_bytes + wasted_bytes) > NewSpacePageEvacuationThreshold2() ||
        (p->AllocatedLabSize() == 0)) &&
       (heap->new_space()->IsPromotionCandidate(p)) &&
       heap->CanExpandOldGeneration(live_bytes);
@@ -778,7 +778,7 @@ bool ShouldMovePage(Page* p, intptr_t live_bytes, intptr_t wasted_bytes) {
         ", live bytes = %zu, wasted bytes = %zu, promotion threshold = %zu"
         ", allocated labs size = %zu\n",
         p, should_move_page, live_bytes, wasted_bytes,
-        NewSpacePageEvacuationThreshold(), p->AllocatedLabSize());
+        NewSpacePageEvacuationThreshold2(), p->AllocatedLabSize());
   }
   if (!should_move_page &&
       (p->AgeInNewSpace() == v8_flags.minor_ms_max_page_age)) {

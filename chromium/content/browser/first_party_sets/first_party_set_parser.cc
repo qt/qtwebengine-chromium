@@ -241,7 +241,7 @@ class ParseContext {
                      exempt_from_limits_
                          ? absl::nullopt
                          : absl::make_optional(
-                               features::kFirstPartySetsMaxAssociatedSites
+                               ::features::kFirstPartySetsMaxAssociatedSites
                                    .Get()),
              },
              {
