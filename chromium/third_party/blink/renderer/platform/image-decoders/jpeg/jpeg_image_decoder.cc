@@ -49,6 +49,10 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "ui/gfx/geometry/size_conversions.h"
 
+#if defined(OS_WIN)
+#include <basetsd.h>  // Included before jpeglib.h because of INT32 clash
+#endif                // OS_WIN
+
 extern "C" {
 #include <stdio.h>  // jpeglib.h needs stdio FILE.
 #include "jpeglib.h"

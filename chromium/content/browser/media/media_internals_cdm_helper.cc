@@ -101,7 +101,7 @@ std::unique_ptr<base::DictionaryValue> CdmInfoToValue(const CdmInfo& cdm_info) {
   return dict;
 }
 
-std::u16string SerializeUpdate(const std::string& function,
+std::u16string SerializeUpdate2(const std::string& function,
                                const base::Value* value) {
   return content::WebUI::GetJavascriptCall(
       function, std::vector<const base::Value*>(1, value));
@@ -159,7 +159,7 @@ void MediaInternalsCdmHelper::SendCdmUpdate() {
   }
 
   return MediaInternals::GetInstance()->SendUpdate(
-      SerializeUpdate("media.updateRegisteredCdms", &cdm_list));
+      SerializeUpdate2("media.updateRegisteredCdms", &cdm_list));
 }
 
 }  // namespace content

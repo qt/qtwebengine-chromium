@@ -342,7 +342,7 @@ std::string GetEventLatencyHistogramBaseName(
                            : is_pinch ? event_metrics.GetPinchTypeName() : ""});
 }
 
-constexpr char kTraceCategory[] =
+constexpr char kTraceCategory2[] =
     "cc,benchmark," TRACE_DISABLED_BY_DEFAULT("devtools.timeline.frame");
 constexpr char kTraceEventCategory[] = "cc,benchmark,input";
 
@@ -1055,7 +1055,7 @@ void CompositorFrameReporter::ReportCompositorLatencyTraceEvents(
   const auto trace_track =
       perfetto::Track(base::trace_event::GetNextGlobalTraceId());
   TRACE_EVENT_BEGIN(
-      kTraceCategory, "PipelineReporter", trace_track, args_.frame_time,
+      kTraceCategory2, "PipelineReporter", trace_track, args_.frame_time,
       [&](perfetto::EventContext context) {
         using perfetto::protos::pbzero::ChromeFrameReporter;
         ChromeFrameReporter::State state;
@@ -1127,7 +1127,7 @@ void CompositorFrameReporter::ReportCompositorLatencyTraceEvents(
 
     if (stage.stage_type == StageType::kSendBeginMainFrameToCommit) {
       TRACE_EVENT_BEGIN(
-          kTraceCategory, perfetto::StaticString{stage_name}, trace_track,
+          kTraceCategory2, perfetto::StaticString{stage_name}, trace_track,
           stage.start_time, [&](perfetto::EventContext context) {
             DCHECK(processed_blink_breakdown_);
             auto* reporter =
@@ -1177,7 +1177,7 @@ void CompositorFrameReporter::ReportCompositorLatencyTraceEvents(
             }
           });
     } else {
-      TRACE_EVENT_BEGIN(kTraceCategory, perfetto::StaticString{stage_name},
+      TRACE_EVENT_BEGIN(kTraceCategory2, perfetto::StaticString{stage_name},
                         trace_track, stage.start_time);
     }
 
@@ -1191,16 +1191,16 @@ void CompositorFrameReporter::ReportCompositorLatencyTraceEvents(
         if (start_time >= end_time)
           continue;
         const char* breakdown_name = GetVizBreakdownName(it.GetBreakdown());
-        TRACE_EVENT_BEGIN(kTraceCategory,
+        TRACE_EVENT_BEGIN(kTraceCategory2,
                           perfetto::StaticString{breakdown_name}, trace_track,
                           start_time);
-        TRACE_EVENT_END(kTraceCategory, trace_track, end_time);
+        TRACE_EVENT_END(kTraceCategory2, trace_track, end_time);
       }
     }
-    TRACE_EVENT_END(kTraceCategory, trace_track, stage.end_time);
+    TRACE_EVENT_END(kTraceCategory2, trace_track, stage.end_time);
   }
 
-  TRACE_EVENT_END(kTraceCategory, trace_track, frame_termination_time_);
+  TRACE_EVENT_END(kTraceCategory2, trace_track, frame_termination_time_);
 }
 
 void CompositorFrameReporter::ReportEventLatencyTraceEvents() const {

@@ -17,8 +17,6 @@
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/quota/quota_manager_host.mojom.h"
 
-class TimeDelta;
-
 namespace content {
 
 // Dispatches a storage pressure event to listeners across multiple storage

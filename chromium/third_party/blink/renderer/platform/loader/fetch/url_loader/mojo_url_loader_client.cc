@@ -32,7 +32,7 @@
 namespace blink {
 namespace {
 
-constexpr size_t kDefaultMaxBufferedBodyBytesPerRequest = 100 * 1000;
+constexpr size_t kDefaultMaxBufferedBodyBytesPerRequestX = 100 * 1000;
 constexpr base::TimeDelta kGracePeriodToFinishLoadingWhileInBackForwardCache =
     base::Seconds(60);
 
@@ -170,7 +170,7 @@ class MojoURLLoaderClient::BodyBuffer final
                           std::move(task_runner)),
         max_bytes_drained_(GetLoadingTasksUnfreezableParamAsInt(
             "max_buffered_bytes",
-            kDefaultMaxBufferedBodyBytesPerRequest)) {
+            kDefaultMaxBufferedBodyBytesPerRequestX)) {
     pipe_drainer_ =
         std::make_unique<mojo::DataPipeDrainer>(this, std::move(readable));
     writable_watcher_.Watch(

@@ -37,7 +37,7 @@ namespace blink {
 // The value of 2 milliseconds is larger than the largest delay which exists in
 // any HRTFKernel from the default HRTFDatabase (0.0136 seconds).
 // We ASSERT the delay values used in process() with this value.
-const double kMaxDelayTimeSeconds = 0.002;
+const double kMaxDelayTimeSeconds2 = 0.002;
 
 const int kUninitializedAzimuth = -1;
 
@@ -57,8 +57,8 @@ HRTFPanner::HRTFPanner(float sample_rate,
       convolver_r1_(FftSizeForSampleRate(sample_rate)),
       convolver_l2_(FftSizeForSampleRate(sample_rate)),
       convolver_r2_(FftSizeForSampleRate(sample_rate)),
-      delay_line_l_(kMaxDelayTimeSeconds, sample_rate, render_quantum_frames),
-      delay_line_r_(kMaxDelayTimeSeconds, sample_rate, render_quantum_frames),
+      delay_line_l_(kMaxDelayTimeSeconds2, sample_rate, render_quantum_frames),
+      delay_line_r_(kMaxDelayTimeSeconds2, sample_rate, render_quantum_frames),
       temp_l1_(render_quantum_frames),
       temp_r1_(render_quantum_frames),
       temp_l2_(render_quantum_frames),
@@ -248,10 +248,10 @@ void HRTFPanner::Pan(double desired_azimuth,
     DCHECK(kernel_r1);
     DCHECK(kernel_l2);
     DCHECK(kernel_r2);
-    DCHECK_LT(frame_delay_l1 / SampleRate(), kMaxDelayTimeSeconds);
-    DCHECK_LT(frame_delay_r1 / SampleRate(), kMaxDelayTimeSeconds);
-    DCHECK_LT(frame_delay_l2 / SampleRate(), kMaxDelayTimeSeconds);
-    DCHECK_LT(frame_delay_r2 / SampleRate(), kMaxDelayTimeSeconds);
+    DCHECK_LT(frame_delay_l1 / SampleRate(), kMaxDelayTimeSeconds2);
+    DCHECK_LT(frame_delay_r1 / SampleRate(), kMaxDelayTimeSeconds2);
+    DCHECK_LT(frame_delay_l2 / SampleRate(), kMaxDelayTimeSeconds2);
+    DCHECK_LT(frame_delay_r2 / SampleRate(), kMaxDelayTimeSeconds2);
 
     // Crossfade inter-aural delays based on transitions.
     double frame_delay_l =
@@ -364,7 +364,7 @@ double HRTFPanner::TailTime() const {
   // the tailTime of the HRTFPanner is the sum of the tailTime of the
   // DelayKernel and the tailTime of the FFTConvolver, which is
   // MaxDelayTimeSeconds and fftSize() / 2, respectively.
-  return kMaxDelayTimeSeconds +
+  return kMaxDelayTimeSeconds2 +
          (FftSize() / 2) / static_cast<double>(SampleRate());
 }
 

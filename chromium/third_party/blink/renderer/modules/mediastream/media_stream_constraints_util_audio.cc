@@ -686,7 +686,7 @@ Vector<int> GetApmSupportedChannels(
   // APM always supports mono output;
   result.push_back(1);
   if (base::FeatureList::IsEnabled(
-          features::kWebRtcEnableCaptureMultiChannelApm)) {
+          ::features::kWebRtcEnableCaptureMultiChannelApm)) {
     // The APM outputs two channels when the layout is
     // CHANNEL_LAYOUT_STEREO_KEYBOARD_MIC.
     int channels = (device_params.channel_layout() ==

@@ -53,6 +53,9 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_f.h"
 
+// To avoid conflicts with the DrawText macro from the Windows SDK...
+#undef DrawText
+
 namespace blink {
 
 namespace {

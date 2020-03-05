@@ -22,7 +22,7 @@ using SmoothThread = CompositorFrameReporter::SmoothThread;
 using StageType = CompositorFrameReporter::StageType;
 using FrameTerminationStatus = CompositorFrameReporter::FrameTerminationStatus;
 
-constexpr char kTraceCategory[] = "cc,benchmark";
+constexpr char kTraceCategory3[] = "cc,benchmark";
 }  // namespace
 
 CompositorFrameReportingController::CompositorFrameReportingController(
@@ -411,9 +411,9 @@ void CompositorFrameReportingController::ReportMultipleSwaps(
 
       const auto trace_track =
           perfetto::Track(base::trace_event::GetNextGlobalTraceId());
-      TRACE_EVENT_BEGIN(kTraceCategory, "MultipleSwaps", trace_track,
+      TRACE_EVENT_BEGIN(kTraceCategory3, "MultipleSwaps", trace_track,
                         latest_swap_times_.front());
-      TRACE_EVENT_END(kTraceCategory, trace_track, latest_swap_times_.back());
+      TRACE_EVENT_END(kTraceCategory3, trace_track, latest_swap_times_.back());
     }
   }
 }

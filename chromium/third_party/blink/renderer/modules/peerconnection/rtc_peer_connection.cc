@@ -250,7 +250,7 @@ SdpSemanticRequested GetSdpSemanticRequested(
   return kSdpSemanticRequestedDefault;
 }
 
-webrtc::PeerConnectionInterface::IceTransportsType IceTransportPolicyFromString(
+webrtc::PeerConnectionInterface::IceTransportsType IceTransportPolicyFromString2(
     const String& policy) {
   if (policy == "relay")
     return webrtc::PeerConnectionInterface::kRelay;
@@ -269,11 +269,11 @@ webrtc::PeerConnectionInterface::RTCConfiguration ParseConfiguration(
   if (configuration->hasIceTransportPolicy()) {
     UseCounter::Count(context, WebFeature::kRTCConfigurationIceTransportPolicy);
     web_configuration.type =
-        IceTransportPolicyFromString(configuration->iceTransportPolicy());
+        IceTransportPolicyFromString2(configuration->iceTransportPolicy());
   } else if (configuration->hasIceTransports()) {
     UseCounter::Count(context, WebFeature::kRTCConfigurationIceTransports);
     web_configuration.type =
-        IceTransportPolicyFromString(configuration->iceTransports());
+        IceTransportPolicyFromString2(configuration->iceTransports());
   }
 
   if (configuration->bundlePolicy() == "max-compat") {

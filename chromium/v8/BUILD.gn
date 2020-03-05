@@ -4491,7 +4491,7 @@ v8_source_set("v8_base_without_compiler") {
     "src/heap/safepoint.cc",
     "src/objects/js-display-names.cc",
     "src/objects/js-relative-time-format.cc",
-
+    "src/utils/ostreams.cc",
     # These source files take an unusually large amount of time to
     # compile.  Build them separately to avoid bottlenecks.
     "src/api/api.cc",

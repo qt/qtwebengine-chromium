@@ -30,7 +30,7 @@ namespace network {
 
 namespace {
 
-constexpr size_t kBlockedBodyAllocationSize = 1;
+constexpr size_t kBlockedBodyAllocationSize2 = 1;
 
 void DeleteProducerAndRunCallback(
     std::unique_ptr<mojo::DataPipeProducer> producer,
@@ -139,7 +139,7 @@ class WebBundleURLLoaderClient : public network::mojom::URLLoaderClient {
     options.struct_size = sizeof(MojoCreateDataPipeOptions);
     options.flags = MOJO_CREATE_DATA_PIPE_FLAG_NONE;
     options.element_num_bytes = 1;
-    options.capacity_num_bytes = kBlockedBodyAllocationSize;
+    options.capacity_num_bytes = kBlockedBodyAllocationSize2;
     mojo::ScopedDataPipeProducerHandle producer;
     mojo::ScopedDataPipeConsumerHandle consumer;
     MojoResult result = mojo::CreateDataPipe(&options, producer, consumer);

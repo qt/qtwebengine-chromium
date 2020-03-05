@@ -19,7 +19,7 @@ using base::DictionaryValue;
 using base::ListValue;
 using base::Value;
 
-namespace keys = extension_web_request_api_constants;
+namespace keys_udp = extension_web_request_api_constants;
 
 namespace {
 
@@ -83,7 +83,7 @@ std::unique_ptr<base::Value> RawDataPresenter::Result() {
 }
 
 void RawDataPresenter::FeedNextBytes(const char* bytes, size_t size) {
-  subtle::AppendKeyValuePair(keys::kRequestBodyRawBytesKey,
+  subtle::AppendKeyValuePair(keys_udp::kRequestBodyRawBytesKey,
                              base::Value::ToUniquePtrValue(base::Value(
                                  base::as_bytes(base::make_span(bytes, size)))),
                              list_.get());
@@ -91,7 +91,7 @@ void RawDataPresenter::FeedNextBytes(const char* bytes, size_t size) {
 
 void RawDataPresenter::FeedNextFile(const std::string& filename) {
   // Insert the file path instead of the contents, which may be too large.
-  subtle::AppendKeyValuePair(keys::kRequestBodyRawFileKey,
+  subtle::AppendKeyValuePair(keys_udp::kRequestBodyRawFileKey,
                              std::make_unique<base::Value>(filename),
                              list_.get());
 }

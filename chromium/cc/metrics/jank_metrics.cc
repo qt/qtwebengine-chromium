@@ -20,10 +20,10 @@ namespace cc {
 namespace {
 
 constexpr uint64_t kMaxNoUpdateFrameQueueLength = 100;
-constexpr int kBuiltinSequenceNum =
+constexpr int kBuiltinJankSequenceNum =
     static_cast<int>(FrameSequenceTrackerType::kMaxType) + 1;
-constexpr int kMaximumJankHistogramIndex = 2 * kBuiltinSequenceNum;
-constexpr int kMaximumStaleHistogramIndex = kBuiltinSequenceNum;
+constexpr int kMaximumJankHistogramIndex = 2 * kBuiltinJankSequenceNum;
+constexpr int kMaximumStaleHistogramIndex = kBuiltinJankSequenceNum;
 
 constexpr base::TimeDelta kStaleHistogramMin = base::Microseconds(1);
 constexpr base::TimeDelta kStaleHistogramMax = base::Milliseconds(1000);
@@ -56,7 +56,7 @@ int GetIndexForJankMetric(FrameInfo::SmoothEffectDrivingThread thread_type,
     return static_cast<int>(type);
 
   DCHECK_EQ(thread_type, FrameInfo::SmoothEffectDrivingThread::kCompositor);
-  return static_cast<int>(type) + kBuiltinSequenceNum;
+  return static_cast<int>(type) + kBuiltinJankSequenceNum;
 }
 
 int GetIndexForStaleMetric(FrameSequenceTrackerType type) {
