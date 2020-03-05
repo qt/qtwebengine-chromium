@@ -21,7 +21,7 @@ namespace storage {
 
 namespace {
 
-const int64_t kMBytes = 1024 * 1024;
+const int64_t _kMBytes = 1024 * 1024;
 const int kRandomizedPercentage = 10;
 
 // Skews |value| by +/- |percent|.
@@ -35,7 +35,7 @@ storage::QuotaSettings CalculateIncognitoDynamicSettings(
   // The incognito pool size is a fraction of the amount of system memory,
   // and the amount is capped to a hard limit.
   double incognito_pool_size_ratio = 0.1;  // 10%
-  int64_t max_incognito_pool_size = 300 * kMBytes;
+  int64_t max_incognito_pool_size = 300 * _kMBytes;
   if (base::FeatureList::IsEnabled(features::kIncognitoDynamicQuota)) {
     const double lower_bound = features::kIncognitoQuotaRatioLowerBound.Get();
     const double upper_bound = features::kIncognitoQuotaRatioUpperBound.Get();
@@ -89,7 +89,7 @@ base::Optional<storage::QuotaSettings> CalculateNominalDynamicSettings(
   // *  64GB storage -- min(6GB,2GB) = 2GB
   // *  16GB storage -- min(1.6GB,2GB) = 1.6GB
   // *   8GB storage -- min(800MB,2GB) = 800MB
-  const int64_t kShouldRemainAvailableFixed = 2048 * kMBytes;  // 2GB
+  const int64_t kShouldRemainAvailableFixed = 2048 * _kMBytes;  // 2GB
   const double kShouldRemainAvailableRatio = 0.1;              // 10%
 
   // The amount of the device's storage the browser attempts to
@@ -104,7 +104,7 @@ base::Optional<storage::QuotaSettings> CalculateNominalDynamicSettings(
   // *  64GB storage -- min(640MB,1GB) = 640MB
   // *  16GB storage -- min(160MB,1GB) = 160MB
   // *   8GB storage -- min(80MB,1GB) = 80MB
-  const int64_t kMustRemainAvailableFixed = 1024 * kMBytes;  // 1GB
+  const int64_t kMustRemainAvailableFixed = 1024 * _kMBytes;  // 1GB
   const double kMustRemainAvailableRatio = 0.01;             // 1%
 
   // The fraction of the temporary pool that can be utilized by a single host.
@@ -116,7 +116,7 @@ base::Optional<storage::QuotaSettings> CalculateNominalDynamicSettings(
   // SessionOnly (or ephemeral) origins are allotted a fraction of what
   // normal origins are provided, and the amount is capped to a hard limit.
   const double kSessionOnlyHostQuotaRatio = 0.1;  // 10%
-  const int64_t kMaxSessionOnlyHostQuota = 300 * kMBytes;
+  const int64_t kMaxSessionOnlyHostQuota = 300 * _kMBytes;
 
   storage::QuotaSettings settings;
 
