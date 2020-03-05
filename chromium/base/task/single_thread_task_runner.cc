@@ -21,18 +21,18 @@ namespace base {
 namespace {
 
 ABSL_CONST_INIT thread_local SingleThreadTaskRunner::CurrentDefaultHandle*
-    current_default_handle = nullptr;
+    current_default_handleSTTR = nullptr;
 
 // This function can be removed, and the calls below replaced with direct
 // variable accesses, once the MSAN workaround is not necessary.
-SingleThreadTaskRunner::CurrentDefaultHandle* GetCurrentDefaultHandle() {
+SingleThreadTaskRunner::CurrentDefaultHandle* GetCurrentDefaultHandle2() {
   // Workaround false-positive MSAN use-of-uninitialized-value on
   // thread_local storage for loaded libraries:
   // https://github.com/google/sanitizers/issues/1265
-  MSAN_UNPOISON(&current_default_handle,
+  MSAN_UNPOISON(&current_default_handleSTTR,
                 sizeof(SingleThreadTaskRunner::CurrentDefaultHandle*));
 
-  return current_default_handle;
+  return current_default_handleSTTR;
 }
 
 }  // namespace
@@ -44,7 +44,7 @@ bool SingleThreadTaskRunner::BelongsToCurrentThread() const {
 // static
 const scoped_refptr<SingleThreadTaskRunner>&
 SingleThreadTaskRunner::GetCurrentDefault() {
-  const auto* const handle = GetCurrentDefaultHandle();
+  const auto* const handle = GetCurrentDefaultHandle2();
   CHECK(handle && handle->task_runner_)
       << "Error: This caller requires a single-threaded context (i.e. the "
          "current task needs to run from a SingleThreadTaskRunner). If you're "
@@ -60,8 +60,8 @@ SingleThreadTaskRunner::GetCurrentDefault() {
 
 // static
 bool SingleThreadTaskRunner::HasCurrentDefault() {
-  return !!GetCurrentDefaultHandle() &&
-         !!GetCurrentDefaultHandle()->task_runner_;
+  return !!GetCurrentDefaultHandle2() &&
+         !!GetCurrentDefaultHandle2()->task_runner_;
 }
 
 SingleThreadTaskRunner::CurrentDefaultHandle::CurrentDefaultHandle(
@@ -71,22 +71,22 @@ SingleThreadTaskRunner::CurrentDefaultHandle::CurrentDefaultHandle(
 }
 
 SingleThreadTaskRunner::CurrentDefaultHandle::~CurrentDefaultHandle() {
-  DCHECK_EQ(GetCurrentDefaultHandle(), this);
-  current_default_handle = previous_handle_;
+  DCHECK_EQ(GetCurrentDefaultHandle2(), this);
+  current_default_handleSTTR = previous_handle_;
 }
 
 SingleThreadTaskRunner::CurrentDefaultHandle::CurrentDefaultHandle(
     scoped_refptr<SingleThreadTaskRunner> task_runner,
     MayAlreadyExist)
     : task_runner_(std::move(task_runner)),
-      previous_handle_(GetCurrentDefaultHandle()),
+      previous_handle_(GetCurrentDefaultHandle2()),
       sequenced_handle_(
           task_runner_,
           SequencedTaskRunner::CurrentDefaultHandle::MayAlreadyExist{}) {
   // Support overriding the current default with a null task runner or a task
   // runner that belongs to the current thread.
   DCHECK(!task_runner_ || task_runner_->BelongsToCurrentThread());
-  current_default_handle = this;
+  current_default_handleSTTR = this;
 }
 
 SingleThreadTaskRunner::CurrentHandleOverrideForTesting::

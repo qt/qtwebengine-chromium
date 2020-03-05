@@ -34,7 +34,7 @@ using performance_manager::features::kResourceAttributionIncludeOrigins;
 
 template <typename FrameOrWorkerNode>
 std::optional<OriginInBrowsingInstanceContext>
-OriginInBrowsingInstanceContextForNode(
+OriginInBrowsingInstanceContextForNodeMMP(
     const FrameOrWorkerNode* node,
     content::BrowsingInstanceId browsing_instance) {
   if (!base::FeatureList::IsEnabled(kResourceAttributionIncludeOrigins)) {
@@ -144,7 +144,7 @@ void MemoryMeasurementProvider::OnMemorySummary(
                              MeasurementAlgorithm::kSum);
           std::optional<OriginInBrowsingInstanceContext>
               origin_in_browsing_instance_context =
-                  OriginInBrowsingInstanceContextForNode(
+                  OriginInBrowsingInstanceContextForNodeMMP(
                       f, f->GetBrowsingInstanceId());
           if (origin_in_browsing_instance_context.has_value()) {
             accumulate_summary(origin_in_browsing_instance_context.value(),
@@ -168,7 +168,7 @@ void MemoryMeasurementProvider::OnMemorySummary(
                client_browsing_instances) {
             std::optional<OriginInBrowsingInstanceContext>
                 origin_in_browsing_instance_context =
-                    OriginInBrowsingInstanceContextForNode(w,
+                    OriginInBrowsingInstanceContextForNodeMMP(w,
                                                            browsing_instance);
             if (origin_in_browsing_instance_context.has_value()) {
               accumulate_summary(origin_in_browsing_instance_context.value(),

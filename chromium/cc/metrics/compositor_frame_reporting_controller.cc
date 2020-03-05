@@ -30,7 +30,7 @@ using SmoothThread = CompositorFrameReporter::SmoothThread;
 using StageType = CompositorFrameReporter::StageType;
 using FrameTerminationStatus = CompositorFrameReporter::FrameTerminationStatus;
 
-constexpr int kNumOfCompositorStages =
+constexpr int kNumOfCompositorStages3 =
     static_cast<int>(StageType::kStageTypeCount) - 1;
 constexpr int kNumDispatchStages =
     static_cast<int>(EventMetrics::DispatchStage::kMaxValue);
@@ -53,7 +53,7 @@ CompositorFrameReportingController::CompositorFrameReportingController(
       previous_latency_predictions_impl_(base::Microseconds(-1)),
       event_latency_predictions_(
           CompositorFrameReporter::EventLatencyInfo(kNumDispatchStages,
-                                                    kNumOfCompositorStages)) {
+                                                    kNumOfCompositorStages3)) {
   if (should_report_ukm) {
     // UKM metrics should be reported if and only if `latency_ukm_reporter` is
     // set on `global_trackers_`.

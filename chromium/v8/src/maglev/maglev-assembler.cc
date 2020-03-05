@@ -703,6 +703,8 @@ void MaglevAssembler::TryMigrateInstance(Register object,
   CompareTaggedAndJumpIf(return_val, Smi::zero(), kEqual, fail);
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

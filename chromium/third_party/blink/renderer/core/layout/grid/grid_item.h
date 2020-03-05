@@ -91,7 +91,7 @@ struct CORE_EXPORT GridItemData {
       const GridPlacementData& placement_data,
       const ComputedStyle& grid_style);
 
-  enum BaselineGroup BaselineGroup(
+  enum BaselineGroupType BaselineGroup(
       GridTrackSizingDirection track_direction) const {
     return (track_direction == kForColumns) ? column_baseline_group
                                             : row_baseline_group;
@@ -236,8 +236,8 @@ struct CORE_EXPORT GridItemData {
   AutoSizeBehavior column_auto_behavior;
   AutoSizeBehavior row_auto_behavior;
 
-  enum BaselineGroup column_baseline_group;
-  enum BaselineGroup row_baseline_group;
+  enum BaselineGroupType column_baseline_group;
+  enum BaselineGroupType row_baseline_group;
 
   WritingMode column_baseline_writing_mode;
   WritingMode row_baseline_writing_mode;

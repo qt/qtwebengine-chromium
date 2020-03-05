@@ -27,7 +27,7 @@ namespace {
 
 // Default to stereo. This could change depending on what the media element
 // .src is set to.
-constexpr unsigned kDefaultNumberOfOutputChannels = 2;
+constexpr unsigned kDefaultNumberOfOutputChannelsMEASH = 2;
 
 }  // namespace
 
@@ -61,7 +61,7 @@ MediaElementAudioSourceHandler::MediaElementAudioSourceHandler(
       media_element_(media_element) {
   DCHECK(IsMainThread());
 
-  AddOutput(kDefaultNumberOfOutputChannels);
+  AddOutput(kDefaultNumberOfOutputChannelsMEASH);
 
   if (Context()->GetExecutionContext()) {
     task_runner_ = Context()->GetExecutionContext()->GetTaskRunner(

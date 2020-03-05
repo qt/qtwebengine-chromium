@@ -37,7 +37,7 @@ namespace {
 const char kSharedModule[] = "shared_module";
 const char kAllowlist[] = "allowlist";
 
-using ManifestKeys = api::shared_module::ManifestKeys;
+using ManifestKeys2 = api::shared_module::ManifestKeys;
 
 static base::LazyInstance<SharedModuleInfo>::DestructorAtExit
     g_empty_shared_module_info = LAZY_INSTANCE_INITIALIZER;
@@ -132,8 +132,8 @@ SharedModuleHandler::~SharedModuleHandler() = default;
 bool SharedModuleHandler::Parse(Extension* extension, std::u16string* error) {
   CHECK(extension);
   CHECK(error);
-  ManifestKeys manifest_keys;
-  if (!ManifestKeys::ParseFromDictionary(
+  ManifestKeys2 manifest_keys;
+  if (!ManifestKeys2::ParseFromDictionary(
           extension->manifest()->available_values(), manifest_keys, *error)) {
     return false;
   }
@@ -157,7 +157,7 @@ bool SharedModuleHandler::Parse(Extension* extension, std::u16string* error) {
       manifest_keys.export_->allowlist->empty()) {
     extension->AddInstallWarning(
         extensions::InstallWarning(errors::kInvalidExportAllowlistEmpty,
-                                   ManifestKeys::kExport, kAllowlist));
+                                   ManifestKeys2::kExport, kAllowlist));
   }
 
   if (has_export && manifest_keys.export_->allowlist) {
@@ -211,7 +211,7 @@ bool SharedModuleHandler::Parse(Extension* extension, std::u16string* error) {
         if (unique_imports.contains(import.id)) {
           unique_imports_warning = true;
           extension->AddInstallWarning(InstallWarning(
-              errors::kInvalidImportRepeatedImport, ManifestKeys::kImport));
+              errors::kInvalidImportRepeatedImport, ManifestKeys2::kImport));
         } else {
           unique_imports.insert(import.id);
         }
@@ -241,8 +241,8 @@ bool SharedModuleHandler::Validate(
 }
 
 base::span<const char* const> SharedModuleHandler::Keys() const {
-  static constexpr const char* kKeys[] = {ManifestKeys::kImport,
-                                          ManifestKeys::kExport};
+  static constexpr const char* kKeys[] = {ManifestKeys2::kImport,
+                                          ManifestKeys2::kExport};
   return kKeys;
 }
 

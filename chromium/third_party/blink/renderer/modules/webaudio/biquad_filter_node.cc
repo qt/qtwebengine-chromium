@@ -43,7 +43,7 @@ constexpr float kMinFrequencyValue = 0.0f;
 constexpr double kDefaultQValue = 1.0;
 constexpr double kDefaultGainValue = 0.0;
 constexpr float kMinGainValue = std::numeric_limits<float>::lowest();
-constexpr double kDefaultDetuneValue = 0.0;
+constexpr double kDefaultDetuneValueBFN = 0.0;
 
 }  // namespace
 
@@ -77,7 +77,7 @@ BiquadFilterNode::BiquadFilterNode(BaseAudioContext& context)
           context,
           Uuid(),
           AudioParamHandler::kParamTypeBiquadFilterDetune,
-          kDefaultDetuneValue,
+          kDefaultDetuneValueBFN,
           AudioParamHandler::AutomationRate::kAudio,
           AudioParamHandler::AutomationRateMode::kVariable,
           /*min_value=*/-1200 * log2f(std::numeric_limits<float>::max()),

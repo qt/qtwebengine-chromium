@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#undef MAP_TYPE
 #endif  // V8_OS_LINUX
 
 #ifdef V8_USE_ADDRESS_SANITIZER

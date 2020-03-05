@@ -41,6 +41,10 @@ jumbo_static_library("renderer") {
     "timing.h",
   ]
 
+  jumbo_excluded_sources = [
+    "form_cache.cc",
+  ]
+
   deps = [
     "//base",
     "//base:i18n",

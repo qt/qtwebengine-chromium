@@ -60,9 +60,9 @@ BASE_FEATURE(kBreakoutBoxWriteVideoFrameCaptureTimestamp,
              "BreakoutBoxWriteVideoFrameCaptureTimestamp",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-class TransferringOptimizer : public WritableStreamTransferringOptimizer {
+class TransferringOptimizerMSVTUS : public WritableStreamTransferringOptimizer {
  public:
-  explicit TransferringOptimizer(
+  explicit TransferringOptimizerMSVTUS(
       scoped_refptr<PushableMediaStreamVideoSource::Broker> source_broker,
       gpu::GpuMemoryBufferManager* gmb_manager)
       : source_broker_(std::move(source_broker)), gmb_manager_(gmb_manager) {}
@@ -225,7 +225,7 @@ ScriptPromise<IDLUndefined> MediaStreamVideoTrackUnderlyingSink::close(
 std::unique_ptr<WritableStreamTransferringOptimizer>
 MediaStreamVideoTrackUnderlyingSink::GetTransferringOptimizer() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return std::make_unique<TransferringOptimizer>(source_broker_, gmb_manager_);
+  return std::make_unique<TransferringOptimizerMSVTUS>(source_broker_, gmb_manager_);
 }
 
 void MediaStreamVideoTrackUnderlyingSink::Disconnect() {

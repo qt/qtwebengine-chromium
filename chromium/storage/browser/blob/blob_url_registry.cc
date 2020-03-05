@@ -16,7 +16,7 @@ namespace storage {
 
 namespace {
 
-BlobUrlRegistry::URLStoreCreationHook* g_url_store_creation_hook = nullptr;
+BlobUrlRegistry::URLStoreCreationHook* g_url_store_creation_hook2 = nullptr;
 
 }
 
@@ -37,8 +37,8 @@ void BlobUrlRegistry::AddReceiver(
           storage_key, renderer_origin, render_process_host_id, AsWeakPtr()),
       std::move(receiver));
 
-  if (g_url_store_creation_hook) {
-    g_url_store_creation_hook->Run(this, receiver_id);
+  if (g_url_store_creation_hook2) {
+    g_url_store_creation_hook2->Run(this, receiver_id);
   }
 }
 
@@ -214,7 +214,7 @@ bool BlobUrlRegistry::GetTokenMapping(
 // static
 void BlobUrlRegistry::SetURLStoreCreationHookForTesting(
     URLStoreCreationHook* hook) {
-  g_url_store_creation_hook = hook;
+  g_url_store_creation_hook2 = hook;
 }
 
 }  // namespace storage

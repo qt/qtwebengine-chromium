@@ -11,22 +11,22 @@ namespace blink {
 namespace {
 
 BoxShadowPaintImageGenerator::BoxShadowPaintImageGeneratorCreateFunction*
-    g_create_function = nullptr;
+    g_create_function_bspig = nullptr;
 
 }  // namespace
 
 // static
 void BoxShadowPaintImageGenerator::Init(
     BoxShadowPaintImageGeneratorCreateFunction* create_function) {
-  DCHECK(!g_create_function);
-  g_create_function = create_function;
+  DCHECK(!g_create_function_bspig);
+  g_create_function_bspig = create_function;
 }
 
 BoxShadowPaintImageGenerator* BoxShadowPaintImageGenerator::Create(
     LocalFrame& local_root) {
-  DCHECK(g_create_function);
+  DCHECK(g_create_function_bspig);
   DCHECK(local_root.IsLocalRoot());
-  return g_create_function(local_root);
+  return g_create_function_bspig(local_root);
 }
 
 }  // namespace blink

@@ -23,8 +23,8 @@
 
 namespace media {
 
-static const SampleFormat kSampleFormat = kSampleFormatS16;
-static const snd_pcm_format_t kAlsaSampleFormat = SND_PCM_FORMAT_S16;
+static const SampleFormat kSampleFormatAI = kSampleFormatS16;
+static const snd_pcm_format_t kAlsaSampleFormatAI = SND_PCM_FORMAT_S16;
 
 static const int kNumPacketsInRingBuffer = 3;
 
@@ -40,7 +40,7 @@ AlsaPcmInputStream::AlsaPcmInputStream(AudioManagerBase* audio_manager,
     : audio_manager_(audio_manager),
       device_name_(device_name),
       params_(params),
-      bytes_per_buffer_(params.GetBytesPerBuffer(kSampleFormat)),
+      bytes_per_buffer_(params.GetBytesPerBuffer(kSampleFormatAI)),
       wrapper_(wrapper),
       buffer_duration_(base::Microseconds(
           params.frames_per_buffer() * base::Time::kMicrosecondsPerSecond /
@@ -71,7 +71,7 @@ AudioInputStream::OpenOutcome AlsaPcmInputStream::Open() {
     for (size_t i = 0; i < std::size(device_names); ++i) {
       device_handle_ = alsa_util::OpenCaptureDevice(
           wrapper_, device_names[i], params_.channels(), params_.sample_rate(),
-          kAlsaSampleFormat, buffer_us, packet_us);
+          kAlsaSampleFormatAI, buffer_us, packet_us);
 
       if (device_handle_) {
         device_name_ = device_names[i];
@@ -81,7 +81,7 @@ AudioInputStream::OpenOutcome AlsaPcmInputStream::Open() {
   } else {
     device_handle_ = alsa_util::OpenCaptureDevice(
         wrapper_, device_name_.c_str(), params_.channels(),
-        params_.sample_rate(), kAlsaSampleFormat, buffer_us, packet_us);
+        params_.sample_rate(), kAlsaSampleFormatAI, buffer_us, packet_us);
   }
 
   if (device_handle_) {

@@ -41,7 +41,7 @@
 #include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #endif
 
-namespace keys = extension_web_request_api_constants;
+namespace keys_wri = extension_web_request_api_constants;
 
 namespace extensions {
 
@@ -143,8 +143,8 @@ std::optional<base::Value::Dict> CreateRequestBodyData(
       &raw_data_presenter      // 2: any data at all? (Non-specific.)
   };
   // Keys for the results of the corresponding presenters.
-  static const char* const kKeys[] = {keys::kRequestBodyFormDataKey,
-                                      keys::kRequestBodyRawKey};
+  static const char* const kKeys[] = {keys_wri::kRequestBodyFormDataKey,
+                                      keys_wri::kRequestBodyRawKey};
   bool some_succeeded = false;
   if (!data_sources.empty()) {
     for (size_t i = 0; i < std::size(presenters); ++i) {
@@ -160,7 +160,7 @@ std::optional<base::Value::Dict> CreateRequestBodyData(
   }
 
   if (!some_succeeded) {
-    request_body_data.Set(keys::kRequestBodyErrorKey, "Unknown error.");
+    request_body_data.Set(keys_wri::kRequestBodyErrorKey, "Unknown error.");
   }
 
   return request_body_data;

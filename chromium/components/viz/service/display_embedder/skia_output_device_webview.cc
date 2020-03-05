@@ -21,7 +21,7 @@
 namespace viz {
 
 namespace {
-constexpr auto kSurfaceColorType = kRGBA_8888_SkColorType;
+constexpr auto kMySurfaceColorType = kRGBA_8888_SkColorType;
 }
 
 SkiaOutputDeviceWebView::SkiaOutputDeviceWebView(
@@ -47,9 +47,9 @@ SkiaOutputDeviceWebView::SkiaOutputDeviceWebView(
   DCHECK(context_state_->context());
 
   capabilities_.sk_color_type_map[SinglePlaneFormat::kRGBA_8888] =
-      kSurfaceColorType;
+      kMySurfaceColorType;
   capabilities_.sk_color_type_map[SinglePlaneFormat::kBGRA_8888] =
-      kSurfaceColorType;
+      kMySurfaceColorType;
 }
 
 SkiaOutputDeviceWebView::~SkiaOutputDeviceWebView() = default;
@@ -107,7 +107,7 @@ void SkiaOutputDeviceWebView::InitSkiaSurface(unsigned int fbo) {
   GrGLFramebufferInfo framebuffer_info;
   framebuffer_info.fFBOID = fbo;
   framebuffer_info.fFormat = GL_RGBA8;
-  SkColorType color_type = kSurfaceColorType;
+  SkColorType color_type = kMySurfaceColorType;
 
   auto render_target =
       GrBackendRenderTargets::MakeGL(size_.width(), size_.height(),

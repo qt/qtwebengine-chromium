@@ -1290,7 +1290,7 @@ unsigned ShapeResult::AdjustOffsetForAutoSpacing(float spacing_width,
 
 namespace {
 
-float HarfBuzzPositionToFloat(hb_position_t value) {
+float HarfBuzzPositionToFloatSR(hb_position_t value) {
   return static_cast<float>(value) / (1 << 16);
 }
 
@@ -1491,8 +1491,8 @@ void ShapeResult::ComputeGlyphPositions(ShapeResult::RunInfo* run,
     // Offset is primarily used when painting glyphs. Keep it in physical.
     if (pos.x_offset || pos.y_offset) [[unlikely]] {
       has_vertical_offsets |= (pos.y_offset != 0);
-      const GlyphOffset offset(HarfBuzzPositionToFloat(pos.x_offset),
-                               -HarfBuzzPositionToFloat(pos.y_offset));
+      const GlyphOffset offset(HarfBuzzPositionToFloatSR(pos.x_offset),
+                               -HarfBuzzPositionToFloatSR(pos.y_offset));
       run->glyph_data_.SetOffsetAt(i, offset);
     }
 

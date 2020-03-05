@@ -9445,4 +9445,6 @@ std::unique_ptr<DebugSideTable> GenerateLiftoffDebugSideTable(
   return debug_sidetable_builder.GenerateDebugSideTable();
 }
 
+#undef __
+
 }  // namespace v8::internal::wasm

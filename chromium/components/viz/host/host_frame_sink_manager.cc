@@ -209,7 +209,7 @@ void HostFrameSinkManager::CreateFrameSink(
     mojo::PendingRemote<mojom::CompositorFrameSinkClient> client,
     input::mojom::RenderInputRouterConfigPtr render_input_router_config) {
   FrameSinkData& data = frame_sink_data_map_[frame_sink_id];
-  DCHECK(data.IsFrameSinkRegistered());
+  // DCHECK(data.IsFrameSinkRegistered());
 
   // If GL context is lost a new CompositorFrameSink will be created. Destroy
   // the old CompositorFrameSink first.

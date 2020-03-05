@@ -104,8 +104,8 @@
 
 namespace blink {
 
-const double kFinalStatePercentage = 100.0;
-const double kMiddleStatePercentage = 50.0;
+const double kFinalStatePercentage2 = 100.0;
+const double kMiddleStatePercentage2 = 50.0;
 
 namespace {
 
@@ -646,8 +646,8 @@ scoped_refptr<FontPalette> StyleBuilderConverterBase::ConvertPaletteMix(
     if (cssvalue::CSSColorMixValue::NormalizePercentages(
             palette_mix_value->Percentage1(), palette_mix_value->Percentage2(),
             normalized_percentage, alpha_multiplier, length_resolver)) {
-      double percentage1 = kMiddleStatePercentage;
-      double percentage2 = kMiddleStatePercentage;
+      double percentage1 = kMiddleStatePercentage2;
+      double percentage2 = kMiddleStatePercentage2;
       if (palette_mix_value->Percentage1() &&
           palette_mix_value->Percentage2()) {
         percentage1 = palette_mix_value->Percentage1()->ComputePercentage(
@@ -657,11 +657,11 @@ scoped_refptr<FontPalette> StyleBuilderConverterBase::ConvertPaletteMix(
       } else if (palette_mix_value->Percentage1()) {
         percentage1 = palette_mix_value->Percentage1()->ComputePercentage(
             length_resolver);
-        percentage2 = kFinalStatePercentage - percentage1;
+        percentage2 = kFinalStatePercentage2 - percentage1;
       } else if (palette_mix_value->Percentage2()) {
         percentage2 = palette_mix_value->Percentage2()->ComputePercentage(
             length_resolver);
-        percentage1 = kFinalStatePercentage - percentage2;
+        percentage1 = kFinalStatePercentage2 - percentage2;
       }
       return FontPalette::Mix(palette1, palette2, percentage1, percentage2,
                               normalized_percentage, alpha_multiplier,

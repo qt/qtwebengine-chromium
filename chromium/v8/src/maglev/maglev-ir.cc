@@ -7445,6 +7445,8 @@ template class AbstractLoadTaggedField<LoadTaggedField>;
 template class AbstractLoadTaggedField<LoadTaggedFieldForContextSlot>;
 template class AbstractLoadTaggedField<LoadTaggedFieldForProperty>;
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8
