@@ -22,7 +22,7 @@ namespace media {
 
 namespace {
 
-struct InputData {
+struct InputData2 {
   raw_ptr<const AudioBus> bus = nullptr;
   bool flushing = false;
 };
@@ -30,12 +30,12 @@ struct InputData {
 constexpr int kAacFramesPerBuffer = 1024;
 
 // Callback used to provide input data to the AudioConverter.
-OSStatus ProvideInputCallback(AudioConverterRef decoder,
+OSStatus ProvideInputCallback2(AudioConverterRef decoder,
                               UInt32* num_packets,
                               AudioBufferList* buffer_list,
                               AudioStreamPacketDescription** packets,
                               void* user_data) {
-  auto* input_data = reinterpret_cast<InputData*>(user_data);
+  auto* input_data = reinterpret_cast<InputData2*>(user_data);
   if (input_data->flushing) {
     *num_packets = 0;
     return noErr;
@@ -319,7 +319,7 @@ void AudioToolboxAudioEncoder::DrainFifoOutput() {
 void AudioToolboxAudioEncoder::DoEncode(const AudioBus* input_bus) {
   bool is_flushing = !input_bus;
 
-  InputData input_data;
+  InputData2 input_data;
   input_data.bus = input_bus;
   input_data.flushing = is_flushing;
 
@@ -338,7 +338,7 @@ void AudioToolboxAudioEncoder::DoEncode(const AudioBus* input_bus) {
     UInt32 num_packets = 1;
     AudioStreamPacketDescription packet_description = {};
     auto result = AudioConverterFillComplexBuffer(
-        encoder_, ProvideInputCallback, &input_data, &num_packets,
+        encoder_, ProvideInputCallback2, &input_data, &num_packets,
         &output_buffer_list, &packet_description);
 
     // We expect "1 in, 1 out" when feeding packets into the encoder, except

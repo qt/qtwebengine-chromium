@@ -141,6 +141,10 @@ jumbo_component("gl") {
     "trace_util.h",
   ]
 
+  jumbo_excluded_sources = [
+    "presenter.cc",
+  ]
+
   if (is_android) {
     sources += [
       "android/scoped_a_native_window.cc",
@@ -221,6 +225,10 @@ jumbo_component("gl") {
       sources += [
         "gl_angle_util_vulkan.cc",
         "gl_angle_util_vulkan.h",
+      ]
+
+      jumbo_excluded_sources += [
+        "gl_angle_util_vulkan.cc",
       ]
     }
 

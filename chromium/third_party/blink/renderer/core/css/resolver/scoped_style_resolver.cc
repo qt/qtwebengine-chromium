@@ -249,7 +249,7 @@ void ScopedStyleResolver::KeyframesRulesAdded(const TreeScope& tree_scope) {
 
 namespace {
 
-bool CanRejectRuleSet(ElementRuleCollector& collector,
+bool CanRejectRuleSetSSR(ElementRuleCollector& collector,
                       const RuleSet& rule_set) {
   const StyleScope* scope = rule_set.SingleScope();
   return scope && collector.CanRejectScope(*scope);
@@ -266,7 +266,7 @@ void ScopedStyleResolver::ForAllStylesheets(ElementRuleCollector& collector,
 
   MatchRequest match_request{&scope_->RootNode()};
   for (auto [sheet, rule_set] : active_style_sheets_) {
-    if (CanRejectRuleSet(collector, *rule_set)) {
+    if (CanRejectRuleSetSSR(collector, *rule_set)) {
       continue;
     }
     match_request.AddRuleset(rule_set.Get());

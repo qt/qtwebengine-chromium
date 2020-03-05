@@ -562,6 +562,8 @@ void MaglevAssembler::GenerateCheckConstTrackingLetCellFooter(Register context,
                          done, Label::kNear);
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

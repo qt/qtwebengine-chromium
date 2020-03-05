@@ -107,7 +107,7 @@ Checkbox::Checkbox(const std::u16string& label,
   // the checkbox view (otherwise it gets clipped which looks weird).
   views::InstallEmptyHighlightPathGenerator(this);
 
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     InkDrop::Install(image_container_view(),
                      std::make_unique<InkDropHost>(image_container_view()));
     SetInkDropView(image_container_view());
@@ -204,7 +204,7 @@ void Checkbox::GetAccessibleNodeData(ui::AXNodeData* node_data) {
 gfx::ImageSkia Checkbox::GetImage(ButtonState for_state) const {
   const int icon_state = GetIconState(for_state);
 
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     const SkColor container_color = GetIconImageColor(icon_state);
     if (GetChecked()) {
       const gfx::ImageSkia check_icon = gfx::CreateVectorIcon(
@@ -243,7 +243,7 @@ SkPath Checkbox::GetFocusRingPath() const {
   gfx::Rect bounds = image_container_view()->GetMirroredContentsBounds();
   // Don't add extra insets in the ChromeRefresh case so that the focus ring can
   // be drawn in the ChromeRefresh style.
-  if (!features::IsChromeRefresh2023()) {
+  if (!::features::IsChromeRefresh2023()) {
     bounds.Inset(1);
   }
   path.addRect(RectToSkRect(bounds));
@@ -251,7 +251,7 @@ SkPath Checkbox::GetFocusRingPath() const {
 }
 
 SkColor Checkbox::GetIconImageColor(int icon_state) const {
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     if (icon_state & IconState::CHECKED) {
       return GetColorProvider()->GetColor(
           (icon_state & IconState::ENABLED)
@@ -294,7 +294,7 @@ SkColor Checkbox::GetIconCheckColor(int icon_state) const {
 }
 
 const gfx::VectorIcon& Checkbox::GetVectorIcon() const {
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     return GetChecked() ? kCheckboxCheckCr2023Icon : kCheckboxNormalCr2023Icon;
   }
 

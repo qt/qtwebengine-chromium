@@ -28,15 +28,15 @@
 
 namespace performance_manager {
 
-namespace {
+namespace performance_manager_registry_impl {
 
 PerformanceManagerRegistryImpl* g_instance = nullptr;
 
 }  // namespace
 
 PerformanceManagerRegistryImpl::PerformanceManagerRegistryImpl() {
-  DCHECK(!g_instance);
-  g_instance = this;
+  DCHECK(!performance_manager_registry_impl::g_instance);
+  performance_manager_registry_impl::g_instance = this;
 
   // The registry should be created after the PerformanceManager.
   DCHECK(PerformanceManager::IsAvailable());
@@ -49,7 +49,7 @@ PerformanceManagerRegistryImpl::~PerformanceManagerRegistryImpl() {
   // TearDown() should have been invoked to reset |g_instance| and clear
   // |web_contents_| and |render_process_user_data_| prior to destroying the
   // registry.
-  DCHECK(!g_instance);
+  DCHECK(!performance_manager_registry_impl::g_instance);
   DCHECK(web_contents_.empty());
   DCHECK(render_process_hosts_.empty());
   DCHECK(pm_owned_.empty());
@@ -60,7 +60,7 @@ PerformanceManagerRegistryImpl::~PerformanceManagerRegistryImpl() {
 
 // static
 PerformanceManagerRegistryImpl* PerformanceManagerRegistryImpl::GetInstance() {
-  return g_instance;
+  return performance_manager_registry_impl::g_instance;
 }
 
 void PerformanceManagerRegistryImpl::AddObserver(
@@ -246,8 +246,8 @@ void PerformanceManagerRegistryImpl::TearDown() {
     observer.OnBeforePerformanceManagerDestroyed();
   }
 
-  DCHECK_EQ(g_instance, this);
-  g_instance = nullptr;
+  DCHECK_EQ(performance_manager_registry_impl::g_instance, this);
+  performance_manager_registry_impl::g_instance = nullptr;
 
   // Destroy WorkerNodes before ProcessNodes, because ProcessNode checks that it
   // has no associated WorkerNode when torn down.

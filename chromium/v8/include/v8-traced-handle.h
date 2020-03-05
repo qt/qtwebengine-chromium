@@ -26,6 +26,7 @@ class Value;
 namespace internal {
 
 class BasicTracedReferenceExtractor;
+class BasicTracedReferenceExtractor_UHMV;
 
 enum class TracedReferenceStoreMode {
   kInitializingStore,
@@ -99,6 +100,7 @@ class TracedReferenceBase : public api_internal::IndirectHandleBase {
   V8_EXPORT void CheckValue() const;
 
   friend class internal::BasicTracedReferenceExtractor;
+  friend class internal::BasicTracedReferenceExtractor_UHMV;
   template <typename F>
   friend class Local;
   template <typename U>

@@ -93,7 +93,7 @@ namespace {
 constexpr const char* kMhtml = "mhtml";
 constexpr int kDefaultScreenshotQuality = 80;
 constexpr int kMaxScreencastFramesInFlight = 2;
-constexpr char kCommandIsOnlyAvailableAtTopTarget[] =
+constexpr char kCommandIsOnlyAvailableAtTopTarget2[] =
     "Command can only be executed on top-level targets";
 constexpr char kErrorNotAttached[] = "Not attached to a page";
 constexpr char kErrorInactivePage[] = "Not attached to an active page";
@@ -2202,7 +2202,7 @@ Response PageHandler::AssureTopLevelActiveFrame() {
     return Response::ServerError(kErrorNotAttached);
 
   if (host_->GetParentOrOuterDocument())
-    return Response::ServerError(kCommandIsOnlyAvailableAtTopTarget);
+    return Response::ServerError(kCommandIsOnlyAvailableAtTopTarget2);
 
   if (!host_->IsActive())
     return Response::ServerError(kErrorInactivePage);

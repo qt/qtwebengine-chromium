@@ -69,7 +69,7 @@ std::atomic<base::TimeDelta> g_max_precise_delay{kDefaultMaxPreciseDelay};
 #if BUILDFLAG(IS_WIN)
 // An atomic is used here because the flag is queried from other threads when
 // tasks are posted cross-thread, which can race with its initialization.
-std::atomic_bool g_explicit_high_resolution_timer_win{true};
+std::atomic_bool g_explicit_high_resolution_timer_win_tqi{true};
 #endif  // BUILDFLAG(IS_WIN)
 
 void RunTaskSynchronously(AssociatedThreadId* associated_thread,
@@ -238,7 +238,7 @@ bool TaskQueueImpl::TaskRunner::RunsTasksInCurrentSequence() const {
 void TaskQueueImpl::InitializeFeatures() {
   g_max_precise_delay = kMaxPreciseDelay.Get();
 #if BUILDFLAG(IS_WIN)
-  g_explicit_high_resolution_timer_win.store(
+  g_explicit_high_resolution_timer_win_tqi.store(
       FeatureList::IsEnabled(kExplicitHighResolutionTimerWin),
       std::memory_order_relaxed);
 #endif  // BUILDFLAG(IS_WIN)
@@ -1095,7 +1095,7 @@ Task TaskQueueImpl::MakeDelayedTask(PostedTask delayed_task,
   WakeUpResolution resolution = WakeUpResolution::kLow;
 #if BUILDFLAG(IS_WIN)
   const bool explicit_high_resolution_timer_win =
-      g_explicit_high_resolution_timer_win.load(std::memory_order_relaxed);
+      g_explicit_high_resolution_timer_win_tqi.load(std::memory_order_relaxed);
 #endif  // BUILDFLAG(IS_WIN)
   if (absl::holds_alternative<base::TimeDelta>(
           delayed_task.delay_or_delayed_run_time)) {

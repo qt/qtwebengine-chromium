@@ -134,7 +134,7 @@ const gfx::VectorIcon& RadioButton::GetVectorIcon() const {
 
 gfx::ImageSkia RadioButton::GetImage(ButtonState for_state) const {
   return gfx::CreateVectorIcon(GetVectorIcon(),
-                               features::IsChromeRefresh2023()
+                               ::features::IsChromeRefresh2023()
                                    ? kRadioButtonIconDipSizeCr2023
                                    : kRadioButtonIconDipSize,
                                GetIconImageColor(GetIconState(for_state)));

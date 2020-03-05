@@ -1292,7 +1292,7 @@ unsigned ShapeResult::AdjustOffsetForAutoSpacing(float spacing_width,
 
 namespace {
 
-float HarfBuzzPositionToFloat(hb_position_t value) {
+float HarfBuzzPositionToFloatSR(hb_position_t value) {
   return static_cast<float>(value) / (1 << 16);
 }
 
@@ -1473,8 +1473,8 @@ void ShapeResult::ComputeGlyphPositions(ShapeResult::RunInfo* run,
     // One out of x_advance and y_advance is zero, depending on
     // whether the buffer direction is horizontal or vertical.
     // Convert to float and negate to avoid integer-overflow for ULONG_MAX.
-    float advance = is_horizontal_run ? HarfBuzzPositionToFloat(pos.x_advance)
-                                      : -HarfBuzzPositionToFloat(pos.y_advance);
+    float advance = is_horizontal_run ? HarfBuzzPositionToFloatSR(pos.x_advance)
+                                      : -HarfBuzzPositionToFloatSR(pos.y_advance);
 
     DCHECK_GE(glyph.cluster, start_cluster);
     const uint16_t character_index = glyph.cluster - start_cluster;

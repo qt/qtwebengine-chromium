@@ -12,7 +12,7 @@
 namespace blink {
 namespace {
 
-DOMArrayBuffer* VectorToDOMArrayBuffer(const Vector<uint8_t> buffer) {
+DOMArrayBuffer* VectorToDOMArrayBufferAAR(const Vector<uint8_t> buffer) {
   return DOMArrayBuffer::Create(static_cast<const void*>(buffer.data()),
                                 buffer.size());
 }
@@ -25,11 +25,11 @@ AuthenticatorAssertionResponse::AuthenticatorAssertionResponse(
     const Vector<uint8_t> signature,
     const std::optional<Vector<uint8_t>> optional_user_handle)
     : AuthenticatorAssertionResponse(
-          VectorToDOMArrayBuffer(client_data_json),
-          VectorToDOMArrayBuffer(authenticator_data),
-          VectorToDOMArrayBuffer(signature),
+          VectorToDOMArrayBufferAAR(client_data_json),
+          VectorToDOMArrayBufferAAR(authenticator_data),
+          VectorToDOMArrayBufferAAR(signature),
           optional_user_handle && optional_user_handle->size() > 0
-              ? VectorToDOMArrayBuffer(std::move(*optional_user_handle))
+              ? VectorToDOMArrayBufferAAR(std::move(*optional_user_handle))
               : nullptr) {}
 
 AuthenticatorAssertionResponse::AuthenticatorAssertionResponse(

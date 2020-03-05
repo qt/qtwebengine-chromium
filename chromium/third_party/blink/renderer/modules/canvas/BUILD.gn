@@ -55,6 +55,10 @@ blink_modules_sources("canvas") {
     "offscreencanvas2d/offscreen_canvas_rendering_context_2d.h",
     "testing/canvas_test_utils.cc",
   ]
+  jumbo_excluded_sources = [
+    "imagebitmap/image_bitmap_rendering_context_base.cc",
+    "offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc",
+  ]
 
   deps = [
     "//third_party/blink/renderer/modules/formatted_text",

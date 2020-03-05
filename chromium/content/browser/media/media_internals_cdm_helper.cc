@@ -121,7 +121,7 @@ base::Value::Dict CdmInfoToDict(const CdmInfo& cdm_info) {
   return dict;
 }
 
-std::u16string SerializeUpdate(std::string_view function,
+std::u16string SerializeUpdate2(std::string_view function,
                                const base::Value::List& value) {
   base::ValueView args[] = {value};
   return content::WebUI::GetJavascriptCall(function, args);
@@ -152,7 +152,7 @@ void MediaInternalsCdmHelper::OnKeySystemCapabilitiesUpdated(
   }
 
   return MediaInternals::GetInstance()->SendUpdate(
-      SerializeUpdate("media.updateRegisteredCdms", cdm_list));
+      SerializeUpdate2("media.updateRegisteredCdms", cdm_list));
 }
 
 }  // namespace content

@@ -96,6 +96,11 @@ blink_modules_sources("webcodecs") {
     "webcodecs_logger.cc",
     "webcodecs_logger.h",
   ]
+  jumbo_excluded_sources = [
+    "video_decoder_broker.cc",
+    "video_encoder.cc",
+    "video_frame.cc",
+  ]
   deps = [
     "//build:chromeos_buildflags",
     "//media",

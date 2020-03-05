@@ -100,7 +100,7 @@ using ::attribution_reporting::SuitableOrigin;
 using ::attribution_reporting::mojom::SourceType;
 using ::attribution_reporting::mojom::TriggerDataMatching;
 
-const base::FilePath::CharType kDatabasePath[] =
+const base::FilePath::CharType kDatabasePathASS[] =
     FILE_PATH_LITERAL("Conversions");
 
 constexpr int64_t kUnsetRecordId = -1;
@@ -458,7 +458,7 @@ AttributionStorageSql::ReadSourceToAttribute(StoredSource::Id source_id) {
 namespace {
 
 base::FilePath DatabasePath(const base::FilePath& user_data_directory) {
-  return user_data_directory.Append(kDatabasePath);
+  return user_data_directory.Append(kDatabasePathASS);
 }
 
 }  // namespace

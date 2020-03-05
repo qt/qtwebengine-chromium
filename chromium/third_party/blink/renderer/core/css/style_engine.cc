@@ -1952,7 +1952,7 @@ static bool AnyRuleCausesInvalidation(const MatchRequest& match_request,
 
 namespace {
 
-bool CanRejectRuleSet(ElementRuleCollector& collector,
+bool CanRejectRuleSet_SE(ElementRuleCollector& collector,
                       const RuleSet& rule_set) {
   const StyleScope* scope = rule_set.SingleScope();
   return scope && collector.CanRejectScope(*scope);
@@ -1995,7 +1995,7 @@ void StyleEngine::ApplyRuleSetInvalidationForElement(
   MatchRequest match_request{&tree_scope.RootNode()};
   bool matched_any = false;
   for (const Member<RuleSet>& rule_set : rule_sets) {
-    if (CanRejectRuleSet(collector, *rule_set)) {
+    if (CanRejectRuleSet_SE(collector, *rule_set)) {
       continue;
     }
     match_request.AddRuleset(rule_set.Get());

@@ -1200,6 +1200,13 @@ template("mojom") {
   } else {
     enabled_configurations = [ default_variant ]
   }
+
+  if (defined(invoker.disable_jumbo) && invoker.disable_jumbo) {
+    disable_jumbo = true
+  } else {
+    disable_jumbo = false
+  }
+
   foreach(bindings_configuration, enabled_configurations) {
     cpp_only = false
     if (defined(invoker.cpp_only)) {
@@ -1564,6 +1571,10 @@ template("mojom") {
       sources_target_type = "source_set"
     }
 
+    if (!disable_jumbo) {
+      sources_target_type = "jumbo_" + sources_target_type
+    }
+
     output_target_name = "${target_name}${variant_suffix}"
     if (proxy_target != "") {
       group(output_target_name) {
@@ -1578,8 +1589,9 @@ template("mojom") {
       sources_target_name = output_target_name
     }
 
-    target("jumbo_" + sources_target_type, sources_target_name) {
+    target(sources_target_type, sources_target_name) {
       if (defined(output_name_override)) {
+
         output_name = output_name_override
       }
       visibility = output_visibility + [
@@ -1687,7 +1699,7 @@ template("mojom") {
 
       mojolpm_target_name = "${target_name}_mojolpm"
       mojolpm_generator_target_name = "${target_name}__generator"
-      source_set(mojolpm_target_name) {
+      jumbo_source_set(mojolpm_target_name) {
         # There are still a few missing header dependencies between mojo targets
         # with typemaps and the dependencies of their typemap headers. It would
         # be good to enable include checking for these in the future though.

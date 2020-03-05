@@ -39,14 +39,14 @@ namespace {
 
 // An iterator for sample vectors.
 template <typename T>
-class IteratorTemplate : public SampleCountIterator {
+class IteratorTemplateSV : public SampleCountIterator {
  public:
-  IteratorTemplate(base::span<T> counts, const BucketRanges* bucket_ranges)
+  IteratorTemplateSV(base::span<T> counts, const BucketRanges* bucket_ranges)
       : counts_(counts), bucket_ranges_(bucket_ranges) {
     SkipEmptyBuckets();
   }
 
-  ~IteratorTemplate() override;
+  ~IteratorTemplateSV() override;
 
   // SampleCountIterator:
   bool Done() const override { return index_ >= counts_.size(); }
@@ -87,14 +87,14 @@ class IteratorTemplate : public SampleCountIterator {
   size_t index_ = 0;
 };
 
-using SampleVectorIterator = IteratorTemplate<const HistogramBase::AtomicCount>;
+using SampleVectorIteratorSV = IteratorTemplateSV<const HistogramBase::AtomicCount>;
 
 template <>
-SampleVectorIterator::~IteratorTemplate() = default;
+SampleVectorIteratorSV::~IteratorTemplateSV() = default;
 
 // Get() for an iterator of a SampleVector.
 template <>
-void SampleVectorIterator::Get(HistogramBase::Sample* min,
+void SampleVectorIteratorSV::Get(HistogramBase::Sample* min,
                                int64_t* max,
                                HistogramBase::Count* count) {
   DCHECK(!Done());
@@ -104,10 +104,10 @@ void SampleVectorIterator::Get(HistogramBase::Sample* min,
 }
 
 using ExtractingSampleVectorIterator =
-    IteratorTemplate<HistogramBase::AtomicCount>;
+    IteratorTemplateSV<HistogramBase::AtomicCount>;
 
 template <>
-ExtractingSampleVectorIterator::~IteratorTemplate() {
+ExtractingSampleVectorIterator::~IteratorTemplateSV() {
   // Ensure that the user has consumed all the samples in order to ensure no
   // samples are lost.
   DCHECK(Done());
@@ -238,7 +238,7 @@ std::unique_ptr<SampleCountIterator> SampleVectorBase::Iterator() const {
       // to corruption). If a different sample is eventually emitted, we will
       // move from SingleSample to a counts storage, and that time, we will
       // discard this invalid sample (see MoveSingleSampleToCounts()).
-      return std::make_unique<SampleVectorIterator>(
+      return std::make_unique<SampleVectorIteratorSV>(
           base::span<const HistogramBase::AtomicCount>(), bucket_ranges_);
     }
 
@@ -250,11 +250,11 @@ std::unique_ptr<SampleCountIterator> SampleVectorBase::Iterator() const {
 
   // Handle the multi-sample case.
   if (counts().has_value() || MountExistingCountsStorage()) {
-    return std::make_unique<SampleVectorIterator>(*counts(), bucket_ranges_);
+    return std::make_unique<SampleVectorIteratorSV>(*counts(), bucket_ranges_);
   }
 
   // And the no-value case.
-  return std::make_unique<SampleVectorIterator>(
+  return std::make_unique<SampleVectorIteratorSV>(
       base::span<const HistogramBase::AtomicCount>(), bucket_ranges_);
 }
 

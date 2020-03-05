@@ -263,7 +263,7 @@ void PushMessagingRouter::FireSubscriptionChangeEvent(
     blink::mojom::PushSubscriptionPtr old_subscription,
     PushEventCallback subscription_change_callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(base::FeatureList::IsEnabled(features::kPushSubscriptionChangeEvent));
+  DCHECK(base::FeatureList::IsEnabled(::features::kPushSubscriptionChangeEvent));
 
   StartServiceWorkerForDispatch(
       ServiceWorkerMetrics::EventType::PUSH_SUBSCRIPTION_CHANGE,
@@ -282,7 +282,7 @@ void PushMessagingRouter::FireSubscriptionChangeEventToWorker(
     scoped_refptr<ServiceWorkerContextWrapper> service_worker_context,
     blink::ServiceWorkerStatusCode status) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(base::FeatureList::IsEnabled(features::kPushSubscriptionChangeEvent));
+  DCHECK(base::FeatureList::IsEnabled(::features::kPushSubscriptionChangeEvent));
 
   if (!service_worker) {
     DCHECK_NE(blink::ServiceWorkerStatusCode::kOk, status);

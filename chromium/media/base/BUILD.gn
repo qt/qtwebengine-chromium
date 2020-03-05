@@ -440,6 +440,8 @@ jumbo_source_set("base") {
       "libaom_thread_wrapper.cc",
       "libaom_thread_wrapper.h",
     ]
+    jumbo_excluded_sources = [ "libaom_thread_wrapper.cc"]
+
     deps += [ "//third_party/libaom" ]
   }
 

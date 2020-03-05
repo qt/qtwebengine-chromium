@@ -8,6 +8,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "media/base/audio_decoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_switches.h"
 #include "media/base/offloading_audio_encoder.h"
 #include "media/filters/mac/audio_toolbox_audio_decoder.h"

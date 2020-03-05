@@ -38,7 +38,7 @@ namespace blink {
 
 namespace {
 
-bool IsLinkHighlighted(const LayoutObject& object) {
+bool IsLinkHighlightedPPTW(const LayoutObject& object) {
   return object.GetFrame()->GetPage()->GetLinkHighlight().IsHighlighting(
       object);
 }
@@ -394,7 +394,7 @@ FragmentData* PrePaintTreeWalk::GetOrCreateFragmentData(
     }
   } else {
     if (pre_paint_info.is_inside_fragment_child) {
-      if (!object.HasInlineFragments() && !IsLinkHighlighted(object)) {
+      if (!object.HasInlineFragments() && !IsLinkHighlightedPPTW(object)) {
         // We don't need any additional fragments for culled inlines - unless
         // this is the highlighted link (in which case even culled inlines get
         // paint effects).

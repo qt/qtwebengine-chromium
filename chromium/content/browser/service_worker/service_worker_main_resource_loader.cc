@@ -101,7 +101,7 @@ std::string GetContainerHostClientId(int frame_tree_node_id) {
 
 bool IsStaticRouterRaceRequestFixEnabled() {
   return base::FeatureList::IsEnabled(
-      features::kServiceWorkerStaticRouterRaceRequestFix);
+      ::features::kServiceWorkerStaticRouterRaceRequestFix);
 }
 
 }  // namespace
@@ -322,7 +322,7 @@ void ServiceWorkerMainResourceLoader::StartRequest(
                     if (active_worker->running_status() !=
                             blink::EmbeddedWorkerStatus::kRunning &&
                         base::FeatureList::IsEnabled(
-                            features::
+                            ::features::
                                 kServiceWorkerStaticRouterStartServiceWorker)) {
                       active_worker->StartWorker(
                           ServiceWorkerMetrics::EventType::STATIC_ROUTER,
@@ -358,7 +358,7 @@ void ServiceWorkerMainResourceLoader::StartRequest(
                     if (active_worker->running_status() !=
                             blink::EmbeddedWorkerStatus::kRunning &&
                         base::FeatureList::IsEnabled(
-                            features::
+                            ::features::
                                 kServiceWorkerStaticRouterStartServiceWorker)) {
                       active_worker->StartWorker(
                           ServiceWorkerMetrics::EventType::STATIC_ROUTER,
@@ -452,7 +452,7 @@ void ServiceWorkerMainResourceLoader::MaybeDispatchPreload(
 bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
     scoped_refptr<ServiceWorkerContextWrapper> context,
     scoped_refptr<ServiceWorkerVersion> version) {
-  if (!base::FeatureList::IsEnabled(features::kServiceWorkerAutoPreload)) {
+  if (!base::FeatureList::IsEnabled(::features::kServiceWorkerAutoPreload)) {
     return false;
   }
 
@@ -462,7 +462,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   }
 
   bool use_allowlist = base::GetFieldTrialParamByFeatureAsBool(
-      features::kServiceWorkerAutoPreload, "use_allowlist",
+      ::features::kServiceWorkerAutoPreload, "use_allowlist",
       /*default_value=*/false);
   if (use_allowlist && !HasAutoPreloadEligibleScript(version)) {
     return false;
@@ -474,7 +474,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   const static base::NoDestructor<base::flat_set<std::string>> blocked_hosts(
       base::SplitString(
           base::GetFieldTrialParamValueByFeature(
-              features::kServiceWorkerAutoPreload, "blocked_hosts"),
+              ::features::kServiceWorkerAutoPreload, "blocked_hosts"),
           ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY));
   if (blocked_hosts->contains(resource_request_.url.host())) {
     return false;
@@ -485,7 +485,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   // running, preload requests for both main resource and subresources are not
   // dispatched.
   if (base::GetFieldTrialParamByFeatureAsBool(
-          features::kServiceWorkerAutoPreload,
+          ::features::kServiceWorkerAutoPreload,
           "enable_only_when_service_worker_not_running",
           /*default_value=*/false) &&
       version->running_status() == blink::EmbeddedWorkerStatus::kRunning) {
@@ -508,7 +508,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   // dispatched for subresources.
   version->set_fetch_handler_bypass_option(
       base::GetFieldTrialParamByFeatureAsBool(
-          features::kServiceWorkerAutoPreload, "enable_subresource_preload",
+          ::features::kServiceWorkerAutoPreload, "enable_subresource_preload",
           /*default_value=*/true)
           ? blink::mojom::ServiceWorkerFetchHandlerBypassOption::kAutoPreload
           : blink::mojom::ServiceWorkerFetchHandlerBypassOption::kDefault);

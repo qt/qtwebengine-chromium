@@ -35,7 +35,7 @@ constexpr int kSmallestRenderProcessId =
 constexpr int kMaxWorkerCountToReport = 50;
 
 // Prevent check on multiple workers per extension for testing purposes.
-bool g_allow_multiple_workers_per_extension = false;
+bool g_allow_multiple_workers_per_extensionWIS = false;
 
 static_assert(kSmallestVersionId < 0,
               "Sentinel version_id must be smaller than any valid version id.");
@@ -91,7 +91,7 @@ void WorkerIdSet::Add(const WorkerId& worker_id,
       "Extensions.ServiceWorkerBackground.WorkerCountAfterAdd", new_size,
       kMaxWorkerCountToReport);
 
-  if (!g_allow_multiple_workers_per_extension) {
+  if (!g_allow_multiple_workers_per_extensionWIS) {
     // TODO(crbug.com/40936639):Enable this CHECK once multiple active workers
     // is resolved. CHECK_LE(new_size, 1u) << "Extension with worker id " <<
     // worker_id
@@ -193,14 +193,14 @@ std::vector<WorkerId> WorkerIdSet::GetAllForTesting() const {
 // static
 base::AutoReset<bool>
 WorkerIdSet::AllowMultipleWorkersPerExtensionForTesting() {
-  return base::AutoReset<bool>(&g_allow_multiple_workers_per_extension, true);
+  return base::AutoReset<bool>(&g_allow_multiple_workers_per_extensionWIS, true);
 }
 
 namespace debug {
 
 namespace {
 
-const char* BoolToCrashKeyValue(bool value) {
+const char* BoolToCrashKeyValueWIS(bool value) {
   return value ? "yes" : "no";
 }
 
@@ -300,7 +300,7 @@ const char* GetRendererProcessRunningValue(const ExtensionId& extension_id,
   ProcessMap* process_map = ProcessMap::Get(context);
   CHECK(process_map);
 
-  return BoolToCrashKeyValue(
+  return BoolToCrashKeyValueWIS(
       process_map->Contains(extension_id, renderer_process_id));
 }
 
@@ -314,7 +314,7 @@ ScopedMultiWorkerCrashKeys::ScopedMultiWorkerCrashKeys(
     : extension_id_crash_key_(GetExtensionIdCrashKey(), extension_id),
       identical_version_ids_crash_key_(
           GetIdenticalVersionIdsCrashKey(),
-          BoolToCrashKeyValue(previous_worker_id.version_id ==
+          BoolToCrashKeyValueWIS(previous_worker_id.version_id ==
                               new_worker_id.version_id)),
       previous_worker_version_id_crash_key_(
           GetPreviousWorkerVersionIdCrashKey(),
@@ -330,7 +330,7 @@ ScopedMultiWorkerCrashKeys::ScopedMultiWorkerCrashKeys(
           GetLifecycleStateValue(new_worker_id, context)),
       identical_worker_render_process_ids_crash_key_(
           GetIdenticalRendererProcessesIdsCrashKey(),
-          BoolToCrashKeyValue(previous_worker_id.render_process_id ==
+          BoolToCrashKeyValueWIS(previous_worker_id.render_process_id ==
                               new_worker_id.render_process_id)),
       previous_worker_render_process_running_crash_key_(
           GetPreviousWorkerRendererProcessRunningCrashKey(),

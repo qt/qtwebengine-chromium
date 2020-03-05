@@ -1977,7 +1977,7 @@ ServiceWorkerContextWrapper::GetLoaderFactoryForBrowserInitiatedRequest(
   } else {
     DCHECK(storage_partition());
     if (base::FeatureList::IsEnabled(
-            features::kPrivateNetworkAccessForWorkers)) {
+            ::features::kPrivateNetworkAccessForWorkers)) {
       if (url_loader_factory::GetTestingInterceptor()) {
         url_loader_factory::GetTestingInterceptor().Run(
             network::mojom::kBrowserProcessId, factory_builder);
@@ -2022,7 +2022,7 @@ ServiceWorkerContextWrapper::GetLoaderFactoryForBrowserInitiatedRequest(
     // create a `WebUI` or a `WebUIController` for WebUI Service Workers so we
     // register the URLDataSource directly.
     if (base::FeatureList::IsEnabled(
-            features::kEnableServiceWorkersForChromeScheme) &&
+            ::features::kEnableServiceWorkersForChromeScheme) &&
         scope.scheme_piece() == kChromeUIScheme) {
       config->RegisterURLDataSource(browser_context());
       static_cast<blink::PendingURLLoaderFactoryBundle*>(
@@ -2032,7 +2032,7 @@ ServiceWorkerContextWrapper::GetLoaderFactoryForBrowserInitiatedRequest(
                                         browser_context(), kChromeUIScheme,
                                         base::flat_set<std::string>()));
     } else if (base::FeatureList::IsEnabled(
-                   features::kEnableServiceWorkersForChromeUntrusted) &&
+                   ::features::kEnableServiceWorkersForChromeUntrusted) &&
                scope.scheme_piece() == kChromeUIUntrustedScheme) {
       config->RegisterURLDataSource(browser_context());
       static_cast<blink::PendingURLLoaderFactoryBundle*>(

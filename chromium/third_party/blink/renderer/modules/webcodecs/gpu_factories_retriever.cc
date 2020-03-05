@@ -20,14 +20,14 @@ MainThreadTaskRunnerRestricted AccessMainThreadForGpuFactories() {
 
 namespace {
 
-media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread() {
+media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread2() {
   DCHECK(IsMainThread());
   return Platform::Current()->GetGpuFactories();
 }
 
 void RetrieveGpuFactories(OutputCB result_callback) {
   if (IsMainThread()) {
-    std::move(result_callback).Run(GetGpuFactoriesOnMainThread());
+    std::move(result_callback).Run(GetGpuFactoriesOnMainThread2());
     return;
   }
 
@@ -36,7 +36,7 @@ void RetrieveGpuFactories(OutputCB result_callback) {
       ->PostTaskAndReplyWithResult(
           FROM_HERE,
           ConvertToBaseOnceCallback(
-              CrossThreadBindOnce(&GetGpuFactoriesOnMainThread)),
+              CrossThreadBindOnce(&GetGpuFactoriesOnMainThread2)),
           ConvertToBaseOnceCallback(std::move(result_callback)));
 }
 

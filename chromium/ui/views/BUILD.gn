@@ -530,6 +530,10 @@ jumbo_component("views") {
     "window/window_shape.cc",
     "windows_stationarity_monitor.cc",
   ]
+  jumbo_excluded_sources = [
+    "accessibility/accessibility_paint_checks.cc",
+    "window/client_view.cc",
+  ]
 
   # Other targets in this file (e.g. tests) get access to the internal headers.
   friend = [ ":*" ]

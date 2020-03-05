@@ -16,7 +16,7 @@ namespace storage {
 
 namespace {
 
-BlobUrlRegistry::URLStoreCreationHook* g_url_store_creation_hook = nullptr;
+BlobUrlRegistry::URLStoreCreationHook* g_url_store_creation_hook2 = nullptr;
 
 }
 
@@ -36,8 +36,8 @@ void BlobUrlRegistry::AddReceiver(
       std::make_unique<storage::BlobURLStoreImpl>(storage_key, AsWeakPtr()),
       std::move(receiver));
 
-  if (g_url_store_creation_hook) {
-    g_url_store_creation_hook->Run(this, receiver_id);
+  if (g_url_store_creation_hook2) {
+    g_url_store_creation_hook2->Run(this, receiver_id);
   }
 }
 
@@ -183,7 +183,7 @@ void BlobUrlRegistry::SetURLStoreCreationHookForTesting(
     URLStoreCreationHook* hook) {
   DCHECK(
       base::FeatureList::IsEnabled(net::features::kSupportPartitionedBlobUrl));
-  g_url_store_creation_hook = hook;
+  g_url_store_creation_hook2 = hook;
 }
 
 }  // namespace storage

@@ -87,14 +87,14 @@ int ElementsKindSize(ElementsKind element_kind) {
 
 }  // namespace
 
-class GraphBuilder {
+class GraphBuilderMGBP {
  public:
   using AssemblerT =
       TSAssembler<MaglevEarlyLoweringReducer, MachineOptimizationReducer,
                   VariableReducer, RequiredOptimizationReducer,
                   ValueNumberingReducer>;
 
-  GraphBuilder(PipelineData* data, Graph& graph, Zone* temp_zone,
+  GraphBuilderMGBP(PipelineData* data, Graph& graph, Zone* temp_zone,
                maglev::MaglevCompilationUnit* maglev_compilation_unit)
       : data_(data),
         temp_zone_(temp_zone),
@@ -2642,7 +2642,7 @@ class GraphBuilder {
     // intepreter register.
 
    public:
-    ThrowingScope(GraphBuilder* builder, maglev::NodeBase* throwing_node)
+    ThrowingScope(GraphBuilderMGBP* builder, maglev::NodeBase* throwing_node)
         : builder_(*builder) {
       DCHECK(throwing_node->properties().can_throw());
       const maglev::ExceptionHandlerInfo* info =
@@ -2699,8 +2699,8 @@ class GraphBuilder {
     }
 
    private:
-    GraphBuilder::AssemblerT& Asm() { return builder_.Asm(); }
-    GraphBuilder& builder_;
+    GraphBuilderMGBP::AssemblerT& Asm() { return builder_.Asm(); }
+    GraphBuilderMGBP& builder_;
   };
 
   template <typename T>
@@ -2830,7 +2830,7 @@ void MaglevGraphBuildingPhase::Run(PipelineData* data, Zone* temp_zone) {
     PrintMaglevGraph(*data, compilation_info.get(), maglev_graph);
   }
 
-  maglev::GraphProcessor<GraphBuilder, true> builder(
+  maglev::GraphProcessor<GraphBuilderMGBP, true> builder(
       data, data->graph(), temp_zone,
       compilation_info->toplevel_compilation_unit());
   builder.ProcessGraph(maglev_graph);

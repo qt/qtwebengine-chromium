@@ -865,7 +865,7 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
   non_network_factories[url::kDataScheme] = DataURLLoaderFactory::Create();
   // Allow service workers for chrome:// or chrome-untrusted:// based on flags.
   if (base::FeatureList::IsEnabled(
-          features::kEnableServiceWorkersForChromeScheme) &&
+          ::features::kEnableServiceWorkersForChromeScheme) &&
       origin.scheme() == content::kChromeUIScheme) {
     non_network_factories.emplace(
         content::kChromeUIScheme,
@@ -873,7 +873,7 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
                                               content::kChromeUIScheme,
                                               base::flat_set<std::string>()));
   } else if (base::FeatureList::IsEnabled(
-                 features::kEnableServiceWorkersForChromeUntrusted) &&
+                 ::features::kEnableServiceWorkersForChromeUntrusted) &&
              origin.scheme() == content::kChromeUIUntrustedScheme) {
     non_network_factories.emplace(
         content::kChromeUIUntrustedScheme,

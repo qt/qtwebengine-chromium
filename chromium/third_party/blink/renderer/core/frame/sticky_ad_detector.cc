@@ -24,8 +24,8 @@ namespace blink {
 
 namespace {
 
-constexpr base::TimeDelta kFireInterval = base::Seconds(1);
-constexpr double kLargeAdSizeToViewportSizeThreshold = 0.3;
+constexpr base::TimeDelta kFireInterval2 = base::Seconds(1);
+constexpr double kLargeAdSizeToViewportSizeThreshold2 = 0.3;
 
 // An sticky element should have a non-default position w.r.t. the viewport. The
 // main page should also be scrollable.
@@ -73,7 +73,7 @@ void StickyAdDetector::MaybeFireDetection(LocalFrame* outermost_main_frame) {
   if (last_detection_time_.has_value() &&
       base::FeatureList::IsEnabled(
           features::kFrequencyCappingForLargeStickyAdDetection) &&
-      current_time < last_detection_time_.value() + kFireInterval) {
+      current_time < last_detection_time_.value() + kFireInterval2) {
     return;
   }
 
@@ -129,7 +129,7 @@ void StickyAdDetector::MaybeFireDetection(LocalFrame* outermost_main_frame) {
 
   bool is_large =
       (overlay_rect.size().Area64() > outermost_main_frame_size.Area64() *
-                                          kLargeAdSizeToViewportSizeThreshold);
+                                          kLargeAdSizeToViewportSizeThreshold2);
 
   bool is_main_page_scrollable =
       element->GetDocument().GetLayoutView()->HasScrollableOverflowY();

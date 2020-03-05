@@ -64,7 +64,7 @@ DOMException* CscResultToDOMException(CapturedSurfaceControlResult result) {
   NOTREACHED_NORETURN();
 }
 
-void OnCapturedSurfaceControlResult(
+void OnCapturedSurfaceControlResultMSVCS(
     base::OnceCallback<void(DOMException*)> callback,
     CapturedSurfaceControlResult result) {
   std::move(callback).Run(CscResultToDOMException(result));
@@ -264,7 +264,7 @@ void MediaStreamVideoCapturerSource::SendWheel(
       session_id.value(),
       blink::mojom::blink::CapturedWheelAction::New(
           relative_x, relative_y, wheel_delta_x, wheel_delta_y),
-      WTF::BindOnce(&OnCapturedSurfaceControlResult, std::move(callback)));
+      WTF::BindOnce(&OnCapturedSurfaceControlResultMSVCS, std::move(callback)));
 }
 
 void MediaStreamVideoCapturerSource::SetZoomLevel(
@@ -282,7 +282,7 @@ void MediaStreamVideoCapturerSource::SetZoomLevel(
 
   GetMediaStreamDispatcherHost()->SetZoomLevel(
       session_id.value(), zoom_level,
-      WTF::BindOnce(&OnCapturedSurfaceControlResult, std::move(callback)));
+      WTF::BindOnce(&OnCapturedSurfaceControlResultMSVCS, std::move(callback)));
 }
 
 void MediaStreamVideoCapturerSource::ApplySubCaptureTarget(

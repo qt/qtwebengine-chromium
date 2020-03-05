@@ -35,7 +35,7 @@ namespace autofill {
 
 namespace {
 
-constexpr char kSubmissionSourceHistogram[] =
+constexpr char kSubmissionSourceHistogramFT[] =
     "Autofill.SubmissionDetectionSource.FormTracker";
 
 bool ShouldReplaceElementsByRendererIds() {
@@ -390,7 +390,7 @@ void FormTracker::OnFrameDetached() {
 }
 
 void FormTracker::FireFormSubmitted(const blink::WebFormElement& form) {
-  base::UmaHistogramEnumeration(kSubmissionSourceHistogram,
+  base::UmaHistogramEnumeration(kSubmissionSourceHistogramFT,
                                 SubmissionSource::FORM_SUBMISSION);
   for (auto& observer : observers_)
     observer.OnFormSubmitted(form);
@@ -398,7 +398,7 @@ void FormTracker::FireFormSubmitted(const blink::WebFormElement& form) {
 }
 
 void FormTracker::FireProbablyFormSubmitted() {
-  base::UmaHistogramEnumeration(kSubmissionSourceHistogram,
+  base::UmaHistogramEnumeration(kSubmissionSourceHistogramFT,
                                 SubmissionSource::PROBABLY_FORM_SUBMITTED);
   for (auto& observer : observers_)
     observer.OnProbablyFormSubmitted();
@@ -407,7 +407,7 @@ void FormTracker::FireProbablyFormSubmitted() {
 
 void FormTracker::FireInferredFormSubmission(SubmissionSource source) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(form_tracker_sequence_checker_);
-  base::UmaHistogramEnumeration(kSubmissionSourceHistogram, source);
+  base::UmaHistogramEnumeration(kSubmissionSourceHistogramFT, source);
   for (auto& observer : observers_)
     observer.OnInferredFormSubmission(source);
   ResetLastInteractedElements();

@@ -19,9 +19,9 @@ using MediaLicenseStorageHostOpenError =
 
 namespace {
 
-static const int kVersionNumber = 1;
+static const int kVersionNumberMLD = 1;
 
-const char kUmaPrefix[] = "Media.EME.MediaLicenseDatabaseSQLiteError";
+const char kUmaPrefixMLD[] = "Media.EME.MediaLicenseDatabaseSQLiteError";
 const char kUmaPrefixWithPeriod[] =
     "Media.EME.MediaLicenseDatabaseSQLiteError.";
 
@@ -230,7 +230,7 @@ MediaLicenseStorageHostOpenError MediaLicenseDatabase::OpenDatabase(
   }
 
   sql::MetaTable meta_table;
-  if (!meta_table.Init(&db_, kVersionNumber, kVersionNumber)) {
+  if (!meta_table.Init(&db_, kVersionNumberMLD, kVersionNumberMLD)) {
     DVLOG(1) << "Could not initialize Media License database metadata table.";
     // Wipe the database and start over. If we've already wiped the database and
     // are still failing, just return false.
@@ -239,12 +239,12 @@ MediaLicenseStorageHostOpenError MediaLicenseDatabase::OpenDatabase(
                     : OpenDatabase(/*is_retry=*/true);
   }
 
-  if (meta_table.GetCompatibleVersionNumber() > kVersionNumber) {
+  if (meta_table.GetCompatibleVersionNumber() > kVersionNumberMLD) {
     // This should only happen if the user downgrades the Chrome channel (for
     // example, from Beta to Stable). If that results in an incompatible schema,
     // we need to wipe the database and start over.
     DVLOG(1) << "Media License database is too new, kVersionNumber"
-             << kVersionNumber << ", GetCompatibleVersionNumber="
+             << kVersionNumberMLD << ", GetCompatibleVersionNumber="
              << meta_table.GetCompatibleVersionNumber();
     db_.Raze();
     return is_retry ? MediaLicenseStorageHostOpenError::kDatabaseRazeError
@@ -273,7 +273,7 @@ MediaLicenseStorageHostOpenError MediaLicenseDatabase::OpenDatabase(
 void MediaLicenseDatabase::OnDatabaseError(int error, sql::Statement* stmt) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  sql::UmaHistogramSqliteResult(kUmaPrefix, error);
+  sql::UmaHistogramSqliteResult(kUmaPrefixMLD, error);
 
   if (last_operation_) {
     sql::UmaHistogramSqliteResult(kUmaPrefixWithPeriod + *last_operation_,

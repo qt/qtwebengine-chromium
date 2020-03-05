@@ -56,7 +56,7 @@ SkColor GetCascadingAccentColor(View* view) {
   const SkColor default_color =
       view->GetColorProvider()->GetColor(ui::kColorFocusableBorderFocused);
   const SkColor background_color = GetCascadingBackgroundColor(view);
-  return features::IsChromeRefresh2023()
+  return ::features::IsChromeRefresh2023()
              ? color_utils::BlendForMinContrast(
                    default_color, background_color, std::nullopt,
                    color_utils::kMinimumVisibleContrastRatio)

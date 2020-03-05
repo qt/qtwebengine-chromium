@@ -102,7 +102,7 @@ BubbleFrameView::BubbleFrameView(const gfx::Insets& title_margins,
   main_image_->SetVisible(false);
   subtitle_->SetVisible(false);
 
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     default_title_->SetTextStyle(style::STYLE_HEADLINE_4);
   }
 
@@ -157,7 +157,7 @@ std::unique_ptr<Label> BubbleFrameView::CreateDefaultTitleLabel(
 std::unique_ptr<Button> BubbleFrameView::CreateCloseButton(
     Button::PressedCallback callback) {
   auto close_button = CreateVectorImageButtonWithNativeTheme(
-      std::move(callback), features::IsChromeRefresh2023()
+      std::move(callback), ::features::IsChromeRefresh2023()
                                ? vector_icons::kCloseChromeRefreshIcon
                                : vector_icons::kCloseRoundedIcon);
   close_button->SetTooltipText(l10n_util::GetStringUTF16(IDS_APP_CLOSE));
@@ -443,19 +443,19 @@ void BubbleFrameView::UpdateMainImage() {
     // since the origin for the view is outside the visible border.
     // For pre-CR2023, there should be no visual change.
     const int border_margin_left =
-        features::IsChromeRefresh2023() ? title_margins_.left() : kBorderMargin;
+        ::features::IsChromeRefresh2023() ? title_margins_.left() : kBorderMargin;
     const int border_margin_top =
-        features::IsChromeRefresh2023() ? title_margins_.top() : kBorderMargin;
+        ::features::IsChromeRefresh2023() ? title_margins_.top() : kBorderMargin;
     const gfx::Insets border_insets = GetBorder()->GetInsets();
     const int main_image_dimension = kMainImageDialogWidthIncrease -
                                      border_insets.left() - border_margin_left -
                                      kBorderStrokeThickness;
     const int image_inset_left =
-        features::IsChromeRefresh2023()
+        ::features::IsChromeRefresh2023()
             ? border_insets.left() + border_margin_left
             : border_margin_left - kBorderStrokeThickness;
     const int image_inset_top =
-        features::IsChromeRefresh2023()
+        ::features::IsChromeRefresh2023()
             ? border_insets.top() + border_margin_top
             : border_margin_top - kBorderStrokeThickness;
     const gfx::Insets image_insets =
@@ -1088,7 +1088,7 @@ bool BubbleFrameView::HasTitle() const {
 
 BubbleFrameView::ButtonsPositioning BubbleFrameView::GetButtonsPositioning()
     const {
-  if (!features::IsChromeRefresh2023()) {
+  if (!::features::IsChromeRefresh2023()) {
     return ButtonsPositioning::kOnFrameEdge;
   }
 

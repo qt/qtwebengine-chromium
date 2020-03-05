@@ -9,7 +9,7 @@
 namespace content {
 
 namespace {
-constexpr char kUmaPrefix[] = "Media.EME.CdmStorageManager.";
+constexpr char kUmaPrefixCSC[] = "Media.EME.CdmStorageManager.";
 
 constexpr char kIncognito[] = "Incognito";
 constexpr char kNonIncognito[] = "NonIncognito";
@@ -39,7 +39,7 @@ CdmFileIdAndContents::~CdmFileIdAndContents() = default;
 std::string GetCdmStorageManagerHistogramName(const std::string& operation,
                                               bool in_memory) {
   auto histogram_name = base::StrCat(
-      {kUmaPrefix, operation, in_memory ? kIncognito : kNonIncognito});
+      {kUmaPrefixCSC, operation, in_memory ? kIncognito : kNonIncognito});
 
   // If the 'kCdmStorageDatabaseMigration' flag is enabled, we should mark the
   // UMA with the fact that this error came during the migration.

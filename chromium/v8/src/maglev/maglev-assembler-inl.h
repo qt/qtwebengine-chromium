@@ -506,11 +506,11 @@ void CheckArgs(Args&&... args) {}
 
 #endif  // DEBUG
 
-template <typename Descriptor, typename... Args>
+template <typename Descriptor2, typename... Args>
 void PushArgumentsForBuiltin(MaglevAssembler* masm, std::tuple<Args...> args) {
   std::apply(
       [&](auto&&... stack_args) {
-        if (Descriptor::kStackArgumentOrder == StackArgumentOrder::kDefault) {
+        if (Descriptor2::kStackArgumentOrder == StackArgumentOrder::kDefault) {
           masm->Push(std::forward<decltype(stack_args)>(stack_args)...);
         } else {
           masm->PushReverse(std::forward<decltype(stack_args)>(stack_args)...);

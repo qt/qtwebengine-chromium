@@ -14,7 +14,7 @@
 namespace content {
 
 namespace {
-using Status = ::attribution_reporting::mojom::StoreSourceResult;
+using StatusSSR = ::attribution_reporting::mojom::StoreSourceResult;
 }  // namespace
 
 StoreSourceResult::StoreSourceResult(StorableSource source,
@@ -39,42 +39,42 @@ StoreSourceResult::StoreSourceResult(StoreSourceResult&&) = default;
 
 StoreSourceResult& StoreSourceResult::operator=(StoreSourceResult&&) = default;
 
-Status StoreSourceResult::status() const {
+StatusSSR StoreSourceResult::status() const {
   return absl::visit(
       base::Overloaded{
           [&](Success) {
-            return is_noised_ ? Status::kSuccessNoised : Status::kSuccess;
+            return is_noised_ ? StatusSSR::kSuccessNoised : StatusSSR::kSuccess;
           },
-          [](InternalError) { return Status::kInternalError; },
+          [](InternalError) { return StatusSSR::kInternalError; },
           [](InsufficientSourceCapacity) {
-            return Status::kInsufficientSourceCapacity;
+            return StatusSSR::kInsufficientSourceCapacity;
           },
           [](InsufficientUniqueDestinationCapacity) {
-            return Status::kInsufficientUniqueDestinationCapacity;
+            return StatusSSR::kInsufficientUniqueDestinationCapacity;
           },
           [](ExcessiveReportingOrigins) {
-            return Status::kExcessiveReportingOrigins;
+            return StatusSSR::kExcessiveReportingOrigins;
           },
           [](ProhibitedByBrowserPolicy) {
-            return Status::kProhibitedByBrowserPolicy;
+            return StatusSSR::kProhibitedByBrowserPolicy;
           },
           [](DestinationReportingLimitReached) {
-            return Status::kDestinationReportingLimitReached;
+            return StatusSSR::kDestinationReportingLimitReached;
           },
           [](DestinationGlobalLimitReached) {
-            return Status::kDestinationGlobalLimitReached;
+            return StatusSSR::kDestinationGlobalLimitReached;
           },
           [](DestinationBothLimitsReached) {
-            return Status::kDestinationBothLimitsReached;
+            return StatusSSR::kDestinationBothLimitsReached;
           },
           [](ReportingOriginsPerSiteLimitReached) {
-            return Status::kReportingOriginsPerSiteLimitReached;
+            return StatusSSR::kReportingOriginsPerSiteLimitReached;
           },
           [](ExceedsMaxChannelCapacity) {
-            return Status::kExceedsMaxChannelCapacity;
+            return StatusSSR::kExceedsMaxChannelCapacity;
           },
           [](ExceedsMaxTriggerStateCardinality) {
-            return Status::kExceedsMaxTriggerStateCardinality;
+            return StatusSSR::kExceedsMaxTriggerStateCardinality;
           },
       },
       result_);

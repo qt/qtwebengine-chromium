@@ -712,6 +712,7 @@ def make_properties_array(cg_context):
     assert isinstance(cg_context, CodeGenContext)
 
     T = TextNode
+    F = FormatNode
 
     if not cg_context.dictionary.own_members:
         return ListNode({})
@@ -721,7 +722,7 @@ def make_properties_array(cg_context):
         for member in cg_context.dictionary.own_members
     ])
     return ListNode([
-        T("const std::string_view kOwnPropertyNames[] = {"),
+        T("const std::string_view kOwnPropertyNames{}[] = {}".format(cg_context.class_name, "{")),
         properties,
         T("};"),
         EmptyNode(),
@@ -732,6 +733,7 @@ def make_fill_template_properties_function(cg_context):
     assert isinstance(cg_context, CodeGenContext)
 
     T = TextNode
+    F = FormatNode
 
     func_def = CxxFuncDefNode(name="FillTemplateProperties",
                               arg_decls=[
@@ -753,10 +755,8 @@ def make_fill_template_properties_function(cg_context):
 
     if cg_context.dictionary.own_members:
         body.extend([
-            T("static_assert(std::size(kOwnPropertyNames) "
-              "== kOwnPropertyCount);"),
-            T("properties.AppendRange(std::cbegin(kOwnPropertyNames),"
-              " std::cend(kOwnPropertyNames));"),
+            T("static_assert(std::size(kOwnPropertyNames{}) == kOwnPropertyCount);".format(cg_context.class_name)),
+            T("properties.AppendRange(std::cbegin(kOwnPropertyNames{}), std::cend(kOwnPropertyNames{}));".format(cg_context.class_name, cg_context.class_name)),
             T("DCHECK_EQ(properties.size(), kTotalPropertyCount);")
         ])
 
@@ -998,7 +998,7 @@ def make_v8_own_member_names_function(cg_context):
     body.extend([
         TextNode("return V8PerIsolateData::From(${isolate})"
                  "->FindOrCreateEternalNameCache"
-                 "(kOwnPropertyNames, kOwnPropertyNames);"),
+                 "(kOwnPropertyNames${class_name}, kOwnPropertyNames${class_name});"),
     ])
 
     return func_decl, func_def

@@ -14,7 +14,7 @@
 
 namespace blink {
 
-constexpr const char* kImageBitmapOptionNone = "none";
+constexpr const char* kImageBitmapOptionNone2 = "none";
 
 ScriptPromise<ImageBitmap> ImageBitmapSource::FulfillImageBitmap(
     ScriptState* script_state,
@@ -31,7 +31,7 @@ ScriptPromise<ImageBitmap> ImageBitmapSource::FulfillImageBitmap(
   // imageOrientation: 'from-image' will be used to replace imageOrientation:
   // 'none'. Adding a deprecation warning when 'none' is called in
   // createImageBitmap.
-  if (options->imageOrientation() == kImageBitmapOptionNone) {
+  if (options->imageOrientation() == kImageBitmapOptionNone2) {
     auto* execution_context =
         ExecutionContext::From(script_state->GetContext());
     Deprecation::CountDeprecation(

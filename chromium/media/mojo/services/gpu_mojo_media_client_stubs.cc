@@ -6,6 +6,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_encoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_log.h"
 #include "media/base/video_decoder.h"
 #include "media/mojo/services/gpu_mojo_media_client.h"

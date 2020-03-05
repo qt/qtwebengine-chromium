@@ -111,7 +111,7 @@ const unsigned kMaxEmailFieldLength = 254;
 
 const unsigned kMinStrongPasswordLabelWidth = 220;
 
-static bool is_default_font_prewarmed_ = false;
+static bool is_default_font_prewarmed_hie = false;
 
 }  // namespace
 
@@ -423,10 +423,10 @@ void HTMLInputElement::InitializeTypeInParsing() {
   // Prewarm the default font family. Do this while parsing because the style
   // recalc calls |TextControlInnerEditorElement::CreateInnerEditorStyle| which
   // needs the primary font.
-  if (!is_default_font_prewarmed_ && new_type_name == input_type_names::kText) {
+  if (!is_default_font_prewarmed_hie && new_type_name == input_type_names::kText) {
     FontCache::PrewarmFamily(LayoutThemeFontProvider::SystemFontFamily(
         CSSValueID::kWebkitSmallControl));
-    is_default_font_prewarmed_ = true;
+    is_default_font_prewarmed_hie = true;
   }
 }
 

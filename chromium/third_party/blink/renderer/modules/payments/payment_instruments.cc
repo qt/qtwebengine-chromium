@@ -74,7 +74,7 @@ bool rejectError(ScriptPromiseResolver<IDLType>* resolver,
   }
 }
 
-bool AllowedToUsePaymentFeatures(ScriptState* script_state) {
+bool AllowedToUsePaymentFeatures2(ScriptState* script_state) {
   if (!script_state->ContextIsValid())
     return false;
   return ExecutionContext::From(script_state)
@@ -131,7 +131,7 @@ ScriptPromise<IDLBoolean> PaymentInstruments::deleteInstrument(
 ScriptPromise<IDLAny> PaymentInstruments::get(ScriptState* script_state,
                                               const String& instrument_key,
                                               ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state)) {
+  if (!AllowedToUsePaymentFeatures2(script_state)) {
     ThrowNotAllowedToUsePaymentFeatures(exception_state);
     return ScriptPromise<IDLAny>();
   }
@@ -156,7 +156,7 @@ ScriptPromise<IDLAny> PaymentInstruments::get(ScriptState* script_state,
 ScriptPromise<IDLSequence<IDLString>> PaymentInstruments::keys(
     ScriptState* script_state,
     ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state)) {
+  if (!AllowedToUsePaymentFeatures2(script_state)) {
     ThrowNotAllowedToUsePaymentFeatures(exception_state);
     return ScriptPromise<IDLSequence<IDLString>>();
   }
@@ -182,7 +182,7 @@ ScriptPromise<IDLBoolean> PaymentInstruments::has(
     ScriptState* script_state,
     const String& instrument_key,
     ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state)) {
+  if (!AllowedToUsePaymentFeatures2(script_state)) {
     ThrowNotAllowedToUsePaymentFeatures(exception_state);
     return ScriptPromise<IDLBoolean>();
   }
@@ -209,7 +209,7 @@ ScriptPromise<IDLUndefined> PaymentInstruments::set(
     const String& instrument_key,
     const PaymentInstrument* details,
     ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!payment_manager_->manager().is_bound()) {
@@ -245,7 +245,7 @@ ScriptPromise<IDLUndefined> PaymentInstruments::set(
 ScriptPromise<IDLUndefined> PaymentInstruments::clear(
     ScriptState* script_state,
     ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!payment_manager_->manager().is_bound()) {

@@ -14,7 +14,7 @@ namespace performance_manager::execution_context_priority {
 
 namespace {
 
-const execution_context::ExecutionContext* GetExecutionContext(
+const execution_context::ExecutionContext* GetExecutionContext3(
     const FrameNode* frame_node) {
   return execution_context::ExecutionContextRegistry::GetFromGraph(
              frame_node->GetGraph())
@@ -82,8 +82,8 @@ void ChildFrameBooster::CreateBoostingVote(const FrameNode* frame_node) {
       std::piecewise_construct, std::forward_as_tuple(frame_node),
       std::forward_as_tuple(
           /*aggregator=*/boosting_vote_aggregator_,
-          /*input_execution_context=*/GetExecutionContext(parent_frame_node),
-          /*output_execution_context=*/GetExecutionContext(frame_node),
+          /*input_execution_context=*/GetExecutionContext3(parent_frame_node),
+          /*output_execution_context=*/GetExecutionContext3(frame_node),
           /*reason=*/kChildFrameBoostReason));
 }
 

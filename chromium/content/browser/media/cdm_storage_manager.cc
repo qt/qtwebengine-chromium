@@ -17,7 +17,7 @@ namespace content {
 
 namespace {
 
-const char kUmaPrefix[] = "Media.EME.CdmStorageManager.";
+const char kUmaPrefix_CSM[] = "Media.EME.CdmStorageManager.";
 
 const char kGetSizeForFileError[] = "GetSizeForFileError";
 const char kGetSizeForStorageKeyError[] = "GetSizeForStorageKeyError";
@@ -282,7 +282,7 @@ void CdmStorageManager::DidGetSize(base::OnceCallback<void(uint64_t)> callback,
 void CdmStorageManager::ReportDatabaseOpenError(CdmStorageOpenError error) {
   // General Errors without distinguishing incognito or not.
   base::UmaHistogramEnumeration(
-      std::string{kUmaPrefix} + std::string{kDatabaseOpenErrorNoPeriod}, error);
+      std::string{kUmaPrefix_CSM} + std::string{kDatabaseOpenErrorNoPeriod}, error);
 
   // Histogram split by incognito and non-incognito.
   base::UmaHistogramEnumeration(

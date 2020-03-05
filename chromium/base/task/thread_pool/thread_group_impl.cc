@@ -25,7 +25,7 @@ namespace internal {
 
 namespace {
 
-constexpr size_t kMaxNumberOfWorkers = 256;
+constexpr size_t kMaxNumberOfWorkers2 = 256;
 
 }  // namespace
 
@@ -422,10 +422,10 @@ size_t ThreadGroupImpl::NumberOfIdleWorkersLockRequiredForTesting() const {
 
 void ThreadGroupImpl::MaintainAtLeastOneIdleWorkerLockRequired(
     ScopedCommandsExecutor* executor) {
-  if (workers_.size() == kMaxNumberOfWorkers) {
+  if (workers_.size() == kMaxNumberOfWorkers2) {
     return;
   }
-  DCHECK_LT(workers_.size(), kMaxNumberOfWorkers);
+  DCHECK_LT(workers_.size(), kMaxNumberOfWorkers2);
 
   if (!idle_workers_set_.IsEmpty()) {
     return;
@@ -446,7 +446,7 @@ ThreadGroupImpl::CreateAndRegisterWorkerLockRequired(
     ScopedCommandsExecutor* executor) {
   DCHECK(!join_for_testing_started_);
   DCHECK_LT(workers_.size(), max_tasks_);
-  DCHECK_LT(workers_.size(), kMaxNumberOfWorkers);
+  DCHECK_LT(workers_.size(), kMaxNumberOfWorkers2);
   DCHECK(idle_workers_set_.IsEmpty());
 
   // WorkerThread needs |lock_| as a predecessor for its thread lock because in

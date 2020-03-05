@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//third_party/inspector_protocol/inspector_protocol.gni")
 import("//v8/gni/v8.gni")
 
@@ -30,7 +31,7 @@ inspector_protocol_generate("protocol_sources") {
   ]
 }
 
-source_set("auction_worklet") {
+jumbo_source_set("auction_worklet") {
   sources = [
     "auction_v8_devtools_agent.cc",
     "auction_v8_devtools_agent.h",
@@ -95,6 +96,10 @@ source_set("auction_worklet") {
   ]
 
   sources += get_target_outputs(":protocol_sources")
+
+  jumbo_excluded_sources = [
+    "seller_worklet.cc",
+  ]
 
   configs += [
     "//build/config/compiler:wexit_time_destructors",

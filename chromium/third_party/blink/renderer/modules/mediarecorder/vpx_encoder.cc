@@ -17,8 +17,6 @@
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "ui/gfx/geometry/size.h"
 
-using media::VideoFrameMetadata;
-
 namespace blink {
 
 void VpxEncoder::VpxCodecDeleter::operator()(vpx_codec_ctx_t* codec) {
@@ -92,25 +90,25 @@ void VpxEncoder::EncodeFrame(scoped_refptr<media::VideoFrame> frame,
   switch (frame->format()) {
     case media::PIXEL_FORMAT_NV12: {
       last_frame_had_alpha_ = false;
-      DoEncode(encoder_.get(), frame_size, frame->data(VideoFrame::Plane::kY),
-               frame->visible_data(VideoFrame::Plane::kY),
-               frame->stride(VideoFrame::Plane::kY),
+      DoEncode(encoder_.get(), frame_size, frame->data(media::VideoFrame::Plane::kY),
+               frame->visible_data(media::VideoFrame::Plane::kY),
+               frame->stride(media::VideoFrame::Plane::kY),
                frame->visible_data(VideoFrame::Plane::kUV),
-               frame->stride(VideoFrame::Plane::kUV),
+               frame->stride(media::VideoFrame::Plane::kUV),
                frame->visible_data(VideoFrame::Plane::kUV) + 1,
-               frame->stride(VideoFrame::Plane::kUV), duration, force_keyframe,
+               frame->stride(media::VideoFrame::Plane::kUV), duration, force_keyframe,
                data, &keyframe, VPX_IMG_FMT_NV12);
       break;
     }
     case media::PIXEL_FORMAT_I420: {
       last_frame_had_alpha_ = false;
-      DoEncode(encoder_.get(), frame_size, frame->data(VideoFrame::Plane::kY),
-               frame->visible_data(VideoFrame::Plane::kY),
-               frame->stride(VideoFrame::Plane::kY),
-               frame->visible_data(VideoFrame::Plane::kU),
-               frame->stride(VideoFrame::Plane::kU),
-               frame->visible_data(VideoFrame::Plane::kV),
-               frame->stride(VideoFrame::Plane::kV), duration, force_keyframe,
+      DoEncode(encoder_.get(), frame_size, frame->data(media::VideoFrame::Plane::kY),
+               frame->visible_data(media::VideoFrame::Plane::kY),
+               frame->stride(media::VideoFrame::Plane::kY),
+               frame->visible_data(media::VideoFrame::Plane::kU),
+               frame->stride(media::VideoFrame::Plane::kU),
+               frame->visible_data(media::VideoFrame::Plane::kV),
+               frame->stride(media::VideoFrame::Plane::kV), duration, force_keyframe,
                data, &keyframe, VPX_IMG_FMT_I420);
       break;
     }
@@ -125,16 +123,16 @@ void VpxEncoder::EncodeFrame(scoped_refptr<media::VideoFrame> frame,
           return;
         }
         u_plane_stride_ = media::VideoFrame::RowBytes(
-            VideoFrame::Plane::kU, frame->format(), frame_size.width());
+            media::VideoFrame::Plane::kU, frame->format(), frame_size.width());
         v_plane_stride_ = media::VideoFrame::RowBytes(
-            VideoFrame::Plane::kV, frame->format(), frame_size.width());
+            media::VideoFrame::Plane::kV, frame->format(), frame_size.width());
         v_plane_offset_ =
-            media::VideoFrame::PlaneSize(frame->format(), VideoFrame::Plane::kU,
+            media::VideoFrame::PlaneSize(frame->format(), media::VideoFrame::Plane::kU,
                                          frame_size)
                 .GetArea();
         alpha_dummy_planes_.resize(base::checked_cast<wtf_size_t>(
             v_plane_offset_ +
-            media::VideoFrame::PlaneSize(frame->format(), VideoFrame::Plane::kV,
+            media::VideoFrame::PlaneSize(frame->format(), media::VideoFrame::Plane::kV,
                                          frame_size)
                 .GetArea()));
         // It is more expensive to encode 0x00, so use 0x80 instead.
@@ -144,19 +142,19 @@ void VpxEncoder::EncodeFrame(scoped_refptr<media::VideoFrame> frame,
       force_keyframe = force_keyframe || !last_frame_had_alpha_;
       last_frame_had_alpha_ = true;
 
-      DoEncode(encoder_.get(), frame_size, frame->data(VideoFrame::Plane::kY),
-               frame->visible_data(VideoFrame::Plane::kY),
-               frame->stride(VideoFrame::Plane::kY),
-               frame->visible_data(VideoFrame::Plane::kU),
-               frame->stride(VideoFrame::Plane::kU),
-               frame->visible_data(VideoFrame::Plane::kV),
-               frame->stride(VideoFrame::Plane::kV), duration, force_keyframe,
+      DoEncode(encoder_.get(), frame_size, frame->data(media::VideoFrame::Plane::kY),
+               frame->visible_data(media::VideoFrame::Plane::kY),
+               frame->stride(media::VideoFrame::Plane::kY),
+               frame->visible_data(media::VideoFrame::Plane::kU),
+               frame->stride(media::VideoFrame::Plane::kU),
+               frame->visible_data(media::VideoFrame::Plane::kV),
+               frame->stride(media::VideoFrame::Plane::kV), duration, force_keyframe,
                data, &keyframe, VPX_IMG_FMT_I420);
 
       DoEncode(alpha_encoder_.get(), frame_size,
-               frame->data(VideoFrame::Plane::kA),
-               frame->visible_data(VideoFrame::Plane::kA),
-               frame->stride(VideoFrame::Plane::kA), alpha_dummy_planes_.data(),
+               frame->data(media::VideoFrame::Plane::kA),
+               frame->visible_data(media::VideoFrame::Plane::kA),
+               frame->stride(media::VideoFrame::Plane::kA), alpha_dummy_planes_.data(),
                base::checked_cast<int>(u_plane_stride_),
                alpha_dummy_planes_.data() + v_plane_offset_,
                base::checked_cast<int>(v_plane_stride_), duration, keyframe,

@@ -80,7 +80,7 @@ class TransparentButton : public Button {
     button_controller()->set_notify_action(
         ButtonController::NotifyAction::kOnPress);
 
-    if (features::IsChromeRefresh2023()) {
+    if (::features::IsChromeRefresh2023()) {
       views::InstallRoundRectHighlightPathGenerator(this, gfx::Insets(),
                                                     GetCornerRadius());
     }
@@ -141,7 +141,7 @@ Combobox::Combobox(ui::ComboboxModel* model) {
   SetFocusBehavior(FocusBehavior::ALWAYS);
 #endif
 
-  SetBackgroundColorId(features::IsChromeRefresh2023()
+  SetBackgroundColorId(::features::IsChromeRefresh2023()
                            ? ui::kColorComboboxBackground
                            : ui::kColorTextfieldBackground);
 
@@ -154,7 +154,7 @@ Combobox::Combobox(ui::ComboboxModel* model) {
       AddChildView(std::make_unique<TransparentButton>(base::BindRepeating(
           &Combobox::ArrowButtonPressed, base::Unretained(this))));
 
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     // TODO(crbug.com/40250124): This setter should be removed and the behavior
     // made default when ChromeRefresh2023 is finalized.
     SetEventHighlighting(true);
@@ -175,7 +175,7 @@ Combobox::Combobox(ui::ComboboxModel* model) {
   SetPaintToLayer();
   layer()->SetFillsBoundsOpaquely(false);
 
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     views::InstallRoundRectHighlightPathGenerator(this, gfx::Insets(),
                                                   GetCornerRadius());
   }
@@ -568,7 +568,7 @@ const std::unique_ptr<ui::ComboboxModel>& Combobox::GetOwnedModel() const {
 }
 
 void Combobox::UpdateBorder() {
-  if (features::IsChromeRefresh2023()) {
+  if (::features::IsChromeRefresh2023()) {
     if (!GetEnabled()) {
       SetBorder(nullptr);
       return;

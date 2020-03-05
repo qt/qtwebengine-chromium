@@ -143,7 +143,7 @@ ui::ResourceBundle::FontDetails TypographyProvider::GetFontDetailsImpl(
       details.weight = gfx::Font::Weight::BOLD;
       break;
     case style::CONTEXT_BUTTON_MD:
-      details.size_delta = features::IsChromeRefresh2023()
+      details.size_delta = ::features::IsChromeRefresh2023()
                                ? gfx::PlatformFont::GetFontSizeDelta(13)
                                : ui::kLabelFontSizeDelta;
       details.weight = MediumWeightForUI();

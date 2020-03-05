@@ -44,18 +44,18 @@ constexpr uint32_t kMaxStackEntries = 256;
 
 namespace {
 
-struct ThreadLocalData {
+struct ThreadLocalData_SHP {
   const char* thread_name = nullptr;
 };
 
-ThreadLocalData* GetThreadLocalData() {
+ThreadLocalData_SHP* GetThreadLocalData_SHP() {
 #if USE_LOCAL_TLS_EMULATION()
   static base::NoDestructor<
-      base::allocator::dispatcher::ThreadLocalStorage<ThreadLocalData>>
+      base::allocator::dispatcher::ThreadLocalStorage<ThreadLocalData_SHP>>
       thread_local_data("sampling_heap_profiler");
   return thread_local_data->GetThreadLocalData();
 #else
-  static thread_local ThreadLocalData thread_local_data;
+  static thread_local ThreadLocalData_SHP thread_local_data;
   return &thread_local_data;
 #endif
 }
@@ -104,7 +104,7 @@ const char* GetAndLeakThreadName() {
 }
 
 const char* UpdateAndGetThreadName(const char* name) {
-  ThreadLocalData* const thread_local_data = GetThreadLocalData();
+  ThreadLocalData_SHP* const thread_local_data = GetThreadLocalData_SHP();
   if (name)
     thread_local_data->thread_name = name;
   if (!thread_local_data->thread_name) {
@@ -327,7 +327,7 @@ std::vector<const char*> SamplingHeapProfiler::GetStrings() {
 
 // static
 void SamplingHeapProfiler::Init() {
-  GetThreadLocalData();
+  GetThreadLocalData_SHP();
   PoissonAllocationSampler::Init();
 }
 

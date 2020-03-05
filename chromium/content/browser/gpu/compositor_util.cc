@@ -449,7 +449,7 @@ bool IsZeroCopyUploadEnabled() {
 
 bool IsPartialRasterEnabled() {
   // Partial raster is not supported with RawDraw.
-  if (features::IsUsingRawDraw()) {
+  if (::features::IsUsingRawDraw()) {
     return false;
   }
   const auto& command_line = *base::CommandLine::ForCurrentProcess();
@@ -459,7 +459,7 @@ bool IsPartialRasterEnabled() {
 bool IsGpuMemoryBufferCompositorResourcesEnabled() {
   // To use Raw Draw, the Raw Draw shared image backing should be used, so
   // not use GPU memory buffer shared image backings for compositor resources.
-  if (features::IsUsingRawDraw()) {
+  if (::features::IsUsingRawDraw()) {
     return false;
   }
   const base::CommandLine& command_line =
@@ -476,7 +476,7 @@ bool IsGpuMemoryBufferCompositorResourcesEnabled() {
 #if BUILDFLAG(IS_APPLE)
   return true;
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
-  return features::IsDelegatedCompositingEnabled();
+  return ::features::IsDelegatedCompositingEnabled();
 #else
   return false;
 #endif

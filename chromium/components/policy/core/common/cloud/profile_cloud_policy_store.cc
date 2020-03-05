@@ -20,7 +20,7 @@ namespace em = enterprise_management;
 namespace policy {
 namespace {
 
-const base::FilePath::CharType kPolicy[] = FILE_PATH_LITERAL("Policy");
+const base::FilePath::CharType kPolicyPCPS[] = FILE_PATH_LITERAL("Policy");
 const base::FilePath::CharType kPolicyCache[] =
     FILE_PATH_LITERAL("Profile Cloud Policy");
 const base::FilePath::CharType kKeyCache[] =
@@ -47,7 +47,7 @@ std::unique_ptr<ProfileCloudPolicyStore> ProfileCloudPolicyStore::Create(
     const base::FilePath& profile_dir,
     scoped_refptr<base::SequencedTaskRunner> background_task_runner,
     bool is_dasherless) {
-  base::FilePath policy_dir = profile_dir.Append(kPolicy);
+  base::FilePath policy_dir = profile_dir.Append(kPolicyPCPS);
   base::FilePath policy_cache_file = policy_dir.Append(kPolicyCache);
   base::FilePath key_cache_file = policy_dir.Append(kKeyCache);
   return std::make_unique<ProfileCloudPolicyStore>(

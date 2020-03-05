@@ -13,7 +13,7 @@ namespace performance_manager::execution_context_priority {
 
 namespace {
 
-const execution_context::ExecutionContext* GetExecutionContext(
+const execution_context::ExecutionContext* GetExecutionContextLPV(
     const FrameNode* frame_node) {
   return execution_context::ExecutionContextRegistry::GetFromGraph(
              frame_node->GetGraph())
@@ -82,7 +82,7 @@ void LoadingPageVoter::OnFrameNodeInitializing(const FrameNode* frame_node) {
   }
 
   voting_channel_.SubmitVote(
-      GetExecutionContext(frame_node),
+      GetExecutionContextLPV(frame_node),
       Vote(base::TaskPriority::USER_VISIBLE, kPageIsLoadingReason));
 }
 
@@ -91,7 +91,7 @@ void LoadingPageVoter::OnFrameNodeTearingDown(const FrameNode* frame_node) {
     return;
   }
 
-  voting_channel_.InvalidateVote(GetExecutionContext(frame_node));
+  voting_channel_.InvalidateVote(GetExecutionContextLPV(frame_node));
 }
 
 void LoadingPageVoter::OnPageNodeStartedLoading(const PageNode* page_node) {
@@ -110,7 +110,7 @@ void LoadingPageVoter::OnPageNodeStoppedLoading(const PageNode* page_node) {
 
 void LoadingPageVoter::SubmitVoteForSubtree(const FrameNode* frame_node) {
   voting_channel_.SubmitVote(
-      GetExecutionContext(frame_node),
+      GetExecutionContextLPV(frame_node),
       Vote(base::TaskPriority::USER_VISIBLE, kPageIsLoadingReason));
 
   // Recurse through subtree.
@@ -121,7 +121,7 @@ void LoadingPageVoter::SubmitVoteForSubtree(const FrameNode* frame_node) {
 }
 
 void LoadingPageVoter::InvalidateVoteForSubtree(const FrameNode* frame_node) {
-  voting_channel_.InvalidateVote(GetExecutionContext(frame_node));
+  voting_channel_.InvalidateVote(GetExecutionContextLPV(frame_node));
 
   // Recurse through subtree.
   frame_node->VisitChildFrameNodes([this](const FrameNode* frame_node) {

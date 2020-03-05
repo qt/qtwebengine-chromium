@@ -28,8 +28,6 @@ namespace performance_manager {
 
 namespace {
 
-const char kDescriberName[] = "ProcessNodeImpl";
-
 std::string ContentTypeToString(ProcessNode::ContentType content_type) {
   switch (content_type) {
     case ProcessNode::ContentType::kExtension:
@@ -141,7 +139,7 @@ base::Time TicksToTime(base::TimeTicks ticks) {
 
 void ProcessNodeImplDescriber::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "ProcessNodeImpl");
 }
 
 void ProcessNodeImplDescriber::OnTakenFromGraph(Graph* graph) {

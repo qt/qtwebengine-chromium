@@ -57,7 +57,7 @@ void SerializeCommonAggregatableData(
     const AttributionReport::CommonAggregatableData& data,
     proto::AttributionCommonAggregatableMetadata& msg) {
   if (base::FeatureList::IsEnabled(
-          aggregation_service::kAggregationServiceMultipleCloudProviders) &&
+          ::aggregation_service::kAggregationServiceMultipleCloudProviders) &&
       data.aggregation_coordinator_origin.has_value()) {
     msg.set_coordinator_origin(
         data.aggregation_coordinator_origin->Serialize());

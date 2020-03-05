@@ -87,7 +87,7 @@ class FlexItem {
            PhysicalBoxStrut physical_margins,
            BoxStrut scrollbars,
            WritingMode baseline_writing_mode,
-           BaselineGroup baseline_group,
+           BaselineGroupType baseline_group,
            bool is_initial_block_size_indefinite,
            bool is_used_flex_basis_indefinite,
            bool depends_on_min_max_sizes);
@@ -163,7 +163,7 @@ class FlexItem {
   PhysicalBoxStrut physical_margins_;
   const BoxStrut scrollbars_;
   const WritingDirectionMode baseline_writing_direction_;
-  const BaselineGroup baseline_group_;
+  const BaselineGroupType baseline_group_;
 
   LayoutUnit flexed_content_size_;
 
