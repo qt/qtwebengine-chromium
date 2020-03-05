@@ -415,6 +415,10 @@ if (enable_extensions) {
       "view_type_util.h",
     ]
 
+    jumbo_excluded_sources = [
+      "manifest_handlers/file_handler_info.cc",
+    ]
+
     configs += [
       "//build/config:precompiled_headers",
       "//build/config/compiler:wexit_time_destructors",

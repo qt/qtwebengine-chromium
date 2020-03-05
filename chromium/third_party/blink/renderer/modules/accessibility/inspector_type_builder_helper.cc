@@ -18,7 +18,7 @@ std::unique_ptr<AXProperty> CreateProperty(const String& name,
   return AXProperty::create().setName(name).setValue(std::move(value)).build();
 }
 
-String IgnoredReasonName(AXIgnoredReason reason) {
+static String IgnoredReasonName_ITBH(AXIgnoredReason reason) {
   switch (reason) {
     case kAXActiveModalDialog:
       return "activeModalDialog";
@@ -58,10 +58,10 @@ String IgnoredReasonName(AXIgnoredReason reason) {
 std::unique_ptr<AXProperty> CreateProperty(IgnoredReason reason) {
   if (reason.related_object)
     return CreateProperty(
-        IgnoredReasonName(reason.reason),
+        IgnoredReasonName_ITBH(reason.reason),
         CreateRelatedNodeListValue(*(reason.related_object), nullptr,
                                    AXValueTypeEnum::Idref));
-  return CreateProperty(IgnoredReasonName(reason.reason),
+  return CreateProperty(IgnoredReasonName_ITBH(reason.reason),
                         CreateBooleanValue(true));
 }
 

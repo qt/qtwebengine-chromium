@@ -36,7 +36,7 @@ class ServiceProcessTracker {
                                 const std::string& service_interface_name) {
     // TODO(jam): remove this class or at least the locks once we only have UI
     // thread mode.
-    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(features::kProcessHostOnUI)
+    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(::features::kProcessHostOnUI)
                             ? BrowserThread::UI
                             : BrowserThread::IO);
     base::AutoLock lock(processes_lock_);
@@ -45,7 +45,7 @@ class ServiceProcessTracker {
     info.service_process_id = id;
     info.pid = process.Pid();
     info.service_interface_name = service_interface_name;
-    if (base::FeatureList::IsEnabled(features::kProcessHostOnUI)) {
+    if (base::FeatureList::IsEnabled(::features::kProcessHostOnUI)) {
       for (auto& observer : observers_)
         observer.OnServiceProcessLaunched(info);
     } else {
@@ -58,14 +58,14 @@ class ServiceProcessTracker {
   }
 
   void NotifyTerminated(ServiceProcessId id) {
-    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(features::kProcessHostOnUI)
+    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(::features::kProcessHostOnUI)
                             ? BrowserThread::UI
                             : BrowserThread::IO);
     base::AutoLock lock(processes_lock_);
     auto iter = processes_.find(id);
     DCHECK(iter != processes_.end());
 
-    if (base::FeatureList::IsEnabled(features::kProcessHostOnUI)) {
+    if (base::FeatureList::IsEnabled(::features::kProcessHostOnUI)) {
       for (auto& observer : observers_)
         observer.OnServiceProcessTerminatedNormally(iter->second);
     } else {
@@ -78,13 +78,13 @@ class ServiceProcessTracker {
   }
 
   void NotifyCrashed(ServiceProcessId id) {
-    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(features::kProcessHostOnUI)
+    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(::features::kProcessHostOnUI)
                             ? BrowserThread::UI
                             : BrowserThread::IO);
     base::AutoLock lock(processes_lock_);
     auto iter = processes_.find(id);
     DCHECK(iter != processes_.end());
-    if (base::FeatureList::IsEnabled(features::kProcessHostOnUI)) {
+    if (base::FeatureList::IsEnabled(::features::kProcessHostOnUI)) {
       for (auto& observer : observers_)
         observer.OnServiceProcessCrashed(iter->second);
     } else {
@@ -134,7 +134,7 @@ class ServiceProcessTracker {
   }
 
   ServiceProcessId GenerateNextId() {
-    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(features::kProcessHostOnUI)
+    DCHECK_CURRENTLY_ON(base::FeatureList::IsEnabled(::features::kProcessHostOnUI)
                             ? BrowserThread::UI
                             : BrowserThread::IO);
     return service_process_id_generator_.GenerateNextId();
@@ -233,7 +233,7 @@ void ServiceProcessHost::RemoveObserver(Observer* observer) {
 void ServiceProcessHost::Launch(mojo::GenericPendingReceiver receiver,
                                 Options options) {
   DCHECK(receiver.interface_name().has_value());
-  auto task_runner = base::FeatureList::IsEnabled(features::kProcessHostOnUI)
+  auto task_runner = base::FeatureList::IsEnabled(::features::kProcessHostOnUI)
                          ? GetUIThreadTaskRunner({})
                          : GetIOThreadTaskRunner({});
   if (task_runner->BelongsToCurrentThread()) {

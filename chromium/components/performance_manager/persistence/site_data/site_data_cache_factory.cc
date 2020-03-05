@@ -19,29 +19,29 @@
 
 namespace performance_manager {
 
-namespace {
+namespace site_data_cache_factory {
 SiteDataCacheFactory* g_instance = nullptr;
 }  // namespace
 
 SiteDataCacheFactory::SiteDataCacheFactory() {
-  DCHECK(!g_instance);
-  g_instance = this;
+  DCHECK(!site_data_cache_factory::g_instance);
+  site_data_cache_factory::g_instance = this;
 }
 
 SiteDataCacheFactory::~SiteDataCacheFactory() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK_EQ(this, g_instance);
+  DCHECK_EQ(this, site_data_cache_factory::g_instance);
   // Clear the cache map before unsetting |g_instance| as this will cause some
   // calls to |SetDataCacheInspectorForBrowserContext|.
   data_cache_map_.clear();
   for (const auto& iter : data_cache_map_)
     DCHECK_EQ(0, iter.second->Size());
-  g_instance = nullptr;
+  site_data_cache_factory::g_instance = nullptr;
 }
 
 // static
 SiteDataCacheFactory* SiteDataCacheFactory::GetInstance() {
-  return g_instance;
+  return site_data_cache_factory::g_instance;
 }
 
 SiteDataCache* SiteDataCacheFactory::GetDataCacheForBrowserContext(

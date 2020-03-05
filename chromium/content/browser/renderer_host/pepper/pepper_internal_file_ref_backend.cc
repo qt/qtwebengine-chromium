@@ -81,7 +81,7 @@ void CallRemove(scoped_refptr<storage::FileSystemContext> file_system_context,
                                                   std::move(callback));
 }
 
-void CallTouchFile(
+void CallTouchFile2(
     scoped_refptr<storage::FileSystemContext> file_system_context,
     const storage::FileSystemURL& url,
     const base::Time& last_access_time,
@@ -258,11 +258,11 @@ int32_t PepperInternalFileRefBackend::Touch(
 
   base::Time last_access_time = ppapi::PPTimeToTime(last_access_time_in);
   base::Time last_modified_time = ppapi::PPTimeToTime(last_modified_time_in);
-  if (base::FeatureList::IsEnabled(features::kProcessHostOnUI)) {
+  if (base::FeatureList::IsEnabled(::features::kProcessHostOnUI)) {
     GetIOThreadTaskRunner({})->PostTask(
         FROM_HERE,
         base::BindOnce(
-            CallTouchFile, GetFileSystemContext(), GetFileSystemURL(),
+            CallTouchFile2, GetFileSystemContext(), GetFileSystemURL(),
             last_access_time, last_modified_time,
             base::BindOnce(&PepperInternalFileRefBackend::DidFinishOnIOThread,
                            weak_factory_.GetWeakPtr(), reply_context,

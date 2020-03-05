@@ -139,7 +139,7 @@ bool TransformOperations::IsTranslation() const {
   return true;
 }
 
-static SkScalar TanDegrees(double degrees) {
+static SkScalar TanDegrees2(double degrees) {
   return SkDoubleToScalar(std::tan(DegToRad(degrees)));
 }
 
@@ -163,8 +163,8 @@ bool TransformOperations::ScaleComponent(SkScalar* scale) const {
       case TransformOperation::TRANSFORM_OPERATION_SKEWX:
       case TransformOperation::TRANSFORM_OPERATION_SKEWY:
       case TransformOperation::TRANSFORM_OPERATION_SKEW: {
-        SkScalar x_component = TanDegrees(operation.skew.x);
-        SkScalar y_component = TanDegrees(operation.skew.y);
+        SkScalar x_component = TanDegrees2(operation.skew.x);
+        SkScalar y_component = TanDegrees2(operation.skew.y);
         SkScalar x_scale = std::sqrt(x_component * x_component + 1);
         SkScalar y_scale = std::sqrt(y_component * y_component + 1);
         operations_scale *= std::max(x_scale, y_scale);

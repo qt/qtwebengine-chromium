@@ -13,7 +13,7 @@ namespace execution_context_priority {
 
 namespace {
 
-const execution_context::ExecutionContext* GetExecutionContext(
+const execution_context::ExecutionContext* GetExecutionContext2(
     const FrameNode* frame_node) {
   return execution_context::ExecutionContextRegistry::GetFromGraph(
              frame_node->GetGraph())
@@ -43,16 +43,16 @@ void FrameAudibleVoter::SetVotingChannel(VotingChannel voting_channel) {
 
 void FrameAudibleVoter::OnFrameNodeAdded(const FrameNode* frame_node) {
   const Vote vote = GetVote(frame_node->IsAudible());
-  voting_channel_.SubmitVote(GetExecutionContext(frame_node), vote);
+  voting_channel_.SubmitVote(GetExecutionContext2(frame_node), vote);
 }
 
 void FrameAudibleVoter::OnBeforeFrameNodeRemoved(const FrameNode* frame_node) {
-  voting_channel_.InvalidateVote(GetExecutionContext(frame_node));
+  voting_channel_.InvalidateVote(GetExecutionContext2(frame_node));
 }
 
 void FrameAudibleVoter::OnIsAudibleChanged(const FrameNode* frame_node) {
   const Vote new_vote = GetVote(frame_node->IsAudible());
-  voting_channel_.ChangeVote(GetExecutionContext(frame_node), new_vote);
+  voting_channel_.ChangeVote(GetExecutionContext2(frame_node), new_vote);
 }
 
 }  // namespace execution_context_priority

@@ -59,25 +59,25 @@ constexpr char kWebRequestProxyingURLLoaderFactoryScope[] =
 // This shutdown notifier makes sure the proxy is destroyed if an incognito
 // browser context is destroyed. This is needed because WebRequestAPI only
 // clears the proxies when the original browser context is destroyed.
-class ShutdownNotifierFactory
+class ShutdownNotifierFactory2
     : public BrowserContextKeyedServiceShutdownNotifierFactory {
  public:
-  static ShutdownNotifierFactory* GetInstance() {
-    static base::NoDestructor<ShutdownNotifierFactory> factory;
+  static ShutdownNotifierFactory2* GetInstance() {
+    static base::NoDestructor<ShutdownNotifierFactory2> factory;
     return factory.get();
   }
 
  private:
-  friend class base::NoDestructor<ShutdownNotifierFactory>;
+  friend class base::NoDestructor<ShutdownNotifierFactory2>;
 
-  ShutdownNotifierFactory()
+  ShutdownNotifierFactory2()
       : BrowserContextKeyedServiceShutdownNotifierFactory(
             "WebRequestProxyingURLLoaderFactory") {
     DependsOn(PermissionHelper::GetFactoryInstance());
   }
-  ~ShutdownNotifierFactory() override {}
+  ~ShutdownNotifierFactory2() override {}
 
-  DISALLOW_COPY_AND_ASSIGN(ShutdownNotifierFactory);
+  DISALLOW_COPY_AND_ASSIGN(ShutdownNotifierFactory2);
 };
 
 // Creates simulated net::RedirectInfo when an extension redirects a request,
@@ -1422,7 +1422,7 @@ WebRequestProxyingURLLoaderFactory::WebRequestProxyingURLLoaderFactory(
   // canceled when |shutdown_notifier_subscription_| is destroyed, and
   // |proxies_| owns this.
   shutdown_notifier_subscription_ =
-      ShutdownNotifierFactory::GetInstance()
+      ShutdownNotifierFactory2::GetInstance()
           ->Get(browser_context)
           ->Subscribe(base::BindRepeating(&WebRequestAPI::ProxySet::RemoveProxy,
                                           base::Unretained(proxies_), this));

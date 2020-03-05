@@ -10,7 +10,7 @@
 namespace blink {
 
 namespace {
-constexpr uint32_t kVersion = 2u;
+constexpr uint32_t kVersionUA = 2u;
 }  // namespace
 
 UserAgentBrandVersion::UserAgentBrandVersion(
@@ -47,7 +47,7 @@ absl::optional<std::string> UserAgentMetadata::Marshal(
   if (!in)
     return absl::nullopt;
   base::Pickle out;
-  out.WriteUInt32(kVersion);
+  out.WriteUInt32(kVersionUA);
 
   out.WriteUInt32(in->brand_version_list.size());
   for (const auto& brand_version : in->brand_version_list) {
@@ -76,7 +76,7 @@ absl::optional<UserAgentMetadata> UserAgentMetadata::Demarshal(
 
   uint32_t version;
   UserAgentMetadata out;
-  if (!in.ReadUInt32(&version) || version != kVersion)
+  if (!in.ReadUInt32(&version) || version != kVersionUA)
     return absl::nullopt;
 
   uint32_t brand_version_size;
