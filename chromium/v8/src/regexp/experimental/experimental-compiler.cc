@@ -181,7 +181,7 @@ bool ExperimentalRegExpCompiler::CanBeHandled(RegExpTree* tree,
   return CanBeHandledVisitor::Check(tree, flags, capture_count);
 }
 
-namespace {
+namespace experimental {
 
 // A label in bytecode with known address.
 class Label {
@@ -609,7 +609,7 @@ class CompileVisitor : private RegExpVisitor {
 
 ZoneList<RegExpInstruction> ExperimentalRegExpCompiler::Compile(
     RegExpTree* tree, JSRegExp::Flags flags, Zone* zone) {
-  return CompileVisitor::Compile(tree, flags, zone);
+  return experimental::CompileVisitor::Compile(tree, flags, zone);
 }
 
 }  // namespace internal

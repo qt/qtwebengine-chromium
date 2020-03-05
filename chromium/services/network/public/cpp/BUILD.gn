@@ -200,7 +200,7 @@ component("cross_origin_embedder_policy") {
   defines = [ "IS_NETWORK_CPP_BASE_IMPL" ]
 }
 
-jumbo_component("cpp_base") {
+component("cpp_base") {
   output_name = "network_cpp_base"
 
   sources = [

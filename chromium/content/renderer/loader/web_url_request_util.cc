@@ -33,6 +33,7 @@
 #include "third_party/blink/public/platform/web_http_header_visitor.h"
 #include "third_party/blink/public/platform/web_mixed_content.h"
 #include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/renderer/platform/wtf/assertions.h"
 
 using blink::mojom::FetchCacheMode;
 using blink::WebData;

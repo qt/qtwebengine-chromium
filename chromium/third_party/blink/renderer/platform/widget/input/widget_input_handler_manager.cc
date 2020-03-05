@@ -392,7 +392,7 @@ void WidgetInputHandlerManager::LogInputTimingUMA() {
 
 void WidgetInputHandlerManager::DispatchScrollGestureToCompositor(
     std::unique_ptr<WebGestureEvent> event) {
-  DCHECK(base::FeatureList::IsEnabled(features::kScrollUnification));
+  DCHECK(base::FeatureList::IsEnabled(::features::kScrollUnification));
   std::unique_ptr<WebCoalescedInputEvent> web_scoped_gesture_event =
       std::make_unique<WebCoalescedInputEvent>(std::move(event),
                                                ui::LatencyInfo());
@@ -405,7 +405,7 @@ void WidgetInputHandlerManager::DispatchScrollGestureToCompositor(
 
 void WidgetInputHandlerManager::HandleInputEventWithLatencyInfoOnCompositor(
     std::unique_ptr<WebCoalescedInputEvent> event) {
-  DCHECK(base::FeatureList::IsEnabled(features::kScrollUnification));
+  DCHECK(base::FeatureList::IsEnabled(::features::kScrollUnification));
   DCHECK(input_handler_proxy_);
   input_handler_proxy_->HandleInputEventWithLatencyInfo(std::move(event),
                                                         base::DoNothing());

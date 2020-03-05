@@ -7,14 +7,15 @@
 #include <utility>
 
 #include "content/browser/cookie_store/cookie_change_subscriptions.pb.h"
+#include "third_party/blink/renderer/platform/wtf/assertions.h"
 
 namespace content {
 
 namespace {
 
-#define STATIC_ASSERT_ENUM(a, b)                            \
-  static_assert(static_cast<int>(a) == static_cast<int>(b), \
-                "mismatching enums: " #a)
+//#define STATIC_ASSERT_ENUM(a, b)                            \
+//  static_assert(static_cast<int>(a) == static_cast<int>(b), \
+//                "mismatching enums: " #a)
 
 STATIC_ASSERT_ENUM(network::mojom::CookieMatchType::EQUALS,
                    proto::CookieMatchType::EQUALS);

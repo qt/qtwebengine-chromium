@@ -5063,7 +5063,7 @@ ${prototype_object}->GetPrototype().As<v8::Object>()->Delete(
     return SequenceNode(nodes) if nodes else None
 
 
-def make_install_interface_template(cg_context, function_name, class_name,
+def make_install_interface_template(cg_context, function_name, class_name, api_class_name,
                                     trampoline_var_name, constructor_entries,
                                     supplemental_install_node,
                                     install_unconditional_func_name,
@@ -5144,7 +5144,7 @@ def make_install_interface_template(cg_context, function_name, class_name,
 
     for entry in constructor_entries:
         set_callback = _format("${interface_template}->SetCallHandler({});",
-                               entry.ctor_callback_name)
+                               api_class_name + "Callbacks::" + entry.ctor_callback_name)
         set_length = _format("${interface_template}->SetLength({});",
                              entry.ctor_func_length)
         if entry.world == CodeGenContext.MAIN_WORLD:
@@ -5525,6 +5525,7 @@ ${instance_object} = ${v8_context}->Global()->GetPrototype().As<v8::Object>();\
         if unconditional_entries:
             body.append(
                 CxxBlockNode([
+                    TextNode("using namespace ${class_name}Callbacks;"),
                     make_table_func(table_name, unconditional_entries),
                     TextNode(installer_call_text),
                 ]))
@@ -5534,6 +5535,7 @@ ${instance_object} = ${v8_context}->Global()->GetPrototype().As<v8::Object>();\
                 CxxUnlikelyIfNode(
                     cond=conditional,
                     body=[
+                        TextNode("using namespace ${class_name}Callbacks;"),
                         make_table_func(table_name, entries),
                         TextNode(installer_call_text),
                     ]))
@@ -5700,6 +5702,8 @@ def make_indexed_and_named_property_callbacks_and_install_node(cg_context):
                 map(lambda flag: "int32_t({})".format(flag), flags))))
         pattern = """\
 // Named interceptors
+{{
+using namespace ${class_name}Callbacks;
 ${instance_template}->SetHandler(
     v8::NamedPropertyHandlerConfiguration(
         {impl_bridge}::NamedPropertyGetterCallback,
@@ -5720,7 +5724,9 @@ interface.indexed_and_named_properties.named_getter.extended_attributes:
         {impl_bridge}::NamedPropertyDefinerCallback,
         {impl_bridge}::NamedPropertyDescriptorCallback,
         v8::Local<v8::Value>(),
-        {property_handler_flags}));"""
+        {property_handler_flags}));
+}}
+"""
         install_node.append(
             F(pattern,
               impl_bridge=impl_bridge,
@@ -5759,6 +5765,8 @@ interface.indexed_and_named_properties.named_getter.extended_attributes:
         property_handler_flags = flags[0]
         pattern = """\
 // Indexed interceptors
+{{
+using namespace ${class_name}Callbacks;
 ${instance_template}->SetHandler(
     v8::IndexedPropertyHandlerConfiguration(
         {impl_bridge}::IndexedPropertyGetterCallback,
@@ -5773,7 +5781,8 @@ ${instance_template}->SetHandler(
         {impl_bridge}::IndexedPropertyDefinerCallback,
         {impl_bridge}::IndexedPropertyDescriptorCallback,
         v8::Local<v8::Value>(),
-        {property_handler_flags}));"""
+        {property_handler_flags}));
+}}"""
         install_node.append(
             F(pattern,
               impl_bridge=impl_bridge,
@@ -5830,6 +5839,8 @@ def make_named_properties_object_callbacks_and_install_node(cg_context):
         callback_defs.append(EmptyNode())
 
     text = """\
+{{
+using namespace ${class_name}Callbacks;
 // Named interceptors
 ${npo_prototype_template}->SetHandler(
     v8::NamedPropertyHandlerConfiguration(
@@ -5855,7 +5866,8 @@ ${npo_prototype_template}->SetHandler(
         NamedPropsObjIndexedDefinerCallback,
         NamedPropsObjIndexedDescriptorCallback,
         v8::Local<v8::Value>(),
-        v8::PropertyHandlerFlags::kNone));"""
+        v8::PropertyHandlerFlags::kNone));
+}}"""
     install_node.append(TextNode(text))
 
     return callback_defs, install_node
@@ -5994,6 +6006,8 @@ def make_cross_origin_property_callbacks_and_install_node(
 
     text = """\
 // Cross origin properties
+{{
+using namespace ${class_name}Callbacks;
 ${instance_template}->SetAccessCheckCallbackAndHandler(
     CrossOriginAccessCheckCallback,
     v8::NamedPropertyHandlerConfiguration(
@@ -6019,6 +6033,7 @@ ${instance_template}->SetAccessCheckCallbackAndHandler(
     v8::External::New(
         ${isolate},
         const_cast<WrapperTypeInfo*>(${class_name}::GetWrapperTypeInfo())));
+}}
 """
     install_node.append(TextNode(text))
     install_node.accumulate(
@@ -6051,6 +6066,8 @@ ${instance_template}->SetAccessCheckCallbackAndHandler(
         callback_defs.append(EmptyNode())
 
     text = """\
+{{
+using namespace ${class_name}Callbacks;
 // Same origin interceptors
 ${instance_template}->SetHandler(
     v8::IndexedPropertyHandlerConfiguration(
@@ -6063,6 +6080,7 @@ ${instance_template}->SetHandler(
         SameOriginIndexedDescriptorCallback,
         v8::Local<v8::Value>(),
         v8::PropertyHandlerFlags::kNone));
+}}
 """
     install_node.append(TextNode(text))
 
@@ -6191,7 +6209,8 @@ v8::Local<v8::FunctionTemplate> ${class_name}::DomTemplate(
 """))
     if has_context_dependent_props:
         pattern = """\
-static void InstallContextDependentPropertiesAdapter(
+namespace ${class_name}Callbacks {{
+void InstallContextDependentPropertiesAdapter(
     v8::Local<v8::Context> context,
     const DOMWrapperWorld& world,
     v8::Local<v8::Object> instance_object,
@@ -6203,6 +6222,7 @@ static void InstallContextDependentPropertiesAdapter(
       interface_template,
       bindings::V8InterfaceBridgeBase::FeatureSelector());
 }}
+}} // namespace
 """
         wrapper_type_info_def.append(
             F(pattern, FN_INSTALL_CONTEXT_DEPENDENT_PROPS))
@@ -6235,7 +6255,7 @@ const WrapperTypeInfo ${class_name}::wrapper_type_info_{{
     class_like = cg_context.class_like
     if has_context_dependent_props:
         install_context_dependent_func = (
-            "InstallContextDependentPropertiesAdapter")
+            "${class_name}Callbacks::InstallContextDependentPropertiesAdapter")
     else:
         install_context_dependent_func = "nullptr"
     if class_like.is_interface and class_like.inherited:
@@ -6395,6 +6415,7 @@ def _make_v8_context_snapshot_get_reference_table_function(
         lambda name: TextNode("reinterpret_cast<intptr_t>({}),".format(name)),
         filter(None, callback_names))
     table_node = ListNode([
+        TextNode("using namespace ${class_name}Callbacks;"),
         TextNode("static const intptr_t kReferenceTable[] = {"),
         ListNode(entry_nodes),
         TextNode("};"),
@@ -6824,6 +6845,7 @@ def generate_interface(interface_identifier):
          cg_context,
          FN_INSTALL_INTERFACE_TEMPLATE,
          class_name=impl_class_name,
+         api_class_name=api_class_name,
          trampoline_var_name=tp_install_interface_template,
          constructor_entries=constructor_entries,
          supplemental_install_node=supplemental_install_node,
@@ -7046,7 +7068,7 @@ def generate_interface(interface_identifier):
         ])
 
     impl_source_blink_ns.body.extend([
-        CxxNamespaceNode(name="", body=callback_defs),
+        CxxNamespaceNode(name=api_class_name + "Callbacks", body=callback_defs),
         EmptyNode(),
         installer_function_defs,
         EmptyNode(),

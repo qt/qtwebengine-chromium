@@ -15,7 +15,7 @@ namespace {
 
 using MathConstants = OpenTypeMathSupport::MathConstants;
 
-static bool IsPrescriptDelimiter(const NGBlockNode& blockNode) {
+bool MyIsPrescriptDelimiter(const NGBlockNode& blockNode) {
   auto* node = blockNode.GetDOMNode();
   return node && IsA<MathMLElement>(node) &&
          node->HasTagName(mathml_names::kMprescriptsTag);
@@ -149,7 +149,7 @@ void NGMathScriptsLayoutAlgorithm::GatherChildren(
       case MathScriptType::kMultiscripts: {
         // The structure of mmultiscripts is specified here:
         // https://mathml-refresh.github.io/mathml-core/#prescripts-and-tensor-indices-mmultiscripts
-        if (IsPrescriptDelimiter(block_child)) {
+        if (MyIsPrescriptDelimiter(block_child)) {
           if (!number_of_scripts_is_even || *first_prescript_index > 0) {
             NOTREACHED();
             return;
