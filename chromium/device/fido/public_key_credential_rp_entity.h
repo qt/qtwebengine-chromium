@@ -22,7 +22,7 @@ namespace device {
 struct COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialRpEntity {
  public:
   static absl::optional<PublicKeyCredentialRpEntity> CreateFromCBORValue(
-      const cbor::Value& cbor);
+      const ::cbor::Value& cbor);
 
   PublicKeyCredentialRpEntity();
   explicit PublicKeyCredentialRpEntity(std::string id);
@@ -42,7 +42,7 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) PublicKeyCredentialRpEntity {
   absl::optional<GURL> icon_url;
 };
 
-cbor::Value AsCBOR(const PublicKeyCredentialRpEntity&);
+::cbor::Value AsCBOR(const PublicKeyCredentialRpEntity&);
 
 }  // namespace device
 

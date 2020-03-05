@@ -4,6 +4,7 @@
 
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_encoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/video_decoder.h"
 #include "media/mojo/services/gpu_mojo_media_client.h"
 
@@ -32,9 +33,6 @@ std::unique_ptr<AudioEncoder> CreatePlatformAudioEncoder(
     scoped_refptr<base::SequencedTaskRunner> task_runner) {
   return nullptr;
 }
-
-// This class doesn't exist on any of the platforms that use the stubs.
-class CdmFactory {};
 
 std::unique_ptr<CdmFactory> CreatePlatformCdmFactory(
     mojom::FrameInterfaceFactory* frame_interfaces) {

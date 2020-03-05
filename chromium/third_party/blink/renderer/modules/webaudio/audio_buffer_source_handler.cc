@@ -32,7 +32,7 @@ constexpr double kMaxRate = 1024.0;
 
 // Default to mono. A call to setBuffer() will set the number of output
 // channels to that of the buffer.
-constexpr unsigned kDefaultNumberOfOutputChannels = 1;
+constexpr unsigned kDefaultNumberOfOutputChannelsABSH = 1;
 
 }  // namespace
 
@@ -47,7 +47,7 @@ AudioBufferSourceHandler::AudioBufferSourceHandler(
       playback_rate_(&playback_rate),
       detune_(&detune),
       grain_duration_(kDefaultGrainDuration) {
-  AddOutput(kDefaultNumberOfOutputChannels);
+  AddOutput(kDefaultNumberOfOutputChannelsABSH);
 
   Initialize();
 }

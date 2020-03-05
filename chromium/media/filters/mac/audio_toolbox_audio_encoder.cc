@@ -19,25 +19,25 @@ namespace media {
 
 namespace {
 
-struct InputData {
+struct InputData2 {
   raw_ptr<const AudioBus> bus = nullptr;
   AudioStreamPacketDescription packet = {};
   bool flushing = false;
 };
 
 // Special error code we use to differentiate real errors from end of buffer.
-constexpr OSStatus kNoMoreDataError = -12345;
+constexpr OSStatus kNoMoreDataError2 = -12345;
 
 // Callback used to provide input data to the AudioConverter.
-OSStatus ProvideInputCallback(AudioConverterRef decoder,
+OSStatus ProvideInputCallback2(AudioConverterRef decoder,
                               UInt32* num_packets,
                               AudioBufferList* buffer_list,
                               AudioStreamPacketDescription** packets,
                               void* user_data) {
-  auto* input_data = reinterpret_cast<InputData*>(user_data);
+  auto* input_data = reinterpret_cast<InputData2*>(user_data);
   if (!input_data->bus) {
     *num_packets = 0;
-    return input_data->flushing ? noErr : kNoMoreDataError;
+    return input_data->flushing ? noErr : kNoMoreDataError2;
   }
 
   DCHECK(!input_data->flushing);
@@ -181,7 +181,7 @@ void AudioToolboxAudioEncoder::Encode(std::unique_ptr<AudioBus> input_bus,
     DVLOG(1) << __func__ << ": Encoding end-of-stream.";
   }
 
-  InputData input_data;
+  InputData2 input_data;
   input_data.bus = input_bus.get();
   input_data.flushing = !input_bus;
 
@@ -198,20 +198,20 @@ void AudioToolboxAudioEncoder::Encode(std::unique_ptr<AudioBus> input_bus,
     output_buffer_list.mBuffers[0].mDataByteSize = max_packet_size_;
 
     // Encodes |num_packets| into |packet_buffer| by calling the
-    // ProvideInputCallback to fill an AudioBufferList that points into
+    // utCallback to fill an AudioBufferList that points into
     // |input_bus|. See media::AudioConverter for a similar mechanism.
     UInt32 num_packets = 1;
     AudioStreamPacketDescription packet_description = {};
     auto result = AudioConverterFillComplexBuffer(
-        encoder_, ProvideInputCallback, &input_data, &num_packets,
+        encoder_, ProvideInputCallback2, &input_data, &num_packets,
         &output_buffer_list, &packet_description);
 
-    if ((result == kNoMoreDataError || result == noErr) && !num_packets) {
+    if ((result == kNoMoreDataError2 || result == noErr) && !num_packets) {
       std::move(done_cb).Run(EncoderStatus::Codes::kOk);
       return;
     }
 
-    if (result != noErr && result != kNoMoreDataError) {
+    if (result != noErr && result != kNoMoreDataError2) {
       OSSTATUS_DLOG(ERROR, result)
           << "AudioConverterFillComplexBuffer() failed";
       std::move(done_cb).Run(EncoderStatus::Codes::kEncoderFailedEncode);

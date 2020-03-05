@@ -30,7 +30,6 @@ class GlobalHandleMarkingVisitor final : public ::heap::base::StackVisitor {
   GlobalHandles::NodeBounds traced_node_bounds_;
 };
 
-#endif  // V8_HEAP_GLOBAL_HANDLE_MARKING_VISITOR_H_
-
 }  // namespace internal
 }  // namespace v8
+#endif  // V8_HEAP_GLOBAL_HANDLE_MARKING_VISITOR_H_

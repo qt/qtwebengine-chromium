@@ -18,25 +18,25 @@ namespace extensions {
 
 namespace {
 
-class ShutdownNotifierFactory
+class ShutdownNotifierFactoryForExtensionMessageFilter
     : public BrowserContextKeyedServiceShutdownNotifierFactory {
  public:
-  ShutdownNotifierFactory(const ShutdownNotifierFactory&) = delete;
-  ShutdownNotifierFactory& operator=(const ShutdownNotifierFactory&) = delete;
+  ShutdownNotifierFactoryForExtensionMessageFilter(const ShutdownNotifierFactoryForExtensionMessageFilter&) = delete;
+  ShutdownNotifierFactoryForExtensionMessageFilter& operator=(const ShutdownNotifierFactoryForExtensionMessageFilter&) = delete;
 
-  static ShutdownNotifierFactory* GetInstance() {
-    return base::Singleton<ShutdownNotifierFactory>::get();
+  static ShutdownNotifierFactoryForExtensionMessageFilter* GetInstance() {
+    return base::Singleton<ShutdownNotifierFactoryForExtensionMessageFilter>::get();
   }
 
  private:
-  friend struct base::DefaultSingletonTraits<ShutdownNotifierFactory>;
+  friend struct base::DefaultSingletonTraits<ShutdownNotifierFactoryForExtensionMessageFilter>;
 
-  ShutdownNotifierFactory()
+  ShutdownNotifierFactoryForExtensionMessageFilter()
       : BrowserContextKeyedServiceShutdownNotifierFactory(
             "ExtensionMessageFilter") {
     DependsOn(ProcessManagerFactory::GetInstance());
   }
-  ~ShutdownNotifierFactory() override {}
+  ~ShutdownNotifierFactoryForExtensionMessageFilter() override {}
 };
 
 }  // namespace
@@ -48,13 +48,13 @@ ExtensionMessageFilter::ExtensionMessageFilter(int render_process_id,
       browser_context_(context) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   shutdown_notifier_subscription_ =
-      ShutdownNotifierFactory::GetInstance()->Get(context)->Subscribe(
+      ShutdownNotifierFactoryForExtensionMessageFilter::GetInstance()->Get(context)->Subscribe(
           base::BindRepeating(&ExtensionMessageFilter::ShutdownOnUIThread,
                               base::Unretained(this)));
 }
 
 void ExtensionMessageFilter::EnsureShutdownNotifierFactoryBuilt() {
-  ShutdownNotifierFactory::GetInstance();
+  ShutdownNotifierFactoryForExtensionMessageFilter::GetInstance();
 }
 
 ExtensionMessageFilter::~ExtensionMessageFilter() {

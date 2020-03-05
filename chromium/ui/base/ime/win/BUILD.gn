@@ -34,6 +34,7 @@ jumbo_component("win") {
     "virtual_keyboard_debounce_timer.cc",
     "virtual_keyboard_debounce_timer.h",
   ]
+  jumbo_excluded_sources = [ "tsf_text_store.cc" ]
 
   defines = [ "IS_UI_BASE_IME_WIN_IMPL" ]
 

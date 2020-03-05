@@ -28,7 +28,7 @@ namespace content {
 
 namespace {
 
-constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotationIGPC =
     net::DefineNetworkTrafficAnnotation("interest_group_well_known_fetcher", R"(
         semantics {
           sender: "Interest group well-known fetcher"
@@ -142,7 +142,7 @@ void InterestGroupPermissionsChecker::CheckPermissions(
 
     active_request->second->simple_url_loader =
         network::SimpleURLLoader::Create(std::move(resource_request),
-                                         kTrafficAnnotation);
+                                         kTrafficAnnotationIGPC);
     active_request->second->simple_url_loader->SetTimeoutDuration(
         kRequestTimeout);
     active_request->second->simple_url_loader->SetRequestID(

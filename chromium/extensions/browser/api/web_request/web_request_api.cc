@@ -99,7 +99,7 @@ using extensions::mojom::APIPermissionID;
 
 namespace activity_log = activity_log_web_request_constants;
 namespace helpers = extension_web_request_api_helpers;
-namespace keys = extension_web_request_api_constants;
+namespace keys_wra = extension_web_request_api_constants;
 using URLLoaderFactoryType =
     content::ContentBrowserClient::URLLoaderFactoryType;
 using DNRRequestAction = extensions::declarative_net_request::RequestAction;
@@ -141,15 +141,15 @@ const char kWebRequestEventPrefix[] = "webRequest.";
 // handled as a normal event (as opposed to a WebRequestEvent at the bindings
 // layer).
 const char* const kWebRequestEvents[] = {
-    keys::kOnBeforeRedirectEvent,
+    keys_wra::kOnBeforeRedirectEvent,
     web_request::OnBeforeRequest::kEventName,
-    keys::kOnBeforeSendHeadersEvent,
-    keys::kOnCompletedEvent,
+    keys_wra::kOnBeforeSendHeadersEvent,
+    keys_wra::kOnCompletedEvent,
     web_request::OnErrorOccurred::kEventName,
-    keys::kOnSendHeadersEvent,
-    keys::kOnAuthRequiredEvent,
-    keys::kOnResponseStartedEvent,
-    keys::kOnHeadersReceivedEvent,
+    keys_wra::kOnSendHeadersEvent,
+    keys_wra::kOnAuthRequiredEvent,
+    keys_wra::kOnResponseStartedEvent,
+    keys_wra::kOnHeadersReceivedEvent,
 };
 
 const char* GetRequestStageAsString(
@@ -158,23 +158,23 @@ const char* GetRequestStageAsString(
     case ExtensionWebRequestEventRouter::kInvalidEvent:
       return "Invalid";
     case ExtensionWebRequestEventRouter::kOnBeforeRequest:
-      return keys::kOnBeforeRequest;
+      return keys_wra::kOnBeforeRequest;
     case ExtensionWebRequestEventRouter::kOnBeforeSendHeaders:
-      return keys::kOnBeforeSendHeaders;
+      return keys_wra::kOnBeforeSendHeaders;
     case ExtensionWebRequestEventRouter::kOnSendHeaders:
-      return keys::kOnSendHeaders;
+      return keys_wra::kOnSendHeaders;
     case ExtensionWebRequestEventRouter::kOnHeadersReceived:
-      return keys::kOnHeadersReceived;
+      return keys_wra::kOnHeadersReceived;
     case ExtensionWebRequestEventRouter::kOnBeforeRedirect:
-      return keys::kOnBeforeRedirect;
+      return keys_wra::kOnBeforeRedirect;
     case ExtensionWebRequestEventRouter::kOnAuthRequired:
-      return keys::kOnAuthRequired;
+      return keys_wra::kOnAuthRequired;
     case ExtensionWebRequestEventRouter::kOnResponseStarted:
-      return keys::kOnResponseStarted;
+      return keys_wra::kOnResponseStarted;
     case ExtensionWebRequestEventRouter::kOnErrorOccurred:
-      return keys::kOnErrorOccurred;
+      return keys_wra::kOnErrorOccurred;
     case ExtensionWebRequestEventRouter::kOnCompleted:
-      return keys::kOnCompleted;
+      return keys_wra::kOnCompleted;
   }
   NOTREACHED();
   return "Not reached";
@@ -194,23 +194,23 @@ ExtensionWebRequestEventRouter::EventTypes GetEventTypeFromEventName(
   static base::NoDestructor<const base::flat_map<
       base::StringPiece, ExtensionWebRequestEventRouter::EventTypes>>
       kRequestStageMap(
-          {{keys::kOnBeforeRequest,
+          {{keys_wra::kOnBeforeRequest,
             ExtensionWebRequestEventRouter::kOnBeforeRequest},
-           {keys::kOnBeforeSendHeaders,
+           {keys_wra::kOnBeforeSendHeaders,
             ExtensionWebRequestEventRouter::kOnBeforeSendHeaders},
-           {keys::kOnSendHeaders,
+           {keys_wra::kOnSendHeaders,
             ExtensionWebRequestEventRouter::kOnSendHeaders},
-           {keys::kOnHeadersReceived,
+           {keys_wra::kOnHeadersReceived,
             ExtensionWebRequestEventRouter::kOnHeadersReceived},
-           {keys::kOnBeforeRedirect,
+           {keys_wra::kOnBeforeRedirect,
             ExtensionWebRequestEventRouter::kOnBeforeRedirect},
-           {keys::kOnAuthRequired,
+           {keys_wra::kOnAuthRequired,
             ExtensionWebRequestEventRouter::kOnAuthRequired},
-           {keys::kOnResponseStarted,
+           {keys_wra::kOnResponseStarted,
             ExtensionWebRequestEventRouter::kOnResponseStarted},
-           {keys::kOnErrorOccurred,
+           {keys_wra::kOnErrorOccurred,
             ExtensionWebRequestEventRouter::kOnErrorOccurred},
-           {keys::kOnCompleted, ExtensionWebRequestEventRouter::kOnCompleted}});
+           {keys_wra::kOnCompleted, ExtensionWebRequestEventRouter::kOnCompleted}});
 
   DCHECK_EQ(kRequestStageMap->size(), std::size(kWebRequestEvents));
 
@@ -269,15 +269,15 @@ bool FromHeaderDictionary(const base::DictionaryValue* header_value,
                           std::string* name,
                           std::string* out_value) {
   const std::string* name_ptr =
-      header_value->FindStringKey(keys::kHeaderNameKey);
+      header_value->FindStringKey(keys_wra::kHeaderNameKey);
   if (!name)
     return false;
   *name = *name_ptr;
 
   // We require either a "value" or a "binaryValue" entry.
-  const base::Value* value = header_value->FindKey(keys::kHeaderValueKey);
+  const base::Value* value = header_value->FindKey(keys_wra::kHeaderValueKey);
   const base::Value* binary_value =
-      header_value->FindKey(keys::kHeaderBinaryValueKey);
+      header_value->FindKey(keys_wra::kHeaderBinaryValueKey);
   if (!((value != nullptr) ^ (binary_value != nullptr))) {
     return false;
   }
@@ -379,18 +379,18 @@ events::HistogramValue GetEventHistogramValue(const std::string& event_name) {
     events::HistogramValue histogram_value;
     const char* const event_name;
   } values_and_names[] = {
-      {events::WEB_REQUEST_ON_BEFORE_REDIRECT, keys::kOnBeforeRedirectEvent},
+      {events::WEB_REQUEST_ON_BEFORE_REDIRECT, keys_wra::kOnBeforeRedirectEvent},
       {events::WEB_REQUEST_ON_BEFORE_REQUEST,
        web_request::OnBeforeRequest::kEventName},
       {events::WEB_REQUEST_ON_BEFORE_SEND_HEADERS,
-       keys::kOnBeforeSendHeadersEvent},
-      {events::WEB_REQUEST_ON_COMPLETED, keys::kOnCompletedEvent},
+       keys_wra::kOnBeforeSendHeadersEvent},
+      {events::WEB_REQUEST_ON_COMPLETED, keys_wra::kOnCompletedEvent},
       {events::WEB_REQUEST_ON_ERROR_OCCURRED,
        web_request::OnErrorOccurred::kEventName},
-      {events::WEB_REQUEST_ON_SEND_HEADERS, keys::kOnSendHeadersEvent},
-      {events::WEB_REQUEST_ON_AUTH_REQUIRED, keys::kOnAuthRequiredEvent},
-      {events::WEB_REQUEST_ON_RESPONSE_STARTED, keys::kOnResponseStartedEvent},
-      {events::WEB_REQUEST_ON_HEADERS_RECEIVED, keys::kOnHeadersReceivedEvent}};
+      {events::WEB_REQUEST_ON_SEND_HEADERS, keys_wra::kOnSendHeadersEvent},
+      {events::WEB_REQUEST_ON_AUTH_REQUIRED, keys_wra::kOnAuthRequiredEvent},
+      {events::WEB_REQUEST_ON_RESPONSE_STARTED, keys_wra::kOnResponseStartedEvent},
+      {events::WEB_REQUEST_ON_HEADERS_RECEIVED, keys_wra::kOnHeadersReceivedEvent}};
   static_assert(std::size(kWebRequestEvents) == std::size(values_and_names),
                 "kWebRequestEvents and values_and_names must be the same");
   for (const ValueAndName& value_and_name : values_and_names) {
@@ -650,13 +650,13 @@ void WebRequestAPI::Shutdown() {
 }
 
 static base::LazyInstance<
-    BrowserContextKeyedAPIFactory<WebRequestAPI>>::DestructorAtExit g_factory =
+    BrowserContextKeyedAPIFactory<WebRequestAPI>>::DestructorAtExit g_factory_wra =
     LAZY_INSTANCE_INITIALIZER;
 
 // static
 BrowserContextKeyedAPIFactory<WebRequestAPI>*
 WebRequestAPI::GetFactoryInstance() {
-  return g_factory.Pointer();
+  return g_factory_wra.Pointer();
 }
 
 void WebRequestAPI::OnListenerRemoved(const EventListenerInfo& details) {
@@ -986,7 +986,7 @@ bool ExtensionWebRequestEventRouter::RequestFilter::InitFromValue(
         if (url.empty() ||
             pattern.Parse(url) != URLPattern::ParseResult::kSuccess) {
           *error = ErrorUtils::FormatErrorMessage(
-              keys::kInvalidRequestFilterUrl, url);
+              keys_wra::kInvalidRequestFilterUrl, url);
           return false;
         }
         urls.AddPattern(pattern);
@@ -1228,7 +1228,7 @@ int ExtensionWebRequestEventRouter::OnBeforeSendHeaders(
   bool initialize_blocked_requests = false;
 
   initialize_blocked_requests |=
-      ProcessDeclarativeRules(browser_context, keys::kOnBeforeSendHeadersEvent,
+      ProcessDeclarativeRules(browser_context, keys_wra::kOnBeforeSendHeadersEvent,
                               request, ON_BEFORE_SEND_HEADERS, nullptr);
 
   DCHECK(request->dnr_actions);
@@ -1241,7 +1241,7 @@ int ExtensionWebRequestEventRouter::OnBeforeSendHeaders(
 
   int extra_info_spec = 0;
   RawListeners listeners =
-      GetMatchingListeners(browser_context, keys::kOnBeforeSendHeadersEvent,
+      GetMatchingListeners(browser_context, keys_wra::kOnBeforeSendHeadersEvent,
                            request, &extra_info_spec);
   if (!listeners.empty() &&
       !GetAndSetSignaled(request->id, kOnBeforeSendHeaders)) {
@@ -1290,7 +1290,7 @@ void ExtensionWebRequestEventRouter::OnSendHeaders(
 
   int extra_info_spec = 0;
   RawListeners listeners = GetMatchingListeners(
-      browser_context, keys::kOnSendHeadersEvent, request, &extra_info_spec);
+      browser_context, keys_wra::kOnSendHeadersEvent, request, &extra_info_spec);
   if (listeners.empty())
     return;
 
@@ -1322,12 +1322,12 @@ int ExtensionWebRequestEventRouter::OnHeadersReceived(
       });
 
   initialize_blocked_requests |= ProcessDeclarativeRules(
-      browser_context, keys::kOnHeadersReceivedEvent, request,
+      browser_context, keys_wra::kOnHeadersReceivedEvent, request,
       ON_HEADERS_RECEIVED, original_response_headers);
 
   int extra_info_spec = 0;
   RawListeners listeners =
-      GetMatchingListeners(browser_context, keys::kOnHeadersReceivedEvent,
+      GetMatchingListeners(browser_context, keys_wra::kOnHeadersReceivedEvent,
                            request, &extra_info_spec);
 
   if (!listeners.empty() &&
@@ -1382,7 +1382,7 @@ ExtensionWebRequestEventRouter::OnAuthRequired(
 
   int extra_info_spec = 0;
   RawListeners listeners = GetMatchingListeners(
-      browser_context, keys::kOnAuthRequiredEvent, request, &extra_info_spec);
+      browser_context, keys_wra::kOnAuthRequiredEvent, request, &extra_info_spec);
   if (listeners.empty())
     return AuthRequiredResponse::AUTH_REQUIRED_RESPONSE_NO_ACTION;
 
@@ -1421,7 +1421,7 @@ void ExtensionWebRequestEventRouter::OnBeforeRedirect(
 
   int extra_info_spec = 0;
   RawListeners listeners = GetMatchingListeners(
-      browser_context, keys::kOnBeforeRedirectEvent, request, &extra_info_spec);
+      browser_context, keys_wra::kOnBeforeRedirectEvent, request, &extra_info_spec);
   if (listeners.empty())
     return;
 
@@ -1429,7 +1429,7 @@ void ExtensionWebRequestEventRouter::OnBeforeRedirect(
       CreateEventDetails(*request, extra_info_spec));
   event_details->SetResponseHeaders(*request, request->response_headers.get());
   event_details->SetResponseSource(*request);
-  event_details->SetString(keys::kRedirectUrlKey, new_location.spec());
+  event_details->SetString(keys_wra::kRedirectUrlKey, new_location.spec());
 
   DispatchEvent(browser_context, request, listeners, std::move(event_details));
 }
@@ -1449,7 +1449,7 @@ void ExtensionWebRequestEventRouter::OnResponseStarted(
 
   int extra_info_spec = 0;
   RawListeners listeners =
-      GetMatchingListeners(browser_context, keys::kOnResponseStartedEvent,
+      GetMatchingListeners(browser_context, keys_wra::kOnResponseStartedEvent,
                            request, &extra_info_spec);
   if (listeners.empty())
     return;
@@ -1488,7 +1488,7 @@ void ExtensionWebRequestEventRouter::OnCompleted(
 
   int extra_info_spec = 0;
   RawListeners listeners = GetMatchingListeners(
-      browser_context, keys::kOnCompletedEvent, request, &extra_info_spec);
+      browser_context, keys_wra::kOnCompletedEvent, request, &extra_info_spec);
   if (listeners.empty())
     return;
 
@@ -1550,8 +1550,8 @@ void ExtensionWebRequestEventRouter::OnErrorOccurred(
   if (started)
     event_details->SetResponseSource(*request);
   else
-    event_details->SetBoolean(keys::kFromCache, request->response_from_cache);
-  event_details->SetString(keys::kErrorKey, net::ErrorToString(net_error));
+    event_details->SetBoolean(keys_wra::kFromCache, request->response_from_cache);
+  event_details->SetString(keys_wra::kErrorKey, net::ErrorToString(net_error));
 
   DispatchEvent(browser_context, request, listeners, std::move(event_details));
 }
@@ -2272,8 +2272,8 @@ void ExtensionWebRequestEventRouter::SendMessages(
     for (const std::string& message : messages) {
       std::unique_ptr<WebRequestEventDetails> event_details(CreateEventDetails(
           *blocked_request.request, /* extra_info_spec */ 0));
-      event_details->SetString(keys::kMessageKey, message);
-      event_details->SetString(keys::kStageKey,
+      event_details->SetString(keys_wra::kMessageKey, message);
+      event_details->SetString(keys_wra::kStageKey,
                                GetRequestStageAsString(blocked_request.event));
       SendOnMessageEventOnUI(browser_context, delta.extension_id,
                              blocked_request.request->is_web_view,
@@ -2653,7 +2653,7 @@ WebRequestInternalAddEventListenerFunction::Run() {
          (ExtraInfoSpec::BLOCKING | ExtraInfoSpec::ASYNC_BLOCKING)) &&
         !extension->permissions_data()->HasAPIPermission(
             APIPermissionID::kWebRequestBlocking)) {
-      return RespondNow(Error(keys::kBlockingPermissionRequired));
+      return RespondNow(Error(keys_wra::kBlockingPermissionRequired));
     }
 
     // We allow to subscribe to patterns that are broader than the host
@@ -2669,7 +2669,7 @@ WebRequestInternalAddEventListenerFunction::Run() {
             ->withheld_permissions()
             .explicit_hosts()
             .is_empty()) {
-      return RespondNow(Error(keys::kHostPermissionsRequired));
+      return RespondNow(Error(keys_wra::kHostPermissionsRequired));
     }
   }
 
@@ -2737,7 +2737,7 @@ WebRequestInternalEventHandledFunction::Run() {
 
     const base::Value* redirect_url_value = dict_value.FindKey("redirectUrl");
     const base::Value* auth_credentials_value =
-        dict_value.FindKey(keys::kAuthCredentialsKey);
+        dict_value.FindKey(keys_wra::kAuthCredentialsKey);
     const base::Value* request_headers_value =
         dict_value.FindKey("requestHeaders");
     const base::Value* response_headers_value =
@@ -2749,7 +2749,7 @@ WebRequestInternalEventHandledFunction::Run() {
       if (dict_value.DictSize() != 1) {
         OnError(event_name, sub_event_name, request_id, render_process_id,
                 web_view_instance_id, std::move(response));
-        return RespondNow(Error(keys::kInvalidBlockingResponse));
+        return RespondNow(Error(keys_wra::kInvalidBlockingResponse));
       }
 
       EXTENSION_FUNCTION_VALIDATE(cancel_value->is_bool());
@@ -2763,7 +2763,7 @@ WebRequestInternalEventHandledFunction::Run() {
       if (!response->new_url.is_valid()) {
         OnError(event_name, sub_event_name, request_id, render_process_id,
                 web_view_instance_id, std::move(response));
-        return RespondNow(Error(keys::kInvalidRedirectUrl, new_url_str));
+        return RespondNow(Error(keys_wra::kInvalidRedirectUrl, new_url_str));
       }
     }
 
@@ -2774,7 +2774,7 @@ WebRequestInternalEventHandledFunction::Run() {
         // Allow only one of the keys, not both.
         OnError(event_name, sub_event_name, request_id, render_process_id,
                 web_view_instance_id, std::move(response));
-        return RespondNow(Error(keys::kInvalidHeaderKeyCombination));
+        return RespondNow(Error(keys_wra::kInvalidHeaderKeyCombination));
       }
 
       const base::Value* headers_value = nullptr;
@@ -2782,11 +2782,11 @@ WebRequestInternalEventHandledFunction::Run() {
       std::unique_ptr<helpers::ResponseHeaders> response_headers;
       if (has_request_headers) {
         request_headers = std::make_unique<net::HttpRequestHeaders>();
-        headers_value = dict_value.FindKeyOfType(keys::kRequestHeadersKey,
+        headers_value = dict_value.FindKeyOfType(keys_wra::kRequestHeadersKey,
                                                  base::Value::Type::LIST);
       } else {
         response_headers = std::make_unique<helpers::ResponseHeaders>();
-        headers_value = dict_value.FindKeyOfType(keys::kResponseHeadersKey,
+        headers_value = dict_value.FindKeyOfType(keys_wra::kResponseHeadersKey,
                                                  base::Value::Type::LIST);
       }
       EXTENSION_FUNCTION_VALIDATE(headers_value);
@@ -2802,17 +2802,17 @@ WebRequestInternalEventHandledFunction::Run() {
           base::JSONWriter::Write(header_value, &serialized_header);
           OnError(event_name, sub_event_name, request_id, render_process_id,
                   web_view_instance_id, std::move(response));
-          return RespondNow(Error(keys::kInvalidHeader, serialized_header));
+          return RespondNow(Error(keys_wra::kInvalidHeader, serialized_header));
         }
         if (!net::HttpUtil::IsValidHeaderName(name)) {
           OnError(event_name, sub_event_name, request_id, render_process_id,
                   web_view_instance_id, std::move(response));
-          return RespondNow(Error(keys::kInvalidHeaderName));
+          return RespondNow(Error(keys_wra::kInvalidHeaderName));
         }
         if (!net::HttpUtil::IsValidHeaderValue(value)) {
           OnError(event_name, sub_event_name, request_id, render_process_id,
                   web_view_instance_id, std::move(response));
-          return RespondNow(Error(keys::kInvalidHeaderValue, name));
+          return RespondNow(Error(keys_wra::kInvalidHeaderValue, name));
         }
         if (has_request_headers)
           request_headers->SetHeader(name, value);
@@ -2830,9 +2830,9 @@ WebRequestInternalEventHandledFunction::Run() {
       EXTENSION_FUNCTION_VALIDATE(
           auth_credentials_value->GetAsDictionary(&credentials_value));
       const std::string* username =
-          credentials_value->FindStringKey(keys::kUsernameKey);
+          credentials_value->FindStringKey(keys_wra::kUsernameKey);
       const std::string* password =
-          credentials_value->FindStringKey(keys::kPasswordKey);
+          credentials_value->FindStringKey(keys_wra::kPasswordKey);
       EXTENSION_FUNCTION_VALIDATE(username);
       EXTENSION_FUNCTION_VALIDATE(password);
       response->auth_credentials = net::AuthCredentials(

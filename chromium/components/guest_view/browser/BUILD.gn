@@ -8,7 +8,9 @@
 # remove this assert.
 assert(!is_android && !is_ios)
 
-static_library("browser") {
+import("//build/config/jumbo.gni")
+
+jumbo_static_library("browser") {
   output_name = "guest_view_browser"
   sources = [
     "//components/guest_view/browser/bad_message.cc",

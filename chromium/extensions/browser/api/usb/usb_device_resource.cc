@@ -21,14 +21,14 @@ using content::BrowserThread;
 namespace extensions {
 
 static base::LazyInstance<BrowserContextKeyedAPIFactory<
-    ApiResourceManager<UsbDeviceResource>>>::DestructorAtExit g_factory =
+    ApiResourceManager<UsbDeviceResource>>>::DestructorAtExit g_factory2 =
     LAZY_INSTANCE_INITIALIZER;
 
 // static
 template <>
 BrowserContextKeyedAPIFactory<ApiResourceManager<UsbDeviceResource> >*
 ApiResourceManager<UsbDeviceResource>::GetFactoryInstance() {
-  return g_factory.Pointer();
+  return g_factory2.Pointer();
 }
 
 UsbDeviceResource::UsbDeviceResource(

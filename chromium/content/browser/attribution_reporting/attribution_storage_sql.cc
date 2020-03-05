@@ -77,9 +77,9 @@ namespace {
 using AggregatableResult = ::content::AttributionTrigger::AggregatableResult;
 using EventLevelResult = ::content::AttributionTrigger::EventLevelResult;
 
-const base::FilePath::CharType kInMemoryPath[] = FILE_PATH_LITERAL(":memory");
+const base::FilePath::CharType kInMemoryPathAttr[] = FILE_PATH_LITERAL(":memory");
 
-const base::FilePath::CharType kDatabasePath[] =
+const base::FilePath::CharType kDatabasePathAttr[] =
     FILE_PATH_LITERAL("Conversions");
 
 constexpr int64_t kUnsetReportId = -1;
@@ -371,7 +371,7 @@ absl::optional<StoredSourceData> ReadSourceToAttribute(
 }
 
 base::FilePath DatabasePath(const base::FilePath& user_data_directory) {
-  return user_data_directory.Append(kDatabasePath);
+  return user_data_directory.Append(kDatabasePathAttr);
 }
 
 // These values are persisted to logs. Entries should not be renumbered and
@@ -436,7 +436,7 @@ bool AttributionStorageSql::DeleteStorageForTesting(
 AttributionStorageSql::AttributionStorageSql(
     const base::FilePath& path_to_database,
     std::unique_ptr<AttributionStorageDelegate> delegate)
-    : path_to_database_(g_run_in_memory_ ? base::FilePath(kInMemoryPath)
+    : path_to_database_(g_run_in_memory_ ? base::FilePath(kInMemoryPathAttr)
                                          : DatabasePath(path_to_database)),
       delegate_(std::move(delegate)),
       rate_limit_table_(delegate_.get()) {
@@ -1997,7 +1997,7 @@ bool AttributionStorageSql::LazyInit(DbCreationPolicy creation_policy) {
       base::BindRepeating(&AttributionStorageSql::DatabaseErrorCallback,
                           weak_factory_.GetWeakPtr()));
 
-  if (path_to_database_.value() == kInMemoryPath) {
+  if (path_to_database_.value() == kInMemoryPathAttr) {
     if (!db_->OpenInMemory()) {
       HandleInitializationFailure(InitStatus::kFailedToOpenDbInMemory);
       return false;
@@ -2318,7 +2318,7 @@ void AttributionStorageSql::DatabaseErrorCallback(int extended_error,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // Attempt to recover a corrupt database, unless it is setup in memory.
   if (sql::Recovery::ShouldRecover(extended_error) &&
-      (path_to_database_.value() != kInMemoryPath)) {
+      (path_to_database_.value() != kInMemoryPathAttr)) {
     // Prevent reentrant calls.
     db_->reset_error_callback();
 
