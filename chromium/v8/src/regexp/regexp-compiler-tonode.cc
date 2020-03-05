@@ -23,7 +23,7 @@ namespace internal {
 
 using namespace regexp_compiler_constants;  // NOLINT(build/namespaces)
 
-constexpr base::uc32 kMaxCodePoint = 0x10ffff;
+constexpr base::uc32 kMaxCodePoint2 = 0x10ffff;
 constexpr int kMaxUtf16CodeUnit = 0xffff;
 constexpr uint32_t kMaxUtf16CodeUnitU = 0xffff;
 constexpr int32_t kMaxOneByteCharCode = unibrow::Latin1::kMaxChar;
@@ -72,7 +72,7 @@ bool CompareInverseRanges(ZoneList<CharacterRange>* ranges,
     }
   }
 
-  return range.to() == kMaxCodePoint;
+  return range.to() == kMaxCodePoint2;
 }
 
 bool CompareRanges(ZoneList<CharacterRange>* ranges, const int* special_class,
@@ -480,7 +480,7 @@ RegExpNode* RegExpClassRanges::ToNode(RegExpCompiler* compiler,
     // internally created for an empty set.
     DCHECK_IMPLIES(
         IsUnicodeSets(compiler->flags()),
-        ranges->length() == 1 && ranges->first().IsEverything(kMaxCodePoint));
+        ranges->length() == 1 && ranges->first().IsEverything(kMaxCodePoint2));
     ZoneList<CharacterRange>* negated =
         zone->New<ZoneList<CharacterRange>>(2, zone);
     CharacterRange::Negate(ranges, negated, zone);
@@ -1366,7 +1366,7 @@ void AddClassNegated(const int* elmv, int elmc,
   elmc--;
   DCHECK_EQ(kRangeEndMarker, elmv[elmc]);
   DCHECK_NE(0x0000, elmv[0]);
-  DCHECK_NE(kMaxCodePoint, elmv[elmc - 1]);
+  DCHECK_NE(kMaxCodePoint2, elmv[elmc - 1]);
   base::uc16 last = 0x0000;
   for (int i = 0; i < elmc; i += 2) {
     DCHECK(last <= elmv[i] - 1);
@@ -1374,7 +1374,7 @@ void AddClassNegated(const int* elmv, int elmc,
     ranges->Add(CharacterRange::Range(last, elmv[i] - 1), zone);
     last = elmv[i + 1];
   }
-  ranges->Add(CharacterRange::Range(last, kMaxCodePoint), zone);
+  ranges->Add(CharacterRange::Range(last, kMaxCodePoint2), zone);
 }
 
 }  // namespace
@@ -1718,8 +1718,8 @@ void CharacterRange::Negate(const ZoneList<CharacterRange>* ranges,
     from = range.to() + 1;
     i++;
   }
-  if (from < kMaxCodePoint) {
-    negated_ranges->Add(CharacterRange::Range(from, kMaxCodePoint), zone);
+  if (from < kMaxCodePoint2) {
+    negated_ranges->Add(CharacterRange::Range(from, kMaxCodePoint2), zone);
   }
 }
 
@@ -1770,7 +1770,7 @@ void SafeAdvanceRange(const ZoneList<CharacterRange>* range, int* index,
     *from = range->at(*index).from();
     *to = range->at(*index).to();
   } else {
-    *from = kMaxCodePoint + 1;
+    *from = kMaxCodePoint2 + 1;
   }
 }
 

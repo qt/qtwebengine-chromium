@@ -71,7 +71,7 @@ using extension_web_request_api_helpers::ExtraInfoSpec;
 using extensions::mojom::APIPermissionID;
 
 namespace helpers = extension_web_request_api_helpers;
-namespace keys = extension_web_request_api_constants;
+namespace keys_wra = extension_web_request_api_constants;
 using URLLoaderFactoryType =
     content::ContentBrowserClient::URLLoaderFactoryType;
 
@@ -86,15 +86,15 @@ namespace {
 bool FromHeaderDictionary(const base::Value::Dict& header_value,
                           std::string* name,
                           std::string* out_value) {
-  const std::string* name_ptr = header_value.FindString(keys::kHeaderNameKey);
+  const std::string* name_ptr = header_value.FindString(keys_wra::kHeaderNameKey);
   if (!name) {
     return false;
   }
   *name = *name_ptr;
 
-  const base::Value* value = header_value.Find(keys::kHeaderValueKey);
+  const base::Value* value = header_value.Find(keys_wra::kHeaderValueKey);
   const base::Value* binary_value =
-      header_value.Find(keys::kHeaderBinaryValueKey);
+      header_value.Find(keys_wra::kHeaderBinaryValueKey);
   // We require either a "value" or a "binaryValue" entry, but not both.
   if ((value == nullptr && binary_value == nullptr) ||
       (value != nullptr && binary_value != nullptr)) {
@@ -136,7 +136,7 @@ bool HasAnyWebRequestPermissions(const Extension* extension) {
 
 // Mirrors the histogram enum of the same name. DO NOT REORDER THESE VALUES OR
 // CHANGE THEIR MEANING.
-enum class WebRequestEventListenerFlag {
+enum class WebRequestEventListenerFlagWRA {
   kTotal,
   kNone,
   kRequestHeaders,
@@ -298,13 +298,13 @@ void WebRequestAPI::Shutdown() {
 }
 
 static base::LazyInstance<
-    BrowserContextKeyedAPIFactory<WebRequestAPI>>::DestructorAtExit g_factory =
+    BrowserContextKeyedAPIFactory<WebRequestAPI>>::DestructorAtExit g_factory_wra =
     LAZY_INSTANCE_INITIALIZER;
 
 // static
 BrowserContextKeyedAPIFactory<WebRequestAPI>*
 WebRequestAPI::GetFactoryInstance() {
-  return g_factory.Pointer();
+  return g_factory_wra.Pointer();
 }
 
 void WebRequestAPI::OnListenerRemoved(const EventListenerInfo& details) {
@@ -792,7 +792,7 @@ WebRequestInternalAddEventListenerFunction::Run() {
         return true;
       }
 
-      return event_name == keys::kOnAuthRequiredEvent &&
+      return event_name == keys_wra::kOnAuthRequiredEvent &&
              extension->permissions_data()->HasAPIPermission(
                  APIPermissionID::kWebRequestAuthProvider);
     };
@@ -803,7 +803,7 @@ WebRequestInternalAddEventListenerFunction::Run() {
     bool is_blocking = extra_info_spec & (ExtraInfoSpec::BLOCKING |
                                           ExtraInfoSpec::ASYNC_BLOCKING);
     if (is_blocking && !has_blocking_permission()) {
-      return RespondNow(Error(keys::kBlockingPermissionRequired));
+      return RespondNow(Error(keys_wra::kBlockingPermissionRequired));
     }
 
     // We allow to subscribe to patterns that are broader than the host
@@ -819,7 +819,7 @@ WebRequestInternalAddEventListenerFunction::Run() {
             ->withheld_permissions()
             .explicit_hosts()
             .is_empty()) {
-      return RespondNow(Error(keys::kHostPermissionsRequired));
+      return RespondNow(Error(keys_wra::kHostPermissionsRequired));
     }
   }
 
@@ -887,7 +887,7 @@ WebRequestInternalEventHandledFunction::Run() {
 
     const base::Value* redirect_url_value = dict_value.Find("redirectUrl");
     const base::Value* auth_credentials_value =
-        dict_value.Find(keys::kAuthCredentialsKey);
+        dict_value.Find(keys_wra::kAuthCredentialsKey);
     const base::Value* request_headers_value =
         dict_value.Find("requestHeaders");
     const base::Value* response_headers_value =
@@ -899,7 +899,7 @@ WebRequestInternalEventHandledFunction::Run() {
       if (dict_value.size() != 1) {
         OnError(event_name, sub_event_name, request_id, render_process_id,
                 web_view_instance_id, std::move(response));
-        return RespondNow(Error(keys::kInvalidBlockingResponse));
+        return RespondNow(Error(keys_wra::kInvalidBlockingResponse));
       }
 
       EXTENSION_FUNCTION_VALIDATE(cancel_value->is_bool());
@@ -913,7 +913,7 @@ WebRequestInternalEventHandledFunction::Run() {
       if (!response->new_url.is_valid()) {
         OnError(event_name, sub_event_name, request_id, render_process_id,
                 web_view_instance_id, std::move(response));
-        return RespondNow(Error(keys::kInvalidRedirectUrl, new_url_str));
+        return RespondNow(Error(keys_wra::kInvalidRedirectUrl, new_url_str));
       }
     }
 
@@ -924,7 +924,7 @@ WebRequestInternalEventHandledFunction::Run() {
         // Allow only one of the keys, not both.
         OnError(event_name, sub_event_name, request_id, render_process_id,
                 web_view_instance_id, std::move(response));
-        return RespondNow(Error(keys::kInvalidHeaderKeyCombination));
+        return RespondNow(Error(keys_wra::kInvalidHeaderKeyCombination));
       }
 
       const base::Value::List* headers_value = nullptr;
@@ -932,10 +932,10 @@ WebRequestInternalEventHandledFunction::Run() {
       std::unique_ptr<helpers::ResponseHeaders> response_headers;
       if (has_request_headers) {
         request_headers = std::make_unique<net::HttpRequestHeaders>();
-        headers_value = dict_value.FindList(keys::kRequestHeadersKey);
+        headers_value = dict_value.FindList(keys_wra::kRequestHeadersKey);
       } else {
         response_headers = std::make_unique<helpers::ResponseHeaders>();
-        headers_value = dict_value.FindList(keys::kResponseHeadersKey);
+        headers_value = dict_value.FindList(keys_wra::kResponseHeadersKey);
       }
       EXTENSION_FUNCTION_VALIDATE(headers_value);
 
@@ -949,17 +949,17 @@ WebRequestInternalEventHandledFunction::Run() {
           base::JSONWriter::Write(header_value, &serialized_header);
           OnError(event_name, sub_event_name, request_id, render_process_id,
                   web_view_instance_id, std::move(response));
-          return RespondNow(Error(keys::kInvalidHeader, serialized_header));
+          return RespondNow(Error(keys_wra::kInvalidHeader, serialized_header));
         }
         if (!net::HttpUtil::IsValidHeaderName(name)) {
           OnError(event_name, sub_event_name, request_id, render_process_id,
                   web_view_instance_id, std::move(response));
-          return RespondNow(Error(keys::kInvalidHeaderName));
+          return RespondNow(Error(keys_wra::kInvalidHeaderName));
         }
         if (!net::HttpUtil::IsValidHeaderValue(value)) {
           OnError(event_name, sub_event_name, request_id, render_process_id,
                   web_view_instance_id, std::move(response));
-          return RespondNow(Error(keys::kInvalidHeaderValue, name));
+          return RespondNow(Error(keys_wra::kInvalidHeaderValue, name));
         }
         if (has_request_headers) {
           request_headers->SetHeader(name, value);
@@ -979,9 +979,9 @@ WebRequestInternalEventHandledFunction::Run() {
           auth_credentials_value->GetIfDict();
       EXTENSION_FUNCTION_VALIDATE(credentials_value);
       const std::string* username =
-          credentials_value->FindString(keys::kUsernameKey);
+          credentials_value->FindString(keys_wra::kUsernameKey);
       const std::string* password =
-          credentials_value->FindString(keys::kPasswordKey);
+          credentials_value->FindString(keys_wra::kPasswordKey);
       EXTENSION_FUNCTION_VALIDATE(username);
       EXTENSION_FUNCTION_VALIDATE(password);
       response->auth_credentials = net::AuthCredentials(

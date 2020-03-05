@@ -49,6 +49,10 @@
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/private/SkJpegMetadataDecoder.h"
 
+#if defined(OS_WIN)
+#include <basetsd.h>  // Included before jpeglib.h because of INT32 clash
+#endif                // OS_WIN
+
 extern "C" {
 #include <setjmp.h>
 #include <stdio.h>  // jpeglib.h needs stdio FILE.

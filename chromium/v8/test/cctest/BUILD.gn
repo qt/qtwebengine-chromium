@@ -216,8 +216,6 @@ v8_source_set("cctest_sources") {
     jumbo_excluded_sources = [
       # TODO(mostynb@opera.com): figure out the jumbo issues with these source
       # files, and include them in jumbo compilation units.
-      "interpreter/bytecode-expectations-printer.cc",
-      "interpreter/test-bytecode-generator.cc",
       "test-api.cc",
     ]
   }

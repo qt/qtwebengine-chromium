@@ -64,7 +64,7 @@ constexpr const char* ToString(MutatorThreadSweepingMode sweeping_mode) {
   }
 }
 
-enum class StickyBits : uint8_t {
+enum class StickyBitsSweeper : uint8_t {
   kDisabled,
   kEnabled,
 };
@@ -236,10 +236,10 @@ struct SpaceState {
 
 using SpaceStates = std::vector<SpaceState>;
 
-void StickyUnmark(HeapObjectHeader* header, StickyBits sticky_bits) {
+void StickyUnmark(HeapObjectHeader* header, StickyBitsSweeper sticky_bits) {
 #if defined(CPPGC_YOUNG_GENERATION)
   // Young generation in Oilpan uses sticky mark bits.
-  if (sticky_bits == StickyBits::kDisabled)
+  if (sticky_bits == StickyBitsSweeper::kDisabled)
     header->Unmark<AccessMode::kAtomic>();
 #else   // !defined(CPPGC_YOUNG_GENERATION)
   header->Unmark<AccessMode::kAtomic>();
@@ -338,7 +338,7 @@ class DeferredFinalizationBuilder final : public FreeHandler {
 
 template <typename FinalizationBuilder>
 typename FinalizationBuilder::ResultType SweepNormalPage(
-    NormalPage* page, PageAllocator& page_allocator, StickyBits sticky_bits) {
+    NormalPage* page, PageAllocator& page_allocator, StickyBitsSweeper sticky_bits) {
   constexpr auto kAtomicAccess = AccessMode::kAtomic;
   FinalizationBuilder builder(*page, page_allocator);
 
@@ -552,8 +552,8 @@ class MutatorThreadSweeper final : private HeapVisitor<MutatorThreadSweeper> {
         platform_(platform),
         free_memory_handling_(free_memory_handling),
         sticky_bits_(heap->generational_gc_supported()
-                         ? StickyBits::kEnabled
-                         : StickyBits::kDisabled) {}
+                         ? StickyBitsSweeper::kEnabled
+                         : StickyBitsSweeper::kDisabled) {}
 
   void Sweep() {
     for (SpaceState& state : *states_) {
@@ -644,7 +644,7 @@ class MutatorThreadSweeper final : private HeapVisitor<MutatorThreadSweeper> {
   cppgc::Platform* platform_;
   size_t largest_new_free_list_entry_ = 0;
   const FreeMemoryHandling free_memory_handling_;
-  const StickyBits sticky_bits_;
+  const StickyBitsSweeper sticky_bits_;
 };
 
 class ConcurrentSweepTask final : public cppgc::JobTask,
@@ -660,8 +660,8 @@ class ConcurrentSweepTask final : public cppgc::JobTask,
         states_(states),
         platform_(platform),
         free_memory_handling_(free_memory_handling),
-        sticky_bits_(heap.generational_gc_supported() ? StickyBits::kEnabled
-                                                      : StickyBits::kDisabled) {
+        sticky_bits_(heap.generational_gc_supported() ? StickyBitsSweeper::kEnabled
+                                                      : StickyBitsSweeper::kDisabled) {
   }
 
   void Run(cppgc::JobDelegate* delegate) final {
@@ -731,7 +731,7 @@ class ConcurrentSweepTask final : public cppgc::JobTask,
   Platform* platform_;
   std::atomic_bool is_completed_{false};
   const FreeMemoryHandling free_memory_handling_;
-  const StickyBits sticky_bits_;
+  const StickyBitsSweeper sticky_bits_;
 };
 
 // This visitor:

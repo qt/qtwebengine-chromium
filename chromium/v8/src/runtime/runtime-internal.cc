@@ -19,7 +19,7 @@
 #include "src/utils/ostreams.h"
 
 #if V8_ENABLE_WEBASSEMBLY
-// TODO(chromium:1236668): Drop this when the "SaveAndClearThreadInWasmFlag"
+// TODO(chromium:1236668): Drop this when the "SaveAndClearThreadInWasmFlag_internal"
 // approach is no longer needed.
 #include "src/trap-handler/trap-handler.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -457,9 +457,9 @@ RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptWithStackCheck_Maglev) {
 namespace {
 
 #if V8_ENABLE_WEBASSEMBLY
-class V8_NODISCARD SaveAndClearThreadInWasmFlag {
+class V8_NODISCARD SaveAndClearThreadInWasmFlag_internal {
  public:
-  SaveAndClearThreadInWasmFlag() {
+  SaveAndClearThreadInWasmFlag_internal() {
     if (trap_handler::IsTrapHandlerEnabled()) {
       if (trap_handler::IsThreadInWasm()) {
         thread_was_in_wasm_ = true;
@@ -467,7 +467,7 @@ class V8_NODISCARD SaveAndClearThreadInWasmFlag {
       }
     }
   }
-  ~SaveAndClearThreadInWasmFlag() {
+  ~SaveAndClearThreadInWasmFlag_internal() {
     if (thread_was_in_wasm_) {
       trap_handler::SetThreadInWasm();
     }
@@ -477,7 +477,7 @@ class V8_NODISCARD SaveAndClearThreadInWasmFlag {
   bool thread_was_in_wasm_{false};
 };
 #else
-class SaveAndClearThreadInWasmFlag {};
+class SaveAndClearThreadInWasmFlag_internal {};
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 }  // namespace
@@ -499,7 +499,7 @@ RUNTIME_FUNCTION(Runtime_AllocateInYoungGeneration) {
   // which is important in case any GC needs to happen.
   // TODO(chromium:1236668): Find a better fix, likely by replacing the global
   // flag.
-  SaveAndClearThreadInWasmFlag clear_wasm_flag;
+  SaveAndClearThreadInWasmFlag_internal clear_wasm_flag;
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   // TODO(v8:9472): Until double-aligned allocation is fixed for new-space

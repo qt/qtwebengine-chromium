@@ -89,22 +89,22 @@ const char* FetchHandlerTypeToString(
 
 bool ShouldBypassFetchHandlerForMainResource(ServiceWorkerVersion& version) {
   if (!base::FeatureList::IsEnabled(
-          features::kServiceWorkerBypassFetchHandler)) {
+          ::features::kServiceWorkerBypassFetchHandler)) {
     return false;
   }
 
-  if (features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
-      features::ServiceWorkerBypassFetchHandlerTarget::kMainResource) {
+  if (::features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
+      ::features::ServiceWorkerBypassFetchHandlerTarget::kMainResource) {
     return false;
   }
 
   // If the feature is enabled, the main resource request bypasses ServiceWorker
   // and starts the worker in parallel for subsequent subresources.
-  switch (features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
+  switch (::features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
     // kFeatureOptIn means that the feature relies on the manual feature
     // toggle from about://flags etc, which is triggered by developers. We
     // bypass fetch handler regardless of the url matching in this case.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
       RecordSkipReason(
           ServiceWorkerControlleeRequestHandler::FetchHandlerSkipReason::
               kMainResourceSkippedDueToFeatureFlag);
@@ -112,7 +112,7 @@ bool ShouldBypassFetchHandlerForMainResource(ServiceWorkerVersion& version) {
     // If kAllowList, the allowlist should be specified. In this case, main
     // resource fetch handlers are bypassed only when the sha256 checksum of the
     // script is in the allowlist.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
       if (content::service_worker_loader_helpers::
               FetchHandlerBypassedHashStrings()
                   .contains(version.sha256_script_checksum())) {
@@ -551,12 +551,12 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion(
       active_version->CountFeature(
           blink::mojom::WebFeature::kServiceWorkerSkippedForEmptyFetchHandler);
       CompleteWithoutLoader();
-      if (!features::kStartServiceWorkerForEmptyFetchHandler.Get()) {
+      if (!::features::kStartServiceWorkerForEmptyFetchHandler.Get()) {
         return;
       }
-      if (features::kAsyncStartServiceWorkerForEmptyFetchHandler.Get()) {
+      if (::features::kAsyncStartServiceWorkerForEmptyFetchHandler.Get()) {
         int duration =
-            features::kAsyncStartServiceWorkerForEmptyFetchHandlerDurationInMs
+            ::features::kAsyncStartServiceWorkerForEmptyFetchHandlerDurationInMs
                 .Get();
         constexpr int kDurationThresholdInMs = 10 * 1000;  // 10 seconds.
         if (duration < 0 || duration > kDurationThresholdInMs) {
@@ -598,9 +598,9 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion(
       // isn't started yet, skip the fetch handler and then start the
       // ServiceWorker.
       if (base::FeatureList::IsEnabled(
-              features::kServiceWorkerBypassFetchHandler) &&
-          features::kServiceWorkerBypassFetchHandlerTarget.Get() ==
-              features::ServiceWorkerBypassFetchHandlerTarget::
+              ::features::kServiceWorkerBypassFetchHandler) &&
+          ::features::kServiceWorkerBypassFetchHandlerTarget.Get() ==
+              ::features::ServiceWorkerBypassFetchHandlerTarget::
                   kAllOnlyIfServiceWorkerNotStarted) {
         switch (active_version->running_status()) {
           case blink::EmbeddedWorkerStatus::kStopped:

@@ -290,7 +290,7 @@ void GridItemData::SetAlignmentFallback(
     // Set fallback alignment to start edges if an item requests baseline
     // alignment but does not meet the requirements for it.
     fallback_alignment =
-        (BaselineGroup(track_direction) == BaselineGroup::kMajor)
+        (BaselineGroup(track_direction) == BaselineGroupType::kMajor)
             ? AxisEdge::kStart
             : AxisEdge::kEnd;
   }

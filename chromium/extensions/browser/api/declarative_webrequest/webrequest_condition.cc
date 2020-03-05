@@ -18,8 +18,6 @@ using url_matcher::URLMatcherConditionFactory;
 using url_matcher::URLMatcherConditionSet;
 using url_matcher::URLMatcherFactory;
 
-namespace keys = extensions::declarative_webrequest_constants;
-
 namespace {
 static base::MatcherStringPattern::ID g_next_id = 0;
 
@@ -38,7 +36,7 @@ const char kConditionCannotBeFulfilled[] = "A condition can never be "
 
 namespace extensions {
 
-namespace keys = declarative_webrequest_constants;
+namespace keys_wrc = declarative_webrequest_constants;
 
 //
 // WebRequestData
@@ -128,12 +126,12 @@ std::unique_ptr<WebRequestCondition> WebRequestCondition::Create(
 
   // Verify that we are dealing with a Condition whose type we understand.
   const std::string* instance_type =
-      condition_dict->FindString(keys::kInstanceTypeKey);
+      condition_dict->FindString(keys_wrc::kInstanceTypeKey);
   if (!instance_type) {
     *error = kConditionWithoutInstanceType;
     return nullptr;
   }
-  if (*instance_type != keys::kRequestMatcherType) {
+  if (*instance_type != keys_wrc::kRequestMatcherType) {
     *error = kExpectedOtherConditionType;
     return nullptr;
   }
@@ -144,12 +142,12 @@ std::unique_ptr<WebRequestCondition> WebRequestCondition::Create(
   for (const auto entry : *condition_dict) {
     const std::string& condition_attribute_name = entry.first;
     const base::Value& condition_attribute_value = entry.second;
-    if (condition_attribute_name == keys::kInstanceTypeKey ||
+    if (condition_attribute_name == keys_wrc::kInstanceTypeKey ||
         condition_attribute_name ==
-            keys::kDeprecatedFirstPartyForCookiesUrlKey ||
-        condition_attribute_name == keys::kDeprecatedThirdPartyKey) {
+            keys_wrc::kDeprecatedFirstPartyForCookiesUrlKey ||
+        condition_attribute_name == keys_wrc::kDeprecatedThirdPartyKey) {
       // Skip this.
-    } else if (condition_attribute_name == keys::kUrlKey) {
+    } else if (condition_attribute_name == keys_wrc::kUrlKey) {
       const base::Value::Dict* dict = condition_attribute_value.GetIfDict();
       if (!dict) {
         *error = base::StringPrintf(kInvalidTypeOfParamter,

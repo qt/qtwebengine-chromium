@@ -11,7 +11,7 @@
 namespace content {
 
 namespace {
-void SendLogMessage(const std::string& message) {
+void SendLogMessageMSPL(const std::string& message) {
   MediaStreamManager::SendMessageToNativeLog("MSPL::" + message);
 }
 }  // namespace
@@ -27,23 +27,23 @@ MediaStreamPowerLogger::~MediaStreamPowerLogger() {
 }
 
 void MediaStreamPowerLogger::OnSuspend() {
-  SendLogMessage(base::StringPrintf("OnSuspend([this=%p])", this));
+  SendLogMessageMSPL(base::StringPrintf("OnSuspend([this=%p])", this));
 }
 
 void MediaStreamPowerLogger::OnResume() {
-  SendLogMessage(base::StringPrintf("OnResume([this=%p])", this));
+  SendLogMessageMSPL(base::StringPrintf("OnResume([this=%p])", this));
 }
 
 void MediaStreamPowerLogger::OnThermalStateChange(
     base::PowerThermalObserver::DeviceThermalState new_state) {
   const char* state_name =
       base::PowerMonitorSource::DeviceThermalStateToString(new_state);
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSPL(base::StringPrintf(
       "OnThermalStateChange({this=%p}, {new_state=%s})", this, state_name));
 }
 
 void MediaStreamPowerLogger::OnSpeedLimitChange(int new_limit) {
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSPL(base::StringPrintf(
       "OnSpeedLimitChange({this=%p}, {new_limit=%d})", this, new_limit));
 }
 

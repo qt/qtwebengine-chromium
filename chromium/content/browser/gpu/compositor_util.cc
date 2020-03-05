@@ -108,7 +108,7 @@ const GpuFeatureData GetGpuFeatureData(
       {"canvas_oop_rasterization",
        SafeGetFeatureStatus(gpu_feature_info,
                             gpu::GPU_FEATURE_TYPE_CANVAS_OOP_RASTERIZATION),
-       !features::IsCanvasOopRasterizationEnabled() ||
+       !::features::IsCanvasOopRasterizationEnabled() ||
            command_line.HasSwitch(switches::kDisableAccelerated2dCanvas),
 #if 0
      // TODO(crbug.com/1240756): Remove the "#if 0" once OOPR-Canvas is fully
@@ -196,7 +196,7 @@ const GpuFeatureData GetGpuFeatureData(
       {"surface_control",
        SafeGetFeatureStatus(gpu_feature_info,
                             gpu::GPU_FEATURE_TYPE_ANDROID_SURFACE_CONTROL),
-       !features::IsAndroidSurfaceControlEnabled(),
+       !::features::IsAndroidSurfaceControlEnabled(),
        DisableInfo::Problem(
            "Surface Control has been disabled by Finch trial or command line."),
        false},
@@ -224,7 +224,7 @@ const GpuFeatureData GetGpuFeatureData(
       {"skia_graphite",
        SafeGetFeatureStatus(gpu_feature_info,
                             gpu::GPU_FEATURE_TYPE_SKIA_GRAPHITE),
-       !base::FeatureList::IsEnabled(features::kSkiaGraphite) &&
+       !base::FeatureList::IsEnabled(::features::kSkiaGraphite) &&
            !command_line.HasSwitch(switches::kEnableSkiaGraphite),
        DisableInfo::NotProblem(), false},
   };
@@ -455,7 +455,7 @@ bool IsZeroCopyUploadEnabled() {
 
 bool IsPartialRasterEnabled() {
   // Partial raster is not supported with RawDraw.
-  if (features::IsUsingRawDraw()) {
+  if (::features::IsUsingRawDraw()) {
     return false;
   }
   const auto& command_line = *base::CommandLine::ForCurrentProcess();
@@ -465,7 +465,7 @@ bool IsPartialRasterEnabled() {
 bool IsGpuMemoryBufferCompositorResourcesEnabled() {
   // To use Raw Draw, the Raw Draw shared image backing should be used, so
   // not use GPU memory buffer shared image backings for compositor resources.
-  if (features::IsUsingRawDraw()) {
+  if (::features::IsUsingRawDraw()) {
     return false;
   }
   const base::CommandLine& command_line =
@@ -482,7 +482,7 @@ bool IsGpuMemoryBufferCompositorResourcesEnabled() {
 #if BUILDFLAG(IS_APPLE)
   return true;
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
-  return features::IsDelegatedCompositingEnabled();
+  return ::features::IsDelegatedCompositingEnabled();
 #else
   return false;
 #endif

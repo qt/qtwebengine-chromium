@@ -9,7 +9,7 @@
 
 namespace blink {
 
-enum class BaselineGroup { kMajor, kMinor };
+enum class BaselineGroupType { kMajor, kMinor };
 
 // Determines the writing-mode to read a baseline from a fragment.
 inline WritingMode DetermineBaselineWritingMode(
@@ -48,7 +48,7 @@ inline WritingMode DetermineBaselineWritingMode(
 //
 // We label these "major"/"minor" to separate them. The "major" group should be
 // aligned to the appropriate "start" axis.
-inline BaselineGroup DetermineBaselineGroup(
+inline BaselineGroupType DetermineBaselineGroup(
     const WritingDirectionMode container_writing_direction,
     const WritingMode baseline_writing_mode,
     bool is_parallel_context,
@@ -57,8 +57,8 @@ inline BaselineGroup DetermineBaselineGroup(
   const auto container_writing_mode =
       container_writing_direction.GetWritingMode();
 
-  auto start_group = BaselineGroup::kMajor;
-  auto end_group = BaselineGroup::kMinor;
+  auto start_group = BaselineGroupType::kMajor;
+  auto end_group = BaselineGroupType::kMinor;
   if (is_last_baseline)
     std::swap(start_group, end_group);
   if (is_flipped)
@@ -86,7 +86,7 @@ inline BaselineGroup DetermineBaselineGroup(
   }
 
   NOTREACHED();
-  return BaselineGroup::kMinor;
+  return BaselineGroupType::kMinor;
 }
 
 }  // namespace blink

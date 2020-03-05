@@ -70,7 +70,7 @@ using mojom::blink::FormControlType;
 static const unsigned kDefaultRows = 2;
 static const unsigned kDefaultCols = 20;
 
-static bool is_default_font_prewarmed_ = false;
+static bool is_default_font_prewarmed_htae = false;
 
 static inline unsigned ComputeLengthForAPIValue(const String& text) {
   unsigned length = text.length();
@@ -96,14 +96,14 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document& document)
       is_placeholder_visible_(false) {
   EnsureUserAgentShadowRoot();
 
-  if (!is_default_font_prewarmed_) {
+  if (!is_default_font_prewarmed_htae) {
     if (Settings* settings = document.GetSettings()) {
       // Prewarm 'monospace', the default font family for `<textarea>`. The
       // default language should be fine for this purpose because most users set
       // the same family for all languages.
       FontCache::PrewarmFamily(settings->GetGenericFontFamilySettings().Fixed(
           LayoutLocale::GetDefault().GetScript()));
-      is_default_font_prewarmed_ = true;
+      is_default_font_prewarmed_htae = true;
     }
   }
 }

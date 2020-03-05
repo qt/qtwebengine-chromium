@@ -810,7 +810,7 @@ WebViewGuest::WebViewGuest(content::RenderFrameHost* owner_rfh)
           ExtensionsAPIClient::Get()->CreateWebViewGuestDelegate(this))),
       is_spatial_navigation_enabled_(
           base::CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kEnableSpatialNavigation)) {}
+              ::switches::kEnableSpatialNavigation)) {}
 
 WebViewGuest::~WebViewGuest() {
   if (!attached() && GetOpener())

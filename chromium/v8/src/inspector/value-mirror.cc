@@ -200,7 +200,7 @@ String16 abbreviateString(const String16& value, AbbreviateMode mode) {
   return String16::concat(value.substring(0, maxLength - 1), ellipsis);
 }
 
-String16 descriptionForSymbol(v8::Local<v8::Context> context,
+String16 descriptionForSymbol2(v8::Local<v8::Context> context,
                               v8::Local<v8::Symbol> symbol) {
   v8::Isolate* isolate = context->GetIsolate();
   return String16::concat(
@@ -705,7 +705,7 @@ class SymbolMirror final : public ValueMirrorBase {
         v8Value(context->GetIsolate()).As<v8::Symbol>();
     *result = RemoteObject::create()
                   .setType(RemoteObject::TypeEnum::Symbol)
-                  .setDescription(descriptionForSymbol(context, value))
+                  .setDescription(descriptionForSymbol2(context, value))
                   .build();
     return Response::Success();
   }
@@ -720,7 +720,7 @@ class SymbolMirror final : public ValueMirrorBase {
                    .setName(name)
                    .setType(RemoteObject::TypeEnum::Symbol)
                    .setValue(abbreviateString(
-                       descriptionForSymbol(context, value), kEnd))
+                       descriptionForSymbol2(context, value), kEnd))
                    .build();
   }
 
@@ -732,7 +732,7 @@ class SymbolMirror final : public ValueMirrorBase {
     *preview =
         ObjectPreview::create()
             .setType(RemoteObject::TypeEnum::Symbol)
-            .setDescription(descriptionForSymbol(context, value))
+            .setDescription(descriptionForSymbol2(context, value))
             .setOverflow(false)
             .setProperties(std::make_unique<protocol::Array<PropertyPreview>>())
             .build();
@@ -1525,7 +1525,7 @@ bool ValueMirror::getProperties(v8::Local<v8::Context> context,
       name = toProtocolString(isolate, v8Name.As<v8::String>());
     } else {
       v8::Local<v8::Symbol> symbol = v8Name.As<v8::Symbol>();
-      name = descriptionForSymbol(context, symbol);
+      name = descriptionForSymbol2(context, symbol);
       symbolMirror = ValueMirror::create(context, symbol);
     }
 

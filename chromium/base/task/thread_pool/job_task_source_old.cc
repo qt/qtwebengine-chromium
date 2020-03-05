@@ -28,13 +28,13 @@ namespace internal {
 namespace {
 
 // Capped to allow assigning task_ids from a bitfield.
-constexpr size_t kMaxWorkersPerJob = 32;
+constexpr size_t kMaxWorkersPerJobJTSO = 32;
 static_assert(
-    kMaxWorkersPerJob <=
+    kMaxWorkersPerJobJTSO <=
         std::numeric_limits<
             std::invoke_result<decltype(&JobDelegate::GetTaskId),
                                JobDelegate>::type>::max(),
-    "AcquireTaskId return type isn't big enough to fit kMaxWorkersPerJob");
+    "AcquireTaskId return type isn't big enough to fit kMaxWorkersPerJobJTSO");
 
 }  // namespace
 
@@ -308,12 +308,12 @@ size_t JobTaskSourceOld::GetMaxConcurrency() const {
 
 size_t JobTaskSourceOld::GetMaxConcurrency(size_t worker_count) const {
   return std::min(max_concurrency_callback_.Run(worker_count),
-                  kMaxWorkersPerJob);
+                  kMaxWorkersPerJobJTSO);
 }
 
 uint8_t JobTaskSourceOld::AcquireTaskId() {
-  static_assert(kMaxWorkersPerJob <= sizeof(assigned_task_ids_) * 8,
-                "TaskId bitfield isn't big enough to fit kMaxWorkersPerJob.");
+  static_assert(kMaxWorkersPerJobJTSO <= sizeof(assigned_task_ids_) * 8,
+                "TaskId bitfield isn't big enough to fit kMaxWorkersPerJobJTSO.");
   uint32_t assigned_task_ids =
       assigned_task_ids_.load(std::memory_order_relaxed);
   uint32_t new_assigned_task_ids = 0;

@@ -744,7 +744,7 @@ LayoutUnit GridLayoutAlgorithm::Baseline(
   const auto& [begin_set_index, end_set_index] =
       grid_item.SetIndices(track_direction);
 
-  return (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+  return (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
              ? track_collection.MajorBaseline(begin_set_index)
              : track_collection.MinorBaseline(end_set_index - 1);
 }
@@ -1058,7 +1058,7 @@ LayoutUnit GetExtraMarginForBaseline(const BoxStrut& margins,
       subgridded_item->SetIndices(track_collection.Direction());
 
   const LayoutUnit extra_margin =
-      (subgridded_item->BaselineGroup(track_direction) == BaselineGroup::kMajor)
+      (subgridded_item->BaselineGroup(track_direction) == BaselineGroupType::kMajor)
           ? track_collection.StartExtraMargin(begin_set_index)
           : track_collection.EndExtraMargin(end_set_index);
 
@@ -1652,7 +1652,7 @@ void GridLayoutAlgorithm::ComputeGridItemBaselines(
     // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
     const auto& [begin_set_index, end_set_index] =
         grid_item.SetIndices(track_direction);
-    if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+    if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
       track_collection.SetMajorBaseline(begin_set_index, baseline);
     } else {
       track_collection.SetMinorBaseline(end_set_index - 1, baseline);
@@ -3401,11 +3401,11 @@ namespace {
 // opposed to DOM order). The baseline of the grid is determined by the first
 // grid item with baseline alignment in the first row. If no items have
 // baseline alignment, fall back to the first item in row-major order.
-class BaselineAccumulator {
+class BaselineAccumulatorGrid {
   STACK_ALLOCATED();
 
  public:
-  explicit BaselineAccumulator(FontBaseline font_baseline)
+  explicit BaselineAccumulatorGrid(FontBaseline font_baseline)
       : font_baseline_(font_baseline) {}
 
   void Accumulate(const GridItemData& grid_item,
@@ -3553,7 +3553,7 @@ void GridLayoutAlgorithm::PlaceGridItems(
         layout_data.Rows().GetSetCount() + 1, EBreakBetween::kAuto);
   }
 
-  BaselineAccumulator baseline_accumulator(Style().GetFontBaseline());
+  BaselineAccumulatorGrid baseline_accumulator(Style().GetFontBaseline());
 
   const auto layout_subtree =
       cached_layout_subtree ? *cached_layout_subtree
@@ -3596,7 +3596,7 @@ void GridLayoutAlgorithm::PlaceGridItems(
       const LayoutUnit baseline_delta =
           Baseline(layout_data, grid_item, track_direction) -
           GetLogicalBaseline(grid_item, baseline_fragment, track_direction);
-      if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+      if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
         return baseline_delta;
 
       // BaselineGroup::kMinor
@@ -3765,7 +3765,7 @@ void GridLayoutAlgorithm::PlaceGridItemsForFragmentation(
   };
 
   HeapVector<ResultAndOffsets> result_and_offsets;
-  BaselineAccumulator baseline_accumulator(Style().GetFontBaseline());
+  BaselineAccumulatorGrid baseline_accumulator(Style().GetFontBaseline());
   LayoutUnit max_row_expansion;
   LayoutUnit max_item_block_end;
   wtf_size_t expansion_row_set_index;
@@ -3788,7 +3788,7 @@ void GridLayoutAlgorithm::PlaceGridItemsForFragmentation(
   auto PlaceItems = [&]() {
     // Reset our state.
     result_and_offsets.clear();
-    baseline_accumulator = BaselineAccumulator(Style().GetFontBaseline());
+    baseline_accumulator = BaselineAccumulatorGrid(Style().GetFontBaseline());
     max_row_expansion = LayoutUnit();
     max_item_block_end = LayoutUnit();
     expansion_row_set_index = kNotFound;

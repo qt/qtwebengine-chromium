@@ -27,7 +27,7 @@ namespace blink {
 namespace {
 
 // An oscillator is always mono.
-constexpr unsigned kNumberOfOutputChannels = 1;
+constexpr unsigned kNumberOfOutputChannelsOH = 1;
 
 // Convert the detune value (in cents) to a frequency scale multiplier:
 // 2^(d/1200)
@@ -185,7 +185,7 @@ OscillatorHandler::OscillatorHandler(AudioNode& node,
     }
   }
 
-  AddOutput(kNumberOfOutputChannels);
+  AddOutput(kNumberOfOutputChannelsOH);
 
   Initialize();
 }

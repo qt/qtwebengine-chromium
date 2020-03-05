@@ -21,9 +21,9 @@ namespace cc {
 namespace {
 
 constexpr uint64_t kMaxNoUpdateFrameQueueLength = 100;
-constexpr int kBuiltinSequenceNum =
+constexpr int kBuiltinJankSequenceNum =
     static_cast<int>(FrameSequenceTrackerType::kMaxType) + 1;
-constexpr int kMaximumStaleHistogramIndex = kBuiltinSequenceNum;
+constexpr int kMaximumJankStaleHistogramIndex = kBuiltinJankSequenceNum;
 
 constexpr base::TimeDelta kStaleHistogramMin = base::Microseconds(1);
 constexpr base::TimeDelta kStaleHistogramMax = base::Milliseconds(1000);
@@ -182,7 +182,7 @@ void JankMetrics::AddPresentedFrame(
     if (tracker_type_ != FrameSequenceTrackerType::kCustom) {
       STATIC_HISTOGRAM_POINTER_GROUP(
           GetStaleHistogramName(tracker_type_),
-          GetIndexForStaleMetric(tracker_type_), kMaximumStaleHistogramIndex,
+          GetIndexForStaleMetric(tracker_type_), kMaximumJankStaleHistogramIndex,
           AddTimeMillisecondsGranularity(staleness),
           base::Histogram::FactoryTimeGet(
               GetStaleHistogramName(tracker_type_), kStaleHistogramMin,
@@ -209,7 +209,7 @@ void JankMetrics::ReportJankMetrics(int frames_expected) {
   // Report the max staleness metrics
   STATIC_HISTOGRAM_POINTER_GROUP(
       GetMaxStaleHistogramName(tracker_type_),
-      GetIndexForStaleMetric(tracker_type_), kMaximumStaleHistogramIndex,
+      GetIndexForStaleMetric(tracker_type_), kMaximumJankStaleHistogramIndex,
       AddTimeMillisecondsGranularity(max_staleness_),
       base::Histogram::FactoryTimeGet(
           GetMaxStaleHistogramName(tracker_type_), kStaleHistogramMin,

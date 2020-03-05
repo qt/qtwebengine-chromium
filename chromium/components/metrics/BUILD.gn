@@ -302,7 +302,7 @@ if (!is_cronet_build || is_ios) {
     }
   }
 
-  jumvo_static_library("test_support") {
+  jumbo_static_library("test_support") {
     testonly = true
     sources = [
       "test/test_enabled_state_provider.cc",

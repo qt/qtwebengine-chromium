@@ -94,24 +94,24 @@ bool IsEligibleForRaceNetworkRequestByOriginTrial(
 bool IsEligibleForRaceNetworkRequest(
     scoped_refptr<ServiceWorkerVersion> version) {
   if (!base::FeatureList::IsEnabled(
-          features::kServiceWorkerBypassFetchHandler)) {
+          ::features::kServiceWorkerBypassFetchHandler)) {
     return false;
   }
-  if (features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
-      features::ServiceWorkerBypassFetchHandlerTarget::
+  if (::features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
+      ::features::ServiceWorkerBypassFetchHandlerTarget::
           kAllWithRaceNetworkRequest) {
     return false;
   }
 
-  switch (features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
+  switch (::features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
     // kFeatureOptIn means that the feature relies on the manual feature
     // toggle from about://flags etc, which is triggered by developers.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
       return true;
     // If kAllowList, the allowlist should be specified. In this case,
     // RaceNetworkRequest is allowed only when the sha256 checksum of the
     // script is in the allowlist.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
       return HasRaceNetworkRequestEligibleScript(version);
   }
 }
@@ -481,7 +481,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   // running, preload requests for both main resource and subresources are not
   // dispatched.
   if (base::GetFieldTrialParamByFeatureAsBool(
-          features::kServiceWorkerAutoPreload,
+          ::features::kServiceWorkerAutoPreload,
           "enable_only_when_service_worker_not_running",
           /*default_value=*/false) &&
       version->running_status() == blink::EmbeddedWorkerStatus::kRunning) {
@@ -504,7 +504,7 @@ bool ServiceWorkerMainResourceLoader::MaybeStartAutoPreload(
   // dispatched for subresources.
   version->set_fetch_handler_bypass_option(
       base::GetFieldTrialParamByFeatureAsBool(
-          features::kServiceWorkerAutoPreload, "enable_subresource_preload",
+          ::features::kServiceWorkerAutoPreload, "enable_subresource_preload",
           /*default_value=*/true)
           ? blink::mojom::ServiceWorkerFetchHandlerBypassOption::kAutoPreload
           : blink::mojom::ServiceWorkerFetchHandlerBypassOption::kDefault);

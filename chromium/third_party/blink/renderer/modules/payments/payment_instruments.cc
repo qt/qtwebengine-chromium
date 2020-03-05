@@ -78,7 +78,7 @@ bool rejectError(ScriptPromiseResolver* resolver,
   return false;
 }
 
-bool AllowedToUsePaymentFeatures(ScriptState* script_state) {
+bool AllowedToUsePaymentFeatures2(ScriptState* script_state) {
   if (!script_state->ContextIsValid())
     return false;
   return ExecutionContext::From(script_state)
@@ -107,7 +107,7 @@ ScriptPromise PaymentInstruments::deleteInstrument(
     ScriptState* script_state,
     const String& instrument_key,
     ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!manager_->is_bound()) {
@@ -130,7 +130,7 @@ ScriptPromise PaymentInstruments::deleteInstrument(
 ScriptPromise PaymentInstruments::get(ScriptState* script_state,
                                       const String& instrument_key,
                                       ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!manager_->is_bound()) {
@@ -152,7 +152,7 @@ ScriptPromise PaymentInstruments::get(ScriptState* script_state,
 
 ScriptPromise PaymentInstruments::keys(ScriptState* script_state,
                                        ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!manager_->is_bound()) {
@@ -174,7 +174,7 @@ ScriptPromise PaymentInstruments::keys(ScriptState* script_state,
 ScriptPromise PaymentInstruments::has(ScriptState* script_state,
                                       const String& instrument_key,
                                       ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!manager_->is_bound()) {
@@ -198,7 +198,7 @@ ScriptPromise PaymentInstruments::set(ScriptState* script_state,
                                       const String& instrument_key,
                                       const PaymentInstrument* details,
                                       ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!manager_->is_bound()) {
@@ -233,7 +233,7 @@ ScriptPromise PaymentInstruments::set(ScriptState* script_state,
 
 ScriptPromise PaymentInstruments::clear(ScriptState* script_state,
                                         ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state))
+  if (!AllowedToUsePaymentFeatures2(script_state))
     return RejectNotAllowedToUsePaymentFeatures(script_state, exception_state);
 
   if (!manager_->is_bound()) {

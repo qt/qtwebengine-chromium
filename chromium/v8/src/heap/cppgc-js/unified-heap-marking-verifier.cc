@@ -55,7 +55,7 @@ class UnifiedHeapVerificationVisitor final : public JSVisitor {
 
 }  // namespace
 
-class BasicTracedReferenceExtractor final {
+class BasicTracedReferenceExtractor_UHMV final {
  public:
   static Address* GetObjectSlotForMarking(const TracedReferenceBase& ref) {
     return const_cast<Address*>(
@@ -68,7 +68,7 @@ void UnifiedHeapVerificationState::VerifyMarkedTracedReference(
   // The following code will crash with null pointer derefs when finding a
   // non-empty `TracedReferenceBase` when `CppHeap` is in detached mode.
   Address* traced_handle_location =
-      BasicTracedReferenceExtractor::GetObjectSlotForMarking(ref);
+      BasicTracedReferenceExtractor_UHMV::GetObjectSlotForMarking(ref);
   // We cannot assume that the reference is non-null as we may get here by
   // tracing an ephemeron which doesn't have early bailouts, see
   // `cppgc::Visitor::TraceEphemeron()` for non-Member values.

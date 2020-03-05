@@ -251,6 +251,22 @@ viz_component("service") {
     "transitions/transferable_resource_tracker.h",
   ]
 
+  # Keep sources with "ui/gl" includes separate to avoid mixing OpenGL sources
+  jumbo_excluded_sources = [
+    "display/display.cc",
+    "display/output_surface.cc",
+    "display/overlay_processor_on_gpu.cc",
+    "display_embedder/compositor_gpu_thread.cc",
+    "display_embedder/image_context_impl.cc",
+    "display_embedder/skia_output_device_gl.cc",
+    "display_embedder/skia_output_device_offscreen.cc",
+    "display_embedder/skia_output_surface_impl.cc",
+    "display_embedder/skia_output_surface_impl_on_gpu.cc",
+    "frame_sinks/frame_sink_manager_impl.cc",
+    "frame_sinks/video_capture/frame_sink_video_capturer_impl.cc",
+    "gl/gpu_service_impl.cc",
+  ]
+
   defines = [ "VIZ_SERVICE_IMPLEMENTATION" ]
 
   deps = [
@@ -431,6 +447,9 @@ viz_component("service") {
       "gl/info_collection_gpu_service_impl.cc",
       "gl/info_collection_gpu_service_impl.h",
     ]
+    jumbo_excluded_sources += [
+      "display_embedder/skia_output_device_dcomp.cc",
+    ]
 
     # SkiaOutputDeviceBufferQueue doesn't support Windows.
     sources -= [
@@ -440,6 +459,11 @@ viz_component("service") {
       "display_embedder/output_presenter_gl.h",
       "display_embedder/skia_output_device_buffer_queue.cc",
       "display_embedder/skia_output_device_buffer_queue.h",
+    ]
+  } else {
+    jumbo_excluded_sources += [
+      "display_embedder/output_presenter_gl.cc",
+      "display_embedder/skia_output_device_buffer_queue.cc",
     ]
   }
 
@@ -460,6 +484,10 @@ viz_component("service") {
     sources += [
       "display_embedder/skia_output_device_vulkan.cc",
       "display_embedder/skia_output_device_vulkan.h",
+    ]
+
+    jumbo_excluded_sources += [
+      "display_embedder/skia_output_device_vulkan.cc",
     ]
 
     if (is_android) {

@@ -16,7 +16,7 @@
 #include "extensions/browser/api/web_request/web_request_api_constants.h"
 #include "net/base/upload_file_element_reader.h"
 
-namespace keys = extension_web_request_api_constants;
+namespace keys_udp = extension_web_request_api_constants;
 
 namespace {
 
@@ -70,13 +70,13 @@ std::optional<base::Value> RawDataPresenter::TakeResult() {
 
 void RawDataPresenter::FeedNextBytes(const char* bytes, size_t size) {
   subtle::AppendKeyValuePair(
-      keys::kRequestBodyRawBytesKey,
+      keys_udp::kRequestBodyRawBytesKey,
       base::Value(base::as_bytes(base::make_span(bytes, size))), list_);
 }
 
 void RawDataPresenter::FeedNextFile(const std::string& filename) {
   // Insert the file path instead of the contents, which may be too large.
-  subtle::AppendKeyValuePair(keys::kRequestBodyRawFileKey,
+  subtle::AppendKeyValuePair(keys_udp::kRequestBodyRawFileKey,
                              base::Value(filename), list_);
 }
 

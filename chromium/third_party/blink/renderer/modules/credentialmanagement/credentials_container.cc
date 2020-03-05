@@ -725,7 +725,7 @@ void OnGetComplete(std::unique_ptr<ScopedPromiseResolver> scoped_resolver,
   resolver->Resolve(mojo::ConvertTo<Credential*>(std::move(credential_info)));
 }
 
-DOMArrayBuffer* VectorToDOMArrayBuffer(const Vector<uint8_t> buffer) {
+static DOMArrayBuffer* VectorToDOMArrayBuffer_CC(const Vector<uint8_t> buffer) {
   return DOMArrayBuffer::Create(static_cast<const void*>(buffer.data()),
                                 buffer.size());
 }
@@ -748,10 +748,10 @@ AuthenticationExtensionsPRFValues* GetPRFExtensionResults(
     const mojom::blink::PRFValuesPtr& prf_results) {
   auto* values = AuthenticationExtensionsPRFValues::Create();
   values->setFirst(MakeGarbageCollected<V8UnionArrayBufferOrArrayBufferView>(
-      VectorToDOMArrayBuffer(std::move(prf_results->first))));
+      VectorToDOMArrayBuffer_CC(std::move(prf_results->first))));
   if (prf_results->second) {
     values->setSecond(MakeGarbageCollected<V8UnionArrayBufferOrArrayBufferView>(
-        VectorToDOMArrayBuffer(std::move(prf_results->second.value()))));
+        VectorToDOMArrayBuffer_CC(std::move(prf_results->second.value()))));
   }
   return values;
 }
@@ -791,17 +791,17 @@ void OnMakePublicKeyCredentialComplete(
                       WebFeature::kWebAuthnRkRequiredCreationSuccess);
   }
   DOMArrayBuffer* client_data_buffer =
-      VectorToDOMArrayBuffer(std::move(credential->info->client_data_json));
+      VectorToDOMArrayBuffer_CC(std::move(credential->info->client_data_json));
   DOMArrayBuffer* raw_id =
-      VectorToDOMArrayBuffer(std::move(credential->info->raw_id));
+      VectorToDOMArrayBuffer_CC(std::move(credential->info->raw_id));
   DOMArrayBuffer* attestation_buffer =
-      VectorToDOMArrayBuffer(std::move(credential->attestation_object));
+      VectorToDOMArrayBuffer_CC(std::move(credential->attestation_object));
   DOMArrayBuffer* authenticator_data =
-      VectorToDOMArrayBuffer(std::move(credential->info->authenticator_data));
+      VectorToDOMArrayBuffer_CC(std::move(credential->info->authenticator_data));
   DOMArrayBuffer* public_key_der = nullptr;
   if (credential->public_key_der) {
     public_key_der =
-        VectorToDOMArrayBuffer(std::move(credential->public_key_der.value()));
+        VectorToDOMArrayBuffer_CC(std::move(credential->public_key_der.value()));
   }
   auto* authenticator_response =
       MakeGarbageCollected<AuthenticatorAttestationResponse>(
@@ -971,7 +971,7 @@ void OnGetAssertionComplete(
 #endif
       resolver->Resolve(MakeGarbageCollected<PublicKeyCredential>(
           credential->info->id,
-          VectorToDOMArrayBuffer(std::move(credential->info->raw_id)),
+          VectorToDOMArrayBuffer_CC(std::move(credential->info->raw_id)),
           authenticator_response, credential->authenticator_attachment,
           extension_outputs));
       return;
@@ -997,7 +997,7 @@ void OnGetAssertionComplete(
           AuthenticationExtensionsLargeBlobOutputs::Create();
       if (extensions->large_blob) {
         large_blob_outputs->setBlob(
-            VectorToDOMArrayBuffer(std::move(*extensions->large_blob)));
+            VectorToDOMArrayBuffer_CC(std::move(*extensions->large_blob)));
       }
       if (extensions->echo_large_blob_written) {
         large_blob_outputs->setWritten(extensions->large_blob_written);
@@ -1006,7 +1006,7 @@ void OnGetAssertionComplete(
     }
     if (extensions->get_cred_blob) {
       extension_outputs->setGetCredBlob(
-          VectorToDOMArrayBuffer(std::move(*extensions->get_cred_blob)));
+          VectorToDOMArrayBuffer_CC(std::move(*extensions->get_cred_blob)));
     }
     if (extensions->echo_prf) {
       auto* prf_outputs = AuthenticationExtensionsPRFOutputs::Create();
@@ -1018,7 +1018,7 @@ void OnGetAssertionComplete(
     }
     resolver->Resolve(MakeGarbageCollected<PublicKeyCredential>(
         credential->info->id,
-        VectorToDOMArrayBuffer(std::move(credential->info->raw_id)),
+        VectorToDOMArrayBuffer_CC(std::move(credential->info->raw_id)),
         authenticator_response, credential->authenticator_attachment,
         extension_outputs));
     return;
