@@ -273,6 +273,11 @@ jumbo_component("cpp_base") {
     "url_request_mojom_traits.cc",
     "url_request_mojom_traits.h",
   ]
+  jumbo_excluded_sources = [
+    "network_ipc_param_traits.cc",
+    "p2p_param_traits.cc",
+    "url_request_mojom_traits.cc"
+  ]
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 

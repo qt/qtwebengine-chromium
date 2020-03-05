@@ -149,7 +149,7 @@ class CONTENT_EXPORT ServiceWorkerResourceReaderImpl
   DiskEntryOpener entry_opener_;
 
   // Used to read metadata from disk cache.
-  scoped_refptr<BigIOBuffer> metadata_buffer_;
+  scoped_refptr<content::BigIOBuffer> metadata_buffer_;
   // Holds the return value of ReadResponseHead(). Stored as a member field
   // to handle //net-style maybe-async methods.
   network::mojom::URLResponseHeadPtr response_head_;

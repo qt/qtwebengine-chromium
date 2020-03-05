@@ -277,6 +277,9 @@ blink_core_sources("animation") {
     "worklet_animation_controller.cc",
     "worklet_animation_controller.h",
   ]
+  jumbo_excluded_sources = [
+    "css_transform_interpolation_type.cc",
+  ]
 
   deps = [
     ":buildflags",

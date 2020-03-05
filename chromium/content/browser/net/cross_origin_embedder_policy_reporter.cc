@@ -13,7 +13,7 @@ namespace content {
 
 namespace {
 
-constexpr char kType[] = "coep";
+constexpr char kTypeCoep[] = "coep";
 
 GURL StripUsernameAndPassword(const GURL& url) {
   url::Replacements<char> replacements;
@@ -95,7 +95,7 @@ void CrossOriginEmbedderPolicyReporter::QueueAndNotify(
         blink::mojom::ReportBodyElement::New("disposition", disposition));
 
     observer_->Notify(blink::mojom::Report::New(
-        kType, context_url_, blink::mojom::ReportBody::New(std::move(list))));
+        kTypeCoep, context_url_, blink::mojom::ReportBody::New(std::move(list))));
   }
   if (endpoint) {
     base::DictionaryValue body_to_pass;
@@ -107,7 +107,7 @@ void CrossOriginEmbedderPolicyReporter::QueueAndNotify(
     // TODO(https://crbug.com/993805): Pass in the appropriate
     // NetworkIsolationKey.
     storage_partition_->GetNetworkContext()->QueueReport(
-        kType, *endpoint, context_url_, net::NetworkIsolationKey::Todo(),
+        kTypeCoep, *endpoint, context_url_, net::NetworkIsolationKey::Todo(),
         /*user_agent=*/base::nullopt, std::move(body_to_pass));
   }
 }

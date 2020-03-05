@@ -178,6 +178,11 @@ viz_component("service") {
     "viz_service_export.h",
   ]
 
+  jumbo_excluded_sources = [
+    "display/display.cc",
+    "display/overlay_processor_on_gpu.cc",
+  ]
+
   defines = [ "VIZ_SERVICE_IMPLEMENTATION" ]
 
   allow_circular_includes_from = [ ":gpu_service_dependencies" ]

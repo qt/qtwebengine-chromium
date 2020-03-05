@@ -849,8 +849,8 @@ void CSAGenerator::EmitInstruction(const StoreReferenceInstruction& instruction,
 }
 
 namespace {
-std::string GetBitFieldSpecialization(const Type* container,
-                                      const BitField& field) {
+std::string GetBitFieldSpecialization2(const Type* container,
+                                       const BitField& field) {
   auto smi_tagged_type =
       Type::MatchUnaryGeneric(container, TypeOracle::GetSmiTaggedGeneric());
   std::string container_type = smi_tagged_type
@@ -903,7 +903,7 @@ void CSAGenerator::EmitInstruction(const LoadBitFieldInstruction& instruction,
   out() << "    " << result_name << " = ca_.UncheckedCast<"
         << field_type->GetGeneratedTNodeTypeName()
         << ">(CodeStubAssembler(state_)." << decoder << "<"
-        << GetBitFieldSpecialization(struct_type, instruction.bit_field)
+        << GetBitFieldSpecialization2(struct_type, instruction.bit_field)
         << ">(ca_.UncheckedCast<" << struct_word_type << ">("
         << bit_field_struct << ")));\n";
 }
@@ -945,7 +945,7 @@ void CSAGenerator::EmitInstruction(const StoreBitFieldInstruction& instruction,
 
   std::string result_expression =
       "CodeStubAssembler(state_)." + encoder + "<" +
-      GetBitFieldSpecialization(struct_type, instruction.bit_field) +
+      GetBitFieldSpecialization2(struct_type, instruction.bit_field) +
       ">(ca_.UncheckedCast<" + struct_word_type + ">(" + bit_field_struct +
       "), ca_.UncheckedCast<" + field_word_type + ">(" + value + ")" +
       (instruction.starts_as_zero ? ", true" : "") + ")";

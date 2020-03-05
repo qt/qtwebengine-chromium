@@ -19,10 +19,10 @@ namespace cc {
 
 namespace {
 
-constexpr int kBuiltinSequenceNum =
+constexpr int kBuiltinJankSequenceNum =
     static_cast<int>(FrameSequenceTrackerType::kMaxType) + 1;
-constexpr int kMaximumJankHistogramIndex = 2 * kBuiltinSequenceNum;
-constexpr int kMaximumStaleHistogramIndex = kBuiltinSequenceNum;
+constexpr int kMaximumJankHistogramIndex = 2 * kBuiltinJankSequenceNum;
+constexpr int kMaximumStaleHistogramIndex = kBuiltinJankSequenceNum;
 
 constexpr base::TimeDelta kStaleHistogramMin =
     base::TimeDelta::FromMicroseconds(1);
@@ -56,7 +56,7 @@ int GetIndexForJankMetric(FrameSequenceMetrics::ThreadType thread_type,
     return static_cast<int>(type);
 
   DCHECK_EQ(thread_type, FrameSequenceMetrics::ThreadType::kCompositor);
-  return static_cast<int>(type) + kBuiltinSequenceNum;
+  return static_cast<int>(type) + kBuiltinJankSequenceNum;
 }
 
 int GetIndexForStaleMetric(FrameSequenceTrackerType type) {

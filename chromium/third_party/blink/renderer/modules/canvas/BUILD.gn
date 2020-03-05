@@ -41,6 +41,10 @@ blink_modules_sources("canvas") {
     "offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc",
     "offscreencanvas2d/offscreen_canvas_rendering_context_2d.h",
   ]
+  jumbo_excluded_sources = [
+    "imagebitmap/image_bitmap_rendering_context_base.cc",
+    "offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc",
+  ]
 }
 
 fuzzer_test("canvas_fuzzer") {
