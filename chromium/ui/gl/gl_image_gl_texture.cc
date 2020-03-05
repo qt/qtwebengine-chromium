@@ -37,7 +37,7 @@ namespace gl {
 namespace {
 
 // Returns corresponding internalformat if supported, and GL_NONE otherwise.
-unsigned GLInternalFormat(gfx::BufferFormat format) {
+unsigned GLInternalFormatGIGT(gfx::BufferFormat format) {
   switch (format) {
     case gfx::BufferFormat::RGBA_4444:
     case gfx::BufferFormat::RGBA_F16:
@@ -116,7 +116,7 @@ GLImageGLTexture::~GLImageGLTexture() {
 }
 
 bool GLImageGLTexture::InitializeFromTexture(uint32_t texture_id) {
-  if (GLInternalFormat(format_) == GL_NONE) {
+  if (GLInternalFormatGIGT(format_) == GL_NONE) {
     LOG(ERROR) << "Unsupported format: " << gfx::BufferFormatToString(format_);
     return false;
   }
@@ -229,7 +229,7 @@ void GLImageGLTexture::BindTexImage(unsigned target) {
 }
 
 unsigned GLImageGLTexture::GetInternalFormat() {
-  return GLInternalFormat(format_);
+  return GLInternalFormatGIGT(format_);
 }
 
 }  // namespace gl

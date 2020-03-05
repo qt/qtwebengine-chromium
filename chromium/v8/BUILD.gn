@@ -4994,6 +4994,8 @@ v8_source_set("v8_base_without_compiler") {
     sources += [ "src/snapshot/snapshot-compression.cc" ]
   }
 
+  jumbo_excluded_sources = []
+
   if (v8_enable_maglev) {
     sources += [
       "src/maglev/maglev-assembler.cc",
@@ -5017,6 +5019,10 @@ v8_source_set("v8_base_without_compiler") {
       ]
     } else if (v8_current_cpu == "x64") {
       sources += [
+        "src/maglev/x64/maglev-assembler-x64.cc",
+        "src/maglev/x64/maglev-ir-x64.cc",
+      ]
+      jumbo_excluded_sources += [
         "src/maglev/x64/maglev-assembler-x64.cc",
         "src/maglev/x64/maglev-ir-x64.cc",
       ]
@@ -5077,6 +5083,11 @@ v8_source_set("v8_base_without_compiler") {
       "src/wasm/wasm-serialization.cc",
       "src/wasm/wasm-subtyping.cc",
     ]
+    jumbo_excluded_sources += [
+      "src/asmjs/asm-js.cc",
+      "src/asmjs/asm-parser.cc",
+      "src/asmjs/asm-scanner.cc",
+    ]
   }
 
   if (v8_enable_third_party_heap) {
@@ -5106,13 +5117,16 @@ v8_source_set("v8_base_without_compiler") {
     sources += [ "src/heap/reference-summarizer.cc" ]
   }
 
-  jumbo_excluded_sources = [
+  jumbo_excluded_sources += [
+    "src/execution/clobber-registers.cc", # Host asm vs target asm includes
     # TODO(mostynb@vewd.com): don't exclude these http://crbug.com/752428
     "src/profiler/heap-snapshot-generator.cc",  # Macro clash in mman-linux.h
     "src/heap/local-heap.cc",
     "src/heap/safepoint.cc",
     "src/objects/js-display-names.cc",
     "src/objects/js-relative-time-format.cc",
+    "src/objects/js-temporal-objects.cc",
+    "src/utils/ostreams.cc",
 
     # These source files take an unusually large amount of time to
     # compile.  Build them separately to avoid bottlenecks.

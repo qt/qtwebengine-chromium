@@ -599,7 +599,7 @@ Scavenger::PromotionList::Local::Local(Scavenger::PromotionList* promotion_list)
           promotion_list->large_object_promotion_list_) {}
 
 namespace {
-ConcurrentAllocator* CreateSharedOldAllocator(Heap* heap) {
+ConcurrentAllocator* CreateSharedOldAllocator2(Heap* heap) {
   if (v8_flags.shared_string_table && heap->isolate()->has_shared_space()) {
     return new ConcurrentAllocator(nullptr, heap->shared_allocation_space(),
                                    ConcurrentAllocator::Context::kGC);
@@ -634,7 +634,7 @@ Scavenger::Scavenger(ScavengerCollector* collector, Heap* heap, bool is_logging,
       copied_size_(0),
       promoted_size_(0),
       allocator_(heap, CompactionSpaceKind::kCompactionSpaceForScavenge),
-      shared_old_allocator_(CreateSharedOldAllocator(heap_)),
+      shared_old_allocator_(CreateSharedOldAllocator2(heap_)),
       is_logging_(is_logging),
       is_incremental_marking_(heap->incremental_marking()->IsMarking()),
       is_compacting_(heap->incremental_marking()->IsCompacting()),

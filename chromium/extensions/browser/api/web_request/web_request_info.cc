@@ -29,7 +29,7 @@
 #include "services/network/url_loader.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace keys = extension_web_request_api_constants;
+namespace keys_wri = extension_web_request_api_constants;
 
 namespace extensions {
 
@@ -129,8 +129,8 @@ absl::optional<base::Value::Dict> CreateRequestBodyData(
       &raw_data_presenter      // 2: any data at all? (Non-specific.)
   };
   // Keys for the results of the corresponding presenters.
-  static const char* const kKeys[] = {keys::kRequestBodyFormDataKey,
-                                      keys::kRequestBodyRawKey};
+  static const char* const kKeys[] = {keys_wri::kRequestBodyFormDataKey,
+                                      keys_wri::kRequestBodyRawKey};
   bool some_succeeded = false;
   if (!data_sources.empty()) {
     for (size_t i = 0; i < std::size(presenters); ++i) {
@@ -145,7 +145,7 @@ absl::optional<base::Value::Dict> CreateRequestBodyData(
   }
 
   if (!some_succeeded) {
-    request_body_data.Set(keys::kRequestBodyErrorKey, "Unknown error.");
+    request_body_data.Set(keys_wri::kRequestBodyErrorKey, "Unknown error.");
   }
 
   return request_body_data;

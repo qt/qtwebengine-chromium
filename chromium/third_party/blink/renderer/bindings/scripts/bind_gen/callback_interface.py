@@ -185,6 +185,7 @@ def generate_callback_interface(callback_interface_identifier):
          cg_context,
          FN_INSTALL_INTERFACE_TEMPLATE,
          class_name=class_name,
+         api_class_name=class_name,
          trampoline_var_name=None,
          constructor_entries=[],
          supplemental_install_node=SequenceNode(),

@@ -3737,6 +3737,8 @@ void BranchIfTypeOf::PrintParams(std::ostream& os,
   os << "(" << interpreter::TestTypeOfFlags::ToString(literal_) << ")";
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8

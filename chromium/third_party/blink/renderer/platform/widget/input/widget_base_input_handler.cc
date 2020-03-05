@@ -161,7 +161,7 @@ mojom::InputEventResultState GetAckResult(WebInputEventResult processed) {
              : mojom::InputEventResultState::kConsumed;
 }
 
-bool IsGestureScroll(WebInputEvent::Type type) {
+bool IsGestureScrollWBIH(WebInputEvent::Type type) {
   switch (type) {
     case WebGestureEvent::Type::kGestureScrollBegin:
     case WebGestureEvent::Type::kGestureScrollUpdate:
@@ -565,7 +565,7 @@ void WidgetBaseInputHandler::InjectGestureScrollEvent(
     ui::ScrollGranularity granularity,
     cc::ElementId scrollable_area_element_id,
     WebInputEvent::Type injected_type) {
-  DCHECK(IsGestureScroll(injected_type));
+  DCHECK(IsGestureScrollWBIH(injected_type));
   // If we're currently handling an input event, cache the appropriate
   // parameters so we can dispatch the events directly once blink finishes
   // handling the event.

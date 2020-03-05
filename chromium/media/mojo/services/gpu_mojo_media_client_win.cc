@@ -8,6 +8,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "media/base/audio_decoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_switches.h"
 #include "media/base/offloading_audio_encoder.h"
 #if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
@@ -100,7 +101,7 @@ VideoDecoderType GetPlatformDecoderImplementationType(
 }
 
 // There is no CdmFactory on windows, so just stub it out.
-class CdmFactory {};
+//class CdmFactory {};
 std::unique_ptr<CdmFactory> CreatePlatformCdmFactory(
     mojom::FrameInterfaceFactory* frame_interfaces) {
   return nullptr;

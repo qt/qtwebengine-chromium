@@ -27,7 +27,7 @@
 namespace blink {
 
 const char kAbortErrorMessage[] = "The Bluetooth operation was cancelled.";
-const char kInactiveDocumentError[] = "Document not active";
+const char kInactiveDocumentError2[] = "Document not active";
 const char kInvalidStateErrorMessage[] =
     "Pending watch advertisements operation.";
 
@@ -113,7 +113,7 @@ ScriptPromise BluetoothDevice::watchAdvertisements(
     ExceptionState& exception_state) {
   ExecutionContext* context = GetExecutionContext();
   if (!context) {
-    exception_state.ThrowTypeError(kInactiveDocumentError);
+    exception_state.ThrowTypeError(kInactiveDocumentError2);
     return ScriptPromise();
   }
 
@@ -204,7 +204,7 @@ void BluetoothDevice::AbortWatchAdvertisements(AbortSignal* signal) {
 ScriptPromise BluetoothDevice::forget(ScriptState* script_state,
                                       ExceptionState& exception_state) {
   if (!GetExecutionContext()) {
-    exception_state.ThrowTypeError(kInactiveDocumentError);
+    exception_state.ThrowTypeError(kInactiveDocumentError2);
     return ScriptPromise();
   }
 

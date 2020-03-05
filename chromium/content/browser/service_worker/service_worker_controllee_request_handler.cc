@@ -89,7 +89,7 @@ const char* FetchHandlerTypeToString(
 const base::flat_set<std::string> FetchHandlerBypassedHashStrings() {
   const static base::NoDestructor<base::flat_set<std::string>> result(
       base::SplitString(
-          features::kServiceWorkerBypassFetchHandlerBypassedHashStrings.Get(),
+          ::features::kServiceWorkerBypassFetchHandlerBypassedHashStrings.Get(),
           ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY));
 
   return *result;
@@ -97,22 +97,22 @@ const base::flat_set<std::string> FetchHandlerBypassedHashStrings() {
 
 bool ShouldBypassFetchHandlerForMainResource(ServiceWorkerVersion& version) {
   if (!base::FeatureList::IsEnabled(
-          features::kServiceWorkerBypassFetchHandler)) {
+          ::features::kServiceWorkerBypassFetchHandler)) {
     return false;
   }
 
-  if (features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
-      features::ServiceWorkerBypassFetchHandlerTarget::kMainResource) {
+  if (::features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
+      ::features::ServiceWorkerBypassFetchHandlerTarget::kMainResource) {
     return false;
   }
 
   // If the feature is enabled, the main resource request bypasses ServiceWorker
   // and starts the worker in parallel for subsequent subresources.
-  switch (features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
+  switch (::features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
     // kFeatureOptIn means that the feature relies on the manual feature
     // toggle from about://flags etc, which is triggered by developers. We
     // bypass fetch handler regardless of the url matching in this case.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
       RecordSkipReason(
           ServiceWorkerControlleeRequestHandler::FetchHandlerSkipReason::
               kMainResourceSkippedDueToFeatureFlag);
@@ -120,7 +120,7 @@ bool ShouldBypassFetchHandlerForMainResource(ServiceWorkerVersion& version) {
     // If kAllowList, the allowlist should be specified. In this case, main
     // resource fetch handlers are bypassed only when the sha256 checksum of the
     // script is in the allowlist.
-    case features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
+    case ::features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
       if (FetchHandlerBypassedHashStrings().contains(
               version.sha256_script_checksum())) {
         version.CountFeature(
@@ -551,10 +551,10 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion(
       active_version->CountFeature(
           blink::mojom::WebFeature::kServiceWorkerSkippedForEmptyFetchHandler);
       CompleteWithoutLoader();
-      if (!features::kStartServiceWorkerForEmptyFetchHandler.Get()) {
+      if (!::features::kStartServiceWorkerForEmptyFetchHandler.Get()) {
         return;
       }
-      if (features::kAsyncStartServiceWorkerForEmptyFetchHandler.Get()) {
+      if (::features::kAsyncStartServiceWorkerForEmptyFetchHandler.Get()) {
         base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
             FROM_HERE,
             base::BindOnce(

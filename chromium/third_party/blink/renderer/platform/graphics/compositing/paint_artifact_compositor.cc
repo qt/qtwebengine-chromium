@@ -631,7 +631,7 @@ void PaintArtifactCompositor::Update(
     const Vector<const TransformPaintPropertyNode*>& scroll_translation_nodes,
     Vector<std::unique_ptr<cc::ViewTransitionRequest>> transition_requests) {
   const bool unification_enabled =
-      base::FeatureList::IsEnabled(features::kScrollUnification);
+      base::FeatureList::IsEnabled(::features::kScrollUnification);
   // See: |UpdateRepaintedLayers| for repaint updates.
   DCHECK(needs_update_);
   DCHECK(scroll_translation_nodes.empty() || unification_enabled);

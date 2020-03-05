@@ -25,7 +25,7 @@
 // Legacy support for NT1(https://www.w3.org/TR/navigation-timing/).
 namespace blink {
 
-static uint64_t ToIntegerMilliseconds(base::TimeDelta duration,
+static uint64_t ToIntegerMilliseconds2(base::TimeDelta duration,
                                       bool cross_origin_isolated_capability) {
   // TODO(npm): add histograms to understand when/why |duration| is sometimes
   // negative.
@@ -345,8 +345,8 @@ uint64_t PerformanceTiming::MonotonicTimeToIntegerMilliseconds(
   if (!timing)
     return 0;
 
-  return ToIntegerMilliseconds(timing->MonotonicTimeToPseudoWallTime(time),
-                               cross_origin_isolated_capability_);
+  return ToIntegerMilliseconds2(timing->MonotonicTimeToPseudoWallTime(time),
+                                cross_origin_isolated_capability_);
 }
 
 // static

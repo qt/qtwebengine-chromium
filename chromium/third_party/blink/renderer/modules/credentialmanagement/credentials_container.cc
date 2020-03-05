@@ -602,7 +602,7 @@ void OnGetComplete(std::unique_ptr<ScopedPromiseResolver> scoped_resolver,
   resolver->Resolve(mojo::ConvertTo<Credential*>(std::move(credential_info)));
 }
 
-DOMArrayBuffer* VectorToDOMArrayBuffer(const Vector<uint8_t> buffer) {
+static DOMArrayBuffer* VectorToDOMArrayBuffer_CC(const Vector<uint8_t> buffer) {
   return DOMArrayBuffer::Create(static_cast<const void*>(buffer.data()),
                                 buffer.size());
 }
@@ -656,17 +656,17 @@ void OnMakePublicKeyCredentialComplete(
                       WebFeature::kWebAuthnRkRequiredCreationSuccess);
   }
   DOMArrayBuffer* client_data_buffer =
-      VectorToDOMArrayBuffer(std::move(credential->info->client_data_json));
+      VectorToDOMArrayBuffer_CC(std::move(credential->info->client_data_json));
   DOMArrayBuffer* raw_id =
-      VectorToDOMArrayBuffer(std::move(credential->info->raw_id));
+      VectorToDOMArrayBuffer_CC(std::move(credential->info->raw_id));
   DOMArrayBuffer* attestation_buffer =
-      VectorToDOMArrayBuffer(std::move(credential->attestation_object));
+      VectorToDOMArrayBuffer_CC(std::move(credential->attestation_object));
   DOMArrayBuffer* authenticator_data =
-      VectorToDOMArrayBuffer(std::move(credential->info->authenticator_data));
+      VectorToDOMArrayBuffer_CC(std::move(credential->info->authenticator_data));
   DOMArrayBuffer* public_key_der = nullptr;
   if (credential->public_key_der) {
     public_key_der =
-        VectorToDOMArrayBuffer(std::move(credential->public_key_der.value()));
+        VectorToDOMArrayBuffer_CC(std::move(credential->public_key_der.value()));
   }
   auto* authenticator_response =
       MakeGarbageCollected<AuthenticatorAttestationResponse>(
@@ -700,9 +700,9 @@ void OnMakePublicKeyCredentialComplete(
   if (credential->device_public_key) {
     AuthenticationExtensionsDevicePublicKeyOutputs* device_public_key_outputs =
         AuthenticationExtensionsDevicePublicKeyOutputs::Create();
-    device_public_key_outputs->setAuthenticatorOutput(VectorToDOMArrayBuffer(
+    device_public_key_outputs->setAuthenticatorOutput(VectorToDOMArrayBuffer_CC(
         std::move(credential->device_public_key->authenticator_output)));
-    device_public_key_outputs->setSignature(VectorToDOMArrayBuffer(
+    device_public_key_outputs->setSignature(VectorToDOMArrayBuffer_CC(
         std::move(credential->device_public_key->signature)));
     extension_outputs->setDevicePubKey(device_public_key_outputs);
   }
@@ -833,7 +833,7 @@ void OnGetAssertionComplete(
           AuthenticationExtensionsLargeBlobOutputs::Create();
       if (credential->large_blob) {
         large_blob_outputs->setBlob(
-            VectorToDOMArrayBuffer(std::move(*credential->large_blob)));
+            VectorToDOMArrayBuffer_CC(std::move(*credential->large_blob)));
       }
       if (credential->echo_large_blob_written) {
         large_blob_outputs->setWritten(credential->large_blob_written);
@@ -842,15 +842,15 @@ void OnGetAssertionComplete(
     }
     if (credential->get_cred_blob) {
       extension_outputs->setGetCredBlob(
-          VectorToDOMArrayBuffer(std::move(*credential->get_cred_blob)));
+          VectorToDOMArrayBuffer_CC(std::move(*credential->get_cred_blob)));
     }
     if (credential->device_public_key) {
       AuthenticationExtensionsDevicePublicKeyOutputs*
           device_public_key_outputs =
               AuthenticationExtensionsDevicePublicKeyOutputs::Create();
-      device_public_key_outputs->setAuthenticatorOutput(VectorToDOMArrayBuffer(
+      device_public_key_outputs->setAuthenticatorOutput(VectorToDOMArrayBuffer_CC(
           std::move(credential->device_public_key->authenticator_output)));
-      device_public_key_outputs->setSignature(VectorToDOMArrayBuffer(
+      device_public_key_outputs->setSignature(VectorToDOMArrayBuffer_CC(
           std::move(credential->device_public_key->signature)));
       extension_outputs->setDevicePubKey(device_public_key_outputs);
     }
@@ -860,12 +860,12 @@ void OnGetAssertionComplete(
         auto* values = AuthenticationExtensionsPRFValues::Create();
         values->setFirst(
             MakeGarbageCollected<V8UnionArrayBufferOrArrayBufferView>(
-                VectorToDOMArrayBuffer(
+                VectorToDOMArrayBuffer_CC(
                     std::move(credential->prf_results->first))));
         if (credential->prf_results->second) {
           values->setSecond(
               MakeGarbageCollected<V8UnionArrayBufferOrArrayBufferView>(
-                  VectorToDOMArrayBuffer(
+                  VectorToDOMArrayBuffer_CC(
                       std::move(credential->prf_results->second.value()))));
         }
         prf_outputs->setResults(values);
@@ -874,7 +874,7 @@ void OnGetAssertionComplete(
     }
     resolver->Resolve(MakeGarbageCollected<PublicKeyCredential>(
         credential->info->id,
-        VectorToDOMArrayBuffer(std::move(credential->info->raw_id)),
+        VectorToDOMArrayBuffer_CC(std::move(credential->info->raw_id)),
         authenticator_response, credential->authenticator_attachment,
         extension_outputs));
     return;

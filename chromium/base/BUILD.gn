@@ -987,6 +987,11 @@ jumbo_component("base") {
     ]
   }
 
+  jumbo_excluded_sources = [
+      "logging.cc",
+      "strings/string_piece.cc",
+  ]
+
   if (is_linux || is_chromeos) {
     sources += [
       "debug/proc_maps_linux.cc",
@@ -1004,6 +1009,7 @@ jumbo_component("base") {
       "threading/thread_type_delegate.cc",
       "threading/thread_type_delegate.h",
     ]
+    jumbo_excluded_sources += [ "process/memory_linux.cc" ]
   }
 
   if (is_linux || is_chromeos || is_android || is_fuchsia) {
@@ -1901,6 +1907,11 @@ jumbo_component("base") {
       "win/wrapped_window_proc.cc",
       "win/wrapped_window_proc.h",
     ]
+
+    # winternl.h and NTSecAPI.h have different definitions of UNICODE_STRING.
+    # There's only one client of NTSecAPI.h in base but several of winternl.h,
+    # so exclude the NTSecAPI.h one.
+    jumbo_excluded_sources += [ "rand_util_win.cc" ]
 
     deps += [ "//base/win:base_win_buildflags" ]
 

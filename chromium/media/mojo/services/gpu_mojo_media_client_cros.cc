@@ -10,6 +10,7 @@
 #include "build/build_config.h"
 #include "media/base/audio_decoder.h"
 #include "media/base/audio_encoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_switches.h"
 #include "media/gpu/chromeos/mailbox_video_frame_converter.h"
 #include "media/gpu/chromeos/platform_video_frame_pool.h"
@@ -280,10 +281,6 @@ std::unique_ptr<AudioEncoder> CreatePlatformAudioEncoder(
     scoped_refptr<base::SequencedTaskRunner> task_runner) {
   return nullptr;
 }
-
-#if !BUILDFLAG(IS_CHROMEOS)
-class CdmFactory {};
-#endif  // !BUILDFLAG(IS_CHROMEOS)
 
 std::unique_ptr<CdmFactory> CreatePlatformCdmFactory(
     mojom::FrameInterfaceFactory* frame_interfaces) {

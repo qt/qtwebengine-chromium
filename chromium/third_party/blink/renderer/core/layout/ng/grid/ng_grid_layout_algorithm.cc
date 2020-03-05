@@ -692,13 +692,13 @@ LayoutUnit NGGridLayoutAlgorithm::Baseline(
   //  alignment context along that axis"
   // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
   if (track_direction == kForColumns) {
-    return (grid_item.column_baseline_group == BaselineGroup::kMajor)
+    return (grid_item.column_baseline_group == BaselineGroupType::kMajor)
                ? layout_data.Columns().MajorBaseline(
                      grid_item.column_set_indices.begin)
                : layout_data.Columns().MinorBaseline(
                      grid_item.column_set_indices.end - 1);
   } else {
-    return (grid_item.row_baseline_group == BaselineGroup::kMajor)
+    return (grid_item.row_baseline_group == BaselineGroupType::kMajor)
                ? layout_data.Rows().MajorBaseline(
                      grid_item.row_set_indices.begin)
                : layout_data.Rows().MinorBaseline(
@@ -1487,7 +1487,7 @@ void NGGridLayoutAlgorithm::CalculateAlignmentBaselines(
     //  in first/last baseline alignment within its start-most/end-most shared
     //  alignment context along that axis"
     // https://www.w3.org/TR/css-align-3/#baseline-sharing-group
-    if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor) {
+    if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor) {
       track_collection->SetMajorBaseline(
           grid_item.SetIndices(track_direction).begin, baseline);
     } else {
@@ -2893,11 +2893,11 @@ namespace {
 // opposed to DOM order). The baseline of the grid is determined by the first
 // grid item with baseline alignment in the first row. If no items have
 // baseline alignment, fall back to the first item in row-major order.
-class BaselineAccumulator {
+class BaselineAccumulatorGrid {
   STACK_ALLOCATED();
 
  public:
-  explicit BaselineAccumulator(FontBaseline font_baseline)
+  explicit BaselineAccumulatorGrid(FontBaseline font_baseline)
       : font_baseline_(font_baseline) {}
 
   void Accumulate(const GridItemData& grid_item,
@@ -3041,7 +3041,7 @@ void NGGridLayoutAlgorithm::PlaceGridItems(
         layout_data.Rows().GetSetCount() + 1, EBreakBetween::kAuto);
   }
 
-  BaselineAccumulator baseline_accumulator(Style().GetFontBaseline());
+  BaselineAccumulatorGrid baseline_accumulator(Style().GetFontBaseline());
 
   for (const auto& grid_item : grid_items) {
     LogicalRect containing_grid_area;
@@ -3071,7 +3071,7 @@ void NGGridLayoutAlgorithm::PlaceGridItems(
           GetLogicalBaseline(
               baseline_fragment,
               grid_item.IsLastBaselineSpecifiedForDirection(track_direction));
-      if (grid_item.BaselineGroup(track_direction) == BaselineGroup::kMajor)
+      if (grid_item.BaselineGroup(track_direction) == BaselineGroupType::kMajor)
         return baseline_delta;
 
       // BaselineGroup::kMinor
@@ -3239,7 +3239,7 @@ void NGGridLayoutAlgorithm::PlaceGridItemsForFragmentation(
 
   HeapVector<ResultAndOffsets> result_and_offsets;
   HeapVector<GridItemPlacementData*> out_of_fragmentainer_space_item_placement;
-  BaselineAccumulator baseline_accumulator(Style().GetFontBaseline());
+  BaselineAccumulatorGrid baseline_accumulator(Style().GetFontBaseline());
   LayoutUnit max_row_expansion;
   wtf_size_t expansion_row_set_index;
   wtf_size_t breakpoint_row_set_index;
@@ -3265,7 +3265,7 @@ void NGGridLayoutAlgorithm::PlaceGridItemsForFragmentation(
     // Reset our state.
     result_and_offsets.clear();
     out_of_fragmentainer_space_item_placement.clear();
-    baseline_accumulator = BaselineAccumulator(Style().GetFontBaseline());
+    baseline_accumulator = BaselineAccumulatorGrid(Style().GetFontBaseline());
     max_row_expansion = LayoutUnit();
     expansion_row_set_index = kNotFound;
     breakpoint_row_set_index = kNotFound;

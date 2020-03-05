@@ -291,7 +291,7 @@ void LayerTreeView::WillCommit(const cc::CommitState&) {
   if (!delegate_)
     return;
   delegate_->WillCommitCompositorFrame();
-  if (base::FeatureList::IsEnabled(features::kNonBlockingCommit)) {
+  if (base::FeatureList::IsEnabled(::features::kNonBlockingCommit)) {
     widget_scheduler_->DidCommitFrameToCompositor();
   }
 }
@@ -301,7 +301,7 @@ void LayerTreeView::DidCommit(base::TimeTicks commit_start_time,
   if (!delegate_)
     return;
   delegate_->DidCommitCompositorFrame(commit_start_time, commit_finish_time);
-  if (!base::FeatureList::IsEnabled(features::kNonBlockingCommit)) {
+  if (!base::FeatureList::IsEnabled(::features::kNonBlockingCommit)) {
     widget_scheduler_->DidCommitFrameToCompositor();
   }
 }

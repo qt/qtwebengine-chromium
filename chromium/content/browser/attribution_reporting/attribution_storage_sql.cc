@@ -77,7 +77,7 @@ using EventLevelResult = ::content::AttributionTrigger::EventLevelResult;
 using ::attribution_reporting::SuitableOrigin;
 using ::attribution_reporting::mojom::SourceType;
 
-const base::FilePath::CharType kDatabasePath[] =
+const base::FilePath::CharType kDatabasePathAttr[] =
     FILE_PATH_LITERAL("Conversions");
 
 constexpr int64_t kUnsetReportId = -1;
@@ -435,7 +435,7 @@ absl::optional<StoredSourceData> ReadSourceToAttribute(
 }
 
 base::FilePath DatabasePath(const base::FilePath& user_data_directory) {
-  return user_data_directory.Append(kDatabasePath);
+  return user_data_directory.Append(kDatabasePathAttr);
 }
 
 }  // namespace

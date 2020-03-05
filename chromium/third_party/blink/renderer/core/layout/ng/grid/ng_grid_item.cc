@@ -241,12 +241,12 @@ void GridItemData::SetAlignmentFallback(
   if (!CanParticipateInBaselineAlignment()) {
     const auto baseline_group = BaselineGroup(track_direction);
     if (track_direction == kForColumns) {
-      inline_axis_alignment_fallback = baseline_group == BaselineGroup::kMajor
+      inline_axis_alignment_fallback = baseline_group == BaselineGroupType::kMajor
                                            ? AxisEdge::kStart
                                            : AxisEdge::kEnd;
       is_inline_axis_overflow_safe_fallback = true;
     } else {
-      block_axis_alignment_fallback = baseline_group == BaselineGroup::kMajor
+      block_axis_alignment_fallback = baseline_group == BaselineGroupType::kMajor
                                           ? AxisEdge::kStart
                                           : AxisEdge::kEnd;
       is_block_axis_overflow_safe_fallback = true;

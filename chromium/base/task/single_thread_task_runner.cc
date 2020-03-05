@@ -21,7 +21,7 @@ namespace base {
 namespace {
 
 ThreadLocalPointer<SingleThreadTaskRunner::CurrentDefaultHandle>&
-CurrentDefaultHandleTls() {
+CurrentDefaultHandleTls2() {
   static NoDestructor<
       ThreadLocalPointer<SingleThreadTaskRunner::CurrentDefaultHandle>>
       instance;
@@ -34,7 +34,7 @@ CurrentDefaultHandleTls() {
 const scoped_refptr<SingleThreadTaskRunner>&
 SingleThreadTaskRunner::GetCurrentDefault() {
   const SingleThreadTaskRunner::CurrentDefaultHandle* current_default =
-      CurrentDefaultHandleTls().Get();
+      CurrentDefaultHandleTls2().Get();
   CHECK(current_default)
       << "Error: This caller requires a single-threaded context (i.e. the "
          "current task needs to run from a SingleThreadTaskRunner). If you're "
@@ -50,7 +50,7 @@ SingleThreadTaskRunner::GetCurrentDefault() {
 
 // static
 bool SingleThreadTaskRunner::HasCurrentDefault() {
-  return !!CurrentDefaultHandleTls().Get();
+  return !!CurrentDefaultHandleTls2().Get();
 }
 
 SingleThreadTaskRunner::CurrentDefaultHandle::CurrentDefaultHandle(
@@ -58,14 +58,14 @@ SingleThreadTaskRunner::CurrentDefaultHandle::CurrentDefaultHandle(
     : task_runner_(std::move(task_runner)),
       sequenced_task_runner_current_default_(task_runner_) {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(!CurrentDefaultHandleTls().Get());
-  CurrentDefaultHandleTls().Set(this);
+  DCHECK(!CurrentDefaultHandleTls2().Get());
+  CurrentDefaultHandleTls2().Set(this);
 }
 
 SingleThreadTaskRunner::CurrentDefaultHandle::~CurrentDefaultHandle() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK_EQ(CurrentDefaultHandleTls().Get(), this);
-  CurrentDefaultHandleTls().Set(nullptr);
+  DCHECK_EQ(CurrentDefaultHandleTls2().Get(), this);
+  CurrentDefaultHandleTls2().Set(nullptr);
 }
 
 SingleThreadTaskRunner::CurrentHandleOverride::CurrentHandleOverride(
@@ -89,7 +89,7 @@ SingleThreadTaskRunner::CurrentHandleOverride::CurrentHandleOverride(
   expected_task_runner_before_restore_ = overriding_task_runner.get();
 #endif
   SingleThreadTaskRunner::CurrentDefaultHandle* current_default =
-      CurrentDefaultHandleTls().Get();
+      CurrentDefaultHandleTls2().Get();
   SequencedTaskRunner::SetCurrentDefaultHandleTaskRunner(
       current_default->sequenced_task_runner_current_default_,
       overriding_task_runner);
@@ -108,7 +108,7 @@ SingleThreadTaskRunner::CurrentHandleOverride::CurrentHandleOverride(
 SingleThreadTaskRunner::CurrentHandleOverride::~CurrentHandleOverride() {
   if (task_runner_to_restore_) {
     SingleThreadTaskRunner::CurrentDefaultHandle* current_default =
-        CurrentDefaultHandleTls().Get();
+        CurrentDefaultHandleTls2().Get();
 
 #if DCHECK_IS_ON()
     DCHECK_EQ(expected_task_runner_before_restore_,

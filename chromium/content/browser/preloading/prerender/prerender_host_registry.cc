@@ -232,7 +232,7 @@ int PrerenderHostRegistry::CreateAndStartHost(
         initiator_rfh &&
         RenderFrameDevToolsAgentHost::GetFor(initiator_rfh) != nullptr;
     if (!should_prerender2holdback_be_overridden &&
-        base::FeatureList::IsEnabled(features::kPrerender2Holdback)) {
+        base::FeatureList::IsEnabled(::features::kPrerender2Holdback)) {
       if (attempt)
         attempt->SetHoldbackStatus(PreloadingHoldbackStatus::kHoldback);
       return RenderFrameHost::kNoFrameTreeNodeId;

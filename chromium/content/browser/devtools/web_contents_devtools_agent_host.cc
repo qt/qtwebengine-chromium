@@ -17,14 +17,14 @@ namespace content {
 namespace {
 using WebContentsDevToolsMap =
     std::map<WebContents*, WebContentsDevToolsAgentHost*>;
-base::LazyInstance<WebContentsDevToolsMap>::Leaky g_agent_host_instances =
+base::LazyInstance<WebContentsDevToolsMap>::Leaky g_agent_host_instances2 =
     LAZY_INSTANCE_INITIALIZER;
 
 WebContentsDevToolsAgentHost* FindAgentHost(WebContents* wc) {
-  if (!g_agent_host_instances.IsCreated())
+  if (!g_agent_host_instances2.IsCreated())
     return nullptr;
-  auto it = g_agent_host_instances.Get().find(wc);
-  return it == g_agent_host_instances.Get().end() ? nullptr : it->second;
+  auto it = g_agent_host_instances2.Get().find(wc);
+  return it == g_agent_host_instances2.Get().end() ? nullptr : it->second;
 }
 
 bool ShouldCreateDevToolsAgentHost(WebContents* wc) {
@@ -146,7 +146,7 @@ WebContentsDevToolsAgentHost::WebContentsDevToolsAgentHost(WebContents* wc)
       auto_attacher_(std::make_unique<AutoAttacher>(wc)) {
   DCHECK(web_contents());
   bool inserted =
-      g_agent_host_instances.Get().insert(std::make_pair(wc, this)).second;
+      g_agent_host_instances2.Get().insert(std::make_pair(wc, this)).second;
   DCHECK(inserted);
   // Once created, persist till underlying WC is destroyed, so that
   // the target id is retained.
@@ -160,10 +160,10 @@ void WebContentsDevToolsAgentHost::PortalActivated(const Portal& portal) {
     WebContents* new_wc = portal.GetPortalContents();
     // Assure instrumentation calls for the new WC would be routed here.
     DCHECK(new_wc->GetResponsibleWebContents() == new_wc);
-    DCHECK(g_agent_host_instances.Get()[old_wc] == this);
+    DCHECK(g_agent_host_instances2.Get()[old_wc] == this);
 
-    g_agent_host_instances.Get().erase(old_wc);
-    g_agent_host_instances.Get()[new_wc] = this;
+    g_agent_host_instances2.Get().erase(old_wc);
+    g_agent_host_instances2.Get()[new_wc] = this;
     Observe(portal.GetPortalContents());
   }
   DCHECK(auto_attacher_);
@@ -323,7 +323,7 @@ void WebContentsDevToolsAgentHost::WebContentsDestroyed() {
   DCHECK_EQ(this, FindAgentHost(web_contents()));
   auto retain_this = ForceDetachAllSessionsImpl();
   auto_attacher_.reset();
-  g_agent_host_instances.Get().erase(web_contents());
+  g_agent_host_instances2.Get().erase(web_contents());
   Observe(nullptr);
   // We may or may not be destruced here, depending on embedders
   // potentially retaining references.

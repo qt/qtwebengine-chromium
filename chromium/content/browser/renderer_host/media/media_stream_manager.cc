@@ -201,7 +201,7 @@ MediaDeviceType ConvertToMediaDeviceType(MediaStreamType stream_type) {
   return MediaDeviceType::NUM_MEDIA_DEVICE_TYPES;
 }
 
-const char* DeviceTypeToString(MediaDeviceType type) {
+const char* DeviceTypeToStringMSM(MediaDeviceType type) {
   switch (type) {
     case MediaDeviceType::MEDIA_AUDIO_INPUT:
       return "DEVICE_AUDIO_INPUT";
@@ -366,7 +366,7 @@ std::string GetStopStreamDeviceLogString(
       session_id.ToString().c_str());
 }
 
-void SendLogMessage(const std::string& message) {
+void SendLogMessageMSM(const std::string& message) {
   MediaStreamManager::SendMessageToNativeLog("MSM::" + message);
 }
 
@@ -762,7 +762,7 @@ class MediaStreamManager::DeviceRequest {
         video_type_(MediaStreamType::NO_SERVICE),
         target_process_id_(-1),
         target_frame_id_(-1) {
-    SendLogMessage(base::StringPrintf(
+    SendLogMessageMSM(base::StringPrintf(
         "DR::DeviceRequest({requesting_process_id=%d}, "
         "{requesting_frame_id=%d}, {requester_id=%d}, {request_type=%s})",
         requesting_process_id, requesting_frame_id, requester_id,
@@ -779,7 +779,7 @@ class MediaStreamManager::DeviceRequest {
   void SetAudioType(MediaStreamType audio_type) {
     DCHECK(blink::IsAudioInputMediaType(audio_type) ||
            audio_type == MediaStreamType::NO_SERVICE);
-    SendLogMessage(base::StringPrintf(
+    SendLogMessageMSM(base::StringPrintf(
         "DR::SetAudioType([requester_id=%d] {audio_type=%s})", requester_id,
         StreamTypeToString(audio_type)));
     audio_type_ = audio_type;
@@ -800,7 +800,7 @@ class MediaStreamManager::DeviceRequest {
   void CreateUIRequest(const std::string& requested_audio_device_id,
                        const std::string& requested_video_device_id) {
     DCHECK(!ui_request_);
-    SendLogMessage(base::StringPrintf(
+    SendLogMessageMSM(base::StringPrintf(
         "DR::CreateUIRequest([requester_id=%d] {requested_audio_device_id=%s}, "
         "{requested_video_device_id=%s})",
         requester_id, requested_audio_device_id.c_str(),
@@ -844,7 +844,7 @@ class MediaStreamManager::DeviceRequest {
 
   // Update the request state and notify observers.
   void SetState(MediaStreamType stream_type, MediaRequestState new_state) {
-    SendLogMessage(base::StringPrintf(
+    SendLogMessageMSM(base::StringPrintf(
         "DR::SetState([requester_id=%d] {stream_type=%s}, {new_state=%s})",
         requester_id, StreamTypeToString(stream_type),
         RequestStateToString(new_state)));
@@ -1155,7 +1155,7 @@ class MediaStreamManager::MediaAccessRequest
       const blink::mojom::StreamDevicesSet& stream_devices_set) override {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     DCHECK(media_access_request_cb_);
-    SendLogMessage(base::StringPrintf(
+    SendLogMessageMSM(base::StringPrintf(
         "FinalizeMediaAccessRequest({label=%s}, {requester_id="
         "%d}, {request_type=%s})",
         label.c_str(), requester_id, RequestTypeToString(request_type())));
@@ -1230,7 +1230,7 @@ class MediaStreamManager::CreateDeviceRequest
     const blink::mojom::StreamDevices& new_devices =
         *stream_devices_set.stream_devices[0];
 
-    SendLogMessage(base::StringPrintf(
+    SendLogMessageMSM(base::StringPrintf(
         "FinalizeChangeDevice({label=%s}, {requester_id="
         "%d}, {request_type=%s})",
         label.c_str(), requester_id, RequestTypeToString(request_type())));
@@ -1545,7 +1545,7 @@ class MediaStreamManager::OpenDeviceRequest
   void FinalizeRequest(const std::string& label) override {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     DCHECK(open_device_cb_);
-    SendLogMessage(base::StringPrintf(
+    SendLogMessageMSM(base::StringPrintf(
         "FinalizeOpenDevice({label=%s}, {requester_id="
         "%d}, {request_type=%s})",
         label.c_str(), requester_id, RequestTypeToString(request_type())));
@@ -1594,7 +1594,7 @@ void MediaStreamManager::SendMessageToNativeLog(const std::string& message) {
 
 MediaStreamManager::MediaStreamManager(media::AudioSystem* audio_system)
     : MediaStreamManager(audio_system, nullptr) {
-  SendLogMessage(base::StringPrintf("MediaStreamManager([this=%p]))", this));
+  SendLogMessageMSM(base::StringPrintf("MediaStreamManager([this=%p]))", this));
 }
 
 MediaStreamManager::MediaStreamManager(
@@ -1778,7 +1778,7 @@ void MediaStreamManager::GenerateStreams(
         device_capture_configuration_change_cb,
     DeviceCaptureHandleChangeCallback device_capture_handle_change_cb) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(GetGenerateStreamsLogString(render_process_id, render_frame_id,
+  SendLogMessageMSM(GetGenerateStreamsLogString(render_process_id, render_frame_id,
                                              requester_id, page_request_id));
   std::unique_ptr<DeviceRequest> request =
       std::make_unique<GenerateStreamsRequest>(
@@ -1901,7 +1901,7 @@ void MediaStreamManager::CancelRequest(const std::string& label) {
 
   const DeviceRequests::const_iterator request_it = FindRequestIterator(label);
   if (request_it == requests_.end()) {
-    SendLogMessage(
+    SendLogMessageMSM(
         base::StringPrintf("CancelRequest({label=%s})", label.c_str()));
     LOG(ERROR) << "The request with label = " << label << " does not exist.";
     return;
@@ -1937,7 +1937,7 @@ void MediaStreamManager::StopStreamDevice(
     const std::string& device_id,
     const base::UnguessableToken& session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(GetStopStreamDeviceLogString(
+  SendLogMessageMSM(GetStopStreamDeviceLogString(
       render_process_id, render_frame_id, requester_id, device_id, session_id));
 
   // Find the first request for this |render_process_id| and |render_frame_id|
@@ -2038,7 +2038,7 @@ base::UnguessableToken MediaStreamManager::VideoDeviceIdToSessionId(
 void MediaStreamManager::StopDevice(MediaStreamType type,
                                     const base::UnguessableToken& session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(base::StringPrintf("StopDevice({type=%s}, {session_id=%s})",
+  SendLogMessageMSM(base::StringPrintf("StopDevice({type=%s}, {session_id=%s})",
                                     StreamTypeToString(type),
                                     session_id.ToString().c_str()));
   DeviceRequests::const_iterator request_it = requests_.begin();
@@ -2101,7 +2101,7 @@ void MediaStreamManager::StopDevice(MediaStreamType type,
 void MediaStreamManager::CloseDevice(MediaStreamType type,
                                      const base::UnguessableToken& session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(base::StringPrintf("CloseDevice({type=%s}, {session_id=%s})",
+  SendLogMessageMSM(base::StringPrintf("CloseDevice({type=%s}, {session_id=%s})",
                                     StreamTypeToString(type),
                                     session_id.ToString().c_str()));
   GetDeviceManager(type)->Close(session_id);
@@ -2158,7 +2158,7 @@ void MediaStreamManager::OpenDevice(int render_process_id,
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(type == MediaStreamType::DEVICE_AUDIO_CAPTURE ||
          type == MediaStreamType::DEVICE_VIDEO_CAPTURE);
-  SendLogMessage(GetOpenDeviceLogString(render_process_id, render_frame_id,
+  SendLogMessageMSM(GetOpenDeviceLogString(render_process_id, render_frame_id,
                                         requester_id, page_request_id,
                                         device_id, type));
   StreamControls controls;
@@ -2228,9 +2228,9 @@ void MediaStreamManager::StopRemovedDevice(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(type == MediaDeviceType::MEDIA_AUDIO_INPUT ||
          type == MediaDeviceType::MEDIA_VIDEO_INPUT);
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
                      "StopRemovedDevice({type=%s}, {device=[id: %s, name: %s]}",
-                     DeviceTypeToString(type),
+                     DeviceTypeToStringMSM(type),
                      media_device_info.device_id.c_str(),
                      media_device_info.label.c_str())
                      .c_str());
@@ -2320,7 +2320,7 @@ void MediaStreamManager::TranslateDeviceIdToSourceId(
 void MediaStreamManager::StartEnumeration(DeviceRequest* request,
                                           const std::string& label) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(
+  SendLogMessageMSM(
       base::StringPrintf("StartEnumeration({requester_id=%d}, {label=%s})",
                          request->requester_id, label.c_str()));
 
@@ -2365,7 +2365,7 @@ MediaStreamManager::AddRequest(std::unique_ptr<DeviceRequest> request) {
     unique_label = base::GenerateGUID();
   } while (FindRequest(unique_label) != nullptr);
 
-  SendLogMessage(
+  SendLogMessageMSM(
       base::StringPrintf("AddRequest([requester_id=%d]) => (label=%s)",
                          request->requester_id, unique_label.c_str()));
   request->SetLabel(unique_label);
@@ -2485,7 +2485,7 @@ void MediaStreamManager::CancelRequest(
   const std::string& label = request_it->first;
   DeviceRequest* const request = request_it->second.get();
 
-  SendLogMessage(
+  SendLogMessageMSM(
       base::StringPrintf("CancelRequest({label=%s})", label.c_str()));
 
   // This is a request for closing one or more devices.
@@ -2522,7 +2522,7 @@ void MediaStreamManager::DeleteRequest(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(request_it != requests_.end());
 
-  SendLogMessage(base::StringPrintf("DeleteRequest([label=%s])",
+  SendLogMessageMSM(base::StringPrintf("DeleteRequest([label=%s])",
                                     request_it->first.c_str()));
 #if BUILDFLAG(IS_CHROMEOS)
   if (request_it->second->IsGetDisplayMediaSet()) {
@@ -2578,7 +2578,7 @@ void MediaStreamManager::PostRequestToUI(
     return;
   }
   DCHECK(request->HasUIRequest());
-  SendLogMessage(
+  SendLogMessageMSM(
       base::StringPrintf("PostRequestToUI({label=%s}, ", label.c_str()));
 
   const MediaStreamType audio_type = request->audio_type();
@@ -2616,7 +2616,7 @@ void MediaStreamManager::SetUpRequest(const std::string& label) {
   }
   DeviceRequest* const request = request_it->second.get();
 
-  SendLogMessage(
+  SendLogMessageMSM(
       base::StringPrintf("SetUpRequest([requester_id=%d] {label=%s})",
                          request->requester_id, label.c_str()));
 
@@ -2731,7 +2731,7 @@ bool MediaStreamManager::SetUpDeviceCaptureRequest(
           request->audio_type() == MediaStreamType::NO_SERVICE) &&
          (request->video_type() == MediaStreamType::DEVICE_VIDEO_CAPTURE ||
           request->video_type() == MediaStreamType::NO_SERVICE));
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "SetUpDeviceCaptureRequest([requester_id=%d])", request->requester_id));
   std::string audio_device_id;
   if (request->stream_controls().audio.requested() &&
@@ -2985,7 +2985,7 @@ void MediaStreamManager::FinalizeGenerateStreams(const std::string& label,
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(request);
   DCHECK_EQ(request->request_type(), blink::MEDIA_GENERATE_STREAM);
-  SendLogMessage(
+  SendLogMessageMSM(
       base::StringPrintf("FinalizeGenerateStreams({label=%s}, {requester_id="
                          "%d}, {request_type=%s})",
                          label.c_str(), request->requester_id,
@@ -3028,7 +3028,7 @@ void MediaStreamManager::FinalizeGetOpenDevice(const std::string& label,
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(request);
   DCHECK_EQ(request->request_type(), blink::MEDIA_GET_OPEN_DEVICE);
-  SendLogMessage(
+  SendLogMessageMSM(
       base::StringPrintf("FinalizeGetOpenDevice({label=%s}, {requester_id="
                          "%d}, {request_type=%s})",
                          label.c_str(), request->requester_id,
@@ -3068,7 +3068,7 @@ void MediaStreamManager::PanTiltZoomPermissionChecked(
     return;
   }
 
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "PanTiltZoomPermissionChecked({label=%s}, {requester_id="
       "%d}, {request_type=%s}, {pan_tilt_zoom_allowed=%d})",
       label.c_str(), request->requester_id,
@@ -3118,7 +3118,7 @@ void MediaStreamManager::FinalizeRequestFailed(
 
   DeviceRequest* const request = request_it->second.get();
 
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "FinalizeRequestFailed({label=%s}, {requester_id=%d}, {result=%s})",
       request_it->first.c_str(), request->requester_id,
       RequestResultToString(result)));
@@ -3210,7 +3210,7 @@ void MediaStreamManager::InitializeMaybeAsync(
                                   std::move(video_capture_provider)));
     return;
   }
-  SendLogMessage(base::StringPrintf("InitializeMaybeAsync([this=%p])", this));
+  SendLogMessageMSM(base::StringPrintf("InitializeMaybeAsync([this=%p])", this));
 
   // Store a pointer to |this| on the IO thread to avoid having to jump to
   // the UI thread to fetch a pointer to the MSM. In particular on Android,
@@ -3247,7 +3247,7 @@ void MediaStreamManager::Opened(
     MediaStreamType stream_type,
     const base::UnguessableToken& capture_session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(base::StringPrintf("Opened({stream_type=%s}, {session_id=%s})",
+  SendLogMessageMSM(base::StringPrintf("Opened({stream_type=%s}, {session_id=%s})",
                                     StreamTypeToString(stream_type),
                                     capture_session_id.ToString().c_str()));
 
@@ -3360,7 +3360,7 @@ void MediaStreamManager::Closed(
     MediaStreamType stream_type,
     const base::UnguessableToken& capture_session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(base::StringPrintf("Closed({stream_type=%s}, {session_id=%s})",
+  SendLogMessageMSM(base::StringPrintf("Closed({stream_type=%s}, {session_id=%s})",
                                     StreamTypeToString(stream_type),
                                     capture_session_id.ToString().c_str()));
 }
@@ -3378,7 +3378,7 @@ void MediaStreamManager::DevicesEnumerated(
   }
   DeviceRequest* const request = request_it->second.get();
 
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "DevicesEnumerated({label=%s}, {requester_id=%d}, {request_type=%s})",
       label.c_str(), request->requester_id,
       RequestTypeToString(request->request_type())));
@@ -3409,7 +3409,7 @@ void MediaStreamManager::Aborted(
     MediaStreamType stream_type,
     const base::UnguessableToken& capture_session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "Aborted({stream_type=%s}, {session_id=%s})",
       StreamTypeToString(stream_type), capture_session_id.ToString().c_str()));
   StopDevice(stream_type, capture_session_id);
@@ -3475,7 +3475,7 @@ void MediaStreamManager::HandleAccessRequestResponse(
   }
   DeviceRequest* const request = request_it->second.get();
 
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "HandleAccessRequestResponse({label=%s}, {request=%s}, {result=%s})",
       label.c_str(), RequestTypeToString(request->request_type()),
       RequestResultToString(result)));
@@ -3571,7 +3571,7 @@ void MediaStreamManager::HandleAccessRequestResponse(
               *request->stream_devices_set.stream_devices[stream_index],
               device);
           request->SetState(device.type, state);
-          SendLogMessage(base::StringPrintf(
+          SendLogMessageMSM(base::StringPrintf(
               "HandleAccessRequestResponse([label=%s]) => "
               "(already opened device: [id: %s, session_id: %s])",
               label.c_str(), device.id.c_str(),
@@ -3588,7 +3588,7 @@ void MediaStreamManager::HandleAccessRequestResponse(
           current_state != MEDIA_REQUEST_STATE_ERROR) {
         request->SetState(device.type, MEDIA_REQUEST_STATE_OPENING);
       }
-      SendLogMessage(
+      SendLogMessageMSM(
           base::StringPrintf("HandleAccessRequestResponse([label=%s]) => "
                              "(opening device: [id: %s, session_id: %s])",
                              label.c_str(), device.id.c_str(),
@@ -3667,7 +3667,7 @@ void MediaStreamManager::StopMediaStreamFromBrowser(const std::string& label) {
   }
   DeviceRequest* const request = request_it->second.get();
 
-  SendLogMessage(base::StringPrintf("StopMediaStreamFromBrowser({label=%s})",
+  SendLogMessageMSM(base::StringPrintf("StopMediaStreamFromBrowser({label=%s})",
                                     label.c_str()));
 
   // Notify renderers that the devices in the stream will be stopped.
@@ -3721,7 +3721,7 @@ void MediaStreamManager::ChangeMediaStreamSourceFromBrowser(
     }
   }
 
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "ChangeMediaStreamSourceFromBrowser({label=%s})", label.c_str()));
 
   SetUpDesktopCaptureChangeSourceRequest(request, label, media_id);
@@ -3739,7 +3739,7 @@ void MediaStreamManager::OnRequestStateChangeFromBrowser(
     return;
   }
 
-  SendLogMessage(base::StringPrintf("RequestStateChangeFromBrowser({label=%s})",
+  SendLogMessageMSM(base::StringPrintf("RequestStateChangeFromBrowser({label=%s})",
                                     label.c_str()));
 
   request->OnRequestStateChangeFromBrowser(label, media_id, new_state);
@@ -3770,8 +3770,8 @@ void MediaStreamManager::NotifyDevicesChanged(
     MediaDeviceType device_type,
     const blink::WebMediaDeviceInfoArray& devices) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(base::StringPrintf("NotifyDevicesChanged({device_type=%s})",
-                                    DeviceTypeToString(device_type)));
+  SendLogMessageMSM(base::StringPrintf("NotifyDevicesChanged({device_type=%s})",
+                                    DeviceTypeToStringMSM(device_type)));
 
   MediaObserver* media_observer =
       GetContentClient()->browser()->GetMediaObserver();
@@ -3799,7 +3799,7 @@ void MediaStreamManager::NotifyDevicesChanged(
 
 bool MediaStreamManager::RequestDone(const DeviceRequest& request) const {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "RequestDone({requester_id=%d}, {request_type=%s})", request.requester_id,
       RequestTypeToString(request.request_type())));
 
@@ -4063,7 +4063,7 @@ void MediaStreamManager::OnStreamStarted(const std::string& label) {
   if (!request) {
     return;
   }
-  SendLogMessage(base::StringPrintf(
+  SendLogMessageMSM(base::StringPrintf(
       "OnStreamStarted({label=%s}, {requester_id=%d}, {request_type=%s})",
       label.c_str(), request->requester_id,
       RequestTypeToString(request->request_type())));
