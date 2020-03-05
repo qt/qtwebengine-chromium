@@ -32,6 +32,7 @@
 #include "third_party/blink/public/platform/web_http_header_visitor.h"
 #include "third_party/blink/public/platform/web_mixed_content.h"
 #include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/renderer/platform/wtf/assertions.h"
 
 using blink::mojom::FetchCacheMode;
 using blink::WebData;
@@ -239,10 +240,6 @@ scoped_refptr<network::ResourceRequestBody> GetRequestBodyForWebHTTPBody(
   request_body->set_contains_sensitive_info(httpBody.ContainsPasswordData());
   return request_body;
 }
-
-#define STATIC_ASSERT_ENUM(a, b)                            \
-  static_assert(static_cast<int>(a) == static_cast<int>(b), \
-                "mismatching enums: " #a)
 
 std::string GetFetchIntegrityForWebURLRequest(const WebURLRequest& request) {
   return request.GetFetchIntegrity().Utf8();

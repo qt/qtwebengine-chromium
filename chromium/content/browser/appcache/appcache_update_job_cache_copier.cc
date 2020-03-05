@@ -19,7 +19,7 @@
 namespace content {
 
 namespace {
-const int kAppCacheFetchBufferSize = 32768;
+const int kThisAppCacheFetchBufferSize = 32768;
 
 void UpdateHttpInfo(net::HttpResponseInfo* response,
                     net::HttpResponseInfo* new_response,
@@ -99,7 +99,7 @@ void AppCacheUpdateJob::CacheCopier::Run() {
   read_data_response_reader_ = job_->service_->storage()->CreateResponseReader(
       manifest_url_, incoming_fetcher_->existing_entry().response_id());
   read_data_buffer_ =
-      base::MakeRefCounted<net::IOBuffer>(kAppCacheFetchBufferSize);
+      base::MakeRefCounted<net::IOBuffer>(kThisAppCacheFetchBufferSize);
 
   state_ = State::kAwaitReadInfoComplete;
   job_->service_->storage()->LoadResponseInfo(
@@ -179,7 +179,7 @@ void AppCacheUpdateJob::CacheCopier::ReadData() {
   state_ = State::kAwaitReadDataComplete;
 
   read_data_response_reader_->ReadData(
-      read_data_buffer_.get(), kAppCacheFetchBufferSize,
+      read_data_buffer_.get(), kThisAppCacheFetchBufferSize,
       base::BindOnce(&AppCacheUpdateJob::CacheCopier::OnReadDataComplete,
                      base::Unretained(this)));
   // Async continues in |OnReadDataComplete| with state kAwaitReadDataComplete.

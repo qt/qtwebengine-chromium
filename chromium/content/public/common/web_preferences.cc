@@ -8,6 +8,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/web/web_settings.h"
+#include "third_party/blink/renderer/platform/wtf/assertions.h"
 
 using blink::WebSettings;
 
@@ -16,9 +17,9 @@ namespace content {
 // "Zyyy" is the ISO 15924 script code for undetermined script aka Common.
 const char kCommonScript[] = "Zyyy";
 
-#define STATIC_ASSERT_ENUM(a, b)                            \
-  static_assert(static_cast<int>(a) == static_cast<int>(b), \
-                "mismatching enums: " #a)
+//#define STATIC_ASSERT_ENUM(a, b)                            \
+//  static_assert(static_cast<int>(a) == static_cast<int>(b), \
+//                "mismatching enums: " #a)
 
 STATIC_ASSERT_ENUM(EDITING_BEHAVIOR_MAC, WebSettings::EditingBehavior::kMac);
 STATIC_ASSERT_ENUM(EDITING_BEHAVIOR_WIN, WebSettings::EditingBehavior::kWin);

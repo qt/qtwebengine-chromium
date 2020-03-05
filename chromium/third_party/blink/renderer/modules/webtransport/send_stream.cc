@@ -15,9 +15,9 @@ namespace blink {
 
 namespace {
 
-class CloseProxy : public WebTransportCloseProxy {
+class SendStreamCloseProxy : public WebTransportCloseProxy {
  public:
-  CloseProxy(QuicTransport* quic_transport,
+  SendStreamCloseProxy(QuicTransport* quic_transport,
              OutgoingStream* outgoing_stream,
              uint32_t stream_id)
       : quic_transport_(quic_transport),
@@ -54,7 +54,7 @@ SendStream::SendStream(ScriptState* script_state,
                        mojo::ScopedDataPipeProducerHandle handle)
     : OutgoingStream(
           script_state,
-          MakeGarbageCollected<CloseProxy>(quic_transport, this, stream_id),
+          MakeGarbageCollected<SendStreamCloseProxy>(quic_transport, this, stream_id),
           std::move(handle)) {}
 
 }  // namespace blink

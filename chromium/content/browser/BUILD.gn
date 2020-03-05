@@ -1927,6 +1927,11 @@ jumbo_static_library("browser") {
     "worker_host/worker_script_loader_factory.h",
   ]
 
+  jumbo_excluded_sources = [
+    "renderer_host/media/media_devices_manager.cc",
+    "web_package/web_bundle_blob_data_source.cc",
+  ]
+
   if (toolkit_views) {
     deps += [ "//ui/events" ]
   }
@@ -2110,6 +2115,9 @@ jumbo_static_library("browser") {
         "media/capture/desktop_capture_device.h",
       ]
       deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
+      jumbo_excluded_sources += [
+        "media/capture/desktop_capture_device.cc",
+      ]
     }
   }
 
@@ -2410,7 +2418,7 @@ jumbo_static_library("browser") {
       "web_contents/web_contents_view_android.h",
     ]
 
-    jumbo_excluded_sources = [
+    jumbo_excluded_sources += [
       # Files with kJavaLangClass and similar constants:
       # Bug https://crbug.com/787557.
       "android/java/java_method.cc",  # and in gin_java_bound_object.cc.

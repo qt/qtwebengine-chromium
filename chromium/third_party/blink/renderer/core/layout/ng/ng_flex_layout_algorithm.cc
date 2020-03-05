@@ -65,7 +65,7 @@ LayoutUnit NGFlexLayoutAlgorithm::MainAxisContentExtent(
 
 namespace {
 
-enum AxisEdge { kStart, kCenter, kEnd };
+enum class AxisEdge { kStart, kCenter, kEnd };
 
 // Maps the resolved justify-content value to a static-position edge.
 AxisEdge MainAxisStaticPositionEdge(const ComputedStyle& style,
