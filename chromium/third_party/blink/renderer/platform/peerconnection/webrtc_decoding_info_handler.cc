@@ -45,7 +45,7 @@ webrtc::SdpVideoFormat::Parameters ConvertToSdpVideoFormatParameters(
 }
 
 // Composes elements of set<string> to a string with ", " delimiter.
-String StringHashSetToString(const HashSet<String>& string_set) {
+String StringHashSetToString2(const HashSet<String>& string_set) {
   String result;
   String delim;
   for (auto& s : string_set) {
@@ -85,7 +85,7 @@ WebrtcDecodingInfoHandler::WebrtcDecodingInfoHandler(
   }
   DVLOG(2) << String::Format(
       "supported_audio_codecs_:[%s]",
-      StringHashSetToString(supported_audio_codecs_).Utf8().c_str());
+      StringHashSetToString2(supported_audio_codecs_).Utf8().c_str());
 }
 
 WebrtcDecodingInfoHandler::~WebrtcDecodingInfoHandler() = default;

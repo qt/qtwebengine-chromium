@@ -61,11 +61,11 @@ namespace blink {
 
 namespace {
 
-constexpr hb_feature_t CreateFeature(char c1,
-                                     char c2,
-                                     char c3,
-                                     char c4,
-                                     uint32_t value = 0) {
+constexpr hb_feature_t CreateFeature2(char c1,
+                                      char c2,
+                                      char c3,
+                                      char c4,
+                                      uint32_t value = 0) {
   return {HB_TAG(c1, c2, c3, c4), value, 0 /* start */,
           static_cast<unsigned>(-1) /* end */};
 }
@@ -695,12 +695,12 @@ CapsFeatureSettingsScopedOverlay::CapsFeatureSettingsScopedOverlay(
 
 void CapsFeatureSettingsScopedOverlay::OverlayCapsFeatures(
     FontDescription::FontVariantCaps variant_caps) {
-  static constexpr hb_feature_t smcp = CreateFeature('s', 'm', 'c', 'p', 1);
-  static constexpr hb_feature_t pcap = CreateFeature('p', 'c', 'a', 'p', 1);
-  static constexpr hb_feature_t c2sc = CreateFeature('c', '2', 's', 'c', 1);
-  static constexpr hb_feature_t c2pc = CreateFeature('c', '2', 'p', 'c', 1);
-  static constexpr hb_feature_t unic = CreateFeature('u', 'n', 'i', 'c', 1);
-  static constexpr hb_feature_t titl = CreateFeature('t', 'i', 't', 'l', 1);
+  static constexpr hb_feature_t smcp = CreateFeature2('s', 'm', 'c', 'p', 1);
+  static constexpr hb_feature_t pcap = CreateFeature2('p', 'c', 'a', 'p', 1);
+  static constexpr hb_feature_t c2sc = CreateFeature2('c', '2', 's', 'c', 1);
+  static constexpr hb_feature_t c2pc = CreateFeature2('c', '2', 'p', 'c', 1);
+  static constexpr hb_feature_t unic = CreateFeature2('u', 'n', 'i', 'c', 1);
+  static constexpr hb_feature_t titl = CreateFeature2('t', 'i', 't', 'l', 1);
   if (variant_caps == FontDescription::kSmallCaps ||
       variant_caps == FontDescription::kAllSmallCaps) {
     PrependCounting(smcp);

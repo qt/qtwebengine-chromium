@@ -80,10 +80,10 @@ LayoutUnit NGFlexLayoutAlgorithm::MainAxisContentExtent(
 
 namespace {
 
-enum AxisEdge { kStart, kCenter, kEnd };
+enum class LocalAxisEdge { kStart, kCenter, kEnd };
 
 // Maps the resolved justify-content value to a static-position edge.
-AxisEdge MainAxisStaticPositionEdge(const ComputedStyle& style,
+LocalAxisEdge MainAxisStaticPositionEdge(const ComputedStyle& style,
                                     bool is_column) {
   const StyleContentAlignmentData justify =
       FlexLayoutAlgorithm::ResolvedJustifyContent(style);
@@ -93,18 +93,18 @@ AxisEdge MainAxisStaticPositionEdge(const ComputedStyle& style,
                              : style.ResolvedIsRowReverseFlexDirection();
 
   if (content_position == ContentPosition::kFlexEnd)
-    return is_reverse_flex ? AxisEdge::kStart : AxisEdge::kEnd;
+    return is_reverse_flex ? LocalAxisEdge::kStart : LocalAxisEdge::kEnd;
 
   if (content_position == ContentPosition::kCenter ||
       justify.Distribution() == ContentDistributionType::kSpaceAround ||
       justify.Distribution() == ContentDistributionType::kSpaceEvenly)
-    return AxisEdge::kCenter;
+    return LocalAxisEdge::kCenter;
 
-  return is_reverse_flex ? AxisEdge::kEnd : AxisEdge::kStart;
+  return is_reverse_flex ? LocalAxisEdge::kEnd : LocalAxisEdge::kStart;
 }
 
 // Maps the resolved alignment value to a static-position edge.
-AxisEdge CrossAxisStaticPositionEdge(const ComputedStyle& style,
+LocalAxisEdge CrossAxisStaticPositionEdge(const ComputedStyle& style,
                                      const ComputedStyle& child_style) {
   ItemPosition alignment =
       FlexLayoutAlgorithm::AlignmentForChild(style, child_style);
@@ -112,16 +112,16 @@ AxisEdge CrossAxisStaticPositionEdge(const ComputedStyle& style,
   // kFlexEnd, but not kStretch. kStretch is supposed to act like kFlexStart.
   if (style.FlexWrap() == EFlexWrap::kWrapReverse &&
       alignment == ItemPosition::kStretch) {
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
   }
 
   if (alignment == ItemPosition::kFlexEnd)
-    return AxisEdge::kEnd;
+    return LocalAxisEdge::kEnd;
 
   if (alignment == ItemPosition::kCenter)
-    return AxisEdge::kCenter;
+    return LocalAxisEdge::kCenter;
 
-  return AxisEdge::kStart;
+  return LocalAxisEdge::kStart;
 }
 
 LayoutUnit ComputeSizeFromAspectRatio(LayoutUnit extent,
@@ -132,12 +132,12 @@ LayoutUnit ComputeSizeFromAspectRatio(LayoutUnit extent,
 }  // namespace
 
 void NGFlexLayoutAlgorithm::HandleOutOfFlowPositioned(NGBlockNode child) {
-  AxisEdge main_axis_edge = MainAxisStaticPositionEdge(Style(), is_column_);
-  AxisEdge cross_axis_edge =
+  LocalAxisEdge main_axis_edge = MainAxisStaticPositionEdge(Style(), is_column_);
+  LocalAxisEdge cross_axis_edge =
       CrossAxisStaticPositionEdge(Style(), child.Style());
 
-  AxisEdge inline_axis_edge = is_column_ ? cross_axis_edge : main_axis_edge;
-  AxisEdge block_axis_edge = is_column_ ? main_axis_edge : cross_axis_edge;
+  LocalAxisEdge inline_axis_edge = is_column_ ? cross_axis_edge : main_axis_edge;
+  LocalAxisEdge block_axis_edge = is_column_ ? main_axis_edge : cross_axis_edge;
 
   using InlineEdge = NGLogicalStaticPosition::InlineEdge;
   using BlockEdge = NGLogicalStaticPosition::BlockEdge;
@@ -147,9 +147,9 @@ void NGFlexLayoutAlgorithm::HandleOutOfFlowPositioned(NGBlockNode child) {
   LogicalOffset offset = BorderScrollbarPadding().StartOffset();
 
   // Determine the static-position based off the axis-edge.
-  if (inline_axis_edge == AxisEdge::kStart) {
+  if (inline_axis_edge == LocalAxisEdge::kStart) {
     inline_edge = InlineEdge::kInlineStart;
-  } else if (inline_axis_edge == AxisEdge::kCenter) {
+  } else if (inline_axis_edge == LocalAxisEdge::kCenter) {
     inline_edge = InlineEdge::kInlineCenter;
     offset.inline_offset += ChildAvailableSize().inline_size / 2;
   } else {
@@ -159,9 +159,9 @@ void NGFlexLayoutAlgorithm::HandleOutOfFlowPositioned(NGBlockNode child) {
 
   // We may not know the final block-size of the fragment yet. This will be
   // adjusted within the |NGContainerFragmentBuilder| once set.
-  if (block_axis_edge == AxisEdge::kStart) {
+  if (block_axis_edge == LocalAxisEdge::kStart) {
     block_edge = BlockEdge::kBlockStart;
-  } else if (block_axis_edge == AxisEdge::kCenter) {
+  } else if (block_axis_edge == LocalAxisEdge::kCenter) {
     block_edge = BlockEdge::kBlockCenter;
     offset.block_offset -= BorderScrollbarPadding().BlockSum() / 2;
   } else {

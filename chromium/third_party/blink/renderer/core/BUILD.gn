@@ -5,6 +5,7 @@
 import("//build/config/chromecast_build.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/dcheck_always_on.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//build/toolchain/toolchain.gni")
 import("//printing/buildflags/buildflags.gni")
@@ -121,7 +122,7 @@ source_set("core_common") {
   sources = [ "core_export.h" ]
 }
 
-source_set("prerequisites") {
+jumbo_source_set("prerequisites") {
   public_deps = [
     "//services/network/public/cpp:cpp",
     "//services/network/public/mojom",
@@ -169,7 +170,7 @@ source_set("prerequisites") {
   ]
 }
 
-component("core") {
+jumbo_component("core") {
   output_name = "blink_core"
 
   visibility = []  # Allow re-assignment of list.

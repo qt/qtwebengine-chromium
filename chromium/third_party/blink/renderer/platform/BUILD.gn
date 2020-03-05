@@ -1567,6 +1567,15 @@ jumbo_component("platform") {
     }
   }
 
+  jumbo_excluded_sources = [
+    "fonts/font_matching_metrics.cc",
+    "mediastream/media_stream_audio_source.cc",
+    "mediastream/media_stream_audio_track.cc",
+    "peerconnection/rtc_video_decoder_adapter.cc",
+    "peerconnection/rtc_video_decoder_factory.cc",
+    "webrtc/legacy_webrtc_video_frame_adapter.cc",
+  ]
+
   if (is_mac) {
     sources += [
       "audio/mac/fft_frame_mac.cc",
@@ -1826,6 +1835,10 @@ jumbo_component("platform") {
       "peerconnection/transmission_encoding_info_handler.h",
       "peerconnection/video_codec_factory.cc",
       "peerconnection/video_codec_factory.h",
+    ]
+    jumbo_excluded_sources -= [
+      "peerconnection/rtc_video_decoder_adapter.cc",
+      "peerconnection/rtc_video_decoder_factory.cc",
     ]
     deps -= [
       "//third_party/webrtc_overrides:webrtc_component"

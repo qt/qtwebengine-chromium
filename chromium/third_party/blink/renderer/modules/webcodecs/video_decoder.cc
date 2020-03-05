@@ -51,7 +51,7 @@ namespace blink {
 
 namespace {
 
-media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread() {
+media::GpuVideoAcceleratorFactories* GetGpuFactoriesOnMainThread3() {
   DCHECK(IsMainThread());
   return Platform::Current()->GetGpuFactories();
 }
@@ -448,7 +448,7 @@ ScriptPromise VideoDecoder::IsAcceleratedConfigSupported(
     Thread::MainThread()->GetTaskRunner()->PostTaskAndReplyWithResult(
         FROM_HERE,
         ConvertToBaseOnceCallback(
-            CrossThreadBindOnce(&GetGpuFactoriesOnMainThread)),
+            CrossThreadBindOnce(&GetGpuFactoriesOnMainThread3)),
         ConvertToBaseOnceCallback(std::move(on_gpu_factories_cb)));
   }
 

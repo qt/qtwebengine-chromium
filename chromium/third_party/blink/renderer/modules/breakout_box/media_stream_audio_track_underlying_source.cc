@@ -13,7 +13,7 @@
 namespace blink {
 
 namespace {
-class PlaceholderTransferringOptimizer
+class PlaceholderTransferringOptimizer2
     : public ReadableStreamTransferringOptimizer {
   UnderlyingSourceBase* PerformInProcessOptimization(
       ScriptState* script_state) override {
@@ -92,7 +92,7 @@ void MediaStreamAudioTrackUnderlyingSource::OnSetFormat(
 
 std::unique_ptr<ReadableStreamTransferringOptimizer>
 MediaStreamAudioTrackUnderlyingSource::GetTransferringOptimizer() {
-  return std::make_unique<PlaceholderTransferringOptimizer>();
+  return std::make_unique<PlaceholderTransferringOptimizer2>();
 }
 
 }  // namespace blink

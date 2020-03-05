@@ -24,14 +24,14 @@ namespace storage {
 
 namespace {
 
-const int64_t kMBytes = 1024 * 1024;
+const int64_t _kMBytes = 1024 * 1024;
 const int kRandomizedPercentage = 10;
 const double kDefaultPerHostRatio = 0.75;
 const double kIncognitoQuotaRatioLowerBound = 0.15;
 const double kIncognitoQuotaRatioUpperBound = 0.2;
 
 // Skews |value| by +/- |percent|.
-int64_t RandomizeByPercent(int64_t value, int percent) {
+int64_t MyRandomizeByPercent(int64_t value, int percent) {
   double random_percent = (base::RandDouble() - 0.5) * percent * 2;
   return value + (value * (random_percent / 100.0));
 }
@@ -116,7 +116,7 @@ absl::optional<QuotaSettings> CalculateNominalDynamicSettings(
   // SessionOnly (or ephemeral) origins are allotted a fraction of what
   // normal origins are provided, and the amount is capped to a hard limit.
   const double kSessionOnlyHostQuotaRatio = 0.1;  // 10%
-  const int64_t kMaxSessionOnlyHostQuota = 300 * kMBytes;
+  const int64_t kMaxSessionOnlyHostQuota = 300 * _kMBytes;
 
   QuotaSettings settings;
 
@@ -143,7 +143,7 @@ absl::optional<QuotaSettings> CalculateNominalDynamicSettings(
                static_cast<int64_t>(total * kMustRemainAvailableRatio));
   settings.per_host_quota = pool_size * kPerHostTemporaryRatio;
   settings.session_only_per_host_quota = std::min(
-      RandomizeByPercent(kMaxSessionOnlyHostQuota, kRandomizedPercentage),
+      MyRandomizeByPercent(kMaxSessionOnlyHostQuota, kRandomizedPercentage),
       static_cast<int64_t>(settings.per_host_quota *
                            kSessionOnlyHostQuotaRatio));
   settings.refresh_interval = base::TimeDelta::FromSeconds(60);

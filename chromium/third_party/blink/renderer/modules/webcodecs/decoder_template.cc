@@ -51,7 +51,7 @@ namespace blink {
 
 namespace {
 
-constexpr const char kCategory[] = "media";
+constexpr const char kCategory2[] = "media";
 
 base::AtomicSequenceNumber g_sequence_num_for_counters;
 
@@ -463,7 +463,7 @@ void DecoderTemplate<Traits>::Shutdown(DOMException* exception) {
   if (IsClosed())
     return;
 
-  TRACE_EVENT1(kCategory, GetTraceNames()->shutdown.c_str(), "has_exception",
+  TRACE_EVENT1(kCategory2, GetTraceNames()->shutdown.c_str(), "has_exception",
                !!exception);
 
   // Abort pending work (otherwise it will never complete)
@@ -503,7 +503,7 @@ void DecoderTemplate<Traits>::Shutdown(DOMException* exception) {
   }
 
   bool trace_enabled = false;
-  TRACE_EVENT_CATEGORY_GROUP_ENABLED(kCategory, &trace_enabled);
+  TRACE_EVENT_CATEGORY_GROUP_ENABLED(kCategory2, &trace_enabled);
   if (trace_enabled) {
     for (auto& pending_decode : pending_decodes_)
       pending_decode.value->decode_trace.reset();
@@ -686,17 +686,17 @@ void DecoderTemplate<Traits>::OnOutput(uint32_t reset_generation,
 
   OutputType* blink_output = std::move(output_or_error).value();
 
-  TRACE_EVENT_BEGIN1(kCategory, GetTraceNames()->output.c_str(), "timestamp",
+  TRACE_EVENT_BEGIN1(kCategory2, GetTraceNames()->output.c_str(), "timestamp",
                      blink_output->timestamp());
 
   output_cb_->InvokeAndReportException(nullptr, blink_output);
 
-  TRACE_EVENT_END0(kCategory, GetTraceNames()->output.c_str());
+  TRACE_EVENT_END0(kCategory2, GetTraceNames()->output.c_str());
 }
 
 template <typename Traits>
 void DecoderTemplate<Traits>::TraceQueueSizes() const {
-  TRACE_COUNTER_ID2(kCategory, GetTraceNames()->requests_counter.c_str(),
+  TRACE_COUNTER_ID2(kCategory2, GetTraceNames()->requests_counter.c_str(),
                     trace_counter_id_, "decodes", num_pending_decodes_, "other",
                     requests_.size() - num_pending_decodes_);
 }
@@ -755,7 +755,7 @@ void DecoderTemplate<Traits>::Request::StartTracing() {
   DCHECK(!is_tracing);
   is_tracing = true;
 #endif
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(kCategory, TraceNameFromType(), this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(kCategory2, TraceNameFromType(), this);
 }
 
 template <typename Traits>
@@ -764,7 +764,7 @@ void DecoderTemplate<Traits>::Request::EndTracing(bool shutting_down) {
   DCHECK(is_tracing);
   is_tracing = false;
 #endif
-  TRACE_EVENT_NESTABLE_ASYNC_END1(kCategory, TraceNameFromType(), this,
+  TRACE_EVENT_NESTABLE_ASYNC_END1(kCategory2, TraceNameFromType(), this,
                                   "completed", !shutting_down);
 }
 

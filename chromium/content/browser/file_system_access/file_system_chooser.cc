@@ -73,7 +73,7 @@ base::FilePath::StringType GetLastExtension(
 
 // Returns whether the specified extension receives special handling by the
 // Windows shell.
-bool IsShellIntegratedExtension(const base::FilePath::StringType& extension) {
+bool IsShellIntegratedExtension2(const base::FilePath::StringType& extension) {
   // TODO(https://crbug.com/1154757): Figure out some way to unify this with
   // net::IsSafePortablePathComponent, with the result probably ending up in
   // base/i18n/file_util_icu.h.
@@ -105,7 +105,7 @@ bool IsInvalidExtension(base::FilePath::StringType& extension) {
   auto extension16 = base::UTF8ToUTF16(component8);
 
   return !base::i18n::IsFilenameLegal(extension16) ||
-         IsShellIntegratedExtension(GetLastExtension(extension));
+         IsShellIntegratedExtension2(GetLastExtension(extension));
 }
 
 // Converts the accepted mime types and extensions from |option| into a list

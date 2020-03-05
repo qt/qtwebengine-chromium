@@ -120,7 +120,7 @@ network::mojom::LoadTimingInfo ToMojoLoadTiming(
 // This is complementary to ConvertNetPriorityToWebKitPriority, defined in
 // service_worker_context_client.cc.
 // TODO(yhirano): Move this to blink/platform/loader.
-net::RequestPriority ConvertWebKitPriorityToNetPriority(
+net::RequestPriority ConvertWebKitPriorityToNetPriority2(
     const WebURLRequest::Priority& priority) {
   switch (priority) {
     case WebURLRequest::Priority::kVeryHigh:
@@ -501,7 +501,7 @@ void WebURLLoader::Context::DidChangePriority(
     int intra_priority_value) {
   if (request_id_ != -1) {
     net::RequestPriority net_priority =
-        ConvertWebKitPriorityToNetPriority(new_priority);
+        ConvertWebKitPriorityToNetPriority2(new_priority);
     resource_request_sender_->DidChangePriority(net_priority,
                                                 intra_priority_value);
     // TODO(https://crbug.com/1137682): Change this to
