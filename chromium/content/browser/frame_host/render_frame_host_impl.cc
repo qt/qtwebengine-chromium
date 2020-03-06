@@ -3956,7 +3956,15 @@ void RenderFrameHostImpl::OnAccessibilitySnapshotResponse(
 // TODO(alexmos): When the allowFullscreen flag is known in the browser
 // process, use it to double-check that fullscreen can be entered here.
 void RenderFrameHostImpl::EnterFullscreen(
-    blink::mojom::FullscreenOptionsPtr options) {
+    blink::mojom::FullscreenOptionsPtr options,
+    EnterFullscreenCallback callback) {
+
+  if (!delegate_->CanEnterFullscreenMode()) {
+    std::move(callback).Run(/*granted=*/false);
+    return;
+  }
+  std::move(callback).Run(/*granted=*/true);
+
   // Entering fullscreen from a cross-process subframe also affects all
   // renderers for ancestor frames, which will need to apply fullscreen CSS to
   // appropriate ancestor <iframe> elements, fire fullscreenchange events, etc.

@@ -25,7 +25,11 @@ import "url/mojom/url.mojom";
 interface LocalFrameHost {
 
   // Request to the browser that the frame wishes to enter fullscreen mode.
-  EnterFullscreen(FullscreenOptions options);
+  // Returns either true if fullscreen is allowed to be entered, or false if the
+  // request to enter fullscreen was denied. Note that the actual transition to
+  // fullscreen will occur on the next visual update, when the next
+  // WidgetMsg_UpdateVisualProperties is sent.
+  EnterFullscreen(FullscreenOptions options) => (bool granted);
 
   // Request to the browser to exit fullscreen mode.
   ExitFullscreen();

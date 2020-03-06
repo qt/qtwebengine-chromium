@@ -93,7 +93,7 @@ class CORE_EXPORT Fullscreen final : public GarbageCollected<Fullscreen>,
 
   // Called by FullscreenController to notify that we've entered or exited
   // fullscreen. All frames are notified, so there may be no pending request.
-  static void DidEnterFullscreen(Document&);
+  static void DidResolveEnterFullscreenRequest(Document&, bool granted);
   static void DidExitFullscreen(Document&);
 
   static void DidUpdateSize(Element&);

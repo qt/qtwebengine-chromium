@@ -1429,6 +1429,18 @@ TEST_F(WebContentsImplTest, NavigationEntryContentStateNewWindow) {
   EXPECT_TRUE(entry_impl2->site_instance()->HasSite());
 }
 
+namespace {
+
+void ExpectTrue(bool value) {
+  DCHECK(value);
+}
+
+void ExpectFalse(bool value) {
+  DCHECK(!value);
+}
+
+}  // namespace
+
 // Tests that fullscreen is exited throughout the object hierarchy when
 // navigating to a new page.
 TEST_F(WebContentsImplTest, NavigationExitsFullscreen) {
@@ -1444,7 +1456,8 @@ TEST_F(WebContentsImplTest, NavigationExitsFullscreen) {
   // Toggle fullscreen mode on (as if initiated via IPC from renderer).
   EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
   EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
-  orig_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New());
+  orig_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
+                            base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
   EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
 
@@ -1482,7 +1495,8 @@ TEST_F(WebContentsImplTest, HistoryNavigationExitsFullscreen) {
 
   for (int i = 0; i < 2; ++i) {
     // Toggle fullscreen mode on (as if initiated via IPC from renderer).
-    orig_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New());
+    orig_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
+                              base::BindOnce(&ExpectTrue));
     EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
     EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
 
@@ -1513,7 +1527,8 @@ TEST_F(WebContentsImplTest, CrashExitsFullscreen) {
   // Toggle fullscreen mode on (as if initiated via IPC from renderer).
   EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
   EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
-  main_test_rfh()->EnterFullscreen(blink::mojom::FullscreenOptions::New());
+  main_test_rfh()->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
+                                   base::BindOnce(&ExpectTrue));
   EXPECT_TRUE(contents()->IsFullscreenForCurrentTab());
   EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
 

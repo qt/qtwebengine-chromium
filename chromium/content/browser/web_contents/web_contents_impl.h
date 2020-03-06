@@ -584,6 +584,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 #if defined(OS_ANDROID)
   void GetNFC(mojo::PendingReceiver<device::mojom::NFC> receiver) override;
 #endif
+  bool CanEnterFullscreenMode() override;
   void EnterFullscreenMode(
       const GURL& origin,
       const blink::mojom::FullscreenOptions& options) override;

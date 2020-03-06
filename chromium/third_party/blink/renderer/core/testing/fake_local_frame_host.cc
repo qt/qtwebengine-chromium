@@ -17,7 +17,10 @@ void FakeLocalFrameHost::Init(blink::AssociatedInterfaceProvider* provider) {
 }
 
 void FakeLocalFrameHost::EnterFullscreen(
-    mojom::blink::FullscreenOptionsPtr options) {}
+    mojom::blink::FullscreenOptionsPtr options,
+    EnterFullscreenCallback callback) {
+  std::move(callback).Run(true);
+}
 
 void FakeLocalFrameHost::ExitFullscreen() {}
 

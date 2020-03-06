@@ -2472,9 +2472,15 @@ RenderWidgetHostImpl* WebContentsImpl::GetRenderWidgetHostWithPageFocus() {
   return focused_web_contents->GetMainFrame()->GetRenderWidgetHost();
 }
 
+bool WebContentsImpl::CanEnterFullscreenMode() {
+  return true;
+}
+
 void WebContentsImpl::EnterFullscreenMode(
     const GURL& origin,
     const blink::mojom::FullscreenOptions& options) {
+  DCHECK(CanEnterFullscreenMode());
+
   // This method is being called to enter renderer-initiated fullscreen mode.
   // Make sure any existing fullscreen widget is shut down first.
   RenderWidgetHostView* const widget_view = GetFullscreenRenderWidgetHostView();
