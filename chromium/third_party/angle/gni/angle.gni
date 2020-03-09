@@ -35,6 +35,7 @@ if (build_with_chromium) {
 } else {
   declare_args() {
     ozone_platform_gbm = false
+    ozone_platform_x11 = false
   }
 }
 
@@ -80,7 +81,7 @@ declare_args() {
   angle_enable_d3d9 = is_win && !angle_is_winuwp
   angle_enable_d3d11 = is_win
   angle_enable_gl =
-      (ozone_platform_gbm || !is_linux || (use_x11 && !is_chromeos)) &&
+      (ozone_platform_gbm || ozone_platform_x11 || !is_linux || (use_x11 && !is_chromeos)) &&
       !is_fuchsia && !angle_is_winuwp
 
   # ANGLE Vulkan backend on Android requires API level 26, i.e. Oreo, due to
@@ -88,7 +89,7 @@ declare_args() {
   # Otherwise, API level 24 would have been enough.
   angle_enable_vulkan =
       angle_has_build &&
-      ((is_win && !angle_is_winuwp) || (is_linux && use_x11 && !is_chromeos) ||
+      ((is_win && !angle_is_winuwp) || (is_linux && (use_x11 || ozone_platform_x11) && !is_chromeos) ||
        (is_android && ndk_api_level_at_least_26) || is_fuchsia)
   angle_enable_null = true
   angle_enable_essl = true
