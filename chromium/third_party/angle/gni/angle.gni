@@ -44,6 +44,7 @@ if (build_with_chromium) {
 } else {
   declare_args() {
     ozone_platform_gbm = false
+    ozone_platform_x11 = false
   }
 }
 
@@ -99,7 +100,7 @@ declare_args() {
 
   angle_enable_d3d9 = is_win && !angle_is_winuwp
   angle_enable_d3d11 = is_win
-  angle_enable_gl = (ozone_platform_gbm || (!is_linux && !is_chromeos) ||
+  angle_enable_gl = (ozone_platform_gbm || ozone_platform_x11 || (!is_linux && !is_chromeos) ||
                      (angle_use_x11 && !is_chromeos)) && !is_fuchsia &&
                     !angle_is_winuwp && !is_ggp && !is_win_arm64
 
@@ -108,7 +109,7 @@ declare_args() {
   # Otherwise, API level 24 would have been enough.
   angle_enable_vulkan =
       angle_has_build && ((is_win && !angle_is_winuwp) ||
-                          (is_linux && angle_use_x11 && !is_chromeos) ||
+                          (is_linux && (angle_use_x11 || ozone_platform_x11) && !is_chromeos) ||
                           (is_android && ndk_api_level_at_least_26) ||
                           is_fuchsia || is_ggp || is_mac)
   angle_enable_null = true
