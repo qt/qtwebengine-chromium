@@ -89,7 +89,7 @@ static void RegionToTracedValue(const LayoutShiftRegion& region,
 #if DCHECK_IS_ON()
 static bool ShouldLog(const LocalFrame& frame) {
   const String& url = frame.GetDocument()->Url().GetString();
-  return !url.StartsWith("chrome-devtools:") && !url.StartsWith("devtools:");
+  return !url.StartsWith("devtools:");
 }
 #endif
 
