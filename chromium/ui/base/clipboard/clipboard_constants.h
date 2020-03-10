@@ -29,14 +29,15 @@ COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) extern const char kMimeTypeMozillaURL[];
 COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) extern const char kMimeTypeHTML[];
 COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) extern const char kMimeTypeRTF[];
 COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES) extern const char kMimeTypePNG[];
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(TOOLKIT_QT)
 COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypeWebCustomData[];
 COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypeWebkitSmartPaste[];
 COMPONENT_EXPORT(BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypePepperCustomData[];
-#else
+#endif
+#if defined(OS_MACOSX)
 // MacOS-specific Uniform Type Identifiers.
 
 // Pickled data.
