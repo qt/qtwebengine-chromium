@@ -1166,6 +1166,13 @@ void RemoveCorbExceptionForPluginOnIOThread(int process_id) {
     network::CrossOriginReadBlocking::RemoveExceptionForPlugin(process_id);
 }
 
+RenderProcessHostImpl::CodeCacheHostReceiverHandler&
+GetCodeCacheHostReceiverHandler() {
+  static base::NoDestructor<RenderProcessHostImpl::CodeCacheHostReceiverHandler>
+      instance;
+  return *instance;
+}
+
 // This is the entry point (i.e. this is called on the UI thread *before*
 // we post a task for RemoveCorbExceptionForPluginOnIOThread).
 void RemoveCorbExceptionForPluginOnUIThread(int process_id) {
@@ -1607,6 +1614,11 @@ void RenderProcessHostImpl::SetStoragePartitionServiceRequestHandlerForTesting(
 void RenderProcessHostImpl::SetBroadcastChannelProviderRequestHandlerForTesting(
     BroadcastChannelProviderRequestHandler handler) {
   GetBroadcastChannelProviderRequestHandler() = handler;
+}
+
+void RenderProcessHostImpl::SetCodeCacheHostReceiverHandlerForTesting(
+    CodeCacheHostReceiverHandler handler) {
+  GetCodeCacheHostReceiverHandler() = handler;
 }
 
 RenderProcessHostImpl::~RenderProcessHostImpl() {
@@ -2161,11 +2173,8 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
 
   AddUIThreadInterface(
       registry.get(),
-      base::BindRepeating(
-          &CodeCacheHostImpl::Create, GetID(),
-          base::RetainedRef(storage_partition_impl_->GetCacheStorageContext()),
-          base::RetainedRef(
-              storage_partition_impl_->GetGeneratedCodeCacheContext())));
+      base::BindRepeating(&RenderProcessHostImpl::CreateCodeCacheHost,
+      base::Unretained(this)));
 
 #if BUILDFLAG(ENABLE_REPORTING)
   AddUIThreadInterface(
@@ -2344,6 +2353,27 @@ void RenderProcessHostImpl::CreateBroadcastChannelProvider(
 
   storage_partition_impl_->GetBroadcastChannelProvider()->Connect(
       id_, std::move(request));
+}
+
+void RenderProcessHostImpl::CreateCodeCacheHost(
+    blink::mojom::CodeCacheHostRequest request) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  // There should be at most one CodeCacheHostImpl for any given
+  // RenderProcessHost.
+  DCHECK(!code_cache_host_impl_);
+
+  // Create a new CodeCacheHostImpl and bind it to the given receiver.
+  code_cache_host_impl_ = std::make_unique<CodeCacheHostImpl>(
+      GetID(), storage_partition_impl_->GetCacheStorageContext(),
+      storage_partition_impl_->GetGeneratedCodeCacheContext(),
+      std::move(request));
+
+  // If there is a callback registered, then invoke it with the newly
+  // created CodeCacheHostImpl.
+  if (!GetCodeCacheHostReceiverHandler().is_null()) {
+    GetCodeCacheHostReceiverHandler().Run(this, code_cache_host_impl_.get());
+  }
 }
 
 void RenderProcessHostImpl::BindVideoDecoderService(
@@ -4233,6 +4263,12 @@ void RenderProcessHostImpl::ResetIPC() {
   // request for FrameSinkProvider so make sure frame_sink_provider_ is ready
   // for that.
   frame_sink_provider_.Unbind();
+
+  // If RenderProcessHostImpl is reused, the next renderer will send a new
+  // request for CodeCacheHost.  Make sure that we clear the stale
+  // object so that we can clearly create the new CodeCacheHostImpl while
+  // asserting we don't have any duplicates.
+  code_cache_host_impl_.reset();
 
   // It's important not to wait for the DeleteTask to delete the channel
   // proxy. Kill it off now. That way, in case the profile is going away, the

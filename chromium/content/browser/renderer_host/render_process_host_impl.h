@@ -67,6 +67,7 @@
 #include "third_party/blink/public/mojom/dom_storage/storage_partition_service.mojom.h"
 #include "third_party/blink/public/mojom/filesystem/file_system.mojom.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-shared.h"
+#include "third_party/blink/public/mojom/loader/code_cache.mojom.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 #include "third_party/blink/public/mojom/webdatabase/web_database.mojom.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -87,6 +88,7 @@ class GpuClient;
 namespace content {
 class BrowserPluginMessageFilter;
 class ChildConnection;
+class CodeCacheHostImpl;
 class FileSystemManagerImpl;
 class IndexedDBDispatcherHost;
 class InProcessChildThreadParams;
@@ -399,6 +401,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   static void SetBroadcastChannelProviderRequestHandlerForTesting(
       BroadcastChannelProviderRequestHandler handler);
 
+  // Allows external code to supply a callback that is invoked immediately
+  // after the CodeCacheHostImpl is created and bound.  Used for swapping
+  // the binding for a test version of the service.
+  using CodeCacheHostReceiverHandler =
+      base::RepeatingCallback<void(RenderProcessHost*, CodeCacheHostImpl*)>;
+  static void SetCodeCacheHostReceiverHandlerForTesting(
+      CodeCacheHostReceiverHandler handler);
+
   RenderFrameMessageFilter* render_frame_message_filter_for_testing() const {
     return render_frame_message_filter_.get();
   }
@@ -572,6 +582,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
       blink::mojom::StoragePartitionServiceRequest request);
   void CreateBroadcastChannelProvider(
       blink::mojom::BroadcastChannelProviderRequest request);
+  void CreateCodeCacheHost(
+      blink::mojom::CodeCacheHostRequest request);
   void CreateRendererHost(mojom::RendererHostAssociatedRequest request);
   void BindVideoDecoderService(media::mojom::InterfaceFactoryRequest request);
   void BindWebDatabaseHostImpl(blink::mojom::WebDatabaseHostRequest request);
@@ -857,6 +869,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   std::unique_ptr<IndexedDBDispatcherHost, base::OnTaskRunnerDeleter>
       indexed_db_factory_;
+
+  std::unique_ptr<CodeCacheHostImpl> code_cache_host_impl_;
 
   bool channel_connected_;
   bool sent_render_process_ready_;

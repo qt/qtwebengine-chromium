@@ -44,14 +44,12 @@ class CONTENT_EXPORT CodeCacheHostImpl : public blink::mojom::CodeCacheHost {
   CodeCacheHostImpl(
       int render_process_id,
       scoped_refptr<CacheStorageContextImpl> cache_storage_context,
-      scoped_refptr<GeneratedCodeCacheContext> generated_code_cache_context);
-  ~CodeCacheHostImpl() override;
-
-  static void Create(
-      int render_process_id,
-      scoped_refptr<CacheStorageContextImpl> cache_storage_context,
       scoped_refptr<GeneratedCodeCacheContext> generated_code_cache_context,
       blink::mojom::CodeCacheHostRequest request);
+  ~CodeCacheHostImpl() override;
+
+  void SetCacheStorageContextForTesting(
+      scoped_refptr<CacheStorageContextImpl> context);
 
  private:
   // blink::mojom::CodeCacheHost implementation.
@@ -90,6 +88,8 @@ class CONTENT_EXPORT CodeCacheHostImpl : public blink::mojom::CodeCacheHost {
   scoped_refptr<CacheStorageContextImpl> cache_storage_context_;
 
   scoped_refptr<GeneratedCodeCacheContext> generated_code_cache_context_;
+
+  mojo::Binding<blink::mojom::CodeCacheHost> binding_;
 
   base::WeakPtrFactory<CodeCacheHostImpl> weak_ptr_factory_{this};
 
