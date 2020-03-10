@@ -2473,7 +2473,7 @@ RenderWidgetHostImpl* WebContentsImpl::GetRenderWidgetHostWithPageFocus() {
 }
 
 bool WebContentsImpl::CanEnterFullscreenMode() {
-  return true;
+  return fullscreen_blocker_count_ == 0;
 }
 
 void WebContentsImpl::EnterFullscreenMode(
@@ -2962,7 +2962,10 @@ RenderFrameHostDelegate* WebContentsImpl::CreateNewWindow(
 
   // Any new WebContents opened while this WebContents is in fullscreen can be
   // used to confuse the user, so drop fullscreen.
-  ForSecurityDropFullscreen();
+  base::ScopedClosureRunner fullscreen_block = ForSecurityDropFullscreen();
+  // The new contents will be independent of this contents, so release the
+  // fullscreen block.
+  fullscreen_block.RunAndReset();
 
   if (params.opener_suppressed) {
     // When the opener is suppressed, the original renderer cannot access the
@@ -4330,7 +4333,7 @@ void WebContentsImpl::ExitFullscreen(bool will_cause_resize) {
   ExitFullscreenMode(will_cause_resize);
 }
 
-void WebContentsImpl::ForSecurityDropFullscreen() {
+base::ScopedClosureRunner WebContentsImpl::ForSecurityDropFullscreen() {
   // There are two chains of WebContents to kick out of fullscreen.
   //
   // Chain 1, the inner/outer WebContents chain. If an inner WebContents has
@@ -4344,16 +4347,37 @@ void WebContentsImpl::ForSecurityDropFullscreen() {
   // Note that these two chains don't interact, as only a top-level WebContents
   // can have an opener. This simplifies things.
 
-  WebContents* web_contents = this;
+  std::vector<base::WeakPtr<WebContentsImpl>> blocked_contentses;
+
+  WebContentsImpl* web_contents = this;
   while (web_contents) {
+    // Drop fullscreen if the WebContents is in it, and...
     if (web_contents->IsFullscreenForCurrentTab())
       web_contents->ExitFullscreen(true);
 
-    if (web_contents->HasOriginalOpener())
-      web_contents = FromRenderFrameHost(web_contents->GetOriginalOpener());
-    else
+    // ...block the WebContents from entering fullscreen until further notice.
+    ++web_contents->fullscreen_blocker_count_;
+    blocked_contentses.push_back(web_contents->weak_factory_.GetWeakPtr());
+
+    if (web_contents->HasOriginalOpener()) {
+      web_contents = static_cast<WebContentsImpl*>(
+          FromRenderFrameHost(web_contents->GetOriginalOpener()));
+    } else {
       web_contents = web_contents->GetOuterWebContents();
+    }
   }
+
+  return base::ScopedClosureRunner(base::BindOnce(
+      [](std::vector<base::WeakPtr<WebContentsImpl>> blocked_contentses) {
+        for (base::WeakPtr<WebContentsImpl>& web_contents :
+             blocked_contentses) {
+          if (web_contents) {
+            DCHECK_GT(web_contents->fullscreen_blocker_count_, 0);
+            --web_contents->fullscreen_blocker_count_;
+          }
+        }
+      },
+      std::move(blocked_contentses)));
 }
 
 void WebContentsImpl::ResumeLoadingCreatedWebContents() {
@@ -4760,7 +4784,10 @@ void WebContentsImpl::ViewSource(RenderFrameHostImpl* frame) {
 
   // Any new WebContents opened while this WebContents is in fullscreen can be
   // used to confuse the user, so drop fullscreen.
-  ForSecurityDropFullscreen();
+  base::ScopedClosureRunner fullscreen_block = ForSecurityDropFullscreen();
+  // The new view source contents will be independent of this contents, so
+  // release the fullscreen block.
+  fullscreen_block.RunAndReset();
 
   // We intentionally don't share the SiteInstance with the original frame so
   // that view source has a consistent process model and always ends up in a new
@@ -4969,8 +4996,13 @@ void WebContentsImpl::OnTextAutosizerPageInfoChanged(
 
 void WebContentsImpl::EnumerateDirectory(
     RenderFrameHost* render_frame_host,
-    std::unique_ptr<FileSelectListener> listener,
+    std::unique_ptr<FileChooserImpl::FileSelectListenerImpl> listener,
     const base::FilePath& directory_path) {
+  // Any explicit focusing of another window while this WebContents is in
+  // fullscreen can be used to confuse the user, so drop fullscreen.
+  base::ScopedClosureRunner fullscreen_block = ForSecurityDropFullscreen();
+  listener->SetFullscreenBlock(std::move(fullscreen_block));
+
   if (delegate_)
     delegate_->EnumerateDirectory(this, std::move(listener), directory_path);
   else
@@ -5523,12 +5555,13 @@ void WebContentsImpl::RunJavaScriptDialog(RenderFrameHost* render_frame_host,
 
   // Running a dialog causes an exit to webpage-initiated fullscreen.
   // http://crbug.com/728276
-  ForSecurityDropFullscreen();
+  base::ScopedClosureRunner fullscreen_block = ForSecurityDropFullscreen();
 
   auto callback =
       base::BindOnce(&WebContentsImpl::OnDialogClosed, base::Unretained(this),
                      render_frame_host->GetProcess()->GetID(),
-                     render_frame_host->GetRoutingID(), reply_msg);
+                     render_frame_host->GetRoutingID(),
+                     reply_msg, std::move(fullscreen_block));
 
   std::vector<protocol::PageHandler*> page_handlers =
       protocol::PageHandler::EnabledForWebContents(this);
@@ -5599,7 +5632,7 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
 
   // Running a dialog causes an exit to webpage-initiated fullscreen.
   // http://crbug.com/728276
-  ForSecurityDropFullscreen();
+  base::ScopedClosureRunner fullscreen_block = ForSecurityDropFullscreen();
 
   RenderFrameHostImpl* rfhi =
       static_cast<RenderFrameHostImpl*>(render_frame_host);
@@ -5609,7 +5642,8 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
   auto callback =
       base::BindOnce(&WebContentsImpl::OnDialogClosed, base::Unretained(this),
                      render_frame_host->GetProcess()->GetID(),
-                     render_frame_host->GetRoutingID(), reply_msg);
+                     render_frame_host->GetRoutingID(),
+                     reply_msg, std::move(fullscreen_block));
 
   std::vector<protocol::PageHandler*> page_handlers =
       protocol::PageHandler::EnabledForWebContents(this);
@@ -5652,11 +5686,12 @@ void WebContentsImpl::RunBeforeUnloadConfirm(
 
 void WebContentsImpl::RunFileChooser(
     RenderFrameHost* render_frame_host,
-    std::unique_ptr<content::FileSelectListener> listener,
+    std::unique_ptr<FileChooserImpl::FileSelectListenerImpl> listener,
     const blink::mojom::FileChooserParams& params) {
   // Any explicit focusing of another window while this WebContents is in
   // fullscreen can be used to confuse the user, so drop fullscreen.
-  ForSecurityDropFullscreen();
+  base::ScopedClosureRunner fullscreen_block = ForSecurityDropFullscreen();
+  listener->SetFullscreenBlock(std::move(fullscreen_block));
 
   if (delegate_)
     delegate_->RunFileChooser(render_frame_host, std::move(listener), params);
@@ -6314,7 +6349,10 @@ void WebContentsImpl::SetFocusedFrame(FrameTreeNode* node,
 void WebContentsImpl::DidCallFocus() {
   // Any explicit focusing of another window while this WebContents is in
   // fullscreen can be used to confuse the user, so drop fullscreen.
-  ForSecurityDropFullscreen();
+  base::ScopedClosureRunner fullscreen_block = ForSecurityDropFullscreen();
+  // The other contents is independent of this contents, so release the
+  // fullscreen block.
+  fullscreen_block.RunAndReset();
 }
 
 RenderFrameHost* WebContentsImpl::GetFocusedFrameIncludingInnerWebContents() {
@@ -6720,12 +6758,14 @@ void WebContentsImpl::OnDidDownloadImage(
 void WebContentsImpl::OnDialogClosed(int render_process_id,
                                      int render_frame_id,
                                      IPC::Message* reply_msg,
+                                     base::ScopedClosureRunner fullscreen_block,
                                      bool dialog_was_suppressed,
                                      bool success,
                                      const base::string16& user_input) {
   RenderFrameHostImpl* rfh = RenderFrameHostImpl::FromID(render_process_id,
                                                          render_frame_id);
   last_dialog_suppressed_ = dialog_was_suppressed;
+  fullscreen_block.RunAndReset();
 
   javascript_dialog_navigation_deferrer_.reset();
 

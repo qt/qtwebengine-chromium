@@ -52,6 +52,7 @@
 #include "content/browser/frame_host/back_forward_cache_impl.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/debug_urls.h"
+#include "content/browser/frame_host/file_chooser_impl.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/input/input_injector_impl.h"
@@ -138,7 +139,6 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/download_manager.h"
-#include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/media_player_watch_time.h"
 #include "content/public/browser/network_service_instance.h"
@@ -627,189 +627,6 @@ PendingNavigation::PendingNavigation(
       blob_url_loader_factory(std::move(blob_url_loader_factory)),
       navigation_client(std::move(navigation_client)),
       navigation_initiator(std::move(navigation_initiator)) {}
-
-// An implementation of blink::mojom::FileChooser and FileSelectListener
-// associated to RenderFrameHost.
-class FileChooserImpl : public blink::mojom::FileChooser,
-                        public content::WebContentsObserver {
-  using FileChooserResult = blink::mojom::FileChooserResult;
-
- public:
-  static void Create(
-      RenderFrameHostImpl* render_frame_host,
-      mojo::PendingReceiver<blink::mojom::FileChooser> receiver) {
-    mojo::MakeSelfOwnedReceiver(
-        std::make_unique<FileChooserImpl>(render_frame_host),
-        std::move(receiver));
-  }
-
-  FileChooserImpl(RenderFrameHostImpl* render_frame_host)
-      : render_frame_host_(render_frame_host) {
-    Observe(WebContents::FromRenderFrameHost(render_frame_host));
-  }
-
-  ~FileChooserImpl() override {
-    if (proxy_)
-      proxy_->ResetOwner();
-  }
-
-  void OpenFileChooser(blink::mojom::FileChooserParamsPtr params,
-                       OpenFileChooserCallback callback) override {
-    if (proxy_ || !render_frame_host_) {
-      std::move(callback).Run(nullptr);
-      return;
-    }
-    callback_ = std::move(callback);
-    auto listener = std::make_unique<ListenerProxy>(this);
-    proxy_ = listener.get();
-    // Do not allow messages with absolute paths in them as this can permit a
-    // renderer to coerce the browser to perform I/O on a renderer controlled
-    // path.
-    if (params->default_file_name != params->default_file_name.BaseName()) {
-      mojo::ReportBadMessage(
-          "FileChooser: The default file name should not be an absolute path.");
-      listener->FileSelectionCanceled();
-      return;
-    }
-    render_frame_host_->delegate()->RunFileChooser(
-        render_frame_host_, std::move(listener), *params);
-  }
-
-  void EnumerateChosenDirectory(
-      const base::FilePath& directory_path,
-      EnumerateChosenDirectoryCallback callback) override {
-    if (proxy_ || !render_frame_host_) {
-      std::move(callback).Run(nullptr);
-      return;
-    }
-    callback_ = std::move(callback);
-    auto listener = std::make_unique<ListenerProxy>(this);
-    proxy_ = listener.get();
-    auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
-    if (policy->CanReadFile(render_frame_host_->GetProcess()->GetID(),
-                            directory_path)) {
-      render_frame_host_->delegate()->EnumerateDirectory(
-          render_frame_host_, std::move(listener), directory_path);
-    } else {
-      listener->FileSelectionCanceled();
-    }
-  }
-
-  void FileSelected(std::vector<blink::mojom::FileChooserFileInfoPtr> files,
-                    const base::FilePath& base_dir,
-                    blink::mojom::FileChooserParams::Mode mode) {
-    if (proxy_)
-      proxy_->ResetOwner();
-    proxy_ = nullptr;
-    if (!render_frame_host_)
-      return;
-    storage::FileSystemContext* file_system_context = nullptr;
-    const int pid = render_frame_host_->GetProcess()->GetID();
-    auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
-    // Grant the security access requested to the given files.
-    for (const auto& file : files) {
-      if (mode == blink::mojom::FileChooserParams::Mode::kSave) {
-        policy->GrantCreateReadWriteFile(pid,
-                                         file->get_native_file()->file_path);
-      } else {
-        if (file->is_file_system()) {
-          if (!file_system_context) {
-            file_system_context =
-                BrowserContext::GetStoragePartition(
-                    render_frame_host_->GetProcess()->GetBrowserContext(),
-                    render_frame_host_->GetSiteInstance())
-                    ->GetFileSystemContext();
-          }
-          policy->GrantReadFileSystem(
-              pid, file_system_context->CrackURL(file->get_file_system()->url)
-                       .mount_filesystem_id());
-        } else {
-          policy->GrantReadFile(pid, file->get_native_file()->file_path);
-        }
-      }
-    }
-    std::move(callback_).Run(
-        FileChooserResult::New(std::move(files), base_dir));
-  }
-
-  void FileSelectionCanceled() {
-    if (proxy_)
-      proxy_->ResetOwner();
-    proxy_ = nullptr;
-    if (!render_frame_host_)
-      return;
-    std::move(callback_).Run(nullptr);
-  }
-
-  void ResetProxy() { proxy_ = nullptr; }
-
- private:
-  class ListenerProxy : public content::FileSelectListener {
-   public:
-    explicit ListenerProxy(FileChooserImpl* owner) : owner_(owner) {}
-    ~ListenerProxy() override {
-#if DCHECK_IS_ON()
-      DCHECK(was_file_select_listener_function_called_)
-          << "Should call either FileSelectListener::FileSelected() or "
-             "FileSelectListener::FileSelectionCanceled()";
-#endif
-      if (owner_)
-        owner_->ResetProxy();
-    }
-    void ResetOwner() { owner_ = nullptr; }
-
-    // FileSelectListener overrides:
-
-    void FileSelected(std::vector<blink::mojom::FileChooserFileInfoPtr> files,
-                      const base::FilePath& base_dir,
-                      blink::mojom::FileChooserParams::Mode mode) override {
-#if DCHECK_IS_ON()
-      DCHECK(!was_file_select_listener_function_called_)
-          << "Should not call both of FileSelectListener::FileSelected() and "
-             "FileSelectListener::FileSelectionCanceled()";
-      was_file_select_listener_function_called_ = true;
-#endif
-      if (owner_)
-        owner_->FileSelected(std::move(files), base_dir, mode);
-    }
-
-    void FileSelectionCanceled() override {
-#if DCHECK_IS_ON()
-      DCHECK(!was_file_select_listener_function_called_)
-          << "Should not call both of FileSelectListener::FileSelected() and "
-             "FileSelectListener::FileSelectionCanceled()";
-      was_file_select_listener_function_called_ = true;
-#endif
-      if (owner_)
-        owner_->FileSelectionCanceled();
-    }
-
-   private:
-    FileChooserImpl* owner_;
-#if DCHECK_IS_ON()
-    bool was_file_select_listener_function_called_ = false;
-#endif
-  };
-
-  // content::WebContentsObserver overrides:
-
-  void RenderFrameHostChanged(RenderFrameHost* old_host,
-                              RenderFrameHost* new_host) override {
-    if (old_host == render_frame_host_)
-      render_frame_host_ = nullptr;
-  }
-
-  void RenderFrameDeleted(RenderFrameHost* render_frame_host) override {
-    if (render_frame_host == render_frame_host_)
-      render_frame_host_ = nullptr;
-  }
-
-  void WebContentsDestroyed() override { render_frame_host_ = nullptr; }
-
-  RenderFrameHostImpl* render_frame_host_;
-  ListenerProxy* proxy_ = nullptr;
-  base::OnceCallback<void(blink::mojom::FileChooserResultPtr)> callback_;
-};
 
 // static
 RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
