@@ -32,6 +32,7 @@
 using spdy::SpdyHeaderBlock;
 using testing::_;
 using testing::AnyNumber;
+using testing::AtLeast;
 using testing::AtMost;
 using testing::Invoke;
 using testing::Truly;
@@ -106,7 +107,6 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
     session_->Initialize();
     push_promise_[":path"] = "/bar";
     push_promise_[":authority"] = "www.google.com";
-    push_promise_[":version"] = "HTTP/1.1";
     push_promise_[":method"] = "GET";
     push_promise_[":scheme"] = "https";
     promise_url_ =
@@ -165,9 +165,11 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
       config.SetMaxIncomingBidirectionalStreamsToSend(
           server_max_incoming_streams);
     }
+    std::unique_ptr<QuicCryptoServerConfig> crypto_config =
+        crypto_test_utils::CryptoServerConfigForTesting();
     crypto_test_utils::HandshakeWithFakeServer(
-        &config, &helper_, &alarm_factory_, connection_, stream,
-        AlpnForVersion(connection_->version()));
+        &config, crypto_config.get(), &helper_, &alarm_factory_, connection_,
+        stream, AlpnForVersion(connection_->version()));
   }
 
   QuicCryptoClientConfig crypto_config_;
@@ -244,8 +246,6 @@ TEST_P(QuicSpdyClientSessionTest, MaxNumStreamsWithNoFinOrRst) {
     // TODO(nharper): Add support for Transport Parameters in the TLS handshake.
     return;
   }
-  EXPECT_CALL(*connection_, SendControlFrame(_)).Times(AnyNumber());
-  EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(AnyNumber());
 
   uint32_t kServerMaxIncomingStreams = 1;
   CompleteCryptoHandshake(kServerMaxIncomingStreams);
@@ -276,8 +276,6 @@ TEST_P(QuicSpdyClientSessionTest, MaxNumStreamsWithRst) {
     // TODO(nharper): Add support for Transport Parameters in the TLS handshake.
     return;
   }
-  EXPECT_CALL(*connection_, SendControlFrame(_)).Times(AnyNumber());
-  EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(AnyNumber());
 
   uint32_t kServerMaxIncomingStreams = 1;
   CompleteCryptoHandshake(kServerMaxIncomingStreams);
@@ -345,7 +343,9 @@ TEST_P(QuicSpdyClientSessionTest, ResetAndTrailers) {
 
   QuicStreamId stream_id = stream->id();
 
-  EXPECT_CALL(*connection_, SendControlFrame(_)).Times(1);
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .Times(AtLeast(1))
+      .WillRepeatedly(Invoke(&ClearControlFrame));
   EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(1);
   session_->SendRstStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
 
@@ -395,7 +395,9 @@ TEST_P(QuicSpdyClientSessionTest, ReceivedMalformedTrailersAfterSendingRst) {
   // Send the RST, which results in the stream being closed locally (but some
   // state remains while the client waits for a response from the server).
   QuicStreamId stream_id = stream->id();
-  EXPECT_CALL(*connection_, SendControlFrame(_)).Times(1);
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .Times(AtLeast(1))
+      .WillRepeatedly(Invoke(&ClearControlFrame));
   EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(1);
   session_->SendRstStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
 
@@ -532,14 +534,15 @@ TEST_P(QuicSpdyClientSessionTest, InvalidPacketReceived) {
 
 // A packet with invalid framing should cause a connection to be closed.
 TEST_P(QuicSpdyClientSessionTest, InvalidFramedPacketReceived) {
-  if (GetParam().handshake_protocol == PROTOCOL_TLS1_3) {
+  const ParsedQuicVersion version = GetParam();
+  if (version.handshake_protocol == PROTOCOL_TLS1_3) {
     // TODO(nharper, b/112643533): Figure out why this test fails when TLS is
     // enabled and fix it.
     return;
   }
   QuicSocketAddress server_address(TestPeerIPAddress(), kTestPort);
   QuicSocketAddress client_address(TestPeerIPAddress(), kTestPort);
-  if (GetParam().KnowsWhichDecrypterToUse()) {
+  if (version.KnowsWhichDecrypterToUse()) {
     connection_->InstallDecrypter(
         ENCRYPTION_FORWARD_SECURE,
         std::make_unique<NullDecrypter>(Perspective::IS_CLIENT));
@@ -560,10 +563,9 @@ TEST_P(QuicSpdyClientSessionTest, InvalidFramedPacketReceived) {
   QuicConnectionId source_connection_id = EmptyQuicConnectionId();
   QuicFramerPeer::SetLastSerializedServerConnectionId(
       QuicConnectionPeer::GetFramer(connection_), destination_connection_id);
-  ParsedQuicVersionVector versions = {GetParam()};
   bool version_flag = false;
   QuicConnectionIdIncluded scid_included = CONNECTION_ID_ABSENT;
-  if (VersionHasIetfInvariantHeader(GetParam().transport_version)) {
+  if (VersionHasIetfInvariantHeader(version.transport_version)) {
     version_flag = true;
     source_connection_id = destination_connection_id;
     scid_included = CONNECTION_ID_PRESENT;
@@ -571,7 +573,7 @@ TEST_P(QuicSpdyClientSessionTest, InvalidFramedPacketReceived) {
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructMisFramedEncryptedPacket(
       destination_connection_id, source_connection_id, version_flag, false, 100,
       "data", CONNECTION_ID_ABSENT, scid_included, PACKET_4BYTE_PACKET_NUMBER,
-      &versions, Perspective::IS_SERVER));
+      version, Perspective::IS_SERVER));
   std::unique_ptr<QuicReceivedPacket> received(
       ConstructReceivedPacket(*packet, QuicTime::Zero()));
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(1);
@@ -618,7 +620,6 @@ TEST_P(QuicSpdyClientSessionTest, PushPromiseStreamIdTooHigh) {
   headers.OnHeaderBlockStart();
   headers.OnHeader(":path", "/bar");
   headers.OnHeader(":authority", "www.google.com");
-  headers.OnHeader(":version", "HTTP/1.1");
   headers.OnHeader(":method", "GET");
   headers.OnHeader(":scheme", "https");
   headers.OnHeaderBlockEnd(0, 0);
@@ -924,7 +925,6 @@ TEST_P(QuicSpdyClientSessionTest, TooManyPushPromises) {
     headers.OnHeaderBlockStart();
     headers.OnHeader(":path", QuicStrCat("/", promise_count));
     headers.OnHeader(":authority", "www.google.com");
-    headers.OnHeader(":version", "HTTP/1.1");
     headers.OnHeader(":method", "GET");
     headers.OnHeader(":scheme", "https");
     headers.OnHeaderBlockEnd(0, 0);

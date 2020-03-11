@@ -18,14 +18,18 @@
 #include "osp/public/protocol_connection_client.h"
 #include "osp/public/protocol_connection_server.h"
 #include "platform/api/network_interface.h"
+#include "platform/api/time.h"
 #include "platform/api/udp_socket.h"
 #include "platform/base/ip_address.h"
 #include "platform/base/macros.h"
 
 namespace openscreen {
+
 namespace platform {
 class TaskRunner;
 }  // namespace platform
+
+namespace osp {
 
 // Factory for ServiceListener and ServicePublisher instances; owns internal
 // objects needed to instantiate them such as MdnsResponderService and runs an
@@ -67,7 +71,8 @@ class InternalServices : platform::UdpSocket::Client {
 
   // The TaskRunner provided here should live for the duration of this
   // InternalService object's lifetime.
-  explicit InternalServices(platform::TaskRunner* task_runner);
+  InternalServices(platform::ClockNowFunctionPtr now_function,
+                   platform::TaskRunner* task_runner);
   ~InternalServices() override;
 
   void RegisterMdnsSocket(platform::UdpSocket* socket);
@@ -84,6 +89,7 @@ class InternalServices : platform::UdpSocket::Client {
   OSP_DISALLOW_COPY_AND_ASSIGN(InternalServices);
 };
 
+}  // namespace osp
 }  // namespace openscreen
 
 #endif  // OSP_IMPL_INTERNAL_SERVICES_H_

@@ -236,6 +236,8 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_AMD_shader_fragment_mask]                 = EBhDisable;
     extensionBehavior[E_GL_AMD_gpu_shader_half_float_fetch]          = EBhDisable;
 
+    extensionBehavior[E_GL_INTEL_shader_integer_functions2]          = EBhDisable;
+
     extensionBehavior[E_GL_NV_sample_mask_override_coverage]         = EBhDisable;
     extensionBehavior[E_SPV_NV_geometry_shader_passthrough]          = EBhDisable;
     extensionBehavior[E_GL_NV_viewport_array2]                       = EBhDisable;
@@ -434,6 +436,8 @@ void TParseVersions::getPreamble(std::string& preamble)
             "#define GL_AMD_shader_fragment_mask 1\n"
             "#define GL_AMD_gpu_shader_half_float_fetch 1\n"
 
+            "#define GL_INTEL_shader_integer_functions2 1\n"
+
             "#define GL_NV_sample_mask_override_coverage 1\n"
             "#define GL_NV_geometry_shader_passthrough 1\n"
             "#define GL_NV_viewport_array2 1\n"
@@ -527,11 +531,11 @@ const char* StageName(EShLanguage stage)
     switch(stage) {
     case EShLangVertex:         return "vertex";
     case EShLangFragment:       return "fragment";
+    case EShLangCompute:        return "compute";
 #ifndef GLSLANG_WEB
     case EShLangTessControl:    return "tessellation control";
     case EShLangTessEvaluation: return "tessellation evaluation";
     case EShLangGeometry:       return "geometry";
-    case EShLangCompute:        return "compute";
     case EShLangRayGenNV:       return "ray-generation";
     case EShLangIntersectNV:    return "intersection";
     case EShLangAnyHitNV:       return "any-hit";

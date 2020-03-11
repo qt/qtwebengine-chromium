@@ -25,7 +25,7 @@
 #include "components/download/public/common/input_stream.h"
 #include "components/leveldb_proto/public/proto_database_provider.h"
 #include "services/network/public/cpp/resource_request.h"
-#include "services/network/public/cpp/resource_response.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 
 #if defined(OS_ANDROID)
@@ -83,8 +83,8 @@ void OnUrlDownloadHandlerCreated(
 void BeginResourceDownload(
     std::unique_ptr<DownloadUrlParameters> params,
     std::unique_ptr<network::ResourceRequest> request,
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-        url_loader_factory_info,
+    std::unique_ptr<network::PendingSharedURLLoaderFactory>
+        pending_url_loader_factory,
     const URLSecurityPolicy& url_security_policy,
     bool is_new_download,
     base::WeakPtr<InProgressDownloadManager> download_manager,
@@ -99,7 +99,7 @@ void BeginResourceDownload(
       ResourceDownloader::BeginDownload(
           download_manager, std::move(params), std::move(request),
           network::SharedURLLoaderFactory::Create(
-              std::move(url_loader_factory_info)),
+              std::move(pending_url_loader_factory)),
           url_security_policy, site_url, tab_url, tab_referrer_url,
           is_new_download, false, std::move(connector), is_background_mode,
           main_task_runner)
@@ -120,11 +120,11 @@ void CreateDownloadHandlerForNavigation(
     const GURL& tab_referrer_url,
     std::vector<GURL> url_chain,
     net::CertStatus cert_status,
-    scoped_refptr<network::ResourceResponse> response_head,
+    network::mojom::URLResponseHeadPtr response_head,
     mojo::ScopedDataPipeConsumerHandle response_body,
     network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-        url_loader_factory_info,
+    std::unique_ptr<network::PendingSharedURLLoaderFactory>
+        pending_url_loader_factory,
     const URLSecurityPolicy& url_security_policy,
     std::unique_ptr<service_manager::Connector> connector,
     const scoped_refptr<base::SingleThreadTaskRunner>& main_task_runner) {
@@ -137,7 +137,7 @@ void CreateDownloadHandlerForNavigation(
           std::move(response_head), std::move(response_body),
           std::move(url_loader_client_endpoints),
           network::SharedURLLoaderFactory::Create(
-              std::move(url_loader_factory_info)),
+              std::move(pending_url_loader_factory)),
           url_security_policy, std::move(connector), main_task_runner)
           .release(),
       base::OnTaskRunnerDeleter(base::ThreadTaskRunnerHandle::Get()));
@@ -224,6 +224,14 @@ void InProgressDownloadManager::OnUrlDownloadStarted(
         url_loader_factory_provider,
     UrlDownloadHandler* downloader,
     DownloadUrlParameters::OnStartedCallback callback) {
+  // If a new download's GUID already exists, skip it.
+  if (!download_create_info->guid.empty() &&
+      download_create_info->is_new_download &&
+      GetDownloadByGuid(download_create_info->guid)) {
+    LOG(WARNING) << "A download with the same GUID already exists, the new "
+                    "request is ignored.";
+    return;
+  }
   StartDownload(std::move(download_create_info), std::move(input_stream),
                 std::move(url_loader_factory_provider),
                 base::BindOnce(&InProgressDownloadManager::CancelUrlDownload,
@@ -293,8 +301,8 @@ DownloadItem* InProgressDownloadManager::GetDownloadByGuid(
 
 void InProgressDownloadManager::BeginDownload(
     std::unique_ptr<DownloadUrlParameters> params,
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-        url_loader_factory_info,
+    std::unique_ptr<network::PendingSharedURLLoaderFactory>
+        pending_url_loader_factory,
     bool is_new_download,
     const GURL& site_url,
     const GURL& tab_url,
@@ -305,7 +313,7 @@ void InProgressDownloadManager::BeginDownload(
       FROM_HERE,
       base::BindOnce(
           &BeginResourceDownload, std::move(params), std::move(request),
-          std::move(url_loader_factory_info), url_security_policy_,
+          std::move(pending_url_loader_factory), url_security_policy_,
           is_new_download, weak_factory_.GetWeakPtr(), site_url, tab_url,
           tab_referrer_url, connector_ ? connector_->Clone() : nullptr,
           !delegate_ /* is_background_mode */,
@@ -321,11 +329,11 @@ void InProgressDownloadManager::InterceptDownloadFromNavigation(
     const GURL& tab_referrer_url,
     std::vector<GURL> url_chain,
     net::CertStatus cert_status,
-    scoped_refptr<network::ResourceResponse> response_head,
+    network::mojom::URLResponseHeadPtr response_head,
     mojo::ScopedDataPipeConsumerHandle response_body,
     network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints,
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
-        url_loader_factory_info) {
+    std::unique_ptr<network::PendingSharedURLLoaderFactory>
+        pending_url_loader_factory) {
   GetIOTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(
@@ -334,7 +342,7 @@ void InProgressDownloadManager::InterceptDownloadFromNavigation(
           site_url, tab_url, tab_referrer_url, std::move(url_chain),
           std::move(cert_status), std::move(response_head),
           std::move(response_body), std::move(url_loader_client_endpoints),
-          std::move(url_loader_factory_info), url_security_policy_,
+          std::move(pending_url_loader_factory), url_security_policy_,
           connector_ ? connector_->Clone() : nullptr,
           base::ThreadTaskRunnerHandle::Get()));
 }
@@ -369,11 +377,10 @@ void InProgressDownloadManager::ShutDown() {
 void InProgressDownloadManager::DetermineDownloadTarget(
     DownloadItemImpl* download,
     const DownloadTargetCallback& callback) {
-#if defined(OS_ANDROID)
   base::FilePath target_path = download->GetForcedFilePath().empty()
                                    ? download->GetTargetFilePath()
                                    : download->GetForcedFilePath();
-
+#if defined(OS_ANDROID)
   if (target_path.empty()) {
     callback.Run(target_path, DownloadItem::TARGET_DISPOSITION_OVERWRITE,
                  download->GetDangerType(), target_path,
@@ -403,9 +410,11 @@ void InProgressDownloadManager::DetermineDownloadTarget(
       base::Bind(&OnPathReserved, callback, download->GetDangerType(),
                  intermediate_path_cb_, download->GetForcedFilePath()));
 #else
-  callback.Run(download->GetTargetFilePath(),
-               DownloadItem::TARGET_DISPOSITION_OVERWRITE,
-               download->GetDangerType(), download->GetFullPath(),
+  // For non-android, the code below is only used by tests.
+  base::FilePath intermediate_path =
+      download->GetFullPath().empty() ? target_path : download->GetFullPath();
+  callback.Run(target_path, DownloadItem::TARGET_DISPOSITION_OVERWRITE,
+               download->GetDangerType(), intermediate_path,
                DOWNLOAD_INTERRUPT_REASON_NONE);
 #endif  // defined(OS_ANDROID)
 }
@@ -487,6 +496,8 @@ void InProgressDownloadManager::StartDownload(
       auto download = std::make_unique<DownloadItemImpl>(
           this, DownloadItem::kInvalidId, *info);
       OnNewDownloadCreated(download.get());
+      guid = download->GetGuid();
+      DCHECK(!guid.empty());
       in_progress_downloads_.push_back(std::move(download));
     }
     StartDownloadWithItem(

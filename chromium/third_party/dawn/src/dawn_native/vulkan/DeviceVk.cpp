@@ -28,11 +28,13 @@
 #include "dawn_native/vulkan/BufferVk.h"
 #include "dawn_native/vulkan/CommandBufferVk.h"
 #include "dawn_native/vulkan/ComputePipelineVk.h"
+#include "dawn_native/vulkan/DescriptorSetService.h"
 #include "dawn_native/vulkan/FencedDeleter.h"
 #include "dawn_native/vulkan/PipelineLayoutVk.h"
 #include "dawn_native/vulkan/QueueVk.h"
 #include "dawn_native/vulkan/RenderPassCache.h"
 #include "dawn_native/vulkan/RenderPipelineVk.h"
+#include "dawn_native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn_native/vulkan/SamplerVk.h"
 #include "dawn_native/vulkan/ShaderModuleVk.h"
 #include "dawn_native/vulkan/StagingBufferVk.h"
@@ -66,11 +68,11 @@ namespace dawn_native { namespace vulkan {
         DAWN_TRY(functions->LoadDeviceProcs(mVkDevice, mDeviceInfo));
 
         GatherQueueFromDevice();
+        mDescriptorSetService = std::make_unique<DescriptorSetService>(this);
         mDeleter = std::make_unique<FencedDeleter>(this);
         mMapRequestTracker = std::make_unique<MapRequestTracker>(this);
-        mMemoryAllocator = std::make_unique<MemoryAllocator>(this);
         mRenderPassCache = std::make_unique<RenderPassCache>(this);
-        mResourceAllocator = std::make_unique<MemoryResourceAllocator>(this);
+        mResourceMemoryAllocator = std::make_unique<ResourceMemoryAllocator>(this);
 
         mExternalMemoryService = std::make_unique<external_memory::Service>(this);
         mExternalSemaphoreService = std::make_unique<external_semaphore::Service>(this);
@@ -121,6 +123,9 @@ namespace dawn_native { namespace vulkan {
         }
         mUnusedCommands.clear();
 
+        // TODO(jiajie.hu@intel.com): In rare cases, a DAWN_TRY() failure may leave semaphores
+        // untagged for deletion. But for most of the time when everything goes well, these
+        // assertions can be helpful in catching bugs.
         ASSERT(mRecordingContext.waitSemaphores.empty());
         ASSERT(mRecordingContext.signalSemaphores.empty());
 
@@ -131,6 +136,7 @@ namespace dawn_native { namespace vulkan {
 
         // Free services explicitly so that they can free Vulkan objects before vkDestroyDevice
         mDynamicUploader = nullptr;
+        mDescriptorSetService = nullptr;
 
         // Releasing the uploader enqueues buffers to be released.
         // Call Tick() again to clear them before releasing the deleter.
@@ -138,7 +144,6 @@ namespace dawn_native { namespace vulkan {
 
         mDeleter = nullptr;
         mMapRequestTracker = nullptr;
-        mMemoryAllocator = nullptr;
 
         // The VkRenderPasses in the cache can be destroyed immediately since all commands referring
         // to them are guaranteed to be finished executing.
@@ -162,7 +167,7 @@ namespace dawn_native { namespace vulkan {
     ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return Buffer::Create(this, descriptor);
     }
-    CommandBufferBase* Device::CreateCommandBuffer(CommandEncoderBase* encoder,
+    CommandBufferBase* Device::CreateCommandBuffer(CommandEncoder* encoder,
                                                    const CommandBufferDescriptor* descriptor) {
         return CommandBuffer::Create(encoder, descriptor);
     }
@@ -217,13 +222,14 @@ namespace dawn_native { namespace vulkan {
         CheckPassedFences();
         RecycleCompletedCommands();
 
+        mDescriptorSetService->Tick(mCompletedSerial);
         mMapRequestTracker->Tick(mCompletedSerial);
 
         // Uploader should tick before the resource allocator
         // as it enqueues resources to be released.
         mDynamicUploader->Deallocate(mCompletedSerial);
 
-        mMemoryAllocator->Tick(mCompletedSerial);
+        mResourceMemoryAllocator->Tick(mCompletedSerial);
 
         mDeleter->Tick(mCompletedSerial);
 
@@ -262,8 +268,8 @@ namespace dawn_native { namespace vulkan {
         return mMapRequestTracker.get();
     }
 
-    MemoryAllocator* Device::GetMemoryAllocator() const {
-        return mMemoryAllocator.get();
+    DescriptorSetService* Device::GetDescriptorSetService() const {
+        return mDescriptorSetService.get();
     }
 
     FencedDeleter* Device::GetFencedDeleter() const {
@@ -308,6 +314,15 @@ namespace dawn_native { namespace vulkan {
         DAWN_TRY_ASSIGN(fence, GetUnusedFence());
         DAWN_TRY(CheckVkSuccess(fn.QueueSubmit(mQueue, 1, &submitInfo, fence), "vkQueueSubmit"));
 
+        // Enqueue the semaphores before incrementing the serial, so that they can be deleted as
+        // soon as the current submission is finished.
+        for (VkSemaphore semaphore : mRecordingContext.waitSemaphores) {
+            mDeleter->DeleteWhenUnused(semaphore);
+        }
+        for (VkSemaphore semaphore : mRecordingContext.signalSemaphores) {
+            mDeleter->DeleteWhenUnused(semaphore);
+        }
+
         mLastSubmittedSerial++;
         mFencesInFlight.emplace(fence, mLastSubmittedSerial);
 
@@ -316,14 +331,6 @@ namespace dawn_native { namespace vulkan {
         mCommandsInFlight.Enqueue(submittedCommands, mLastSubmittedSerial);
         mRecordingContext = CommandRecordingContext();
         DAWN_TRY(PrepareRecordingContext());
-
-        for (VkSemaphore semaphore : mRecordingContext.waitSemaphores) {
-            mDeleter->DeleteWhenUnused(semaphore);
-        }
-
-        for (VkSemaphore semaphore : mRecordingContext.signalSemaphores) {
-            mDeleter->DeleteWhenUnused(semaphore);
-        }
 
         return {};
     }
@@ -347,6 +354,14 @@ namespace dawn_native { namespace vulkan {
         if (mDeviceInfo.externalMemoryFD) {
             extensionsToRequest.push_back(kExtensionNameKhrExternalMemoryFD);
             usedKnobs.externalMemoryFD = true;
+        }
+        if (mDeviceInfo.externalMemoryDmaBuf) {
+            extensionsToRequest.push_back(kExtensionNameExtExternalMemoryDmaBuf);
+            usedKnobs.externalMemoryDmaBuf = true;
+        }
+        if (mDeviceInfo.imageDrmFormatModifier) {
+            extensionsToRequest.push_back(kExtensionNameExtImageDrmFormatModifier);
+            usedKnobs.imageDrmFormatModifier = true;
         }
         if (mDeviceInfo.externalMemoryZirconHandle) {
             extensionsToRequest.push_back(kExtensionNameFuchsiaExternalMemory);
@@ -388,8 +403,8 @@ namespace dawn_native { namespace vulkan {
 
         // Find a universal queue family
         {
-            constexpr uint32_t kUniversalFlags =
-                VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+            // Note that GRAPHICS and COMPUTE imply TRANSFER so we don't need to check for it.
+            constexpr uint32_t kUniversalFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
             int universalQueueFamily = -1;
             for (unsigned int i = 0; i < mDeviceInfo.queueFamilies.size(); ++i) {
                 if ((mDeviceInfo.queueFamilies[i].queueFlags & kUniversalFlags) ==
@@ -572,7 +587,7 @@ namespace dawn_native { namespace vulkan {
 
         // Insert pipeline barrier to ensure correct ordering with previous memory operations on the
         // buffer.
-        ToBackend(destination)->TransitionUsageNow(recordingContext, dawn::BufferUsage::CopyDst);
+        ToBackend(destination)->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
 
         VkBufferCopy copy;
         copy.srcOffset = sourceOffset;
@@ -588,6 +603,7 @@ namespace dawn_native { namespace vulkan {
 
     MaybeError Device::ImportExternalImage(const ExternalImageDescriptor* descriptor,
                                            ExternalMemoryHandle memoryHandle,
+                                           VkImage image,
                                            const std::vector<ExternalSemaphoreHandle>& waitHandles,
                                            VkSemaphore* outSignalSemaphore,
                                            VkDeviceMemory* outAllocation,
@@ -599,7 +615,7 @@ namespace dawn_native { namespace vulkan {
         if (!mExternalSemaphoreService->Supported()) {
             return DAWN_VALIDATION_ERROR("External semaphore usage not supported");
         }
-        if (!mExternalMemoryService->Supported(
+        if (!mExternalMemoryService->SupportsImportMemory(
                 VulkanImageFormat(textureDescriptor->format), VK_IMAGE_TYPE_2D,
                 VK_IMAGE_TILING_OPTIMAL,
                 VulkanImageUsage(textureDescriptor->usage,
@@ -613,9 +629,11 @@ namespace dawn_native { namespace vulkan {
                         mExternalSemaphoreService->CreateExportableSemaphore());
 
         // Import the external image's memory
+        external_memory::MemoryImportParams importParams;
+        DAWN_TRY_ASSIGN(importParams,
+                        mExternalMemoryService->GetMemoryImportParams(descriptor, image));
         DAWN_TRY_ASSIGN(*outAllocation,
-                        mExternalMemoryService->ImportMemory(
-                            memoryHandle, descriptor->allocationSize, descriptor->memoryTypeIndex));
+                        mExternalMemoryService->ImportMemory(memoryHandle, importParams, image));
 
         // Import semaphores we have to wait on before using the texture
         for (const ExternalSemaphoreHandle& handle : waitHandles) {
@@ -664,11 +682,20 @@ namespace dawn_native { namespace vulkan {
         // Cleanup in case of a failure, the image creation doesn't acquire the external objects
         // if a failure happems.
         Texture* result = nullptr;
-        if (ConsumedError(ImportExternalImage(descriptor, memoryHandle, waitHandles,
-                                              &signalSemaphore, &allocation, &waitSemaphores)) ||
-            ConsumedError(Texture::CreateFromExternal(this, descriptor, textureDescriptor,
-                                                      signalSemaphore, allocation, waitSemaphores),
-                          &result)) {
+        // TODO(crbug.com/1026480): Consolidate this into a single CreateFromExternal call.
+        if (ConsumedError(Texture::CreateFromExternal(this, descriptor, textureDescriptor,
+                                                      mExternalMemoryService.get()),
+                          &result) ||
+            ConsumedError(ImportExternalImage(descriptor, memoryHandle, result->GetHandle(),
+                                              waitHandles, &signalSemaphore, &allocation,
+                                              &waitSemaphores)) ||
+            ConsumedError(result->BindExternalMemory(descriptor, signalSemaphore, allocation,
+                                                     waitSemaphores))) {
+            // Delete the Texture if it was created
+            if (result != nullptr) {
+                delete result;
+            }
+
             // Clear the signal semaphore
             fn.DestroySemaphore(GetVkDevice(), signalSemaphore, nullptr);
 
@@ -688,20 +715,19 @@ namespace dawn_native { namespace vulkan {
     ResultOrError<ResourceMemoryAllocation> Device::AllocateMemory(
         VkMemoryRequirements requirements,
         bool mappable) {
-        // TODO(crbug.com/dawn/27): Support sub-allocation.
-        ResourceMemoryAllocation allocation;
-        DAWN_TRY_ASSIGN(allocation, mResourceAllocator->Allocate(requirements, mappable));
-        return allocation;
+        return mResourceMemoryAllocator->Allocate(requirements, mappable);
     }
 
-    void Device::DeallocateMemory(ResourceMemoryAllocation& allocation) {
-        if (allocation.GetInfo().mMethod == AllocationMethod::kInvalid) {
-            return;
-        }
-        mResourceAllocator->Deallocate(allocation);
-
-        // Invalidate the underlying resource heap in case the client accidentally
-        // calls DeallocateMemory again using the same allocation.
-        allocation.Invalidate();
+    void Device::DeallocateMemory(ResourceMemoryAllocation* allocation) {
+        mResourceMemoryAllocator->Deallocate(allocation);
     }
+
+    int Device::FindBestMemoryTypeIndex(VkMemoryRequirements requirements, bool mappable) {
+        return mResourceMemoryAllocator->FindBestTypeIndex(requirements, mappable);
+    }
+
+    ResourceMemoryAllocator* Device::GetResourceMemoryAllocatorForTesting() const {
+        return mResourceMemoryAllocator.get();
+    }
+
 }}  // namespace dawn_native::vulkan

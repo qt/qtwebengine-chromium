@@ -25,7 +25,7 @@ namespace dawn_native { namespace metal {
     Buffer::Buffer(Device* device, const BufferDescriptor* descriptor)
         : BufferBase(device, descriptor) {
         MTLResourceOptions storageMode;
-        if (GetUsage() & (dawn::BufferUsage::MapRead | dawn::BufferUsage::MapWrite)) {
+        if (GetUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) {
             storageMode = MTLResourceStorageModeShared;
         } else {
             storageMode = MTLResourceStorageModePrivate;
@@ -35,7 +35,7 @@ namespace dawn_native { namespace metal {
         // Metal validation layer requires the size of uniform buffer and storage buffer to be no
         // less than the size of the buffer block defined in shader, and the overall size of the
         // buffer must be aligned to the largest alignment of its members.
-        if (GetUsage() & (dawn::BufferUsage::Uniform | dawn::BufferUsage::Storage)) {
+        if (GetUsage() & (wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage)) {
             currentSize = Align(currentSize, kMinUniformOrStorageBufferAlignment);
         }
 
@@ -53,15 +53,15 @@ namespace dawn_native { namespace metal {
     void Buffer::OnMapCommandSerialFinished(uint32_t mapSerial, bool isWrite) {
         char* data = reinterpret_cast<char*>([mMtlBuffer contents]);
         if (isWrite) {
-            CallMapWriteCallback(mapSerial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, data, GetSize());
+            CallMapWriteCallback(mapSerial, WGPUBufferMapAsyncStatus_Success, data, GetSize());
         } else {
-            CallMapReadCallback(mapSerial, DAWN_BUFFER_MAP_ASYNC_STATUS_SUCCESS, data, GetSize());
+            CallMapReadCallback(mapSerial, WGPUBufferMapAsyncStatus_Success, data, GetSize());
         }
     }
 
     bool Buffer::IsMapWritable() const {
         // TODO(enga): Handle CPU-visible memory on UMA
-        return (GetUsage() & (dawn::BufferUsage::MapRead | dawn::BufferUsage::MapWrite)) != 0;
+        return (GetUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) != 0;
     }
 
     MaybeError Buffer::MapAtCreationImpl(uint8_t** mappedPointer) {

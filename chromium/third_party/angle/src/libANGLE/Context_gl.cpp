@@ -1089,11 +1089,6 @@ void Context::getTexGendv(GLenum coord, GLenum pname, GLdouble *params)
     UNIMPLEMENTED();
 }
 
-void Context::getTexImage(GLenum target, GLint level, GLenum format, GLenum type, void *pixels)
-{
-    UNIMPLEMENTED();
-}
-
 void Context::indexMask(GLuint mask)
 {
     UNIMPLEMENTED();
@@ -1974,9 +1969,9 @@ void Context::texSubImage1D(GLenum target,
     UNIMPLEMENTED();
 }
 
-void Context::multiDrawElementsBaseVertex(GLenum mode,
+void Context::multiDrawElementsBaseVertex(PrimitiveMode mode,
                                           const GLsizei *count,
-                                          GLenum type,
+                                          DrawElementsType type,
                                           const void *const *indices,
                                           GLsizei drawcount,
                                           const GLint *basevertex)

@@ -27,10 +27,6 @@
 
 namespace perfetto {
 
-namespace protos {
-class TracePacket;  // From protos/trace_packet.pb.h.
-}  // namespace protos
-
 // A wrapper around a byte buffer that contains a protobuf-encoded TracePacket
 // (see trace_packet.proto). The TracePacket is decoded only if the Consumer
 // requests that. This is to allow Consumer(s) to just stream the packet over
@@ -45,6 +41,9 @@ class PERFETTO_EXPORT TracePacket {
 
   // The field id of protos::Trace::packet, static_assert()-ed in the unittest.
   static constexpr uint32_t kPacketFieldNumber = 1;
+
+  // Maximum size of the preamble returned by GetProtoPreamble().
+  static constexpr size_t kMaxPreambleBytes = 8;
 
   TracePacket();
   ~TracePacket();
@@ -80,7 +79,7 @@ class PERFETTO_EXPORT TracePacket {
 
   Slices slices_;     // Not owned.
   size_t size_ = 0;   // SUM(slice.size for slice in slices_).
-  char preamble_[8];  // Deliberately not initialized.
+  char preamble_[kMaxPreambleBytes];  // Deliberately not initialized.
 
   // Remember to update the move operators and their unittest if adding new
   // fields. ConsumerIPCClientImpl::OnReadBuffersResponse() relies on

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "dawn_native/d3d12/StagingBufferD3D12.h"
+#include "dawn_native/d3d12/D3D12Error.h"
 #include "dawn_native/d3d12/DeviceD3D12.h"
 
 namespace dawn_native { namespace d3d12 {
@@ -35,18 +36,19 @@ namespace dawn_native { namespace d3d12 {
         resourceDescriptor.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
         resourceDescriptor.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-        DAWN_TRY_ASSIGN(mUploadHeap, mDevice->AllocateMemory(
-                                         D3D12_HEAP_TYPE_UPLOAD, resourceDescriptor,
-                                         D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_FLAG_NONE));
+        DAWN_TRY_ASSIGN(mUploadHeap,
+                        mDevice->AllocateMemory(D3D12_HEAP_TYPE_UPLOAD, resourceDescriptor,
+                                                D3D12_RESOURCE_STATE_GENERIC_READ));
 
-        if (FAILED(GetResource()->Map(0, nullptr, &mMappedPointer))) {
-            return DAWN_DEVICE_LOST_ERROR("Unable to map staging buffer.");
-        }
-
-        return {};
+        return CheckHRESULT(GetResource()->Map(0, nullptr, &mMappedPointer), "ID3D12Resource::Map");
     }
 
     StagingBuffer::~StagingBuffer() {
+        // Always check if the allocation is valid before Unmap.
+        // The resource would not exist had it failed to allocate.
+        if (mUploadHeap.GetInfo().mMethod == AllocationMethod::kInvalid) {
+            return;
+        }
         // Invalidate the CPU virtual address & flush cache (if needed).
         GetResource()->Unmap(0, nullptr);
         mMappedPointer = nullptr;

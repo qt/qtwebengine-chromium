@@ -22,6 +22,7 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_text_utils.h"
+#include "net/third_party/quiche/src/quic/test_tools/qpack/qpack_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_config_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_flow_controller_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_session_peer.h"
@@ -231,21 +232,31 @@ class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
       auto send_control_stream =
           QuicSpdySessionPeer::GetSendControlStream(session_.get());
       // The control stream will write 3 times, including stream type, settings
-      // frame, priority for headers.
+      // frame and max push id, priority for headers.
+      int num_control_stream_writes = 2;
+      if (session_->perspective() == Perspective::IS_CLIENT) {
+        // The control stream also writes the max push id frame.
+        num_control_stream_writes++;
+      }
       EXPECT_CALL(*session_, WritevData(send_control_stream,
                                         send_control_stream->id(), _, _, _))
-          .Times(2);
-      auto qpack_encoder_stream =
-          QuicSpdySessionPeer::GetQpackEncoderSendStream(session_.get());
-      EXPECT_CALL(*session_, WritevData(qpack_encoder_stream,
-                                        qpack_encoder_stream->id(), 1, 0, _));
+          .Times(num_control_stream_writes);
       auto qpack_decoder_stream =
           QuicSpdySessionPeer::GetQpackDecoderSendStream(session_.get());
       EXPECT_CALL(*session_, WritevData(qpack_decoder_stream,
                                         qpack_decoder_stream->id(), 1, 0, _));
+      auto qpack_encoder_stream =
+          QuicSpdySessionPeer::GetQpackEncoderSendStream(session_.get());
+      EXPECT_CALL(*session_, WritevData(qpack_encoder_stream,
+                                        qpack_encoder_stream->id(), 1, 0, _));
     }
-    static_cast<QuicSession*>(session_.get())
-        ->OnCryptoHandshakeEvent(QuicSession::ENCRYPTION_ESTABLISHED);
+    if (session_->use_handshake_delegate()) {
+      static_cast<QuicSession*>(session_.get())
+          ->SetDefaultEncryptionLevel(ENCRYPTION_ZERO_RTT);
+    } else {
+      static_cast<QuicSession*>(session_.get())
+          ->OnCryptoHandshakeEvent(QuicSession::ENCRYPTION_ESTABLISHED);
+    }
   }
 
   QuicHeaderList ProcessHeaders(bool fin, const SpdyHeaderBlock& headers) {
@@ -280,7 +291,8 @@ class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
   std::string HeadersFrame(QuicStringPiece payload) {
     std::unique_ptr<char[]> headers_buffer;
     QuicByteCount headers_frame_header_length =
-        encoder_.SerializeHeadersFrameHeader(payload.length(), &headers_buffer);
+        HttpEncoder::SerializeHeadersFrameHeader(payload.length(),
+                                                 &headers_buffer);
     QuicStringPiece headers_frame_header(headers_buffer.get(),
                                          headers_frame_header_length);
     return QuicStrCat(headers_frame_header, payload);
@@ -289,7 +301,7 @@ class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
   std::string DataFrame(QuicStringPiece payload) {
     std::unique_ptr<char[]> data_buffer;
     QuicByteCount data_frame_header_length =
-        encoder_.SerializeDataFrameHeader(payload.length(), &data_buffer);
+        HttpEncoder::SerializeDataFrameHeader(payload.length(), &data_buffer);
     QuicStringPiece data_frame_header(data_buffer.get(),
                                       data_frame_header_length);
     return QuicStrCat(data_frame_header, payload);
@@ -323,8 +335,6 @@ class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
   TestStream* stream2_;
 
   SpdyHeaderBlock headers_;
-
-  HttpEncoder encoder_;
 };
 
 INSTANTIATE_TEST_SUITE_P(Tests,
@@ -346,29 +356,36 @@ TEST_P(QuicSpdyStreamTest, ProcessHeaderList) {
 TEST_P(QuicSpdyStreamTest, ProcessTooLargeHeaderList) {
   Initialize(kShouldProcessData);
 
-  QuicHeaderList headers;
-  stream_->OnStreamHeadersPriority(
-      spdy::SpdyStreamPrecedence(kV3HighestPriority));
+  if (!UsesHttp3()) {
+    QuicHeaderList headers;
+    stream_->OnStreamHeadersPriority(
+        spdy::SpdyStreamPrecedence(kV3HighestPriority));
 
-  const bool version_uses_qpack =
-      VersionUsesHttp3(GetParam().transport_version);
-
-  if (version_uses_qpack) {
-    EXPECT_CALL(
-        *connection_,
-        CloseConnection(
-            QUIC_HEADERS_STREAM_DATA_DECOMPRESS_FAILURE,
-            MatchesRegex("Too large headers received on stream \\d+"), _));
-  } else {
     EXPECT_CALL(*session_,
                 SendRstStream(stream_->id(), QUIC_HEADERS_TOO_LARGE, 0));
+    stream_->OnStreamHeaderList(false, 1 << 20, headers);
+
+    EXPECT_THAT(stream_->stream_error(), IsStreamError(QUIC_HEADERS_TOO_LARGE));
+
+    return;
   }
 
-  stream_->OnStreamHeaderList(false, 1 << 20, headers);
+  // Header list size includes 32 bytes for overhead per header field.
+  session_->set_max_inbound_header_list_size(40);
+  std::string headers =
+      HeadersFrame({std::make_pair("foo", "too long headers")});
 
-  if (!version_uses_qpack) {
-    EXPECT_EQ(QUIC_HEADERS_TOO_LARGE, stream_->stream_error());
-  }
+  QuicStreamFrame frame(stream_->id(), false, 0, headers);
+
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_HEADERS_STREAM_DATA_DECOMPRESS_FAILURE,
+                      MatchesRegex("Too large headers received on stream \\d+"),
+                      _));
+
+  stream_->OnStreamFrame(frame);
+
+  EXPECT_TRUE(stream_->header_list().empty());
 }
 
 TEST_P(QuicSpdyStreamTest, ProcessHeaderListWithFin) {
@@ -386,7 +403,7 @@ TEST_P(QuicSpdyStreamTest, ProcessHeaderListWithFin) {
   EXPECT_EQ("", stream_->data());
   EXPECT_FALSE(stream_->header_list().empty());
   EXPECT_FALSE(stream_->IsDoneReading());
-  EXPECT_TRUE(stream_->HasFinalReceivedByteOffset());
+  EXPECT_TRUE(stream_->HasReceivedFinalOffset());
 }
 
 // A valid status code should be 3-digit integer. The first digit should be in
@@ -469,7 +486,8 @@ TEST_P(QuicSpdyStreamTest, ProcessWrongFramesOnSpdyStream) {
   GoAwayFrame goaway;
   goaway.stream_id = 0x1;
   std::unique_ptr<char[]> buffer;
-  QuicByteCount header_length = encoder_.SerializeGoAwayFrame(goaway, &buffer);
+  QuicByteCount header_length =
+      HttpEncoder::SerializeGoAwayFrame(goaway, &buffer);
   std::string data = std::string(buffer.get(), header_length);
 
   EXPECT_EQ("", stream_->data());
@@ -763,7 +781,8 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlNoWindowUpdateIfNotConsumed) {
 
   if (UsesHttp3()) {
     std::unique_ptr<char[]> buffer;
-    header_length = encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+    header_length =
+        HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
     std::string header = std::string(buffer.get(), header_length);
     data = header + body;
   } else {
@@ -812,7 +831,8 @@ TEST_P(QuicSpdyStreamTest, StreamFlowControlWindowUpdate) {
 
   if (UsesHttp3()) {
     std::unique_ptr<char[]> buffer;
-    header_length = encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+    header_length =
+        HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
     std::string header = std::string(buffer.get(), header_length);
     data = header + body;
   } else {
@@ -882,12 +902,13 @@ TEST_P(QuicSpdyStreamTest, ConnectionFlowControlWindowUpdate) {
   if (UsesHttp3()) {
     body = std::string(kWindow / 4 - 2, 'a');
     std::unique_ptr<char[]> buffer;
-    header_length = encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+    header_length =
+        HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
     std::string header = std::string(buffer.get(), header_length);
     data = header + body;
     std::unique_ptr<char[]> buffer2;
     QuicByteCount header_length2 =
-        encoder_.SerializeDataFrameHeader(body2.length(), &buffer2);
+        HttpEncoder::SerializeDataFrameHeader(body2.length(), &buffer2);
     std::string header2 = std::string(buffer2.get(), header_length2);
     data2 = header2 + body2;
   } else {
@@ -1023,7 +1044,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersViaHeaderList) {
   trailers_block["key2"] = "value2";
   trailers_block["key3"] = "value3";
   SpdyHeaderBlock trailers_block_with_final_offset = trailers_block.Clone();
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     // :final-offset pseudo-header is only added if trailers are sent
     // on the headers stream.
     trailers_block_with_final_offset[kFinalOffsetHeaderKey] = "0";
@@ -1051,7 +1072,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersViaHeaderList) {
 TEST_P(QuicSpdyStreamTest, ReceivingTrailersWithOffset) {
   // kFinalOffsetHeaderKey is not used when HEADERS are sent on the
   // request/response stream.
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     return;
   }
 
@@ -1098,7 +1119,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersWithOffset) {
 TEST_P(QuicSpdyStreamTest, ReceivingTrailersWithoutOffset) {
   // kFinalOffsetHeaderKey is not used when HEADERS are sent on the
   // request/response stream.
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     return;
   }
 
@@ -1130,7 +1151,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersWithoutOffset) {
 TEST_P(QuicSpdyStreamTest, ReceivingTrailersWithoutFin) {
   // In IETF QUIC, there is no such thing as FIN flag on HTTP/3 frames like the
   // HEADERS frame.
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     return;
   }
 
@@ -1161,7 +1182,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersAfterHeadersWithFin) {
   // If HEADERS frames are sent on the request/response stream, then the
   // sequencer will signal an error if any stream data arrives after a FIN,
   // so QuicSpdyStream does not need to.
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     return;
   }
 
@@ -1183,7 +1204,7 @@ TEST_P(QuicSpdyStreamTest, ReceivingTrailersAfterBodyWithFin) {
   // If HEADERS frames are sent on the request/response stream,
   // then the sequencer will block them from reaching QuicSpdyStream
   // after the stream is closed.
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     return;
   }
 
@@ -1233,7 +1254,7 @@ TEST_P(QuicSpdyStreamTest, ClosingStreamWithNoTrailers) {
 TEST_P(QuicSpdyStreamTest, WritingTrailersSendsAFin) {
   Initialize(kShouldProcessData);
 
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     // In this case, TestStream::WriteHeadersImpl() does not prevent writes.
     EXPECT_CALL(*session_, WritevData(stream_, stream_->id(), _, _, _))
         .Times(AtLeast(1));
@@ -1253,9 +1274,10 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersSendsAFin) {
 
 TEST_P(QuicSpdyStreamTest, ClientWritesPriority) {
   SetQuicFlag(FLAGS_quic_allow_http3_priority, true);
+  SetQuicReloadableFlag(quic_send_max_push_id_with_settings, true);
   InitializeWithPerspective(kShouldProcessData, Perspective::IS_CLIENT);
 
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     // In this case, TestStream::WriteHeadersImpl() does not prevent writes.
     // Six writes include priority for headers, headers frame header, headers
     // frame, priority of trailers, trailing headers frame header, and trailers.
@@ -1263,7 +1285,8 @@ TEST_P(QuicSpdyStreamTest, ClientWritesPriority) {
         .Times(4);
     auto send_control_stream =
         QuicSpdySessionPeer::GetSendControlStream(session_.get());
-    // The control stream will write priority for headers.
+    // The control stream will write priority for headers as well as
+    // the settings/max_push_id.
     EXPECT_CALL(*session_, WritevData(send_control_stream,
                                       send_control_stream->id(), _, _, _))
         .Times(1);
@@ -1286,7 +1309,7 @@ TEST_P(QuicSpdyStreamTest, ClientWritesPriority) {
 TEST_P(QuicSpdyStreamTest, WritingTrailersFinalOffset) {
   Initialize(kShouldProcessData);
 
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     // In this case, TestStream::WriteHeadersImpl() does not prevent writes.
     EXPECT_CALL(*session_, WritevData(stream_, stream_->id(), _, _, _))
         .Times(AtLeast(1));
@@ -1302,7 +1325,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersFinalOffset) {
   QuicByteCount header_length = 0;
   if (UsesHttp3()) {
     std::unique_ptr<char[]> buf;
-    header_length = encoder_.SerializeDataFrameHeader(body.length(), &buf);
+    header_length = HttpEncoder::SerializeDataFrameHeader(body.length(), &buf);
   }
 
   stream_->WriteOrBufferBody(body, false);
@@ -1315,7 +1338,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersFinalOffset) {
   SpdyHeaderBlock expected_trailers(trailers.Clone());
   // :final-offset pseudo-header is only added if trailers are sent
   // on the headers stream.
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     expected_trailers[kFinalOffsetHeaderKey] =
         QuicTextUtils::Uint64ToString(body.length() + header_length);
   }
@@ -1357,7 +1380,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersWithQueuedBytes) {
   // This test exercises sending trailers on the headers stream while data is
   // still queued on the response/request stream.  In IETF QUIC, data and
   // trailers are sent on the same stream, so this test does not apply.
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     return;
   }
 
@@ -1416,7 +1439,7 @@ TEST_P(QuicSpdyStreamTest, WritingTrailersAfterFIN) {
 
 TEST_P(QuicSpdyStreamTest, HeaderStreamNotiferCorrespondingSpdyStream) {
   // There is no headers stream if QPACK is used.
-  if (VersionUsesHttp3(GetParam().transport_version)) {
+  if (UsesHttp3()) {
     return;
   }
 
@@ -1652,10 +1675,11 @@ TEST_P(QuicSpdyStreamTest, HeadersAckNotReportedWriteOrBufferBody) {
 
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
   std::string header = std::string(buffer.get(), header_length);
 
-  header_length = encoder_.SerializeDataFrameHeader(body2.length(), &buffer);
+  header_length =
+      HttpEncoder::SerializeDataFrameHeader(body2.length(), &buffer);
   std::string header2 = std::string(buffer.get(), header_length);
 
   EXPECT_CALL(*mock_ack_listener, OnPacketAcked(body.length(), _));
@@ -1748,7 +1772,7 @@ TEST_P(QuicSpdyStreamTest, HeaderBytesNotReportedOnRetransmission) {
 }
 
 TEST_P(QuicSpdyStreamTest, HeadersFrameOnRequestStream) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -1776,7 +1800,7 @@ TEST_P(QuicSpdyStreamTest, HeadersFrameOnRequestStream) {
 }
 
 TEST_P(QuicSpdyStreamTest, ProcessBodyAfterTrailers) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -1820,7 +1844,7 @@ TEST_P(QuicSpdyStreamTest, ProcessBodyAfterTrailers) {
 // normal body. Make sure the http decoder stops processing body after the
 // connection shuts down.
 TEST_P(QuicSpdyStreamTest, MalformedHeadersStopHttpDecoder) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -1839,11 +1863,10 @@ TEST_P(QuicSpdyStreamTest, MalformedHeadersStopHttpDecoder) {
 
   EXPECT_CALL(
       *connection_,
-      CloseConnection(
-          QUIC_DECOMPRESSION_FAILURE,
-          MatchesRegex("Error decompressing header block on stream \\d+: "
-                       "Incomplete header block."),
-          _))
+      CloseConnection(QUIC_QPACK_DECOMPRESSION_FAILED,
+                      MatchesRegex("Error decoding headers on stream \\d+: "
+                                   "Incomplete header block."),
+                      _))
       .WillOnce(
           (Invoke([this](QuicErrorCode error, const std::string& error_details,
                          ConnectionCloseBehavior connection_close_behavior) {
@@ -1861,8 +1884,50 @@ TEST_P(QuicSpdyStreamTest, MalformedHeadersStopHttpDecoder) {
   stream_->OnStreamFrame(frame);
 }
 
+// Regression test for https://crbug.com/1027895: a HEADERS frame triggers an
+// error in QuicSpdyStream::OnHeadersFramePayload().  This closes the
+// connection, freeing the buffer of QuicStreamSequencer.  Therefore
+// QuicStreamSequencer::MarkConsumed() must not be called from
+// QuicSpdyStream::OnHeadersFramePayload().
+TEST_P(QuicSpdyStreamTest, DoNotMarkConsumedAfterQpackDecodingError) {
+  if (!UsesHttp3()) {
+    return;
+  }
+
+  Initialize(kShouldProcessData);
+  connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
+
+  testing::InSequence s;
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_QPACK_DECOMPRESSION_FAILED,
+                      MatchesRegex("Error decoding headers on stream \\d+: "
+                                   "Invalid relative index."),
+                      _))
+      .WillOnce(
+          (Invoke([this](QuicErrorCode error, const std::string& error_details,
+                         ConnectionCloseBehavior connection_close_behavior) {
+            connection_->ReallyCloseConnection(error, error_details,
+                                               connection_close_behavior);
+          })));
+  EXPECT_CALL(*connection_, SendConnectionClosePacket(_, _));
+  EXPECT_CALL(*session_, OnConnectionClosed(_, _))
+      .WillOnce(Invoke([this](const QuicConnectionCloseFrame& frame,
+                              ConnectionCloseSource source) {
+        session_->ReallyOnConnectionClosed(frame, source);
+      }));
+  EXPECT_CALL(*session_, SendRstStream(stream_->id(), _, _));
+  EXPECT_CALL(*session_, SendRstStream(stream2_->id(), _, _));
+
+  // Invalid headers: Required Insert Count is zero, but the header block
+  // contains a dynamic table reference.
+  std::string headers = HeadersFrame(QuicTextUtils::HexDecode("000080"));
+  QuicStreamFrame frame(stream_->id(), false, 0, headers);
+  stream_->OnStreamFrame(frame);
+}
+
 TEST_P(QuicSpdyStreamTest, ImmediateHeaderDecodingWithDynamicTableEntries) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -1917,7 +1982,7 @@ TEST_P(QuicSpdyStreamTest, ImmediateHeaderDecodingWithDynamicTableEntries) {
 }
 
 TEST_P(QuicSpdyStreamTest, BlockedHeaderDecoding) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -1974,7 +2039,7 @@ TEST_P(QuicSpdyStreamTest, BlockedHeaderDecoding) {
 }
 
 TEST_P(QuicSpdyStreamTest, AsyncErrorDecodingHeaders) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -1993,11 +2058,10 @@ TEST_P(QuicSpdyStreamTest, AsyncErrorDecodingHeaders) {
 
   EXPECT_CALL(
       *connection_,
-      CloseConnection(
-          QUIC_DECOMPRESSION_FAILURE,
-          MatchesRegex("Error during async decoding of headers on stream \\d+: "
-                       "Required Insert Count too large."),
-          ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
+      CloseConnection(QUIC_QPACK_DECOMPRESSION_FAILED,
+                      MatchesRegex("Error decoding headers on stream \\d+: "
+                                   "Required Insert Count too large."),
+                      ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
 
   // Deliver two dynamic table entries to decoder
   // to trigger decoding of header block.
@@ -2005,8 +2069,37 @@ TEST_P(QuicSpdyStreamTest, AsyncErrorDecodingHeaders) {
   session_->qpack_decoder()->OnInsertWithoutNameReference("foo", "bar");
 }
 
+// Regression test for https://crbug.com/1024263 and for
+// https://crbug.com/1025209#c11.
+TEST_P(QuicSpdyStreamTest, BlockedHeaderDecodingUnblockedWithBufferedError) {
+  if (!UsesHttp3()) {
+    return;
+  }
+
+  Initialize(kShouldProcessData);
+  session_->qpack_decoder()->OnSetDynamicTableCapacity(1024);
+
+  // Relative index 2 is invalid because it is larger than or equal to the Base.
+  std::string headers = HeadersFrame(QuicTextUtils::HexDecode("020082"));
+  stream_->OnStreamFrame(QuicStreamFrame(stream_->id(), false, 0, headers));
+
+  // Decoding is blocked.
+  EXPECT_FALSE(stream_->headers_decompressed());
+
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_QPACK_DECOMPRESSION_FAILED,
+                      MatchesRegex("Error decoding headers on stream \\d+: "
+                                   "Invalid relative index."),
+                      ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
+
+  // Deliver one dynamic table entry to decoder
+  // to trigger decoding of header block.
+  session_->qpack_decoder()->OnInsertWithoutNameReference("foo", "bar");
+}
+
 TEST_P(QuicSpdyStreamTest, AsyncErrorDecodingTrailers) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -2053,13 +2146,12 @@ TEST_P(QuicSpdyStreamTest, AsyncErrorDecodingTrailers) {
   // Insert Count value advertised in the header block prefix.
   EXPECT_FALSE(stream_->trailers_decompressed());
 
-  EXPECT_CALL(*connection_,
-              CloseConnection(
-                  QUIC_DECOMPRESSION_FAILURE,
-                  MatchesRegex(
-                      "Error during async decoding of trailers on stream \\d+: "
-                      "Required Insert Count too large."),
-                  ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_QPACK_DECOMPRESSION_FAILED,
+                      MatchesRegex("Error decoding trailers on stream \\d+: "
+                                   "Required Insert Count too large."),
+                      ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
 
   // Deliver second dynamic table entry to decoder
   // to trigger decoding of trailing header block.
@@ -2116,7 +2208,7 @@ INSTANTIATE_TEST_SUITE_P(Tests,
 // Test that stream bytes are consumed (by calling
 // sequencer()->MarkConsumed()) incrementally, as soon as possible.
 TEST_P(QuicSpdyStreamIncrementalConsumptionTest, OnlyKnownFrames) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -2175,7 +2267,7 @@ TEST_P(QuicSpdyStreamIncrementalConsumptionTest, OnlyKnownFrames) {
 }
 
 TEST_P(QuicSpdyStreamIncrementalConsumptionTest, UnknownFramesInterleaved) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -2268,9 +2360,8 @@ TEST_P(QuicSpdyStreamTest, PushPromiseOnDataStream) {
   push_promise.push_id = 0x01;
   push_promise.headers = headers;
   std::unique_ptr<char[]> buffer;
-  HttpEncoder encoder;
-  uint64_t length =
-      encoder.SerializePushPromiseFrameWithOnlyPushId(push_promise, &buffer);
+  uint64_t length = HttpEncoder::SerializePushPromiseFrameWithOnlyPushId(
+      push_promise, &buffer);
   std::string data = std::string(buffer.get(), length) + headers;
   QuicStreamFrame frame(stream_->id(), false, 0, data);
 
@@ -2282,7 +2373,7 @@ TEST_P(QuicSpdyStreamTest, PushPromiseOnDataStream) {
 
 // Close connection if a DATA frame is received before a HEADERS frame.
 TEST_P(QuicSpdyStreamTest, DataBeforeHeaders) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -2304,7 +2395,7 @@ TEST_P(QuicSpdyStreamTest, DataBeforeHeaders) {
 
 // Close connection if a HEADERS frame is received after the trailing HEADERS.
 TEST_P(QuicSpdyStreamTest, TrailersAfterTrailers) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -2357,7 +2448,7 @@ TEST_P(QuicSpdyStreamTest, TrailersAfterTrailers) {
 // Regression test for https://crbug.com/978733.
 // Close connection if a DATA frame is received after the trailing HEADERS.
 TEST_P(QuicSpdyStreamTest, DataAfterTrailers) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -2407,7 +2498,7 @@ TEST_P(QuicSpdyStreamTest, DataAfterTrailers) {
 // SETTINGS frames are invalid on bidirectional streams.  If one is received,
 // the connection is closed.  No more data should be processed.
 TEST_P(QuicSpdyStreamTest, StopProcessingIfConnectionClosed) {
-  if (!VersionUsesHttp3(GetParam().transport_version)) {
+  if (!UsesHttp3()) {
     return;
   }
 
@@ -2436,6 +2527,45 @@ TEST_P(QuicSpdyStreamTest, StopProcessingIfConnectionClosed) {
                                          /* offset = */ 0, frames));
 
   EXPECT_EQ(0u, stream_->sequencer()->NumBytesConsumed());
+}
+
+// Stream Cancellation instruction is sent on QPACK decoder stream
+// when stream is reset.
+// TODO(b/145684124) Re-enable.
+TEST_P(QuicSpdyStreamTest, DISABLED_StreamCancellationWhenStreamReset) {
+  if (!UsesHttp3()) {
+    return;
+  }
+
+  Initialize(kShouldProcessData);
+
+  auto qpack_decoder_stream =
+      QuicSpdySessionPeer::GetQpackDecoderSendStream(session_.get());
+  EXPECT_CALL(*session_, WritevData(qpack_decoder_stream,
+                                    qpack_decoder_stream->id(), 1, 1, _));
+  EXPECT_CALL(*session_,
+              SendRstStream(stream_->id(), QUIC_STREAM_CANCELLED, 0));
+
+  stream_->Reset(QUIC_STREAM_CANCELLED);
+}
+
+// Stream Cancellation instruction is sent on QPACK decoder stream
+// when RESET_STREAM frame is received.
+// TODO(b/145684124) Re-enable.
+TEST_P(QuicSpdyStreamTest, DISABLED_StreamCancellationOnResetReceived) {
+  if (!UsesHttp3()) {
+    return;
+  }
+
+  Initialize(kShouldProcessData);
+
+  auto qpack_decoder_stream =
+      QuicSpdySessionPeer::GetQpackDecoderSendStream(session_.get());
+  EXPECT_CALL(*session_, WritevData(qpack_decoder_stream,
+                                    qpack_decoder_stream->id(), 1, 1, _));
+
+  stream_->OnStreamReset(QuicRstStreamFrame(
+      kInvalidControlFrameId, stream_->id(), QUIC_STREAM_CANCELLED, 0));
 }
 
 }  // namespace

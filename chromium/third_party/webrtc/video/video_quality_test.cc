@@ -22,7 +22,6 @@
 #include "api/rtc_event_log_output_file.h"
 #include "api/task_queue/default_task_queue_factory.h"
 #include "api/task_queue/task_queue_base.h"
-#include "api/transport/media/media_transport_config.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "api/video_codecs/video_encoder.h"
 #include "call/fake_network_pipe.h"
@@ -41,6 +40,7 @@
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 #include "modules/video_coding/utility/ivf_file_writer.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "test/platform_video_capturer.h"
 #include "test/run_loop.h"
 #include "test/testsupport/file_utils.h"
@@ -1188,7 +1188,7 @@ VideoQualityTest::CreateSendTransport() {
     network_behavior = std::move(injection_components_->sender_network);
   }
   return std::make_unique<test::LayerFilteringTransport>(
-      &task_queue_,
+      task_queue(),
       std::make_unique<FakeNetworkPipe>(clock_, std::move(network_behavior)),
       sender_call_.get(), kPayloadTypeVP8, kPayloadTypeVP9,
       params_.video[0].selected_tl, params_.ss[0].selected_sl,
@@ -1206,7 +1206,7 @@ VideoQualityTest::CreateReceiveTransport() {
     network_behavior = std::move(injection_components_->receiver_network);
   }
   return std::make_unique<test::DirectTransport>(
-      &task_queue_,
+      task_queue(),
       std::make_unique<FakeNetworkPipe>(clock_, std::move(network_behavior)),
       receiver_call_.get(), payload_type_map_);
 }
@@ -1254,19 +1254,20 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
     recv_event_log_ = std::make_unique<RtcEventLogNull>();
   }
 
-  task_queue_.SendTask([this, &params, &send_transport, &recv_transport]() {
-    Call::Config send_call_config(send_event_log_.get());
-    Call::Config recv_call_config(recv_event_log_.get());
-    send_call_config.bitrate_config = params.call.call_bitrate_config;
-    recv_call_config.bitrate_config = params.call.call_bitrate_config;
-    if (params_.audio.enabled)
-      InitializeAudioDevice(&send_call_config, &recv_call_config,
-                            params_.audio.use_real_adm);
+  SendTask(RTC_FROM_HERE, task_queue(),
+           [this, &params, &send_transport, &recv_transport]() {
+             Call::Config send_call_config(send_event_log_.get());
+             Call::Config recv_call_config(recv_event_log_.get());
+             send_call_config.bitrate_config = params.call.call_bitrate_config;
+             recv_call_config.bitrate_config = params.call.call_bitrate_config;
+             if (params_.audio.enabled)
+               InitializeAudioDevice(&send_call_config, &recv_call_config,
+                                     params_.audio.use_real_adm);
 
-    CreateCalls(send_call_config, recv_call_config);
-    send_transport = CreateSendTransport();
-    recv_transport = CreateReceiveTransport();
-  });
+             CreateCalls(send_call_config, recv_call_config);
+             send_transport = CreateSendTransport();
+             recv_transport = CreateReceiveTransport();
+           });
 
   std::string graph_title = params_.analyzer.graph_title;
   if (graph_title.empty())
@@ -1284,9 +1285,9 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
       static_cast<size_t>(params_.ss[0].selected_stream),
       params.ss[0].selected_sl, params_.video[0].selected_tl,
       is_quick_test_enabled, clock_, params_.logging.rtp_dump_name,
-      &task_queue_);
+      task_queue());
 
-  task_queue_.SendTask([&]() {
+  SendTask(RTC_FROM_HERE, task_queue(), [&]() {
     analyzer_->SetCall(sender_call_.get());
     analyzer_->SetReceiver(receiver_call_->Receiver());
     send_transport->SetReceiver(analyzer_.get());
@@ -1332,7 +1333,7 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
 
   analyzer_->Wait();
 
-  task_queue_.SendTask([&]() {
+  SendTask(RTC_FROM_HERE, task_queue(), [&]() {
     StopThumbnails();
     Stop();
 
@@ -1408,8 +1409,7 @@ void VideoQualityTest::InitializeAudioDevice(Call::Config* send_call_config,
 }
 
 void VideoQualityTest::SetupAudio(Transport* transport) {
-  AudioSendStream::Config audio_send_config(transport,
-                                            webrtc::MediaTransportConfig());
+  AudioSendStream::Config audio_send_config(transport);
   audio_send_config.rtp.ssrc = kAudioSendSsrc;
 
   // Add extension to enable audio send side BWE, and allow audio bit rate
@@ -1475,7 +1475,7 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
     recv_event_log_ = std::make_unique<RtcEventLogNull>();
   }
 
-  task_queue_.SendTask([&]() {
+  SendTask(RTC_FROM_HERE, task_queue(), [&]() {
     params_ = params;
     CheckParamsAndInjectionComponents();
 
@@ -1562,9 +1562,9 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
     Start();
   });
 
-  test::PressEnterToContinue(task_queue_);
+  test::PressEnterToContinue(task_queue());
 
-  task_queue_.SendTask([&]() {
+  SendTask(RTC_FROM_HERE, task_queue(), [&]() {
     Stop();
     DestroyStreams();
 

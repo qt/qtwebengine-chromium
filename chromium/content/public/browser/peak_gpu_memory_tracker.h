@@ -41,6 +41,14 @@ class CONTENT_EXPORT PeakGpuMemoryTracker {
   PeakGpuMemoryTracker(const PeakGpuMemoryTracker*) = delete;
   PeakGpuMemoryTracker& operator=(const PeakGpuMemoryTracker&) = delete;
 
+  // Invalidates this tracker, i.e. the callback is never called when tracking
+  // stops.
+  virtual void Cancel() = 0;
+
+  // Sets a new PeakMemoryCallback to replace the one provided at construction
+  // time. The original is not called.
+  virtual void SetCallback(PeakMemoryCallback callback) = 0;
+
  protected:
   PeakGpuMemoryTracker() = default;
 };

@@ -12,15 +12,16 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/quic_transport/quic_transport_protocol.h"
 #include "net/third_party/quiche/src/quic/quic_transport/quic_transport_session_interface.h"
+#include "net/third_party/quiche/src/quic/quic_transport/quic_transport_stream.h"
 
 namespace quic {
 
 // A server session for the QuicTransport protocol.
-class QUIC_EXPORT QuicTransportServerSession
+class QUIC_EXPORT_PRIVATE QuicTransportServerSession
     : public QuicSession,
       public QuicTransportSessionInterface {
  public:
-  class ServerVisitor {
+  class QUIC_EXPORT_PRIVATE ServerVisitor {
    public:
     virtual ~ServerVisitor() {}
 
@@ -49,6 +50,10 @@ class QUIC_EXPORT QuicTransportServerSession
     return crypto_stream_.get();
   }
 
+  // Returns true once the encryption has been established, the client
+  // indication has been received and the origin has been verified.  No
+  // application data will be read or written before the connection is ready.
+  // Once the connection becomes ready, this method will never return false.
   bool IsSessionReady() const override { return ready_; }
 
   QuicStream* CreateIncomingStream(QuicStreamId id) override;
@@ -59,7 +64,7 @@ class QUIC_EXPORT QuicTransportServerSession
   }
 
  protected:
-  class ClientIndication : public QuicStream {
+  class QUIC_EXPORT_PRIVATE ClientIndication : public QuicStream {
    public:
     explicit ClientIndication(QuicTransportServerSession* session);
     void OnDataAvailable() override;
@@ -70,7 +75,7 @@ class QUIC_EXPORT QuicTransportServerSession
   };
 
   // Utility class for parsing the client indication.
-  class ClientIndicationParser {
+  class QUIC_EXPORT_PRIVATE ClientIndicationParser {
    public:
     ClientIndicationParser(QuicTransportServerSession* session,
                            QuicStringPiece indication)
@@ -92,6 +97,8 @@ class QUIC_EXPORT QuicTransportServerSession
   // Parses and processes the client indication as described in
   // https://vasilvv.github.io/webtransport/draft-vvv-webtransport-quic.html#rfc.section.3.2
   void ProcessClientIndication(QuicStringPiece indication);
+
+  virtual void OnIncomingDataStream(QuicTransportStream* /*stream*/) {}
 
   std::unique_ptr<QuicCryptoServerStream> crypto_stream_;
   bool ready_ = false;

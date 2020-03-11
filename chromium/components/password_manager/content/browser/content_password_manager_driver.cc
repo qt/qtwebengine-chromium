@@ -18,9 +18,11 @@
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_manager_metrics_recorder.h"
 #include "components/safe_browsing/buildflags.h"
+#include "content/public/browser/back_forward_cache.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/ssl_status.h"
 #include "content/public/browser/web_contents.h"
@@ -109,6 +111,10 @@ void ContentPasswordManagerDriver::FillPasswordForm(
       autofill::MaybeClearPasswordValues(form_data));
 }
 
+void ContentPasswordManagerDriver::InformNoSavedCredentials() {
+  GetPasswordAutofillAgent()->InformNoSavedCredentials();
+}
+
 void ContentPasswordManagerDriver::FormEligibleForGenerationFound(
     const autofill::PasswordFormGenerationData& form) {
   if (GetPasswordGenerationHelper()->IsGenerationEnabled(
@@ -183,6 +189,14 @@ autofill::AutofillDriver* ContentPasswordManagerDriver::GetAutofillDriver() {
 
 bool ContentPasswordManagerDriver::IsMainFrame() const {
   return is_main_frame_;
+}
+
+bool ContentPasswordManagerDriver::CanShowAutofillUi() const {
+  // TODO(crbug.com/1041021): Use RenderFrameHost::IsActive here when available.
+  return !content::BackForwardCache::EvictIfCached(
+      {render_frame_host_->GetProcess()->GetID(),
+       render_frame_host_->GetRoutingID()},
+      "ContentPasswordManagerDriver::CanShowAutofillUi");
 }
 
 const GURL& ContentPasswordManagerDriver::GetLastCommittedURL() const {

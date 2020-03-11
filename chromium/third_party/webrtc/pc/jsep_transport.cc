@@ -102,8 +102,8 @@ JsepTransportDescription& JsepTransportDescription::operator=(
 JsepTransport::JsepTransport(
     const std::string& mid,
     const rtc::scoped_refptr<rtc::RTCCertificate>& local_certificate,
-    std::unique_ptr<cricket::IceTransportInternal> ice_transport,
-    std::unique_ptr<cricket::IceTransportInternal> rtcp_ice_transport,
+    rtc::scoped_refptr<webrtc::IceTransportInterface> ice_transport,
+    rtc::scoped_refptr<webrtc::IceTransportInterface> rtcp_ice_transport,
     std::unique_ptr<webrtc::RtpTransport> unencrypted_rtp_transport,
     std::unique_ptr<webrtc::SrtpTransport> sdes_transport,
     std::unique_ptr<webrtc::DtlsSrtpTransport> dtls_srtp_transport,
@@ -111,7 +111,6 @@ JsepTransport::JsepTransport(
     std::unique_ptr<DtlsTransportInternal> rtp_dtls_transport,
     std::unique_ptr<DtlsTransportInternal> rtcp_dtls_transport,
     std::unique_ptr<SctpTransportInternal> sctp_transport,
-    std::unique_ptr<webrtc::MediaTransportInterface> media_transport,
     std::unique_ptr<webrtc::DatagramTransportInterface> datagram_transport,
     webrtc::DataChannelTransportInterface* data_channel_transport)
     : network_thread_(rtc::Thread::Current()),
@@ -139,7 +138,6 @@ JsepTransport::JsepTransport(
                           ? new rtc::RefCountedObject<webrtc::SctpTransport>(
                                 std::move(sctp_transport))
                           : nullptr),
-      media_transport_(std::move(media_transport)),
       datagram_transport_(std::move(datagram_transport)),
       datagram_rtp_transport_(std::move(datagram_rtp_transport)),
       data_channel_transport_(data_channel_transport) {
@@ -149,7 +147,6 @@ JsepTransport::JsepTransport(
   // present.
   RTC_DCHECK_EQ((rtcp_ice_transport_ != nullptr),
                 (rtcp_dtls_transport_ != nullptr));
-  RTC_DCHECK(!datagram_transport_ || !media_transport_);
   // Verify the "only one out of these three can be set" invariant.
   if (unencrypted_rtp_transport_) {
     RTC_DCHECK(!sdes_transport);
@@ -173,10 +170,6 @@ JsepTransport::JsepTransport(
             datagram_rtp_transport_.get(), default_rtp_transport()});
   }
 
-  if (media_transport_) {
-    media_transport_->SetMediaTransportStateCallback(this);
-  }
-
   if (data_channel_transport_ && sctp_data_channel_transport_) {
     composite_data_channel_transport_ =
         std::make_unique<webrtc::CompositeDataChannelTransport>(
@@ -186,11 +179,6 @@ JsepTransport::JsepTransport(
 }
 
 JsepTransport::~JsepTransport() {
-  // Disconnect media transport state callbacks.
-  if (media_transport_) {
-    media_transport_->SetMediaTransportStateCallback(nullptr);
-  }
-
   if (sctp_transport_) {
     sctp_transport_->Clear();
   }
@@ -772,6 +760,7 @@ bool JsepTransport::GetTransportStats(DtlsTransportInternal* dtls_transport,
   } else {
     substats.component = ICE_CANDIDATE_COMPONENT_RTP;
   }
+  dtls_transport->GetSslVersionBytes(&substats.ssl_version_bytes);
   dtls_transport->GetSrtpCryptoSuite(&substats.srtp_crypto_suite);
   dtls_transport->GetSslCipherSuite(&substats.ssl_cipher_suite);
   substats.dtls_state = dtls_transport->dtls_state();
@@ -781,18 +770,6 @@ bool JsepTransport::GetTransportStats(DtlsTransportInternal* dtls_transport,
   }
   stats->channel_stats.push_back(substats);
   return true;
-}
-
-void JsepTransport::OnStateChanged(webrtc::MediaTransportState state) {
-  // TODO(bugs.webrtc.org/9719) This method currently fires on the network
-  // thread, but media transport does not make such guarantees. We need to make
-  // sure this callback is guaranteed to be executed on the network thread.
-  RTC_DCHECK_RUN_ON(network_thread_);
-  {
-    rtc::CritScope scope(&accessor_lock_);
-    media_transport_state_ = state;
-  }
-  SignalMediaTransportStateChanged();
 }
 
 void JsepTransport::NegotiateDatagramTransport(SdpType type) {

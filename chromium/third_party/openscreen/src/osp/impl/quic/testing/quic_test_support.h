@@ -18,11 +18,12 @@
 #include "platform/api/time.h"
 #include "platform/api/udp_socket.h"
 #include "platform/base/ip_address.h"
-#include "platform/impl/task_runner.h"
 #include "platform/test/fake_clock.h"
+#include "platform/test/fake_task_runner.h"
 #include "platform/test/fake_udp_socket.h"
 
 namespace openscreen {
+namespace osp {
 
 class MockServiceObserver : public ProtocolConnectionServiceObserver {
  public:
@@ -84,6 +85,7 @@ class FakeQuicBridge {
   std::unique_ptr<platform::FakeUdpSocket> server_socket_;
 };
 
+}  // namespace osp
 }  // namespace openscreen
 
 #endif  // OSP_IMPL_QUIC_TESTING_QUIC_TEST_SUPPORT_H_

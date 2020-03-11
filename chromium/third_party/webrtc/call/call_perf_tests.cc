@@ -28,6 +28,7 @@
 #include "modules/audio_device/include/test_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/metrics.h"
@@ -43,7 +44,6 @@
 #include "test/null_transport.h"
 #include "test/rtp_header_parser.h"
 #include "test/rtp_rtcp_observer.h"
-#include "test/single_threaded_task_queue.h"
 #include "test/testsupport/file_utils.h"
 #include "test/testsupport/perf_test.h"
 #include "test/video_encoder_proxy_factory.h"
@@ -182,7 +182,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   AudioReceiveStream* audio_receive_stream;
   std::unique_ptr<DriftingClock> drifting_clock;
 
-  task_queue_.SendTask([&]() {
+  SendTask(RTC_FROM_HERE, task_queue(), [&]() {
     metrics::Reset();
     rtc::scoped_refptr<TestAudioDeviceModule> fake_audio_device =
         TestAudioDeviceModule::Create(
@@ -218,7 +218,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
                  });
 
     audio_send_transport = std::make_unique<test::PacketTransport>(
-        &task_queue_, sender_call_.get(), &observer,
+        task_queue(), sender_call_.get(), &observer,
         test::PacketTransport::kSender, audio_pt_map,
         std::make_unique<FakeNetworkPipe>(
             Clock::GetRealTimeClock(),
@@ -226,7 +226,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
     audio_send_transport->SetReceiver(receiver_call_->Receiver());
 
     video_send_transport = std::make_unique<test::PacketTransport>(
-        &task_queue_, sender_call_.get(), &observer,
+        task_queue(), sender_call_.get(), &observer,
         test::PacketTransport::kSender, video_pt_map,
         std::make_unique<FakeNetworkPipe>(Clock::GetRealTimeClock(),
                                           std::make_unique<SimulatedNetwork>(
@@ -234,7 +234,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
     video_send_transport->SetReceiver(receiver_call_->Receiver());
 
     receive_transport = std::make_unique<test::PacketTransport>(
-        &task_queue_, receiver_call_.get(), &observer,
+        task_queue(), receiver_call_.get(), &observer,
         test::PacketTransport::kReceiver, payload_type_map_,
         std::make_unique<FakeNetworkPipe>(Clock::GetRealTimeClock(),
                                           std::make_unique<SimulatedNetwork>(
@@ -244,8 +244,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
     CreateSendConfig(1, 0, 0, video_send_transport.get());
     CreateMatchingReceiveConfigs(receive_transport.get());
 
-    AudioSendStream::Config audio_send_config(audio_send_transport.get(),
-                                              MediaTransportConfig());
+    AudioSendStream::Config audio_send_config(audio_send_transport.get());
     audio_send_config.rtp.ssrc = kAudioSendSsrc;
     audio_send_config.send_codec_spec = AudioSendStream::Config::SendCodecSpec(
         kAudioSendPayloadType, {"ISAC", 16000, 1});
@@ -297,7 +296,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   EXPECT_TRUE(observer.Wait())
       << "Timed out while waiting for audio and video to be synchronized.";
 
-  task_queue_.SendTask([&]() {
+  SendTask(RTC_FROM_HERE, task_queue(), [&]() {
     audio_send_stream->Stop();
     audio_receive_stream->Stop();
 
@@ -861,14 +860,13 @@ void CallPerfTest::TestMinAudioVideoBitrate(int test_bitrate_from,
 
   class MinVideoAndAudioBitrateTester : public test::EndToEndTest {
    public:
-    MinVideoAndAudioBitrateTester(
-        int test_bitrate_from,
-        int test_bitrate_to,
-        int test_bitrate_step,
-        int min_bwe,
-        int start_bwe,
-        int max_bwe,
-        test::DEPRECATED_SingleThreadedTaskQueueForTesting* task_queue)
+    MinVideoAndAudioBitrateTester(int test_bitrate_from,
+                                  int test_bitrate_to,
+                                  int test_bitrate_step,
+                                  int min_bwe,
+                                  int start_bwe,
+                                  int max_bwe,
+                                  TaskQueueBase* task_queue)
         : EndToEndTest(),
           test_bitrate_from_(test_bitrate_from),
           test_bitrate_to_(test_bitrate_to),
@@ -932,8 +930,9 @@ void CallPerfTest::TestMinAudioVideoBitrate(int test_bitrate_from,
         int64_t avg_rtt = 0;
         for (int i = 0; i < kBitrateMeasurements; i++) {
           Call::Stats call_stats;
-          task_queue_->SendTask(
-              [this, &call_stats]() { call_stats = sender_call_->GetStats(); });
+          SendTask(RTC_FROM_HERE, task_queue_, [this, &call_stats]() {
+            call_stats = sender_call_->GetStats();
+          });
           avg_rtt += call_stats.rtt_ms;
           rtc::Thread::SleepMs(quick_perf_test ? kShortDelayMs
                                                : kBitrateMeasurementMs);
@@ -982,9 +981,9 @@ void CallPerfTest::TestMinAudioVideoBitrate(int test_bitrate_from,
     SimulatedNetwork* send_simulated_network_;
     SimulatedNetwork* receive_simulated_network_;
     Call* sender_call_;
-    test::DEPRECATED_SingleThreadedTaskQueueForTesting* const task_queue_;
+    TaskQueueBase* const task_queue_;
   } test(test_bitrate_from, test_bitrate_to, test_bitrate_step, min_bwe,
-         start_bwe, max_bwe, &task_queue_);
+         start_bwe, max_bwe, task_queue());
 
   RunBaseTest(&test);
 }

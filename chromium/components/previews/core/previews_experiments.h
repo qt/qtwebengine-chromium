@@ -238,6 +238,15 @@ bool ShouldExcludeMediaSuffix(const GURL& url);
 // preview using a cache is enabled.
 bool DetectDeferRedirectLoopsUsingCache();
 
+// Returns true if the checks to show a preview for the navigation should be
+// overridden.
+bool OverrideShouldShowPreviewCheck();
+
+// Returns true if DeferAllScript should be applied even if the optimization
+// guide decision is unknown. This allows DeferAllScript to be applied if the
+// optimization guide does not yet know if it can be or not.
+bool ApplyDeferWhenOptimizationGuideDecisionUnknown();
+
 }  // namespace params
 
 }  // namespace previews

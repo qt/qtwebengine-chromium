@@ -11,11 +11,11 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "platform/api/logging.h"
 #include "platform/base/error.h"
+#include "util/logging.h"
 
 namespace openscreen {
-namespace mdns {
+namespace osp {
 
 struct DomainName {
   static ErrorOr<DomainName> Append(const DomainName& first,
@@ -85,7 +85,7 @@ class DomainNameComparator {
 
 std::ostream& operator<<(std::ostream& os, const DomainName& domain_name);
 
-}  // namespace mdns
+}  // namespace osp
 }  // namespace openscreen
 
 #endif  // OSP_IMPL_DISCOVERY_MDNS_DOMAIN_NAME_H_

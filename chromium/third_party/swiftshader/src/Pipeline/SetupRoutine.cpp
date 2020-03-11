@@ -25,7 +25,6 @@ namespace sw
 {
 	SetupRoutine::SetupRoutine(const SetupProcessor::State &state) : state(state)
 	{
-		routine = 0;
 	}
 
 	SetupRoutine::~SetupRoutine()
@@ -34,7 +33,7 @@ namespace sw
 
 	void SetupRoutine::generate()
 	{
-		Function<Int(Pointer<Byte>, Pointer<Byte>, Pointer<Byte>, Pointer<Byte>)> function;
+		SetupFunction function;
 		{
 			Pointer<Byte> primitive(function.Arg<0>());
 			Pointer<Byte> tri(function.Arg<1>());
@@ -295,11 +294,6 @@ namespace sw
 				conditionalRotate2(wMax == w2, v0, v1, v2);
 			}
 
-			*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordX)) =
-				*Pointer<Float>(v0 + OFFSET(Vertex, x));
-			*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordY)) =
-				*Pointer<Float>(v0 + OFFSET(Vertex, y));
-
 			Float w0 = *Pointer<Float>(v0 + OFFSET(Vertex, w));
 			Float w1 = *Pointer<Float>(v1 + OFFSET(Vertex, w));
 			Float w2 = *Pointer<Float>(v2 + OFFSET(Vertex, w));
@@ -320,6 +314,12 @@ namespace sw
 			Int Y0 = *Pointer<Int>(v0 + OFFSET(Vertex,projected.y));
 			Int Y1 = *Pointer<Int>(v1 + OFFSET(Vertex,projected.y));
 			Int Y2 = *Pointer<Int>(v2 + OFFSET(Vertex,projected.y));
+
+			if(point)
+			{
+				*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordX)) = Float(1.0f / subPixF) * Float(X0);
+				*Pointer<Float>(primitive + OFFSET(Primitive, pointCoordY)) = Float(1.0f / subPixF) * Float(Y0);
+			}
 
 			if(line)
 			{
@@ -452,8 +452,24 @@ namespace sw
 							OFFSET(Vertex, v[interpolant]),
 							OFFSET(Primitive, V[interpolant]),
 							state.gradient[interpolant].Flat,
-							!state.gradient[interpolant].NoPerspective, 0);
+							!state.gradient[interpolant].NoPerspective);
 				}
+			}
+
+			for (unsigned int i = 0; i < state.numClipDistances; i++)
+			{
+				setupGradient(primitive, tri, w012, M, v0, v1, v2,
+						OFFSET(Vertex, clipDistance[i]),
+						OFFSET(Primitive, clipDistance[i]),
+						false, true);
+			}
+
+			for (unsigned int i = 0; i < state.numCullDistances; i++)
+			{
+				setupGradient(primitive, tri, w012, M, v0, v1, v2,
+						OFFSET(Vertex, cullDistance[i]),
+						OFFSET(Primitive, cullDistance[i]),
+						false, true);
 			}
 
 			Return(1);
@@ -462,7 +478,7 @@ namespace sw
 		routine = function("SetupRoutine");
 	}
 
-	void SetupRoutine::setupGradient(Pointer<Byte> &primitive, Pointer<Byte> &triangle, Float4 &w012, Float4 (&m)[3], Pointer<Byte> &v0, Pointer<Byte> &v1, Pointer<Byte> &v2, int attribute, int planeEquation, bool flat, bool perspective, int component)
+	void SetupRoutine::setupGradient(Pointer<Byte> &primitive, Pointer<Byte> &triangle, Float4 &w012, Float4 (&m)[3], Pointer<Byte> &v0, Pointer<Byte> &v1, Pointer<Byte> &v2, int attribute, int planeEquation, bool flat, bool perspective)
 	{
 		if(!flat)
 		{
@@ -610,7 +626,7 @@ namespace sw
 		#endif
 	}
 
-	std::shared_ptr<Routine> SetupRoutine::getRoutine()
+	SetupFunction::RoutineType SetupRoutine::getRoutine()
 	{
 		return routine;
 	}

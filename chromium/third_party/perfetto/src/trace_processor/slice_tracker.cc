@@ -127,24 +127,54 @@ base::Optional<uint32_t> SliceTracker::StartSlice(
 base::Optional<uint32_t> SliceTracker::EndAndroid(int64_t timestamp,
                                                   uint32_t ftrace_tid,
                                                   uint32_t atrace_tgid) {
-  auto actual_tgid_it = ftrace_to_atrace_tgid_.find(ftrace_tid);
-  if (actual_tgid_it == ftrace_to_atrace_tgid_.end()) {
-    // This is possible if we start tracing after a begin slice.
-    PERFETTO_DLOG("Unknown tgid for ftrace tid %u", ftrace_tid);
-    return base::nullopt;
-  }
-  uint32_t actual_tgid = actual_tgid_it->second;
+  auto map_tgid_it = ftrace_to_atrace_tgid_.find(ftrace_tid);
+  bool has_map_tgid = map_tgid_it != ftrace_to_atrace_tgid_.end();
+
   // atrace_tgid can be 0 in older android versions where the end event would
   // not contain the value.
-  if (atrace_tgid != 0 && atrace_tgid != actual_tgid) {
-    PERFETTO_DLOG("Mismatched atrace pid %u and looked up pid %u", atrace_tgid,
-                  actual_tgid);
-    context_->storage->IncrementStats(stats::atrace_tgid_mismatch);
+  if (atrace_tgid == 0) {
+    if (!has_map_tgid) {
+      // This is possible if we start tracing after a begin slice.
+      PERFETTO_DLOG("Unknown tgid for ftrace tid %u", ftrace_tid);
+      return base::nullopt;
+    }
+  } else {
+    if (has_map_tgid && atrace_tgid != map_tgid_it->second) {
+      PERFETTO_DLOG("Mismatched atrace pid %u and looked up pid %u",
+                    atrace_tgid, map_tgid_it->second);
+      context_->storage->IncrementStats(stats::atrace_tgid_mismatch);
+    }
   }
+
+  uint32_t actual_tgid = atrace_tgid == 0 ? map_tgid_it->second : atrace_tgid;
   UniqueTid utid =
       context_->process_tracker->UpdateThread(ftrace_tid, actual_tgid);
   TrackId track_id = context_->track_tracker->InternThreadTrack(utid);
   return End(timestamp, track_id);
+}
+
+// Returns the first incomplete slice in the stack with matching name and
+// category. We assume null category/name matches everything. Returns
+// nullopt if no matching slice is found.
+base::Optional<size_t> SliceTracker::MatchingIncompleteSliceIndex(
+    SlicesStack& stack,
+    StringId name,
+    StringId category) {
+  auto* slices = context_->storage->mutable_nestable_slices();
+  for (int i = static_cast<int>(stack.size()) - 1; i >= 0; i--) {
+    uint32_t slice_idx = stack[static_cast<size_t>(i)].first;
+    if (slices->durations()[slice_idx] != kPendingDuration)
+      continue;
+    const StringId& other_category = slices->categories()[slice_idx];
+    if (!category.is_null() && !other_category.is_null() &&
+        category != other_category)
+      continue;
+    const StringId& other_name = slices->names()[slice_idx];
+    if (!name.is_null() && !other_name.is_null() && name != other_name)
+      continue;
+    return static_cast<size_t>(i);
+  }
+  return base::nullopt;
 }
 
 base::Optional<uint32_t> SliceTracker::End(int64_t timestamp,
@@ -166,14 +196,29 @@ base::Optional<uint32_t> SliceTracker::End(int64_t timestamp,
     return base::nullopt;
 
   auto* slices = context_->storage->mutable_nestable_slices();
-  uint32_t slice_idx = stack.back().first;
+  base::Optional<size_t> stack_idx =
+      MatchingIncompleteSliceIndex(stack, name, category);
 
-  // If we are trying to close mismatching slices (e.g., slices that began
-  // before tracing started), bail out.
-  if (!category.is_null() && slices->categories()[slice_idx] != category)
+  // If we are trying to close slices that are not open on the stack (e.g.,
+  // slices that began before tracing started), bail out.
+  if (!stack_idx)
     return base::nullopt;
-  if (!name.is_null() && slices->names()[slice_idx] != name)
-    return base::nullopt;
+
+  if (*stack_idx != stack.size() - 1) {
+    // This usually happens because we have two slices that are partially
+    // overlapping.
+    // [  slice  1    ]
+    //          [     slice 2     ]
+    // This is invalid in chrome and should be fixed. Duration events should
+    // either be nested or disjoint, never partially intersecting.
+    PERFETTO_DLOG(
+        "Incorrect ordering of End slice event around timestamp "
+        "%" PRId64,
+        timestamp);
+    context_->storage->IncrementStats(stats::misplaced_end_event);
+  }
+
+  uint32_t slice_idx = stack[stack_idx.value()].first;
 
   PERFETTO_DCHECK(slices->durations()[slice_idx] == kPendingDuration);
   slices->set_duration(slice_idx, timestamp - slices->start_ns()[slice_idx]);

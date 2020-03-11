@@ -16,6 +16,7 @@
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
+#include "libANGLE/renderer/vulkan/RenderTargetVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "libANGLE/renderer/vulkan/vk_utils.h"
 #include "libANGLE/trace.h"
@@ -61,12 +62,11 @@ struct ImageMemoryBarrierData
     // needs a READ bit, as WAR hazards don't need memory barriers (just execution barriers).
     VkAccessFlags srcAccessMask;
 
-    // If access is read-only, the execution barrier can be skipped altogether if retransitioning to
+    // If access is read-only, the memory barrier can be skipped altogether if retransitioning to
     // the same layout.  This is because read-after-read does not need an execution or memory
     // barrier.
     //
-    // Otherwise, same-layout transitions only require an execution barrier (and not a memory
-    // barrier).
+    // Otherwise, some same-layout transitions require a memory barrier.
     bool sameLayoutTransitionRequiresBarrier;
 };
 
@@ -96,6 +96,32 @@ constexpr angle::PackedEnumMap<ImageLayout, ImageMemoryBarrierData> kImageMemory
             // Transition from: all writes must finish before barrier.
             VK_ACCESS_MEMORY_WRITE_BIT,
             false,
+        },
+    },
+    {
+        ImageLayout::ExternalShadersReadOnly,
+        {
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            // Transition to: all reads must happen after barrier.
+            VK_ACCESS_SHADER_READ_BIT,
+            // Transition from: RAR and WAR don't need memory barrier.
+            0,
+            false,
+        },
+    },
+    {
+        ImageLayout::ExternalShadersWrite,
+        {
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            // Transition to: all reads and writes must happen after barrier.
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            // Transition from: all writes must finish before barrier.
+            VK_ACCESS_SHADER_WRITE_BIT,
+            true,
         },
     },
     {
@@ -193,8 +219,8 @@ constexpr angle::PackedEnumMap<ImageLayout, ImageMemoryBarrierData> kImageMemory
         ImageLayout::DepthStencilAttachment,
         {
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
             // Transition to: all reads and writes must happen after barrier.
             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             // Transition from: all writes must finish before barrier.
@@ -284,6 +310,40 @@ ImageView *GetLevelImageView(ImageViewVector *imageViews, uint32_t level, uint32
     ASSERT(imageViews->size() > level);
 
     return &(*imageViews)[level];
+}
+
+// Special rules apply to VkBufferImageCopy with depth/stencil. The components are tightly packed
+// into a depth or stencil section of the destination buffer. See the spec:
+// https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/VkBufferImageCopy.html
+const angle::Format &GetDepthStencilImageToBufferFormat(const angle::Format &imageFormat,
+                                                        VkImageAspectFlagBits copyAspect)
+{
+    if (copyAspect == VK_IMAGE_ASPECT_STENCIL_BIT)
+    {
+        ASSERT(imageFormat.id == angle::FormatID::D24_UNORM_S8_UINT ||
+               imageFormat.id == angle::FormatID::D32_FLOAT_S8X24_UINT ||
+               imageFormat.id == angle::FormatID::S8_UINT);
+        return angle::Format::Get(angle::FormatID::S8_UINT);
+    }
+
+    ASSERT(copyAspect == VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    switch (imageFormat.id)
+    {
+        case angle::FormatID::D16_UNORM:
+            return imageFormat;
+        case angle::FormatID::D24_UNORM_X8_UINT:
+            return imageFormat;
+        case angle::FormatID::D24_UNORM_S8_UINT:
+            return angle::Format::Get(angle::FormatID::D24_UNORM_X8_UINT);
+        case angle::FormatID::D32_FLOAT:
+            return imageFormat;
+        case angle::FormatID::D32_FLOAT_S8X24_UINT:
+            return angle::Format::Get(angle::FormatID::D32_FLOAT);
+        default:
+            UNREACHABLE();
+            return imageFormat;
+    }
 }
 }  // anonymous namespace
 
@@ -930,7 +990,7 @@ angle::Result DynamicQueryPool::allocateNewPool(ContextVk *contextVk)
     queryPoolInfo.queryCount            = mPoolSize;
     queryPoolInfo.pipelineStatistics    = 0;
 
-    vk::QueryPool queryPool;
+    QueryPool queryPool;
 
     ANGLE_VK_TRY(contextVk, queryPool.init(contextVk->getDevice(), queryPoolInfo));
 
@@ -1076,7 +1136,7 @@ SemaphoreHelper &SemaphoreHelper::operator=(SemaphoreHelper &&other)
     return *this;
 }
 
-void SemaphoreHelper::init(const size_t semaphorePoolIndex, const vk::Semaphore *semaphore)
+void SemaphoreHelper::init(const size_t semaphorePoolIndex, const Semaphore *semaphore)
 {
     mSemaphorePoolIndex = semaphorePoolIndex;
     mSemaphore          = semaphore;
@@ -1107,7 +1167,7 @@ LineLoopHelper::~LineLoopHelper() = default;
 angle::Result LineLoopHelper::getIndexBufferForDrawArrays(ContextVk *contextVk,
                                                           uint32_t clampedVertexCount,
                                                           GLint firstVertex,
-                                                          vk::BufferHelper **bufferOut,
+                                                          BufferHelper **bufferOut,
                                                           VkDeviceSize *offsetOut)
 {
     uint32_t *indices    = nullptr;
@@ -1141,7 +1201,7 @@ angle::Result LineLoopHelper::getIndexBufferForElementArrayBuffer(ContextVk *con
                                                                   gl::DrawElementsType glIndexType,
                                                                   int indexCount,
                                                                   intptr_t elementArrayOffset,
-                                                                  vk::BufferHelper **bufferOut,
+                                                                  BufferHelper **bufferOut,
                                                                   VkDeviceSize *bufferOffsetOut,
                                                                   uint32_t *indexCountOut)
 {
@@ -1193,7 +1253,7 @@ angle::Result LineLoopHelper::streamIndices(ContextVk *contextVk,
                                             gl::DrawElementsType glIndexType,
                                             GLsizei indexCount,
                                             const uint8_t *srcPtr,
-                                            vk::BufferHelper **bufferOut,
+                                            BufferHelper **bufferOut,
                                             VkDeviceSize *bufferOffsetOut,
                                             uint32_t *indexCountOut)
 {
@@ -1245,12 +1305,12 @@ angle::Result LineLoopHelper::streamIndices(ContextVk *contextVk,
 
 angle::Result LineLoopHelper::streamIndicesIndirect(ContextVk *contextVk,
                                                     gl::DrawElementsType glIndexType,
-                                                    vk::BufferHelper *indexBuffer,
-                                                    vk::BufferHelper *indirectBuffer,
+                                                    BufferHelper *indexBuffer,
+                                                    BufferHelper *indirectBuffer,
                                                     VkDeviceSize indirectBufferOffset,
-                                                    vk::BufferHelper **indexBufferOut,
+                                                    BufferHelper **indexBufferOut,
                                                     VkDeviceSize *indexBufferOffsetOut,
-                                                    vk::BufferHelper **indirectBufferOut,
+                                                    BufferHelper **indirectBufferOut,
                                                     VkDeviceSize *indirectBufferOffsetOut)
 {
     VkIndexType indexType = gl_vk::kIndexTypeMap[glIndexType];
@@ -1283,8 +1343,8 @@ angle::Result LineLoopHelper::streamIndicesIndirect(ContextVk *contextVk,
                                               nullptr, nullptr, indirectBufferOffsetOut, nullptr));
     *indirectBufferOut = mDynamicIndirectBuffer.getCurrentBuffer();
 
-    vk::BufferHelper *destIndexBuffer    = mDynamicIndexBuffer.getCurrentBuffer();
-    vk::BufferHelper *destIndirectBuffer = mDynamicIndirectBuffer.getCurrentBuffer();
+    BufferHelper *destIndexBuffer    = mDynamicIndexBuffer.getCurrentBuffer();
+    BufferHelper *destIndirectBuffer = mDynamicIndirectBuffer.getCurrentBuffer();
 
     // Copy relevant section of the source into destination at allocated offset.  Note that the
     // offset returned by allocate() above is in bytes. As is the indices offset pointer.
@@ -1296,6 +1356,46 @@ angle::Result LineLoopHelper::streamIndicesIndirect(ContextVk *contextVk,
 
     ANGLE_TRY(contextVk->getUtils().convertLineLoopIndexIndirectBuffer(
         contextVk, indirectBuffer, destIndirectBuffer, destIndexBuffer, indexBuffer, params));
+
+    return angle::Result::Continue;
+}
+
+angle::Result LineLoopHelper::streamArrayIndirect(ContextVk *contextVk,
+                                                  size_t vertexCount,
+                                                  BufferHelper *arrayIndirectBuffer,
+                                                  VkDeviceSize arrayIndirectBufferOffset,
+                                                  BufferHelper **indexBufferOut,
+                                                  VkDeviceSize *indexBufferOffsetOut,
+                                                  BufferHelper **indexIndirectBufferOut,
+                                                  VkDeviceSize *indexIndirectBufferOffsetOut)
+{
+    auto unitSize        = sizeof(uint32_t);
+    size_t allocateBytes = static_cast<size_t>((vertexCount + 1) * unitSize);
+
+    mDynamicIndexBuffer.releaseInFlightBuffers(contextVk);
+    mDynamicIndirectBuffer.releaseInFlightBuffers(contextVk);
+
+    ANGLE_TRY(mDynamicIndexBuffer.allocate(contextVk, allocateBytes, nullptr, nullptr,
+                                           indexBufferOffsetOut, nullptr));
+    *indexBufferOut = mDynamicIndexBuffer.getCurrentBuffer();
+
+    ANGLE_TRY(mDynamicIndirectBuffer.allocate(contextVk, sizeof(VkDrawIndexedIndirectCommand),
+                                              nullptr, nullptr, indexIndirectBufferOffsetOut,
+                                              nullptr));
+    *indexIndirectBufferOut = mDynamicIndirectBuffer.getCurrentBuffer();
+
+    BufferHelper *destIndexBuffer    = mDynamicIndexBuffer.getCurrentBuffer();
+    BufferHelper *destIndirectBuffer = mDynamicIndirectBuffer.getCurrentBuffer();
+
+    // Copy relevant section of the source into destination at allocated offset.  Note that the
+    // offset returned by allocate() above is in bytes. As is the indices offset pointer.
+    UtilsVk::ConvertLineLoopArrayIndirectParameters params = {};
+    params.indirectBufferOffset    = static_cast<uint32_t>(arrayIndirectBufferOffset);
+    params.dstIndirectBufferOffset = static_cast<uint32_t>(*indexIndirectBufferOffsetOut);
+    params.dstIndexBufferOffset    = static_cast<uint32_t>(*indexBufferOffsetOut);
+
+    ANGLE_TRY(contextVk->getUtils().convertLineLoopArrayIndirectBuffer(
+        contextVk, arrayIndirectBuffer, destIndirectBuffer, destIndexBuffer, params));
 
     return angle::Result::Continue;
 }
@@ -1313,10 +1413,10 @@ void LineLoopHelper::destroy(VkDevice device)
 }
 
 // static
-void LineLoopHelper::Draw(uint32_t count, vk::CommandBuffer *commandBuffer)
+void LineLoopHelper::Draw(uint32_t count, uint32_t baseVertex, CommandBuffer *commandBuffer)
 {
     // Our first index is always 0 because that's how we set it up in createIndexBuffer*.
-    commandBuffer->drawIndexed(count);
+    commandBuffer->drawIndexedBaseVertex(count, baseVertex);
 }
 
 // BufferHelper implementation.
@@ -1326,6 +1426,7 @@ BufferHelper::BufferHelper()
       mSize(0),
       mMappedMemory(nullptr),
       mViewFormat(nullptr),
+      mCurrentQueueFamilyIndex(std::numeric_limits<uint32_t>::max()),
       mCurrentWriteAccess(0),
       mCurrentReadAccess(0)
 {}
@@ -1346,8 +1447,10 @@ angle::Result BufferHelper::init(ContextVk *contextVk,
 
     mSize = createInfo.size;
     ANGLE_VK_TRY(contextVk, mBuffer.init(contextVk->getDevice(), createInfo));
-    return vk::AllocateBufferMemory(contextVk, memoryPropertyFlags, &mMemoryPropertyFlags, nullptr,
-                                    &mBuffer, &mDeviceMemory);
+    ANGLE_TRY(AllocateBufferMemory(contextVk, memoryPropertyFlags, &mMemoryPropertyFlags, nullptr,
+                                   &mBuffer, &mDeviceMemory));
+    mCurrentQueueFamilyIndex = contextVk->getRenderer()->getQueueFamilyIndex();
+    return angle::Result::Continue;
 }
 
 void BufferHelper::destroy(VkDevice device)
@@ -1370,8 +1473,7 @@ void BufferHelper::release(RendererVk *renderer)
     renderer->collectGarbageAndReinit(&mUse, &mBuffer, &mBufferView, &mDeviceMemory);
 }
 
-bool BufferHelper::needsOnWriteBarrier(VkAccessFlags readAccessType,
-                                       VkAccessFlags writeAccessType,
+bool BufferHelper::needsOnWriteBarrier(VkAccessFlags writeAccessType,
                                        VkAccessFlags *barrierSrcOut,
                                        VkAccessFlags *barrierDstOut)
 {
@@ -1380,20 +1482,18 @@ bool BufferHelper::needsOnWriteBarrier(VkAccessFlags readAccessType,
     // Note: mCurrentReadAccess is not part of barrier src flags as "anything-after-read" is
     // satisified by execution barriers alone.
     *barrierSrcOut = mCurrentWriteAccess;
-    *barrierDstOut = readAccessType | writeAccessType;
+    *barrierDstOut = writeAccessType;
 
     mCurrentWriteAccess = writeAccessType;
-    mCurrentReadAccess  = readAccessType;
+    mCurrentReadAccess  = 0;
 
     return needsBarrier;
 }
 
-void BufferHelper::onWriteAccess(ContextVk *contextVk,
-                                 VkAccessFlags readAccessType,
-                                 VkAccessFlags writeAccessType)
+void BufferHelper::onWriteAccess(ContextVk *contextVk, VkAccessFlags writeAccessType)
 {
     VkAccessFlags barrierSrc, barrierDst;
-    if (needsOnWriteBarrier(readAccessType, writeAccessType, &barrierSrc, &barrierDst))
+    if (needsOnWriteBarrier(writeAccessType, &barrierSrc, &barrierDst))
     {
         addGlobalMemoryBarrier(barrierSrc, barrierDst, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
     }
@@ -1411,7 +1511,7 @@ angle::Result BufferHelper::copyFromBuffer(ContextVk *contextVk,
                                            const VkBufferCopy &copyRegion)
 {
     // 'recordCommands' will implicitly stop any reads from using the old buffer data.
-    vk::CommandBuffer *commandBuffer = nullptr;
+    CommandBuffer *commandBuffer = nullptr;
     ANGLE_TRY(recordCommands(contextVk, &commandBuffer));
 
     if (mCurrentReadAccess != 0 || mCurrentWriteAccess != 0 || bufferAccessType != 0)
@@ -1506,6 +1606,24 @@ angle::Result BufferHelper::invalidate(ContextVk *contextVk, VkDeviceSize offset
     return angle::Result::Continue;
 }
 
+void BufferHelper::changeQueue(uint32_t newQueueFamilyIndex, CommandBuffer *commandBuffer)
+{
+    VkBufferMemoryBarrier bufferMemoryBarrier = {};
+    bufferMemoryBarrier.sType                 = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    bufferMemoryBarrier.srcAccessMask         = 0;
+    bufferMemoryBarrier.dstAccessMask         = 0;
+    bufferMemoryBarrier.srcQueueFamilyIndex   = mCurrentQueueFamilyIndex;
+    bufferMemoryBarrier.dstQueueFamilyIndex   = newQueueFamilyIndex;
+    bufferMemoryBarrier.buffer                = mBuffer.getHandle();
+    bufferMemoryBarrier.offset                = 0;
+    bufferMemoryBarrier.size                  = VK_WHOLE_SIZE;
+
+    commandBuffer->bufferBarrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, &bufferMemoryBarrier);
+
+    mCurrentQueueFamilyIndex = newQueueFamilyIndex;
+}
+
 // ImageHelper implementation.
 ImageHelper::ImageHelper()
     : CommandGraphResource(CommandGraphResourceType::Image),
@@ -1549,7 +1667,7 @@ ImageHelper::~ImageHelper()
 }
 
 void ImageHelper::initStagingBuffer(RendererVk *renderer,
-                                    const vk::Format &format,
+                                    const Format &format,
                                     VkBufferUsageFlags usageFlags,
                                     size_t initialSize)
 {
@@ -1796,7 +1914,13 @@ angle::Result ImageHelper::init2DStaging(Context *context,
 
 VkImageAspectFlags ImageHelper::getAspectFlags() const
 {
-    return GetFormatAspectFlags(mFormat->imageFormat());
+    return GetFormatAspectFlags(mFormat->actualImageFormat());
+}
+
+bool ImageHelper::isCombinedDepthStencilFormat() const
+{
+    return ((VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) & getAspectFlags()) ==
+           (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
 }
 
 VkImageLayout ImageHelper::getCurrentLayout() const
@@ -1816,10 +1940,9 @@ bool ImageHelper::isLayoutChangeNecessary(ImageLayout newLayout) const
 {
     const ImageMemoryBarrierData &layoutData = kImageMemoryBarrierData[mCurrentLayout];
 
-    // If transitioning to the same layout, we rarely need a barrier.  RAR (read-after-read)
-    // doesn't need a barrier, and WAW (write-after-write) is guaranteed to not require a barrier
-    // for color attachment and depth/stencil attachment writes.  Transfer dst and shader writes
-    // are basically the only cases where an execution barrier is still necessary.
+    // If transitioning to the same layout, we don't need a barrier if the layout is read-only as
+    // RAR (read-after-read) doesn't need a barrier.  WAW (write-after-write) does require a memory
+    // barrier though.
     bool sameLayoutAndNoNeedForBarrier =
         mCurrentLayout == newLayout && !layoutData.sameLayoutTransitionRequiresBarrier;
 
@@ -1828,7 +1951,7 @@ bool ImageHelper::isLayoutChangeNecessary(ImageLayout newLayout) const
 
 void ImageHelper::changeLayout(VkImageAspectFlags aspectMask,
                                ImageLayout newLayout,
-                               vk::CommandBuffer *commandBuffer)
+                               CommandBuffer *commandBuffer)
 {
     if (!isLayoutChangeNecessary(newLayout))
     {
@@ -1841,10 +1964,19 @@ void ImageHelper::changeLayout(VkImageAspectFlags aspectMask,
 void ImageHelper::changeLayoutAndQueue(VkImageAspectFlags aspectMask,
                                        ImageLayout newLayout,
                                        uint32_t newQueueFamilyIndex,
-                                       vk::CommandBuffer *commandBuffer)
+                                       CommandBuffer *commandBuffer)
 {
     ASSERT(isQueueChangeNeccesary(newQueueFamilyIndex));
     forceChangeLayoutAndQueue(aspectMask, newLayout, newQueueFamilyIndex, commandBuffer);
+}
+
+void ImageHelper::onExternalLayoutChange(ImageLayout newLayout)
+{
+    mCurrentLayout = newLayout;
+
+    // The image must have already been owned by EXTERNAL.  If this is not the case, it's an
+    // application bug, so ASSERT might eventually need to change to a warning.
+    ASSERT(mCurrentQueueFamilyIndex == VK_QUEUE_FAMILY_EXTERNAL);
 }
 
 uint32_t ImageHelper::getBaseLevel()
@@ -1861,27 +1993,8 @@ void ImageHelper::setBaseAndMaxLevels(uint32_t baseLevel, uint32_t maxLevel)
 void ImageHelper::forceChangeLayoutAndQueue(VkImageAspectFlags aspectMask,
                                             ImageLayout newLayout,
                                             uint32_t newQueueFamilyIndex,
-                                            vk::CommandBuffer *commandBuffer)
+                                            CommandBuffer *commandBuffer)
 {
-    // If transitioning to the same layout (and there is no queue transfer), an execution barrier
-    // suffices.
-    //
-    // TODO(syoussefi): AMD driver on windows has a bug where an execution barrier is not sufficient
-    // between transfer dst operations (even if the transfer is not to the same subresource!).  A
-    // workaround may be necessary.  http://anglebug.com/3554
-    if (mCurrentLayout == newLayout && mCurrentQueueFamilyIndex == newQueueFamilyIndex &&
-        mCurrentLayout != ImageLayout::TransferDst)
-    {
-        const ImageMemoryBarrierData &transition = kImageMemoryBarrierData[mCurrentLayout];
-
-        // In this case, the image is going to be used in the same way, so the src and dst stage
-        // masks must be necessarily equal.
-        ASSERT(transition.srcStageMask == transition.dstStageMask);
-
-        commandBuffer->executionBarrier(transition.dstStageMask);
-        return;
-    }
-
     const ImageMemoryBarrierData &transitionFrom = kImageMemoryBarrierData[mCurrentLayout];
     const ImageMemoryBarrierData &transitionTo   = kImageMemoryBarrierData[newLayout];
 
@@ -1913,7 +2026,7 @@ void ImageHelper::clearColor(const VkClearColorValue &color,
                              uint32_t levelCount,
                              uint32_t baseArrayLayer,
                              uint32_t layerCount,
-                             vk::CommandBuffer *commandBuffer)
+                             CommandBuffer *commandBuffer)
 {
     ASSERT(valid());
 
@@ -1936,7 +2049,7 @@ void ImageHelper::clearDepthStencil(VkImageAspectFlags imageAspectFlags,
                                     uint32_t levelCount,
                                     uint32_t baseArrayLayer,
                                     uint32_t layerCount,
-                                    vk::CommandBuffer *commandBuffer)
+                                    CommandBuffer *commandBuffer)
 {
     ASSERT(valid());
 
@@ -1957,14 +2070,14 @@ void ImageHelper::clear(const VkClearValue &value,
                         uint32_t mipLevel,
                         uint32_t baseArrayLayer,
                         uint32_t layerCount,
-                        vk::CommandBuffer *commandBuffer)
+                        CommandBuffer *commandBuffer)
 {
-    const angle::Format &angleFormat = mFormat->angleFormat();
+    const angle::Format &angleFormat = mFormat->intendedFormat();
     bool isDepthStencil              = angleFormat.depthBits > 0 || angleFormat.stencilBits > 0;
 
     if (isDepthStencil)
     {
-        const VkImageAspectFlags aspect = vk::GetDepthStencilAspectFlags(mFormat->imageFormat());
+        const VkImageAspectFlags aspect = GetDepthStencilAspectFlags(mFormat->actualImageFormat());
         clearDepthStencil(aspect, aspect, value.depthStencil, mipLevel, 1, baseArrayLayer,
                           layerCount, commandBuffer);
     }
@@ -1991,7 +2104,7 @@ void ImageHelper::Copy(ImageHelper *srcImage,
                        const gl::Extents &copySize,
                        const VkImageSubresourceLayers &srcSubresource,
                        const VkImageSubresourceLayers &dstSubresource,
-                       vk::CommandBuffer *commandBuffer)
+                       CommandBuffer *commandBuffer)
 {
     ASSERT(commandBuffer->valid() && srcImage->valid() && dstImage->valid());
 
@@ -2017,7 +2130,7 @@ void ImageHelper::Copy(ImageHelper *srcImage,
 
 angle::Result ImageHelper::generateMipmapsWithBlit(ContextVk *contextVk, GLuint maxLevel)
 {
-    vk::CommandBuffer *commandBuffer = nullptr;
+    CommandBuffer *commandBuffer = nullptr;
     ANGLE_TRY(recordCommands(contextVk, &commandBuffer));
 
     changeLayout(VK_IMAGE_ASPECT_COLOR_BIT, ImageLayout::TransferDst, commandBuffer);
@@ -2097,11 +2210,10 @@ angle::Result ImageHelper::generateMipmapsWithBlit(ContextVk *contextVk, GLuint 
 
 void ImageHelper::resolve(ImageHelper *dest,
                           const VkImageResolve &region,
-                          vk::CommandBuffer *commandBuffer)
+                          CommandBuffer *commandBuffer)
 {
-    ASSERT(mCurrentLayout == vk::ImageLayout::TransferSrc);
-    dest->changeLayout(region.dstSubresource.aspectMask, vk::ImageLayout::TransferDst,
-                       commandBuffer);
+    ASSERT(mCurrentLayout == ImageLayout::TransferSrc);
+    dest->changeLayout(region.dstSubresource.aspectMask, ImageLayout::TransferDst, commandBuffer);
 
     commandBuffer->resolveImage(getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest->getImage(),
                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
@@ -2128,32 +2240,20 @@ void ImageHelper::removeStagedUpdates(ContextVk *contextVk, const gl::ImageIndex
     }
 }
 
-angle::Result ImageHelper::stageSubresourceUpdate(ContextVk *contextVk,
-                                                  const gl::ImageIndex &index,
-                                                  const gl::Extents &glExtents,
-                                                  const gl::Offset &offset,
-                                                  const gl::InternalFormat &formatInfo,
-                                                  const gl::PixelUnpackState &unpack,
-                                                  GLenum type,
-                                                  const uint8_t *pixels,
-                                                  const vk::Format &vkFormat)
+angle::Result ImageHelper::stageSubresourceUpdateImpl(ContextVk *contextVk,
+                                                      const gl::ImageIndex &index,
+                                                      const gl::Extents &glExtents,
+                                                      const gl::Offset &offset,
+                                                      const gl::InternalFormat &formatInfo,
+                                                      const gl::PixelUnpackState &unpack,
+                                                      GLenum type,
+                                                      const uint8_t *pixels,
+                                                      const Format &vkFormat,
+                                                      const GLuint inputRowPitch,
+                                                      const GLuint inputDepthPitch,
+                                                      const GLuint inputSkipBytes)
 {
-    GLuint inputRowPitch = 0;
-    ANGLE_VK_CHECK_MATH(contextVk,
-                        formatInfo.computeRowPitch(type, glExtents.width, unpack.alignment,
-                                                   unpack.rowLength, &inputRowPitch));
-
-    GLuint inputDepthPitch = 0;
-    ANGLE_VK_CHECK_MATH(
-        contextVk, formatInfo.computeDepthPitch(glExtents.height, unpack.imageHeight, inputRowPitch,
-                                                &inputDepthPitch));
-
-    GLuint inputSkipBytes = 0;
-    ANGLE_VK_CHECK_MATH(contextVk,
-                        formatInfo.computeSkipBytes(type, inputRowPitch, inputDepthPitch, unpack,
-                                                    index.usesTex3D(), &inputSkipBytes));
-
-    const angle::Format &storageFormat = vkFormat.imageFormat();
+    const angle::Format &storageFormat = vkFormat.actualImageFormat();
 
     size_t outputRowPitch;
     size_t outputDepthPitch;
@@ -2267,7 +2367,7 @@ angle::Result ImageHelper::stageSubresourceUpdate(ContextVk *contextVk,
                                   outputDepthPitch);
 
     VkBufferImageCopy copy         = {};
-    VkImageAspectFlags aspectFlags = GetFormatAspectFlags(vkFormat.imageFormat());
+    VkImageAspectFlags aspectFlags = GetFormatAspectFlags(vkFormat.actualImageFormat());
 
     copy.bufferOffset      = stagingOffset;
     copy.bufferRowLength   = bufferRowLength;
@@ -2349,6 +2449,54 @@ angle::Result ImageHelper::stageSubresourceUpdate(ContextVk *contextVk,
     return angle::Result::Continue;
 }
 
+angle::Result ImageHelper::CalculateBufferInfo(ContextVk *contextVk,
+                                               const gl::Extents &glExtents,
+                                               const gl::InternalFormat &formatInfo,
+                                               const gl::PixelUnpackState &unpack,
+                                               GLenum type,
+                                               bool is3D,
+                                               GLuint *inputRowPitch,
+                                               GLuint *inputDepthPitch,
+                                               GLuint *inputSkipBytes)
+{
+    ANGLE_VK_CHECK_MATH(contextVk,
+                        formatInfo.computeRowPitch(type, glExtents.width, unpack.alignment,
+                                                   unpack.rowLength, inputRowPitch));
+
+    ANGLE_VK_CHECK_MATH(contextVk,
+                        formatInfo.computeDepthPitch(glExtents.height, unpack.imageHeight,
+                                                     *inputRowPitch, inputDepthPitch));
+
+    ANGLE_VK_CHECK_MATH(
+        contextVk, formatInfo.computeSkipBytes(type, *inputRowPitch, *inputDepthPitch, unpack, is3D,
+                                               inputSkipBytes));
+
+    return angle::Result::Continue;
+}
+
+angle::Result ImageHelper::stageSubresourceUpdate(ContextVk *contextVk,
+                                                  const gl::ImageIndex &index,
+                                                  const gl::Extents &glExtents,
+                                                  const gl::Offset &offset,
+                                                  const gl::InternalFormat &formatInfo,
+                                                  const gl::PixelUnpackState &unpack,
+                                                  GLenum type,
+                                                  const uint8_t *pixels,
+                                                  const Format &vkFormat)
+{
+    GLuint inputRowPitch   = 0;
+    GLuint inputDepthPitch = 0;
+    GLuint inputSkipBytes  = 0;
+    ANGLE_TRY(CalculateBufferInfo(contextVk, glExtents, formatInfo, unpack, type, index.usesTex3D(),
+                                  &inputRowPitch, &inputDepthPitch, &inputSkipBytes));
+
+    ANGLE_TRY(stageSubresourceUpdateImpl(contextVk, index, glExtents, offset, formatInfo, unpack,
+                                         type, pixels, vkFormat, inputRowPitch, inputDepthPitch,
+                                         inputSkipBytes));
+
+    return angle::Result::Continue;
+}
+
 angle::Result ImageHelper::stageSubresourceUpdateAndGetData(ContextVk *contextVk,
                                                             size_t allocationSize,
                                                             const gl::ImageIndex &imageIndex,
@@ -2389,27 +2537,40 @@ angle::Result ImageHelper::stageSubresourceUpdateFromBuffer(ContextVk *contextVk
                                                             const VkExtent3D &extent,
                                                             const VkOffset3D &offset,
                                                             BufferHelper *bufferHelper,
-                                                            VkDeviceSize stagingOffset)
+                                                            StagingBufferOffsetArray stagingOffsets)
 {
     // This function stages an update from explicitly provided handle and offset
     // It is used when the texture base level has changed, and we need to propagate data
 
-    VkBufferImageCopy copy               = {};
-    copy.bufferOffset                    = stagingOffset;
-    copy.bufferRowLength                 = extent.width;
-    copy.bufferImageHeight               = extent.height;
-    copy.imageSubresource.aspectMask     = getAspectFlags();
-    copy.imageSubresource.mipLevel       = mipLevel;
-    copy.imageSubresource.baseArrayLayer = baseArrayLayer;
-    copy.imageSubresource.layerCount     = layerCount;
-    copy.imageOffset                     = offset;
-    copy.imageExtent                     = extent;
+    VkBufferImageCopy copy[2]               = {};
+    copy[0].bufferOffset                    = stagingOffsets[0];
+    copy[0].bufferRowLength                 = extent.width;
+    copy[0].bufferImageHeight               = extent.height;
+    copy[0].imageSubresource.aspectMask     = getAspectFlags();
+    copy[0].imageSubresource.mipLevel       = mipLevel;
+    copy[0].imageSubresource.baseArrayLayer = baseArrayLayer;
+    copy[0].imageSubresource.layerCount     = layerCount;
+    copy[0].imageOffset                     = offset;
+    copy[0].imageExtent                     = extent;
 
-    ASSERT(getAspectFlags() == VK_IMAGE_ASPECT_COLOR_BIT ||
-           getAspectFlags() == VK_IMAGE_ASPECT_DEPTH_BIT ||
-           getAspectFlags() == VK_IMAGE_ASPECT_STENCIL_BIT);
+    if (isCombinedDepthStencilFormat())
+    {
+        // Force aspect to depth for first copy
+        copy[0].imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        // Copy stencil aspect separately
+        copy[1].bufferOffset                    = stagingOffsets[1];
+        copy[1].bufferRowLength                 = extent.width;
+        copy[1].bufferImageHeight               = extent.height;
+        copy[1].imageSubresource.aspectMask     = VK_IMAGE_ASPECT_STENCIL_BIT;
+        copy[1].imageSubresource.mipLevel       = mipLevel;
+        copy[1].imageSubresource.baseArrayLayer = baseArrayLayer;
+        copy[1].imageSubresource.layerCount     = layerCount;
+        copy[1].imageOffset                     = offset;
+        copy[1].imageExtent                     = extent;
+        mSubresourceUpdates.emplace_back(bufferHelper, copy[1]);
+    }
 
-    mSubresourceUpdates.emplace_back(bufferHelper, copy);
+    mSubresourceUpdates.emplace_back(bufferHelper, copy[0]);
 
     return angle::Result::Continue;
 }
@@ -2423,7 +2584,7 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
     const gl::InternalFormat &formatInfo,
     FramebufferVk *framebufferVk)
 {
-    ContextVk *contextVk = vk::GetImpl(context);
+    ContextVk *contextVk = GetImpl(context);
 
     // If the extents and offset is outside the source image, we need to clip.
     gl::Rectangle clippedRectangle;
@@ -2444,8 +2605,8 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
     // 1- obtain a buffer handle to copy to
     RendererVk *renderer = contextVk->getRenderer();
 
-    const vk::Format &vkFormat         = renderer->getFormat(formatInfo.sizedInternalFormat);
-    const angle::Format &storageFormat = vkFormat.imageFormat();
+    const Format &vkFormat             = renderer->getFormat(formatInfo.sizedInternalFormat);
+    const angle::Format &storageFormat = vkFormat.actualImageFormat();
     LoadImageFunctionInfo loadFunction = vkFormat.textureLoadFunctions(formatInfo.type);
 
     size_t outputRowPitch   = storageFormat.pixelBytes * clippedRectangle.width;
@@ -2466,6 +2627,8 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
     PackPixelsParams params(clippedRectangle, copyFormat, static_cast<GLuint>(outputRowPitch),
                             isViewportFlipEnabled, nullptr, 0);
 
+    RenderTargetVk *readRenderTarget = framebufferVk->getColorReadRenderTarget();
+
     // 2- copy the source image region to the pixel buffer using a cpu readback
     if (loadFunction.requiresConversion)
     {
@@ -2477,9 +2640,9 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
         ANGLE_VK_CHECK_ALLOC(contextVk, context->getScratchBuffer(bufferSize, &memoryBuffer));
 
         // Read into the scratch buffer
-        ANGLE_TRY(framebufferVk->readPixelsImpl(
-            contextVk, clippedRectangle, params, VK_IMAGE_ASPECT_COLOR_BIT,
-            framebufferVk->getColorReadRenderTarget(), memoryBuffer->data()));
+        ANGLE_TRY(framebufferVk->readPixelsImpl(contextVk, clippedRectangle, params,
+                                                VK_IMAGE_ASPECT_COLOR_BIT, readRenderTarget,
+                                                memoryBuffer->data()));
 
         // Load from scratch buffer to our pixel buffer
         loadFunction.loadFunction(clippedRectangle.width, clippedRectangle.height, 1,
@@ -2489,9 +2652,9 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
     else
     {
         // We read directly from the framebuffer into our pixel buffer.
-        ANGLE_TRY(framebufferVk->readPixelsImpl(
-            contextVk, clippedRectangle, params, VK_IMAGE_ASPECT_COLOR_BIT,
-            framebufferVk->getColorReadRenderTarget(), stagingPointer));
+        ANGLE_TRY(framebufferVk->readPixelsImpl(contextVk, clippedRectangle, params,
+                                                VK_IMAGE_ASPECT_COLOR_BIT, readRenderTarget,
+                                                stagingPointer));
     }
 
     // 3- enqueue the destination image subresource update
@@ -2511,7 +2674,7 @@ angle::Result ImageHelper::stageSubresourceUpdateFromFramebuffer(
     return angle::Result::Continue;
 }
 
-void ImageHelper::stageSubresourceUpdateFromImage(vk::ImageHelper *image,
+void ImageHelper::stageSubresourceUpdateFromImage(ImageHelper *image,
                                                   const gl::ImageIndex &index,
                                                   const gl::Offset &destOffset,
                                                   const gl::Extents &glExtents,
@@ -2563,7 +2726,7 @@ void ImageHelper::stageClearIfEmulatedFormat(const gl::ImageIndex &index, const 
 {
     if (format.hasEmulatedImageChannels())
     {
-        stageSubresourceEmulatedClear(index, format.angleFormat());
+        stageSubresourceEmulatedClear(index, format.intendedFormat());
     }
 }
 
@@ -2593,11 +2756,11 @@ angle::Result ImageHelper::allocateStagingMemory(ContextVk *contextVk,
                                                  size_t sizeInBytes,
                                                  uint8_t **ptrOut,
                                                  BufferHelper **bufferOut,
-                                                 VkDeviceSize *offsetOut,
+                                                 StagingBufferOffsetArray *offsetOut,
                                                  bool *newBufferAllocatedOut)
 {
     VkBuffer handle;
-    ANGLE_TRY(mStagingBuffer.allocate(contextVk, sizeInBytes, ptrOut, &handle, offsetOut,
+    ANGLE_TRY(mStagingBuffer.allocate(contextVk, sizeInBytes, ptrOut, &handle, &(*offsetOut)[0],
                                       newBufferAllocatedOut));
     *bufferOut = mStagingBuffer.getCurrentBuffer();
     return angle::Result::Continue;
@@ -2608,7 +2771,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
                                               uint32_t levelEnd,
                                               uint32_t layerStart,
                                               uint32_t layerEnd,
-                                              vk::CommandBuffer *commandBuffer)
+                                              CommandBuffer *commandBuffer)
 {
     if (mSubresourceUpdates.empty())
     {
@@ -2618,7 +2781,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
     ANGLE_TRY(mStagingBuffer.flush(contextVk));
 
     std::vector<SubresourceUpdate> updatesToKeep;
-    const VkImageAspectFlags aspectFlags = GetFormatAspectFlags(mFormat->imageFormat());
+    const VkImageAspectFlags aspectFlags = GetFormatAspectFlags(mFormat->actualImageFormat());
 
     // Upload levels and layers that don't conflict in parallel.  The (level, layer) pair is hashed
     // to `(level * mLayerCount + layer) % 64` and used to track whether that subresource is
@@ -2628,7 +2791,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
     uint64_t subresourceUploadsInProgress            = 0;
 
     // Start in TransferDst.
-    changeLayout(aspectFlags, vk::ImageLayout::TransferDst, commandBuffer);
+    changeLayout(aspectFlags, ImageLayout::TransferDst, commandBuffer);
 
     for (SubresourceUpdate &update : mSubresourceUpdates)
     {
@@ -2695,7 +2858,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
         if (updateLayerCount >= kMaxParallelSubresourceUpload)
         {
             // If there are more subresources than bits we can track, always insert a barrier.
-            changeLayout(aspectFlags, vk::ImageLayout::TransferDst, commandBuffer);
+            changeLayout(aspectFlags, ImageLayout::TransferDst, commandBuffer);
             subresourceUploadsInProgress = std::numeric_limits<uint64_t>::max();
         }
         else
@@ -2709,7 +2872,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
             if ((subresourceUploadsInProgress & subresourceHash) != 0)
             {
                 // If there's overlap in subresource upload, issue a barrier.
-                changeLayout(aspectFlags, vk::ImageLayout::TransferDst, commandBuffer);
+                changeLayout(aspectFlags, ImageLayout::TransferDst, commandBuffer);
                 subresourceUploadsInProgress = 0;
             }
             subresourceUploadsInProgress |= subresourceHash;
@@ -2733,9 +2896,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
         }
         else
         {
-            update.image.image->changeLayout(aspectFlags, vk::ImageLayout::TransferSrc,
-                                             commandBuffer);
-
+            update.image.image->changeLayout(aspectFlags, ImageLayout::TransferSrc, commandBuffer);
             update.image.image->addReadDependency(contextVk, this);
 
             commandBuffer->copyImage(update.image.image->getImage(),
@@ -2760,7 +2921,7 @@ angle::Result ImageHelper::flushStagedUpdates(ContextVk *contextVk,
 angle::Result ImageHelper::flushAllStagedUpdates(ContextVk *contextVk)
 {
     // Clear the image.
-    vk::CommandBuffer *commandBuffer = nullptr;
+    CommandBuffer *commandBuffer = nullptr;
     ANGLE_TRY(recordCommands(contextVk, &commandBuffer));
     return flushStagedUpdates(contextVk, 0, mLevelCount, 0, mLayerCount, commandBuffer);
 }
@@ -2807,9 +2968,308 @@ bool ImageHelper::isUpdateStaged(uint32_t level, uint32_t layer)
     return false;
 }
 
+angle::Result ImageHelper::copyImageDataToBuffer(ContextVk *contextVk,
+                                                 size_t sourceLevel,
+                                                 uint32_t layerCount,
+                                                 uint32_t baseLayer,
+                                                 const gl::Box &sourceArea,
+                                                 BufferHelper **bufferOut,
+                                                 size_t *bufferSize,
+                                                 StagingBufferOffsetArray *bufferOffsetsOut,
+                                                 uint8_t **outDataPtr)
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "ImageHelper::copyImageDataToBuffer");
+
+    const angle::Format &imageFormat = mFormat->actualImageFormat();
+
+    // Two VK formats (one depth-only, one combined depth/stencil) use an extra byte for depth.
+    // From https://www.khronos.org/registry/vulkan/specs/1.1/html/vkspec.html#VkBufferImageCopy:
+    //  data copied to or from the depth aspect of a VK_FORMAT_X8_D24_UNORM_PACK32 or
+    //  VK_FORMAT_D24_UNORM_S8_UINT format is packed with one 32-bit word per texel...
+    // So make sure if we hit the depth/stencil format that we have 5 bytes per pixel (4 for depth
+    //  data, 1 for stencil). NOTE that depth-only VK_FORMAT_X8_D24_UNORM_PACK32 already has 4 bytes
+    //  per pixel which is sufficient to contain its depth aspect (no stencil aspect).
+    uint32_t pixelBytes         = imageFormat.pixelBytes;
+    uint32_t depthBytesPerPixel = imageFormat.depthBits >> 3;
+    if (mFormat->vkImageFormat == VK_FORMAT_D24_UNORM_S8_UINT)
+    {
+        pixelBytes         = 5;
+        depthBytesPerPixel = 4;
+    }
+
+    *bufferSize = sourceArea.width * sourceArea.height * sourceArea.depth * pixelBytes * layerCount;
+
+    CommandBuffer *commandBuffer = nullptr;
+    ANGLE_TRY(recordCommands(contextVk, &commandBuffer));
+
+    // Transition the image to readable layout
+    const VkImageAspectFlags aspectFlags = getAspectFlags();
+    changeLayout(aspectFlags, ImageLayout::TransferSrc, commandBuffer);
+
+    // Allocate staging buffer data
+    ANGLE_TRY(allocateStagingMemory(contextVk, *bufferSize, outDataPtr, bufferOut, bufferOffsetsOut,
+                                    nullptr));
+
+    VkBufferImageCopy regions[2] = {};
+    // Default to non-combined DS case
+    regions[0].bufferOffset                    = (*bufferOffsetsOut)[0];
+    regions[0].bufferRowLength                 = 0;
+    regions[0].bufferImageHeight               = 0;
+    regions[0].imageExtent.width               = sourceArea.width;
+    regions[0].imageExtent.height              = sourceArea.height;
+    regions[0].imageExtent.depth               = sourceArea.depth;
+    regions[0].imageOffset.x                   = sourceArea.x;
+    regions[0].imageOffset.y                   = sourceArea.y;
+    regions[0].imageOffset.z                   = sourceArea.z;
+    regions[0].imageSubresource.aspectMask     = aspectFlags;
+    regions[0].imageSubresource.baseArrayLayer = baseLayer;
+    regions[0].imageSubresource.layerCount     = layerCount;
+    regions[0].imageSubresource.mipLevel       = static_cast<uint32_t>(sourceLevel);
+
+    if (isCombinedDepthStencilFormat())
+    {
+        // For combined DS image we'll copy depth and stencil aspects separately
+        // Depth aspect comes first in buffer and can use most settings from above
+        regions[0].imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+        // Get depth data size since stencil data immediately follows depth data in buffer
+        const VkDeviceSize depthSize = depthBytesPerPixel * sourceArea.width * sourceArea.height *
+                                       sourceArea.depth * layerCount;
+
+        // Double-check that we allocated enough buffer space (always 1 byte per stencil)
+        ASSERT(*bufferSize >= (depthSize + (sourceArea.width * sourceArea.height *
+                                            sourceArea.depth * layerCount)));
+
+        // Copy stencil data into buffer immediately following the depth data
+        const VkDeviceSize stencilOffset           = (*bufferOffsetsOut)[0] + depthSize;
+        (*bufferOffsetsOut)[1]                     = stencilOffset;
+        regions[1].bufferOffset                    = stencilOffset;
+        regions[1].bufferRowLength                 = 0;
+        regions[1].bufferImageHeight               = 0;
+        regions[1].imageExtent.width               = sourceArea.width;
+        regions[1].imageExtent.height              = sourceArea.height;
+        regions[1].imageExtent.depth               = sourceArea.depth;
+        regions[1].imageOffset.x                   = sourceArea.x;
+        regions[1].imageOffset.y                   = sourceArea.y;
+        regions[1].imageOffset.z                   = sourceArea.z;
+        regions[1].imageSubresource.aspectMask     = VK_IMAGE_ASPECT_STENCIL_BIT;
+        regions[1].imageSubresource.baseArrayLayer = baseLayer;
+        regions[1].imageSubresource.layerCount     = layerCount;
+        regions[1].imageSubresource.mipLevel       = static_cast<uint32_t>(sourceLevel);
+        commandBuffer->copyImageToBuffer(mImage, getCurrentLayout(),
+                                         (*bufferOut)->getBuffer().getHandle(), 1, &regions[1]);
+    }
+
+    commandBuffer->copyImageToBuffer(mImage, getCurrentLayout(),
+                                     (*bufferOut)->getBuffer().getHandle(), 1, regions);
+
+    return angle::Result::Continue;
+}
+
+// static
+angle::Result ImageHelper::GetReadPixelsParams(ContextVk *contextVk,
+                                               const gl::PixelPackState &packState,
+                                               gl::Buffer *packBuffer,
+                                               GLenum format,
+                                               GLenum type,
+                                               const gl::Rectangle &area,
+                                               const gl::Rectangle &clippedArea,
+                                               PackPixelsParams *paramsOut,
+                                               GLuint *skipBytesOut)
+{
+    const gl::InternalFormat &sizedFormatInfo = gl::GetInternalFormatInfo(format, type);
+
+    GLuint outputPitch = 0;
+    ANGLE_VK_CHECK_MATH(contextVk,
+                        sizedFormatInfo.computeRowPitch(type, area.width, packState.alignment,
+                                                        packState.rowLength, &outputPitch));
+    ANGLE_VK_CHECK_MATH(contextVk, sizedFormatInfo.computeSkipBytes(type, outputPitch, 0, packState,
+                                                                    false, skipBytesOut));
+
+    *skipBytesOut += (clippedArea.x - area.x) * sizedFormatInfo.pixelBytes +
+                     (clippedArea.y - area.y) * outputPitch;
+
+    const angle::Format &angleFormat = GetFormatFromFormatType(format, type);
+
+    *paramsOut = PackPixelsParams(clippedArea, angleFormat, outputPitch, packState.reverseRowOrder,
+                                  packBuffer, 0);
+    return angle::Result::Continue;
+}
+
+angle::Result ImageHelper::readPixelsForGetImage(ContextVk *contextVk,
+                                                 const gl::PixelPackState &packState,
+                                                 gl::Buffer *packBuffer,
+                                                 uint32_t level,
+                                                 uint32_t layer,
+                                                 GLenum format,
+                                                 GLenum type,
+                                                 void *pixels)
+{
+    const angle::Format &angleFormat = GetFormatFromFormatType(format, type);
+
+    // Depth/stencil readback is not yet implemented.
+    // TODO(http://anglebug.com/4058): Depth/stencil readback.
+    if (angleFormat.depthBits > 0 || angleFormat.stencilBits > 0)
+    {
+        UNIMPLEMENTED();
+        return angle::Result::Continue;
+    }
+
+    PackPixelsParams params;
+    GLuint outputSkipBytes = 0;
+
+    uint32_t width  = std::max(1u, mExtents.width >> level);
+    uint32_t height = std::max(1u, mExtents.height >> level);
+    gl::Rectangle area(0, 0, width, height);
+
+    ANGLE_TRY(GetReadPixelsParams(contextVk, packState, packBuffer, format, type, area, area,
+                                  &params, &outputSkipBytes));
+
+    // Use a temporary staging buffer. Could be optimized.
+    vk::RendererScoped<vk::DynamicBuffer> stagingBuffer(contextVk->getRenderer());
+    stagingBuffer.get().init(contextVk->getRenderer(), VK_BUFFER_USAGE_TRANSFER_DST_BIT, 1,
+                             kStagingBufferSize, true);
+
+    return readPixels(contextVk, area, params, VK_IMAGE_ASPECT_COLOR_BIT, level, layer,
+                      static_cast<uint8_t *>(pixels) + outputSkipBytes, &stagingBuffer.get());
+}
+
+angle::Result ImageHelper::readPixels(ContextVk *contextVk,
+                                      const gl::Rectangle &area,
+                                      const PackPixelsParams &packPixelsParams,
+                                      VkImageAspectFlagBits copyAspectFlags,
+                                      uint32_t level,
+                                      uint32_t layer,
+                                      void *pixels,
+                                      DynamicBuffer *stagingBuffer)
+{
+    ANGLE_TRACE_EVENT0("gpu.angle", "ImageHelper::readPixels");
+
+    RendererVk *renderer = contextVk->getRenderer();
+
+    // Note that although we're reading from the image, we need to update the layout below.
+    CommandBuffer *commandBuffer;
+    ANGLE_TRY(recordCommands(contextVk, &commandBuffer));
+    changeLayout(copyAspectFlags, ImageLayout::TransferSrc, commandBuffer);
+
+    const angle::Format *readFormat = &mFormat->actualImageFormat();
+
+    if (copyAspectFlags != VK_IMAGE_ASPECT_COLOR_BIT)
+    {
+        readFormat = &GetDepthStencilImageToBufferFormat(*readFormat, copyAspectFlags);
+    }
+
+    VkOffset3D srcOffset = {area.x, area.y, 0};
+
+    VkImageSubresourceLayers srcSubresource = {};
+    srcSubresource.aspectMask               = copyAspectFlags;
+    srcSubresource.mipLevel                 = level;
+    srcSubresource.baseArrayLayer           = layer;
+    srcSubresource.layerCount               = 1;
+
+    VkExtent3D srcExtent = {static_cast<uint32_t>(area.width), static_cast<uint32_t>(area.height),
+                            1};
+
+    if (mExtents.depth > 1)
+    {
+        // Depth > 1 means this is a 3D texture and we need special handling
+        srcOffset.z                   = layer;
+        srcSubresource.baseArrayLayer = 0;
+    }
+
+    // If the source image is multisampled, we need to resolve it into a temporary image before
+    // performing a readback.
+    bool isMultisampled = mSamples > 1;
+    DeviceScoped<ImageHelper> resolvedImage(contextVk->getDevice());
+
+    ImageHelper *src = this;
+
+    if (isMultisampled)
+    {
+        ANGLE_TRY(resolvedImage.get().init2DStaging(
+            contextVk, renderer->getMemoryProperties(), gl::Extents(area.width, area.height, 1),
+            *mFormat, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 1));
+        resolvedImage.get().onGraphAccess(contextVk->getCommandGraph());
+
+        // Note: resolve only works on color images (not depth/stencil).
+        //
+        // TODO: Currently, depth/stencil blit can perform a depth/stencil readback, but that code
+        // path will be optimized away.  http://anglebug.com/3200
+        ASSERT(copyAspectFlags == VK_IMAGE_ASPECT_COLOR_BIT);
+
+        VkImageResolve resolveRegion                = {};
+        resolveRegion.srcSubresource                = srcSubresource;
+        resolveRegion.srcOffset                     = srcOffset;
+        resolveRegion.dstSubresource.aspectMask     = copyAspectFlags;
+        resolveRegion.dstSubresource.mipLevel       = 0;
+        resolveRegion.dstSubresource.baseArrayLayer = 0;
+        resolveRegion.dstSubresource.layerCount     = 1;
+        resolveRegion.dstOffset                     = {};
+        resolveRegion.extent                        = srcExtent;
+
+        resolve(&resolvedImage.get(), resolveRegion, commandBuffer);
+
+        resolvedImage.get().changeLayout(copyAspectFlags, ImageLayout::TransferSrc, commandBuffer);
+
+        // Make the resolved image the target of buffer copy.
+        src                           = &resolvedImage.get();
+        level                         = 0;
+        layer                         = 0;
+        srcOffset                     = {0, 0, 0};
+        srcSubresource.baseArrayLayer = 0;
+        srcSubresource.layerCount     = 1;
+        srcSubresource.mipLevel       = 0;
+    }
+
+    VkBuffer bufferHandle      = VK_NULL_HANDLE;
+    uint8_t *readPixelBuffer   = nullptr;
+    VkDeviceSize stagingOffset = 0;
+    size_t allocationSize      = readFormat->pixelBytes * area.width * area.height;
+
+    ANGLE_TRY(stagingBuffer->allocate(contextVk, allocationSize, &readPixelBuffer, &bufferHandle,
+                                      &stagingOffset, nullptr));
+
+    VkBufferImageCopy region = {};
+    region.bufferImageHeight = srcExtent.height;
+    region.bufferOffset      = stagingOffset;
+    region.bufferRowLength   = srcExtent.width;
+    region.imageExtent       = srcExtent;
+    region.imageOffset       = srcOffset;
+    region.imageSubresource  = srcSubresource;
+
+    commandBuffer->copyImageToBuffer(src->getImage(), src->getCurrentLayout(), bufferHandle, 1,
+                                     &region);
+
+    // Triggers a full finish.
+    // TODO(jmadill): Don't block on asynchronous readback.
+    ANGLE_TRY(contextVk->finishImpl());
+
+    // The buffer we copied to needs to be invalidated before we read from it because its not been
+    // created with the host coherent bit.
+    ANGLE_TRY(stagingBuffer->invalidate(contextVk));
+
+    if (packPixelsParams.packBuffer)
+    {
+        // Must map the PBO in order to read its contents (and then unmap it later)
+        BufferVk *packBufferVk = GetImpl(packPixelsParams.packBuffer);
+        void *mapPtr           = nullptr;
+        ANGLE_TRY(packBufferVk->mapImpl(contextVk, &mapPtr));
+        uint8_t *dest = static_cast<uint8_t *>(mapPtr) + reinterpret_cast<ptrdiff_t>(pixels);
+        PackPixels(packPixelsParams, *readFormat, area.width * readFormat->pixelBytes,
+                   readPixelBuffer, static_cast<uint8_t *>(dest));
+        packBufferVk->unmapImpl(contextVk);
+    }
+    else
+    {
+        PackPixels(packPixelsParams, *readFormat, area.width * readFormat->pixelBytes,
+                   readPixelBuffer, static_cast<uint8_t *>(pixels));
+    }
+
+    return angle::Result::Continue;
+}
+
 // ImageHelper::SubresourceUpdate implementation
-ImageHelper::SubresourceUpdate::SubresourceUpdate()
-    : updateSource(UpdateSource::Buffer), buffer{VK_NULL_HANDLE}
+ImageHelper::SubresourceUpdate::SubresourceUpdate() : updateSource(UpdateSource::Buffer), buffer{}
 {}
 
 ImageHelper::SubresourceUpdate::SubresourceUpdate(BufferHelper *bufferHelperIn,
@@ -2890,7 +3350,10 @@ void FramebufferHelper::release(ContextVk *contextVk)
 }
 
 // ImageViewHelper implementation.
-ImageViewHelper::ImageViewHelper() = default;
+ImageViewHelper::ImageViewHelper()
+{
+    mUse.init();
+}
 
 ImageViewHelper::ImageViewHelper(ImageViewHelper &&other)
 {
@@ -2901,28 +3364,38 @@ ImageViewHelper::ImageViewHelper(ImageViewHelper &&other)
     std::swap(mLayerLevelDrawImageViews, other.mLayerLevelDrawImageViews);
 }
 
-ImageViewHelper::~ImageViewHelper() = default;
-
-void ImageViewHelper::release(ContextVk *contextVk)
+ImageViewHelper::~ImageViewHelper()
 {
-    contextVk->addGarbage(&mReadImageView);
-    contextVk->addGarbage(&mFetchImageView);
-    contextVk->addGarbage(&mStencilReadImageView);
+    mUse.release();
+}
 
-    for (vk::ImageView &imageView : mLevelDrawImageViews)
+void ImageViewHelper::release(RendererVk *renderer)
+{
+    std::vector<GarbageObject> garbage;
+
+    garbage.emplace_back(GetGarbage(&mReadImageView));
+    garbage.emplace_back(GetGarbage(&mFetchImageView));
+    garbage.emplace_back(GetGarbage(&mStencilReadImageView));
+
+    for (ImageView &imageView : mLevelDrawImageViews)
     {
-        contextVk->addGarbage(&imageView);
+        garbage.emplace_back(GetGarbage(&imageView));
     }
     mLevelDrawImageViews.clear();
 
-    for (vk::ImageViewVector &layerViews : mLayerLevelDrawImageViews)
+    for (ImageViewVector &layerViews : mLayerLevelDrawImageViews)
     {
-        for (vk::ImageView &imageView : layerViews)
+        for (ImageView &imageView : layerViews)
         {
-            contextVk->addGarbage(&imageView);
+            garbage.emplace_back(GetGarbage(&imageView));
         }
     }
     mLayerLevelDrawImageViews.clear();
+
+    renderer->collectGarbage(std::move(mUse), std::move(garbage));
+
+    // Ensure the resource use is always valid.
+    mUse.init();
 }
 
 void ImageViewHelper::destroy(VkDevice device)
@@ -2931,15 +3404,15 @@ void ImageViewHelper::destroy(VkDevice device)
     mFetchImageView.destroy(device);
     mStencilReadImageView.destroy(device);
 
-    for (vk::ImageView &imageView : mLevelDrawImageViews)
+    for (ImageView &imageView : mLevelDrawImageViews)
     {
         imageView.destroy(device);
     }
     mLevelDrawImageViews.clear();
 
-    for (vk::ImageViewVector &layerViews : mLayerLevelDrawImageViews)
+    for (ImageViewVector &layerViews : mLayerLevelDrawImageViews)
     {
-        for (vk::ImageView &imageView : layerViews)
+        for (ImageView &imageView : layerViews)
         {
             imageView.destroy(device);
         }
@@ -2957,7 +3430,7 @@ angle::Result ImageViewHelper::initReadViews(ContextVk *contextVk,
                                              uint32_t baseLayer,
                                              uint32_t layerCount)
 {
-    const VkImageAspectFlags aspectFlags = GetFormatAspectFlags(format.angleFormat());
+    const VkImageAspectFlags aspectFlags = GetFormatAspectFlags(format.intendedFormat());
     if (HasBothDepthAndStencilAspects(aspectFlags))
     {
         ANGLE_TRY(image.initLayerImageView(contextVk, viewType, VK_IMAGE_ASPECT_DEPTH_BIT,
@@ -2977,7 +3450,7 @@ angle::Result ImageViewHelper::initReadViews(ContextVk *contextVk,
     if (viewType == gl::TextureType::CubeMap || viewType == gl::TextureType::_2DArray ||
         viewType == gl::TextureType::_2DMultisampleArray)
     {
-        gl::TextureType arrayType = vk::Get2DTextureType(layerCount, image.getSamples());
+        gl::TextureType arrayType = Get2DTextureType(layerCount, image.getSamples());
 
         // TODO(http://anglebug.com/4004): SwizzleState incorrect for CopyTextureCHROMIUM.
         ANGLE_TRY(image.initLayerImageView(contextVk, arrayType, aspectFlags, swizzleState,
@@ -2995,6 +3468,8 @@ angle::Result ImageViewHelper::getLevelDrawImageView(ContextVk *contextVk,
                                                      uint32_t layer,
                                                      const ImageView **imageViewOut)
 {
+    onGraphAccess(contextVk->getCommandGraph());
+
     // TODO(http://anglebug.com/4008): Possibly incorrect level count.
     ImageView *imageView = GetLevelImageView(&mLevelDrawImageViews, level, 1);
 
@@ -3009,14 +3484,16 @@ angle::Result ImageViewHelper::getLevelDrawImageView(ContextVk *contextVk,
                                     imageView, level, 1, layer, image.getLayerCount());
 }
 
-angle::Result ImageViewHelper::getLevelLayerDrawImageView(Context *context,
+angle::Result ImageViewHelper::getLevelLayerDrawImageView(ContextVk *contextVk,
                                                           const ImageHelper &image,
                                                           uint32_t level,
                                                           uint32_t layer,
                                                           const ImageView **imageViewOut)
 {
     ASSERT(image.valid());
-    ASSERT(!image.getFormat().imageFormat().isBlock);
+    ASSERT(!image.getFormat().actualImageFormat().isBlock);
+
+    onGraphAccess(contextVk->getCommandGraph());
 
     uint32_t layerCount = GetImageLayerCountForView(image);
 
@@ -3039,12 +3516,28 @@ angle::Result ImageViewHelper::getLevelLayerDrawImageView(Context *context,
     // Lazily allocate the image view itself.
     // Note that these views are specifically made to be used as color attachments, and therefore
     // don't have swizzle.
-    gl::TextureType viewType = vk::Get2DTextureType(1, image.getSamples());
-    return image.initLayerImageView(context, viewType, image.getAspectFlags(), gl::SwizzleState(),
+    gl::TextureType viewType = Get2DTextureType(1, image.getSamples());
+    return image.initLayerImageView(contextVk, viewType, image.getAspectFlags(), gl::SwizzleState(),
                                     imageView, level, 1, layer, 1);
 }
 
-// FramebufferHelper implementation.
+// SamplerHelper implementation.
+SamplerHelper::SamplerHelper()
+{
+    mUse.init();
+}
+
+SamplerHelper::~SamplerHelper()
+{
+    mUse.release();
+}
+
+void SamplerHelper::release(RendererVk *renderer)
+{
+    renderer->collectGarbageAndReinit(&mUse, &mSampler);
+}
+
+// DispatchHelper implementation.
 DispatchHelper::DispatchHelper() : CommandGraphResource(CommandGraphResourceType::Dispatcher) {}
 
 DispatchHelper::~DispatchHelper() = default;
@@ -3114,7 +3607,7 @@ angle::Result ShaderProgramHelper::getComputePipeline(Context *context,
     createInfo.basePipelineHandle = VK_NULL_HANDLE;
     createInfo.basePipelineIndex  = 0;
 
-    vk::PipelineCache *pipelineCache = nullptr;
+    PipelineCache *pipelineCache = nullptr;
     ANGLE_TRY(renderer->getPipelineCache(&pipelineCache));
     ANGLE_VK_TRY(context, mComputePipeline.get().initCompute(context->getDevice(), createInfo,
                                                              *pipelineCache));

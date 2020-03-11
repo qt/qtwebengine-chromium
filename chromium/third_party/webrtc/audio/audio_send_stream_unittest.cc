@@ -144,7 +144,7 @@ struct ConfigHelper {
   ConfigHelper(bool audio_bwe_enabled, bool expect_set_encoder_call)
       : clock_(1000000),
         task_queue_factory_(CreateDefaultTaskQueueFactory()),
-        stream_config_(/*send_transport=*/nullptr, MediaTransportConfig()),
+        stream_config_(/*send_transport=*/nullptr),
         audio_processing_(new rtc::RefCountedObject<MockAudioProcessing>()),
         bitrate_allocator_(&limit_observer_),
         worker_queue_(task_queue_factory_->CreateTaskQueue(
@@ -347,8 +347,7 @@ std::unique_ptr<AudioFrame> CreateAudioFrame1kHzSineWave(int16_t audio_level,
 }  // namespace
 
 TEST(AudioSendStreamTest, ConfigToString) {
-  AudioSendStream::Config config(/*send_transport=*/nullptr,
-                                 MediaTransportConfig());
+  AudioSendStream::Config config(/*send_transport=*/nullptr);
   config.rtp.ssrc = kSsrc;
   config.rtp.c_name = kCName;
   config.min_bitrate_bps = 12000;
@@ -367,7 +366,7 @@ TEST(AudioSendStreamTest, ConfigToString) {
       "{rtp: {ssrc: 1234, extmap-allow-mixed: true, extensions: [{uri: "
       "urn:ietf:params:rtp-hdrext:ssrc-audio-level, id: 2}], "
       "c_name: foo_name}, rtcp_report_interval_ms: 2500, "
-      "send_transport: null, media_transport_config: {media_transport: null}, "
+      "send_transport: null, "
       "min_bitrate_bps: 12000, max_bitrate_bps: 34000, "
       "send_codec_spec: {nack_enabled: true, transport_cc_enabled: false, "
       "cng_payload_type: 42, payload_type: 103, "
@@ -698,29 +697,6 @@ TEST(AudioSendStreamTest, DontRecreateEncoder) {
   helper.config().send_codec_spec->cng_payload_type = 105;
   auto send_stream = helper.CreateAudioSendStream();
   send_stream->Reconfigure(helper.config());
-}
-
-// Allow to check for race conditions under tsan.
-// This mimicks the situation where 'ModuleProcessThread' (pacer thread) is
-// launched by webrtc::RtpTransportControllerSend::RtpTransportControllerSend().
-TEST(AudioSendStreamTest, RaceFree) {
-  ConfigHelper helper(false, false);
-  // Sanity checks: copy-pasted from DontRecreateEncoder test.
-  EXPECT_CALL(*helper.channel_send(), SetEncoderForMock(_, _))
-      .WillOnce(Return());
-
-  EXPECT_CALL(*helper.channel_send(), RegisterCngPayloadType(105, 8000));
-
-  helper.config().send_codec_spec =
-      AudioSendStream::Config::SendCodecSpec(9, kG722Format);
-  helper.config().send_codec_spec->cng_payload_type = 105;
-  auto send_stream = helper.CreateAudioSendStream();
-  std::thread pacer([&]() {
-    send_stream->OnPacketAdded(/*ssrc*/ 0xcafe,
-                               /*seq_num*/ 0xf00d);
-  });
-  send_stream->Reconfigure(helper.config());
-  pacer.join();
 }
 
 TEST(AudioSendStreamTest, ReconfigureTransportCcResetsFirst) {

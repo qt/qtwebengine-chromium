@@ -68,21 +68,11 @@
 #endif  // defined(ANGLE_ENABLE_NULL)
 
 #if defined(ANGLE_ENABLE_VULKAN)
-#    if defined(ANGLE_PLATFORM_WINDOWS)
-#        include "libANGLE/renderer/vulkan/win32/DisplayVkWin32.h"
-#    elif defined(ANGLE_PLATFORM_LINUX)
-#        include "libANGLE/renderer/vulkan/xcb/DisplayVkXcb.h"
-#    elif defined(ANGLE_PLATFORM_ANDROID)
-#        include "libANGLE/renderer/vulkan/android/DisplayVkAndroid.h"
-#    elif defined(ANGLE_PLATFORM_FUCHSIA)
-#        include "libANGLE/renderer/vulkan/fuchsia/DisplayVkFuchsia.h"
-#    else
-#        error Unsupported Vulkan platform.
-#    endif
+#    include "libANGLE/renderer/vulkan/DisplayVk_api.h"
 #endif  // defined(ANGLE_ENABLE_VULKAN)
 
 #if defined(ANGLE_ENABLE_METAL)
-#    include "libANGLE/renderer/metal/DisplayMtl.h"
+#    include "libANGLE/renderer/metal/DisplayMtl_api.h"
 #endif  // defined(ANGLE_ENABLE_METAL)
 
 namespace egl
@@ -182,14 +172,6 @@ EGLAttrib GetDisplayTypeFromEnvironment()
     }
 #endif
 
-#if defined(ANGLE_ENABLE_METAL)
-    if (rx::DisplayMtl::IsMetalAvailable())
-    {
-        return EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE;
-    }
-    // else fallthrough to below
-#endif
-
 #if defined(ANGLE_ENABLE_D3D11)
     return EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE;
 #elif defined(ANGLE_ENABLE_D3D9)
@@ -202,6 +184,8 @@ EGLAttrib GetDisplayTypeFromEnvironment()
 #    else
     return EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE;
 #    endif
+#elif defined(ANGLE_ENABLE_METAL)
+    return EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE;
 #elif defined(ANGLE_ENABLE_VULKAN)
     return EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE;
 #elif defined(ANGLE_ENABLE_NULL)
@@ -281,13 +265,35 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap, const D
         case EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE:
 #if defined(ANGLE_ENABLE_VULKAN)
 #    if defined(ANGLE_PLATFORM_WINDOWS)
-            impl = new rx::DisplayVkWin32(state);
+            if (rx::IsVulkanWin32DisplayAvailable())
+            {
+                impl = rx::CreateVulkanWin32Display(state);
+            }
 #    elif defined(ANGLE_PLATFORM_LINUX)
-            impl = new rx::DisplayVkXcb(state);
+            if (rx::IsVulkanXcbDisplayAvailable())
+            {
+                impl = rx::CreateVulkanXcbDisplay(state);
+            }
 #    elif defined(ANGLE_PLATFORM_ANDROID)
-            impl = new rx::DisplayVkAndroid(state);
+            if (rx::IsVulkanAndroidDisplayAvailable())
+            {
+                impl = rx::CreateVulkanAndroidDisplay(state);
+            }
 #    elif defined(ANGLE_PLATFORM_FUCHSIA)
-            impl = new rx::DisplayVkFuchsia(state);
+            if (rx::IsVulkanFuchsiaDisplayAvailable())
+            {
+                impl = rx::CreateVulkanFuchsiaDisplay(state);
+            }
+#    elif defined(ANGLE_PLATFORM_GGP)
+            if (rx::IsVulkanGGPDisplayAvailable())
+            {
+                impl = rx::CreateVulkanGGPDisplay(state);
+            }
+#    elif defined(ANGLE_PLATFORM_APPLE)
+            if (rx::IsVulkanMacDisplayAvailable())
+            {
+                impl = rx::CreateVulkanMacDisplay(state);
+            }
 #    else
 #        error Unsupported Vulkan platform.
 #    endif
@@ -298,9 +304,9 @@ rx::DisplayImpl *CreateDisplayFromAttribs(const AttributeMap &attribMap, const D
             break;
         case EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE:
 #if defined(ANGLE_ENABLE_METAL)
-            if (rx::DisplayMtl::IsMetalAvailable())
+            if (rx::IsMetalDisplayAvailable())
             {
-                impl = new rx::DisplayMtl(state);
+                impl = rx::CreateMetalDisplay(state);
                 break;
             }
 #endif
@@ -367,7 +373,7 @@ void ANGLESetDefaultDisplayPlatform(angle::EGLDisplayType display)
 
 }  // anonymous namespace
 
-DisplayState::DisplayState() : label(nullptr) {}
+DisplayState::DisplayState() : label(nullptr), featuresAllDisabled(false) {}
 
 DisplayState::~DisplayState() {}
 
@@ -567,6 +573,8 @@ void Display::setAttributes(rx::DisplayImpl *impl, const AttributeMap &attribMap
         reinterpret_cast<const char **>(mAttributeMap.get(EGL_FEATURE_OVERRIDES_DISABLED_ANGLE, 0));
     mState.featureOverridesEnabled  = EGLStringArrayToStringVector(featuresForceEnabled);
     mState.featureOverridesDisabled = EGLStringArrayToStringVector(featuresForceDisabled);
+    mState.featuresAllDisabled =
+        static_cast<bool>(mAttributeMap.get(EGL_FEATURE_ALL_DISABLED_ANGLE, 0));
 }
 
 Error Display::initialize()
@@ -612,7 +620,10 @@ Error Display::initialize()
         config.second.renderableType |= EGL_OPENGL_ES_BIT;
     }
 
-    initializeFrontendFeatures();
+    if (!mState.featuresAllDisabled)
+    {
+        initializeFrontendFeatures();
+    }
 
     mFeatures.clear();
     mFrontendFeatures.populateFeatureList(&mFeatures);
@@ -1248,7 +1259,11 @@ static ClientExtensions GenerateClientExtensions()
 #endif
 
 #if defined(ANGLE_ENABLE_D3D11)
+#    if defined(ANGLE_ENABLE_WINDOWS_UWP)
+    extensions.platformANGLED3D11ON12 = true;
+#    else
     extensions.platformANGLED3D11ON12 = IsWindows10OrGreater();
+#    endif
 #endif
 
 #if defined(ANGLE_ENABLE_OPENGL)
@@ -1269,7 +1284,10 @@ static ClientExtensions GenerateClientExtensions()
 #endif
 
 #if defined(ANGLE_ENABLE_VULKAN)
-    extensions.platformANGLEVulkan                = true;
+    extensions.platformANGLEVulkan = true;
+#endif
+
+#if defined(ANGLE_ENABLE_SWIFTSHADER)
     extensions.platformANGLEDeviceTypeSwiftShader = true;
 #endif
 

@@ -137,8 +137,7 @@ class VideoSendStreamImplTest : public ::testing::Test {
         &video_stream_encoder_, &event_log_, &config_,
         initial_encoder_max_bitrate, initial_encoder_bitrate_priority,
         suspended_ssrcs, suspended_payload_states, content_type,
-        std::make_unique<FecControllerDefault>(&clock_),
-        /*media_transport=*/nullptr);
+        std::make_unique<FecControllerDefault>(&clock_));
   }
 
  protected:
@@ -856,6 +855,42 @@ TEST_F(VideoSendStreamImplTest, DisablesPaddingOnPausedEncoder) {
 
   // Pause the test suite so that the last delayed task executes.
   ASSERT_TRUE(done.Wait(10000));
+}
+
+TEST_F(VideoSendStreamImplTest, KeepAliveOnDroppedFrame) {
+  std::unique_ptr<VideoSendStreamImpl> vss_impl;
+  test_queue_.SendTask(
+      [&] {
+        vss_impl = CreateVideoSendStreamImpl(
+            kDefaultInitialBitrateBps, kDefaultBitratePriority,
+            VideoEncoderConfig::ContentType::kRealtimeVideo);
+        vss_impl->Start();
+        const uint32_t kBitrateBps = 100000;
+        EXPECT_CALL(rtp_video_sender_, GetPayloadBitrateBps())
+            .Times(1)
+            .WillOnce(Return(kBitrateBps));
+        static_cast<BitrateAllocatorObserver*>(vss_impl.get())
+            ->OnBitrateUpdated(CreateAllocation(kBitrateBps));
+
+        // Keep the stream from deallocating by dropping a frame.
+        static_cast<EncodedImageCallback*>(vss_impl.get())
+            ->OnDroppedFrame(
+                EncodedImageCallback::DropReason::kDroppedByEncoder);
+        EXPECT_CALL(bitrate_allocator_, RemoveObserver(vss_impl.get()))
+            .Times(0);
+      },
+      RTC_FROM_HERE);
+
+  rtc::Event done;
+  test_queue_.PostDelayedTask(
+      [&] {
+        testing::Mock::VerifyAndClearExpectations(&bitrate_allocator_);
+        vss_impl->Stop();
+        vss_impl.reset();
+        done.Set();
+      },
+      2000);
+  ASSERT_TRUE(done.Wait(5000));
 }
 
 }  // namespace internal

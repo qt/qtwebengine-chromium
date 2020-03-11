@@ -3,7 +3,6 @@
 <translationbundle lang="ml">
 <translation id="1001534784610492198">ഇന്‍സ്റ്റാളര്‍ ആര്‍ക്കൈവ് കേടായി അല്ലെങ്കില്‍ അസാധുവാണ്. ദയവായി Google Chrome വീണ്ടും ഡൗൺലോഡ് ചെയ്യുക.</translation>
 <translation id="102763973188675173">Google Chrome ഇഷ്ടാനുസൃതമാക്കി നിയന്ത്രിക്കുക. അപ്‌ഡേറ്റ് ലഭ്യമാണ്.</translation>
-<translation id="1035334672863811645">Chrome-ലേക്ക് സൈൻ ഇൻ ചെയ്യുക</translation>
 <translation id="1051826050538111504">നിങ്ങളുടെ കമ്പ്യൂട്ടറിൽ ദോഷകരമായ സോഫ്‌റ്റ്‌വെയറുണ്ട്. നിങ്ങളുടെ ബ്രൗസർ വീണ്ടും സാധാരണ രീതിയിൽ പ്രവർത്തിക്കാൻ, Chrome-ന് ഇത് നീക്കം ചെയ്യാനും ക്രമീകരണം പുനഃസ്ഥാപിക്കാനും വിപുലീകരണം പ്രവർത്തനരഹിതമാക്കാനുമാവും.</translation>
 <translation id="1065672644894730302">നിങ്ങളുടെ മുൻഗണനകൾ വായിക്കാൻ കഴിയില്ല.
 
@@ -77,7 +76,6 @@
 <translation id="3065168410429928842">Chrome ടാബ്</translation>
 <translation id="3080151273017101988">Google Chrome അടച്ചാലും പശ്ചാത്തല ആപ്ലിക്കേഷനുകള്‍ പ്രവര്‍ത്തിപ്പിക്കുന്നത് തുടരുക</translation>
 <translation id="3089968997497233615">Google Chrome-ന്റെ പുതിയതും സുരക്ഷിതവുമായ പതിപ്പ് ലഭ്യമാണ്.</translation>
-<translation id="3138848678222082288">ഭാവിയിലെ Chrome പതിപ്പുകൾ സ്വയമേവ ഇൻസ്‌റ്റാൾ ചെയ്യും. ഈ ഡൗൺലോഡ് പൂർത്തിയാകുമ്പോൾ, Chrome പുനരാരംഭിക്കുകയും തുടർന്ന്, നിങ്ങൾക്ക് മുന്നോട്ട് പോവുകയും ചെയ്യാം.</translation>
 <translation id="3149510190863420837">Chrome അപ്ലിക്കേഷനുകൾ</translation>
 <translation id="3282568296779691940">Chrome-ലേക്ക് സൈൻ ഇൻ ചെയ്യുക</translation>
 <translation id="3340978935015468852">ക്രമീകരണങ്ങൾ</translation>
@@ -98,7 +96,6 @@
 <translation id="3718181793972440140">ഇത് ഈ ഉപകരണത്തിൽ നിന്നും ഒരിനം ഇല്ലാതാക്കും. പിന്നീട് നിങ്ങളുടെ വിവരങ്ങൾ വീണ്ടെടുക്കാൻ, <ph name="USER_EMAIL" /> എന്നയാളായി Chrome-ൽ സൈൻ ഇൻ ചെയ്യുക.</translation>
 <translation id="3735758079232443276">നിങ്ങൾ Chrome ആരംഭിക്കുമ്പോൾ ദൃശ്യമാകുന്ന പേജിനെ "<ph name="EXTENSION_NAME" />" വിപുലീകരണം മാറ്റി.</translation>
 <translation id="3780814664026482060">Chrome - <ph name="PAGE_TITLE" /></translation>
-<translation id="3784527566857328444">Chrome-ൽ നിന്ന് നീക്കംചെയ്യുക...</translation>
 <translation id="386202838227397562">ദയവായി എല്ലാ Google Chrome വിന്‍‌ഡോകളും അടച്ച് വീണ്ടും ശ്രമിക്കുക.</translation>
 <translation id="3873044882194371212">Chrome അദൃശ്യ വിൻഡോയിൽ ലിങ്ക് തുറക്കുക</translation>
 <translation id="3889417619312448367">Google Chrome അണ്‍‌ഇന്‍സ്റ്റാള്‍ ചെയ്യുക</translation>
@@ -183,7 +180,6 @@
 <translation id="677276454032249905">എന്തായാലും Chrome-ൽ നിന്ന് പുറത്തുകടക്കണോ?</translation>
 <translation id="683440813066116847">mDNS ട്രാഫിക് അനുവദിക്കാൻ Google Chrome കാനറിയ്‌ക്കുള്ള ഇൻബൗണ്ട് റൂൾ.</translation>
 <translation id="6885412569789873916">Chrome ബീറ്റ ആപ്പുകൾ</translation>
-<translation id="6906909733186691861">ഭാവിയിലെ Chrome പതിപ്പുകൾ സ്വയമേവ ഇൻസ്‌റ്റാൾ ചെയ്യും.</translation>
 <translation id="6943584222992551122">ഈ ഉപകരണത്തിൽ നിന്ന് ഈ വ്യക്തിയുടെ ബ്രൗസിംഗ് ഡാറ്റ ഇല്ലാതാകും. ഡാറ്റ വീണ്ടെടുക്കാൻ, Chromium-ത്തിലേക്ക് <ph name="USER_EMAIL" /> ആയി സൈൻ ഇൻ ചെയ്യുക.</translation>
 <translation id="6967962315388095737">mDNS ട്രാഫിക് അനുവദിക്കുന്നതിന് Google Chrome ബീറ്റയ്ക്ക് വേണ്ടിയുള്ള ഇൻബൗണ്ട് റൂൾ.</translation>
 <translation id="6982337800632491844">ഈ ഉപകരണം ഉപയോഗിക്കുന്നതിന് മുമ്പ് നിങ്ങൾ ഇനിപ്പറയുന്ന സേവന നിബന്ധനകൾ വായിച്ച് അംഗീകരിക്കണമെന്ന് <ph name="DOMAIN" /> ആവശ്യപ്പെടുന്നു. Google Chrome OS നിബന്ധനകൾ വിപുലീകരിക്കുകയോ പരിഷ്‌കരിക്കുകയോ പരിമിതപ്പെടുത്തുകയോ ചെയ്യരുത്.</translation>
@@ -234,7 +230,6 @@
 <translation id="8521348052903287641">mDNS ട്രാഫിക് അനുവദിക്കുന്നതിന് Google Chrome Dev-ന് വേണ്ടിയുള്ള ഇൻബൗണ്ട് റൂൾ.</translation>
 <translation id="8540666473246803645">Google Chrome</translation>
 <translation id="8556340503434111824">Google Chrome-ന്റെ പുതിയ പതിപ്പ് ലഭ്യമാണ്, അത് മുമ്പത്തേക്കാൾ വേഗതയേറിയതാണ്.</translation>
-<translation id="8606668294522778825">നിങ്ങളുടെ ബ്രൗസിംഗ് അനുഭവം മെച്ചപ്പെടുത്താൻ Google Chrome വെബ് സേവനങ്ങൾ ഉപയോഗിക്കാനിടയുണ്ട്. നിങ്ങൾക്ക് ഈ സേവനങ്ങൾ ഓപ്‌ഷണലായി പ്രവർത്തനരഹിതമാക്കാം. <ph name="BEGIN_LINK" />കൂടുതലറിയുക<ph name="END_LINK" /></translation>
 <translation id="8614913330719544658">Google Chrome പ്രതികരിക്കുന്നില്ല. ഇപ്പോള്‍ വീണ്ടും സമാരംഭിക്കണോ?</translation>
 <translation id="8625237574518804553">{0,plural, =1{ഒരു മിനിറ്റിൽ Chrome വീണ്ടും സമാരംഭിക്കും}other{# മിനിറ്റിൽ Chrome വീണ്ടും സമാരംഭിക്കും}}</translation>
 <translation id="8669527147644353129">Google Chrome സഹായി</translation>

@@ -382,10 +382,15 @@ int NFA::Step(Threadq* runq, Threadq* nextq, int c, const StringPiece& context,
         break;
 
       case kInstMatch: {
-        // Avoid invoking undefined behavior when p happens
-        // to be null - and p-1 would be meaningless anyway.
-        if (p == NULL)
+        // Avoid invoking undefined behavior (arithmetic on a null pointer)
+        // by storing p instead of p-1. (What would the latter even mean?!)
+        // This complements the special case in NFA::Search().
+        if (p == NULL) {
+          CopyCapture(match_, t->capture);
+          match_[1] = p;
+          matched_ = true;
           break;
+        }
 
         if (endmatch_ && p-1 != etext_)
           break;
@@ -431,12 +436,12 @@ std::string NFA::FormatCapture(const char** capture) {
     if (capture[i] == NULL)
       s += "(?,?)";
     else if (capture[i+1] == NULL)
-      s += StringPrintf("(%d,?)",
-                        (int)(capture[i] - btext_));
+      s += StringPrintf("(%td,?)",
+                        capture[i] - btext_);
     else
-      s += StringPrintf("(%d,%d)",
-                        (int)(capture[i] - btext_),
-                        (int)(capture[i+1] - btext_));
+      s += StringPrintf("(%td,%td)",
+                        capture[i] - btext_,
+                        capture[i+1] - btext_);
   }
   return s;
 }
@@ -493,8 +498,7 @@ bool NFA::Search(const StringPiece& text, const StringPiece& const_context,
 
   if (ExtraDebug)
     fprintf(stderr, "NFA::Search %s (context: %s) anchored=%d longest=%d\n",
-            std::string(text).c_str(), std::string(context).c_str(), anchored,
-            longest);
+            std::string(text).c_str(), std::string(context).c_str(), anchored, longest);
 
   // Set up search.
   Threadq* runq = &q0_;
@@ -594,6 +598,18 @@ bool NFA::Search(const StringPiece& text, const StringPiece& const_context,
         fprintf(stderr, "dead\n");
       break;
     }
+
+    // Avoid invoking undefined behavior (arithmetic on a null pointer)
+    // by simply not continuing the loop.
+    // This complements the special case in NFA::Step().
+    if (p == NULL) {
+      (void)Step(runq, nextq, p < etext_ ? p[0] & 0xFF : -1, context, p);
+      DCHECK_EQ(runq->size(), 0);
+      using std::swap;
+      swap(nextq, runq);
+      nextq->clear();
+      break;
+    }
   }
 
   for (Threadq::iterator i = runq->begin(); i != runq->end(); ++i)
@@ -606,7 +622,8 @@ bool NFA::Search(const StringPiece& text, const StringPiece& const_context,
                       static_cast<size_t>(match_[2 * i + 1] - match_[2 * i]));
     if (ExtraDebug)
       fprintf(stderr, "match (%td,%td)\n",
-              match_[0] - btext_, match_[1] - btext_);
+              match_[0] - btext_,
+              match_[1] - btext_);
     return true;
   }
   return false;

@@ -11,35 +11,31 @@
 
 #include "platform/api/task_runner.h"
 #include "platform/api/time.h"
-#include "platform/api/udp_socket.h"
 #include "platform/impl/socket_handle.h"
 #include "platform/impl/socket_handle_waiter.h"
+#include "platform/impl/udp_socket_posix.h"
 
 namespace openscreen {
 namespace platform {
-
-struct UdpSocketPosix;
 
 // This is the class responsible for watching sockets for readable data, then
 // calling the function associated with these sockets once that data is read.
 // NOTE: This class will only function as intended while its RunUntilStopped
 // method is running.
-class UdpSocketReaderPosix : public UdpSocket::LifetimeObserver,
-                             public SocketHandleWaiter::Subscriber {
+class UdpSocketReaderPosix : public SocketHandleWaiter::Subscriber {
  public:
   using SocketHandleRef = SocketHandleWaiter::SocketHandleRef;
 
   // Creates a new instance of this object.
   // NOTE: The provided NetworkWaiter must outlive this object.
   explicit UdpSocketReaderPosix(SocketHandleWaiter* waiter);
-  virtual ~UdpSocketReaderPosix();
+  virtual ~UdpSocketReaderPosix() override;
 
-  // UdpSocket::LifetimeObserver overrides.
   // Waits for |socket| to be readable and then calls the socket's
   // RecieveMessage(...) method to process the available packet.
   // NOTE: The first read on any newly watched socket may be delayed up to 50
   // ms.
-  void OnCreate(UdpSocket* socket) override;
+  void OnCreate(UdpSocket* socket);
 
   // Cancels any pending wait on reading |socket|. Following this call, any
   // pending reads will proceed but their associated callbacks will not fire.
@@ -48,7 +44,7 @@ class UdpSocketReaderPosix : public UdpSocket::LifetimeObserver,
   // may be read on this socket and but the callback may not be called. If a
   // socket callback is added in the middle of a wait call, the new socket may
   // not be watched until after this wait call ends.
-  void OnDestroy(UdpSocket* socket) override;
+  virtual void OnDestroy(UdpSocket* socket);
 
   // SocketHandleWaiter::Subscriber overrides.
   void ProcessReadyHandle(SocketHandleRef handle) override;

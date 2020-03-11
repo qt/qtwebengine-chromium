@@ -54,6 +54,7 @@
 #include "test/mock_audio_decoder.h"
 #include "test/mock_audio_encoder.h"
 #include "test/testsupport/file_utils.h"
+#include "test/testsupport/rtc_expect_death.h"
 
 using ::testing::_;
 using ::testing::AtLeast;
@@ -272,8 +273,8 @@ TEST_F(AudioCodingModuleTestOldApi, VerifyOutputFrame) {
 TEST_F(AudioCodingModuleTestOldApi, FailOnZeroDesiredFrequency) {
   AudioFrame audio_frame;
   bool muted;
-  EXPECT_DEATH(acm_->PlayoutData10Ms(0, &audio_frame, &muted),
-               "dst_sample_rate_hz");
+  RTC_EXPECT_DEATH(acm_->PlayoutData10Ms(0, &audio_frame, &muted),
+                   "dst_sample_rate_hz");
 }
 #endif
 
@@ -1638,7 +1639,7 @@ TEST_F(AcmSetBitRateNewApi, OpusFromFormat_48khz_20ms_50kbps) {
 // send surround audio.
 TEST_F(AudioCodingModuleTestOldApi, SendingMultiChannelForMonoInput) {
   constexpr int kSampleRateHz = 48000;
-  constexpr int kSamplesPerChannel = (kSampleRateHz * 10) / 1000;
+  constexpr int kSamplesPerChannel = kSampleRateHz * 10 / 1000;
 
   audio_format_ = SdpAudioFormat({"multiopus",
                                   kSampleRateHz,
@@ -1692,7 +1693,7 @@ TEST_F(AudioCodingModuleTestOldApi, SendingStereoForMonoInput) {
   constexpr int kSampleRateHz = 48000;
   constexpr int kSamplesPerChannel = (kSampleRateHz * 10) / 1000;
 
-  audio_format_ = SdpAudioFormat("opus", kSampleRateHz, 2);
+  audio_format_ = SdpAudioFormat("L16", kSampleRateHz, 2);
 
   RegisterCodec();
 

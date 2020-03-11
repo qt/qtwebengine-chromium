@@ -11,6 +11,7 @@
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/values.h"
+#include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
@@ -19,6 +20,25 @@
 #include "components/policy/core/common/policy_service.h"
 #include "components/policy/policy_constants.h"
 #include "components/prefs/pref_service.h"
+
+namespace {
+static const char* kSettingsIcon = "cr:settings_icon";
+static const char* kPolicyIcon = "cr20:domain";
+
+enum class CookieControlsEnforcement {
+  kNoEnforcement,
+  kEnforcedByPolicy,
+  kEnforcedByCookieSetting
+};
+
+CookieControlsEnforcement GetCookieControlsEnforcement(const Profile* profile) {
+  if (profile->GetPrefs()->IsManagedPreference(prefs::kBlockThirdPartyCookies))
+    return CookieControlsEnforcement::kEnforcedByPolicy;
+  if (profile->GetPrefs()->GetBoolean(prefs::kBlockThirdPartyCookies))
+    return CookieControlsEnforcement::kEnforcedByCookieSetting;
+  return CookieControlsEnforcement::kNoEnforcement;
+}
+}  // namespace
 
 CookieControlsHandler::CookieControlsHandler() {}
 
@@ -42,11 +62,11 @@ void CookieControlsHandler::OnJavascriptAllowed() {
   pref_change_registrar_.Init(profile->GetPrefs());
   pref_change_registrar_.Add(
       prefs::kCookieControlsMode,
-      base::Bind(&CookieControlsHandler::OnCookieControlsChanged,
+      base::Bind(&CookieControlsHandler::SendCookieControlsUIChanges,
                  base::Unretained(this)));
   pref_change_registrar_.Add(
       prefs::kBlockThirdPartyCookies,
-      base::Bind(&CookieControlsHandler::OnThirdPartyCookieBlockingChanged,
+      base::Bind(&CookieControlsHandler::SendCookieControlsUIChanges,
                  base::Unretained(this)));
   policy_registrar_ = std::make_unique<policy::PolicyChangeRegistrar>(
       profile->GetProfilePolicyConnector()->policy_service(),
@@ -81,37 +101,47 @@ void CookieControlsHandler::HandleCookieControlsToggleChanged(
 void CookieControlsHandler::HandleObserveCookieControlsSettingsChanges(
     const base::ListValue* args) {
   AllowJavascript();
-  OnCookieControlsChanged();
-  OnThirdPartyCookieBlockingChanged();
-}
-
-void CookieControlsHandler::OnCookieControlsChanged() {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  FireWebUIListener("cookie-controls-changed",
-                    base::Value(GetToggleCheckedValue(profile)));
+  SendCookieControlsUIChanges();
 }
 
 bool CookieControlsHandler::GetToggleCheckedValue(const Profile* profile) {
-  int mode = profile->GetPrefs()->GetInteger(prefs::kCookieControlsMode);
-  return mode != static_cast<int>(content_settings::CookieControlsMode::kOff);
+  return CookieSettingsFactory::GetForProfile(const_cast<Profile*>(profile))
+      ->ShouldBlockThirdPartyCookies();
 }
 
-void CookieControlsHandler::OnThirdPartyCookieBlockingChanged() {
+void CookieControlsHandler::SendCookieControlsUIChanges() {
   Profile* profile = Profile::FromWebUI(web_ui());
-  FireWebUIListener("third-party-cookie-blocking-changed",
-                    base::Value(ShouldHideCookieControlsUI(profile)));
+  base::DictionaryValue dict;
+  dict.SetBoolKey("enforced", ShouldEnforceCookieControls(profile));
+  dict.SetBoolKey("checked", GetToggleCheckedValue(profile));
+  dict.SetStringKey("icon", GetEnforcementIcon(profile));
+  FireWebUIListener("cookie-controls-changed", dict);
 }
 
 void CookieControlsHandler::OnThirdPartyCookieBlockingPolicyChanged(
     const base::Value* previous,
     const base::Value* current) {
-  OnThirdPartyCookieBlockingChanged();
+  SendCookieControlsUIChanges();
 }
 
 bool CookieControlsHandler::ShouldHideCookieControlsUI(const Profile* profile) {
   return !base::FeatureList::IsEnabled(
-             content_settings::kImprovedCookieControls) ||
-         profile->GetPrefs()->IsManagedPreference(
-             prefs::kBlockThirdPartyCookies) ||
-         profile->GetPrefs()->GetBoolean(prefs::kBlockThirdPartyCookies);
+      content_settings::kImprovedCookieControls);
+}
+
+bool CookieControlsHandler::ShouldEnforceCookieControls(
+    const Profile* profile) {
+  return GetCookieControlsEnforcement(profile) !=
+         CookieControlsEnforcement::kNoEnforcement;
+}
+
+const char* CookieControlsHandler::GetEnforcementIcon(const Profile* profile) {
+  switch (GetCookieControlsEnforcement(profile)) {
+    case CookieControlsEnforcement::kEnforcedByPolicy:
+      return kPolicyIcon;
+    case CookieControlsEnforcement::kEnforcedByCookieSetting:
+      return kSettingsIcon;
+    case CookieControlsEnforcement::kNoEnforcement:
+      return "";
+  }
 }

@@ -14,6 +14,7 @@
 
 import("//build_overrides/build.gni")
 import("../swiftshader.gni")
+import("vulkan.gni")
 
 # Need a separate config to ensure the warnings are added to the end.
 config("swiftshader_libvulkan_private_config") {
@@ -32,6 +33,12 @@ config("swiftshader_libvulkan_private_config") {
     defines = [
       "VK_USE_PLATFORM_WIN32_KHR=1",
       "VK_EXPORT=",
+    ]
+  } else if (is_mac) {
+    defines = [
+      "VK_USE_PLATFORM_MACOS_MVK=1",
+      "VK_USE_PLATFORM_METAL_EXT=1",
+      "VK_EXPORT=__attribute__((visibility(\"default\")))",
     ]
   } else {
     defines = [ "VK_EXPORT=" ]
@@ -81,16 +88,18 @@ swiftshader_source_set("swiftshader_libvulkan_headers") {
     "VkSampler.hpp",
     "VkSemaphore.hpp",
     "VkShaderModule.hpp",
+    "VkStringify.hpp",
     "VulkanPlatform.h",
   ]
   if (is_linux || is_android) {
     sources += [
+      "VkDeviceMemoryExternalLinux.hpp",
       "VkSemaphoreExternalLinux.hpp",
     ]
+  } else if (is_fuchsia) {
+    sources += [ "VkSemaphoreExternalFuchsia.hpp" ]
   } else {
-    sources += [
-      "VkSemaphoreExternalNone.hpp",
-    ]
+    sources += [ "VkSemaphoreExternalNone.hpp" ]
   }
 }
 
@@ -124,6 +133,7 @@ swiftshader_shared_library("swiftshader_libvulkan") {
     "VkSampler.cpp",
     "VkSemaphore.cpp",
     "VkShaderModule.cpp",
+    "VkStringify.cpp",
     "Vulkan.rc",
     "libVulkan.cpp",
     "main.cpp",
@@ -155,8 +165,8 @@ swiftshader_shared_library("swiftshader_libvulkan") {
   }
 
   deps = [
-    "../../third_party/marl:Marl",
     "${swiftshader_spirv_tools_dir}:SPIRV-Tools",
+    "../../third_party/marl:Marl",
     "../Device",
     "../Pipeline",
     "../Reactor:swiftshader_llvm_reactor",
@@ -173,5 +183,41 @@ swiftshader_shared_library("swiftshader_libvulkan") {
 
   public_deps = [
     ":swiftshader_libvulkan_headers",
+  ]
+}
+
+# Generates an ICD JSON file that can be used by all targets in this GN build
+# (ANGLE, Dawn, Chromium).
+action("icd_file") {
+  output_icd_file = "${root_out_dir}/${swiftshader_icd_file_name}"
+  input_file = swiftshader_icd_file_name
+
+  if (is_win) {
+    library_path = ".\\vk_swiftshader.dll"
+  } else if (is_mac) {
+    library_path = "./libvk_swiftshader.dylib"
+  } else {
+    library_path = "./libvk_swiftshader.so"
+  }
+
+  script = "write_icd_json.py"
+  args = [
+    "--input",
+    rebase_path(input_file, root_build_dir),
+    "--output",
+    rebase_path(output_icd_file, root_build_dir),
+    "--library_path",
+    library_path,
+  ]
+
+  inputs = [
+    input_file,
+  ]
+  outputs = [
+    output_icd_file,
+  ]
+
+  deps = [
+    ":swiftshader_libvulkan",
   ]
 }

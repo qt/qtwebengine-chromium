@@ -21,6 +21,7 @@
 #include "api/peer_connection_factory_proxy.h"
 #include "api/peer_connection_proxy.h"
 #include "api/rtc_event_log/rtc_event_log.h"
+#include "api/transport/field_trial_based_config.h"
 #include "api/transport/media/media_transport_interface.h"
 #include "api/turn_customizer.h"
 #include "api/units/data_rate.h"
@@ -28,6 +29,7 @@
 #include "media/base/rtp_data_engine.h"
 #include "media/sctp/sctp_transport.h"
 #include "p2p/base/basic_packet_socket_factory.h"
+#include "p2p/base/default_ice_transport_factory.h"
 #include "p2p/client/basic_port_allocator.h"
 #include "pc/audio_track.h"
 #include "pc/local_audio_source.h"
@@ -41,7 +43,6 @@
 #include "rtc_base/experiments/field_trial_units.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/system/file_wrapper.h"
-#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
@@ -53,7 +54,7 @@ CreateModularPeerConnectionFactory(
           std::move(dependencies)));
   // Call Initialize synchronously but make sure it is executed on
   // |signaling_thread|.
-  MethodCall0<PeerConnectionFactory, bool> call(
+  MethodCall<PeerConnectionFactory, bool> call(
       pc_factory.get(), &PeerConnectionFactory::Initialize);
   bool result = call.Marshal(RTC_FROM_HERE, pc_factory->signaling_thread());
 
@@ -79,8 +80,10 @@ PeerConnectionFactory::PeerConnectionFactory(
           std::move(dependencies.network_state_predictor_factory)),
       injected_network_controller_factory_(
           std::move(dependencies.network_controller_factory)),
-      media_transport_factory_(
-          std::move(dependencies.media_transport_factory)) {
+      media_transport_factory_(std::move(dependencies.media_transport_factory)),
+      neteq_factory_(std::move(dependencies.neteq_factory)),
+      trials_(dependencies.trials ? std::move(dependencies.trials)
+                                  : std::make_unique<FieldTrialBasedConfig>()) {
   if (!network_thread_) {
     owned_network_thread_ = rtc::Thread::CreateWithSocketServer();
     owned_network_thread_->SetName("pc_network_thread", nullptr);
@@ -267,6 +270,11 @@ PeerConnectionFactory::CreatePeerConnection(
     });
   }
 
+  if (!dependencies.ice_transport_factory) {
+    dependencies.ice_transport_factory =
+        std::make_unique<DefaultIceTransportFactory>();
+  }
+
   // TODO(zstein): Once chromium injects its own AsyncResolverFactory, set
   // |dependencies.async_resolver_factory| to a new
   // |rtc::BasicAsyncResolverFactory| if no factory is provided.
@@ -336,7 +344,7 @@ std::unique_ptr<RtcEventLog> PeerConnectionFactory::CreateRtcEventLog_w() {
   RTC_DCHECK_RUN_ON(worker_thread_);
 
   auto encoding_type = RtcEventLog::EncodingType::Legacy;
-  if (field_trial::IsEnabled("WebRTC-RtcEventLogNewFormat"))
+  if (IsTrialEnabled("WebRTC-RtcEventLogNewFormat"))
     encoding_type = RtcEventLog::EncodingType::NewFormat;
   return event_log_factory_
              ? event_log_factory_->CreateRtcEventLog(encoding_type)
@@ -358,7 +366,7 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
   FieldTrialParameter<DataRate> start_bandwidth("start", DataRate::kbps(300));
   FieldTrialParameter<DataRate> max_bandwidth("max", DataRate::kbps(2000));
   ParseFieldTrial({&min_bandwidth, &start_bandwidth, &max_bandwidth},
-                  field_trial::FindFullName("WebRTC-PcFactoryDefaultBitrates"));
+                  trials_->Lookup("WebRTC-PcFactoryDefaultBitrates"));
 
   call_config.bitrate_config.min_bitrate_bps =
       rtc::saturated_cast<int>(min_bandwidth->bps());
@@ -371,8 +379,9 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
   call_config.task_queue_factory = task_queue_factory_.get();
   call_config.network_state_predictor_factory =
       network_state_predictor_factory_.get();
+  call_config.neteq_factory = neteq_factory_.get();
 
-  if (field_trial::IsEnabled("WebRTC-Bwe-InjectedCongestionController")) {
+  if (IsTrialEnabled("WebRTC-Bwe-InjectedCongestionController")) {
     RTC_LOG(LS_INFO) << "Using injected network controller factory";
     call_config.network_controller_factory =
         injected_network_controller_factory_.get();
@@ -380,7 +389,14 @@ std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(
     RTC_LOG(LS_INFO) << "Using default network controller factory";
   }
 
+  call_config.trials = trials_.get();
+
   return std::unique_ptr<Call>(call_factory_->CreateCall(call_config));
+}
+
+bool PeerConnectionFactory::IsTrialEnabled(absl::string_view key) const {
+  RTC_DCHECK(trials_);
+  return trials_->Lookup(key).find("Enabled") == 0;
 }
 
 }  // namespace webrtc

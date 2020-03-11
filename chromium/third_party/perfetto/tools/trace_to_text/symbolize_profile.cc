@@ -20,6 +20,7 @@
 
 #include "perfetto/base/logging.h"
 #include "perfetto/profiling/symbolizer.h"
+#include "perfetto/trace_processor/trace_processor.h"
 
 #if PERFETTO_BUILDFLAG(PERFETTO_LOCAL_SYMBOLIZER)
 #include "tools/trace_to_text/local_symbolizer.h"
@@ -31,22 +32,6 @@
 
 namespace perfetto {
 namespace trace_to_text {
-namespace {
-
-using ::protozero::proto_utils::kMessageLengthFieldSize;
-using ::protozero::proto_utils::MakeTagLengthDelimited;
-using ::protozero::proto_utils::WriteVarInt;
-
-void WriteTracePacket(const std::string& str, std::ostream* output) {
-  constexpr char kPreamble =
-      MakeTagLengthDelimited(protos::pbzero::Trace::kPacketFieldNumber);
-  uint8_t length_field[10];
-  uint8_t* end = WriteVarInt(str.size(), length_field);
-  *output << kPreamble;
-  *output << std::string(length_field, end);
-  *output << str;
-}
-}
 
 // Ingest profile, and emit a symbolization table for each sequence. This can
 // be prepended to the profile to attach the symbol information.
@@ -73,10 +58,10 @@ int SymbolizeProfile(std::istream* input, std::ostream* output) {
   tp->NotifyEndOfFile();
 
   SymbolizeDatabase(tp.get(), symbolizer.get(),
-                    [output](const perfetto::protos::TracePacket& packet) {
-                      WriteTracePacket(packet.SerializeAsString(), output);
+                    [output](const std::string& packet_proto) {
+                      WriteTracePacket(packet_proto, output);
                     });
-  return true;
+  return 0;
 }
 
 }  // namespace trace_to_text

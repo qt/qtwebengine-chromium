@@ -29,7 +29,7 @@
 #include "tools/trace_to_text/utils.h"
 
 #include "protos/perfetto/trace/trace.pbzero.h"
-#include "protos/perfetto/trace/trace_packet.pb.h"
+#include "protos/perfetto/trace/trace_packet.pbzero.h"
 
 namespace perfetto {
 namespace trace_to_text {
@@ -110,8 +110,8 @@ void PrintCompressedPackets(const std::string& packets,
   TextFormat::Printer printer;
   printer.SetInitialIndentLevel(2);
   for (auto it = decoder.packet(); it; ++it) {
-    compressed_msg_scratch->ParseFromArray(it->data(),
-                                           static_cast<int>(it->size()));
+    protozero::ConstBytes cb = *it;
+    compressed_msg_scratch->ParseFromArray(cb.data, static_cast<int>(cb.size));
     WriteToZeroCopyOutput(output, kIndentedPacketPrefix,
                           sizeof(kIndentedPacketPrefix) - 1);
     printer.Print(*compressed_msg_scratch, output);

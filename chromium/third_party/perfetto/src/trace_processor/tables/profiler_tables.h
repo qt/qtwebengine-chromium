@@ -23,6 +23,15 @@ namespace perfetto {
 namespace trace_processor {
 namespace tables {
 
+#define PERFETTO_TP_STACK_PROFILE_CALLSITE_DEF(NAME, PARENT, C) \
+  NAME(StackProfileCallsiteTable, "stack_profile_callsite")     \
+  PERFETTO_TP_ROOT_TABLE(PARENT, C)                             \
+  C(int64_t, depth)                                             \
+  C(int64_t, parent_id)                                         \
+  C(int64_t, frame_id)
+
+PERFETTO_TP_TABLE(PERFETTO_TP_STACK_PROFILE_CALLSITE_DEF);
+
 #define PERFETTO_TP_SYMBOL_DEF(NAME, PARENT, C) \
   NAME(SymbolTable, "stack_profile_symbol")     \
   PERFETTO_TP_ROOT_TABLE(PARENT, C)             \
@@ -33,15 +42,19 @@ namespace tables {
 
 PERFETTO_TP_TABLE(PERFETTO_TP_SYMBOL_DEF);
 
-#define PERFETTO_TP_HEAP_GRAPH_OBJECT_DEF(NAME, PARENT, C) \
-  NAME(HeapGraphObjectTable, "heap_graph_object")          \
-  PERFETTO_TP_ROOT_TABLE(PARENT, C)                        \
-  C(int64_t, upid)                                         \
-  C(int64_t, graph_sample_ts)                              \
-  C(int64_t, object_id)                                    \
-  C(int64_t, self_size)                                    \
-  C(int64_t, reference_set_id)                             \
-  C(StringPool::Id, type_name)                             \
+#define PERFETTO_TP_HEAP_GRAPH_OBJECT_DEF(NAME, PARENT, C)  \
+  NAME(HeapGraphObjectTable, "heap_graph_object")           \
+  PERFETTO_TP_ROOT_TABLE(PARENT, C)                         \
+  C(int64_t, upid)                                          \
+  C(int64_t, graph_sample_ts)                               \
+  C(int64_t, object_id)                                     \
+  C(int64_t, self_size)                                     \
+  C(int64_t, retained_size)                                 \
+  C(int64_t, unique_retained_size)                          \
+  C(int64_t, reference_set_id)                              \
+  C(int32_t, reachable)                                     \
+  C(StringPool::Id, type_name)                              \
+  C(base::Optional<StringPool::Id>, deobfuscated_type_name) \
   C(base::Optional<StringPool::Id>, root_type)
 
 PERFETTO_TP_TABLE(PERFETTO_TP_HEAP_GRAPH_OBJECT_DEF);
@@ -52,24 +65,27 @@ PERFETTO_TP_TABLE(PERFETTO_TP_HEAP_GRAPH_OBJECT_DEF);
   C(int64_t, reference_set_id)                                \
   C(int64_t, owner_id)                                        \
   C(int64_t, owned_id)                                        \
-  C(StringPool::Id, field_name)
+  C(StringPool::Id, field_name)                               \
+  C(base::Optional<StringPool::Id>, deobfuscated_field_name)
 
 PERFETTO_TP_TABLE(PERFETTO_TP_HEAP_GRAPH_REFERENCE_DEF);
 
 #define PERFETTO_TP_VULKAN_MEMORY_ALLOCATIONS_DEF(NAME, PARENT, C) \
   NAME(VulkanMemoryAllocationsTable, "vulkan_memory_allocations")  \
   PERFETTO_TP_ROOT_TABLE(PARENT, C)                                \
-  C(StringPool::Id, source_iid)                                    \
-  C(StringPool::Id, type_iid)                                      \
+  C(StringPool::Id, source)                                        \
+  C(StringPool::Id, operation)                                     \
   C(int64_t, timestamp)                                            \
   C(base::Optional<uint32_t>, upid)                                \
   C(base::Optional<int64_t>, device)                               \
   C(base::Optional<int64_t>, device_memory)                        \
+  C(base::Optional<uint32_t>, memory_type)                         \
   C(base::Optional<uint32_t>, heap)                                \
-  C(base::Optional<StringPool::Id>, caller_iid)                    \
+  C(base::Optional<StringPool::Id>, function_name)                 \
   C(base::Optional<int64_t>, object_handle)                        \
   C(base::Optional<int64_t>, memory_address)                       \
   C(base::Optional<int64_t>, memory_size)                          \
+  C(StringPool::Id, scope)                                         \
   C(base::Optional<uint32_t>, arg_set_id)
 
 PERFETTO_TP_TABLE(PERFETTO_TP_VULKAN_MEMORY_ALLOCATIONS_DEF);

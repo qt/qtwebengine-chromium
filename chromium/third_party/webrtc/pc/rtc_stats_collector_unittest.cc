@@ -1789,6 +1789,8 @@ TEST_F(RTCStatsCollectorTest, CollectRTCInboundRTPStreamStats_Audio) {
   // Set previously undefined values and "GetStats" again.
   voice_media_info.receivers[0].last_packet_received_timestamp_ms = 3000;
   expected_audio.last_packet_received_timestamp = 3.0;
+  voice_media_info.receivers[0].estimated_playout_ntp_timestamp_ms = 4567;
+  expected_audio.estimated_playout_timestamp = 4567;
   voice_media_channel->SetStats(voice_media_info);
 
   report = stats_->GetFreshStatsReport();
@@ -1821,9 +1823,14 @@ TEST_F(RTCStatsCollectorTest, CollectRTCInboundRTPStreamStats_Video) {
   video_media_info.receivers[0].key_frames_decoded = 3;
   video_media_info.receivers[0].qp_sum = absl::nullopt;
   video_media_info.receivers[0].total_decode_time_ms = 9000;
+  video_media_info.receivers[0].total_inter_frame_delay = 0.123;
+  video_media_info.receivers[0].total_squared_inter_frame_delay = 0.00456;
+
   video_media_info.receivers[0].last_packet_received_timestamp_ms =
       absl::nullopt;
   video_media_info.receivers[0].content_type = VideoContentType::UNSPECIFIED;
+  video_media_info.receivers[0].estimated_playout_ntp_timestamp_ms =
+      absl::nullopt;
   video_media_info.receivers[0].decoder_implementation_name = "";
 
   RtpCodecParameters codec_parameters;
@@ -1861,6 +1868,8 @@ TEST_F(RTCStatsCollectorTest, CollectRTCInboundRTPStreamStats_Video) {
   expected_video.key_frames_decoded = 3;
   // |expected_video.qp_sum| should be undefined.
   expected_video.total_decode_time = 9.0;
+  expected_video.total_inter_frame_delay = 0.123;
+  expected_video.total_squared_inter_frame_delay = 0.00456;
   // |expected_video.last_packet_received_timestamp| should be undefined.
   // |expected_video.content_type| should be undefined.
   // |expected_video.decoder_implementation| should be undefined.
@@ -1872,11 +1881,13 @@ TEST_F(RTCStatsCollectorTest, CollectRTCInboundRTPStreamStats_Video) {
 
   // Set previously undefined values and "GetStats" again.
   video_media_info.receivers[0].qp_sum = 9;
-  video_media_info.receivers[0].last_packet_received_timestamp_ms = 1000;
   expected_video.qp_sum = 9;
+  video_media_info.receivers[0].last_packet_received_timestamp_ms = 1000;
   expected_video.last_packet_received_timestamp = 1.0;
   video_media_info.receivers[0].content_type = VideoContentType::SCREENSHARE;
   expected_video.content_type = "screenshare";
+  video_media_info.receivers[0].estimated_playout_ntp_timestamp_ms = 1234;
+  expected_video.estimated_playout_timestamp = 1234;
   video_media_info.receivers[0].decoder_implementation_name = "libfoodecoder";
   expected_video.decoder_implementation = "libfoodecoder";
   video_media_channel->SetStats(video_media_info);
@@ -2194,6 +2205,68 @@ TEST_F(RTCStatsCollectorTest, CollectRTCTransportStats) {
   EXPECT_EQ(
       expected_rtcp_transport,
       report->Get(expected_rtcp_transport.id())->cast_to<RTCTransportStats>());
+}
+
+TEST_F(RTCStatsCollectorTest, CollectRTCTransportStatsWithCrypto) {
+  const char kTransportName[] = "transport";
+
+  pc_->AddVoiceChannel("audio", kTransportName);
+
+  std::unique_ptr<cricket::Candidate> rtp_local_candidate =
+      CreateFakeCandidate("42.42.42.42", 42, "protocol", rtc::ADAPTER_TYPE_WIFI,
+                          cricket::LOCAL_PORT_TYPE, 42);
+  std::unique_ptr<cricket::Candidate> rtp_remote_candidate =
+      CreateFakeCandidate("42.42.42.42", 42, "protocol",
+                          rtc::ADAPTER_TYPE_UNKNOWN, cricket::LOCAL_PORT_TYPE,
+                          42);
+  std::unique_ptr<cricket::Candidate> rtcp_local_candidate =
+      CreateFakeCandidate("42.42.42.42", 42, "protocol", rtc::ADAPTER_TYPE_WIFI,
+                          cricket::LOCAL_PORT_TYPE, 42);
+  std::unique_ptr<cricket::Candidate> rtcp_remote_candidate =
+      CreateFakeCandidate("42.42.42.42", 42, "protocol",
+                          rtc::ADAPTER_TYPE_UNKNOWN, cricket::LOCAL_PORT_TYPE,
+                          42);
+
+  cricket::ConnectionInfo rtp_connection_info;
+  rtp_connection_info.best_connection = false;
+  rtp_connection_info.local_candidate = *rtp_local_candidate.get();
+  rtp_connection_info.remote_candidate = *rtp_remote_candidate.get();
+  rtp_connection_info.sent_total_bytes = 42;
+  rtp_connection_info.recv_total_bytes = 1337;
+  cricket::TransportChannelStats rtp_transport_channel_stats;
+  rtp_transport_channel_stats.component = cricket::ICE_CANDIDATE_COMPONENT_RTP;
+  rtp_transport_channel_stats.ice_transport_stats.connection_infos.push_back(
+      rtp_connection_info);
+  // The state must be connected in order for crypto parameters to show up.
+  rtp_transport_channel_stats.dtls_state = cricket::DTLS_TRANSPORT_CONNECTED;
+  rtp_transport_channel_stats.ice_transport_stats
+      .selected_candidate_pair_changes = 1;
+  rtp_transport_channel_stats.ssl_version_bytes = 0x0203;
+  // 0x2F is TLS_RSA_WITH_AES_128_CBC_SHA according to IANA
+  rtp_transport_channel_stats.ssl_cipher_suite = 0x2F;
+  rtp_transport_channel_stats.srtp_crypto_suite = rtc::SRTP_AES128_CM_SHA1_80;
+  pc_->SetTransportStats(kTransportName, {rtp_transport_channel_stats});
+
+  // Get stats
+  rtc::scoped_refptr<const RTCStatsReport> report = stats_->GetStatsReport();
+
+  RTCTransportStats expected_rtp_transport(
+      "RTCTransport_transport_" +
+          rtc::ToString(cricket::ICE_CANDIDATE_COMPONENT_RTP),
+      report->timestamp_us());
+  expected_rtp_transport.bytes_sent = 42;
+  expected_rtp_transport.bytes_received = 1337;
+  expected_rtp_transport.dtls_state = RTCDtlsTransportState::kConnected;
+  expected_rtp_transport.selected_candidate_pair_changes = 1;
+  // Crypto parameters
+  expected_rtp_transport.tls_version = "0203";
+  expected_rtp_transport.dtls_cipher = "TLS_RSA_WITH_AES_128_CBC_SHA";
+  expected_rtp_transport.srtp_cipher = "AES_CM_128_HMAC_SHA1_80";
+
+  ASSERT_TRUE(report->Get(expected_rtp_transport.id()));
+  EXPECT_EQ(
+      expected_rtp_transport,
+      report->Get(expected_rtp_transport.id())->cast_to<RTCTransportStats>());
 }
 
 TEST_F(RTCStatsCollectorTest, CollectNoStreamRTCOutboundRTPStreamStats_Audio) {

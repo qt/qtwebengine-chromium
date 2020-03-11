@@ -20,6 +20,7 @@
 #include "common/SerialQueue.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/d3d12/CommandRecordingContext.h"
+#include "dawn_native/d3d12/D3D12Info.h"
 #include "dawn_native/d3d12/Forward.h"
 #include "dawn_native/d3d12/ResourceHeapAllocationD3D12.h"
 
@@ -31,7 +32,6 @@ namespace dawn_native { namespace d3d12 {
     class DescriptorHeapAllocator;
     class MapRequestTracker;
     class PlatformFunctions;
-    class ResourceAllocator;
     class ResourceAllocatorManager;
 
 #define ASSERT_SUCCESS(hr)            \
@@ -48,7 +48,7 @@ namespace dawn_native { namespace d3d12 {
 
         MaybeError Initialize();
 
-        CommandBufferBase* CreateCommandBuffer(CommandEncoderBase* encoder,
+        CommandBufferBase* CreateCommandBuffer(CommandEncoder* encoder,
                                                const CommandBufferDescriptor* descriptor) override;
 
         Serial GetCompletedCommandSerial() const final override;
@@ -64,7 +64,6 @@ namespace dawn_native { namespace d3d12 {
 
         DescriptorHeapAllocator* GetDescriptorHeapAllocator() const;
         MapRequestTracker* GetMapRequestTracker() const;
-        ResourceAllocator* GetResourceAllocator() const;
         CommandAllocatorManager* GetCommandAllocatorManager() const;
 
         const PlatformFunctions* GetFunctions() const;
@@ -73,12 +72,14 @@ namespace dawn_native { namespace d3d12 {
         ResultOrError<CommandRecordingContext*> GetPendingCommandContext();
         Serial GetPendingCommandSerial() const override;
 
+        const D3D12DeviceInfo& GetDeviceInfo() const;
+
         MaybeError NextSerial();
         MaybeError WaitForSerial(Serial serial);
 
         void ReferenceUntilUnused(ComPtr<IUnknown> object);
 
-        MaybeError ExecuteCommandContext(CommandRecordingContext* commandContext);
+        MaybeError ExecutePendingCommandContext();
 
         ResultOrError<std::unique_ptr<StagingBufferBase>> CreateStagingBuffer(size_t size) override;
         MaybeError CopyFromStagingToBuffer(StagingBufferBase* source,
@@ -90,12 +91,18 @@ namespace dawn_native { namespace d3d12 {
         ResultOrError<ResourceHeapAllocation> AllocateMemory(
             D3D12_HEAP_TYPE heapType,
             const D3D12_RESOURCE_DESC& resourceDescriptor,
-            D3D12_RESOURCE_STATES initialUsage,
-            D3D12_HEAP_FLAGS heapFlags);
+            D3D12_RESOURCE_STATES initialUsage);
 
         void DeallocateMemory(ResourceHeapAllocation& allocation);
 
-        TextureBase* WrapSharedHandle(const TextureDescriptor* descriptor, HANDLE sharedHandle);
+        TextureBase* WrapSharedHandle(const TextureDescriptor* descriptor,
+                                      HANDLE sharedHandle,
+                                      uint64_t acquireMutexKey);
+        ResultOrError<ComPtr<IDXGIKeyedMutex>> CreateKeyedMutexForTexture(
+            ID3D12Resource* d3d12Resource);
+        void ReleaseKeyedMutexForTexture(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex);
+
+        void InitTogglesFromDriver();
 
       private:
         ResultOrError<BindGroupBase*> CreateBindGroupImpl(
@@ -128,6 +135,10 @@ namespace dawn_native { namespace d3d12 {
         ComPtr<ID3D12Device> mD3d12Device;  // Device is owned by adapter and will not be outlived.
         ComPtr<ID3D12CommandQueue> mCommandQueue;
 
+        // 11on12 device and device context corresponding to mCommandQueue
+        ComPtr<ID3D11On12Device> mD3d11On12Device;
+        ComPtr<ID3D11DeviceContext2> mD3d11On12DeviceContext;
+
         ComPtr<ID3D12CommandSignature> mDispatchIndirectSignature;
         ComPtr<ID3D12CommandSignature> mDrawIndirectSignature;
         ComPtr<ID3D12CommandSignature> mDrawIndexedIndirectSignature;
@@ -139,7 +150,6 @@ namespace dawn_native { namespace d3d12 {
         std::unique_ptr<CommandAllocatorManager> mCommandAllocatorManager;
         std::unique_ptr<DescriptorHeapAllocator> mDescriptorHeapAllocator;
         std::unique_ptr<MapRequestTracker> mMapRequestTracker;
-        std::unique_ptr<ResourceAllocator> mResourceAllocator;
         std::unique_ptr<ResourceAllocatorManager> mResourceAllocatorManager;
 
         dawn_native::PCIInfo mPCIInfo;

@@ -30,6 +30,7 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_endian.h"
 
 namespace quic {
 
@@ -109,8 +110,8 @@ void CryptoUtils::SetKeyAndIV(const EVP_MD* prf,
 
 namespace {
 
-static_assert(kQuicIetfDraftVersion == 23, "Salts do not match draft version");
-// Salt from https://tools.ietf.org/html/draft-ietf-quic-tls-23#section-5.2
+static_assert(kQuicIetfDraftVersion == 24, "Salts do not match draft version");
+// Salt from https://tools.ietf.org/html/draft-ietf-quic-tls-24#section-5.2
 const uint8_t kDraft23InitialSalt[] = {0xc3, 0xee, 0xf7, 0x12, 0xc7, 0x2e, 0xbb,
                                        0x5a, 0x11, 0xa7, 0xd2, 0x43, 0x2b, 0xb4,
                                        0x63, 0x65, 0xbe, 0xf9, 0xf5, 0x02};
@@ -141,7 +142,7 @@ const uint8_t kQ099Salt[] = {0xc0, 0xa2, 0xee, 0x20, 0xc7, 0xe1, 0x83,
 
 const uint8_t* InitialSaltForVersion(const ParsedQuicVersion& version,
                                      size_t* out_len) {
-  static_assert(QUIC_ARRAYSIZE(kSupportedTransportVersions) == 8u,
+  static_assert(QUIC_ARRAYSIZE(kSupportedTransportVersions) == 6u,
                 "Supported versions out of sync with initial encryption salts");
   switch (version.handshake_protocol) {
     case PROTOCOL_QUIC_CRYPTO:
@@ -299,7 +300,7 @@ bool CryptoUtils::DeriveKeys(const ParsedQuicVersion& version,
 
     psk_premaster_secret = std::make_unique<char[]>(psk_premaster_secret_size);
     QuicDataWriter writer(psk_premaster_secret_size, psk_premaster_secret.get(),
-                          HOST_BYTE_ORDER);
+                          quiche::HOST_BYTE_ORDER);
 
     if (!writer.WriteStringPiece(label) || !writer.WriteUInt8(0) ||
         !writer.WriteStringPiece(pre_shared_key) ||

@@ -22,7 +22,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_socket_address_coder.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_endian.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
@@ -33,6 +32,7 @@
 #include "net/third_party/quiche/src/quic/test_tools/mock_random.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_crypto_server_config_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_endian.h"
 
 namespace quic {
 namespace test {
@@ -125,7 +125,7 @@ class CryptoServerTest : public QuicTestWithParam<TestParams> {
         config_.GenerateConfig(rand_, &clock_, config_options_);
     primary_config.set_primary_time(clock_.WallNow().ToUNIXSeconds());
     std::unique_ptr<CryptoHandshakeMessage> msg(
-        config_.AddConfig(std::move(primary_config), clock_.WallNow()));
+        config_.AddConfig(primary_config, clock_.WallNow()));
 
     QuicStringPiece orbit;
     CHECK(msg->GetStringPiece(kORBT, &orbit));

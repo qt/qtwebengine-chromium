@@ -41,13 +41,6 @@ class QUIC_EXPORT_PRIVATE UberLossAlgorithm : public LossDetectionInterface {
   // Returns the earliest time the early retransmit timer should be active.
   QuicTime GetLossTimeout() const override;
 
-  // Increases the loss detection threshold for time loss detection.
-  void SpuriousRetransmitDetected(
-      const QuicUnackedPacketMap& unacked_packets,
-      QuicTime time,
-      const RttStats& rtt_stats,
-      QuicPacketNumber spurious_retransmission) override;
-
   // Called to increases time or packet threshold.
   void SpuriousLossDetected(const QuicUnackedPacketMap& unacked_packets,
                             const RttStats& rtt_stats,
@@ -60,6 +53,9 @@ class QUIC_EXPORT_PRIVATE UberLossAlgorithm : public LossDetectionInterface {
 
   // Enable adaptive reordering threshold of all packet number spaces.
   void EnableAdaptiveReorderingThreshold();
+
+  // Enable adaptive time threshold of all packet number spaces.
+  void EnableAdaptiveTimeThreshold();
 
  private:
   friend class test::QuicSentPacketManagerPeer;

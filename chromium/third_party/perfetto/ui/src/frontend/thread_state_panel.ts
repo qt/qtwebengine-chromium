@@ -36,7 +36,7 @@ export class ThreadStatePanel extends Panel<ThreadStateDetailsAttr> {
     if (threadInfo) {
       return m(
           '.details-panel',
-          m('.details-panel-heading', 'Thread State'),
+          m('.details-panel-heading', m('h2', 'Thread State')),
           m('.details-table', [m('table', [
               m('tr',
                 m('th', `Start time`),
@@ -78,8 +78,6 @@ export class ThreadStatePanel extends Panel<ThreadStateDetailsAttr> {
         {
           onclick: () => {
             if (globals.sliceDetails.id && globals.sliceDetails.ts) {
-              globals.makeSelection(
-                  Actions.selectSlice({id: globals.sliceDetails.id}));
               // TODO(taylori): Use trackId from TP.
               let trackId;
               for (const track of Object.values(globals.state.tracks)) {
@@ -89,6 +87,8 @@ export class ThreadStatePanel extends Panel<ThreadStateDetailsAttr> {
                 }
               }
               if (trackId) {
+                globals.makeSelection(Actions.selectSlice(
+                    {id: globals.sliceDetails.id, trackId}));
                 scrollToTrackAndTs(
                     trackId,
                     toNs(

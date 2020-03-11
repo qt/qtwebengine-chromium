@@ -365,9 +365,9 @@ class TestQuicVisitor : public QuicFramerVisitorInterface {
     message_frames_.push_back(
         std::make_unique<QuicMessageFrame>(frame.data, frame.message_length));
     if (VersionHasIetfQuicFrames(transport_version_)) {
-      EXPECT_TRUE(IETF_EXTENSION_MESSAGE_NO_LENGTH ==
+      EXPECT_TRUE(IETF_EXTENSION_MESSAGE_NO_LENGTH_V99 ==
                       framer_->current_received_frame_type() ||
-                  IETF_EXTENSION_MESSAGE ==
+                  IETF_EXTENSION_MESSAGE_V99 ==
                       framer_->current_received_frame_type());
     } else {
       EXPECT_EQ(0u, framer_->current_received_frame_type());
@@ -929,7 +929,7 @@ TEST_P(QuicFramerTest, EmptyPacket) {
   char packet[] = {0x00};
   QuicEncryptedPacket encrypted(packet, 0, false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
 }
 
 TEST_P(QuicFramerTest, LargePacket) {
@@ -977,7 +977,7 @@ TEST_P(QuicFramerTest, LargePacket) {
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.header_->destination_connection_id);
   // Make sure the correct error is propagated.
-  EXPECT_EQ(QUIC_PACKET_TOO_LARGE, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_PACKET_TOO_LARGE));
   EXPECT_EQ("Packet too large.", framer_.detailed_error());
 }
 
@@ -1006,7 +1006,7 @@ TEST_P(QuicFramerTest, PacketHeader) {
       AssemblePacketFromFragments(fragments));
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.header_->destination_connection_id);
@@ -1032,7 +1032,7 @@ TEST_P(QuicFramerTest, PacketHeader) {
       &retry_token, &detailed_error);
   EXPECT_FALSE(retry_token_present);
   EXPECT_FALSE(use_length_prefix);
-  EXPECT_EQ(QUIC_NO_ERROR, error_code);
+  EXPECT_THAT(error_code, IsQuicNoError());
   EXPECT_EQ(GOOGLE_QUIC_PACKET, format);
   EXPECT_FALSE(version_flag);
   EXPECT_EQ(kQuicDefaultConnectionIdLength, destination_connection_id.length());
@@ -1071,7 +1071,7 @@ TEST_P(QuicFramerTest, LongPacketHeader) {
       AssemblePacketFromFragments(packet46));
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.header_->destination_connection_id);
@@ -1095,7 +1095,7 @@ TEST_P(QuicFramerTest, LongPacketHeader) {
       &version_flag, &use_length_prefix, &version_label, &parsed_version,
       &destination_connection_id, &source_connection_id, &retry_token_present,
       &retry_token, &detailed_error);
-  EXPECT_EQ(QUIC_NO_ERROR, error_code);
+  EXPECT_THAT(error_code, IsQuicNoError());
   EXPECT_EQ("", detailed_error);
   EXPECT_FALSE(retry_token_present);
   EXPECT_FALSE(use_length_prefix);
@@ -1175,7 +1175,7 @@ TEST_P(QuicFramerTest, LongPacketHeaderWithBothConnectionIds) {
       &version_flag, &use_length_prefix, &version_label, &parsed_version,
       &destination_connection_id, &source_connection_id, &retry_token_present,
       &retry_token, &detailed_error);
-  EXPECT_EQ(QUIC_NO_ERROR, error_code);
+  EXPECT_THAT(error_code, IsQuicNoError());
   EXPECT_FALSE(retry_token_present);
   EXPECT_EQ(framer_.version().HasLengthPrefixedConnectionIds(),
             use_length_prefix);
@@ -1270,7 +1270,7 @@ TEST_P(QuicFramerTest, ParsePublicHeader) {
       &parsed_version, &destination_connection_id, &source_connection_id,
       &long_packet_type, &retry_token_length_length, &retry_token,
       &detailed_error);
-  EXPECT_EQ(QUIC_NO_ERROR, parse_error);
+  EXPECT_THAT(parse_error, IsQuicNoError());
   EXPECT_EQ("", detailed_error);
   EXPECT_EQ(p[0], first_byte);
   EXPECT_TRUE(version_present);
@@ -1294,7 +1294,6 @@ TEST_P(QuicFramerTest, ParsePublicHeaderProxBadSourceConnectionIdLength) {
   if (!framer_.version().HasLengthPrefixedConnectionIds()) {
     return;
   }
-  SetQuicReloadableFlag(quic_parse_prox_source_connection_id, true);
   // clang-format off
   unsigned char packet[] = {
     // public flags (long header with packet type HANDSHAKE and
@@ -1339,7 +1338,7 @@ TEST_P(QuicFramerTest, ParsePublicHeaderProxBadSourceConnectionIdLength) {
       &has_length_prefix, &version_label, &parsed_version,
       &destination_connection_id, &source_connection_id, &long_packet_type,
       &retry_token_length_length, &retry_token, &detailed_error);
-  EXPECT_EQ(QUIC_NO_ERROR, parse_error);
+  EXPECT_THAT(parse_error, IsQuicNoError());
   EXPECT_EQ("", detailed_error);
   EXPECT_EQ(p[0], first_byte);
   EXPECT_TRUE(version_present);
@@ -1376,7 +1375,7 @@ TEST_P(QuicFramerTest, ClientConnectionIdFromShortHeaderToClient) {
   // clang-format on
   QuicEncryptedPacket encrypted(AsChars(packet), QUIC_ARRAYSIZE(packet), false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   EXPECT_EQ("", framer_.detailed_error());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
@@ -1410,7 +1409,7 @@ TEST_P(QuicFramerTest, ClientConnectionIdFromShortHeaderToServer) {
   // clang-format on
   QuicEncryptedPacket encrypted(AsChars(packet), QUIC_ARRAYSIZE(packet), false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   EXPECT_EQ("", framer_.detailed_error());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
@@ -1464,7 +1463,7 @@ TEST_P(QuicFramerTest, PacketHeaderWith0ByteConnectionId) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(fragments));
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(), visitor_.header_->source_connection_id);
   EXPECT_FALSE(visitor_.header_->reset_flag);
@@ -1545,7 +1544,7 @@ TEST_P(QuicFramerTest, PacketHeaderWithVersionFlag) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(fragments));
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.header_->destination_connection_id);
@@ -1607,7 +1606,7 @@ TEST_P(QuicFramerTest, PacketHeaderWith4BytePacketNumber) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(fragments));
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.header_->destination_connection_id);
@@ -1671,10 +1670,10 @@ TEST_P(QuicFramerTest, PacketHeaderWith2BytePacketNumber) {
       AssemblePacketFromFragments(fragments));
   if (framer_.version().HasHeaderProtection()) {
     EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-    EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+    EXPECT_THAT(framer_.error(), IsQuicNoError());
   } else {
     EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-    EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   }
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
@@ -1741,10 +1740,10 @@ TEST_P(QuicFramerTest, PacketHeaderWith1BytePacketNumber) {
       AssemblePacketFromFragments(fragments));
   if (framer_.version().HasHeaderProtection()) {
     EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-    EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+    EXPECT_THAT(framer_.error(), IsQuicNoError());
   } else {
     EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-    EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   }
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
@@ -1986,7 +1985,7 @@ TEST_P(QuicFramerTest, LargePublicFlagWithMismatchedVersions) {
   }
   QuicEncryptedPacket encrypted(AsChars(p), p_size, false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(0, visitor_.frame_count_);
   EXPECT_EQ(1, visitor_.version_mismatch_);
@@ -2090,7 +2089,7 @@ TEST_P(QuicFramerTest, PaddingFrame) {
 
   QuicEncryptedPacket encrypted(AsChars(p), p_size, false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2210,7 +2209,7 @@ TEST_P(QuicFramerTest, StreamFrame) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2265,7 +2264,7 @@ TEST_P(QuicFramerTest, EmptyStreamFrame) {
       AssemblePacketFromFragments(packet));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2360,14 +2359,14 @@ TEST_P(QuicFramerTest, MissingDiversificationNonce) {
   QuicEncryptedPacket encrypted(AsChars(p), p_length, false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
   if (framer_.version().HasHeaderProtection()) {
-    EXPECT_EQ(QUIC_DECRYPTION_FAILURE, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_DECRYPTION_FAILURE));
     EXPECT_EQ("Unable to decrypt header protection.", framer_.detailed_error());
   } else if (framer_.transport_version() >= QUIC_VERSION_46) {
     // Cannot read diversification nonce.
-    EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
     EXPECT_EQ("Unable to read nonce.", framer_.detailed_error());
   } else {
-    EXPECT_EQ(QUIC_DECRYPTION_FAILURE, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_DECRYPTION_FAILURE));
   }
 }
 
@@ -2413,7 +2412,7 @@ TEST_P(QuicFramerTest, StreamFrame3ByteStreamId) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2533,7 +2532,7 @@ TEST_P(QuicFramerTest, StreamFrame2ByteStreamId) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2653,7 +2652,7 @@ TEST_P(QuicFramerTest, StreamFrame1ByteStreamId) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2855,7 +2854,7 @@ TEST_P(QuicFramerTest, StreamFrameWithVersion) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2939,7 +2938,7 @@ TEST_P(QuicFramerTest, RejectPacket) {
                                 false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -2978,7 +2977,7 @@ TEST_P(QuicFramerTest, RejectPublicHeader) {
       false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_FALSE(visitor_.header_->packet_number.IsInitialized());
 }
@@ -3087,7 +3086,7 @@ TEST_P(QuicFramerTest, AckFrameOneAckBlock) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -3580,7 +3579,7 @@ TEST_P(QuicFramerTest, AckFrameFirstAckBlockLengthZero) {
       AssemblePacketFromFragments(fragments));
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_INVALID_ACK_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_ACK_DATA));
 
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
@@ -3689,7 +3688,7 @@ TEST_P(QuicFramerTest, AckFrameOneAckBlockMaxLength) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -3914,7 +3913,7 @@ TEST_P(QuicFramerTest, AckFrameTwoTimeStampsMultipleAckBlocks) {
   framer_.set_process_timestamps(true);
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4126,7 +4125,7 @@ TEST_P(QuicFramerTest, NewStopWaitingFrame) {
   if (GetQuicReloadableFlag(quic_do_not_accept_stop_waiting) &&
       version_.transport_version >= QUIC_VERSION_46) {
     EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-    EXPECT_EQ(QUIC_INVALID_STOP_WAITING_DATA, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_STOP_WAITING_DATA));
     EXPECT_EQ("STOP WAITING not supported in version 44+.",
               framer_.detailed_error());
     return;
@@ -4134,7 +4133,7 @@ TEST_P(QuicFramerTest, NewStopWaitingFrame) {
 
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4192,7 +4191,7 @@ TEST_P(QuicFramerTest, InvalidNewStopWaitingFrame) {
                                                     : QUIC_ARRAYSIZE(packet),
       false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_INVALID_STOP_WAITING_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_STOP_WAITING_DATA));
   EXPECT_EQ("Invalid unacked delta.", framer_.detailed_error());
 }
 
@@ -4283,7 +4282,7 @@ TEST_P(QuicFramerTest, RstStreamFrame) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4394,7 +4393,7 @@ TEST_P(QuicFramerTest, ConnectionCloseFrame) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4407,8 +4406,8 @@ TEST_P(QuicFramerTest, ConnectionCloseFrame) {
   if (VersionHasIetfQuicFrames(framer_.transport_version())) {
     EXPECT_EQ(0x1234u,
               visitor_.connection_close_frame_.transport_close_frame_type);
-    EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING,
-              visitor_.connection_close_frame_.extracted_error_code);
+    EXPECT_THAT(visitor_.connection_close_frame_.extracted_error_code,
+                IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   } else {
     // For Google QUIC closes, the error code is copied into
     // extracted_error_code.
@@ -4528,7 +4527,7 @@ TEST_P(QuicFramerTest, ConnectionCloseFrameWithExtractedInfoIgnoreGCuic) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4598,7 +4597,7 @@ TEST_P(QuicFramerTest, ApplicationCloseFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4660,7 +4659,7 @@ TEST_P(QuicFramerTest, ApplicationCloseFrameExtract) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4757,7 +4756,7 @@ TEST_P(QuicFramerTest, GoAwayFrame) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4830,14 +4829,14 @@ TEST_P(QuicFramerTest, WindowUpdateFrame) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
       PACKET_8BYTE_CONNECTION_ID, PACKET_0BYTE_CONNECTION_ID));
 
   EXPECT_EQ(kStreamId, visitor_.window_update_frame_.stream_id);
-  EXPECT_EQ(kStreamOffset, visitor_.window_update_frame_.byte_offset);
+  EXPECT_EQ(kStreamOffset, visitor_.window_update_frame_.max_data);
 
   CheckFramingBoundaries(fragments, QUIC_INVALID_WINDOW_UPDATE_DATA);
 }
@@ -4873,7 +4872,7 @@ TEST_P(QuicFramerTest, MaxDataFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -4881,7 +4880,7 @@ TEST_P(QuicFramerTest, MaxDataFrame) {
 
   EXPECT_EQ(QuicUtils::GetInvalidStreamId(framer_.transport_version()),
             visitor_.window_update_frame_.stream_id);
-  EXPECT_EQ(kStreamOffset, visitor_.window_update_frame_.byte_offset);
+  EXPECT_EQ(kStreamOffset, visitor_.window_update_frame_.max_data);
 
   CheckFramingBoundaries(packet99, QUIC_INVALID_MAX_DATA_FRAME_DATA);
 }
@@ -4920,14 +4919,14 @@ TEST_P(QuicFramerTest, MaxStreamDataFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
       PACKET_8BYTE_CONNECTION_ID, PACKET_0BYTE_CONNECTION_ID));
 
   EXPECT_EQ(kStreamId, visitor_.window_update_frame_.stream_id);
-  EXPECT_EQ(kStreamOffset, visitor_.window_update_frame_.byte_offset);
+  EXPECT_EQ(kStreamOffset, visitor_.window_update_frame_.max_data);
 
   CheckFramingBoundaries(packet99, QUIC_INVALID_MAX_STREAM_DATA_FRAME_DATA);
 }
@@ -5002,7 +5001,7 @@ TEST_P(QuicFramerTest, BlockedFrame) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -5075,7 +5074,7 @@ TEST_P(QuicFramerTest, PingFrame) {
       false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -5087,7 +5086,7 @@ TEST_P(QuicFramerTest, PingFrame) {
 }
 
 TEST_P(QuicFramerTest, MessageFrame) {
-  if (framer_.transport_version() <= QUIC_VERSION_43) {
+  if (!VersionSupportsMessageFrames(framer_.transport_version())) {
     return;
   }
   SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
@@ -5118,13 +5117,43 @@ TEST_P(QuicFramerTest, MessageFrame) {
         {{},
          {'m', 'e', 's', 's', 'a', 'g', 'e', '2'}},
    };
+  PacketFragments packet99 = {
+       // type (short header, 4 byte packet number)
+       {"",
+        {0x43}},
+       // connection_id
+       {"",
+        {0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}},
+       // packet number
+       {"",
+        {0x12, 0x34, 0x56, 0x78}},
+       // message frame type.
+       {"",
+        { 0x31 }},
+       // message length
+       {"Unable to read message length",
+        {0x07}},
+       // message data
+       {"Unable to read message data",
+        {'m', 'e', 's', 's', 'a', 'g', 'e'}},
+        // message frame no length.
+        {"",
+         { 0x30 }},
+        // message data
+        {{},
+         {'m', 'e', 's', 's', 'a', 'g', 'e', '2'}},
+   };
   // clang-format on
 
-  std::unique_ptr<QuicEncryptedPacket> encrypted(
-      AssemblePacketFromFragments(packet46));
+  std::unique_ptr<QuicEncryptedPacket> encrypted;
+  if (VersionHasIetfQuicFrames(framer_.transport_version())) {
+    encrypted = AssemblePacketFromFragments(packet99);
+  } else {
+    encrypted = AssemblePacketFromFragments(packet46);
+  }
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -5134,7 +5163,11 @@ TEST_P(QuicFramerTest, MessageFrame) {
   EXPECT_EQ(7u, visitor_.message_frames_[0]->message_length);
   EXPECT_EQ(8u, visitor_.message_frames_[1]->message_length);
 
-  CheckFramingBoundaries(packet46, QUIC_INVALID_MESSAGE_DATA);
+  if (VersionHasIetfQuicFrames(framer_.transport_version())) {
+    CheckFramingBoundaries(packet99, QUIC_INVALID_MESSAGE_DATA);
+  } else {
+    CheckFramingBoundaries(packet46, QUIC_INVALID_MESSAGE_DATA);
+  }
 }
 
 TEST_P(QuicFramerTest, PublicResetPacketV33) {
@@ -5177,7 +5210,7 @@ TEST_P(QuicFramerTest, PublicResetPacketV33) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(packet));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-  ASSERT_EQ(QUIC_NO_ERROR, framer_.error());
+  ASSERT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.public_reset_packet_.get());
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.public_reset_packet_->connection_id);
@@ -5232,7 +5265,7 @@ TEST_P(QuicFramerTest, PublicResetPacket) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(packet));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-  ASSERT_EQ(QUIC_NO_ERROR, framer_.error());
+  ASSERT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.public_reset_packet_.get());
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.public_reset_packet_->connection_id);
@@ -5279,7 +5312,7 @@ TEST_P(QuicFramerTest, PublicResetPacketWithTrailingJunk) {
 
   QuicEncryptedPacket encrypted(AsChars(packet), QUIC_ARRAYSIZE(packet), false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
-  ASSERT_EQ(QUIC_INVALID_PUBLIC_RST_PACKET, framer_.error());
+  ASSERT_THAT(framer_.error(), IsError(QUIC_INVALID_PUBLIC_RST_PACKET));
   EXPECT_EQ("Unable to read reset message.", framer_.detailed_error());
 }
 
@@ -5331,7 +5364,7 @@ TEST_P(QuicFramerTest, PublicResetPacketWithClientAddress) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(packet));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-  ASSERT_EQ(QUIC_NO_ERROR, framer_.error());
+  ASSERT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.public_reset_packet_.get());
   EXPECT_EQ(FramerTestConnectionId(),
             visitor_.public_reset_packet_->connection_id);
@@ -5380,7 +5413,7 @@ TEST_P(QuicFramerTest, IetfStatelessResetPacket) {
   // This packet cannot be decrypted because diversification nonce is missing.
   QuicEncryptedPacket encrypted(AsChars(packet), QUIC_ARRAYSIZE(packet), false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
-  ASSERT_EQ(QUIC_NO_ERROR, framer_.error());
+  ASSERT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.stateless_reset_packet_.get());
   EXPECT_EQ(kTestStatelessResetToken,
             visitor_.stateless_reset_packet_->stateless_reset_token);
@@ -5423,7 +5456,7 @@ TEST_P(QuicFramerTest, IetfStatelessResetPacketInvalidStatelessResetToken) {
   // This packet cannot be decrypted because diversification nonce is missing.
   QuicEncryptedPacket encrypted(AsChars(packet), QUIC_ARRAYSIZE(packet), false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_DECRYPTION_FAILURE, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_DECRYPTION_FAILURE));
   ASSERT_FALSE(visitor_.stateless_reset_packet_);
 }
 
@@ -5490,7 +5523,7 @@ TEST_P(QuicFramerTest, VersionNegotiationPacketClient) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-  ASSERT_EQ(QUIC_NO_ERROR, framer_.error());
+  ASSERT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.version_negotiation_packet_.get());
   EXPECT_EQ(1u, visitor_.version_negotiation_packet_->versions.size());
   EXPECT_EQ(GetParam(), visitor_.version_negotiation_packet_->versions[0]);
@@ -5549,7 +5582,8 @@ TEST_P(QuicFramerTest, VersionNegotiationPacketServer) {
 
   QuicEncryptedPacket encrypted(AsChars(p), p_length, false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_INVALID_VERSION_NEGOTIATION_PACKET, framer_.error());
+  EXPECT_THAT(framer_.error(),
+              IsError(QUIC_INVALID_VERSION_NEGOTIATION_PACKET));
   EXPECT_EQ("Server received version negotiation packet.",
             framer_.detailed_error());
   EXPECT_FALSE(visitor_.version_negotiation_packet_.get());
@@ -5580,7 +5614,7 @@ TEST_P(QuicFramerTest, OldVersionNegotiationPacket) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(packet));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-  ASSERT_EQ(QUIC_NO_ERROR, framer_.error());
+  ASSERT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.version_negotiation_packet_.get());
   EXPECT_EQ(1u, visitor_.version_negotiation_packet_->versions.size());
   EXPECT_EQ(GetParam(), visitor_.version_negotiation_packet_->versions[0]);
@@ -5646,7 +5680,7 @@ TEST_P(QuicFramerTest, ParseIetfRetryPacket) {
   QuicEncryptedPacket encrypted(AsChars(p), p_length, false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
 
   ASSERT_TRUE(visitor_.retry_original_connection_id_.get());
@@ -5687,7 +5721,7 @@ TEST_P(QuicFramerTest, RejectIetfRetryPacketAsServer) {
   QuicEncryptedPacket encrypted(AsChars(packet), QUIC_ARRAYSIZE(packet), false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
   EXPECT_EQ("Client-initiated RETRY is invalid.", framer_.detailed_error());
 }
 
@@ -6483,7 +6517,7 @@ TEST_P(QuicFramerTest, CryptoFrame) {
       AssemblePacketFromFragments(fragments));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -6498,7 +6532,6 @@ TEST_P(QuicFramerTest, CryptoFrame) {
 }
 
 TEST_P(QuicFramerTest, BuildVersionNegotiationPacket) {
-  SetQuicReloadableFlag(quic_version_negotiation_grease, true);
   SetQuicFlag(FLAGS_quic_disable_version_negotiation_grease_randomness, true);
   // clang-format off
   unsigned char packet[] = {
@@ -6565,7 +6598,6 @@ TEST_P(QuicFramerTest, BuildVersionNegotiationPacketWithClientConnectionId) {
     return;
   }
 
-  SetQuicReloadableFlag(quic_version_negotiation_grease, true);
   SetQuicFlag(FLAGS_quic_disable_version_negotiation_grease_randomness, true);
 
   // clang-format off
@@ -8131,7 +8163,7 @@ TEST_P(QuicFramerTest, BuildWindowUpdatePacket) {
 
   QuicWindowUpdateFrame window_update_frame;
   window_update_frame.stream_id = kStreamId;
-  window_update_frame.byte_offset = 0x1122334455667788;
+  window_update_frame.max_data = 0x1122334455667788;
 
   QuicFrames frames = {QuicFrame(&window_update_frame)};
 
@@ -8219,7 +8251,7 @@ TEST_P(QuicFramerTest, BuildMaxStreamDataPacket) {
 
   QuicWindowUpdateFrame window_update_frame;
   window_update_frame.stream_id = kStreamId;
-  window_update_frame.byte_offset = 0x1122334455667788;
+  window_update_frame.max_data = 0x1122334455667788;
 
   QuicFrames frames = {QuicFrame(&window_update_frame)};
 
@@ -8265,7 +8297,7 @@ TEST_P(QuicFramerTest, BuildMaxDataPacket) {
   QuicWindowUpdateFrame window_update_frame;
   window_update_frame.stream_id =
       QuicUtils::GetInvalidStreamId(framer_.transport_version());
-  window_update_frame.byte_offset = 0x1122334455667788;
+  window_update_frame.max_data = 0x1122334455667788;
 
   QuicFrames frames = {QuicFrame(&window_update_frame)};
 
@@ -8442,7 +8474,7 @@ TEST_P(QuicFramerTest, BuildPingPacket) {
 }
 
 TEST_P(QuicFramerTest, BuildMessagePacket) {
-  if (framer_.transport_version() <= QUIC_VERSION_43) {
+  if (!VersionSupportsMessageFrames(framer_.transport_version())) {
     return;
   }
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_CLIENT);
@@ -8487,13 +8519,13 @@ TEST_P(QuicFramerTest, BuildMessagePacket) {
     0x12, 0x34, 0x56, 0x78,
 
     // frame type (IETF_MESSAGE frame)
-    0x21,
+    0x31,
     // Length
     0x07,
     // Message Data
     'm', 'e', 's', 's', 'a', 'g', 'e',
     // frame type (message frame no length)
-    0x20,
+    0x30,
     // Message Data
     'm', 'e', 's', 's', 'a', 'g', 'e', '2'
   };
@@ -9205,7 +9237,7 @@ TEST_P(QuicFramerTest, StopPacketProcessing) {
   }
   QuicEncryptedPacket encrypted(AsChars(p), p_size, false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
 }
 
 static char kTestString[] = "At least 20 characters.";
@@ -9260,7 +9292,7 @@ TEST_P(QuicFramerTest, ConstructEncryptedPacket) {
   EXPECT_CALL(visitor, OnPacketComplete()).Times(1);
 
   EXPECT_TRUE(framer_.ProcessPacket(*packet));
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
 }
 
 // Verify that the packet returned by ConstructMisFramedEncryptedPacket()
@@ -9278,12 +9310,10 @@ TEST_P(QuicFramerTest, ConstructMisFramedEncryptedPacket) {
   }
   framer_.SetEncrypter(ENCRYPTION_INITIAL,
                        std::make_unique<NullEncrypter>(framer_.perspective()));
-  ParsedQuicVersionVector versions;
-  versions.push_back(framer_.version());
   std::unique_ptr<QuicEncryptedPacket> packet(ConstructMisFramedEncryptedPacket(
       TestConnectionId(), EmptyQuicConnectionId(), false, false,
       kTestQuicStreamId, kTestString, CONNECTION_ID_PRESENT,
-      CONNECTION_ID_ABSENT, PACKET_4BYTE_PACKET_NUMBER, &versions,
+      CONNECTION_ID_ABSENT, PACKET_4BYTE_PACKET_NUMBER, framer_.version(),
       Perspective::IS_CLIENT));
 
   MockFramerVisitor visitor;
@@ -9302,7 +9332,7 @@ TEST_P(QuicFramerTest, ConstructMisFramedEncryptedPacket) {
   EXPECT_CALL(visitor, OnPacketComplete()).Times(0);
 
   EXPECT_FALSE(framer_.ProcessPacket(*packet));
-  EXPECT_EQ(QUIC_INVALID_FRAME_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_FRAME_DATA));
 }
 
 TEST_P(QuicFramerTest, IetfBlockedFrame) {
@@ -9336,7 +9366,7 @@ TEST_P(QuicFramerTest, IetfBlockedFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9421,7 +9451,7 @@ TEST_P(QuicFramerTest, IetfStreamBlockedFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9507,7 +9537,7 @@ TEST_P(QuicFramerTest, BiDiMaxStreamsFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9548,7 +9578,7 @@ TEST_P(QuicFramerTest, UniDiMaxStreamsFrame) {
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_CLIENT);
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9590,7 +9620,7 @@ TEST_P(QuicFramerTest, ServerUniDiMaxStreamsFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9631,7 +9661,7 @@ TEST_P(QuicFramerTest, ClientUniDiMaxStreamsFrame) {
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_CLIENT);
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9676,7 +9706,7 @@ TEST_P(QuicFramerTest, BiDiMaxStreamsFrameTooBig) {
   QuicEncryptedPacket encrypted(AsChars(packet99), QUIC_ARRAYSIZE(packet99),
                                 false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9715,7 +9745,7 @@ TEST_P(QuicFramerTest, ClientBiDiMaxStreamsFrameTooBig) {
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_CLIENT);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9754,7 +9784,7 @@ TEST_P(QuicFramerTest, ServerUniDiMaxStreamsFrameTooBig) {
                                 false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9793,7 +9823,7 @@ TEST_P(QuicFramerTest, ClientUniDiMaxStreamsFrameTooBig) {
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_CLIENT);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9862,7 +9892,7 @@ TEST_P(QuicFramerTest, ServerBiDiStreamsBlockedFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9905,7 +9935,7 @@ TEST_P(QuicFramerTest, BiDiStreamsBlockedFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9948,7 +9978,7 @@ TEST_P(QuicFramerTest, UniDiStreamsBlockedFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -9989,7 +10019,7 @@ TEST_P(QuicFramerTest, ClientUniDiStreamsBlockedFrame) {
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_CLIENT);
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10033,7 +10063,7 @@ TEST_P(QuicFramerTest, StreamsBlockedFrameTooBig) {
   QuicFramerPeer::SetPerspective(&framer_, Perspective::IS_CLIENT);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_STREAMS_BLOCKED_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_STREAMS_BLOCKED_DATA));
   EXPECT_EQ(framer_.detailed_error(),
             "STREAMS_BLOCKED stream count exceeds implementation limit.");
 }
@@ -10071,7 +10101,7 @@ TEST_P(QuicFramerTest, StreamsBlockedFrameZeroCount) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10293,7 +10323,7 @@ TEST_P(QuicFramerTest, NewConnectionIdFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10352,7 +10382,7 @@ TEST_P(QuicFramerTest, NewConnectionIdFrameVariableLength) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10419,7 +10449,7 @@ TEST_P(QuicFramerTest, InvalidLongNewConnectionIdFrame) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(packet99));
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_INVALID_NEW_CONNECTION_ID_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_NEW_CONNECTION_ID_DATA));
   EXPECT_EQ("Unable to read new connection ID frame connection id.",
             framer_.detailed_error());
 }
@@ -10464,7 +10494,7 @@ TEST_P(QuicFramerTest, InvalidRetirePriorToNewConnectionIdFrame) {
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(packet99));
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_INVALID_NEW_CONNECTION_ID_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_NEW_CONNECTION_ID_DATA));
   EXPECT_EQ("Retire_prior_to > sequence_number.", framer_.detailed_error());
 }
 
@@ -10557,7 +10587,7 @@ TEST_P(QuicFramerTest, NewTokenFrame) {
       AssemblePacketFromFragments(packet));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10650,7 +10680,7 @@ TEST_P(QuicFramerTest, IetfStopSendingFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10736,7 +10766,7 @@ TEST_P(QuicFramerTest, IetfPathChallengeFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10819,7 +10849,7 @@ TEST_P(QuicFramerTest, IetfPathResponseFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -10981,7 +11011,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorUnknown1Byte) {
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_INVALID_FRAME_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_FRAME_DATA));
   EXPECT_EQ("Illegal frame type.", framer_.detailed_error());
 }
 
@@ -11014,7 +11044,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorUnknown2Bytes) {
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_INVALID_FRAME_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_FRAME_DATA));
   EXPECT_EQ("Illegal frame type.", framer_.detailed_error());
 }
 
@@ -11047,7 +11077,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorUnknown4Bytes) {
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_INVALID_FRAME_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_FRAME_DATA));
   EXPECT_EQ("Illegal frame type.", framer_.detailed_error());
 }
 
@@ -11079,7 +11109,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorUnknown8Bytes) {
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_INVALID_FRAME_DATA, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_FRAME_DATA));
   EXPECT_EQ("Illegal frame type.", framer_.detailed_error());
 }
 
@@ -11116,7 +11146,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorKnown2Bytes) {
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(IETF_QUIC_PROTOCOL_VIOLATION, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(IETF_QUIC_PROTOCOL_VIOLATION));
   EXPECT_EQ("Frame type not minimally encoded.", framer_.detailed_error());
 }
 
@@ -11149,7 +11179,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorKnown4Bytes) {
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(IETF_QUIC_PROTOCOL_VIOLATION, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(IETF_QUIC_PROTOCOL_VIOLATION));
   EXPECT_EQ("Frame type not minimally encoded.", framer_.detailed_error());
 }
 
@@ -11181,7 +11211,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorKnown8Bytes) {
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(IETF_QUIC_PROTOCOL_VIOLATION, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(IETF_QUIC_PROTOCOL_VIOLATION));
   EXPECT_EQ("Frame type not minimally encoded.", framer_.detailed_error());
 }
 
@@ -11585,7 +11615,7 @@ TEST_P(QuicFramerTest, IetfFrameTypeEncodingErrorKnown2BytesAllTypes) {
 
     EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
 
-    EXPECT_EQ(IETF_QUIC_PROTOCOL_VIOLATION, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(IETF_QUIC_PROTOCOL_VIOLATION));
     EXPECT_EQ("Frame type not minimally encoded.", framer_.detailed_error());
   }
 }
@@ -11620,7 +11650,7 @@ TEST_P(QuicFramerTest, RetireConnectionIdFrame) {
       AssemblePacketFromFragments(packet99));
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
       *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
@@ -12083,7 +12113,7 @@ TEST_P(QuicFramerTest, CoalescedPacket) {
   QuicEncryptedPacket encrypted(AsChars(p), p_length, false);
   EXPECT_TRUE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
 
   ASSERT_EQ(1u, visitor_.stream_frames_.size());
@@ -12098,7 +12128,7 @@ TEST_P(QuicFramerTest, CoalescedPacket) {
   ASSERT_EQ(visitor_.coalesced_packets_.size(), 1u);
   EXPECT_TRUE(framer_.ProcessPacket(*visitor_.coalesced_packets_[0].get()));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
 
   ASSERT_EQ(2u, visitor_.stream_frames_.size());
@@ -12197,18 +12227,18 @@ TEST_P(QuicFramerTest, UndecryptablePacketWithoutDecrypter) {
   // First attempt decryption without the handshake crypter.
   EXPECT_FALSE(
       framer_.ProcessPacket(QuicEncryptedPacket(AsChars(p), p_length, false)));
-  EXPECT_EQ(QUIC_DECRYPTION_FAILURE, framer_.error());
-    ASSERT_EQ(1u, visitor_.undecryptable_packets_.size());
-    ASSERT_EQ(1u, visitor_.undecryptable_decryption_levels_.size());
-    ASSERT_EQ(1u, visitor_.undecryptable_has_decryption_keys_.size());
-    CompareCharArraysWithHexError(
-        "undecryptable packet", visitor_.undecryptable_packets_[0]->data(),
-        visitor_.undecryptable_packets_[0]->length(), AsChars(p), p_length);
-    if (framer_.version().KnowsWhichDecrypterToUse()) {
-      EXPECT_EQ(ENCRYPTION_HANDSHAKE,
-                visitor_.undecryptable_decryption_levels_[0]);
-    }
-    EXPECT_FALSE(visitor_.undecryptable_has_decryption_keys_[0]);
+  EXPECT_THAT(framer_.error(), IsError(QUIC_DECRYPTION_FAILURE));
+  ASSERT_EQ(1u, visitor_.undecryptable_packets_.size());
+  ASSERT_EQ(1u, visitor_.undecryptable_decryption_levels_.size());
+  ASSERT_EQ(1u, visitor_.undecryptable_has_decryption_keys_.size());
+  CompareCharArraysWithHexError(
+      "undecryptable packet", visitor_.undecryptable_packets_[0]->data(),
+      visitor_.undecryptable_packets_[0]->length(), AsChars(p), p_length);
+  if (framer_.version().KnowsWhichDecrypterToUse()) {
+    EXPECT_EQ(ENCRYPTION_HANDSHAKE,
+              visitor_.undecryptable_decryption_levels_[0]);
+  }
+  EXPECT_FALSE(visitor_.undecryptable_has_decryption_keys_[0]);
 }
 
 TEST_P(QuicFramerTest, UndecryptablePacketWithDecrypter) {
@@ -12299,19 +12329,19 @@ TEST_P(QuicFramerTest, UndecryptablePacketWithDecrypter) {
 
   EXPECT_FALSE(
       framer_.ProcessPacket(QuicEncryptedPacket(AsChars(p), p_length, false)));
-  EXPECT_EQ(QUIC_DECRYPTION_FAILURE, framer_.error());
-    ASSERT_EQ(1u, visitor_.undecryptable_packets_.size());
-    ASSERT_EQ(1u, visitor_.undecryptable_decryption_levels_.size());
-    ASSERT_EQ(1u, visitor_.undecryptable_has_decryption_keys_.size());
-    CompareCharArraysWithHexError(
-        "undecryptable packet", visitor_.undecryptable_packets_[0]->data(),
-        visitor_.undecryptable_packets_[0]->length(), AsChars(p), p_length);
-    if (framer_.version().KnowsWhichDecrypterToUse()) {
-      EXPECT_EQ(ENCRYPTION_HANDSHAKE,
-                visitor_.undecryptable_decryption_levels_[0]);
-    }
-    EXPECT_EQ(framer_.version().KnowsWhichDecrypterToUse(),
-              visitor_.undecryptable_has_decryption_keys_[0]);
+  EXPECT_THAT(framer_.error(), IsError(QUIC_DECRYPTION_FAILURE));
+  ASSERT_EQ(1u, visitor_.undecryptable_packets_.size());
+  ASSERT_EQ(1u, visitor_.undecryptable_decryption_levels_.size());
+  ASSERT_EQ(1u, visitor_.undecryptable_has_decryption_keys_.size());
+  CompareCharArraysWithHexError(
+      "undecryptable packet", visitor_.undecryptable_packets_[0]->data(),
+      visitor_.undecryptable_packets_[0]->length(), AsChars(p), p_length);
+  if (framer_.version().KnowsWhichDecrypterToUse()) {
+    EXPECT_EQ(ENCRYPTION_HANDSHAKE,
+              visitor_.undecryptable_decryption_levels_[0]);
+  }
+  EXPECT_EQ(framer_.version().KnowsWhichDecrypterToUse(),
+            visitor_.undecryptable_has_decryption_keys_[0]);
 }
 
 TEST_P(QuicFramerTest, UndecryptableCoalescedPacket) {
@@ -12462,20 +12492,19 @@ TEST_P(QuicFramerTest, UndecryptableCoalescedPacket) {
 
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_DECRYPTION_FAILURE, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_DECRYPTION_FAILURE));
 
-    ASSERT_EQ(1u, visitor_.undecryptable_packets_.size());
-    ASSERT_EQ(1u, visitor_.undecryptable_decryption_levels_.size());
-    ASSERT_EQ(1u, visitor_.undecryptable_has_decryption_keys_.size());
-    // Make sure we only receive the first undecryptable packet and not the
-    // full packet including the second coalesced packet.
-    CompareCharArraysWithHexError("undecryptable packet",
-                                  visitor_.undecryptable_packets_[0]->data(),
-                                  visitor_.undecryptable_packets_[0]->length(),
-                                  AsChars(p), length_of_first_coalesced_packet);
-    EXPECT_EQ(ENCRYPTION_HANDSHAKE,
-              visitor_.undecryptable_decryption_levels_[0]);
-    EXPECT_TRUE(visitor_.undecryptable_has_decryption_keys_[0]);
+  ASSERT_EQ(1u, visitor_.undecryptable_packets_.size());
+  ASSERT_EQ(1u, visitor_.undecryptable_decryption_levels_.size());
+  ASSERT_EQ(1u, visitor_.undecryptable_has_decryption_keys_.size());
+  // Make sure we only receive the first undecryptable packet and not the
+  // full packet including the second coalesced packet.
+  CompareCharArraysWithHexError("undecryptable packet",
+                                visitor_.undecryptable_packets_[0]->data(),
+                                visitor_.undecryptable_packets_[0]->length(),
+                                AsChars(p), length_of_first_coalesced_packet);
+  EXPECT_EQ(ENCRYPTION_HANDSHAKE, visitor_.undecryptable_decryption_levels_[0]);
+  EXPECT_TRUE(visitor_.undecryptable_has_decryption_keys_[0]);
 
   // Make sure the second coalesced packet is parsed correctly.
   ASSERT_EQ(visitor_.coalesced_packets_.size(), 1u);
@@ -12631,7 +12660,7 @@ TEST_P(QuicFramerTest, MismatchedCoalescedPacket) {
   EXPECT_QUIC_PEER_BUG(EXPECT_TRUE(framer_.ProcessPacket(encrypted)),
                        "Server: Received mismatched coalesced header.*");
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
 
   ASSERT_EQ(1u, visitor_.stream_frames_.size());
@@ -12737,7 +12766,7 @@ TEST_P(QuicFramerTest, InvalidCoalescedPacket) {
   EXPECT_QUIC_PEER_BUG(EXPECT_TRUE(framer_.ProcessPacket(encrypted)),
                        "Server: Failed to parse received coalesced header.*");
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
 
   ASSERT_EQ(1u, visitor_.stream_frames_.size());
@@ -12835,7 +12864,7 @@ TEST_P(QuicFramerTest, ClientReceivesInvalidVersion) {
   QuicEncryptedPacket encrypted(AsChars(packet), QUIC_ARRAYSIZE(packet), false);
   EXPECT_FALSE(framer_.ProcessPacket(encrypted));
 
-  EXPECT_EQ(QUIC_INVALID_VERSION, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_VERSION));
   EXPECT_EQ("Client received unexpected version.", framer_.detailed_error());
 }
 
@@ -12887,10 +12916,10 @@ TEST_P(QuicFramerTest, PacketHeaderWithVariableLengthConnectionId) {
       AssemblePacketFromFragments(fragments));
   if (framer_.version().HasHeaderProtection()) {
     EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-    EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+    EXPECT_THAT(framer_.error(), IsQuicNoError());
   } else {
     EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-    EXPECT_EQ(QUIC_MISSING_PAYLOAD, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_MISSING_PAYLOAD));
   }
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(connection_id, visitor_.header_->destination_connection_id);
@@ -12963,7 +12992,7 @@ TEST_P(QuicFramerTest, MultiplePacketNumberSpaces) {
                             QUIC_ARRAYSIZE(long_header_packet99), false)));
   }
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   EXPECT_FALSE(
       QuicFramerPeer::GetLargestDecryptedPacketNumber(&framer_, INITIAL_DATA)
           .IsInitialized());
@@ -12998,7 +13027,7 @@ TEST_P(QuicFramerTest, MultiplePacketNumberSpaces) {
   }
   EXPECT_TRUE(framer_.ProcessPacket(short_header_encrypted));
 
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   EXPECT_FALSE(
       QuicFramerPeer::GetLargestDecryptedPacketNumber(&framer_, INITIAL_DATA)
           .IsInitialized());
@@ -13033,7 +13062,7 @@ TEST_P(QuicFramerTest, IetfRetryPacketRejected) {
       AssemblePacketFromFragments(packet46));
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
   CheckFramingBoundaries(packet46, QUIC_INVALID_PACKET_HEADER);
 }
 
@@ -13062,7 +13091,7 @@ TEST_P(QuicFramerTest, RetryPacketRejectedWithMultiplePacketNumberSpaces) {
       AssemblePacketFromFragments(packet));
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
   CheckFramingBoundaries(packet, QUIC_INVALID_PACKET_HEADER);
 }
 
@@ -13101,7 +13130,7 @@ TEST_P(QuicFramerTest, ProcessPublicHeaderNoVersionInferredType) {
       AssemblePacketFromFragments(fragments));
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
   EXPECT_EQ("Invalid public header type for expected version.",
             framer_.detailed_error());
   CheckFramingBoundaries(fragments, QUIC_INVALID_PACKET_HEADER);
@@ -13138,7 +13167,7 @@ TEST_P(QuicFramerTest, ProcessMismatchedHeaderVersion) {
   framer_.ProcessPacket(*encrypted);
 
   EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-  EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+  EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
   EXPECT_EQ("Invalid public header type for expected version.",
             framer_.detailed_error());
   CheckFramingBoundaries(packet, QUIC_INVALID_PACKET_HEADER);
@@ -13229,7 +13258,7 @@ TEST_P(QuicFramerTest, WriteClientVersionNegotiationProbePacketOld) {
       &version_present, &has_length_prefix, &version_label, &parsed_version,
       &destination_connection_id, &source_connection_id, &retry_token_present,
       &retry_token, &detailed_error);
-  EXPECT_EQ(QUIC_NO_ERROR, parse_result);
+  EXPECT_THAT(parse_result, IsQuicNoError());
   EXPECT_EQ(IETF_QUIC_LONG_HEADER_PACKET, format);
   EXPECT_TRUE(version_present);
   EXPECT_FALSE(has_length_prefix);
@@ -13380,7 +13409,7 @@ TEST_P(QuicFramerTest, DispatcherParseOldClientVersionNegotiationProbePacket) {
       &version_present, &has_length_prefix, &version_label, &parsed_version,
       &destination_connection_id, &source_connection_id, &retry_token_present,
       &retry_token, &detailed_error);
-  EXPECT_EQ(QUIC_NO_ERROR, header_parse_result);
+  EXPECT_THAT(header_parse_result, IsQuicNoError());
   EXPECT_EQ(IETF_QUIC_LONG_HEADER_PACKET, format);
   EXPECT_TRUE(version_present);
   EXPECT_FALSE(has_length_prefix);
@@ -13459,7 +13488,7 @@ TEST_P(QuicFramerTest, DispatcherParseClientVersionNegotiationProbePacket) {
       &version_present, &has_length_prefix, &version_label, &parsed_version,
       &destination_connection_id, &source_connection_id, &retry_token_present,
       &retry_token, &detailed_error);
-  EXPECT_EQ(QUIC_NO_ERROR, header_parse_result);
+  EXPECT_THAT(header_parse_result, IsQuicNoError());
   EXPECT_EQ(IETF_QUIC_LONG_HEADER_PACKET, format);
   EXPECT_TRUE(version_present);
   EXPECT_TRUE(has_length_prefix);
@@ -13587,12 +13616,12 @@ TEST_P(QuicFramerTest, ClientConnectionIdFromLongHeaderToClient) {
   if (!QuicUtils::VariableLengthConnectionIdAllowedForVersion(
           framer_.transport_version())) {
     EXPECT_FALSE(parse_success);
-    EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
     EXPECT_EQ("Invalid ConnectionId length.", framer_.detailed_error());
     return;
   }
   EXPECT_TRUE(parse_success);
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   EXPECT_EQ("", framer_.detailed_error());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
@@ -13653,19 +13682,19 @@ TEST_P(QuicFramerTest, ClientConnectionIdFromLongHeaderToServer) {
   if (!QuicUtils::VariableLengthConnectionIdAllowedForVersion(
           framer_.transport_version())) {
     EXPECT_FALSE(parse_success);
-    EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
     EXPECT_EQ("Invalid ConnectionId length.", framer_.detailed_error());
     return;
   }
   if (!framer_.version().SupportsClientConnectionIds()) {
     EXPECT_FALSE(parse_success);
-    EXPECT_EQ(QUIC_INVALID_PACKET_HEADER, framer_.error());
+    EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_PACKET_HEADER));
     EXPECT_EQ("Client connection ID not supported in this version.",
               framer_.detailed_error());
     return;
   }
   EXPECT_TRUE(parse_success);
-  EXPECT_EQ(QUIC_NO_ERROR, framer_.error());
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
   EXPECT_EQ("", framer_.detailed_error());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_EQ(FramerTestConnectionId(),
@@ -13757,17 +13786,20 @@ TEST_P(QuicFramerTest, TestExtendedErrorCodeParser) {
 
   frame.error_details = "this has no error code info in it";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING, frame.extracted_error_code);
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   EXPECT_EQ("this has no error code info in it", frame.error_details);
 
   frame.error_details = "1234this does not have the colon in it";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING, frame.extracted_error_code);
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   EXPECT_EQ("1234this does not have the colon in it", frame.error_details);
 
   frame.error_details = "1a234:this has a colon, but a malformed error number";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING, frame.extracted_error_code);
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   EXPECT_EQ("1a234:this has a colon, but a malformed error number",
             frame.error_details);
 
@@ -13779,14 +13811,16 @@ TEST_P(QuicFramerTest, TestExtendedErrorCodeParser) {
   frame.error_details =
       "1234 :this is not good, space between last digit and colon";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING, frame.extracted_error_code);
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   EXPECT_EQ("1234 :this is not good, space between last digit and colon",
             frame.error_details);
 
   frame.error_details = "123456789";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING,
-            frame.extracted_error_code);  // Not good, all numbers, no :
+  EXPECT_THAT(
+      frame.extracted_error_code,
+      IsError(QUIC_IETF_GQUIC_ERROR_MISSING));  // Not good, all numbers, no :
   EXPECT_EQ("123456789", frame.error_details);
 
   frame.error_details = "1234:";
@@ -13803,23 +13837,26 @@ TEST_P(QuicFramerTest, TestExtendedErrorCodeParser) {
 
   frame.error_details = "12345 6789:";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING,
-            frame.extracted_error_code);  // Not good
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));  // Not good
   EXPECT_EQ("12345 6789:", frame.error_details);
 
   frame.error_details = ":no numbers, is not good";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING, frame.extracted_error_code);
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   EXPECT_EQ(":no numbers, is not good", frame.error_details);
 
   frame.error_details = "qwer:also no numbers, is not good";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING, frame.extracted_error_code);
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   EXPECT_EQ("qwer:also no numbers, is not good", frame.error_details);
 
   frame.error_details = " 1234:this is not good, space before first digit";
   MaybeExtractQuicErrorCode(&frame);
-  EXPECT_EQ(QUIC_IETF_GQUIC_ERROR_MISSING, frame.extracted_error_code);
+  EXPECT_THAT(frame.extracted_error_code,
+              IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
   EXPECT_EQ(" 1234:this is not good, space before first digit",
             frame.error_details);
 
@@ -13828,6 +13865,42 @@ TEST_P(QuicFramerTest, TestExtendedErrorCodeParser) {
   EXPECT_EQ(1234u,
             frame.extracted_error_code);  // this is good
   EXPECT_EQ("", frame.error_details);
+}
+
+// Regression test for crbug/1029636.
+TEST_P(QuicFramerTest, OverlyLargeAckDelay) {
+  if (!VersionHasIetfQuicFrames(framer_.transport_version())) {
+    return;
+  }
+  SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
+  // clang-format off
+  unsigned char packet99[] = {
+    // type (short header, 4 byte packet number)
+    0x43,
+    // connection_id
+    0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
+    // packet number
+    0x12, 0x34, 0x56, 0x78,
+
+    // frame type (IETF_ACK frame)
+    0x02,
+    // largest acked
+    kVarInt62FourBytes + 0x12, 0x34, 0x56, 0x78,
+    // ack delay time.
+    kVarInt62EightBytes + 0x31, 0x00, 0x00, 0x00, 0xF3, 0xA0, 0x81, 0xE0,
+    // Nr. of additional ack blocks
+    kVarInt62OneByte + 0x00,
+    // first ack block length.
+    kVarInt62FourBytes + 0x12, 0x34, 0x56, 0x77,
+  };
+  // clang-format on
+
+  framer_.ProcessPacket(
+      QuicEncryptedPacket(AsChars(packet99), QUIC_ARRAYSIZE(packet99), false));
+  ASSERT_EQ(1u, visitor_.ack_frames_.size());
+  // Verify ack_delay_time is set correctly.
+  EXPECT_EQ(QuicTime::Delta::Infinite(),
+            visitor_.ack_frames_[0]->ack_delay_time);
 }
 
 }  // namespace

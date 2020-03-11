@@ -135,10 +135,7 @@ class StatelessConnectionTerminator {
         creator_(server_connection_id, &framer_, &collector_),
         time_wait_list_manager_(time_wait_list_manager) {
     framer_.set_data_producer(&collector_);
-    if (framer_.framer_doesnt_create_initial_encrypter() ||
-        version.UsesInitialObfuscators()) {
-      framer_.SetInitialObfuscators(server_connection_id);
-    }
+    framer_.SetInitialObfuscators(server_connection_id);
   }
 
   ~StatelessConnectionTerminator() {
@@ -179,7 +176,7 @@ class StatelessConnectionTerminator {
         framer_.transport_version(), error_code, error_details,
         /*transport_close_frame_type=*/0);
 
-    if (!creator_.AddSavedFrame(QuicFrame(frame), NOT_RETRANSMISSION)) {
+    if (!creator_.AddFrame(QuicFrame(frame), NOT_RETRANSMISSION)) {
       QUIC_BUG << "Unable to add frame to an empty packet";
       delete frame;
       return;
@@ -454,12 +451,10 @@ bool QuicDispatcher::MaybeDispatchPacket(
       return true;
     }
 
-    if (GetQuicReloadableFlag(quic_donot_process_small_initial_packets) &&
-        crypto_config()->validate_chlo_size() &&
+    if (crypto_config()->validate_chlo_size() &&
         packet_info.form == IETF_QUIC_LONG_HEADER_PACKET &&
         packet_info.long_packet_type == INITIAL &&
         packet_info.packet.length() < kMinClientInitialPacketLength) {
-      QUIC_RELOADABLE_FLAG_COUNT(quic_donot_process_small_initial_packets);
       StatelessConnectionTerminator terminator(
           packet_info.destination_connection_id, packet_info.version,
           helper_.get(), time_wait_list_manager_.get());
@@ -530,8 +525,6 @@ void QuicDispatcher::ProcessHeader(ReceivedPacketInfo* packet_info) {
 QuicDispatcher::QuicPacketFate QuicDispatcher::ValidityChecks(
     const ReceivedPacketInfo& packet_info) {
   if (!packet_info.version_flag) {
-    if (GetQuicReloadableFlag(quic_reply_to_old_android_conformance_test)) {
-      QUIC_RELOADABLE_FLAG_COUNT(quic_reply_to_old_android_conformance_test);
       // The Android network conformance test contains a UDP test that sends a
       // 12-byte packet with the following format:
       //  - 0x0c (public flags: 8-byte connection ID, 1-byte packet number)
@@ -559,17 +552,12 @@ QuicDispatcher::QuicPacketFate QuicDispatcher::ValidityChecks(
             /*ietf_quic=*/false, GetPerPacketContext());
         return kFateDrop;
       }
-    }
 
     QUIC_DLOG(INFO)
         << "Packet without version arrived for unknown connection ID "
         << packet_info.destination_connection_id;
-    if (GetQuicReloadableFlag(quic_reject_unprocessable_packets_statelessly)) {
-      QUIC_RELOADABLE_FLAG_COUNT(quic_reject_unprocessable_packets_statelessly);
-      MaybeResetPacketsWithNoVersion(packet_info);
-      return kFateDrop;
-    }
-    return kFateTimeWait;
+    MaybeResetPacketsWithNoVersion(packet_info);
+    return kFateDrop;
   }
 
   // Let the connection parse and validate packet number.
@@ -586,7 +574,7 @@ void QuicDispatcher::CleanUpSession(SessionMap::iterator it,
       !connection->termination_packets()->empty()) {
     action = QuicTimeWaitListManager::SEND_TERMINATION_PACKETS;
   } else {
-    if (!connection->IsHandshakeConfirmed()) {
+    if (!connection->IsHandshakeComplete()) {
       if (!VersionHasIetfInvariantHeader(connection->transport_version())) {
         QUIC_CODE_COUNT(gquic_add_to_time_wait_list_with_handshake_failed);
       } else {

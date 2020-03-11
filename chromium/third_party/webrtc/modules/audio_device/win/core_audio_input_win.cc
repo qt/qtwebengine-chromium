@@ -46,13 +46,13 @@ CoreAudioInput::~CoreAudioInput() {
 int CoreAudioInput::Init() {
   RTC_DLOG(INFO) << __FUNCTION__;
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  StopRecording();
   return 0;
 }
 
 int CoreAudioInput::Terminate() {
   RTC_DLOG(INFO) << __FUNCTION__;
   RTC_DCHECK_RUN_ON(&thread_checker_);
+  StopRecording();
   return 0;
 }
 
@@ -63,11 +63,16 @@ int CoreAudioInput::NumDevices() const {
 
 int CoreAudioInput::SetDevice(int index) {
   RTC_DLOG(INFO) << __FUNCTION__ << ": " << index;
+  RTC_DCHECK_GE(index, 0);
+  RTC_DCHECK_RUN_ON(&thread_checker_);
   return CoreAudioBase::SetDevice(index);
 }
 
 int CoreAudioInput::SetDevice(AudioDeviceModule::WindowsDeviceType device) {
-  RTC_DLOG(INFO) << __FUNCTION__ << ": " << device;
+  RTC_DLOG(INFO) << __FUNCTION__ << ": "
+                 << ((device == AudioDeviceModule::kDefaultDevice)
+                         ? "Default"
+                         : "DefaultCommunication");
   RTC_DCHECK_RUN_ON(&thread_checker_);
   return SetDevice((device == AudioDeviceModule::kDefaultDevice) ? 0 : 1);
 }
@@ -239,7 +244,6 @@ int CoreAudioInput::RestartRecording() {
 }
 
 bool CoreAudioInput::Restarting() const {
-  RTC_DLOG(INFO) << __FUNCTION__;
   RTC_DCHECK_RUN_ON(&thread_checker_);
   return IsRestarting();
 }
@@ -261,6 +265,13 @@ void CoreAudioInput::ReleaseCOMObjects() {
 
 bool CoreAudioInput::OnDataCallback(uint64_t device_frequency) {
   RTC_DCHECK_RUN_ON(&thread_checker_audio_);
+
+  if (!initialized_ || !is_active_) {
+    // This is concurrent examination of state across multiple threads so will
+    // be somewhat error prone, but we should still be defensive and not use
+    // audio_capture_client_ if we know it's not there.
+    return false;
+  }
   if (num_data_callbacks_ == 0) {
     RTC_LOG(INFO) << "--- Input audio stream is alive ---";
   }

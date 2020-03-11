@@ -25,11 +25,11 @@ namespace dawn_native { namespace d3d12 {
         : SwapChainBase(device, descriptor) {
         const auto& im = GetImplementation();
         DawnWSIContextD3D12 wsiContext = {};
-        wsiContext.device = reinterpret_cast<DawnDevice>(GetDevice());
+        wsiContext.device = reinterpret_cast<WGPUDevice>(GetDevice());
         im.Init(im.userData, &wsiContext);
 
-        ASSERT(im.textureUsage != DAWN_TEXTURE_USAGE_NONE);
-        mTextureUsage = static_cast<dawn::TextureUsage>(im.textureUsage);
+        ASSERT(im.textureUsage != WGPUTextureUsage_None);
+        mTextureUsage = static_cast<wgpu::TextureUsage>(im.textureUsage);
     }
 
     SwapChain::~SwapChain() {
@@ -40,12 +40,12 @@ namespace dawn_native { namespace d3d12 {
         DawnSwapChainNextTexture next = {};
         DawnSwapChainError error = im.GetNextTexture(im.userData, &next);
         if (error) {
-            GetDevice()->HandleError(dawn::ErrorType::Unknown, error);
+            GetDevice()->HandleError(wgpu::ErrorType::Unknown, error);
             return nullptr;
         }
 
-        ID3D12Resource* nativeTexture = static_cast<ID3D12Resource*>(next.texture.ptr);
-        return new Texture(ToBackend(GetDevice()), descriptor, nativeTexture);
+        ComPtr<ID3D12Resource> d3d12Texture = static_cast<ID3D12Resource*>(next.texture.ptr);
+        return new Texture(ToBackend(GetDevice()), descriptor, std::move(d3d12Texture));
     }
 
     MaybeError SwapChain::OnBeforePresent(TextureBase* texture) {
@@ -57,7 +57,7 @@ namespace dawn_native { namespace d3d12 {
         // Perform the necessary transition for the texture to be presented.
         ToBackend(texture)->TransitionUsageNow(commandContext, mTextureUsage);
 
-        DAWN_TRY(device->ExecuteCommandContext(nullptr));
+        DAWN_TRY(device->ExecutePendingCommandContext());
 
         return {};
     }

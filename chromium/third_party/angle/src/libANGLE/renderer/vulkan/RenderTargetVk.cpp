@@ -28,7 +28,12 @@ RenderTargetVk::RenderTargetVk(RenderTargetVk &&other)
       mImageViews(other.mImageViews),
       mLevelIndex(other.mLevelIndex),
       mLayerIndex(other.mLayerIndex)
-{}
+{
+    other.mImage      = nullptr;
+    other.mImageViews = nullptr;
+    other.mLevelIndex = 0;
+    other.mLayerIndex = 0;
+}
 
 void RenderTargetVk::init(vk::ImageHelper *image,
                           vk::ImageViewHelper *imageViews,
@@ -54,7 +59,7 @@ angle::Result RenderTargetVk::onColorDraw(ContextVk *contextVk,
                                           vk::CommandBuffer *commandBuffer)
 {
     ASSERT(commandBuffer->valid());
-    ASSERT(!mImage->getFormat().imageFormat().hasDepthOrStencilBits());
+    ASSERT(!mImage->getFormat().actualImageFormat().hasDepthOrStencilBits());
 
     // TODO(jmadill): Use automatic layout transition. http://anglebug.com/2361
     mImage->changeLayout(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment,
@@ -62,6 +67,8 @@ angle::Result RenderTargetVk::onColorDraw(ContextVk *contextVk,
 
     // Set up dependencies between the RT resource and the Framebuffer.
     mImage->addWriteDependency(contextVk, framebufferVk);
+
+    onImageViewGraphAccess(contextVk);
 
     return angle::Result::Continue;
 }
@@ -71,16 +78,18 @@ angle::Result RenderTargetVk::onDepthStencilDraw(ContextVk *contextVk,
                                                  vk::CommandBuffer *commandBuffer)
 {
     ASSERT(commandBuffer->valid());
-    ASSERT(mImage->getFormat().imageFormat().hasDepthOrStencilBits());
+    ASSERT(mImage->getFormat().actualImageFormat().hasDepthOrStencilBits());
 
     // TODO(jmadill): Use automatic layout transition. http://anglebug.com/2361
-    const angle::Format &format    = mImage->getFormat().imageFormat();
+    const angle::Format &format    = mImage->getFormat().actualImageFormat();
     VkImageAspectFlags aspectFlags = vk::GetDepthStencilAspectFlags(format);
 
     mImage->changeLayout(aspectFlags, vk::ImageLayout::DepthStencilAttachment, commandBuffer);
 
     // Set up dependencies between the RT resource and the Framebuffer.
     mImage->addWriteDependency(contextVk, framebufferVk);
+
+    onImageViewGraphAccess(contextVk);
 
     return angle::Result::Continue;
 }
@@ -147,9 +156,8 @@ vk::ImageHelper *RenderTargetVk::getImageForRead(ContextVk *contextVk,
     // However, this needs context to be available here, or all call sites changed
     // to perform the layout transition and set the dependency.
     mImage->addWriteDependency(contextVk, readingResource);
-
     mImage->changeLayout(mImage->getAspectFlags(), layout, commandBuffer);
-
+    onImageViewGraphAccess(contextVk);
     return mImage;
 }
 
@@ -158,6 +166,7 @@ vk::ImageHelper *RenderTargetVk::getImageForWrite(ContextVk *contextVk,
 {
     ASSERT(mImage && mImage->valid());
     mImage->addWriteDependency(contextVk, writingResource);
+    onImageViewGraphAccess(contextVk);
     return mImage;
 }
 
@@ -173,4 +182,8 @@ angle::Result RenderTargetVk::flushStagedUpdates(ContextVk *contextVk)
                                       mLayerIndex + 1, commandBuffer);
 }
 
+void RenderTargetVk::onImageViewGraphAccess(ContextVk *contextVk) const
+{
+    mImageViews->onGraphAccess(contextVk->getCommandGraph());
+}
 }  // namespace rx

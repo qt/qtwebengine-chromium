@@ -22,8 +22,8 @@ import {trackRegistry} from '../../frontend/track_registry';
 
 import {Config, Data, SLICE_TRACK_KIND} from './common';
 
-const SLICE_HEIGHT = 20;
-const TRACK_PADDING = 5;
+const SLICE_HEIGHT = 18;
+const TRACK_PADDING = 4;
 
 function hash(s: string): number {
   let hash = 0x811c9dc5 & 0xfffffff;
@@ -159,7 +159,8 @@ export class ChromeSliceTrack extends Track<Config, Data> {
     if (data === undefined) return false;
     const sliceId = data.sliceIds[sliceIndex];
     if (sliceId) {
-      globals.makeSelection(Actions.selectChromeSlice({id: sliceId}));
+      globals.makeSelection(Actions.selectChromeSlice(
+          {id: sliceId, trackId: this.trackState.id}));
       return true;
     }
     return false;

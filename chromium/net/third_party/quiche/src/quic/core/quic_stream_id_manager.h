@@ -29,7 +29,7 @@ const int kMaxStreamsWindowDivisor = 2;
 // This class manages the stream ids for Version 99/IETF QUIC.
 class QUIC_EXPORT_PRIVATE QuicStreamIdManager {
  public:
-  class DelegateInterface {
+  class QUIC_EXPORT_PRIVATE DelegateInterface {
    public:
     virtual ~DelegateInterface() = default;
 
@@ -151,6 +151,10 @@ class QUIC_EXPORT_PRIVATE QuicStreamIdManager {
   void set_largest_peer_created_stream_id(
       QuicStreamId largest_peer_created_stream_id) {
     largest_peer_created_stream_id_ = largest_peer_created_stream_id;
+  }
+
+  QuicStreamId largest_peer_created_stream_id() const {
+    return largest_peer_created_stream_id_;
   }
 
   // These are the limits for outgoing and incoming streams,

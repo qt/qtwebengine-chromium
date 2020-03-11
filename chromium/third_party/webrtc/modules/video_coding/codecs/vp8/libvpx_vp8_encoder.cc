@@ -652,10 +652,15 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
 
   vpx_configs_[0].rc_target_bitrate = stream_bitrates[stream_idx_cfg_0];
   if (stream_bitrates[stream_idx_cfg_0] > 0) {
+    uint32_t maxFramerate =
+        inst->simulcastStream[stream_idx_cfg_0].maxFramerate;
+    if (!maxFramerate) {
+      maxFramerate = inst->maxFramerate;
+    }
+
     frame_buffer_controller_->OnRatesUpdated(
         stream_idx_cfg_0,
-        allocation.GetTemporalLayerAllocation(stream_idx_cfg_0),
-        inst->maxFramerate);
+        allocation.GetTemporalLayerAllocation(stream_idx_cfg_0), maxFramerate);
   }
   frame_buffer_controller_->SetQpLimits(stream_idx_cfg_0,
                                         vpx_configs_[0].rc_min_quantizer,
@@ -685,9 +690,13 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
     SetStreamState(stream_bitrates[stream_idx] > 0, stream_idx);
     vpx_configs_[i].rc_target_bitrate = stream_bitrates[stream_idx];
     if (stream_bitrates[stream_idx] > 0) {
+      uint32_t maxFramerate = inst->simulcastStream[stream_idx].maxFramerate;
+      if (!maxFramerate) {
+        maxFramerate = inst->maxFramerate;
+      }
       frame_buffer_controller_->OnRatesUpdated(
           stream_idx, allocation.GetTemporalLayerAllocation(stream_idx),
-          inst->maxFramerate);
+          maxFramerate);
     }
     frame_buffer_controller_->SetQpLimits(stream_idx,
                                           vpx_configs_[i].rc_min_quantizer,
@@ -1131,19 +1140,28 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
     CodecSpecificInfo codec_specific;
     const vpx_codec_cx_pkt_t* pkt = NULL;
 
+    size_t encoded_size = 0;
+    while ((pkt = libvpx_->codec_get_cx_data(&encoders_[encoder_idx], &iter)) !=
+           NULL) {
+      if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
+        encoded_size += pkt->data.frame.sz;
+      }
+    }
+
     // TODO(nisse): Introduce some buffer cache or buffer pool, to reduce
     // allocations and/or copy operations.
-    auto buffer = EncodedImageBuffer::Create();
+    auto buffer = EncodedImageBuffer::Create(encoded_size);
 
+    iter = NULL;
+    size_t encoded_pos = 0;
     while ((pkt = libvpx_->codec_get_cx_data(&encoders_[encoder_idx], &iter)) !=
            NULL) {
       switch (pkt->kind) {
         case VPX_CODEC_CX_FRAME_PKT: {
-          const size_t size = buffer->size();
-          const size_t new_size = pkt->data.frame.sz + size;
-          buffer->Realloc(new_size);
-          memcpy(&buffer->data()[size], pkt->data.frame.buf,
+          RTC_CHECK_LE(encoded_pos + pkt->data.frame.sz, buffer->size());
+          memcpy(&buffer->data()[encoded_pos], pkt->data.frame.buf,
                  pkt->data.frame.sz);
+          encoded_pos += pkt->data.frame.sz;
           break;
         }
         default:
@@ -1157,6 +1175,7 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
               VideoFrameType::kVideoFrameKey;
         }
         encoded_images_[encoder_idx].SetEncodedData(buffer);
+        encoded_images_[encoder_idx].set_size(encoded_pos);
         encoded_images_[encoder_idx].SetSpatialIndex(stream_idx);
         PopulateCodecSpecific(&codec_specific, *pkt, stream_idx, encoder_idx,
                               input_image.timestamp());

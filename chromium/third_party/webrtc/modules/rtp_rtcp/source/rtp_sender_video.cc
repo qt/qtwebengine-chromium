@@ -180,6 +180,7 @@ bool IsBaseLayer(const RTPVideoHeader& video_header) {
   return true;
 }
 
+#if RTC_TRACE_EVENTS_ENABLED
 const char* FrameTypeToString(VideoFrameType frame_type) {
   switch (frame_type) {
     case VideoFrameType::kEmptyFrame:
@@ -193,6 +194,7 @@ const char* FrameTypeToString(VideoFrameType frame_type) {
       return "";
   }
 }
+#endif
 
 }  // namespace
 
@@ -339,14 +341,12 @@ void RTPSenderVideo::LogAndSendToNetwork(
   int64_t now_ms = clock_->TimeInMilliseconds();
 #if BWE_TEST_LOGGING_COMPILE_TIME_ENABLE
   for (const auto& packet : packets) {
-    const uint32_t ssrc = packet->Ssrc();
-    BWE_TEST_LOGGING_PLOT_WITH_SSRC(1, "VideoTotBitrate_kbps", now_ms,
-                                    rtp_sender_->ActualSendBitrateKbit(), ssrc);
-    BWE_TEST_LOGGING_PLOT_WITH_SSRC(1, "VideoFecBitrate_kbps", now_ms,
-                                    FecOverheadRate() / 1000, ssrc);
-    BWE_TEST_LOGGING_PLOT_WITH_SSRC(1, "VideoNackBitrate_kbps", now_ms,
-                                    rtp_sender_->NackOverheadRate() / 1000,
-                                    ssrc);
+    if (packet->packet_type() ==
+        RtpPacketToSend::Type::kForwardErrorCorrection) {
+      const uint32_t ssrc = packet->Ssrc();
+      BWE_TEST_LOGGING_PLOT_WITH_SSRC(1, "VideoFecBitrate_kbps", now_ms,
+                                      FecOverheadRate() / 1000, ssrc);
+    }
   }
 #endif
 
@@ -366,16 +366,15 @@ void RTPSenderVideo::LogAndSendToNetwork(
           continue;
       }
     }
-    RTC_DCHECK_GE(packetized_payload_size, unpacketized_payload_size);
-    packetization_overhead_bitrate_.Update(
-        packetized_payload_size - unpacketized_payload_size,
-        clock_->TimeInMilliseconds());
+    // AV1 packetizer may produce less packetized bytes than unpacketized.
+    if (packetized_payload_size >= unpacketized_payload_size) {
+      packetization_overhead_bitrate_.Update(
+          packetized_payload_size - unpacketized_payload_size,
+          clock_->TimeInMilliseconds());
+    }
   }
 
-  // TODO(sprang): Replace with bulk send method.
-  for (auto& packet : packets) {
-    rtp_sender_->SendToNetwork(std::move(packet));
-  }
+  rtp_sender_->EnqueuePackets(std::move(packets));
 }
 
 size_t RTPSenderVideo::FecPacketOverhead() const {
@@ -423,8 +422,10 @@ bool RTPSenderVideo::SendVideo(
     const RTPFragmentationHeader* fragmentation,
     RTPVideoHeader video_header,
     absl::optional<int64_t> expected_retransmission_time_ms) {
+  #if RTC_TRACE_EVENTS_ENABLED
   TRACE_EVENT_ASYNC_STEP1("webrtc", "Video", capture_time_ms, "Send", "type",
                           FrameTypeToString(video_header.frame_type));
+  #endif
   RTC_CHECK_RUNS_SERIALIZED(&send_checker_);
 
   if (video_header.frame_type == VideoFrameType::kEmptyFrame)
@@ -667,13 +668,6 @@ bool RTPSenderVideo::SendVideo(
     // Put packetization finish timestamp into extension.
     if (packet->HasExtension<VideoTimingExtension>()) {
       packet->set_packetization_finish_time_ms(clock_->TimeInMilliseconds());
-      // TODO(webrtc:10750): wait a couple of months and remove the statement
-      // below. For now we can't use packets with VideoTimingFrame extensions in
-      // Fec because the extension is modified after FEC is calculated by pacer
-      // and network. This may cause corruptions in video payload and header.
-      // The fix in receive code is implemented, but until all the receivers
-      // are updated, senders can't send potentially breaking packets.
-      protect_packet = false;
     }
 
     if (red_enabled()) {

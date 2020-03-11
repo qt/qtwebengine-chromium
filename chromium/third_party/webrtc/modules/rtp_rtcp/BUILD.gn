@@ -8,7 +8,7 @@
 
 import("../../webrtc.gni")
 
-rtc_source_set("rtp_rtcp_format") {
+rtc_library("rtp_rtcp_format") {
   visibility = [ "*" ]
   public = [
     "include/report_block_data.h",
@@ -106,6 +106,7 @@ rtc_source_set("rtp_rtcp_format") {
     "../../api:rtp_parameters",
     "../../api/audio_codecs:audio_codecs_api",
     "../../api/transport:network_control",
+    "../../api/units:time_delta",
     "../../api/video:video_frame",
     "../../api/video:video_rtp_headers",
     "../../common_video",
@@ -124,7 +125,7 @@ rtc_source_set("rtp_rtcp_format") {
   ]
 }
 
-rtc_static_library("rtp_rtcp") {
+rtc_library("rtp_rtcp") {
   visibility = [ "*" ]
   sources = [
     "include/flexfec_receiver.h",
@@ -164,6 +165,8 @@ rtc_static_library("rtp_rtcp") {
     "source/rtcp_receiver.h",
     "source/rtcp_sender.cc",
     "source/rtcp_sender.h",
+    "source/rtp_depacketizer_av1.cc",
+    "source/rtp_depacketizer_av1.h",
     "source/rtp_format.cc",
     "source/rtp_format.h",
     "source/rtp_format_h264.cc",
@@ -178,6 +181,8 @@ rtc_static_library("rtp_rtcp") {
     "source/rtp_header_extension_size.h",
     "source/rtp_packet_history.cc",
     "source/rtp_packet_history.h",
+    "source/rtp_packetizer_av1.cc",
+    "source/rtp_packetizer_av1.h",
     "source/rtp_rtcp_config.h",
     "source/rtp_rtcp_impl.cc",
     "source/rtp_rtcp_impl.h",
@@ -185,6 +190,8 @@ rtc_static_library("rtp_rtcp") {
     "source/rtp_sender.h",
     "source/rtp_sender_audio.cc",
     "source/rtp_sender_audio.h",
+    "source/rtp_sender_egress.cc",
+    "source/rtp_sender_egress.h",
     "source/rtp_sender_video.cc",
     "source/rtp_sender_video.h",
     "source/rtp_sequence_number_map.cc",
@@ -203,6 +210,7 @@ rtc_static_library("rtp_rtcp") {
     "source/ulpfec_header_reader_writer.h",
     "source/ulpfec_receiver_impl.cc",
     "source/ulpfec_receiver_impl.h",
+    "source/video_rtp_depacketizer.h",
   ]
 
   if (rtc_enable_bwe_test_logging) {
@@ -232,8 +240,10 @@ rtc_static_library("rtp_rtcp") {
     "../../api/transport:field_trial_based_config",
     "../../api/transport:webrtc_key_value_config",
     "../../api/transport/rtp:rtp_source",
+    "../../api/units:data_rate",
     "../../api/units:time_delta",
     "../../api/units:timestamp",
+    "../../api/video:encoded_image",
     "../../api/video:video_bitrate_allocation",
     "../../api/video:video_bitrate_allocator",
     "../../api/video:video_codec_constants",
@@ -269,7 +279,7 @@ rtc_static_library("rtp_rtcp") {
   ]
 }
 
-rtc_source_set("rtcp_transceiver") {
+rtc_library("rtcp_transceiver") {
   visibility = [ "*" ]
   public = [
     "source/rtcp_transceiver.h",
@@ -301,7 +311,7 @@ rtc_source_set("rtcp_transceiver") {
   ]
 }
 
-rtc_source_set("rtp_video_header") {
+rtc_library("rtp_video_header") {
   visibility = [ "*" ]
   sources = [
     "source/rtp_video_header.cc",
@@ -319,7 +329,7 @@ rtc_source_set("rtp_video_header") {
   ]
 }
 
-rtc_source_set("fec_test_helper") {
+rtc_library("fec_test_helper") {
   testonly = true
   sources = [
     "source/fec_test_helper.cc",
@@ -334,7 +344,7 @@ rtc_source_set("fec_test_helper") {
   ]
 }
 
-rtc_source_set("mock_rtp_rtcp") {
+rtc_library("mock_rtp_rtcp") {
   testonly = true
   sources = [
     "mocks/mock_recovered_packet_receiver.cc",
@@ -378,7 +388,7 @@ if (rtc_include_tests) {
     ]
   }  # test_packet_masks_metrics
 
-  rtc_source_set("rtp_rtcp_modules_tests") {
+  rtc_library("rtp_rtcp_modules_tests") {
     testonly = true
 
     sources = [
@@ -393,7 +403,7 @@ if (rtc_include_tests) {
     ]
   }
 
-  rtc_source_set("rtp_rtcp_unittests") {
+  rtc_library("rtp_rtcp_unittests") {
     testonly = true
 
     sources = [
@@ -438,6 +448,7 @@ if (rtc_include_tests) {
       "source/rtcp_sender_unittest.cc",
       "source/rtcp_transceiver_impl_unittest.cc",
       "source/rtcp_transceiver_unittest.cc",
+      "source/rtp_depacketizer_av1_unittest.cc",
       "source/rtp_fec_unittest.cc",
       "source/rtp_format_h264_unittest.cc",
       "source/rtp_format_unittest.cc",
@@ -451,6 +462,7 @@ if (rtc_include_tests) {
       "source/rtp_header_extension_size_unittest.cc",
       "source/rtp_packet_history_unittest.cc",
       "source/rtp_packet_unittest.cc",
+      "source/rtp_packetizer_av1_unittest.cc",
       "source/rtp_rtcp_impl_unittest.cc",
       "source/rtp_sender_audio_unittest.cc",
       "source/rtp_sender_unittest.cc",
@@ -481,6 +493,7 @@ if (rtc_include_tests) {
       "../../api/rtc_event_log",
       "../../api/transport:field_trial_based_config",
       "../../api/units:timestamp",
+      "../../api/video:encoded_image",
       "../../api/video:video_bitrate_allocation",
       "../../api/video:video_bitrate_allocator",
       "../../api/video:video_codec_constants",

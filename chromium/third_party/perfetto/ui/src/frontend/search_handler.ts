@@ -38,48 +38,47 @@ export function executeSearch(reverse = false) {
           searchSegment(globals.currentSearchResults.tsStarts, startNs);
       globals.frontendLocalState.setSearchIndex(larger);
     }
-    // If there is no result in the current viewport, move it.
-    const currentTs = globals.currentSearchResults.tsStarts[state.searchIndex];
-    if (currentTs < startNs || currentTs > endNs) {
-      moveViewportToCurrentSearch();
-    }
   } else {
-    // If the currentTs is in the viewport, increment the index and move the
-    // viewport if necessary.
+    // If the currentTs is in the viewport, increment the index.
     if (reverse) {
       globals.frontendLocalState.setSearchIndex(Math.max(index - 1, 0));
     } else {
       globals.frontendLocalState.setSearchIndex(Math.min(
           index + 1, globals.currentSearchResults.sliceIds.length - 1));
     }
-    moveViewportToCurrentSearch();
   }
   selectCurrentSearchResult();
+
+  // TODO(taylori): If the user does a search before any other selection,
+  // the details panel will pop up when the search is executed. If the search
+  // result is behind where the details panel appears then it won't get scrolled
+  // to. This time delay is a workaround for this specific situation.
+  // A better solution will be a callback that allows something to happen on the
+  // first redraw after an Action is applied.
+  const delay = index === -1 ? 50 : 0;
+  setTimeout(() => moveViewportToCurrentSearch(), delay);
 }
 
 function moveViewportToCurrentSearch() {
-  const currentTs = globals.currentSearchResults
-                        .tsStarts[globals.frontendLocalState.searchIndex];
-  const trackId = globals.currentSearchResults
-                      .trackIds[globals.frontendLocalState.searchIndex];
+  const searchIndex = globals.frontendLocalState.searchIndex;
+  if (searchIndex === -1) return;
+  const currentTs = globals.currentSearchResults.tsStarts[searchIndex];
+  const trackId = globals.currentSearchResults.trackIds[searchIndex];
   scrollToTrackAndTs(trackId, currentTs);
 }
 
 function selectCurrentSearchResult() {
   const state = globals.frontendLocalState;
-  const index = state.searchIndex;
-  const refType = globals.currentSearchResults.refTypes[index];
-  const currentId = globals.currentSearchResults.sliceIds[index];
+  const searchIndex = state.searchIndex;
+  const refType = globals.currentSearchResults.refTypes[searchIndex];
+  const currentId = globals.currentSearchResults.sliceIds[searchIndex];
+  const trackId = globals.currentSearchResults.trackIds[searchIndex];
 
   if (currentId === undefined) return;
 
   if (refType === 'cpu') {
-    globals.dispatch(Actions.selectSlice({
-      id: currentId,
-    }));
+    globals.dispatch(Actions.selectSlice({id: currentId, trackId}));
   } else {
-    globals.dispatch(Actions.selectChromeSlice({
-      id: currentId,
-    }));
+    globals.dispatch(Actions.selectChromeSlice({id: currentId, trackId}));
   }
 }

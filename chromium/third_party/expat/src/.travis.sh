@@ -45,10 +45,6 @@ cd expat
 if [[ ${MODE} = distcheck ]]; then
     ./configure ${CONFIGURE_ARGS}
     make distcheck
-
-    mkdir -p ~/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-    ln -v -s "$PWD"/expat-*.tar.bz2 ~/rpmbuild/SOURCES/
-    rpmbuild -ba expat.spec
 elif [[ ${MODE} = cmake-oos ]]; then
     mkdir build
     cd build
@@ -61,6 +57,8 @@ elif [[ ${MODE} = cppcheck ]]; then
 elif [[ ${MODE} = clang-format ]]; then
     ./apply-clang-format.sh
     git diff --exit-code
+elif [[ ${MODE} = coverage-sh ]]; then
+    ./coverage.sh
 else
     ./qa.sh ${CMAKE_ARGS}
 fi

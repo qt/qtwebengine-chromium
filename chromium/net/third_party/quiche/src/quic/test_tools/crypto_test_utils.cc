@@ -209,7 +209,14 @@ class FullChloGenerator {
 
 }  // namespace
 
+std::unique_ptr<QuicCryptoServerConfig> CryptoServerConfigForTesting() {
+  return std::make_unique<QuicCryptoServerConfig>(
+      QuicCryptoServerConfig::TESTING, QuicRandom::GetInstance(),
+      ProofSourceForTesting(), KeyExchangeSource::Default());
+}
+
 int HandshakeWithFakeServer(QuicConfig* server_quic_config,
+                            QuicCryptoServerConfig* crypto_config,
                             MockQuicConnectionHelper* helper,
                             MockAlarmFactory* alarm_factory,
                             PacketSavingConnection* client_conn,
@@ -219,19 +226,19 @@ int HandshakeWithFakeServer(QuicConfig* server_quic_config,
       helper, alarm_factory, Perspective::IS_SERVER,
       ParsedVersionOfIndex(client_conn->supported_versions(), 0));
 
-  QuicCryptoServerConfig crypto_config(
-      QuicCryptoServerConfig::TESTING, QuicRandom::GetInstance(),
-      ProofSourceForTesting(), KeyExchangeSource::Default());
   QuicCompressedCertsCache compressed_certs_cache(
       QuicCompressedCertsCache::kQuicCompressedCertsCacheSize);
   SetupCryptoServerConfigForTest(
-      server_conn->clock(), server_conn->random_generator(), &crypto_config);
+      server_conn->clock(), server_conn->random_generator(), crypto_config);
 
   TestQuicSpdyServerSession server_session(
       server_conn, *server_quic_config, client_conn->supported_versions(),
-      &crypto_config, &compressed_certs_cache);
-  server_session.OnSuccessfulVersionNegotiation(
-      client_conn->supported_versions().front());
+      crypto_config, &compressed_certs_cache);
+  server_session.Initialize();
+  if (!GetQuicReloadableFlag(quic_version_negotiated_by_default_at_server)) {
+    server_session.OnSuccessfulVersionNegotiation(
+        client_conn->supported_versions().front());
+  }
   EXPECT_CALL(*server_session.helper(),
               CanAcceptClientHello(testing::_, testing::_, testing::_,
                                    testing::_, testing::_))
@@ -346,7 +353,8 @@ void CommunicateHandshakeMessages(PacketSavingConnection* client_conn,
     MovePackets(client_conn, &client_i, server, server_conn,
                 Perspective::IS_SERVER);
 
-    if (client->handshake_confirmed() && server->handshake_confirmed()) {
+    if (client->handshake_confirmed() && server->handshake_confirmed() &&
+        server_conn->encrypted_packets_.size() == server_i) {
       break;
     }
     ASSERT_GT(server_conn->encrypted_packets_.size(), server_i);
@@ -782,7 +790,7 @@ std::string GenerateClientNonceHex(const QuicClock* clock,
       QuicRandom::GetInstance(), clock, new_config_options);
   primary_config.set_primary_time(clock->WallNow().ToUNIXSeconds());
   std::unique_ptr<CryptoHandshakeMessage> msg =
-      crypto_config->AddConfig(std::move(primary_config), clock->WallNow());
+      crypto_config->AddConfig(primary_config, clock->WallNow());
   QuicStringPiece orbit;
   CHECK(msg->GetStringPiece(kORBT, &orbit));
   std::string nonce;

@@ -152,8 +152,7 @@ void AppManagementPageHandler::GetApps(GetAppsCallback callback) {
   std::vector<app_management::mojom::AppPtr> apps;
   proxy->AppRegistryCache().ForEachApp(
       [this, &apps](const apps::AppUpdate& update) {
-        if (update.ShowInManagement() == apps::mojom::OptionalBool::kTrue &&
-            update.Readiness() != apps::mojom::Readiness::kUninstalledByUser) {
+        if (update.ShowInManagement() == apps::mojom::OptionalBool::kTrue) {
           apps.push_back(CreateUIAppPtr(update));
         }
       });
@@ -212,7 +211,7 @@ void AppManagementPageHandler::Uninstall(const std::string& app_id) {
   if (!proxy)
     return;
 
-  proxy->Uninstall(app_id);
+  proxy->Uninstall(app_id, nullptr /* parent_window */);
 }
 
 void AppManagementPageHandler::OpenNativeSettings(const std::string& app_id) {

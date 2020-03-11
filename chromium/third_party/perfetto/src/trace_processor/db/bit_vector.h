@@ -34,6 +34,7 @@ namespace internal {
 
 class BaseIterator;
 class AllBitsIterator;
+class SetBitsIterator;
 
 }  // namespace internal
 
@@ -42,9 +43,12 @@ class AllBitsIterator;
 class BitVector {
  public:
   using AllBitsIterator = internal::AllBitsIterator;
+  using SetBitsIterator = internal::SetBitsIterator;
 
   // Creates an empty bitvector.
   BitVector();
+
+  explicit BitVector(std::initializer_list<bool> init);
 
   // Creates a bitvector of |count| size filled with |value|.
   BitVector(uint32_t count, bool value = false);
@@ -284,9 +288,18 @@ class BitVector {
   // }
   AllBitsIterator IterateAllBits() const;
 
+  // Iterate all the set bits in the BitVector.
+  //
+  // Usage:
+  // for (auto it = bv.IterateSetBits(); it; it.Next()) {
+  //   ...
+  // }
+  SetBitsIterator IterateSetBits() const;
+
  private:
   friend class internal::BaseIterator;
   friend class internal::AllBitsIterator;
+  friend class internal::SetBitsIterator;
 
   // Represents the offset of a bit within a block.
   struct BlockOffset {

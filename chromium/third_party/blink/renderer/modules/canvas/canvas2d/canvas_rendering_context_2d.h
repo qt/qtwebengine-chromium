@@ -192,15 +192,15 @@ class MODULES_EXPORT CanvasRenderingContext2D final
 
   void FinalizeFrame() override;
 
-  bool IsPaintable() const final { return canvas()->GetCanvas2DLayerBridge(); }
+  bool IsPaintable() const final {
+    return canvas() && canvas()->GetCanvas2DLayerBridge();
+  }
 
   void WillDrawImage(CanvasImageSource*) const final;
 
   void Trace(blink::Visitor*) override;
 
   CanvasColorParams ColorParamsForTest() const { return ColorParams(); }
-
-  bool IsDeferralEnabled() const final;
 
  protected:
   CanvasColorParams ColorParams() const override;
@@ -247,7 +247,8 @@ class MODULES_EXPORT CanvasRenderingContext2D final
   bool IsAccelerated() const override;
   bool IsOriginTopLeft() const override;
   bool HasAlpha() const override { return CreationAttributes().alpha; }
-  void SetIsHidden(bool) override;
+  void SetIsInHiddenPage(bool) override;
+  void SetIsBeingDisplayed(bool) override;
   void Stop() final;
 
   bool IsTransformInvertible() const override;

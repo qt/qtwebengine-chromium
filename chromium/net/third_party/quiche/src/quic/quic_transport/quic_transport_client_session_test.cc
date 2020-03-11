@@ -20,6 +20,7 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_session_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/quiche/src/quic/test_tools/quic_transport_test_tools.h"
 
 namespace quic {
 namespace test {
@@ -29,8 +30,6 @@ using testing::_;
 using testing::ElementsAre;
 
 const char* kTestOrigin = "https://test-origin.test";
-constexpr char kTestOriginClientIndication[] =
-    "\0\0\0\x18https://test-origin.test";
 url::Origin GetTestOrigin() {
   GURL origin_url(kTestOrigin);
   return url::Origin::Create(origin_url);
@@ -50,32 +49,6 @@ std::string DataInStream(QuicStream* stream) {
   return result;
 }
 
-class TestClientSession : public QuicTransportClientSession {
- public:
-  using QuicTransportClientSession::QuicTransportClientSession;
-
-  class Stream : public QuicStream {
-   public:
-    using QuicStream::QuicStream;
-    void OnDataAvailable() override {}
-  };
-
-  QuicStream* CreateIncomingStream(QuicStreamId id) override {
-    auto stream = std::make_unique<Stream>(
-        id, this, /*is_static=*/false,
-        QuicUtils::GetStreamType(id, connection()->perspective(),
-                                 /*peer_initiated=*/true));
-    QuicStream* result = stream.get();
-    ActivateStream(std::move(stream));
-    return result;
-  }
-
-  QuicStream* CreateIncomingStream(PendingStream* /*pending*/) override {
-    QUIC_NOTREACHED();
-    return nullptr;
-  }
-};
-
 class QuicTransportClientSessionTest : public QuicTest {
  protected:
   QuicTransportClientSessionTest()
@@ -83,16 +56,16 @@ class QuicTransportClientSessionTest : public QuicTest {
                     &alarm_factory_,
                     Perspective::IS_CLIENT,
                     GetVersions()),
-        server_id_("test.example.com", 443),
         crypto_config_(crypto_test_utils::ProofVerifierForTesting()) {
     SetQuicReloadableFlag(quic_supports_tls_handshake, true);
-    CreateSession(GetTestOrigin());
+    CreateSession(GetTestOrigin(), "");
   }
 
-  void CreateSession(url::Origin origin) {
-    session_ = std::make_unique<TestClientSession>(
-        &connection_, nullptr, DefaultQuicConfig(), GetVersions(), server_id_,
-        &crypto_config_, origin);
+  void CreateSession(url::Origin origin, std::string url_suffix) {
+    session_ = std::make_unique<QuicTransportClientSession>(
+        &connection_, nullptr, DefaultQuicConfig(), GetVersions(),
+        GURL("quic-transport://test.example.com:50000" + url_suffix),
+        &crypto_config_, origin, &visitor_);
     session_->Initialize();
     crypto_stream_ = static_cast<QuicCryptoClientStream*>(
         session_->GetMutableCryptoStream());
@@ -101,18 +74,20 @@ class QuicTransportClientSessionTest : public QuicTest {
   void Connect() {
     session_->CryptoConnect();
     QuicConfig server_config = DefaultQuicConfig();
+    std::unique_ptr<QuicCryptoServerConfig> crypto_config(
+        crypto_test_utils::CryptoServerConfigForTesting());
     crypto_test_utils::HandshakeWithFakeServer(
-        &server_config, &helper_, &alarm_factory_, &connection_, crypto_stream_,
-        QuicTransportAlpn());
+        &server_config, crypto_config.get(), &helper_, &alarm_factory_,
+        &connection_, crypto_stream_, QuicTransportAlpn());
   }
 
   MockAlarmFactory alarm_factory_;
   MockQuicConnectionHelper helper_;
 
   PacketSavingConnection connection_;
-  QuicServerId server_id_;
   QuicCryptoClientConfig crypto_config_;
-  std::unique_ptr<TestClientSession> session_;
+  MockClientVisitor visitor_;
+  std::unique_ptr<QuicTransportClientSession> session_;
   QuicCryptoClientStream* crypto_stream_;
 };
 
@@ -121,6 +96,39 @@ TEST_F(QuicTransportClientSessionTest, HasValidAlpn) {
 }
 
 TEST_F(QuicTransportClientSessionTest, SuccessfulConnection) {
+  constexpr char kTestOriginClientIndication[] =
+      "\0\0"                      // key (0x0000, origin)
+      "\0\x18"                    // length
+      "https://test-origin.test"  // value
+      "\0\x01"                    // key (0x0001, path)
+      "\0\x01"                    // length
+      "/";                        // value
+
+  Connect();
+  EXPECT_TRUE(session_->IsSessionReady());
+
+  QuicStream* client_indication_stream =
+      QuicSessionPeer::zombie_streams(session_.get())[ClientIndicationStream()]
+          .get();
+  ASSERT_TRUE(client_indication_stream != nullptr);
+  const std::string client_indication = DataInStream(client_indication_stream);
+  const std::string expected_client_indication{
+      kTestOriginClientIndication,
+      QUIC_ARRAYSIZE(kTestOriginClientIndication) - 1};
+  EXPECT_EQ(client_indication, expected_client_indication);
+}
+
+TEST_F(QuicTransportClientSessionTest, SuccessfulConnectionWithPath) {
+  constexpr char kSuffix[] = "/foo/bar?hello=world#not-sent";
+  constexpr char kTestOriginClientIndication[] =
+      "\0\0"                      // key (0x0000, origin)
+      "\0\x18"                    // length
+      "https://test-origin.test"  // value
+      "\0\x01"                    // key (0x0001, path)
+      "\0\x14"                    // length
+      "/foo/bar?hello=world";     // value
+
+  CreateSession(GetTestOrigin(), kSuffix);
   Connect();
   EXPECT_TRUE(session_->IsSessionReady());
 
@@ -139,9 +147,26 @@ TEST_F(QuicTransportClientSessionTest, OriginTooLong) {
   std::string long_string(68000, 'a');
   GURL bad_origin_url{"https://" + long_string + ".example/"};
   EXPECT_TRUE(bad_origin_url.is_valid());
-  CreateSession(url::Origin::Create(bad_origin_url));
+  CreateSession(url::Origin::Create(bad_origin_url), "");
 
   EXPECT_QUIC_BUG(Connect(), "Client origin too long");
+}
+
+TEST_F(QuicTransportClientSessionTest, ReceiveNewStreams) {
+  Connect();
+  ASSERT_TRUE(session_->IsSessionReady());
+  ASSERT_TRUE(session_->AcceptIncomingUnidirectionalStream() == nullptr);
+
+  const QuicStreamId id = GetNthServerInitiatedUnidirectionalStreamId(
+      session_->transport_version(), 0);
+  QuicStreamFrame frame(id, /*fin=*/false, /*offset=*/0, "test");
+  EXPECT_CALL(visitor_, OnIncomingUnidirectionalStreamAvailable()).Times(1);
+  session_->OnStreamFrame(frame);
+
+  QuicTransportStream* stream = session_->AcceptIncomingUnidirectionalStream();
+  ASSERT_TRUE(stream != nullptr);
+  EXPECT_EQ(stream->ReadableBytes(), 4u);
+  EXPECT_EQ(stream->id(), id);
 }
 
 }  // namespace

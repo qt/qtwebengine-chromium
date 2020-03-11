@@ -66,12 +66,13 @@ class TestAutofillClient : public AutofillClient {
       const std::vector<MigratableCreditCard>& migratable_credit_cards,
       MigrationDeleteCardCallback delete_local_card_callback) override;
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-  void ShowVerifyPendingDialog(
-      base::OnceClosure cancel_card_verification_callback) override;
-  void CloseVerifyPendingDialog() override;
+  void ShowWebauthnOfferDialog(
+      WebauthnDialogCallback offer_dialog_callback) override;
+  void ShowWebauthnVerifyPendingDialog(
+      WebauthnDialogCallback verify_pending_dialog_callback) override;
+  void UpdateWebauthnOfferDialogWithError() override;
+  bool CloseWebauthnDialog() override;
 #endif
-  void ShowWebauthnOfferDialog(WebauthnOfferDialogCallback callback) override;
-  bool CloseWebauthnOfferDialog() override;
   void ConfirmSaveAutofillProfile(const AutofillProfile& profile,
                                   base::OnceClosure callback) override;
   void ConfirmSaveCreditCardLocally(
@@ -81,14 +82,11 @@ class TestAutofillClient : public AutofillClient {
 #if defined(OS_ANDROID) || defined(OS_IOS)
   void ConfirmAccountNameFixFlow(
       base::OnceCallback<void(const base::string16&)> callback) override;
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
-
-#if defined(OS_ANDROID)
   void ConfirmExpirationDateFixFlow(
       const CreditCard& card,
       base::OnceCallback<void(const base::string16&, const base::string16&)>
           callback) override;
-#endif  // defined(OS_ANDROID)
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
   void ConfirmSaveCreditCardToCloud(
       const CreditCard& card,
       const LegalMessageLines& legal_message_lines,

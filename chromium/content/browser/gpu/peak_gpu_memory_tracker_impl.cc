@@ -52,6 +52,8 @@ PeakGpuMemoryTrackerImpl::~PeakGpuMemoryTrackerImpl() {
   auto wrap_callback = base::BindOnce(
       [](base::SingleThreadTaskRunner* task_runner, PeakMemoryCallback callback,
          const uint64_t peak_memory) {
+        if (callback.is_null())
+          return;
         task_runner->PostTask(FROM_HERE,
                               base::BindOnce(std::move(callback), peak_memory));
       },
@@ -78,6 +80,14 @@ PeakGpuMemoryTrackerImpl::~PeakGpuMemoryTrackerImpl() {
             }
           },
           sequence_num_, std::move(wrap_callback)));
+}
+
+void PeakGpuMemoryTrackerImpl::Cancel() {
+  callback_ = PeakMemoryCallback();
+}
+
+void PeakGpuMemoryTrackerImpl::SetCallback(PeakMemoryCallback callback) {
+  callback_ = std::move(callback);
 }
 
 }  // namespace content

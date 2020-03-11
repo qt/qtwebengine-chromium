@@ -52,7 +52,7 @@ namespace dawn_native { namespace vulkan {
             // driver. Need to generalize
             config->nativeFormat = VK_FORMAT_B8G8R8A8_UNORM;
             config->colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-            config->format = dawn::TextureFormat::BGRA8Unorm;
+            config->format = wgpu::TextureFormat::BGRA8Unorm;
             config->minImageCount = 3;
             // TODO(cwallez@chromium.org): This is upside down compared to what we want, at least
             // on Linux
@@ -94,8 +94,8 @@ namespace dawn_native { namespace vulkan {
         UpdateSurfaceConfig();
     }
 
-    DawnSwapChainError NativeSwapChainImpl::Configure(DawnTextureFormat format,
-                                                      DawnTextureUsage usage,
+    DawnSwapChainError NativeSwapChainImpl::Configure(WGPUTextureFormat format,
+                                                      WGPUTextureUsage usage,
                                                       uint32_t width,
                                                       uint32_t height) {
         UpdateSurfaceConfig();
@@ -105,7 +105,7 @@ namespace dawn_native { namespace vulkan {
         ASSERT(mInfo.capabilities.minImageExtent.height <= height);
         ASSERT(mInfo.capabilities.maxImageExtent.height >= height);
 
-        ASSERT(format == static_cast<DawnTextureFormat>(GetPreferredFormat()));
+        ASSERT(format == static_cast<WGPUTextureFormat>(GetPreferredFormat()));
         // TODO(cwallez@chromium.org): need to check usage works too
 
         // Create the swapchain with the configuration we chose
@@ -121,7 +121,7 @@ namespace dawn_native { namespace vulkan {
         createInfo.imageExtent.width = width;
         createInfo.imageExtent.height = height;
         createInfo.imageArrayLayers = 1;
-        createInfo.imageUsage = VulkanImageUsage(static_cast<dawn::TextureUsage>(usage),
+        createInfo.imageUsage = VulkanImageUsage(static_cast<wgpu::TextureUsage>(usage),
                                                  mDevice->GetValidInternalFormat(mConfig.format));
         createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         createInfo.queueFamilyIndexCount = 0;
@@ -236,7 +236,7 @@ namespace dawn_native { namespace vulkan {
         return DAWN_SWAP_CHAIN_NO_ERROR;
     }
 
-    dawn::TextureFormat NativeSwapChainImpl::GetPreferredFormat() const {
+    wgpu::TextureFormat NativeSwapChainImpl::GetPreferredFormat() const {
         return mConfig.format;
     }
 

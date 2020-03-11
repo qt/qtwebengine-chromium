@@ -22,6 +22,7 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_stream_sequencer_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/simple_quic_framer.h"
+#include "net/third_party/quiche/src/quic/test_tools/simple_session_cache.h"
 
 using testing::_;
 
@@ -37,7 +38,10 @@ class QuicCryptoClientStreamTest : public QuicTest {
   QuicCryptoClientStreamTest()
       : supported_versions_(AllSupportedVersions()),
         server_id_(kServerHostname, kServerPort, false),
-        crypto_config_(crypto_test_utils::ProofVerifierForTesting()) {
+        crypto_config_(crypto_test_utils::ProofVerifierForTesting(),
+                       std::make_unique<test::SimpleSessionCache>()),
+        server_crypto_config_(
+            crypto_test_utils::CryptoServerConfigForTesting()) {
     CreateConnection();
   }
 
@@ -56,17 +60,30 @@ class QuicCryptoClientStreamTest : public QuicTest {
             {AlpnForVersion(connection_->version())})));
   }
 
+  void UseTlsHandshake() {
+    SetQuicReloadableFlag(quic_supports_tls_handshake, true);
+    supported_versions_.clear();
+    for (ParsedQuicVersion version : AllSupportedVersions()) {
+      if (version.handshake_protocol != PROTOCOL_TLS1_3) {
+        continue;
+      }
+      supported_versions_.push_back(version);
+    }
+  }
+
   void CompleteCryptoHandshake() {
+    int proof_verify_details_calls = 1;
     if (stream()->handshake_protocol() != PROTOCOL_TLS1_3) {
       EXPECT_CALL(*session_, OnProofValid(testing::_));
+      proof_verify_details_calls = 0;
     }
     EXPECT_CALL(*session_, OnProofVerifyDetailsAvailable(testing::_))
-        .Times(testing::AnyNumber());
+        .Times(testing::AtLeast(proof_verify_details_calls));
     stream()->CryptoConnect();
     QuicConfig config;
     crypto_test_utils::HandshakeWithFakeServer(
-        &config, &server_helper_, &alarm_factory_, connection_, stream(),
-        AlpnForVersion(connection_->version()));
+        &config, server_crypto_config_.get(), &server_helper_, &alarm_factory_,
+        connection_, stream(), AlpnForVersion(connection_->version()));
   }
 
   QuicCryptoClientStream* stream() {
@@ -82,6 +99,7 @@ class QuicCryptoClientStreamTest : public QuicTest {
   QuicServerId server_id_;
   CryptoHandshakeMessage message_;
   QuicCryptoClientConfig crypto_config_;
+  std::unique_ptr<QuicCryptoServerConfig> server_crypto_config_;
 };
 
 TEST_F(QuicCryptoClientStreamTest, NotInitiallyConected) {
@@ -93,45 +111,57 @@ TEST_F(QuicCryptoClientStreamTest, ConnectedAfterSHLO) {
   CompleteCryptoHandshake();
   EXPECT_TRUE(stream()->encryption_established());
   EXPECT_TRUE(stream()->handshake_confirmed());
+  EXPECT_FALSE(stream()->IsResumption());
 }
 
 TEST_F(QuicCryptoClientStreamTest, ConnectedAfterTlsHandshake) {
-  SetQuicReloadableFlag(quic_supports_tls_handshake, true);
-  supported_versions_.clear();
-  for (ParsedQuicVersion version : AllSupportedVersions()) {
-    if (version.handshake_protocol != PROTOCOL_TLS1_3) {
-      continue;
-    }
-    supported_versions_.push_back(version);
-  }
+  UseTlsHandshake();
   CreateConnection();
   CompleteCryptoHandshake();
   EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
   EXPECT_TRUE(stream()->encryption_established());
   EXPECT_TRUE(stream()->handshake_confirmed());
+  EXPECT_FALSE(stream()->IsResumption());
 }
 
 TEST_F(QuicCryptoClientStreamTest,
        ProofVerifyDetailsAvailableAfterTlsHandshake) {
-  SetQuicReloadableFlag(quic_supports_tls_handshake, true);
-  supported_versions_.clear();
-  for (ParsedQuicVersion version : AllSupportedVersions()) {
-    if (version.handshake_protocol != PROTOCOL_TLS1_3) {
-      continue;
-    }
-    supported_versions_.push_back(version);
-  }
+  UseTlsHandshake();
   CreateConnection();
 
   EXPECT_CALL(*session_, OnProofVerifyDetailsAvailable(testing::_));
   stream()->CryptoConnect();
   QuicConfig config;
   crypto_test_utils::HandshakeWithFakeServer(
-      &config, &server_helper_, &alarm_factory_, connection_, stream(),
-      AlpnForVersion(connection_->version()));
+      &config, server_crypto_config_.get(), &server_helper_, &alarm_factory_,
+      connection_, stream(), AlpnForVersion(connection_->version()));
   EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
   EXPECT_TRUE(stream()->encryption_established());
   EXPECT_TRUE(stream()->handshake_confirmed());
+}
+
+TEST_F(QuicCryptoClientStreamTest, TlsResumption) {
+  UseTlsHandshake();
+  // Enable resumption on the server:
+  SSL_CTX_clear_options(server_crypto_config_->ssl_ctx(), SSL_OP_NO_TICKET);
+  CreateConnection();
+
+  // Finish establishing the first connection:
+  CompleteCryptoHandshake();
+
+  EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->handshake_confirmed());
+  EXPECT_FALSE(stream()->IsResumption());
+
+  // Create a second connection
+  CreateConnection();
+  CompleteCryptoHandshake();
+
+  EXPECT_EQ(PROTOCOL_TLS1_3, stream()->handshake_protocol());
+  EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_TRUE(stream()->handshake_confirmed());
+  EXPECT_TRUE(stream()->IsResumption());
 }
 
 TEST_F(QuicCryptoClientStreamTest, MessageAfterHandshake) {
@@ -359,14 +389,14 @@ TEST_F(QuicCryptoClientStreamTest, PreferredVersion) {
   // Verify preferred version is the highest version that session supports, and
   // is different from connection's version.
   QuicVersionLabel client_version_label;
-  EXPECT_EQ(QUIC_NO_ERROR,
-            session_->sent_crypto_handshake_messages()[0].GetVersionLabel(
-                kVER, &client_version_label));
+  EXPECT_THAT(session_->sent_crypto_handshake_messages()[0].GetVersionLabel(
+                  kVER, &client_version_label),
+              IsQuicNoError());
   EXPECT_EQ(CreateQuicVersionLabel(supported_versions_[0]),
             client_version_label);
-  EXPECT_EQ(QUIC_NO_ERROR,
-            session_->sent_crypto_handshake_messages()[1].GetVersionLabel(
-                kVER, &client_version_label));
+  EXPECT_THAT(session_->sent_crypto_handshake_messages()[1].GetVersionLabel(
+                  kVER, &client_version_label),
+              IsQuicNoError());
   EXPECT_EQ(CreateQuicVersionLabel(supported_versions_[0]),
             client_version_label);
   EXPECT_NE(CreateQuicVersionLabel(connection_->version()),

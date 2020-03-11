@@ -303,9 +303,7 @@ void UnwindingWorker::HandleUnwindBatch(pid_t peer_pid) {
     shmem.EndRead(std::move(buf));
     // Reparsing takes time, so process the rest in a new batch to avoid timing
     // out.
-    // TODO(fmayer): Do not special case blocking mode.
-    if (client_data.client_config.block_client &&
-        reparses_before < client_data.metadata.reparses) {
+    if (reparses_before < client_data.metadata.reparses) {
       repost_task = true;
       break;
     }
@@ -374,7 +372,7 @@ void UnwindingWorker::PostHandoffSocket(HandoffData handoff_data) {
 void UnwindingWorker::HandleHandoffSocket(HandoffData handoff_data) {
   auto sock = base::UnixSocket::AdoptConnected(
       handoff_data.sock.ReleaseFd(), this, this->thread_task_runner_.get(),
-      base::SockType::kStream);
+      base::SockFamily::kUnix, base::SockType::kStream);
   pid_t peer_pid = sock->peer_pid();
 
   UnwindingMetadata metadata(peer_pid, std::move(handoff_data.maps_fd),

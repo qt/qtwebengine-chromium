@@ -146,7 +146,7 @@ class GoogCcNetworkControllerTest : public ::testing::Test {
   // prescribing on which iterations it must change (like a mock would).
   void TargetBitrateTrackingSetup() {
     controller_ = factory_.Create(InitialConfig());
-    controller_->OnProcessInterval(DefaultInterval());
+    OnUpdate(controller_->OnProcessInterval(DefaultInterval()));
   }
 
   NetworkControllerConfig InitialConfig(
@@ -216,7 +216,7 @@ class GoogCcNetworkControllerTest : public ::testing::Test {
           CreateResult(current_time_.ms() + delay_buildup, current_time_.ms(),
                        kPayloadSize, PacedPacketInfo());
       delay_buildup += delay;
-      controller_->OnSentPacket(packet.sent_packet);
+      OnUpdate(controller_->OnSentPacket(packet.sent_packet));
       TransportPacketsFeedback feedback;
       feedback.feedback_time = packet.receive_time;
       feedback.packet_feedbacks.push_back(packet);
@@ -235,17 +235,19 @@ class GoogCcNetworkControllerTest : public ::testing::Test {
 TEST_F(GoogCcNetworkControllerTest, ReactsToChangedNetworkConditions) {
   // Test no change.
   AdvanceTimeMilliseconds(25);
-  controller_->OnProcessInterval(DefaultInterval());
+  OnUpdate(controller_->OnProcessInterval(DefaultInterval()));
 
   NetworkControlUpdate update;
-  controller_->OnRemoteBitrateReport(CreateBitrateReport(kInitialBitrate * 2));
+  OnUpdate(controller_->OnRemoteBitrateReport(
+      CreateBitrateReport(kInitialBitrate * 2)));
   AdvanceTimeMilliseconds(25);
   update = controller_->OnProcessInterval(DefaultInterval());
   EXPECT_EQ(update.target_rate->target_rate, kInitialBitrate * 2);
   EXPECT_EQ(update.pacer_config->data_rate(),
             kInitialBitrate * 2 * kDefaultPacingRate);
 
-  controller_->OnRemoteBitrateReport(CreateBitrateReport(kInitialBitrate));
+  OnUpdate(
+      controller_->OnRemoteBitrateReport(CreateBitrateReport(kInitialBitrate)));
   AdvanceTimeMilliseconds(25);
   update = controller_->OnProcessInterval(DefaultInterval());
   EXPECT_EQ(update.target_rate->target_rate, kInitialBitrate);
@@ -374,77 +376,6 @@ TEST_F(GoogCcNetworkControllerTest,
   // Check this is also the case when congestion window pushback kicks in.
   send_net->PauseTransmissionUntil(s.Now() + TimeDelta::seconds(1));
   EXPECT_NEAR(client->padding_rate().kbps(), client->target_rate().kbps(), 1);
-}
-
-TEST_F(GoogCcNetworkControllerTest,
-       NoCongestionWindowPushbackWithoutReceiveTraffic) {
-  ScopedFieldTrials trial(
-      "WebRTC-CongestionWindow/QueueSize:800,MinBitrate:30000/"
-      "WebRTC-Bwe-CongestionWindowDownlinkDelay/Enabled/");
-  Scenario s("googcc_unit/cwnd_no_downlink", false);
-  NetworkSimulationConfig net_conf;
-  net_conf.bandwidth = DataRate::kbps(1000);
-  net_conf.delay = TimeDelta::ms(100);
-  auto send_net = s.CreateSimulationNode(net_conf);
-  auto ret_net = s.CreateMutableSimulationNode(net_conf);
-
-  auto* client = s.CreateClient("sender", CallClientConfig());
-  auto* route = s.CreateRoutes(client, {send_net},
-                               s.CreateClient("return", CallClientConfig()),
-                               {ret_net->node()});
-
-  s.CreateVideoStream(route->forward(), VideoStreamConfig());
-  // A return video stream ensures we get steady traffic stream,
-  // so we can better differentiate between send being down and return
-  // being down.
-  s.CreateVideoStream(route->reverse(), VideoStreamConfig());
-
-  // Wait to stabilize the bandwidth estimate.
-  s.RunFor(TimeDelta::seconds(10));
-  // Disabling the return triggers the data window expansion logic
-  // which will stop the congestion window from activating.
-  ret_net->PauseTransmissionUntil(s.Now() + TimeDelta::seconds(10));
-  s.RunFor(TimeDelta::seconds(5));
-
-  // Expect that we never lost send speed because we received no packets.
-  // 500kbps is enough to demonstrate that congestion window isn't activated.
-  EXPECT_GE(client->target_rate().kbps(), 500);
-}
-
-TEST_F(GoogCcNetworkControllerTest, CongestionWindowPushBackOnSendDelaySpike) {
-  ScopedFieldTrials trial(
-      "WebRTC-CongestionWindow/QueueSize:800,MinBitrate:30000/"
-      "WebRTC-Bwe-CongestionWindowDownlinkDelay/Enabled/");
-  Scenario s("googcc_unit/cwnd_actives_no_feedback", false);
-  NetworkSimulationConfig net_conf;
-  net_conf.bandwidth = DataRate::kbps(1000);
-  net_conf.delay = TimeDelta::ms(100);
-  auto send_net = s.CreateMutableSimulationNode(net_conf);
-  auto ret_net = s.CreateSimulationNode(net_conf);
-
-  auto* client = s.CreateClient("sender", CallClientConfig());
-  auto* route =
-      s.CreateRoutes(client, {send_net->node()},
-                     s.CreateClient("return", CallClientConfig()), {ret_net});
-
-  s.CreateVideoStream(route->forward(), VideoStreamConfig());
-  // A return video stream ensures we get steady traffic stream,
-  // so we can better differentiate between send being down and return
-  // being down.
-  s.CreateVideoStream(route->reverse(), VideoStreamConfig());
-
-  // Wait to stabilize the bandwidth estimate.
-  s.RunFor(TimeDelta::seconds(10));
-  // Send being down triggers congestion window pushback.
-  send_net->PauseTransmissionUntil(s.Now() + TimeDelta::seconds(10));
-  s.RunFor(TimeDelta::seconds(3));
-
-  // Expect the target rate to be reduced rapidly due to congestion.
-  // We would expect things to be at 30kbps, the min bitrate. Note
-  // that the congestion window still gets activated since we are
-  // receiving packets upstream.
-  EXPECT_LT(client->target_rate().kbps(), 100);
-  EXPECT_GE(client->target_rate().kbps(), 30);
 }
 
 TEST_F(GoogCcNetworkControllerTest, LimitsToFloorIfRttIsHighInTrial) {
@@ -696,7 +627,6 @@ TEST_F(GoogCcNetworkControllerTest, CutsHighRateInSafeResetTrial) {
 TEST_F(GoogCcNetworkControllerTest, DetectsHighRateInSafeResetTrial) {
   ScopedFieldTrials trial(
       "WebRTC-Bwe-SafeResetOnRouteChange/Enabled,ack/"
-      "WebRTC-Bwe-ProbeRateFallback/Enabled/"
       "WebRTC-SendSideBwe-WithOverhead/Enabled/");
   const DataRate kInitialLinkCapacity = DataRate::kbps(200);
   const DataRate kNewLinkCapacity = DataRate::kbps(800);

@@ -167,7 +167,12 @@
         ]
     },
     "buffer create mapped callback": {
-        "category": "natively defined"
+        "category": "callback",
+        "args": [
+            {"name": "status", "type": "buffer map async status"},
+            {"name": "result", "type": "create buffer mapped result"},
+            {"name": "userdata", "type": "void", "annotation": "*"}
+        ]
     },
     "buffer copy view": {
         "category": "structure",
@@ -189,10 +194,22 @@
         ]
     },
     "buffer map read callback": {
-        "category": "natively defined"
+        "category": "callback",
+        "args": [
+            {"name": "status", "type": "buffer map async status"},
+            {"name": "data", "type": "void", "annotation": "const*"},
+            {"name": "data length", "type": "uint64_t"},
+            {"name": "userdata", "type": "void", "annotation": "*"}
+        ]
     },
     "buffer map write callback": {
-        "category": "natively defined"
+        "category": "callback",
+        "args": [
+            {"name": "status", "type": "buffer map async status"},
+            {"name": "data", "type": "void", "annotation": "*"},
+            {"name": "data length", "type": "uint64_t"},
+            {"name": "userdata", "type": "void", "annotation": "*"}
+        ]
     },
     "buffer map async status": {
         "category": "enum",
@@ -396,7 +413,7 @@
                     {"name": "group index", "type": "uint32_t"},
                     {"name": "group", "type": "bind group"},
                     {"name": "dynamic offset count", "type": "uint32_t", "default": "0"},
-                    {"name": "dynamic offsets", "type": "uint64_t", "annotation": "const*", "length": "dynamic offset count", "optional": true}
+                    {"name": "dynamic offsets", "type": "uint32_t", "annotation": "const*", "length": "dynamic offset count", "optional": true}
                 ]
             },
             {
@@ -420,14 +437,23 @@
         ]
     },
     "compute pipeline": {
-        "category": "object"
+        "category": "object",
+        "methods": [
+            {
+                "name": "get bind group layout",
+                "returns": "bind group layout",
+                "args": [
+                    {"name": "group", "type": "uint32_t"}
+                ]
+            }
+        ]
     },
     "compute pipeline descriptor": {
         "category": "structure",
         "extensible": true,
         "members": [
             {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
-            {"name": "layout", "type": "pipeline layout"},
+            {"name": "layout", "type": "pipeline layout", "optional": true},
             {"name": "compute stage", "type": "programmable stage descriptor"}
         ]
     },
@@ -579,6 +605,13 @@
             }
         ]
     },
+    "device properties": {
+        "category": "structure",
+        "extensible": false,
+        "members": [
+            {"name": "texture compression BC", "type": "bool", "default": "false"}
+        ]
+    },
     "depth stencil state descriptor": {
         "category": "structure",
         "extensible": true,
@@ -593,7 +626,12 @@
         ]
     },
     "error callback": {
-        "category": "natively defined"
+        "category": "callback",
+        "args": [
+            {"name": "type", "type": "error type"},
+            {"name": "message", "type": "char", "annotation": "const*"},
+            {"name": "userdata", "type": "void", "annotation": "*"}
+        ]
     },
     "error filter": {
         "category": "enum",
@@ -639,7 +677,11 @@
         ]
     },
     "fence on completion callback": {
-        "category": "natively defined"
+        "category": "callback",
+        "args": [
+            {"name": "status", "type": "fence completion status"},
+            {"name": "userdata", "type": "void", "annotation": "*"}
+        ]
     },
     "fence completion status": {
         "category": "enum",
@@ -686,28 +728,28 @@
         "category": "structure",
         "extensible": false,
         "members": [
-            {"name": "shader location", "type": "uint32_t"},
-            {"name": "offset", "type": "uint64_t", "default": "0"},
-            {"name": "format", "type": "vertex format"}
+            {"name": "format", "type": "vertex format"},
+            {"name": "offset", "type": "uint64_t"},
+            {"name": "shader location", "type": "uint32_t"}
         ]
     },
-    "vertex buffer descriptor": {
+    "vertex buffer layout descriptor": {
         "category": "structure",
         "extensible": false,
         "members": [
-            {"name": "stride", "type": "uint64_t"},
+            {"name": "array stride", "type": "uint64_t"},
             {"name": "step mode", "type": "input step mode", "default": "vertex"},
             {"name": "attribute count", "type": "uint32_t"},
             {"name": "attributes", "type": "vertex attribute descriptor", "annotation": "const*", "length": "attribute count"}
         ]
     },
-    "vertex input descriptor": {
+    "vertex state descriptor": {
         "category": "structure",
         "extensible": true,
         "members": [
             {"name": "index format", "type": "index format", "default": "uint32"},
-            {"name": "buffer count", "type": "uint32_t", "default": 0},
-            {"name": "buffers", "type": "vertex buffer descriptor", "annotation": "const*", "length": "buffer count"}
+            {"name": "vertex buffer count", "type": "uint32_t", "default": 0},
+            {"name": "vertex buffers", "type": "vertex buffer layout descriptor", "annotation": "const*", "length": "vertex buffer count"}
         ]
     },
     "input step mode": {
@@ -827,7 +869,7 @@
                     {"name": "group index", "type": "uint32_t"},
                     {"name": "group", "type": "bind group"},
                     {"name": "dynamic offset count", "type": "uint32_t", "default": "0"},
-                    {"name": "dynamic offsets", "type": "uint64_t", "annotation": "const*", "length": "dynamic offset count", "optional": true}
+                    {"name": "dynamic offsets", "type": "uint32_t", "annotation": "const*", "length": "dynamic offset count", "optional": true}
                 ]
             },
             {
@@ -973,7 +1015,7 @@
                     {"name": "group index", "type": "uint32_t"},
                     {"name": "group", "type": "bind group"},
                     {"name": "dynamic offset count", "type": "uint32_t", "default": "0"},
-                    {"name": "dynamic offsets", "type": "uint64_t", "annotation": "const*", "length": "dynamic offset count", "optional": true}
+                    {"name": "dynamic offsets", "type": "uint32_t", "annotation": "const*", "length": "dynamic offset count", "optional": true}
                 ]
             },
             {
@@ -1085,17 +1127,26 @@
         ]
     },
     "render pipeline": {
-        "category": "object"
+        "category": "object",
+        "methods": [
+            {
+                "name": "get bind group layout",
+                "returns": "bind group layout",
+                "args": [
+                    {"name": "group", "type": "uint32_t"}
+                ]
+            }
+        ]
     },
     "render pipeline descriptor": {
         "category": "structure",
         "extensible": true,
         "members": [
             {"name": "label", "type": "char", "annotation": "const*", "length": "strlen", "optional": true},
-            {"name": "layout", "type": "pipeline layout"},
+            {"name": "layout", "type": "pipeline layout", "optional": true},
             {"name": "vertex stage", "type": "programmable stage descriptor"},
             {"name": "fragment stage", "type": "programmable stage descriptor", "annotation": "const*", "optional": true},
-            {"name": "vertex input", "type": "vertex input descriptor", "annotation": "const*", "optional": true},
+            {"name": "vertex state", "type": "vertex state descriptor", "annotation": "const*", "optional": true},
             {"name": "primitive topology", "type": "primitive topology"},
             {"name": "rasterization state", "type": "rasterization state descriptor", "annotation": "const*", "optional": true},
             {"name": "sample count", "type": "uint32_t", "default": "1"},
@@ -1181,16 +1232,8 @@
                     {"name": "height", "type": "uint32_t"}
                 ]
             },
-            {
-                "name": "get next texture",
-                "returns": "texture"
-            },
-            {
-                "name": "present",
-                "args": [
-                    {"name": "texture", "type": "texture"}
-                ]
-            }
+            {"name": "get current texture view", "returns": "texture view"},
+            {"name": "present"}
         ]
     },
     "swap chain descriptor": {

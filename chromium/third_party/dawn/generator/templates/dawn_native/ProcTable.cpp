@@ -26,10 +26,18 @@
 
 namespace dawn_native {
 
+    // Type aliases to make all frontend types appear as if they have "Base" at the end when some
+    // of them are actually pure-frontend and don't have the Base.
+    using CommandEncoderBase = CommandEncoder;
+    using ComputePassEncoderBase = ComputePassEncoder;
+    using FenceBase = Fence;
+    using RenderPassEncoderBase = RenderPassEncoder;
+    using RenderBundleEncoderBase = RenderBundleEncoder;
+
     namespace {
 
         {% for type in by_category["object"] %}
-            {% for method in native_methods(type) %}
+            {% for method in c_methods(type) %}
                 {% set suffix = as_MethodSuffix(type.name, method.name) %}
 
                 {{as_cType(method.return_type.name)}} Native{{suffix}}(
@@ -73,18 +81,18 @@ namespace dawn_native {
         {% endfor %}
 
         struct ProcEntry {
-            DawnProc proc;
+            WGPUProc proc;
             const char* name;
         };
         static const ProcEntry sProcMap[] = {
-            {% for (type, method) in methods_sorted_by_name %}
-                { reinterpret_cast<DawnProc>(Native{{as_MethodSuffix(type.name, method.name)}}), "{{as_cMethod(type.name, method.name)}}" },
+            {% for (type, method) in c_methods_sorted_by_name %}
+                { reinterpret_cast<WGPUProc>(Native{{as_MethodSuffix(type.name, method.name)}}), "{{as_cMethod(type.name, method.name)}}" },
             {% endfor %}
         };
         static constexpr size_t sProcMapSize = sizeof(sProcMap) / sizeof(sProcMap[0]);
     }
 
-    DawnProc NativeGetProcAddress(DawnDevice, const char* procName) {
+    WGPUProc NativeGetProcAddress(WGPUDevice, const char* procName) {
         if (procName == nullptr) {
             return nullptr;
         }
@@ -99,8 +107,8 @@ namespace dawn_native {
             return entry->proc;
         }
 
-        if (strcmp(procName, "dawnGetProcAddress") == 0) {
-            return reinterpret_cast<DawnProc>(NativeGetProcAddress);
+        if (strcmp(procName, "wgpuGetProcAddress") == 0) {
+            return reinterpret_cast<WGPUProc>(NativeGetProcAddress);
         }
 
         return nullptr;
@@ -119,7 +127,7 @@ namespace dawn_native {
         DawnProcTable table;
         table.getProcAddress = NativeGetProcAddress;
         {% for type in by_category["object"] %}
-            {% for method in native_methods(type) %}
+            {% for method in c_methods(type) %}
                 table.{{as_varName(type.name, method.name)}} = Native{{as_MethodSuffix(type.name, method.name)}};
             {% endfor %}
         {% endfor %}

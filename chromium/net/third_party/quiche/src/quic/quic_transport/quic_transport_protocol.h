@@ -12,23 +12,24 @@
 namespace quic {
 
 // The ALPN used by QuicTransport.
-QUIC_EXPORT inline const char* QuicTransportAlpn() {
+QUIC_EXPORT_PRIVATE inline const char* QuicTransportAlpn() {
   return "wq-vvv-01";
 }
 
 // The stream ID on which the client indication is sent.
-QUIC_EXPORT constexpr QuicStreamId ClientIndicationStream() {
+QUIC_EXPORT_PRIVATE constexpr QuicStreamId ClientIndicationStream() {
   return 2;
 }
 
 // The maximum allowed size of the client indication.
-QUIC_EXPORT constexpr QuicByteCount ClientIndicationMaxSize() {
+QUIC_EXPORT_PRIVATE constexpr QuicByteCount ClientIndicationMaxSize() {
   return 65536;
 }
 
 // The keys of the fields in the client indication.
 enum class QuicTransportClientIndicationKeys : uint16_t {
   kOrigin = 0x0000,
+  kPath = 0x0001,
 };
 
 }  // namespace quic

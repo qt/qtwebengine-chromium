@@ -522,7 +522,7 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   LRESULT OnWindowSizingFinished(UINT message, WPARAM w_param, LPARAM l_param);
 
   // Receives Windows Session Change notifications.
-  void OnSessionChange(WPARAM status_code);
+  void OnSessionChange(WPARAM status_code, const bool* is_current_session);
 
   using TouchEvents = std::vector<ui::TouchEvent>;
   // Helper to handle the list of touch events passed in. We need this because
@@ -782,9 +782,6 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // message causes black flickering in the titlebar region so we do it on for
   // the first message after frame type changes.
   bool needs_dwm_frame_clear_ = true;
-
-  // True if user is in remote session.
-  bool is_remote_session_;
 
   // True if is handling mouse WM_INPUT messages.
   bool using_wm_input_ = false;

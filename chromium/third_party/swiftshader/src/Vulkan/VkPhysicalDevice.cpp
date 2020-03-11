@@ -23,6 +23,22 @@
 namespace vk
 {
 
+static void setExternalMemoryProperties(VkExternalMemoryHandleTypeFlagBits handleType, VkExternalMemoryProperties* properties)
+{
+#if SWIFTSHADER_EXTERNAL_MEMORY_OPAQUE_FD
+	if (handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT)
+	{
+		properties->compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+		properties->exportFromImportedHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+		properties->externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT;
+		return;
+	}
+#endif
+	properties->compatibleHandleTypes = 0;
+	properties->exportFromImportedHandleTypes = 0;
+	properties->externalMemoryFeatures = 0;
+}
+
 PhysicalDevice::PhysicalDevice(const void*, void* mem)
 {
 }
@@ -32,7 +48,7 @@ const VkPhysicalDeviceFeatures& PhysicalDevice::getFeatures() const
 	static const VkPhysicalDeviceFeatures features
 	{
 		VK_TRUE,   // robustBufferAccess
-		VK_FALSE,  // fullDrawIndexUint32
+		VK_TRUE,   // fullDrawIndexUint32
 		VK_FALSE,  // imageCubeArray
 		VK_TRUE,   // independentBlend
 		VK_FALSE,  // geometryShader
@@ -68,8 +84,8 @@ const VkPhysicalDeviceFeatures& PhysicalDevice::getFeatures() const
 		VK_FALSE,  // shaderSampledImageArrayDynamicIndexing
 		VK_FALSE,  // shaderStorageBufferArrayDynamicIndexing
 		VK_FALSE,  // shaderStorageImageArrayDynamicIndexing
-		VK_FALSE,  // shaderClipDistance
-		VK_FALSE,  // shaderCullDistance
+		VK_TRUE,   // shaderClipDistance
+		VK_TRUE,   // shaderCullDistance
 		VK_FALSE,  // shaderFloat64
 		VK_FALSE,  // shaderInt64
 		VK_FALSE,  // shaderInt16
@@ -134,6 +150,21 @@ void PhysicalDevice::getFeatures(VkPhysicalDeviceShaderDrawParameterFeatures* fe
 	features->shaderDrawParameters = VK_FALSE;
 }
 
+void PhysicalDevice::getFeatures(VkPhysicalDeviceLineRasterizationFeaturesEXT* features) const
+{
+	features->rectangularLines = VK_TRUE;
+    features->bresenhamLines = VK_TRUE;
+    features->smoothLines = VK_FALSE;
+    features->stippledRectangularLines = VK_FALSE;
+    features->stippledBresenhamLines = VK_FALSE;
+    features->stippledSmoothLines = VK_FALSE;
+}
+
+void PhysicalDevice::getFeatures(VkPhysicalDeviceProvokingVertexFeaturesEXT* features) const
+{
+	features->provokingVertexLast = VK_TRUE;
+}
+
 VkSampleCountFlags PhysicalDevice::getSampleCounts() const
 {
 	return VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
@@ -161,7 +192,7 @@ const VkPhysicalDeviceLimits& PhysicalDevice::getLimits() const
 		MAX_BOUND_DESCRIPTOR_SETS, // maxBoundDescriptorSets
 		16, // maxPerStageDescriptorSamplers
 		14, // maxPerStageDescriptorUniformBuffers
-		4, // maxPerStageDescriptorStorageBuffers
+		16, // maxPerStageDescriptorStorageBuffers
 		16, // maxPerStageDescriptorSampledImages
 		4, // maxPerStageDescriptorStorageImages
 		4, // maxPerStageDescriptorInputAttachments
@@ -238,9 +269,9 @@ const VkPhysicalDeviceLimits& PhysicalDevice::getLimits() const
 		1, // maxSampleMaskWords
 		VK_FALSE, // timestampComputeAndGraphics
 		60, // timestampPeriod
-		8, // maxClipDistances
-		8, // maxCullDistances
-		8, // maxCombinedClipAndCullDistances
+		sw::MAX_CLIP_DISTANCES, // maxClipDistances
+		sw::MAX_CULL_DISTANCES, // maxCullDistances
+		sw::MAX_CLIP_DISTANCES + sw::MAX_CULL_DISTANCES, // maxCombinedClipAndCullDistances
 		2, // discreteQueuePriorities
 		{ 1.0, vk::MAX_POINT_SIZE }, // pointSizeRange[2]
 		{ 1.0, 1.0 }, // lineWidthRange[2] (unsupported)
@@ -324,9 +355,7 @@ void PhysicalDevice::getProperties(VkPhysicalDeviceSubgroupProperties* propertie
 
 void PhysicalDevice::getProperties(const VkExternalMemoryHandleTypeFlagBits* handleType, VkExternalImageFormatProperties* properties) const
 {
-	properties->externalMemoryProperties.compatibleHandleTypes = 0;
-	properties->externalMemoryProperties.exportFromImportedHandleTypes = 0;
-	properties->externalMemoryProperties.externalMemoryFeatures = 0;
+	setExternalMemoryProperties(*handleType, &properties->externalMemoryProperties);
 }
 
 void PhysicalDevice::getProperties(VkSamplerYcbcrConversionImageFormatProperties* properties) const
@@ -343,9 +372,7 @@ void PhysicalDevice::getProperties(VkPhysicalDevicePresentationPropertiesANDROID
 
 void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalBufferInfo* pExternalBufferInfo, VkExternalBufferProperties* pExternalBufferProperties) const
 {
-	pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes = 0;
-	pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes = 0;
-	pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures = 0;
+	setExternalMemoryProperties(pExternalBufferInfo->handleType, &pExternalBufferProperties->externalMemoryProperties);
 }
 
 void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalFenceInfo* pExternalFenceInfo, VkExternalFenceProperties* pExternalFenceProperties) const
@@ -357,11 +384,20 @@ void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalFenceInfo* pExt
 
 void PhysicalDevice::getProperties(const VkPhysicalDeviceExternalSemaphoreInfo* pExternalSemaphoreInfo, VkExternalSemaphoreProperties* pExternalSemaphoreProperties) const
 {
-#if SWIFTSHADER_EXTERNAL_SEMAPHORE_LINUX_MEMFD
+#if SWIFTSHADER_EXTERNAL_SEMAPHORE_OPAQUE_FD
 	if (pExternalSemaphoreInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT)
 	{
 		pExternalSemaphoreProperties->compatibleHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
 		pExternalSemaphoreProperties->exportFromImportedHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+		pExternalSemaphoreProperties->externalSemaphoreFeatures = VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT;
+		return;
+	}
+#endif
+#if VK_USE_PLATFORM_FUCHSIA
+	if (pExternalSemaphoreInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA)
+	{
+		pExternalSemaphoreProperties->compatibleHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
+		pExternalSemaphoreProperties->exportFromImportedHandleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
 		pExternalSemaphoreProperties->externalSemaphoreFeatures = VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT;
 		return;
 	}
@@ -377,6 +413,16 @@ void PhysicalDevice::getProperties(VkPhysicalDeviceDriverPropertiesKHR* properti
 	strcpy(properties->driverName, "SwiftShader driver");
 	strcpy(properties->driverInfo, "");
 	properties->conformanceVersion = {1, 1, 3, 3};
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDeviceLineRasterizationPropertiesEXT* properties) const
+{
+	properties->lineSubPixelPrecisionBits = vk::SUBPIXEL_PRECISION_BITS;
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDeviceProvokingVertexPropertiesEXT* properties) const
+{
+	properties->provokingVertexModePerPipeline = VK_TRUE;
 }
 
 bool PhysicalDevice::hasFeatures(const VkPhysicalDeviceFeatures& requestedFeatures) const
@@ -782,6 +828,20 @@ void PhysicalDevice::getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount
 		pQueueFamilyProperties[i].queueCount = 1;
 		pQueueFamilyProperties[i].queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 		pQueueFamilyProperties[i].timestampValidBits = 0; // No support for time stamps
+	}
+}
+
+void PhysicalDevice::getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount,
+                                              VkQueueFamilyProperties2* pQueueFamilyProperties) const
+{
+	for(uint32_t i = 0; i < pQueueFamilyPropertyCount; i++)
+	{
+		pQueueFamilyProperties[i].queueFamilyProperties.minImageTransferGranularity.width = 1;
+		pQueueFamilyProperties[i].queueFamilyProperties.minImageTransferGranularity.height = 1;
+		pQueueFamilyProperties[i].queueFamilyProperties.minImageTransferGranularity.depth = 1;
+		pQueueFamilyProperties[i].queueFamilyProperties.queueCount = 1;
+		pQueueFamilyProperties[i].queueFamilyProperties.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+		pQueueFamilyProperties[i].queueFamilyProperties.timestampValidBits = 0; // No support for time stamps
 	}
 }
 

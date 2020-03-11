@@ -19,7 +19,6 @@
 #include "p2p/base/stun_port.h"
 #include "p2p/base/stun_request.h"
 #include "p2p/base/stun_server.h"
-#include "p2p/base/test_relay_server.h"
 #include "p2p/base/test_stun_server.h"
 #include "p2p/base/test_turn_server.h"
 #include "rtc_base/fake_clock.h"
@@ -43,6 +42,7 @@
 #include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "system_wrappers/include/metrics.h"
+#include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -215,9 +215,9 @@ class BasicPortAllocatorTestBase : public ::testing::Test,
     AddTurnServers(udp_turn, tcp_turn);
   }
 
-  void AddTurnServers(const rtc::SocketAddress& udp_turn,
-                      const rtc::SocketAddress& tcp_turn) {
-    RelayServerConfig turn_server(RELAY_TURN);
+  RelayServerConfig CreateTurnServers(const rtc::SocketAddress& udp_turn,
+                                      const rtc::SocketAddress& tcp_turn) {
+    RelayServerConfig turn_server;
     RelayCredentials credentials(kTurnUsername, kTurnPassword);
     turn_server.credentials = credentials;
 
@@ -227,6 +227,12 @@ class BasicPortAllocatorTestBase : public ::testing::Test,
     if (!tcp_turn.IsNil()) {
       turn_server.ports.push_back(ProtocolAddress(tcp_turn, PROTO_TCP));
     }
+    return turn_server;
+  }
+
+  void AddTurnServers(const rtc::SocketAddress& udp_turn,
+                      const rtc::SocketAddress& tcp_turn) {
+    RelayServerConfig turn_server = CreateTurnServers(udp_turn, tcp_turn);
     allocator_->AddTurnServer(turn_server);
   }
 
@@ -1771,7 +1777,7 @@ TEST_F(BasicPortAllocatorTestWithRealClock,
   AddInterface(kClientAddr);
   allocator_.reset(new BasicPortAllocator(&network_manager_));
   allocator_->Initialize();
-  RelayServerConfig turn_server(RELAY_TURN);
+  RelayServerConfig turn_server;
   RelayCredentials credentials(kTurnUsername, kTurnPassword);
   turn_server.credentials = credentials;
   turn_server.ports.push_back(
@@ -2426,6 +2432,31 @@ TEST_F(BasicPortAllocatorTest, HostCandidateAddressIsReplacedByHostname) {
   EXPECT_EQ(1, num_host_tcp_candidates);
   EXPECT_EQ(1, num_srflx_candidates);
   EXPECT_EQ(2, num_relay_candidates);
+}
+
+TEST_F(BasicPortAllocatorTest, TestUseTurnServerAsStunSever) {
+  ServerAddresses stun_servers;
+  stun_servers.insert(kStunAddr);
+  PortConfiguration port_config(stun_servers, "", "");
+  RelayServerConfig turn_servers =
+      CreateTurnServers(kTurnUdpIntAddr, kTurnTcpIntAddr);
+  port_config.AddRelay(turn_servers);
+
+  EXPECT_EQ(2U, port_config.StunServers().size());
+}
+
+TEST_F(BasicPortAllocatorTest, TestDoNotUseTurnServerAsStunSever) {
+  webrtc::test::ScopedFieldTrials field_trials(
+      "WebRTC-UseTurnServerAsStunServer/Disabled/");
+  ServerAddresses stun_servers;
+  stun_servers.insert(kStunAddr);
+  PortConfiguration port_config(stun_servers, "" /* user_name */,
+                                "" /* password */);
+  RelayServerConfig turn_servers =
+      CreateTurnServers(kTurnUdpIntAddr, kTurnTcpIntAddr);
+  port_config.AddRelay(turn_servers);
+
+  EXPECT_EQ(1U, port_config.StunServers().size());
 }
 
 }  // namespace cricket

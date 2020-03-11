@@ -32,6 +32,7 @@ GeneralLossAlgorithm::GeneralLossAlgorithm(LossDetectionType loss_type)
     : loss_detection_timeout_(QuicTime::Zero()),
       reordering_threshold_(kNumberOfNacksBeforeRetransmission),
       use_adaptive_reordering_threshold_(false),
+      use_adaptive_time_threshold_(false),
       least_in_flight_(1),
       packet_number_space_(NUM_PACKET_NUMBER_SPACES) {
   SetLossDetectionType(loss_type);
@@ -39,7 +40,6 @@ GeneralLossAlgorithm::GeneralLossAlgorithm(LossDetectionType loss_type)
 
 void GeneralLossAlgorithm::SetLossDetectionType(LossDetectionType loss_type) {
   loss_detection_timeout_ = QuicTime::Zero();
-  largest_sent_on_spurious_retransmit_.Clear();
   loss_type_ = loss_type;
   if (loss_type == kAdaptiveTime) {
     reordering_shift_ = kDefaultAdaptiveLossDelayShift;
@@ -185,43 +185,14 @@ QuicTime GeneralLossAlgorithm::GetLossTimeout() const {
   return loss_detection_timeout_;
 }
 
-void GeneralLossAlgorithm::SpuriousRetransmitDetected(
-    const QuicUnackedPacketMap& unacked_packets,
-    QuicTime time,
-    const RttStats& rtt_stats,
-    QuicPacketNumber spurious_retransmission) {
-  if (loss_type_ != kAdaptiveTime || reordering_shift_ == 0) {
-    return;
-  }
-  // Calculate the extra time needed so this wouldn't have been declared lost.
-  // Extra time needed is based on how long it's been since the spurious
-  // retransmission was sent, because the SRTT and latest RTT may have changed.
-  QuicTime::Delta extra_time_needed =
-      time -
-      unacked_packets.GetTransmissionInfo(spurious_retransmission).sent_time;
-  // Increase the reordering fraction until enough time would be allowed.
-  QuicTime::Delta max_rtt =
-      std::max(rtt_stats.previous_srtt(), rtt_stats.latest_rtt());
-
-  if (largest_sent_on_spurious_retransmit_.IsInitialized() &&
-      spurious_retransmission <= largest_sent_on_spurious_retransmit_) {
-    return;
-  }
-  largest_sent_on_spurious_retransmit_ = unacked_packets.largest_sent_packet();
-  QuicTime::Delta proposed_extra_time(QuicTime::Delta::Zero());
-  do {
-    proposed_extra_time = max_rtt >> reordering_shift_;
-    --reordering_shift_;
-  } while (proposed_extra_time < extra_time_needed && reordering_shift_ > 0);
-}
-
 void GeneralLossAlgorithm::SpuriousLossDetected(
     const QuicUnackedPacketMap& unacked_packets,
     const RttStats& rtt_stats,
     QuicTime ack_receive_time,
     QuicPacketNumber packet_number,
     QuicPacketNumber previous_largest_acked) {
-  if (loss_type_ == kAdaptiveTime && reordering_shift_ > 0) {
+  if ((loss_type_ == kAdaptiveTime || use_adaptive_time_threshold_) &&
+      reordering_shift_ > 0) {
     // Increase reordering fraction such that the packet would not have been
     // declared lost.
     QuicTime::Delta time_needed =

@@ -70,17 +70,6 @@ QuicTime UberLossAlgorithm::GetLossTimeout() const {
   return loss_timeout;
 }
 
-void UberLossAlgorithm::SpuriousRetransmitDetected(
-    const QuicUnackedPacketMap& unacked_packets,
-    QuicTime time,
-    const RttStats& rtt_stats,
-    QuicPacketNumber spurious_retransmission) {
-  general_loss_algorithms_[unacked_packets.GetPacketNumberSpace(
-                               spurious_retransmission)]
-      .SpuriousRetransmitDetected(unacked_packets, time, rtt_stats,
-                                  spurious_retransmission);
-}
-
 void UberLossAlgorithm::SpuriousLossDetected(
     const QuicUnackedPacketMap& unacked_packets,
     const RttStats& rtt_stats,
@@ -101,6 +90,12 @@ void UberLossAlgorithm::SetReorderingShift(int reordering_shift) {
 void UberLossAlgorithm::EnableAdaptiveReorderingThreshold() {
   for (int8_t i = INITIAL_DATA; i < NUM_PACKET_NUMBER_SPACES; ++i) {
     general_loss_algorithms_[i].enable_adaptive_reordering_threshold();
+  }
+}
+
+void UberLossAlgorithm::EnableAdaptiveTimeThreshold() {
+  for (int8_t i = INITIAL_DATA; i < NUM_PACKET_NUMBER_SPACES; ++i) {
+    general_loss_algorithms_[i].enable_adaptive_time_threshold();
   }
 }
 

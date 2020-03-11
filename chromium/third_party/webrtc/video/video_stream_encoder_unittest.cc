@@ -55,6 +55,8 @@ using ::testing::StrictMock;
 
 namespace {
 const int kMinPixelsPerFrame = 320 * 180;
+const int kQpLow = 1;
+const int kQpHigh = 2;
 const int kMinFramerateFps = 2;
 const int kMinBalancedFramerateFps = 7;
 const int64_t kFrameTimeoutMs = 100;
@@ -299,6 +301,13 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
                 .set_rotation(kVideoRotation_0)
                 .build();
         adapted_frame.set_ntp_time_ms(video_frame.ntp_time_ms());
+        if (video_frame.has_update_rect()) {
+          adapted_frame.set_update_rect(
+              video_frame.update_rect().ScaleWithFrame(
+                  video_frame.width(), video_frame.height(), 0, 0,
+                  video_frame.width(), video_frame.height(), out_width,
+                  out_height));
+        }
         test::FrameForwarder::IncomingCapturedFrame(adapted_frame);
         last_width_.emplace(adapted_frame.width());
         last_height_.emplace(adapted_frame.height());
@@ -317,9 +326,7 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
                        const rtc::VideoSinkWants& wants) override {
     rtc::CritScope cs(&crit_);
     last_wants_ = sink_wants();
-    adapter_.OnResolutionFramerateRequest(wants.target_pixel_count,
-                                          wants.max_pixel_count,
-                                          wants.max_framerate_fps);
+    adapter_.OnSinkWants(wants);
     test::FrameForwarder::AddOrUpdateSink(sink, wants);
   }
   cricket::VideoAdapter adapter_;
@@ -482,7 +489,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
             .set_timestamp_rtp(99)
             .set_timestamp_ms(99)
             .set_rotation(kVideoRotation_0)
-            .set_update_rect({offset_x, 0, 1, 1})
+            .set_update_rect(VideoFrame::UpdateRect{offset_x, 0, 1, 1})
             .build();
     frame.set_ntp_time_ms(ntp_time_ms);
     return frame;
@@ -683,8 +690,8 @@ class VideoStreamEncoderTest : public ::testing::Test {
       EncoderInfo info;
       if (initialized_ == EncoderState::kInitialized) {
         if (quality_scaling_) {
-          info.scaling_settings =
-              VideoEncoder::ScalingSettings(1, 2, kMinPixelsPerFrame);
+          info.scaling_settings = VideoEncoder::ScalingSettings(
+              kQpLow, kQpHigh, kMinPixelsPerFrame);
         }
         info.is_hardware_accelerated = is_hardware_accelerated_;
         for (int i = 0; i < kMaxSpatialLayers; ++i) {
@@ -3302,10 +3309,12 @@ TEST_F(VideoStreamEncoderTest, TemporalLayersNotDisabledIfSupported) {
   // Bitrate allocated across temporal layers.
   const int kTl0Bps = kTargetBitrateBps *
                       webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(
-                          kNumTemporalLayers, /*temporal_id*/ 0);
+                          kNumTemporalLayers, /*temporal_id*/ 0,
+                          /*base_heavy_tl3_alloc*/ false);
   const int kTl1Bps = kTargetBitrateBps *
                       webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(
-                          kNumTemporalLayers, /*temporal_id*/ 1);
+                          kNumTemporalLayers, /*temporal_id*/ 1,
+                          /*base_heavy_tl3_alloc*/ false);
   VideoBitrateAllocation expected_bitrate;
   expected_bitrate.SetBitrate(/*si*/ 0, /*ti*/ 0, kTl0Bps);
   expected_bitrate.SetBitrate(/*si*/ 0, /*ti*/ 1, kTl1Bps - kTl0Bps);
@@ -3336,11 +3345,13 @@ TEST_F(VideoStreamEncoderTest, VerifyBitrateAllocationForTwoStreams) {
 
   const int kS0Bps = 150000;
   const int kS0Tl0Bps =
-      kS0Bps * webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(
-                   /*num_layers*/ 2, /*temporal_id*/ 0);
+      kS0Bps *
+      webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(
+          /*num_layers*/ 2, /*temporal_id*/ 0, /*base_heavy_tl3_alloc*/ false);
   const int kS0Tl1Bps =
-      kS0Bps * webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(
-                   /*num_layers*/ 2, /*temporal_id*/ 1);
+      kS0Bps *
+      webrtc::SimulcastRateAllocator::GetTemporalRateAllocation(
+          /*num_layers*/ 2, /*temporal_id*/ 1, /*base_heavy_tl3_alloc*/ false);
   const int kS1Bps = kTargetBitrateBps - kS0Tl1Bps;
   // Temporal layers not supported by si:1.
   VideoBitrateAllocation expected_bitrate;
@@ -3697,6 +3708,69 @@ TEST_F(VideoStreamEncoderTest, InitialFrameDropActivatesWhenBweDrops) {
 
   // Expect the sink_wants to specify a scaled frame.
   EXPECT_LT(video_source_.sink_wants().max_pixel_count, kWidth * kHeight);
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest, RampsUpInQualityWhenBwIsHigh) {
+  webrtc::test::ScopedFieldTrials field_trials(
+      "WebRTC-Video-QualityRampupSettings/min_pixels:1,min_duration_ms:2000/");
+
+  // Reset encoder for field trials to take effect.
+  VideoEncoderConfig config = video_encoder_config_.Copy();
+  config.max_bitrate_bps = kTargetBitrateBps;
+  ConfigureEncoder(std::move(config));
+  fake_encoder_.SetQp(kQpLow);
+
+  // Enable MAINTAIN_FRAMERATE preference.
+  AdaptingFrameForwarder source;
+  source.set_adaptation_enabled(true);
+  video_stream_encoder_->SetSource(&source,
+                                   DegradationPreference::MAINTAIN_FRAMERATE);
+
+  // Start at low bitrate.
+  const int kLowBitrateBps = 200000;
+  video_stream_encoder_->OnBitrateUpdated(DataRate::bps(kLowBitrateBps),
+                                          DataRate::bps(kLowBitrateBps),
+                                          DataRate::bps(kLowBitrateBps), 0, 0);
+
+  // Expect first frame to be dropped and resolution to be limited.
+  const int kWidth = 1280;
+  const int kHeight = 720;
+  const int64_t kFrameIntervalMs = 100;
+  int64_t timestamp_ms = kFrameIntervalMs;
+  source.IncomingCapturedFrame(CreateFrame(timestamp_ms, kWidth, kHeight));
+  ExpectDroppedFrame();
+  EXPECT_LT(source.sink_wants().max_pixel_count, kWidth * kHeight);
+
+  // Increase bitrate to encoder max.
+  video_stream_encoder_->OnBitrateUpdated(DataRate::bps(config.max_bitrate_bps),
+                                          DataRate::bps(config.max_bitrate_bps),
+                                          DataRate::bps(config.max_bitrate_bps),
+                                          0, 0);
+
+  // Insert frames and advance |min_duration_ms|.
+  for (size_t i = 1; i <= 10; i++) {
+    timestamp_ms += kFrameIntervalMs;
+    source.IncomingCapturedFrame(CreateFrame(timestamp_ms, kWidth, kHeight));
+    WaitForEncodedFrame(timestamp_ms);
+  }
+  EXPECT_TRUE(stats_proxy_->GetStats().bw_limited_resolution);
+  EXPECT_LT(source.sink_wants().max_pixel_count, kWidth * kHeight);
+
+  fake_clock_.AdvanceTime(TimeDelta::ms(2000));
+
+  // Insert frame should trigger high BW and release quality limitation.
+  timestamp_ms += kFrameIntervalMs;
+  source.IncomingCapturedFrame(CreateFrame(timestamp_ms, kWidth, kHeight));
+  WaitForEncodedFrame(timestamp_ms);
+  VerifyFpsMaxResolutionMax(source.sink_wants());
+
+  // Frame should not be adapted.
+  timestamp_ms += kFrameIntervalMs;
+  source.IncomingCapturedFrame(CreateFrame(timestamp_ms, kWidth, kHeight));
+  WaitForEncodedFrame(kWidth, kHeight);
+  EXPECT_FALSE(stats_proxy_->GetStats().bw_limited_resolution);
+
   video_stream_encoder_->Stop();
 }
 
@@ -5131,6 +5205,63 @@ TEST_F(VideoStreamEncoderTest,
       /*rtt_ms=*/0);
   video_stream_encoder_->WaitUntilTaskQueueIsIdle();
   EXPECT_EQ(1, fake_encoder_.GetNumSetRates());
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest, AutomaticAnimationDetection) {
+  test::ScopedFieldTrials field_trials(
+      "WebRTC-AutomaticAnimationDetectionScreenshare/"
+      "enabled:true,min_fps:20,min_duration_ms:1000,min_area_ratio:0.8/");
+  const int kFramerateFps = 30;
+  const int kWidth = 1920;
+  const int kHeight = 1080;
+  const int kNumFrames = 2 * kFramerateFps;  // >1 seconds of frames.
+  // Works on screenshare mode.
+  ResetEncoder("VP8", 1, 1, 1, /*screenshare*/ true);
+  // We rely on the automatic resolution adaptation, but we handle framerate
+  // adaptation manually by mocking the stats proxy.
+  video_source_.set_adaptation_enabled(true);
+
+  // BALANCED degradation preference is required for this feature.
+  video_stream_encoder_->OnBitrateUpdated(
+      DataRate::bps(kTargetBitrateBps), DataRate::bps(kTargetBitrateBps),
+      DataRate::bps(kTargetBitrateBps), 0, 0);
+  video_stream_encoder_->SetSource(&video_source_,
+                                   webrtc::DegradationPreference::BALANCED);
+  VerifyNoLimitation(video_source_.sink_wants());
+
+  VideoFrame frame = CreateFrame(1, kWidth, kHeight);
+  frame.set_update_rect(VideoFrame::UpdateRect{0, 0, kWidth, kHeight});
+
+  // Pass enough frames with the full update to trigger animation detection.
+  for (int i = 0; i < kNumFrames; ++i) {
+    int64_t timestamp_ms =
+        fake_clock_.TimeNanos() / rtc::kNumNanosecsPerMillisec;
+    frame.set_ntp_time_ms(timestamp_ms);
+    frame.set_timestamp_us(timestamp_ms * 1000);
+    video_source_.IncomingCapturedFrame(frame);
+    WaitForEncodedFrame(timestamp_ms);
+  }
+
+  // Resolution should be limited.
+  rtc::VideoSinkWants expected;
+  expected.max_framerate_fps = kFramerateFps;
+  expected.max_pixel_count = 1280 * 720 + 1;
+  VerifyFpsEqResolutionLt(video_source_.sink_wants(), expected);
+
+  // Pass one frame with no known update.
+  //  Resolution cap should be removed immediately.
+  int64_t timestamp_ms = fake_clock_.TimeNanos() / rtc::kNumNanosecsPerMillisec;
+  frame.set_ntp_time_ms(timestamp_ms);
+  frame.set_timestamp_us(timestamp_ms * 1000);
+  frame.clear_update_rect();
+
+  video_source_.IncomingCapturedFrame(frame);
+  WaitForEncodedFrame(timestamp_ms);
+
+  // Resolution should be unlimited now.
+  VerifyFpsEqResolutionMax(video_source_.sink_wants(), kFramerateFps);
+
   video_stream_encoder_->Stop();
 }
 

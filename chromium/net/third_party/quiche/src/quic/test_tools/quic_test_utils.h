@@ -23,6 +23,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_sent_packet_manager.h"
 #include "net/third_party/quiche/src/quic/core/quic_simple_buffer_allocator.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_mem_slice_storage.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_str_cat.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/mock_clock.h"
@@ -161,7 +162,7 @@ QuicEncryptedPacket* ConstructMisFramedEncryptedPacket(
     QuicConnectionIdIncluded destination_connection_id_included,
     QuicConnectionIdIncluded source_connection_id_included,
     QuicPacketNumberLength packet_number_length,
-    ParsedQuicVersionVector* versions,
+    ParsedQuicVersion version,
     Perspective perspective);
 
 void CompareCharArraysWithHexError(const std::string& description,
@@ -412,7 +413,8 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD1(OnMaxStreamsFrame, bool(const QuicMaxStreamsFrame& frame));
   MOCK_METHOD1(OnStreamsBlockedFrame,
                bool(const QuicStreamsBlockedFrame& frame));
-  MOCK_METHOD1(OnStopSendingFrame, bool(const QuicStopSendingFrame& frame));
+  MOCK_METHOD1(OnStopSendingFrame, void(const QuicStopSendingFrame& frame));
+  MOCK_METHOD1(OnPacketDecrypted, void(EncryptionLevel));
 };
 
 class MockQuicConnectionHelper : public QuicConnectionHelperInterface {
@@ -533,7 +535,8 @@ class MockQuicConnection : public QuicConnection {
 
   MOCK_METHOD2(OnStreamReset, void(QuicStreamId, QuicRstStreamErrorCode));
   MOCK_METHOD1(SendControlFrame, bool(const QuicFrame& frame));
-  MOCK_METHOD2(SendMessage, MessageStatus(QuicMessageId, QuicMemSliceSpan));
+  MOCK_METHOD3(SendMessage,
+               MessageStatus(QuicMessageId, QuicMemSliceSpan, bool));
   MOCK_METHOD3(OnConnectionClosed,
                void(QuicErrorCode error,
                     const std::string& error_details,
@@ -666,6 +669,12 @@ class MockQuicSession : public QuicSession {
                                       QuicStreamOffset offset,
                                       StreamSendingState state);
 
+  void ReallySendRstStream(QuicStreamId id,
+                           QuicRstStreamErrorCode error,
+                           QuicStreamOffset bytes_written) {
+    QuicSession::SendRstStream(id, error, bytes_written);
+  }
+
  private:
   std::unique_ptr<QuicCryptoStream> crypto_stream_;
 };
@@ -681,6 +690,7 @@ class MockQuicCryptoStream : public QuicCryptoStream {
   const QuicCryptoNegotiatedParameters& crypto_negotiated_params()
       const override;
   CryptoMessageParser* crypto_message_parser() override;
+  void OnPacketDecrypted(EncryptionLevel /*level*/) override {}
 
  private:
   QuicReferenceCountedPointer<QuicCryptoNegotiatedParameters> params_;
@@ -947,7 +957,9 @@ class MockSendAlgorithm : public SendAlgorithmInterface {
   MOCK_CONST_METHOD0(GetCongestionControlType, CongestionControlType());
   MOCK_METHOD3(AdjustNetworkParameters,
                void(QuicBandwidth, QuicTime::Delta, bool));
+  MOCK_METHOD1(AdjustNetworkParameters, void(const NetworkParams&));
   MOCK_METHOD1(OnApplicationLimited, void(QuicByteCount));
+  MOCK_CONST_METHOD1(PopulateConnectionStats, void(QuicConnectionStats*));
 };
 
 class MockLossAlgorithm : public LossDetectionInterface {
@@ -966,11 +978,6 @@ class MockLossAlgorithm : public LossDetectionInterface {
                     const AckedPacketVector& packets_acked,
                     LostPacketVector* packets_lost));
   MOCK_CONST_METHOD0(GetLossTimeout, QuicTime());
-  MOCK_METHOD4(SpuriousRetransmitDetected,
-               void(const QuicUnackedPacketMap&,
-                    QuicTime,
-                    const RttStats&,
-                    QuicPacketNumber));
   MOCK_METHOD5(SpuriousLossDetected,
                void(const QuicUnackedPacketMap&,
                     const RttStats&,
@@ -1014,11 +1021,8 @@ class MockQuicConnectionDebugVisitor : public QuicConnectionDebugVisitor {
 
   MOCK_METHOD1(OnFrameAddedToPacket, void(const QuicFrame&));
 
-  MOCK_METHOD4(OnPacketSent,
-               void(const SerializedPacket&,
-                    QuicPacketNumber,
-                    TransmissionType,
-                    QuicTime));
+  MOCK_METHOD3(OnPacketSent,
+               void(const SerializedPacket&, TransmissionType, QuicTime));
 
   MOCK_METHOD0(OnPingSent, void());
 
@@ -1195,8 +1199,6 @@ void ExpectApproxEq(T expected, T actual, float relative_margin) {
 template <typename T>
 QuicHeaderList AsHeaderList(const T& container) {
   QuicHeaderList l;
-  // No need to enforce header list size limits again in this handler.
-  l.set_max_header_list_size(UINT_MAX);
   l.OnHeaderBlockStart();
   size_t total_size = 0;
   for (auto p : container) {
@@ -1252,6 +1254,46 @@ MATCHER_P(ReceivedPacketInfoConnectionIdEquals, destination_connection_id, "") {
 
 MATCHER_P2(InRange, min, max, "") {
   return arg >= min && arg <= max;
+}
+
+// A GMock matcher that prints expected and actual QuicErrorCode strings
+// upon failure.  Example usage:
+// EXPECT_THAT(stream_->connection_error()), IsError(QUIC_INTERNAL_ERROR));
+MATCHER_P(IsError,
+          expected,
+          QuicStrCat(negation ? "isn't equal to " : "is equal to ",
+                     QuicErrorCodeToString(expected))) {
+  *result_listener << QuicErrorCodeToString(arg);
+  return arg == expected;
+}
+
+// Shorthand for IsError(QUIC_NO_ERROR).
+// Example usage: EXPECT_THAT(stream_->connection_error(), IsQuicNoError());
+MATCHER(IsQuicNoError,
+        QuicStrCat(negation ? "isn't equal to " : "is equal to ",
+                   QuicErrorCodeToString(QUIC_NO_ERROR))) {
+  *result_listener << QuicErrorCodeToString(arg);
+  return arg == QUIC_NO_ERROR;
+}
+
+// A GMock matcher that prints expected and actual QuicRstStreamErrorCode
+// strings upon failure.  Example usage:
+// EXPECT_THAT(stream_->stream_error(), IsStreamError(QUIC_INTERNAL_ERROR));
+MATCHER_P(IsStreamError,
+          expected,
+          QuicStrCat(negation ? "isn't equal to " : "is equal to ",
+                     QuicRstStreamErrorCodeToString(expected))) {
+  *result_listener << QuicRstStreamErrorCodeToString(arg);
+  return arg == expected;
+}
+
+// Shorthand for IsStreamError(QUIC_STREAM_NO_ERROR).  Example usage:
+// EXPECT_THAT(stream_->stream_error(), IsQuicStreamNoError());
+MATCHER(IsQuicStreamNoError,
+        QuicStrCat(negation ? "isn't equal to " : "is equal to ",
+                   QuicRstStreamErrorCodeToString(QUIC_STREAM_NO_ERROR))) {
+  *result_listener << QuicRstStreamErrorCodeToString(arg);
+  return arg == QUIC_STREAM_NO_ERROR;
 }
 
 }  // namespace test

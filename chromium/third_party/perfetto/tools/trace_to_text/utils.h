@@ -29,11 +29,16 @@
 #include <zlib.h>
 
 #include "perfetto/base/build_config.h"
+#include "perfetto/ext/base/optional.h"
 #include "perfetto/ext/base/paged_memory.h"
+#include "perfetto/profiling/deobfuscator.h"
 #include "perfetto/profiling/symbolizer.h"
-#include "perfetto/trace_processor/trace_processor.h"
 
 namespace perfetto {
+
+namespace trace_processor {
+class TraceProcessor;
+}
 
 namespace protos {
 class TracePacket;
@@ -53,18 +58,26 @@ void ForEachPacketBlobInTrace(
     std::istream* input,
     const std::function<void(std::unique_ptr<char[]>, size_t)>&);
 
-void ForEachPacketInTrace(
-    std::istream* input,
-    const std::function<void(const protos::TracePacket&)>&);
-
 std::vector<std::string> GetPerfettoBinaryPath();
+base::Optional<std::string> GetPerfettoProguardMapPath();
 
 bool ReadTrace(trace_processor::TraceProcessor* tp, std::istream* input);
 
-void SymbolizeDatabase(
+void WriteTracePacket(const std::string& str, std::ostream* output);
+
+// Generate ModuleSymbol protos for all unsymbolized frames in the database.
+// Wrap them in proto-encoded TracePackets messages and call callback.
+void SymbolizeDatabase(trace_processor::TraceProcessor* tp,
+                       Symbolizer* symbolizer,
+                       std::function<void(const std::string&)> callback);
+
+// Generate ObfuscationMapping protos for all obfuscated java names in the
+// database.
+// Wrap them in proto-encoded TracePackets messages and call callback.
+void DeobfuscateDatabase(
     trace_processor::TraceProcessor* tp,
-    Symbolizer* symbolizer,
-    std::function<void(perfetto::protos::TracePacket)> callback);
+    const std::map<std::string, profiling::ObfuscatedClass>& mapping,
+    std::function<void(const std::string&)> callback);
 
 class TraceWriter {
  public:

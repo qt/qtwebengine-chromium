@@ -276,8 +276,6 @@ template_capture_header = """// GENERATED FILE - DO NOT EDIT.
 
 namespace gl
 {{
-class Context;
-
 {prototypes}
 }}  // namespace gl
 
@@ -298,7 +296,7 @@ template_capture_source = """// GENERATED FILE - DO NOT EDIT.
 
 #include "libANGLE/Context.h"
 #include "libANGLE/FrameCapture.h"
-#include "libANGLE/gl_enum_utils_autogen.h"
+#include "libANGLE/gl_enum_utils.h"
 #include "libANGLE/validation{annotation_no_dash}.h"
 
 using namespace angle;
@@ -447,7 +445,7 @@ template_sources_includes = """#include "libGLESv2/entry_points_{header_version}
 #include "libANGLE/Context.h"
 #include "libANGLE/Context.inl.h"
 #include "libANGLE/capture_{header_version}_autogen.h"
-#include "libANGLE/gl_enum_utils_autogen.h"
+#include "libANGLE/gl_enum_utils.h"
 #include "libANGLE/validation{validation_header_version}.h"
 #include "libANGLE/entry_points_utils.h"
 #include "libGLESv2/global_state.h"
@@ -462,7 +460,7 @@ template_sources_includes_gl32 = """#include "libGL/entry_points_{}_autogen.h"
 
 #include "libANGLE/Context.h"
 #include "libANGLE/Context.inl.h"
-#include "libANGLE/gl_enum_utils_autogen.h"
+#include "libANGLE/gl_enum_utils.h"
 #include "libANGLE/validationEGL.h"
 #include "libANGLE/validationES.h"
 #include "libANGLE/validationES1.h"
@@ -898,9 +896,9 @@ def format_capture_method(command, cmd_name, proto, params, all_param_types, cap
     packed_gl_enums = get_packed_enums(cmd_packed_gl_enums, cmd_name)
 
     params_with_type = get_internal_params(
-        cmd_name, ["const Context *context", "bool isCallValid"] + params, cmd_packed_gl_enums)
+        cmd_name, ["const State &glState", "bool isCallValid"] + params, cmd_packed_gl_enums)
     params_just_name = ", ".join(
-        ["context", "isCallValid"] +
+        ["glState", "isCallValid"] +
         [just_the_name_packed(param, packed_gl_enums) for param in params])
 
     parameter_captures = []
@@ -995,7 +993,7 @@ def format_validation_proto(cmd_name, params, cmd_packed_gl_enums):
 
 def format_capture_proto(cmd_name, proto, params, cmd_packed_gl_enums):
     internal_params = get_internal_params(
-        cmd_name, ["const Context *context", "bool isCallValid"] + params, cmd_packed_gl_enums)
+        cmd_name, ["const State &glState", "bool isCallValid"] + params, cmd_packed_gl_enums)
     return_type = proto[:-len(cmd_name)].strip()
     if return_type != "void":
         internal_params += ", %s returnValue" % return_type

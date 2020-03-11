@@ -103,7 +103,8 @@ static std::string FormatCapture(const StringPiece& text,
   if (s.data() == NULL)
     return "(?,?)";
   return StringPrintf("(%td,%td)",
-                      s.begin() - text.begin(), s.end() - text.begin());
+                      s.begin() - text.begin(),
+                      s.end() - text.begin());
 }
 
 // Returns whether text contains non-ASCII (>= 0x80) bytes.
@@ -644,7 +645,7 @@ static Prog::Anchor anchors[] = {
 
 bool Tester::TestInput(const StringPiece& text) {
   bool okay = TestInputInContext(text, text);
-  if (text.size() > 0) {
+  if (!text.empty()) {
     StringPiece sp;
     sp = text;
     sp.remove_prefix(1);

@@ -253,6 +253,8 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxGeometryShaderStorageBlocks   = 0;
     resources->MaxGeometryShaderInvocations     = 32;
     resources->MaxGeometryImageUniforms         = 0;
+
+    resources->SubPixelBits = 8;
 }
 
 //
@@ -667,6 +669,18 @@ int GetGeometryShaderMaxVertices(const ShHandle handle)
     int maxVertices = compiler->getGeometryShaderMaxVertices();
     ASSERT(maxVertices >= 0);
     return maxVertices;
+}
+
+unsigned int GetShaderSharedMemorySize(const ShHandle handle)
+{
+    ASSERT(handle);
+
+    TShHandleBase *base = static_cast<TShHandleBase *>(handle);
+    TCompiler *compiler = base->getAsCompiler();
+    ASSERT(compiler);
+
+    unsigned int sharedMemorySize = compiler->getSharedMemorySize();
+    return sharedMemorySize;
 }
 
 }  // namespace sh

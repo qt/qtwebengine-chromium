@@ -2,8 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Accumulates frames for the next packet until more frames no longer fit or
-// it's time to create a packet from them.
+// Responsible for creating packets on behalf of a QuicConnection.
+// Packets are serialized just-in-time. Stream data and control frames will be
+// requested from the Connection just-in-time. Frames are accumulated into
+// "current" packet until no more frames can fit, then current packet gets
+// serialized and passed to connection via OnSerializedPacket().
+//
+// Whether a packet should be serialized is determined by whether delegate is
+// writable. If the Delegate is not writable, then no operations will cause
+// a packet to be serialized.
 
 #ifndef QUICHE_QUIC_CORE_QUIC_PACKET_CREATOR_H_
 #define QUICHE_QUIC_CORE_QUIC_PACKET_CREATOR_H_
@@ -13,9 +20,10 @@
 #include <utility>
 #include <vector>
 
+#include "net/third_party/quiche/src/quic/core/frames/quic_stream_frame.h"
+#include "net/third_party/quiche/src/quic/core/quic_coalesced_packet.h"
 #include "net/third_party/quiche/src/quic/core/quic_framer.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
-#include "net/third_party/quiche/src/quic/core/quic_pending_retransmission.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 
@@ -60,6 +68,10 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
     // Called when a frame has been added to the current packet.
     virtual void OnFrameAddedToPacket(const QuicFrame& /*frame*/) {}
+
+    // Called when a stream frame is coalesced with an existing stream frame.
+    // |frame| is the new stream frame.
+    virtual void OnStreamFrameCoalesced(const QuicStreamFrame& /*frame*/) {}
   };
 
   QuicPacketCreator(QuicConnectionId server_connection_id,
@@ -137,12 +149,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // |length|.
   bool HasRoomForMessageFrame(QuicByteCount length);
 
-  // Re-serializes frames with the original packet's packet number length.
-  // Used for retransmitting packets to ensure they aren't too long.
-  void ReserializeAllFrames(const QuicPendingRetransmission& retransmission,
-                            char* buffer,
-                            size_t buffer_len);
-
   // Serializes all added frames into a single packet and invokes the delegate_
   // to further process the SerializedPacket.
   void FlushCurrentPacket();
@@ -189,8 +195,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // Tries to add |frame| to the packet creator's list of frames to be
   // serialized. If the frame does not fit into the current packet, flushes the
   // packet and returns false.
-  bool AddSavedFrame(const QuicFrame& frame,
-                     TransmissionType transmission_type);
+  bool AddFrame(const QuicFrame& frame, TransmissionType transmission_type);
 
   // Identical to AddSavedFrame, but allows the frame to be padded.
   bool AddPaddedSavedFrame(const QuicFrame& frame,
@@ -271,12 +276,14 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // Sets the maximum packet length.
   void SetMaxPacketLength(QuicByteCount length);
 
+  // Set a soft maximum packet length in the creator. If a packet cannot be
+  // successfully created, creator will remove the soft limit and use the actual
+  // max packet length.
+  void SetSoftMaxPacketLength(QuicByteCount length);
+
   // Increases pending_padding_bytes by |size|. Pending padding will be sent by
   // MaybeAddPadding().
   void AddPendingPadding(QuicByteCount size);
-
-  // Sets transmission type of next constructed packets.
-  void SetTransmissionTypeOfNextPackets(TransmissionType type);
 
   // Sets the retry token to be sent over the wire in IETF Initial packets.
   void SetRetryToken(QuicStringPiece retry_token);
@@ -363,12 +370,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
     debug_delegate_ = debug_delegate;
   }
 
-  void set_can_set_transmission_type(bool can_set_transmission_type) {
-    can_set_transmission_type_ = can_set_transmission_type;
-  }
-
-  bool can_set_transmission_type() const { return can_set_transmission_type_; }
-
   QuicByteCount pending_padding_bytes() const { return pending_padding_bytes_; }
 
   QuicTransportVersion transport_version() const {
@@ -382,17 +383,11 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   bool PacketFlusherAttached() const;
 
   void set_fully_pad_crypto_handshake_packets(bool new_value) {
-    DCHECK(combine_generator_and_creator_);
     fully_pad_crypto_handshake_packets_ = new_value;
   }
 
   bool fully_pad_crypto_handshake_packets() const {
-    DCHECK(combine_generator_and_creator_);
     return fully_pad_crypto_handshake_packets_;
-  }
-
-  bool combine_generator_and_creator() const {
-    return combine_generator_and_creator_;
   }
 
   // Serialize a probing packet that uses IETF QUIC's PATH CHALLENGE frame. Also
@@ -422,6 +417,12 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
                                         size_t packet_length,
                                         EncryptionLevel level);
 
+  // Serializes |coalesced| to provided |buffer|, returns coalesced packet
+  // length if serialization succeeds. Otherwise, returns 0.
+  size_t SerializeCoalescedPacket(const QuicCoalescedPacket& coalesced,
+                                  char* buffer,
+                                  size_t buffer_len);
+
  private:
   friend class test::QuicPacketCreatorPeer;
 
@@ -444,13 +445,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   void FillPacketHeader(QuicPacketHeader* header);
 
-  // Adds a |frame| if there is space and returns false and flushes all pending
-  // frames if there isn't room. If |save_retransmittable_frames| is true,
-  // saves the |frame| in the next SerializedPacket.
-  bool AddFrame(const QuicFrame& frame,
-                bool save_retransmittable_frames,
-                TransmissionType transmission_type);
-
   // Adds a padding frame to the current packet (if there is space) when (1)
   // current packet needs full padding or (2) there are pending paddings.
   void MaybeAddPadding();
@@ -467,6 +461,27 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Clears all fields of packet_ that should be cleared between serializations.
   void ClearPacket();
+
+  // Re-serialzes frames of ENCRYPTION_INITIAL packet in coalesced packet with
+  // the original packet's packet number and packet number length.
+  // |padding_size| indicates the size of necessary padding. Returns 0 if
+  // serialization fails.
+  size_t ReserializeInitialPacketInCoalescedPacket(
+      const SerializedPacket& packet,
+      size_t padding_size,
+      char* buffer,
+      size_t buffer_len);
+
+  // Tries to coalesce |frame| with the back of |queued_frames_|.
+  // Returns true on success.
+  bool MaybeCoalesceStreamFrame(const QuicStreamFrame& frame);
+
+  // Called to remove the soft max_packet_length and restores
+  // latched_hard_max_packet_length_ if the packet cannot accommodate a single
+  // frame. Returns true if the soft limit is successfully removed. Returns
+  // false if either there is no current soft limit or there are queued frames
+  // (such that the packet length cannot be changed).
+  bool RemoveSoftMaxPacketLength();
 
   // Returns true if a diversification nonce should be included in the current
   // packet's header.
@@ -553,10 +568,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // bytes.
   bool needs_full_padding_;
 
-  // If true, packet_'s transmission type is only set by
-  // SetPacketTransmissionType and does not get cleared in ClearPacket.
-  bool can_set_transmission_type_;
-
   // Transmission type of the next serialized packet.
   TransmissionType next_transmission_type_;
 
@@ -571,8 +582,10 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // flusher detaches.
   QuicPacketNumber write_start_packet_number_;
 
-  // Latched value of quic_combine_generator_and_creator.
-  const bool combine_generator_and_creator_;
+  // If not 0, this latches the actual max_packet_length when
+  // SetSoftMaxPacketLength is called and max_packet_length_ gets
+  // set to a soft value.
+  QuicByteCount latched_hard_max_packet_length_;
 };
 
 }  // namespace quic

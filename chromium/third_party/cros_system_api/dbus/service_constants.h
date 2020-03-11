@@ -9,6 +9,7 @@
 
 // We use relative includes here to make this compatible with both the
 // Chromium OS and Chromium environment.
+#include "anomaly_detector/dbus-constants.h"
 #include "authpolicy/dbus-constants.h"
 #include "biod/dbus-constants.h"
 #include "bluetooth/dbus-constants.h"
@@ -25,11 +26,13 @@
 #include "login_manager/dbus-constants.h"
 #include "lorgnette/dbus-constants.h"
 #include "oobe_config/dbus-constants.h"
+#include "patchpanel/dbus-constants.h"
 #include "permission_broker/dbus-constants.h"
 #include "power_manager/dbus-constants.h"
 #include "runtime_probe/dbus-constants.h"
 #include "seneschal/dbus-constants.h"
 #include "shill/dbus-constants.h"
+#include "smbfs/dbus-constants.h"
 #include "smbprovider/dbus-constants.h"
 #include "update_engine/dbus-constants.h"
 #include "usbguard/dbus-constants.h"
@@ -224,6 +227,12 @@ const char kGesturePropertiesServiceListDevicesMethod[] = "ListDevices";
 const char kGesturePropertiesServiceListPropertiesMethod[] = "ListProperties";
 const char kGesturePropertiesServiceGetPropertyMethod[] = "GetProperty";
 const char kGesturePropertiesServiceSetPropertyMethod[] = "SetProperty";
+
+const char kPrintersServiceName[] = "org.chromium.PrintersService";
+const char kPrintersServicePath[] = "/org/chromium/PrintersService";
+const char kPrintersServiceInterface[] =
+    "org.chromium.PrintersServiceInterface";
+const char kPrintersServicePrintersChangedSignal[] = "PrintersChanged";
 
 }  // namespace chromeos
 
@@ -505,14 +514,6 @@ constexpr char kOpenFileMethod[] = "OpenFile";
 
 }  // namespace arc
 
-namespace anomaly_detector {
-const char kAnomalyEventServiceName[] = "org.chromium.AnomalyEventService";
-const char kAnomalyEventServicePath[] = "/org/chromium/AnomalyEventService";
-const char kAnomalyEventServiceInterface[] =
-    "org.chromium.AnomalyEventServiceInterface";
-const char kAnomalyEventSignalName[] = "AnomalyEvent";
-}  // namespace anomaly_detector
-
 namespace libvda {
 const char kLibvdaServiceInterface[] = "org.chromium.LibvdaService";
 const char kLibvdaServiceName[] = "org.chromium.LibvdaService";
@@ -562,5 +563,13 @@ const char kModemfwdServiceName[] = "org.chromium.Modemfwd";
 const char kSetDebugMode[] = "SetDebugMode";
 
 }  // namespace modemfwd
+
+namespace lock_to_single_user {
+const char kLockToSingleUserInterface[] = "org.chromium.LockToSingleUser";
+const char kLockToSingleUserServicePath[] = "/org/chromium/LockToSingleUser";
+const char kLockToSingleUserServiceName[] = "org.chromium.LockToSingleUser";
+
+const char kNotifyVmStartingMethod[] = "NotifyVmStarting";
+}  // namespace lock_to_single_user
 
 #endif  // SYSTEM_API_DBUS_SERVICE_CONSTANTS_H_

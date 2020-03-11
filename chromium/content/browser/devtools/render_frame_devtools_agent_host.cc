@@ -320,8 +320,7 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
           : protocol::TargetHandler::AccessMode::kAutoAttachOnly,
       GetId(), GetRendererChannel(), session->GetRootSession()));
   session->AddHandler(std::make_unique<protocol::PageHandler>(
-      emulation_handler_ptr, &active_file_chooser_interceptor_,
-      session->client()->MayWriteLocalFiles(),
+      emulation_handler_ptr, session->client()->MayWriteLocalFiles(),
       session->client()->MayReadLocalFiles()));
   session->AddHandler(std::make_unique<protocol::SecurityHandler>());
   if (!frame_tree_node_ || !frame_tree_node_->parent()) {
@@ -603,6 +602,19 @@ void RenderFrameDevToolsAgentHost::OnPageScaleFactorChanged(
     input->OnPageScaleFactorChanged(page_scale_factor);
 }
 
+void RenderFrameDevToolsAgentHost::OnNavigationRequestWillBeSent(
+    const NavigationRequest& navigation_request) {
+  const auto& url = navigation_request.common_params().url;
+  std::vector<DevToolsSession*> restricted_sessions;
+  bool is_webui = frame_host_ && frame_host_->web_ui();
+  for (DevToolsSession* session : sessions()) {
+    if (!session->client()->MayAttachToURL(url, is_webui))
+      restricted_sessions.push_back(session);
+  }
+  if (!restricted_sessions.empty())
+    ForceDetachRestrictedSessions(restricted_sessions);
+}
+
 void RenderFrameDevToolsAgentHost::DisconnectWebContents() {
   navigation_requests_.clear();
   SetFrameTreeNode(nullptr);
@@ -793,16 +805,18 @@ bool RenderFrameDevToolsAgentHost::IsChildFrame() {
 
 bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
     DevToolsSession* session) {
+  // There's not much we can say if there's not host yet, but we'll
+  // check again when host is updated.
+  if (!frame_host_)
+    return true;
   DevToolsManager* manager = DevToolsManager::GetInstance();
-  if (manager->delegate() && frame_host_) {
-    if (!manager->delegate()->AllowInspectingRenderFrameHost(frame_host_))
-      return false;
-  }
-  const bool is_webui =
-      frame_host_ && (frame_host_->web_ui() || frame_host_->pending_web_ui());
-  if (!session->client()->MayAttachToRenderer(frame_host_, is_webui))
+  if (manager->delegate() &&
+      !manager->delegate()->AllowInspectingRenderFrameHost(frame_host_)) {
     return false;
-  return true;
+  }
+  // Note this may be called before navigation is committed.
+  return session->client()->MayAttachToURL(
+      frame_host_->GetSiteInstance()->GetSiteURL(), frame_host_->web_ui());
 }
 
 void RenderFrameDevToolsAgentHost::UpdateResourceLoaderFactories() {

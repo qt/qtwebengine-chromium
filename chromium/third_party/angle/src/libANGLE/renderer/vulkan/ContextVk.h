@@ -65,10 +65,7 @@ class CommandQueue final : angle::NonCopyable
 
     void clearAllGarbage(VkDevice device);
 
-    angle::Result finishToSerialOrTimeout(vk::Context *context,
-                                          Serial serial,
-                                          uint64_t timeout,
-                                          bool *outTimedOut);
+    angle::Result finishToSerial(vk::Context *context, Serial serial, uint64_t timeout);
 
     angle::Result submitFrame(vk::Context *context,
                               const VkSubmitInfo &submitInfo,
@@ -133,12 +130,25 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::RenderPassO
                                GLsizei count,
                                gl::DrawElementsType type,
                                const void *indices) override;
+    angle::Result drawElementsBaseVertex(const gl::Context *context,
+                                         gl::PrimitiveMode mode,
+                                         GLsizei count,
+                                         gl::DrawElementsType type,
+                                         const void *indices,
+                                         GLint baseVertex) override;
     angle::Result drawElementsInstanced(const gl::Context *context,
                                         gl::PrimitiveMode mode,
                                         GLsizei count,
                                         gl::DrawElementsType type,
                                         const void *indices,
                                         GLsizei instanceCount) override;
+    angle::Result drawElementsInstancedBaseVertex(const gl::Context *context,
+                                                  gl::PrimitiveMode mode,
+                                                  GLsizei count,
+                                                  gl::DrawElementsType type,
+                                                  const void *indices,
+                                                  GLsizei instanceCount,
+                                                  GLint baseVertex) override;
     angle::Result drawElementsInstancedBaseVertexBaseInstance(const gl::Context *context,
                                                               gl::PrimitiveMode mode,
                                                               GLsizei count,
@@ -154,6 +164,14 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::RenderPassO
                                     GLsizei count,
                                     gl::DrawElementsType type,
                                     const void *indices) override;
+    angle::Result drawRangeElementsBaseVertex(const gl::Context *context,
+                                              gl::PrimitiveMode mode,
+                                              GLuint start,
+                                              GLuint end,
+                                              GLsizei count,
+                                              gl::DrawElementsType type,
+                                              const void *indices,
+                                              GLint baseVertex) override;
     angle::Result drawArraysIndirect(const gl::Context *context,
                                      gl::PrimitiveMode mode,
                                      const void *indirect) override;
@@ -352,8 +370,6 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::RenderPassO
 
     // Wait for completion of batches until (at least) batch with given serial is finished.
     angle::Result finishToSerial(Serial serial);
-    // A variant of finishToSerial that can time out.  Timeout status returned in outTimedOut.
-    angle::Result finishToSerialOrTimeout(Serial serial, uint64_t timeout, bool *outTimedOut);
 
     angle::Result getCompatibleRenderPass(const vk::RenderPassDesc &desc,
                                           vk::RenderPass **renderPassOut);
@@ -506,27 +522,31 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::RenderPassO
     angle::Result setupIndirectDraw(const gl::Context *context,
                                     gl::PrimitiveMode mode,
                                     DirtyBits dirtyBitMask,
-                                    vk::CommandBuffer **commandBufferOut,
-                                    vk::Buffer **indirectBufferOut);
-    angle::Result setupIndirectDrawHelper(const gl::Context *context,
-                                          gl::PrimitiveMode mode,
-                                          DirtyBits dirtyBitMask,
-                                          vk::CommandBuffer **commandBufferOut);
+                                    vk::BufferHelper *indirectBuffer,
+                                    VkDeviceSize indirectBufferOffset,
+                                    vk::CommandBuffer **commandBufferOut);
     angle::Result setupIndexedIndirectDraw(const gl::Context *context,
                                            gl::PrimitiveMode mode,
                                            gl::DrawElementsType indexType,
-                                           vk::CommandBuffer **commandBufferOut,
-                                           vk::Buffer **indirectBufferOut);
+                                           vk::BufferHelper *indirectBuffer,
+                                           VkDeviceSize indirectBufferOffset,
+                                           vk::CommandBuffer **commandBufferOut);
 
     angle::Result setupLineLoopIndexedIndirectDraw(const gl::Context *context,
                                                    gl::PrimitiveMode mode,
                                                    gl::DrawElementsType indexType,
-                                                   const gl::Buffer *indirectBuffer,
+                                                   vk::BufferHelper *srcIndirectBuf,
                                                    VkDeviceSize indirectBufferOffset,
-                                                   const gl::Buffer *indexBuffer,
                                                    vk::CommandBuffer **commandBufferOut,
-                                                   vk::Buffer **indirectBufferOut,
+                                                   vk::BufferHelper **indirectBufferOut,
                                                    VkDeviceSize *indirectBufferOffsetOut);
+    angle::Result setupLineLoopIndirectDraw(const gl::Context *context,
+                                            gl::PrimitiveMode mode,
+                                            vk::BufferHelper *indirectBuffer,
+                                            VkDeviceSize indirectBufferOffset,
+                                            vk::CommandBuffer **commandBufferOut,
+                                            vk::BufferHelper **indirectBufferOut,
+                                            VkDeviceSize *indirectBufferOffsetOut);
 
     angle::Result setupLineLoopDraw(const gl::Context *context,
                                     gl::PrimitiveMode mode,
@@ -625,6 +645,7 @@ class ContextVk : public ContextImpl, public vk::Context, public vk::RenderPassO
     angle::Result submitFrame(const VkSubmitInfo &submitInfo,
                               vk::PrimaryCommandBuffer &&commandBuffer);
     angle::Result flushCommandGraph(vk::PrimaryCommandBuffer *commandBatch);
+    void memoryBarrierImpl(GLbitfield barriers, VkPipelineStageFlags stageMask);
 
     angle::Result synchronizeCpuGpuTime();
     angle::Result traceGpuEventImpl(vk::PrimaryCommandBuffer *commandBuffer,

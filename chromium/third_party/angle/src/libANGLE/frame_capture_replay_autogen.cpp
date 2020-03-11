@@ -695,9 +695,10 @@ void FrameCapture::ReplayCall(gl::Context *context,
             break;
         case gl::EntryPoint::DrawElementsBaseVertex:
             context->drawElementsBaseVertex(
-                params.getParam("mode", ParamType::TGLenum, 0).value.GLenumVal,
+                params.getParam("modePacked", ParamType::TPrimitiveMode, 0).value.PrimitiveModeVal,
                 params.getParam("count", ParamType::TGLsizei, 1).value.GLsizeiVal,
-                params.getParam("type", ParamType::TGLenum, 2).value.GLenumVal,
+                params.getParam("typePacked", ParamType::TDrawElementsType, 2)
+                    .value.DrawElementsTypeVal,
                 replayContext->getAsConstPointer<const void *>(
                     params.getParam("indices", ParamType::TvoidConstPointer, 3)),
                 params.getParam("basevertex", ParamType::TGLint, 4).value.GLintVal);
@@ -722,9 +723,10 @@ void FrameCapture::ReplayCall(gl::Context *context,
             break;
         case gl::EntryPoint::DrawElementsInstancedBaseVertex:
             context->drawElementsInstancedBaseVertex(
-                params.getParam("mode", ParamType::TGLenum, 0).value.GLenumVal,
+                params.getParam("modePacked", ParamType::TPrimitiveMode, 0).value.PrimitiveModeVal,
                 params.getParam("count", ParamType::TGLsizei, 1).value.GLsizeiVal,
-                params.getParam("type", ParamType::TGLenum, 2).value.GLenumVal,
+                params.getParam("typePacked", ParamType::TDrawElementsType, 2)
+                    .value.DrawElementsTypeVal,
                 replayContext->getAsConstPointer<const void *>(
                     params.getParam("indices", ParamType::TvoidConstPointer, 3)),
                 params.getParam("instancecount", ParamType::TGLsizei, 4).value.GLsizeiVal,
@@ -755,11 +757,12 @@ void FrameCapture::ReplayCall(gl::Context *context,
             break;
         case gl::EntryPoint::DrawRangeElementsBaseVertex:
             context->drawRangeElementsBaseVertex(
-                params.getParam("mode", ParamType::TGLenum, 0).value.GLenumVal,
+                params.getParam("modePacked", ParamType::TPrimitiveMode, 0).value.PrimitiveModeVal,
                 params.getParam("start", ParamType::TGLuint, 1).value.GLuintVal,
                 params.getParam("end", ParamType::TGLuint, 2).value.GLuintVal,
                 params.getParam("count", ParamType::TGLsizei, 3).value.GLsizeiVal,
-                params.getParam("type", ParamType::TGLenum, 4).value.GLenumVal,
+                params.getParam("typePacked", ParamType::TDrawElementsType, 4)
+                    .value.DrawElementsTypeVal,
                 replayContext->getAsConstPointer<const void *>(
                     params.getParam("indices", ParamType::TvoidConstPointer, 5)),
                 params.getParam("basevertex", ParamType::TGLint, 6).value.GLintVal);
@@ -1502,6 +1505,15 @@ void FrameCapture::ReplayCall(gl::Context *context,
                                  replayContext->getReadBufferPointer<GLint *>(
                                      params.getParam("params", ParamType::TGLintPointer, 2)));
             break;
+        case gl::EntryPoint::GetTexImage:
+            context->getTexImage(params.getParam("targetPacked", ParamType::TTextureTarget, 0)
+                                     .value.TextureTargetVal,
+                                 params.getParam("level", ParamType::TGLint, 1).value.GLintVal,
+                                 params.getParam("format", ParamType::TGLenum, 2).value.GLenumVal,
+                                 params.getParam("type", ParamType::TGLenum, 3).value.GLenumVal,
+                                 replayContext->getReadBufferPointer<void *>(
+                                     params.getParam("pixels", ParamType::TvoidPointer, 4)));
+            break;
         case gl::EntryPoint::GetTexLevelParameterfv:
             context->getTexLevelParameterfv(
                 params.getParam("targetPacked", ParamType::TTextureTarget, 0)
@@ -1911,6 +1923,19 @@ void FrameCapture::ReplayCall(gl::Context *context,
                 replayContext->getAsPointerConstPointer<const void *const *>(
                     params.getParam("indices", ParamType::TvoidConstPointerPointer, 3)),
                 params.getParam("drawcount", ParamType::TGLsizei, 4).value.GLsizeiVal);
+            break;
+        case gl::EntryPoint::MultiDrawElementsBaseVertex:
+            context->multiDrawElementsBaseVertex(
+                params.getParam("modePacked", ParamType::TPrimitiveMode, 0).value.PrimitiveModeVal,
+                replayContext->getAsConstPointer<const GLsizei *>(
+                    params.getParam("count", ParamType::TGLsizeiConstPointer, 1)),
+                params.getParam("typePacked", ParamType::TDrawElementsType, 2)
+                    .value.DrawElementsTypeVal,
+                replayContext->getAsPointerConstPointer<const void *const *>(
+                    params.getParam("indices", ParamType::TvoidConstPointerPointer, 3)),
+                params.getParam("drawcount", ParamType::TGLsizei, 4).value.GLsizeiVal,
+                replayContext->getAsConstPointer<const GLint *>(
+                    params.getParam("basevertex", ParamType::TGLintConstPointer, 5)));
             break;
         case gl::EntryPoint::MultiTexCoord4f:
             context->multiTexCoord4f(

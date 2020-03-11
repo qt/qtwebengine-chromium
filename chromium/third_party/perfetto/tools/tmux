@@ -24,7 +24,7 @@ fi
 function get_gn_value() {
   local out=$1
   local key=$2
-  gn args "$out" --list --short | sed -n -e "s/$key = \"\(.*\)\"/\1/p"
+  gn args "$out" --list=$key --short | awk '{print $3}' | tr -d '"'
 }
 
 function is_monolithic() {
@@ -194,7 +194,8 @@ else
   DIR=$(mktemp -p $TMPDIR -d perfetto.XXXXXX)
 fi
 
-tools/ninja -C "$OUT" traced traced_probes perfetto trace_to_text test/configs
+"$CUR_DIR/ninja" -C "$OUT" \
+  traced traced_probes perfetto trace_to_text test/configs
 
 push "$OUT/traced"
 push "$OUT/traced_probes"
@@ -296,6 +297,9 @@ fi
 if [[ -n "$SCRIPT" ]]; then
   tmux select-pane -t 3
   tmux send-keys "clear" C-m
+  if is_android "$OUT"; then
+    tmux send-keys "adb shell" C-m
+  fi
 fi
 
 sleep 2
@@ -339,7 +343,11 @@ if [[ -n "$SCRIPT" ]]; then
   tmux send-keys "PS1='[script]$ '" Enter
   tmux send-keys "cd $DIR" Enter
   tmux send-keys "clear" C-m
-  tmux send-keys "./$(basename "$SCRIPT")"
+  if [[ -f "$SCRIPT" ]]; then
+    tmux send-keys "./$(basename "$SCRIPT")"
+  else
+    tmux send-keys "$SCRIPT"
+  fi
 fi
 
 # Select consumer pane.

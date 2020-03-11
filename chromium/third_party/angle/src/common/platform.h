@@ -20,6 +20,9 @@
 #elif defined(ANDROID)
 #    define ANGLE_PLATFORM_ANDROID 1
 #    define ANGLE_PLATFORM_POSIX 1
+#elif defined(__ggp__)
+#    define ANGLE_PLATFORM_GGP 1
+#    define ANGLE_PLATFORM_POSIX 1
 #elif defined(__linux__) || defined(EMSCRIPTEN)
 #    define ANGLE_PLATFORM_LINUX 1
 #    define ANGLE_PLATFORM_POSIX 1
@@ -110,5 +113,14 @@
 #        define ANGLE_UNLIKELY(x) (x)
 #    endif  // defined(__GNUC__) || defined(__clang__)
 #endif      // !defined(ANGLE_LIKELY) || !defined(ANGLE_UNLIKELY)
+
+#ifdef ANGLE_PLATFORM_APPLE
+#    include <TargetConditionals.h>
+#    if TARGET_OS_OSX
+#        define ANGLE_PLATFORM_MACOS 1
+#    elif TARGET_OS_IOS
+#        define ANGLE_PLATFORM_IOS 1
+#    endif
+#endif
 
 #endif  // COMMON_PLATFORM_H_

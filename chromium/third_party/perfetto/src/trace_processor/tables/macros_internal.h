@@ -50,7 +50,7 @@ class MacroTable : public Table {
  public:
   MacroTable(const char* name, StringPool* pool, Table* parent)
       : Table(pool, parent), name_(name), parent_(parent) {
-    row_maps_.emplace_back(BitVector());
+    row_maps_.emplace_back();
     if (!parent) {
       columns_.emplace_back(
           Column::IdColumn(this, static_cast<uint32_t>(columns_.size()),
@@ -71,12 +71,12 @@ class MacroTable : public Table {
       // parent row maps to the corresponding row map in the child.
       for (uint32_t i = 0; i < parent_->row_maps().size(); ++i) {
         const RowMap& parent_rm = parent_->row_maps()[i];
-        row_maps_[i].Add(parent_rm.Get(parent_rm.size() - 1));
+        row_maps_[i].Insert(parent_rm.Get(parent_rm.size() - 1));
       }
     }
     // Also add the index of the new row to the identity row map and increment
     // the size.
-    row_maps_.back().Add(size_++);
+    row_maps_.back().Insert(size_++);
   }
 
   // Stores the most specific "derived" type of this row in the table.
@@ -158,6 +158,9 @@ class MacroTable : public Table {
 // Defines the variable in Table::Row.
 #define PERFETTO_TP_ROW_DEFINITION(type, name, ...) type name = {};
 
+// Used to generate an equality implementation on Table::Row.
+#define PERFETTO_TP_ROW_EQUALS(type, name, ...) other.name == name&&
+
 // Defines the parent row field in Insert.
 #define PERFETTO_TP_PARENT_ROW_INSERT(type, name, ...) row.name,
 
@@ -166,14 +169,16 @@ class MacroTable : public Table {
   SparseVector<TypedColumn<type>::StoredType> name##_;
 
 // Constructs the column in the Table constructor when flags are specified.
-#define PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN_FLAGS(type, name, flags)        \
-  columns_.emplace_back(#name, &name##_, static_cast<uint32_t>(flags), this, \
-                        columns_.size(), row_maps_.size() - 1);
+#define PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN_FLAGS(type, name, flags)          \
+  columns_.emplace_back(                                                       \
+      #name, &name##_,                                                         \
+      static_cast<uint32_t>(flags) | TypedColumn<type>::default_flags(), this, \
+      columns_.size(), row_maps_.size() - 1);
 
 // Constructs the column in the Table constructor when no flags are specified.
-#define PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN_NO_FLAGS(type, name) \
-  columns_.emplace_back(#name, &name##_, Column::kNoFlag, this,   \
-                        columns_.size(), row_maps_.size() - 1);
+#define PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN_NO_FLAGS(type, name)            \
+  columns_.emplace_back(#name, &name##_, TypedColumn<type>::default_flags(), \
+                        this, columns_.size(), row_maps_.size() - 1);
 
 // Chooses between the flag and no-flag variant based on the whether there
 // are two or three arguments.
@@ -233,6 +238,10 @@ class MacroTable : public Table {
         PERFETTO_TP_TABLE_COLUMNS(DEF, PERFETTO_TP_ROW_INITIALIZER)           \
       }                                                                       \
                                                                               \
+      bool operator==(const class_name::Row& other) const {                   \
+        return PERFETTO_TP_TABLE_COLUMNS(DEF, PERFETTO_TP_ROW_EQUALS) true;   \
+      }                                                                       \
+                                                                              \
       /* Expands to                                                           \
        * col_type1 col1 = {};                                                 \
        * base::Optional<col_type2> col2 = {};                                 \
@@ -273,8 +282,9 @@ class MacroTable : public Table {
       return id;                                                              \
     }                                                                         \
                                                                               \
-    const Column& id() const {                                                \
-      return columns_[static_cast<uint32_t>(ColumnIndex::id)];                \
+    const IdColumn& id() const {                                              \
+      return static_cast<const IdColumn&>(                                    \
+          columns_[static_cast<uint32_t>(ColumnIndex::id)]);                  \
     }                                                                         \
                                                                               \
     const TypedColumn<StringPool::Id>& type() const {                         \

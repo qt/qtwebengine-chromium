@@ -456,7 +456,8 @@ SerializedPacket::SerializedPacket(QuicPacketNumber packet_number,
       encryption_level(ENCRYPTION_INITIAL),
       has_ack(has_ack),
       has_stop_waiting(has_stop_waiting),
-      transmission_type(NOT_RETRANSMISSION) {}
+      transmission_type(NOT_RETRANSMISSION),
+      has_ack_frame_copy(false) {}
 
 SerializedPacket::SerializedPacket(const SerializedPacket& other) = default;
 
@@ -474,17 +475,46 @@ SerializedPacket::SerializedPacket(SerializedPacket&& other)
       has_ack(other.has_ack),
       has_stop_waiting(other.has_stop_waiting),
       transmission_type(other.transmission_type),
-      original_packet_number(other.original_packet_number),
-      largest_acked(other.largest_acked) {
+      largest_acked(other.largest_acked),
+      has_ack_frame_copy(other.has_ack_frame_copy) {
   retransmittable_frames.swap(other.retransmittable_frames);
+  nonretransmittable_frames.swap(other.nonretransmittable_frames);
 }
 
 SerializedPacket::~SerializedPacket() {}
+
+SerializedPacket* CopySerializedPacket(const SerializedPacket& serialized,
+                                       QuicBufferAllocator* allocator,
+                                       bool copy_buffer) {
+  SerializedPacket* copy = new SerializedPacket(serialized);
+  if (copy_buffer) {
+    copy->encrypted_buffer = CopyBuffer(serialized);
+  }
+  // Copy underlying frames.
+  copy->retransmittable_frames =
+      CopyQuicFrames(allocator, serialized.retransmittable_frames);
+  copy->nonretransmittable_frames.clear();
+  for (const auto& frame : serialized.nonretransmittable_frames) {
+    if (frame.type == ACK_FRAME) {
+      copy->has_ack_frame_copy = true;
+    }
+    copy->nonretransmittable_frames.push_back(CopyQuicFrame(allocator, frame));
+  }
+  return copy;
+}
 
 void ClearSerializedPacket(SerializedPacket* serialized_packet) {
   if (!serialized_packet->retransmittable_frames.empty()) {
     DeleteFrames(&serialized_packet->retransmittable_frames);
   }
+  for (auto& frame : serialized_packet->nonretransmittable_frames) {
+    if (!serialized_packet->has_ack_frame_copy && frame.type == ACK_FRAME) {
+      // Do not delete ack frame if the packet does not own a copy of it.
+      continue;
+    }
+    DeleteFrame(&frame);
+  }
+  serialized_packet->nonretransmittable_frames.clear();
   serialized_packet->encrypted_buffer = nullptr;
   serialized_packet->encrypted_length = 0;
   serialized_packet->largest_acked.Clear();
@@ -493,6 +523,13 @@ void ClearSerializedPacket(SerializedPacket* serialized_packet) {
 char* CopyBuffer(const SerializedPacket& packet) {
   char* dst_buffer = new char[packet.encrypted_length];
   memcpy(dst_buffer, packet.encrypted_buffer, packet.encrypted_length);
+  return dst_buffer;
+}
+
+char* CopyBuffer(const char* encrypted_buffer,
+                 QuicPacketLength encrypted_length) {
+  char* dst_buffer = new char[encrypted_length];
+  memcpy(dst_buffer, encrypted_buffer, encrypted_length);
   return dst_buffer;
 }
 

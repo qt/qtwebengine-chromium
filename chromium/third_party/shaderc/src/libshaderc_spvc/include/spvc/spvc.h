@@ -28,36 +28,91 @@ extern "C" {
 #include "shaderc/visibility.h"
 
 typedef enum {
+  SHADERC_SPVC_DECORATION_SPECID,
+  SHADERC_SPVC_DECORATION_BLOCK,
+  SHADERC_SPVC_DECORATION_ROWMAJOR,
+  SHADERC_SPVC_DECORATION_COLMAJOR,
+  SHADERC_SPVC_DECORATION_ARRAYSTRIDE,
+  SHADERC_SPVC_DECORATION_MATRIXSTRIDE,
+  SHADERC_SPVC_DECORATION_BUILTIN,
+  SHADERC_SPVC_DECORATION_NOPERSPECTIVE,
+  SHADERC_SPVC_DECORATION_FLAT,
+  SHADERC_SPVC_DECORATION_CENTROID,
+  SHADERC_SPVC_DECORATION_RESTRICT,
+  SHADERC_SPVC_DECORATION_ALIASED,
+  SHADERC_SPVC_DECORATION_NONWRITABLE,
+  SHADERC_SPVC_DECORATION_NONREADABLE,
+  SHADERC_SPVC_DECORATION_UNIFORM,
+  SHADERC_SPVC_DECORATION_LOCATION,
+  SHADERC_SPVC_DECORATION_COMPONENT,
+  SHADERC_SPVC_DECORATION_INDEX,
+  SHADERC_SPVC_DECORATION_BINDING,
+  SHADERC_SPVC_DECORATION_DESCRIPTORSET,
+  SHADERC_SPVC_DECORATION_OFFSET,
+  SHADERC_SPVC_DECORATION_NOCONTRACTION,
+} shaderc_spvc_decoration;
+
+typedef enum {
   shaderc_spvc_msl_platform_ios,
   shaderc_spvc_msl_platform_macos,
 } shaderc_spvc_msl_platform;
 
-// An opaque handle to an object that manages all compiler state.
-typedef struct shaderc_spvc_compiler* shaderc_spvc_compiler_t;
+// Return code for spvc API calls. shaderc_spvc_status_success indicates success
+// completion of the operation, all others indicate some sort of failure.
+typedef enum {
+  shaderc_spvc_status_success,
+  shaderc_spvc_status_compilation_error,
+  shaderc_spvc_status_internal_error,
+  shaderc_spvc_status_validation_error,
+  shaderc_spvc_status_transformation_error,
+  shaderc_spvc_status_configuration_error,
+} shaderc_spvc_status;
 
-// Create a compiler.  A return of NULL indicates that there was an error.
-// Any function operating on a *_compiler_t must offer the basic
+// An opaque handle to an object that manages all compiler state.
+typedef struct shaderc_spvc_context* shaderc_spvc_context_t;
+
+// Create a spvc state handle.  A return of NULL indicates that there was an
+// error. Any function operating on a *_context_t must offer the basic
 // thread-safety guarantee.
 // [http://herbsutter.com/2014/01/13/gotw-95-solution-thread-safety-and-synchronization/]
 // That is: concurrent invocation of these functions on DIFFERENT objects needs
 // no synchronization; concurrent invocation of these functions on the SAME
 // object requires synchronization IF AND ONLY IF some of them take a non-const
 // argument.
-SHADERC_EXPORT shaderc_spvc_compiler_t shaderc_spvc_compiler_initialize(void);
+SHADERC_EXPORT shaderc_spvc_context_t shaderc_spvc_context_create(void);
 
 // Release resources.  After this the handle cannot be used.
-SHADERC_EXPORT void shaderc_spvc_compiler_release(shaderc_spvc_compiler_t);
+SHADERC_EXPORT void shaderc_spvc_context_destroy(
+    shaderc_spvc_context_t context);
+
+// Get validation/compilation error or informational messages.
+SHADERC_EXPORT const char* shaderc_spvc_context_get_messages(
+    const shaderc_spvc_context_t context);
+
+// EXPERIMENTAL
+// Get spirv_cross compiler reference, does NOT transfer ownership.
+// Return type is actually spirv_cross::Compiler*, but cannot have that in the
+// C API.
+// This is being exposed temporarily to ease integration of spvc into Dawn, but
+// this is will be removed in the future without warning.
+SHADERC_EXPORT void* shaderc_spvc_context_get_compiler(
+    const shaderc_spvc_context_t context);
+
+// If true, use spvc built in parser to generate IR for spirv-cross, otherwise
+// use spirv-cross's implementation.
+SHADERC_EXPORT void shaderc_spvc_context_set_use_spvc_parser(
+    shaderc_spvc_context_t context, bool b);
 
 // An opaque handle to an object that manages options to a single compilation
 // result.
 typedef struct shaderc_spvc_compile_options* shaderc_spvc_compile_options_t;
 
-// Returns default compiler options.
+// Creates default compiler options.
 // A return of NULL indicates that there was an error initializing the options.
 // Any function operating on shaderc_spvc_compile_options_t must offer the
 // basic thread-safety guarantee.
 SHADERC_EXPORT shaderc_spvc_compile_options_t
-shaderc_spvc_compile_options_initialize(void);
+shaderc_spvc_compile_options_create(void);
 
 // Returns a copy of the given options.
 // If NULL is passed as the parameter the call is the same as
@@ -66,10 +121,10 @@ SHADERC_EXPORT shaderc_spvc_compile_options_t
 shaderc_spvc_compile_options_clone(
     const shaderc_spvc_compile_options_t options);
 
-// Releases the compilation options. It is invalid to use the given
+// Destroys the compilation options. It is invalid to use the given
 // option object in any future calls. It is safe to pass
 // NULL to this function, and doing such will have no effect.
-SHADERC_EXPORT void shaderc_spvc_compile_options_release(
+SHADERC_EXPORT void shaderc_spvc_compile_options_destroy(
     shaderc_spvc_compile_options_t options);
 
 // Sets the entry point.
@@ -88,6 +143,8 @@ SHADERC_EXPORT void shaderc_spvc_compile_options_set_remove_unused_variables(
 SHADERC_EXPORT void shaderc_spvc_compile_options_set_robust_buffer_access_pass(
     shaderc_spvc_compile_options_t options, bool b);
 
+SHADERC_EXPORT void shaderc_spvc_compile_options_set_emit_line_directives(
+    shaderc_spvc_compile_options_t options, bool b);
 // Sets the source shader environment, affecting which warnings or errors will
 // be issued during validation.
 // Default value for environment is Vulkan 1.0.
@@ -172,6 +229,16 @@ shaderc_spvc_compile_options_set_msl_discrete_descriptor_sets(
     shaderc_spvc_compile_options_t options, const uint32_t* descriptors,
     size_t num_descriptors);
 
+// Set whether or not PointSize builtin is used for MSL shaders
+SHADERC_EXPORT void
+shaderc_spvc_compile_options_set_msl_enable_point_size_builtin(
+    shaderc_spvc_compile_options_t options, bool b);
+
+// Set the index in the buffer size in the buffer for MSL
+SHADERC_EXPORT void
+shaderc_spvc_compile_options_set_msl_buffer_size_buffer_index(
+    shaderc_spvc_compile_options_t options, uint32_t index);
+
 // Set HLSL shader model.  Default is 30.
 SHADERC_EXPORT void shaderc_spvc_compile_options_set_hlsl_shader_model(
     shaderc_spvc_compile_options_t options, uint32_t model);
@@ -209,52 +276,61 @@ SHADERC_EXPORT size_t shaderc_spvc_compile_options_set_for_fuzzing(
     shaderc_spvc_compile_options_t options, const uint8_t* data, size_t size);
 
 // An opaque handle to the results of a call to any
-// shaderc_spvc_compile_into_*() function.
+// shaderc_spvc_*_compile_*() function.
 typedef struct shaderc_spvc_compilation_result*
     shaderc_spvc_compilation_result_t;
 
-// Takes SPIR-V as a sequence of 32-bit words, validates it, then compiles to
-// GLSL.
-SHADERC_EXPORT shaderc_spvc_compilation_result_t shaderc_spvc_compile_into_glsl(
-    const shaderc_spvc_compiler_t compiler, const uint32_t* source,
+// Takes SPIR-V as a sequence of 32-bit words, validates it, then creates the
+// internal compiler for translating to GLSL and performing reflection.
+SHADERC_EXPORT shaderc_spvc_status shaderc_spvc_initialize_for_glsl(
+    const shaderc_spvc_context_t context, const uint32_t* source,
     size_t source_len, shaderc_spvc_compile_options_t options);
 
-// Takes SPIR-V as a sequence of 32-bit words, validates it, then compiles to
-// HLSL.
-SHADERC_EXPORT shaderc_spvc_compilation_result_t shaderc_spvc_compile_into_hlsl(
-    const shaderc_spvc_compiler_t compiler, const uint32_t* source,
+// Takes SPIR-V as a sequence of 32-bit words, validates it, then creates the
+// internal compiler for translating to HLSL and performing reflection.
+SHADERC_EXPORT shaderc_spvc_status shaderc_spvc_initialize_for_hlsl(
+    const shaderc_spvc_context_t context, const uint32_t* source,
     size_t source_len, shaderc_spvc_compile_options_t options);
 
-// Takes SPIR-V as a sequence of 32-bit words, validates it, then compiles to
-// MSL.
-SHADERC_EXPORT shaderc_spvc_compilation_result_t shaderc_spvc_compile_into_msl(
-    const shaderc_spvc_compiler_t compiler, const uint32_t* source,
+// Takes SPIR-V as a sequence of 32-bit words, validates it, then creates the
+// internal compiler for translating to MSL and performing reflection.
+SHADERC_EXPORT shaderc_spvc_status shaderc_spvc_initialize_for_msl(
+    const shaderc_spvc_context_t context, const uint32_t* source,
     size_t source_len, shaderc_spvc_compile_options_t options);
 
-// Takes SPIR-V as a sequence of 32-bit words, validates it, then compiles to
-// Vullkan specific SPIR-V.
-SHADERC_EXPORT shaderc_spvc_compilation_result_t
-shaderc_spvc_compile_into_vulkan(const shaderc_spvc_compiler_t compiler,
-                                 const uint32_t* source, size_t source_len,
-                                 shaderc_spvc_compile_options_t options);
+// Takes SPIR-V as a sequence of 32-bit words, validates it, then creates the
+// internal compiler for translating to Vulkan and performing reflection.
+SHADERC_EXPORT shaderc_spvc_status shaderc_spvc_initialize_for_vulkan(
+    const shaderc_spvc_context_t context, const uint32_t* source,
+    size_t source_len, shaderc_spvc_compile_options_t options);
+
+// Given an initialized compiler, generates a shader of the appropriate
+// language.
+SHADERC_EXPORT shaderc_spvc_status
+shaderc_spvc_compile_shader(const shaderc_spvc_context_t context,
+                            shaderc_spvc_compilation_result_t result);
+
+// Set spirv_cross decoration (added for HLSL support in Dawn)
+// Given an id, decoration and argument, the decoration flag on the id is set
+// Assuming id is valid.
+SHADERC_EXPORT shaderc_spvc_status shaderc_spvc_set_decoration(
+    const shaderc_spvc_context_t context, uint32_t id,
+    shaderc_spvc_decoration decoration, uint32_t argument);
 
 // The following functions, operating on shaderc_spvc_compilation_result_t
 // objects, offer only the basic thread-safety guarantee.
 
-// Releases the resources held by the result object. It is invalid to use the
+// Creates an instant of compiliation result data structure.
+// A return of NULL indicates that there was an error creating the structure.
+// Any function operating on shaderc_spvc_compilation_result_t must offer the
+// basic thread-safety guarantee.
+SHADERC_EXPORT shaderc_spvc_compilation_result_t
+shaderc_spvc_result_create(void);
+
+// Destroys the resources held by the result object. It is invalid to use the
 // result object for any further operations.
-SHADERC_EXPORT void shaderc_spvc_result_release(
+SHADERC_EXPORT void shaderc_spvc_result_destroy(
     shaderc_spvc_compilation_result_t result);
-
-// Returns the compilation status, indicating whether the compilation succeeded,
-// or failed due to some reasons, like invalid shader stage or compilation
-// errors.
-SHADERC_EXPORT shaderc_compilation_status
-shaderc_spvc_result_get_status(const shaderc_spvc_compilation_result_t);
-
-// Get validation/compilation error or informational messages.
-SHADERC_EXPORT const char* shaderc_spvc_result_get_messages(
-    const shaderc_spvc_compilation_result_t result);
 
 // Get validation/compilation result as a string. This is only supported
 // compiling to GLSL, HSL, and MSL.

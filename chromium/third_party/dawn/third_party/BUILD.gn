@@ -16,114 +16,9 @@ import("//build_overrides/build.gni")
 import("../scripts/dawn_features.gni")
 import("../scripts/dawn_overrides_with_defaults.gni")
 
-is_msvc = is_win && !is_clang
-
 ###############################################################################
 # Third-party dependencies needed by libdawn_native
 ###############################################################################
-
-# SPIRV-Cross
-spirv_cross_dir = dawn_spirv_cross_dir
-
-config("spirv_cross_public") {
-  include_dirs = [
-    "${spirv_cross_dir}",
-    "${spirv_cross_dir}/..",
-  ]
-  defines = [ "SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS" ]
-}
-
-config("spirv_cross_internal") {
-  if (!is_msvc) {
-    cflags_cc = [
-      "-Wno-implicit-fallthrough",
-      "-Wno-return-type",
-      "-Wno-sign-compare",
-    ]
-  } else {
-    # Disable "not all control paths return a value" warning.
-    cflags_cc = [ "/wd4715" ]
-  }
-}
-
-static_library("spirv_cross") {
-  public_configs = [ ":spirv_cross_public" ]
-  configs += [ ":spirv_cross_internal" ]
-
-  sources = [
-    "${spirv_cross_dir}/GLSL.std.450.h",
-    "${spirv_cross_dir}/spirv.hpp",
-    "${spirv_cross_dir}/spirv_cfg.cpp",
-    "${spirv_cross_dir}/spirv_cfg.hpp",
-    "${spirv_cross_dir}/spirv_common.hpp",
-    "${spirv_cross_dir}/spirv_cross.cpp",
-    "${spirv_cross_dir}/spirv_cross.hpp",
-    "${spirv_cross_dir}/spirv_cross_parsed_ir.cpp",
-    "${spirv_cross_dir}/spirv_cross_parsed_ir.hpp",
-    "${spirv_cross_dir}/spirv_parser.cpp",
-    "${spirv_cross_dir}/spirv_parser.hpp",
-  ]
-
-  need_glsl_cross = dawn_enable_opengl || dawn_enable_cross_reflection
-  need_reflection_cross = dawn_enable_cross_reflection
-
-  if (dawn_enable_d3d12) {
-    sources += [
-      "${spirv_cross_dir}/spirv_hlsl.cpp",
-      "${spirv_cross_dir}/spirv_hlsl.hpp",
-    ]
-    need_glsl_cross = true
-  }
-
-  if (dawn_enable_metal) {
-    sources += [
-      "${spirv_cross_dir}/spirv_msl.cpp",
-      "${spirv_cross_dir}/spirv_msl.hpp",
-    ]
-    need_glsl_cross = true
-  }
-
-  if (need_glsl_cross) {
-    sources += [
-      "${spirv_cross_dir}/spirv_glsl.cpp",
-      "${spirv_cross_dir}/spirv_glsl.hpp",
-    ]
-  }
-
-  if (need_reflection_cross) {
-    sources += [
-      "${spirv_cross_dir}/spirv_reflect.cpp",
-      "${spirv_cross_dir}/spirv_reflect.hpp",
-    ]
-  }
-}
-
-static_library("spirv_cross_full_for_fuzzers") {
-  public_configs = [ ":spirv_cross_public" ]
-  configs += [ ":spirv_cross_internal" ]
-
-  sources = [
-    "${spirv_cross_dir}/GLSL.std.450.h",
-    "${spirv_cross_dir}/spirv.hpp",
-    "${spirv_cross_dir}/spirv_cfg.cpp",
-    "${spirv_cross_dir}/spirv_cfg.hpp",
-    "${spirv_cross_dir}/spirv_common.hpp",
-    "${spirv_cross_dir}/spirv_cross.cpp",
-    "${spirv_cross_dir}/spirv_cross.hpp",
-    "${spirv_cross_dir}/spirv_cross_parsed_ir.cpp",
-    "${spirv_cross_dir}/spirv_cross_parsed_ir.hpp",
-    "${spirv_cross_dir}/spirv_glsl.cpp",
-    "${spirv_cross_dir}/spirv_glsl.hpp",
-    "${spirv_cross_dir}/spirv_hlsl.cpp",
-    "${spirv_cross_dir}/spirv_hlsl.hpp",
-    "${spirv_cross_dir}/spirv_msl.cpp",
-    "${spirv_cross_dir}/spirv_msl.hpp",
-    "${spirv_cross_dir}/spirv_parser.cpp",
-    "${spirv_cross_dir}/spirv_parser.hpp",
-    "${spirv_cross_dir}/spirv_reflect.cpp",
-    "${spirv_cross_dir}/spirv_reflect.hpp",
-  ]
-}
 
 # Empty targets to add the include dirs and list the sources of Khronos headers for header inclusion check.
 config("khronos_headers_public") {
@@ -269,7 +164,7 @@ if (is_win || (is_linux && !is_chromeos) || is_mac) {
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [ "//build/config/compiler:no_chromium_code" ]
 
-    if (is_msvc) {
+    if (is_win && !is_clang) {
       # nonstandard extension, function/data pointer conversion in expression
       cflags_c = [ "/wd4152" ]
     } else {
@@ -365,6 +260,7 @@ if (is_win || (is_linux && !is_chromeos) || is_mac) {
       cflags_objc = [
         "-Wno-sign-compare",
         "-Wno-unguarded-availability",
+        "-Wno-objc-multiple-method-names",
       ]
     }
   }

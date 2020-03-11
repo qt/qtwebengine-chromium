@@ -22,7 +22,6 @@
 #include "dawn_native/Device.h"
 #include "dawn_native/vulkan/CommandRecordingContext.h"
 #include "dawn_native/vulkan/Forward.h"
-#include "dawn_native/vulkan/MemoryResourceAllocatorVk.h"
 #include "dawn_native/vulkan/VulkanFunctions.h"
 #include "dawn_native/vulkan/VulkanInfo.h"
 
@@ -36,11 +35,12 @@ namespace dawn_native { namespace vulkan {
 
     class Adapter;
     class BufferUploader;
+    class DescriptorSetService;
     struct ExternalImageDescriptor;
     class FencedDeleter;
     class MapRequestTracker;
-    class MemoryAllocator;
     class RenderPassCache;
+    class ResourceMemoryAllocator;
 
     class Device : public DeviceBase {
       public:
@@ -59,9 +59,9 @@ namespace dawn_native { namespace vulkan {
         VkQueue GetQueue() const;
 
         BufferUploader* GetBufferUploader() const;
+        DescriptorSetService* GetDescriptorSetService() const;
         FencedDeleter* GetFencedDeleter() const;
         MapRequestTracker* GetMapRequestTracker() const;
-        MemoryAllocator* GetMemoryAllocator() const;
         RenderPassCache* GetRenderPassCache() const;
 
         CommandRecordingContext* GetPendingRecordingContext();
@@ -77,7 +77,7 @@ namespace dawn_native { namespace vulkan {
                                                   ExternalSemaphoreHandle* outHandle);
 
         // Dawn API
-        CommandBufferBase* CreateCommandBuffer(CommandEncoderBase* encoder,
+        CommandBufferBase* CreateCommandBuffer(CommandEncoder* encoder,
                                                const CommandBufferDescriptor* descriptor) override;
 
         Serial GetCompletedCommandSerial() const final override;
@@ -93,8 +93,11 @@ namespace dawn_native { namespace vulkan {
 
         ResultOrError<ResourceMemoryAllocation> AllocateMemory(VkMemoryRequirements requirements,
                                                                bool mappable);
+        void DeallocateMemory(ResourceMemoryAllocation* allocation);
 
-        void DeallocateMemory(ResourceMemoryAllocation& allocation);
+        int FindBestMemoryTypeIndex(VkMemoryRequirements requirements, bool mappable);
+
+        ResourceMemoryAllocator* GetResourceMemoryAllocatorForTesting() const;
 
       private:
         ResultOrError<BindGroupBase*> CreateBindGroupImpl(
@@ -133,11 +136,10 @@ namespace dawn_native { namespace vulkan {
         uint32_t mQueueFamily = 0;
         VkQueue mQueue = VK_NULL_HANDLE;
 
-        std::unique_ptr<MemoryResourceAllocator> mResourceAllocator;
-
+        std::unique_ptr<DescriptorSetService> mDescriptorSetService;
         std::unique_ptr<FencedDeleter> mDeleter;
         std::unique_ptr<MapRequestTracker> mMapRequestTracker;
-        std::unique_ptr<MemoryAllocator> mMemoryAllocator;
+        std::unique_ptr<ResourceMemoryAllocator> mResourceMemoryAllocator;
         std::unique_ptr<RenderPassCache> mRenderPassCache;
 
         std::unique_ptr<external_memory::Service> mExternalMemoryService;
@@ -171,6 +173,7 @@ namespace dawn_native { namespace vulkan {
 
         MaybeError ImportExternalImage(const ExternalImageDescriptor* descriptor,
                                        ExternalMemoryHandle memoryHandle,
+                                       VkImage image,
                                        const std::vector<ExternalSemaphoreHandle>& waitHandles,
                                        VkSemaphore* outSignalSemaphore,
                                        VkDeviceMemory* outAllocation,

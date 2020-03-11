@@ -57,6 +57,13 @@ action("gen_buildflags") {
   } else {
     perfetto_local_symbolizer = "0"
   }
+  if (enable_perfetto_trace_processor_httpd) {
+    perfetto_tp_httpd = "PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_ANDROID() || " +
+                        "PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_LINUX() || " +
+                        "PERFETTO_BUILDFLAG_DEFINE_PERFETTO_OS_MACOSX()"
+  } else {
+    perfetto_tp_httpd = "0"
+  }
 
   response_file_contents = [
     "--flags",  # Keep this marker first.
@@ -70,9 +77,20 @@ action("gen_buildflags") {
     "PERFETTO_FORCE_DLOG_ON=$perfetto_force_dlog_on",
     "PERFETTO_FORCE_DLOG_OFF=$perfetto_force_dlog_off",
     "PERFETTO_VERSION_GEN=$enable_perfetto_version_gen",
-    "PERFETTO_TP_LINENOISE=$enable_perfetto_trace_processor_linenoise",
-    "PERFETTO_TP_JSON=$enable_perfetto_trace_processor_json",
+    "PERFETTO_TP_SQLITE=$enable_perfetto_trace_processor_sqlite",
     "PERFETTO_TP_PERCENTILE=$enable_perfetto_trace_processor_percentile",
+    "PERFETTO_TP_LINENOISE=$enable_perfetto_trace_processor_linenoise",
+    "PERFETTO_TP_METRICS=$enable_perfetto_trace_processor_metrics",
+    "PERFETTO_TP_FTRACE=$enable_perfetto_trace_processor_ftrace",
+    "PERFETTO_TP_HTTPD=$perfetto_tp_httpd",
+    "PERFETTO_TP_SYSTEM_PROBES=$enable_perfetto_trace_processor_system_probes",
+    "PERFETTO_TP_ANDROID_PROBES=$enable_perfetto_trace_processor_android_probes",
+    "PERFETTO_TP_HEAP_GRAPHS=$enable_perfetto_trace_processor_heap_graphs",
+    "PERFETTO_TP_GRAPHICS=$enable_perfetto_trace_processor_graphics",
+    "PERFETTO_TP_JSON=$enable_perfetto_trace_processor_json",
+    "PERFETTO_TP_JSON_IMPORT=$enable_perfetto_trace_processor_json_import",
+    "PERFETTO_TP_FUCHSIA=$enable_perfetto_trace_processor_fuchsia",
+    "PERFETTO_TP_SYSCALLS=$enable_perfetto_trace_processor_syscalls",
     "PERFETTO_LOCAL_SYMBOLIZER=$perfetto_local_symbolizer",
   ]
 

@@ -13,17 +13,24 @@
 // limitations under the License.
 
 import {Actions} from '../common/actions';
+import {HttpRpcState} from '../common/http_rpc_engine';
 import {
   FrontendLocalState as FrontendState,
   OmniboxState,
-  SelectedTimeRange,
   Timestamped,
+  TimestampedAreaSelection,
   VisibleState,
 } from '../common/state';
 import {TimeSpan} from '../common/time';
 
+import {Tab} from './details_panel';
 import {globals} from './globals';
 import {TimeScale} from './time_scale';
+
+interface Range {
+  start?: number;
+  end?: number;
+}
 
 function chooseLatest<T extends Timestamped<{}>>(current: T, next: T): T {
   if (next !== current && next.lastUpdate > current.lastUpdate) {
@@ -92,11 +99,15 @@ export class FrontendLocalState {
   showNotePreview = false;
   localOnlyMode = false;
   sidebarVisible = true;
+  // This is used to calculate the tracks within a Y range for area selection.
+  areaY: Range = {};
   visibleTracks = new Set<string>();
   prevVisibleTracks = new Set<string>();
   searchIndex = -1;
-  scrollToTrackId: undefined|string|number = undefined;
-  private scrollBarWidth: undefined|number = undefined;
+  currentTab?: Tab;
+  scrollToTrackId?: string|number;
+  httpRpcState: HttpRpcState = {connected: false};
+  private scrollBarWidth?: number;
 
   private _omniboxState: OmniboxState = {
     lastUpdate: 0,
@@ -111,7 +122,7 @@ export class FrontendLocalState {
     resolution: 1,
   };
 
-  private _selectedTimeRange: SelectedTimeRange = {
+  private _selectedArea: TimestampedAreaSelection = {
     lastUpdate: 0,
   };
 
@@ -174,6 +185,11 @@ export class FrontendLocalState {
     globals.rafScheduler.scheduleFullRedraw();
   }
 
+  setHttpRpcState(httpRpcState: HttpRpcState) {
+    this.httpRpcState = httpRpcState;
+    globals.rafScheduler.scheduleFullRedraw();
+  }
+
   // Called when beginning a canvas redraw.
   clearVisibleTracks() {
     this.prevVisibleTracks = new Set(this.visibleTracks);
@@ -193,36 +209,39 @@ export class FrontendLocalState {
   mergeState(state: FrontendState): void {
     this._omniboxState = chooseLatest(this._omniboxState, state.omniboxState);
     this._visibleState = chooseLatest(this._visibleState, state.visibleState);
-    this._selectedTimeRange =
-        chooseLatest(this._selectedTimeRange, state.selectedTimeRange);
+    this._selectedArea = chooseLatest(this._selectedArea, state.selectedArea);
     if (this._visibleState === state.visibleState) {
       this.updateLocalTime(
           new TimeSpan(this._visibleState.startSec, this._visibleState.endSec));
     }
   }
 
-  private selectTimeRangeDebounced = debounce(() => {
-    globals.dispatch(Actions.selectTimeRange(this._selectedTimeRange));
+  private selectAreaDebounced = debounce(() => {
+    globals.dispatch(Actions.selectArea(this._selectedArea));
   }, 20);
 
-  selectTimeRange(startSec: number, endSec: number) {
-    this._selectedTimeRange = {startSec, endSec, lastUpdate: Date.now() / 1000};
-    this.selectTimeRangeDebounced();
-    globals.rafScheduler.scheduleRedraw();
-  }
 
-  removeTimeRange() {
-    this._selectedTimeRange = {
-      startSec: undefined,
-      endSec: undefined,
+  selectArea(
+      startSec: number, endSec: number,
+      tracks = this._selectedArea.area ? this._selectedArea.area.tracks : []) {
+    this._selectedArea = {
+      area: {startSec, endSec, tracks},
       lastUpdate: Date.now() / 1000
     };
-    this.selectTimeRangeDebounced();
-    globals.rafScheduler.scheduleRedraw();
+    this.selectAreaDebounced();
+    globals.frontendLocalState.currentTab = 'time_range';
+    globals.rafScheduler.scheduleFullRedraw();
   }
 
-  get selectedTimeRange(): SelectedTimeRange {
-    return this._selectedTimeRange;
+  deselectArea() {
+    this._selectedArea = {lastUpdate: Date.now() / 1000};
+    this.selectAreaDebounced();
+    globals.frontendLocalState.currentTab = undefined;
+    globals.rafScheduler.scheduleFullRedraw();
+  }
+
+  get selectedArea(): TimestampedAreaSelection {
+    return this._selectedArea;
   }
 
   private setOmniboxDebounced = debounce(() => {
@@ -256,6 +275,12 @@ export class FrontendLocalState {
     this._visibleState.lastUpdate = Date.now() / 1000;
     this._visibleState.startSec = this.visibleWindowTime.start;
     this._visibleState.endSec = this.visibleWindowTime.end;
+    this._visibleState.resolution = globals.getCurResolution();
+    this.ratelimitedUpdateVisible();
+  }
+
+  updateResolution(pxStart: number, pxEnd: number) {
+    this.timeScale.setLimitsPx(pxStart, pxEnd);
     this._visibleState.resolution = globals.getCurResolution();
     this.ratelimitedUpdateVisible();
   }

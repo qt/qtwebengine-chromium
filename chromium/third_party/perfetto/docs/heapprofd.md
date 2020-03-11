@@ -16,8 +16,9 @@ profileable manifest flag.
 
 <!-- This uses github because gitiles does not allow to get the raw file. -->
 
-Use the `tools/heap_profile` script to heap profile a process. If you are
-having trouble make sure you are using the [latest version](
+On Linux / MacOS, use the `tools/heap_profile` script to heap profile a
+process. If you are having trouble make sure you are using the
+[latest version](
 https://raw.githubusercontent.com/catapult-project/perfetto/master/tools/heap_profile).
 
 See all the arguments using `tools/heap_profile -h`, or use the defaults
@@ -31,6 +32,12 @@ These can be viewed using pprof. Googlers: head to pprof/ and upload them.
 ```
 
 This will create a pprof-compatible heap dump when Ctrl+C is pressed.
+
+You can also use the [Perfetto UI](https://ui.perfetto.dev/#!/record?p=memory)
+to record heapprofd profiles. Tick "Heap profiling" in the trace configuration,
+enter the processes you want to target, click "Add Device" to pair your phone,
+and record profiles straight from your browser. This is also possible on
+Windows.
 
 ## Viewing the data
 
@@ -52,9 +59,13 @@ The resulting profile proto contains four views on the data
 visualization. *Tip: you might want to put `libart.so` as a "Hide regex" when
 profiling apps.*
 
-[Speedscope](https://speedscope.app) can also be used to visualize the heap
-dump, but will only show the space view. *Tip: Click Left Heavy on the top
-left for a good visualisation.*
+You can use the [Perfetto UI](https://ui.perfetto.dev) to visualize heap dumps.
+Upload the `raw-trace` file in your output directory. You will see all heap
+dumps as diamonds on the timeline, click any of them to get a flamegraph.
+
+Alternatively [Speedscope](https://speedscope.app) can be used to visualize
+the gzipped protos, but will only show the space view.
+*Tip: Click Left Heavy on the top left for a good visualisation.*
 
 ## Sampling interval
 heapprofd samples heap allocations. Given a sampling interval of n bytes,

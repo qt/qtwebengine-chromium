@@ -39,11 +39,6 @@ void TlsServerHandshaker::SignatureCallback::Cancel() {
   handshaker_ = nullptr;
 }
 
-// static
-bssl::UniquePtr<SSL_CTX> TlsServerHandshaker::CreateSslCtx() {
-  return TlsServerConnection::CreateSslCtx();
-}
-
 TlsServerHandshaker::TlsServerHandshaker(QuicCryptoStream* stream,
                                          QuicSession* session,
                                          SSL_CTX* ssl_ctx,
@@ -113,6 +108,15 @@ bool TlsServerHandshaker::ZeroRttAttempted() const {
 
 void TlsServerHandshaker::SetPreviousCachedNetworkParams(
     CachedNetworkParameters /*cached_network_params*/) {}
+
+void TlsServerHandshaker::OnPacketDecrypted(EncryptionLevel level) {
+  if (level == ENCRYPTION_HANDSHAKE &&
+      state_ < STATE_ENCRYPTION_HANDSHAKE_DATA_PROCESSED) {
+    state_ = STATE_ENCRYPTION_HANDSHAKE_DATA_PROCESSED;
+    delegate()->DiscardOldEncryptionKey(ENCRYPTION_INITIAL);
+    delegate()->DiscardOldDecryptionKey(ENCRYPTION_INITIAL);
+  }
+}
 
 bool TlsServerHandshaker::ShouldSendExpectCTHeader() const {
   return false;
@@ -257,11 +261,9 @@ void TlsServerHandshaker::FinishHandshake() {
   QUIC_LOG(INFO) << "Server: handshake finished";
   state_ = STATE_HANDSHAKE_COMPLETE;
 
-  session()->connection()->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
-  session()->NeuterUnencryptedData();
   encryption_established_ = true;
   handshake_confirmed_ = true;
-  session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
+  delegate()->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
 
   // Fill crypto_negotiated_params_:
   const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
@@ -269,8 +271,9 @@ void TlsServerHandshaker::FinishHandshake() {
     crypto_negotiated_params_->cipher_suite = SSL_CIPHER_get_value(cipher);
   }
   crypto_negotiated_params_->key_exchange_group = SSL_get_curve_id(ssl());
-
-  session()->connection()->OnHandshakeComplete();
+  // TODO(fayang): Replace this with DiscardOldKeys(ENCRYPTION_HANDSHAKE) when
+  // handshake key discarding settles down.
+  delegate()->NeuterHandshakeData();
 }
 
 ssl_private_key_result_t TlsServerHandshaker::PrivateKeySign(

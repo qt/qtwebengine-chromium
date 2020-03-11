@@ -25,7 +25,7 @@ config("rtc_pc_config") {
   }
 }
 
-rtc_static_library("rtc_pc_base") {
+rtc_library("rtc_pc_base") {
   visibility = [ "*" ]
   defines = []
   sources = [
@@ -87,6 +87,8 @@ rtc_static_library("rtc_pc_base") {
     "../api:array_view",
     "../api:audio_options_api",
     "../api:call_api",
+    "../api:function_view",
+    "../api:ice_transport_factory",
     "../api:libjingle_peerconnection_api",
     "../api:rtc_error",
     "../api:rtp_headers",
@@ -147,14 +149,14 @@ rtc_source_set("rtc_pc") {
   ]
 }
 
-rtc_source_set("media_protocol_names") {
+rtc_library("media_protocol_names") {
   sources = [
     "media_protocol_names.cc",
     "media_protocol_names.h",
   ]
 }
 
-rtc_static_library("peerconnection") {
+rtc_library("peerconnection") {
   visibility = [ "*" ]
   cflags = []
   sources = [
@@ -164,6 +166,8 @@ rtc_static_library("peerconnection") {
     "audio_track.h",
     "data_channel.cc",
     "data_channel.h",
+    "data_channel_controller.cc",
+    "data_channel_controller.h",
     "dtmf_sender.cc",
     "dtmf_sender.h",
     "ice_server_parsing.cc",
@@ -211,6 +215,8 @@ rtc_static_library("peerconnection") {
     "track_media_info_map.h",
     "video_rtp_receiver.cc",
     "video_rtp_receiver.h",
+    "video_rtp_track_source.cc",
+    "video_rtp_track_source.h",
     "video_track.cc",
     "video_track.h",
     "video_track_source.cc",
@@ -227,6 +233,7 @@ rtc_static_library("peerconnection") {
     "../api:audio_options_api",
     "../api:call_api",
     "../api:fec_controller_api",
+    "../api:ice_transport_factory",
     "../api:libjingle_peerconnection_api",
     "../api:media_stream_interface",
     "../api:network_state_predictor_api",
@@ -239,6 +246,7 @@ rtc_static_library("peerconnection") {
     "../api/rtc_event_log",
     "../api/task_queue",
     "../api/transport:datagram_transport_interface",
+    "../api/transport:field_trial_based_config",
     "../api/transport/media:media_transport_interface",
     "../api/units:data_rate",
     "../api/video:builtin_video_bitrate_allocator_factory",
@@ -255,7 +263,9 @@ rtc_static_library("peerconnection") {
     "../rtc_base",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+    "../rtc_base:rtc_operations_chain",
     "../rtc_base:safe_minmax",
+    "../rtc_base:weak_ptr",
     "../rtc_base/experiments:field_trial_parser",
     "../rtc_base/system:fallthrough",
     "../rtc_base/system:file_wrapper",
@@ -304,6 +314,7 @@ if (rtc_include_tests) {
       "test/rtp_transport_test_util.h",
       "test/srtp_test_util.h",
       "used_ids_unittest.cc",
+      "video_rtp_receiver_unittest.cc",
     ]
 
     include_dirs = [ "//third_party/libsrtp/srtp" ]
@@ -315,6 +326,7 @@ if (rtc_include_tests) {
     deps = [
       ":libjingle_peerconnection",
       ":pc_test_utils",
+      ":peerconnection",
       ":rtc_pc",
       ":rtc_pc_base",
       "../api:array_view",
@@ -328,6 +340,7 @@ if (rtc_include_tests) {
       "../api:rtp_parameters",
       "../api/transport/media:media_transport_interface",
       "../api/video:builtin_video_bitrate_allocator_factory",
+      "../api/video/test:mock_recordable_encoded_frame",
       "../call:rtp_interfaces",
       "../call:rtp_receiver",
       "../media:rtc_data",
@@ -360,7 +373,7 @@ if (rtc_include_tests) {
     }
   }
 
-  rtc_source_set("peerconnection_perf_tests") {
+  rtc_library("peerconnection_perf_tests") {
     testonly = true
     sources = [
       "peer_connection_rampup_tests.cc",
@@ -398,7 +411,7 @@ if (rtc_include_tests) {
     ]
   }
 
-  rtc_source_set("peerconnection_wrapper") {
+  rtc_library("peerconnection_wrapper") {
     testonly = true
     sources = [
       "peer_connection_wrapper.cc",
@@ -421,7 +434,7 @@ if (rtc_include_tests) {
     ]
   }
 
-  rtc_source_set("pc_test_utils") {
+  rtc_library("pc_test_utils") {
     testonly = true
     sources = [
       "test/fake_audio_capture_module.cc",
@@ -534,6 +547,7 @@ if (rtc_include_tests) {
       "test/fake_audio_capture_module_unittest.cc",
       "test/test_sdp_strings.h",
       "track_media_info_map_unittest.cc",
+      "video_rtp_track_source_unittest.cc",
       "video_track_unittest.cc",
       "webrtc_sdp_unittest.cc",
     ]
@@ -575,6 +589,7 @@ if (rtc_include_tests) {
       "../modules/audio_device:audio_device_api",
       "../modules/audio_processing:audio_processing_statistics",
       "../modules/rtp_rtcp:rtp_rtcp_format",
+      "../p2p:fake_ice_transport",
       "../p2p:fake_port_allocator",
       "../rtc_base:checks",
       "../rtc_base:gunit_helpers",
@@ -597,13 +612,14 @@ if (rtc_include_tests) {
       ":libjingle_peerconnection",
       ":pc_test_utils",
       "../api:callfactory_api",
-      "../api:fake_media_transport",
       "../api:rtc_event_log_output_file",
       "../api:rtc_stats_api",
       "../api:rtp_parameters",
       "../api/audio_codecs:audio_codecs_api",
       "../api/audio_codecs:builtin_audio_decoder_factory",
       "../api/audio_codecs:builtin_audio_encoder_factory",
+      "../api/audio_codecs:opus_audio_decoder_factory",
+      "../api/audio_codecs:opus_audio_encoder_factory",
       "../api/audio_codecs/L16:audio_decoder_L16",
       "../api/audio_codecs/L16:audio_encoder_L16",
       "../api/video_codecs:builtin_video_decoder_factory",
@@ -644,7 +660,7 @@ if (rtc_include_tests) {
   }
 
   if (is_android) {
-    rtc_source_set("android_black_magic") {
+    rtc_library("android_black_magic") {
       # The android code uses hacky includes to chromium-base and the ssl code;
       # having this in a separate target enables us to keep the peerconnection
       # unit tests clean.

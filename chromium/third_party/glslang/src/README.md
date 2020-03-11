@@ -28,6 +28,15 @@ comment in `glslang/MachineIndependent/Versions.cpp`.
 
 Tasks waiting to be done are documented as GitHub issues.
 
+Deprecations
+------------
+
+1. GLSLang, when installed through CMake, will install a `SPIRV` folder into
+`${CMAKE_INSTALL_INCLUDEDIR}`. This `SPIRV` folder is being moved to
+`glslang/SPIRV`. During the transition the `SPIRV` folder will be installed into
+both locations. The old install of `SPIRV/` will be removed as a CMake install
+target no sooner then May 1, 2020. See issue #1964.
+
 Execution of Standalone Wrapper
 -------------------------------
 
@@ -94,8 +103,8 @@ cd ../..
 ```
 
 If you wish to assure that SPIR-V generated from HLSL is legal for Vulkan,
-or wish to invoke -Os to reduce SPIR-V size from HLSL or GLSL, install
-spirv-tools with this:
+wish to invoke -Os to reduce SPIR-V size from HLSL or GLSL, or wish to run the
+integrated test suite, install spirv-tools with this:
 
 ```bash
 ./update_glslang_sources.py
@@ -226,6 +235,11 @@ Running `runtests` script-backed tests:
 ```bash
 cd $SOURCE_DIR/Test && ./runtests
 ```
+
+If some tests fail with validation errors, there may be a mismatch between the
+version of `spirv-val` on the system and the version of glslang.  In this
+case, it is necessary to run `update_glslang_sources.py`.  See "Check-Out
+External Projects" above for more details.
 
 ### Contributing tests
 

@@ -22,12 +22,12 @@
 #include "net/third_party/quiche/src/quic/core/quic_packet_creator.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_endian.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 #include "net/third_party/quiche/src/quic/test_tools/crypto_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_config_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_connection_peer.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_endian.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_frame_builder.h"
 
 using testing::_;
@@ -44,14 +44,14 @@ QuicConnectionId TestConnectionId() {
 
 QuicConnectionId TestConnectionId(uint64_t connection_number) {
   const uint64_t connection_id64_net =
-      QuicEndian::HostToNet64(connection_number);
+      quiche::QuicheEndian::HostToNet64(connection_number);
   return QuicConnectionId(reinterpret_cast<const char*>(&connection_id64_net),
                           sizeof(connection_id64_net));
 }
 
 QuicConnectionId TestConnectionIdNineBytesLong(uint64_t connection_number) {
   const uint64_t connection_number_net =
-      QuicEndian::HostToNet64(connection_number);
+      quiche::QuicheEndian::HostToNet64(connection_number);
   char connection_id_bytes[9] = {};
   static_assert(
       sizeof(connection_id_bytes) == 1 + sizeof(connection_number_net),
@@ -67,7 +67,7 @@ uint64_t TestConnectionIdToUInt64(QuicConnectionId connection_id) {
   memcpy(&connection_id64_net, connection_id.data(),
          std::min<size_t>(static_cast<size_t>(connection_id.length()),
                           sizeof(connection_id64_net)));
-  return QuicEndian::NetToHost64(connection_id64_net);
+  return quiche::QuicheEndian::NetToHost64(connection_id64_net);
 }
 
 QuicAckFrame InitAckFrame(const std::vector<QuicAckBlock>& ack_blocks) {
@@ -531,7 +531,7 @@ void PacketSavingConnection::SendOrQueuePacket(SerializedPacket* packet) {
   // Transfer ownership of the packet to the SentPacketManager and the
   // ack notifier to the AckNotifierManager.
   QuicConnectionPeer::GetSentPacketManager(this)->OnPacketSent(
-      packet, QuicPacketNumber(), clock_.ApproximateNow(), NOT_RETRANSMISSION,
+      packet, clock_.ApproximateNow(), NOT_RETRANSMISSION,
       HAS_RETRANSMITTABLE_DATA);
 }
 
@@ -576,7 +576,7 @@ QuicConsumedData MockQuicSession::ConsumeData(QuicStream* stream,
                                               StreamSendingState state) {
   if (write_length > 0) {
     auto buf = std::make_unique<char[]>(write_length);
-    QuicDataWriter writer(write_length, buf.get(), HOST_BYTE_ORDER);
+    QuicDataWriter writer(write_length, buf.get(), quiche::HOST_BYTE_ORDER);
     stream->WriteStreamData(offset, write_length, &writer);
   } else {
     DCHECK(state != NO_FIN);
@@ -652,7 +652,6 @@ TestQuicSpdyServerSession::TestQuicSpdyServerSession(
                             &helper_,
                             crypto_config,
                             compressed_certs_cache) {
-  Initialize();
   ON_CALL(helper_, CanAcceptClientHello(_, _, _, _, _))
       .WillByDefault(testing::Return(true));
 }
@@ -992,7 +991,7 @@ QuicEncryptedPacket* ConstructMisFramedEncryptedPacket(
     QuicConnectionIdIncluded destination_connection_id_included,
     QuicConnectionIdIncluded source_connection_id_included,
     QuicPacketNumberLength packet_number_length,
-    ParsedQuicVersionVector* versions,
+    ParsedQuicVersion version,
     Perspective perspective) {
   QuicPacketHeader header;
   header.destination_connection_id = destination_connection_id;
@@ -1004,7 +1003,7 @@ QuicEncryptedPacket* ConstructMisFramedEncryptedPacket(
   header.reset_flag = reset_flag;
   header.packet_number_length = packet_number_length;
   header.packet_number = QuicPacketNumber(packet_number);
-  if (QuicVersionHasLongHeaderLengths((*versions)[0].transport_version) &&
+  if (QuicVersionHasLongHeaderLengths(version.transport_version) &&
       version_flag) {
     header.retry_token_length_length = VARIABLE_LENGTH_INTEGER_LENGTH_1;
     header.length_length = VARIABLE_LENGTH_INTEGER_LENGTH_2;
@@ -1012,10 +1011,7 @@ QuicEncryptedPacket* ConstructMisFramedEncryptedPacket(
   QuicFrame frame(QuicStreamFrame(1, false, 0, QuicStringPiece(data)));
   QuicFrames frames;
   frames.push_back(frame);
-  ParsedQuicVersion version =
-      (versions != nullptr ? *versions : AllSupportedVersions())[0];
-  QuicFramer framer(versions != nullptr ? *versions : AllSupportedVersions(),
-                    QuicTime::Zero(), perspective,
+  QuicFramer framer({version}, QuicTime::Zero(), perspective,
                     kQuicDefaultConnectionIdLength);
   framer.SetInitialObfuscators(destination_connection_id);
   EncryptionLevel level =
@@ -1184,6 +1180,7 @@ void CreateServerSessionForTest(
   *server_session = new TestQuicSpdyServerSession(
       *server_connection, DefaultQuicConfig(), supported_versions,
       server_crypto_config, compressed_certs_cache);
+  (*server_session)->Initialize();
 
   // We advance the clock initially because the default time is zero and the
   // strike register worries that we've just overflowed a uint32_t time.

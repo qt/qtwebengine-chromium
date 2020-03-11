@@ -17,12 +17,12 @@ import * as m from 'mithril';
 import {Actions} from '../common/actions';
 import {TrackState} from '../common/state';
 
+import {TRACK_SHELL_WIDTH} from './css_constants';
 import {globals} from './globals';
 import {drawGridLines} from './gridline_helper';
 import {Panel, PanelSize} from './panel';
 import {verticalScrollToTrack} from './scroll_helper';
 import {Track} from './track';
-import {TRACK_SHELL_WIDTH} from './track_constants';
 import {trackRegistry} from './track_registry';
 import {
   drawVerticalLineAtTime,
@@ -49,11 +49,30 @@ class TrackShell implements m.ClassComponent<TrackShellAttrs> {
   }
 
   view({attrs}: m.CVnode<TrackShellAttrs>) {
-    const dragClass = this.dragging ? `.drag` : '';
-    const dropClass = this.dropping ? `.drop-${this.dropping}` : '';
+    // The shell should be highlighted if the current search result is inside
+    // this track.
+    let highlightClass = '';
+    const searchIndex = globals.frontendLocalState.searchIndex;
+    if (searchIndex !== -1) {
+      const trackId = globals.currentSearchResults
+                          .trackIds[globals.frontendLocalState.searchIndex];
+      if (trackId === attrs.trackState.id) {
+        highlightClass = 'flash';
+      }
+    }
+
+    const dragClass = this.dragging ? `drag` : '';
+    const dropClass = this.dropping ? `drop-${this.dropping}` : '';
+    const selectedArea = globals.frontendLocalState.selectedArea.area;
+    const markSelectedClass =
+        selectedArea && selectedArea.tracks.includes(attrs.trackState.id) ?
+        'selected' :
+        '';
     return m(
-        `.track-shell${dragClass}${dropClass}[draggable=true]`,
+        `.track-shell[draggable=true]`,
         {
+          class: `${highlightClass} ${markSelectedClass} ${dragClass} ${
+              dropClass}`,
           onmousedown: this.onmousedown.bind(this),
           ondragstart: this.ondragstart.bind(this),
           ondragend: this.ondragend.bind(this),
@@ -140,7 +159,7 @@ export class TrackContent implements m.ClassComponent<TrackContentAttrs> {
   view({attrs}: m.CVnode<TrackContentAttrs>) {
     return m('.track-content', {
       onmousemove: (e: MouseEvent) => {
-        attrs.track.onMouseMove({x: e.layerX, y: e.layerY});
+        attrs.track.onMouseMove({x: e.layerX - TRACK_SHELL_WIDTH, y: e.layerY});
         globals.rafScheduler.scheduleRedraw();
       },
       onmouseout: () => {
@@ -152,15 +171,15 @@ export class TrackContent implements m.ClassComponent<TrackContentAttrs> {
         // track.
         if (e.shiftKey) return;
         // If the click is outside of the current time range, clear it.
-        const clickTime =
-            globals.frontendLocalState.timeScale.pxToTime(e.layerX);
-        const start = globals.frontendLocalState.selectedTimeRange.startSec;
-        const end = globals.frontendLocalState.selectedTimeRange.endSec;
-        if (start !== undefined && end !== undefined &&
-            (clickTime < start || clickTime > end)) {
-          globals.frontendLocalState.removeTimeRange();
+        const clickTime = globals.frontendLocalState.timeScale.pxToTime(
+            e.layerX - TRACK_SHELL_WIDTH);
+        const area = globals.frontendLocalState.selectedArea.area;
+        if (area !== undefined &&
+            (clickTime < area.startSec || clickTime > area.endSec)) {
+          globals.frontendLocalState.deselectArea();
           e.stopPropagation();
-        } else if (attrs.track.onMouseClick({x: e.layerX, y: e.layerY})) {
+        } else if (attrs.track.onMouseClick(
+                       {x: e.layerX - TRACK_SHELL_WIDTH, y: e.layerY})) {
           e.stopPropagation();
         }
         globals.rafScheduler.scheduleRedraw();
@@ -189,7 +208,7 @@ class TrackComponent implements m.ClassComponent<TrackComponentAttrs> {
         ]);
   }
 
-  onupdate({attrs}: m.CVnode<TrackComponentAttrs>) {
+  oncreate({attrs}: m.CVnode<TrackComponentAttrs>) {
     if (globals.frontendLocalState.scrollToTrackId === attrs.trackState.id) {
       verticalScrollToTrack(attrs.trackState.id);
       globals.frontendLocalState.scrollToTrackId = undefined;
@@ -252,11 +271,12 @@ export class TrackPanel extends Panel<TrackPanelAttrs> {
     const localState = globals.frontendLocalState;
     // Draw vertical line when hovering on the notes panel.
     if (localState.showNotePreview) {
-      drawVerticalLineAtTime(ctx,
-                             localState.timeScale,
-                             localState.hoveredTimestamp,
-                             size.height,
-                             `#aaa`);
+      drawVerticalLineAtTime(
+          ctx,
+          localState.timeScale,
+          localState.hoveredTimestamp,
+          size.height,
+          `#aaa`);
     }
     // Draw vertical line when shift is pressed.
     if (localState.showTimeSelectPreview) {
@@ -266,13 +286,12 @@ export class TrackPanel extends Panel<TrackPanelAttrs> {
                              size.height,
                              `rgb(52,69,150)`);
     }
-    if (globals.frontendLocalState.selectedTimeRange.startSec !== undefined &&
-        globals.frontendLocalState.selectedTimeRange.endSec !== undefined) {
+    if (localState.selectedArea.area !== undefined) {
       drawVerticalSelection(
           ctx,
           localState.timeScale,
-          globals.frontendLocalState.selectedTimeRange.startSec,
-          globals.frontendLocalState.selectedTimeRange.endSec,
+          localState.selectedArea.area.startSec,
+          localState.selectedArea.area.endSec,
           size.height,
           `rgba(0,0,0,0.5)`);
     }

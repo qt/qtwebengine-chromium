@@ -150,15 +150,13 @@ namespace sw
 		unsigned int numBatches;
 
 		VkPrimitiveTopology topology;
+		VkProvokingVertexModeEXT provokingVertexMode;
 		VkIndexType indexType;
+		VkLineRasterizationModeEXT lineRasterizationMode;
 
-		std::shared_ptr<Routine> vertexRoutine;
-		std::shared_ptr<Routine> setupRoutine;
-		std::shared_ptr<Routine> pixelRoutine;
-
-		VertexProcessor::RoutinePointer vertexPointer;
-		SetupProcessor::RoutinePointer setupPointer;
-		PixelProcessor::RoutinePointer pixelPointer;
+		VertexProcessor::RoutineType vertexRoutine;
+		SetupProcessor::RoutineType setupRoutine;
+		PixelProcessor::RoutineType pixelRoutine;
 
 		SetupFunction setupPrimitives;
 		SetupProcessor::State setupState;
@@ -178,7 +176,8 @@ namespace sw
 				VkIndexType indexType,
 				unsigned int start,
 				unsigned int triangleCount,
-				VkPrimitiveTopology topology);
+				VkPrimitiveTopology topology,
+				VkProvokingVertexModeEXT provokingVertexMode);
 
 		static int setupSolidTriangles(Triangle* triangles, Primitive* primitives, const DrawCall* drawCall, int count);
 		static int setupWireframeTriangles(Triangle* triangles, Primitive* primitives, const DrawCall* drawCall, int count);
@@ -203,7 +202,7 @@ namespace sw
 		bool hasOcclusionQuery() const { return occlusionQuery != nullptr; }
 
 		void draw(const sw::Context* context, VkIndexType indexType, unsigned int count, int baseVertex,
-				TaskEvents *events, int instanceID, int viewID, void *indexBuffer,
+				TaskEvents *events, int instanceID, int viewID, void *indexBuffer, const VkExtent3D& framebufferExtent,
 				PushConstantStorage const & pushConstants, bool update = true);
 
 		// Viewport & Clipper
@@ -234,9 +233,9 @@ namespace sw
 		SetupProcessor::State setupState;
 		PixelProcessor::State pixelState;
 
-		std::shared_ptr<Routine> vertexRoutine;
-		std::shared_ptr<Routine> setupRoutine;
-		std::shared_ptr<Routine> pixelRoutine;
+		VertexProcessor::RoutineType vertexRoutine;
+		SetupProcessor::RoutineType setupRoutine;
+		PixelProcessor::RoutineType pixelRoutine;
 
 		vk::Device* device;
 	};

@@ -174,6 +174,7 @@ ClientImageTransferCacheEntry::ClientImageTransferCacheEntry(
   safe_size += sizeof(uint32_t);  // height
   safe_size += sizeof(uint32_t);  // has mips
   safe_size += sizeof(uint64_t) + align;  // pixels size + alignment
+  safe_size += sizeof(uint64_t) + align;  // row bytes + alignment
   safe_size += target_color_space_size + sizeof(uint64_t) + align;
   safe_size += pixmap_color_space_size + sizeof(uint64_t) + align;
   // Include 4 bytes of padding so we can always align our data pointer to a
@@ -216,6 +217,7 @@ ClientImageTransferCacheEntry::ClientImageTransferCacheEntry(
   safe_size += decoded_color_space_size + align;
   safe_size += num_planes_ * sizeof(uint64_t);  // plane widths
   safe_size += num_planes_ * sizeof(uint64_t);  // plane heights
+  safe_size += num_planes_ * sizeof(uint64_t);  // plane strides
   safe_size +=
       num_planes_ * (sizeof(uint64_t) + align);  // pixels size + alignment
   // Include 4 bytes of padding before each plane data chunk so we can always
@@ -249,8 +251,8 @@ void ClientImageTransferCacheEntry::ValidateYUVDataBeforeSerializing() const {
     const SkPixmap* plane = yuv_pixmaps_->at(i);
     DCHECK_GT(plane->width(), 0);
     DCHECK_GT(plane->height(), 0);
+    DCHECK_GT(plane->rowBytes(), 0u);
   }
-  DCHECK(yuv_color_space_);
 }
 
 bool ClientImageTransferCacheEntry::Serialize(base::span<uint8_t> data) const {
@@ -273,6 +275,7 @@ bool ClientImageTransferCacheEntry::Serialize(base::span<uint8_t> data) const {
       const SkPixmap* plane = yuv_pixmaps_->at(i);
       writer.Write(plane->width());
       writer.Write(plane->height());
+      writer.WriteSize(plane->rowBytes());
       size_t plane_size = plane->computeByteSize();
       if (plane_size == SIZE_MAX)
         return false;
@@ -299,7 +302,7 @@ bool ClientImageTransferCacheEntry::Serialize(base::span<uint8_t> data) const {
   if (pixmap_size == SIZE_MAX)
     return false;
   writer.WriteSize(pixmap_size);
-  // TODO(enne): we should consider caching these in some form.
+  writer.WriteSize(pixmap_->rowBytes());
   writer.Write(pixmap_->colorSpace());
   writer.Write(target_color_space_);
   writer.AlignMemory(4);
@@ -403,6 +406,8 @@ bool ServiceImageTransferCacheEntry::Deserialize(
       reader.Read(&plane_width);
       uint32_t plane_height = 0;
       reader.Read(&plane_height);
+      size_t plane_stride = 0;
+      reader.ReadSize(&plane_stride);
       // Because Skia does not support YUV rasterization from software planes,
       // we require that each pixmap fits in a GPU texture. In the
       // GpuImageDecodeCache, we veto YUV decoding if the planes would be too
@@ -411,7 +416,8 @@ bool ServiceImageTransferCacheEntry::Deserialize(
       // We compute this for each plane in case a malicious renderer tries to
       // send very large U or V planes.
       fits_on_gpu_ = plane_width <= max_size && plane_height <= max_size;
-      if (!fits_on_gpu_ || plane_width == 0 || plane_height == 0)
+      if (!fits_on_gpu_ || plane_width == 0 || plane_height == 0 ||
+          plane_stride == 0)
         return false;
 
       size_t plane_bytes;
@@ -435,7 +441,9 @@ bool ServiceImageTransferCacheEntry::Deserialize(
       // are OK with this as the worst case scenario is visual corruption.
       SkPixmap plane_pixmap(plane_pixmap_info,
                             const_cast<const void*>(plane_pixel_data),
-                            plane_pixmap_info.minRowBytes());
+                            plane_stride);
+      if (plane_pixmap.computeByteSize() > plane_bytes)
+        return false;
 
       // Nothing should read the colorspace of individual planes because that
       // information is stored in image_, so we pass nullptr.
@@ -478,6 +486,8 @@ bool ServiceImageTransferCacheEntry::Deserialize(
   has_mips_ = needs_mips;
   size_t pixel_size;
   reader.ReadSize(&pixel_size);
+  size_t row_bytes;
+  reader.ReadSize(&row_bytes);
   sk_sp<SkColorSpace> pixmap_color_space;
   reader.Read(&pixmap_color_space);
   sk_sp<SkColorSpace> target_color_space;
@@ -488,8 +498,10 @@ bool ServiceImageTransferCacheEntry::Deserialize(
 
   SkImageInfo image_info = SkImageInfo::Make(
       width, height, color_type, kPremul_SkAlphaType, pixmap_color_space);
-  if (image_info.computeMinByteSize() > pixel_size)
+  if (row_bytes < image_info.minRowBytes() ||
+      image_info.computeByteSize(row_bytes) > pixel_size) {
     return false;
+  }
 
   // Align data to a 4-byte boundry, to match what we did when writing.
   reader.AlignMemory(4);
@@ -505,8 +517,7 @@ bool ServiceImageTransferCacheEntry::Deserialize(
   // Const-cast away the "volatile" on |pixel_data|. We specifically understand
   // that a malicious caller may change our pixels under us, and are OK with
   // this as the worst case scenario is visual corruption.
-  SkPixmap pixmap(image_info, const_cast<const void*>(pixel_data),
-                  image_info.minRowBytes());
+  SkPixmap pixmap(image_info, const_cast<const void*>(pixel_data), row_bytes);
   image_ = MakeSkImage(pixmap, width, height, target_color_space);
 
   if (image_) {
@@ -537,6 +548,8 @@ sk_sp<SkImage> ServiceImageTransferCacheEntry::MakeSkImage(
     image = MakeTextureImage(context_, std::move(image), target_color_space,
                              has_mips_ ? GrMipMapped::kYes : GrMipMapped::kNo);
   } else {
+    // If the image is on the CPU, no work is needed to generate mips.
+    has_mips_ = true;
     sk_sp<SkImage> original =
         SkImage::MakeFromRaster(pixmap, [](const void*, void*) {}, nullptr);
     if (!original)
@@ -571,6 +584,7 @@ void ServiceImageTransferCacheEntry::EnsureMips() {
   if (has_mips_)
     return;
 
+  DCHECK(fits_on_gpu_);
   if (is_yuv()) {
     DCHECK(image_);
     DCHECK(yuv_color_space_.has_value());

@@ -18,7 +18,7 @@ namespace openscreen {
 // code and an optional message.
 class Error {
  public:
-  // TODO(issue/65): Group/rename OSP-specific errors
+  // TODO(crbug.com/openscreen/65): Group/rename OSP-specific errors
   enum class Code : int8_t {
     // No error occurred.
     kNone = 0,
@@ -153,6 +153,7 @@ class Error {
     kCastV2InvalidChannelId,
     kCastV2ConnectTimeout,
     kCastV2PingTimeout,
+    kCastV2ChannelPolicyMismatch,
 
     // Generic errors.
     kUnknownError,

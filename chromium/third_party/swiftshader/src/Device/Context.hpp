@@ -88,6 +88,7 @@ namespace sw
 		BlendState getBlendState(int index) const;
 
 		VkPrimitiveTopology topology;
+		VkProvokingVertexModeEXT provokingVertexMode;
 
 		bool stencilEnable;
 		VkStencilOpState frontStencil;
@@ -97,6 +98,7 @@ namespace sw
 		VkCullModeFlags cullMode;
 		VkFrontFace frontFace;
 		VkPolygonMode polygonMode;
+		VkLineRasterizationModeEXT lineRasterizationMode;
 
 		float depthBias;
 		float slopeDepthBias;

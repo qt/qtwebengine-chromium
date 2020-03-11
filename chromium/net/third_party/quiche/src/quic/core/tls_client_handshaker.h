@@ -24,26 +24,21 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
       public QuicCryptoClientStream::HandshakerDelegate,
       public TlsClientConnection::Delegate {
  public:
-  TlsClientHandshaker(QuicCryptoStream* stream,
+  TlsClientHandshaker(const QuicServerId& server_id,
+                      QuicCryptoStream* stream,
                       QuicSession* session,
-                      const QuicServerId& server_id,
-                      ProofVerifier* proof_verifier,
-                      SSL_CTX* ssl_ctx,
                       std::unique_ptr<ProofVerifyContext> verify_context,
-                      QuicCryptoClientStream::ProofHandler* proof_handler,
-                      const std::string& user_agent_id);
+                      QuicCryptoClientConfig* crypto_config,
+                      QuicCryptoClientStream::ProofHandler* proof_handler);
   TlsClientHandshaker(const TlsClientHandshaker&) = delete;
   TlsClientHandshaker& operator=(const TlsClientHandshaker&) = delete;
 
   ~TlsClientHandshaker() override;
 
-  // Creates and configures an SSL_CTX to be used with a TlsClientHandshaker.
-  // The caller is responsible for ownership of the newly created struct.
-  static bssl::UniquePtr<SSL_CTX> CreateSslCtx();
-
   // From QuicCryptoClientStream::HandshakerDelegate
   bool CryptoConnect() override;
   int num_sent_client_hellos() const override;
+  bool IsResumption() const override;
   int num_scup_messages_received() const override;
   std::string chlo_hash() const override;
 
@@ -54,6 +49,9 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
       const override;
   CryptoMessageParser* crypto_message_parser() override;
   size_t BufferSizeLimitForLevel(EncryptionLevel level) const override;
+
+  // Override to drop initial keys if trying to write ENCRYPTION_HANDSHAKE data.
+  void WriteMessage(EncryptionLevel level, QuicStringPiece data) override;
 
   void AllowEmptyAlpnForTests() { allow_empty_alpn_for_tests_ = true; }
 
@@ -73,7 +71,8 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
  private:
   // ProofVerifierCallbackImpl handles the result of an asynchronous certificate
   // verification operation.
-  class ProofVerifierCallbackImpl : public ProofVerifierCallback {
+  class QUIC_EXPORT_PRIVATE ProofVerifierCallbackImpl
+      : public ProofVerifierCallback {
    public:
     explicit ProofVerifierCallbackImpl(TlsClientHandshaker* parent);
     ~ProofVerifierCallbackImpl() override;
@@ -94,6 +93,7 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
     STATE_IDLE,
     STATE_HANDSHAKE_RUNNING,
     STATE_CERT_VERIFY_PENDING,
+    STATE_ENCRYPTION_HANDSHAKE_DATA_SENT,
     STATE_HANDSHAKE_COMPLETE,
     STATE_CONNECTION_CLOSED,
   } state_ = STATE_IDLE;
@@ -102,6 +102,8 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
   bool SetTransportParameters();
   bool ProcessTransportParameters(std::string* error_details);
   void FinishHandshake();
+
+  void InsertSession(bssl::UniquePtr<SSL_SESSION> session) override;
 
   QuicServerId server_id_;
 
@@ -114,6 +116,10 @@ class QUIC_EXPORT_PRIVATE TlsClientHandshaker
   // OnProofVerifyDetailsAvailable callback to use for notifying the result of
   // certificate verification.
   QuicCryptoClientStream::ProofHandler* proof_handler_;
+
+  // Used for session resumption. |session_cache_| is owned by the
+  // QuicCryptoClientConfig passed into TlsClientHandshaker's constructor.
+  SessionCache* session_cache_;
 
   std::string user_agent_id_;
 

@@ -177,6 +177,8 @@ class TestQuicCryptoStream : public QuicCryptoStream {
     pending_writes_.push_back(std::make_pair(std::string(data), level));
   }
 
+  void OnPacketDecrypted(EncryptionLevel /*level*/) override {}
+
   const std::vector<std::pair<std::string, EncryptionLevel>>& pending_writes() {
     return pending_writes_;
   }
@@ -223,17 +225,15 @@ class TestQuicCryptoClientStream : public TestQuicCryptoStream {
  public:
   explicit TestQuicCryptoClientStream(QuicSession* session)
       : TestQuicCryptoStream(session),
-        proof_verifier_(new FakeProofVerifier),
-        ssl_ctx_(TlsClientConnection::CreateSslCtx()),
+        crypto_config_(std::make_unique<FakeProofVerifier>(),
+                       /*session_cache*/ nullptr),
         handshaker_(new TlsClientHandshaker(
+            QuicServerId("test.example.com", 443, false),
             this,
             session,
-            QuicServerId("test.example.com", 443, false),
-            proof_verifier_.get(),
-            ssl_ctx_.get(),
             crypto_test_utils::ProofVerifyContextForTesting(),
-            &proof_handler_,
-            "quic-tester")) {}
+            &crypto_config_,
+            &proof_handler_)) {}
 
   ~TestQuicCryptoClientStream() override = default;
 
@@ -244,13 +244,12 @@ class TestQuicCryptoClientStream : public TestQuicCryptoStream {
   bool CryptoConnect() { return handshaker_->CryptoConnect(); }
 
   FakeProofVerifier* GetFakeProofVerifier() const {
-    return proof_verifier_.get();
+    return static_cast<FakeProofVerifier*>(crypto_config_.proof_verifier());
   }
 
  private:
-  std::unique_ptr<FakeProofVerifier> proof_verifier_;
   MockProofHandler proof_handler_;
-  bssl::UniquePtr<SSL_CTX> ssl_ctx_;
+  QuicCryptoClientConfig crypto_config_;
   std::unique_ptr<TlsClientHandshaker> handshaker_;
 };
 
@@ -270,6 +269,10 @@ class TestQuicCryptoServerStream : public TestQuicCryptoStream {
 
   void CancelOutstandingCallbacks() {
     handshaker_->CancelOutstandingCallbacks();
+  }
+
+  void OnPacketDecrypted(EncryptionLevel level) override {
+    handshaker_->OnPacketDecrypted(level);
   }
 
   TlsHandshaker* handshaker() const override { return handshaker_.get(); }
@@ -334,8 +337,8 @@ class TlsHandshakerTest : public QuicTest {
     EXPECT_TRUE(client_stream_->encryption_established());
     EXPECT_TRUE(server_stream_->handshake_confirmed());
     EXPECT_TRUE(server_stream_->encryption_established());
-    EXPECT_TRUE(client_conn_->IsHandshakeConfirmed());
-    EXPECT_TRUE(server_conn_->IsHandshakeConfirmed());
+    EXPECT_TRUE(client_conn_->IsHandshakeComplete());
+    EXPECT_TRUE(server_conn_->IsHandshakeComplete());
 
     const auto& client_crypto_params =
         client_stream_->crypto_negotiated_params();
@@ -370,17 +373,11 @@ class TlsHandshakerTest : public QuicTest {
 };
 
 TEST_F(TlsHandshakerTest, CryptoHandshake) {
-  EXPECT_FALSE(client_conn_->IsHandshakeConfirmed());
-  EXPECT_FALSE(server_conn_->IsHandshakeConfirmed());
+  EXPECT_FALSE(client_conn_->IsHandshakeComplete());
+  EXPECT_FALSE(server_conn_->IsHandshakeComplete());
 
   EXPECT_CALL(*client_conn_, CloseConnection(_, _, _)).Times(0);
   EXPECT_CALL(*server_conn_, CloseConnection(_, _, _)).Times(0);
-  EXPECT_CALL(client_session_,
-              OnCryptoHandshakeEvent(QuicSession::ENCRYPTION_ESTABLISHED));
-  EXPECT_CALL(client_session_,
-              OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED));
-  EXPECT_CALL(server_session_,
-              OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED));
   EXPECT_CALL(client_stream_->proof_handler(), OnProofVerifyDetailsAvailable);
   client_stream_->CryptoConnect();
   ExchangeHandshakeMessages(client_stream_, server_stream_);
@@ -505,7 +502,7 @@ TEST_F(TlsHandshakerTest, ClientNotSendingALPN) {
 }
 
 TEST_F(TlsHandshakerTest, ClientSendingBadALPN) {
-  static std::string kTestBadClientAlpn = "bad-client-alpn";
+  const std::string kTestBadClientAlpn = "bad-client-alpn";
   EXPECT_CALL(client_session_, GetAlpnsToOffer())
       .WillOnce(Return(std::vector<std::string>({kTestBadClientAlpn})));
   EXPECT_CALL(*client_conn_, CloseConnection(QUIC_HANDSHAKE_FAILED,
@@ -539,9 +536,9 @@ TEST_F(TlsHandshakerTest, ClientSendingTooManyALPNs) {
 }
 
 TEST_F(TlsHandshakerTest, ServerRequiresCustomALPN) {
-  static const std::string kTestAlpn = "An ALPN That Client Did Not Offer";
+  const std::string kTestAlpn = "An ALPN That Client Did Not Offer";
   EXPECT_CALL(server_session_, SelectAlpn(_))
-      .WillOnce([](const std::vector<QuicStringPiece>& alpns) {
+      .WillOnce([kTestAlpn](const std::vector<QuicStringPiece>& alpns) {
         return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
       });
   EXPECT_CALL(*client_conn_, CloseConnection(QUIC_HANDSHAKE_FAILED,
@@ -561,23 +558,18 @@ TEST_F(TlsHandshakerTest, ServerRequiresCustomALPN) {
 TEST_F(TlsHandshakerTest, CustomALPNNegotiation) {
   EXPECT_CALL(*client_conn_, CloseConnection(_, _, _)).Times(0);
   EXPECT_CALL(*server_conn_, CloseConnection(_, _, _)).Times(0);
-  EXPECT_CALL(client_session_,
-              OnCryptoHandshakeEvent(QuicSession::ENCRYPTION_ESTABLISHED));
-  EXPECT_CALL(client_session_,
-              OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED));
-  EXPECT_CALL(server_session_,
-              OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED));
 
-  static const std::string kTestAlpn = "A Custom ALPN Value";
-  static const std::vector<std::string> kTestAlpns(
+  const std::string kTestAlpn = "A Custom ALPN Value";
+  const std::vector<std::string> kTestAlpns(
       {"foo", "bar", kTestAlpn, "something else"});
   EXPECT_CALL(client_session_, GetAlpnsToOffer())
       .WillRepeatedly(Return(kTestAlpns));
   EXPECT_CALL(server_session_, SelectAlpn(_))
-      .WillOnce([](const std::vector<QuicStringPiece>& alpns) {
-        EXPECT_THAT(alpns, ElementsAreArray(kTestAlpns));
-        return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
-      });
+      .WillOnce(
+          [kTestAlpn, kTestAlpns](const std::vector<QuicStringPiece>& alpns) {
+            EXPECT_THAT(alpns, ElementsAreArray(kTestAlpns));
+            return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
+          });
   EXPECT_CALL(client_session_, OnAlpnSelected(QuicStringPiece(kTestAlpn)));
   EXPECT_CALL(server_session_, OnAlpnSelected(QuicStringPiece(kTestAlpn)));
   client_stream_->CryptoConnect();

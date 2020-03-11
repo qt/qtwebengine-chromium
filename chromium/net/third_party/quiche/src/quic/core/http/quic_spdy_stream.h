@@ -102,6 +102,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   // QUIC_STREAM_NO_ERROR.
   void OnStreamReset(const QuicRstStreamFrame& frame) override;
 
+  void Reset(QuicRstStreamErrorCode error) override;
+
   // Called by the sequencer when new data is available. Decodes the data and
   // calls OnBodyAvailable() to pass to the upper layer.
   void OnDataAvailable() override;
@@ -211,11 +213,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   // will be available.
   bool IsClosed() { return sequencer()->IsClosed(); }
 
-  using QuicStream::CloseWriteSide;
-
   // QpackDecodedHeadersAccumulator::Visitor implementation.
   void OnHeadersDecoded(QuicHeaderList headers) override;
-  void OnHeaderDecodingError() override;
+  void OnHeaderDecodingError(QuicStringPiece error_message) override;
 
  protected:
   // Called when the received headers are too large. By default this will
@@ -267,9 +267,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   bool OnUnknownFramePayload(QuicStringPiece payload);
   bool OnUnknownFrameEnd();
 
-  // Called internally when headers are decoded.
-  void ProcessDecodedHeaders(const QuicHeaderList& headers);
-
   // Given the interval marked by [|offset|, |offset| + |data_length|), return
   // the number of frame header bytes contained in it.
   QuicByteCount GetNumFrameHeadersInInterval(QuicStreamOffset offset,
@@ -286,6 +283,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   bool blocked_on_decoding_headers_;
   // True if the headers have been completely decompressed.
   bool headers_decompressed_;
+  // True if uncompressed headers or trailers exceed maximum allowed size
+  // advertised to peer via SETTINGS_MAX_HEADER_LIST_SIZE.
+  bool header_list_size_limit_exceeded_;
   // Contains a copy of the decompressed header (name, value) pairs until they
   // are consumed via Readv.
   QuicHeaderList header_list_;
@@ -305,8 +305,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   // The parsed trailers received from the peer.
   spdy::SpdyHeaderBlock received_trailers_;
 
-  // Http encoder for writing streams.
-  HttpEncoder encoder_;
   // Headers accumulator for decoding HEADERS frame payload.
   std::unique_ptr<QpackDecodedHeadersAccumulator>
       qpack_decoded_headers_accumulator_;

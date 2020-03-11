@@ -15,11 +15,11 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_aligned.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_endian.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_prefetch.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_uint128.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_endian.h"
 
 namespace quic {
 namespace {
@@ -161,10 +161,12 @@ const char* QuicUtils::SentPacketStateToString(SentPacketState state) {
     RETURN_STRING_LITERAL(NEVER_SENT);
     RETURN_STRING_LITERAL(ACKED);
     RETURN_STRING_LITERAL(UNACKABLE);
+    RETURN_STRING_LITERAL(NEUTERED);
     RETURN_STRING_LITERAL(HANDSHAKE_RETRANSMITTED);
     RETURN_STRING_LITERAL(LOST);
     RETURN_STRING_LITERAL(TLP_RETRANSMITTED);
     RETURN_STRING_LITERAL(RTO_RETRANSMITTED);
+    RETURN_STRING_LITERAL(PTO_RETRANSMITTED);
     RETURN_STRING_LITERAL(PROBE_RETRANSMITTED);
   }
   return "INVALID_SENT_PACKET_STATE";
@@ -329,6 +331,8 @@ SentPacketState QuicUtils::RetransmissionTypeToPacketState(
       return TLP_RETRANSMITTED;
     case RTO_RETRANSMISSION:
       return RTO_RETRANSMITTED;
+    case PTO_RETRANSMISSION:
+      return PTO_RETRANSMITTED;
     case PROBING_RETRANSMISSION:
       return PROBE_RETRANSMITTED;
     default:
@@ -514,7 +518,7 @@ bool QuicUtils::VariableLengthConnectionIdAllowedForVersion(
   // We allow variable length connection IDs for unsupported versions to
   // ensure that IETF version negotiation works when other implementations
   // trigger version negotiation with custom connection ID lengths.
-  return version >= QUIC_VERSION_47 || version == QUIC_VERSION_UNSUPPORTED;
+  return version > QUIC_VERSION_46 || version == QUIC_VERSION_UNSUPPORTED;
 }
 
 // static

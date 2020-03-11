@@ -9,12 +9,15 @@
 
 #include "absl/types/optional.h"
 #include "osp/impl/quic/quic_connection_factory_impl.h"
-#include "platform/api/logging.h"
-#include "platform/api/trace_logging.h"
 #include "platform/base/error.h"
 #include "third_party/chromium_quic/src/net/third_party/quic/platform/impl/quic_chromium_clock.h"
+#include "util/logging.h"
+#include "util/trace_logging.h"
+
+using openscreen::platform::TraceCategory;
 
 namespace openscreen {
+namespace osp {
 
 UdpTransport::UdpTransport(platform::UdpSocket* socket,
                            const IPEndpoint& destination)
@@ -89,12 +92,12 @@ void QuicConnectionImpl::OnRead(platform::UdpSocket* socket,
 }
 
 void QuicConnectionImpl::OnSendError(platform::UdpSocket* socket, Error error) {
-  // TODO(issue/67): Implement this method.
+  // TODO(crbug.com/openscreen/67): Implement this method.
   OSP_UNIMPLEMENTED();
 }
 
 void QuicConnectionImpl::OnError(platform::UdpSocket* socket, Error error) {
-  // TODO(issue/67): Implement this method.
+  // TODO(crbug.com/openscreen/67): Implement this method.
   OSP_UNIMPLEMENTED();
 }
 
@@ -152,4 +155,5 @@ void QuicConnectionImpl::OnConnectionClosed(
   delegate_->OnConnectionClosed(session_->connection_id());
 }
 
+}  // namespace osp
 }  // namespace openscreen

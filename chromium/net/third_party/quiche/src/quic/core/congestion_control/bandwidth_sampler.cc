@@ -21,6 +21,7 @@ QuicByteCount MaxAckHeightTracker::Update(QuicBandwidth bandwidth_estimate,
   if (aggregation_epoch_start_time_ == QuicTime::Zero()) {
     aggregation_epoch_bytes_ = bytes_acked;
     aggregation_epoch_start_time_ = ack_time;
+    ++num_ack_aggregation_epochs_;
     return 0;
   }
 
@@ -30,10 +31,13 @@ QuicByteCount MaxAckHeightTracker::Update(QuicBandwidth bandwidth_estimate,
       bandwidth_estimate * (ack_time - aggregation_epoch_start_time_);
   // Reset the current aggregation epoch as soon as the ack arrival rate is less
   // than or equal to the max bandwidth.
-  if (aggregation_epoch_bytes_ <= expected_bytes_acked) {
+  if (aggregation_epoch_bytes_ <=
+      GetQuicFlag(FLAGS_quic_ack_aggregation_bandwidth_threshold) *
+          expected_bytes_acked) {
     // Reset to start measuring a new aggregation epoch.
     aggregation_epoch_bytes_ = bytes_acked;
     aggregation_epoch_start_time_ = ack_time;
+    ++num_ack_aggregation_epochs_;
     return 0;
   }
 
@@ -195,7 +199,7 @@ BandwidthSample BandwidthSampler::OnPacketAcknowledgedInner(
     } else {
       QUIC_CODE_COUNT_N(quic_prev_ack_time_larger_than_current_ack_time, 2, 2);
     }
-    QUIC_LOG_EVERY_N_SEC(ERROR, 5)
+    QUIC_LOG_EVERY_N_SEC(ERROR, 60)
         << "Time of the previously acked packet:"
         << sent_packet.last_acked_packet_ack_time.ToDebuggingValue()
         << " is larger than the ack time of the current packet:"

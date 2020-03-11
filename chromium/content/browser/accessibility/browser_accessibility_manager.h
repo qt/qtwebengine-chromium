@@ -191,14 +191,16 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver,
   // view lost focus.
   virtual void OnWindowBlurred();
 
-  // Notify the accessibility manager about page navigation.
-  // TODO(domfarolino, dmazzoni): Implement WebContentsObserver methods that
-  // correspond to the ones we provide today, so we can stop being manually
-  // notified of navigation events when they happen.
-  void UserIsNavigatingAway();
   virtual void UserIsReloading();
-  void NavigationSucceeded();
-  void NavigationFailed();
+
+  // WebContentsObserver implementation.
+  // Notify the accessibility manager about page navigation.
+  // BrowserAccessibilityManager used to be manually notified at the same time
+  // WebContentsObserver's DidStartLoading(), DidStopLoading(), and
+  // DidFinishNavigation() methods were called. Since then, it was determined
+  // BrowserAccessibilityManager does not need to distinguish between
+  // DidFinishNavigation() and DidStopLoading().
+  void DidStartLoading() override;
   void DidStopLoading() override;
 
   // Keep track of if this page is hidden by an interstitial, in which case
@@ -216,7 +218,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver,
 
   // For testing only, register a function to be called when focus changes
   // in any BrowserAccessibilityManager.
-  static void SetFocusChangeCallbackForTesting(const base::Closure& callback);
+  static void SetFocusChangeCallbackForTesting(base::RepeatingClosure callback);
 
   // For testing only, register a function to be called when
   // a generated event is fired from this BrowserAccessibilityManager.
@@ -230,6 +232,12 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver,
   // this behavior and just fire all events with no delay as if the window
   // had focus.
   static void NeverSuppressOrDelayEventsForTesting();
+
+  // Extra mac nodes are temporarily disabled, except for in tests.
+  static void AllowExtraMacNodesForTesting();
+  // Are extra mac nodes allowed at all? Currently only allowed in tests.
+  // Even when returning true, platforms other than Mac OS do not enable them.
+  static bool GetExtraMacNodesAllowed();
 
   // Accessibility actions. All of these are implemented asynchronously
   // by sending a message to the renderer to perform the respective action
@@ -249,7 +257,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver,
       ax::mojom::ScrollAlignment horizontal_scroll_alignment =
           ax::mojom::ScrollAlignment::kScrollAlignmentCenter,
       ax::mojom::ScrollAlignment vertical_scroll_alignment =
-          ax::mojom::ScrollAlignment::kScrollAlignmentCenter);
+          ax::mojom::ScrollAlignment::kScrollAlignmentCenter,
+      ax::mojom::ScrollBehavior scroll_behavior =
+          ax::mojom::ScrollBehavior::kDoNotScrollIfVisible);
   void ScrollToPoint(const BrowserAccessibility& node, gfx::Point point);
   void SetAccessibilityFocus(const BrowserAccessibility& node);
   void SetFocus(const BrowserAccessibility& node);
@@ -403,6 +413,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver,
   void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
   void OnSubtreeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
   void OnNodeCreated(ui::AXTree* tree, ui::AXNode* node) override;
+  void OnNodeDeleted(ui::AXTree* tree, int32_t node_id) override;
   void OnNodeReparented(ui::AXTree* tree, ui::AXNode* node) override;
   void OnAtomicUpdateFinished(
       ui::AXTree* tree,
@@ -519,6 +530,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver,
   // Fire all events regardless of focus and with no delay, to avoid test
   // flakiness. See NeverSuppressOrDelayEventsForTesting() for details.
   static bool never_suppress_or_delay_events_for_testing_;
+
+  // Extra mac nodes are disabled even on mac currently, except for in tests.
+  static bool allow_extra_mac_nodes_for_testing_;
 
   // Stores the id of the last focused node across all frames, as well as the id
   // of the tree that contains it, so that when focus might have changed we can

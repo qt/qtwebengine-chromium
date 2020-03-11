@@ -15,6 +15,7 @@
 #include "dawn_wire/WireCmd_autogen.h"
 
 #include "common/Assert.h"
+#include "dawn_wire/Wire.h"
 
 #include <algorithm>
 #include <cstring>
@@ -454,5 +455,35 @@ namespace dawn_wire {
     {% for command in cmd_records["return command"] %}
         {{ write_command_serialization_methods(command, True) }}
     {% endfor %}
+
+        // Implementations of serialization/deserialization of WPGUDeviceProperties.
+        size_t SerializedWGPUDevicePropertiesSize(const WGPUDeviceProperties* deviceProperties) {
+            return sizeof(WGPUDeviceProperties) +
+                   WGPUDevicePropertiesGetExtraRequiredSize(*deviceProperties);
+        }
+
+        void SerializeWGPUDeviceProperties(const WGPUDeviceProperties* deviceProperties,
+                                           char* serializeBuffer) {
+            size_t devicePropertiesSize = SerializedWGPUDevicePropertiesSize(deviceProperties);
+            WGPUDevicePropertiesTransfer* transfer =
+                reinterpret_cast<WGPUDevicePropertiesTransfer*>(serializeBuffer);
+            serializeBuffer += devicePropertiesSize;
+
+            WGPUDevicePropertiesSerialize(*deviceProperties, transfer, &serializeBuffer);
+        }
+
+        bool DeserializeWGPUDeviceProperties(WGPUDeviceProperties* deviceProperties,
+                                             const volatile char* deserializeBuffer) {
+            size_t devicePropertiesSize = SerializedWGPUDevicePropertiesSize(deviceProperties);
+            const volatile WGPUDevicePropertiesTransfer* transfer = nullptr;
+            if (GetPtrFromBuffer(&deserializeBuffer, &devicePropertiesSize, 1, &transfer) !=
+                DeserializeResult::Success) {
+                return false;
+            }
+
+            return WGPUDevicePropertiesDeserialize(deviceProperties, transfer, &deserializeBuffer,
+                                                   &devicePropertiesSize,
+                                                   nullptr) == DeserializeResult::Success;
+        }
 
 }  // namespace dawn_wire

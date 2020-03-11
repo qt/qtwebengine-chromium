@@ -761,10 +761,7 @@ void RenderWidget::OnUpdateVisualProperties(
                       visual_properties.max_size_for_auto_resize,
                       visual_properties.screen_info.device_scale_factor);
 
-    browser_controls_shrink_blink_size_ =
-        visual_properties.browser_controls_shrink_blink_size;
-    top_controls_height_ = visual_properties.top_controls_height;
-    bottom_controls_height_ = visual_properties.bottom_controls_height;
+    browser_controls_params_ = visual_properties.browser_controls_params;
   }
 
   if (for_frame()) {
@@ -789,10 +786,8 @@ void RenderWidget::OnUpdateVisualProperties(
     }
   }
 
-  layer_tree_host_->SetBrowserControlsHeight(
-      visual_properties.top_controls_height,
-      visual_properties.bottom_controls_height,
-      visual_properties.browser_controls_shrink_blink_size);
+  layer_tree_host_->SetBrowserControlsParams(
+      visual_properties.browser_controls_params);
 
   if (!auto_resize_mode_) {
     if (visual_properties.is_fullscreen_granted != is_fullscreen_granted_) {
@@ -963,9 +958,8 @@ void RenderWidget::OnDisableDeviceEmulation() {
   // TODO(https://crbug.com/1006052): We should move emulation into the browser
   // and send consistent ScreenInfo and ScreenRects to all RenderWidgets based
   // on emulation.
-  if (!delegate_)
+  if (!delegate_ || !device_emulator_)
     return;
-  DCHECK(device_emulator_);
   device_emulator_->DisableAndApply();
   device_emulator_.reset();
 }
@@ -1371,6 +1365,7 @@ void RenderWidget::SetShowScrollBottleneckRects(bool show) {
   debug_state.show_touch_event_handler_rects = show;
   debug_state.show_wheel_event_handler_rects = show;
   debug_state.show_non_fast_scrollable_rects = show;
+  debug_state.show_main_thread_scrolling_reason_rects = show;
   layer_tree_host_->SetDebugState(debug_state);
 }
 
@@ -1689,9 +1684,8 @@ void RenderWidget::ResizeWebWidget() {
     // When associated with a RenderView, the RenderView is in control of the
     // main frame's size, because it includes other factors for top and bottom
     // controls.
-    delegate()->ResizeWebWidgetForWidget(size_for_blink, top_controls_height_,
-                                         bottom_controls_height_,
-                                         browser_controls_shrink_blink_size_);
+    delegate()->ResizeWebWidgetForWidget(size_for_blink,
+                                         browser_controls_params_);
     delegate()->ResizeVisualViewportForWidget(visible_viewport_size_for_blink);
   } else {
     // When not associated with a RenderView, the RenderWidget is in control of
@@ -2396,13 +2390,10 @@ void RenderWidget::OnUpdateScreenRects(const gfx::Rect& widget_screen_rect,
 }
 
 void RenderWidget::OnSetViewportIntersection(
-    const gfx::Rect& viewport_intersection,
-    const gfx::Rect& compositor_visible_rect,
-    blink::FrameOcclusionState occlusion_state) {
+    const blink::ViewportIntersectionState& intersection_state) {
   if (auto* frame_widget = GetFrameWidget()) {
-    compositor_visible_rect_ = compositor_visible_rect;
-    frame_widget->SetRemoteViewportIntersection(viewport_intersection,
-                                                occlusion_state);
+    compositor_visible_rect_ = intersection_state.compositor_visible_rect;
+    frame_widget->SetRemoteViewportIntersection(intersection_state);
     layer_tree_host_->SetViewportVisibleRect(ViewportVisibleRect());
   }
 }
@@ -2833,20 +2824,6 @@ void RenderWidget::DidHandleGestureEvent(const WebGestureEvent& event,
     else
       ShowVirtualKeyboard();
   }
-// TODO(ananta): Piggyback off existing IPCs to communicate this information,
-// crbug/420130.
-#if defined(OS_WIN)
-  if (event.GetType() == blink::WebGestureEvent::kGestureTap) {
-    // TODO(estade): hit test the event against focused node to make sure
-    // the tap actually hit the focused node.
-    blink::WebInputMethodController* controller = GetInputMethodController();
-    blink::WebTextInputType text_input_type =
-        controller ? controller->TextInputType() : blink::kWebTextInputTypeNone;
-
-    Send(new WidgetHostMsg_FocusedNodeTouched(
-        routing_id_, text_input_type != blink::kWebTextInputTypeNone));
-  }
-#endif
 #endif
 }
 
@@ -2982,6 +2959,14 @@ cc::LayerTreeSettings RenderWidget::GenerateLayerTreeSettings(
     settings.default_tile_size.set_height(tile_height);
   }
 
+  if (cmd.HasSwitch(switches::kMinHeightForGpuRasterTile)) {
+    int min_height_for_gpu_raster_tile = 0;
+    switch_value_as_int(cmd, switches::kMinHeightForGpuRasterTile, 1,
+                        std::numeric_limits<int>::max(),
+                        &min_height_for_gpu_raster_tile);
+    settings.min_height_for_gpu_raster_tile = min_height_for_gpu_raster_tile;
+  }
+
   int max_untiled_layer_width = settings.max_untiled_layer_size.width();
   if (cmd.HasSwitch(switches::kMaxUntiledLayerWidth)) {
     switch_value_as_int(cmd, switches::kMaxUntiledLayerWidth, 1,
@@ -3066,7 +3051,6 @@ cc::LayerTreeSettings RenderWidget::GenerateLayerTreeSettings(
 
   settings.initial_debug_state.SetRecordRenderingStats(
       cmd.HasSwitch(cc::switches::kEnableGpuBenchmarking));
-  settings.build_hit_test_data = features::IsVizHitTestingSurfaceLayerEnabled();
 
   if (cmd.HasSwitch(cc::switches::kSlowDownRasterScaleFactor)) {
     const int kMinSlowDownScaleFactor = 0;
@@ -3616,15 +3600,13 @@ int RenderWidget::GetLayerTreeId() const {
   return layer_tree_host_->GetId();
 }
 
-void RenderWidget::SetBrowserControlsShownRatio(float ratio) {
-  layer_tree_host_->SetBrowserControlsShownRatio(ratio);
+void RenderWidget::SetBrowserControlsShownRatio(float top_ratio,
+                                                float bottom_ratio) {
+  layer_tree_host_->SetBrowserControlsShownRatio(top_ratio, bottom_ratio);
 }
 
-void RenderWidget::SetBrowserControlsHeight(float top_height,
-                                            float bottom_height,
-                                            bool shrink_viewport) {
-  layer_tree_host_->SetBrowserControlsHeight(top_height, bottom_height,
-                                             shrink_viewport);
+void RenderWidget::SetBrowserControlsParams(cc::BrowserControlsParams params) {
+  layer_tree_host_->SetBrowserControlsParams(params);
 }
 
 viz::FrameSinkId RenderWidget::GetFrameSinkId() {

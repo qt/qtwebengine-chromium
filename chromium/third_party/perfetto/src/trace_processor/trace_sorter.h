@@ -21,8 +21,6 @@
 
 #include "perfetto/ext/base/circular_queue.h"
 #include "perfetto/trace_processor/basic_types.h"
-#include "src/trace_processor/fuchsia_provider_view.h"
-#include "src/trace_processor/proto_incremental_state.h"
 #include "src/trace_processor/timestamped_trace_piece.h"
 #include "src/trace_processor/trace_blob_view.h"
 #include "src/trace_processor/trace_processor_context.h"
@@ -34,6 +32,9 @@ class Value;
 
 namespace perfetto {
 namespace trace_processor {
+
+class FuchsiaProviderView;
+class PacketSequenceState;
 
 // This class takes care of sorting events parsed from the trace stream in
 // arbitrary order and pushing them to the next pipeline stages (parsing) in
@@ -67,7 +68,7 @@ class TraceSorter {
   TraceSorter(TraceProcessorContext*, int64_t window_size_ns);
 
   inline void PushTracePacket(int64_t timestamp,
-                              ProtoIncrementalState::PacketSequenceState* state,
+                              PacketSequenceState* state,
                               TraceBlobView packet) {
     DCHECK_ftrace_batch_cpu(kNoBatch);
     auto* queue = GetQueue(0);
@@ -123,12 +124,11 @@ class TraceSorter {
         TimestampedTracePiece(timestamp, packet_idx_++, inline_event));
   }
 
-  inline void PushTrackEventPacket(
-      int64_t timestamp,
-      int64_t thread_time,
-      int64_t thread_instruction_count,
-      ProtoIncrementalState::PacketSequenceState* state,
-      TraceBlobView packet) {
+  inline void PushTrackEventPacket(int64_t timestamp,
+                                   int64_t thread_time,
+                                   int64_t thread_instruction_count,
+                                   PacketSequenceState* state,
+                                   TraceBlobView packet) {
     auto* queue = GetQueue(0);
     queue->Append(TimestampedTracePiece(timestamp, thread_time,
                                         thread_instruction_count, packet_idx_++,
@@ -145,6 +145,7 @@ class TraceSorter {
   // Extract all events ignoring the window.
   void ExtractEventsForced() {
     SortAndExtractEventsBeyondWindow(/*window_size_ns=*/0);
+    queues_.resize(0);
   }
 
   // Sets the window size to be the size specified (which should be lower than
@@ -163,6 +164,8 @@ class TraceSorter {
       return;
     SortAndExtractEventsBeyondWindow(window_size_ns_);
   }
+
+  int64_t max_timestamp() const { return global_max_ts_; }
 
  private:
   static constexpr uint32_t kNoBatch = std::numeric_limits<uint32_t>::max();

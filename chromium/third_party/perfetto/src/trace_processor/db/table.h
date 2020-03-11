@@ -37,18 +37,37 @@ class Table {
   // Iterator over the rows of the table.
   class Iterator {
    public:
-    Iterator(const Table* table) : table_(table) {}
+    Iterator(const Table* table) : table_(table) {
+      for (const auto& rm : table->row_maps()) {
+        its_.emplace_back(rm.IterateRows());
+      }
+    }
 
-    bool Next() { return ++row_ < table_->size(); }
+    Iterator(Iterator&&) noexcept = default;
+    Iterator& operator=(Iterator&&) = default;
+
+    // Advances the iterator to the next row of the table.
+    void Next() {
+      for (auto& it : its_) {
+        it.Next();
+      }
+    }
+
+    // Returns whether the row the iterator is pointing at is valid.
+    operator bool() const { return its_[0]; }
 
     // Returns the value at the current row for column |col_idx|.
-    SqlValue Get(uint32_t col_idx) {
-      return table_->columns_[col_idx].Get(row_);
+    SqlValue Get(uint32_t col_idx) const {
+      const auto& col = table_->columns_[col_idx];
+      return col.GetAtIdx(its_[col.row_map_idx_].row());
     }
 
    private:
+    Iterator(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&) = delete;
+
     const Table* table_ = nullptr;
-    uint32_t row_ = std::numeric_limits<uint32_t>::max();
+    std::vector<RowMap::Iterator> its_;
   };
 
   // We explicitly define the move constructor here because we need to update
@@ -81,15 +100,14 @@ class Table {
   // Returns the column at index |idx| in the Table.
   const Column& GetColumn(uint32_t idx) const { return columns_[idx]; }
 
-  // Retuns the index of the column with the given name, if one exists, or
-  // nullptr otherwise.
-  base::Optional<uint32_t> FindColumnIdxByName(const char* name) const {
+  // Returns the column with the given name or nullptr otherwise.
+  const Column* GetColumnByName(const char* name) const {
     auto it = std::find_if(
         columns_.begin(), columns_.end(),
         [name](const Column& col) { return strcmp(col.name(), name) == 0; });
-    return it == columns_.end() ? base::nullopt
-                                : base::make_optional(static_cast<uint32_t>(
-                                      std::distance(columns_.begin(), it)));
+    if (it == columns_.end())
+      return nullptr;
+    return &*it;
   }
 
   // Returns the number of columns in the Table.

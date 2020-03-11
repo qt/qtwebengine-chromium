@@ -21,7 +21,6 @@
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_encoder_stream_sender.h"
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_receive_stream.h"
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_send_stream.h"
-#include "net/third_party/quiche/src/quic/core/qpack/qpack_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_session.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
@@ -153,6 +152,13 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Writes a HTTP/3 PRIORITY frame to the peer.
   void WriteH3Priority(const PriorityFrame& priority);
 
+  // Process received HTTP/3 GOAWAY frame. This method should only be called on
+  // the client side.
+  virtual void OnHttp3GoAway(QuicStreamId stream_id);
+
+  // Write the GOAWAY |frame| on control stream.
+  void SendHttp3GoAway();
+
   // Write |headers| for |promised_stream_id| on |original_stream_id| in a
   // PUSH_PROMISE frame to peer.
   virtual void WritePushPromise(QuicStreamId original_stream_id,
@@ -237,6 +243,10 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   Http3DebugVisitor* debug_visitor() { return debug_visitor_; }
 
+  bool http3_goaway_received() const { return http3_goaway_received_; }
+
+  bool http3_goaway_sent() const { return http3_goaway_sent_; }
+
   // Log header compression ratio histogram.
   // |using_qpack| is true for QPACK, false for HPACK.
   // |is_sent| is true for sent headers, false for received ones.
@@ -254,6 +264,14 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
                                                  bool is_sent,
                                                  QuicByteCount compressed,
                                                  QuicByteCount uncompressed);
+
+  // True if any dynamic table entries have been referenced from either a sent
+  // or received header block.  Used for stats.
+  bool dynamic_table_entry_referenced() const {
+    return (qpack_encoder_ &&
+            qpack_encoder_->dynamic_table_entry_referenced()) ||
+           (qpack_decoder_ && qpack_decoder_->dynamic_table_entry_referenced());
+  }
 
  protected:
   // Override CreateIncomingStream(), CreateOutgoingBidirectionalStream() and
@@ -295,6 +313,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
       QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
 
   void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) override;
+  void SetDefaultEncryptionLevel(quic::EncryptionLevel level) override;
 
   bool supports_push_promise() { return supports_push_promise_; }
 
@@ -416,6 +435,14 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Not owned by the session.
   Http3DebugVisitor* debug_visitor_;
+
+  // If the endpoint has received HTTP/3 GOAWAY frame.
+  bool http3_goaway_received_;
+  // If the endpoint has sent HTTP/3 GOAWAY frame.
+  bool http3_goaway_sent_;
+
+  // If the sendpoint has sent the initial HTTP/3 MAX_PUSH_ID frame.
+  bool http3_max_push_id_sent_;
 };
 
 }  // namespace quic

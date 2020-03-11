@@ -16,7 +16,11 @@ import * as m from 'mithril';
 
 import {assertExists} from '../base/logging';
 import {Actions} from '../common/actions';
-import {TrackGroupState, TrackState} from '../common/state';
+import {
+  getContainingTrackId,
+  TrackGroupState,
+  TrackState
+} from '../common/state';
 
 import {globals} from './globals';
 import {drawGridLines} from './gridline_helper';
@@ -26,7 +30,7 @@ import {TrackContent} from './track_panel';
 import {trackRegistry} from './track_registry';
 import {
   drawVerticalLineAtTime,
-  drawVerticalSelection
+  drawVerticalSelection,
 } from './vertical_line_helper';
 
 
@@ -62,17 +66,38 @@ export class TrackGroupPanel extends Panel<Attrs> {
     if (name[0] === '/') {
       name = StripPathFromExecutable(name);
     }
+
+    // The shell should be highlighted if the current search result is inside
+    // this track group.
+    let highlightClass = '';
+    const searchIndex = globals.frontendLocalState.searchIndex;
+    if (searchIndex !== -1) {
+      const trackId = globals.currentSearchResults
+                          .trackIds[globals.frontendLocalState.searchIndex];
+      const parentTrackId = getContainingTrackId(globals.state, trackId);
+      if (parentTrackId === attrs.trackGroupId) {
+        highlightClass = 'flash';
+      }
+    }
+
+    const selectedArea = globals.frontendLocalState.selectedArea.area;
+    const markSelectedClass =
+        selectedArea && selectedArea.tracks.includes(attrs.trackGroupId) ?
+        'selected' :
+        '';
+
     return m(
         `.track-group-panel[collapsed=${collapsed}]`,
         {id: 'track_' + this.trackGroupId},
-        m('.shell',
+        m(`.shell`,
           {
             onclick: (e: MouseEvent) => {
               globals.dispatch(Actions.toggleTrackGroupCollapsed({
                 trackGroupId: attrs.trackGroupId,
               })),
                   e.stopPropagation();
-            }
+            },
+            class: `${highlightClass} ${markSelectedClass}`,
           },
           m('h1',
             {
@@ -135,13 +160,12 @@ export class TrackGroupPanel extends Panel<Attrs> {
                             size.height,
                             `rgb(52,69,150)`);
     }
-    if (globals.frontendLocalState.selectedTimeRange.startSec !== undefined &&
-        globals.frontendLocalState.selectedTimeRange.endSec !== undefined) {
+    if (localState.selectedArea.area !== undefined) {
       drawVerticalSelection(
           ctx,
           localState.timeScale,
-          globals.frontendLocalState.selectedTimeRange.startSec,
-          globals.frontendLocalState.selectedTimeRange.endSec,
+          localState.selectedArea.area.startSec,
+          localState.selectedArea.area.endSec,
           size.height,
           `rgba(0,0,0,0.5)`);
     }

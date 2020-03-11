@@ -22,6 +22,7 @@
 #include "dawn_native/Fence.h"
 #include "dawn_native/FenceSignalTracker.h"
 #include "dawn_native/Texture.h"
+#include "dawn_platform/DawnPlatform.h"
 #include "dawn_platform/tracing/TraceEvent.h"
 
 namespace dawn_native {
@@ -33,8 +34,9 @@ namespace dawn_native {
 
     void QueueBase::Submit(uint32_t commandCount, CommandBufferBase* const* commands) {
         DeviceBase* device = GetDevice();
-        TRACE_EVENT0(device->GetPlatform(), TRACE_DISABLED_BY_DEFAULT("gpu.dawn"), "Queue::Submit");
-        if (device->ConsumedError(ValidateSubmit(commandCount, commands))) {
+        TRACE_EVENT0(device->GetPlatform(), General, "Queue::Submit");
+        if (device->IsValidationEnabled() &&
+            device->ConsumedError(ValidateSubmit(commandCount, commands))) {
             return;
         }
         ASSERT(!IsError());
@@ -46,7 +48,7 @@ namespace dawn_native {
             device->GetCurrentErrorScope());
     }
 
-    void QueueBase::Signal(FenceBase* fence, uint64_t signalValue) {
+    void QueueBase::Signal(Fence* fence, uint64_t signalValue) {
         DeviceBase* device = GetDevice();
         if (device->ConsumedError(ValidateSignal(fence, signalValue))) {
             return;
@@ -59,16 +61,17 @@ namespace dawn_native {
             device->GetCurrentErrorScope());
     }
 
-    FenceBase* QueueBase::CreateFence(const FenceDescriptor* descriptor) {
+    Fence* QueueBase::CreateFence(const FenceDescriptor* descriptor) {
         if (GetDevice()->ConsumedError(ValidateCreateFence(descriptor))) {
-            return FenceBase::MakeError(GetDevice());
+            return Fence::MakeError(GetDevice());
         }
 
-        return new FenceBase(this, descriptor);
+        return new Fence(this, descriptor);
     }
 
     MaybeError QueueBase::ValidateSubmit(uint32_t commandCount,
                                          CommandBufferBase* const* commands) {
+        TRACE_EVENT0(GetDevice()->GetPlatform(), Validation, "Queue::ValidateSubmit");
         DAWN_TRY(GetDevice()->ValidateObject(this));
 
         for (uint32_t i = 0; i < commandCount; ++i) {
@@ -96,7 +99,7 @@ namespace dawn_native {
         return {};
     }
 
-    MaybeError QueueBase::ValidateSignal(const FenceBase* fence, uint64_t signalValue) {
+    MaybeError QueueBase::ValidateSignal(const Fence* fence, uint64_t signalValue) {
         DAWN_TRY(GetDevice()->ValidateObject(this));
         DAWN_TRY(GetDevice()->ValidateObject(fence));
 

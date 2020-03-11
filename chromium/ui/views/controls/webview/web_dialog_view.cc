@@ -65,6 +65,10 @@ void ObservableWebView::ResourceLoadComplete(
     delegate_->OnMainFrameResourceLoadComplete(resource_load_info);
 }
 
+void ObservableWebView::ResetDelegate() {
+  delegate_ = nullptr;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // WebDialogView, public:
 
@@ -268,10 +272,9 @@ std::string WebDialogView::GetDialogArgs() const {
   return std::string();
 }
 
-void WebDialogView::OnDialogShown(content::WebUI* webui,
-                                  content::RenderViewHost* render_view_host) {
+void WebDialogView::OnDialogShown(content::WebUI* webui) {
   if (delegate_)
-    delegate_->OnDialogShown(webui, render_view_host);
+    delegate_->OnDialogShown(webui);
 }
 
 void WebDialogView::OnDialogClosed(const std::string& json_retval) {
@@ -287,6 +290,8 @@ void WebDialogView::OnDialogClosed(const std::string& json_retval) {
   if (delegate_) {
     delegate_->OnDialogClosed(json_retval);
     delegate_ = nullptr;  // We will not communicate further with the delegate.
+    // Clear the copy of the delegate in |web_view_| too.
+    web_view_->ResetDelegate();
   }
 }
 
@@ -308,6 +313,12 @@ bool WebDialogView::ShouldShowDialogTitle() const {
   if (delegate_)
     return delegate_->ShouldShowDialogTitle();
   return true;
+}
+
+bool WebDialogView::ShouldCenterDialogTitleText() const {
+  if (delegate_)
+    return delegate_->ShouldCenterDialogTitleText();
+  return false;
 }
 
 bool WebDialogView::ShouldShowCloseButton() const {

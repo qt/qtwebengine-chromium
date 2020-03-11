@@ -73,6 +73,10 @@ generators = {
         'src/libANGLE/renderer/gen_angle_format_table.py',
     'ANGLE load functions table':
         'src/libANGLE/renderer/gen_load_functions_table.py',
+    'ANGLE shader preprocessor':
+        'src/compiler/preprocessor/generate_parser.py',
+    'ANGLE shader translator':
+        'src/compiler/translator/generate_parser.py',
     'D3D11 blit shader selection':
         'src/libANGLE/renderer/d3d/d3d11/gen_blit11helper.py',
     'D3D11 format':
@@ -117,6 +121,8 @@ generators = {
         'src/libANGLE/renderer/metal/gen_mtl_format_table.py',
     'Metal default shaders':
         'src/libANGLE/renderer/metal/shaders/gen_mtl_internal_shaders.py',
+    'GL CTS (dEQP) build files':
+        'scripts/gen_vk_gl_cts_build.py',
 }
 
 

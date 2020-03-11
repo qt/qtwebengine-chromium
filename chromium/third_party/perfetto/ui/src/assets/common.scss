@@ -53,7 +53,6 @@
 
 * {
     box-sizing: border-box;
-    overflow: hidden;
     -webkit-tap-highlight-color: none;
     touch-action: none;
 }
@@ -97,6 +96,7 @@ body>main {
     grid-template-rows: auto auto 1fr;
     grid-template-columns: auto 1fr;
     color: #121212;
+    overflow: hidden;
 }
 
 button {
@@ -132,7 +132,8 @@ button.close {
     grid-area: page;
     position: relative;
     display: flex;
-    flex-direction: column
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .split-panel {
@@ -140,6 +141,7 @@ button.close {
   display: flex;
   flex-flow: row;
   position: relative;
+  overflow: hidden;
 }
 
 .video-panel {
@@ -307,6 +309,10 @@ button.close {
           box-shadow: 0 -4px 2px -1px hsl(213, 40%, 50%) inset;
         }
 
+        &.selected {
+          background-color: #ebeef9;
+        }
+
         h1 {
             grid-area: title;
             margin: 0;
@@ -334,6 +340,9 @@ button.close {
         &:hover .track-button{
           opacity: 1;
         }
+        &.flash {
+          background-color: #ffe263;
+        }
     }
 }
 
@@ -343,6 +352,24 @@ button.close {
   overflow-y: auto;
   flex: 1 1 auto;
   will-change: transform;  // Force layer creation.
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: "space";
+}
+
+.details-panel-container {
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  // TODO(taylori): This causes the sticky header to flicker when scrolling.
+  // Is will-change necessary in the details panel?
+  // will-change: transform;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: "space";
 }
 
 .pinned-panel-container {
@@ -352,6 +379,10 @@ button.close {
   overflow: visible;
   box-shadow: 1px 3px 15px rgba(23, 32, 44, 0.3);
   z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: "space";
 }
 
 // In the scrolling case, since the canvas is overdrawn and continuously
@@ -359,14 +390,17 @@ button.close {
 // height equaling the total height of the content to prevent scrolling
 // height from growing.
 .scroll-limiter {
-  overflow: hidden;
   position: relative;
+  grid-area: space;
+  overflow: hidden;
 }
 
 canvas.main-canvas {
-  top: 0px;
   z-index: -1;
-  position: absolute;
+}
+
+.panels {
+  grid-area: space;
 }
 
 .panel {
@@ -431,57 +465,46 @@ button.query-ctrl {
 }
 
 .perf-stats {
-  --perfetto-orange: hsl(45, 100%, 48%);
-  --perfetto-red: hsl(6, 70%, 53%);
   --stroke-color: hsl(217, 39%, 94%);
   position: fixed;
   bottom: 0;
+  left: 0;
+  width: 600px;
   color: var(--stroke-color);
   font-family: monospace;
-  padding: 2px 0px;
+  padding: 10px 24px;
   z-index: 100;
-  button:hover {
-    color: var(--perfetto-red);
-  }
-  &[expanded=true] {
-    width: 600px;
-    background-color: rgba(27, 28, 29, 0.95);
-    button {
-      color: var(--perfetto-orange);
-      &:hover {
-        color: var(--perfetto-red);
-      }
+  background-color: rgba(27, 28, 29, 0.90);
+  button {
+    text-decoration: underline;
+    color: hsl(45, 100%, 48%);
+    &:hover {
+      color: hsl(6, 70%, 53%);
     }
   }
-  &[expanded=false] {
-    width: var(--sidebar-width);
-    background-color: transparent;
+  .close-button {
+    position: absolute;
+    right: 20px;
+    top: 10px;
+    width: 20px;
+    height: 20px;
+    color: var(--stroke-color)
   }
-  i {
-    margin: 0px 24px;
-    font-size: 30px;
+  & > section {
+    padding: 5px;
+    border-bottom: 1px solid var(--stroke-color);
   }
-  .perf-stats-content {
-    margin: 10px 24px;
-    & > section {
-      padding: 5px;
-      border-bottom: 1px solid var(--stroke-color);
-    }
-    button {
-      text-decoration: underline;
-    }
-    div {
-      margin: 2px 0px;
-    }
-    table, td, th {
-      border: 1px solid var(--stroke-color);
-      text-align: center;
-      padding: 4px;
-      margin: 4px 0px;
-    }
-    table {
-      border-collapse: collapse;
-    }
+  div {
+    margin: 2px 0px;
+  }
+  table, td, th {
+    border: 1px solid var(--stroke-color);
+    text-align: center;
+    padding: 4px;
+    margin: 4px 0px;
+  }
+  table {
+    border-collapse: collapse;
   }
 }
 
@@ -512,6 +535,9 @@ button.query-ctrl {
     background-color: var(--expanded-background);
     color: white;
     font-weight: bold;
+    .shell.flash {
+      color: #121212;
+    }
   }
   .shell {
     padding: 4px 10px;
@@ -539,6 +565,12 @@ button.query-ctrl {
       .fold-button {
         color: hsl(45, 100%, 48%);
       }
+    }
+    &.flash {
+      background-color: #ffe263;
+    }
+    &.selected {
+      background-color: #ebeef9;
     }
   }
 }

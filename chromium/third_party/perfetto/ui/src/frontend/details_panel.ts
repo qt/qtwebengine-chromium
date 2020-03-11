@@ -16,6 +16,7 @@ import * as m from 'mithril';
 
 import {LogExists, LogExistsKey} from '../common/logs';
 
+import {AggregationPanel} from './aggregation_panel';
 import {ChromeSliceDetailsPanel} from './chrome_slice_panel';
 import {CounterDetailsPanel} from './counter_panel';
 import {DragGestureHandler} from './drag_gesture_handler';
@@ -31,6 +32,23 @@ const UP_ICON = 'keyboard_arrow_up';
 const DOWN_ICON = 'keyboard_arrow_down';
 const DRAG_HANDLE_HEIGHT_PX = 28;
 const DEFAULT_DETAILS_HEIGHT_PX = 230 + DRAG_HANDLE_HEIGHT_PX;
+let HEAP_PROFILE_DETAILS_HEIGHT_PX = DEFAULT_DETAILS_HEIGHT_PX;
+
+function generateHeapProfileHeight() {
+  const panelContainer =
+      document.querySelector('.scrolling-panel-container') as HTMLElement;
+  if (HEAP_PROFILE_DETAILS_HEIGHT_PX === DEFAULT_DETAILS_HEIGHT_PX &&
+      panelContainer !== null) {
+    HEAP_PROFILE_DETAILS_HEIGHT_PX = panelContainer.clientHeight;
+  }
+}
+
+function getHeightForDetailsPanel(): number {
+  return globals.state.currentSelection &&
+          globals.state.currentSelection.kind === 'HEAP_PROFILE' ?
+      HEAP_PROFILE_DETAILS_HEIGHT_PX :
+      DEFAULT_DETAILS_HEIGHT_PX;
+}
 
 function hasLogs(): boolean {
   const data = globals.trackDataStore.get(LogExistsKey) as LogExists;
@@ -40,13 +58,23 @@ function hasLogs(): boolean {
 interface DragHandleAttrs {
   height: number;
   resize: (height: number) => void;
+  tabs: Tab[];
 }
+
+export type Tab = 'current_selection'|'time_range'|'android_logs';
 
 class DragHandle implements m.ClassComponent<DragHandleAttrs> {
   private dragStartHeight = 0;
   private height = 0;
+  private previousHeight = this.height;
   private resize: (height: number) => void = () => {};
   private isClosed = this.height <= DRAG_HANDLE_HEIGHT_PX;
+  private tabNames = new Map<Tab, string>([
+    ['current_selection', 'Current Selection'],
+    ['time_range', 'Time Range'],
+    ['android_logs', 'Android Logs']
+  ]);
+
 
   oncreate({dom, attrs}: m.CVnodeDOM<DragHandleAttrs>) {
     this.resize = attrs.resize;
@@ -79,20 +107,37 @@ class DragHandle implements m.ClassComponent<DragHandleAttrs> {
 
   onDragEnd() {}
 
-  view() {
+  view({attrs}: m.CVnode<DragHandleAttrs>) {
     const icon = this.isClosed ? UP_ICON : DOWN_ICON;
     const title = this.isClosed ? 'Show panel' : 'Hide panel';
+    const renderTab = (key: Tab) => {
+      if (globals.frontendLocalState.currentTab === key ||
+          globals.frontendLocalState.currentTab === undefined &&
+              attrs.tabs[0] === key) {
+        return m('.tab[active]', this.tabNames.get(key));
+      }
+      return m(
+          '.tab',
+          {
+            onclick: () => {
+              globals.frontendLocalState.currentTab = key;
+              globals.rafScheduler.scheduleFullRedraw();
+            }
+          },
+          this.tabNames.get(key));
+    };
     return m(
         '.handle',
-        m('.handle-title', 'Current Selection'),
+        m('.tabs', attrs.tabs.map(renderTab)),
         m('i.material-icons',
           {
             onclick: () => {
               if (this.height === DRAG_HANDLE_HEIGHT_PX) {
                 this.isClosed = false;
-                this.resize(DEFAULT_DETAILS_HEIGHT_PX);
+                this.resize(this.previousHeight);
               } else {
                 this.isClosed = true;
+                this.previousHeight = this.height;
                 this.resize(DRAG_HANDLE_HEIGHT_PX);
               }
               globals.rafScheduler.scheduleFullRedraw();
@@ -107,58 +152,74 @@ export class DetailsPanel implements m.ClassComponent {
   private detailsHeight = DRAG_HANDLE_HEIGHT_PX;
   // Used to set details panel to default height on selection.
   private showDetailsPanel = true;
+  private lastSelectedKind?: string;
 
   view() {
-    const detailsPanels: AnyAttrsVnode[] = [];
+    const detailsPanels: Map<Tab, AnyAttrsVnode> = new Map();
     const curSelection = globals.state.currentSelection;
     if (curSelection) {
       switch (curSelection.kind) {
         case 'NOTE':
-          detailsPanels.push(m(NotesEditorPanel, {
-            key: 'notes',
-            id: curSelection.id,
-          }));
+          detailsPanels.set('current_selection', m(NotesEditorPanel, {
+                              key: 'notes',
+                              id: curSelection.id,
+                            }));
           break;
         case 'SLICE':
-          detailsPanels.push(m(SliceDetailsPanel, {
-            key: 'slice',
-          }));
+          detailsPanels.set('current_selection', m(SliceDetailsPanel, {
+                              key: 'slice',
+                            }));
           break;
         case 'COUNTER':
-          detailsPanels.push(m(CounterDetailsPanel, {
-            key: 'counter',
-          }));
+          detailsPanels.set('current_selection', m(CounterDetailsPanel, {
+                              key: 'counter',
+                            }));
           break;
         case 'HEAP_PROFILE':
-          detailsPanels.push(m(HeapProfileDetailsPanel, {key: 'heap_profile'}));
+          detailsPanels.set(
+              'current_selection',
+              m(HeapProfileDetailsPanel, {key: 'heap_profile'}));
+          generateHeapProfileHeight();
           break;
         case 'CHROME_SLICE':
-          detailsPanels.push(m(ChromeSliceDetailsPanel));
+          detailsPanels.set('current_selection', m(ChromeSliceDetailsPanel));
           break;
         case 'THREAD_STATE':
-          detailsPanels.push(m(ThreadStatePanel, {
-            key: 'thread_state',
-            ts: curSelection.ts,
-            dur: curSelection.dur,
-            utid: curSelection.utid,
-            state: curSelection.state,
-            cpu: curSelection.cpu
-          }));
+          detailsPanels.set('current_selection', m(ThreadStatePanel, {
+                              key: 'thread_state',
+                              ts: curSelection.ts,
+                              dur: curSelection.dur,
+                              utid: curSelection.utid,
+                              state: curSelection.state,
+                              cpu: curSelection.cpu
+                            }));
           break;
         default:
           break;
       }
-    } else if (hasLogs()) {
-      detailsPanels.push(m(LogPanel, {}));
+    }
+    if (hasLogs()) {
+      detailsPanels.set('android_logs', m(LogPanel, {}));
+    }
+
+    if (globals.frontendLocalState.selectedArea.area !== undefined) {
+      detailsPanels.set('time_range', m(AggregationPanel));
     }
 
     const wasShowing = this.showDetailsPanel;
-    this.showDetailsPanel = detailsPanels.length > 0;
+    const changedSelection =
+        curSelection && this.lastSelectedKind !== curSelection.kind;
+    this.showDetailsPanel = detailsPanels.size > 0;
+    this.lastSelectedKind = curSelection ? curSelection.kind : undefined;
     // Pop up details panel on first selection.
-    if (!wasShowing && this.showDetailsPanel &&
-        this.detailsHeight === DRAG_HANDLE_HEIGHT_PX) {
-      this.detailsHeight = DEFAULT_DETAILS_HEIGHT_PX;
+    if (!wasShowing && changedSelection && this.showDetailsPanel) {
+      this.detailsHeight = getHeightForDetailsPanel();
     }
+
+    const panel = globals.frontendLocalState.currentTab ?
+        detailsPanels.get(globals.frontendLocalState.currentTab) :
+        detailsPanels.values().next().value;
+    const panels = panel ? [panel] : [];
 
     return m(
         '.details-content',
@@ -173,9 +234,9 @@ export class DetailsPanel implements m.ClassComponent {
             this.detailsHeight = Math.max(height, DRAG_HANDLE_HEIGHT_PX);
           },
           height: this.detailsHeight,
+          tabs: [...detailsPanels.keys()],
         }),
         m('.details-panel-container',
-          m(PanelContainer,
-            {doesScroll: true, panels: detailsPanels, kind: 'DETAILS'})));
+          m(PanelContainer, {doesScroll: true, panels, kind: 'DETAILS'})));
   }
 }

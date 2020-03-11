@@ -79,12 +79,13 @@ class LambdaPeerConnectionObserver final : public PeerConnectionObserver {
     for (const auto& handler : handlers_->on_ice_candidate)
       handler(candidate);
   }
-  void OnIceCandidateError(const std::string& host_candidate,
+  void OnIceCandidateError(const std::string& address,
+                           int port,
                            const std::string& url,
                            int error_code,
                            const std::string& error_text) override {
     for (const auto& handler : handlers_->on_ice_candidate_error)
-      handler(host_candidate, url, error_code, error_text);
+      handler(address, port, url, error_code, error_text);
   }
   void OnIceCandidatesRemoved(
       const std::vector<cricket::Candidate>& candidates) override {
@@ -185,7 +186,6 @@ PeerScenarioClient::PeerScenarioClient(
   pcf_deps.fec_controller_factory = nullptr;
   pcf_deps.network_controller_factory = nullptr;
   pcf_deps.network_state_predictor_factory = nullptr;
-  pcf_deps.media_transport_factory = nullptr;
 
   pc_factory_ = CreateModularPeerConnectionFactory(std::move(pcf_deps));
 

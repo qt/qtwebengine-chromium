@@ -5,24 +5,29 @@
 #ifndef UTIL_SERIAL_DELETE_PTR_H_
 #define UTIL_SERIAL_DELETE_PTR_H_
 
+#include <cassert>
 #include <memory>
+#include <utility>
 
 #include "platform/api/task_runner.h"
 
 namespace openscreen {
 
+// A functor that deletes an object via a task on a specific TaskRunner. This is
+// used for ensuring an object is deleted after any tasks that reference it have
+// completed.
 template <typename Type, typename DeleterType>
 class SerialDelete {
  public:
-  SerialDelete(platform::TaskRunner* task_runner)
+  explicit SerialDelete(platform::TaskRunner* task_runner)
       : task_runner_(task_runner), deleter_() {
-    OSP_DCHECK(task_runner);
+    assert(task_runner);
   }
 
   template <typename DT>
   SerialDelete(platform::TaskRunner* task_runner, DT&& deleter)
       : task_runner_(task_runner), deleter_(std::forward<DT>(deleter)) {
-    OSP_DCHECK(task_runner);
+    assert(task_runner);
   }
 
   void operator()(Type* pointer) const {
@@ -35,29 +40,31 @@ class SerialDelete {
   DeleterType deleter_;
 };
 
+// A wrapper around std::unique_ptr<> that uses SerialDelete<> to schedule the
+// object's deletion.
 template <typename Type, typename DeleterType = std::default_delete<Type>>
 class SerialDeletePtr
     : public std::unique_ptr<Type, SerialDelete<Type, DeleterType>> {
  public:
-  SerialDeletePtr(platform::TaskRunner* task_runner) noexcept
+  explicit SerialDeletePtr(platform::TaskRunner* task_runner) noexcept
       : std::unique_ptr<Type, SerialDelete<Type, DeleterType>>(
             nullptr,
             SerialDelete<Type, DeleterType>(task_runner)) {
-    OSP_DCHECK(task_runner);
+    assert(task_runner);
   }
 
   SerialDeletePtr(platform::TaskRunner* task_runner, std::nullptr_t) noexcept
       : std::unique_ptr<Type, SerialDelete<Type, DeleterType>>(
             nullptr,
             SerialDelete<Type, DeleterType>(task_runner)) {
-    OSP_DCHECK(task_runner);
+    assert(task_runner);
   }
 
   SerialDeletePtr(platform::TaskRunner* task_runner, Type* pointer) noexcept
       : std::unique_ptr<Type, SerialDelete<Type, DeleterType>>(
             pointer,
             SerialDelete<Type, DeleterType>(task_runner)) {
-    OSP_DCHECK(task_runner);
+    assert(task_runner);
   }
 
   SerialDeletePtr(
@@ -69,7 +76,7 @@ class SerialDeletePtr
       : std::unique_ptr<Type, SerialDelete<Type, DeleterType>>(
             pointer,
             SerialDelete<Type, DeleterType>(task_runner, deleter)) {
-    OSP_DCHECK(task_runner);
+    assert(task_runner);
   }
 
   SerialDeletePtr(
@@ -79,7 +86,7 @@ class SerialDeletePtr
       : std::unique_ptr<Type, SerialDelete<Type, DeleterType>>(
             pointer,
             SerialDelete<Type, DeleterType>(task_runner, std::move(deleter))) {
-    OSP_DCHECK(task_runner);
+    assert(task_runner);
   }
 };
 

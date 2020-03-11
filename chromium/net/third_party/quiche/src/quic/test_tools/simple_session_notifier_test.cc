@@ -42,7 +42,7 @@ class SimpleSessionNotifierTest : public QuicTest {
       : connection_(&helper_, &alarm_factory_, Perspective::IS_CLIENT),
         notifier_(&connection_) {
     connection_.set_visitor(&visitor_);
-    QuicConnectionPeer::SetSessionDecidesWhatToWrite(&connection_);
+    connection_.SetSessionNotifier(&notifier_);
     EXPECT_FALSE(notifier_.WillingToWrite());
     EXPECT_EQ(0u, notifier_.StreamBytesSent());
     EXPECT_FALSE(notifier_.HasBufferedStreamData());
@@ -135,6 +135,8 @@ TEST_F(SimpleSessionNotifierTest, WriteOrBufferPing) {
 
 TEST_F(SimpleSessionNotifierTest, NeuterUnencryptedData) {
   if (QuicVersionUsesCryptoFrames(connection_.transport_version())) {
+    // This test writes crypto data through crypto streams. It won't work when
+    // crypto frames are used instead.
     return;
   }
   InSequence s;
@@ -175,6 +177,8 @@ TEST_F(SimpleSessionNotifierTest, NeuterUnencryptedData) {
 
 TEST_F(SimpleSessionNotifierTest, OnCanWrite) {
   if (QuicVersionUsesCryptoFrames(connection_.transport_version())) {
+    // This test writes crypto data through crypto streams. It won't work when
+    // crypto frames are used instead.
     return;
   }
   InSequence s;

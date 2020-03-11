@@ -4327,26 +4327,6 @@ namespace rr
 		Nucleus::createMaskedStore(base.value, val.value, mask.value, alignment);
 	}
 
-	RValue<Float4> Gather(RValue<Pointer<Float>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
-	{
-		return RValue<Float4>(Nucleus::createGather(base.value, Float::getType(), offsets.value, mask.value, alignment, zeroMaskedLanes));
-	}
-
-	RValue<Int4> Gather(RValue<Pointer<Int>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
-	{
-		return RValue<Int4>(Nucleus::createGather(base.value, Int::getType(), offsets.value, mask.value, alignment, zeroMaskedLanes));
-	}
-
-	void Scatter(RValue<Pointer<Float>> base, RValue<Float4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment)
-	{
-		Nucleus::createScatter(base.value, val.value, offsets.value, mask.value, alignment);
-	}
-
-	void Scatter(RValue<Pointer<Int>> base, RValue<Int4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment)
-	{
-		Nucleus::createScatter(base.value, val.value, offsets.value, mask.value, alignment);
-	}
-
 	void Fence(std::memory_order memoryOrder)
 	{
 		ASSERT_MSG(memoryOrder == std::memory_order_acquire ||
@@ -4357,4 +4337,16 @@ namespace rr
 		Nucleus::createFence(memoryOrder);
 	}
 
+	Bool          CToReactor<bool>::cast(bool v)               { return type(v); }
+	Byte          CToReactor<uint8_t>::cast(uint8_t v)         { return type(v); }
+	SByte         CToReactor<int8_t>::cast(int8_t v)           { return type(v); }
+	Short         CToReactor<int16_t>::cast(int16_t v)         { return type(v); }
+	UShort        CToReactor<uint16_t>::cast(uint16_t v)       { return type(v); }
+	Int           CToReactor<int32_t>::cast(int32_t v)         { return type(v); }
+	UInt          CToReactor<uint32_t>::cast(uint32_t v)       { return type(v); }
+	Float         CToReactor<float>::cast(float v)             { return type(v); }
+	Float4        CToReactor<float[4]>::cast(float v[4])       { return type(v[0], v[1], v[2], v[3]); }
+
+	// TODO: Long has no constructor that takes a uint64_t
+	// Long          CToReactor<uint64_t>::cast(uint64_t v)       { return type(v); }
 }

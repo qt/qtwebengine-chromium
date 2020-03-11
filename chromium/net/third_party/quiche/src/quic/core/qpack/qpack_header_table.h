@@ -40,7 +40,7 @@ class QUIC_EXPORT_PRIVATE QpackHeaderTable {
   enum class MatchType { kNameAndValue, kName, kNoMatch };
 
   // Observer interface for dynamic table insertion.
-  class Observer {
+  class QUIC_EXPORT_PRIVATE Observer {
    public:
     virtual ~Observer() = default;
 
@@ -98,6 +98,11 @@ class QUIC_EXPORT_PRIVATE QpackHeaderTable {
   // This method must only be called at most once.
   void SetMaximumDynamicTableCapacity(uint64_t maximum_dynamic_table_capacity);
 
+  // Get |maximum_dynamic_table_capacity_|.
+  uint64_t maximum_dynamic_table_capacity() const {
+    return maximum_dynamic_table_capacity_;
+  }
+
   // Register an observer to be notified when inserted_entry_count() reaches
   // |required_insert_count|.  After the notification, |observer| automatically
   // gets unregistered.  Each observer must only be registered at most once.
@@ -129,6 +134,13 @@ class QUIC_EXPORT_PRIVATE QpackHeaderTable {
   // remaining capacity is taken up by draining entries and unused space.
   // The returned index might not be the index of a valid entry.
   uint64_t draining_index(float draining_fraction) const;
+
+  void set_dynamic_table_entry_referenced() {
+    dynamic_table_entry_referenced_ = true;
+  }
+  bool dynamic_table_entry_referenced() const {
+    return dynamic_table_entry_referenced_;
+  }
 
  private:
   friend class test::QpackHeaderTablePeer;
@@ -192,6 +204,10 @@ class QUIC_EXPORT_PRIVATE QpackHeaderTable {
 
   // Observers waiting to be notified, sorted by required insert count.
   std::multimap<uint64_t, Observer*> observers_;
+
+  // True if any dynamic table entries have been referenced from a header block.
+  // Set directly by the encoder or decoder.  Used for stats.
+  bool dynamic_table_entry_referenced_;
 };
 
 }  // namespace quic

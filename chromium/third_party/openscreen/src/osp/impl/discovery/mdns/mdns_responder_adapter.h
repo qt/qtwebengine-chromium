@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "osp/impl/discovery/mdns/domain_name.h"
 #include "osp/impl/discovery/mdns/mdns_responder_platform.h"
 #include "platform/api/network_interface.h"
@@ -20,7 +19,7 @@
 #include "platform/base/ip_address.h"
 
 namespace openscreen {
-namespace mdns {
+namespace osp {
 
 struct QueryEventHeader {
   enum class Type {
@@ -31,9 +30,9 @@ struct QueryEventHeader {
 
   QueryEventHeader();
   QueryEventHeader(Type response_type, platform::UdpSocket* socket);
-  QueryEventHeader(const QueryEventHeader&);
+  QueryEventHeader(QueryEventHeader&&) noexcept;
   ~QueryEventHeader();
-  QueryEventHeader& operator=(const QueryEventHeader&);
+  QueryEventHeader& operator=(QueryEventHeader&&) noexcept;
 
   Type response_type;
   platform::UdpSocket* socket;
@@ -41,7 +40,7 @@ struct QueryEventHeader {
 
 struct PtrEvent {
   PtrEvent();
-  PtrEvent(const QueryEventHeader& header, DomainName service_instance);
+  PtrEvent(QueryEventHeader header, DomainName service_instance);
   PtrEvent(PtrEvent&&) noexcept;
   ~PtrEvent();
   PtrEvent& operator=(PtrEvent&&) noexcept;
@@ -52,7 +51,7 @@ struct PtrEvent {
 
 struct SrvEvent {
   SrvEvent();
-  SrvEvent(const QueryEventHeader& header,
+  SrvEvent(QueryEventHeader header,
            DomainName service_instance,
            DomainName domain_name,
            uint16_t port);
@@ -68,7 +67,7 @@ struct SrvEvent {
 
 struct TxtEvent {
   TxtEvent();
-  TxtEvent(const QueryEventHeader& header,
+  TxtEvent(QueryEventHeader header,
            DomainName service_instance,
            std::vector<std::string> txt_info);
   TxtEvent(TxtEvent&&) noexcept;
@@ -85,9 +84,7 @@ struct TxtEvent {
 
 struct AEvent {
   AEvent();
-  AEvent(const QueryEventHeader& header,
-         DomainName domain_name,
-         const IPAddress& address);
+  AEvent(QueryEventHeader header, DomainName domain_name, IPAddress address);
   AEvent(AEvent&&) noexcept;
   ~AEvent();
   AEvent& operator=(AEvent&&) noexcept;
@@ -99,9 +96,7 @@ struct AEvent {
 
 struct AaaaEvent {
   AaaaEvent();
-  AaaaEvent(const QueryEventHeader& header,
-            DomainName domain_name,
-            const IPAddress& address);
+  AaaaEvent(QueryEventHeader header, DomainName domain_name, IPAddress address);
   AaaaEvent(AaaaEvent&&) noexcept;
   ~AaaaEvent();
   AaaaEvent& operator=(AaaaEvent&&) noexcept;
@@ -196,7 +191,7 @@ class MdnsResponderAdapter : public platform::UdpSocket::Client {
 
   // Returns the time period after which this method must be called again, if
   // any.
-  virtual absl::optional<platform::Clock::duration> RunTasks() = 0;
+  virtual platform::Clock::duration RunTasks() = 0;
 
   virtual std::vector<PtrEvent> TakePtrResponses() = 0;
   virtual std::vector<SrvEvent> TakeSrvResponses() = 0;
@@ -257,7 +252,7 @@ class MdnsResponderAdapter : public platform::UdpSocket::Client {
       const std::map<std::string, std::string>& txt_data) = 0;
 };
 
-}  // namespace mdns
+}  // namespace osp
 }  // namespace openscreen
 
 #endif  // OSP_IMPL_DISCOVERY_MDNS_MDNS_RESPONDER_ADAPTER_H_

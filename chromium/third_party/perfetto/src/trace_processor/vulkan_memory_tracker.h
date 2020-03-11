@@ -17,36 +17,62 @@
 #ifndef SRC_TRACE_PROCESSOR_VULKAN_MEMORY_TRACKER_H_
 #define SRC_TRACE_PROCESSOR_VULKAN_MEMORY_TRACKER_H_
 
-#include <deque>
+#include "src/trace_processor/importers/proto/proto_incremental_state.h"
+#include "src/trace_processor/trace_storage.h"
 
 #include "protos/perfetto/trace/gpu/vulkan_memory_event.pbzero.h"
-#include "src/trace_processor/trace_storage.h"
 
 namespace perfetto {
 namespace trace_processor {
+
+using protos::pbzero::VulkanMemoryEvent;
 
 class TraceProcessorContext;
 
 class VulkanMemoryTracker {
  public:
-  using SourceStringId = uint64_t;
+  enum class DeviceCounterType {
+    kAllocationCounter = 0,
+    kBindCounter = 1,
+  };
 
   explicit VulkanMemoryTracker(TraceProcessorContext* context);
   ~VulkanMemoryTracker() = default;
 
-  void AddString(SourceStringId, StringId);
+  template <int32_t FieldId>
+  StringId GetInternedString(PacketSequenceState* state,
+                             size_t generation,
+                             uint64_t iid) {
+    auto* decoder =
+        state->LookupInternedMessage<FieldId, protos::pbzero::InternedString>(
+            generation, iid);
+    if (!decoder)
+      return kNullStringId;
+    return context_->storage->InternString(
+        base::StringView(reinterpret_cast<const char*>(decoder->str().data),
+                         decoder->str().size));
+  }
 
-  base::Optional<StringId> FindString(SourceStringId);
-  base::Optional<StringId> FindSourceString(SourceStringId source);
-  base::Optional<StringId> FindTypeString(SourceStringId type);
+  StringId FindSourceString(VulkanMemoryEvent::Source);
+  StringId FindOperationString(VulkanMemoryEvent::Operation);
+  StringId FindAllocationScopeString(VulkanMemoryEvent::AllocationScope);
+  StringId FindAllocationScopeCounterString(VulkanMemoryEvent::AllocationScope);
+  StringId FindMemoryTypeCounterString(uint32_t /*memory_type*/,
+                                       DeviceCounterType);
 
  private:
   TraceProcessorContext* const context_;
-  const StringId empty_;
 
-  std::unordered_map<SourceStringId, StringId> string_map_;
-  std::unordered_map<SourceStringId, StringId> source_string_map_;
-  std::unordered_map<SourceStringId, StringId> type_string_map_;
+  const std::string vulkan_driver_memory_counter_str_;
+  const std::string vulkan_device_memory_counter_str_;
+  std::vector<StringId> source_strs_id_;
+  std::vector<StringId> operation_strs_id_;
+  std::vector<StringId> scope_strs_id_;
+  std::vector<StringId> scope_counter_strs_id_;
+  std::unordered_map<uint32_t /*memory_type*/, StringId>
+      memory_type_allocation_counter_string_map_;
+  std::unordered_map<uint32_t /*memory_type*/, StringId>
+      memory_type_bind_counter_string_map_;
 
   void SetupSourceAndTypeInternedStrings();
 };

@@ -137,7 +137,7 @@ void HeapprofdProducer::AdoptTargetProcessSocket() {
   PERFETTO_DCHECK(mode_ == HeapprofdMode::kChild);
   auto socket = base::UnixSocket::AdoptConnected(
       std::move(inherited_fd_), &socket_delegate_, task_runner_,
-      base::SockType::kStream);
+      base::SockFamily::kUnix, base::SockType::kStream);
 
   HandleClientConnection(std::move(socket), target_process_);
 }
@@ -296,7 +296,7 @@ void HeapprofdProducer::SetupDataSource(DataSourceInstanceID id,
   }
 
   HeapprofdConfig heapprofd_config;
-  heapprofd_config.ParseRawProto(ds_config.heapprofd_config_raw());
+  heapprofd_config.ParseFromString(ds_config.heapprofd_config_raw());
 
   if (heapprofd_config.all() && !heapprofd_config.pid().empty())
     PERFETTO_ELOG("No point setting all and pid");
@@ -351,6 +351,8 @@ void HeapprofdProducer::SetupDataSource(DataSourceInstanceID id,
   auto& cli_config = data_source.client_configuration;
   cli_config.interval = heapprofd_config.sampling_interval_bytes();
   cli_config.block_client = heapprofd_config.block_client();
+  cli_config.block_client_timeout_us =
+      heapprofd_config.block_client_timeout_us();
   data_source.config = heapprofd_config;
   data_source.normalized_cmdlines = std::move(normalized_cmdlines);
   data_source.stop_timeout_ms = ds_config.stop_timeout_ms();
@@ -610,7 +612,6 @@ bool HeapprofdProducer::DumpProcessesInDataSource(DataSourceInstanceID id) {
   }
   DataSource& data_source = it->second;
 
-
   for (std::pair<const pid_t, ProcessState>& pid_and_process_state :
        data_source.process_states) {
     pid_t pid = pid_and_process_state.first;
@@ -749,9 +750,14 @@ void HeapprofdProducer::SocketDelegate::OnDataAvailable(
     PERFETTO_DLOG("%d: Received FDs.", self->peer_pid());
     int raw_fd = pending_process.shmem.fd();
     // TODO(fmayer): Full buffer could deadlock us here.
-    self->Send(&data_source.client_configuration,
-               sizeof(data_source.client_configuration), &raw_fd, 1,
-               base::UnixSocket::BlockingMode::kBlocking);
+    if (!self->Send(&data_source.client_configuration,
+                    sizeof(data_source.client_configuration), &raw_fd, 1,
+                    base::UnixSocket::BlockingMode::kBlocking)) {
+      // If Send fails, the socket will have been Shutdown, and the raw socket
+      // closed.
+      producer_->pending_processes_.erase(it);
+      return;
+    }
 
     UnwindingWorker::HandoffData handoff_data;
     handoff_data.data_source_instance_id =

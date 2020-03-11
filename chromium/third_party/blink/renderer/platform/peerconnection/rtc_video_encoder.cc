@@ -8,7 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -18,6 +17,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_checker.h"
@@ -33,10 +33,12 @@
 #include "media/video/h264_parser.h"
 #include "media/video/video_encode_accelerator.h"
 #include "mojo/public/cpp/base/shared_memory_utils.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/webrtc/webrtc_video_frame_adapter.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/deque.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/libyuv/include/libyuv.h"
@@ -363,6 +365,30 @@ void RTCVideoEncoder::Impl::CreateAndInitializeVEA(
   // Check for overflow converting bitrate (kilobits/sec) to bits/sec.
   if (IsBitrateTooHigh(bitrate))
     return;
+
+  // Check that |profile| supports |input_visible_size|.
+  if (base::FeatureList::IsEnabled(features::kWebRtcUseMinMaxVEADimensions)) {
+    const auto vea_supported_profiles =
+        gpu_factories_->GetVideoEncodeAcceleratorSupportedProfiles();
+    for (const auto vea_profile : vea_supported_profiles) {
+      if (vea_profile.profile == profile &&
+          (input_visible_size.width() > vea_profile.max_resolution.width() ||
+           input_visible_size.height() > vea_profile.max_resolution.height() ||
+           input_visible_size.width() < vea_profile.min_resolution.width() ||
+           input_visible_size.height() < vea_profile.min_resolution.height())) {
+        LogAndNotifyError(
+            FROM_HERE,
+            base::StringPrintf(
+                "Requested dimensions (%s) beyond accelerator limits (%s - %s)",
+                input_visible_size.ToString().c_str(),
+                vea_profile.min_resolution.ToString().c_str(),
+                vea_profile.max_resolution.ToString().c_str())
+                .c_str(),
+            media::VideoEncodeAccelerator::kInvalidArgumentError);
+        return;
+      }
+    }
+  }
 
   video_encoder_ = gpu_factories_->CreateVideoEncodeAccelerator();
   if (!video_encoder_) {
@@ -848,8 +874,9 @@ void RTCVideoEncoder::Impl::EncodeOneFrameWithNativeInput() {
   }
 
   constexpr int kDummyIndex = -1;
-  frame->AddDestructionObserver(media::BindToCurrentLoop(base::BindOnce(
-      &RTCVideoEncoder::Impl::EncodeFrameFinished, this, kDummyIndex)));
+  frame->AddDestructionObserver(media::BindToCurrentLoop(
+      WTF::Bind(&RTCVideoEncoder::Impl::EncodeFrameFinished,
+                CrossThreadUnretained(this), kDummyIndex)));
   if (!failed_timestamp_match_) {
     DCHECK(std::find_if(pending_timestamps_.begin(), pending_timestamps_.end(),
                         [&frame](const RTCTimestamps& entry) {

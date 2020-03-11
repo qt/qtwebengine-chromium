@@ -45,6 +45,10 @@ class ObservableWebView : public WebView {
       const content::GlobalRequestID& request_id,
       const content::mojom::ResourceLoadInfo& resource_load_info) override;
 
+  // Resets the delegate. The delegate will no longer receive calls after this
+  // point.
+  void ResetDelegate();
+
  private:
   ui::WebDialogDelegate* delegate_;
 
@@ -114,13 +118,13 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
   void GetDialogSize(gfx::Size* size) const override;
   void GetMinimumDialogSize(gfx::Size* size) const override;
   std::string GetDialogArgs() const override;
-  void OnDialogShown(content::WebUI* webui,
-                     content::RenderViewHost* render_view_host) override;
+  void OnDialogShown(content::WebUI* webui) override;
   void OnDialogClosed(const std::string& json_retval) override;
   void OnDialogCloseFromWebUI(const std::string& json_retval) override;
   void OnCloseContents(content::WebContents* source,
                        bool* out_close_dialog) override;
   bool ShouldShowDialogTitle() const override;
+  bool ShouldCenterDialogTitleText() const override;
   bool HandleContextMenu(content::RenderFrameHost* render_frame_host,
                          const content::ContextMenuParams& params) override;
 

@@ -37,20 +37,20 @@ DrawElementsInstancedBaseVertexBaseInstanceANGLE(GLenum mode,
                                                  GLuint baseInstance);
 ANGLE_EXPORT void GL_APIENTRY
 MultiDrawArraysInstancedBaseInstanceANGLE(GLenum mode,
-                                          GLsizei drawcount,
+                                          const GLint *firsts,
                                           const GLsizei *counts,
                                           const GLsizei *instanceCounts,
-                                          const GLint *firsts,
-                                          const GLuint *baseInstances);
+                                          const GLuint *baseInstances,
+                                          GLsizei drawcount);
 ANGLE_EXPORT void GL_APIENTRY
 MultiDrawElementsInstancedBaseVertexBaseInstanceANGLE(GLenum mode,
-                                                      GLenum type,
-                                                      GLsizei drawcount,
                                                       const GLsizei *counts,
-                                                      const GLsizei *instanceCounts,
+                                                      GLenum type,
                                                       const GLvoid *const *indices,
+                                                      const GLsizei *instanceCounts,
                                                       const GLint *baseVertices,
-                                                      const GLuint *baseInstances);
+                                                      const GLuint *baseInstances,
+                                                      GLsizei drawcount);
 
 // GL_ANGLE_copy_texture_3d
 ANGLE_EXPORT void GL_APIENTRY CopyTexture3DANGLE(GLuint sourceId,
@@ -99,6 +99,14 @@ ANGLE_EXPORT void GL_APIENTRY RenderbufferStorageMultisampleANGLE(GLenum target,
                                                                   GLenum internalformat,
                                                                   GLsizei width,
                                                                   GLsizei height);
+
+// GL_ANGLE_get_image
+ANGLE_EXPORT void GL_APIENTRY
+GetTexImageANGLE(GLenum target, GLint level, GLenum format, GLenum type, void *pixels);
+ANGLE_EXPORT void GL_APIENTRY GetRenderbufferImageANGLE(GLenum target,
+                                                        GLenum format,
+                                                        GLenum type,
+                                                        void *pixels);
 
 // GL_ANGLE_instanced_arrays
 ANGLE_EXPORT void GL_APIENTRY DrawArraysInstancedANGLE(GLenum mode,
@@ -713,6 +721,32 @@ ANGLE_EXPORT void GL_APIENTRY QueryCounterEXT(GLuint id, GLenum target);
 // GL_EXT_draw_buffers
 ANGLE_EXPORT void GL_APIENTRY DrawBuffersEXT(GLsizei n, const GLenum *bufs);
 
+// GL_EXT_draw_elements_base_vertex
+ANGLE_EXPORT void GL_APIENTRY DrawElementsBaseVertexEXT(GLenum mode,
+                                                        GLsizei count,
+                                                        GLenum type,
+                                                        const void *indices,
+                                                        GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawElementsInstancedBaseVertexEXT(GLenum mode,
+                                                                 GLsizei count,
+                                                                 GLenum type,
+                                                                 const void *indices,
+                                                                 GLsizei instancecount,
+                                                                 GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawRangeElementsBaseVertexEXT(GLenum mode,
+                                                             GLuint start,
+                                                             GLuint end,
+                                                             GLsizei count,
+                                                             GLenum type,
+                                                             const void *indices,
+                                                             GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY MultiDrawElementsBaseVertexEXT(GLenum mode,
+                                                             const GLsizei *count,
+                                                             GLenum type,
+                                                             const void *const *indices,
+                                                             GLsizei primcount,
+                                                             const GLint *basevertex);
+
 // GL_EXT_geometry_shader
 ANGLE_EXPORT void GL_APIENTRY FramebufferTextureEXT(GLenum target,
                                                     GLenum attachment,
@@ -855,6 +889,8 @@ ANGLE_EXPORT void GL_APIENTRY WaitSemaphoreEXT(GLuint semaphore,
 // GL_EXT_semaphore_fd
 ANGLE_EXPORT void GL_APIENTRY ImportSemaphoreFdEXT(GLuint semaphore, GLenum handleType, GLint fd);
 
+// GL_EXT_texture_filter_anisotropic
+
 // GL_EXT_texture_storage
 ANGLE_EXPORT void GL_APIENTRY TexStorage1DEXT(GLenum target,
                                               GLsizei levels,
@@ -931,6 +967,26 @@ ANGLE_EXPORT GLboolean GL_APIENTRY TestFenceNV(GLuint fence);
 ANGLE_EXPORT void GL_APIENTRY EGLImageTargetRenderbufferStorageOES(GLenum target,
                                                                    GLeglImageOES image);
 ANGLE_EXPORT void GL_APIENTRY EGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image);
+
+// GL_OES_draw_elements_base_vertex
+ANGLE_EXPORT void GL_APIENTRY DrawElementsBaseVertexOES(GLenum mode,
+                                                        GLsizei count,
+                                                        GLenum type,
+                                                        const void *indices,
+                                                        GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawElementsInstancedBaseVertexOES(GLenum mode,
+                                                                 GLsizei count,
+                                                                 GLenum type,
+                                                                 const void *indices,
+                                                                 GLsizei instancecount,
+                                                                 GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawRangeElementsBaseVertexOES(GLenum mode,
+                                                             GLuint start,
+                                                             GLuint end,
+                                                             GLsizei count,
+                                                             GLenum type,
+                                                             const void *indices,
+                                                             GLint basevertex);
 
 // GL_OES_draw_texture
 ANGLE_EXPORT void GL_APIENTRY
@@ -1611,6 +1667,18 @@ ANGLE_EXPORT void GL_APIENTRY DrawElementsBaseVertexContextANGLE(GLeglContext ct
                                                                  GLenum type,
                                                                  const void *indices,
                                                                  GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawElementsBaseVertexEXTContextANGLE(GLeglContext ctx,
+                                                                    GLenum mode,
+                                                                    GLsizei count,
+                                                                    GLenum type,
+                                                                    const void *indices,
+                                                                    GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawElementsBaseVertexOESContextANGLE(GLeglContext ctx,
+                                                                    GLenum mode,
+                                                                    GLsizei count,
+                                                                    GLenum type,
+                                                                    const void *indices,
+                                                                    GLint basevertex);
 ANGLE_EXPORT void GL_APIENTRY DrawElementsIndirectContextANGLE(GLeglContext ctx,
                                                                GLenum mode,
                                                                GLenum type,
@@ -1634,6 +1702,20 @@ ANGLE_EXPORT void GL_APIENTRY DrawElementsInstancedBaseVertexContextANGLE(GLeglC
                                                                           const void *indices,
                                                                           GLsizei instancecount,
                                                                           GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawElementsInstancedBaseVertexEXTContextANGLE(GLeglContext ctx,
+                                                                             GLenum mode,
+                                                                             GLsizei count,
+                                                                             GLenum type,
+                                                                             const void *indices,
+                                                                             GLsizei instancecount,
+                                                                             GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawElementsInstancedBaseVertexOESContextANGLE(GLeglContext ctx,
+                                                                             GLenum mode,
+                                                                             GLsizei count,
+                                                                             GLenum type,
+                                                                             const void *indices,
+                                                                             GLsizei instancecount,
+                                                                             GLint basevertex);
 ANGLE_EXPORT void GL_APIENTRY DrawElementsInstancedEXTContextANGLE(GLeglContext ctx,
                                                                    GLenum mode,
                                                                    GLsizei count,
@@ -1655,6 +1737,22 @@ ANGLE_EXPORT void GL_APIENTRY DrawRangeElementsBaseVertexContextANGLE(GLeglConte
                                                                       GLenum type,
                                                                       const void *indices,
                                                                       GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawRangeElementsBaseVertexEXTContextANGLE(GLeglContext ctx,
+                                                                         GLenum mode,
+                                                                         GLuint start,
+                                                                         GLuint end,
+                                                                         GLsizei count,
+                                                                         GLenum type,
+                                                                         const void *indices,
+                                                                         GLint basevertex);
+ANGLE_EXPORT void GL_APIENTRY DrawRangeElementsBaseVertexOESContextANGLE(GLeglContext ctx,
+                                                                         GLenum mode,
+                                                                         GLuint start,
+                                                                         GLuint end,
+                                                                         GLsizei count,
+                                                                         GLenum type,
+                                                                         const void *indices,
+                                                                         GLint basevertex);
 ANGLE_EXPORT void GL_APIENTRY DrawTexfOESContextANGLE(GLeglContext ctx,
                                                       GLfloat x,
                                                       GLfloat y,
@@ -2462,6 +2560,13 @@ ANGLE_EXPORT void GL_APIENTRY MemoryObjectParameterivEXTContextANGLE(GLeglContex
 ANGLE_EXPORT void GL_APIENTRY MinSampleShadingContextANGLE(GLeglContext ctx, GLfloat value);
 ANGLE_EXPORT void GL_APIENTRY MultMatrixfContextANGLE(GLeglContext ctx, const GLfloat *m);
 ANGLE_EXPORT void GL_APIENTRY MultMatrixxContextANGLE(GLeglContext ctx, const GLfixed *m);
+ANGLE_EXPORT void GL_APIENTRY MultiDrawElementsBaseVertexEXTContextANGLE(GLeglContext ctx,
+                                                                         GLenum mode,
+                                                                         const GLsizei *count,
+                                                                         GLenum type,
+                                                                         const void *const *indices,
+                                                                         GLsizei primcount,
+                                                                         const GLint *basevertex);
 ANGLE_EXPORT void GL_APIENTRY MultiTexCoord4fContextANGLE(GLeglContext ctx,
                                                           GLenum target,
                                                           GLfloat s,
@@ -4139,21 +4244,21 @@ DrawElementsInstancedBaseVertexBaseInstanceANGLEContextANGLE(GLeglContext ctx,
 ANGLE_EXPORT void GL_APIENTRY
 MultiDrawArraysInstancedBaseInstanceANGLEContextANGLE(GLeglContext ctx,
                                                       GLenum mode,
-                                                      GLsizei drawcount,
+                                                      const GLint *firsts,
                                                       const GLsizei *counts,
                                                       const GLsizei *instanceCounts,
-                                                      const GLint *firsts,
-                                                      const GLuint *baseInstances);
+                                                      const GLuint *baseInstances,
+                                                      GLsizei drawcount);
 ANGLE_EXPORT void GL_APIENTRY
 MultiDrawElementsInstancedBaseVertexBaseInstanceANGLEContextANGLE(GLeglContext ctx,
                                                                   GLenum mode,
-                                                                  GLenum type,
-                                                                  GLsizei drawcount,
                                                                   const GLsizei *counts,
-                                                                  const GLsizei *instanceCounts,
+                                                                  GLenum type,
                                                                   const GLvoid *const *indices,
+                                                                  const GLsizei *instanceCounts,
                                                                   const GLint *baseVertices,
-                                                                  const GLuint *baseInstances);
+                                                                  const GLuint *baseInstances,
+                                                                  GLsizei drawcount);
 ANGLE_EXPORT void GL_APIENTRY GetMultisamplefvANGLEContextANGLE(GLeglContext ctx,
                                                                 GLenum pname,
                                                                 GLuint index,
@@ -4175,6 +4280,17 @@ ANGLE_EXPORT void GL_APIENTRY TexImage2DExternalANGLEContextANGLE(GLeglContext c
                                                                   GLenum format,
                                                                   GLenum type);
 ANGLE_EXPORT void GL_APIENTRY InvalidateTextureANGLEContextANGLE(GLeglContext ctx, GLenum target);
+ANGLE_EXPORT void GL_APIENTRY GetTexImageANGLEContextANGLE(GLeglContext ctx,
+                                                           GLenum target,
+                                                           GLint level,
+                                                           GLenum format,
+                                                           GLenum type,
+                                                           void *pixels);
+ANGLE_EXPORT void GL_APIENTRY GetRenderbufferImageANGLEContextANGLE(GLeglContext ctx,
+                                                                    GLenum target,
+                                                                    GLenum format,
+                                                                    GLenum type,
+                                                                    void *pixels);
 }  // namespace gl
 
 #endif  // LIBGLESV2_ENTRY_POINTS_GLES_EXT_AUTOGEN_H_

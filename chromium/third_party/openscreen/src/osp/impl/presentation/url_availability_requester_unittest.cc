@@ -13,15 +13,15 @@
 #include "osp/msgs/osp_messages.h"
 #include "osp/public/network_service_manager.h"
 #include "osp/public/testing/message_demuxer_test_support.h"
-#include "platform/api/logging.h"
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
+#include "util/logging.h"
 
 using std::chrono::milliseconds;
 using std::chrono::seconds;
 
 namespace openscreen {
-namespace presentation {
+namespace osp {
 
 using ::testing::_;
 using ::testing::Invoke;
@@ -675,5 +675,5 @@ TEST_F(UrlAvailabilityRequesterTest, RemoveObserverInSteps) {
   quic_bridge_->RunTasksUntilIdle();
 }
 
-}  // namespace presentation
+}  // namespace osp
 }  // namespace openscreen

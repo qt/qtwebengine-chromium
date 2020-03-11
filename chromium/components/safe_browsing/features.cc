@@ -38,14 +38,18 @@ const base::Feature kCaptureSafetyNetId{"SafeBrowsingCaptureSafetyNetId",
 const base::Feature kCommittedSBInterstitials{
     "SafeBrowsingCommittedInterstitials", base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kDeepScanningOfDownloads{
-    "SafeBrowsingDeepScanningOfDownloads", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kContentComplianceEnabled{
+    "ContentComplianceEnabled", base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kForceUseAPDownloadProtection{
-    "ForceUseAPDownloadProtection", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kMalwareScanEnabled{"MalwareScanEnabled",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kPasswordProtectionForSavedPasswords{
     "SafeBrowsingPasswordProtectionForSavedPasswords",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kPasswordProtectionShowDomainsForSavedPasswords{
+    "SafeBrowsingPasswordProtectionShowDomainsForSavedPasswords",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kPasswordProtectionForSignedInUsers{
@@ -54,10 +58,6 @@ const base::Feature kPasswordProtectionForSignedInUsers{
 
 const base::Feature kRealTimeUrlLookupEnabled{
     "SafeBrowsingRealTimeUrlLookupEnabled", base::FEATURE_DISABLED_BY_DEFAULT};
-
-const base::Feature kRealTimeUrlLookupFetchAllowlist{
-    "SafeBrowsingRealTimeUrlLookupFetchAllowlist",
-    base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kSendOnFocusPing {
   "SafeBrowsingSendOnFocusPing",
@@ -99,8 +99,8 @@ const base::Feature kTriggerThrottlerDailyQuotaFeature{
 const base::Feature kUseLocalBlacklistsV2{"SafeBrowsingUseLocalBlacklistsV2",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kUploadForMalwareCheck{"SafeBrowsingUploadForMalwareCheck",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kUseNewDownloadWarnings{"UseNewDownloadWarnings",
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 namespace {
 // List of Safe Browsing features. Boolean value for each list member should be
@@ -117,11 +117,12 @@ constexpr struct {
     {&kCaptureInlineJavascriptForGoogleAds, true},
     {&kCaptureSafetyNetId, true},
     {&kCommittedSBInterstitials, true},
-    {&kForceUseAPDownloadProtection, false},
+    {&kContentComplianceEnabled, true},
+    {&kMalwareScanEnabled, true},
     {&kPasswordProtectionForSavedPasswords, true},
+    {&kPasswordProtectionShowDomainsForSavedPasswords, true},
     {&kPasswordProtectionForSignedInUsers, true},
     {&kRealTimeUrlLookupEnabled, true},
-    {&kRealTimeUrlLookupFetchAllowlist, true},
     {&kSendOnFocusPing, true},
     {&kSendPasswordReusePing, true},
     {&kSendSampledPingsForAllowlistDomains, false},

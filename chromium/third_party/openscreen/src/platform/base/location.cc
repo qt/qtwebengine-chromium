@@ -5,7 +5,6 @@
 #include "platform/base/location.h"
 
 #include "absl/strings/str_cat.h"
-#include "platform/api/logging.h"
 #include "platform/base/macros.h"
 
 namespace openscreen {

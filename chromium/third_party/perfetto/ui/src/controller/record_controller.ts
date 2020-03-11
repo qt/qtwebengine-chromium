@@ -25,8 +25,10 @@ import {
   BufferConfig,
   ChromeConfig,
   ConsumerPort,
+  ContinuousDumpConfig,
   DataSourceConfig,
   FtraceConfig,
+  HeapprofdConfig,
   ProcessStatsConfig,
   SysStatsConfig,
   TraceConfig,
@@ -34,11 +36,11 @@ import {
 import {MeminfoCounters, VmstatCounters} from '../common/protos';
 import {
   AdbRecordingTarget,
-  isAndroidTarget,
+  isAdbTarget,
   isChromeTarget,
   MAX_TIME,
   RecordConfig,
-  TargetOs
+  RecordingTarget
 } from '../common/state';
 
 import {AdbOverWebUsb} from './adb';
@@ -222,6 +224,34 @@ export function genConfig(uiCfg: RecordConfig): TraceConfig {
     trackInitialOomScore = true;
   }
 
+  let heapprofd: HeapprofdConfig|undefined = undefined;
+  if (uiCfg.heapProfiling) {
+    // TODO(taylori): Check or inform user if buffer size are too small.
+    if (heapprofd === undefined) heapprofd = new HeapprofdConfig();
+    heapprofd.samplingIntervalBytes = uiCfg.hpSamplingIntervalBytes;
+    if (uiCfg.hpSharedMemoryBuffer >= 8192 &&
+        uiCfg.hpSharedMemoryBuffer % 4096 === 0) {
+      heapprofd.shmemSizeBytes = uiCfg.hpSharedMemoryBuffer;
+    }
+    if (uiCfg.hpProcesses !== '') {
+      uiCfg.hpProcesses.split('\n').forEach(value => {
+        if (isNaN(+value)) {
+          heapprofd!.processCmdline.push(value);
+        } else {
+          heapprofd!.pid.push(+value);
+        }
+      });
+    }
+    if (uiCfg.hpContinuousDumpsInterval > 0) {
+      heapprofd.continuousDumpConfig = new ContinuousDumpConfig();
+      heapprofd.continuousDumpConfig.dumpIntervalMs =
+          uiCfg.hpContinuousDumpsInterval;
+      heapprofd.continuousDumpConfig.dumpPhaseMs =
+          uiCfg.hpContinuousDumpsPhase > 0 ? uiCfg.hpContinuousDumpsPhase :
+                                             undefined;
+    }
+  }
+
   if (uiCfg.procStats || procThreadAssociationPolling || trackInitialOomScore) {
     const ds = new TraceConfig.DataSource();
     ds.config = new DataSourceConfig();
@@ -263,6 +293,7 @@ export function genConfig(uiCfg: RecordConfig): TraceConfig {
   if (uiCfg.ipcFlows) {
     chromeCategories.add('toplevel');
     chromeCategories.add('disabled-by-default-ipc.flow');
+    chromeCategories.add('mojom');
   }
 
   if (uiCfg.jsExecution) {
@@ -298,6 +329,8 @@ export function genConfig(uiCfg: RecordConfig): TraceConfig {
     chromeCategories.add('loading');
     chromeCategories.add('net');
     chromeCategories.add('netlog');
+    chromeCategories.add('navigation');
+    chromeCategories.add('browser');
   }
 
   if (chromeCategories.size !== 0) {
@@ -339,6 +372,15 @@ export function genConfig(uiCfg: RecordConfig): TraceConfig {
     ds.config = new DataSourceConfig();
     ds.config.name = 'linux.sys_stats';
     ds.config.sysStatsConfig = sysStatsCfg;
+    protoCfg.dataSources.push(ds);
+  }
+
+  if (heapprofd !== undefined) {
+    const ds = new TraceConfig.DataSource();
+    ds.config = new DataSourceConfig();
+    ds.config.targetBuffer = 0;
+    ds.config.name = 'android.heapprofd';
+    ds.config.heapprofdConfig = heapprofd;
     protoCfg.dataSources.push(ds);
   }
 
@@ -395,7 +437,12 @@ export function toPbtxt(configBuffer: Uint8Array): string {
   // definition somehow but for now we just hard code keys which have this
   // problem in the config.
   function is64BitNumber(key: string): boolean {
-    return key === 'maxFileSizeBytes';
+    return [
+      'maxFileSizeBytes',
+      'samplingIntervalBytes',
+      'shmemSizeBytes',
+      'pid'
+    ].includes(key);
   }
   function* message(msg: {}, indent: number): IterableIterator<string> {
     for (const [key, value] of Object.entries(msg)) {
@@ -583,9 +630,8 @@ export class RecordController extends Controller<'main'> implements Consumer {
   // - Android device target: WebUSB is used to communicate using the adb
   // protocol. Actually, there is no full consumer_port implementation, but
   // only the support to start tracing and fetch the file.
-  async getTargetController(target: TargetOs, device?: AdbRecordingTarget):
-      Promise<RpcConsumerPort> {
-    const identifier = this.getTargetIdentifier(target, device);
+  async getTargetController(target: RecordingTarget): Promise<RpcConsumerPort> {
+    const identifier = this.getTargetIdentifier(target);
 
     // The reason why caching the target 'record controller' Promise is that
     // multiple rcp calls can happen while we are trying to understand if an
@@ -599,16 +645,16 @@ export class RecordController extends Controller<'main'> implements Consumer {
           if (isChromeTarget(target)) {
             controller =
                 new ChromeExtensionConsumerPort(this.extensionPort, this);
-          } else if (isAndroidTarget(target)) {
-            if (!device) throw Error(`No android device connected`);
-
+          } else if (isAdbTarget(target)) {
             this.onStatus(`Please allow USB debugging on device.
                  If you press cancel, reload the page.`);
-            const socketAccess = await this.hasSocketAccess(device);
+            const socketAccess = await this.hasSocketAccess(target);
 
             controller = socketAccess ?
                 new AdbSocketConsumerPort(this.adb, this) :
                 new AdbConsumerPort(this.adb, this);
+          } else {
+            throw Error(`No device connected`);
           }
 
           if (!controller) throw Error(`Unknown target: ${target}`);
@@ -619,9 +665,8 @@ export class RecordController extends Controller<'main'> implements Consumer {
     return controllerPromise;
   }
 
-  private getTargetIdentifier(target: TargetOs, device?: AdbRecordingTarget):
-      string {
-    return device ? device.serial : target;
+  private getTargetIdentifier(target: RecordingTarget): string {
+    return isAdbTarget(target) ? target.serial : target.os;
   }
 
   private async hasSocketAccess(target: AdbRecordingTarget) {
@@ -637,8 +682,7 @@ export class RecordController extends Controller<'main'> implements Consumer {
       _callback: RPCImplCallback) {
     try {
       const state = this.app.state;
-      (await this.getTargetController(
-           state.recordConfig.targetOS, state.androidDeviceConnected))
+      (await this.getTargetController(state.recordingTarget))
           .handleCommand(method.name, requestData);
     } catch (e) {
       console.error(`error invoking ${method}: ${e.message}`);

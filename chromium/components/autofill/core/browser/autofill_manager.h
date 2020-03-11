@@ -157,6 +157,11 @@ class AutofillManager : public AutofillHandler,
   // Invoked when the user selected |value| in the Autocomplete drop-down.
   void OnAutocompleteEntrySelected(const base::string16& value);
 
+  // Invoked when the user selects the "Hide Suggestions" item in the
+  // Autocomplete drop-down.
+  virtual void OnUserHideSuggestions(const FormData& form,
+                                     const FormFieldData& field);
+
   // Returns true only if the previewed form should be cleared.
   bool ShouldClearPreviewedForm();
 
@@ -220,16 +225,16 @@ class AutofillManager : public AutofillHandler,
       bool autoselect_first_suggestion,
       const std::vector<Suggestion>& suggestions) override;
 
-  // Returns the value of AutofillEnabled pref.
+  // Returns true if either Profile or CreditCard Autofill is enabled.
   virtual bool IsAutofillEnabled() const;
 
   // Returns true if the value of the AutofillProfileEnabled pref is true and
   // the client supports Autofill.
-  virtual bool IsProfileAutofillEnabled() const;
+  virtual bool IsAutofillProfileEnabled() const;
 
   // Returns true if the value of the AutofillCreditCardEnabled pref is true and
   // the client supports Autofill.
-  virtual bool IsCreditCardAutofillEnabled() const;
+  virtual bool IsAutofillCreditCardEnabled() const;
 
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions

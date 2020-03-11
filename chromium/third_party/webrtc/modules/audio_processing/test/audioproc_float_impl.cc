@@ -40,6 +40,7 @@ ABSL_FLAG(std::string,
           artificial_nearend,
           "",
           "Artificial nearend wav filename");
+ABSL_FLAG(std::string, linear_aec_output, "", "Linear AEC output wav filename");
 ABSL_FLAG(int,
           output_num_channels,
           kParameterNotSpecifiedValue,
@@ -130,6 +131,10 @@ ABSL_FLAG(int,
           kParameterNotSpecifiedValue,
           "Activate (1) or deactivate(0) the legacy AEC");
 ABSL_FLAG(int,
+          use_legacy_ns,
+          kParameterNotSpecifiedValue,
+          "Activate (1) or deactivate(0) the legacy AEC");
+ABSL_FLAG(int,
           experimental_agc,
           kParameterNotSpecifiedValue,
           "Activate (1) or deactivate(0) the experimental AGC");
@@ -212,9 +217,15 @@ ABSL_FLAG(int,
           0,
           "Activate (1) or deactivate(0) the analog mic gain simulation");
 ABSL_FLAG(int,
-          experimental_multi_channel,
+          multi_channel_render,
           kParameterNotSpecifiedValue,
-          "Activate (1) or deactivate(0) multi-channel audio in APM pipeline");
+          "Activate (1) or deactivate(0) multi-channel render processing in "
+          "APM pipeline");
+ABSL_FLAG(int,
+          multi_channel_capture,
+          kParameterNotSpecifiedValue,
+          "Activate (1) or deactivate(0) multi-channel capture processing in "
+          "APM pipeline");
 ABSL_FLAG(int,
           simulated_mic_kind,
           kParameterNotSpecifiedValue,
@@ -360,6 +371,8 @@ SimulationSettings CreateSettings() {
                         &settings.reverse_output_filename);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_artificial_nearend),
                         &settings.artificial_nearend_filename);
+  SetSettingIfSpecified(absl::GetFlag(FLAGS_linear_aec_output),
+                        &settings.linear_aec_output_filename);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_output_num_channels),
                         &settings.output_num_channels);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_reverse_output_num_channels),
@@ -393,6 +406,8 @@ SimulationSettings CreateSettings() {
 
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_use_legacy_aec),
                       &settings.use_legacy_aec);
+  SetSettingIfFlagSet(absl::GetFlag(FLAGS_use_legacy_ns),
+                      &settings.use_legacy_ns);
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_experimental_agc),
                       &settings.use_experimental_agc);
   SetSettingIfFlagSet(
@@ -434,8 +449,10 @@ SimulationSettings CreateSettings() {
   SetSettingIfSpecified(absl::GetFlag(FLAGS_aec_settings),
                         &settings.aec_settings_filename);
   settings.initial_mic_level = absl::GetFlag(FLAGS_initial_mic_level);
-  SetSettingIfFlagSet(absl::GetFlag(FLAGS_experimental_multi_channel),
-                      &settings.experimental_multi_channel);
+  SetSettingIfFlagSet(absl::GetFlag(FLAGS_multi_channel_render),
+                      &settings.multi_channel_render);
+  SetSettingIfFlagSet(absl::GetFlag(FLAGS_multi_channel_capture),
+                      &settings.multi_channel_capture);
   settings.simulate_mic_gain = absl::GetFlag(FLAGS_simulate_mic_gain);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_simulated_mic_kind),
                         &settings.simulated_mic_kind);
@@ -501,6 +518,19 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
         "Error: The aec dump input file cannot be specified together with the "
         "aec dump input string!\n");
   }
+
+  ReportConditionalErrorAndExit(settings.use_aec && !(*settings.use_aec) &&
+                                    settings.linear_aec_output_filename,
+                                "Error: The linear AEC ouput filename cannot "
+                                "be specified without the AEC being active");
+
+  ReportConditionalErrorAndExit(
+      ((settings.use_aec && *settings.use_aec && settings.use_legacy_aec &&
+        *settings.use_legacy_aec) ||
+       (settings.use_aecm && *settings.use_aecm)) &&
+          !!settings.linear_aec_output_filename,
+      "Error: The linear AEC ouput filename cannot be specified when the "
+      "legacy AEC or the AECm are used");
 
   ReportConditionalErrorAndExit(
       settings.use_aec && *settings.use_aec && settings.use_aecm &&
@@ -610,6 +640,11 @@ void PerformBasicParameterSanityChecks(const SimulationSettings& settings) {
       settings.artificial_nearend_filename &&
           !valid_wav_name(*settings.artificial_nearend_filename),
       "Error: --artifical_nearend must be a valid .wav file name.\n");
+
+  ReportConditionalErrorAndExit(
+      settings.linear_aec_output_filename &&
+          (!valid_wav_name(*settings.linear_aec_output_filename)),
+      "Error: --linear_aec_output must be a valid .wav file name.\n");
 
   ReportConditionalErrorAndExit(
       WEBRTC_APM_DEBUG_DUMP == 0 && settings.dump_internal_data,

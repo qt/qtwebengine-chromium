@@ -115,7 +115,14 @@ if(${ARCH} STREQUAL "aarch64")
 
     chacha/chacha-armv8.${ASM_EXT}
     test/trampoline-armv8.${ASM_EXT}
-    third_party/sike/asm/fp-armv8.${ASM_EXT}
+  )
+endif()
+
+if(${ARCH} STREQUAL "ppc64le")
+  set(
+    CRYPTO_ARCH_SOURCES
+
+    test/trampoline-ppc.${ASM_EXT}
   )
 endif()
 
@@ -137,7 +144,6 @@ if(${ARCH} STREQUAL "x86_64")
     cipher_extra/chacha20_poly1305_x86_64.${ASM_EXT}
     hrss/asm/poly_rq_mul.S
     test/trampoline-x86_64.${ASM_EXT}
-    third_party/sike/asm/fp-x86_64.${ASM_EXT}
   )
 endif()
 
@@ -147,10 +153,9 @@ perlasm(chacha/chacha-x86.${ASM_EXT} chacha/asm/chacha-x86.pl)
 perlasm(chacha/chacha-x86_64.${ASM_EXT} chacha/asm/chacha-x86_64.pl)
 perlasm(cipher_extra/aes128gcmsiv-x86_64.${ASM_EXT} cipher_extra/asm/aes128gcmsiv-x86_64.pl)
 perlasm(cipher_extra/chacha20_poly1305_x86_64.${ASM_EXT} cipher_extra/asm/chacha20_poly1305_x86_64.pl)
-perlasm(third_party/sike/asm/fp-x86_64.${ASM_EXT} ../third_party/sike/asm/fp-x86_64.pl)
-perlasm(third_party/sike/asm/fp-armv8.${ASM_EXT} ../third_party/sike/asm/fp-armv8.pl)
 perlasm(test/trampoline-armv4.${ASM_EXT} test/asm/trampoline-armv4.pl)
 perlasm(test/trampoline-armv8.${ASM_EXT} test/asm/trampoline-armv8.pl)
+perlasm(test/trampoline-ppc.${ASM_EXT} test/asm/trampoline-ppc.pl)
 perlasm(test/trampoline-x86.${ASM_EXT} test/asm/trampoline-x86.pl)
 perlasm(test/trampoline-x86_64.${ASM_EXT} test/asm/trampoline-x86_64.pl)
 
@@ -412,11 +417,6 @@ add_library(
   x509v3/v3_sxnet.c
   x509v3/v3_utl.c
   ../third_party/fiat/curve25519.c
-  ../third_party/sike/fpx.c
-  ../third_party/sike/isogeny.c
-  ../third_party/sike/curve_params.c
-  ../third_party/sike/sike.c
-  ../third_party/sike/asm/fp_generic.c
 
   $<TARGET_OBJECTS:fipsmodule>
 
@@ -461,6 +461,20 @@ endif()
 if(USE_CUSTOM_LIBCXX)
   target_link_libraries(crypto libcxx)
 endif()
+
+# urandom_test is a separate binary because it needs to be able to observe the
+# PRNG initialisation, which means that it can't have other tests running before
+# it does.
+add_executable(
+  urandom_test
+
+  fipsmodule/rand/urandom_test.cc
+)
+
+target_link_libraries(urandom_test test_support_lib boringssl_gtest crypto)
+
+add_dependencies(urandom_test global_target)
+add_dependencies(all_tests urandom_test)
 
 add_executable(
   crypto_test
@@ -523,7 +537,6 @@ add_executable(
   x509/x509_time_test.cc
   x509v3/tab_test.cc
   x509v3/v3name_test.cc
-  ../third_party/sike/sike_test.cc
 
   $<TARGET_OBJECTS:crypto_test_data>
   $<TARGET_OBJECTS:boringssl_gtest_main>

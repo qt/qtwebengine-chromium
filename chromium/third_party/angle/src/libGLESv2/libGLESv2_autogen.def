@@ -476,6 +476,10 @@ EXPORTS
     ; GL_ANGLE_framebuffer_multisample
     glRenderbufferStorageMultisampleANGLE
 
+    ; GL_ANGLE_get_image
+    glGetRenderbufferImageANGLE
+    glGetTexImageANGLE
+
     ; GL_ANGLE_instanced_arrays
     glDrawArraysInstancedANGLE
     glDrawElementsInstancedANGLE
@@ -649,6 +653,12 @@ EXPORTS
     ; GL_EXT_draw_buffers
     glDrawBuffersEXT
 
+    ; GL_EXT_draw_elements_base_vertex
+    glDrawElementsBaseVertexEXT
+    glDrawElementsInstancedBaseVertexEXT
+    glDrawRangeElementsBaseVertexEXT
+    glMultiDrawElementsBaseVertexEXT
+
     ; GL_EXT_geometry_shader
     glFramebufferTextureEXT
 
@@ -702,6 +712,8 @@ EXPORTS
     ; GL_EXT_semaphore_fd
     glImportSemaphoreFdEXT
 
+    ; GL_EXT_texture_filter_anisotropic
+
     ; GL_EXT_texture_storage
     glTexStorage1DEXT
     glTexStorage2DEXT
@@ -735,6 +747,11 @@ EXPORTS
     ; GL_OES_EGL_image
     glEGLImageTargetRenderbufferStorageOES
     glEGLImageTargetTexture2DOES
+
+    ; GL_OES_draw_elements_base_vertex
+    glDrawElementsBaseVertexOES
+    glDrawElementsInstancedBaseVertexOES
+    glDrawRangeElementsBaseVertexOES
 
     ; GL_OES_draw_texture
     glDrawTexfOES
@@ -975,14 +992,20 @@ EXPORTS
     glDrawBuffersEXTContextANGLE
     glDrawElementsContextANGLE
     glDrawElementsBaseVertexContextANGLE
+    glDrawElementsBaseVertexEXTContextANGLE
+    glDrawElementsBaseVertexOESContextANGLE
     glDrawElementsIndirectContextANGLE
     glDrawElementsInstancedContextANGLE
     glDrawElementsInstancedANGLEContextANGLE
     glDrawElementsInstancedBaseVertexContextANGLE
     glDrawElementsInstancedBaseVertexBaseInstanceANGLEContextANGLE
+    glDrawElementsInstancedBaseVertexEXTContextANGLE
+    glDrawElementsInstancedBaseVertexOESContextANGLE
     glDrawElementsInstancedEXTContextANGLE
     glDrawRangeElementsContextANGLE
     glDrawRangeElementsBaseVertexContextANGLE
+    glDrawRangeElementsBaseVertexEXTContextANGLE
+    glDrawRangeElementsBaseVertexOESContextANGLE
     glDrawTexfOESContextANGLE
     glDrawTexfvOESContextANGLE
     glDrawTexiOESContextANGLE
@@ -1132,6 +1155,7 @@ EXPORTS
     glGetQueryivContextANGLE
     glGetQueryivEXTContextANGLE
     glGetQueryivRobustANGLEContextANGLE
+    glGetRenderbufferImageANGLEContextANGLE
     glGetRenderbufferParameterivContextANGLE
     glGetRenderbufferParameterivOESContextANGLE
     glGetRenderbufferParameterivRobustANGLEContextANGLE
@@ -1160,6 +1184,7 @@ EXPORTS
     glGetTexGenfvOESContextANGLE
     glGetTexGenivOESContextANGLE
     glGetTexGenxvOESContextANGLE
+    glGetTexImageANGLEContextANGLE
     glGetTexLevelParameterfvContextANGLE
     glGetTexLevelParameterfvANGLEContextANGLE
     glGetTexLevelParameterfvRobustANGLEContextANGLE
@@ -1276,6 +1301,7 @@ EXPORTS
     glMultiDrawArraysInstancedANGLEContextANGLE
     glMultiDrawArraysInstancedBaseInstanceANGLEContextANGLE
     glMultiDrawElementsANGLEContextANGLE
+    glMultiDrawElementsBaseVertexEXTContextANGLE
     glMultiDrawElementsInstancedANGLEContextANGLE
     glMultiDrawElementsInstancedBaseVertexBaseInstanceANGLEContextANGLE
     glMultiTexCoord4fContextANGLE
@@ -1626,6 +1652,9 @@ EXPORTS
     ; EGL_ANGLE_stream_producer_d3d_texture
     EGL_CreateStreamProducerD3DTextureANGLE
     EGL_StreamPostD3DTextureANGLE
+
+    ; EGL_ANGLE_swap_with_frame_token
+    EGL_SwapBuffersWithFrameTokenANGLE
 
     ; EGL_CHROMIUM_get_sync_values
     EGL_GetSyncValuesCHROMIUM

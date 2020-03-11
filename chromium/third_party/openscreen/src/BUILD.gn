@@ -9,24 +9,26 @@ import("osp/build/config/services.gni")
 # source_sets).
 group("gn_all") {
   deps = [
-    "cast/common:mdns",
-    "cast/common/certificate",
-    "cast/sender/channel",
+    "cast/common:certificate",
+    "cast/common:channel",
+    "cast/sender:channel",
+    "cast/streaming:receiver",
+    "cast/streaming:sender",
+    "discovery:dnssd",
+    "discovery:mdns",
     "osp",
     "osp/msgs",
     "platform",
-    "platform:default_logger",
-    "streaming/cast:receiver",
-    "streaming/cast:sender",
     "third_party/abseil",
     "third_party/boringssl",
     "third_party/jsoncpp",
-    "third_party/protobuf:protoc",
     "third_party/tinycbor",
-    "third_party/zlib",
-    "tools/cddl",
     "util",
   ]
+
+  if (current_toolchain == host_toolchain) {
+    deps += [ "tools/cddl" ]
+  }
 
   if (use_mdns_responder) {
     deps += [ "osp/impl/discovery/mdns:mdns_demo" ]
@@ -43,23 +45,51 @@ group("gn_all") {
   if (use_chromium_quic && use_mdns_responder) {
     deps += [ "osp:osp_demo" ]
   }
+
+  if (!build_with_chromium) {
+    deps += [
+      "third_party/protobuf:protoc",
+      "third_party/zlib",
+    ]
+
+    # TODO(crbug.com/openscreen/86): Build for Mac too once the mac buildbot
+    # compiler is upgraded.
+    if (!is_mac) {
+      deps += [ "cast/standalone_receiver:cast_receiver" ]
+    }
+  }
 }
 
-executable("openscreen_unittests") {
+source_set("openscreen_unittests_all") {
   testonly = true
-  deps = [
+  public_deps = [
     "cast/common:unittests",
-    "cast/common/certificate:unittests",
-    "cast/common/channel:unittests",
-    "cast/sender/channel:unittests",
+    "cast/sender:unittests",
+    "cast/streaming:unittests",
+    "discovery:unittests",
     "osp:unittests",
-    "osp/impl/discovery/mdns:unittests",
-    "osp/impl/testing:unittests",
     "osp/msgs:unittests",
     "platform:unittests",
-    "streaming/cast:unittests",
     "third_party/abseil",
     "third_party/googletest:gtest_main",
     "util:unittests",
   ]
+
+  if (use_mdns_responder) {
+    public_deps += [
+      "osp/impl/discovery/mdns:unittests",
+
+      # Currently this target only includes mDNS tests.
+      "osp/impl/testing:unittests",
+    ]
+  }
+}
+
+if (!build_with_chromium) {
+  executable("openscreen_unittests") {
+    testonly = true
+    deps = [
+      ":openscreen_unittests_all",
+    ]
+  }
 }

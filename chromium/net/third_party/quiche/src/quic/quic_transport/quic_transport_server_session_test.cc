@@ -21,6 +21,7 @@
 #include "net/third_party/quiche/src/quic/quic_transport/quic_transport_protocol.h"
 #include "net/third_party/quiche/src/quic/test_tools/crypto_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/quiche/src/quic/test_tools/quic_transport_test_tools.h"
 
 namespace quic {
 namespace test {
@@ -48,11 +49,6 @@ ParsedQuicVersionVector GetVersions() {
   return {ParsedQuicVersion{PROTOCOL_TLS1_3, QUIC_VERSION_99}};
 }
 
-class MockVisitor : public QuicTransportServerSession::ServerVisitor {
- public:
-  MOCK_METHOD1(CheckOrigin, bool(url::Origin));
-};
-
 class QuicTransportServerSessionTest : public QuicTest {
  public:
   QuicTransportServerSessionTest()
@@ -76,7 +72,9 @@ class QuicTransportServerSessionTest : public QuicTest {
     session_->Initialize();
     crypto_stream_ = static_cast<QuicCryptoServerStream*>(
         session_->GetMutableCryptoStream());
-    crypto_stream_->OnSuccessfulVersionNegotiation(GetVersions()[0]);
+    if (!GetQuicReloadableFlag(quic_version_negotiated_by_default_at_server)) {
+      crypto_stream_->OnSuccessfulVersionNegotiation(GetVersions()[0]);
+    }
   }
 
   void Connect() {
@@ -111,7 +109,7 @@ class QuicTransportServerSessionTest : public QuicTest {
   QuicCryptoServerConfig crypto_config_;
   std::unique_ptr<QuicTransportServerSession> session_;
   QuicCompressedCertsCache compressed_certs_cache_;
-  testing::StrictMock<MockVisitor> visitor_;
+  testing::StrictMock<MockServerVisitor> visitor_;
   QuicCryptoServerStream* crypto_stream_;
 };
 

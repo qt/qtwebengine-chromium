@@ -47,13 +47,6 @@ class QUIC_EXPORT_PRIVATE GeneralLossAlgorithm : public LossDetectionInterface {
   // Returns a non-zero value when the early retransmit timer is active.
   QuicTime GetLossTimeout() const override;
 
-  // Increases the loss detection threshold for time loss detection.
-  void SpuriousRetransmitDetected(
-      const QuicUnackedPacketMap& unacked_packets,
-      QuicTime time,
-      const RttStats& rtt_stats,
-      QuicPacketNumber spurious_retransmission) override;
-
   // Called to increases time and/or packet threshold.
   void SpuriousLossDetected(const QuicUnackedPacketMap& unacked_packets,
                             const RttStats& rtt_stats,
@@ -77,11 +70,14 @@ class QUIC_EXPORT_PRIVATE GeneralLossAlgorithm : public LossDetectionInterface {
     use_adaptive_reordering_threshold_ = true;
   }
 
+  bool use_adaptive_time_threshold() const {
+    return use_adaptive_time_threshold_;
+  }
+
+  void enable_adaptive_time_threshold() { use_adaptive_time_threshold_ = true; }
+
  private:
   QuicTime loss_detection_timeout_;
-  // Largest sent packet when a spurious retransmit is detected.
-  // Prevents increasing the reordering threshold multiple times per epoch.
-  QuicPacketNumber largest_sent_on_spurious_retransmit_;
   LossDetectionType loss_type_;
   // Fraction of a max(SRTT, latest_rtt) to permit reordering before declaring
   // loss.  Fraction calculated by shifting max(SRTT, latest_rtt) to the right
@@ -91,6 +87,8 @@ class QUIC_EXPORT_PRIVATE GeneralLossAlgorithm : public LossDetectionInterface {
   QuicPacketCount reordering_threshold_;
   // If true, uses adaptive reordering threshold for loss detection.
   bool use_adaptive_reordering_threshold_;
+  // If true, uses adaptive time threshold for time based loss detection.
+  bool use_adaptive_time_threshold_;
   // The largest newly acked from the previous call to DetectLosses.
   QuicPacketNumber largest_previously_acked_;
   // The least in flight packet. Loss detection should start from this. Please

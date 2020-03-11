@@ -15,11 +15,15 @@
 #include "common/Optional.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/renderer/ContextImpl.h"
-#include "libANGLE/renderer/metal/mtl_common.h"
+#include "libANGLE/renderer/metal/mtl_buffer_pool.h"
+#include "libANGLE/renderer/metal/mtl_command_buffer.h"
+#include "libANGLE/renderer/metal/mtl_resources.h"
+#include "libANGLE/renderer/metal/mtl_state_cache.h"
+#include "libANGLE/renderer/metal/mtl_utils.h"
 
 namespace rx
 {
-class RendererMtl;
+class DisplayMtl;
 class FramebufferMtl;
 class VertexArrayMtl;
 class ProgramMtl;
@@ -27,7 +31,7 @@ class ProgramMtl;
 class ContextMtl : public ContextImpl, public mtl::Context
 {
   public:
-    ContextMtl(const gl::State &state, gl::ErrorSet *errorSet, RendererMtl *renderer);
+    ContextMtl(const gl::State &state, gl::ErrorSet *errorSet, DisplayMtl *display);
     ~ContextMtl() override;
 
     angle::Result initialize() override;
@@ -60,12 +64,25 @@ class ContextMtl : public ContextImpl, public mtl::Context
                                GLsizei count,
                                gl::DrawElementsType type,
                                const void *indices) override;
+    angle::Result drawElementsBaseVertex(const gl::Context *context,
+                                         gl::PrimitiveMode mode,
+                                         GLsizei count,
+                                         gl::DrawElementsType type,
+                                         const void *indices,
+                                         GLint baseVertex) override;
     angle::Result drawElementsInstanced(const gl::Context *context,
                                         gl::PrimitiveMode mode,
                                         GLsizei count,
                                         gl::DrawElementsType type,
                                         const void *indices,
                                         GLsizei instanceCount) override;
+    angle::Result drawElementsInstancedBaseVertex(const gl::Context *context,
+                                                  gl::PrimitiveMode mode,
+                                                  GLsizei count,
+                                                  gl::DrawElementsType type,
+                                                  const void *indices,
+                                                  GLsizei instanceCount,
+                                                  GLint baseVertex) override;
     angle::Result drawElementsInstancedBaseVertexBaseInstance(const gl::Context *context,
                                                               gl::PrimitiveMode mode,
                                                               GLsizei count,
@@ -81,6 +98,14 @@ class ContextMtl : public ContextImpl, public mtl::Context
                                     GLsizei count,
                                     gl::DrawElementsType type,
                                     const void *indices) override;
+    angle::Result drawRangeElementsBaseVertex(const gl::Context *context,
+                                              gl::PrimitiveMode mode,
+                                              GLuint start,
+                                              GLuint end,
+                                              GLsizei count,
+                                              gl::DrawElementsType type,
+                                              const void *indices,
+                                              GLint baseVertex) override;
     angle::Result drawArraysIndirect(const gl::Context *context,
                                      gl::PrimitiveMode mode,
                                      const void *indirect) override;
@@ -185,13 +210,232 @@ class ContextMtl : public ContextImpl, public mtl::Context
                      const char *file,
                      const char *function,
                      unsigned int line) override;
+    void handleError(NSError *_Nullable error,
+                     const char *file,
+                     const char *function,
+                     unsigned int line) override;
 
     using ContextImpl::handleError;
 
+    void invalidateState(const gl::Context *context);
+    void invalidateDefaultAttribute(size_t attribIndex);
+    void invalidateDefaultAttributes(const gl::AttributesMask &dirtyMask);
+    void invalidateCurrentTextures();
+    void invalidateDriverUniforms();
+    void invalidateRenderPipeline();
+
+    // Call this to notify ContextMtl whenever FramebufferMtl's state changed
+    void onDrawFrameBufferChange(const gl::Context *context, FramebufferMtl *framebuffer);
+
+    const MTLClearColor &getClearColorValue() const;
+    MTLColorWriteMask getColorMask() const;
+    float getClearDepthValue() const;
+    uint32_t getClearStencilValue() const;
+    // Return front facing stencil write mask
+    uint32_t getStencilMask() const;
+    bool isDepthWriteEnabled() const;
+
+    const mtl::Format &getPixelFormat(angle::FormatID angleFormatId) const;
+    // See mtl::FormatTable::getVertexFormat()
+    const mtl::VertexFormat &getVertexFormat(angle::FormatID angleFormatId,
+                                             bool tightlyPacked) const;
+
+    // Recommended to call these methods to end encoding instead of invoking the encoder's
+    // endEncoding() directly.
+    void endEncoding(mtl::RenderCommandEncoder *encoder);
+    // Ends any active command encoder
+    void endEncoding(bool forceSaveRenderPassContent);
+
+    void flushCommandBufer();
+    void present(const gl::Context *context, id<CAMetalDrawable> presentationDrawable);
+    angle::Result finishCommandBuffer();
+
+    // Check whether compatible render pass has been started.
+    bool hasStartedRenderPass(const mtl::RenderPassDesc &desc);
+    bool hasStartedRenderPass(FramebufferMtl *framebuffer);
+
+    // Get current render encoder. May be nullptr if no render pass has been started.
+    mtl::RenderCommandEncoder *getRenderCommandEncoder();
+
+    mtl::RenderCommandEncoder *getCurrentFramebufferRenderCommandEncoder();
+
+    // Will end current command encoder if it is valid, then start new encoder.
+    // Unless hasStartedRenderPass(desc) returns true.
+    mtl::RenderCommandEncoder *getRenderCommandEncoder(const mtl::RenderPassDesc &desc);
+
+    // Utilities to quickly create render command enconder to a specific texture:
+    // The previous content of texture will be loaded if clearColor is not provided
+    mtl::RenderCommandEncoder *getRenderCommandEncoder(const mtl::TextureRef &textureTarget,
+                                                       const gl::ImageIndex &index,
+                                                       const Optional<MTLClearColor> &clearColor);
+    // The previous content of texture will be loaded
+    mtl::RenderCommandEncoder *getRenderCommandEncoder(const mtl::TextureRef &textureTarget,
+                                                       const gl::ImageIndex &index);
+
+    // Will end current command encoder and start new blit command encoder. Unless a blit comamnd
+    // encoder is already started.
+    mtl::BlitCommandEncoder *getBlitCommandEncoder();
+
+    // Will end current command encoder and start new compute command encoder. Unless a compute
+    // command encoder is already started.
+    mtl::ComputeCommandEncoder *getComputeCommandEncoder();
+
   private:
-    gl::TextureCapsMap mNativeTextureCaps;
-    gl::Extensions mNativeExtensions;
-    gl::Caps mNativeCaps;
+    void ensureCommandBufferValid();
+    angle::Result setupDraw(const gl::Context *context,
+                            gl::PrimitiveMode mode,
+                            GLint firstVertex,
+                            GLsizei vertexOrIndexCount,
+                            GLsizei instanceCount,
+                            gl::DrawElementsType indexTypeOrNone,
+                            const void *indices);
+    angle::Result genLineLoopLastSegment(const gl::Context *context,
+                                         GLint firstVertex,
+                                         GLsizei vertexOrIndexCount,
+                                         GLsizei instanceCount,
+                                         gl::DrawElementsType indexTypeOrNone,
+                                         const void *indices,
+                                         mtl::BufferRef *lastSegmentIndexBufferOut);
+
+    angle::Result drawTriFanArrays(const gl::Context *context,
+                                   GLint first,
+                                   GLsizei count,
+                                   GLsizei instances);
+    angle::Result drawTriFanArraysWithBaseVertex(const gl::Context *context,
+                                                 GLint first,
+                                                 GLsizei count,
+                                                 GLsizei instances);
+    angle::Result drawTriFanArraysLegacy(const gl::Context *context,
+                                         GLint first,
+                                         GLsizei count,
+                                         GLsizei instances);
+    angle::Result drawTriFanElements(const gl::Context *context,
+                                     GLsizei count,
+                                     gl::DrawElementsType type,
+                                     const void *indices,
+                                     GLsizei instances);
+
+    angle::Result drawArraysImpl(const gl::Context *context,
+                                 gl::PrimitiveMode mode,
+                                 GLint first,
+                                 GLsizei count,
+                                 GLsizei instanceCount);
+
+    angle::Result drawElementsImpl(const gl::Context *context,
+                                   gl::PrimitiveMode mode,
+                                   GLsizei count,
+                                   gl::DrawElementsType type,
+                                   const void *indices,
+                                   GLsizei instanceCount);
+
+    void updateViewport(FramebufferMtl *framebufferMtl,
+                        const gl::Rectangle &viewport,
+                        float nearPlane,
+                        float farPlane);
+    void updateDepthRange(float nearPlane, float farPlane);
+    void updateScissor(const gl::State &glState);
+    void updateCullMode(const gl::State &glState);
+    void updateFrontFace(const gl::State &glState);
+    void updateDepthBias(const gl::State &glState);
+    void updateDrawFrameBufferBinding(const gl::Context *context);
+    void updateProgramExecutable(const gl::Context *context);
+    void updateVertexArray(const gl::Context *context);
+
+    angle::Result updateDefaultAttribute(size_t attribIndex);
+    angle::Result handleDirtyActiveTextures(const gl::Context *context);
+    angle::Result handleDirtyDefaultAttribs(const gl::Context *context);
+    angle::Result handleDirtyDriverUniforms(const gl::Context *context);
+    angle::Result handleDirtyDepthStencilState(const gl::Context *context);
+    angle::Result handleDirtyDepthBias(const gl::Context *context);
+    angle::Result checkIfPipelineChanged(const gl::Context *context,
+                                         gl::PrimitiveMode primitiveMode,
+                                         Optional<mtl::RenderPipelineDesc> *changedPipelineDesc);
+
+    // Dirty bits.
+    enum DirtyBitType : size_t
+    {
+        DIRTY_BIT_DEFAULT_ATTRIBS,
+        DIRTY_BIT_TEXTURES,
+        DIRTY_BIT_DRIVER_UNIFORMS,
+        DIRTY_BIT_DEPTH_STENCIL_DESC,
+        DIRTY_BIT_DEPTH_BIAS,
+        DIRTY_BIT_STENCIL_REF,
+        DIRTY_BIT_BLEND_COLOR,
+        DIRTY_BIT_VIEWPORT,
+        DIRTY_BIT_SCISSOR,
+        DIRTY_BIT_DRAW_FRAMEBUFFER,
+        DIRTY_BIT_CULL_MODE,
+        DIRTY_BIT_WINDING,
+        DIRTY_BIT_RENDER_PIPELINE,
+        DIRTY_BIT_MAX,
+    };
+
+    // See compiler/translator/TranslatorVulkan.cpp: AddDriverUniformsToShader()
+    struct DriverUniforms
+    {
+        float viewport[4];
+
+        float halfRenderAreaHeight;
+        float viewportYScale;
+        float negViewportYScale;
+
+        // NOTE(hqle): Transform feedsback is not supported yet.
+        uint32_t xfbActiveUnpaused;
+
+        int32_t xfbBufferOffsets[4];
+        uint32_t acbBufferOffsets[4];
+
+        // We'll use x, y, z, w for near / far / diff / zscale respectively.
+        float depthRange[4];
+    };
+
+    struct DefaultAttribute
+    {
+        // NOTE(hqle): Support integer default attributes in ES 3.0
+        float values[4];
+    };
+
+    mtl::CommandBuffer mCmdBuffer;
+    mtl::RenderCommandEncoder mRenderEncoder;
+    mtl::BlitCommandEncoder mBlitEncoder;
+    mtl::ComputeCommandEncoder mComputeEncoder;
+
+    // Cached back-end objects
+    FramebufferMtl *mDrawFramebuffer = nullptr;
+    VertexArrayMtl *mVertexArray     = nullptr;
+    ProgramMtl *mProgram             = nullptr;
+
+    // Special flag to indicate current draw framebuffer is default framebuffer.
+    // We need this instead of calling mDrawFramebuffer->getState().isDefault() because
+    // mDrawFramebuffer might point to a deleted object, ContextMtl only knows about this very late,
+    // only during syncState() function call.
+    bool mDrawFramebufferIsDefault = true;
+
+    using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
+
+    gl::AttributesMask mDirtyDefaultAttribsMask;
+    DirtyBits mDirtyBits;
+
+    // State
+    mtl::RenderPipelineDesc mRenderPipelineDesc;
+    mtl::DepthStencilDesc mDepthStencilDesc;
+    mtl::BlendDesc mBlendDesc;
+    MTLClearColor mClearColor;
+    MTLViewport mViewport;
+    MTLScissorRect mScissorRect;
+    MTLWinding mWinding;
+    MTLCullMode mCullMode;
+    bool mCullAllPolygons = false;
+
+    // Lineloop and TriFan index buffer
+    mtl::BufferPool mLineLoopIndexBuffer;
+    mtl::BufferPool mTriFanIndexBuffer;
+    // one buffer can be reused for any starting vertex in DrawArrays()
+    mtl::BufferRef mTriFanArraysIndexBuffer;
+
+    DriverUniforms mDriverUniforms;
+
+    DefaultAttribute mDefaultAttributes[mtl::kMaxVertexAttribs];
 };
 
 }  // namespace rx

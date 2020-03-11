@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-#include "dawn/dawn.h"
+#include "dawn/webgpu.h"
 #include "dawn_wire/dawn_wire_export.h"
 
 namespace dawn_wire {
@@ -34,6 +34,16 @@ namespace dawn_wire {
         virtual ~CommandHandler() = default;
         virtual const volatile char* HandleCommands(const volatile char* commands, size_t size) = 0;
     };
+
+    DAWN_WIRE_EXPORT size_t
+    SerializedWGPUDevicePropertiesSize(const WGPUDeviceProperties* deviceProperties);
+
+    DAWN_WIRE_EXPORT void SerializeWGPUDeviceProperties(
+        const WGPUDeviceProperties* deviceProperties,
+        char* serializeBuffer);
+
+    DAWN_WIRE_EXPORT bool DeserializeWGPUDeviceProperties(WGPUDeviceProperties* deviceProperties,
+                                                          const volatile char* deserializeBuffer);
 
 }  // namespace dawn_wire
 

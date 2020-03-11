@@ -147,12 +147,15 @@ namespace sw
 	void PixelProcessor::setRoutineCacheSize(int cacheSize)
 	{
 		delete routineCache;
-		routineCache = new RoutineCache<State>(clamp(cacheSize, 1, 65536));
+		routineCache = new RoutineCacheType(clamp(cacheSize, 1, 65536));
 	}
 
 	const PixelProcessor::State PixelProcessor::update(const Context* context) const
 	{
 		State state;
+
+		state.numClipDistances = context->vertexShader->getNumOutputClipDistances();
+		state.numCullDistances = context->vertexShader->getNumOutputCullDistances();
 
 		if(context->pixelShader)
 		{
@@ -177,7 +180,6 @@ namespace sw
 		{
 			state.depthTestActive = true;
 			state.depthCompareMode = context->depthCompareMode;
-			state.quadLayoutDepthBuffer = context->depthBuffer->getFormat().hasQuadLayout();
 			state.depthFormat = context->depthBuffer->getFormat();
 		}
 
@@ -193,6 +195,8 @@ namespace sw
 
 		state.multiSample = static_cast<unsigned int>(context->sampleCount);
 		state.multiSampleMask = context->multiSampleMask;
+		state.multiSampledBresenham = (state.multiSample > 1) && context->isDrawLine(true) &&
+		                              (context->lineRasterizationMode == VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT);
 
 		if(state.multiSample > 1 && context->pixelShader)
 		{
@@ -206,7 +210,7 @@ namespace sw
 		return state;
 	}
 
-	std::shared_ptr<Routine> PixelProcessor::routine(const State &state,
+	PixelProcessor::RoutineType PixelProcessor::routine(const State &state,
 		vk::PipelineLayout const *pipelineLayout,
 		SpirvShader const *pixelShader,
 		const vk::DescriptorSet::Bindings &descriptorSets)

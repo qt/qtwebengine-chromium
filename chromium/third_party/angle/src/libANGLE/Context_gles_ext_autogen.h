@@ -56,6 +56,10 @@
                           GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLint z,  \
                           GLint width, GLint height, GLint depth, GLboolean unpackFlipY,           \
                           GLboolean unpackPremultiplyAlpha, GLboolean unpackUnmultiplyAlpha);      \
+    /* GL_ANGLE_get_image */                                                                       \
+    void getTexImage(TextureTarget targetPacked, GLint level, GLenum format, GLenum type,          \
+                     void *pixels);                                                                \
+    void getRenderbufferImage(GLenum target, GLenum format, GLenum type, void *pixels);            \
     /* GL_ANGLE_program_binary */                                                                  \
     /* GL_ANGLE_request_extension */                                                               \
     void requestExtension(const GLchar *name);                                                     \
@@ -279,12 +283,12 @@
         PrimitiveMode modePacked, GLsizei count, DrawElementsType typePacked,                      \
         const GLvoid *indices, GLsizei instanceCounts, GLint baseVertex, GLuint baseInstance);     \
     void multiDrawArraysInstancedBaseInstance(                                                     \
-        PrimitiveMode modePacked, GLsizei drawcount, const GLsizei *counts,                        \
-        const GLsizei *instanceCounts, const GLint *firsts, const GLuint *baseInstances);          \
+        PrimitiveMode modePacked, const GLint *firsts, const GLsizei *counts,                      \
+        const GLsizei *instanceCounts, const GLuint *baseInstances, GLsizei drawcount);            \
     void multiDrawElementsInstancedBaseVertexBaseInstance(                                         \
-        PrimitiveMode modePacked, DrawElementsType typePacked, GLsizei drawcount,                  \
-        const GLsizei *counts, const GLsizei *instanceCounts, const GLvoid *const *indices,        \
-        const GLint *baseVertices, const GLuint *baseInstances);                                   \
+        PrimitiveMode modePacked, const GLsizei *counts, DrawElementsType typePacked,              \
+        const GLvoid *const *indices, const GLsizei *instanceCounts, const GLint *baseVertices,    \
+        const GLuint *baseInstances, GLsizei drawcount);                                           \
     /* GL_ANGLE_framebuffer_blit */                                                                \
     /* GL_ANGLE_framebuffer_multisample */                                                         \
     /* GL_ANGLE_instanced_arrays */                                                                \
@@ -325,6 +329,10 @@
     void getQueryObjectui64v(QueryID idPacked, GLenum pname, GLuint64 *params);                    \
     void queryCounter(QueryID idPacked, QueryType targetPacked);                                   \
     /* GL_EXT_draw_buffers */                                                                      \
+    /* GL_EXT_draw_elements_base_vertex */                                                         \
+    void multiDrawElementsBaseVertex(PrimitiveMode modePacked, const GLsizei *count,               \
+                                     DrawElementsType typePacked, const void *const *indices,      \
+                                     GLsizei primcount, const GLint *basevertex);                  \
     /* GL_EXT_geometry_shader */                                                                   \
     /* GL_EXT_instanced_arrays */                                                                  \
     /* GL_EXT_map_buffer_range */                                                                  \
@@ -377,6 +385,7 @@
                        const TextureID *texturesPacked, const GLenum *srcLayouts);                 \
     /* GL_EXT_semaphore_fd */                                                                      \
     void importSemaphoreFd(SemaphoreID semaphorePacked, HandleType handleTypePacked, GLint fd);    \
+    /* GL_EXT_texture_filter_anisotropic */                                                        \
     /* GL_EXT_texture_storage */                                                                   \
     void texStorage1D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width);        \
     /* GL_KHR_debug */                                                                             \
@@ -393,6 +402,7 @@
     /* GL_OES_EGL_image */                                                                         \
     void eGLImageTargetRenderbufferStorage(GLenum target, GLeglImageOES image);                    \
     void eGLImageTargetTexture2D(TextureType targetPacked, GLeglImageOES image);                   \
+    /* GL_OES_draw_elements_base_vertex */                                                         \
     /* GL_OES_get_program_binary */                                                                \
     /* GL_OES_mapbuffer */                                                                         \
     void *mapBuffer(BufferBinding targetPacked, GLenum access);                                    \

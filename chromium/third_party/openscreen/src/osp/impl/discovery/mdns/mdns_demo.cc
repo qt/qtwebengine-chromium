@@ -12,12 +12,12 @@
 
 // TODO(rwkeane): Remove references to platform/impl
 #include "osp/impl/discovery/mdns/mdns_responder_adapter_impl.h"
-#include "platform/api/logging.h"
+#include "platform/api/network_interface.h"
 #include "platform/api/time.h"
 #include "platform/base/error.h"
-#include "platform/impl/socket_handle_waiter_thread.h"
+#include "platform/impl/logging.h"
+#include "platform/impl/platform_client_posix.h"
 #include "platform/impl/task_runner.h"
-#include "platform/impl/task_runner_thread.h"
 #include "platform/impl/udp_socket_reader_posix.h"
 
 // This file contains a demo of our mDNSResponder wrapper code.  It can both
@@ -36,19 +36,24 @@
 // There are a few known bugs around the handling of record events, so this
 // shouldn't be expected to be a source of truth, nor should it be expected to
 // be correct after running for a long time.
+
+using openscreen::platform::Clock;
+using openscreen::platform::PlatformClientPosix;
+
 namespace openscreen {
+namespace osp {
 namespace {
 
 bool g_done = false;
 bool g_dump_services = false;
 
 struct Service {
-  explicit Service(mdns::DomainName service_instance)
+  explicit Service(DomainName service_instance)
       : service_instance(std::move(service_instance)) {}
   ~Service() = default;
 
-  mdns::DomainName service_instance;
-  mdns::DomainName domain_name;
+  DomainName service_instance;
+  DomainName domain_name;
   IPAddress address;
   uint16_t port;
   std::vector<std::string> txt;
@@ -56,10 +61,10 @@ struct Service {
 
 class DemoSocketClient : public platform::UdpSocket::Client {
  public:
-  DemoSocketClient(mdns::MdnsResponderAdapterImpl* mdns) : mdns_(mdns) {}
+  DemoSocketClient(MdnsResponderAdapterImpl* mdns) : mdns_(mdns) {}
 
   void OnError(platform::UdpSocket* socket, Error error) override {
-    // TODO(issue/66): Change to OSP_LOG_FATAL.
+    // TODO(crbug.com/openscreen/66): Change to OSP_LOG_FATAL.
     OSP_LOG_ERROR << "configuration failed for interface " << error.message();
     OSP_CHECK(false);
   }
@@ -74,11 +79,10 @@ class DemoSocketClient : public platform::UdpSocket::Client {
   }
 
  private:
-  mdns::MdnsResponderAdapterImpl* mdns_;
+  MdnsResponderAdapterImpl* mdns_;
 };
 
-using ServiceMap =
-    std::map<mdns::DomainName, Service, mdns::DomainNameComparator>;
+using ServiceMap = std::map<DomainName, Service, DomainNameComparator>;
 ServiceMap* g_services = nullptr;
 
 void sigusr1_dump_services(int) {
@@ -160,12 +164,12 @@ void LogService(const Service& s) {
   OSP_LOG << "A: " << s.address;
 }
 
-void HandleEvents(mdns::MdnsResponderAdapterImpl* mdns_adapter) {
+void HandleEvents(MdnsResponderAdapterImpl* mdns_adapter) {
   for (auto& ptr_event : mdns_adapter->TakePtrResponses()) {
     auto it = g_services->find(ptr_event.service_instance);
     switch (ptr_event.header.response_type) {
-      case mdns::QueryEventHeader::Type::kAdded:
-      case mdns::QueryEventHeader::Type::kAddedNoCache:
+      case QueryEventHeader::Type::kAdded:
+      case QueryEventHeader::Type::kAddedNoCache:
         mdns_adapter->StartSrvQuery(ptr_event.header.socket,
                                     ptr_event.service_instance);
         mdns_adapter->StartTxtQuery(ptr_event.header.socket,
@@ -175,7 +179,7 @@ void HandleEvents(mdns::MdnsResponderAdapterImpl* mdns_adapter) {
                               Service(ptr_event.service_instance));
         }
         break;
-      case mdns::QueryEventHeader::Type::kRemoved:
+      case QueryEventHeader::Type::kRemoved:
         // PTR may be removed and added without updating related entries (SRV
         // and friends) so this simple logic is actually broken, but I don't
         // want to do a better design or pointer hell for just a demo.
@@ -192,16 +196,16 @@ void HandleEvents(mdns::MdnsResponderAdapterImpl* mdns_adapter) {
       continue;
 
     switch (srv_event.header.response_type) {
-      case mdns::QueryEventHeader::Type::kAdded:
-      case mdns::QueryEventHeader::Type::kAddedNoCache:
+      case QueryEventHeader::Type::kAdded:
+      case QueryEventHeader::Type::kAddedNoCache:
         mdns_adapter->StartAQuery(srv_event.header.socket,
                                   srv_event.domain_name);
         it->second.domain_name = std::move(srv_event.domain_name);
         it->second.port = srv_event.port;
         break;
-      case mdns::QueryEventHeader::Type::kRemoved:
+      case QueryEventHeader::Type::kRemoved:
         OSP_LOG_WARN << "srv-remove: " << srv_event.service_instance;
-        it->second.domain_name = mdns::DomainName();
+        it->second.domain_name = DomainName();
         it->second.port = 0;
         break;
     }
@@ -212,11 +216,11 @@ void HandleEvents(mdns::MdnsResponderAdapterImpl* mdns_adapter) {
       continue;
 
     switch (txt_event.header.response_type) {
-      case mdns::QueryEventHeader::Type::kAdded:
-      case mdns::QueryEventHeader::Type::kAddedNoCache:
+      case QueryEventHeader::Type::kAdded:
+      case QueryEventHeader::Type::kAddedNoCache:
         it->second.txt = std::move(txt_event.txt_info);
         break;
-      case mdns::QueryEventHeader::Type::kRemoved:
+      case QueryEventHeader::Type::kRemoved:
         OSP_LOG_WARN << "txt-remove: " << txt_event.service_instance;
         it->second.txt.clear();
         break;
@@ -226,20 +230,19 @@ void HandleEvents(mdns::MdnsResponderAdapterImpl* mdns_adapter) {
     // TODO(btolsch): If multiple SRV records specify the same domain, the A
     // will only update the first.  I didn't think this would happen but I
     // noticed this happens for cast groups.
-    auto it =
-        std::find_if(g_services->begin(), g_services->end(),
-                     [&a_event](const std::pair<mdns::DomainName, Service>& s) {
-                       return s.second.domain_name == a_event.domain_name;
-                     });
+    auto it = std::find_if(g_services->begin(), g_services->end(),
+                           [&a_event](const std::pair<DomainName, Service>& s) {
+                             return s.second.domain_name == a_event.domain_name;
+                           });
     if (it == g_services->end())
       continue;
 
     switch (a_event.header.response_type) {
-      case mdns::QueryEventHeader::Type::kAdded:
-      case mdns::QueryEventHeader::Type::kAddedNoCache:
+      case QueryEventHeader::Type::kAdded:
+      case QueryEventHeader::Type::kAddedNoCache:
         it->second.address = a_event.address;
         break;
-      case mdns::QueryEventHeader::Type::kRemoved:
+      case QueryEventHeader::Type::kRemoved:
         OSP_LOG_WARN << "a-remove: " << a_event.domain_name;
         it->second.address = IPAddress(0, 0, 0, 0);
         break;
@@ -254,8 +257,8 @@ void BrowseDemo(platform::TaskRunner* task_runner,
   SignalThings();
 
   std::vector<std::string> labels{service_name, service_protocol};
-  ErrorOr<mdns::DomainName> service_type =
-      mdns::DomainName::FromLabels(labels.begin(), labels.end());
+  ErrorOr<DomainName> service_type =
+      DomainName::FromLabels(labels.begin(), labels.end());
 
   if (!service_type) {
     OSP_LOG_ERROR << "bad domain labels: " << service_name << ", "
@@ -263,19 +266,20 @@ void BrowseDemo(platform::TaskRunner* task_runner,
     return;
   }
 
-  auto mdns_adapter = std::make_unique<mdns::MdnsResponderAdapterImpl>();
+  auto mdns_adapter = std::make_unique<MdnsResponderAdapterImpl>();
   mdns_adapter->Init();
   mdns_adapter->SetHostLabel("gigliorononomicon");
-  auto interface_addresses = platform::GetInterfaceAddresses();
-  for (const auto& ifa : interface_addresses) {
-    OSP_LOG << "Found interface: " << ifa;
-  }
-
+  const std::vector<platform::InterfaceInfo> interfaces =
+      platform::GetNetworkInterfaces();
   std::vector<platform::NetworkInterfaceIndex> index_list;
-  for (const auto& interface : interface_addresses) {
-    if (!interface.addresses.empty())
-      index_list.push_back(interface.info.index);
+  for (const auto& interface : interfaces) {
+    OSP_LOG << "Found interface: " << interface;
+    if (!interface.addresses.empty()) {
+      index_list.push_back(interface.index);
+    }
   }
+  OSP_LOG_IF(WARN, index_list.empty())
+      << "No network interfaces had usable addresses for mDNS.";
 
   DemoSocketClient client(mdns_adapter.get());
   auto sockets = SetUpMulticastSockets(task_runner, index_list, &client);
@@ -287,20 +291,20 @@ void BrowseDemo(platform::TaskRunner* task_runner,
   // Listen on all interfaces.
   auto socket_it = sockets.begin();
   for (platform::NetworkInterfaceIndex index : index_list) {
-    const auto& addr = *std::find_if(
-        interface_addresses.begin(), interface_addresses.end(),
-        [index](const openscreen::platform::InterfaceAddresses& addr) {
-          return addr.info.index == index;
-        });
+    const auto& interface =
+        *std::find_if(interfaces.begin(), interfaces.end(),
+                      [index](const openscreen::platform::InterfaceInfo& info) {
+                        return info.index == index;
+                      });
     // Pick any address for the given interface.
-    mdns_adapter->RegisterInterface(addr.info, addr.addresses.front(),
+    mdns_adapter->RegisterInterface(interface, interface.addresses.front(),
                                     socket_it->get());
     ++socket_it;
   }
 
   if (!service_instance.empty()) {
     mdns_adapter->RegisterService(service_instance, service_name,
-                                  service_protocol, mdns::DomainName(), 12345,
+                                  service_protocol, DomainName(), 12345,
                                   {{"k1", "yurtle"}, {"k2", "turtle"}});
   }
 
@@ -335,10 +339,10 @@ void BrowseDemo(platform::TaskRunner* task_runner,
 }
 
 }  // namespace
+}  // namespace osp
 }  // namespace openscreen
 
 int main(int argc, char** argv) {
-  openscreen::platform::LogInit(nullptr);
   openscreen::platform::SetLogLevel(openscreen::platform::LogLevel::kVerbose);
 
   std::string service_instance;
@@ -352,23 +356,21 @@ int main(int argc, char** argv) {
   if (service_type.size() && service_type[0] == '.')
     return 1;
 
-  auto labels = openscreen::SplitByDot(service_type);
+  auto labels = openscreen::osp::SplitByDot(service_type);
   if (labels.size() != 2)
     return 1;
 
-  openscreen::ServiceMap services;
-  openscreen::g_services = &services;
+  openscreen::osp::ServiceMap services;
+  openscreen::osp::g_services = &services;
 
-  openscreen::platform::TaskRunnerThread task_runner_thread(
-      openscreen::platform::Clock::now);
-  openscreen::platform::SocketHandleWaiterThread socket_handle_waiter_thread;
-  openscreen::platform::UdpSocketReaderPosix reader(
-      socket_handle_waiter_thread.socket_handle_waiter());
-  openscreen::platform::UdpSocket::SetLifetimeObserver(&reader);
+  PlatformClientPosix::Create(Clock::duration{50}, Clock::duration{50});
 
-  openscreen::BrowseDemo(task_runner_thread.task_runner(), labels[0], labels[1],
-                         service_instance);
+  openscreen::osp::BrowseDemo(
+      PlatformClientPosix::GetInstance()->GetTaskRunner(), labels[0], labels[1],
+      service_instance);
 
-  openscreen::g_services = nullptr;
+  PlatformClientPosix::ShutDown();
+
+  openscreen::osp::g_services = nullptr;
   return 0;
 }

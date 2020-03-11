@@ -41,16 +41,16 @@ class GeneralLossAlgorithmTest : public QuicTest {
                             PACKET_1BYTE_PACKET_NUMBER, nullptr, kDefaultLength,
                             false, false);
     packet.retransmittable_frames.push_back(QuicFrame(frame));
-    unacked_packets_.AddSentPacket(&packet, QuicPacketNumber(),
-                                   NOT_RETRANSMISSION, clock_.Now(), true);
+    unacked_packets_.AddSentPacket(&packet, NOT_RETRANSMISSION, clock_.Now(),
+                                   true);
   }
 
   void SendAckPacket(uint64_t packet_number) {
     SerializedPacket packet(QuicPacketNumber(packet_number),
                             PACKET_1BYTE_PACKET_NUMBER, nullptr, kDefaultLength,
                             true, false);
-    unacked_packets_.AddSentPacket(&packet, QuicPacketNumber(),
-                                   NOT_RETRANSMISSION, clock_.Now(), false);
+    unacked_packets_.AddSentPacket(&packet, NOT_RETRANSMISSION, clock_.Now(),
+                                   false);
   }
 
   void VerifyLosses(uint64_t largest_newly_acked,
@@ -514,21 +514,51 @@ TEST_F(GeneralLossAlgorithmTest, IncreaseThresholdUponSpuriousLoss) {
   // Advance the time 1/4 RTT and indicate the loss was spurious.
   // The new threshold should be 1/2 RTT.
   clock_.AdvanceTime(rtt_stats_.smoothed_rtt() * (1.0f / 4));
-  if (GetQuicReloadableFlag(quic_detect_spurious_loss)) {
-    loss_algorithm_.SpuriousLossDetected(unacked_packets_, rtt_stats_,
-                                         clock_.Now(), QuicPacketNumber(1),
-                                         QuicPacketNumber(2));
-    EXPECT_EQ(1, loss_algorithm_.reordering_shift());
-    return;
-  }
-  loss_algorithm_.SpuriousRetransmitDetected(unacked_packets_, clock_.Now(),
-                                             rtt_stats_, QuicPacketNumber(11));
+  loss_algorithm_.SpuriousLossDetected(unacked_packets_, rtt_stats_,
+                                       clock_.Now(), QuicPacketNumber(1),
+                                       QuicPacketNumber(2));
   EXPECT_EQ(1, loss_algorithm_.reordering_shift());
+}
 
-  // Detect another spurious retransmit and ensure the threshold doesn't
-  // increase again.
-  loss_algorithm_.SpuriousRetransmitDetected(unacked_packets_, clock_.Now(),
-                                             rtt_stats_, QuicPacketNumber(12));
+TEST_F(GeneralLossAlgorithmTest, IncreaseTimeThresholdUponSpuriousLoss) {
+  loss_algorithm_.SetLossDetectionType(kIetfLossDetection);
+  loss_algorithm_.enable_adaptive_time_threshold();
+  loss_algorithm_.set_reordering_shift(kDefaultLossDelayShift);
+  EXPECT_EQ(kDefaultLossDelayShift, loss_algorithm_.reordering_shift());
+  EXPECT_TRUE(loss_algorithm_.use_adaptive_time_threshold());
+  const size_t kNumSentPackets = 10;
+  // Transmit 2 packets at 1/10th an RTT interval.
+  for (size_t i = 1; i <= kNumSentPackets; ++i) {
+    SendDataPacket(i);
+    clock_.AdvanceTime(0.1 * rtt_stats_.smoothed_rtt());
+  }
+  EXPECT_EQ(QuicTime::Zero() + rtt_stats_.smoothed_rtt(), clock_.Now());
+  AckedPacketVector packets_acked;
+  // Expect the timer to not be set.
+  EXPECT_EQ(QuicTime::Zero(), loss_algorithm_.GetLossTimeout());
+  // Packet 1 should not be lost until 1/4 RTTs pass.
+  unacked_packets_.RemoveFromInFlight(QuicPacketNumber(2));
+  packets_acked.push_back(AckedPacket(
+      QuicPacketNumber(2), kMaxOutgoingPacketSize, QuicTime::Zero()));
+  VerifyLosses(2, packets_acked, std::vector<uint64_t>{});
+  packets_acked.clear();
+  // Expect the timer to be set to 1/4 RTT's in the future.
+  EXPECT_EQ(rtt_stats_.smoothed_rtt() * (1.0f / 4),
+            loss_algorithm_.GetLossTimeout() - clock_.Now());
+  VerifyLosses(2, packets_acked, std::vector<uint64_t>{});
+  clock_.AdvanceTime(rtt_stats_.smoothed_rtt() * (1.0f / 4));
+  VerifyLosses(2, packets_acked, {1});
+  EXPECT_EQ(QuicTime::Zero(), loss_algorithm_.GetLossTimeout());
+  // Retransmit packet 1 as 11 and 2 as 12.
+  SendDataPacket(11);
+  SendDataPacket(12);
+
+  // Advance the time 1/4 RTT and indicate the loss was spurious.
+  // The new threshold should be 1/2 RTT.
+  clock_.AdvanceTime(rtt_stats_.smoothed_rtt() * (1.0f / 4));
+  loss_algorithm_.SpuriousLossDetected(unacked_packets_, rtt_stats_,
+                                       clock_.Now(), QuicPacketNumber(1),
+                                       QuicPacketNumber(2));
   EXPECT_EQ(1, loss_algorithm_.reordering_shift());
 }
 

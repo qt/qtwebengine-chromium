@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "url/gurl.h"
 #include "url/origin.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_crypto_client_config.h"
 #include "net/third_party/quiche/src/quic/core/quic_config.h"
@@ -19,24 +20,38 @@
 #include "net/third_party/quiche/src/quic/core/quic_stream.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_containers.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quiche/src/quic/quic_transport/quic_transport_protocol.h"
 #include "net/third_party/quiche/src/quic/quic_transport/quic_transport_session_interface.h"
+#include "net/third_party/quiche/src/quic/quic_transport/quic_transport_stream.h"
 
 namespace quic {
 
 // A client session for the QuicTransport protocol.
-class QUIC_EXPORT QuicTransportClientSession
+class QUIC_EXPORT_PRIVATE QuicTransportClientSession
     : public QuicSession,
       public QuicTransportSessionInterface {
  public:
+  class QUIC_EXPORT_PRIVATE ClientVisitor {
+   public:
+    virtual ~ClientVisitor() {}
+
+    // Notifies the visitor when a new stream has been received.  The stream in
+    // question can be retrieved using AcceptIncomingBidirectionalStream() or
+    // AcceptIncomingUnidirectionalStream().
+    virtual void OnIncomingBidirectionalStreamAvailable() = 0;
+    virtual void OnIncomingUnidirectionalStreamAvailable() = 0;
+  };
+
   QuicTransportClientSession(QuicConnection* connection,
                              Visitor* owner,
                              const QuicConfig& config,
                              const ParsedQuicVersionVector& supported_versions,
-                             const QuicServerId& server_id,
+                             const GURL& url,
                              QuicCryptoClientConfig* crypto_config,
-                             url::Origin origin);
+                             url::Origin origin,
+                             ClientVisitor* visitor);
 
   std::vector<std::string> GetAlpnsToOffer() const override {
     return std::vector<std::string>({QuicTransportAlpn()});
@@ -53,12 +68,35 @@ class QUIC_EXPORT QuicTransportClientSession
     return crypto_stream_.get();
   }
 
+  // Returns true once the encryption has been established and the client
+  // indication has been sent.  No application data will be read or written
+  // before the connection is ready.  Once the connection becomes ready, this
+  // method will never return false.
   bool IsSessionReady() const override { return ready_; }
 
+  QuicStream* CreateIncomingStream(QuicStreamId id) override;
+  QuicStream* CreateIncomingStream(PendingStream* /*pending*/) override {
+    QUIC_BUG << "QuicTransportClientSession::CreateIncomingStream("
+                "PendingStream) not implemented";
+    return nullptr;
+  }
+
   void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) override;
+  void SetDefaultEncryptionLevel(EncryptionLevel level) override;
+
+  // Return the earliest incoming stream that has been received by the session
+  // but has not been accepted.  Returns nullptr if there are no incoming
+  // streams.
+  QuicTransportStream* AcceptIncomingBidirectionalStream();
+  QuicTransportStream* AcceptIncomingUnidirectionalStream();
+
+  using QuicSession::CanOpenNextOutgoingBidirectionalStream;
+  using QuicSession::CanOpenNextOutgoingUnidirectionalStream;
+  QuicTransportStream* OpenOutgoingBidirectionalStream();
+  QuicTransportStream* OpenOutgoingUnidirectionalStream();
 
  protected:
-  class ClientIndication : public QuicStream {
+  class QUIC_EXPORT_PRIVATE ClientIndication : public QuicStream {
    public:
     using QuicStream::QuicStream;
 
@@ -69,6 +107,9 @@ class QUIC_EXPORT QuicTransportClientSession
     }
   };
 
+  // Creates and activates a QuicTransportStream for the given ID.
+  QuicTransportStream* CreateStream(QuicStreamId id);
+
   // Serializes the client indication as described in
   // https://vasilvv.github.io/webtransport/draft-vvv-webtransport-quic.html#rfc.section.3.2
   std::string SerializeClientIndication();
@@ -76,9 +117,22 @@ class QUIC_EXPORT QuicTransportClientSession
   void SendClientIndication();
 
   std::unique_ptr<QuicCryptoClientStream> crypto_stream_;
+  GURL url_;
   url::Origin origin_;
+  ClientVisitor* visitor_;  // not owned
   bool client_indication_sent_ = false;
   bool ready_ = false;
+
+  // Contains all of the streams that has been received by the session but have
+  // not been processed by the application.
+  // TODO(vasilvv): currently, we always send MAX_STREAMS as long as the overall
+  // maximum number of streams for the connection has not been exceeded. We
+  // should also limit the maximum number of streams that the consuming code
+  // has not accepted to a smaller number, by checking the size of
+  // |incoming_bidirectional_streams_| and |incoming_unidirectional_streams_|
+  // before sending MAX_STREAMS.
+  QuicDeque<QuicTransportStream*> incoming_bidirectional_streams_;
+  QuicDeque<QuicTransportStream*> incoming_unidirectional_streams_;
 };
 
 }  // namespace quic

@@ -116,15 +116,17 @@ class StackProfileTracker {
   ~StackProfileTracker();
 
   void AddString(SourceStringId, base::StringView);
-  int64_t AddMapping(SourceMappingId,
-                     const SourceMapping&,
-                     const InternLookup* intern_lookup = nullptr);
-  int64_t AddFrame(SourceFrameId,
-                   const SourceFrame&,
-                   const InternLookup* intern_lookup = nullptr);
-  int64_t AddCallstack(SourceCallstackId,
-                       const SourceCallstack&,
-                       const InternLookup* intern_lookup = nullptr);
+  base::Optional<int64_t> AddMapping(
+      SourceMappingId,
+      const SourceMapping&,
+      const InternLookup* intern_lookup = nullptr);
+  base::Optional<int64_t> AddFrame(SourceFrameId,
+                                   const SourceFrame&,
+                                   const InternLookup* intern_lookup = nullptr);
+  base::Optional<int64_t> AddCallstack(
+      SourceCallstackId,
+      const SourceCallstack&,
+      const InternLookup* intern_lookup = nullptr);
 
   int64_t GetDatabaseFrameIdForTesting(SourceFrameId);
 
@@ -164,10 +166,12 @@ class StackProfileTracker {
   std::unordered_map<SourceCallstack, int64_t> callstacks_from_frames_;
   std::unordered_map<SourceCallstackId, int64_t> callstacks_;
 
+  // TODO(oysteine): Share these indices between the StackProfileTrackers,
+  // since they're not sequence-specific.
   std::unordered_map<TraceStorage::StackProfileMappings::Row, int64_t>
       mapping_idx_;
   std::unordered_map<TraceStorage::StackProfileFrames::Row, int64_t> frame_idx_;
-  std::unordered_map<TraceStorage::StackProfileCallsites::Row, int64_t>
+  std::unordered_map<tables::StackProfileCallsiteTable::Row, int64_t>
       callsite_idx_;
 
   TraceProcessorContext* const context_;

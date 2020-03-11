@@ -30,8 +30,8 @@ namespace dawn_native { namespace vulkan {
         DawnWSIContextVulkan wsiContext = {};
         im.Init(im.userData, &wsiContext);
 
-        ASSERT(im.textureUsage != DAWN_TEXTURE_USAGE_NONE);
-        mTextureUsage = static_cast<dawn::TextureUsage>(im.textureUsage);
+        ASSERT(im.textureUsage != WGPUTextureUsage_None);
+        mTextureUsage = static_cast<wgpu::TextureUsage>(im.textureUsage);
     }
 
     SwapChain::~SwapChain() {
@@ -43,7 +43,7 @@ namespace dawn_native { namespace vulkan {
         DawnSwapChainError error = im.GetNextTexture(im.userData, &next);
 
         if (error) {
-            GetDevice()->HandleError(dawn::ErrorType::Unknown, error);
+            GetDevice()->HandleError(wgpu::ErrorType::Unknown, error);
             return nullptr;
         }
 

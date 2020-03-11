@@ -14,7 +14,7 @@
 
 #include "dawn_native/vulkan/CommandBufferVk.h"
 
-#include "dawn_native/BindGroupTracker.h"
+#include "dawn_native/BindGroupAndStorageBarrierTracker.h"
 #include "dawn_native/CommandEncoder.h"
 #include "dawn_native/Commands.h"
 #include "dawn_native/RenderBundle.h"
@@ -35,11 +35,11 @@ namespace dawn_native { namespace vulkan {
 
     namespace {
 
-        VkIndexType VulkanIndexType(dawn::IndexFormat format) {
+        VkIndexType VulkanIndexType(wgpu::IndexFormat format) {
             switch (format) {
-                case dawn::IndexFormat::Uint16:
+                case wgpu::IndexFormat::Uint16:
                     return VK_INDEX_TYPE_UINT16;
-                case dawn::IndexFormat::Uint32:
+                case wgpu::IndexFormat::Uint32:
                     return VK_INDEX_TYPE_UINT32;
                 default:
                     UNREACHABLE();
@@ -91,16 +91,77 @@ namespace dawn_native { namespace vulkan {
             return region;
         }
 
-        class DescriptorSetTracker : public BindGroupTrackerBase<VkDescriptorSet, true, uint32_t> {
+        void ApplyDescriptorSets(Device* device,
+                                 VkCommandBuffer commands,
+                                 VkPipelineBindPoint bindPoint,
+                                 VkPipelineLayout pipelineLayout,
+                                 const std::bitset<kMaxBindGroups>& bindGroupsToApply,
+                                 const std::array<BindGroupBase*, kMaxBindGroups>& bindGroups,
+                                 const std::array<uint32_t, kMaxBindGroups>& dynamicOffsetCounts,
+                                 const std::array<std::array<uint32_t, kMaxBindingsPerGroup>,
+                                                  kMaxBindGroups>& dynamicOffsets) {
+            for (uint32_t dirtyIndex : IterateBitSet(bindGroupsToApply)) {
+                VkDescriptorSet set = ToBackend(bindGroups[dirtyIndex])->GetHandle();
+                const uint32_t* dynamicOffset = dynamicOffsetCounts[dirtyIndex] > 0
+                                                    ? dynamicOffsets[dirtyIndex].data()
+                                                    : nullptr;
+                device->fn.CmdBindDescriptorSets(commands, bindPoint, pipelineLayout, dirtyIndex, 1,
+                                                 &set, dynamicOffsetCounts[dirtyIndex],
+                                                 dynamicOffset);
+            }
+        }
+
+        class RenderDescriptorSetTracker : public BindGroupTrackerBase<true, uint32_t> {
           public:
-            void Apply(Device* device, VkCommandBuffer commands, VkPipelineBindPoint bindPoint) {
-                for (uint32_t dirtyIndex :
-                     IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
-                    device->fn.CmdBindDescriptorSets(
-                        commands, bindPoint, ToBackend(mPipelineLayout)->GetHandle(), dirtyIndex, 1,
-                        &mBindGroups[dirtyIndex], mDynamicOffsetCounts[dirtyIndex],
-                        mDynamicOffsetCounts[dirtyIndex] > 0 ? mDynamicOffsets[dirtyIndex].data()
-                                                             : nullptr);
+            RenderDescriptorSetTracker() = default;
+
+            void Apply(Device* device,
+                       CommandRecordingContext* recordingContext,
+                       VkPipelineBindPoint bindPoint) {
+                ApplyDescriptorSets(device, recordingContext->commandBuffer, bindPoint,
+                                    ToBackend(mPipelineLayout)->GetHandle(),
+                                    mDirtyBindGroupsObjectChangedOrIsDynamic, mBindGroups,
+                                    mDynamicOffsetCounts, mDynamicOffsets);
+                DidApply();
+            }
+        };
+
+        class ComputeDescriptorSetTracker
+            : public BindGroupAndStorageBarrierTrackerBase<true, uint32_t> {
+          public:
+            ComputeDescriptorSetTracker() = default;
+
+            void Apply(Device* device,
+                       CommandRecordingContext* recordingContext,
+                       VkPipelineBindPoint bindPoint) {
+                ApplyDescriptorSets(device, recordingContext->commandBuffer, bindPoint,
+                                    ToBackend(mPipelineLayout)->GetHandle(),
+                                    mDirtyBindGroupsObjectChangedOrIsDynamic, mBindGroups,
+                                    mDynamicOffsetCounts, mDynamicOffsets);
+
+                for (uint32_t index : IterateBitSet(mBindGroupLayoutsMask)) {
+                    for (uint32_t binding : IterateBitSet(mBuffersNeedingBarrier[index])) {
+                        switch (mBindingTypes[index][binding]) {
+                            case wgpu::BindingType::StorageBuffer:
+                                ToBackend(mBuffers[index][binding])
+                                    ->TransitionUsageNow(recordingContext,
+                                                         wgpu::BufferUsage::Storage);
+                                break;
+
+                            case wgpu::BindingType::StorageTexture:
+                                // Not implemented.
+
+                            case wgpu::BindingType::UniformBuffer:
+                            case wgpu::BindingType::ReadonlyStorageBuffer:
+                            case wgpu::BindingType::Sampler:
+                            case wgpu::BindingType::SampledTexture:
+                                // Don't require barriers.
+
+                            default:
+                                UNREACHABLE();
+                                break;
+                        }
+                    }
                 }
                 DidApply();
             }
@@ -122,13 +183,13 @@ namespace dawn_native { namespace vulkan {
                     TextureView* view = ToBackend(attachmentInfo.view.Get());
                     bool hasResolveTarget = attachmentInfo.resolveTarget.Get() != nullptr;
 
-                    dawn::LoadOp loadOp = attachmentInfo.loadOp;
+                    wgpu::LoadOp loadOp = attachmentInfo.loadOp;
                     ASSERT(view->GetLayerCount() == 1);
                     ASSERT(view->GetLevelCount() == 1);
-                    if (loadOp == dawn::LoadOp::Load &&
+                    if (loadOp == wgpu::LoadOp::Load &&
                         !view->GetTexture()->IsSubresourceContentInitialized(
                             view->GetBaseMipLevel(), 1, view->GetBaseArrayLayer(), 1)) {
-                        loadOp = dawn::LoadOp::Clear;
+                        loadOp = wgpu::LoadOp::Clear;
                     }
 
                     if (hasResolveTarget) {
@@ -143,12 +204,12 @@ namespace dawn_native { namespace vulkan {
                     }
 
                     switch (attachmentInfo.storeOp) {
-                        case dawn::StoreOp::Store: {
+                        case wgpu::StoreOp::Store: {
                             view->GetTexture()->SetIsSubresourceContentInitialized(
                                 true, view->GetBaseMipLevel(), 1, view->GetBaseArrayLayer(), 1);
                         } break;
 
-                        case dawn::StoreOp::Clear: {
+                        case wgpu::StoreOp::Clear: {
                             view->GetTexture()->SetIsSubresourceContentInitialized(
                                 false, view->GetBaseMipLevel(), 1, view->GetBaseArrayLayer(), 1);
                         } break;
@@ -170,26 +231,26 @@ namespace dawn_native { namespace vulkan {
                             view->GetBaseMipLevel(), view->GetLevelCount(),
                             view->GetBaseArrayLayer(), view->GetLayerCount())) {
                         if (view->GetTexture()->GetFormat().HasDepth() &&
-                            attachmentInfo.depthLoadOp == dawn::LoadOp::Load) {
+                            attachmentInfo.depthLoadOp == wgpu::LoadOp::Load) {
                             attachmentInfo.clearDepth = 0.0f;
-                            attachmentInfo.depthLoadOp = dawn::LoadOp::Clear;
+                            attachmentInfo.depthLoadOp = wgpu::LoadOp::Clear;
                         }
                         if (view->GetTexture()->GetFormat().HasStencil() &&
-                            attachmentInfo.stencilLoadOp == dawn::LoadOp::Load) {
+                            attachmentInfo.stencilLoadOp == wgpu::LoadOp::Load) {
                             attachmentInfo.clearStencil = 0u;
-                            attachmentInfo.stencilLoadOp = dawn::LoadOp::Clear;
+                            attachmentInfo.stencilLoadOp = wgpu::LoadOp::Clear;
                         }
                     }
                     query.SetDepthStencil(view->GetTexture()->GetFormat().format,
                                           attachmentInfo.depthLoadOp, attachmentInfo.stencilLoadOp);
 
-                    if (attachmentInfo.depthStoreOp == dawn::StoreOp::Store &&
-                        attachmentInfo.stencilStoreOp == dawn::StoreOp::Store) {
+                    if (attachmentInfo.depthStoreOp == wgpu::StoreOp::Store &&
+                        attachmentInfo.stencilStoreOp == wgpu::StoreOp::Store) {
                         view->GetTexture()->SetIsSubresourceContentInitialized(
                             true, view->GetBaseMipLevel(), view->GetLevelCount(),
                             view->GetBaseArrayLayer(), view->GetLayerCount());
-                    } else if (attachmentInfo.depthStoreOp == dawn::StoreOp::Clear &&
-                               attachmentInfo.stencilStoreOp == dawn::StoreOp::Clear) {
+                    } else if (attachmentInfo.depthStoreOp == wgpu::StoreOp::Clear &&
+                               attachmentInfo.stencilStoreOp == wgpu::StoreOp::Clear) {
                         view->GetTexture()->SetIsSubresourceContentInitialized(
                             false, view->GetBaseMipLevel(), view->GetLevelCount(),
                             view->GetBaseArrayLayer(), view->GetLayerCount());
@@ -290,13 +351,12 @@ namespace dawn_native { namespace vulkan {
     }  // anonymous namespace
 
     // static
-    CommandBuffer* CommandBuffer::Create(CommandEncoderBase* encoder,
+    CommandBuffer* CommandBuffer::Create(CommandEncoder* encoder,
                                          const CommandBufferDescriptor* descriptor) {
         return new CommandBuffer(encoder, descriptor);
     }
 
-    CommandBuffer::CommandBuffer(CommandEncoderBase* encoder,
-                                 const CommandBufferDescriptor* descriptor)
+    CommandBuffer::CommandBuffer(CommandEncoder* encoder, const CommandBufferDescriptor* descriptor)
         : CommandBufferBase(encoder, descriptor), mCommands(encoder->AcquireCommands()) {
     }
 
@@ -321,7 +381,7 @@ namespace dawn_native { namespace vulkan {
             format.blockByteSize;
         BufferDescriptor tempBufferDescriptor;
         tempBufferDescriptor.size = tempBufferSize;
-        tempBufferDescriptor.usage = dawn::BufferUsage::CopySrc | dawn::BufferUsage::CopyDst;
+        tempBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
 
         Device* device = ToBackend(GetDevice());
         Ref<Buffer> tempBuffer = AcquireRef(ToBackend(device->CreateBuffer(&tempBufferDescriptor)));
@@ -336,7 +396,7 @@ namespace dawn_native { namespace vulkan {
         VkImage srcImage = ToBackend(srcCopy.texture)->GetHandle();
         VkImage dstImage = ToBackend(dstCopy.texture)->GetHandle();
 
-        tempBuffer->TransitionUsageNow(recordingContext, dawn::BufferUsage::CopyDst);
+        tempBuffer->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
         VkBufferImageCopy srcToTempBufferRegion =
             ComputeBufferImageCopyRegion(tempBufferCopy, srcCopy, copySize);
 
@@ -344,7 +404,7 @@ namespace dawn_native { namespace vulkan {
         device->fn.CmdCopyImageToBuffer(commands, srcImage, VK_IMAGE_LAYOUT_GENERAL,
                                         tempBuffer->GetHandle(), 1, &srcToTempBufferRegion);
 
-        tempBuffer->TransitionUsageNow(recordingContext, dawn::BufferUsage::CopySrc);
+        tempBuffer->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopySrc);
         VkBufferImageCopy tempBufferToDstRegion =
             ComputeBufferImageCopyRegion(tempBufferCopy, dstCopy, copySize);
 
@@ -373,7 +433,7 @@ namespace dawn_native { namespace vulkan {
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared in RecordBeginRenderPass by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
-                if (!(usages.textureUsages[i] & dawn::TextureUsage::OutputAttachment)) {
+                if (!(usages.textureUsages[i] & wgpu::TextureUsage::OutputAttachment)) {
                     texture->EnsureSubresourceContentInitialized(recordingContext, 0,
                                                                  texture->GetNumMipLevels(), 0,
                                                                  texture->GetArrayLayers());
@@ -392,8 +452,8 @@ namespace dawn_native { namespace vulkan {
                     Buffer* srcBuffer = ToBackend(copy->source.Get());
                     Buffer* dstBuffer = ToBackend(copy->destination.Get());
 
-                    srcBuffer->TransitionUsageNow(recordingContext, dawn::BufferUsage::CopySrc);
-                    dstBuffer->TransitionUsageNow(recordingContext, dawn::BufferUsage::CopyDst);
+                    srcBuffer->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopySrc);
+                    dstBuffer->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
 
                     VkBufferCopy region;
                     region.srcOffset = copy->sourceOffset;
@@ -426,9 +486,9 @@ namespace dawn_native { namespace vulkan {
                                                                   subresource.baseArrayLayer, 1);
                     }
                     ToBackend(src.buffer)
-                        ->TransitionUsageNow(recordingContext, dawn::BufferUsage::CopySrc);
+                        ->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopySrc);
                     ToBackend(dst.texture)
-                        ->TransitionUsageNow(recordingContext, dawn::TextureUsage::CopyDst);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst);
                     VkBuffer srcBuffer = ToBackend(src.buffer)->GetHandle();
                     VkImage dstImage = ToBackend(dst.texture)->GetHandle();
 
@@ -454,9 +514,9 @@ namespace dawn_native { namespace vulkan {
                                                               subresource.baseArrayLayer, 1);
 
                     ToBackend(src.texture)
-                        ->TransitionUsageNow(recordingContext, dawn::TextureUsage::CopySrc);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc);
                     ToBackend(dst.buffer)
-                        ->TransitionUsageNow(recordingContext, dawn::BufferUsage::CopyDst);
+                        ->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
 
                     VkImage srcImage = ToBackend(src.texture)->GetHandle();
                     VkBuffer dstBuffer = ToBackend(dst.buffer)->GetHandle();
@@ -486,9 +546,9 @@ namespace dawn_native { namespace vulkan {
                     }
 
                     ToBackend(src.texture)
-                        ->TransitionUsageNow(recordingContext, dawn::TextureUsage::CopySrc);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc);
                     ToBackend(dst.texture)
-                        ->TransitionUsageNow(recordingContext, dawn::TextureUsage::CopyDst);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst);
 
                     // In some situations we cannot do texture-to-texture copies with vkCmdCopyImage
                     // because as Vulkan SPEC always validates image copies with the virtual size of
@@ -553,7 +613,7 @@ namespace dawn_native { namespace vulkan {
         Device* device = ToBackend(GetDevice());
         VkCommandBuffer commands = recordingContext->commandBuffer;
 
-        DescriptorSetTracker descriptorSets = {};
+        ComputeDescriptorSetTracker descriptorSets = {};
 
         Command type;
         while (mCommands.NextCommandId(&type)) {
@@ -565,7 +625,8 @@ namespace dawn_native { namespace vulkan {
 
                 case Command::Dispatch: {
                     DispatchCmd* dispatch = mCommands.NextCommand<DispatchCmd>();
-                    descriptorSets.Apply(device, commands, VK_PIPELINE_BIND_POINT_COMPUTE);
+
+                    descriptorSets.Apply(device, recordingContext, VK_PIPELINE_BIND_POINT_COMPUTE);
                     device->fn.CmdDispatch(commands, dispatch->x, dispatch->y, dispatch->z);
                 } break;
 
@@ -573,7 +634,7 @@ namespace dawn_native { namespace vulkan {
                     DispatchIndirectCmd* dispatch = mCommands.NextCommand<DispatchIndirectCmd>();
                     VkBuffer indirectBuffer = ToBackend(dispatch->indirectBuffer)->GetHandle();
 
-                    descriptorSets.Apply(device, commands, VK_PIPELINE_BIND_POINT_COMPUTE);
+                    descriptorSets.Apply(device, recordingContext, VK_PIPELINE_BIND_POINT_COMPUTE);
                     device->fn.CmdDispatchIndirect(
                         commands, indirectBuffer,
                         static_cast<VkDeviceSize>(dispatch->indirectOffset));
@@ -581,13 +642,14 @@ namespace dawn_native { namespace vulkan {
 
                 case Command::SetBindGroup: {
                     SetBindGroupCmd* cmd = mCommands.NextCommand<SetBindGroupCmd>();
-                    VkDescriptorSet set = ToBackend(cmd->group.Get())->GetHandle();
-                    uint64_t* dynamicOffsets = nullptr;
+
+                    BindGroup* bindGroup = ToBackend(cmd->group.Get());
+                    uint32_t* dynamicOffsets = nullptr;
                     if (cmd->dynamicOffsetCount > 0) {
-                        dynamicOffsets = mCommands.NextData<uint64_t>(cmd->dynamicOffsetCount);
+                        dynamicOffsets = mCommands.NextData<uint32_t>(cmd->dynamicOffsetCount);
                     }
 
-                    descriptorSets.OnSetBindGroup(cmd->index, set, cmd->dynamicOffsetCount,
+                    descriptorSets.OnSetBindGroup(cmd->index, bindGroup, cmd->dynamicOffsetCount,
                                                   dynamicOffsets);
                 } break;
 
@@ -695,7 +757,7 @@ namespace dawn_native { namespace vulkan {
             device->fn.CmdSetScissor(commands, 0, 1, &scissorRect);
         }
 
-        DescriptorSetTracker descriptorSets = {};
+        RenderDescriptorSetTracker descriptorSets = {};
         RenderPipeline* lastPipeline = nullptr;
 
         auto EncodeRenderBundleCommand = [&](CommandIterator* iter, Command type) {
@@ -703,7 +765,7 @@ namespace dawn_native { namespace vulkan {
                 case Command::Draw: {
                     DrawCmd* draw = iter->NextCommand<DrawCmd>();
 
-                    descriptorSets.Apply(device, commands, VK_PIPELINE_BIND_POINT_GRAPHICS);
+                    descriptorSets.Apply(device, recordingContext, VK_PIPELINE_BIND_POINT_GRAPHICS);
                     device->fn.CmdDraw(commands, draw->vertexCount, draw->instanceCount,
                                        draw->firstVertex, draw->firstInstance);
                 } break;
@@ -711,7 +773,7 @@ namespace dawn_native { namespace vulkan {
                 case Command::DrawIndexed: {
                     DrawIndexedCmd* draw = iter->NextCommand<DrawIndexedCmd>();
 
-                    descriptorSets.Apply(device, commands, VK_PIPELINE_BIND_POINT_GRAPHICS);
+                    descriptorSets.Apply(device, recordingContext, VK_PIPELINE_BIND_POINT_GRAPHICS);
                     device->fn.CmdDrawIndexed(commands, draw->indexCount, draw->instanceCount,
                                               draw->firstIndex, draw->baseVertex,
                                               draw->firstInstance);
@@ -721,7 +783,7 @@ namespace dawn_native { namespace vulkan {
                     DrawIndirectCmd* draw = iter->NextCommand<DrawIndirectCmd>();
                     VkBuffer indirectBuffer = ToBackend(draw->indirectBuffer)->GetHandle();
 
-                    descriptorSets.Apply(device, commands, VK_PIPELINE_BIND_POINT_GRAPHICS);
+                    descriptorSets.Apply(device, recordingContext, VK_PIPELINE_BIND_POINT_GRAPHICS);
                     device->fn.CmdDrawIndirect(commands, indirectBuffer,
                                                static_cast<VkDeviceSize>(draw->indirectOffset), 1,
                                                0);
@@ -731,7 +793,7 @@ namespace dawn_native { namespace vulkan {
                     DrawIndirectCmd* draw = iter->NextCommand<DrawIndirectCmd>();
                     VkBuffer indirectBuffer = ToBackend(draw->indirectBuffer)->GetHandle();
 
-                    descriptorSets.Apply(device, commands, VK_PIPELINE_BIND_POINT_GRAPHICS);
+                    descriptorSets.Apply(device, recordingContext, VK_PIPELINE_BIND_POINT_GRAPHICS);
                     device->fn.CmdDrawIndexedIndirect(
                         commands, indirectBuffer, static_cast<VkDeviceSize>(draw->indirectOffset),
                         1, 0);
@@ -786,13 +848,13 @@ namespace dawn_native { namespace vulkan {
 
                 case Command::SetBindGroup: {
                     SetBindGroupCmd* cmd = iter->NextCommand<SetBindGroupCmd>();
-                    VkDescriptorSet set = ToBackend(cmd->group.Get())->GetHandle();
-                    uint64_t* dynamicOffsets = nullptr;
+                    BindGroup* bindGroup = ToBackend(cmd->group.Get());
+                    uint32_t* dynamicOffsets = nullptr;
                     if (cmd->dynamicOffsetCount > 0) {
-                        dynamicOffsets = iter->NextData<uint64_t>(cmd->dynamicOffsetCount);
+                        dynamicOffsets = iter->NextData<uint32_t>(cmd->dynamicOffsetCount);
                     }
 
-                    descriptorSets.OnSetBindGroup(cmd->index, set, cmd->dynamicOffsetCount,
+                    descriptorSets.OnSetBindGroup(cmd->index, bindGroup, cmd->dynamicOffsetCount,
                                                   dynamicOffsets);
                 } break;
 
@@ -804,7 +866,7 @@ namespace dawn_native { namespace vulkan {
                     // and rebind if needed on pipeline change
                     ASSERT(lastPipeline != nullptr);
                     VkIndexType indexType =
-                        VulkanIndexType(lastPipeline->GetVertexInputDescriptor()->indexFormat);
+                        VulkanIndexType(lastPipeline->GetVertexStateDescriptor()->indexFormat);
                     device->fn.CmdBindIndexBuffer(
                         commands, indexBuffer, static_cast<VkDeviceSize>(cmd->offset), indexType);
                 } break;

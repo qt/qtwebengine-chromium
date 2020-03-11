@@ -83,7 +83,7 @@ declare_args() {
     target_triplet = "arm-linux-androideabi"
   } else if (target_os == "android" && target_cpu == "x86") {
     target_triplet = "i686-linux-android"
-  } else if (target_os == "android" && target_cpu == "x86_64") {
+  } else if (target_os == "android" && target_cpu == "x64") {
     target_triplet = "x86_64-linux-android"
   } else {
     assert(false,
@@ -179,7 +179,7 @@ template("gcc_like_toolchain") {
         command = "rm -f {{output}} && libtool -static {{arflags}} -o {{output}} -filelist $rspfile"
       } else {
         rspfile_content = "{{inputs}}"
-        command = "$ar rcsD {{output}} @$rspfile"
+        command = "rm -f {{output}} && $ar rcsD {{output}} @$rspfile"
       }
       outputs = [
         "{{root_out_dir}}/{{target_output_name}}{{output_extension}}",

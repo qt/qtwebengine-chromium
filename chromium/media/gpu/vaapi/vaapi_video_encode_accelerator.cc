@@ -119,6 +119,7 @@ class VaapiEncodeJob : public AcceleratedVideoEncoder::EncodeJob {
                  scoped_refptr<VASurface> input_surface,
                  scoped_refptr<VASurface> reconstructed_surface,
                  VABufferID coded_buffer_id);
+  ~VaapiEncodeJob() override = default;
 
   VaapiEncodeJob* AsVaapiEncodeJob() override { return this; }
 
@@ -131,8 +132,6 @@ class VaapiEncodeJob : public AcceleratedVideoEncoder::EncodeJob {
   }
 
  private:
-  ~VaapiEncodeJob() override = default;
-
   // Input surface for video frame data or scaled data.
   const scoped_refptr<VASurface> input_surface_;
 
@@ -520,14 +519,14 @@ void VaapiVideoEncodeAccelerator::TryToReturnBitstreamBuffer() {
 
   auto buffer = std::move(available_bitstream_buffers_.front());
   available_bitstream_buffers_.pop();
-  auto encode_job = submitted_encode_jobs_.front();
+  auto encode_job = std::move(submitted_encode_jobs_.front());
   submitted_encode_jobs_.pop();
 
-  ReturnBitstreamBuffer(encode_job, std::move(buffer));
+  ReturnBitstreamBuffer(std::move(encode_job), std::move(buffer));
 }
 
 void VaapiVideoEncodeAccelerator::ReturnBitstreamBuffer(
-    scoped_refptr<VaapiEncodeJob> encode_job,
+    std::unique_ptr<VaapiEncodeJob> encode_job,
     std::unique_ptr<BitstreamBufferRef> buffer) {
   DCHECK(encoder_thread_task_runner_->BelongsToCurrentThread());
 
@@ -574,7 +573,7 @@ void VaapiVideoEncodeAccelerator::EncodeTask(scoped_refptr<VideoFrame> frame,
   EncodePendingInputs();
 }
 
-scoped_refptr<VaapiEncodeJob> VaapiVideoEncodeAccelerator::CreateEncodeJob(
+std::unique_ptr<VaapiEncodeJob> VaapiVideoEncodeAccelerator::CreateEncodeJob(
     scoped_refptr<VideoFrame> frame,
     bool force_keyframe) {
   DCHECK(encoder_thread_task_runner_->BelongsToCurrentThread());
@@ -680,7 +679,7 @@ scoped_refptr<VaapiEncodeJob> VaapiVideoEncodeAccelerator::CreateEncodeJob(
                     kVaSurfaceFormat, base::BindOnce(va_surface_release_cb_));
   available_va_surface_ids_.pop_back();
 
-  auto job = base::MakeRefCounted<VaapiEncodeJob>(
+  auto job = std::make_unique<VaapiEncodeJob>(
       frame, force_keyframe,
       base::BindOnce(&VaapiVideoEncodeAccelerator::ExecuteEncode,
                      base::Unretained(this), input_surface->id()),
@@ -704,7 +703,7 @@ void VaapiVideoEncodeAccelerator::EncodePendingInputs() {
 
     // If this is a flush (null) frame, don't create/submit a new encode job for
     // it, but forward a null job to the submitted_encode_jobs_ queue.
-    scoped_refptr<VaapiEncodeJob> job;
+    std::unique_ptr<VaapiEncodeJob> job;
     TRACE_EVENT0("media,gpu", "VAVEA::FromCreateEncodeJobToReturn");
     if (input_frame) {
       job = CreateEncodeJob(input_frame->frame, input_frame->force_keyframe);
@@ -726,7 +725,7 @@ void VaapiVideoEncodeAccelerator::EncodePendingInputs() {
       job->Execute();
     }
 
-    submitted_encode_jobs_.push(job);
+    submitted_encode_jobs_.push(std::move(job));
     TryToReturnBitstreamBuffer();
   }
 }

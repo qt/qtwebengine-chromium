@@ -34,9 +34,9 @@ ClipboardHostImpl::ClipboardHostImpl(
 void ClipboardHostImpl::Create(
     mojo::PendingReceiver<blink::mojom::ClipboardHost> receiver) {
   // Clipboard implementations do interesting things, like run nested message
-  // loops. Since StrongBinding<T> synchronously destroys on failure, that can
-  // result in some unfortunate use-after-frees after the nested message loops
-  // exit.
+  // loops. Use manual memory management instead of SelfOwnedReceiver<T> which
+  // synchronously destroys on failure and can result in some unfortunate
+  // use-after-frees after the nested message loops exit.
   auto* host = new ClipboardHostImpl(std::move(receiver));
   host->receiver_.set_disconnect_handler(base::BindOnce(
       [](ClipboardHostImpl* host) {
@@ -167,6 +167,8 @@ void ClipboardHostImpl::WriteCustomData(
 
 void ClipboardHostImpl::WriteRawData(const base::string16& format,
                                      mojo_base::BigBuffer data) {
+  if (!HasRawPermission())
+    return;
   // Windows / X11 clipboards enter an unrecoverable state after registering
   // some amount of unique formats, and there's no way to un-register these
   // formats. For these clipboards, use a conservative limit to avoid
@@ -203,6 +205,17 @@ void ClipboardHostImpl::WriteImage(const SkBitmap& bitmap) {
 void ClipboardHostImpl::CommitWrite() {
   clipboard_writer_.reset(
       new ui::ScopedClipboardWriter(ui::ClipboardBuffer::kCopyPaste));
+}
+
+bool ClipboardHostImpl::HasRawPermission() {
+  // M80 note: This will always return false, because this function is added
+  // before ClipboardHost became frame-scoped, making it difficult to check the
+  // permission in the browser via PermissionController::FromBrowserContext, in
+  // a change with a minimal amount of diff.
+
+  // This effectively disables raw write in M80, which is okay because this was
+  // only launched behind a flag and never should have been accessible.
+  return false;
 }
 
 }  // namespace content

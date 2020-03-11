@@ -203,6 +203,16 @@ cr.define('cr.login', function() {
   };
 
   /**
+   * Old or not supported on Chrome OS messages.
+   * @type {!Array<string>}
+   * @const
+   */
+  const IGNORED_MESSAGES_FROM_GAIA = [
+    'clearOldAttempts',
+    'showConfirmCancel',
+  ];
+
+  /**
    * Initializes the authenticator component.
    */
   class Authenticator extends cr.EventTarget {
@@ -232,6 +242,7 @@ cr.define('cr.login', function() {
       this.reloadUrl_ = null;
       this.trusted_ = true;
       this.readyFired_ = false;
+      this.authCompletedFired_ = false;
       this.webview_ = typeof webview == 'string' ? $(webview) : webview;
       assert(this.webview_);
       this.enableGaiaActionButtons_ = false;
@@ -344,6 +355,9 @@ cr.define('cr.login', function() {
       this.webviewEventManager_.addEventListener(
           this.samlHandler_, 'apiPasswordAdded',
           this.onSamlApiPasswordAdded_.bind(this));
+      this.webviewEventManager_.addEventListener(
+          this.samlHandler_, 'challengeMachineKeyRequired',
+          this.onChallengeMachineKeyRequired_.bind(this));
 
       this.webviewEventManager_.addEventListener(
           this.webview_, 'droplink', this.onDropLink_.bind(this));
@@ -453,6 +467,7 @@ cr.define('cr.login', function() {
     load(authMode, data) {
       this.authMode = authMode;
       this.resetStates();
+      this.authCompletedFired_ = false;
       // gaiaUrl parameter is used for testing. Once defined, it is never
       // changed.
       this.idpOrigin_ = data.gaiaUrl || IDP_ORIGIN;
@@ -499,6 +514,7 @@ cr.define('cr.login', function() {
      */
     reload() {
       this.resetStates();
+      this.authCompletedFired_ = false;
       this.webview_.src = this.reloadUrl_;
       this.isLoaded_ = true;
     }
@@ -697,6 +713,13 @@ cr.define('cr.login', function() {
      * @private
      */
     onHeadersReceived_(details) {
+      if (this.authCompletedFired_) {
+        // SIGN_IN_HEADER could be sent more thane once. Sometimes already
+        // after authentication completed. Return here to avoid triggering
+        // maybeCompleteAuth which shows "create your password screen" because
+        // scraped passwords are wiped at that point.
+        return;
+      }
       const currentUrl = details.url;
       if (currentUrl.lastIndexOf(this.idpOrigin_, 0) != 0) {
         return;
@@ -761,8 +784,11 @@ cr.define('cr.login', function() {
 
       const msg = e.data;
       if (msg.method in messageHandlers) {
+        if (this.authCompletedFired_) {
+          console.error(msg.method + ' message sent after auth completed');
+        }
         messageHandlers[msg.method].call(this, msg);
-      } else {
+      } else if (!IGNORED_MESSAGES_FROM_GAIA.includes(msg.method)) {
         console.warn('Unrecognized message from GAIA: ' + msg.method);
       }
     }
@@ -805,6 +831,9 @@ cr.define('cr.login', function() {
      * @private
      */
     maybeCompleteAuth_() {
+      if (this.authCompletedFired_) {
+        return;
+      }
       const missingGaiaInfo =
           !this.email_ || !this.gaiaId_ || !this.sessionIndex_;
       if (missingGaiaInfo && !this.skipForNow_) {
@@ -997,6 +1026,7 @@ cr.define('cr.login', function() {
             }
           }));
       this.resetStates();
+      this.authCompletedFired_ = true;
     }
 
     /**
@@ -1054,6 +1084,16 @@ cr.define('cr.login', function() {
       if (this.gaiaId_) {
         this.maybeCompleteAuth_();
       }
+    }
+
+    /**
+     * Invoked when |samlHandler_| fires 'challengeMachineKeyRequired' event.
+     * @private
+     */
+    onChallengeMachineKeyRequired_(e) {
+      cr.sendWithPromise(
+            'samlChallengeMachineKey', e.detail.url, e.detail.challenge)
+          .then(e.detail.callback);
     }
 
     /**
@@ -1124,6 +1164,10 @@ cr.define('cr.login', function() {
      * @private
      */
     onLoadAbort_(e) {
+      if (this.samlHandler_.isIntentionalAbort()) {
+        return;
+      }
+
       this.dispatchEvent(new CustomEvent(
           'loadAbort', {detail: {error_code: e.code, src: e.url}}));
     }

@@ -19,6 +19,7 @@
 #include "absl/strings/match.h"
 #include "api/array_view.h"
 #include "api/transport/field_trial_based_config.h"
+#include "api/video_codecs/video_codec.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
@@ -273,19 +274,10 @@ DataRate CalculateOverheadRate(DataRate data_rate,
 }
 
 absl::optional<VideoCodecType> GetVideoCodecType(const RtpConfig& config) {
-  absl::optional<VideoCodecType> video_type;
-  if (!config.raw_payload) {
-    if (absl::EqualsIgnoreCase(config.payload_name, "VP8")) {
-      video_type = kVideoCodecVP8;
-    } else if (absl::EqualsIgnoreCase(config.payload_name, "VP9")) {
-      video_type = kVideoCodecVP9;
-    } else if (absl::EqualsIgnoreCase(config.payload_name, "H264")) {
-      video_type = kVideoCodecH264;
-    } else {
-      video_type = kVideoCodecGeneric;
-    }
+  if (config.raw_payload) {
+    return absl::nullopt;
   }
-  return video_type;
+  return PayloadStringToCodecType(config.payload_name);
 }
 }  // namespace
 
@@ -399,14 +391,16 @@ RtpVideoSender::RtpVideoSender(
 
   fec_controller_->SetProtectionCallback(this);
   // Signal congestion controller this object is ready for OnPacket* callbacks.
-  transport_->RegisterPacketFeedbackObserver(this);
+  transport_->GetStreamFeedbackProvider()->RegisterStreamFeedbackObserver(
+      rtp_config_.ssrcs, this);
 }
 
 RtpVideoSender::~RtpVideoSender() {
   for (const RtpStreamSender& stream : rtp_streams_) {
     transport_->packet_router()->RemoveSendRtpModule(stream.rtp_rtcp.get());
   }
-  transport_->DeRegisterPacketFeedbackObserver(this);
+  transport_->GetStreamFeedbackProvider()->DeRegisterStreamFeedbackObserver(
+      this);
 }
 
 void RtpVideoSender::RegisterProcessThread(
@@ -583,7 +577,7 @@ void RtpVideoSender::DeliverRtcp(const uint8_t* packet, size_t length) {
 
 void RtpVideoSender::ConfigureSsrcs() {
   // Configure regular SSRCs.
-  RTC_CHECK(ssrc_to_rtp_sender_.empty());
+  RTC_CHECK(ssrc_to_rtp_module_.empty());
   for (size_t i = 0; i < rtp_config_.ssrcs.size(); ++i) {
     uint32_t ssrc = rtp_config_.ssrcs[i];
     RtpRtcp* const rtp_rtcp = rtp_streams_[i].rtp_rtcp.get();
@@ -593,9 +587,7 @@ void RtpVideoSender::ConfigureSsrcs() {
     if (it != suspended_ssrcs_.end())
       rtp_rtcp->SetRtpState(it->second);
 
-    RTPSender* rtp_sender = rtp_rtcp->RtpSender();
-    RTC_DCHECK(rtp_sender != nullptr);
-    ssrc_to_rtp_sender_[ssrc] = rtp_sender;
+    ssrc_to_rtp_module_[ssrc] = rtp_rtcp;
   }
 
   // Set up RTX if available.
@@ -812,30 +804,19 @@ void RtpVideoSender::SetFecAllowed(bool fec_allowed) {
 }
 
 void RtpVideoSender::OnPacketFeedbackVector(
-    const std::vector<PacketFeedback>& packet_feedback_vector) {
+    std::vector<StreamPacketInfo> packet_feedback_vector) {
   if (fec_controller_->UseLossVectorMask()) {
     rtc::CritScope cs(&crit_);
-    for (const PacketFeedback& packet : packet_feedback_vector) {
-      if (packet.send_time_ms == PacketFeedback::kNoSendTime || !packet.ssrc ||
-          absl::c_find(rtp_config_.ssrcs, *packet.ssrc) ==
-              rtp_config_.ssrcs.end()) {
-        // If packet send time is missing, the feedback for this packet has
-        // probably already been processed, so ignore it.
-        // If packet does not belong to a registered media ssrc, we are also
-        // not interested in it.
-        continue;
-      }
-      loss_mask_vector_.push_back(packet.arrival_time_ms ==
-                                  PacketFeedback::kNotReceived);
+    for (const StreamPacketInfo& packet : packet_feedback_vector) {
+      loss_mask_vector_.push_back(!packet.received);
     }
   }
 
   // Map from SSRC to all acked packets for that RTP module.
   std::map<uint32_t, std::vector<uint16_t>> acked_packets_per_ssrc;
-  for (const PacketFeedback& packet : packet_feedback_vector) {
-    if (packet.ssrc && packet.arrival_time_ms != PacketFeedback::kNotReceived) {
-      acked_packets_per_ssrc[*packet.ssrc].push_back(
-          packet.rtp_sequence_number);
+  for (const StreamPacketInfo& packet : packet_feedback_vector) {
+    if (packet.received) {
+      acked_packets_per_ssrc[packet.ssrc].push_back(packet.rtp_sequence_number);
     }
   }
 
@@ -844,33 +825,23 @@ void RtpVideoSender::OnPacketFeedbackVector(
     // lost by feedback, without being trailed by any received packets.
     std::map<uint32_t, std::vector<uint16_t>> early_loss_detected_per_ssrc;
 
-    for (const PacketFeedback& packet : packet_feedback_vector) {
-      if (packet.send_time_ms == PacketFeedback::kNoSendTime || !packet.ssrc ||
-          absl::c_find(rtp_config_.ssrcs, *packet.ssrc) ==
-              rtp_config_.ssrcs.end()) {
-        // If packet send time is missing, the feedback for this packet has
-        // probably already been processed, so ignore it.
-        // If packet does not belong to a registered media ssrc, we are also
-        // not interested in it.
-        continue;
-      }
-
-      if (packet.arrival_time_ms == PacketFeedback::kNotReceived) {
+    for (const StreamPacketInfo& packet : packet_feedback_vector) {
+      if (!packet.received) {
         // Last known lost packet, might not be detectable as lost by remote
         // jitter buffer.
-        early_loss_detected_per_ssrc[*packet.ssrc].push_back(
+        early_loss_detected_per_ssrc[packet.ssrc].push_back(
             packet.rtp_sequence_number);
       } else {
         // Packet received, so any loss prior to this is already detectable.
-        early_loss_detected_per_ssrc.erase(*packet.ssrc);
+        early_loss_detected_per_ssrc.erase(packet.ssrc);
       }
     }
 
     for (const auto& kv : early_loss_detected_per_ssrc) {
       const uint32_t ssrc = kv.first;
-      auto it = ssrc_to_rtp_sender_.find(ssrc);
-      RTC_DCHECK(it != ssrc_to_rtp_sender_.end());
-      RTPSender* rtp_sender = it->second;
+      auto it = ssrc_to_rtp_module_.find(ssrc);
+      RTC_DCHECK(it != ssrc_to_rtp_module_.end());
+      RTPSender* rtp_sender = it->second->RtpSender();
       for (uint16_t sequence_number : kv.second) {
         rtp_sender->ReSendPacket(sequence_number);
       }
@@ -879,8 +850,8 @@ void RtpVideoSender::OnPacketFeedbackVector(
 
   for (const auto& kv : acked_packets_per_ssrc) {
     const uint32_t ssrc = kv.first;
-    auto it = ssrc_to_rtp_sender_.find(ssrc);
-    if (it == ssrc_to_rtp_sender_.end()) {
+    auto it = ssrc_to_rtp_module_.find(ssrc);
+    if (it == ssrc_to_rtp_module_.end()) {
       // Packets not for a media SSRC, so likely RTX or FEC. If so, ignore
       // since there's no RTP history to clean up anyway.
       continue;

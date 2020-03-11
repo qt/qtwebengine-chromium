@@ -95,18 +95,18 @@ namespace dawn_wire { namespace client {
 
     namespace {
         struct ProcEntry {
-            DawnProc proc;
+            WGPUProc proc;
             const char* name;
         };
         static const ProcEntry sProcMap[] = {
-            {% for (type, method) in methods_sorted_by_name %}
-                { reinterpret_cast<DawnProc>(Client{{as_MethodSuffix(type.name, method.name)}}), "{{as_cMethod(type.name, method.name)}}" },
+            {% for (type, method) in c_methods_sorted_by_name %}
+                { reinterpret_cast<WGPUProc>(Client{{as_MethodSuffix(type.name, method.name)}}), "{{as_cMethod(type.name, method.name)}}" },
             {% endfor %}
         };
         static constexpr size_t sProcMapSize = sizeof(sProcMap) / sizeof(sProcMap[0]);
     }  // anonymous namespace
 
-    DawnProc ClientGetProcAddress(DawnDevice, const char* procName) {
+    WGPUProc ClientGetProcAddress(WGPUDevice, const char* procName) {
         if (procName == nullptr) {
             return nullptr;
         }
@@ -121,8 +121,8 @@ namespace dawn_wire { namespace client {
             return entry->proc;
         }
 
-        if (strcmp(procName, "dawnGetProcAddress") == 0) {
-            return reinterpret_cast<DawnProc>(ClientGetProcAddress);
+        if (strcmp(procName, "wgpuGetProcAddress") == 0) {
+            return reinterpret_cast<WGPUProc>(ClientGetProcAddress);
         }
 
         return nullptr;
@@ -146,7 +146,7 @@ namespace dawn_wire { namespace client {
         DawnProcTable table;
         table.getProcAddress = ClientGetProcAddress;
         {% for type in by_category["object"] %}
-            {% for method in native_methods(type) %}
+            {% for method in c_methods(type) %}
                 {% set suffix = as_MethodSuffix(type.name, method.name) %}
                 table.{{as_varName(type.name, method.name)}} = Client{{suffix}};
             {% endfor %}

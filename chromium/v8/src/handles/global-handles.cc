@@ -600,7 +600,7 @@ class GlobalHandles::Node final : public NodeBase<GlobalHandles::Node> {
 
   // This stores three flags (independent, partially_dependent and
   // in_young_list) and a State.
-  using NodeState = BitField8<State, 0, 3>;
+  using NodeState = base::BitField8<State, 0, 3>;
   using IsInYoungList = NodeState::Next<bool, 1>;
   using NodeWeaknessType = IsInYoungList::Next<WeaknessType, 2>;
 
@@ -678,7 +678,7 @@ class GlobalHandles::TracedNode final
   }
 
  protected:
-  using NodeState = BitField8<State, 0, 2>;
+  using NodeState = base::BitField8<State, 0, 2>;
   using IsInYoungList = NodeState::Next<bool, 1>;
   using IsRoot = IsInYoungList::Next<bool, 1>;
   using HasDestructor = IsRoot::Next<bool, 1>;
@@ -1047,6 +1047,8 @@ void GlobalHandles::IterateYoungWeakUnmodifiedRootsForPhantomHandles(
 void GlobalHandles::InvokeSecondPassPhantomCallbacksFromTask() {
   DCHECK(second_pass_callbacks_task_posted_);
   second_pass_callbacks_task_posted_ = false;
+  Heap::DevToolsTraceEventScope devtools_trace_event_scope(
+      isolate()->heap(), "MajorGC", "invoke weak phantom callbacks");
   TRACE_EVENT0("v8", "V8.GCPhantomHandleProcessingCallback");
   isolate()->heap()->CallGCPrologueCallbacks(
       GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags);
@@ -1173,6 +1175,8 @@ void GlobalHandles::InvokeOrScheduleSecondPassPhantomCallbacks(
     bool synchronous_second_pass) {
   if (!second_pass_callbacks_.empty()) {
     if (FLAG_optimize_for_size || FLAG_predictable || synchronous_second_pass) {
+      Heap::DevToolsTraceEventScope devtools_trace_event_scope(
+          isolate()->heap(), "MajorGC", "invoke weak phantom callbacks");
       isolate()->heap()->CallGCPrologueCallbacks(
           GCType::kGCTypeProcessWeakCallbacks, kNoGCCallbackFlags);
       InvokeSecondPassPhantomCallbacks();

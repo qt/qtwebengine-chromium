@@ -17,6 +17,7 @@
 #include "call/fake_network_pipe.h"
 #include "call/simulated_network.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/call_test.h"
 #include "test/field_trial.h"
@@ -202,8 +203,7 @@ TEST_F(RetransmissionEndToEndTest,
        StopSendingKeyframeRequestsForInactiveStream) {
   class KeyframeRequestObserver : public test::EndToEndTest {
    public:
-    explicit KeyframeRequestObserver(
-        test::DEPRECATED_SingleThreadedTaskQueueForTesting* task_queue)
+    explicit KeyframeRequestObserver(TaskQueueBase* task_queue)
         : clock_(Clock::GetRealTimeClock()), task_queue_(task_queue) {}
 
     void OnVideoStreamsCreated(
@@ -225,7 +225,7 @@ TEST_F(RetransmissionEndToEndTest,
         SleepMs(100);
       }
       ASSERT_TRUE(frame_decoded);
-      task_queue_->SendTask([this]() { send_stream_->Stop(); });
+      SendTask(RTC_FROM_HERE, task_queue_, [this]() { send_stream_->Stop(); });
       SleepMs(10000);
       ASSERT_EQ(
           1U, receive_stream_->GetStats().rtcp_packet_type_counts.pli_packets);
@@ -235,8 +235,8 @@ TEST_F(RetransmissionEndToEndTest,
     Clock* clock_;
     VideoSendStream* send_stream_;
     VideoReceiveStream* receive_stream_;
-    test::DEPRECATED_SingleThreadedTaskQueueForTesting* const task_queue_;
-  } test(&task_queue_);
+    TaskQueueBase* const task_queue_;
+  } test(task_queue());
 
   RunBaseTest(&test);
 }

@@ -248,10 +248,8 @@ int CheckPDFiumCApi() {
     CHK(FORM_OnLButtonDown);
     CHK(FORM_OnLButtonUp);
     CHK(FORM_OnMouseMove);
-#ifdef PDF_ENABLE_XFA
     CHK(FORM_OnRButtonDown);
     CHK(FORM_OnRButtonUp);
-#endif
     CHK(FORM_Redo);
     CHK(FORM_ReplaceSelection);
     CHK(FORM_SetIndexSelected);
@@ -265,9 +263,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_FFLRecord);
 #endif
     CHK(FPDF_GetFormType);
-#ifdef PDF_ENABLE_XFA
     CHK(FPDF_LoadXFA);
-#endif
     CHK(FPDF_RemoveFormFieldHighlight);
     CHK(FPDF_SetFormFieldHighlightAlpha);
     CHK(FPDF_SetFormFieldHighlightColor);

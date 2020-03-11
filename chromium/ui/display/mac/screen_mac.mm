@@ -106,8 +106,8 @@ Display BuildDisplayForScreen(NSScreen* screen) {
     display.set_color_space(screen_color_space);
   }
 
-  display.set_color_depth(NSBitsPerPixelFromDepth([screen depth]));
-  display.set_depth_per_component(NSBitsPerSampleFromDepth([screen depth]));
+  display.set_color_depth(Display::kDefaultBitsPerPixel);
+  display.set_depth_per_component(Display::kDefaultBitsPerComponent);
   display.set_is_monochrome(CGDisplayUsesForceToGray());
 
   if (auto display_link = ui::DisplayLinkMac::GetForDisplay(display_id))

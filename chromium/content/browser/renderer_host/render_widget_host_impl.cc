@@ -21,7 +21,7 @@
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/macros.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_current.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
@@ -33,6 +33,7 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
+#include "cc/trees/browser_controls_params.h"
 #include "cc/trees/render_frame_metadata.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/quads/compositor_frame.h"
@@ -45,7 +46,7 @@
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/compositor/surface_utils.h"
-#include "content/browser/fileapi/browser_file_system_helper.h"
+#include "content/browser/file_system/browser_file_system_helper.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/display_util.h"
@@ -82,6 +83,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/peak_gpu_memory_tracker.h"
 #include "content/public/browser/render_frame_metadata_provider.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/render_widget_host_observer.h"
@@ -100,7 +102,7 @@
 #include "net/base/filename_util.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
-#include "storage/browser/fileapi/isolated_context.h"
+#include "storage/browser/file_system/isolated_context.h"
 #include "third_party/blink/public/web/web_ime_text_span.h"
 #include "ui/base/clipboard/clipboard_constants.h"
 #include "ui/base/ui_base_switches.h"
@@ -190,38 +192,6 @@ class RenderWidgetHostIteratorImpl : public RenderWidgetHostIterator {
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostIteratorImpl);
 };
-
-inline blink::WebGestureEvent CreateScrollBeginForWrapping(
-    const blink::WebGestureEvent& gesture_event) {
-  DCHECK(gesture_event.GetType() == blink::WebInputEvent::kGestureScrollUpdate);
-
-  blink::WebGestureEvent wrap_gesture_scroll_begin(
-      blink::WebInputEvent::kGestureScrollBegin, gesture_event.GetModifiers(),
-      gesture_event.TimeStamp(), gesture_event.SourceDevice());
-  wrap_gesture_scroll_begin.data.scroll_begin.delta_x_hint = 0;
-  wrap_gesture_scroll_begin.data.scroll_begin.delta_y_hint = 0;
-  wrap_gesture_scroll_begin.resending_plugin_id =
-      gesture_event.resending_plugin_id;
-  wrap_gesture_scroll_begin.data.scroll_begin.delta_hint_units =
-      gesture_event.data.scroll_update.delta_units;
-
-  return wrap_gesture_scroll_begin;
-}
-
-inline blink::WebGestureEvent CreateScrollEndForWrapping(
-    const blink::WebGestureEvent& gesture_event) {
-  DCHECK(gesture_event.GetType() == blink::WebInputEvent::kGestureScrollUpdate);
-
-  blink::WebGestureEvent wrap_gesture_scroll_end(
-      blink::WebInputEvent::kGestureScrollEnd, gesture_event.GetModifiers(),
-      gesture_event.TimeStamp(), gesture_event.SourceDevice());
-  wrap_gesture_scroll_end.resending_plugin_id =
-      gesture_event.resending_plugin_id;
-  wrap_gesture_scroll_end.data.scroll_end.delta_units =
-      gesture_event.data.scroll_update.delta_units;
-
-  return wrap_gesture_scroll_end;
-}
 
 std::vector<DropData::Metadata> DropDataToMetaData(const DropData& drop_data) {
   std::vector<DropData::Metadata> metadata;
@@ -345,7 +315,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
     RenderProcessHost* process,
     int32_t routing_id,
     mojo::PendingRemote<mojom::Widget> widget,
-    bool hidden)
+    bool hidden,
+    std::unique_ptr<FrameTokenMessageQueue> frame_token_message_queue)
     : delegate_(delegate),
       process_(process),
       routing_id_(routing_id),
@@ -356,8 +327,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
       new_content_rendering_delay_(
           TimeDelta::FromMilliseconds(kNewContentRenderingDelayMs)),
       compositor_frame_sink_receiver_(this),
-      frame_token_message_queue_(
-          std::make_unique<FrameTokenMessageQueue>(this)),
+      frame_token_message_queue_(std::move(frame_token_message_queue)),
       render_frame_metadata_provider_(
 #if defined(OS_MACOSX)
           ui::WindowResizeHelperMac::Get()->task_runner(),
@@ -367,6 +337,9 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
           frame_token_message_queue_.get()),
       frame_sink_id_(base::checked_cast<uint32_t>(process_->GetID()),
                      base::checked_cast<uint32_t>(routing_id_)) {
+  DCHECK(frame_token_message_queue_);
+  frame_token_message_queue_->Init(this);
+
 #if defined(OS_MACOSX)
   fling_scheduler_ = std::make_unique<FlingSchedulerMac>(this);
 #elif defined(OS_ANDROID)
@@ -637,7 +610,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(WidgetHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(WidgetHostMsg_SelectionBoundsChanged,
                         OnSelectionBoundsChanged)
-    IPC_MESSAGE_HANDLER(WidgetHostMsg_FocusedNodeTouched, OnFocusedNodeTouched)
     IPC_MESSAGE_HANDLER(DragHostMsg_StartDragging, OnStartDragging)
     IPC_MESSAGE_HANDLER(DragHostMsg_UpdateDragCursor, OnUpdateDragCursor)
     IPC_MESSAGE_HANDLER(WidgetHostMsg_FrameSwapMessages,
@@ -763,23 +735,16 @@ void RenderWidgetHostImpl::SetImportance(ChildProcessImportance importance) {
   process_->UpdateClientPriority(this);
 }
 
-void RenderWidgetHostImpl::OnImeTextCommittedEvent(
-    const base::string16& text_str) {
-  for (auto& observer : ime_text_committed_observers_) {
-    observer.OnImeTextCommittedEvent(text_str);
+void RenderWidgetHostImpl::AddImeInputEventObserver(
+    RenderWidgetHost::InputEventObserver* observer) {
+  if (!ime_input_event_observers_.HasObserver(observer)) {
+    ime_input_event_observers_.AddObserver(observer);
   }
 }
 
-void RenderWidgetHostImpl::AddImeTextCommittedEventObserver(
+void RenderWidgetHostImpl::RemoveImeInputEventObserver(
     RenderWidgetHost::InputEventObserver* observer) {
-  if (!ime_text_committed_observers_.HasObserver(observer)) {
-    ime_text_committed_observers_.AddObserver(observer);
-  }
-}
-
-void RenderWidgetHostImpl::RemoveImeTextCommittedEventObserver(
-    RenderWidgetHost::InputEventObserver* observer) {
-  ime_text_committed_observers_.RemoveObserver(observer);
+  ime_input_event_observers_.RemoveObserver(observer);
 }
 #endif
 
@@ -803,11 +768,17 @@ VisualProperties RenderWidgetHostImpl::GetVisualProperties() {
   RenderViewHostDelegateView* rvh_delegate_view = delegate_->GetDelegateView();
   DCHECK(rvh_delegate_view);
 
-  visual_properties.browser_controls_shrink_blink_size =
+  visual_properties.browser_controls_params.browser_controls_shrink_blink_size =
       rvh_delegate_view->DoBrowserControlsShrinkRendererSize();
+  visual_properties.browser_controls_params
+      .animate_browser_controls_height_changes =
+      rvh_delegate_view->ShouldAnimateBrowserControlsHeightChanges();
 
   float top_controls_height = rvh_delegate_view->GetTopControlsHeight();
+  float top_controls_min_height = rvh_delegate_view->GetTopControlsMinHeight();
   float bottom_controls_height = rvh_delegate_view->GetBottomControlsHeight();
+  float bottom_controls_min_height =
+      rvh_delegate_view->GetBottomControlsMinHeight();
   float browser_controls_dsf_multiplier = 1.f;
   // The top and bottom control sizes are physical pixels but the IPC wants
   // DIPs *when not using page zoom for DSF* because blink layout is working
@@ -816,10 +787,14 @@ VisualProperties RenderWidgetHostImpl::GetVisualProperties() {
     browser_controls_dsf_multiplier =
         visual_properties.screen_info.device_scale_factor;
   }
-  visual_properties.top_controls_height =
+  visual_properties.browser_controls_params.top_controls_height =
       top_controls_height / browser_controls_dsf_multiplier;
-  visual_properties.bottom_controls_height =
+  visual_properties.browser_controls_params.top_controls_min_height =
+      top_controls_min_height / browser_controls_dsf_multiplier;
+  visual_properties.browser_controls_params.bottom_controls_height =
       bottom_controls_height / browser_controls_dsf_multiplier;
+  visual_properties.browser_controls_params.bottom_controls_min_height =
+      bottom_controls_min_height / browser_controls_dsf_multiplier;
 
   visual_properties.auto_resize_enabled = auto_resize_enabled_;
   visual_properties.min_size_for_auto_resize = min_size_for_auto_resize_;
@@ -832,8 +807,7 @@ VisualProperties RenderWidgetHostImpl::GetVisualProperties() {
   visual_properties.capture_sequence_number = view_->GetCaptureSequenceNumber();
   // For OOPIFs, use the compositor viewport received from the FrameConnector.
   visual_properties.compositor_viewport_pixel_rect =
-      view_->IsRenderWidgetHostViewChildFrame() &&
-              !view_->IsRenderWidgetHostViewGuest()
+      view_->IsRenderWidgetHostViewChildFrame()
           ? gfx::ScaleToEnclosingRect(
                 compositor_viewport_,
                 IsUseZoomForDSFEnabled()
@@ -942,11 +916,15 @@ bool RenderWidgetHostImpl::SynchronizeVisualProperties(
   TRACE_EVENT_WITH_FLOW2(
       TRACE_DISABLED_BY_DEFAULT("viz.surface_id_flow"),
       "RenderWidgetHostImpl::SynchronizeVisualProperties send message",
-      visual_properties->local_surface_id_allocation->local_surface_id()
+      visual_properties->local_surface_id_allocation
+          .value_or(viz::LocalSurfaceIdAllocation())
+          .local_surface_id()
           .submission_trace_id(),
       TRACE_EVENT_FLAG_FLOW_OUT, "message",
       "WidgetMsg_SynchronizeVisualProperties", "local_surface_id",
-      visual_properties->local_surface_id_allocation->local_surface_id()
+      visual_properties->local_surface_id_allocation
+          .value_or(viz::LocalSurfaceIdAllocation())
+          .local_surface_id()
           .ToString());
   visual_properties_ack_pending_ =
       DoesVisualPropertiesNeedAck(old_visual_properties_, *visual_properties);
@@ -1246,12 +1224,17 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
   DCHECK_NE(gesture_event.SourceDevice(),
             blink::WebGestureDevice::kUninitialized);
 
-  bool scroll_update_needs_wrapping = false;
   if (gesture_event.GetType() == blink::WebInputEvent::kGestureScrollBegin) {
     DCHECK(
         !is_in_gesture_scroll_[static_cast<int>(gesture_event.SourceDevice())]);
     is_in_gesture_scroll_[static_cast<int>(gesture_event.SourceDevice())] =
         true;
+    scroll_peak_gpu_mem_tracker_ =
+        PeakGpuMemoryTracker::Create(base::BindOnce([](uint64_t peak_memory) {
+          // Converting Bytes to Kilobytes.
+          UMA_HISTOGRAM_MEMORY_KB("Memory.GPU.PeakMemoryUsage.Scroll",
+                                  peak_memory / 1024u);
+        }));
   } else if (gesture_event.GetType() ==
              blink::WebInputEvent::kGestureScrollEnd) {
     DCHECK(
@@ -1259,8 +1242,20 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
     is_in_gesture_scroll_[static_cast<int>(gesture_event.SourceDevice())] =
         false;
     is_in_touchpad_gesture_fling_ = false;
-    if (view_)
+    if (view_) {
+      if (scroll_peak_gpu_mem_tracker_ &&
+          !view_->is_currently_scrolling_viewport()) {
+        // We start tracking peak gpu-memory usage when the initial scroll-begin
+        // is dispatched. However, it is possible that the scroll-begin did not
+        // trigger any scrolls (e.g. the page is not scrollable). In such cases,
+        // we do not want to report the peak-memory usage metric. So it is
+        // canceled here.
+        scroll_peak_gpu_mem_tracker_->Cancel();
+      }
+
       view_->set_is_currently_scrolling_viewport(false);
+    }
+    scroll_peak_gpu_mem_tracker_ = nullptr;
   } else if (gesture_event.GetType() ==
              blink::WebInputEvent::kGestureFlingStart) {
     if (gesture_event.SourceDevice() == blink::WebGestureDevice::kTouchpad) {
@@ -1304,23 +1299,6 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
     }
   }
 
-  // TODO(wjmaclean) Remove the code for supporting resending gesture events
-  // when WebView transitions to OOPIF and BrowserPlugin is removed.
-  // http://crbug.com/533069
-  scroll_update_needs_wrapping =
-      gesture_event.GetType() == blink::WebInputEvent::kGestureScrollUpdate &&
-      gesture_event.resending_plugin_id != -1 &&
-      !is_in_gesture_scroll_[static_cast<int>(gesture_event.SourceDevice())];
-
-  // TODO(crbug.com/544782): Fix WebViewGuestScrollTest.TestGuestWheelScrolls-
-  // Bubble to test the resending logic of gesture events.
-  if (scroll_update_needs_wrapping) {
-    ForwardGestureEventWithLatencyInfo(
-        CreateScrollBeginForWrapping(gesture_event),
-        ui::WebInputEventTraits::CreateLatencyInfoForWebGestureEvent(
-            gesture_event));
-  }
-
   // Delegate must be non-null, due to |IsIgnoringInputEvents()| test.
   if (delegate_->PreHandleGestureEvent(gesture_event))
     return;
@@ -1329,13 +1307,6 @@ void RenderWidgetHostImpl::ForwardGestureEventWithLatencyInfo(
   DispatchInputEventWithLatencyInfo(gesture_event,
                                     &gesture_with_latency.latency);
   input_router_->SendGestureEvent(gesture_with_latency);
-
-  if (scroll_update_needs_wrapping) {
-    ForwardGestureEventWithLatencyInfo(
-        CreateScrollEndForWrapping(gesture_event),
-        ui::WebInputEventTraits::CreateLatencyInfoForWebGestureEvent(
-            gesture_event));
-  }
 }
 
 void RenderWidgetHostImpl::ForwardTouchEventWithLatencyInfo(
@@ -1776,11 +1747,6 @@ void RenderWidgetHostImpl::OnSelectionBoundsChanged(
     view_->SelectionBoundsChanged(params);
 }
 
-void RenderWidgetHostImpl::OnFocusedNodeTouched(bool editable) {
-  if (delegate_)
-    delegate_->FocusedNodeTouched(editable);
-}
-
 void RenderWidgetHostImpl::OnStartDragging(
     const DropData& drop_data,
     blink::WebDragOperationsMask drag_operations_mask,
@@ -1944,6 +1910,11 @@ void RenderWidgetHostImpl::ImeSetComposition(
     int selection_end) {
   GetWidgetInputHandler()->ImeSetComposition(
       text, ime_text_spans, replacement_range, selection_start, selection_end);
+#if defined(OS_ANDROID)
+  for (auto& observer : ime_input_event_observers_) {
+    observer.OnImeSetComposingTextEvent(text);
+  }
+#endif
 }
 
 void RenderWidgetHostImpl::ImeCommitText(
@@ -1954,10 +1925,20 @@ void RenderWidgetHostImpl::ImeCommitText(
   GetWidgetInputHandler()->ImeCommitText(text, ime_text_spans,
                                          replacement_range, relative_cursor_pos,
                                          base::OnceClosure());
+#if defined(OS_ANDROID)
+  for (auto& observer : ime_input_event_observers_) {
+    observer.OnImeTextCommittedEvent(text);
+  }
+#endif
 }
 
 void RenderWidgetHostImpl::ImeFinishComposingText(bool keep_selection) {
   GetWidgetInputHandler()->ImeFinishComposingText(keep_selection);
+#if defined(OS_ANDROID)
+  for (auto& observer : ime_input_event_observers_) {
+    observer.OnImeFinishComposingTextEvent();
+  }
+#endif
 }
 
 void RenderWidgetHostImpl::ImeCancelComposition() {
@@ -2357,12 +2338,8 @@ bool RenderWidgetHostImpl::StoredVisualPropertiesNeedsUpdate(
              new_visual_properties.is_fullscreen_granted ||
          old_visual_properties->display_mode !=
              new_visual_properties.display_mode ||
-         old_visual_properties->top_controls_height !=
-             new_visual_properties.top_controls_height ||
-         old_visual_properties->browser_controls_shrink_blink_size !=
-             new_visual_properties.browser_controls_shrink_blink_size ||
-         old_visual_properties->bottom_controls_height !=
-             new_visual_properties.bottom_controls_height ||
+         old_visual_properties->browser_controls_params !=
+             new_visual_properties.browser_controls_params ||
          old_visual_properties->visible_viewport_size !=
              new_visual_properties.visible_viewport_size ||
          old_visual_properties->capture_sequence_number !=
@@ -2725,7 +2702,7 @@ void RenderWidgetHostImpl::ClearPendingUserActivation() {
   pending_user_activation_timer_.Stop();
 }
 
-bool RenderWidgetHostImpl::ConsumePendingUserActivationIfAllowed() {
+bool RenderWidgetHostImpl::RemovePendingUserActivationIfAvailable() {
   if (pending_user_activation_counter_ > 0) {
     pending_user_activation_counter_--;
     return true;
@@ -3135,7 +3112,7 @@ void RenderWidgetHostImpl::SetFrameInputHandler(
 }
 
 void RenderWidgetHostImpl::SetInputTargetClient(
-    viz::mojom::InputTargetClientPtr input_target_client) {
+    mojo::Remote<viz::mojom::InputTargetClient> input_target_client) {
   input_target_client_ = std::move(input_target_client);
 }
 
@@ -3199,12 +3176,31 @@ void RenderWidgetHostImpl::OnRenderFrameMetadataChangedBeforeActivation(
     const cc::RenderFrameMetadata& metadata) {}
 
 void RenderWidgetHostImpl::OnRenderFrameMetadataChangedAfterActivation() {
-  bool is_mobile_optimized =
-      render_frame_metadata_provider_.LastRenderFrameMetadata()
-          .is_mobile_optimized;
+  const auto& metadata =
+      render_frame_metadata_provider_.LastRenderFrameMetadata();
+
+  bool is_mobile_optimized = metadata.is_mobile_optimized;
   input_router_->NotifySiteIsMobileOptimized(is_mobile_optimized);
   if (auto* touch_emulator = GetExistingTouchEmulator())
     touch_emulator->SetDoubleTapSupportForPageEnabled(!is_mobile_optimized);
+
+  // The value |kNull| is only used to indicate an absence of vertical scroll
+  // direction and should therefore be ignored.
+  if (metadata.new_vertical_scroll_direction ==
+      viz::VerticalScrollDirection::kNull) {
+    return;
+  }
+
+  // Changes in vertical scroll direction are only propagated for main frames.
+  // If there is no |owner_delegate|, this is not a main frame.
+  if (!owner_delegate())
+    return;
+
+  if (!delegate())
+    return;
+
+  delegate()->OnVerticalScrollDirectionChanged(
+      metadata.new_vertical_scroll_direction);
 }
 
 void RenderWidgetHostImpl::OnLocalSurfaceIdChanged(
@@ -3300,6 +3296,19 @@ void RenderWidgetHostImpl::OnZoomToFindInPageRectInMainFrame(
   auto* root_rvhi = RenderViewHostImpl::From(root_view->GetRenderWidgetHost());
   root_rvhi->Send(new ViewMsg_ZoomToFindInPageRect(root_rvhi->GetRoutingID(),
                                                    transformed_rect_to_zoom));
+}
+
+gfx::Size RenderWidgetHostImpl::GetRootWidgetViewportSize() {
+  if (!view_)
+    return gfx::Size();
+
+  // if |view_| is RWHVCF and |frame_connector_| is destroyed, then call to
+  // GetRootView will return null pointer.
+  auto* root_view = view_->GetRootView();
+  if (!root_view)
+    return gfx::Size();
+
+  return root_view->GetVisibleViewportSize();
 }
 
 }  // namespace content

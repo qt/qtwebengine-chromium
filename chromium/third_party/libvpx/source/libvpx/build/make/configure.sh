@@ -767,37 +767,9 @@ process_common_toolchain() {
 
     # detect tgt_os
     case "$gcctarget" in
-      *darwin10*)
+      *darwin1[0-8]*)
         tgt_isa=x86_64
-        tgt_os=darwin10
-        ;;
-      *darwin11*)
-        tgt_isa=x86_64
-        tgt_os=darwin11
-        ;;
-      *darwin12*)
-        tgt_isa=x86_64
-        tgt_os=darwin12
-        ;;
-      *darwin13*)
-        tgt_isa=x86_64
-        tgt_os=darwin13
-        ;;
-      *darwin14*)
-        tgt_isa=x86_64
-        tgt_os=darwin14
-        ;;
-      *darwin15*)
-        tgt_isa=x86_64
-        tgt_os=darwin15
-        ;;
-      *darwin16*)
-        tgt_isa=x86_64
-        tgt_os=darwin16
-        ;;
-      *darwin17*)
-        tgt_isa=x86_64
-        tgt_os=darwin17
+        tgt_os=`echo $gcctarget | sed 's/.*\(darwin1[0-8]\).*/\1/'`
         ;;
       x86_64*mingw32*)
         tgt_os=win64
@@ -930,6 +902,10 @@ process_common_toolchain() {
     *-darwin17-*)
       add_cflags  "-mmacosx-version-min=10.13"
       add_ldflags "-mmacosx-version-min=10.13"
+      ;;
+    *-darwin18-*)
+      add_cflags  "-mmacosx-version-min=10.14"
+      add_ldflags "-mmacosx-version-min=10.14"
       ;;
     *-iphonesimulator-*)
       add_cflags  "-miphoneos-version-min=${IOS_VERSION_MIN}"
@@ -1105,60 +1081,62 @@ EOF
           ;;
 
         darwin*)
-          XCRUN_FIND="xcrun --sdk iphoneos --find"
-          CXX="$(${XCRUN_FIND} clang++)"
-          CC="$(${XCRUN_FIND} clang)"
-          AR="$(${XCRUN_FIND} ar)"
-          AS="$(${XCRUN_FIND} as)"
-          STRIP="$(${XCRUN_FIND} strip)"
-          NM="$(${XCRUN_FIND} nm)"
-          RANLIB="$(${XCRUN_FIND} ranlib)"
-          AS_SFX=.S
-          LD="${CXX:-$(${XCRUN_FIND} ld)}"
+          if ! enabled external_build; then
+            XCRUN_FIND="xcrun --sdk iphoneos --find"
+            CXX="$(${XCRUN_FIND} clang++)"
+            CC="$(${XCRUN_FIND} clang)"
+            AR="$(${XCRUN_FIND} ar)"
+            AS="$(${XCRUN_FIND} as)"
+            STRIP="$(${XCRUN_FIND} strip)"
+            NM="$(${XCRUN_FIND} nm)"
+            RANLIB="$(${XCRUN_FIND} ranlib)"
+            AS_SFX=.S
+            LD="${CXX:-$(${XCRUN_FIND} ld)}"
 
-          # ASFLAGS is written here instead of using check_add_asflags
-          # because we need to overwrite all of ASFLAGS and purge the
-          # options that were put in above
-          ASFLAGS="-arch ${tgt_isa} -g"
+            # ASFLAGS is written here instead of using check_add_asflags
+            # because we need to overwrite all of ASFLAGS and purge the
+            # options that were put in above
+            ASFLAGS="-arch ${tgt_isa} -g"
 
-          add_cflags -arch ${tgt_isa}
-          add_ldflags -arch ${tgt_isa}
+            add_cflags -arch ${tgt_isa}
+            add_ldflags -arch ${tgt_isa}
 
-          alt_libc="$(show_darwin_sdk_path iphoneos)"
-          if [ -d "${alt_libc}" ]; then
-            add_cflags -isysroot ${alt_libc}
-          fi
+            alt_libc="$(show_darwin_sdk_path iphoneos)"
+            if [ -d "${alt_libc}" ]; then
+              add_cflags -isysroot ${alt_libc}
+            fi
 
-          if [ "${LD}" = "${CXX}" ]; then
-            add_ldflags -miphoneos-version-min="${IOS_VERSION_MIN}"
-          else
-            add_ldflags -ios_version_min "${IOS_VERSION_MIN}"
-          fi
+            if [ "${LD}" = "${CXX}" ]; then
+              add_ldflags -miphoneos-version-min="${IOS_VERSION_MIN}"
+            else
+              add_ldflags -ios_version_min "${IOS_VERSION_MIN}"
+            fi
 
-          for d in lib usr/lib usr/lib/system; do
-            try_dir="${alt_libc}/${d}"
-            [ -d "${try_dir}" ] && add_ldflags -L"${try_dir}"
-          done
+            for d in lib usr/lib usr/lib/system; do
+              try_dir="${alt_libc}/${d}"
+              [ -d "${try_dir}" ] && add_ldflags -L"${try_dir}"
+            done
 
-          case ${tgt_isa} in
-            armv7|armv7s|armv8|arm64)
-              if enabled neon && ! check_xcode_minimum_version; then
-                soft_disable neon
-                log_echo "  neon disabled: upgrade Xcode (need v6.3+)."
-                if enabled neon_asm; then
-                  soft_disable neon_asm
-                  log_echo "  neon_asm disabled: upgrade Xcode (need v6.3+)."
+            case ${tgt_isa} in
+              armv7|armv7s|armv8|arm64)
+                if enabled neon && ! check_xcode_minimum_version; then
+                  soft_disable neon
+                  log_echo "  neon disabled: upgrade Xcode (need v6.3+)."
+                  if enabled neon_asm; then
+                    soft_disable neon_asm
+                    log_echo "  neon_asm disabled: upgrade Xcode (need v6.3+)."
+                  fi
                 fi
-              fi
-              ;;
-          esac
+                ;;
+            esac
 
-          asm_conversion_cmd="${source_path}/build/make/ads2gas_apple.pl"
+            asm_conversion_cmd="${source_path}/build/make/ads2gas_apple.pl"
 
-          if [ "$(show_darwin_sdk_major_version iphoneos)" -gt 8 ]; then
-            check_add_cflags -fembed-bitcode
-            check_add_asflags -fembed-bitcode
-            check_add_ldflags -fembed-bitcode
+            if [ "$(show_darwin_sdk_major_version iphoneos)" -gt 8 ]; then
+              check_add_cflags -fembed-bitcode
+              check_add_asflags -fembed-bitcode
+              check_add_ldflags -fembed-bitcode
+            fi
           fi
           ;;
 

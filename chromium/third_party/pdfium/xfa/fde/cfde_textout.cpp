@@ -60,7 +60,7 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
   uint32_t dwFontStyle = pFont->GetFontStyles();
   CFX_Font FxFont;
   auto SubstFxFont = pdfium::MakeUnique<CFX_SubstFont>();
-  SubstFxFont->m_Weight = FontStyleIsBold(dwFontStyle) ? 700 : 400;
+  SubstFxFont->m_Weight = FontStyleIsForceBold(dwFontStyle) ? 700 : 400;
   SubstFxFont->m_ItalicAngle = FontStyleIsItalic(dwFontStyle) ? -12 : 0;
   SubstFxFont->m_WeightCJK = SubstFxFont->m_Weight;
   SubstFxFont->m_bItalicCJK = FontStyleIsItalic(dwFontStyle);
@@ -183,13 +183,13 @@ void CFDE_TextOut::SetLineBreakTolerance(float fTolerance) {
   m_pTxtBreak->SetLineBreakTolerance(m_fTolerance);
 }
 
-void CFDE_TextOut::CalcLogicSize(const WideString& str, CFX_SizeF* pSize) {
+void CFDE_TextOut::CalcLogicSize(WideStringView str, CFX_SizeF* pSize) {
   CFX_RectF rtText(0.0f, 0.0f, pSize->width, pSize->height);
   CalcLogicSize(str, &rtText);
   *pSize = rtText.Size();
 }
 
-void CFDE_TextOut::CalcLogicSize(const WideString& str, CFX_RectF* pRect) {
+void CFDE_TextOut::CalcLogicSize(WideStringView str, CFX_RectF* pRect) {
   if (str.IsEmpty()) {
     pRect->width = 0.0f;
     pRect->height = 0.0f;
@@ -452,24 +452,23 @@ void CFDE_TextOut::Reload(const CFX_RectF& rect) {
 }
 
 void CFDE_TextOut::ReloadLinePiece(CFDE_TTOLine* pLine, const CFX_RectF& rect) {
-  const wchar_t* pwsStr = m_wsText.c_str();
-  int32_t iPieceWidths = 0;
-
+  pdfium::span<const wchar_t> text_span = m_wsText.span();
   FDE_TTOPIECE* pPiece = pLine->GetPtrAt(0);
   int32_t iStartChar = pPiece->iStartChar;
   int32_t iPieceCount = pLine->GetSize();
+  int32_t iPieceWidths = 0;
   int32_t iPieceIndex = 0;
   CFX_BreakType dwBreakStatus = CFX_BreakType::None;
   m_fLinePos = pPiece->rtPiece.top;
   while (iPieceIndex < iPieceCount) {
-    int32_t iStar = iStartChar;
-    int32_t iEnd = pPiece->iChars + iStar;
-    while (iStar < iEnd) {
-      dwBreakStatus = m_pTxtBreak->AppendChar(*(pwsStr + iStar));
+    int32_t iStart = iStartChar;
+    int32_t iEnd = pPiece->iChars + iStart;
+    while (iStart < iEnd) {
+      dwBreakStatus = m_pTxtBreak->AppendChar(text_span[iStart]);
       if (!CFX_BreakTypeNoneOrPiece(dwBreakStatus))
         RetrievePieces(dwBreakStatus, true, rect, &iStartChar, &iPieceWidths);
 
-      ++iStar;
+      ++iStart;
     }
     ++iPieceIndex;
     pPiece = pLine->GetPtrAt(iPieceIndex);

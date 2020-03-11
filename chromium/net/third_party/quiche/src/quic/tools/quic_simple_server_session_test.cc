@@ -10,10 +10,12 @@
 
 #include "net/third_party/quiche/src/quic/core/crypto/quic_crypto_server_config.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_random.h"
+#include "net/third_party/quiche/src/quic/core/http/http_encoder.h"
 #include "net/third_party/quiche/src/quic/core/proto/cached_network_parameters_proto.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection.h"
 #include "net/third_party/quiche/src/quic/core/quic_crypto_server_stream.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
+#include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_containers.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_expect_bug.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
@@ -228,9 +230,10 @@ class QuicSimpleServerSessionTest
         QuicRandom::GetInstance(), &clock,
         QuicCryptoServerConfig::ConfigOptions());
     session_->Initialize();
-    QuicSessionPeer::GetMutableCryptoStream(session_.get())
-        ->OnSuccessfulVersionNegotiation(supported_versions.front());
-    visitor_ = QuicConnectionPeer::GetVisitor(connection_);
+    if (!GetQuicReloadableFlag(quic_version_negotiated_by_default_at_server)) {
+      QuicSessionPeer::GetMutableCryptoStream(session_.get())
+          ->OnSuccessfulVersionNegotiation(supported_versions.front());
+    }
 
     if (VersionHasIetfQuicFrames(transport_version())) {
       EXPECT_CALL(*connection_, SendControlFrame(_))
@@ -284,12 +287,12 @@ class QuicSimpleServerSessionTest
   QuicMemoryCacheBackend memory_cache_backend_;
   std::unique_ptr<MockQuicSimpleServerSession> session_;
   std::unique_ptr<CryptoHandshakeMessage> handshake_message_;
-  QuicConnectionVisitorInterface* visitor_;
 };
 
 INSTANTIATE_TEST_SUITE_P(Tests,
                          QuicSimpleServerSessionTest,
-                         ::testing::ValuesIn(AllSupportedVersions()));
+                         ::testing::ValuesIn(AllSupportedVersions()),
+                         ::testing::PrintToStringParamName());
 
 TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
   // Open a stream, then reset it.
@@ -311,7 +314,7 @@ TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
                 OnStreamReset(GetNthClientInitiatedBidirectionalId(0),
                               QUIC_RST_ACKNOWLEDGEMENT));
   }
-  visitor_->OnRstStream(rst1);
+  session_->OnRstStream(rst1);
   // Create and inject a STOP_SENDING frame. In GOOGLE QUIC, receiving a
   // RST_STREAM frame causes a two-way close. For IETF QUIC, RST_STREAM causes
   // a one-way close.
@@ -320,7 +323,7 @@ TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
 
   // Send the same two bytes of payload in a new packet.
-  visitor_->OnStreamFrame(data1);
+  session_->OnStreamFrame(data1);
 
   // The stream should not be re-opened.
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
@@ -340,7 +343,7 @@ TEST_P(QuicSimpleServerSessionTest, NeverOpenStreamDueToReset) {
                 OnStreamReset(GetNthClientInitiatedBidirectionalId(0),
                               QUIC_RST_ACKNOWLEDGEMENT));
   }
-  visitor_->OnRstStream(rst1);
+  session_->OnRstStream(rst1);
   // Create and inject a STOP_SENDING frame. In GOOGLE QUIC, receiving a
   // RST_STREAM frame causes a two-way close. For IETF QUIC, RST_STREAM causes
   // a one-way close.
@@ -352,7 +355,7 @@ TEST_P(QuicSimpleServerSessionTest, NeverOpenStreamDueToReset) {
   // Send two bytes of payload.
   QuicStreamFrame data1(GetNthClientInitiatedBidirectionalId(0), false, 0,
                         QuicStringPiece("HT"));
-  visitor_->OnStreamFrame(data1);
+  session_->OnStreamFrame(data1);
 
   // The stream should never be opened, now that the reset is received.
   EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
@@ -365,8 +368,8 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
                          QuicStringPiece("\1\0\0\0\0\0\0\0HT"));
   QuicStreamFrame frame2(GetNthClientInitiatedBidirectionalId(1), false, 0,
                          QuicStringPiece("\2\0\0\0\0\0\0\0HT"));
-  visitor_->OnStreamFrame(frame1);
-  visitor_->OnStreamFrame(frame2);
+  session_->OnStreamFrame(frame1);
+  session_->OnStreamFrame(frame2);
   EXPECT_EQ(2u, session_->GetNumOpenIncomingStreams());
 
   // Send a reset (and expect the peer to send a RST in response).
@@ -381,7 +384,7 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
                 OnStreamReset(GetNthClientInitiatedBidirectionalId(0),
                               QUIC_RST_ACKNOWLEDGEMENT));
   }
-  visitor_->OnRstStream(rst);
+  session_->OnRstStream(rst);
   // Create and inject a STOP_SENDING frame. In GOOGLE QUIC, receiving a
   // RST_STREAM frame causes a two-way close. For IETF QUIC, RST_STREAM causes
   // a one-way close.
@@ -395,8 +398,8 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
                          QuicStringPiece("TP"));
   QuicStreamFrame frame4(GetNthClientInitiatedBidirectionalId(1), false, 2,
                          QuicStringPiece("TP"));
-  visitor_->OnStreamFrame(frame3);
-  visitor_->OnStreamFrame(frame4);
+  session_->OnStreamFrame(frame3);
+  session_->OnStreamFrame(frame4);
   // The stream should never be opened, now that the reset is received.
   EXPECT_EQ(1u, session_->GetNumOpenIncomingStreams());
   EXPECT_TRUE(connection_->connected());
@@ -589,8 +592,10 @@ class QuicSimpleServerSessionServerPushTest
         config_, connection_, &owner_, &stream_helper_, &crypto_config_,
         &compressed_certs_cache_, &memory_cache_backend_);
     session_->Initialize();
-    QuicSessionPeer::GetMutableCryptoStream(session_.get())
-        ->OnSuccessfulVersionNegotiation(supported_versions.front());
+    if (!GetQuicReloadableFlag(quic_version_negotiated_by_default_at_server)) {
+      QuicSessionPeer::GetMutableCryptoStream(session_.get())
+          ->OnSuccessfulVersionNegotiation(supported_versions.front());
+    }
     // Needed to make new session flow control window and server push work.
 
     if (VersionHasIetfQuicFrames(transport_version())) {
@@ -599,8 +604,6 @@ class QuicSimpleServerSessionServerPushTest
                                            ClearMaxStreamsControlFrame));
     }
     session_->OnConfigNegotiated();
-
-    visitor_ = QuicConnectionPeer::GetVisitor(connection_);
 
     if (!VersionUsesHttp3(connection_->transport_version())) {
       session_->UnregisterStreamPriority(
@@ -657,10 +660,9 @@ class QuicSimpleServerSessionServerPushTest
       std::string data;
       data_frame_header_length = 0;
       if (VersionUsesHttp3(connection_->transport_version())) {
-        HttpEncoder encoder;
         std::unique_ptr<char[]> buffer;
         data_frame_header_length =
-            encoder.SerializeDataFrameHeader(body.length(), &buffer);
+            HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
         std::string header(buffer.get(), data_frame_header_length);
         data = header + body;
       } else {
@@ -813,6 +815,12 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
 // prevent a promised resource to be send out.
 TEST_P(QuicSimpleServerSessionServerPushTest,
        ResetPromisedStreamToCancelServerPush) {
+  if (VersionHasIetfQuicFrames(transport_version())) {
+    // This test is resetting a stream that is not opened yet. IETF QUIC has no
+    // way to handle this. Some similar tests can be added once CANCEL_PUSH is
+    // supported.
+    return;
+  }
   MaybeConsumeHeadersStreamData();
   session_->SetMaxAllowedPushId(kMaxQuicStreamId);
 
@@ -844,7 +852,7 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
       .WillOnce(Invoke(&ClearControlFrame));
   EXPECT_CALL(*connection_,
               OnStreamReset(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT));
-  visitor_->OnRstStream(rst);
+  session_->OnRstStream(rst);
 
   // When the first 2 streams becomes draining, the two queued up stream could
   // be created. But since one of them was marked cancelled due to RST frame,
@@ -863,8 +871,6 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
     EXPECT_CALL(*connection_,
                 SendStreamData(stream_not_reset, 1, offset, NO_FIN));
     offset++;
-  }
-  if (VersionUsesHttp3(connection_->transport_version())) {
     EXPECT_CALL(*connection_,
                 SendStreamData(stream_not_reset, kHeadersFrameHeaderLength,
                                offset, NO_FIN));
@@ -873,8 +879,6 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
                 SendStreamData(stream_not_reset, kHeadersFramePayloadLength,
                                offset, NO_FIN));
     offset += kHeadersFramePayloadLength;
-  }
-  if (VersionUsesHttp3(connection_->transport_version())) {
     EXPECT_CALL(*connection_,
                 SendStreamData(stream_not_reset, data_frame_header_length,
                                offset, NO_FIN));
@@ -924,9 +928,9 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   // Resetting an open stream will close the stream and give space for extra
   // stream to be opened.
   QuicStreamId stream_got_reset = GetNthServerInitiatedUnidirectionalId(3);
-  EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
   EXPECT_CALL(*connection_, SendControlFrame(_));
   if (!VersionHasIetfQuicFrames(transport_version())) {
+    EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
     // For version 99, this is covered in InjectStopSending()
     EXPECT_CALL(*connection_,
                 OnStreamReset(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT));
@@ -936,8 +940,6 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
     EXPECT_CALL(*connection_,
                 SendStreamData(stream_to_open, 1, offset, NO_FIN));
     offset++;
-  }
-  if (VersionUsesHttp3(connection_->transport_version())) {
     EXPECT_CALL(*connection_,
                 SendStreamData(stream_to_open, kHeadersFrameHeaderLength,
                                offset, NO_FIN));
@@ -946,8 +948,6 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
                 SendStreamData(stream_to_open, kHeadersFramePayloadLength,
                                offset, NO_FIN));
     offset += kHeadersFramePayloadLength;
-  }
-  if (VersionUsesHttp3(connection_->transport_version())) {
     EXPECT_CALL(*connection_,
                 SendStreamData(stream_to_open, data_frame_header_length, offset,
                                NO_FIN));
@@ -968,8 +968,9 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
     // available as it closes/etc them.
     session_->OnMaxStreamsFrame(
         QuicMaxStreamsFrame(0, num_resources + 3, /*unidirectional=*/true));
+  } else {
+    session_->OnRstStream(rst);
   }
-  visitor_->OnRstStream(rst);
   // Create and inject a STOP_SENDING frame. In GOOGLE QUIC, receiving a
   // RST_STREAM frame causes a two-way close. For IETF QUIC, RST_STREAM causes
   // a one-way close.

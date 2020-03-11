@@ -63,7 +63,6 @@
 
 namespace {
 
-using quic::QuicSocketAddress;
 using quic::QuicStringPiece;
 using quic::QuicTextUtils;
 using quic::QuicUrl;
@@ -237,10 +236,6 @@ int QuicToyClient::SendRequestsAndPrintResponses(
     std::cerr << "Failed to initialize client." << std::endl;
     return 1;
   }
-  client->client_session()->set_qpack_maximum_dynamic_table_capacity(
-      kDefaultQpackMaxDynamicTableCapacity);
-  client->client_session()->set_qpack_maximum_blocked_streams(
-      kDefaultMaximumBlockedStreams);
   if (!client->Connect()) {
     quic::QuicErrorCode error = client->session()->error();
     if (error == quic::QUIC_INVALID_VERSION) {

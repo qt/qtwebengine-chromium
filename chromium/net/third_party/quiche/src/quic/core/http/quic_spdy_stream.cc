@@ -193,6 +193,7 @@ QuicSpdyStream::QuicSpdyStream(QuicStreamId id,
       visitor_(nullptr),
       blocked_on_decoding_headers_(false),
       headers_decompressed_(false),
+      header_list_size_limit_exceeded_(false),
       headers_payload_length_(0),
       trailers_payload_length_(0),
       trailers_decompressed_(false),
@@ -227,6 +228,7 @@ QuicSpdyStream::QuicSpdyStream(PendingStream* pending,
       visitor_(nullptr),
       blocked_on_decoding_headers_(false),
       headers_decompressed_(false),
+      header_list_size_limit_exceeded_(false),
       headers_payload_length_(0),
       trailers_payload_length_(0),
       trailers_decompressed_(false),
@@ -297,7 +299,7 @@ void QuicSpdyStream::WriteOrBufferBody(QuicStringPiece data, bool fin) {
   // Write frame header.
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(data.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(data.length(), &buffer);
   unacked_frame_headers_offsets_.Add(
       send_buffer().stream_offset(),
       send_buffer().stream_offset() + header_length);
@@ -310,7 +312,7 @@ void QuicSpdyStream::WriteOrBufferBody(QuicStringPiece data, bool fin) {
   // Write body.
   QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
                   << " is writing DATA frame payload of length "
-                  << data.length();
+                  << data.length() << " with fin " << fin;
   WriteOrBufferData(data, fin, nullptr);
 }
 
@@ -358,7 +360,7 @@ void QuicSpdyStream::WritePushPromise(const PushPromiseFrame& frame) {
   DCHECK(VersionUsesHttp3(transport_version()));
   std::unique_ptr<char[]> push_promise_frame_with_id;
   const size_t push_promise_frame_length =
-      encoder_.SerializePushPromiseFrameWithOnlyPushId(
+      HttpEncoder::SerializePushPromiseFrameWithOnlyPushId(
           frame, &push_promise_frame_with_id);
 
   unacked_frame_headers_offsets_.Add(send_buffer().stream_offset(),
@@ -401,7 +403,7 @@ QuicConsumedData QuicSpdyStream::WriteBodySlices(QuicMemSliceSpan slices,
 
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(slices.total_length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(slices.total_length(), &buffer);
   if (!CanWriteNewDataAfterData(header_length)) {
     return {0, false};
   }
@@ -517,13 +519,13 @@ void QuicSpdyStream::OnStreamHeaderList(bool fin,
                                         size_t frame_len,
                                         const QuicHeaderList& header_list) {
   // TODO(b/134706391): remove |fin| argument.
-  // The headers list avoid infinite buffering by clearing the headers list
-  // if the current headers are too large. So if the list is empty here
-  // then the headers list must have been too large, and the stream should
-  // be reset.
-  // TODO(rch): Use an explicit "headers too large" signal. An empty header list
-  // might be acceptable if it corresponds to a trailing header frame.
-  if (header_list.empty()) {
+  // When using Google QUIC, an empty header list indicates that the size limit
+  // has been exceeded.
+  // When using IETF QUIC, there is an explicit signal from
+  // QpackDecodedHeadersAccumulator.
+  if ((VersionUsesHttp3(transport_version()) &&
+       header_list_size_limit_exceeded_) ||
+      (!VersionUsesHttp3(transport_version()) && header_list.empty())) {
     OnHeadersTooLarge();
     if (IsDoneReading()) {
       return;
@@ -537,26 +539,46 @@ void QuicSpdyStream::OnStreamHeaderList(bool fin,
 }
 
 void QuicSpdyStream::OnHeadersDecoded(QuicHeaderList headers) {
-  blocked_on_decoding_headers_ = false;
-  ProcessDecodedHeaders(headers);
-  // Continue decoding HTTP/3 frames.
-  OnDataAvailable();
+  header_list_size_limit_exceeded_ =
+      qpack_decoded_headers_accumulator_->header_list_size_limit_exceeded();
+  qpack_decoded_headers_accumulator_.reset();
+
+  QuicSpdySession::LogHeaderCompressionRatioHistogram(
+      /* using_qpack = */ true,
+      /* is_sent = */ false, headers.compressed_header_bytes(),
+      headers.uncompressed_header_bytes());
+
+  if (spdy_session_->promised_stream_id() ==
+      QuicUtils::GetInvalidStreamId(session()->transport_version())) {
+    const QuicByteCount frame_length = headers_decompressed_
+                                           ? trailers_payload_length_
+                                           : headers_payload_length_;
+    OnStreamHeaderList(/* fin = */ false, frame_length, headers);
+  } else {
+    spdy_session_->OnHeaderList(headers);
+  }
+
+  if (blocked_on_decoding_headers_) {
+    blocked_on_decoding_headers_ = false;
+    // Continue decoding HTTP/3 frames.
+    OnDataAvailable();
+  }
 }
 
-void QuicSpdyStream::OnHeaderDecodingError() {
-  // TODO(b/124216424): Use HTTP_EXCESSIVE_LOAD or
-  // HTTP_QPACK_DECOMPRESSION_FAILED error code as indicated by
-  // |qpack_decoded_headers_accumulator_|.
-  std::string error_message = QuicStrCat(
-      "Error during async decoding of ",
-      headers_decompressed_ ? "trailers" : "headers", " on stream ", id(), ": ",
-      qpack_decoded_headers_accumulator_->error_message());
-  CloseConnectionWithDetails(QUIC_DECOMPRESSION_FAILURE, error_message);
+void QuicSpdyStream::OnHeaderDecodingError(QuicStringPiece error_message) {
+  qpack_decoded_headers_accumulator_.reset();
+
+  std::string connection_close_error_message = QuicStrCat(
+      "Error decoding ", headers_decompressed_ ? "trailers" : "headers",
+      " on stream ", id(), ": ", error_message);
+  CloseConnectionWithDetails(QUIC_QPACK_DECOMPRESSION_FAILED,
+                             connection_close_error_message);
 }
 
 void QuicSpdyStream::OnHeadersTooLarge() {
   if (VersionUsesHttp3(transport_version())) {
-    // TODO(124216424): Use HTTP_EXCESSIVE_LOAD error code.
+    // TODO(b/124216424): Reset stream with H3_REQUEST_CANCELLED (if client)
+    // or with H3_REQUEST_REJECTED (if server).
     std::string error_message =
         QuicStrCat("Too large headers received on stream ", id());
     CloseConnectionWithDetails(QUIC_HEADERS_STREAM_DATA_DECOMPRESS_FAILURE,
@@ -658,15 +680,24 @@ void QuicSpdyStream::OnPriorityFrame(
 
 void QuicSpdyStream::OnStreamReset(const QuicRstStreamFrame& frame) {
   if (frame.error_code != QUIC_STREAM_NO_ERROR) {
+    // TODO(b/145684124) Call QpackDecoder::OnStreamReset().
+
     QuicStream::OnStreamReset(frame);
     return;
   }
+
   QUIC_DVLOG(1) << ENDPOINT
                 << "Received QUIC_STREAM_NO_ERROR, not discarding response";
   set_rst_received(true);
   MaybeIncreaseHighestReceivedOffset(frame.byte_offset);
   set_stream_error(frame.error_code);
   CloseWriteSide();
+}
+
+void QuicSpdyStream::Reset(QuicRstStreamErrorCode error) {
+  // TODO(b/145684124) Call QpackDecoder::OnStreamReset().
+
+  QuicStream::Reset(error);
 }
 
 void QuicSpdyStream::OnDataAvailable() {
@@ -899,18 +930,14 @@ bool QuicSpdyStream::OnHeadersFramePayload(QuicStringPiece payload) {
     headers_payload_length_ += payload.length();
   }
 
-  const bool success = qpack_decoded_headers_accumulator_->Decode(payload);
+  qpack_decoded_headers_accumulator_->Decode(payload);
 
-  sequencer()->MarkConsumed(body_manager_.OnNonBody(payload.size()));
-
-  if (!success) {
-    // TODO(124216424): Use HTTP_QPACK_DECOMPRESSION_FAILED error code.
-    std::string error_message =
-        QuicStrCat("Error decompressing header block on stream ", id(), ": ",
-                   qpack_decoded_headers_accumulator_->error_message());
-    CloseConnectionWithDetails(QUIC_DECOMPRESSION_FAILURE, error_message);
+  // |qpack_decoded_headers_accumulator_| is reset if an error is detected.
+  if (!qpack_decoded_headers_accumulator_) {
     return false;
   }
+
+  sequencer()->MarkConsumed(body_manager_.OnNonBody(payload.size()));
   return true;
 }
 
@@ -918,25 +945,15 @@ bool QuicSpdyStream::OnHeadersFrameEnd() {
   DCHECK(VersionUsesHttp3(transport_version()));
   DCHECK(qpack_decoded_headers_accumulator_);
 
-  auto result = qpack_decoded_headers_accumulator_->EndHeaderBlock();
+  qpack_decoded_headers_accumulator_->EndHeaderBlock();
 
-  if (result == QpackDecodedHeadersAccumulator::Status::kError) {
-    // TODO(124216424): Use HTTP_QPACK_DECOMPRESSION_FAILED error code.
-    std::string error_message =
-        QuicStrCat("Error decompressing header block on stream ", id(), ": ",
-                   qpack_decoded_headers_accumulator_->error_message());
-    CloseConnectionWithDetails(QUIC_DECOMPRESSION_FAILURE, error_message);
-    return false;
-  }
-
-  if (result == QpackDecodedHeadersAccumulator::Status::kBlocked) {
+  // If decoding is complete or an error is detected, then
+  // |qpack_decoded_headers_accumulator_| is already reset.
+  if (qpack_decoded_headers_accumulator_) {
     blocked_on_decoding_headers_ = true;
     return false;
   }
 
-  DCHECK(result == QpackDecodedHeadersAccumulator::Status::kSuccess);
-
-  ProcessDecodedHeaders(qpack_decoded_headers_accumulator_->quic_header_list());
   return !sequencer()->IsClosed() && !reading_stopped();
 }
 
@@ -999,24 +1016,6 @@ bool QuicSpdyStream::OnUnknownFrameEnd() {
   return true;
 }
 
-void QuicSpdyStream::ProcessDecodedHeaders(const QuicHeaderList& headers) {
-  QuicSpdySession::LogHeaderCompressionRatioHistogram(
-      /* using_qpack = */ true,
-      /* is_sent = */ false, headers.compressed_header_bytes(),
-      headers.uncompressed_header_bytes());
-
-  if (spdy_session_->promised_stream_id() ==
-      QuicUtils::GetInvalidStreamId(session()->transport_version())) {
-    const QuicByteCount frame_length = headers_decompressed_
-                                           ? trailers_payload_length_
-                                           : headers_payload_length_;
-    OnStreamHeaderList(/* fin = */ false, frame_length, headers);
-  } else {
-    spdy_session_->OnHeaderList(headers);
-  }
-  qpack_decoded_headers_accumulator_.reset();
-}
-
 size_t QuicSpdyStream::WriteHeadersImpl(
     spdy::SpdyHeaderBlock header_block,
     bool fin,
@@ -1044,8 +1043,8 @@ size_t QuicSpdyStream::WriteHeadersImpl(
   // Write HEADERS frame.
   std::unique_ptr<char[]> headers_frame_header;
   const size_t headers_frame_header_length =
-      encoder_.SerializeHeadersFrameHeader(encoded_headers.size(),
-                                           &headers_frame_header);
+      HttpEncoder::SerializeHeadersFrameHeader(encoded_headers.size(),
+                                               &headers_frame_header);
   unacked_frame_headers_offsets_.Add(
       send_buffer().stream_offset(),
       send_buffer().stream_offset() + headers_frame_header_length);
@@ -1059,7 +1058,7 @@ size_t QuicSpdyStream::WriteHeadersImpl(
 
   QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
                   << " is writing HEADERS frame payload of length "
-                  << encoded_headers.length();
+                  << encoded_headers.length() << " with fin " << fin;
   WriteOrBufferData(encoded_headers, fin, nullptr);
 
   QuicSpdySession::LogHeaderCompressionRatioHistogram(

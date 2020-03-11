@@ -35,8 +35,6 @@ class EncodedImageBufferWrapper : public EncodedImageBufferInterface {
   uint8_t* data() override { return buffer_.data(); }
   size_t size() const override { return buffer_.size(); }
 
-  void Realloc(size_t t) override { RTC_NOTREACHED(); }
-
  private:
   rtc::Buffer buffer_;
 };
@@ -107,7 +105,7 @@ void FrameEncodeMetadataWriter::OnEncodeStarted(const VideoFrame& frame) {
     // If stream is disabled due to low bandwidth OnEncodeStarted still will be
     // called and have to be ignored.
     if (timing_frames_info_[si].target_bitrate_bytes_per_sec == 0)
-      return;
+      continue;
     if (timing_frames_info_[si].frames.size() == kMaxEncodeStartTimeListSize) {
       ++stalled_encoder_logged_messages_;
       if (stalled_encoder_logged_messages_ <= kMessagesThrottlingThreshold ||

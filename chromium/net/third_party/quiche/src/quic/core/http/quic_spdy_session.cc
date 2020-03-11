@@ -11,6 +11,8 @@
 
 #include "net/third_party/quiche/src/quic/core/http/http_constants.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_headers_stream.h"
+#include "net/third_party/quiche/src/quic/core/quic_error_codes.h"
+#include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
@@ -44,7 +46,6 @@ using spdy::SpdyPriorityIR;
 using spdy::SpdyPushPromiseIR;
 using spdy::SpdySerializedFrame;
 using spdy::SpdySettingsId;
-using spdy::SpdySettingsIR;
 using spdy::SpdyStreamId;
 
 namespace quic {
@@ -245,11 +246,6 @@ class QuicSpdySession::SpdyFramerVisitor
                   int weight,
                   bool exclusive) override {
     DCHECK(!VersionUsesHttp3(session_->transport_version()));
-    if (session_->transport_version() <= QUIC_VERSION_39) {
-      CloseConnection("SPDY PRIORITY frame received.",
-                      QUIC_INVALID_HEADERS_STREAM_DATA);
-      return;
-    }
     if (!session_->IsConnected()) {
       return;
     }
@@ -303,7 +299,6 @@ class QuicSpdySession::SpdyFramerVisitor
     }
   }
 
- private:
   QuicSpdySession* session_;
   QuicHeaderList header_list_;
 };
@@ -352,7 +347,10 @@ QuicSpdySession::QuicSpdySession(
       spdy_framer_visitor_(new SpdyFramerVisitor(this)),
       max_allowed_push_id_(0),
       destruction_indicator_(123456789),
-      debug_visitor_(nullptr) {
+      debug_visitor_(nullptr),
+      http3_goaway_received_(false),
+      http3_goaway_sent_(false),
+      http3_max_push_id_sent_(false) {
   h2_deframer_.set_visitor(spdy_framer_visitor_.get());
   h2_deframer_.set_debug_visitor(spdy_framer_visitor_.get());
   spdy_framer_.set_debug_visitor(spdy_framer_visitor_.get());
@@ -416,18 +414,16 @@ void QuicSpdySession::Initialize() {
 void QuicSpdySession::OnDecoderStreamError(QuicStringPiece error_message) {
   DCHECK(VersionUsesHttp3(transport_version()));
 
-  // TODO(b/124216424): Use HTTP_QPACK_DECODER_STREAM_ERROR.
   CloseConnectionWithDetails(
-      QUIC_DECOMPRESSION_FAILURE,
+      QUIC_QPACK_DECODER_STREAM_ERROR,
       QuicStrCat("Decoder stream error: ", error_message));
 }
 
 void QuicSpdySession::OnEncoderStreamError(QuicStringPiece error_message) {
   DCHECK(VersionUsesHttp3(transport_version()));
 
-  // TODO(b/124216424): Use HTTP_QPACK_ENCODER_STREAM_ERROR.
   CloseConnectionWithDetails(
-      QUIC_DECOMPRESSION_FAILURE,
+      QUIC_QPACK_ENCODER_STREAM_ERROR,
       QuicStrCat("Encoder stream error: ", error_message));
 }
 
@@ -520,9 +516,6 @@ size_t QuicSpdySession::WritePriority(QuicStreamId id,
                                       int weight,
                                       bool exclusive) {
   DCHECK(!VersionUsesHttp3(transport_version()));
-  if (transport_version() <= QUIC_VERSION_39) {
-    return 0;
-  }
   SpdyPriorityIR priority_frame(id, parent_stream_id, weight, exclusive);
   SpdySerializedFrame frame(spdy_framer_.SerializeFrame(priority_frame));
   headers_stream()->WriteOrBufferData(
@@ -537,8 +530,27 @@ void QuicSpdySession::WriteH3Priority(const PriorityFrame& priority) {
       << "Server must not send priority";
 
   QuicConnection::ScopedPacketFlusher flusher(connection());
-  SendInitialData();
   send_control_stream_->WritePriority(priority);
+}
+
+void QuicSpdySession::OnHttp3GoAway(QuicStreamId stream_id) {
+  DCHECK_EQ(perspective(), Perspective::IS_CLIENT);
+  if (!QuicUtils::IsBidirectionalStreamId(stream_id) ||
+      IsIncomingStream(stream_id)) {
+    CloseConnectionWithDetails(
+        QUIC_INVALID_STREAM_ID,
+        "GOAWAY's last stream id has to point to a request stream");
+    return;
+  }
+  http3_goaway_received_ = true;
+}
+
+void QuicSpdySession::SendHttp3GoAway() {
+  DCHECK_EQ(perspective(), Perspective::IS_SERVER);
+  DCHECK(VersionUsesHttp3(transport_version()));
+  http3_goaway_sent_ = true;
+  send_control_stream_->SendGoAway(
+      GetLargestPeerCreatedStreamId(/*unidirectional = */ false));
 }
 
 void QuicSpdySession::WritePushPromise(QuicStreamId original_stream_id,
@@ -580,27 +592,18 @@ void QuicSpdySession::WritePushPromise(QuicStreamId original_stream_id,
 }
 
 void QuicSpdySession::SendInitialData() {
-  if (VersionUsesHttp3(transport_version())) {
-    QuicConnection::ScopedPacketFlusher flusher(connection());
-    send_control_stream_->MaybeSendSettingsFrame();
-    // TODO(renjietang): Remove this once stream id manager can take dynamically
-    // created HTTP/3 unidirectional streams.
-    qpack_encoder_send_stream_->MaybeSendStreamType();
-    qpack_decoder_send_stream_->MaybeSendStreamType();
+  if (!VersionUsesHttp3(transport_version())) {
     return;
   }
-  if (GetQuicReloadableFlag(quic_do_not_send_settings)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_do_not_send_settings);
-    return;
+  QuicConnection::ScopedPacketFlusher flusher(connection());
+  send_control_stream_->MaybeSendSettingsFrame();
+  if (GetQuicReloadableFlag(quic_send_max_push_id_with_settings) &&
+      perspective() == Perspective::IS_CLIENT && !http3_max_push_id_sent_) {
+    SendMaxPushId();
+    http3_max_push_id_sent_ = true;
   }
-
-  SpdySettingsIR settings_frame;
-  settings_frame.AddSetting(SETTINGS_MAX_HEADER_LIST_SIZE,
-                            max_inbound_header_list_size_);
-
-  SpdySerializedFrame frame(spdy_framer_.SerializeFrame(settings_frame));
-  headers_stream()->WriteOrBufferData(
-      QuicStringPiece(frame.data(), frame.size()), false, nullptr);
+  qpack_decoder_send_stream_->MaybeSendStreamType();
+  qpack_encoder_send_stream_->MaybeSendStreamType();
 }
 
 QpackEncoder* QuicSpdySession::qpack_encoder() {
@@ -630,19 +633,20 @@ QuicSpdyStream* QuicSpdySession::GetSpdyDataStream(
 
 void QuicSpdySession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   QuicSession::OnCryptoHandshakeEvent(event);
-  if (VersionUsesHttp3(transport_version()) ||
-      (event == HANDSHAKE_CONFIRMED && config()->SupportMaxHeaderListSize())) {
-    SendInitialData();
-  }
+  SendInitialData();
+}
+
+void QuicSpdySession::SetDefaultEncryptionLevel(quic::EncryptionLevel level) {
+  QuicSession::SetDefaultEncryptionLevel(level);
+  SendInitialData();
 }
 
 // True if there are open HTTP requests.
 bool QuicSpdySession::ShouldKeepConnectionAlive() const {
-  if (GetQuicReloadableFlag(quic_aggressive_connection_aliveness)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_aggressive_connection_aliveness);
-    return GetNumActiveStreams() > 0;
+  if (!VersionUsesHttp3(transport_version())) {
+    DCHECK(pending_streams().empty());
   }
-  return GetNumOpenDynamicStreams() > 0;
+  return GetNumActiveStreams() + pending_streams().size() > 0;
 }
 
 bool QuicSpdySession::UsesPendingStreams() const {
@@ -1035,9 +1039,8 @@ void QuicSpdySession::SetMaxAllowedPushId(QuicStreamId max_allowed_push_id) {
   }
 
   DCHECK(perspective() == Perspective::IS_CLIENT);
-  if (IsHandshakeConfirmed()) {
+  if (IsCryptoHandshakeConfirmed()) {
     SendMaxPushId();
-    send_control_stream_->SendMaxPushIdFrame(max_allowed_push_id_);
   }
 }
 

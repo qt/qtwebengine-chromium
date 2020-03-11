@@ -14,6 +14,7 @@
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_decoder_stream_receiver.h"
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_encoder_stream_sender.h"
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_header_table.h"
+#include "net/third_party/quiche/src/quic/core/qpack/qpack_instructions.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_exported_stats.h"
@@ -87,39 +88,35 @@ class QUIC_EXPORT_PRIVATE QpackEncoder
     return &decoder_stream_receiver_;
   }
 
+  // True if any dynamic table entries have been referenced from a header block.
+  bool dynamic_table_entry_referenced() const {
+    return header_table_.dynamic_table_entry_referenced();
+  }
+
  private:
   friend class test::QpackEncoderPeer;
 
-  // TODO(bnc): Consider moving this class to QpackInstructionEncoder or
-  // qpack_constants, adding factory methods, one for each instruction, and
-  // changing QpackInstructionEncoder::Encoder() to take an
-  // InstructionWithValues struct instead of separate |instruction| and |values|
-  // arguments.
-  struct InstructionWithValues {
-    // |instruction| is not owned.
-    const QpackInstruction* instruction;
-    QpackInstructionEncoder::Values values;
-  };
-  using Instructions = std::vector<InstructionWithValues>;
+  using Instructions = std::vector<QpackInstructionWithValues>;
 
   // Generate indexed header field instruction
   // and optionally update |*referred_indices|.
-  static InstructionWithValues EncodeIndexedHeaderField(
+  static QpackInstructionWithValues EncodeIndexedHeaderField(
       bool is_static,
       uint64_t index,
       QpackBlockingManager::IndexSet* referred_indices);
 
   // Generate literal header field with name reference instruction
   // and optionally update |*referred_indices|.
-  static InstructionWithValues EncodeLiteralHeaderFieldWithNameReference(
+  static QpackInstructionWithValues EncodeLiteralHeaderFieldWithNameReference(
       bool is_static,
       uint64_t index,
       QuicStringPiece value,
       QpackBlockingManager::IndexSet* referred_indices);
 
   // Generate literal header field instruction.
-  static InstructionWithValues EncodeLiteralHeaderField(QuicStringPiece name,
-                                                        QuicStringPiece value);
+  static QpackInstructionWithValues EncodeLiteralHeaderField(
+      QuicStringPiece name,
+      QuicStringPiece value);
 
   // Performs first pass of two-pass encoding: represent each header field in
   // |*header_list| as a reference to an existing entry, the name of an existing

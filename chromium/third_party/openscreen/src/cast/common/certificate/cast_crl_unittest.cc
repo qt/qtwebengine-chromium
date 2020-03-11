@@ -9,7 +9,7 @@
 #include "cast/common/certificate/proto/test_suite.pb.h"
 #include "cast/common/certificate/test_helpers.h"
 #include "gtest/gtest.h"
-#include "platform/api/logging.h"
+#include "util/logging.h"
 
 namespace cast {
 namespace certificate {
@@ -85,7 +85,7 @@ bool TestVerifyRevocation(CastCertError expected_result,
   return expected_result == result.code();
 }
 
-#define TEST_DATA_PREFIX "test/data/cast/common/certificate/"
+#define TEST_DATA_PREFIX OPENSCREEN_TEST_DATA_DIR "cast/common/certificate/"
 
 bool RunTest(const DeviceCertTest& test_case) {
   std::unique_ptr<TrustStore> crl_trust_store;

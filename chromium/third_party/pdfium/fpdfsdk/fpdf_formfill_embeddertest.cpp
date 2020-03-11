@@ -703,6 +703,26 @@ TEST_F(FPDFFormFillEmbedderTest, DocumentAActions) {
   EXPECT_STREQ(L"Did Print", alerts[3].message.c_str());
 }
 
+TEST_F(FPDFFormFillEmbedderTest, DocumentAActionsDisableJavaScript) {
+  EmbedderTestTimerHandlingDelegate delegate;
+  SetDelegate(&delegate);
+
+  EXPECT_TRUE(OpenDocumentWithoutJavaScript("document_aactions.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  EXPECT_TRUE(page);
+
+  const auto& alerts = delegate.GetAlerts();
+  EXPECT_EQ(0U, alerts.size());
+
+  FORM_DoDocumentAAction(form_handle(), FPDFDOC_AACTION_WS);
+  FORM_DoDocumentAAction(form_handle(), FPDFDOC_AACTION_DS);
+  FORM_DoDocumentAAction(form_handle(), FPDFDOC_AACTION_WP);
+  FORM_DoDocumentAAction(form_handle(), FPDFDOC_AACTION_DP);
+  UnloadPage(page);
+
+  ASSERT_EQ(0U, alerts.size());
+}
+
 TEST_F(FPDFFormFillEmbedderTest, BUG_551248) {
   // Test that timers fire once and intervals fire repeatedly.
   EmbedderTestTimerHandlingDelegate delegate;
@@ -894,6 +914,8 @@ TEST_F(FPDFFormFillEmbedderTest, MAYBE_FormText) {
     // Click on the textfield
     EXPECT_EQ(FPDF_FORMFIELD_TEXTFIELD,
               FPDFPage_HasFormFieldAtPoint(form_handle(), page, 120.0, 120.0));
+    EXPECT_EQ(
+        0, FPDFPage_FormFieldZOrderAtPoint(form_handle(), page, 120.0, 120.0));
     FORM_OnMouseMove(form_handle(), page, 0, 120.0, 120.0);
     FORM_OnLButtonDown(form_handle(), page, 0, 120.0, 120.0);
     FORM_OnLButtonUp(form_handle(), page, 0, 120.0, 120.0);
@@ -905,12 +927,19 @@ TEST_F(FPDFFormFillEmbedderTest, MAYBE_FormText) {
     ScopedFPDFBitmap bitmap2 = RenderLoadedPage(page);
     CompareBitmap(bitmap2.get(), 300, 300, md5_2);
 
+    // Focus remains despite right clicking out of the textfield
+    FORM_OnMouseMove(form_handle(), page, 0, 15.0, 15.0);
+    FORM_OnRButtonDown(form_handle(), page, 0, 15.0, 15.0);
+    FORM_OnRButtonUp(form_handle(), page, 0, 15.0, 15.0);
+    ScopedFPDFBitmap bitmap3 = RenderLoadedPage(page);
+    CompareBitmap(bitmap3.get(), 300, 300, md5_2);
+
     // Take out focus by clicking out of the textfield
     FORM_OnMouseMove(form_handle(), page, 0, 15.0, 15.0);
     FORM_OnLButtonDown(form_handle(), page, 0, 15.0, 15.0);
     FORM_OnLButtonUp(form_handle(), page, 0, 15.0, 15.0);
-    ScopedFPDFBitmap bitmap3 = RenderLoadedPage(page);
-    CompareBitmap(bitmap3.get(), 300, 300, md5_3);
+    ScopedFPDFBitmap bitmap4 = RenderLoadedPage(page);
+    CompareBitmap(bitmap4.get(), 300, 300, md5_3);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 

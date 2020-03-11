@@ -42,14 +42,17 @@ blink::SecurityStyle SecurityLevelToSecurityStyle(
     security_state::SecurityLevel security_level) {
   switch (security_level) {
     case security_state::NONE:
+      return blink::SecurityStyle::kNeutral;
     case security_state::WARNING:
+      if (security_state::ShouldShowDangerTriangleForWarningLevel())
+        return blink::SecurityStyle::kInsecure;
       return blink::SecurityStyle::kNeutral;
     case security_state::SECURE_WITH_POLICY_INSTALLED_CERT:
     case security_state::EV_SECURE:
     case security_state::SECURE:
       return blink::SecurityStyle::kSecure;
     case security_state::DANGEROUS:
-      return blink::SecurityStyle::kInsecure;
+      return blink::SecurityStyle::kInsecureBroken;
     case security_state::SECURITY_LEVEL_COUNT:
       NOTREACHED();
       return blink::SecurityStyle::kNeutral;

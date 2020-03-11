@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "net/third_party/quiche/src/quic/core/http/http_encoder.h"
 #include "net/third_party/quiche/src/quic/core/http/spdy_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
@@ -192,7 +193,6 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
     header_list_.OnHeader(":authority", "www.google.com");
     header_list_.OnHeader(":path", "/");
     header_list_.OnHeader(":method", "POST");
-    header_list_.OnHeader(":version", "HTTP/1.1");
     header_list_.OnHeader("content-length", "11");
 
     header_list_.OnHeaderBlockEnd(128, 128);
@@ -248,7 +248,6 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
   std::unique_ptr<QuicBackendResponse> quic_response_;
   std::string body_;
   QuicHeaderList header_list_;
-  HttpEncoder encoder_;
 };
 
 INSTANTIATE_TEST_SUITE_P(Tests,
@@ -262,7 +261,7 @@ TEST_P(QuicSimpleServerStreamTest, TestFraming) {
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body_.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body_.length(), &buffer);
   std::string header = std::string(buffer.get(), header_length);
   std::string data = UsesHttp3() ? header + body_ : body_;
   stream_->OnStreamFrame(
@@ -280,7 +279,7 @@ TEST_P(QuicSimpleServerStreamTest, TestFramingOnePacket) {
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body_.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body_.length(), &buffer);
   std::string header = std::string(buffer.get(), header_length);
   std::string data = UsesHttp3() ? header + body_ : body_;
   stream_->OnStreamFrame(
@@ -321,7 +320,7 @@ TEST_P(QuicSimpleServerStreamTest, TestFramingExtraData) {
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body_.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body_.length(), &buffer);
   std::string header = std::string(buffer.get(), header_length);
   std::string data = UsesHttp3() ? header + body_ : body_;
 
@@ -330,7 +329,7 @@ TEST_P(QuicSimpleServerStreamTest, TestFramingExtraData) {
   // Content length is still 11.  This will register as an error and we won't
   // accept the bytes.
   header_length =
-      encoder_.SerializeDataFrameHeader(large_body.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(large_body.length(), &buffer);
   header = std::string(buffer.get(), header_length);
   std::string data2 = UsesHttp3() ? header + large_body : large_body;
   stream_->OnStreamFrame(
@@ -345,17 +344,15 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithIllegalResponseStatus) {
   spdy::SpdyHeaderBlock* request_headers = stream_->mutable_headers();
   (*request_headers)[":path"] = "/bar";
   (*request_headers)[":authority"] = "www.google.com";
-  (*request_headers)[":version"] = "HTTP/1.1";
   (*request_headers)[":method"] = "GET";
 
-  response_headers_[":version"] = "HTTP/1.1";
   // HTTP/2 only supports integer responsecode, so "200 OK" is illegal.
   response_headers_[":status"] = "200 OK";
   response_headers_["content-length"] = "5";
   std::string body = "Yummm";
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
 
   memory_cache_backend_.AddResponse("www.google.com", "/bar",
                                     std::move(response_headers_), body);
@@ -379,10 +376,8 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithIllegalResponseStatus2) {
   spdy::SpdyHeaderBlock* request_headers = stream_->mutable_headers();
   (*request_headers)[":path"] = "/bar";
   (*request_headers)[":authority"] = "www.google.com";
-  (*request_headers)[":version"] = "HTTP/1.1";
   (*request_headers)[":method"] = "GET";
 
-  response_headers_[":version"] = "HTTP/1.1";
   // HTTP/2 only supports 3-digit-integer, so "+200" is illegal.
   response_headers_[":status"] = "+200";
   response_headers_["content-length"] = "5";
@@ -390,7 +385,7 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithIllegalResponseStatus2) {
 
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
 
   memory_cache_backend_.AddResponse("www.google.com", "/bar",
                                     std::move(response_headers_), body);
@@ -422,10 +417,8 @@ TEST_P(QuicSimpleServerStreamTest, SendPushResponseWith404Response) {
   spdy::SpdyHeaderBlock* request_headers = promised_stream->mutable_headers();
   (*request_headers)[":path"] = "/bar";
   (*request_headers)[":authority"] = "www.google.com";
-  (*request_headers)[":version"] = "HTTP/1.1";
   (*request_headers)[":method"] = "GET";
 
-  response_headers_[":version"] = "HTTP/1.1";
   response_headers_[":status"] = "404";
   response_headers_["content-length"] = "8";
   std::string body = "NotFound";
@@ -445,17 +438,15 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithValidHeaders) {
   spdy::SpdyHeaderBlock* request_headers = stream_->mutable_headers();
   (*request_headers)[":path"] = "/bar";
   (*request_headers)[":authority"] = "www.google.com";
-  (*request_headers)[":version"] = "HTTP/1.1";
   (*request_headers)[":method"] = "GET";
 
-  response_headers_[":version"] = "HTTP/1.1";
   response_headers_[":status"] = "200";
   response_headers_["content-length"] = "5";
   std::string body = "Yummm";
 
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
 
   memory_cache_backend_.AddResponse("www.google.com", "/bar",
                                     std::move(response_headers_), body);
@@ -483,7 +474,7 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithPushResources) {
   std::string body = "Yummm";
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(body.length(), &buffer);
   QuicBackendResponse::ServerPushInfo push_info(
       QuicUrl(host, "/bar"), spdy::SpdyHeaderBlock(),
       QuicStream::kDefaultPriority, "Push body");
@@ -495,7 +486,6 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithPushResources) {
   spdy::SpdyHeaderBlock* request_headers = stream_->mutable_headers();
   (*request_headers)[":path"] = request_path;
   (*request_headers)[":authority"] = host;
-  (*request_headers)[":version"] = "HTTP/1.1";
   (*request_headers)[":method"] = "GET";
 
   stream_->set_fin_received(true);
@@ -546,16 +536,14 @@ TEST_P(QuicSimpleServerStreamTest, PushResponseOnServerInitiatedStream) {
   spdy::SpdyHeaderBlock headers;
   headers[":path"] = kPath;
   headers[":authority"] = kHost;
-  headers[":version"] = "HTTP/1.1";
   headers[":method"] = "GET";
 
-  response_headers_[":version"] = "HTTP/1.1";
   response_headers_[":status"] = "200";
   response_headers_["content-length"] = "5";
   const std::string kBody = "Hello";
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
-      encoder_.SerializeDataFrameHeader(kBody.length(), &buffer);
+      HttpEncoder::SerializeDataFrameHeader(kBody.length(), &buffer);
   memory_cache_backend_.AddResponse(kHost, kPath, std::move(response_headers_),
                                     kBody);
 
@@ -645,6 +633,16 @@ TEST_P(QuicSimpleServerStreamTest,
   EXPECT_FALSE(stream_->reading_stopped());
 
   EXPECT_CALL(session_, SendRstStream(_, QUIC_STREAM_NO_ERROR, _)).Times(0);
+  if (VersionUsesHttp3(connection_->transport_version())) {
+    // Unidirectional stream type and then a Stream Cancellation instruction is
+    // sent on the QPACK decoder stream.  Ignore these writes without any
+    // assumption on their number or size.
+    auto* qpack_decoder_stream =
+        QuicSpdySessionPeer::GetQpackDecoderSendStream(&session_);
+    EXPECT_CALL(session_, WritevData(qpack_decoder_stream,
+                                     qpack_decoder_stream->id(), _, _, _))
+        .Times(AnyNumber());
+  }
   EXPECT_CALL(session_, SendRstStream(_, QUIC_RST_ACKNOWLEDGEMENT, _)).Times(1);
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream_->id(),
                                QUIC_STREAM_CANCELLED, 1234);

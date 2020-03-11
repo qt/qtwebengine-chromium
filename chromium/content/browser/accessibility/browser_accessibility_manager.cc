@@ -27,7 +27,7 @@ namespace content {
 
 namespace {
 // A function to call when focus changes, for testing only.
-base::LazyInstance<base::Closure>::DestructorAtExit
+base::LazyInstance<base::RepeatingClosure>::DestructorAtExit
     g_focus_change_callback_for_testing = LAZY_INSTANCE_INITIALIZER;
 
 // If 2 or more tree updates can all be merged into others,
@@ -219,6 +219,9 @@ void BrowserAccessibilityManager::Initialize(
 bool BrowserAccessibilityManager::never_suppress_or_delay_events_for_testing_ =
     false;
 
+// A flag for use in tests to indicate that extra mac nodes are allowed.
+bool BrowserAccessibilityManager::allow_extra_mac_nodes_for_testing_ = false;
+
 // static
 base::Optional<int32_t> BrowserAccessibilityManager::last_focused_node_id_ = {};
 
@@ -342,20 +345,12 @@ void BrowserAccessibilityManager::OnWindowBlurred() {
     SetLastFocusedNode(nullptr);
 }
 
-void BrowserAccessibilityManager::UserIsNavigatingAway() {
-  user_is_navigating_away_ = true;
-}
-
 void BrowserAccessibilityManager::UserIsReloading() {
   user_is_navigating_away_ = true;
 }
 
-void BrowserAccessibilityManager::NavigationSucceeded() {
-  user_is_navigating_away_ = false;
-}
-
-void BrowserAccessibilityManager::NavigationFailed() {
-  user_is_navigating_away_ = false;
+void BrowserAccessibilityManager::DidStartLoading() {
+  user_is_navigating_away_ = true;
 }
 
 void BrowserAccessibilityManager::DidStopLoading() {
@@ -668,8 +663,8 @@ void BrowserAccessibilityManager::SetFocusLocallyForTesting(
 
 // static
 void BrowserAccessibilityManager::SetFocusChangeCallbackForTesting(
-    const base::Closure& callback) {
-  g_focus_change_callback_for_testing.Get() = callback;
+    base::RepeatingClosure callback) {
+  g_focus_change_callback_for_testing.Get() = std::move(callback);
 }
 
 void BrowserAccessibilityManager::SetGeneratedEventCallbackForTesting(
@@ -680,6 +675,16 @@ void BrowserAccessibilityManager::SetGeneratedEventCallbackForTesting(
 // static
 void BrowserAccessibilityManager::NeverSuppressOrDelayEventsForTesting() {
   never_suppress_or_delay_events_for_testing_ = true;
+}
+
+// static
+void BrowserAccessibilityManager::AllowExtraMacNodesForTesting() {
+  allow_extra_mac_nodes_for_testing_ = true;
+}
+
+// static
+bool BrowserAccessibilityManager::GetExtraMacNodesAllowed() {
+  return allow_extra_mac_nodes_for_testing_;
 }
 
 void BrowserAccessibilityManager::Decrement(const BrowserAccessibility& node) {
@@ -752,7 +757,8 @@ void BrowserAccessibilityManager::ScrollToMakeVisible(
     const BrowserAccessibility& node,
     gfx::Rect subfocus,
     ax::mojom::ScrollAlignment horizontal_scroll_alignment,
-    ax::mojom::ScrollAlignment vertical_scroll_alignment) {
+    ax::mojom::ScrollAlignment vertical_scroll_alignment,
+    ax::mojom::ScrollBehavior scroll_behavior) {
   if (!delegate_)
     return;
 
@@ -765,6 +771,7 @@ void BrowserAccessibilityManager::ScrollToMakeVisible(
   action_data.target_rect = subfocus;
   action_data.horizontal_scroll_alignment = horizontal_scroll_alignment;
   action_data.vertical_scroll_alignment = vertical_scroll_alignment;
+  action_data.scroll_behavior = scroll_behavior;
   delegate_->AccessibilityPerformAction(action_data);
 }
 
@@ -1222,8 +1229,6 @@ void BrowserAccessibilityManager::OnNodeWillBeDeleted(ui::AXTree* tree,
   if (BrowserAccessibility* wrapper = GetFromAXNode(node)) {
     if (wrapper == GetLastFocusedNode())
       SetLastFocusedNode(nullptr);
-    id_wrapper_map_.erase(node->id());
-    wrapper->Destroy();
   }
 }
 
@@ -1236,6 +1241,15 @@ void BrowserAccessibilityManager::OnNodeCreated(ui::AXTree* tree,
   BrowserAccessibility* wrapper = factory_->Create();
   id_wrapper_map_[node->id()] = wrapper;
   wrapper->Init(this, node);
+}
+
+void BrowserAccessibilityManager::OnNodeDeleted(ui::AXTree* tree,
+                                                int32_t node_id) {
+  DCHECK_NE(node_id, ui::AXNode::kInvalidAXID);
+  if (BrowserAccessibility* wrapper = GetFromID(node_id)) {
+    id_wrapper_map_.erase(node_id);
+    wrapper->Destroy();
+  }
 }
 
 void BrowserAccessibilityManager::OnNodeReparented(ui::AXTree* tree,

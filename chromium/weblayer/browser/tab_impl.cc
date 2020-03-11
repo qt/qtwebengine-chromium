@@ -9,14 +9,13 @@
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/browser_controls_state.h"
 #include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "ui/base/window_open_disposition.h"
 #include "weblayer/browser/file_select_helper.h"
-#include "weblayer/browser/i18n_util.h"
 #include "weblayer/browser/isolated_world_ids.h"
 #include "weblayer/browser/navigation_controller_impl.h"
 #include "weblayer/browser/profile_impl.h"
@@ -42,6 +41,14 @@
 namespace weblayer {
 
 namespace {
+
+#if defined(OS_ANDROID)
+// The time that must elapse after a navigation before the browser controls can
+// be hidden. This value matches what chrome has in
+// TabStateBrowserControlsVisibilityDelegate.
+constexpr base::TimeDelta kBrowserControlsAllowHideDelay =
+    base::TimeDelta::FromSeconds(3);
+#endif
 
 NewTabType NewTabTypeFromWindowDisposition(WindowOpenDisposition disposition) {
   // WindowOpenDisposition has a *ton* of types, but the following are really
@@ -110,10 +117,10 @@ TabImpl::TabImpl(ProfileImpl* profile,
     web_contents_ = content::WebContents::Create(create_params);
   }
 
-  // TODO(estade): set more preferences, and set them dynamically rather than
-  // just at startup.
-  web_contents_->GetMutableRendererPrefs()->accept_languages =
-      i18n::GetAcceptLangs();
+  UpdateRendererPrefs(false);
+  locale_change_subscription_ =
+      i18n::RegisterLocaleChangeCallback(base::BindRepeating(
+          &TabImpl::UpdateRendererPrefs, base::Unretained(this), true));
 
   std::unique_ptr<UserData> user_data = std::make_unique<UserData>();
   user_data->controller = this;
@@ -265,11 +272,6 @@ content::WebContents* TabImpl::OpenURLFromTab(
   return source;
 }
 
-void TabImpl::LoadProgressChanged(content::WebContents* source,
-                                                double progress) {
-  navigation_controller_->NotifyLoadProgressChanged(progress);
-}
-
 void TabImpl::DidNavigateMainFramePostCommit(
     content::WebContents* web_contents) {
   for (auto& observer : observers_)
@@ -297,8 +299,6 @@ void TabImpl::RunFileChooser(
 }
 
 int TabImpl::GetTopControlsHeight() {
-  if (is_fullscreen_)
-    return 0;
 #if defined(OS_ANDROID)
   return top_controls_container_view_
              ? top_controls_container_view_->GetTopControlsHeight()
@@ -333,11 +333,21 @@ void TabImpl::EnterFullscreenModeForTab(
                                                 weak_ptr_factory_.GetWeakPtr());
   base::AutoReset<bool> reset(&processing_enter_fullscreen_, true);
   fullscreen_delegate_->EnterFullscreen(std::move(exit_fullscreen_closure));
+#if defined(OS_ANDROID)
+  // Make sure browser controls cannot show when the tab is fullscreen.
+  UpdateBrowserControlsState(content::BROWSER_CONTROLS_STATE_HIDDEN,
+                             content::BROWSER_CONTROLS_STATE_BOTH, false);
+#endif
 }
 
 void TabImpl::ExitFullscreenModeForTab(content::WebContents* web_contents) {
   is_fullscreen_ = false;
   fullscreen_delegate_->ExitFullscreen();
+#if defined(OS_ANDROID)
+  // Attempt to show browser controls when exiting fullscreen.
+  UpdateBrowserControlsState(content::BROWSER_CONTROLS_STATE_BOTH,
+                             content::BROWSER_CONTROLS_STATE_SHOWN, true);
+#endif
 }
 
 bool TabImpl::IsFullscreenForTabOrPending(
@@ -374,16 +384,18 @@ void TabImpl::CloseContents(content::WebContents* source) {
 void TabImpl::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
 #if defined(OS_ANDROID)
-  web_contents_->GetMainFrame()->UpdateBrowserControlsState(
-      content::BROWSER_CONTROLS_STATE_BOTH,
-      content::BROWSER_CONTROLS_STATE_SHOWN, false);
-
-  if (web_contents_->ShowingInterstitialPage()) {
-    web_contents_->GetInterstitialPage()
-        ->GetMainFrame()
-        ->UpdateBrowserControlsState(content::BROWSER_CONTROLS_STATE_SHOWN,
-                                     content::BROWSER_CONTROLS_STATE_SHOWN,
-                                     false);
+  if (navigation_handle->IsInMainFrame() &&
+      !navigation_handle->IsSameDocument()) {
+    // Force the browser controls to show initially, then allow hiding after a
+    // short delay.
+    UpdateBrowserControlsState(content::BROWSER_CONTROLS_STATE_SHOWN,
+                               content::BROWSER_CONTROLS_STATE_BOTH, true);
+    update_browser_controls_state_timer_.Start(
+        FROM_HERE, kBrowserControlsAllowHideDelay,
+        base::BindOnce(&TabImpl::UpdateBrowserControlsState,
+                       base::Unretained(this),
+                       content::BROWSER_CONTROLS_STATE_BOTH,
+                       content::BROWSER_CONTROLS_STATE_BOTH, true));
   }
 #endif
 }
@@ -401,6 +413,31 @@ void TabImpl::OnExitFullscreen() {
       << "exiting fullscreen while entering fullscreen is not supported";
   web_contents_->ExitFullscreen(/* will_cause_resize */ false);
 }
+
+void TabImpl::UpdateRendererPrefs(bool should_sync_prefs) {
+  web_contents_->GetMutableRendererPrefs()->accept_languages =
+      i18n::GetAcceptLangs();
+  if (should_sync_prefs)
+    web_contents_->SyncRendererPrefs();
+}
+
+#if defined(OS_ANDROID)
+void TabImpl::UpdateBrowserControlsState(
+    content::BrowserControlsState constraints,
+    content::BrowserControlsState current,
+    bool animate) {
+  // Cancel the timer since the state was set explicitly.
+  update_browser_controls_state_timer_.Stop();
+  web_contents_->GetMainFrame()->UpdateBrowserControlsState(constraints,
+                                                            current, animate);
+
+  if (web_contents_->ShowingInterstitialPage()) {
+    web_contents_->GetInterstitialPage()
+        ->GetMainFrame()
+        ->UpdateBrowserControlsState(constraints, current, animate);
+  }
+}
+#endif
 
 std::unique_ptr<Tab> Tab::Create(Profile* profile) {
   return std::make_unique<TabImpl>(static_cast<ProfileImpl*>(profile));

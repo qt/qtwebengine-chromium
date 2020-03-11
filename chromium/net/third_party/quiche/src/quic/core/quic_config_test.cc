@@ -21,6 +21,9 @@ namespace quic {
 namespace test {
 namespace {
 
+const uint32_t kMaxPacketSizeForTest = 1234;
+const uint32_t kMaxDatagramFrameSizeForTest = 1333;
+
 class QuicConfigTest : public QuicTestWithParam<QuicTransportVersion> {
  protected:
   QuicConfig config_;
@@ -47,6 +50,8 @@ TEST_P(QuicConfigTest, SetDefaults) {
   EXPECT_FALSE(
       config_.HasReceivedInitialMaxStreamDataBytesOutgoingBidirectional());
   EXPECT_FALSE(config_.HasReceivedInitialMaxStreamDataBytesUnidirectional());
+  EXPECT_EQ(kMaxIncomingPacketSize, config_.GetMaxPacketSizeToSend());
+  EXPECT_FALSE(config_.HasReceivedMaxPacketSize());
 }
 
 TEST_P(QuicConfigTest, AutoSetIetfFlowControl) {
@@ -91,15 +96,15 @@ TEST_P(QuicConfigTest, ToHandshakeMessage) {
 
   uint32_t value;
   QuicErrorCode error = msg.GetUint32(kICSL, &value);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_EQ(5u, value);
 
   error = msg.GetUint32(kSFCW, &value);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_EQ(kInitialStreamFlowControlWindowForTest, value);
 
   error = msg.GetUint32(kCFCW, &value);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_EQ(kInitialSessionFlowControlWindowForTest, value);
 }
 
@@ -137,7 +142,7 @@ TEST_P(QuicConfigTest, ProcessClientHello) {
   EXPECT_FALSE(
       config_.SetInitialReceivedConnectionOptions(initial_received_options))
       << "You cannot set initial options after the hello.";
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_TRUE(config_.negotiated());
   EXPECT_EQ(QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs),
             config_.IdleNetworkTimeout());
@@ -191,7 +196,7 @@ TEST_P(QuicConfigTest, ProcessServerHello) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, SERVER, &error_details);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_TRUE(config_.negotiated());
   EXPECT_EQ(QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs / 2),
             config_.IdleNetworkTimeout());
@@ -231,7 +236,7 @@ TEST_P(QuicConfigTest, MissingOptionalValuesInCHLO) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, CLIENT, &error_details);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_TRUE(config_.negotiated());
 }
 
@@ -246,7 +251,7 @@ TEST_P(QuicConfigTest, MissingOptionalValuesInSHLO) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, SERVER, &error_details);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_TRUE(config_.negotiated());
 }
 
@@ -256,7 +261,7 @@ TEST_P(QuicConfigTest, MissingValueInCHLO) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, CLIENT, &error_details);
-  EXPECT_EQ(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND, error);
+  EXPECT_THAT(error, IsError(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND));
 }
 
 TEST_P(QuicConfigTest, MissingValueInSHLO) {
@@ -265,7 +270,7 @@ TEST_P(QuicConfigTest, MissingValueInSHLO) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, SERVER, &error_details);
-  EXPECT_EQ(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND, error);
+  EXPECT_THAT(error, IsError(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND));
 }
 
 TEST_P(QuicConfigTest, OutOfBoundSHLO) {
@@ -279,7 +284,7 @@ TEST_P(QuicConfigTest, OutOfBoundSHLO) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, SERVER, &error_details);
-  EXPECT_EQ(QUIC_INVALID_NEGOTIATED_VALUE, error);
+  EXPECT_THAT(error, IsError(QUIC_INVALID_NEGOTIATED_VALUE));
 }
 
 TEST_P(QuicConfigTest, InvalidFlowControlWindow) {
@@ -309,7 +314,7 @@ TEST_P(QuicConfigTest, HasClientSentConnectionOption) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, CLIENT, &error_details);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_TRUE(config_.negotiated());
 
   EXPECT_TRUE(config_.HasReceivedConnectionOptions());
@@ -330,7 +335,7 @@ TEST_P(QuicConfigTest, DontSendClientConnectionOptions) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, CLIENT, &error_details);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_TRUE(config_.negotiated());
 
   EXPECT_FALSE(config_.HasReceivedConnectionOptions());
@@ -357,7 +362,7 @@ TEST_P(QuicConfigTest, HasClientRequestedIndependentOption) {
   std::string error_details;
   const QuicErrorCode error =
       config_.ProcessPeerHello(msg, CLIENT, &error_details);
-  EXPECT_EQ(QUIC_NO_ERROR, error);
+  EXPECT_THAT(error, IsQuicNoError());
   EXPECT_TRUE(config_.negotiated());
 
   EXPECT_TRUE(config_.HasReceivedConnectionOptions());
@@ -377,8 +382,9 @@ TEST_P(QuicConfigTest, IncomingLargeIdleTimeoutTransportParameter) {
   params.idle_timeout_milliseconds.set_value(120000);
 
   std::string error_details = "foobar";
-  EXPECT_EQ(QUIC_NO_ERROR,
-            config_.ProcessTransportParameters(params, SERVER, &error_details));
+  EXPECT_THAT(
+      config_.ProcessTransportParameters(params, SERVER, &error_details),
+      IsQuicNoError());
   EXPECT_EQ("", error_details);
   EXPECT_EQ(quic::QuicTime::Delta::FromSeconds(60),
             config_.IdleNetworkTimeout());
@@ -391,6 +397,8 @@ TEST_P(QuicConfigTest, FillTransportParams) {
       3 * kMinimumFlowControlSendWindow);
   config_.SetInitialMaxStreamDataBytesUnidirectionalToSend(
       4 * kMinimumFlowControlSendWindow);
+  config_.SetMaxPacketSizeToSend(kMaxPacketSizeForTest);
+  config_.SetMaxDatagramFrameSizeToSend(kMaxDatagramFrameSizeForTest);
 
   TransportParameters params;
   config_.FillTransportParameters(&params);
@@ -404,6 +412,10 @@ TEST_P(QuicConfigTest, FillTransportParams) {
 
   EXPECT_EQ(static_cast<uint64_t>(kMaximumIdleTimeoutSecs * 1000),
             params.idle_timeout_milliseconds.value());
+
+  EXPECT_EQ(kMaxPacketSizeForTest, params.max_packet_size.value());
+  EXPECT_EQ(kMaxDatagramFrameSizeForTest,
+            params.max_datagram_frame_size.value());
 }
 
 TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
@@ -415,10 +427,13 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
       3 * kMinimumFlowControlSendWindow);
   params.initial_max_stream_data_uni.set_value(4 *
                                                kMinimumFlowControlSendWindow);
+  params.max_packet_size.set_value(kMaxPacketSizeForTest);
+  params.max_datagram_frame_size.set_value(kMaxDatagramFrameSizeForTest);
 
   std::string error_details;
-  EXPECT_EQ(QUIC_NO_ERROR,
-            config_.ProcessTransportParameters(params, SERVER, &error_details));
+  EXPECT_THAT(
+      config_.ProcessTransportParameters(params, SERVER, &error_details),
+      IsQuicNoError());
 
   ASSERT_TRUE(
       config_.HasReceivedInitialMaxStreamDataBytesIncomingBidirectional());
@@ -433,6 +448,25 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
   ASSERT_TRUE(config_.HasReceivedInitialMaxStreamDataBytesUnidirectional());
   EXPECT_EQ(4 * kMinimumFlowControlSendWindow,
             config_.ReceivedInitialMaxStreamDataBytesUnidirectional());
+
+  ASSERT_TRUE(config_.HasReceivedMaxPacketSize());
+  EXPECT_EQ(kMaxPacketSizeForTest, config_.ReceivedMaxPacketSize());
+
+  ASSERT_TRUE(config_.HasReceivedMaxDatagramFrameSize());
+  EXPECT_EQ(kMaxDatagramFrameSizeForTest,
+            config_.ReceivedMaxDatagramFrameSize());
+
+  EXPECT_FALSE(config_.DisableConnectionMigration());
+}
+
+TEST_P(QuicConfigTest, DisableMigrationTransportParameter) {
+  TransportParameters params;
+  params.disable_migration = true;
+  std::string error_details;
+  EXPECT_THAT(
+      config_.ProcessTransportParameters(params, SERVER, &error_details),
+      IsQuicNoError());
+  EXPECT_TRUE(config_.DisableConnectionMigration());
 }
 
 }  // namespace

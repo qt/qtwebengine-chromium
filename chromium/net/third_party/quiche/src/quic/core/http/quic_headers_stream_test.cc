@@ -25,6 +25,7 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_endian.h"
 #include "net/third_party/quiche/src/spdy/core/http2_frame_decoder_adapter.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_alt_svc_wire_format.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
@@ -36,7 +37,6 @@ using spdy::SETTINGS_HEADER_TABLE_SIZE;
 using spdy::SETTINGS_INITIAL_WINDOW_SIZE;
 using spdy::SETTINGS_MAX_CONCURRENT_STREAMS;
 using spdy::SETTINGS_MAX_FRAME_SIZE;
-using spdy::SETTINGS_MAX_HEADER_LIST_SIZE;
 using spdy::Spdy3PriorityToHttp2Weight;
 using spdy::SpdyAltSvcWireFormat;
 using spdy::SpdyDataIR;
@@ -200,7 +200,6 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
     QuicSpdySessionPeer::SetMaxInboundHeaderListSize(&session_, 256 * 1024);
     session_.Initialize();
     headers_stream_ = QuicSpdySessionPeer::GetHeadersStream(&session_);
-    headers_[":version"] = "HTTP/1.1";
     headers_[":status"] = "200 Ok";
     headers_["content-length"] = "11";
     framer_ = std::unique_ptr<SpdyFramer>(
@@ -228,7 +227,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
 
   QuicConsumedData SaveIov(size_t write_length) {
     char* buf = new char[write_length];
-    QuicDataWriter writer(write_length, buf, NETWORK_BYTE_ORDER);
+    QuicDataWriter writer(write_length, buf, quiche::NETWORK_BYTE_ORDER);
     headers_stream_->WriteStreamData(headers_stream_->stream_bytes_written(),
                                      write_length, &writer);
     saved_data_.append(buf, write_length);
@@ -306,7 +305,7 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
     } else {
       EXPECT_CALL(visitor_,
                   OnHeaders(stream_id, !kHasPriority,
-                            /*priority=*/0,
+                            /*weight=*/0,
                             /*parent_stream_id=*/0,
                             /*exclusive=*/false, fin, kFrameComplete));
     }
@@ -521,13 +520,7 @@ TEST_P(QuicHeadersStreamTest, ProcessPriorityFrame) {
       SpdyPriorityIR priority_frame(stream_id, parent_stream_id, weight, true);
       SpdySerializedFrame frame(framer_->SerializeFrame(priority_frame));
       parent_stream_id = stream_id;
-      if (transport_version() <= QUIC_VERSION_39) {
-        EXPECT_CALL(*connection_,
-                    CloseConnection(QUIC_INVALID_HEADERS_STREAM_DATA,
-                                    "SPDY PRIORITY frame received.", _))
-            .WillRepeatedly(InvokeWithoutArgs(
-                this, &QuicHeadersStreamTest::TearDownLocalConnectionState));
-      } else if (perspective() == Perspective::IS_CLIENT) {
+      if (perspective() == Perspective::IS_CLIENT) {
         EXPECT_CALL(*connection_,
                     CloseConnection(QUIC_INVALID_HEADERS_STREAM_DATA,
                                     "Server must not send PRIORITY frames.", _))

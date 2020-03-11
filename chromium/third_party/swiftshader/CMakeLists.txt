@@ -105,6 +105,7 @@ option(DCHECK_ALWAYS_ON "Check validation macros even in release builds" 0)
 option(REACTOR_EMIT_DEBUG_INFO "Emit debug info for JIT functions" 0)
 option(REACTOR_EMIT_PRINT_LOCATION "Emit printing of location info for JIT functions" 0)
 option(REACTOR_VERIFY_LLVM_IR "Check reactor-generated LLVM IR is valid even in release builds" 0)
+option(LESS_DEBUG_INFO "Generate less debug info to reduce file size" 0)
 
 set(BUILD_MARL ${BUILD_VULKAN})
 
@@ -323,7 +324,6 @@ if(MSVC)
         "/wd4018" # 'expression' : signed/unsigned mismatch
         "/wd4065" # switch statement contains 'default' but no 'case' labels
         "/wd4141" # 'modifier' : used more than once
-        "/wd4146" # unary minus operator applied to unsigned type, result still unsigned
         "/wd4244" # 'conversion' conversion from 'type1' to 'type2', possible loss of data
         "/wd4267" # 'var' : conversion from 'size_t' to 'type', possible loss of data
         "/wd4291" # 'void X new(size_t,unsigned int,unsigned int)': no matching operator delete found; memory will not be freed if initialization throws an exception
@@ -401,9 +401,16 @@ else()
         set_cpp_flag("-fPIC")
     endif()
 
-    # Use -g3 to have even more debug info
-    set_cpp_flag("-g -g3" DEBUG)
-    set_cpp_flag("-g -g3" RELWITHDEBINFO)
+    if(LESS_DEBUG_INFO)
+        # Use -g1 to be able to get stack traces
+        set_cpp_flag("-g -g1" DEBUG)
+        set_cpp_flag("-g -g1" RELWITHDEBINFO)
+    else()
+        # Use -g3 to have even more debug info
+        set_cpp_flag("-g -g3" DEBUG)
+        set_cpp_flag("-g -g3" RELWITHDEBINFO)
+    endif()
+
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # Treated as an unused argument with clang
         set_cpp_flag("-s" RELEASE)
@@ -1531,16 +1538,18 @@ if(${REACTOR_BACKEND} STREQUAL "Subzero")
     )
 
     set(SUBZERO_REACTOR_LIST
-        ${SOURCE_DIR}/Reactor/Reactor.cpp
-        ${SOURCE_DIR}/Reactor/Reactor.hpp
-        ${SOURCE_DIR}/Reactor/SubzeroReactor.cpp
-        ${SOURCE_DIR}/Reactor/Optimizer.cpp
-        ${SOURCE_DIR}/Reactor/Nucleus.hpp
-        ${SOURCE_DIR}/Reactor/Routine.hpp
         ${SOURCE_DIR}/Reactor/Debug.cpp
         ${SOURCE_DIR}/Reactor/Debug.hpp
+        ${SOURCE_DIR}/Reactor/EmulatedReactor.cpp
         ${SOURCE_DIR}/Reactor/ExecutableMemory.cpp
         ${SOURCE_DIR}/Reactor/ExecutableMemory.hpp
+        ${SOURCE_DIR}/Reactor/Nucleus.hpp
+        ${SOURCE_DIR}/Reactor/Optimizer.cpp
+        ${SOURCE_DIR}/Reactor/Print.hpp
+        ${SOURCE_DIR}/Reactor/Reactor.cpp
+        ${SOURCE_DIR}/Reactor/Reactor.hpp
+        ${SOURCE_DIR}/Reactor/Routine.hpp
+        ${SOURCE_DIR}/Reactor/SubzeroReactor.cpp
     )
 
     set(SUBZERO_INCLUDE_DIR
@@ -1559,6 +1568,7 @@ if(${REACTOR_BACKEND} STREQUAL "Subzero")
 
     if(WIN32)
         list(APPEND SUBZERO_COMPILE_OPTIONS
+            "/wd4146" # unary minus operator applied to unsigned type, result still unsigned
             "/wd4334" # ''operator' : result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)
             "/wd4996" # The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: new_name.
         )
@@ -1662,20 +1672,22 @@ if(REACTOR_EMIT_DEBUG_INFO)
 endif(REACTOR_EMIT_DEBUG_INFO)
 
 set(REACTOR_LLVM_LIST
-    ${SOURCE_DIR}/Reactor/Reactor.cpp
-    ${SOURCE_DIR}/Reactor/Reactor.hpp
+    ${SOURCE_DIR}/Reactor/CPUID.cpp
+    ${SOURCE_DIR}/Reactor/CPUID.hpp
+    ${SOURCE_DIR}/Reactor/Debug.cpp
+    ${SOURCE_DIR}/Reactor/Debug.hpp
+    ${SOURCE_DIR}/Reactor/EmulatedReactor.cpp
+    ${SOURCE_DIR}/Reactor/ExecutableMemory.cpp
+    ${SOURCE_DIR}/Reactor/ExecutableMemory.hpp
     ${SOURCE_DIR}/Reactor/LLVMReactor.cpp
     ${SOURCE_DIR}/Reactor/LLVMReactor.hpp
     ${SOURCE_DIR}/Reactor/LLVMReactorDebugInfo.cpp
     ${SOURCE_DIR}/Reactor/LLVMReactorDebugInfo.hpp
     ${SOURCE_DIR}/Reactor/Nucleus.hpp
+    ${SOURCE_DIR}/Reactor/Print.hpp
+    ${SOURCE_DIR}/Reactor/Reactor.cpp
+    ${SOURCE_DIR}/Reactor/Reactor.hpp
     ${SOURCE_DIR}/Reactor/Routine.hpp
-    ${SOURCE_DIR}/Reactor/CPUID.cpp
-    ${SOURCE_DIR}/Reactor/CPUID.hpp
-    ${SOURCE_DIR}/Reactor/Debug.cpp
-    ${SOURCE_DIR}/Reactor/Debug.hpp
-    ${SOURCE_DIR}/Reactor/ExecutableMemory.cpp
-    ${SOURCE_DIR}/Reactor/ExecutableMemory.hpp
 )
 
 file(GLOB_RECURSE EGL_LIST
@@ -1838,8 +1850,8 @@ elseif(APPLE)
     )
 
     list(APPEND VULKAN_LIST
-        ${SOURCE_DIR}/WSI/MacOSSurfaceMVK.mm
-        ${SOURCE_DIR}/WSI/MacOSSurfaceMVK.h
+        ${SOURCE_DIR}/WSI/MetalSurface.mm
+        ${SOURCE_DIR}/WSI/MetalSurface.h
     )
 elseif(ANDROID)
     list(APPEND SWIFTSHADER_LIST

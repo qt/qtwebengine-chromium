@@ -46,7 +46,7 @@ namespace dawn_native {
         DeviceBase(AdapterBase* adapter, const DeviceDescriptor* descriptor);
         virtual ~DeviceBase();
 
-        void HandleError(dawn::ErrorType type, const char* message);
+        void HandleError(wgpu::ErrorType type, const char* message);
 
         bool ConsumedError(MaybeError maybeError) {
             if (DAWN_UNLIKELY(maybeError.IsError())) {
@@ -74,18 +74,18 @@ namespace dawn_native {
         ErrorScopeTracker* GetErrorScopeTracker() const;
         FenceSignalTracker* GetFenceSignalTracker() const;
 
-        // Returns the Format corresponding to the dawn::TextureFormat or an error if the format
-        // isn't a valid dawn::TextureFormat or isn't supported by this device.
+        // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
+        // isn't a valid wgpu::TextureFormat or isn't supported by this device.
         // The pointer returned has the same lifetime as the device.
-        ResultOrError<const Format*> GetInternalFormat(dawn::TextureFormat format) const;
+        ResultOrError<const Format*> GetInternalFormat(wgpu::TextureFormat format) const;
 
-        // Returns the Format corresponding to the dawn::TextureFormat and assumes the format is
+        // Returns the Format corresponding to the wgpu::TextureFormat and assumes the format is
         // valid and supported.
         // The reference returned has the same lifetime as the device.
-        const Format& GetValidInternalFormat(dawn::TextureFormat format) const;
+        const Format& GetValidInternalFormat(wgpu::TextureFormat format) const;
 
         virtual CommandBufferBase* CreateCommandBuffer(
-            CommandEncoderBase* encoder,
+            CommandEncoder* encoder,
             const CommandBufferDescriptor* descriptor) = 0;
 
         virtual Serial GetCompletedCommandSerial() const = 0;
@@ -141,15 +141,15 @@ namespace dawn_native {
         BindGroupBase* CreateBindGroup(const BindGroupDescriptor* descriptor);
         BindGroupLayoutBase* CreateBindGroupLayout(const BindGroupLayoutDescriptor* descriptor);
         BufferBase* CreateBuffer(const BufferDescriptor* descriptor);
-        DawnCreateBufferMappedResult CreateBufferMapped(const BufferDescriptor* descriptor);
+        WGPUCreateBufferMappedResult CreateBufferMapped(const BufferDescriptor* descriptor);
         void CreateBufferMappedAsync(const BufferDescriptor* descriptor,
-                                     dawn::BufferCreateMappedCallback callback,
+                                     wgpu::BufferCreateMappedCallback callback,
                                      void* userdata);
-        CommandEncoderBase* CreateCommandEncoder(const CommandEncoderDescriptor* descriptor);
+        CommandEncoder* CreateCommandEncoder(const CommandEncoderDescriptor* descriptor);
         ComputePipelineBase* CreateComputePipeline(const ComputePipelineDescriptor* descriptor);
         PipelineLayoutBase* CreatePipelineLayout(const PipelineLayoutDescriptor* descriptor);
         QueueBase* CreateQueue();
-        RenderBundleEncoderBase* CreateRenderBundleEncoder(
+        RenderBundleEncoder* CreateRenderBundleEncoder(
             const RenderBundleEncoderDescriptor* descriptor);
         RenderPipelineBase* CreateRenderPipeline(const RenderPipelineDescriptor* descriptor);
         SamplerBase* CreateSampler(const SamplerDescriptor* descriptor);
@@ -159,13 +159,13 @@ namespace dawn_native {
         TextureViewBase* CreateTextureView(TextureBase* texture,
                                            const TextureViewDescriptor* descriptor);
 
-        void InjectError(dawn::ErrorType type, const char* message);
+        void InjectError(wgpu::ErrorType type, const char* message);
 
         void Tick();
 
-        void SetUncapturedErrorCallback(dawn::ErrorCallback callback, void* userdata);
-        void PushErrorScope(dawn::ErrorFilter filter);
-        bool PopErrorScope(dawn::ErrorCallback callback, void* userdata);
+        void SetUncapturedErrorCallback(wgpu::ErrorCallback callback, void* userdata);
+        void PushErrorScope(wgpu::ErrorFilter filter);
+        bool PopErrorScope(wgpu::ErrorCallback callback, void* userdata);
         ErrorScope* GetCurrentErrorScope();
 
         void Reference();
@@ -185,6 +185,7 @@ namespace dawn_native {
         std::vector<const char*> GetTogglesUsed() const;
         bool IsExtensionEnabled(Extension extension) const;
         bool IsToggleEnabled(Toggle toggle) const;
+        bool IsValidationEnabled() const;
         size_t GetLazyClearCountForTesting();
         void IncrementLazyClearCountForTesting();
 
@@ -230,7 +231,7 @@ namespace dawn_native {
                                                 const PipelineLayoutDescriptor* descriptor);
         MaybeError CreateQueueInternal(QueueBase** result);
         MaybeError CreateRenderBundleEncoderInternal(
-            RenderBundleEncoderBase** result,
+            RenderBundleEncoder** result,
             const RenderBundleEncoderDescriptor* descriptor);
         MaybeError CreateRenderPipelineInternal(RenderPipelineBase** result,
                                                 const RenderPipelineDescriptor* descriptor);
@@ -261,9 +262,9 @@ namespace dawn_native {
         std::unique_ptr<Caches> mCaches;
 
         struct DeferredCreateBufferMappedAsync {
-            dawn::BufferCreateMappedCallback callback;
-            DawnBufferMapAsyncStatus status;
-            DawnCreateBufferMappedResult result;
+            wgpu::BufferCreateMappedCallback callback;
+            WGPUBufferMapAsyncStatus status;
+            WGPUCreateBufferMappedResult result;
             void* userdata;
         };
 

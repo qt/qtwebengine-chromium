@@ -29,9 +29,6 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
       : NGConstraintSpaceBuilder(parent_space.GetWritingMode(),
                                  out_writing_mode,
                                  is_new_fc) {
-    // Propagate the intermediate layout bit to the child constraint space.
-    space_.bitfields_.is_intermediate_layout =
-        parent_space.IsIntermediateLayout();
     if (parent_space.IsInsideBalancedColumns())
       space_.EnsureRareData()->is_inside_balanced_columns = true;
   }
@@ -148,10 +145,6 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
 
   void SetIsShrinkToFit(bool b) { space_.bitfields_.is_shrink_to_fit = b; }
 
-  void SetIsIntermediateLayout(bool b) {
-    space_.bitfields_.is_intermediate_layout = b;
-  }
-
   void SetFragmentationType(NGFragmentationType fragmentation_type) {
 #if DCHECK_IS_ON()
     DCHECK(!is_block_direction_fragmentation_type_set_);
@@ -180,6 +173,12 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   void SetIsRestrictedBlockSizeTableCell(bool b) {
     DCHECK(space_.bitfields_.is_table_cell);
     space_.bitfields_.is_restricted_block_size_table_cell = b;
+  }
+
+  void SetHideTableCellIfEmpty(bool b) {
+    DCHECK(space_.bitfields_.is_table_cell);
+    if (b)
+      space_.EnsureRareData()->hide_table_cell_if_empty = b;
   }
 
   void SetIsAnonymous(bool b) { space_.bitfields_.is_anonymous = b; }
@@ -245,8 +244,8 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
     DCHECK(!is_forced_bfc_block_offset_set_);
     is_forced_bfc_block_offset_set_ = true;
 #endif
-    if (LIKELY(!is_new_fc_))
-      space_.EnsureRareData()->SetForcedBfcBlockOffset(forced_bfc_block_offset);
+    DCHECK(!is_new_fc_);
+    space_.EnsureRareData()->SetForcedBfcBlockOffset(forced_bfc_block_offset);
   }
 
   void SetClearanceOffset(LayoutUnit clearance_offset) {

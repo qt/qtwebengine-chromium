@@ -7,9 +7,10 @@
 #include <algorithm>
 #include <memory>
 
-#include "platform/api/logging.h"
+#include "util/logging.h"
 
 namespace openscreen {
+namespace osp {
 
 FakeQuicConnectionFactoryBridge::FakeQuicConnectionFactoryBridge(
     const IPEndpoint& controller_endpoint)
@@ -223,4 +224,5 @@ void FakeServerQuicConnectionFactory::OnRead(
   idle_ = bridge_->server_idle();
 }
 
+}  // namespace osp
 }  // namespace openscreen

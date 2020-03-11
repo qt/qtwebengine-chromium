@@ -11,7 +11,9 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
+#include "components/prefs/pref_registry_simple.h"
 #include "components/security_state/core/features.h"
+#include "components/security_state/core/security_state_pref_names.h"
 #include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 
@@ -52,6 +54,14 @@ SecurityLevel GetSecurityLevelForNonSecureFieldTrial(
   // Default to dangerous on editing form fields and otherwise
   // warning.
   return input_events.insecure_field_edited ? DANGEROUS : WARNING;
+}
+
+SecurityLevel GetSecurityLevelForDisplayedMixedContent(bool suppress_warning) {
+  if (base::FeatureList::IsEnabled(features::kPassiveMixedContentWarning) &&
+      !suppress_warning) {
+    return kDisplayedInsecureContentWarningLevel;
+  }
+  return kDisplayedInsecureContentLevel;
 }
 
 std::string GetHistogramSuffixForSecurityLevel(
@@ -214,8 +224,12 @@ SecurityLevel GetSecurityLevel(
   DCHECK(!visible_security_state.ran_mixed_content);
   DCHECK(!visible_security_state.ran_content_with_cert_errors);
 
+  if (visible_security_state.displayed_mixed_content) {
+    return GetSecurityLevelForDisplayedMixedContent(
+        visible_security_state.should_suppress_mixed_content_warning);
+  }
+
   if (visible_security_state.contained_mixed_form ||
-      visible_security_state.displayed_mixed_content ||
       visible_security_state.displayed_content_with_cert_errors) {
     return kDisplayedInsecureContentLevel;
   }
@@ -253,6 +267,11 @@ bool HasMajorCertificateError(
   return is_cryptographic_with_certificate && is_major_cert_error;
 }
 
+void RegisterProfilePrefs(PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kStricterMixedContentTreatmentEnabled,
+                                true);
+}
+
 VisibleSecurityState::VisibleSecurityState()
     : malicious_content_status(MALICIOUS_CONTENT_STATUS_NONE),
       connection_info_initialized(false),
@@ -270,7 +289,8 @@ VisibleSecurityState::VisibleSecurityState()
       is_view_source(false),
       is_devtools(false),
       connection_used_legacy_tls(false),
-      should_suppress_legacy_tls_warning(false) {}
+      should_suppress_legacy_tls_warning(false),
+      should_suppress_mixed_content_warning(false) {}
 
 VisibleSecurityState::VisibleSecurityState(const VisibleSecurityState& other) =
     default;
@@ -323,6 +343,15 @@ bool IsSHA1InChain(const VisibleSecurityState& visible_security_state) {
   return visible_security_state.certificate &&
          (visible_security_state.cert_status &
           net::CERT_STATUS_SHA1_SIGNATURE_PRESENT);
+}
+
+// TODO(crbug.com/1015626): Clean this up once the experiment is fully
+// launched.
+bool ShouldShowDangerTriangleForWarningLevel() {
+  return base::GetFieldTrialParamValueByFeature(
+             features::kMarkHttpAsFeature,
+             features::kMarkHttpAsFeatureParameterName) ==
+         security_state::features::kMarkHttpAsParameterDangerWarning;
 }
 
 }  // namespace security_state

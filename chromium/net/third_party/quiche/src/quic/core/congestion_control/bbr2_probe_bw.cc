@@ -48,6 +48,8 @@ Bbr2Mode Bbr2ProbeBwMode::OnCongestionEvent(
     }
   }
 
+  bool switch_to_probe_rtt = false;
+
   if (cycle_.phase == CyclePhase::PROBE_UP) {
     UpdateProbeUp(prior_in_flight, congestion_event);
   } else if (cycle_.phase == CyclePhase::PROBE_DOWN) {
@@ -55,7 +57,7 @@ Bbr2Mode Bbr2ProbeBwMode::OnCongestionEvent(
     // Maybe transition to PROBE_RTT at the end of this cycle.
     if (cycle_.phase != CyclePhase::PROBE_DOWN &&
         model_->MaybeExpireMinRtt(congestion_event)) {
-      return Bbr2Mode::PROBE_RTT;
+      switch_to_probe_rtt = true;
     }
   } else if (cycle_.phase == CyclePhase::PROBE_CRUISE) {
     UpdateProbeCruise(congestion_event);
@@ -63,10 +65,14 @@ Bbr2Mode Bbr2ProbeBwMode::OnCongestionEvent(
     UpdateProbeRefill(congestion_event);
   }
 
-  model_->set_pacing_gain(PacingGainForPhase(cycle_.phase));
-  model_->set_cwnd_gain(Params().probe_bw_cwnd_gain);
+  // Do not need to set the gains if switching to PROBE_RTT, they will be set
+  // when Bbr2ProbeRttMode::Enter is called.
+  if (!switch_to_probe_rtt) {
+    model_->set_pacing_gain(PacingGainForPhase(cycle_.phase));
+    model_->set_cwnd_gain(Params().probe_bw_cwnd_gain);
+  }
 
-  return Bbr2Mode::PROBE_BW;
+  return switch_to_probe_rtt ? Bbr2Mode::PROBE_RTT : Bbr2Mode::PROBE_BW;
 }
 
 Limits<QuicByteCount> Bbr2ProbeBwMode::GetCwndLimits() const {
@@ -194,6 +200,15 @@ bool Bbr2ProbeBwMode::IsTimeToProbeBandwidth(
 // long, as seen in some multi-sender simulator tests.
 bool Bbr2ProbeBwMode::HasStayedLongEnoughInProbeDown(
     const Bbr2CongestionEvent& congestion_event) const {
+  if (exit_probe_down_after_one_rtt_) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_exit_probe_bw_down_after_one_rtt);
+    // Stay in PROBE_DOWN for at most the time of a min rtt, as it is done in
+    // BBRv1. The intention here is to figure out whether the performance
+    // regression in BBRv2 is because it stays in PROBE_DOWN for too long.
+    // TODO(wub): Consider exit after a full round instead, which typically
+    // indicates most(if not all) packets sent during PROBE_UP have been acked.
+    return HasPhaseLasted(model_->MinRtt(), congestion_event);
+  }
   // The amount of time to stay in PROBE_DOWN, as a fraction of probe wait time.
   const double kProbeWaitFraction = 0.2;
   return HasCycleLasted(cycle_.probe_wait_time * kProbeWaitFraction,
@@ -271,9 +286,7 @@ void Bbr2ProbeBwMode::ProbeInflightHighUpward(
     return;
   }
 
-  if (GetQuicReloadableFlag(quic_bbr2_fix_inflight_bounds) &&
-      congestion_event.prior_cwnd < model_->inflight_hi()) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_fix_inflight_bounds, 1, 2);
+  if (congestion_event.prior_cwnd < model_->inflight_hi()) {
     QUIC_DVLOG(3)
         << sender_
         << " Raising inflight_hi early return: inflight_hi not fully used.";
@@ -296,7 +309,7 @@ void Bbr2ProbeBwMode::ProbeInflightHighUpward(
                     << ", (new)probe_up_acked:" << cycle_.probe_up_acked;
 
       model_->set_inflight_hi(new_inflight_hi);
-    } else if (GetQuicReloadableFlag(quic_bbr2_fix_inflight_bounds)) {
+    } else {
       QUIC_BUG << "Not growing inflight_hi due to wrap around. Old value:"
                << model_->inflight_hi() << ", new value:" << new_inflight_hi;
     }
@@ -417,10 +430,8 @@ void Bbr2ProbeBwMode::EnterProbeCruise(
                 << congestion_event.event_time - cycle_.phase_start_time
                 << ", or " << cycle_.rounds_in_phase << " rounds.  @ "
                 << congestion_event.event_time;
-  if (GetQuicReloadableFlag(quic_bbr2_fix_inflight_bounds)) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_fix_inflight_bounds, 2, 2);
-    model_->cap_inflight_lo(model_->inflight_hi());
-  }
+
+  model_->cap_inflight_lo(model_->inflight_hi());
   cycle_.phase = CyclePhase::PROBE_CRUISE;
   cycle_.rounds_in_phase = 0;
   cycle_.phase_start_time = congestion_event.event_time;

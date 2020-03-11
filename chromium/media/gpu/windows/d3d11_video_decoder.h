@@ -80,7 +80,7 @@ class MEDIA_GPU_EXPORT D3D11VideoDecoder : public VideoDecoder,
 
   // D3D11VideoDecoderClient implementation.
   D3D11PictureBuffer* GetPicture() override;
-  void OutputResult(const CodecPicture* picture,
+  bool OutputResult(const CodecPicture* picture,
                     D3D11PictureBuffer* picture_buffer) override;
 
   static bool GetD3D11FeatureLevel(ComD3D11Device dev,
@@ -269,6 +269,9 @@ class MEDIA_GPU_EXPORT D3D11VideoDecoder : public VideoDecoder,
   std::vector<scoped_refptr<D3D11PictureBuffer>> picture_buffers_;
 
   State state_ = State::kInitializing;
+
+  // Profile of the video being decoded.
+  VideoCodecProfile profile_ = VIDEO_CODEC_PROFILE_UNKNOWN;
 
   // Callback to get a command buffer helper.  Must be called from the gpu
   // main thread only.

@@ -26,7 +26,7 @@ config("apm_debug_dump") {
   }
 }
 
-rtc_static_library("config") {
+rtc_library("config") {
   visibility = [ ":*" ]
   sources = [
     "include/config.cc",
@@ -38,7 +38,7 @@ rtc_static_library("config") {
   ]
 }
 
-rtc_source_set("api") {
+rtc_library("api") {
   visibility = [ "*" ]
   sources = [
     "include/audio_processing.cc",
@@ -62,7 +62,7 @@ rtc_source_set("api") {
   ]
 }
 
-rtc_static_library("audio_buffer") {
+rtc_library("audio_buffer") {
   visibility = [ "*" ]
 
   configs += [ ":apm_debug_dump" ]
@@ -87,7 +87,7 @@ rtc_static_library("audio_buffer") {
   ]
 }
 
-rtc_static_library("high_pass_filter") {
+rtc_library("high_pass_filter") {
   visibility = [ "*" ]
 
   sources = [
@@ -105,7 +105,7 @@ rtc_static_library("high_pass_filter") {
   ]
 }
 
-rtc_static_library("audio_processing") {
+rtc_library("audio_processing") {
   visibility = [ "*" ]
   configs += [ ":apm_debug_dump" ]
   sources = [
@@ -124,18 +124,16 @@ rtc_static_library("audio_processing") {
     "echo_detector/moving_max.h",
     "echo_detector/normalized_covariance_estimator.cc",
     "echo_detector/normalized_covariance_estimator.h",
-    "gain_control_for_experimental_agc.cc",
-    "gain_control_for_experimental_agc.h",
     "gain_control_impl.cc",
     "gain_control_impl.h",
     "gain_controller2.cc",
     "gain_controller2.h",
     "include/aec_dump.cc",
     "include/aec_dump.h",
+    "legacy_noise_suppression.cc",
+    "legacy_noise_suppression.h",
     "level_estimator.cc",
     "level_estimator.h",
-    "noise_suppression.cc",
-    "noise_suppression.h",
     "render_queue_item_verifier.h",
     "residual_echo_detector.cc",
     "residual_echo_detector.h",
@@ -182,6 +180,7 @@ rtc_static_library("audio_processing") {
     "../../rtc_base:checks",
     "../../rtc_base:deprecation",
     "../../rtc_base:gtest_prod",
+    "../../rtc_base:ignore_wundef",
     "../../rtc_base:safe_minmax",
     "../../rtc_base:sanitizer",
     "../../rtc_base/system:rtc_export",
@@ -198,6 +197,7 @@ rtc_static_library("audio_processing") {
     "agc2:adaptive_digital",
     "agc2:fixed_digital",
     "agc2:gain_applier",
+    "ns",
     "vad",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
@@ -221,7 +221,7 @@ rtc_static_library("audio_processing") {
   ]
 }
 
-rtc_source_set("audio_processing_statistics") {
+rtc_library("audio_processing_statistics") {
   visibility = [ "*" ]
   sources = [
     "include/audio_processing_statistics.cc",
@@ -254,7 +254,7 @@ rtc_source_set("audio_generator_interface") {
   ]
 }
 
-rtc_source_set("audio_generator_factory") {
+rtc_library("audio_generator_factory") {
   visibility = [ "*" ]
   testonly = true
   sources = [
@@ -270,7 +270,7 @@ rtc_source_set("audio_generator_factory") {
   ]
 }
 
-rtc_source_set("file_audio_generator") {
+rtc_library("file_audio_generator") {
   sources = [
     "audio_generator/file_audio_generator.cc",
     "audio_generator/file_audio_generator.h",
@@ -286,29 +286,29 @@ rtc_source_set("file_audio_generator") {
 rtc_source_set("audio_processing_c") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
   sources = [
-    "ns/windows_private.h",
+    "legacy_ns/windows_private.h",
   ]
 
   if (rtc_prefer_fixed_point) {
     sources += [
-      "ns/noise_suppression_x.c",
-      "ns/noise_suppression_x.h",
-      "ns/nsx_core.c",
-      "ns/nsx_core.h",
-      "ns/nsx_defines.h",
+      "legacy_ns/noise_suppression_x.c",
+      "legacy_ns/noise_suppression_x.h",
+      "legacy_ns/nsx_core.c",
+      "legacy_ns/nsx_core.h",
+      "legacy_ns/nsx_defines.h",
     ]
     if (current_cpu == "mipsel") {
-      sources += [ "ns/nsx_core_mips.c" ]
+      sources += [ "legacy_ns/nsx_core_mips.c" ]
     } else {
-      sources += [ "ns/nsx_core_c.c" ]
+      sources += [ "legacy_ns/nsx_core_c.c" ]
     }
   } else {
     sources += [
-      "ns/defines.h",
-      "ns/noise_suppression.c",
-      "ns/noise_suppression.h",
-      "ns/ns_core.c",
-      "ns/ns_core.h",
+      "legacy_ns/defines.h",
+      "legacy_ns/noise_suppression.c",
+      "legacy_ns/noise_suppression.h",
+      "legacy_ns/ns_core.c",
+      "legacy_ns/ns_core.h",
     ]
   }
 
@@ -323,7 +323,7 @@ rtc_source_set("audio_processing_c") {
   ]
 
   if (rtc_build_with_neon) {
-    sources += [ "ns/nsx_core_neon.c" ]
+    sources += [ "legacy_ns/nsx_core_neon.c" ]
 
     if (current_cpu != "arm64") {
       # Enable compilation for the NEON instruction set.
@@ -343,7 +343,7 @@ if (rtc_enable_protobuf) {
   }
 }
 
-rtc_source_set("apm_logging") {
+rtc_library("apm_logging") {
   configs += [ ":apm_debug_dump" ]
   sources = [
     "logging/apm_data_dumper.cc",
@@ -392,7 +392,7 @@ if (rtc_include_tests) {
     }
   }
 
-  rtc_source_set("audio_processing_unittests") {
+  rtc_library("audio_processing_unittests") {
     testonly = true
 
     configs += [ ":apm_debug_dump" ]
@@ -437,6 +437,7 @@ if (rtc_include_tests) {
       "../../rtc_base",
       "../../rtc_base:checks",
       "../../rtc_base:gtest_prod",
+      "../../rtc_base:ignore_wundef",
       "../../rtc_base:protobuf_utils",
       "../../rtc_base:rtc_base_approved",
       "../../rtc_base:rtc_base_tests_utils",
@@ -447,6 +448,7 @@ if (rtc_include_tests) {
       "../../system_wrappers",
       "../../system_wrappers:cpu_features_api",
       "../../test:fileutils",
+      "../../test:rtc_expect_death",
       "../../test:test_support",
       "../audio_coding:neteq_input_audio_tools",
       "aec:aec_core",
@@ -505,8 +507,8 @@ if (rtc_include_tests) {
         "echo_detector/normalized_covariance_estimator_unittest.cc",
         "gain_control_unittest.cc",
         "high_pass_filter_unittest.cc",
+        "legacy_noise_suppression_unittest.cc",
         "level_estimator_unittest.cc",
-        "noise_suppression_unittest.cc",
         "residual_echo_detector_unittest.cc",
         "rms_level_unittest.cc",
         "test/debug_dump_replayer.cc",
@@ -522,8 +524,9 @@ if (rtc_include_tests) {
     }
   }
 
-  rtc_source_set("audio_processing_perf_tests") {
+  rtc_library("audio_processing_perf_tests") {
     testonly = true
+    configs += [ ":apm_debug_dump" ]
 
     sources = [
       "audio_processing_performance_unittest.cc",
@@ -540,7 +543,7 @@ if (rtc_include_tests) {
     ]
   }
 
-  rtc_source_set("file_audio_generator_unittests") {
+  rtc_library("file_audio_generator_unittests") {
     testonly = true
 
     sources = [
@@ -558,7 +561,7 @@ if (rtc_include_tests) {
     ]
   }
 
-  rtc_source_set("analog_mic_simulation") {
+  rtc_library("analog_mic_simulation") {
     sources = [
       "test/fake_recording_device.cc",
       "test/fake_recording_device.h",
@@ -576,7 +579,7 @@ if (rtc_include_tests) {
   }
 
   if (rtc_enable_protobuf) {
-    rtc_source_set("audioproc_f_impl") {
+    rtc_library("audioproc_f_impl") {
       testonly = true
       configs += [ ":apm_debug_dump" ]
       sources = [
@@ -605,6 +608,7 @@ if (rtc_include_tests) {
         "../../api/audio:aec3_factory",
         "../../common_audio",
         "../../rtc_base:checks",
+        "../../rtc_base:ignore_wundef",
         "../../rtc_base:protobuf_utils",
         "../../rtc_base:rtc_base_approved",
         "../../rtc_base:rtc_json",
@@ -634,7 +638,7 @@ if (rtc_include_tests) {
     }  # audioproc_f
   }
 
-  rtc_source_set("audioproc_test_utils") {
+  rtc_library("audioproc_test_utils") {
     visibility = [ "*" ]
     testonly = true
     sources = [
@@ -713,7 +717,7 @@ if (rtc_include_tests) {
       proto_out_dir = "modules/audio_processing/test"
     }
 
-    rtc_static_library("audioproc_protobuf_utils") {
+    rtc_library("audioproc_protobuf_utils") {
       sources = [
         "test/protobuf_utils.cc",
         "test/protobuf_utils.h",
@@ -722,13 +726,14 @@ if (rtc_include_tests) {
       deps = [
         ":audioproc_debug_proto",
         "../../rtc_base:checks",
+        "../../rtc_base:ignore_wundef",
         "../../rtc_base:protobuf_utils",
         "../../rtc_base:rtc_base_approved",
         "../../rtc_base/system:arch",
       ]
     }
 
-    rtc_static_library("runtime_settings_protobuf_utils") {
+    rtc_library("runtime_settings_protobuf_utils") {
       testonly = true
       sources = [
         "test/runtime_setting_util.cc",

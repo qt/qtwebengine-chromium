@@ -298,17 +298,14 @@ void SafeBrowsingUrlCheckerImpl::ProcessUrls() {
                  &SafeBrowsingUrlCheckerImpl::OnTimeout);
 
     bool safe_synchronously;
-    auto* rt_lookup_service = database_manager_->GetRealTimeUrlLookupService();
-    if (real_time_lookup_enabled_ &&
-        RealTimePolicyEngine::CanPerformFullURLLookupForResourceType(
-            resource_type_) &&
-        rt_lookup_service && rt_lookup_service->CanCheckUrl(url) &&
-        !rt_lookup_service->IsInBackoffMode()) {
+    bool can_perform_full_url_lookup = CanPerformFullURLLookup(url);
+    if (can_perform_full_url_lookup) {
       UMA_HISTOGRAM_ENUMERATION("SafeBrowsing.RT.ResourceTypes.Checked",
                                 resource_type_);
       safe_synchronously = false;
       AsyncMatch match =
           database_manager_->CheckUrlForHighConfidenceAllowlist(url, this);
+      UMA_HISTOGRAM_ENUMERATION("SafeBrowsing.RT.LocalMatch.Result", match);
       switch (match) {
         case AsyncMatch::ASYNC:
           // Hash-prefix matched. A call to
@@ -356,10 +353,16 @@ void SafeBrowsingUrlCheckerImpl::ProcessUrls() {
 
     // Only send out notification of starting a slow check if the database
     // manager actually supports fast checks (i.e., synchronous checks) but is
-    // not able to complete the check synchronously in this case.
+    // not able to complete the check synchronously in this case and we're doing
+    // hash-based checks.
     // Don't send out notification if the database manager doesn't support
-    // synchronous checks at all (e.g., on mobile).
-    if (!database_manager_->ChecksAreAlwaysAsync())
+    // synchronous checks at all (e.g., on mobile), or if performing a full URL
+    // check since we don't want to block resource fetch while we perform a full
+    // URL lookup. Note that we won't parse the response until the Safe Browsing
+    // check is complete and return SAFE, so there's no Safe Browsing bypass
+    // risk here.
+    if (!can_perform_full_url_lookup &&
+        !database_manager_->ChecksAreAlwaysAsync())
       urls_[next_index_].notifier.OnStartSlowCheck();
 
     break;
@@ -377,6 +380,23 @@ void SafeBrowsingUrlCheckerImpl::BlockAndProcessUrls(bool showed_interstitial) {
     if (!RunNextCallback(false, showed_interstitial))
       return;
   }
+}
+
+bool SafeBrowsingUrlCheckerImpl::CanPerformFullURLLookup(const GURL& url) {
+  if (!real_time_lookup_enabled_)
+    return false;
+
+  if (!RealTimePolicyEngine::CanPerformFullURLLookupForResourceType(
+          resource_type_))
+    return false;
+
+  auto* rt_lookup_service = database_manager_->GetRealTimeUrlLookupService();
+  if (!rt_lookup_service || !rt_lookup_service->CanCheckUrl(url))
+    return false;
+
+  bool in_backoff = rt_lookup_service->IsInBackoffMode();
+  UMA_HISTOGRAM_BOOLEAN("SafeBrowsing.RT.Backoff.State", in_backoff);
+  return !in_backoff;
 }
 
 void SafeBrowsingUrlCheckerImpl::OnBlockingPageComplete(bool proceed) {

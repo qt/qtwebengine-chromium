@@ -31,6 +31,7 @@
 #include "perfetto/ext/base/optional.h"
 #include "perfetto/ext/base/string_view.h"
 #include "perfetto/ext/base/utils.h"
+#include "perfetto/trace_processor/basic_types.h"
 #include "src/trace_processor/ftrace_utils.h"
 #include "src/trace_processor/metadata.h"
 #include "src/trace_processor/stats.h"
@@ -80,6 +81,10 @@ static const ArgSetId kInvalidArgSetId = 0;
 
 using TrackId = uint32_t;
 
+// TODO(lalitm): this is a temporary hack while migrating the counters table and
+// will be removed when the migration is complete.
+static const TrackId kInvalidTrackId = std::numeric_limits<TrackId>::max();
+
 enum class RefType {
   kRefNoRef = 0,
   kRefUtid = 1,
@@ -99,7 +104,7 @@ const std::vector<const char*>& GetRefTypeStringMap();
 // names for a given CPU).
 class TraceStorage {
  public:
-  TraceStorage();
+  TraceStorage(const Config& = Config());
 
   virtual ~TraceStorage();
 
@@ -111,6 +116,7 @@ class TraceStorage {
     StringId name_id = 0;
     uint32_t pid = 0;
     base::Optional<UniquePid> parent_upid;
+    base::Optional<uint32_t> uid;
   };
 
   // Information about a unique thread seen in a trace.
@@ -343,6 +349,8 @@ class TraceStorage {
       return slice_count() - 1;
     }
 
+    void set_name(uint32_t index, StringId name) { names_[index] = name; }
+
     void set_duration(uint32_t index, int64_t duration_ns) {
       durations_[index] = duration_ns;
     }
@@ -509,98 +517,43 @@ class TraceStorage {
     std::deque<int64_t> thread_instruction_deltas_;
   };
 
-  class CounterDefinitions {
-   public:
-    using Id = uint32_t;
-    static constexpr Id kInvalidId = std::numeric_limits<Id>::max();
-
-    inline Id AddCounterDefinition(StringId name_id,
-                                   int64_t ref,
-                                   RefType type,
-                                   StringId desc_id = 0,
-                                   StringId unit_id = 0) {
-      base::Hash hash;
-      hash.Update(name_id);
-      hash.Update(ref);
-      hash.Update(type);
-
-      // TODO(lalitm): this is a perf bottleneck and likely we can do something
-      // quite a bit better here.
-      uint64_t digest = hash.digest();
-      auto it = hash_to_row_idx_.find(digest);
-      if (it != hash_to_row_idx_.end())
-        return it->second;
-
-      name_ids_.emplace_back(name_id);
-      refs_.emplace_back(ref);
-      types_.emplace_back(type);
-      desc_ids_.emplace_back(desc_id);
-      unit_ids_.emplace_back(unit_id);
-      hash_to_row_idx_.emplace(digest, size() - 1);
-      return size() - 1;
-    }
-
-    uint32_t size() const { return static_cast<uint32_t>(name_ids_.size()); }
-
-    const std::deque<StringId>& name_ids() const { return name_ids_; }
-
-    const std::deque<StringId>& desc_ids() const { return desc_ids_; }
-
-    const std::deque<StringId>& unit_ids() const { return unit_ids_; }
-
-    const std::deque<int64_t>& refs() const { return refs_; }
-
-    const std::deque<RefType>& types() const { return types_; }
-
-   private:
-    std::deque<StringId> name_ids_;
-    std::deque<int64_t> refs_;
-    std::deque<RefType> types_;
-    std::deque<StringId> desc_ids_;
-    std::deque<StringId> unit_ids_;
-
-    std::unordered_map<uint64_t, uint32_t> hash_to_row_idx_;
-  };
-
   class CounterValues {
    public:
-    inline uint32_t AddCounterValue(CounterDefinitions::Id counter_id,
+    inline uint32_t AddCounterValue(TrackId track_id,
                                     int64_t timestamp,
                                     double value) {
-      counter_ids_.emplace_back(counter_id);
+      track_id_.emplace_back(track_id);
       timestamps_.emplace_back(timestamp);
       values_.emplace_back(value);
       arg_set_ids_.emplace_back(kInvalidArgSetId);
 
-      if (counter_id != CounterDefinitions::kInvalidId) {
-        if (counter_id >= rows_for_counter_id_.size()) {
-          rows_for_counter_id_.resize(counter_id + 1);
+      if (track_id != kInvalidTrackId) {
+        if (track_id >= rows_for_track_id_.size()) {
+          rows_for_track_id_.resize(track_id + 1);
         }
-        rows_for_counter_id_[counter_id].emplace_back(size() - 1);
+        rows_for_track_id_[track_id].emplace_back(size() - 1);
       }
       return size() - 1;
     }
 
-    void set_counter_id(uint32_t index, CounterDefinitions::Id counter_id) {
-      PERFETTO_DCHECK(counter_ids_[index] == CounterDefinitions::kInvalidId);
+    void set_track_id(uint32_t index, TrackId track_id) {
+      PERFETTO_DCHECK(track_id_[index] == kInvalidTrackId);
 
-      counter_ids_[index] = counter_id;
-      if (counter_id >= rows_for_counter_id_.size()) {
-        rows_for_counter_id_.resize(counter_id + 1);
+      track_id_[index] = track_id;
+      if (track_id >= rows_for_track_id_.size()) {
+        rows_for_track_id_.resize(track_id + 1);
       }
 
-      auto* new_rows = &rows_for_counter_id_[counter_id];
+      auto* new_rows = &rows_for_track_id_[track_id];
       new_rows->insert(
           std::upper_bound(new_rows->begin(), new_rows->end(), index), index);
     }
 
     void set_arg_set_id(uint32_t row, ArgSetId id) { arg_set_ids_[row] = id; }
 
-    uint32_t size() const { return static_cast<uint32_t>(counter_ids_.size()); }
+    uint32_t size() const { return static_cast<uint32_t>(track_id_.size()); }
 
-    const std::deque<CounterDefinitions::Id>& counter_ids() const {
-      return counter_ids_;
-    }
+    const std::deque<TrackId>& track_ids() const { return track_id_; }
 
     const std::deque<int64_t>& timestamps() const { return timestamps_; }
 
@@ -608,19 +561,18 @@ class TraceStorage {
 
     const std::deque<ArgSetId>& arg_set_ids() const { return arg_set_ids_; }
 
-    const std::deque<std::vector<uint32_t>>& rows_for_counter_id() const {
-      return rows_for_counter_id_;
+    const std::deque<std::vector<uint32_t>>& rows_for_track_id() const {
+      return rows_for_track_id_;
     }
 
    private:
-    std::deque<CounterDefinitions::Id> counter_ids_;
+    std::deque<TrackId> track_id_;
     std::deque<int64_t> timestamps_;
     std::deque<double> values_;
     std::deque<ArgSetId> arg_set_ids_;
 
-    // Indexed by counter_id value and contains the row numbers corresponding to
-    // it.
-    std::deque<std::vector<uint32_t>> rows_for_counter_id_;
+    // Indexed by track_id and contains the row numbers corresponding to it.
+    std::deque<std::vector<uint32_t>> rows_for_track_id_;
   };
 
   class SqlStats {
@@ -805,6 +757,15 @@ class TraceStorage {
       return TraceStorage::CreateRowId(kMetadataTable, index);
     }
 
+    const Variadic& GetScalarMetadata(metadata::KeyIDs key) const {
+      PERFETTO_DCHECK(scalar_indices.count(key) == 1);
+      return values_.at(scalar_indices.at(key));
+    }
+
+    bool MetadataExists(metadata::KeyIDs key) const {
+      return scalar_indices.count(key) >= 1;
+    }
+
     void OverwriteMetadata(uint32_t index, Variadic value) {
       PERFETTO_DCHECK(index < values_.size());
       values_[index] = value;
@@ -833,21 +794,23 @@ class TraceStorage {
 
     uint32_t size() const { return static_cast<uint32_t>(names_.size()); }
 
-    int64_t Insert(const Row& row) {
+    uint32_t Insert(const Row& row) {
       names_.emplace_back(row.name_id);
       mappings_.emplace_back(row.mapping_row);
       rel_pcs_.emplace_back(row.rel_pc);
       symbol_set_ids_.emplace_back(0);
       size_t row_number = names_.size() - 1;
-      index_.emplace(std::make_pair(row.mapping_row, row.rel_pc), row_number);
-      return static_cast<int64_t>(row_number);
+      index_[std::make_pair(row.mapping_row, row.rel_pc)].emplace_back(
+          row_number);
+      return static_cast<uint32_t>(row_number);
     }
 
-    ssize_t FindFrameRow(size_t mapping_row, uint64_t rel_pc) const {
+    std::vector<int64_t> FindFrameRow(size_t mapping_row,
+                                      uint64_t rel_pc) const {
       auto it = index_.find(std::make_pair(mapping_row, rel_pc));
       if (it == index_.end())
-        return -1;
-      return static_cast<ssize_t>(it->second);
+        return {};
+      return it->second;
     }
 
     void SetSymbolSetId(size_t row_idx, uint32_t symbol_set_id) {
@@ -868,42 +831,9 @@ class TraceStorage {
     std::deque<int64_t> rel_pcs_;
     std::deque<uint32_t> symbol_set_ids_;
 
-    std::map<std::pair<size_t /* mapping row */, uint64_t /* rel_pc */>, size_t>
+    std::map<std::pair<size_t /* mapping row */, uint64_t /* rel_pc */>,
+             std::vector<int64_t>>
         index_;
-  };
-
-  class StackProfileCallsites {
-   public:
-    struct Row {
-      int64_t depth;
-      int64_t parent_id;
-      int64_t frame_row;
-
-      bool operator==(const Row& other) const {
-        return std::tie(depth, parent_id, frame_row) ==
-               std::tie(other.depth, other.parent_id, other.frame_row);
-      }
-    };
-
-    uint32_t size() const { return static_cast<uint32_t>(frame_ids_.size()); }
-
-    int64_t Insert(const Row& row) {
-      frame_depths_.emplace_back(row.depth);
-      parent_callsite_ids_.emplace_back(row.parent_id);
-      frame_ids_.emplace_back(row.frame_row);
-      return static_cast<int64_t>(frame_depths_.size()) - 1;
-    }
-
-    const std::deque<int64_t>& frame_depths() const { return frame_depths_; }
-    const std::deque<int64_t>& parent_callsite_ids() const {
-      return parent_callsite_ids_;
-    }
-    const std::deque<int64_t>& frame_ids() const { return frame_ids_; }
-
-   private:
-    std::deque<int64_t> frame_depths_;
-    std::deque<int64_t> parent_callsite_ids_;
-    std::deque<int64_t> frame_ids_;
   };
 
   class StackProfileMappings {
@@ -927,7 +857,7 @@ class TraceStorage {
 
     uint32_t size() const { return static_cast<uint32_t>(names_.size()); }
 
-    int64_t Insert(const Row& row) {
+    uint32_t Insert(const Row& row) {
       build_ids_.emplace_back(row.build_id);
       exact_offsets_.emplace_back(row.exact_offset);
       start_offsets_.emplace_back(row.start_offset);
@@ -939,7 +869,7 @@ class TraceStorage {
       size_t row_number = build_ids_.size() - 1;
       index_[std::make_pair(row.name_id, row.build_id)].emplace_back(
           row_number);
-      return static_cast<int64_t>(row_number);
+      return static_cast<uint32_t>(row_number);
     }
 
     std::vector<int64_t> FindMappingRow(StringId name,
@@ -1190,6 +1120,55 @@ class TraceStorage {
     return &thread_track_table_;
   }
 
+  const tables::CounterTrackTable& counter_track_table() const {
+    return counter_track_table_;
+  }
+  tables::CounterTrackTable* mutable_counter_track_table() {
+    return &counter_track_table_;
+  }
+
+  const tables::ThreadCounterTrackTable& thread_counter_track_table() const {
+    return thread_counter_track_table_;
+  }
+  tables::ThreadCounterTrackTable* mutable_thread_counter_track_table() {
+    return &thread_counter_track_table_;
+  }
+
+  const tables::ProcessCounterTrackTable& process_counter_track_table() const {
+    return process_counter_track_table_;
+  }
+  tables::ProcessCounterTrackTable* mutable_process_counter_track_table() {
+    return &process_counter_track_table_;
+  }
+
+  const tables::CpuCounterTrackTable& cpu_counter_track_table() const {
+    return cpu_counter_track_table_;
+  }
+  tables::CpuCounterTrackTable* mutable_cpu_counter_track_table() {
+    return &cpu_counter_track_table_;
+  }
+
+  const tables::IrqCounterTrackTable& irq_counter_track_table() const {
+    return irq_counter_track_table_;
+  }
+  tables::IrqCounterTrackTable* mutable_irq_counter_track_table() {
+    return &irq_counter_track_table_;
+  }
+
+  const tables::SoftirqCounterTrackTable& softirq_counter_track_table() const {
+    return softirq_counter_track_table_;
+  }
+  tables::SoftirqCounterTrackTable* mutable_softirq_counter_track_table() {
+    return &softirq_counter_track_table_;
+  }
+
+  const tables::GpuCounterTrackTable& gpu_counter_track_table() const {
+    return gpu_counter_track_table_;
+  }
+  tables::GpuCounterTrackTable* mutable_gpu_counter_track_table() {
+    return &gpu_counter_track_table_;
+  }
+
   const Slices& slices() const { return slices_; }
   Slices* mutable_slices() { return &slices_; }
 
@@ -1210,13 +1189,6 @@ class TraceStorage {
     return gpu_slice_table_;
   }
   tables::GpuSliceTable* mutable_gpu_slice_table() { return &gpu_slice_table_; }
-
-  const CounterDefinitions& counter_definitions() const {
-    return counter_definitions_;
-  }
-  CounterDefinitions* mutable_counter_definitions() {
-    return &counter_definitions_;
-  }
 
   const CounterValues& counter_values() const { return counter_values_; }
   CounterValues* mutable_counter_values() { return &counter_values_; }
@@ -1255,11 +1227,12 @@ class TraceStorage {
     return &stack_profile_frames_;
   }
 
-  const StackProfileCallsites& stack_profile_callsites() const {
-    return stack_profile_callsites_;
+  const tables::StackProfileCallsiteTable& stack_profile_callsite_table()
+      const {
+    return stack_profile_callsite_table_;
   }
-  StackProfileCallsites* mutable_stack_profile_callsites() {
-    return &stack_profile_callsites_;
+  tables::StackProfileCallsiteTable* mutable_stack_profile_callsite_table() {
+    return &stack_profile_callsite_table_;
   }
 
   const HeapProfileAllocations& heap_profile_allocations() const {
@@ -1355,6 +1328,21 @@ class TraceStorage {
   tables::ProcessTrackTable process_track_table_{&string_pool_, &track_table_};
   tables::ThreadTrackTable thread_track_table_{&string_pool_, &track_table_};
 
+  // Track tables for counter events.
+  tables::CounterTrackTable counter_track_table_{&string_pool_, &track_table_};
+  tables::ThreadCounterTrackTable thread_counter_track_table_{
+      &string_pool_, &counter_track_table_};
+  tables::ProcessCounterTrackTable process_counter_track_table_{
+      &string_pool_, &counter_track_table_};
+  tables::CpuCounterTrackTable cpu_counter_track_table_{&string_pool_,
+                                                        &counter_track_table_};
+  tables::IrqCounterTrackTable irq_counter_track_table_{&string_pool_,
+                                                        &counter_track_table_};
+  tables::SoftirqCounterTrackTable softirq_counter_track_table_{
+      &string_pool_, &counter_track_table_};
+  tables::GpuCounterTrackTable gpu_counter_track_table_{&string_pool_,
+                                                        &counter_track_table_};
+
   // Metadata for gpu tracks.
   GpuContexts gpu_contexts_;
 
@@ -1386,9 +1374,6 @@ class TraceStorage {
   // NestableSlices).
   tables::GpuSliceTable gpu_slice_table_{&string_pool_, nullptr};
 
-  // The type of counters in the trace. Can be thought of as the "metadata".
-  CounterDefinitions counter_definitions_;
-
   // The values from the Counter events from the trace. This includes CPU
   // frequency events as well systrace trace_marker counter events.
   CounterValues counter_values_;
@@ -1409,7 +1394,8 @@ class TraceStorage {
 
   StackProfileMappings stack_profile_mappings_;
   StackProfileFrames stack_profile_frames_;
-  StackProfileCallsites stack_profile_callsites_;
+  tables::StackProfileCallsiteTable stack_profile_callsite_table_{&string_pool_,
+                                                                  nullptr};
   HeapProfileAllocations heap_profile_allocations_;
   CpuProfileStackSamples cpu_profile_stack_samples_;
 
@@ -1443,14 +1429,14 @@ struct hash<
 
 template <>
 struct hash<
-    ::perfetto::trace_processor::TraceStorage::StackProfileCallsites::Row> {
+    ::perfetto::trace_processor::tables::StackProfileCallsiteTable::Row> {
   using argument_type =
-      ::perfetto::trace_processor::TraceStorage::StackProfileCallsites::Row;
+      ::perfetto::trace_processor::tables::StackProfileCallsiteTable::Row;
   using result_type = size_t;
 
   result_type operator()(const argument_type& r) const {
     return std::hash<int64_t>{}(r.depth) ^ std::hash<int64_t>{}(r.parent_id) ^
-           std::hash<int64_t>{}(r.frame_row);
+           std::hash<int64_t>{}(r.frame_id);
   }
 };
 

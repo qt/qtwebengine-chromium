@@ -72,7 +72,6 @@
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/loader/request_extra_data.h"
 #include "content/renderer/media/audio/audio_device_factory.h"
-#include "content/renderer/media/webrtc/rtc_peer_connection_handler.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
@@ -106,7 +105,6 @@
 #include "third_party/blink/public/platform/web_connection_type.h"
 #include "third_party/blink/public/platform/web_effective_connection_type.h"
 #include "third_party/blink/public/platform/web_http_body.h"
-#include "third_party/blink/public/platform/web_image.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/platform/web_input_event_result.h"
 #include "third_party/blink/public/platform/web_network_state_notifier.h"
@@ -170,7 +168,6 @@
 #include <cpu-features.h>
 
 #include "base/android/build_info.h"
-#include "base/memory/shared_memory.h"
 #include "content/child/child_thread_impl.h"
 #include "ui/gfx/geometry/rect_f.h"
 
@@ -198,7 +195,6 @@ using blink::WebGestureEvent;
 using blink::WebHistoryItem;
 using blink::WebHitTestResult;
 using blink::WebHTTPBody;
-using blink::WebImage;
 using blink::WebInputElement;
 using blink::WebInputEvent;
 using blink::WebLocalFrame;
@@ -681,9 +677,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->SetWebGLErrorsToConsoleEnabled(
       prefs.webgl_errors_to_console_enabled);
 
-  // Uses the mock theme engine for scrollbars.
-  settings->SetMockScrollbarsEnabled(prefs.mock_scrollbars_enabled);
-
   settings->SetHideScrollbars(prefs.hide_scrollbars);
 
   // Enable gpu-accelerated 2d canvas if requested on the command line.
@@ -864,6 +857,11 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       !prefs.disable_features_depending_on_viz);
   WebRuntimeFeatures::EnableAcceleratedSmallCanvases(
       !prefs.disable_accelerated_small_canvases);
+  if (prefs.reenable_web_components_v0) {
+    WebRuntimeFeatures::EnableShadowDOMV0(true);
+    WebRuntimeFeatures::EnableCustomElementsV0(true);
+    WebRuntimeFeatures::EnableHTMLImports(true);
+  }
 #endif  // defined(OS_ANDROID)
 
   settings->SetForceDarkModeEnabled(prefs.force_dark_mode_enabled);
@@ -892,8 +890,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->SetMainFrameResizesAreOrientationChanges(
       prefs.main_frame_resizes_are_orientation_changes);
 
-  settings->SetUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
-
   settings->SetShowContextMenuOnMouseUp(prefs.context_menu_on_mouse_up);
   settings->SetAlwaysShowContextMenuOnTouch(
       prefs.always_show_context_menu_on_touch);
@@ -918,7 +914,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.data_saver_holdback_web_api_enabled);
 
   settings->SetLazyLoadEnabled(prefs.lazy_load_enabled);
-  settings->SetPreferredColorScheme(prefs.preferred_color_scheme);
 
   for (const auto& ect_distance_pair :
        prefs.lazy_frame_loading_distance_thresholds_px) {
@@ -1162,13 +1157,9 @@ void RenderViewImpl::DidCompletePageScaleAnimationForWidget() {
 }
 
 void RenderViewImpl::ResizeWebWidgetForWidget(
-    const gfx::Size& size,
-    float top_controls_height,
-    float bottom_controls_height,
-    bool browser_controls_shrink_blink_size) {
-  webview()->ResizeWithBrowserControls(size, top_controls_height,
-                                       bottom_controls_height,
-                                       browser_controls_shrink_blink_size);
+    const gfx::Size& widget_size,
+    cc::BrowserControlsParams browser_controls_params) {
+  webview()->ResizeWithBrowserControls(widget_size, browser_controls_params);
 }
 
 void RenderViewImpl::SetScreenMetricsEmulationParametersForWidget(
@@ -1273,8 +1264,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetBackgroundOpaque, OnSetBackgroundOpaque)
 
     // Page messages.
-    IPC_MESSAGE_HANDLER(PageMsg_WasHidden, OnPageWasHidden)
-    IPC_MESSAGE_HANDLER(PageMsg_WasShown, OnPageWasShown)
+    IPC_MESSAGE_HANDLER(PageMsg_VisibilityChanged, OnPageVisibilityChanged)
     IPC_MESSAGE_HANDLER(PageMsg_SetHistoryOffsetAndLength,
                         OnSetHistoryOffsetAndLength)
     IPC_MESSAGE_HANDLER(PageMsg_AudioStateChanged, OnAudioStateChanged)
@@ -1313,16 +1303,15 @@ WebView* RenderViewImpl::CreateView(
   RenderFrameImpl* creator_frame = RenderFrameImpl::FromWebFrame(creator);
   mojom::CreateNewWindowParamsPtr params = mojom::CreateNewWindowParams::New();
 
-  // User Activation v2 moves user gesture checks to the browser process, with
-  // the exception of the extensions case handled through the following |if|.
-  params->mimic_user_gesture =
-      base::FeatureList::IsEnabled(features::kUserActivationV2)
-          ? false
-          : WebUserGestureIndicator::IsProcessingUserGesture(creator);
+  // The user activation check is done at the browser process through
+  // |frame_host->CreateNewWindow()| call below.  But the extensions case
+  // handled through the following |if| is an exception.
+  //
   // TODO(mustaq): Investigate if mimic_user_gesture can wrongly expose presence
   // of user activation w/o any user interaction, e.g. through
   // |WebChromeClient#onCreateWindow|. One case to deep-dive: disabling popup
   // blocker then calling window.open at onload event. crbug.com/929729
+  params->mimic_user_gesture = false;
   if (GetContentClient()->renderer()->AllowPopup())
     params->mimic_user_gesture = true;
 
@@ -1351,7 +1340,6 @@ WebView* RenderViewImpl::CreateView(
   // moved on send.
   bool is_background_tab =
       params->disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
-  bool opened_by_user_gesture = params->mimic_user_gesture;
 
   mojom::CreateNewWindowStatus status;
   mojom::CreateNewWindowReplyPtr reply;
@@ -1378,11 +1366,9 @@ WebView* RenderViewImpl::CreateView(
   DCHECK_NE(MSG_ROUTING_NONE, reply->main_frame_widget_route_id);
 
   // The browser allowed creation of a new window and consumed the user
-  // activation (UAv2 only).
+  // activation.
   bool was_consumed = WebUserGestureIndicator::ConsumeUserGesture(
       creator, blink::UserActivationUpdateSource::kBrowser);
-  if (base::FeatureList::IsEnabled(features::kUserActivationV2))
-    opened_by_user_gesture = was_consumed;
 
   // While this view may be a background extension page, it can spawn a visible
   // render view. So we just assume that the new one is not another background
@@ -1408,10 +1394,6 @@ WebView* RenderViewImpl::CreateView(
   view_params
       ->main_frame_interface_bundle = mojom::DocumentScopedInterfaceBundle::New(
       std::move(reply->main_frame_interface_bundle->interface_provider),
-      std::move(reply->main_frame_interface_bundle
-                    ->document_interface_broker_content),
-      std::move(
-          reply->main_frame_interface_bundle->document_interface_broker_blink),
       std::move(reply->main_frame_interface_bundle->browser_interface_broker));
   view_params->main_frame_widget_routing_id = reply->main_frame_widget_route_id;
   view_params->session_storage_namespace_id =
@@ -1432,7 +1414,7 @@ WebView* RenderViewImpl::CreateView(
   // show().
   RenderWidget::ShowCallback show_callback =
       base::BindOnce(&RenderFrameImpl::ShowCreatedWindow,
-                     base::Unretained(creator_frame), opened_by_user_gesture);
+                     base::Unretained(creator_frame), was_consumed);
 
   RenderViewImpl* view = RenderViewImpl::Create(
       compositor_deps_, std::move(view_params), std::move(show_callback),
@@ -1617,7 +1599,7 @@ void RenderViewImpl::StartNavStateSyncTimerIfNecessary(RenderFrameImpl* frame) {
   int delay;
   if (send_content_state_immediately_)
     delay = 0;
-  else if (GetWebView()->IsHidden())
+  else if (GetWebView()->GetVisibilityState() != PageVisibilityState::kVisible)
     delay = kDelaySecondsForContentStateSyncHidden;
   else
     delay = kDelaySecondsForContentStateSync;
@@ -1673,10 +1655,6 @@ void RenderViewImpl::FocusedElementChanged(const WebElement& from_element,
     previous_frame->FocusedElementChanged(WebElement());
   if (new_frame)
     new_frame->FocusedElementChanged(to_element);
-
-  // TODO(dmazzoni): remove once there's a separate a11y tree per frame.
-  if (main_render_frame_)
-    main_render_frame_->FocusedElementChangedForAccessibility(to_element);
 }
 
 void RenderViewImpl::DidUpdateMainFrameLayout() {
@@ -1685,21 +1663,6 @@ void RenderViewImpl::DidUpdateMainFrameLayout() {
 
   // The main frame may have changed size.
   needs_preferred_size_update_ = true;
-}
-
-void RenderViewImpl::NavigateBackForwardSoon(int offset,
-                                             bool has_user_gesture) {
-  history_navigation_virtual_time_pauser_ =
-      RenderThreadImpl::current()
-          ->GetWebMainThreadScheduler()
-          ->CreateWebScopedVirtualTimePauser(
-              "NavigateBackForwardSoon",
-              blink::WebScopedVirtualTimePauser::VirtualTaskDuration::kInstant);
-  history_navigation_virtual_time_pauser_.PauseVirtualTime();
-}
-
-void RenderViewImpl::DidCommitProvisionalHistoryLoad() {
-  history_navigation_virtual_time_pauser_.UnpauseVirtualTime();
 }
 
 void RenderViewImpl::UpdateBrowserControlsState(
@@ -1862,8 +1825,12 @@ void RenderViewImpl::OnSetPageScale(float page_scale_factor) {
   webview()->SetPageScaleFactor(page_scale_factor);
 }
 
-void RenderViewImpl::ApplyPageHidden(bool hidden, bool initial_setting) {
-  webview()->SetIsHidden(hidden, initial_setting);
+void RenderViewImpl::ApplyPageVisibilityState(
+    PageVisibilityState visibility_state,
+    bool initial_setting) {
+  webview()->SetVisibilityState(visibility_state, initial_setting);
+  for (auto& observer : observers_)
+    observer.OnPageVisibilityChanged(visibility_state);
   // Note: RenderWidget visibility is separately set from the IPC handlers, and
   // does not change when tests override the visibility of the Page.
 }
@@ -1989,20 +1956,14 @@ void RenderViewImpl::OnMoveOrResizeStarted() {
     webview()->CancelPagePopup();
 }
 
-void RenderViewImpl::OnPageWasHidden() {
+void RenderViewImpl::OnPageVisibilityChanged(
+    PageVisibilityState visibility_state) {
 #if defined(OS_ANDROID)
-  SuspendVideoCaptureDevices(true);
+  SuspendVideoCaptureDevices(visibility_state != PageVisibilityState::kVisible);
 #endif
 
-  ApplyPageHidden(/*hidden=*/true, /*initial_setting=*/false);
-}
-
-void RenderViewImpl::OnPageWasShown() {
-#if defined(OS_ANDROID)
-  SuspendVideoCaptureDevices(false);
-#endif
-
-  ApplyPageHidden(/*hidden=*/false, /*initial_setting=*/false);
+  ApplyPageVisibilityState(visibility_state,
+                           /*initial_setting=*/false);
 }
 
 void RenderViewImpl::OnUpdatePageVisualProperties(
@@ -2038,9 +1999,10 @@ void RenderViewImpl::PutPageIntoBackForwardCache() {
     webview()->PutPageIntoBackForwardCache();
 }
 
-void RenderViewImpl::RestorePageFromBackForwardCache() {
+void RenderViewImpl::RestorePageFromBackForwardCache(
+    base::TimeTicks navigation_start) {
   if (webview())
-    webview()->RestorePageFromBackForwardCache();
+    webview()->RestorePageFromBackForwardCache(navigation_start);
 }
 
 // This function receives TextAutosizerPageInfo from the main frame's renderer

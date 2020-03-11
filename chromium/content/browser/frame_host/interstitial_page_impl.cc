@@ -542,11 +542,6 @@ bool InterstitialPageImpl::ShouldOverrideUserAgentInNewTabs() {
   return false;
 }
 
-bool InterstitialPageImpl::ShowingInterstitialPage() {
-  // An interstitial page never shows a second interstitial.
-  return false;
-}
-
 blink::mojom::RendererPreferences InterstitialPageImpl::GetRendererPrefs(
     BrowserContext* browser_context) const {
   delegate_->OverrideRendererPrefs(&renderer_preferences_);
@@ -619,7 +614,7 @@ WebContentsView* InterstitialPageImpl::CreateWebContentsView() {
   WebContentsView* wcv =
       static_cast<WebContentsImpl*>(web_contents())->GetView();
   RenderWidgetHostViewBase* view =
-      wcv->CreateViewForWidget(render_view_host_->GetWidget(), false);
+      wcv->CreateViewForWidget(render_view_host_->GetWidget());
   render_view_host_->GetWidget()->SetView(view);
   render_view_host_->GetMainFrame()->AllowBindings(
       BINDINGS_POLICY_DOM_AUTOMATION);

@@ -28,7 +28,6 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_client_stats.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_endian.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_hostname_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_map_util.h"
@@ -61,7 +60,13 @@ void RecordDiskCacheServerConfigState(
 
 QuicCryptoClientConfig::QuicCryptoClientConfig(
     std::unique_ptr<ProofVerifier> proof_verifier)
+    : QuicCryptoClientConfig(std::move(proof_verifier), nullptr) {}
+
+QuicCryptoClientConfig::QuicCryptoClientConfig(
+    std::unique_ptr<ProofVerifier> proof_verifier,
+    std::unique_ptr<SessionCache> session_cache)
     : proof_verifier_(std::move(proof_verifier)),
+      session_cache_(std::move(session_cache)),
       ssl_ctx_(TlsClientConnection::CreateSslCtx()) {
   DCHECK(proof_verifier_.get());
   SetDefaults();
@@ -120,7 +125,7 @@ QuicCryptoClientConfig::CachedState::GetServerConfig() const {
     return nullptr;
   }
 
-  if (!scfg_.get()) {
+  if (!scfg_) {
     scfg_ = CryptoFramer::ParseMessage(server_config_);
     DCHECK(scfg_.get());
   }
@@ -848,6 +853,10 @@ QuicErrorCode QuicCryptoClientConfig::ProcessServerConfigUpdate(
 
 ProofVerifier* QuicCryptoClientConfig::proof_verifier() const {
   return proof_verifier_.get();
+}
+
+SessionCache* QuicCryptoClientConfig::session_cache() const {
+  return session_cache_.get();
 }
 
 SSL_CTX* QuicCryptoClientConfig::ssl_ctx() const {

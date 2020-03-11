@@ -27,17 +27,15 @@ namespace dawn_native {
 
     // Keeps track of the dirty bind groups so they can be lazily applied when we know the
     // pipeline state or it changes.
-    // |BindGroup| is a template parameter so a backend may provide its backend-specific
-    // type or native handle.
     // |DynamicOffset| is a template parameter because offsets in Vulkan are uint32_t but uint64_t
     // in other backends.
-    template <typename BindGroup, bool CanInheritBindGroups, typename DynamicOffset = uint64_t>
+    template <bool CanInheritBindGroups, typename DynamicOffset>
     class BindGroupTrackerBase {
       public:
         void OnSetBindGroup(uint32_t index,
-                            BindGroup bindGroup,
+                            BindGroupBase* bindGroup,
                             uint32_t dynamicOffsetCount,
-                            uint64_t* dynamicOffsets) {
+                            uint32_t* dynamicOffsets) {
             ASSERT(index < kMaxBindGroups);
 
             if (mBindGroupLayoutsMask[index]) {
@@ -103,7 +101,7 @@ namespace dawn_native {
         std::bitset<kMaxBindGroups> mDirtyBindGroups = 0;
         std::bitset<kMaxBindGroups> mDirtyBindGroupsObjectChangedOrIsDynamic = 0;
         std::bitset<kMaxBindGroups> mBindGroupLayoutsMask = 0;
-        std::array<BindGroup, kMaxBindGroups> mBindGroups = {};
+        std::array<BindGroupBase*, kMaxBindGroups> mBindGroups = {};
         std::array<uint32_t, kMaxBindGroups> mDynamicOffsetCounts = {};
         std::array<std::array<DynamicOffset, kMaxBindingsPerGroup>, kMaxBindGroups>
             mDynamicOffsets = {};
@@ -115,21 +113,20 @@ namespace dawn_native {
         PipelineLayoutBase* mLastAppliedPipelineLayout = nullptr;
 
       private:
-        // Vulkan backend use uint32_t as dynamic offsets type, it is not correct.
-        // Vulkan should use VkDeviceSize. Dawn vulkan backend has to handle this.
-        static void SetDynamicOffsets(uint32_t* data,
+        // We have two overloads here because offsets in Vulkan are uint32_t but uint64_t
+        // in other backends.
+        static void SetDynamicOffsets(uint64_t* data,
                                       uint32_t dynamicOffsetCount,
-                                      uint64_t* dynamicOffsets) {
+                                      uint32_t* dynamicOffsets) {
             for (uint32_t i = 0; i < dynamicOffsetCount; ++i) {
-                ASSERT(dynamicOffsets[i] <= std::numeric_limits<uint32_t>::max());
-                data[i] = static_cast<uint32_t>(dynamicOffsets[i]);
+                data[i] = static_cast<uint64_t>(dynamicOffsets[i]);
             }
         }
 
-        static void SetDynamicOffsets(uint64_t* data,
+        static void SetDynamicOffsets(uint32_t* data,
                                       uint32_t dynamicOffsetCount,
-                                      uint64_t* dynamicOffsets) {
-            memcpy(data, dynamicOffsets, sizeof(uint64_t) * dynamicOffsetCount);
+                                      uint32_t* dynamicOffsets) {
+            memcpy(data, dynamicOffsets, sizeof(uint32_t) * dynamicOffsetCount);
         }
     };
 
