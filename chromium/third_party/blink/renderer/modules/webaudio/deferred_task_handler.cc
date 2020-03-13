@@ -157,19 +157,27 @@ void DeferredTaskHandler::RemoveAutomaticPullNode(
 }
 
 void DeferredTaskHandler::UpdateAutomaticPullNodes() {
+  DCHECK(IsAudioThread());
   DCHECK(IsGraphOwner());
 
   if (automatic_pull_handlers_need_updating_) {
-    CopyToVector(automatic_pull_handlers_, rendering_automatic_pull_handlers_);
-    automatic_pull_handlers_need_updating_ = false;
+    MutexTryLocker try_locker(automatic_pull_handlers_lock_);
+    if (try_locker.Locked()) {
+      CopyToVector(automatic_pull_handlers_,
+                   rendering_automatic_pull_handlers_);
+      automatic_pull_handlers_need_updating_ = false;
+    }
   }
 }
 
 void DeferredTaskHandler::ProcessAutomaticPullNodes(size_t frames_to_process) {
   DCHECK(IsAudioThread());
-  for (unsigned i = 0; i < rendering_automatic_pull_handlers_.size(); ++i) {
-    rendering_automatic_pull_handlers_[i]->ProcessIfNecessary(
-        frames_to_process);
+  MutexTryLocker try_locker(automatic_pull_handlers_lock_);
+  if (try_locker.Locked()) {
+    for (auto& rendering_automatic_pull_handler :
+        rendering_automatic_pull_handlers_) {
+      rendering_automatic_pull_handler->ProcessIfNecessary(frames_to_process);
+    }
   }
 }
 
@@ -334,6 +342,12 @@ void DeferredTaskHandler::RequestToDeleteHandlersOnMainThread() {
 
 void DeferredTaskHandler::DeleteHandlersOnMainThread() {
   DCHECK(IsMainThread());
+
+  {
+    MutexLocker locker(automatic_pull_handlers_lock_);
+    rendering_automatic_pull_handlers_.clear();
+  }
+
   GraphAutoLocker locker(*this);
   deletable_orphan_handlers_.clear();
   DisableOutputsForTailProcessing();
