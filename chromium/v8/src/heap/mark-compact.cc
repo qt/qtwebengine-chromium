@@ -3377,6 +3377,7 @@ void MarkCompactCollector::StartSweepSpace(PagedSpace* space) {
     }
 
     if (p->IsFlagSet(Page::NEVER_ALLOCATE_ON_PAGE)) {
+      base::LockGuard<base::Mutex> guard(p->mutex());
       // We need to sweep the page to get it into an iterable state again. Note
       // that this adds unusable memory into the free list that is later on
       // (in the free list) dropped again. Since we only use the flag for
@@ -3385,7 +3386,8 @@ void MarkCompactCollector::StartSweepSpace(PagedSpace* space) {
       sweeper()->RawSweep(p, Sweeper::IGNORE_FREE_LIST,
                           Heap::ShouldZapGarbage()
                               ? FreeSpaceTreatmentMode::ZAP_FREE_SPACE
-                              : FreeSpaceTreatmentMode::IGNORE_FREE_SPACE);
+                              : FreeSpaceTreatmentMode::IGNORE_FREE_SPACE,
+                          guard);
       space->IncreaseAllocatedBytes(p->allocated_bytes(), p);
       continue;
     }
