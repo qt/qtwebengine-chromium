@@ -83,7 +83,7 @@ struct MediaLogPropertyTypeConverter<std::vector<T>> {
 
 // Specializer for sending AudioDecoderConfigs to the media tab in devtools.
 template <>
-struct internal::MediaLogPropertyTypeConverter<media::AudioDecoderConfig> {
+struct MediaLogPropertyTypeConverter<media::AudioDecoderConfig> {
   static base::Value Convert(const AudioDecoderConfig& value) {
     base::Value result(base::Value::Type::DICTIONARY);
     result.SetStringKey("codec", GetCodecName(value.codec()));
@@ -114,7 +114,7 @@ struct internal::MediaLogPropertyTypeConverter<media::AudioDecoderConfig> {
 
 // Specializer for sending VideoDecoderConfigs to the media tab in devtools.
 template <>
-struct internal::MediaLogPropertyTypeConverter<VideoDecoderConfig> {
+struct MediaLogPropertyTypeConverter<VideoDecoderConfig> {
   static base::Value Convert(const VideoDecoderConfig& value) {
     base::Value result(base::Value::Type::DICTIONARY);
     result.SetStringKey("codec", GetCodecName(value.codec()));
