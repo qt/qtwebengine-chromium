@@ -150,10 +150,8 @@ namespace content {
 // static
 blink::WebMediaPlayer::SurfaceLayerMode
 MediaFactory::GetVideoSurfaceLayerMode() {
-#if defined(OS_ANDROID)
   if (base::FeatureList::IsEnabled(media::kDisableSurfaceLayerForVideo))
     return blink::WebMediaPlayer::SurfaceLayerMode::kNever;
-#endif  // OS_ANDROID
 
   return blink::WebMediaPlayer::SurfaceLayerMode::kAlways;
 }

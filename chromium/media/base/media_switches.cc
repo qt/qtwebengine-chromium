@@ -464,6 +464,11 @@ const base::Feature kAutoplayDisableSettings{"AutoplayDisableSettings",
 const base::Feature kAutoplayWhitelistSettings{
     "AutoplayWhitelistSettings", base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Prevents using SurfaceLayer for videos. This is meant to be used by embedders
+// that cannot support SurfaceLayer at the moment.
+const base::Feature kDisableSurfaceLayerForVideo{
+    "DisableSurfaceLayerForVideo", base::FEATURE_DISABLED_BY_DEFAULT};
+
 #if defined(OS_ANDROID)
 // Enable a gesture to make the media controls expaned into the display cutout.
 // TODO(beccahughes): Remove this.
@@ -492,11 +497,6 @@ const base::Feature kMediaDrmPreprovisioningAtStartup{
 // Enables the Android Image Reader path for Video decoding(for AVDA and MCVD)
 const base::Feature kAImageReaderVideoOutput{"AImageReaderVideoOutput",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Prevents using SurfaceLayer for videos. This is meant to be used by embedders
-// that cannot support SurfaceLayer at the moment.
-const base::Feature kDisableSurfaceLayerForVideo{
-    "DisableSurfaceLayerForVideo", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable picture in picture web api for android.
 const base::Feature kPictureInPictureAPI{"PictureInPictureAPI",
