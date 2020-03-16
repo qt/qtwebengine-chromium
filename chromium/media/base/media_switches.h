@@ -192,13 +192,14 @@ MEDIA_EXPORT extern const base::Feature kForceHardwareAudioDecoders;
 MEDIA_EXPORT extern const base::Feature kVp9kSVCHWDecoding;
 #endif  // defined(ARCH_CPU_X86_FAMILY) && defined(OS_CHROMEOS)
 
+MEDIA_EXPORT extern const base::Feature kDisableSurfaceLayerForVideo;
+
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const base::Feature kAllowNonSecureOverlays;
 MEDIA_EXPORT extern const base::Feature kMediaControlsExpandGesture;
 MEDIA_EXPORT extern const base::Feature kMediaDrmPersistentLicense;
 MEDIA_EXPORT extern const base::Feature kMediaDrmPreprovisioning;
 MEDIA_EXPORT extern const base::Feature kMediaDrmPreprovisioningAtStartup;
-MEDIA_EXPORT extern const base::Feature kDisableSurfaceLayerForVideo;
 MEDIA_EXPORT extern const base::Feature kCanPlayHls;
 MEDIA_EXPORT extern const base::Feature kPictureInPictureAPI;
 MEDIA_EXPORT extern const base::Feature kHlsPlayer;

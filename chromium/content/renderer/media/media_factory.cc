@@ -223,11 +223,12 @@ namespace content {
 // static
 blink::WebMediaPlayer::SurfaceLayerMode
 MediaFactory::GetVideoSurfaceLayerMode() {
-#if defined(OS_ANDROID)
-  if (base::FeatureList::IsEnabled(media::kDisableSurfaceLayerForVideo) &&
-      !features::IsUsingVizForWebView())
+  if (base::FeatureList::IsEnabled(media::kDisableSurfaceLayerForVideo))
     return blink::WebMediaPlayer::SurfaceLayerMode::kNever;
-#endif  // OS_ANDROID
+#if defined(OS_ANDROID)
+  if (!features::IsUsingVizForWebView())
+    return blink::WebMediaPlayer::SurfaceLayerMode::kNever;
+#endif
 
   return blink::WebMediaPlayer::SurfaceLayerMode::kAlways;
 }

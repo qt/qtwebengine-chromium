@@ -539,6 +539,11 @@ const base::Feature kAutoplayDisableSettings{"AutoplayDisableSettings",
 const base::Feature kAutoplayWhitelistSettings{
     "AutoplayWhitelistSettings", base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Prevents using SurfaceLayer for videos. This is meant to be used by embedders
+// that cannot support SurfaceLayer at the moment.
+const base::Feature kDisableSurfaceLayerForVideo{
+    "DisableSurfaceLayerForVideo", base::FEATURE_DISABLED_BY_DEFAULT};
+
 #if defined(OS_ANDROID)
 // Should we allow video playback to use an overlay if it's not needed for
 // security?  Normally, we'd always want to allow this, except as part of the
@@ -569,11 +574,6 @@ const base::Feature kMediaDrmPreprovisioning{"MediaDrmPreprovisioning",
 // Note: Has no effect if kMediaDrmPreprovisioning feature is disabled.
 const base::Feature kMediaDrmPreprovisioningAtStartup{
     "MediaDrmPreprovisioningAtStartup", base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Prevents using SurfaceLayer for videos. This is meant to be used by embedders
-// that cannot support SurfaceLayer at the moment.
-const base::Feature kDisableSurfaceLayerForVideo{
-    "DisableSurfaceLayerForVideo", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable picture in picture web api for android.
 const base::Feature kPictureInPictureAPI{"PictureInPictureAPI",
