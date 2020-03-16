@@ -1815,15 +1815,16 @@ generated_test_modules = [
 ]
 
 generated_worker_bundles = [
-  "$resources_out_dir/formatter_worker.js",
-  "$resources_out_dir/heap_snapshot_worker.js",
+  # These require node.js
+  # "$resources_out_dir/formatter_worker.js",
+  # "$resources_out_dir/heap_snapshot_worker.js",
 ]
 
 devtools_applications = [
   "audits_worker",
   "devtools_app",
-  "formatter_worker",
-  "heap_snapshot_worker",
+  # "formatter_worker",
+  # "heap_snapshot_worker",
   "inspector",
   "integration_test_runner",
   "js_app",
