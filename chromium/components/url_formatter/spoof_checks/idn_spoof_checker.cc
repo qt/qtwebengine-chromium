@@ -316,6 +316,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(
   // Disallow Icelandic confusables for domains outside Iceland's ccTLD (.is).
   if (label_string.length() > 1 && top_level_domain != "is" &&
       icelandic_characters_.containsSome(label_string))
+    return false;
 
   // Disallow Latin Schwa (U+0259) for domains outside Azerbaijan's ccTLD (.az).
   if (label_string.length() > 1 && top_level_domain != "az" &&
