@@ -271,9 +271,9 @@ void DeleteSelectionCommand::InitializePositionData(
       To<HTMLTableRowElement>(EnclosingNodeOfType(end, &IsHTMLTableRowElement));
 #else
   start_table_row_ = To<HTMLTableRowElement>(
-      EnclosingNodeOfType(start, &IsA<HTMLTableRowElement>));
+      EnclosingNodeOfType(start, &IsA<HTMLTableRowElement, Node>));
   end_table_row_ = To<HTMLTableRowElement>(
-      EnclosingNodeOfType(end, &IsA<HTMLTableRowElement>));
+      EnclosingNodeOfType(end, &IsA<HTMLTableRowElement, Node>));
 #endif
 
   // Don't move content out of a table cell.

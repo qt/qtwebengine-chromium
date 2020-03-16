@@ -17,7 +17,7 @@ const char kMimeTypeDownloadURL[] = "downloadurl";
 const char kMimeTypeHTML[] = "text/html";
 const char kMimeTypeRTF[] = "text/rtf";
 const char kMimeTypePNG[] = "image/png";
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) || defined(TOOLKIT_QT)
 // TODO(dcheng): This name is temporary. See crbug.com/106449.
 const char kMimeTypeWebCustomData[] = "chromium/x-web-custom-data";
 const char kMimeTypeWebkitSmartPaste[] = "chromium/x-webkit-paste";
