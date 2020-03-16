@@ -20,13 +20,17 @@
 #include "build/build_config.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/language/core/browser/pref_names.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
+#include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/public/common/content_switches.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
+
+#if BUILDFLAG(ENABLE_SPELLCHECK)
+#include "components/language/core/browser/pref_names.h"
+#endif
 
 #if !defined(TOOLKIT_QT)
 #include "components/browser_sync/browser_sync_switches.h"
@@ -41,7 +45,9 @@
 
 const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::string_switch_map_[] = {
+#if BUILDFLAG(ENABLE_SPELLCHECK)
         {switches::kLang, language::prefs::kApplicationLocale},
+#endif
 #if !defined(TOOLKIT_QT)
         {data_reduction_proxy::switches::kDataReductionProxy,
          data_reduction_proxy::prefs::kDataReductionProxy},
