@@ -46,7 +46,7 @@ COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypeLinuxText[];
 #endif  // defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_FUCHSIA)
 
-#if !defined(OS_APPLE)
+#if !defined(OS_APPLE) || defined(TOOLKIT_QT)
 // TODO(dcheng): This name is temporary. See crbug.com/106449.
 COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypeWebCustomData[];
@@ -54,7 +54,8 @@ COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypeWebkitSmartPaste[];
 COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypePepperCustomData[];
-#else
+#endif
+#if defined(OS_APPLE)
 // MacOS-specific Uniform Type Identifiers.
 
 // SVG images.

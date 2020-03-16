@@ -27,7 +27,9 @@ if (is_win) {
   ]
 }
 
-raw_vulkan_icd_dir = rebase_path("icd", root_build_dir)
+if (is_linux || is_win) {
+  raw_vulkan_icd_dir = rebase_path("icd", root_build_dir)
+}
 
 vulkan_data_dir = "$root_out_dir/$vulkan_data_subdir"
 raw_vulkan_data_dir = rebase_path(vulkan_data_dir, root_build_dir)

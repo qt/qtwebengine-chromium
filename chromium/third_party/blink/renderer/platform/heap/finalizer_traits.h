@@ -43,10 +43,14 @@ struct FinalizerTraitImpl<T, true> {
 // an object's base class has a virtual destructor. In case there is no virtual
 // destructor present, the object is always finalized through its leaf type. In
 // other words: there is no finalization through a base pointer.
+#if defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdelete-non-virtual-dtor"
+#endif
       static_cast<T*>(obj)->~T();
+#if defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
     }
   };
   using FinalizeImpl =
