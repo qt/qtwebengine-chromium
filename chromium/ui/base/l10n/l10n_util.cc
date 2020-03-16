@@ -438,7 +438,7 @@ std::string GetApplicationLocaleInternalMac(const std::string& pref_locale) {
 }
 #endif
 
-#if !defined(OS_APPLE)
+#if !defined(OS_APPLE) || defined(TOOLKIT_QT)
 std::string GetApplicationLocaleInternalNonMac(const std::string& pref_locale) {
   std::string resolved_locale;
   std::vector<std::string> candidates;
@@ -508,7 +508,7 @@ std::string GetApplicationLocaleInternalNonMac(const std::string& pref_locale) {
 #endif  // !defined(OS_APPLE)
 
 std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
-#if defined(OS_APPLE)
+#if defined(OS_APPLE) && !defined(TOOLKIT_QT)
   return GetApplicationLocaleInternalMac(pref_locale);
 #else
   return GetApplicationLocaleInternalNonMac(pref_locale);
