@@ -580,7 +580,7 @@ cc::PaintCanvas* CanvasResourceProvider::Canvas() {
     cc::ImageProvider* image_provider = &*canvas_image_provider_;
 
     cc::SkiaPaintCanvas::ContextFlushes context_flushes;
-    if (IsAccelerated() &&
+    if (IsAccelerated() && ContextProviderWrapper() &&
         !ContextProviderWrapper()
              ->ContextProvider()
              ->GetGpuFeatureInfo()
