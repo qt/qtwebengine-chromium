@@ -163,9 +163,14 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::prepareImages(
 template <typename Fn>
 size_t SkScalerCache::commonFilterLoop(SkDrawableGlyphBuffer* drawables, Fn&& fn) {
     size_t total = 0;
-    for (auto [i, packedID, pos] : SkMakeEnumerate(drawables->input())) {
+    for (auto t : SkMakeEnumerate(drawables->input())) {
+        auto i = std::get<0>(t);
+        auto packedID = std::get<0>(std::get<1>(t));
+        auto pos = std::get<1>(std::get<1>(t));
         if (SkScalarsAreFinite(pos.x(), pos.y())) {
-            auto [digest, size] = this->digest(packedID);
+            auto t2 = this->digest(packedID);
+            auto digest = std::get<0>(t2);
+            auto size = std::get<1>(t2);
             total += size;
             if (!digest.isEmpty()) {
                 fn(i, digest, pos);

@@ -494,8 +494,9 @@ void RemoteStrike::commonMaskLoop(
 
 void RemoteStrike::prepareForMaskDrawing(
         SkDrawableGlyphBuffer* drawables, SkSourceGlyphBuffer* rejects) {
-    for (auto [i, variant, _] : SkMakeEnumerate(drawables->input())) {
-        SkPackedGlyphID packedID = variant.packedID();
+    for (auto t : SkMakeEnumerate(drawables->input())) {
+        auto i = std::get<0>(t);
+        auto packedID = std::get<0>(std::get<1>(t)).packedID();
         if (fSentLowGlyphIDs.test(packedID)) {
             #ifdef SK_DEBUG
             MaskSummary* summary = fSentGlyphs.find(packedID);
