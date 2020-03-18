@@ -1169,7 +1169,7 @@ config("compiler_deterministic") {
   # Tells the compiler not to use absolute paths when passing the default
   # paths to the tools it invokes. We don't want this because we don't
   # really need it and it can mess up the goma cache entries.
-  if (is_clang && !is_nacl) {
+  if (is_clang && !is_nacl && !(use_qt && use_libcxx)) {
     cflags += [ "-no-canonical-prefixes" ]
   }
 }
