@@ -296,10 +296,7 @@ void DeferredTaskHandler::HandleDeferredTasks() {
 }
 
 void DeferredTaskHandler::ContextWillBeDestroyed() {
-  for (auto& handler : rendering_orphan_handlers_)
-    handler->ClearContext();
-  for (auto& handler : deletable_orphan_handlers_)
-    handler->ClearContext();
+  ClearContextFromOrphanHandlers();
   ClearHandlersToBeDeleted();
   // Some handlers might live because of their cross thread tasks.
 }
@@ -350,6 +347,19 @@ void DeferredTaskHandler::ClearHandlersToBeDeleted() {
   deletable_orphan_handlers_.clear();
   automatic_pull_handlers_.clear();
   rendering_automatic_pull_handlers_.clear();
+}
+
+void DeferredTaskHandler::ClearContextFromOrphanHandlers() {
+  DCHECK(IsMainThread());
+
+  // |rendering_orphan_handlers_| and |deletable_orphan_handlers_| can
+  // be modified on the audio thread.
+  GraphAutoLocker locker(*this);
+
+  for (auto& handler : rendering_orphan_handlers_)
+    handler->ClearContext();
+  for (auto& handler : deletable_orphan_handlers_)
+    handler->ClearContext();
 }
 
 void DeferredTaskHandler::SetAudioThreadToCurrentThread() {

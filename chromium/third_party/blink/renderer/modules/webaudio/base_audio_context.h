@@ -95,6 +95,7 @@ class MODULES_EXPORT BaseAudioContext
       public PausableObject {
   USING_GARBAGE_COLLECTED_MIXIN(BaseAudioContext);
   DEFINE_WRAPPERTYPEINFO();
+  USING_PRE_FINALIZER(BaseAudioContext, Dispose);
 
  public:
   // The state of an audio context.  On creation, the state is Suspended. The
@@ -112,6 +113,8 @@ class MODULES_EXPORT BaseAudioContext
   ~BaseAudioContext() override;
 
   void Trace(blink::Visitor*) override;
+
+  void Dispose();
 
   // Is the destination node initialized and ready to handle audio?
   bool IsDestinationInitialized() const {

@@ -104,6 +104,9 @@ class MODULES_EXPORT DeferredTaskHandler final
   void RequestToDeleteHandlersOnMainThread();
   void ClearHandlersToBeDeleted();
 
+  // Clear the context from the rendering and deletable orphan handlers.
+  void ClearContextFromOrphanHandlers();
+
   // If |node| requires tail processing, add it to the list of tail
   // nodes so the tail is processed.
   void AddTailProcessingHandler(scoped_refptr<AudioHandler>);
