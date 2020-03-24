@@ -63,6 +63,7 @@ class VizProcessTransportFactory : public ui::ContextFactory,
 
   // Connects HostFrameSinkManager to FrameSinkManagerImpl in viz process.
   void ConnectHostFrameSinkManager();
+  void PrepareForShutDown();
 
   // ui::ContextFactory implementation.
   void CreateLayerTreeFrameSink(
@@ -151,6 +152,7 @@ class VizProcessTransportFactory : public ui::ContextFactory,
   bool is_gpu_compositing_disabled_ = false;
 
   base::WeakPtrFactory<VizProcessTransportFactory> weak_ptr_factory_{this};
+  bool shutdown_ = false;
 };
 
 }  // namespace content
