@@ -109,8 +109,8 @@ void HostFrameSinkManager::InvalidateFrameSinkId(
     // HostFrameSinkManager has been mutated. |data| might not be a valid
     // reference at this point.
   }
-
-  frame_sink_manager_->InvalidateFrameSinkId(frame_sink_id);
+  if (frame_sink_manager_)
+    frame_sink_manager_->InvalidateFrameSinkId(frame_sink_id);
 }
 
 void HostFrameSinkManager::SetFrameSinkDebugLabel(
@@ -128,7 +128,7 @@ void HostFrameSinkManager::SetFrameSinkDebugLabel(
 void HostFrameSinkManager::CreateRootCompositorFrameSink(
     mojom::RootCompositorFrameSinkParamsPtr params) {
   // Should only be used with an out-of-process display compositor.
-  DCHECK(frame_sink_manager_remote_);
+  DCHECK(frame_sink_manager_remote_ || !frame_sink_manager_);
 
   FrameSinkId frame_sink_id = params->frame_sink_id;
   FrameSinkData& data = frame_sink_data_map_[frame_sink_id];
@@ -141,10 +141,11 @@ void HostFrameSinkManager::CreateRootCompositorFrameSink(
                                                     base::DoNothing());
   }
 
-  data.is_root = true;
-  data.has_created_compositor_frame_sink = true;
-
-  frame_sink_manager_->CreateRootCompositorFrameSink(std::move(params));
+  if (frame_sink_manager_) {
+     data.is_root = true;
+     data.has_created_compositor_frame_sink = true;
+     frame_sink_manager_->CreateRootCompositorFrameSink(std::move(params));
+  }
   display_hit_test_query_[frame_sink_id] = std::make_unique<HitTestQuery>();
 }
 
@@ -162,11 +163,12 @@ void HostFrameSinkManager::CreateCompositorFrameSink(
                                                     base::DoNothing());
   }
 
-  data.is_root = false;
-  data.has_created_compositor_frame_sink = true;
-
-  frame_sink_manager_->CreateCompositorFrameSink(
+  if (frame_sink_manager_) {
+    data.is_root = false;
+    data.has_created_compositor_frame_sink = true;
+    frame_sink_manager_->CreateCompositorFrameSink(
       frame_sink_id, std::move(receiver), std::move(client));
+  }
 }
 
 void HostFrameSinkManager::OnFrameTokenChanged(const FrameSinkId& frame_sink_id,
@@ -225,8 +227,9 @@ void HostFrameSinkManager::UnregisterFrameSinkHierarchy(
   DCHECK(base::Contains(parent_data.children, child_frame_sink_id));
   base::Erase(parent_data.children, child_frame_sink_id);
 
-  frame_sink_manager_->UnregisterFrameSinkHierarchy(parent_frame_sink_id,
-                                                    child_frame_sink_id);
+  if (frame_sink_manager_)
+    frame_sink_manager_->UnregisterFrameSinkHierarchy(parent_frame_sink_id,
+                                                      child_frame_sink_id);
 
   // The reference parent_data will become invalid when the container is
   // modified. So we have to call IsEmpty() in advance.
