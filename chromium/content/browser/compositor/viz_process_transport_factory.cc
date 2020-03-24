@@ -356,11 +356,15 @@ void VizProcessTransportFactory::OnGpuProcessLost() {
   ConnectHostFrameSinkManager();
 }
 
+void VizProcessTransportFactory::PrepareForShutDown() {
+  shutdown_=true;
+}
+
 void VizProcessTransportFactory::OnEstablishedGpuChannel(
     base::WeakPtr<ui::Compositor> compositor_weak_ptr,
     scoped_refptr<gpu::GpuChannelHost> gpu_channel_host) {
   ui::Compositor* compositor = compositor_weak_ptr.get();
-  if (!compositor)
+  if (!compositor || shutdown_)
     return;
 
   bool gpu_compositing =
