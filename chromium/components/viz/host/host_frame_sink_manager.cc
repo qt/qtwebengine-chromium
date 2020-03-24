@@ -157,7 +157,8 @@ void HostFrameSinkManager::InvalidateFrameSinkId(
                        base::Unretained(this), frame_sink_id);
   }
 
-  frame_sink_manager_->InvalidateFrameSinkId(frame_sink_id,
+  if (frame_sink_manager_)
+    frame_sink_manager_->InvalidateFrameSinkId(frame_sink_id,
                                              std::move(invalidate_callback));
 }
 
@@ -186,7 +187,7 @@ void HostFrameSinkManager::CreateRootCompositorFrameSink(
     mojom::RootCompositorFrameSinkParamsPtr params,
     bool maybe_wait_on_destruction /*=true*/) {
   // Should only be used with an out-of-process display compositor.
-  DCHECK(frame_sink_manager_remote_);
+  DCHECK(frame_sink_manager_remote_ || !frame_sink_manager_);
 
   FrameSinkId frame_sink_id = params->frame_sink_id;
   FrameSinkData& data = frame_sink_data_map_[frame_sink_id];
@@ -199,14 +200,15 @@ void HostFrameSinkManager::CreateRootCompositorFrameSink(
                                                     base::DoNothing());
   }
 
-  data.is_root = true;
-  data.has_created_compositor_frame_sink = true;
-
   // Only wait on destruction if using GPU compositing for the window.
   data.wait_on_destruction =
       maybe_wait_on_destruction && params->gpu_compositing;
 
-  frame_sink_manager_->CreateRootCompositorFrameSink(std::move(params));
+  if (frame_sink_manager_) {
+    data.is_root = true;
+    data.has_created_compositor_frame_sink = true;
+    frame_sink_manager_->CreateRootCompositorFrameSink(std::move(params));
+  }
   display_hit_test_query_[frame_sink_id] =
       std::make_unique<HitTestQuery>(std::nullopt);
 }
@@ -261,11 +263,13 @@ void HostFrameSinkManager::CreateFrameSink(
                                                     base::DoNothing());
   }
 
-  data.is_root = false;
-  data.has_created_compositor_frame_sink = true;
-  frame_sink_manager_->CreateCompositorFrameSink(
+  if (frame_sink_manager_) {
+    data.is_root = false;
+    data.has_created_compositor_frame_sink = true;
+    frame_sink_manager_->CreateCompositorFrameSink(
       frame_sink_id, bundle_id, std::move(receiver), std::move(client),
       std::move(render_input_router_config));
+  }
 }
 
 void HostFrameSinkManager::OnFrameTokenChanged(
@@ -319,8 +323,9 @@ void HostFrameSinkManager::UnregisterFrameSinkHierarchy(
     frame_sink_data_map_.erase(parent_frame_sink_id);
   }
 
-  frame_sink_manager_->UnregisterFrameSinkHierarchy(parent_frame_sink_id,
-                                                    child_frame_sink_id);
+  if (frame_sink_manager_)
+    frame_sink_manager_->UnregisterFrameSinkHierarchy(parent_frame_sink_id,
+                                                      child_frame_sink_id);
 }
 
 void HostFrameSinkManager::AddVideoDetectorObserver(
