@@ -202,9 +202,12 @@ AllocationResult Heap::AllocateRaw(int size_in_bytes, AllocationType type,
       allocation = old_space_->AllocateRaw(size_in_bytes, alignment, origin);
     }
   } else if (AllocationType::kCode == type) {
+#ifdef V8_ENABLE_THIRD_PARTY_HEAP
     if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
       allocation = tp_heap_->AllocateCode(size_in_bytes);
-    } else if (size_in_bytes <= code_space()->AreaSize() && !large_object) {
+    } else
+#endif
+    if (size_in_bytes <= code_space()->AreaSize() && !large_object) {
       allocation = code_space_->AllocateRawUnaligned(size_in_bytes);
     } else {
       allocation = code_lo_space_->AllocateRaw(size_in_bytes);
@@ -219,8 +222,10 @@ AllocationResult Heap::AllocateRaw(int size_in_bytes, AllocationType type,
     DCHECK_EQ(AllocationOrigin::kRuntime, origin);
     allocation =
         read_only_space_->AllocateRaw(size_in_bytes, alignment, origin);
+#ifdef V8_ENABLE_THIRD_PARTY_HEAP
   } else if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     allocation = tp_heap_->Allocate(size_in_bytes);
+#endif
   } else {
     UNREACHABLE();
   }
@@ -415,9 +420,11 @@ bool Heap::InOldSpace(Object object) { return old_space_->Contains(object); }
 
 // static
 Heap* Heap::FromWritableHeapObject(HeapObject obj) {
+#ifdef V8_ENABLE_THIRD_PARTY_HEAP
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     return Heap::GetIsolateFromWritableObject(obj)->heap();
   }
+#endif
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(obj);
   // RO_SPACE can be shared between heaps, so we can't use RO_SPACE objects to
   // find a heap. The exception is when the ReadOnlySpace is writeable, during

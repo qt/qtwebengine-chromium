@@ -6187,10 +6187,12 @@ Code Heap::GcSafeFindCodeForInnerPointer(Address inner_pointer) {
   Code code = InstructionStream::TryLookupCode(isolate(), inner_pointer);
   if (!code.is_null()) return code;
 
+#ifdef V8_ENABLE_THIRD_PARTY_HEAP
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     Address start = tp_heap_->GetObjectFromInnerPointer(inner_pointer);
     return GcSafeCastToCode(HeapObject::FromAddress(start), inner_pointer);
   }
+#endif
 
   // Check if the inner pointer points into a large object chunk.
   LargePage* large_page = code_lo_space()->FindPage(inner_pointer);
