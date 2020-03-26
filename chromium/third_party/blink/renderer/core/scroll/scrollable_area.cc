@@ -56,6 +56,10 @@
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 
+#ifdef TOOLKIT_QT
+#include "third_party/blink/renderer/core/editing/frame_selection.h"
+#endif
+
 namespace blink {
 
 int ScrollableArea::PixelsPerLineStep(LocalFrame* frame) {
@@ -298,6 +302,12 @@ void ScrollableArea::SetScrollOffset(const ScrollOffset& offset,
     default:
       NOTREACHED();
   }
+
+#ifdef TOOLKIT_QT
+  if (auto doc = GetDocument())
+    if (auto frame = doc->GetFrame())
+      frame->Selection().MarkCacheDirty();
+#endif
 }
 
 void ScrollableArea::SetScrollOffset(const ScrollOffset& offset,
