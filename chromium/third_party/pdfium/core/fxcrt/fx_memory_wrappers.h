@@ -23,8 +23,8 @@ struct FxFreeDeleter {
 template <class T>
 struct FxAllocAllocator {
  public:
-  static_assert(std::is_arithmetic<T>::value,
-                "Only numeric types allowed in this partition");
+  //static_assert(std::is_arithmetic<T>::value,
+  //              "Only numeric types allowed in this partition");
 
   using value_type = T;
   using pointer = T*;

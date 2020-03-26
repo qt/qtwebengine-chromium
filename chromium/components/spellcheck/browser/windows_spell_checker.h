@@ -46,9 +46,11 @@ class WindowsSpellChecker : public PlatformSpellChecker {
       const base::string16& text,
       spellcheck_platform::TextCheckCompleteCallback callback) override;
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
   void GetPerLanguageSuggestions(
       const base::string16& word,
       spellcheck_platform::GetSuggestionsCallback callback);
+#endif
 
   void AddWordForAllLanguages(const base::string16& word);
 
@@ -96,11 +98,13 @@ class WindowsSpellChecker : public PlatformSpellChecker {
         int document_tag,
         const base::string16& text);
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
     // Gets spelling suggestions for |word| from all active spell checkers (all
     // languages), keeping the suggestions separate per language, and returns
     // the results in a vector of vector of strings.
     spellcheck::PerLanguageSuggestions GetPerLanguageSuggestions(
         const base::string16& word);
+#endif
 
     // Fills the given vector |optional_suggestions| with a number (up to
     // kMaxSuggestions) of suggestions for the string |wrong_word| using the
