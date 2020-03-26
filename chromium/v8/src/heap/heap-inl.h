@@ -470,9 +470,11 @@ bool Heap::InOldSpace(Object object) {
 
 // static
 Heap* Heap::FromWritableHeapObject(HeapObject obj) {
+#ifdef V8_ENABLE_THIRD_PARTY_HEAP
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     return Heap::GetIsolateFromWritableObject(obj)->heap();
   }
+#endif
   BasicMemoryChunk* chunk = BasicMemoryChunk::FromHeapObject(obj);
   // RO_SPACE can be shared between heaps, so we can't use RO_SPACE objects to
   // find a heap. The exception is when the ReadOnlySpace is writeable, during
