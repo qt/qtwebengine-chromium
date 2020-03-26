@@ -67,7 +67,7 @@ class PacketSequenceState {
         PERFETTO_FATAL(
             "Interning entry accessed under different types! previous type: "
             "%s. new type: %s.",
-            decoder_type, __PRETTY_FUNCTION__);
+            decoder_type, PERFETTO_DEBUG_FUNCTION_IDENTIFIER());
       }
       return reinterpret_cast<typename MessageType::Decoder*>(decoder.get());
     }
@@ -79,10 +79,18 @@ class PacketSequenceState {
     const char* decoder_type = nullptr;
   };
 
-  using InternedMessageMap =
-      std::unordered_map<uint64_t /*iid*/, InternedMessageView>;
-  using InternedFieldMap =
-      std::unordered_map<uint32_t /*field_id*/, InternedMessageMap>;
+  using InternedMessageMap = std::unordered_map<uint64_t /*iid*/, InternedMessageView>;
+  // We need to specialize this map, as the MSVC standard library otherwise tries to
+  // instantiate the copy constructors which fails with movable-only types.
+  class InternedFieldMap : public std::unordered_map<uint32_t /*field_id*/, InternedMessageMap>
+  {
+   public:
+    InternedFieldMap() = default;
+    InternedFieldMap(InternedFieldMap&&) = default;
+    InternedFieldMap(const InternedFieldMap&) = delete;
+    InternedFieldMap& operator=(InternedFieldMap&&) = default;
+    InternedFieldMap& operator=(const InternedFieldMap&) = delete;
+  };
   using InternedDataGenerationList = std::vector<InternedFieldMap>;
 
   PacketSequenceState(TraceProcessorContext* context)

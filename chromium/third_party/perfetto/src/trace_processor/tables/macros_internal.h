@@ -40,7 +40,7 @@ class RootParentTable : public Table {
    protected:
     const char* type_ = nullptr;
   };
-  uint32_t Insert(const Row&) { PERFETTO_FATAL("Should not be called"); }
+  uint32_t Insert(const Row&) { PERFETTO_FATAL("Should not be called"); return 0; }
 };
 
 // The parent class for all macro generated tables.
@@ -186,12 +186,15 @@ class MacroTable : public Table {
                                                      fn, ...)                 \
   fn
 
+#define CR_EXPAND_ARG(arg) arg
+
 // Invokes the chosen column constructor by passing the given args.
 #define PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN(...)              \
+  CR_EXPAND_ARG(                                               \
   PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN_CHOOSER(                \
       __VA_ARGS__, PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN_FLAGS, \
       PERFETTO_TP_TABLE_CONSTRUCTOR_COLUMN_NO_FLAGS)           \
-  (__VA_ARGS__)
+  (__VA_ARGS__))
 
 // Inserts the value into the corresponding column
 #define PERFETTO_TP_COLUMN_APPEND(type, name, ...) \

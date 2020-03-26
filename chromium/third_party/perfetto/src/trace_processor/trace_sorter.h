@@ -17,6 +17,7 @@
 #ifndef SRC_TRACE_PROCESSOR_TRACE_SORTER_H_
 #define SRC_TRACE_PROCESSOR_TRACE_SORTER_H_
 
+#include <algorithm>
 #include <vector>
 
 #include "perfetto/ext/base/circular_queue.h"

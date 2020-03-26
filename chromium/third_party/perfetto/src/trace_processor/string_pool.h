@@ -78,7 +78,7 @@ class StringPool {
   ~StringPool();
 
   // Allow std::move().
-  StringPool(StringPool&&) noexcept;
+  StringPool(StringPool&&);
   StringPool& operator=(StringPool&&);
 
   // Disable implicit copy.
