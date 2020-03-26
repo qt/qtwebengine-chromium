@@ -51,7 +51,7 @@ class COMPONENT_EXPORT(TRACING_CPP) TrackEventThreadLocalEventSink
   //
   // This is important because when TRACE_EVENT_FLAG_COPY is set, the
   // InternedIndexesUpdates are cleared within the same call to AddTraceEvent().
-  union IndexData {
+  struct IndexData {
     const char* str_piece;
     std::tuple<const char*, const char*, int> src_loc;
     explicit IndexData(const char* str);

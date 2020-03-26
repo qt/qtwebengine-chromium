@@ -85,7 +85,9 @@ config("compiler") {
     cflags += [ "/X" ]
 
     # Tell clang which version of MSVC to emulate.
-    cflags += [ "-fmsc-version=1916" ]
+    if (!ninja_use_custom_environment_files) {
+      cflags += [ "-fmsc-version=1916" ]
+    }
 
     # Emit table of address-taken functions for Control-Flow Guard (CFG). We
     # don't emit the CFG checks themselves, but this enables the functions to

@@ -156,7 +156,8 @@ inline void* operator new(size_t, NotNullTag, void* location) {
   return location;
 }
 
-#if defined(__clang__) && __has_attribute(uninitialized)
+#if defined(__clang__) || defined(__GNUC__)
+#if __has_attribute(uninitialized)
 // Attribute "uninitialized" disables -ftrivial-auto-var-init=pattern for
 // the specified variable.
 //
@@ -168,7 +169,9 @@ inline void* operator new(size_t, NotNullTag, void* location) {
 // However if compiler optimization fails and code refactoring is hard, the
 // attribute can be used as a workaround.
 #define STACK_UNINITIALIZED __attribute__((uninitialized))
-#else
+#endif
+#endif
+#ifndef STACK_UNINITIALIZED
 #define STACK_UNINITIALIZED
 #endif
 

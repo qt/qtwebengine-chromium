@@ -459,7 +459,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       const mojom::HttpAuthDynamicParams*
           http_auth_dynamic_network_service_params);
 
-  const net::HttpAuthPreferences* GetHttpAuthPreferences() const;
+  const net::HttpAuthPreferences* GetHttpAuthPreferences() const noexcept;
 
  private:
   URLRequestContextOwner MakeURLRequestContext();

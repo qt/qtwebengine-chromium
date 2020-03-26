@@ -62,8 +62,10 @@ class WindowsSpellChecker {
       bool fill_suggestions,
       PlatformTextCheckCompleteCallback callback);
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
   void GetPerLanguageSuggestions(const base::string16& word,
                                  GetSuggestionsCallback callback);
+#endif
 
   void AddWordForAllLanguages(const base::string16& word);
 
@@ -107,9 +109,11 @@ class WindowsSpellChecker {
       bool fill_suggestions,
       PlatformTextCheckCompleteCallback callback);
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
   void GetPerLanguageSuggestionsInBackgroundThread(
       const base::string16& word,
       GetSuggestionsCallback callback);
+#endif
 
   // Fills the given vector |optional_suggestions| with a number (up to
   // kMaxSuggestions) of suggestions for the string |wrong_word| of language
@@ -219,6 +223,7 @@ void WindowsSpellChecker::RequestTextCheckForAllLanguages(
                      fill_suggestions, std::move(callback)));
 }
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
 void WindowsSpellChecker::GetPerLanguageSuggestions(
     const base::string16& word,
     GetSuggestionsCallback callback) {
@@ -228,6 +233,7 @@ void WindowsSpellChecker::GetPerLanguageSuggestions(
           &WindowsSpellChecker::GetPerLanguageSuggestionsInBackgroundThread,
           weak_ptr_factory_.GetWeakPtr(), word, std::move(callback)));
 }
+#endif
 
 void WindowsSpellChecker::AddWordForAllLanguages(const base::string16& word) {
   background_task_runner_->PostTask(
@@ -393,6 +399,7 @@ void WindowsSpellChecker::RequestTextCheckForAllLanguagesInBackgroundThread(
                               base::BindOnce(std::move(callback), results));
 }
 
+#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
 void WindowsSpellChecker::GetPerLanguageSuggestionsInBackgroundThread(
     const base::string16& word,
     GetSuggestionsCallback callback) {
@@ -412,6 +419,7 @@ void WindowsSpellChecker::GetPerLanguageSuggestionsInBackgroundThread(
   main_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(suggestions)));
 }
+#endif
 
 void WindowsSpellChecker::FillSuggestionListInBackgroundThread(
     const std::string& lang_tag,
