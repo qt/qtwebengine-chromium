@@ -70,6 +70,10 @@
 #include "third_party/blink/renderer/platform/timer.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 
+#ifdef TOOLKIT_QT
+#include "third_party/blink/renderer/core/editing/frame_selection.h"
+#endif
+
 namespace blink {
 
 int ScrollableArea::PixelsPerLineStep(LocalFrame* frame) {
@@ -306,6 +310,11 @@ void ScrollableArea::SetScrollOffset(const ScrollOffset& offset,
       [](WeakPersistent<ScrollableArea> area, ScrollCompletionMode mode) {
         if (area) {
           area->RunScrollCompleteCallbacks(mode);
+#ifdef TOOLKIT_QT
+          if (auto doc = area->GetDocument())
+            if (auto frame = doc->GetFrame())
+              frame->Selection().MarkCacheDirty();
+#endif
         }
       },
       WrapWeakPersistent(this)));
