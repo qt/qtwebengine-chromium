@@ -1549,13 +1549,13 @@ class AXPosition {
           text_position->GetGraphemeIterator();
       DCHECK_GE(text_position->text_offset_, 0);
       DCHECK_LE(text_position->text_offset_,
-                int{text_position->name_.length()});
+                int(text_position->name_.length()));
       while (
           !text_position->AtStartOfAnchor() &&
           (!gfx::IsValidCodePointIndex(text_position->name_,
-                                       size_t{text_position->text_offset_}) ||
+                                       size_t(text_position->text_offset_)) ||
            (grapheme_iterator && !grapheme_iterator->IsGraphemeBoundary(
-                                     size_t{text_position->text_offset_})))) {
+                                     size_t(text_position->text_offset_))))) {
         --text_position->text_offset_;
       }
       return text_position;
@@ -1599,18 +1599,18 @@ class AXPosition {
       //
       // TODO(nektar): Remove this workaround as soon as the source of the bug
       // is identified.
-      if (text_position->text_offset_ > int{text_position->name_.length()})
+      if (text_position->text_offset_ > int(text_position->name_.length()))
         return CreateNullPosition();
 
       DCHECK_GE(text_position->text_offset_, 0);
       DCHECK_LE(text_position->text_offset_,
-                int{text_position->name_.length()});
+                int(text_position->name_.length()));
       while (
           !text_position->AtEndOfAnchor() &&
           (!gfx::IsValidCodePointIndex(text_position->name_,
-                                       size_t{text_position->text_offset_}) ||
+                                       size_t(text_position->text_offset_)) ||
            (grapheme_iterator && !grapheme_iterator->IsGraphemeBoundary(
-                                     size_t{text_position->text_offset_})))) {
+                                     size_t(text_position->text_offset_))))) {
         ++text_position->text_offset_;
       }
 
@@ -1668,7 +1668,7 @@ class AXPosition {
       ++text_position->text_offset_;
     } while (!text_position->AtEndOfAnchor() && grapheme_iterator &&
              !grapheme_iterator->IsGraphemeBoundary(
-                 size_t{text_position->text_offset_}));
+                 size_t(text_position->text_offset_)));
     DCHECK_GT(text_position->text_offset_, 0);
     DCHECK_LE(text_position->text_offset_, text_position->MaxTextOffset());
 
@@ -1731,7 +1731,7 @@ class AXPosition {
       --text_position->text_offset_;
     } while (!text_position->AtStartOfAnchor() && grapheme_iterator &&
              !grapheme_iterator->IsGraphemeBoundary(
-                 size_t{text_position->text_offset_}));
+                 size_t(text_position->text_offset_)));
     DCHECK_GE(text_position->text_offset_, 0);
     DCHECK_LT(text_position->text_offset_, text_position->MaxTextOffset());
 
@@ -2423,7 +2423,7 @@ class AXPosition {
   virtual int MaxTextOffset() const {
     if (IsNullPosition())
       return INVALID_OFFSET;
-    return int{GetText().length()};
+    return int(GetText().length());
   }
 
  protected:

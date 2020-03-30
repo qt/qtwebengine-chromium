@@ -319,9 +319,9 @@ gfx::Vector2dF GetPixelsPerInchForPointerDevice(HANDLE source_device) {
   if (get_pointer_device_rects(source_device, &device, &screen)) {
     constexpr float kHimetricPerInch = 2540.f;
     float himetric_to_pixel_ratio_x =
-        float{device.right - device.left} / float{screen.right - screen.left};
+        float(device.right - device.left) / float(screen.right - screen.left);
     float himetric_to_pixel_ratio_y =
-        float{device.bottom - device.top} / float{screen.bottom - screen.top};
+        float(device.bottom - device.top) / float(screen.bottom - screen.top);
     pixels_per_inch.set_x(kHimetricPerInch / himetric_to_pixel_ratio_x);
     pixels_per_inch.set_y(kHimetricPerInch / himetric_to_pixel_ratio_y);
     return pixels_per_inch;
