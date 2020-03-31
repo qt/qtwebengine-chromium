@@ -31,7 +31,12 @@ MaybeHandle<Object> CreateDynamicFunction(Isolate* isolate,
 
   if (!Builtins::AllowDynamicFunction(isolate, target, target_global_proxy)) {
     isolate->CountUsage(v8::Isolate::kFunctionConstructorReturnedUndefined);
-    return isolate->factory()->undefined_value();
+    // TODO(verwaest): We would like to throw using the calling context instead
+    // of the entered context but we don't currently have access to that.
+    HandleScopeImplementer* impl = isolate->handle_scope_implementer();
+    SaveContext saved_context(isolate);
+    isolate->set_context(impl->LastEnteredOrMicrotaskContext()->native_context());
+    THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kNoAccess), Object);
   }
 
   // Build the source string.
