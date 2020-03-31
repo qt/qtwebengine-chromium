@@ -30,18 +30,19 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
+#include "third_party/blink/renderer/core/frame/settings.h"
 
 namespace blink {
 
 HTMLParserOptions::HTMLParserOptions(Document* document) {
-  if (!document)
+  if (!document || !document->GetFrame())
     return;
 
-  if (LocalFrame* frame = document->GetFrame()) {
-    script_enabled = document->CanExecuteScripts(kNotAboutToExecuteScript);
-    plugins_enabled =
-        frame->Loader().AllowPlugins(kNotAboutToInstantiatePlugin);
-  }
+  scripting_flag = (document->GetSettings()->GetParserScriptingFlagPolicy() ==
+                    ParserScriptingFlagPolicy::kEnabled) ||
+                   document->CanExecuteScripts(kNotAboutToExecuteScript);
+  plugins_enabled =
+    document->GetFrame()->Loader().AllowPlugins(kNotAboutToInstantiatePlugin);
 }
 
 }  // namespace blink

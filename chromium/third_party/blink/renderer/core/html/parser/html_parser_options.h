@@ -37,8 +37,9 @@ class CORE_EXPORT HTMLParserOptions {
   DISALLOW_NEW();
 
  public:
-  bool script_enabled = false;
   bool plugins_enabled = false;
+  // https://html.spec.whatwg.org/#scripting-flag
+  bool scripting_flag = false;
 
   explicit HTMLParserOptions(Document* = nullptr);
 };

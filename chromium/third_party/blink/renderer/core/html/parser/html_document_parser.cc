@@ -81,7 +81,7 @@ static HTMLTokenizer::State TokenizerStateForContextElement(
   if (context_tag.Matches(styleTag) || context_tag.Matches(xmpTag) ||
       context_tag.Matches(iframeTag) ||
       (context_tag.Matches(noembedTag) && options.plugins_enabled) ||
-      (context_tag.Matches(noscriptTag) && options.script_enabled) ||
+      (context_tag.Matches(noscriptTag) && options.scripting_flag) ||
       context_tag.Matches(noframesTag))
     return report_errors ? HTMLTokenizer::kRAWTEXTState
                          : HTMLTokenizer::kPLAINTEXTState;

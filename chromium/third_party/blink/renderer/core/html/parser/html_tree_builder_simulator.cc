@@ -169,7 +169,7 @@ HTMLTreeBuilderSimulator::SimulatedToken HTMLTreeBuilderSimulator::Simulate(
                     options_.plugins_enabled) ||
                    ThreadSafeMatch(tag_name, noframesTag) ||
                    (ThreadSafeMatch(tag_name, noscriptTag) &&
-                    options_.script_enabled)) {
+                    options_.scripting_flag)) {
           tokenizer->SetState(HTMLTokenizer::kRAWTEXTState);
         }
       }
