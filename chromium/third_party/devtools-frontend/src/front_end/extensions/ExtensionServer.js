@@ -56,6 +56,8 @@ export default class ExtensionServer extends Common.Object {
     this._traceProviders = [];
     /** @type {!Map<string, !Extensions.TracingSession>} */
     this._traceSessions = new Map();
+    // TODO(caseq): properly unload extensions when we disable them.
+    this._extensionsEnabled = true;
 
     const commands = Extensions.extensionAPI.Commands;
 
@@ -141,6 +143,10 @@ export default class ExtensionServer extends Common.Object {
   }
 
   _inspectedURLChanged(event) {
+    if (!this._canInspectURL(event.data.inspectedURL())) {
+      this._disableExtensions();
+      return;
+    }
     if (event.data !== SDK.targetManager.mainTarget()) {
       return;
     }
@@ -179,6 +185,9 @@ export default class ExtensionServer extends Common.Object {
    * @param {...*} vararg
    */
   _postNotification(type, vararg) {
+    if (!this._extensionsEnabled) {
+      return;
+    }
     const subscribers = this._subscribers[type];
     if (!subscribers) {
       return;
@@ -710,6 +719,13 @@ export default class ExtensionServer extends Common.Object {
   _addExtension(extensionInfo) {
     const startPage = extensionInfo.startPage;
 
+    const inspectedURL = SDK.SDKModel.TargetManager.instance().mainTarget().inspectedURL();
+    if (!this._canInspectURL(inspectedURL)) {
+      this._disableExtensions();
+    }
+    if (!this._extensionsEnabled) {
+      return;
+    }
     try {
       const startPageURL = new URL(/** @type {string} */ (startPage));
       const extensionOrigin = startPageURL.origin;
@@ -755,10 +771,12 @@ export default class ExtensionServer extends Common.Object {
     const message = event.data;
     let result;
 
-    if (message.command in this._handlers) {
-      result = await this._handlers[message.command](message, event.target);
-    } else {
+    if (!(message.command in this._handlers)) {
       result = this._status.E_NOTSUPPORTED(message.command);
+    } else if (!this._extensionsEnabled) {
+      result = this._status.E_FAILED('Permission denied');
+    } else {
+      result = await this._handlers[message.command](message, event.target);
     }
 
     if (result && message.requestId) {
@@ -894,6 +912,11 @@ export default class ExtensionServer extends Common.Object {
       }
       return this._status.E_NOTFOUND(options.frameURL || '<top>');
     }
+    // We shouldn't get here if the top frame can't be inspected by an extension, but
+    // let's double check for subframes.
+    if (!this._canInspectURL(frame.url)) {
+      return this._status.E_FAILED('Permission denied');
+    }
 
     let contextSecurityOrigin;
     if (options.useContentScriptContext) {
@@ -927,6 +950,9 @@ export default class ExtensionServer extends Common.Object {
         return this._status.E_FAILED(frame.url + ' has no execution context');
       }
     }
+    if (!this._canInspectURL(context.origin)) {
+      return this._status.E_FAILED('Permission denied');
+    }
 
     context
         .evaluate(
@@ -951,6 +977,33 @@ export default class ExtensionServer extends Common.Object {
       }
       callback(null, result.object || null, !!result.exceptionDetails);
     }
+  }
+
+  /**
+   *
+   * @param {string} url
+   */
+  _canInspectURL(url) {
+    let parsedURL;
+    // This is only to work around invalid URLs we're occasionally getting from some tests.
+    // TODO(caseq): make sure tests supply valid URLs or we specifically handle invalid ones.
+    try {
+      parsedURL = new URL(url);
+    } catch (exception) {
+      return false;
+    }
+    if (parsedURL.protocol === 'chrome:' || parsedURL.protocol === 'devtools:') {
+      return false;
+    }
+    if (parsedURL.protocol.startsWith('http') && parsedURL.hostname === 'chrome.google.com' &&
+        parsedURL.pathname.startsWith('/webstore')) {
+      return false;
+    }
+    return true;
+  }
+
+  _disableExtensions() {
+    this._extensionsEnabled = false;
   }
 }
 
