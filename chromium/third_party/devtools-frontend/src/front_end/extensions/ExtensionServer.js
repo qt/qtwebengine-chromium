@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+const extensionOriginSymbol = Symbol('extensionOrigin');
+
 /**
  * @unrestricted
  */
@@ -45,7 +47,8 @@ export default class ExtensionServer extends Common.Object {
     this._extraHeaders = {};
     this._requests = {};
     this._lastRequestId = 0;
-    this._registeredExtensions = {};
+    /** @type {!Map<string, !{name: string}>} */
+    this._registeredExtensions = new Map();
     this._status = new ExtensionStatus();
     /** @type {!Array<!Extensions.ExtensionSidebarPane>} */
     this._sidebarPanes = [];
@@ -103,7 +106,7 @@ export default class ExtensionServer extends Common.Object {
    * @return {boolean}
    */
   hasExtensions() {
-    return !!Object.keys(this._registeredExtensions).length;
+    return !!this._registeredExtensions.size;
   }
 
   /**
@@ -229,7 +232,7 @@ export default class ExtensionServer extends Common.Object {
     for (const extension in this._extraHeaders) {
       const headers = this._extraHeaders[extension];
       for (const name in headers) {
-        if (typeof headers[name] === 'string') {
+        if (name !== '__proto__' && typeof headers.get(name) === 'string') {
           allHeaders[name] = headers[name];
         }
       }
@@ -267,8 +270,8 @@ export default class ExtensionServer extends Common.Object {
       return this._status.E_EXISTS(id);
     }
 
-    const page = this._expandResourcePath(port._extensionOrigin, message.page);
-    let persistentId = port._extensionOrigin + message.title;
+    const page = this._expandResourcePath(port[extensionOriginSymbol], message.page);
+    let persistentId = port[extensionOriginSymbol] + message.title;
     persistentId = persistentId.replace(/\s/g, '');
     const panelView = new ExtensionServerPanelView(
         persistentId, message.title, new Extensions.ExtensionPanel(this, persistentId, id, page));
@@ -292,7 +295,7 @@ export default class ExtensionServer extends Common.Object {
       return this._status.E_NOTFOUND(message.panel);
     }
     const button = new Extensions.ExtensionButton(
-        this, message.id, this._expandResourcePath(port._extensionOrigin, message.icon), message.tooltip,
+        this, message.id, this._expandResourcePath(port[extensionOriginSymbol], message.icon), message.tooltip,
         message.disabled);
     this._clientObjects[message.id] = button;
 
@@ -313,7 +316,8 @@ export default class ExtensionServer extends Common.Object {
     if (!button || !(button instanceof Extensions.ExtensionButton)) {
       return this._status.E_NOTFOUND(message.id);
     }
-    button.update(this._expandResourcePath(port._extensionOrigin, message.icon), message.tooltip, message.disabled);
+    button.update(
+        this._expandResourcePath(port[extensionOriginSymbol], message.icon), message.tooltip, message.disabled);
     return this._status.OK();
   }
 
@@ -373,7 +377,8 @@ export default class ExtensionServer extends Common.Object {
     }
     if (message.evaluateOnPage) {
       return sidebar.setExpression(
-          message.expression, message.rootTitle, message.evaluateOptions, port._extensionOrigin, callback.bind(this));
+          message.expression, message.rootTitle, message.evaluateOptions, port[extensionOriginSymbol],
+          callback.bind(this));
     }
     sidebar.setObject(message.expression, message.rootTitle, callback.bind(this));
   }
@@ -383,7 +388,7 @@ export default class ExtensionServer extends Common.Object {
     if (!sidebar) {
       return this._status.E_NOTFOUND(message.id);
     }
-    sidebar.setPage(this._expandResourcePath(port._extensionOrigin, message.page));
+    sidebar.setPage(this._expandResourcePath(port[extensionOriginSymbol], message.page));
   }
 
   _onOpenResource(message) {
@@ -409,7 +414,7 @@ export default class ExtensionServer extends Common.Object {
   }
 
   _onSetOpenResourceHandler(message, port) {
-    const name = this._registeredExtensions[port._extensionOrigin].name || ('Extension ' + port._extensionOrigin);
+    const name = this._registeredExtensions.get(port[extensionOriginSymbol]).name;
     if (message.handlerPresent) {
       Components.Linkifier.registerLinkHandler(name, this._handleOpenURL.bind(this, port));
     } else {
@@ -454,7 +459,7 @@ export default class ExtensionServer extends Common.Object {
       this._dispatchCallback(message.requestId, port, result);
     }
     return this.evaluate(
-        message.expression, true, true, message.evaluateOptions, port._extensionOrigin, callback.bind(this));
+        message.expression, true, true, message.evaluateOptions, port[extensionOriginSymbol], callback.bind(this));
   }
 
   async _onGetHAR() {
@@ -569,8 +574,8 @@ export default class ExtensionServer extends Common.Object {
    * @param {!MessagePort} port
    */
   _onAddTraceProvider(message, port) {
-    const provider = new Extensions.ExtensionTraceProvider(
-        port._extensionOrigin, message.id, message.categoryName, message.categoryTooltip);
+    const provider = new ExtensionTraceProvider(
+        port[extensionOriginSymbol], message.id, message.categoryName, message.categoryTooltip);
     this._clientObjects[message.id] = provider;
     this._traceProviders.push(provider);
     this.dispatchEventToListeners(Events.TraceProviderAdded, provider);
@@ -703,24 +708,19 @@ export default class ExtensionServer extends Common.Object {
    * @suppressGlobalPropertiesCheck
    */
   _addExtension(extensionInfo) {
-    const urlOriginRegExp = new RegExp('([^:]+:\/\/[^/]*)\/');  // Can't use regexp literal here, MinJS chokes on it.
     const startPage = extensionInfo.startPage;
-    const name = extensionInfo.name;
 
     try {
-      const originMatch = urlOriginRegExp.exec(startPage);
-      if (!originMatch) {
-        console.error('Skipping extension with invalid URL: ' + startPage);
-        return false;
-      }
-      const extensionOrigin = originMatch[1];
-      if (!this._registeredExtensions[extensionOrigin]) {
+      const startPageURL = new URL(/** @type {string} */ (startPage));
+      const extensionOrigin = startPageURL.origin;
+      if (!this._registeredExtensions.get(extensionOrigin)) {
         // See ExtensionAPI.js for details.
         const injectedAPI = self.buildExtensionAPIInjectedScript(
             extensionInfo, this._inspectedTabId, UI.themeSupport.themeName(), UI.shortcutRegistry.globalShortcutKeys(),
             Extensions.extensionServer['_extensionAPITestHook']);
         Host.InspectorFrontendHost.setInjectedScriptForOrigin(extensionOrigin, injectedAPI);
-        this._registeredExtensions[extensionOrigin] = {name: name};
+        const name = extensionInfo.name || `Extension ${extensionOrigin}`;
+        this._registeredExtensions.set(extensionOrigin, {name});
       }
       const iframe = createElement('iframe');
       iframe.src = startPage;
@@ -734,14 +734,13 @@ export default class ExtensionServer extends Common.Object {
   }
 
   _registerExtension(origin, port) {
-    if (!this._registeredExtensions.hasOwnProperty(origin)) {
-      if (origin !== window.location.origin)  // Just ignore inspector frames.
-      {
+    if (!this._registeredExtensions.has(origin)) {
+      if (origin !== window.location.origin) {  // Just ignore inspector frames.
         console.error('Ignoring unauthorized client request from ' + origin);
       }
       return;
     }
-    port._extensionOrigin = origin;
+    port[extensionOriginSymbol] = origin;
     port.addEventListener('message', this._onmessage.bind(this), false);
     port.start();
   }
