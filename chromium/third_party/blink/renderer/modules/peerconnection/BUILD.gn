@@ -162,8 +162,6 @@ blink_modules_sources("peerconnection") {
   if (!enable_webrtc) {
     sources -= [
       "peer_connection_dependency_factory.cc",
-      "webrtc_media_stream_track_adapter.cc",
-      "webrtc_media_stream_track_adapter_map.cc",
     ]
   }
 }

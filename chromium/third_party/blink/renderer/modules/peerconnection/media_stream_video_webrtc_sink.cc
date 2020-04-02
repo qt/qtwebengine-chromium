@@ -266,6 +266,7 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
       ContentHintTypeToWebRtcContentHint(track.ContentHint()));
   video_track_->set_enabled(track.IsEnabled());
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   source_adapter_ = base::MakeRefCounted<WebRtcVideoSourceAdapter>(
       factory->GetWebRtcWorkerTaskRunner(), video_source_.get(),
       refresh_interval,
@@ -277,7 +278,7 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
       track,
       base::Bind(&WebRtcVideoSourceAdapter::OnVideoFrameOnIO, source_adapter_),
       false);
-
+#endif
   DVLOG(3) << "MediaStreamVideoWebRtcSink ctor() : is_screencast "
            << is_screencast;
 }
@@ -286,8 +287,10 @@ MediaStreamVideoWebRtcSink::~MediaStreamVideoWebRtcSink() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DVLOG(3) << "MediaStreamVideoWebRtcSink dtor().";
   weak_factory_.InvalidateWeakPtrs();
-  MediaStreamVideoSink::DisconnectFromTrack();
-  source_adapter_->ReleaseSourceOnMainThread();
+  if (source_adapter_) {
+    MediaStreamVideoSink::DisconnectFromTrack();
+    source_adapter_->ReleaseSourceOnMainThread();
+  }
 }
 
 void MediaStreamVideoWebRtcSink::OnEnabledChanged(bool enabled) {
