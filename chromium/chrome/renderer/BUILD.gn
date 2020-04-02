@@ -11,6 +11,7 @@ import("//components/offline_pages/buildflags/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
+import("//pdf/features.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//third_party/widevine/cdm/widevine.gni")
 import("//tools/grit/grit_rule.gni")
@@ -225,7 +226,6 @@ jumbo_static_library("renderer") {
       "plugins/power_saver_info.h",
     ]
     deps += [
-      "//components/pdf/renderer",
       "//components/strings",
       "//media:media_buildflags",
       "//ppapi/host",
@@ -237,6 +237,12 @@ jumbo_static_library("renderer") {
     if (is_linux) {
       deps += [ "//components/services/font/public/cpp" ]
     }
+  }
+
+  if (enable_pdf) {
+    deps += [
+      "//components/pdf/renderer",
+    ]
   }
 
   if (enable_widevine_cdm_component) {
