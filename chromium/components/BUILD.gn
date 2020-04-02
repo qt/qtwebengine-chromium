@@ -10,6 +10,7 @@ import("//components/safe_browsing/buildflags.gni")
 import("//components/ui_devtools/devtools.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
+import("//pdf/features.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//rlz/buildflags/buildflags.gni")
@@ -419,7 +420,7 @@ test("components_unittests") {
     ]
   }
 
-  if (enable_plugins) {
+  if (enable_plugins && enable_pdf) {
     deps += [ "//components/pdf/renderer:unit_tests" ]
   }
 
@@ -587,7 +588,7 @@ if (!is_ios && !is_fuchsia) {
       data += [ "$root_out_dir/Content Shell.app/" ]
     }
 
-    if (enable_plugins) {
+    if (enable_plugins && enable_pdf) {
       sources += [ "pdf/renderer/pdf_accessibility_tree_browsertest.cc" ]
       deps += [
         "//components/pdf/renderer",
