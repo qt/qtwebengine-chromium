@@ -18,7 +18,6 @@
 #define INCLUDE_PERFETTO_EXT_BASE_STRING_WRITER_H_
 
 #include <inttypes.h>
-#include <math.h>
 #include <string.h>
 #include <cmath>
 #include <cstdlib>
