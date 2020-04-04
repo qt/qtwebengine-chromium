@@ -316,12 +316,14 @@ void RenderWidgetHostViewBase::SetBackgroundColor(SkColor color) {
                     : SK_AlphaOPAQUE;
   default_background_color_ = color;
   UpdateBackgroundColor();
+#ifndef TOOLKIT_QT
   if (opaque != (SkColorGetA(color) == SK_AlphaOPAQUE)) {
     if (host()->owner_delegate()) {
       host()->owner_delegate()->SetBackgroundOpaque(SkColorGetA(color) ==
                                                     SK_AlphaOPAQUE);
     }
   }
+#endif
 }
 
 base::Optional<SkColor> RenderWidgetHostViewBase::GetBackgroundColor() {
