@@ -387,7 +387,8 @@ bool IDNToUnicodeOneComponent(const base::char16* comp,
   // Only transform if the input can be an IDN component.
   static const base::char16 kIdnPrefix[] = {'x', 'n', '-', '-'};
   if ((comp_len > arraysize(kIdnPrefix)) &&
-      !memcmp(comp, kIdnPrefix, sizeof(kIdnPrefix))) {
+      !memcmp(comp, kIdnPrefix, sizeof(kIdnPrefix)) &&
+      comp[comp_len - 1] != '-') { // Valid punycode must not end with a dash.
     UIDNA* uidna = g_uidna.Get().value;
     DCHECK(uidna != nullptr);
     size_t original_length = out->length();
