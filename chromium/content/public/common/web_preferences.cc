@@ -206,7 +206,11 @@ WebPreferences::WebPreferences()
       embedded_media_experience_enabled(false),
       css_hex_alpha_color_enabled(true),
       scroll_top_left_interop_enabled(true),
+#endif
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
       disable_features_depending_on_viz(false),
+#endif
+#if defined(OS_ANDROID)
       disable_accelerated_small_canvases(false),
       reenable_web_components_v0(false),
 #endif  // defined(OS_ANDROID)

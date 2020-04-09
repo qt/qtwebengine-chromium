@@ -275,10 +275,14 @@ struct CONTENT_EXPORT WebPreferences {
   // WebView sets this to false to retain old documentElement behaviour
   // (http://crbug.com/761016).
   bool scroll_top_left_interop_enabled;
+#endif
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
   // Disable features such as offscreen canvas that depend on the viz
   // architecture of surface embedding. Android WebView does not support this
   // architecture yet.
   bool disable_features_depending_on_viz;
+#endif
+#if defined(OS_ANDROID)
   // Don't accelerate small canvases to avoid crashes TODO(crbug.com/1004304)
   bool disable_accelerated_small_canvases;
   // Re-enable Web Components v0 on Webview, temporarily. This should get

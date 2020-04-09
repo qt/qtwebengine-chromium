@@ -233,7 +233,11 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(immersive_mode_enabled)
   IPC_STRUCT_TRAITS_MEMBER(css_hex_alpha_color_enabled)
   IPC_STRUCT_TRAITS_MEMBER(scroll_top_left_interop_enabled)
+#endif
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
   IPC_STRUCT_TRAITS_MEMBER(disable_features_depending_on_viz)
+#endif
+#if defined(OS_ANDROID)
   IPC_STRUCT_TRAITS_MEMBER(disable_accelerated_small_canvases)
   IPC_STRUCT_TRAITS_MEMBER(reenable_web_components_v0)
 #endif  // defined(OS_ANDROID)
