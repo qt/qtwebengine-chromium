@@ -5,7 +5,7 @@
 #ifndef BASE_TASK_SEQUENCE_MANAGER_SEQUENCE_MANAGER_IMPL_H_
 #define BASE_TASK_SEQUENCE_MANAGER_SEQUENCE_MANAGER_IMPL_H_
 
-#include <list>
+#include <deque>
 #include <map>
 #include <memory>
 #include <random>
@@ -228,7 +228,9 @@ class BASE_EXPORT SequenceManagerImpl
     bool task_was_run_on_quiescence_monitored_queue = false;
 
     // Due to nested runloops more than one task can be executing concurrently.
-    std::list<ExecutingTask> task_execution_stack;
+    // Note that this uses std::deque for pointer stability, since pointers to
+    // objects in this container are stored in TLS.
+    std::deque<ExecutingTask> task_execution_stack;
 
     Observer* observer = nullptr;  // NOT OWNED
   };
