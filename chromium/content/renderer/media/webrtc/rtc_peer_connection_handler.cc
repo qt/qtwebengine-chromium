@@ -1041,6 +1041,7 @@ RTCPeerConnectionHandler::RTCPeerConnectionHandler(
       initialize_called_(false),
       client_(client),
       is_closed_(false),
+      is_unregistered_(false),
       dependency_factory_(dependency_factory),
       track_adapter_map_(
           new WebRtcMediaStreamTrackAdapterMap(dependency_factory_,
@@ -1055,6 +1056,12 @@ RTCPeerConnectionHandler::RTCPeerConnectionHandler(
 }
 
 RTCPeerConnectionHandler::~RTCPeerConnectionHandler() {
+  if (!is_unregistered_) {
+    StopAndUnregister();
+  }
+}
+
+void RTCPeerConnectionHandler::StopAndUnregister() {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   Stop();
@@ -1065,6 +1072,10 @@ RTCPeerConnectionHandler::~RTCPeerConnectionHandler() {
 
   UMA_HISTOGRAM_COUNTS_10000(
       "WebRTC.NumDataChannelsPerPeerConnection", num_data_channels_created_);
+  // Clear the pointer to client_ so that it does not interfere with
+  // garbage collection.
+  client_ = nullptr;
+  is_unregistered_ = true;
 }
 
 void RTCPeerConnectionHandler::associateWithFrame(blink::WebLocalFrame* frame) {
@@ -1998,6 +2009,10 @@ void RTCPeerConnectionHandler::OnSignalingChange(
     peer_connection_tracker_->TrackSignalingStateChange(this, new_state);
   if (!is_closed_)
     client_->DidChangeSignalingState(new_state);
+     // The callback may have closed the PC. If so, do not continue.
+  if (is_closed_ || !client_) {
+     return;
+  }
 }
 
 // Called any time the IceConnectionState changes

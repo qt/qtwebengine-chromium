@@ -121,6 +121,12 @@ class WebRTCPeerConnectionHandler {
   virtual webrtc::RTCErrorOr<std::unique_ptr<WebRTCRtpTransceiver>> RemoveTrack(
       WebRTCRtpSender*) = 0;
   virtual void Stop() = 0;
+  // This function should be called when the object is taken out of service.
+  // There might be functions that need to return through the object, so it
+  // cannot be deleted yet, but no new operations should be allowed.
+  // All references to the object except the owning reference are deleted
+  // by this function.
+  virtual void StopAndUnregister() = 0;
 
   // Origin Trial - RtcPeerConnectionId
   virtual WebString Id() const = 0;

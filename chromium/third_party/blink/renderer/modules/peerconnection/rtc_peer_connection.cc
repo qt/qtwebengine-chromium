@@ -629,9 +629,11 @@ RTCPeerConnection::~RTCPeerConnection() {
 }
 
 void RTCPeerConnection::Dispose() {
-  // Promptly clears a raw reference from content/ to an on-heap object
+  // Promptly clears the handler's pointer to |this|
   // so that content/ doesn't access it in a lazy sweeping phase.
-  peer_handler_.reset();
+  if (peer_handler_) {
+    peer_handler_->StopAndUnregister();
+  }
 }
 
 ScriptPromise RTCPeerConnection::createOffer(ScriptState* script_state,
@@ -2201,7 +2203,7 @@ void RTCPeerConnection::ReleasePeerConnectionHandler() {
 
   dispatch_scheduled_event_runner_->Stop();
 
-  peer_handler_.reset();
+  peer_handler_->StopAndUnregister();
 
   connection_handle_for_scheduler_.reset();
 }
