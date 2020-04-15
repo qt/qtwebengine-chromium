@@ -163,6 +163,7 @@ class MODULES_EXPORT RTCPeerConnectionHandler
       const blink::WebString& label,
       const webrtc::DataChannelInit& init) override;
   void Stop() override;
+  void StopAndUnregister() override;
   webrtc::PeerConnectionInterface* NativePeerConnection() override;
   void RunSynchronousOnceClosureOnSignalingThread(
       base::OnceClosure closure,
@@ -339,14 +340,18 @@ class MODULES_EXPORT RTCPeerConnectionHandler
   // first call fails.
   bool initialize_called_;
 
-  // |client_| is a weak pointer to the blink object (blink::RTCPeerConnection)
+  // |client_| is a raw pointer to the blink object (blink::RTCPeerConnection)
   // that owns this object.
-  // It is valid for the lifetime of this object.
-  blink::WebRTCPeerConnectionHandlerClient* const client_;
+  // It is valid for the lifetime of this object, but is cleared when
+  // StopAndUnregister() is called, in order to make sure it doesn't
+  // interfere with garbage collection of the owner object.
+  blink::WebRTCPeerConnectionHandlerClient* client_;
   // True if this PeerConnection has been closed.
   // After the PeerConnection has been closed, this object may no longer
   // forward callbacks to blink.
   bool is_closed_;
+  // True if StopAndUnregister has been called.
+  bool is_unregistered_;
 
   // Transition from kHaveLocalOffer to kHaveRemoteOffer indicates implicit
   // rollback in which case we need to also make visiting of kStable observable.
