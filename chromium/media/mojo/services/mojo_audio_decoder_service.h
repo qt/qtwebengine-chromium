@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "media/base/audio_decoder.h"
 #include "media/mojo/interfaces/audio_decoder.mojom.h"
+#include "media/base/cdm_context.h"
 #include "media/mojo/services/media_mojo_export.h"
 
 namespace media {
@@ -67,8 +68,9 @@ class MEDIA_MOJO_EXPORT MojoAudioDecoderService : public mojom::AudioDecoder {
   // The destination for the decoded buffers.
   mojom::AudioDecoderClientAssociatedPtr client_;
 
-  // Holds the CdmContextRef to keep the CdmContext alive for the lifetime of
-  // the |decoder_|.
+  // The CDM ID and the corresponding CdmContextRef, which must be held to keep
+  // the CdmContext alive for the lifetime of the |decoder_|.
+  int cdm_id_ = CdmContext::kInvalidCdmId;
   std::unique_ptr<CdmContextRef> cdm_context_ref_;
 
   // The AudioDecoder that does actual decoding work.

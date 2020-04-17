@@ -11,7 +11,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_decoder_config.h"
@@ -168,21 +167,29 @@ void MojoVideoDecoderService::Initialize(const VideoDecoderConfig& config,
     return;
   }
 
-  // Get CdmContext from cdm_id if the stream is encrypted.
-  CdmContext* cdm_context = nullptr;
+  // |cdm_context_ref_| must be kept as long as |cdm_context| is used by the
+  // |decoder_|. We do NOT support resetting |cdm_context_ref_| because in
+  // general we don't support resetting CDM in the media pipeline.
   if (cdm_id != CdmContext::kInvalidCdmId) {
-    auto cdm_context_ref = mojo_cdm_service_context_->GetCdmContextRef(cdm_id);
-    if (!cdm_context_ref) {
-      DVLOG(1) << "CdmContextRef not found for CDM id: " << cdm_id;
-      std::move(callback).Run(false, false, 1);
+    if (cdm_id_ == CdmContext::kInvalidCdmId) {
+      DCHECK(!cdm_context_ref_);
+      cdm_id_ = cdm_id;
+      cdm_context_ref_ = mojo_cdm_service_context_->GetCdmContextRef(cdm_id);
+    } else if (cdm_id != cdm_id_) {
+      // TODO(xhwang): Replace with mojo::ReportBadMessage().
+      NOTREACHED() << "The caller should not switch CDM";
+      OnDecoderInitialized(std::move(callback),false);
       return;
     }
+  }
+  // Get CdmContext, which could be null.
+  CdmContext* cdm_context =
+      cdm_context_ref_ ? cdm_context_ref_->GetCdmContext() : nullptr;
 
-    // |cdm_context_ref_| must be kept as long as |cdm_context| is used by the
-    // |decoder_|.
-    cdm_context_ref_ = std::move(cdm_context_ref);
-    cdm_context = cdm_context_ref_->GetCdmContext();
-    DCHECK(cdm_context);
+  if (config.is_encrypted() && !cdm_context) {
+    DVLOG(1) << "CdmContext for " << cdm_id << " not found for encrypted video";
+    OnDecoderInitialized(std::move(callback),false);
+    return;
   }
 
   decoder_->Initialize(
@@ -233,9 +240,6 @@ void MojoVideoDecoderService::OnDecoderInitialized(InitializeCallback callback,
                                                    bool success) {
   DVLOG(1) << __func__;
   DCHECK(decoder_);
-
-  if (!success)
-    cdm_context_ref_.reset();
 
   std::move(callback).Run(success, decoder_->NeedsBitstreamConversion(),
                           decoder_->GetMaxDecodeRequests());
