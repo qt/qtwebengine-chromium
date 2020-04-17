@@ -110,9 +110,12 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext {
   void StartRendering() override;
 
   // Called when the context is being closed to stop rendering audio and clean
-  // up handlers. This clears the self-referencing pointer, making this object
-  // available for the potential GC.
+  // up handlers.
   void StopRendering();
+
+  // Called when suspending the context to stop reundering audio, but don't
+  // clean up handlers because we expect to be resuming where we left off.
+  void SuspendRendering();
 
   void DidClose();
 
