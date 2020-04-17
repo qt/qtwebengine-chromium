@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/modules/webaudio/audio_context_options.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/self_keep_alive.h"
 
 namespace blink {
 
@@ -104,6 +105,13 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext {
   // Record the current autoplay metrics.
   void RecordAutoplayMetrics();
 
+  // Starts rendering via AudioDestinationNode. This sets the self-referencing
+  // pointer to this object.
+  void StartRendering() override;
+
+  // Called when the context is being closed to stop rendering audio and clean
+  // up handlers. This clears the self-referencing pointer, making this object
+  // available for the potential GC.
   void StopRendering();
 
   void DidClose();
@@ -126,6 +134,8 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext {
 
   // Records if start() was ever called for any source node in this context.
   bool source_node_started_ = false;
+
+  SelfKeepAlive<AudioContext> keep_alive_;
 };
 
 }  // namespace blink

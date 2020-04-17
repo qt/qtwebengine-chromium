@@ -116,7 +116,8 @@ AudioContext* AudioContext::Create(Document& document,
 AudioContext::AudioContext(Document& document,
                            const WebAudioLatencyHint& latency_hint)
     : BaseAudioContext(&document, kRealtimeContext),
-      context_id_(g_context_id++) {
+      context_id_(g_context_id++),
+      keep_alive_(this) {
   destination_node_ = DefaultAudioDestinationNode::Create(this, latency_hint);
 
   switch (GetAutoplayPolicy()) {
@@ -143,7 +144,7 @@ void AudioContext::Uninitialize() {
   DCHECK(IsMainThread());
   DCHECK_NE(g_hardware_context_count, 0u);
   --g_hardware_context_count;
-
+  StopRendering();
   DidClose();
   RecordAutoplayMetrics();
   BaseAudioContext::Uninitialize();
@@ -315,14 +316,26 @@ bool AudioContext::IsContextClosed() const {
   return close_resolver_ || BaseAudioContext::IsContextClosed();
 }
 
+void AudioContext::StartRendering() {
+  DCHECK(IsMainThread());
+
+  if (!keep_alive_)
+    keep_alive_ = this;
+  BaseAudioContext::StartRendering();
+}
+
 void AudioContext::StopRendering() {
   DCHECK(IsMainThread());
   DCHECK(destination());
 
-  if (ContextState() == kRunning) {
+  // It is okay to perform the following on a suspended AudioContext because
+  // this method gets called from ExecutionContext::ContextDestroyed() meaning
+  // the AudioContext is already unreachable from the user code.
+  if (ContextState() != kClosed) {
     destination()->GetAudioDestinationHandler().StopRendering();
     SetContextState(kSuspended);
     GetDeferredTaskHandler().ClearHandlersToBeDeleted();
+    keep_alive_.Clear();
   }
 }
 

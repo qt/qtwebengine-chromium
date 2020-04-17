@@ -281,7 +281,7 @@ class MODULES_EXPORT BaseAudioContext
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
 
-  void StartRendering();
+  virtual void StartRendering();
 
   void NotifyStateChange();
 
