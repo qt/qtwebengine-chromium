@@ -3,6 +3,6 @@
 #ifndef SKIA_EXT_SKIA_COMMIT_HASH_H_
 #define SKIA_EXT_SKIA_COMMIT_HASH_H_
 
-#define SKIA_COMMIT_HASH "ac0e515499dbbfd8de62ed1eb7b5d0f2ad6a7679"
+#define SKIA_COMMIT_HASH "a91f9f612e5eeb93cf40a3c0ce7d7c6ddf838feb"
 
 #endif  // SKIA_EXT_SKIA_COMMIT_HASH_H_
