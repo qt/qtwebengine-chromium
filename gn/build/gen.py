@@ -360,6 +360,8 @@ def WriteGNNinja(path, platform, host, options):
       ldflags.append('-O3')
       if platform.is_darwin() and options.isysroot:
         cflags.append('-isysroot ' +  options.isysroot)
+        ldflags.append('-isysroot ' +  options.isysroot)
+
       # Use -fdata-sections and -ffunction-sections to place each function
       # or data item into its own section so --gc-sections can eliminate any
       # unused functions and data items.
