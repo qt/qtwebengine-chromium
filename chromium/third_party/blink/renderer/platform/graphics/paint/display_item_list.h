@@ -44,7 +44,8 @@ class PLATFORM_EXPORT DisplayItemList
         ContiguousContainer::AppendByMoving(item, item.DerivedSize());
     // ContiguousContainer::AppendByMoving() calls an in-place constructor
     // on item which replaces it with a tombstone/"dead display item" that
-    // can be safely destructed but should never be used except for debugging.
+    // can be safely destructed but should never be used except for debugging
+    // and raster invalidation (see below).
     DCHECK(item.IsTombstone());
     DCHECK(item.GetId() == result.GetId());
     // We need |visual_rect_| and |outset_for_raster_effects_| of the old
@@ -53,6 +54,7 @@ class PLATFORM_EXPORT DisplayItemList
     // original values back from |result|.
     item.visual_rect_ = result.visual_rect_;
     item.outset_for_raster_effects_ = result.outset_for_raster_effects_;
+    result.SetCopiedFromCachedSubsequence(false);
     return result;
   }
 
