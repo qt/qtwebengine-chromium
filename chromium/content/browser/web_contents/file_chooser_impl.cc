@@ -206,6 +206,8 @@ void FileChooserImpl::FileSelected(
     const base::FilePath& base_dir,
     blink::mojom::FileChooserParams::Mode mode,
     std::vector<blink::mojom::FileChooserFileInfoPtr> files) {
+  if (listener_impl_)
+    listener_impl_->ResetOwner();
   listener_impl_ = nullptr;
   if (!render_frame_host()) {
     std::move(callback_).Run(nullptr);
@@ -238,6 +240,8 @@ void FileChooserImpl::FileSelected(
 }
 
 void FileChooserImpl::FileSelectionCanceled() {
+  if (listener_impl_)
+    listener_impl_->ResetOwner();
   listener_impl_ = nullptr;
   std::move(callback_).Run(nullptr);
 }
