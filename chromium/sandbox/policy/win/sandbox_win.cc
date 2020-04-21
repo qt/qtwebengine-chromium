@@ -377,8 +377,15 @@ ResultCode AddDefaultConfigForSandboxedProcess(TargetConfig* config) {
     return result;
 
   config->SetLockdownDefaultDacl();
+
   config->AddKernelObjectToClose(HandleToClose::kDeviceApi);
+
+#ifdef TOOLKIT_QT
+  // Disable alternate window station due to QTBUG-83300
+  config->SetDesktop(Desktop::kAlternateDesktop);
+#else
   config->SetDesktop(Desktop::kAlternateWinstation);
+#endif
 
   if (base::FeatureList::IsEnabled(
           sandbox::policy::features::kWinSboxZeroAppShim)) {
