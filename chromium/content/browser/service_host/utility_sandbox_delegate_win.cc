@@ -12,6 +12,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_handle_util.h"
+#include "build/build_config.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -69,7 +70,12 @@ bool AudioInitializeConfig(sandbox::TargetConfig* config) {
     return false;
   }
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  // Disable alternate window station due to QTBUG-83300
+  config->SetDesktop(sandbox::Desktop::kAlternateDesktop);
+#else
   config->SetDesktop(sandbox::Desktop::kAlternateWinstation);
+#endif
 
   return true;
 }
@@ -143,7 +149,12 @@ bool IconReaderInitializeConfig(sandbox::TargetConfig* config) {
     return false;
   }
   config->SetLockdownDefaultDacl();
+#if BUILDFLAG(IS_QTWEBENGINE)
+  // Disable alternate window station due to QTBUG-83300
+  config->SetDesktop(sandbox::Desktop::kAlternateDesktop);
+#else
   config->SetDesktop(sandbox::Desktop::kAlternateWinstation);
+#endif
 
   sandbox::MitigationFlags flags = config->GetDelayedProcessMitigations();
   flags |= sandbox::MITIGATION_DYNAMIC_CODE_DISABLE;
