@@ -432,7 +432,12 @@ ResultCode AddDefaultPolicyForSandboxedProcess(TargetPolicy* policy) {
     return result;
   policy->SetLockdownDefaultDacl();
 
+#ifdef TOOLKIT_QT
+  // Disable alternate window station due to QTBUG-83300
+  result = policy->SetAlternateDesktop(false);
+#else
   result = policy->SetAlternateDesktop(true);
+#endif
   if (result != SBOX_ALL_OK) {
     // We ignore the result of setting the alternate desktop, however log
     // a launch warning.
