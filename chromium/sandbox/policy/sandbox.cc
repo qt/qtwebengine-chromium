@@ -57,8 +57,14 @@ bool Sandbox::Initialize(sandbox::mojom::Sandbox sandbox_type,
       // process because it will initialize the sandbox broker, which requires
       // the process to swap its window station. During this time all the UI
       // will be broken. This has to run before threads and windows are created.
+#ifdef TOOLKIT_QT
+      // Disable alternate window station due to QTBUG-83300
+      ResultCode result = broker_services->CreateAlternateDesktop(
+          Desktop::kAlternateDesktop);
+#else
       ResultCode result = broker_services->CreateAlternateDesktop(
           Desktop::kAlternateWinstation);
+#endif
       CHECK(result == SBOX_ALL_OK);
     }
     return true;
