@@ -325,7 +325,12 @@ ResultCode AddDefaultConfigForSandboxedProcess(TargetConfig* config) {
   if (result != SBOX_ALL_OK)
     return result;
 
+#ifdef TOOLKIT_QT
+  // Disable alternate window station due to QTBUG-83300
+  config->SetDesktop(Desktop::kAlternateDesktop);
+#else
   config->SetDesktop(Desktop::kAlternateWinstation);
+#endif
   return SBOX_ALL_OK;
 }
 
