@@ -81,7 +81,7 @@ source_set("x11") {
   }
 
   if (use_xkbcommon) {
-    configs += [ "//ui/events/ozone/layout:xkbcommon" ]
+    configs += [ "//ui/events/keycodes:xkbcommon" ]
   }
 
   public_configs = [ "//third_party/khronos:khronos_headers" ]
