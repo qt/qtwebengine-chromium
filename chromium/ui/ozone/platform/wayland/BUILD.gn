@@ -124,7 +124,7 @@ source_set("wayland") {
 
   import("//ui/base/ui_features.gni")
   if (use_xkbcommon) {
-    configs += [ "//ui/events/ozone/layout:xkbcommon" ]
+    configs += [ "//ui/events/keycodes:xkbcommon" ]
   }
 
   deps = [
