@@ -13,6 +13,8 @@ const char kEnableTracing[] = "enable-service-manager-tracing";
 #if defined(TOOLKIT_QT)
 // Pass on parent application name
 const char kApplicationName[] = "application-name";
+// Preload widevinepaths for sandbox
+const char kCdmWidevinePath[] = "widevine-path";
 #endif
 
 }  // namespace switches
