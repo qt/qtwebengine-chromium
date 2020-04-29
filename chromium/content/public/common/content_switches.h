@@ -298,6 +298,7 @@ extern const char kIpcFuzzerTestcase[];
 
 #if defined(TOOLKIT_QT)
 extern const char kApplicationName[];
+extern const char kCdmWidevinePath[];
 #endif
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in
