@@ -263,6 +263,7 @@ void ZygoteCommunication::Init(
       sandbox::policy::switches::kNoSandbox,
 #if defined(TOOLKIT_QT)
       switches::kApplicationName,
+      switches::kCdmWidevinePath,
 #endif
   };
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches);
