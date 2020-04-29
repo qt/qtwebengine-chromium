@@ -285,6 +285,7 @@ extern const char kIpcFuzzerTestcase[];
 
 #if BUILDFLAG(IS_QTWEBENGINE)
 extern const char kApplicationName[];
+extern const char kCdmWidevinePath[];
 #endif
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in
