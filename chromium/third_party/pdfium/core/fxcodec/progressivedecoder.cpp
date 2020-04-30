@@ -742,14 +742,14 @@ bool ProgressiveDecoder::BmpDetectImageTypeInBuffer(
   }
 
   uint32_t pitch = 0;
-  uint32_t neededData = 0;
+  size_t neededData = 0;
   if (!CFX_DIBitmap::CalculatePitchAndSize(m_SrcWidth, m_SrcHeight, format,
                                            &pitch, &neededData)) {
     m_status = FXCODEC_STATUS_ERR_FORMAT;
     return false;
   }
 
-  uint32_t availableData = m_pFile->GetSize() - m_offSet +
+  size_t availableData = m_pFile->GetSize() - m_offSet +
                            pBmpModule->GetAvailInput(pBmpContext.get());
   if (neededData > availableData) {
     m_status = FXCODEC_STATUS_ERR_FORMAT;
