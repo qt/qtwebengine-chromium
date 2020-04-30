@@ -37,6 +37,11 @@ def third_party_path():
 
 # This points to the node binary downloaded as part of the checkout.
 def node_path():
+    # Qt WebEngine: Expect node.js to be installed in path.
+    if sys.platform == 'win32':
+        return 'node.exe'
+    else:
+        return 'nodejs'
     try:
         old_sys_path = sys.path[:]
         sys.path.append(path.join(third_party_path(), 'node'))
