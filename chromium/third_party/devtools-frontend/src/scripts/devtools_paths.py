@@ -6,6 +6,7 @@ Helper to find the path to the correct third_party directory
 """
 
 from os import path
+import os
 import sys
 
 
@@ -32,7 +33,6 @@ def root_path():
 # This is the third_party path relative to the root of the checkout.
 def third_party_path():
     return path.join(root_path(), 'third_party')
-
 
 # This points to the node binary downloaded as part of the checkout.
 def node_path():

@@ -9,8 +9,12 @@ import subprocess
 import sys
 import os
 
-
 def GetBinaryPath():
+  # qtwebengine: This is set with cmake -E env when calling ninja.
+  node_path = os.getenv('NODEJS_EXECUTABLE')
+  assert node_path, "NODEJS_EXECUTABLE must be set to the nodejs executable"
+  return node_path
+
   if platform.machine() == 'arm64':
     darwin_path = 'mac_arm64'
     darwin_name = 'node-darwin-arm64'
