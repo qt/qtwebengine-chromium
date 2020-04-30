@@ -9,8 +9,27 @@ import subprocess
 import sys
 import os
 
+def which(cmd):
+    pathenv = os.getenv('PATH')
+    for p in pathenv.split(os_path.pathsep):
+        p = os_path.join(p, cmd)
+        if os_path.exists(p) and os.access(p, os.X_OK):
+            return p
+    return None
 
 def GetBinaryPath():
+  if sys.platform == 'win32':
+    nodejs = which('node.exe')
+    if nodejs:
+      return nodejs
+  else:
+    nodejs = which('nodejs')
+    if nodejs:
+      return nodejs
+    nodejs = which('node')
+    if nodejs:
+      return nodejs
+
   # TODO: Node 16.0 will likely ship with an official universal node binary
   # on macOS. Once node 16.0 is released, remove this special case here
   # and use node-darwin-universal in the dict in the main return statement.
