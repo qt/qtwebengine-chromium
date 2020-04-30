@@ -880,16 +880,11 @@ all_worker_entrypoints = [
 ]
 
 generated_worker_bundles = [
-  "$resources_out_dir/formatter_worker_entrypoint.js",
-  "$resources_out_dir/heap_snapshot_worker_entrypoint.js",
-  "$resources_out_dir/wasmparser_worker_entrypoint.js",
 ]
 
 devtools_applications = [
   "lighthouse_worker",
   "devtools_app",
-  "formatter_worker_entrypoint",
-  "heap_snapshot_worker_entrypoint",
   "inspector",
   "integration_test_runner",
   "js_app",
@@ -897,9 +892,22 @@ devtools_applications = [
   "node_app",
   "shell",
   "toolbox",
-  "wasmparser_worker_entrypoint",
   "worker_app",
 ]
+
+if (have_nodejs) {
+  # These require node.js
+  generated_worker_bundles += [
+    "$resources_out_dir/formatter_worker_entrypoint.js",
+    "$resources_out_dir/heap_snapshot_worker_entrypoint.js",
+    "$resources_out_dir/wasmparser_worker_entrypoint.js",
+  ]
+  devtools_applications += [
+    "formatter_worker_entrypoint",
+    "heap_snapshot_worker_entrypoint",
+    "wasmparser_worker_entrypoint",
+  ]
+}
 
 #-------------------------------------------------------------------------------
 

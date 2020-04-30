@@ -25,6 +25,8 @@ declare_args() {
   # snapshots if the parameter `treatGlobalObjectsAsRoots` of `takeHeapSnapshot`
   # is set.
   enable_additional_blink_object_names = enable_blink_heap_verification
+
+  have_nodejs = true
 }
 
 # Unhandled Tap enable means Contextual Search aka Touch to Search.
