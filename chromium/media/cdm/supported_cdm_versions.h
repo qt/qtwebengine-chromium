@@ -6,6 +6,7 @@
 #define MEDIA_CDM_SUPPORTED_CDM_VERSIONS_H_
 
 #include <array>
+#include <cstddef>
 
 #include "media/base/media_export.h"
 #include "media/cdm/api/content_decryption_module.h"
