@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include <functional>
+#include <stdint.h>
 
 #include "perfetto/base/export.h"
 
