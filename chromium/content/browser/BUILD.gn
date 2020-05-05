@@ -2419,6 +2419,10 @@ jumbo_static_library("browser") {
       "serial/serial_service.cc",
       "serial/serial_service.h",
     ]
+
+    jumbo_excluded_sources = [
+      "web_package/web_bundle_blob_data_source.cc",
+    ]
   }
 
   if (enable_web_auth) {
