@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
 
+#include "base/feature_list.h"
 #include "third_party/blink/renderer/core/loader/resource/script_resource.h"
 
 namespace blink {
@@ -45,8 +46,15 @@ String SourceMapUrlFromResponse(const ResourceResponse& response) {
   // Try to get deprecated header.
   return response.HttpHeaderField(HTTPNames::X_SourceMap);
 }
+const base::Feature kUnsafeScriptReportPostRedirectURL{
+    "UnsafeScriptReportPostRedirectURL", base::FEATURE_DISABLED_BY_DEFAULT};
 
 }  // namespace
+
+// static
+bool ScriptSourceCode::UsePostRedirectURL() {
+  return base::FeatureList::IsEnabled(kUnsafeScriptReportPostRedirectURL);
+}
 
 ScriptSourceCode::ScriptSourceCode(
     const MovableString& source,
@@ -80,7 +88,9 @@ ScriptSourceCode::ScriptSourceCode(ScriptStreamer* streamer,
     : source_(TreatNullSourceAsEmpty(resource->SourceText())),
       cache_handler_(resource->CacheHandler()),
       streamer_(streamer),
-      url_(StripFragmentIdentifier(resource->GetResponse().Url())),
+      url_(StripFragmentIdentifier(
+          UsePostRedirectURL() ? resource->GetResponse().Url()
+                               : resource->Url())),
       source_map_url_(SourceMapUrlFromResponse(resource->GetResponse())),
       start_position_(TextPosition::MinimumPosition()),
       source_location_type_(ScriptSourceLocationType::kExternalFile) {}
