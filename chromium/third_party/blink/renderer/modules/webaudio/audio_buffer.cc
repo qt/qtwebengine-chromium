@@ -288,7 +288,7 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
   DCHECK(src);
   DCHECK(dst);
 
-  memcpy(dst, src + start_in_channel, count * sizeof(*src));
+  memmove(dst, src + start_in_channel, count * sizeof(*src));
 }
 
 void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,
@@ -336,7 +336,7 @@ void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,
   DCHECK(src);
   DCHECK(dst);
 
-  memcpy(dst + start_in_channel, src, count * sizeof(*dst));
+  memmove(dst + start_in_channel, src, count * sizeof(*dst));
 }
 
 void AudioBuffer::Zero() {
