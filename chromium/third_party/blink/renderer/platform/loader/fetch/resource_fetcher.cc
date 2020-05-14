@@ -818,10 +818,11 @@ base::Optional<ResourceRequestBlockedReason> ResourceFetcher::PrepareRequest(
       params.IsSpeculativePreload() ? ReportingDisposition::kSuppressReporting
                                     : ReportingDisposition::kReport;
 
-  // Note that resource_request.GetRedirectStatus() may return kFollowedRedirect
-  // here since e.g. ThreadableLoader may create a new Resource from
-  // a ResourceRequest that originates from the ResourceRequest passed to
-  // the redirect handling callback.
+
+  // Note that resource_request.GetRedirectInfo() may non-null here since e.g.
+  // ThreadableLoader may create a new Resource from a ResourceRequest that
+  // originates from the ResourceRequest passed to the redirect handling
+  // callback.
 
   // Before modifying the request for CSP, evaluate report-only headers. This
   // allows site owners to learn about requests that are being modified
@@ -829,7 +830,9 @@ base::Optional<ResourceRequestBlockedReason> ResourceFetcher::PrepareRequest(
   Context().CheckCSPForRequest(
       resource_request.GetRequestContext(),
       MemoryCache::RemoveFragmentIdentifierIfNeeded(params.Url()), options,
-      reporting_disposition, resource_request.GetRedirectStatus());
+      reporting_disposition, resource_request.GetRedirectInfo()
+          ? ResourceRequest::RedirectStatus::kFollowedRedirect
+          : ResourceRequest::RedirectStatus::kNoRedirect);
 
   // This may modify params.Url() (via the resource_request argument).
   Context().PopulateResourceRequest(
@@ -890,7 +893,7 @@ base::Optional<ResourceRequestBlockedReason> ResourceFetcher::PrepareRequest(
   base::Optional<ResourceRequestBlockedReason> blocked_reason =
       Context().CanRequest(resource_type, resource_request, url, options,
                            reporting_disposition,
-                           resource_request.GetRedirectStatus());
+                           resource_request.GetRedirectInfo());
 
   if (Context().CalculateIfAdSubresource(resource_request, resource_type))
     resource_request.SetIsAdResource();
@@ -2056,7 +2059,7 @@ void ResourceFetcher::EmulateLoadStartedForInspector(
   Context().CanRequest(resource->GetType(), last_resource_request,
                        last_resource_request.Url(), params.Options(),
                        ReportingDisposition::kReport,
-                       last_resource_request.GetRedirectStatus());
+                       last_resource_request.GetRedirectInfo());
   DidLoadResourceFromMemoryCache(resource->InspectorId(), resource,
                                  params.GetResourceRequest(),
                                  false /* is_static_data */);
