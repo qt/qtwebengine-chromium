@@ -255,7 +255,7 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
   DCHECK_LE(count, channel_data->deprecatedLengthAsUnsigned());
   DCHECK_LE(buffer_offset + count, channel_data->deprecatedLengthAsUnsigned());
 
-  memcpy(dst, src + buffer_offset, count * sizeof(*src));
+  memmove(dst, src + buffer_offset, count * sizeof(*src));
 }
 
 void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,
@@ -299,7 +299,7 @@ void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,
   DCHECK_LE(buffer_offset + count, channel_data->deprecatedLengthAsUnsigned());
   DCHECK_LE(count, source.View()->deprecatedLengthAsUnsigned());
 
-  memcpy(dst + buffer_offset, src, count * sizeof(*dst));
+  memmove(dst + buffer_offset, src, count * sizeof(*dst));
 }
 
 void AudioBuffer::Zero() {
