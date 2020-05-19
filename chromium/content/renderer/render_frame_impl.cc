@@ -5944,7 +5944,8 @@ void RenderFrameImpl::OnMixedContentFound(
       params.request_context_type);
   frame_->MixedContentFound(params.main_resource_url, params.mixed_content_url,
                             request_context, params.was_allowed,
-                            params.had_redirect, source_location);
+                            params.url_before_redirects, params.had_redirect,
+                            source_location);
 }
 
 void RenderFrameImpl::RequestOverlayRoutingToken(

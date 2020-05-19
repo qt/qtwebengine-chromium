@@ -79,8 +79,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
       const KURL& url,
       const ResourceLoaderOptions& options,
       ReportingDisposition reporting_disposition,
-      const base::Optional<ResourceRequest::RedirectInfo>& redirect_info)
-      const override;
+      const Vector<KURL>& redirect_chain) const override;
   mojom::FetchCacheMode ResourceRequestCachePolicy(
       const ResourceRequest&,
       ResourceType,
@@ -113,7 +112,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   bool SendConversionRequestInsteadOfRedirecting(
       const KURL& url,
-      const base::Optional<ResourceRequest::RedirectInfo>& redirect_info,
+      const Vector<KURL>& redirect_chain,
       ReportingDisposition reporting_disposition) const override;
 
   mojo::PendingReceiver<mojom::blink::WorkerTimingContainer>
@@ -153,7 +152,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   std::unique_ptr<WebSocketHandshakeThrottle> CreateWebSocketHandshakeThrottle()
       override;
   bool ShouldBlockFetchByMixedContentCheck(mojom::RequestContextType,
-                                           ResourceRequest::RedirectStatus,
+                                           const Vector<KURL>& redirect_chain,
                                            const KURL&,
                                            ReportingDisposition) const override;
   bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,

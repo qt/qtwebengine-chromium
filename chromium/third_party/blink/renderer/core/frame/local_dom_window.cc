@@ -840,7 +840,7 @@ void LocalDOMWindow::DispatchMessageEventWithOriginCheck(
 
   KURL sender(event->origin());
   if (!document()->GetContentSecurityPolicy()->AllowConnectToSource(
-          sender, RedirectStatus::kNoRedirect,
+          sender, sender, RedirectStatus::kNoRedirect,
           ReportingDisposition::kSuppressReporting)) {
     UseCounter::Count(
         document(), WebFeature::kPostMessageIncomingWouldBeBlockedByConnectSrc);

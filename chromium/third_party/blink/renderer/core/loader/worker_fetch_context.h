@@ -60,7 +60,7 @@ class WorkerFetchContext final : public BaseFetchContext {
   std::unique_ptr<WebSocketHandshakeThrottle> CreateWebSocketHandshakeThrottle()
       override;
   bool ShouldBlockFetchByMixedContentCheck(mojom::RequestContextType,
-                                           ResourceRequest::RedirectStatus,
+                                           const Vector<KURL>& redirect_chain,
                                            const KURL&,
                                            ReportingDisposition) const override;
   bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,

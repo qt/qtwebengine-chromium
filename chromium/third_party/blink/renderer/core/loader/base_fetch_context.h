@@ -37,12 +37,13 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
-      const base::Optional<ResourceRequest::RedirectInfo>&) const override;
+      const Vector<KURL>&) const override;
   base::Optional<ResourceRequestBlockedReason> CheckCSPForRequest(
       mojom::RequestContextType,
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
+      const KURL& url_before_redirects,
       ResourceRequest::RedirectStatus) const override;
 
   void Trace(Visitor*) override;
@@ -74,7 +75,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   // registration endpoint.
   virtual bool SendConversionRequestInsteadOfRedirecting(
       const KURL& url,
-      const base::Optional<ResourceRequest::RedirectInfo>& redirect_info,
+      const Vector<KURL>& redirect_chain,
       ReportingDisposition reporting_disposition) const;
 
   virtual const ContentSecurityPolicy* GetContentSecurityPolicy() const = 0;
@@ -99,7 +100,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   virtual bool IsSVGImageChromeClient() const = 0;
   virtual bool ShouldBlockFetchByMixedContentCheck(
       mojom::RequestContextType,
-      ResourceRequest::RedirectStatus,
+      const Vector<KURL>& redirect_chain,
       const KURL&,
       ReportingDisposition) const = 0;
   virtual bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,
@@ -123,13 +124,14 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
-      const base::Optional<ResourceRequest::RedirectInfo>& redirect_info) const;
+      const Vector<KURL>& redirect_chain) const;
 
   base::Optional<ResourceRequestBlockedReason> CheckCSPForRequestInternal(
       mojom::RequestContextType,
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
+      const KURL& url_before_redirects,
       ResourceRequest::RedirectStatus,
       ContentSecurityPolicy::CheckHeaderType) const;
 };

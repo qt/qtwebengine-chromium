@@ -113,8 +113,7 @@ class PLATFORM_EXPORT FetchContext : public GarbageCollected<FetchContext> {
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
-      const base::Optional<ResourceRequest::RedirectInfo>& redirect_info)
-      const {
+      const Vector<KURL>& redirect_chain) const {
     return ResourceRequestBlockedReason::kOther;
   }
   virtual base::Optional<ResourceRequestBlockedReason> CheckCSPForRequest(
@@ -122,6 +121,7 @@ class PLATFORM_EXPORT FetchContext : public GarbageCollected<FetchContext> {
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
+      const KURL& url_before_redirects,
       ResourceRequest::RedirectStatus) const {
     return ResourceRequestBlockedReason::kOther;
   }

@@ -739,6 +739,8 @@ bool ResourceLoader::WillFollowRedirect(
   const ResourceResponse& redirect_response(
       passed_redirect_response.ToResourceResponse());
 
+  const KURL& url_before_redirects = initial_request.Url();
+
   if (!IsManualRedirectFetchRequest(initial_request)) {
     bool unused_preload = resource_->IsUnusedPreload();
 
@@ -750,13 +752,13 @@ bool ResourceLoader::WillFollowRedirect(
     // CanRequest() checks only enforced CSP, so check report-only here to
     // ensure that violations are sent.
     Context().CheckCSPForRequest(
-        request_context, new_url, options, reporting_disposition,
+        request_context, new_url, options, reporting_disposition, url_before_redirects,
         ResourceRequest::RedirectStatus::kFollowedRedirect);
 
     base::Optional<ResourceRequestBlockedReason> blocked_reason =
         Context().CanRequest(resource_type, *new_request, new_url, options,
                              reporting_disposition,
-                             new_request->GetRedirectInfo());
+                             new_request->GetRedirectChain());
 
     if (Context().CalculateIfAdSubresource(*new_request, resource_type))
       new_request->SetIsAdResource();
@@ -1028,17 +1030,18 @@ void ResourceLoader::DidReceiveResponseInternal(
     // pre-request checks, and consider running the checks regardless of service
     // worker interception.
     const KURL& response_url = response.ResponseUrl();
+    Vector<KURL> redirect_chain = request.GetRedirectChain();
+    redirect_chain.push_back(request.Url());
     // CanRequest() below only checks enforced policies: check report-only
     // here to ensure violations are sent.
     Context().CheckCSPForRequest(
-        request_context, response_url, options, ReportingDisposition::kReport,
+        request_context, response_url, options, ReportingDisposition::kReport, redirect_chain.front(),
         ResourceRequest::RedirectStatus::kFollowedRedirect);
 
     base::Optional<ResourceRequestBlockedReason> blocked_reason =
         Context().CanRequest(resource_type, ResourceRequest(initial_request),
                              response_url, options,
-                             ReportingDisposition::kReport,
-                             ResourceRequest::RedirectInfo());
+                             ReportingDisposition::kReport, redirect_chain);
     if (blocked_reason) {
       HandleError(ResourceError::CancelledDueToAccessCheckError(
           response_url, blocked_reason.value()));

@@ -72,12 +72,14 @@ class CORE_EXPORT MixedContentChecker final {
   static bool ShouldBlockFetch(
       LocalFrame*,
       mojom::RequestContextType,
+      const KURL& url_before_redirects,
       ResourceRequest::RedirectStatus,
       const KURL&,
       ReportingDisposition = ReportingDisposition::kReport);
 
   static bool ShouldBlockFetchOnWorker(const WorkerFetchContext&,
                                        mojom::RequestContextType,
+                                       const KURL& url_before_redirects,
                                        ResourceRequest::RedirectStatus,
                                        const KURL&,
                                        ReportingDisposition,
@@ -117,6 +119,7 @@ class CORE_EXPORT MixedContentChecker final {
                                 const KURL& mixed_content_url,
                                 mojom::RequestContextType,
                                 bool was_allowed,
+                                const KURL& url_before_redirects,
                                 bool had_redirect,
                                 std::unique_ptr<SourceLocation>);
 
