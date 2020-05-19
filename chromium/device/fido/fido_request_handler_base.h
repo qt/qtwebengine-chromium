@@ -270,7 +270,7 @@ class COMPONENT_EXPORT(DEVICE_FIDO) FidoRequestHandlerBase
   // DispatchRequest(). InitializeAuthenticator() sends a GetInfo command
   // to FidoDeviceAuthenticator instances in order to determine their protocol
   // versions before a request can be dispatched.
-  void InitializeAuthenticatorAndDispatchRequest(FidoAuthenticator*);
+  void InitializeAuthenticatorAndDispatchRequest(const std::string& authenticator_id);
   void ConstructBleAdapterPowerManager();
 
   AuthenticatorMap active_authenticators_;
