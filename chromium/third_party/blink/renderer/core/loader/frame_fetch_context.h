@@ -89,7 +89,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
       const ResourceLoaderOptions& options,
       SecurityViolationReportingPolicy reporting_policy,
       FetchParameters::OriginRestriction origin_restriction,
-      ResourceRequest::RedirectStatus redirect_status) const override;
+      const Vector<KURL>& redirect_chain) const override;
   mojom::FetchCacheMode ResourceRequestCachePolicy(
       const ResourceRequest&,
       Resource::Type,
@@ -230,7 +230,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   bool ShouldBlockFetchByMixedContentCheck(
       WebURLRequest::RequestContext,
       network::mojom::RequestContextFrameType,
-      ResourceRequest::RedirectStatus,
+      const Vector<KURL>& redirect_chain,
       const KURL&,
       SecurityViolationReportingPolicy) const override;
   bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,

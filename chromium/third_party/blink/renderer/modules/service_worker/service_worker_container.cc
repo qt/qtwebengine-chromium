@@ -268,9 +268,10 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(
   ContentSecurityPolicy* csp = execution_context->GetContentSecurityPolicy();
   if (csp) {
     if (!csp->AllowRequestWithoutIntegrity(
-            WebURLRequest::kRequestContextServiceWorker, script_url) ||
+            WebURLRequest::kRequestContextServiceWorker, script_url,
+            script_url, ResourceRequest::RedirectStatus::kNoRedirect) ||
         !csp->AllowWorkerContextFromSource(
-            script_url, ResourceRequest::RedirectStatus::kNoRedirect,
+            script_url, script_url, ResourceRequest::RedirectStatus::kNoRedirect,
             SecurityViolationReportingPolicy::kReport)) {
       callbacks->OnError(WebServiceWorkerError(
           mojom::blink::ServiceWorkerErrorType::kSecurity,

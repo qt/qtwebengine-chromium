@@ -334,8 +334,7 @@ class PLATFORM_EXPORT ResourceRequest final {
     cors_preflight_policy_ = policy;
   }
 
-  void SetRedirectStatus(RedirectStatus status) { redirect_status_ = status; }
-  RedirectStatus GetRedirectStatus() const { return redirect_status_; }
+  const Vector<KURL>& GetRedirectChain() const { return redirect_chain_; }
 
   void SetSuggestedFilename(const base::Optional<String>& suggested_filename) {
     suggested_filename_ = suggested_filename;
@@ -430,7 +429,7 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool was_discarded_;
   bool is_external_request_;
   network::mojom::CORSPreflightPolicy cors_preflight_policy_;
-  RedirectStatus redirect_status_;
+  Vector<KURL> redirect_chain_;
   base::Optional<String> suggested_filename_;
 
   mutable CacheControlHeader cache_control_header_cache_;
@@ -500,7 +499,6 @@ struct PLATFORM_EXPORT CrossThreadResourceRequestData {
   bool check_for_browser_side_navigation_;
   bool is_external_request_;
   network::mojom::CORSPreflightPolicy cors_preflight_policy_;
-  ResourceRequest::RedirectStatus redirect_status_;
   base::Optional<String> suggested_filename_;
   bool is_ad_resource_;
   WebContentSecurityPolicyList navigation_csp_;

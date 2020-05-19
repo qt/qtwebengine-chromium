@@ -185,7 +185,7 @@ class PLATFORM_EXPORT FetchContext
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
       FetchParameters::OriginRestriction,
-      ResourceRequest::RedirectStatus) const {
+      const Vector<KURL>& redirect_chain) const {
     return ResourceRequestBlockedReason::kOther;
   }
   virtual base::Optional<ResourceRequestBlockedReason> CheckCSPForRequest(
@@ -193,6 +193,7 @@ class PLATFORM_EXPORT FetchContext
       const KURL&,
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
+      const KURL& url_before_redirects,
       ResourceRequest::RedirectStatus) const {
     return ResourceRequestBlockedReason::kOther;
   }

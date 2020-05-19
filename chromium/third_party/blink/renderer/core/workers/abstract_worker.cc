@@ -68,8 +68,9 @@ KURL AbstractWorker::ResolveURL(ExecutionContext* execution_context,
 
   if (ContentSecurityPolicy* csp =
           execution_context->GetContentSecurityPolicy()) {
-    if (!csp->AllowRequestWithoutIntegrity(request_context, script_url) ||
-        !csp->AllowWorkerContextFromSource(script_url)) {
+    if (!csp->AllowRequestWithoutIntegrity(request_context, script_url,
+                                           script_url, RedirectStatus::kNoRedirect) ||
+        !csp->AllowWorkerContextFromSource(script_url, script_url, RedirectStatus::kNoRedirect)) {
       exception_state.ThrowSecurityError(
           "Access to the script at '" + script_url.ElidedString() +
           "' is denied by the document's Content Security Policy.");

@@ -86,44 +86,57 @@ class CORE_EXPORT CSPDirectiveList
                              const String& nonce,
                              const IntegrityMetadataSet& hashes,
                              ParserDisposition,
+                             const KURL& url_before_redirects,
                              ResourceRequest::RedirectStatus,
                              SecurityViolationReportingPolicy) const;
   bool AllowStyleFromSource(const KURL&,
                             const String& nonce,
+                            const KURL& url_before_redirects,
                             ResourceRequest::RedirectStatus,
                             SecurityViolationReportingPolicy) const;
 
   bool AllowObjectFromSource(const KURL&,
+                             const KURL& url_before_redirects,
                              ResourceRequest::RedirectStatus,
                              SecurityViolationReportingPolicy) const;
   bool AllowPrefetchFromSource(const KURL&,
+                               const KURL& url_before_redirects,
                                ResourceRequest::RedirectStatus,
                                SecurityViolationReportingPolicy) const;
   bool AllowFrameFromSource(const KURL&,
+                            const KURL& url_before_redirects,
                             ResourceRequest::RedirectStatus,
                             SecurityViolationReportingPolicy) const;
   bool AllowImageFromSource(const KURL&,
+                            const KURL& url_before_redirects,
                             ResourceRequest::RedirectStatus,
                             SecurityViolationReportingPolicy) const;
   bool AllowFontFromSource(const KURL&,
+                           const KURL& url_before_redirects,
                            ResourceRequest::RedirectStatus,
                            SecurityViolationReportingPolicy) const;
   bool AllowMediaFromSource(const KURL&,
+                            const KURL& url_before_redirects,
                             ResourceRequest::RedirectStatus,
                             SecurityViolationReportingPolicy) const;
   bool AllowManifestFromSource(const KURL&,
+                               const KURL& url_before_redirects,
                                ResourceRequest::RedirectStatus,
                                SecurityViolationReportingPolicy) const;
   bool AllowConnectToSource(const KURL&,
+                            const KURL& url_before_redirects,
                             ResourceRequest::RedirectStatus,
                             SecurityViolationReportingPolicy) const;
   bool AllowFormAction(const KURL&,
+                       const KURL& url_before_redirects,
                        ResourceRequest::RedirectStatus,
                        SecurityViolationReportingPolicy) const;
   bool AllowBaseURI(const KURL&,
+                    const KURL& url_before_redirects,
                     ResourceRequest::RedirectStatus,
                     SecurityViolationReportingPolicy) const;
   bool AllowWorkerFromSource(const KURL&,
+                             const KURL& url_before_redirects,
                              ResourceRequest::RedirectStatus,
                              SecurityViolationReportingPolicy) const;
   // |allowAncestors| does not need to know whether the resource was a
@@ -144,13 +157,14 @@ class CORE_EXPORT CSPDirectiveList
 
   bool AllowRequestWithoutIntegrity(WebURLRequest::RequestContext,
                                     const KURL&,
+                                    const KURL& url_before_redirects,
                                     ResourceRequest::RedirectStatus,
                                     SecurityViolationReportingPolicy) const;
 
   bool StrictMixedContentChecking() const {
     return strict_mixed_content_checking_enforced_;
   }
-  void ReportMixedContent(const KURL& mixed_url,
+  void ReportMixedContent(const KURL& blocked_url,
                           ResourceRequest::RedirectStatus) const;
 
   const String& EvalDisabledErrorMessage() const {
@@ -303,6 +317,7 @@ class CORE_EXPORT CSPDirectiveList
   bool CheckSourceAndReportViolation(SourceListDirective*,
                                      const KURL&,
                                      const ContentSecurityPolicy::DirectiveType,
+                                     const KURL& url_before_redirects,
                                      ResourceRequest::RedirectStatus) const;
   bool CheckMediaTypeAndReportViolation(MediaListDirective*,
                                         const String& type,
@@ -313,6 +328,7 @@ class CORE_EXPORT CSPDirectiveList
                                         const KURL&) const;
   bool CheckRequestWithoutIntegrityAndReportViolation(
       WebURLRequest::RequestContext,
+      const KURL&,
       const KURL&,
       ResourceRequest::RedirectStatus) const;
 

@@ -225,7 +225,7 @@ bool HTMLTrackElement::CanLoadUrl(const KURL& url) {
   if (url.IsEmpty())
     return false;
 
-  if (!GetDocument().GetContentSecurityPolicy()->AllowMediaFromSource(url)) {
+  if (!GetDocument().GetContentSecurityPolicy()->AllowMediaFromSource(url, url, RedirectStatus::kNoRedirect)) {
     DVLOG(TRACK_LOG_LEVEL) << "canLoadUrl(" << UrlForLoggingTrack(url)
                            << ") -> rejected by Content Security Policy";
     return false;

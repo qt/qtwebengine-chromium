@@ -1172,15 +1172,21 @@ FrameFetchContext::CreateWebSocketHandshakeThrottle() {
 bool FrameFetchContext::ShouldBlockFetchByMixedContentCheck(
     WebURLRequest::RequestContext request_context,
     network::mojom::RequestContextFrameType frame_type,
-    ResourceRequest::RedirectStatus redirect_status,
+    const Vector<KURL>& redirect_chain,
     const KURL& url,
     SecurityViolationReportingPolicy reporting_policy) const {
   if (IsDetached()) {
     // TODO(yhirano): Implement the detached case.
     return false;
   }
+  RedirectStatus redirect_status = redirect_chain.IsEmpty()
+                                       ? RedirectStatus::kNoRedirect
+                                       : RedirectStatus::kFollowedRedirect;
+  const KURL& url_before_redirects =
+      redirect_chain.IsEmpty() ? url : redirect_chain.front();
+
   return MixedContentChecker::ShouldBlockFetch(GetFrame(), request_context,
-                                               frame_type, redirect_status, url,
+                                               frame_type, url_before_redirects, redirect_status, url,
                                                reporting_policy);
 }
 
@@ -1522,7 +1528,7 @@ base::Optional<ResourceRequestBlockedReason> FrameFetchContext::CanRequest(
     const ResourceLoaderOptions& options,
     SecurityViolationReportingPolicy reporting_policy,
     FetchParameters::OriginRestriction origin_restriction,
-    ResourceRequest::RedirectStatus redirect_status) const {
+    const Vector<KURL>& redirect_chain) const {
   if (document_ && document_->IsFreezingInProgress() &&
       !resource_request.GetKeepalive()) {
     AddErrorConsoleMessage(
@@ -1532,7 +1538,7 @@ base::Optional<ResourceRequestBlockedReason> FrameFetchContext::CanRequest(
   }
   return BaseFetchContext::CanRequest(type, resource_request, url, options,
                                       reporting_policy, origin_restriction,
-                                      redirect_status);
+                                      redirect_chain);
 }
 
 }  // namespace blink

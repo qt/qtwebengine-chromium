@@ -205,42 +205,50 @@ class CORE_EXPORT ContentSecurityPolicy
 
   bool AllowObjectFromSource(
       const KURL&,
-      RedirectStatus = RedirectStatus::kNoRedirect,
+      const KURL& url_before_redirects,
+      RedirectStatus,
       SecurityViolationReportingPolicy =
           SecurityViolationReportingPolicy::kReport,
       CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowPrefetchFromSource(
       const KURL&,
-      RedirectStatus = RedirectStatus::kNoRedirect,
+      const KURL& url_before_redirects,
+      RedirectStatus,
       SecurityViolationReportingPolicy =
           SecurityViolationReportingPolicy::kReport,
       CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowFrameFromSource(const KURL&,
-                            RedirectStatus = RedirectStatus::kNoRedirect,
+                            const KURL& url_before_redirects,
+                            RedirectStatus,
                             SecurityViolationReportingPolicy =
                                 SecurityViolationReportingPolicy::kReport,
                             CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowImageFromSource(const KURL&,
-                            RedirectStatus = RedirectStatus::kNoRedirect,
+                            const KURL& url_before_redirects,
+                            RedirectStatus,
                             SecurityViolationReportingPolicy =
                                 SecurityViolationReportingPolicy::kReport,
                             CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowFontFromSource(const KURL&,
-                           RedirectStatus = RedirectStatus::kNoRedirect,
+                          const KURL& url_before_redirects,
+                           RedirectStatus,
                            SecurityViolationReportingPolicy =
                                SecurityViolationReportingPolicy::kReport,
                            CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowMediaFromSource(const KURL&,
+                            const KURL& url_before_redirects,
                             RedirectStatus = RedirectStatus::kNoRedirect,
                             SecurityViolationReportingPolicy =
                                 SecurityViolationReportingPolicy::kReport,
                             CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowConnectToSource(const KURL&,
-                            RedirectStatus = RedirectStatus::kNoRedirect,
+                            const KURL& url_before_redirects,
+                            RedirectStatus,
                             SecurityViolationReportingPolicy =
                                 SecurityViolationReportingPolicy::kReport,
                             CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowFormAction(const KURL&,
+                       const KURL& url_before_redirects,
                        RedirectStatus = RedirectStatus::kNoRedirect,
                        SecurityViolationReportingPolicy =
                            SecurityViolationReportingPolicy::kReport,
@@ -251,14 +259,16 @@ class CORE_EXPORT ContentSecurityPolicy
                         SecurityViolationReportingPolicy::kReport) const;
   bool AllowWorkerContextFromSource(
       const KURL&,
-      RedirectStatus = RedirectStatus::kNoRedirect,
+      const KURL& url_before_redirects,
+      RedirectStatus,
       SecurityViolationReportingPolicy =
           SecurityViolationReportingPolicy::kReport,
       CheckHeaderType = CheckHeaderType::kCheckAll) const;
 
   bool AllowManifestFromSource(
       const KURL&,
-      RedirectStatus = RedirectStatus::kNoRedirect,
+      const KURL& url_before_redirects,
+      RedirectStatus,
       SecurityViolationReportingPolicy =
           SecurityViolationReportingPolicy::kReport,
       CheckHeaderType = CheckHeaderType::kCheckAll) const;
@@ -270,13 +280,15 @@ class CORE_EXPORT ContentSecurityPolicy
       const String& nonce,
       const IntegrityMetadataSet& hashes,
       ParserDisposition,
-      RedirectStatus = RedirectStatus::kNoRedirect,
+      const KURL& url_before_redirects,
+      RedirectStatus,
       SecurityViolationReportingPolicy =
           SecurityViolationReportingPolicy::kReport,
       CheckHeaderType = CheckHeaderType::kCheckAll) const;
   bool AllowStyleFromSource(const KURL&,
                             const String& nonce,
-                            RedirectStatus = RedirectStatus::kNoRedirect,
+                            const KURL& url_before_redirects,
+                            RedirectStatus,
                             SecurityViolationReportingPolicy =
                                 SecurityViolationReportingPolicy::kReport,
                             CheckHeaderType = CheckHeaderType::kCheckAll) const;
@@ -312,7 +324,8 @@ class CORE_EXPORT ContentSecurityPolicy
   bool AllowRequestWithoutIntegrity(
       WebURLRequest::RequestContext,
       const KURL&,
-      RedirectStatus = RedirectStatus::kNoRedirect,
+      const KURL& url_before_redirects,
+      RedirectStatus,
       SecurityViolationReportingPolicy =
           SecurityViolationReportingPolicy::kReport,
       CheckHeaderType = CheckHeaderType::kCheckAll) const;
@@ -322,7 +335,8 @@ class CORE_EXPORT ContentSecurityPolicy
                     const String& nonce,
                     const IntegrityMetadataSet&,
                     ParserDisposition,
-                    RedirectStatus = RedirectStatus::kNoRedirect,
+                    const KURL& url_before_redirects,
+                    RedirectStatus,
                     SecurityViolationReportingPolicy =
                         SecurityViolationReportingPolicy::kReport,
                     CheckHeaderType = CheckHeaderType::kCheckAll) const;
@@ -387,7 +401,7 @@ class CORE_EXPORT ContentSecurityPolicy
   // Called when mixed content is detected on a page; will trigger a violation
   // report if the 'block-all-mixed-content' directive is specified for a
   // policy.
-  void ReportMixedContent(const KURL& mixed_url, RedirectStatus) const;
+  void ReportMixedContent(const KURL& blocked_url, RedirectStatus) const;
 
   void ReportBlockedScriptExecutionToInspector(
       const String& directive_text) const;

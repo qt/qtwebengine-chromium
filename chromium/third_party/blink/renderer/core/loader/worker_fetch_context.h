@@ -57,7 +57,7 @@ class WorkerFetchContext final : public BaseFetchContext {
   bool ShouldBlockFetchByMixedContentCheck(
       WebURLRequest::RequestContext,
       network::mojom::RequestContextFrameType,
-      ResourceRequest::RedirectStatus,
+      const Vector<KURL>& redirect_chain,
       const KURL&,
       SecurityViolationReportingPolicy) const override;
   bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,

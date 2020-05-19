@@ -1476,7 +1476,7 @@ bool HTMLMediaElement::IsSafeToLoadURL(const KURL& url,
     return false;
   }
 
-  if (!GetDocument().GetContentSecurityPolicy()->AllowMediaFromSource(url)) {
+  if (!GetDocument().GetContentSecurityPolicy()->AllowMediaFromSource(url, url, RedirectStatus::kNoRedirect)) {
     BLINK_MEDIA_LOG << "isSafeToLoadURL(" << (void*)this << ", "
                     << UrlForLoggingMedia(url)
                     << ") -> rejected by Content Security Policy";

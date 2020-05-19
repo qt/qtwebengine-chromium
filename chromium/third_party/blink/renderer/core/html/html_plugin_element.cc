@@ -636,7 +636,7 @@ bool HTMLPlugInElement::AllowedToLoadObject(const KURL& url,
     return false;
 
   AtomicString declared_mime_type = FastGetAttribute(HTMLNames::typeAttr);
-  if (!GetDocument().GetContentSecurityPolicy()->AllowObjectFromSource(url) ||
+  if (!GetDocument().GetContentSecurityPolicy()->AllowObjectFromSource(url, url, RedirectStatus::kNoRedirect) ||
       !GetDocument().GetContentSecurityPolicy()->AllowPluginTypeForDocument(
           GetDocument(), mime_type, declared_mime_type, url)) {
     if (auto* layout_object = GetLayoutEmbeddedObject()) {
@@ -651,7 +651,7 @@ bool HTMLPlugInElement::AllowedToLoadObject(const KURL& url,
   return (!mime_type.IsEmpty() && url.IsEmpty()) ||
          !MixedContentChecker::ShouldBlockFetch(
              frame, WebURLRequest::kRequestContextObject,
-             network::mojom::RequestContextFrameType::kNone,
+             network::mojom::RequestContextFrameType::kNone, url,
              ResourceRequest::RedirectStatus::kNoRedirect, url);
 }
 

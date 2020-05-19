@@ -614,7 +614,9 @@ void FetchManager::Loader::Start(ExceptionState& exception_state) {
   //    blocked"
   if (!ContentSecurityPolicy::ShouldBypassMainWorld(execution_context_) &&
       !execution_context_->GetContentSecurityPolicy()->AllowConnectToSource(
-          fetch_request_data_->Url())) {
+          fetch_request_data_->Url(),
+          fetch_request_data_->Url(),
+          RedirectStatus::kNoRedirect)) {
     // "A network error."
     PerformNetworkError(
         "Refused to connect to '" + fetch_request_data_->Url().ElidedString() +

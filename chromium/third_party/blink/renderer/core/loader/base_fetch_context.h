@@ -38,12 +38,13 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
       FetchParameters::OriginRestriction,
-      ResourceRequest::RedirectStatus) const override;
+      const Vector<KURL>&) const override;
   base::Optional<ResourceRequestBlockedReason> CheckCSPForRequest(
       WebURLRequest::RequestContext,
       const KURL&,
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
+      const KURL& url_before_redirects,
       ResourceRequest::RedirectStatus) const override;
 
   void Trace(blink::Visitor*) override;
@@ -81,7 +82,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   virtual bool ShouldBlockFetchByMixedContentCheck(
       WebURLRequest::RequestContext,
       network::mojom::RequestContextFrameType,
-      ResourceRequest::RedirectStatus,
+      const Vector<KURL>& redirect_chain,
       const KURL&,
       SecurityViolationReportingPolicy) const = 0;
   virtual bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,
@@ -105,13 +106,14 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
       FetchParameters::OriginRestriction,
-      ResourceRequest::RedirectStatus) const;
+      const Vector<KURL>& redirect_chain) const;
 
   base::Optional<ResourceRequestBlockedReason> CheckCSPForRequestInternal(
       WebURLRequest::RequestContext,
       const KURL&,
       const ResourceLoaderOptions&,
       SecurityViolationReportingPolicy,
+      const KURL& url_before_redirects,
       ResourceRequest::RedirectStatus,
       ContentSecurityPolicy::CheckHeaderType) const;
 };

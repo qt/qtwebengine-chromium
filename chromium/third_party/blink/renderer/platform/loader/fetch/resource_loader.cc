@@ -288,6 +288,8 @@ bool ResourceLoader::WillFollowRedirect(
   const ResourceResponse& redirect_response(
       passed_redirect_response.ToResourceResponse());
 
+  const KURL& url_before_redirects = initial_request.Url();
+
   if (!IsManualRedirectFetchRequest(initial_request)) {
     bool unused_preload = resource_->IsUnusedPreload();
 
@@ -299,14 +301,14 @@ bool ResourceLoader::WillFollowRedirect(
     // CanRequest() checks only enforced CSP, so check report-only here to
     // ensure that violations are sent.
     Context().CheckCSPForRequest(
-        request_context, new_url, options, reporting_policy,
+        request_context, new_url, options, reporting_policy, url_before_redirects,
         ResourceRequest::RedirectStatus::kFollowedRedirect);
 
     base::Optional<ResourceRequestBlockedReason> blocked_reason =
         Context().CanRequest(
             resource_type, *new_request, new_url, options, reporting_policy,
             FetchParameters::kUseDefaultOriginRestrictionForType,
-            ResourceRequest::RedirectStatus::kFollowedRedirect);
+            new_request->GetRedirectChain());
 
     if (Context().IsAdResource(new_url, resource_type,
                                new_request->GetRequestContext())) {
@@ -590,11 +592,13 @@ void ResourceLoader::DidReceiveResponse(
     // https://w3c.github.io/webappsec-csp/#should-block-response
     const KURL& original_url = response.OriginalURLViaServiceWorker();
     if (!original_url.IsEmpty()) {
+      Vector<KURL> redirect_chain = initial_request.GetRedirectChain();
+      redirect_chain.push_back(initial_request.Url());
       // CanRequest() below only checks enforced policies: check report-only
       // here to ensure violations are sent.
       Context().CheckCSPForRequest(
           request_context, original_url, options,
-          SecurityViolationReportingPolicy::kReport,
+          SecurityViolationReportingPolicy::kReport, redirect_chain.front(),
           ResourceRequest::RedirectStatus::kFollowedRedirect);
 
       base::Optional<ResourceRequestBlockedReason> blocked_reason =
@@ -602,7 +606,7 @@ void ResourceLoader::DidReceiveResponse(
               resource_type, initial_request, original_url, options,
               SecurityViolationReportingPolicy::kReport,
               FetchParameters::kUseDefaultOriginRestrictionForType,
-              ResourceRequest::RedirectStatus::kFollowedRedirect);
+              redirect_chain);
       if (blocked_reason) {
         HandleError(ResourceError::CancelledDueToAccessCheckError(
             original_url, blocked_reason.value()));

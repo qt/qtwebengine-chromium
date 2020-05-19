@@ -80,8 +80,7 @@ ResourceRequest::ResourceRequest(const KURL& url)
       was_discarded_(false),
       is_external_request_(false),
       cors_preflight_policy_(
-          network::mojom::CORSPreflightPolicy::kConsiderPreflight),
-      redirect_status_(RedirectStatus::kNoRedirect) {}
+          network::mojom::CORSPreflightPolicy::kConsiderPreflight) {}
 
 ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
     : ResourceRequest(data->url_) {
@@ -119,7 +118,6 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   check_for_browser_side_navigation_ = data->check_for_browser_side_navigation_;
   is_external_request_ = data->is_external_request_;
   cors_preflight_policy_ = data->cors_preflight_policy_;
-  redirect_status_ = data->redirect_status_;
   suggested_filename_ = data->suggested_filename_;
   is_ad_resource_ = data->is_ad_resource_;
   SetInitiatorCSP(data->navigation_csp_);
@@ -149,8 +147,8 @@ std::unique_ptr<ResourceRequest> ResourceRequest::CreateRedirectRequest(
   request->SetHTTPReferrer(
       Referrer(referrer, static_cast<ReferrerPolicy>(new_referrer_policy)));
   request->SetSkipServiceWorker(skip_service_worker);
-  request->SetRedirectStatus(RedirectStatus::kFollowedRedirect);
-
+  request->redirect_chain_ = GetRedirectChain();
+  request->redirect_chain_.push_back(Url());
   // Copy from parameters for |this|.
   request->SetDownloadToBlob(DownloadToBlob());
   request->SetUseStreamOnResponse(UseStreamOnResponse());
@@ -216,7 +214,6 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->check_for_browser_side_navigation_ = check_for_browser_side_navigation_;
   data->is_external_request_ = is_external_request_;
   data->cors_preflight_policy_ = cors_preflight_policy_;
-  data->redirect_status_ = redirect_status_;
   data->suggested_filename_ = suggested_filename_;
   data->is_ad_resource_ = is_ad_resource_;
   data->navigation_csp_ = initiator_csp_;

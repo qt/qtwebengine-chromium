@@ -55,7 +55,7 @@ bool ShouldBlockDueToCSP(ExecutionContext* execution_context,
                          const KURL& request_url) {
   return !ContentSecurityPolicy::ShouldBypassMainWorld(execution_context) &&
          !execution_context->GetContentSecurityPolicy()->AllowConnectToSource(
-             request_url);
+             request_url, request_url, RedirectStatus::kNoRedirect);
 }
 
 bool ShouldBlockPort(const KURL& request_url) {

@@ -328,6 +328,7 @@ class WebLocalFrame : public WebFrame {
                                  const WebURL& mixed_content_url,
                                  WebURLRequest::RequestContext,
                                  bool was_allowed,
+                                 const WebURL& url_before_redirects,
                                  bool had_redirect,
                                  const WebSourceLocation&) = 0;
 

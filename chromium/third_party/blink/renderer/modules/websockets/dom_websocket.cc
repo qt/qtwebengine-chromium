@@ -336,7 +336,7 @@ void DOMWebSocket::Connect(const String& url,
 
   if (!ContentSecurityPolicy::ShouldBypassMainWorld(GetExecutionContext()) &&
       !GetExecutionContext()->GetContentSecurityPolicy()->AllowConnectToSource(
-          url_)) {
+          url_, url_, RedirectStatus::kNoRedirect)) {
     state_ = kClosed;
 
     // Delay the event dispatch until after the current task by suspending and

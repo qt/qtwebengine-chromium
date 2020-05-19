@@ -162,10 +162,10 @@ base::Optional<ResourceRequestBlockedReason> BaseFetchContext::CanRequest(
     const ResourceLoaderOptions& options,
     SecurityViolationReportingPolicy reporting_policy,
     FetchParameters::OriginRestriction origin_restriction,
-    ResourceRequest::RedirectStatus redirect_status) const {
+    const Vector<KURL>& redirect_chain) const {
   base::Optional<ResourceRequestBlockedReason> blocked_reason =
       CanRequestInternal(type, resource_request, url, options, reporting_policy,
-                         origin_restriction, redirect_status);
+                         origin_restriction, redirect_chain);
   if (blocked_reason &&
       reporting_policy == SecurityViolationReportingPolicy::kReport) {
     DispatchDidBlockRequest(resource_request, options.initiator_info,
@@ -226,9 +226,11 @@ BaseFetchContext::CheckCSPForRequest(
     const KURL& url,
     const ResourceLoaderOptions& options,
     SecurityViolationReportingPolicy reporting_policy,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status) const {
   return CheckCSPForRequestInternal(
-      request_context, url, options, reporting_policy, redirect_status,
+      request_context, url, options, reporting_policy,
+      url_before_redirects, redirect_status,
       ContentSecurityPolicy::CheckHeaderType::kCheckReportOnly);
 }
 
@@ -238,6 +240,7 @@ BaseFetchContext::CheckCSPForRequestInternal(
     const KURL& url,
     const ResourceLoaderOptions& options,
     SecurityViolationReportingPolicy reporting_policy,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     ContentSecurityPolicy::CheckHeaderType check_header_type) const {
   if (ShouldBypassMainWorldCSP() || options.content_security_policy_option ==
@@ -249,7 +252,8 @@ BaseFetchContext::CheckCSPForRequestInternal(
   if (csp && !csp->AllowRequest(
                  request_context, url, options.content_security_policy_nonce,
                  options.integrity_metadata, options.parser_disposition,
-                 redirect_status, reporting_policy, check_header_type)) {
+                 url_before_redirects, redirect_status, reporting_policy,
+                 check_header_type)) {
     return ResourceRequestBlockedReason::kCSP;
   }
   return base::nullopt;
@@ -263,10 +267,10 @@ BaseFetchContext::CanRequestInternal(
     const ResourceLoaderOptions& options,
     SecurityViolationReportingPolicy reporting_policy,
     FetchParameters::OriginRestriction origin_restriction,
-    ResourceRequest::RedirectStatus redirect_status) const {
+    const Vector<KURL>& redirect_chain) const {
   if (IsDetached()) {
     if (!resource_request.GetKeepalive() ||
-        redirect_status == ResourceRequest::RedirectStatus::kNoRedirect) {
+        redirect_chain.IsEmpty()) {
       return ResourceRequestBlockedReason::kOther;
     }
   }
@@ -337,11 +341,17 @@ BaseFetchContext::CanRequestInternal(
   WebURLRequest::RequestContext request_context =
       resource_request.GetRequestContext();
 
+  const KURL& url_before_redirects =
+      redirect_chain.IsEmpty() ? url : redirect_chain.front();
+  const ResourceRequest::RedirectStatus redirect_status =
+      redirect_chain.IsEmpty()
+          ? ResourceRequest::RedirectStatus::kNoRedirect
+          : ResourceRequest::RedirectStatus::kFollowedRedirect;
   // We check the 'report-only' headers before upgrading the request (in
   // populateResourceRequest). We check the enforced headers here to ensure we
   // block things we ought to block.
   if (CheckCSPForRequestInternal(
-          request_context, url, options, reporting_policy, redirect_status,
+          request_context, url, options, reporting_policy, url_before_redirects, redirect_status,
           ContentSecurityPolicy::CheckHeaderType::kCheckEnforce) ==
       ResourceRequestBlockedReason::kCSP) {
     return ResourceRequestBlockedReason::kCSP;
@@ -389,8 +399,8 @@ BaseFetchContext::CanRequestInternal(
   // mixed content via CSP, they don't get a mixed content warning, but a CSP
   // warning instead.
   if (ShouldBlockFetchByMixedContentCheck(request_context, frame_type,
-                                          resource_request.GetRedirectStatus(),
-                                          url, reporting_policy))
+                                          redirect_chain, url,
+                                          reporting_policy))
     return ResourceRequestBlockedReason::kMixedContent;
 
   if (url.PotentiallyDanglingMarkup() && url.ProtocolIsInHTTPFamily()) {

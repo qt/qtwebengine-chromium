@@ -447,7 +447,7 @@ void HTMLFormElement::ScheduleFormSubmission(FormSubmission* submission) {
   }
 
   if (!GetDocument().GetContentSecurityPolicy()->AllowFormAction(
-          submission->Action())) {
+          submission->Action(), submission->Action(), RedirectStatus::kNoRedirect)) {
     return;
   }
 

@@ -662,6 +662,7 @@ bool ContentSecurityPolicy::AllowScriptFromSource(
     const String& nonce,
     const IntegrityMetadataSet& hashes,
     ParserDisposition parser_disposition,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -694,7 +695,8 @@ bool ContentSecurityPolicy::AllowScriptFromSource(
       continue;
     is_allowed &=
         policy->AllowScriptFromSource(url, nonce, hashes, parser_disposition,
-                                      redirect_status, reporting_policy);
+                                      url_before_redirects, redirect_status,
+                                      reporting_policy);
   }
   return is_allowed;
 }
@@ -702,13 +704,14 @@ bool ContentSecurityPolicy::AllowScriptFromSource(
 bool ContentSecurityPolicy::AllowRequestWithoutIntegrity(
     WebURLRequest::RequestContext context,
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
   for (const auto& policy : policies_) {
     if (CheckHeaderTypeMatches(check_header_type, policy->HeaderType()) &&
-        !policy->AllowRequestWithoutIntegrity(context, url, redirect_status,
-                                              reporting_policy))
+        !policy->AllowRequestWithoutIntegrity(context, url, url_before_redirects,
+                                              redirect_status, reporting_policy))
       return false;
   }
   return true;
@@ -720,11 +723,12 @@ bool ContentSecurityPolicy::AllowRequest(
     const String& nonce,
     const IntegrityMetadataSet& integrity_metadata,
     ParserDisposition parser_disposition,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
   if (integrity_metadata.IsEmpty() &&
-      !AllowRequestWithoutIntegrity(context, url, redirect_status,
+      !AllowRequestWithoutIntegrity(context, url, url_before_redirects, redirect_status,
                                     reporting_policy, check_header_type)) {
     return false;
   }
@@ -733,7 +737,8 @@ bool ContentSecurityPolicy::AllowRequest(
     case WebURLRequest::kRequestContextAudio:
     case WebURLRequest::kRequestContextTrack:
     case WebURLRequest::kRequestContextVideo:
-      return AllowMediaFromSource(url, redirect_status, reporting_policy,
+      return AllowMediaFromSource(url, url_before_redirects,
+                                  redirect_status, reporting_policy,
                                   check_header_type);
     case WebURLRequest::kRequestContextBeacon:
     case WebURLRequest::kRequestContextEventSource:
@@ -741,47 +746,53 @@ bool ContentSecurityPolicy::AllowRequest(
     case WebURLRequest::kRequestContextPing:
     case WebURLRequest::kRequestContextXMLHttpRequest:
     case WebURLRequest::kRequestContextSubresource:
-      return AllowConnectToSource(url, redirect_status, reporting_policy,
+      return AllowConnectToSource(url, url_before_redirects,
+                                  redirect_status, reporting_policy,
                                   check_header_type);
     case WebURLRequest::kRequestContextEmbed:
     case WebURLRequest::kRequestContextObject:
-      return AllowObjectFromSource(url, redirect_status, reporting_policy,
+      return AllowObjectFromSource(url, url_before_redirects,
+                                   redirect_status, reporting_policy,
                                    check_header_type);
     case WebURLRequest::kRequestContextPrefetch:
-      return AllowPrefetchFromSource(url, redirect_status, reporting_policy,
+      return AllowPrefetchFromSource(url, url_before_redirects,
+                                     redirect_status, reporting_policy,
                                      check_header_type);
     case WebURLRequest::kRequestContextFavicon:
     case WebURLRequest::kRequestContextImage:
     case WebURLRequest::kRequestContextImageSet:
-      return AllowImageFromSource(url, redirect_status, reporting_policy,
-                                  check_header_type);
+      return AllowImageFromSource(url, url_before_redirects, redirect_status,
+                                  reporting_policy, check_header_type);
     case WebURLRequest::kRequestContextFont:
-      return AllowFontFromSource(url, redirect_status, reporting_policy,
+      return AllowFontFromSource(url, url_before_redirects,
+                                 redirect_status, reporting_policy,
                                  check_header_type);
     case WebURLRequest::kRequestContextForm:
-      return AllowFormAction(url, redirect_status, reporting_policy,
+      return AllowFormAction(url, url_before_redirects, redirect_status, reporting_policy,
                              check_header_type);
     case WebURLRequest::kRequestContextFrame:
     case WebURLRequest::kRequestContextIframe:
-      return AllowFrameFromSource(url, redirect_status, reporting_policy,
+      return AllowFrameFromSource(url, url_before_redirects,
+                                  redirect_status, reporting_policy,
                                   check_header_type);
     case WebURLRequest::kRequestContextImport:
     case WebURLRequest::kRequestContextScript:
     case WebURLRequest::kRequestContextXSLT:
       return AllowScriptFromSource(url, nonce, integrity_metadata,
-                                   parser_disposition, redirect_status,
-                                   reporting_policy, check_header_type);
+                                   parser_disposition, url_before_redirects,
+                                   redirect_status, reporting_policy,
+                                   check_header_type);
     case WebURLRequest::kRequestContextManifest:
-      return AllowManifestFromSource(url, redirect_status, reporting_policy,
-                                     check_header_type);
+      return AllowManifestFromSource(url, url_before_redirects, redirect_status,
+                                     reporting_policy, check_header_type);
     case WebURLRequest::kRequestContextServiceWorker:
     case WebURLRequest::kRequestContextSharedWorker:
     case WebURLRequest::kRequestContextWorker:
-      return AllowWorkerContextFromSource(url, redirect_status,
+      return AllowWorkerContextFromSource(url, url, redirect_status,
                                           reporting_policy, check_header_type);
     case WebURLRequest::kRequestContextStyle:
-      return AllowStyleFromSource(url, nonce, redirect_status, reporting_policy,
-                                  check_header_type);
+      return AllowStyleFromSource(url, nonce, url_before_redirects, redirect_status,
+                                  reporting_policy, check_header_type);
     case WebURLRequest::kRequestContextCSPReport:
     case WebURLRequest::kRequestContextDownload:
     case WebURLRequest::kRequestContextHyperlink:
@@ -805,6 +816,7 @@ void ContentSecurityPolicy::UsesStyleHashAlgorithms(uint8_t algorithms) {
 
 bool ContentSecurityPolicy::AllowObjectFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -816,7 +828,8 @@ bool ContentSecurityPolicy::AllowObjectFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowObjectFromSource(url, redirect_status, reporting_policy);
+        policy->AllowObjectFromSource(url, url_before_redirects,
+                                      redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -824,6 +837,7 @@ bool ContentSecurityPolicy::AllowObjectFromSource(
 
 bool ContentSecurityPolicy::AllowPrefetchFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -835,7 +849,7 @@ bool ContentSecurityPolicy::AllowPrefetchFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowPrefetchFromSource(url, redirect_status, reporting_policy);
+        policy->AllowPrefetchFromSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -843,6 +857,7 @@ bool ContentSecurityPolicy::AllowPrefetchFromSource(
 
 bool ContentSecurityPolicy::AllowFrameFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -854,7 +869,7 @@ bool ContentSecurityPolicy::AllowFrameFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowFrameFromSource(url, redirect_status, reporting_policy);
+        policy->AllowFrameFromSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -862,6 +877,7 @@ bool ContentSecurityPolicy::AllowFrameFromSource(
 
 bool ContentSecurityPolicy::AllowImageFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -874,7 +890,7 @@ bool ContentSecurityPolicy::AllowImageFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowImageFromSource(url, redirect_status, reporting_policy);
+        policy->AllowImageFromSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -883,6 +899,7 @@ bool ContentSecurityPolicy::AllowImageFromSource(
 bool ContentSecurityPolicy::AllowStyleFromSource(
     const KURL& url,
     const String& nonce,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -894,14 +911,15 @@ bool ContentSecurityPolicy::AllowStyleFromSource(
   for (const auto& policy : policies_) {
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
-    is_allowed &= policy->AllowStyleFromSource(url, nonce, redirect_status,
-                                               reporting_policy);
+    is_allowed &= policy->AllowStyleFromSource(url, nonce, url_before_redirects,
+                                               redirect_status, reporting_policy);
   }
   return is_allowed;
 }
 
 bool ContentSecurityPolicy::AllowFontFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -913,7 +931,7 @@ bool ContentSecurityPolicy::AllowFontFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowFontFromSource(url, redirect_status, reporting_policy);
+        policy->AllowFontFromSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -921,6 +939,7 @@ bool ContentSecurityPolicy::AllowFontFromSource(
 
 bool ContentSecurityPolicy::AllowMediaFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -932,7 +951,7 @@ bool ContentSecurityPolicy::AllowMediaFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowMediaFromSource(url, redirect_status, reporting_policy);
+        policy->AllowMediaFromSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -940,6 +959,7 @@ bool ContentSecurityPolicy::AllowMediaFromSource(
 
 bool ContentSecurityPolicy::AllowConnectToSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -951,7 +971,7 @@ bool ContentSecurityPolicy::AllowConnectToSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowConnectToSource(url, redirect_status, reporting_policy);
+        policy->AllowConnectToSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -959,6 +979,7 @@ bool ContentSecurityPolicy::AllowConnectToSource(
 
 bool ContentSecurityPolicy::AllowFormAction(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -970,7 +991,7 @@ bool ContentSecurityPolicy::AllowFormAction(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowFormAction(url, redirect_status, reporting_policy);
+        policy->AllowFormAction(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -990,7 +1011,7 @@ bool ContentSecurityPolicy::AllowBaseURI(
     if (!CheckHeaderTypeMatches(CheckHeaderType::kCheckAll,
                                 policy->HeaderType()))
       continue;
-    is_allowed &= policy->AllowBaseURI(url, redirect_status, reporting_policy);
+    is_allowed &= policy->AllowBaseURI(url, url, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -998,6 +1019,7 @@ bool ContentSecurityPolicy::AllowBaseURI(
 
 bool ContentSecurityPolicy::AllowWorkerContextFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -1012,7 +1034,7 @@ bool ContentSecurityPolicy::AllowWorkerContextFromSource(
         if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
           continue;
         is_allowed_worker &= policy->AllowWorkerFromSource(
-            url, redirect_status,
+            url, url_before_redirects, redirect_status,
             SecurityViolationReportingPolicy::kSuppressReporting);
       }
     }
@@ -1025,7 +1047,7 @@ bool ContentSecurityPolicy::AllowWorkerContextFromSource(
           continue;
         is_allowed_script &= policy->AllowScriptFromSource(
             url, AtomicString(), IntegrityMetadataSet(), kNotParserInserted,
-            redirect_status,
+            url_before_redirects, redirect_status,
             SecurityViolationReportingPolicy::kSuppressReporting);
       }
     }
@@ -1044,7 +1066,7 @@ bool ContentSecurityPolicy::AllowWorkerContextFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowWorkerFromSource(url, redirect_status, reporting_policy);
+        policy->AllowWorkerFromSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -1052,6 +1074,7 @@ bool ContentSecurityPolicy::AllowWorkerContextFromSource(
 
 bool ContentSecurityPolicy::AllowManifestFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy,
     CheckHeaderType check_header_type) const {
@@ -1063,7 +1086,7 @@ bool ContentSecurityPolicy::AllowManifestFromSource(
     if (!CheckHeaderTypeMatches(check_header_type, policy->HeaderType()))
       continue;
     is_allowed &=
-        policy->AllowManifestFromSource(url, redirect_status, reporting_policy);
+        policy->AllowManifestFromSource(url, url_before_redirects, redirect_status, reporting_policy);
   }
 
   return is_allowed;
@@ -1191,7 +1214,7 @@ static void GatherSecurityPolicyViolationEventData(
         break;
       case ContentSecurityPolicy::kURLViolation:
         init.setBlockedURI(StripURLForUseInReport(
-            context, blocked_url, redirect_status, effective_type));
+            context, blocked_url, RedirectStatus::kNoRedirect, effective_type));
         break;
     }
   }
@@ -1438,10 +1461,10 @@ void ContentSecurityPolicy::DispatchViolationEvents(
 }
 
 void ContentSecurityPolicy::ReportMixedContent(
-    const KURL& mixed_url,
+    const KURL& blocked_url,
     RedirectStatus redirect_status) const {
   for (const auto& policy : policies_)
-    policy->ReportMixedContent(mixed_url, redirect_status);
+    policy->ReportMixedContent(blocked_url, redirect_status);
 }
 
 void ContentSecurityPolicy::ReportReportOnlyInMeta(const String& header) {

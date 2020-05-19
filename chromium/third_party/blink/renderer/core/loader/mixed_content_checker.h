@@ -69,6 +69,7 @@ class CORE_EXPORT MixedContentChecker final {
   static bool ShouldBlockFetch(LocalFrame*,
                                WebURLRequest::RequestContext,
                                network::mojom::RequestContextFrameType,
+                               const KURL& url_before_redirects,
                                ResourceRequest::RedirectStatus,
                                const KURL&,
                                SecurityViolationReportingPolicy =
@@ -76,6 +77,7 @@ class CORE_EXPORT MixedContentChecker final {
 
   static bool ShouldBlockFetchOnWorker(const WorkerFetchContext&,
                                        WebURLRequest::RequestContext,
+                                       const KURL& url_before_redirects,
                                        ResourceRequest::RedirectStatus,
                                        const KURL&,
                                        SecurityViolationReportingPolicy,
@@ -117,6 +119,7 @@ class CORE_EXPORT MixedContentChecker final {
                                 const KURL& mixed_content_url,
                                 WebURLRequest::RequestContext,
                                 bool was_allowed,
+                                const KURL& url_before_redirects,
                                 bool had_redirect,
                                 std::unique_ptr<SourceLocation>);
 

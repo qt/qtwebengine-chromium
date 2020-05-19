@@ -177,11 +177,16 @@ WorkerFetchContext::CreateWebSocketHandshakeThrottle() {
 bool WorkerFetchContext::ShouldBlockFetchByMixedContentCheck(
     WebURLRequest::RequestContext request_context,
     network::mojom::RequestContextFrameType frame_type,
-    ResourceRequest::RedirectStatus redirect_status,
+    const Vector<KURL>& redirect_chain,
     const KURL& url,
     SecurityViolationReportingPolicy reporting_policy) const {
+  RedirectStatus redirect_status = redirect_chain.IsEmpty()
+                                       ? RedirectStatus::kNoRedirect
+                                       : RedirectStatus::kFollowedRedirect;
+  const KURL& url_before_redirects =
+      redirect_chain.IsEmpty() ? url : redirect_chain.front();
   return MixedContentChecker::ShouldBlockFetchOnWorker(
-      *this, request_context, redirect_status, url, reporting_policy,
+      *this, request_context, url_before_redirects, redirect_status, url, reporting_policy,
       global_scope_->IsWorkletGlobalScope());
 }
 

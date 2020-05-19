@@ -292,10 +292,7 @@ ResourceLoadPriority ResourceFetcher::ComputeLoadPriority(
 }
 
 static void PopulateTimingInfo(ResourceTimingInfo* info, Resource* resource) {
-  KURL initial_url = resource->GetResponse().RedirectResponses().IsEmpty()
-                         ? resource->GetResourceRequest().Url()
-                         : resource->GetResponse().RedirectResponses()[0].Url();
-  info->SetInitialURL(initial_url);
+  info->SetInitialURL(resource->Url());
   info->SetFinalResponse(resource->GetResponse());
 }
 
@@ -653,18 +650,27 @@ base::Optional<ResourceRequestBlockedReason> ResourceFetcher::PrepareRequest(
           ? SecurityViolationReportingPolicy::kSuppressReporting
           : SecurityViolationReportingPolicy::kReport;
 
-  // Note that resource_request.GetRedirectStatus() may return kFollowedRedirect
-  // here since e.g. DocumentThreadableLoader may create a new Resource from
-  // a ResourceRequest that originates from the ResourceRequest passed to
-  // the redirect handling callback.
+  // Note that resource_request.GetRedirectChain() may be non-empty here since
+  // e.g. ThreadableLoader may create a new Resource from a ResourceRequest that
+  // originates from the ResourceRequest passed to the redirect handling
+  // callback.
 
   // Before modifying the request for CSP, evaluate report-only headers. This
   // allows site owners to learn about requests that are being modified
   // (e.g. mixed content that is being upgraded by upgrade-insecure-requests).
+ const Vector<KURL>& redirect_chain = resource_request.GetRedirectChain();
+ const KURL& url_before_redirects =
+      redirect_chain.IsEmpty() ? params.Url() : redirect_chain.front();
+ const ResourceRequest::RedirectStatus redirect_status =
+      redirect_chain.IsEmpty()
+          ? ResourceRequest::RedirectStatus::kNoRedirect
+          : ResourceRequest::RedirectStatus::kFollowedRedirect;
   Context().CheckCSPForRequest(
       resource_request.GetRequestContext(),
       MemoryCache::RemoveFragmentIdentifierIfNeeded(params.Url()), options,
-      reporting_policy, resource_request.GetRedirectStatus());
+      reporting_policy,
+      MemoryCache::RemoveFragmentIdentifierIfNeeded(url_before_redirects),
+      redirect_status);
 
   // This may modify params.Url() (via the resource_request argument).
   Context().PopulateResourceRequest(
@@ -714,7 +720,7 @@ base::Optional<ResourceRequestBlockedReason> ResourceFetcher::PrepareRequest(
   base::Optional<ResourceRequestBlockedReason> blocked_reason =
       Context().CanRequest(resource_type, resource_request, url, options,
                            reporting_policy, params.GetOriginRestriction(),
-                           resource_request.GetRedirectStatus());
+                           resource_request.GetRedirectChain());
 
   if (Context().IsAdResource(url, resource_type,
                              resource_request.GetRequestContext())) {
@@ -1760,7 +1766,7 @@ void ResourceFetcher::EmulateLoadStartedForInspector(
                        resource->LastResourceRequest().Url(), params.Options(),
                        SecurityViolationReportingPolicy::kReport,
                        params.GetOriginRestriction(),
-                       resource->LastResourceRequest().GetRedirectStatus());
+                       resource->LastResourceRequest().GetRedirectChain());
   RequestLoadStarted(resource->Identifier(), resource, params, kUse);
 }
 

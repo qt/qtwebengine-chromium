@@ -248,14 +248,14 @@ bool CSPDirectiveList::CheckDynamic(SourceListDirective* directive) const {
 }
 
 void CSPDirectiveList::ReportMixedContent(
-    const KURL& mixed_url,
+    const KURL& blocked_url,
     ResourceRequest::RedirectStatus redirect_status) const {
   if (StrictMixedContentChecking()) {
     policy_->ReportViolation(
         ContentSecurityPolicy::GetDirectiveName(
             ContentSecurityPolicy::DirectiveType::kBlockAllMixedContent),
         ContentSecurityPolicy::DirectiveType::kBlockAllMixedContent, String(),
-        mixed_url, report_endpoints_, use_reporting_api_, header_, header_type_,
+        blocked_url, report_endpoints_, use_reporting_api_, header_, header_type_,
         ContentSecurityPolicy::kURLViolation, std::unique_ptr<SourceLocation>(),
         nullptr,  // contextFrame,
         redirect_status);
@@ -319,6 +319,7 @@ bool CSPDirectiveList::CheckRequestWithoutIntegrity(
 bool CSPDirectiveList::CheckRequestWithoutIntegrityAndReportViolation(
     WebURLRequest::RequestContext context,
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status) const {
   if (CheckRequestWithoutIntegrity(context))
     return true;
@@ -352,18 +353,19 @@ bool CSPDirectiveList::CheckRequestWithoutIntegrityAndReportViolation(
                       "' because 'require-sri-for' directive requires "
                       "integrity attribute be present for all " +
                       resource_type + "s.",
-                  url, redirect_status);
+                  url_before_redirects, redirect_status);
   return DenyIfEnforcingPolicy();
 }
 
 bool CSPDirectiveList::AllowRequestWithoutIntegrity(
     WebURLRequest::RequestContext context,
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   if (reporting_policy == SecurityViolationReportingPolicy::kReport)
     return CheckRequestWithoutIntegrityAndReportViolation(context, url,
-                                                          redirect_status);
+                                                          url_before_redirects, redirect_status);
   return DenyIfEnforcingPolicy() || CheckRequestWithoutIntegrity(context);
 }
 
@@ -507,6 +509,7 @@ bool CSPDirectiveList::CheckSourceAndReportViolation(
     SourceListDirective* directive,
     const KURL& url,
     const ContentSecurityPolicy::DirectiveType effective_type,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status) const {
   if (!directive)
     return true;
@@ -570,7 +573,7 @@ bool CSPDirectiveList::CheckSourceAndReportViolation(
                       "' because it violates the following Content Security "
                       "Policy directive: \"" +
                       directive->GetText() + "\"." + suffix + "\n",
-                  url, redirect_status);
+                  url_before_redirects, redirect_status);
   return DenyIfEnforcingPolicy();
 }
 
@@ -736,6 +739,7 @@ bool CSPDirectiveList::AllowScriptFromSource(
     const String& nonce,
     const IntegrityMetadataSet& hashes,
     ParserDisposition parser_disposition,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   SourceListDirective* directive =
@@ -750,12 +754,13 @@ bool CSPDirectiveList::AllowScriptFromSource(
              ? CheckSourceAndReportViolation(
                    directive, url,
                    ContentSecurityPolicy::DirectiveType::kScriptSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(directive, url, redirect_status);
 }
 
 bool CSPDirectiveList::AllowObjectFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   if (url.ProtocolIsAbout())
@@ -765,7 +770,7 @@ bool CSPDirectiveList::AllowObjectFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kObjectSrc),
                    url, ContentSecurityPolicy::DirectiveType::kObjectSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kObjectSrc),
@@ -774,6 +779,7 @@ bool CSPDirectiveList::AllowObjectFromSource(
 
 bool CSPDirectiveList::AllowPrefetchFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   return reporting_policy == SecurityViolationReportingPolicy::kReport
@@ -781,7 +787,7 @@ bool CSPDirectiveList::AllowPrefetchFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kPrefetchSrc),
                    url, ContentSecurityPolicy::DirectiveType::kPrefetchSrc,
-                   redirect_status)
+                   url_before_redirects ,redirect_status)
              : CheckSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kPrefetchSrc),
@@ -790,6 +796,7 @@ bool CSPDirectiveList::AllowPrefetchFromSource(
 
 bool CSPDirectiveList::AllowFrameFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   if (url.ProtocolIsAbout())
@@ -806,12 +813,13 @@ bool CSPDirectiveList::AllowFrameFromSource(
              ? CheckSourceAndReportViolation(
                    which_directive, url,
                    ContentSecurityPolicy::DirectiveType::kFrameSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(which_directive, url, redirect_status);
 }
 
 bool CSPDirectiveList::AllowImageFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   return reporting_policy == SecurityViolationReportingPolicy::kReport
@@ -819,7 +827,7 @@ bool CSPDirectiveList::AllowImageFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kImgSrc),
                    url, ContentSecurityPolicy::DirectiveType::kImgSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(OperativeDirective(
                                ContentSecurityPolicy::DirectiveType::kImgSrc),
                            url, redirect_status);
@@ -828,6 +836,7 @@ bool CSPDirectiveList::AllowImageFromSource(
 bool CSPDirectiveList::AllowStyleFromSource(
     const KURL& url,
     const String& nonce,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   if (IsMatchingNoncePresent(
@@ -839,7 +848,7 @@ bool CSPDirectiveList::AllowStyleFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kStyleSrc),
                    url, ContentSecurityPolicy::DirectiveType::kStyleSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(OperativeDirective(
                                ContentSecurityPolicy::DirectiveType::kStyleSrc),
                            url, redirect_status);
@@ -847,6 +856,7 @@ bool CSPDirectiveList::AllowStyleFromSource(
 
 bool CSPDirectiveList::AllowFontFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   return reporting_policy == SecurityViolationReportingPolicy::kReport
@@ -854,7 +864,7 @@ bool CSPDirectiveList::AllowFontFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kFontSrc),
                    url, ContentSecurityPolicy::DirectiveType::kFontSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(OperativeDirective(
                                ContentSecurityPolicy::DirectiveType::kFontSrc),
                            url, redirect_status);
@@ -862,6 +872,7 @@ bool CSPDirectiveList::AllowFontFromSource(
 
 bool CSPDirectiveList::AllowMediaFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   return reporting_policy == SecurityViolationReportingPolicy::kReport
@@ -869,7 +880,7 @@ bool CSPDirectiveList::AllowMediaFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kMediaSrc),
                    url, ContentSecurityPolicy::DirectiveType::kMediaSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(OperativeDirective(
                                ContentSecurityPolicy::DirectiveType::kMediaSrc),
                            url, redirect_status);
@@ -877,6 +888,7 @@ bool CSPDirectiveList::AllowMediaFromSource(
 
 bool CSPDirectiveList::AllowManifestFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   return reporting_policy == SecurityViolationReportingPolicy::kReport
@@ -884,7 +896,7 @@ bool CSPDirectiveList::AllowManifestFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kManifestSrc),
                    url, ContentSecurityPolicy::DirectiveType::kManifestSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kManifestSrc),
@@ -893,6 +905,7 @@ bool CSPDirectiveList::AllowManifestFromSource(
 
 bool CSPDirectiveList::AllowConnectToSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   return reporting_policy == SecurityViolationReportingPolicy::kReport
@@ -900,7 +913,7 @@ bool CSPDirectiveList::AllowConnectToSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kConnectSrc),
                    url, ContentSecurityPolicy::DirectiveType::kConnectSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kConnectSrc),
@@ -909,6 +922,7 @@ bool CSPDirectiveList::AllowConnectToSource(
 
 bool CSPDirectiveList::AllowFormAction(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   return reporting_policy == SecurityViolationReportingPolicy::kReport
@@ -916,7 +930,7 @@ bool CSPDirectiveList::AllowFormAction(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kFormAction),
                    url, ContentSecurityPolicy::DirectiveType::kFormAction,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kFormAction),
@@ -925,6 +939,7 @@ bool CSPDirectiveList::AllowFormAction(
 
 bool CSPDirectiveList::AllowBaseURI(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   bool result =
@@ -933,7 +948,7 @@ bool CSPDirectiveList::AllowBaseURI(
                 OperativeDirective(
                     ContentSecurityPolicy::DirectiveType::kBaseURI),
                 url, ContentSecurityPolicy::DirectiveType::kBaseURI,
-                redirect_status)
+                url_before_redirects, redirect_status)
           : CheckSource(OperativeDirective(
                             ContentSecurityPolicy::DirectiveType::kBaseURI),
                         url, redirect_status);
@@ -951,6 +966,7 @@ bool CSPDirectiveList::AllowBaseURI(
 
 bool CSPDirectiveList::AllowWorkerFromSource(
     const KURL& url,
+    const KURL& url_before_redirects,
     ResourceRequest::RedirectStatus redirect_status,
     SecurityViolationReportingPolicy reporting_policy) const {
   if (AllowDynamicWorker())
@@ -961,7 +977,7 @@ bool CSPDirectiveList::AllowWorkerFromSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kWorkerSrc),
                    url, ContentSecurityPolicy::DirectiveType::kWorkerSrc,
-                   redirect_status)
+                   url_before_redirects, redirect_status)
              : CheckSource(
                    OperativeDirective(
                        ContentSecurityPolicy::DirectiveType::kWorkerSrc),
