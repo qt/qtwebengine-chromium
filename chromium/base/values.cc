@@ -221,7 +221,7 @@ Value::Value(StringPiece in_string) : Value(std::string(in_string)) {}
 
 Value::Value(std::string&& in_string) noexcept
     : type_(Type::STRING), string_value_(std::move(in_string)) {
-  DCHECK(IsStringUTF8(string_value_));
+  DCHECK(IsStringUTF8AllowingNoncharacters(string_value_));
 }
 
 Value::Value(const char16* in_string16) : Value(StringPiece16(in_string16)) {}
@@ -1214,7 +1214,7 @@ DictionaryValue::DictionaryValue(DictStorage&& in_dict) noexcept
     : Value(std::move(in_dict)) {}
 
 bool DictionaryValue::HasKey(StringPiece key) const {
-  DCHECK(IsStringUTF8(key));
+  DCHECK(IsStringUTF8AllowingNoncharacters(key));
   auto current_entry = dict_.find(key);
   DCHECK((current_entry == dict_.end()) || current_entry->second);
   return current_entry != dict_.end();
@@ -1225,7 +1225,7 @@ void DictionaryValue::Clear() {
 }
 
 Value* DictionaryValue::Set(StringPiece path, std::unique_ptr<Value> in_value) {
-  DCHECK(IsStringUTF8(path));
+  DCHECK(IsStringUTF8AllowingNoncharacters(path));
   DCHECK(in_value);
 
   // IMPORTANT NOTE: Do not replace with SetPathInternal() yet, because the
@@ -1300,7 +1300,7 @@ Value* DictionaryValue::SetWithoutPathExpansion(
 
 bool DictionaryValue::Get(StringPiece path,
                           const Value** out_value) const {
-  DCHECK(IsStringUTF8(path));
+  DCHECK(IsStringUTF8AllowingNoncharacters(path));
   const Value* value = FindPath(path);
   if (!value)
     return false;
@@ -1425,7 +1425,7 @@ bool DictionaryValue::GetList(StringPiece path, ListValue** out_value) {
 
 bool DictionaryValue::GetWithoutPathExpansion(StringPiece key,
                                               const Value** out_value) const {
-  DCHECK(IsStringUTF8(key));
+  DCHECK(IsStringUTF8AllowingNoncharacters(key));
   auto entry_iterator = dict_.find(key);
   if (entry_iterator == dict_.end())
     return false;
@@ -1530,7 +1530,7 @@ bool DictionaryValue::GetListWithoutPathExpansion(StringPiece key,
 
 bool DictionaryValue::Remove(StringPiece path,
                              std::unique_ptr<Value>* out_value) {
-  DCHECK(IsStringUTF8(path));
+  DCHECK(IsStringUTF8AllowingNoncharacters(path));
   StringPiece current_path(path);
   DictionaryValue* current_dictionary = this;
   size_t delimiter_position = current_path.rfind('.');
@@ -1548,7 +1548,7 @@ bool DictionaryValue::Remove(StringPiece path,
 bool DictionaryValue::RemoveWithoutPathExpansion(
     StringPiece key,
     std::unique_ptr<Value>* out_value) {
-  DCHECK(IsStringUTF8(key));
+  DCHECK(IsStringUTF8AllowingNoncharacters(key));
   auto entry_iterator = dict_.find(key);
   if (entry_iterator == dict_.end())
     return false;
