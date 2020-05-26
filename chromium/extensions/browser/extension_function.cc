@@ -309,6 +309,10 @@ bool ExtensionFunction::HasPermission() const {
   return availability.is_available();
 }
 
+void ExtensionFunction::RespondWithError(const std::string& error) {
+  Respond(Error(error));
+}
+
 bool ExtensionFunction::PreRunValidation(std::string* error) {
   // TODO(crbug.com/625646) This is a partial fix to avoid crashes when certain
   // extension functions run during shutdown. Browser or Notification creation
@@ -340,8 +344,7 @@ bool ExtensionFunction::ShouldSkipQuotaLimiting() const {
 }
 
 void ExtensionFunction::OnQuotaExceeded(const std::string& violation_error) {
-  error_ = violation_error;
-  SendResponseImpl(false);
+  RespondWithError(violation_error);
 }
 
 void ExtensionFunction::SetArgs(base::Value args) {

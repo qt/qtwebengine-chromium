@@ -112,6 +112,9 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // checks in Run(), such as for specific host permissions or user gestures.
   bool HasPermission() const;
 
+  // Sends |error| as an error response.
+  void RespondWithError(const std::string& error);
+
   // The result of a function call.
   //
   // Use NoArguments(), OneArgument(), ArgumentList(), or Error()

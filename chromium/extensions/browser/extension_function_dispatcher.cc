@@ -51,6 +51,8 @@ using content::BrowserThread;
 namespace extensions {
 namespace {
 
+constexpr char kCreationFailed[] = "Access to extension API denied.";
+
 // Notifies the ApiActivityMonitor that an extension API function has been
 // called. May be called from any thread.
 void NotifyApiFunctionCalled(const std::string& extension_id,
@@ -482,7 +484,7 @@ bool ExtensionFunctionDispatcher::CheckPermissions(
     const ExtensionFunction::ResponseCallback& callback) {
   if (!function->HasPermission()) {
     LOG(ERROR) << "Permission denied for " << params.name;
-    SendAccessDenied(callback);
+    function->RespondWithError(kCreationFailed);
     return false;
   }
   return true;
@@ -502,7 +504,7 @@ ExtensionFunctionDispatcher::CreateExtensionFunction(
       ExtensionFunctionRegistry::GetInstance().NewFunction(params.name);
   if (!function) {
     LOG(ERROR) << "Unknown Extension API - " << params.name;
-    SendAccessDenied(callback);
+    callback.Run(ExtensionFunction::FAILED, base::ListValue(), kCreationFailed);
     return nullptr;
   }
 
@@ -520,13 +522,4 @@ ExtensionFunctionDispatcher::CreateExtensionFunction(
 
   return function;
 }
-
-// static
-void ExtensionFunctionDispatcher::SendAccessDenied(
-    const ExtensionFunction::ResponseCallback& callback) {
-  base::ListValue empty_list;
-  callback.Run(ExtensionFunction::FAILED, empty_list,
-               "Access to extension API denied.");
-}
-
 }  // namespace extensions
