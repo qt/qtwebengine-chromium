@@ -26,6 +26,7 @@
 #include "src/trace_processor/slice_tracker.h"
 #include "src/trace_processor/track_tracker.h"
 
+#include <cctype>
 #include <inttypes.h>
 #include <string>
 #include <unordered_map>
