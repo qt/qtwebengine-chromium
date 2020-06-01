@@ -735,7 +735,7 @@ void SkPipeCanvas::onDrawVerticesObject(const SkVertices* vertices, const SkMatr
     SkPipeWriter writer(this);
     writer.write32(pack_verb(SkPipeVerb::kDrawVertices, extra));
     // TODO: dedup vertices?
-    writer.writeDataAsByteArray(vertices->encode().get());
+    vertices->encode(writer);
     writer.write32(boneCount);
     writer.write(bones, sizeof(SkMatrix) * boneCount);
     write_paint(writer, paint, kVertices_PaintUsage);
