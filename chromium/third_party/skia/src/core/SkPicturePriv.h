@@ -94,10 +94,11 @@ public:
         kUnifyErodeDilateImpls_Version      = 71,
         kMatrixColorFilterDomain_Version    = 72,
         kEdgeAAQuadColor4f_Version          = 73,
+        kVerticesUseReadBuffer_Version      = 75,
 
         // Only SKPs within the min/current picture version range (inclusive) can be read.
         kMin_Version     = kTileModeInBlurImageFilter_Version,
-        kCurrent_Version = kEdgeAAQuadColor4f_Version
+        kCurrent_Version = kVerticesUseReadBuffer_Version
     };
 
     static_assert(kMin_Version <= 62, "Remove kFontAxes_bad from SkFontDescriptor.cpp");

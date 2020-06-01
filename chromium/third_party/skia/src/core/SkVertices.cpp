@@ -9,11 +9,11 @@
 
 #include "include/core/SkData.h"
 #include "include/private/SkTo.h"
-#include "src/core/SkReader32.h"
+#include "src/core/SkReadBuffer.h"
 #include "src/core/SkSafeMath.h"
 #include "src/core/SkSafeRange.h"
 #include "src/core/SkVerticesPriv.h"
-#include "src/core/SkWriter32.h"
+#include "src/core/SkWriteBuffer.h"
 #include <atomic>
 #include <new>
 
@@ -295,41 +295,6 @@ size_t SkVerticesPriv::customDataSize() const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-enum EncodedVerticesVersions {
-    kOriginal_Version       = 0,    // before we called out the mask for versions
-    kNoBones_Version        = 1,    // we explicitly ignore the bones-flag (0x400)
-    kPerVertexData_Version  = 2,    // add new count (and array)
-    kAttribute_Version      = 3,    // Adds array of custom attribute types
-
-    kCurrent_Version        = kAttribute_Version
-};
-
-struct Header_v1 {
-    uint32_t    fPacked;
-    int32_t     fVertexCount;
-    int32_t     fIndexCount;
-    // [pos] + [texs] + [colors] + [indices]
-};
-
-struct Header_v2 {
-    uint32_t    fPacked;
-    int32_t     fVertexCount;
-    int32_t     fIndexCount;
-    int32_t     fPerVertexDataCount;
-    // [pos] + [vertexData] + [texs] + [colors] + [indices]
-};
-
-struct Header_v3 {
-    uint32_t              fPacked;
-    int32_t               fVertexCount;
-    int32_t               fIndexCount;
-    int32_t               fAttributeCount;
-    SkVertices::Attribute fAttributes[SkVertices::kMaxCustomAttributes];
-    // [pos] + [vertexData] + [texs] + [colors] + [indices]
-};
-
-#define kCurrentHeaderSize    sizeof(Header_v3)
-
 // storage = packed | vertex_count | index_count | pos[] | texs[] | colors[] | boneIndices[] |
 //           boneWeights[] | indices[]
 //         = header + arrays
@@ -337,13 +302,8 @@ struct Header_v3 {
 #define kMode_Mask          0x0FF
 #define kHasTexs_Mask       0x100
 #define kHasColors_Mask     0x200
-#define kHasBones_Mask_V0   0x400
-#define kIsNonVolatile_Mask 0x800  // Deprecated flag
-// new as of 3/2020
-#define kVersion_Shift      24
-#define kVersion_Mask       (0xFF << kVersion_Shift)
 
-sk_sp<SkData> SkVertices::encode() const {
+void SkVertices::encode(SkWriteBuffer& buffer) const{
     // packed has room for addtional flags in the future (e.g. versioning)
     uint32_t packed = static_cast<uint32_t>(fMode);
     SkASSERT((packed & ~kMode_Mask) == 0);  // our mode fits in the mask bits
@@ -353,122 +313,108 @@ sk_sp<SkData> SkVertices::encode() const {
     if (fColors) {
         packed |= kHasColors_Mask;
     }
-    packed |= kCurrent_Version << kVersion_Shift;
 
     Sizes sizes = this->getSizes();
     SkASSERT(!sizes.fBuilderTriFanISize);
-    // need to force alignment to 4 for SkWriter32 -- will pad w/ 0s as needed
-    const size_t size = SkAlign4(kCurrentHeaderSize + sizes.fArrays);
 
-    sk_sp<SkData> data = SkData::MakeUninitialized(size);
-    SkWriter32 writer(data->writable_data(), data->size());
+    buffer.writeUInt(packed);
+    buffer.writeInt(fVertexCount);
+    buffer.writeInt(fIndexCount);
+    buffer.writeInt(fAttributeCount);
 
-    writer.write32(packed);
-    writer.write32(fVertexCount);
-    writer.write32(fIndexCount);
-    writer.write32(fAttributeCount);
+    for (int i = 0; i < fAttributeCount; ++i) {
+        buffer.writeInt(static_cast<int>(fAttributes[i].fType));
+    }
 
-    // Write all custom attribute slots to simplify alignment
-    writer.write(fAttributes, sizeof(fAttributes));
-
-    writer.write(fPositions, sizes.fVSize);
-    writer.write(fCustomData, sizes.fDSize);
-    writer.write(fTexs, sizes.fTSize);
-    writer.write(fColors, sizes.fCSize);
+    buffer.writeByteArray(fPositions, sizes.fVSize);
+    buffer.writeByteArray(fCustomData, sizes.fDSize);
+    buffer.writeByteArray(fTexs, sizes.fTSize);
+    buffer.writeByteArray(fColors, sizes.fCSize);
     // if index-count is odd, we won't be 4-bytes aligned, so we call the pad version
-    writer.writePad(fIndices, sizes.fISize);
-
-    return data;
+    buffer.writeByteArray(fIndices, sizes.fISize);
 }
 
-sk_sp<SkVertices> SkVertices::Decode(const void* data, size_t length) {
-    if (length < sizeof(Header_v1)) {
+sk_sp<SkVertices> SkVertices::Decode(SkReadBuffer& buffer) {
+    if (buffer.isVersionLT(SkPicturePriv::kVerticesUseReadBuffer_Version)) {
+        // Old versions used an embedded blob that was serialized with SkWriter32/SkReader32.
+        // We don't support loading those, but skip over the vertices to keep the buffer valid.
+        auto data = buffer.readByteArrayAsData();
+        (void)data;
         return nullptr;
     }
 
-    SkReader32 reader(data, length);
-    SkSafeRange safe;
+    auto decode = [](SkReadBuffer &buffer) -> sk_sp<SkVertices> {
+        SkSafeRange safe;
+        const uint32_t packed = buffer.readUInt();
+        const int vertexCount = safe.checkGE(buffer.readInt(), 0);
+        const int indexCount = safe.checkGE(buffer.readInt(), 0);
+        const int attrCount = safe.checkGE(buffer.readInt(), 0);
+        const VertexMode mode = safe.checkLE<VertexMode>(packed & kMode_Mask,
+                                                         SkVertices::kLast_VertexMode);
+        const bool hasTexs = SkToBool(packed & kHasTexs_Mask);
+        const bool hasColors = SkToBool(packed & kHasColors_Mask);
+        // now we finish unpacking the packed field
 
-    const uint32_t packed = reader.readInt();
-    const unsigned version = safe.checkLE<unsigned>((packed & kVersion_Mask) >> kVersion_Shift,
-                                                    kCurrent_Version);
-    const int vertexCount = safe.checkGE(reader.readInt(), 0);
-    const int indexCount = safe.checkGE(reader.readInt(), 0);
-    const VertexMode mode = safe.checkLE<VertexMode>(packed & kMode_Mask,
-                                                     SkVertices::kLast_VertexMode);
-    if (!safe) {
-        return nullptr;
-    }
-    if (version >= kPerVertexData_Version && length < sizeof(Header_v2)) {
-        return nullptr;
-    }
-    if (version >= kAttribute_Version && length < sizeof(Header_v3)) {
-        return nullptr;
-    }
 
-    Attribute attrs[kMaxCustomAttributes];
-    const int attrCount = (version >= kPerVertexData_Version) ? reader.readS32() : 0;
-    if (attrCount < 0 || attrCount > kMaxCustomAttributes) {
-        return nullptr;
-    }
+        if (!safe                                           // Invalid header fields
+            || attrCount > kMaxCustomAttributes             // Too many custom attributes?
+            || (attrCount > 0 && (hasTexs || hasColors))) { // Overspecified (incompatible features)
+            return nullptr;
+        }
 
-    if (version >= kAttribute_Version) {
-        reader.read(attrs, sizeof(attrs));
-    } else if (version == kPerVertexData_Version) {
-        // Attributes default to kFloat, which works fine to migrate this version of data.
-    }
+        SkVertices::Attribute attrs[SkVertices::kMaxCustomAttributes];
+        for (int i = 0; i < attrCount; ++i) {
+            auto type = buffer.checkRange(SkVertices::Attribute::Type::kFloat,
+                                          SkVertices::Attribute::Type::kByte4_unorm);
+            attrs[i] = SkVertices::Attribute(type);
+        }
 
-    // now we finish unpacking the packed field
-    const bool hasTexs = SkToBool(packed & kHasTexs_Mask);
-    const bool hasColors = SkToBool(packed & kHasColors_Mask);
-    const bool hasBones = SkToBool(packed & kHasBones_Mask_V0);
+        // Ensure that all of the attribute metadata was valid before proceeding
+        if (!buffer.isValid()) {
+            return nullptr;
+        }
 
-    // check if we're overspecified for v2+
-    if (attrCount > 0 && (hasTexs || hasColors || hasBones)) {
-        return nullptr;
-    }
-    const Desc desc{
-        mode, vertexCount, indexCount, hasTexs, hasColors, attrCount ? attrs : nullptr, attrCount
-    };
-    Sizes sizes(desc);
-    if (!sizes.isValid()) {
-        return nullptr;
-    }
-    // logically we can be only 2-byte aligned, but our buffer is always 4-byte aligned
-    if (reader.available() != SkAlign4(sizes.fArrays)) {
-        return nullptr;
-    }
+        const Desc desc{mode, vertexCount, indexCount, hasTexs, hasColors,
+                        attrCount ? attrs : nullptr, attrCount};
+        Sizes sizes(desc);
+        if (!sizes.isValid()) {
+            return nullptr;
+        }
 
-    Builder builder(desc);
-    if (!builder.isValid()) {
-        return nullptr;
-    }
-    SkSafeMath safe_math;
+        Builder builder(desc);
+        if (!builder.isValid()) {
+            return nullptr;
+        }
 
-    reader.read(builder.positions(), sizes.fVSize);
-    reader.read(builder.customData(), sizes.fDSize);
-    reader.read(builder.texCoords(), sizes.fTSize);
-    reader.read(builder.colors(), sizes.fCSize);
-    if (hasBones) {
-        reader.skip(safe_math.mul(vertexCount, sizeof(SkVertices_DeprecatedBoneIndices)));
-        reader.skip(safe_math.mul(vertexCount, sizeof(SkVertices_DeprecatedBoneWeights)));
-    }
-    size_t isize = (mode == kTriangleFan_VertexMode) ? sizes.fBuilderTriFanISize : sizes.fISize;
-    reader.read(builder.indices(), isize);
-    if (indexCount > 0) {
-        // validate that the indices are in range
-        const uint16_t* indices = builder.indices();
-        for (int i = 0; i < indexCount; ++i) {
-            if (indices[i] >= (unsigned)vertexCount) {
-                return nullptr;
+        buffer.readByteArray(builder.positions(), sizes.fVSize);
+        buffer.readByteArray(builder.customData(), sizes.fDSize);
+        buffer.readByteArray(builder.texCoords(), sizes.fTSize);
+        buffer.readByteArray(builder.colors(), sizes.fCSize);
+
+        size_t isize = (mode == kTriangleFan_VertexMode) ? sizes.fBuilderTriFanISize : sizes.fISize;
+        buffer.readByteArray(builder.indices(), isize);
+
+        if (!buffer.isValid()) {
+            return nullptr;
+        }
+        if (indexCount > 0) {
+            // validate that the indices are in range
+            const uint16_t* indices = builder.indices();
+            for (int i = 0; i < indexCount; ++i) {
+                if (indices[i] >= (unsigned)vertexCount) {
+                    return nullptr;
+                }
             }
         }
+        return builder.detach();
+    };
+
+    if (auto verts = decode(buffer)) {
+        return verts;
     }
 
-    if (!safe_math.ok()) {
-        return nullptr;
-    }
-    return builder.detach();
+    buffer.validate(false);
+    return nullptr;
 }
 
 void SkVertices::operator delete(void* p) {
