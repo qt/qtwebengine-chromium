@@ -400,7 +400,7 @@ using RemoveCvRefT = std::remove_cv_t<std::remove_reference_t<T>>;
 // byte for its body. __declspec(empty_bases) enables the optimization.
 // cf)
 // https://blogs.msdn.microsoft.com/vcblog/2016/03/30/optimizing-the-layout-of-empty-base-classes-in-vs2015-update-2-3/
-#ifdef OS_WIN
+#if defined(OS_WIN) && !defined(COMPILER_MSVC)
 #define OPTIONAL_DECLSPEC_EMPTY_BASES __declspec(empty_bases)
 #else
 #define OPTIONAL_DECLSPEC_EMPTY_BASES
