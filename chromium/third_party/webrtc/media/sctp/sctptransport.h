@@ -13,6 +13,7 @@
 
 #include <errno.h>
 
+#include <cstdint>
 #include <map>
 #include <memory>  // for unique_ptr.
 #include <set>
@@ -200,6 +201,10 @@ class SctpTransport : public SctpTransportInternal,
   const char* debug_name_ = "SctpTransport";
   // Hides usrsctp interactions from this header file.
   class UsrSctpWrapper;
+
+  // Used for associating this transport with the underlying sctp socket in
+  // various callbacks.
+  uintptr_t id_ = 0;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(SctpTransport);
 };
