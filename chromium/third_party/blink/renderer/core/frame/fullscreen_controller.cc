@@ -131,7 +131,8 @@ void FullscreenController::DidExitFullscreen() {
 }
 
 void FullscreenController::EnterFullscreen(LocalFrame& frame,
-                                           const FullscreenOptions& options) {
+                                           const FullscreenOptions& options,
+                                           bool for_cross_process_descendant) {
   // TODO(dtapuska): If we are already in fullscreen. If the options are
   // different than the currently requested one we may wish to request
   // fullscreen mode again.
@@ -174,8 +175,9 @@ void FullscreenController::EnterFullscreen(LocalFrame& frame,
   // Only clone options if the feature is enabled.
   if (RuntimeEnabledFeatures::FullscreenOptionsEnabled())
     blink_options.prefers_navigation_bar = options.prefersNavigationBar();
-  GetWebFrameClient(frame).EnterFullscreen(blink_options);
-
+  if (!for_cross_process_descendant) {
+    GetWebFrameClient(frame).EnterFullscreen(blink_options);
+  }
   state_ = State::kEnteringFullscreen;
 }
 
