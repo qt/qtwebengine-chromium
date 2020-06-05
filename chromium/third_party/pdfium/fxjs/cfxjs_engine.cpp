@@ -126,6 +126,7 @@ class CFXJS_ObjDefinition {
 
     v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(isolate);
     fun->InstanceTemplate()->SetInternalFieldCount(2);
+    fun->InstanceTemplate()->SetImmutableProto();
     fun->SetCallHandler([](const v8::FunctionCallbackInfo<v8::Value>& info) {
       v8::Local<v8::Object> holder = info.Holder();
       ASSERT(holder->InternalFieldCount() == 2);
