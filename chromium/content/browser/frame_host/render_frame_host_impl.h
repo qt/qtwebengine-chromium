@@ -1115,7 +1115,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void BindPresentationServiceRequest(
       blink::mojom::PresentationServiceRequest request);
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   void BindAuthenticatorRequest(blink::mojom::AuthenticatorRequest request);
 #endif
 

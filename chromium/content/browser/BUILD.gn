@@ -2498,6 +2498,22 @@ jumbo_source_set("browser") {
       ]
     }
   }
+  if (use_qt) {
+    sources -= [
+      "webauth/authenticator_impl.cc",
+      "webauth/authenticator_impl.h",
+      "webauth/authenticator_type_converters.cc",
+      "webauth/authenticator_type_converters.h",
+      "webauth/scoped_virtual_authenticator_environment.cc",
+      "webauth/scoped_virtual_authenticator_environment.h",
+      "webauth/virtual_authenticator.cc",
+      "webauth/virtual_authenticator.h",
+      "webauth/virtual_discovery.cc",
+      "webauth/virtual_discovery.h",
+    ]
+    deps -= ["//device/fido"]
+  }
+
 }
 
 buildflag_header("accessibility_buildflags") {
