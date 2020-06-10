@@ -97,7 +97,6 @@ class WebAXSparseAttributeClientAdapter : public AXSparseAttributeClient {
   }
 };
 
-#if DCHECK_IS_ON()
 // It's not safe to call some WebAXObject APIs if a layout is pending.
 // Clients should call updateLayoutAndCheckValidity first.
 static bool IsLayoutClean(Document* document) {
@@ -109,7 +108,6 @@ static bool IsLayoutClean(Document* document) {
                DocumentLifecycle::kLayoutSubtreeChangeClean) &&
           !document->View()->NeedsLayout());
 }
-#endif
 
 WebScopedAXContext::WebScopedAXContext(WebDocument& root_document)
     : private_(ScopedAXObjectCache::Create(*root_document.Unwrap<Document>())) {
