@@ -16,6 +16,7 @@
 #include "base/files/file_descriptor_watcher_posix.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/numerics/checked_math.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/sequence_checker.h"
 #include "base/stl_util.h"
@@ -159,7 +160,7 @@ class UsbDeviceHandleUsbfs::FileThreadHelper {
   DISALLOW_COPY_AND_ASSIGN(FileThreadHelper);
 };
 
-struct UsbDeviceHandleUsbfs::Transfer {
+struct UsbDeviceHandleUsbfs::Transfer final {
   Transfer() = delete;
   Transfer(scoped_refptr<base::RefCountedBytes> buffer,
            TransferCallback callback,
@@ -168,7 +169,7 @@ struct UsbDeviceHandleUsbfs::Transfer {
            IsochronousTransferCallback callback);
   ~Transfer();
 
-  void* operator new(std::size_t size, size_t number_of_iso_packets);
+  void* operator new(size_t size, size_t number_of_iso_packets);
   void RunCallback(UsbTransferStatus status, size_t bytes_transferred);
   void RunIsochronousCallback(const std::vector<IsochronousPacket>& packets);
 
@@ -356,7 +357,9 @@ UsbDeviceHandleUsbfs::Transfer::Transfer(
     : buffer(buffer),
       callback(std::move(callback)),
       callback_runner(callback_runner) {
-  memset(&urb, 0, sizeof(urb));
+  // This buffer size calculation is checked in operator new().
+  memset(&urb, 0,
+         sizeof(urb) + sizeof(urb.iso_frame_desc[0]) * urb.number_of_packets);
   urb.usercontext = this;
   urb.buffer = buffer->front();
 }
@@ -374,10 +377,15 @@ UsbDeviceHandleUsbfs::Transfer::Transfer(
 UsbDeviceHandleUsbfs::Transfer::~Transfer() = default;
 
 void* UsbDeviceHandleUsbfs::Transfer::operator new(
-    std::size_t size,
+    size_t size,
     size_t number_of_iso_packets) {
-  void* p = ::operator new(
-      size + sizeof(usbdevfs_iso_packet_desc) * number_of_iso_packets);
+  // The checked math should pass as long as Mojo message size limits are being
+  // enforced.
+  size_t total_size =
+      base::CheckAdd(size, base::CheckMul(sizeof(urb.iso_frame_desc[0]),
+                                          number_of_iso_packets))
+          .ValueOrDie();
+  void* p = ::operator new(total_size);
   Transfer* transfer = static_cast<Transfer*>(p);
   transfer->urb.number_of_packets = number_of_iso_packets;
   return p;
