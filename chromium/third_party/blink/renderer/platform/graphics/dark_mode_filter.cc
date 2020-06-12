@@ -50,21 +50,17 @@ bool ShouldApplyToImage(const DarkModeSettings& settings,
                         Image* image) {
   switch (settings.image_policy) {
     case DarkModeImagePolicy::kFilterSmart: {
-      DarkModeImageClassifier* classifier;
+      DarkModeClassification result = DarkModeClassification::kNotClassified;
       switch (settings.classifier_type) {
         case DarkModeClassifierType::kIcon: {
-          DarkModeIconClassifier icon_classifier;
-          classifier = &icon_classifier;
+          result = DarkModeIconClassifier().Classify(image, src_rect, dest_rect);
           break;
         }
         case DarkModeClassifierType::kGeneric: {
-          DarkModeGenericClassifier generic_classifier;
-          classifier = &generic_classifier;
+          result = DarkModeGenericClassifier().Classify(image, src_rect, dest_rect);
           break;
         }
       }
-      DarkModeClassification result =
-          classifier->Classify(image, src_rect, dest_rect);
       return result == DarkModeClassification::kApplyFilter;
     }
     case DarkModeImagePolicy::kFilterNone:
