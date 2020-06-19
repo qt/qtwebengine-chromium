@@ -23,8 +23,10 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/primary_account_access_token_fetcher.h"
 #include "components/signin/public/identity_manager/scope_set.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/base/sync_util.h"
 #include "components/sync/protocol/history_status.pb.h"
+#endif
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/base/load_flags.h"
@@ -527,6 +529,7 @@ void WebHistoryService::QueryWebAndAppActivity(
   request->Start();
 }
 
+#if !defined(TOOLKIT_QT)
 void WebHistoryService::QueryOtherFormsOfBrowsingHistory(
     version_info::Channel channel,
     QueryOtherFormsOfBrowsingHistoryCallback callback,
@@ -563,6 +566,7 @@ void WebHistoryService::QueryOtherFormsOfBrowsingHistory(
 
   request->Start();
 }
+#endif // !defined(TOOLKIT_QT)
 
 // static
 void WebHistoryService::QueryHistoryCompletionCallback(
@@ -643,6 +647,7 @@ void WebHistoryService::QueryWebAndAppActivityCompletionCallback(
   std::move(callback).Run(web_and_app_activity_enabled);
 }
 
+#if !defined(TOOLKIT_QT)
 void WebHistoryService::QueryOtherFormsOfBrowsingHistoryCompletionCallback(
     WebHistoryService::QueryOtherFormsOfBrowsingHistoryCallback callback,
     WebHistoryService::Request* request,
@@ -660,5 +665,6 @@ void WebHistoryService::QueryOtherFormsOfBrowsingHistoryCompletionCallback(
 
   std::move(callback).Run(has_other_forms_of_browsing_history);
 }
+#endif // !defined(TOOLKIT_QT)
 
 }  // namespace history

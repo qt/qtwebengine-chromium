@@ -14,6 +14,7 @@
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
@@ -124,7 +125,11 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
     return LogInitFailure(InitStep::META_TABLE_INIT);
   if (!CreateURLTable(false) || !InitVisitTable() ||
       !InitKeywordSearchTermsTable() || !InitDownloadTable() ||
+#if !defined(TOOLKIT_QT)
       !InitSegmentTables() || !InitSyncTable())
+#else
+      !InitSegmentTables())
+#endif
     return LogInitFailure(InitStep::CREATE_TABLES);
   CreateMainURLIndex();
 
@@ -606,6 +611,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     meta_table_.SetVersionNumber(cur_version);
   }
 
+#if !defined(TOOLKIT_QT)
   if (cur_version == 40) {
     std::vector<URLID> visited_url_rowids_sorted;
     if (!GetAllVisitedURLRowidsForMigrationToVersion40(
@@ -617,6 +623,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     cur_version++;
     meta_table_.SetVersionNumber(cur_version);
   }
+#endif
 
   if (cur_version == 41) {
     if (!MigrateKeywordsSearchTermsLowerTermColumn())
