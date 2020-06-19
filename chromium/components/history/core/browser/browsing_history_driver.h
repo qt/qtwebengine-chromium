@@ -25,6 +25,7 @@ class WebHistoryService;
 // platform logic and classes, facilitating both sending an receiving data.
 class BrowsingHistoryDriver {
  public:
+#if !defined(TOOLKIT_QT)
   BrowsingHistoryDriver(const BrowsingHistoryDriver&) = delete;
   BrowsingHistoryDriver& operator=(const BrowsingHistoryDriver&) = delete;
 
@@ -33,6 +34,7 @@ class BrowsingHistoryDriver {
       const std::vector<BrowsingHistoryService::HistoryEntry>& results,
       const BrowsingHistoryService::QueryResultsInfo& query_results_info,
       base::OnceClosure continuation_closure) {}
+#endif // !defined(TOOLKIT_QT)
 
   // Callback for RemoveVisits().
   virtual void OnRemoveVisitsComplete() {}
@@ -67,6 +69,7 @@ class BrowsingHistoryDriver {
   // accessible.
   virtual WebHistoryService* GetWebHistoryService() = 0;
 
+#if !defined(TOOLKIT_QT)
   // Whether the Clear Browsing Data UI should show a notice about the existence
   // of other forms of browsing history stored in user's account. The response
   // is returned in a `callback`.
@@ -74,6 +77,7 @@ class BrowsingHistoryDriver {
       const syncer::SyncService* sync_service,
       WebHistoryService* history_service,
       base::OnceCallback<void(bool)> callback) = 0;
+#endif // !defined(TOOLKIT_QT)
 
  protected:
   BrowsingHistoryDriver() {}
