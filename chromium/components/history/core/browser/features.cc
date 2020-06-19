@@ -6,7 +6,9 @@
 
 #include "build/build_config.h"
 #include "components/history/core/browser/top_sites_impl.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/base/features.h"
+#endif
 
 namespace history {
 namespace {
@@ -92,7 +94,11 @@ const base::FeatureParam<int> kMaxNumNewTabPageDisplays(
     5);
 
 bool IsSyncSegmentsDataEnabled() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return base::FeatureList::IsEnabled(kSyncSegmentsData);
+#else
+  return false;
+#endif
 }
 
 }  // namespace history

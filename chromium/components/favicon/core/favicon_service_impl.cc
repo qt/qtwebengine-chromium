@@ -47,8 +47,10 @@ FaviconServiceImpl::FaviconServiceImpl(
     history::HistoryService* history_service)
     : favicon_client_(std::move(favicon_client)),
       history_service_(history_service) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // TODO(crbug.com/40658964): convert to DCHECK once crash is resolved.
   CHECK(history_service_);
+#endif
 }
 
 FaviconServiceImpl::~FaviconServiceImpl() {}

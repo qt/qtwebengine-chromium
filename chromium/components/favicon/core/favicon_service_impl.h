@@ -129,6 +129,15 @@ class FaviconServiceImpl : public FaviconService {
   void UnableToDownloadFavicon(const GURL& icon_url) override;
   bool WasUnableToDownloadFavicon(const GURL& icon_url) const override;
   void ClearUnableToDownloadFavicons() override;
+#if BUILDFLAG(IS_QTWEBENGINE)
+  history::HistoryService* HistoryService() const override {
+    return history_service_;
+  }
+
+  void SetHistoryService(history::HistoryService* history_service) override {
+    history_service_ = history_service;
+  }
+#endif
 
  private:
   using MissingFaviconURLHash = size_t;

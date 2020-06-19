@@ -13,7 +13,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/crash/core/common/crash_key.h"
+#endif
 #include "components/database_utils/upper_bound_string.h"
 #include "components/database_utils/url_converter.h"
 #include "components/history/core/browser/keyword_search_term.h"
@@ -752,6 +754,7 @@ bool URLDatabase::RecreateURLTableWithAllContents() {
           "SELECT id, url, title, visit_count, typed_count, last_visit_time, "
           "hidden FROM urls")) {
     const char* error_message = GetDB().GetErrorMessage();
+#if !BUILDFLAG(IS_QTWEBENGINE)
     if (error_message) {
       // TODO(crbug.com/40901889): used in understanding why this is happening.
       // Remove once bug is fixed.
@@ -759,6 +762,7 @@ bool URLDatabase::RecreateURLTableWithAllContents() {
           "recreate_url_table_description");
       error_message_crash_key.Set(error_message);
     }
+#endif
     DUMP_WILL_BE_NOTREACHED_NORETURN() << error_message;
     return false;
   }
