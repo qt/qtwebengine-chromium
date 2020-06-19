@@ -5,7 +5,9 @@
 #include "components/history/core/browser/features.h"
 
 #include "components/history/core/browser/top_sites_impl.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/base/features.h"
+#endif
 
 namespace history {
 namespace {

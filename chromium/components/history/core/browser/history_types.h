@@ -24,7 +24,9 @@
 #include "components/query_parser/query_parser.h"
 #include "components/query_parser/snippet.h"
 #include "components/sessions/core/session_id.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync_device_info/device_info.h"
+#endif
 #include "third_party/abseil-cpp/absl/container/inlined_vector.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -583,6 +585,7 @@ using OriginCountAndLastVisitMap = std::map<GURL, std::pair<int, base::Time>>;
 
 // Segments -------------------------------------------------------------------
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // Contains device information (i.e. OS Type, Form Factor) for all syncing
 // devices (including the local device). Devices are identified by their
 // Originator Cache GUID. Has the following shape:
@@ -591,6 +594,7 @@ using OriginCountAndLastVisitMap = std::map<GURL, std::pair<int, base::Time>>;
 using SyncDeviceInfoMap = std::map<
     std::string,
     std::pair<syncer::DeviceInfo::OsType, syncer::DeviceInfo::FormFactor>>;
+#endif
 
 // Statistics -----------------------------------------------------------------
 
