@@ -99,8 +99,11 @@ HistoryDatabase::HistoryDatabase(
               // this value, tells us how much memory the cache will use
               // maximum. 1000 * 4kB = 4MB
               .set_cache_size(1000),
-          /*tag=*/"History"),
-      history_metadata_db_(&db_, &meta_table_) {}
+          /*tag=*/"History")
+#if !BUILDFLAG(IS_QTWEBENGINE)
+      , history_metadata_db_(&db_, &meta_table_)
+#endif
+{}
 
 HistoryDatabase::~HistoryDatabase() = default;
 
@@ -129,7 +132,12 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
   if (!CreateURLTable(false) || !InitVisitTable() ||
       !InitKeywordSearchTermsTable() || !InitDownloadTable() ||
       !InitSegmentTables() || !InitVisitAnnotationsTables() ||
-      !CreateVisitedLinkTable() || !history_metadata_db_.Init()) {
+      !CreateVisitedLinkTable()
+#if !BUILDFLAG(IS_QTWEBENGINE)
+      || !history_metadata_db_.Init()
+#endif
+      )
+  {
     return LogInitFailure(InitStep::CREATE_TABLES);
   }
   CreateMainURLIndex();
@@ -149,6 +157,7 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
 void HistoryDatabase::ComputeDatabaseMetrics(
     const base::FilePath& history_name) {
   base::TimeTicks start_time = base::TimeTicks::Now();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::optional<int64_t> file_size = base::GetFileSize(history_name);
   if (!file_size.has_value()) {
     return;
@@ -251,6 +260,7 @@ void HistoryDatabase::ComputeDatabaseMetrics(
     base::UmaHistogramCounts1M("History.ForeignVisitsRemappableOpener",
                                mappable_opener_visits);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   base::UmaHistogramTimes("History.DatabaseForeignVisitMetricsTime",
                           base::TimeTicks::Now() - start_time);
@@ -520,9 +530,11 @@ void HistoryDatabase::SetKnownToSyncVisitsExist(bool exist) {
   meta_table_.SetValue(kKnownToSyncVisitsExist, exist ? 1 : 0);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 HistorySyncMetadataDatabase* HistoryDatabase::GetHistoryMetadataDB() {
   return &history_metadata_db_;
 }
+#endif
 
 sql::Database& HistoryDatabase::GetDBForTesting() {
   return db_;
@@ -764,6 +776,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     std::ignore = meta_table_.SetVersionNumber(cur_version);
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (cur_version == 40) {
     // The migration to version 40 concerned Sync metadata for TypedURLs, which
     // doesn't exist anymore in current versions (68+). So nothing to do here.
@@ -771,6 +784,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     // TODO(crbug.com/40891923): Handle failure instead of ignoring it.
     std::ignore = meta_table_.SetVersionNumber(cur_version);
   }
+#endif
 
   if (cur_version == 41) {
     if (!MigrateKeywordsSearchTermsLowerTermColumn())
