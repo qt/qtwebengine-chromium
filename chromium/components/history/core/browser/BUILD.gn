@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
+
 static_library("browser") {
   sources = [
     "browsing_history_driver.h",
@@ -121,6 +123,31 @@ static_library("browser") {
     "//ui/gfx",
     "//url",
   ]
+
+  if (use_qt) {
+    sources -= [
+      "browsing_history_service.cc",
+      "browsing_history_service.h",
+      "sync/delete_directive_handler.cc",
+      "sync/delete_directive_handler.h",
+      "sync/history_delete_directives_model_type_controller.cc",
+      "sync/history_delete_directives_model_type_controller.h",
+      "sync/typed_url_model_type_controller.cc",
+      "sync/typed_url_model_type_controller.h",
+      "sync/typed_url_sync_bridge.cc",
+      "sync/typed_url_sync_bridge.h",
+      "sync/typed_url_sync_metadata_database.cc",
+      "sync/typed_url_sync_metadata_database.h",
+    ]
+
+    public_deps -= [
+      "//components/sync/protocol",
+    ]
+
+    deps -= [
+      "//components/sync",
+    ]
+  }
 
   if (is_android) {
     sources += [
