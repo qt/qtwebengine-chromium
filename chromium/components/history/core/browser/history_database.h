@@ -11,7 +11,9 @@
 #include "build/build_config.h"
 #include "components/history/core/browser/download_database.h"
 #include "components/history/core/browser/history_types.h"
+#if !defined(TOOLKIT_QT)
 #include "components/history/core/browser/sync/typed_url_sync_metadata_database.h"
+#endif
 #include "components/history/core/browser/url_database.h"
 #include "components/history/core/browser/visit_annotations_database.h"
 #include "components/history/core/browser/visit_database.h"
@@ -45,7 +47,9 @@ class HistoryDatabase : public DownloadDatabase,
                         public AndroidURLsDatabase,
                         public AndroidCacheDatabase,
 #endif
+#if !defined(TOOLKIT_QT)
                         public TypedURLSyncMetadataDatabase,
+#endif
                         public URLDatabase,
                         public VisitDatabase,
                         public VisitAnnotationsDatabase,
@@ -180,7 +184,11 @@ class HistoryDatabase : public DownloadDatabase,
   sql::Database& GetDB() override;
 
   // Overridden from TypedURLSyncMetadataDatabase.
+#if !defined(TOOLKIT_QT)
   sql::MetaTable& GetMetaTable() override;
+#else
+  sql::MetaTable& GetMetaTable();
+#endif
 
   // Migration -----------------------------------------------------------------
 
