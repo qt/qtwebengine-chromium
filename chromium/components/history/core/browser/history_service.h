@@ -712,6 +712,7 @@ class HistoryService : public KeyedService {
 
   base::WeakPtr<HistoryService> AsWeakPtr();
 
+#if !defined(TOOLKIT_QT)
   // For sync codebase only: returns the SyncableService API that implements
   // sync datatype HISTORY_DELETE_DIRECTIVES.
   base::WeakPtr<syncer::SyncableService> GetDeleteDirectivesSyncableService();
@@ -725,6 +726,7 @@ class HistoryService : public KeyedService {
   // HistorySyncBridge. Must be called from the UI thread.
   std::unique_ptr<syncer::ModelTypeControllerDelegate>
   GetHistorySyncControllerDelegate();
+#endif // !defined(TOOLKIT_QT)
 
   // Sends the SyncService's TransportState `state` to the backend, which will
   // pass it on to the HistorySyncBridge.
@@ -1065,7 +1067,9 @@ class HistoryService : public KeyedService {
   base::ObserverList<HistoryServiceObserver>::Unchecked observers_;
   FaviconsChangedCallbackList favicons_changed_callback_list_;
 
+#if !defined(TOOLKIT_QT)
   std::unique_ptr<DeleteDirectiveHandler> delete_directive_handler_;
+#endif
 
   base::OnceClosure origin_queried_closure_for_testing_;
 

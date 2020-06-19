@@ -20,7 +20,9 @@
 #include "base/rand_util.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/base/features.h"
+#endif
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
@@ -83,7 +85,8 @@ HistoryDatabase::HistoryDatabase(
     DownloadInterruptReason download_interrupt_reason_crash)
     : DownloadDatabase(download_interrupt_reason_none,
                        download_interrupt_reason_crash),
-      db_({// Note that we don't set exclusive locking here. That's done by
+      db_(sql::DatabaseOptions{
+           // Note that we don't set exclusive locking here. That's done by
            // BeginExclusiveMode below which is called later (we have to be in
            // shared mode to start out for the in-memory backend to read the
            // data).
@@ -96,9 +99,12 @@ HistoryDatabase::HistoryDatabase(
            // Set the cache size. The page size, plus a little extra, times this
            // value, tells us how much memory the cache will use maximum.
            // 1000 * 4kB = 4MB
-           .cache_size = 1000}),
-      typed_url_metadata_db_(&db_, &meta_table_),
-      history_metadata_db_(&db_, &meta_table_) {}
+           .cache_size = 1000})
+#if !defined(TOOLKIT_QT)
+      , typed_url_metadata_db_(&db_, &meta_table_)
+      , history_metadata_db_(&db_, &meta_table_)
+#endif
+{}
 
 HistoryDatabase::~HistoryDatabase() = default;
 
@@ -128,14 +134,19 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
     return LogInitFailure(InitStep::META_TABLE_INIT);
   if (!CreateURLTable(false) || !InitVisitTable() ||
       !InitKeywordSearchTermsTable() || !InitDownloadTable() ||
-      !InitSegmentTables() || !typed_url_metadata_db_.Init() ||
+      !InitSegmentTables() ||
+#if !defined(TOOLKIT_QT)
+      !typed_url_metadata_db_.Init() ||
+#endif
       !InitVisitAnnotationsTables()) {
     return LogInitFailure(InitStep::CREATE_TABLES);
   }
+#if !defined(TOOLKIT_QT)
   if (base::FeatureList::IsEnabled(syncer::kSyncEnableHistoryDataType) &&
       !history_metadata_db_.Init()) {
     return LogInitFailure(InitStep::CREATE_TABLES);
   }
+#endif
   CreateMainURLIndex();
 
   // TODO(benjhayden) Remove at some point.
@@ -176,6 +187,7 @@ void HistoryDatabase::ComputeDatabaseMetrics(
   UMA_HISTOGRAM_TIMES("History.DatabaseBasicMetricsTime",
                       base::TimeTicks::Now() - start_time);
 
+#if !defined(TOOLKIT_QT)
   if (base::FeatureList::IsEnabled(syncer::kSyncEnableHistoryDataType)) {
     // Compute metrics about foreign visits (i.e. visits coming from other
     // devices) in the DB.
@@ -254,6 +266,7 @@ void HistoryDatabase::ComputeDatabaseMetrics(
     base::UmaHistogramTimes("History.DatabaseForeignVisitMetricsTime",
                             base::TimeTicks::Now() - start_time);
   }
+#endif  // !defined(TOOLKIT_QT)
 
   // Compute the advanced metrics even less often, pending timing data showing
   // that's not necessary.
@@ -482,6 +495,7 @@ void HistoryDatabase::SetKnownToSyncVisitsExist(bool exist) {
   meta_table_.SetValue(kKnownToSyncVisitsExist, exist ? 1 : 0);
 }
 
+#if !defined(TOOLKIT_QT)
 TypedURLSyncMetadataDatabase* HistoryDatabase::GetTypedURLMetadataDB() {
   return &typed_url_metadata_db_;
 }
@@ -489,6 +503,7 @@ TypedURLSyncMetadataDatabase* HistoryDatabase::GetTypedURLMetadataDB() {
 HistorySyncMetadataDatabase* HistoryDatabase::GetHistoryMetadataDB() {
   return &history_metadata_db_;
 }
+#endif  // !defined(TOOLKIT_QT)
 
 sql::Database& HistoryDatabase::GetDB() {
   return db_;
@@ -726,6 +741,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     std::ignore = meta_table_.SetVersionNumber(cur_version);
   }
 
+#if !defined(TOOLKIT_QT)
   if (cur_version == 40) {
     std::vector<URLID> visited_url_rowids_sorted;
     if (!GetAllVisitedURLRowidsForMigrationToVersion40(
@@ -738,6 +754,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     // TODO(crbug.com/1414092): Handle failure instead of ignoring it.
     std::ignore = meta_table_.SetVersionNumber(cur_version);
   }
+#endif
 
   if (cur_version == 41) {
     if (!MigrateKeywordsSearchTermsLowerTermColumn())

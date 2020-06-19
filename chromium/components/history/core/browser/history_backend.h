@@ -672,6 +672,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // redirect chain.
   bool GetLastVisitByTime(base::Time visit_time, VisitRow* visit_row) override;
 
+#if !defined(TOOLKIT_QT)
   // Returns the sync controller delegate for syncing typed urls. The returned
   // delegate is owned by `this` object.
   base::WeakPtr<syncer::ModelTypeControllerDelegate>
@@ -681,6 +682,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // delegate is owned by `this` object.
   base::WeakPtr<syncer::ModelTypeControllerDelegate>
   GetHistorySyncControllerDelegate();
+#endif // !defined(TOOLKIT_QT)
 
   // Sends the SyncService's TransportState `state` to the HistorySyncBridge.
   void SetSyncTransportState(syncer::SyncService::TransportState state);
@@ -759,7 +761,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   ExpireHistoryBackend* expire_backend() { return &expirer_; }
 #endif
 
+#if !defined(TOOLKIT_QT)
   void SetTypedURLSyncBridgeForTest(std::unique_ptr<TypedURLSyncBridge> bridge);
+#endif
 
   // Returns true if the passed visit time is already expired (used by the sync
   // code to avoid syncing visits that would immediately be expired).
@@ -1044,6 +1048,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // List of observers
   base::ObserverList<HistoryBackendObserver>::Unchecked observers_;
 
+#if !defined(TOOLKIT_QT)
   // Used to manage syncing of the typed urls datatype. It will be null before
   // HistoryBackend::Init() is called. Defined after `observers_` because
   // it unregisters itself as observer during destruction.
@@ -1053,6 +1058,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // HistoryBackend::Init() is called. Defined after `observers_` because
   // it unregisters itself as observer during destruction.
   std::unique_ptr<HistorySyncBridge> history_sync_bridge_;
+#endif // !defined(TOOLKIT_QT)
 };
 
 }  // namespace history
