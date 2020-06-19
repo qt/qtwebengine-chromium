@@ -55,11 +55,15 @@
 #include "components/history/core/browser/keyword_search_term.h"
 #include "components/history/core/browser/keyword_search_term_util.h"
 #include "components/history/core/browser/page_usage_data.h"
+#if !defined(TOOLKIT_QT)
 #include "components/history/core/browser/sync/history_sync_bridge.h"
 #include "components/history/core/browser/sync/typed_url_sync_bridge.h"
+#endif
 #include "components/history/core/browser/url_utils.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/base/features.h"
 #include "components/sync/model/client_tag_based_model_type_processor.h"
+#endif
 #include "components/url_formatter/url_formatter.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sql/error_delegate_util.h"
@@ -81,7 +85,9 @@ using favicon::FaviconBitmapID;
 using favicon::FaviconBitmapIDSize;
 using favicon::FaviconBitmapType;
 using favicon::IconMapping;
+#if !defined(TOOLKIT_QT)
 using syncer::ClientTagBasedModelTypeProcessor;
+#endif
 
 /* The HistoryBackend consists of two components:
 
@@ -321,6 +327,7 @@ void HistoryBackend::Init(
     InitImpl(history_database_params);
   delegate_->DBLoaded();
 
+#if !defined(TOOLKIT_QT)
   typed_url_sync_bridge_ = std::make_unique<TypedURLSyncBridge>(
       this, db_ ? db_->GetTypedURLMetadataDB() : nullptr,
       std::make_unique<ClientTagBasedModelTypeProcessor>(
@@ -335,6 +342,7 @@ void HistoryBackend::Init(
         std::make_unique<ClientTagBasedModelTypeProcessor>(
             syncer::HISTORY, /*dump_stack=*/base::RepeatingClosure()));
   }
+#endif // !defined(TOOLKIT_QT)
 
   memory_pressure_listener_ = std::make_unique<base::MemoryPressureListener>(
       FROM_HERE, base::BindRepeating(&HistoryBackend::OnMemoryPressure,
@@ -1265,10 +1273,12 @@ void HistoryBackend::AddPagesWithDetails(const URLRows& urls,
   ScheduleCommit();
 }
 
+#if !defined(TOOLKIT_QT)
 void HistoryBackend::SetTypedURLSyncBridgeForTest(
     std::unique_ptr<TypedURLSyncBridge> bridge) {
   typed_url_sync_bridge_ = std::move(bridge);
 }
+#endif // !defined(TOOLKIT_QT)
 
 bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) const {
   return time < expirer_.GetCurrentExpirationTime();
@@ -1605,6 +1615,7 @@ QueryURLResult HistoryBackend::QueryURL(const GURL& url, bool want_visits) {
   return result;
 }
 
+#if !defined(TOOLKIT_QT)
 base::WeakPtr<syncer::ModelTypeControllerDelegate>
 HistoryBackend::GetTypedURLSyncControllerDelegate() {
   DCHECK(typed_url_sync_bridge_);
@@ -1616,6 +1627,7 @@ HistoryBackend::GetHistorySyncControllerDelegate() {
   DCHECK(history_sync_bridge_);
   return history_sync_bridge_->change_processor()->GetControllerDelegate();
 }
+#endif // !defined(TOOLKIT_QT)
 
 // Statistics ------------------------------------------------------------------
 
@@ -2950,12 +2962,14 @@ void HistoryBackend::KillHistoryDatabase() {
   if (!db_)
     return;
 
+#if !defined(TOOLKIT_QT)
   // Notify the sync bridges about storage error. They'll report failures to the
   // sync engine and stop accepting remote updates.
   if (typed_url_sync_bridge_)
     typed_url_sync_bridge_->OnDatabaseError();
   if (history_sync_bridge_)
     history_sync_bridge_->OnDatabaseError();
+#endif // !defined(TOOLKIT_QT)
 
   // Rollback transaction because Raze() cannot be called from within a
   // transaction.

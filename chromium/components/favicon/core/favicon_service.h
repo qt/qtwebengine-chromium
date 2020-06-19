@@ -16,6 +16,10 @@
 
 class GURL;
 
+namespace history {
+class HistoryService;
+}
+
 namespace favicon {
 
 class FaviconService : public CoreFaviconService, public LargeFaviconProvider {
@@ -152,6 +156,10 @@ class FaviconService : public CoreFaviconService, public LargeFaviconProvider {
                                    favicon_base::IconType icon_type,
                                    const gfx::Image& image,
                                    base::OnceCallback<void(bool)> callback) = 0;
+#if defined(TOOLKIT_QT)
+  virtual history::HistoryService* HistoryService() const = 0;
+  virtual void SetHistoryService(history::HistoryService* history_service) = 0;
+#endif
 };
 
 }  // namespace favicon
