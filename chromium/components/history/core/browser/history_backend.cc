@@ -58,12 +58,16 @@
 #include "components/history/core/browser/keyword_search_term.h"
 #include "components/history/core/browser/keyword_search_term_util.h"
 #include "components/history/core/browser/page_usage_data.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/history/core/browser/sync/history_sync_bridge.h"
+#endif
 #include "components/history/core/browser/url_row.h"
 #include "components/history/core/browser/url_utils.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/base/features.h"
 #include "components/sync/base/report_unrecoverable_error.h"
 #include "components/sync/model/client_tag_based_data_type_processor.h"
+#endif
 #include "components/url_formatter/url_formatter.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
@@ -87,7 +91,9 @@ using favicon::FaviconBitmapID;
 using favicon::FaviconBitmapIDSize;
 using favicon::FaviconBitmapType;
 using favicon::IconMapping;
+#if !BUILDFLAG(IS_QTWEBENGINE)
 using syncer::ClientTagBasedDataTypeProcessor;
+#endif
 
 /* The HistoryBackend consists of two components:
 
@@ -105,8 +111,10 @@ namespace history {
 
 namespace {
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 using OsType = syncer::DeviceInfo::OsType;
 using FormFactor = syncer::DeviceInfo::FormFactor;
+#endif
 
 #if DCHECK_IS_ON()
 // Use to keep track of paths used to host HistoryBackends. This class
@@ -240,6 +248,7 @@ class DeleteForeignVisitsDBTask : public HistoryDBTask {
   void DoneRunOnMainThread() override {}
 };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // On iOS devices, Returns true if the device that created the foreign visit is
 // an Android or iOS device, and has a mobile form factor.
 //
@@ -281,6 +290,7 @@ bool CanAddForeignVisitToSegments(
   return false;
 #endif
 }
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
 // We require a `top_level_site` and a `frame_origin` to construct a
 // visited link partition key. So if `top_level_url` and/or `fame_url` are
@@ -428,6 +438,7 @@ void HistoryBackend::Init(
   }
   delegate_->DBLoaded();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   history_sync_bridge_ = std::make_unique<HistorySyncBridge>(
       this, db_ ? db_->GetHistoryMetadataDB() : nullptr,
       std::make_unique<ClientTagBasedDataTypeProcessor>(
@@ -440,6 +451,7 @@ void HistoryBackend::Init(
     // browser shutdown. Continue it.
     StartDeletingForeignVisits();
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void HistoryBackend::SetOnBackendDestroyTask(
@@ -606,6 +618,7 @@ SegmentID HistoryBackend::CalculateSegmentID(
 }
 
 void HistoryBackend::UpdateSegmentForExistingForeignVisit(VisitRow& visit_row) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   CHECK(can_add_foreign_visits_to_segments_);
   CHECK(!visit_row.originator_cache_guid.empty());
 
@@ -649,6 +662,7 @@ void HistoryBackend::UpdateSegmentForExistingForeignVisit(VisitRow& visit_row) {
   visit_row.segment_id = new_segment_id;
 
   db_->SetSegmentID(visit_row.visit_id, new_segment_id);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void HistoryBackend::UpdateWithPageEndTime(ContextID context_id,
@@ -1387,7 +1401,9 @@ void HistoryBackend::InitImpl(
 
 void HistoryBackend::CloseAllDatabases() {
   // Reset to avoid dangling pointers to the database.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   history_sync_bridge_.reset();
+#endif
   expirer_.SetDatabases(/*main_db=*/nullptr, /*favicon_db=*/nullptr);
   if (db_) {
     CommitSingletonTransactionIfItExists();
@@ -1626,10 +1642,12 @@ bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) const {
   return time < expirer_.GetCurrentExpirationTime();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // static
 int HistoryBackend::GetForeignVisitsToDeletePerBatchForTest() {
   return kSyncHistoryForeignVisitsToDeletePerBatch;
 }
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
 sql::Database& HistoryBackend::GetDBForTesting() {
   return db_->GetDBForTesting();  // IN-TEST
@@ -1813,12 +1831,14 @@ VisitID HistoryBackend::AddSyncedVisit(
 
   db_->SetMayContainForeignVisits(true);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (can_add_foreign_visits_to_segments_ &&
       CanAddForeignVisitToSegments(visit, local_device_originator_cache_guid_,
                                    sync_device_info_)) {
     AssignSegmentForNewVisit(url, visit.referring_visit, visit_id,
                              visit.transition, visit.visit_time);
   }
+#endif
 
   ScheduleCommit();
   return visit_id;
@@ -1896,9 +1916,11 @@ VisitID HistoryBackend::UpdateSyncedVisit(
     return kInvalidVisitID;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (can_add_foreign_visits_to_segments_) {
     UpdateSegmentForExistingForeignVisit(updated_row);
   }
+#endif
 
   // If provided, add or update the ContextAnnotations.
   if (context_annotations) {
@@ -2096,6 +2118,7 @@ QueryURLAndVisitsResult HistoryBackend::QueryURLAndVisits(
   return result;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::WeakPtr<syncer::DataTypeControllerDelegate>
 HistoryBackend::GetHistorySyncControllerDelegate() {
   if (history_sync_bridge_) {
@@ -2110,6 +2133,7 @@ void HistoryBackend::SetSyncTransportState(
     history_sync_bridge_->SetSyncTransportState(state);
   }
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 // Statistics ------------------------------------------------------------------
 
@@ -3728,11 +3752,13 @@ void HistoryBackend::KillHistoryDatabase() {
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Notify the sync bridge about storage error. It'll report failures to the
   // sync engine and stop accepting remote updates.
   if (history_sync_bridge_) {
     history_sync_bridge_->OnDatabaseError();
   }
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Rollback transaction because Raze() cannot be called from within a
   // transaction. Deleting the object causes the rollback in the destructor.
@@ -3747,9 +3773,11 @@ void HistoryBackend::KillHistoryDatabase() {
   CloseAllDatabases();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void HistoryBackend::SetSyncDeviceInfo(SyncDeviceInfoMap sync_device_info) {
   sync_device_info_ = std::move(sync_device_info);
 }
+#endif
 
 void HistoryBackend::SetLocalDeviceOriginatorCacheGuid(
     std::string local_device_originator_cache_guid) {
@@ -3991,8 +4019,10 @@ bool HistoryBackend::ProcessSetFaviconsResult(
 }
 
 void HistoryBackend::StartDeletingForeignVisits() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ProcessDBTask(std::make_unique<DeleteForeignVisitsDBTask>(), task_runner_,
                 /*is_canceled=*/base::BindRepeating([]() { return false; }));
+#endif
 }
 
 }  // namespace history

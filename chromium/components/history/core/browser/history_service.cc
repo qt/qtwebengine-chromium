@@ -51,11 +51,15 @@
 #include "components/history/core/browser/in_memory_database.h"
 #include "components/history/core/browser/in_memory_history_backend.h"
 #include "components/history/core/browser/keyword_search_term.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/history/core/browser/sync/delete_directive_handler.h"
+#endif
 #include "components/history/core/browser/visit_database.h"
 #include "components/history/core/browser/visit_delegate.h"
 #include "components/history/core/browser/web_history_service.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/model/proxy_data_type_controller_delegate.h"
+#endif
 #include "components/visitedlink/core/visited_link.h"
 #include "net/base/schemeful_site.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -198,9 +202,13 @@ HistoryService::HistoryService(
     syncer::DeviceInfoTracker* device_info_tracker,
     syncer::LocalDeviceInfoProvider* local_device_info_provider)
     : history_client_(std::move(history_client)),
+#if !BUILDFLAG(IS_QTWEBENGINE)
       visit_delegate_(std::move(visit_delegate)),
       device_info_tracker_(device_info_tracker),
       local_device_info_provider_(local_device_info_provider) {}
+#else
+      visit_delegate_(std::move(visit_delegate)) {}
+#endif
 
 HistoryService::~HistoryService() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -443,6 +451,7 @@ void HistoryService::RemoveObserver(HistoryServiceObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void HistoryService::SetCanAddForeignVisitsToSegmentsOnBackend(
     bool add_foreign_visits) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -489,6 +498,7 @@ void HistoryService::SendLocalDeviceOriginatorCacheGuidToBackend() {
       base::BindOnce(&HistoryBackend::SetLocalDeviceOriginatorCacheGuid,
                      history_backend_, std::move(guid)));
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 base::CancelableTaskTracker::TaskId HistoryService::ScheduleDBTask(
     const base::Location& from_here,
@@ -1466,11 +1476,13 @@ void HistoryService::Cleanup() {
   // Clear `backend_task_runner_` to make sure it's not used after Cleanup().
   backend_task_runner_ = nullptr;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   local_device_info_available_subscription_ = {};
   local_device_info_provider_ = nullptr;
 
   device_info_tracker_observation_.Reset();
   device_info_tracker_ = nullptr;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 bool HistoryService::Init(
@@ -1509,9 +1521,11 @@ bool HistoryService::Init(
                base::BindOnce(&HistoryBackend::Init, history_backend_, no_db,
                               history_database_params));
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   delete_directive_handler_ = std::make_unique<DeleteDirectiveHandler>(
       base::BindRepeating(base::IgnoreResult(&HistoryService::ScheduleDBTask),
                           base::Unretained(this)));
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
   if (visit_delegate_ && !visit_delegate_->Init(this)) {
     // This is a low-level service that many other services in chromium depend
@@ -1523,6 +1537,7 @@ bool HistoryService::Init(
     base::Process::TerminateCurrentProcessImmediately(0);
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (device_info_tracker_) {
     device_info_tracker_observation_.Observe(device_info_tracker_);
 
@@ -1538,6 +1553,7 @@ bool HistoryService::Init(
 
     SendLocalDeviceOriginatorCacheGuidToBackend();
   }
+#endif
 
   if (history_client_) {
     history_client_->OnHistoryServiceCreated(this);
@@ -1573,6 +1589,7 @@ base::SafeRef<HistoryService> HistoryService::AsSafeRef() {
   return weak_ptr_factory_.GetSafeRef();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::WeakPtr<syncer::SyncableService>
 HistoryService::GetDeleteDirectivesSyncableService() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1600,11 +1617,14 @@ void HistoryService::SetSyncTransportState(
                base::BindOnce(&HistoryBackend::SetSyncTransportState,
                               history_backend_, state));
 }
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 
 void HistoryService::ProcessLocalDeleteDirective(
     const sync_pb::HistoryDeleteDirectiveSpecifics& delete_directive) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   delete_directive_handler_->ProcessLocalDeleteDirective(delete_directive);
+#endif
 }
 
 void HistoryService::SetInMemoryBackend(
@@ -1672,6 +1692,7 @@ void HistoryService::DeleteLocalAndRemoteHistoryBetween(
     base::CancelableTaskTracker* tracker) {
   // TODO(crbug.com/41439580): This should be factored out into a separate class
   // that dispatches deletions to the proper places.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (web_history) {
     delete_directive_handler_->CreateTimeRangeDeleteDirective(begin_time,
                                                               end_time);
@@ -1709,6 +1730,7 @@ void HistoryService::DeleteLocalAndRemoteHistoryBetween(
         /*restrict_urls=*/{}, begin_time, end_time, base::DoNothing(),
         partial_traffic_annotation);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   ExpireHistoryBetween(/*restrict_urls=*/{}, app_id, begin_time, end_time,
                        /*user_initiated=*/true, std::move(callback), tracker);
 }
@@ -1716,6 +1738,7 @@ void HistoryService::DeleteLocalAndRemoteHistoryBetween(
 void HistoryService::DeleteLocalAndRemoteUrl(WebHistoryService* web_history,
                                              const GURL& url) {
   DCHECK(url.is_valid());
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // TODO(crbug.com/41439580): This should be factored out into a separate class
   // that dispatches deletions to the proper places.
   if (web_history) {
@@ -1748,13 +1771,16 @@ void HistoryService::DeleteLocalAndRemoteUrl(WebHistoryService* web_history,
         /*restrict_urls=*/{url}, base::Time(), base::Time::Max(),
         base::DoNothing(), partial_traffic_annotation);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   DeleteURLs({url});
 }
 
 void HistoryService::OnDBLoaded() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   backend_loaded_ = true;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   delete_directive_handler_->OnBackendLoaded();
+#endif
   NotifyHistoryServiceLoaded();
 }
 
