@@ -123,6 +123,10 @@ class FaviconHandler {
     virtual void OnFaviconDeleted(
         const GURL& page_url,
         FaviconDriverObserver::NotificationIconType notification_icon_type) = 0;
+
+#if defined(TOOLKIT_QT)
+    virtual void OnHandlerCompleted(FaviconHandler *handler) {}
+#endif
   };
 
   // |service| may be null (which means favicons are not saved). If |service|
@@ -165,6 +169,10 @@ class FaviconHandler {
   static int GetMaximalIconSize(
       FaviconDriverObserver::NotificationIconType handler_type,
       bool candidates_from_web_manifest);
+
+#if defined(TOOLKIT_QT)
+  FaviconDriverObserver::NotificationIconType Type() const { return handler_type_; }
+#endif
 
  private:
   // Used to track a candidate for the favicon.

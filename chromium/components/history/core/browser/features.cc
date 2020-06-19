@@ -6,7 +6,9 @@
 
 #include "build/build_config.h"
 #include "components/history/core/browser/top_sites_impl.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/base/features.h"
+#endif
 
 namespace history {
 namespace {
@@ -92,8 +94,12 @@ const base::FeatureParam<int> kMaxNumNewTabPageDisplays(
     5);
 
 bool IsSyncSegmentsDataEnabled() {
+#if !defined(TOOLKIT_QT)
   return base::FeatureList::IsEnabled(syncer::kSyncEnableHistoryDataType) &&
          base::FeatureList::IsEnabled(kSyncSegmentsData);
+#else
+  return false;
+#endif
 }
 
 }  // namespace history
