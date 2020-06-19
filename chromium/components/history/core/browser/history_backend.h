@@ -449,10 +449,12 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   bool GetURLByID(URLID url_id, URLRow* url_row);
 
+#if !defined(TOOLKIT_QT)
   // Returns the sync controller delegate for syncing typed urls. The returned
   // delegate is owned by |this| object.
   base::WeakPtr<syncer::ModelTypeControllerDelegate>
   GetTypedURLSyncControllerDelegate();
+#endif // !defined(TOOLKIT_QT)
 
   // Deleting ------------------------------------------------------------------
 
@@ -536,7 +538,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   ExpireHistoryBackend* expire_backend() { return &expirer_; }
 #endif
 
+#if !defined(TOOLKIT_QT)
   void SetTypedURLSyncBridgeForTest(std::unique_ptr<TypedURLSyncBridge> bridge);
+#endif
 
   // Returns true if the passed visit time is already expired (used by the sync
   // code to avoid syncing visits that would immediately be expired).
@@ -875,10 +879,12 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // List of observers
   base::ObserverList<HistoryBackendObserver>::Unchecked observers_;
 
+#if !defined(TOOLKIT_QT)
   // Used to manage syncing of the typed urls datatype. It will be null before
   // HistoryBackend::Init is called. Defined after observers_ because
   // it unregisters itself as observer during destruction.
   std::unique_ptr<TypedURLSyncBridge> typed_url_sync_bridge_;
+#endif // !defined(TOOLKIT_QT)
 
   DISALLOW_COPY_AND_ASSIGN(HistoryBackend);
 };
