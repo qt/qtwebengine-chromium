@@ -83,7 +83,8 @@ HistoryDatabase::HistoryDatabase(
     DownloadInterruptReason download_interrupt_reason_crash)
     : DownloadDatabase(download_interrupt_reason_none,
                        download_interrupt_reason_crash),
-      db_({// Note that we don't set exclusive locking here. That's done by
+      db_(sql::DatabaseOptions{
+           // Note that we don't set exclusive locking here. That's done by
            // BeginExclusiveMode below which is called later (we have to be in
            // shared mode to start out for the in-memory backend to read the
            // data).
@@ -96,8 +97,11 @@ HistoryDatabase::HistoryDatabase(
            // Set the cache size. The page size, plus a little extra, times this
            // value, tells us how much memory the cache will use maximum.
            // 1000 * 4kB = 4MB
-           .cache_size = 1000}),
-      history_metadata_db_(&db_, &meta_table_) {}
+           .cache_size = 1000})
+#if !defined(TOOLKIT_QT)
+      , history_metadata_db_(&db_, &meta_table_)
+#endif
+{}
 
 HistoryDatabase::~HistoryDatabase() = default;
 
@@ -126,9 +130,13 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
   if (!meta_table_.Init(&db_, GetCurrentVersion(), kCompatibleVersionNumber))
     return LogInitFailure(InitStep::META_TABLE_INIT);
   if (!CreateURLTable(false) || !InitVisitTable() ||
-      !InitKeywordSearchTermsTable() || !InitDownloadTable() ||
-      !InitSegmentTables() || !InitVisitAnnotationsTables() ||
-      !CreateVisitedLinkTable() || !history_metadata_db_.Init()) {
+      || !InitKeywordSearchTermsTable() || !InitDownloadTable()
+      || !InitSegmentTables() || !InitVisitAnnotationsTables()
+      || !CreateVisitedLinkTable()
+#if !defined(TOOLKIT_QT)
+      || !history_metadata_db_.Init())
+#endif
+  {
     return LogInitFailure(InitStep::CREATE_TABLES);
   }
   CreateMainURLIndex();
@@ -148,6 +156,7 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
 void HistoryDatabase::ComputeDatabaseMetrics(
     const base::FilePath& history_name) {
   base::TimeTicks start_time = base::TimeTicks::Now();
+#if !defined(TOOLKIT_QT)
   int64_t file_size = 0;
   if (!base::GetFileSize(history_name, &file_size))
     return;
@@ -236,6 +245,7 @@ void HistoryDatabase::ComputeDatabaseMetrics(
       }
     }
   }
+
   // Only record these metrics if there are any foreign visits in the DB.
   if (total_foreign_visits > 0) {
     base::UmaHistogramCounts1M("History.ForeignVisitsTotal",
@@ -252,7 +262,6 @@ void HistoryDatabase::ComputeDatabaseMetrics(
 
   base::UmaHistogramTimes("History.DatabaseForeignVisitMetricsTime",
                           base::TimeTicks::Now() - start_time);
-
   // Compute the advanced metrics even less often, pending timing data showing
   // that's not necessary.
   if (base::RandInt(1, 3) == 3) {
@@ -510,10 +519,11 @@ bool HistoryDatabase::KnownToSyncVisitsExist() {
 void HistoryDatabase::SetKnownToSyncVisitsExist(bool exist) {
   meta_table_.SetValue(kKnownToSyncVisitsExist, exist ? 1 : 0);
 }
-
+#if !defined(TOOLKIT_QT)
 HistorySyncMetadataDatabase* HistoryDatabase::GetHistoryMetadataDB() {
   return &history_metadata_db_;
 }
+#endif  // !defined(TOOLKIT_QT)
 
 sql::Database& HistoryDatabase::GetDBForTesting() {
   return db_;
@@ -755,6 +765,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     std::ignore = meta_table_.SetVersionNumber(cur_version);
   }
 
+#if !defined(TOOLKIT_QT)
   if (cur_version == 40) {
     // The migration to version 40 concerned Sync metadata for TypedURLs, which
     // doesn't exist anymore in current versions (68+). So nothing to do here.
@@ -762,6 +773,7 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     // TODO(crbug.com/1414092): Handle failure instead of ignoring it.
     std::ignore = meta_table_.SetVersionNumber(cur_version);
   }
+#endif
 
   if (cur_version == 41) {
     if (!MigrateKeywordsSearchTermsLowerTermColumn())

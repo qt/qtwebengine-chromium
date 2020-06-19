@@ -37,7 +37,9 @@
 #include "components/history/core/browser/keyword_id.h"
 #include "components/history/core/browser/sync/history_backend_for_sync.h"
 #include "components/history/core/browser/visit_tracker.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/service/sync_service.h"
+#endif
 #include "sql/init_status.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/origin.h"
@@ -595,8 +597,10 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Generic operations --------------------------------------------------------
 
+#if !defined(TOOLKIT_QT)
   // Sets the device information for all syncing devices.
   void SetSyncDeviceInfo(SyncDeviceInfoMap sync_device_info);
+#endif
 
   // Sets the local device Originator Cache GUID.
   void SetLocalDeviceOriginatorCacheGuid(
@@ -696,6 +700,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // redirect chain.
   bool GetLastVisitByTime(base::Time visit_time, VisitRow* visit_row) override;
 
+#if !defined(TOOLKIT_QT)
   // Returns the sync controller delegate for syncing history. The returned
   // delegate is owned by `this` object.
   base::WeakPtr<syncer::ModelTypeControllerDelegate>
@@ -703,6 +708,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Sends the SyncService's TransportState `state` to the HistorySyncBridge.
   void SetSyncTransportState(syncer::SyncService::TransportState state);
+#endif // !defined(TOOLKIT_QT)
 
   // Deleting ------------------------------------------------------------------
 
@@ -784,7 +790,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   base::Time GetFirstRecordedTimeForTest() { return first_recorded_time_; }
 
+#if !defined(TOOLKIT_QT)
   static int GetForeignVisitsToDeletePerBatchForTest();
+#endif
 
   sql::Database& GetDBForTesting();
 
@@ -1095,6 +1103,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // List of observers
   base::ObserverList<HistoryBackendObserver>::Unchecked observers_;
 
+#if !defined(TOOLKIT_QT)
   // Used to manage syncing of the history datatype. It will be null before
   // HistoryBackend::Init() is called. Defined after `observers_` because
   // it unregisters itself as observer during destruction.
@@ -1102,6 +1111,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Contains device information for all syncing devices.
   SyncDeviceInfoMap sync_device_info_;
+#endif // !defined(TOOLKIT_QT)
 
   // Contains the local device Originator Cache GUID, a unique, sync-specific
   // identifier for the local device.

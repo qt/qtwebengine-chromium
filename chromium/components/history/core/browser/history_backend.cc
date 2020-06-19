@@ -55,12 +55,16 @@
 #include "components/history/core/browser/keyword_search_term.h"
 #include "components/history/core/browser/keyword_search_term_util.h"
 #include "components/history/core/browser/page_usage_data.h"
+#if !defined(TOOLKIT_QT)
 #include "components/history/core/browser/sync/history_sync_bridge.h"
+#endif
 #include "components/history/core/browser/url_row.h"
 #include "components/history/core/browser/url_utils.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/base/features.h"
 #include "components/sync/base/report_unrecoverable_error.h"
 #include "components/sync/model/client_tag_based_model_type_processor.h"
+#endif
 #include "components/url_formatter/url_formatter.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sql/error_delegate_util.h"
@@ -83,7 +87,9 @@ using favicon::FaviconBitmapID;
 using favicon::FaviconBitmapIDSize;
 using favicon::FaviconBitmapType;
 using favicon::IconMapping;
+#if !defined(TOOLKIT_QT)
 using syncer::ClientTagBasedModelTypeProcessor;
+#endif
 
 /* The HistoryBackend consists of two components:
 
@@ -101,8 +107,10 @@ namespace history {
 
 namespace {
 
+#if !defined(TOOLKIT_QT)
 using OsType = syncer::DeviceInfo::OsType;
 using FormFactor = syncer::DeviceInfo::FormFactor;
+#endif
 
 #if DCHECK_IS_ON()
 // Use to keep track of paths used to host HistoryBackends. This class
@@ -238,6 +246,7 @@ class DeleteForeignVisitsDBTask : public HistoryDBTask {
   void DoneRunOnMainThread() override {}
 };
 
+#if !defined(TOOLKIT_QT)
 // On iOS devices, Returns true if the device that created the foreign visit is
 // an Android or iOS device, and has a mobile form factor.
 //
@@ -280,6 +289,7 @@ bool CanAddForeignVisitToSegments(
   return false;
 #endif
 }
+#endif  // !defined(TOOLKIT_QT)
 
 // Returns whether a page visit has a ui::PageTransition type that allows us
 // to construct a triple partition key for the VisitedLinkDatabase.
@@ -412,6 +422,7 @@ void HistoryBackend::Init(
     InitImpl(history_database_params);
   delegate_->DBLoaded();
 
+#if !defined(TOOLKIT_QT)
   history_sync_bridge_ = std::make_unique<HistorySyncBridge>(
       this, db_ ? db_->GetHistoryMetadataDB() : nullptr,
       std::make_unique<ClientTagBasedModelTypeProcessor>(
@@ -424,6 +435,7 @@ void HistoryBackend::Init(
     // browser shutdown. Continue it.
     StartDeletingForeignVisits();
   }
+#endif // !defined(TOOLKIT_QT)
 
   memory_pressure_listener_ = std::make_unique<base::MemoryPressureListener>(
       FROM_HERE, base::BindRepeating(&HistoryBackend::OnMemoryPressure,
@@ -588,6 +600,7 @@ SegmentID HistoryBackend::CalculateSegmentID(
 }
 
 void HistoryBackend::UpdateSegmentForExistingForeignVisit(VisitRow& visit_row) {
+#if !defined(TOOLKIT_QT)
   CHECK(can_add_foreign_visits_to_segments_);
   CHECK(!visit_row.originator_cache_guid.empty());
 
@@ -631,6 +644,7 @@ void HistoryBackend::UpdateSegmentForExistingForeignVisit(VisitRow& visit_row) {
   visit_row.segment_id = new_segment_id;
 
   db_->SetSegmentID(visit_row.visit_id, new_segment_id);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void HistoryBackend::UpdateWithPageEndTime(ContextID context_id,
@@ -1547,10 +1561,12 @@ bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) const {
   return time < expirer_.GetCurrentExpirationTime();
 }
 
+#if !defined(TOOLKIT_QT)
 // static
 int HistoryBackend::GetForeignVisitsToDeletePerBatchForTest() {
   return kSyncHistoryForeignVisitsToDeletePerBatch;
 }
+#endif // !defined(TOOLKIT_QT)
 
 sql::Database& HistoryBackend::GetDBForTesting() {
   return db_->GetDBForTesting();  // IN-TEST
@@ -1731,12 +1747,14 @@ VisitID HistoryBackend::AddSyncedVisit(
 
   db_->SetMayContainForeignVisits(true);
 
+#if !defined(TOOLKIT_QT)
   if (can_add_foreign_visits_to_segments_ &&
       CanAddForeignVisitToSegments(visit, local_device_originator_cache_guid_,
                                    sync_device_info_)) {
     AssignSegmentForNewVisit(url, visit.referring_visit, visit_id,
                              visit.transition, visit.visit_time);
   }
+#endif
 
   ScheduleCommit();
   return visit_id;
@@ -1814,9 +1832,11 @@ VisitID HistoryBackend::UpdateSyncedVisit(
     return kInvalidVisitID;
   }
 
+#if !defined(TOOLKIT_QT)
   if (can_add_foreign_visits_to_segments_) {
     UpdateSegmentForExistingForeignVisit(updated_row);
   }
+#endif
 
   // If provided, add or update the ContextAnnotations.
   if (context_annotations) {
@@ -1974,6 +1994,7 @@ QueryURLResult HistoryBackend::QueryURL(const GURL& url, bool want_visits) {
   return result;
 }
 
+#if !defined(TOOLKIT_QT)
 base::WeakPtr<syncer::ModelTypeControllerDelegate>
 HistoryBackend::GetHistorySyncControllerDelegate() {
   if (history_sync_bridge_) {
@@ -1988,6 +2009,7 @@ void HistoryBackend::SetSyncTransportState(
     history_sync_bridge_->SetSyncTransportState(state);
   }
 }
+#endif // !defined(TOOLKIT_QT)
 
 // Statistics ------------------------------------------------------------------
 
@@ -3503,10 +3525,12 @@ void HistoryBackend::KillHistoryDatabase() {
   if (!db_)
     return;
 
+#if !defined(TOOLKIT_QT)
   // Notify the sync bridge about storage error. It'll report failures to the
   // sync engine and stop accepting remote updates.
   if (history_sync_bridge_)
     history_sync_bridge_->OnDatabaseError();
+#endif // !defined(TOOLKIT_QT)
 
   // Rollback transaction because Raze() cannot be called from within a
   // transaction. Deleting the object causes the rollback in the destructor.
@@ -3522,9 +3546,11 @@ void HistoryBackend::KillHistoryDatabase() {
   CloseAllDatabases();
 }
 
+#if !defined(TOOLKIT_QT)
 void HistoryBackend::SetSyncDeviceInfo(SyncDeviceInfoMap sync_device_info) {
   sync_device_info_ = std::move(sync_device_info);
 }
+#endif
 
 void HistoryBackend::SetLocalDeviceOriginatorCacheGuid(
     std::string local_device_originator_cache_guid) {
@@ -3732,8 +3758,10 @@ bool HistoryBackend::ProcessSetFaviconsResult(
 }
 
 void HistoryBackend::StartDeletingForeignVisits() {
+#if !defined(TOOLKIT_QT)
   ProcessDBTask(std::make_unique<DeleteForeignVisitsDBTask>(), task_runner_,
                 /*is_canceled=*/base::BindRepeating([]() { return false; }));
+#endif
 }
 
 }  // namespace history
