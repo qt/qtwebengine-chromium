@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
+
 static_library("browser") {
   sources = [
     "browsing_history_driver.h",
@@ -133,6 +135,52 @@ static_library("browser") {
     "//ui/gfx",
     "//url",
   ]
+
+  if (is_qtwebengine) {
+    sources -= [
+      "browsing_history_service.cc",
+      "browsing_history_service.h",
+      "sync/delete_directive_handler.cc",
+      "sync/delete_directive_handler.h",
+      "sync/history_backend_for_sync.h",
+      "sync/history_delete_directives_model_type_controller.cc",
+      "sync/history_delete_directives_model_type_controller.h",
+      "sync/history_model_type_controller.cc",
+      "sync/history_model_type_controller.h",
+      "sync/history_model_type_controller_helper.cc",
+      "sync/history_model_type_controller_helper.h",
+      "sync/history_sync_bridge.cc",
+      "sync/history_sync_bridge.h",
+      "sync/history_sync_metadata_database.cc",
+      "sync/history_sync_metadata_database.h",
+      "sync/typed_url_sync_bridge.cc",
+      "sync/typed_url_sync_bridge.h",
+      "sync/typed_url_sync_metadata_database.cc",
+      "sync/typed_url_sync_metadata_database.h",
+      "sync/visit_id_remapper.cc",
+      "sync/visit_id_remapper.h",
+      "top_sites.cc",
+      "top_sites.h",
+      "top_sites_backend.cc",
+      "top_sites_backend.h",
+      "top_sites_database.cc",
+      "top_sites_database.h",
+      "top_sites_impl.cc",
+      "top_sites_impl.h",
+      "top_sites_observer.h",
+    ]
+
+    public_deps -= [
+      "//components/sync/protocol",
+    ]
+
+    deps -= [
+      "//components/google/core/common",
+      "//components/search_engines",
+      "//components/signin/public/identity_manager",
+      "//components/sync",
+    ]
+  }
 
   if (is_android) {
     sources += [

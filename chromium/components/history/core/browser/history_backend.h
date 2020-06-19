@@ -37,7 +37,9 @@
 #include "components/history/core/browser/keyword_id.h"
 #include "components/history/core/browser/sync/history_backend_for_sync.h"
 #include "components/history/core/browser/visit_tracker.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/service/sync_service.h"
+#endif
 #include "sql/init_status.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/origin.h"
@@ -700,6 +702,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // redirect chain.
   bool GetLastVisitByTime(base::Time visit_time, VisitRow* visit_row) override;
 
+#if !defined(TOOLKIT_QT)
   // Returns the sync controller delegate for syncing typed urls. The returned
   // delegate is owned by `this` object.
   base::WeakPtr<syncer::ModelTypeControllerDelegate>
@@ -712,6 +715,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Sends the SyncService's TransportState `state` to the HistorySyncBridge.
   void SetSyncTransportState(syncer::SyncService::TransportState state);
+#endif // !defined(TOOLKIT_QT)
 
   // Deleting ------------------------------------------------------------------
 
@@ -787,7 +791,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   ExpireHistoryBackend* expire_backend() { return &expirer_; }
 #endif
 
+#if !defined(TOOLKIT_QT)
   void SetTypedURLSyncBridgeForTest(std::unique_ptr<TypedURLSyncBridge> bridge);
+#endif
 
   // Returns true if the passed visit time is already expired (used by the sync
   // code to avoid syncing visits that would immediately be expired).
@@ -795,7 +801,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   base::Time GetFirstRecordedTimeForTest() { return first_recorded_time_; }
 
+#if !defined(TOOLKIT_QT)
   static int GetForeignVisitsToDeletePerBatchForTest();
+#endif
 
   sql::Database& GetDBForTesting();
 
@@ -1090,6 +1098,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // List of observers
   base::ObserverList<HistoryBackendObserver>::Unchecked observers_;
 
+#if !defined(TOOLKIT_QT)
   // Used to manage syncing of the typed urls datatype. It will be null before
   // HistoryBackend::Init() is called. Defined after `observers_` because
   // it unregisters itself as observer during destruction.
@@ -1102,6 +1111,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   // Contains device information for all syncing devices.
   SyncDeviceInfoMap sync_device_info_;
+#endif // !defined(TOOLKIT_QT)
 
   // Contains the local device Originator Cache GUID, a unique, sync-specific
   // identifier for the local device.

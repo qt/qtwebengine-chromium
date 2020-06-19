@@ -55,12 +55,16 @@
 #include "components/history/core/browser/keyword_search_term.h"
 #include "components/history/core/browser/keyword_search_term_util.h"
 #include "components/history/core/browser/page_usage_data.h"
+#if !defined(TOOLKIT_QT)
 #include "components/history/core/browser/sync/history_sync_bridge.h"
 #include "components/history/core/browser/sync/typed_url_sync_bridge.h"
+#endif
 #include "components/history/core/browser/url_utils.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/base/features.h"
 #include "components/sync/base/report_unrecoverable_error.h"
 #include "components/sync/model/client_tag_based_model_type_processor.h"
+#endif
 #include "components/url_formatter/url_formatter.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "sql/error_delegate_util.h"
@@ -83,7 +87,9 @@ using favicon::FaviconBitmapID;
 using favicon::FaviconBitmapIDSize;
 using favicon::FaviconBitmapType;
 using favicon::IconMapping;
+#if !defined(TOOLKIT_QT)
 using syncer::ClientTagBasedModelTypeProcessor;
+#endif
 
 /* The HistoryBackend consists of two components:
 
@@ -209,6 +215,7 @@ BASE_FEATURE(kDeleteForeignVisitsOnStartup,
              "DeleteForeignVisitsOnStartup",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+#if !defined(TOOLKIT_QT)
 int GetForeignVisitsToDeletePerBatch() {
   return syncer::kSyncHistoryForeignVisitsToDeletePerBatch.Get();
 }
@@ -242,6 +249,7 @@ class DeleteForeignVisitsDBTask : public HistoryDBTask {
 
   void DoneRunOnMainThread() override {}
 };
+#endif  // !defined(TOOLKIT_QT)
 
 // On iOS devices, Returns true if the device that created the foreign visit is
 // an Android or iOS device, and has a mobile form factor.
@@ -409,6 +417,7 @@ void HistoryBackend::Init(
     InitImpl(history_database_params);
   delegate_->DBLoaded();
 
+#if !defined(TOOLKIT_QT)
   typed_url_sync_bridge_ = std::make_unique<TypedURLSyncBridge>(
       this, db_ ? db_->GetTypedURLMetadataDB() : nullptr,
       std::make_unique<ClientTagBasedModelTypeProcessor>(
@@ -438,6 +447,7 @@ void HistoryBackend::Init(
       StartDeletingForeignVisits();
     }
   }
+#endif // !defined(TOOLKIT_QT)
 
   memory_pressure_listener_ = std::make_unique<base::MemoryPressureListener>(
       FROM_HERE, base::BindRepeating(&HistoryBackend::OnMemoryPressure,
@@ -1476,19 +1486,23 @@ void HistoryBackend::AddPagesWithDetails(const URLRows& urls,
   ScheduleCommit();
 }
 
+#if !defined(TOOLKIT_QT)
 void HistoryBackend::SetTypedURLSyncBridgeForTest(
     std::unique_ptr<TypedURLSyncBridge> bridge) {
   typed_url_sync_bridge_ = std::move(bridge);
 }
+#endif // !defined(TOOLKIT_QT)
 
 bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) const {
   return time < expirer_.GetCurrentExpirationTime();
 }
 
+#if !defined(TOOLKIT_QT)
 // static
 int HistoryBackend::GetForeignVisitsToDeletePerBatchForTest() {
   return GetForeignVisitsToDeletePerBatch();
 }
+#endif // !defined(TOOLKIT_QT)
 
 sql::Database& HistoryBackend::GetDBForTesting() {
   return db_->GetDBForTesting();  // IN-TEST
@@ -1939,6 +1953,7 @@ QueryURLResult HistoryBackend::QueryURL(const GURL& url, bool want_visits) {
   return result;
 }
 
+#if !defined(TOOLKIT_QT)
 base::WeakPtr<syncer::ModelTypeControllerDelegate>
 HistoryBackend::GetTypedURLSyncControllerDelegate() {
   DCHECK(typed_url_sync_bridge_);
@@ -1956,6 +1971,7 @@ void HistoryBackend::SetSyncTransportState(
   DCHECK(history_sync_bridge_);
   history_sync_bridge_->SetSyncTransportState(state);
 }
+#endif // !defined(TOOLKIT_QT)
 
 // Statistics ------------------------------------------------------------------
 
@@ -3467,12 +3483,14 @@ void HistoryBackend::KillHistoryDatabase() {
   if (!db_)
     return;
 
+#if !defined(TOOLKIT_QT)
   // Notify the sync bridges about storage error. They'll report failures to the
   // sync engine and stop accepting remote updates.
   if (typed_url_sync_bridge_)
     typed_url_sync_bridge_->OnDatabaseError();
   if (history_sync_bridge_)
     history_sync_bridge_->OnDatabaseError();
+#endif // !defined(TOOLKIT_QT)
 
   // Rollback transaction because Raze() cannot be called from within a
   // transaction. Deleting the object causes the rollback in the destructor.
@@ -3696,8 +3714,10 @@ bool HistoryBackend::ProcessSetFaviconsResult(
 }
 
 void HistoryBackend::StartDeletingForeignVisits() {
+#if !defined(TOOLKIT_QT)
   ProcessDBTask(std::make_unique<DeleteForeignVisitsDBTask>(), task_runner_,
                 /*is_canceled=*/base::BindRepeating([]() { return false; }));
+#endif
 }
 
 }  // namespace history
