@@ -46,12 +46,16 @@
 #include "components/history/core/browser/in_memory_database.h"
 #include "components/history/core/browser/in_memory_history_backend.h"
 #include "components/history/core/browser/keyword_search_term.h"
+#if !defined(TOOLKIT_QT)
 #include "components/history/core/browser/sync/delete_directive_handler.h"
+#endif
 #include "components/history/core/browser/visit_database.h"
 #include "components/history/core/browser/visit_delegate.h"
 #include "components/history/core/browser/web_history_service.h"
+#if !defined(TOOLKIT_QT)
 #include "components/sync/model/proxy_model_type_controller_delegate.h"
 #include "components/sync/model/sync_error_factory.h"
+#endif
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/page_transition_types.h"
 
@@ -1112,9 +1116,11 @@ bool HistoryService::Init(
                base::BindOnce(&HistoryBackend::Init, history_backend_, no_db,
                               history_database_params));
 
+#if !defined(TOOLKIT_QT)
   delete_directive_handler_ = std::make_unique<DeleteDirectiveHandler>(
       base::BindRepeating(base::IgnoreResult(&HistoryService::ScheduleDBTask),
                           base::Unretained(this)));
+#endif // !defined(TOOLKIT_QT)
 
   if (visit_delegate_ && !visit_delegate_->Init(this)) {
     // This is rare enough that it's worth logging.
@@ -1156,6 +1162,7 @@ base::WeakPtr<HistoryService> HistoryService::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
+#if !defined(TOOLKIT_QT)
 base::WeakPtr<syncer::SyncableService>
 HistoryService::GetDeleteDirectivesSyncableService() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1174,11 +1181,14 @@ HistoryService::GetTypedURLSyncControllerDelegate() {
       base::BindRepeating(&HistoryBackend::GetTypedURLSyncControllerDelegate,
                           base::Unretained(history_backend_.get())));
 }
+#endif // !defined(TOOLKIT_QT)
 
 void HistoryService::ProcessLocalDeleteDirective(
     const sync_pb::HistoryDeleteDirectiveSpecifics& delete_directive) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+#if !defined(TOOLKIT_QT)
   delete_directive_handler_->ProcessLocalDeleteDirective(delete_directive);
+#endif
 }
 
 void HistoryService::SetInMemoryBackend(
@@ -1256,6 +1266,7 @@ void HistoryService::DeleteLocalAndRemoteHistoryBetween(
     base::CancelableTaskTracker* tracker) {
   // TODO(crbug.com/929111): This should be factored out into a separate class
   // that dispatches deletions to the proper places.
+#if !defined(TOOLKIT_QT)
   if (web_history) {
     delete_directive_handler_->CreateTimeRangeDeleteDirective(begin_time,
                                                               end_time);
@@ -1293,6 +1304,7 @@ void HistoryService::DeleteLocalAndRemoteHistoryBetween(
         /*restrict_urls=*/{}, begin_time, end_time, base::DoNothing(),
         partial_traffic_annotation);
   }
+#endif // !defined(TOOLKIT_QT)
   ExpireHistoryBetween(/*restrict_urls=*/{}, begin_time, end_time,
                        /*user_initiated=*/true, std::move(callback), tracker);
 }
@@ -1300,6 +1312,7 @@ void HistoryService::DeleteLocalAndRemoteHistoryBetween(
 void HistoryService::DeleteLocalAndRemoteUrl(WebHistoryService* web_history,
                                              const GURL& url) {
   DCHECK(url.is_valid());
+#if !defined(TOOLKIT_QT)
   // TODO(crbug.com/929111): This should be factored out into a separate class
   // that dispatches deletions to the proper places.
   if (web_history) {
@@ -1332,13 +1345,16 @@ void HistoryService::DeleteLocalAndRemoteUrl(WebHistoryService* web_history,
         /*restrict_urls=*/{url}, base::Time(), base::Time::Max(),
         base::DoNothing(), partial_traffic_annotation);
   }
+#endif // !defined(TOOLKIT_QT)
   DeleteURLs({url});
 }
 
 void HistoryService::OnDBLoaded() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   backend_loaded_ = true;
+#if !defined(TOOLKIT_QT)
   delete_directive_handler_->OnBackendLoaded();
+#endif
   NotifyHistoryServiceLoaded();
 }
 

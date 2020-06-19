@@ -161,12 +161,14 @@ class WebHistoryService : public KeyedService {
   // Used for tests.
   size_t GetNumberOfPendingAudioHistoryRequests();
 
+#if !defined(TOOLKIT_QT)
   // Whether there are other forms of browsing history stored on the server.
   void QueryOtherFormsOfBrowsingHistory(
       version_info::Channel channel,
       QueryOtherFormsOfBrowsingHistoryCallback callback,
       const net::PartialNetworkTrafficAnnotationTag&
           partial_traffic_annotation);
+#endif // !defined(TOOLKIT_QT)
 
  protected:
   // This function is pulled out for testing purposes. Caller takes ownership of
@@ -213,6 +215,7 @@ class WebHistoryService : public KeyedService {
       WebHistoryService::Request* request,
       bool success);
 
+#if !defined(TOOLKIT_QT)
   // Called by `request` when a query for other forms of browsing history has
   // completed. Unpacks the response and calls `callback`, which is the original
   // callback that was passed to QueryOtherFormsOfBrowsingHistory().
@@ -220,6 +223,7 @@ class WebHistoryService : public KeyedService {
       WebHistoryService::QueryWebAndAppActivityCallback callback,
       WebHistoryService::Request* request,
       bool success);
+#endif // !defined(TOOLKIT_QT)
 
  private:
   friend class WebHistoryServiceTest;
