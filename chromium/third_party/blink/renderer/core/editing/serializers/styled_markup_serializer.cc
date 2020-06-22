@@ -362,7 +362,7 @@ Node* StyledMarkupTraverser<Strategy>::Traverse(Node* start_node,
         continue;
       }
 
-      if (n->GetLayoutObject() || ShouldSerializeUnrenderedElement(*n)) {
+      if (!n->GetLayoutObject() && !ShouldSerializeUnrenderedElement(*n)) {
         next = Strategy::NextSkippingChildren(*n);
         // Don't skip over pastEnd.
         if (past_end && Strategy::IsDescendantOf(*past_end, *n))
