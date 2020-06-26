@@ -222,7 +222,13 @@ void jsimd_idct_4x4_neon(void *dct_table,
   int64_t right_ac_bitmap = vgetq_lane_s64(vreinterpretq_s64_s16(bitmap), 1);
 
   /* Load constants for IDCT computation. */
+#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_4x4_neon_consts);
+#else
+  const int16x4x3_t consts = { vld1_s16(jsimd_idct_4x4_neon_consts),
+                               vld1_s16(jsimd_idct_4x4_neon_consts + 4),
+                               vld1_s16(jsimd_idct_4x4_neon_consts + 8) };
+#endif
 
   if (left_ac_bitmap == 0 && right_ac_bitmap == 0) {
     /* All AC coefficients are zero. */
