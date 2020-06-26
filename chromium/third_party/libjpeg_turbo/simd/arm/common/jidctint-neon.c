@@ -347,7 +347,13 @@ static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
                                                   int16_t *workspace_2)
 {
   /* Load constants for IDCT calculation. */
+#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
+#else
+  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+#endif
 
   /* Even part. */
   int16x4_t z2_s16 = vmul_s16(row2, quant_row2);
@@ -464,7 +470,13 @@ static inline void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
                                                  int16_t *workspace_2)
 {
   /* Load constants for IDCT computation. */
+#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
+#else
+  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+#endif
 
   /* Even part. */
   int16x4_t z2_s16 = vmul_s16(row2, quant_row2);
@@ -538,7 +550,13 @@ static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
                                                   unsigned buf_offset)
 {
   /* Load constants for IDCT computation. */
+#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
+#else
+  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+#endif
 
   /* Even part. */
   int16x4_t z2_s16 = vld1_s16(workspace + 2 * DCTSIZE / 2);
@@ -676,7 +694,13 @@ static inline void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
                                                  unsigned buf_offset)
 {
   /* Load constants for IDCT computation. */
+#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
+#else
+  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
+                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+#endif
 
   /* Even part. */
   int16x4_t z2_s16 = vld1_s16(workspace + 2 * DCTSIZE / 2);
