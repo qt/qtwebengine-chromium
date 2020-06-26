@@ -221,7 +221,13 @@ void jsimd_idct_4x4_neon(void *dct_table,
   int64_t right_ac_bitmap = vreinterpret_s64_s16(vget_high_s16(bitmap));
 
   /* Load constants for IDCT computation. */
+#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_4x4_neon_consts);
+#else
+  const int16x4x3_t consts = { vld1_s16(jsimd_idct_4x4_neon_consts),
+                               vld1_s16(jsimd_idct_4x4_neon_consts + 4),
+                               vld1_s16(jsimd_idct_4x4_neon_consts + 8) };
+#endif
 
   if (left_ac_bitmap == 0 && right_ac_bitmap == 0) {
     /* All AC coefficients are zero. */
@@ -452,7 +458,8 @@ void jsimd_idct_4x4_neon(void *dct_table,
   /* Interleaving store completes the transpose. */
   uint8x8x2_t output_0123 = vzip_u8(vqmovun_s16(output_cols_02),
                                     vqmovun_s16(output_cols_13));
-  uint16x4x2_t output_01_23 = { output_0123.val[0], output_0123.val[1] };
+  uint16x4x2_t output_01_23 = { vreinterpret_u16_u8(output_0123.val[0]),
+                                vreinterpret_u16_u8(output_0123.val[1]) };
 
   /* Store 4x4 block to memory. */
   vst2_lane_u16((uint16_t *)(output_buf[0] + output_col), output_01_23, 0);
