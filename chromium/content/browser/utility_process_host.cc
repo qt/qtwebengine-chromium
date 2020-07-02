@@ -290,6 +290,9 @@ bool UtilityProcessHost::StartProcess() {
       switches::kWebXrForceRuntime,
       sandbox::policy::switches::kAddXrAppContainerCaps,
 #endif
+#if defined(TOOLKIT_QT)
+      switches::kApplicationName,
+#endif
       network::switches::kUseFirstPartySet,
 #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
       switches::kSchedulerBoostUrgent,

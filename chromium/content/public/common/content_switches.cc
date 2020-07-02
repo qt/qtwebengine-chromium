@@ -1039,6 +1039,11 @@ const char kIpcDumpDirectory[] = "ipc-dump-directory";
 const char kIpcFuzzerTestcase[] = "ipc-fuzzer-testcase";
 #endif
 
+#if defined(TOOLKIT_QT)
+// Pass on parent application name
+const char kApplicationName[] = "application-name";
+#endif
+
 // Don't dump stuff here, follow the same order as the header.
 
 }  // namespace switches
