@@ -37,6 +37,7 @@
 #include "sandbox/policy/switches.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+#include "services/service_manager/switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gl/gl_switches.h"
 
@@ -286,6 +287,9 @@ bool UtilityProcessHost::StartProcess() {
       switches::kWaveOutBuffers,
       switches::kWebXrForceRuntime,
       sandbox::policy::switches::kAddXrAppContainerCaps,
+#endif
+#if defined(TOOLKIT_QT)
+      service_manager::switches::kApplicationName,
 #endif
       network::switches::kUseFirstPartySet,
     };

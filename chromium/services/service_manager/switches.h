@@ -13,6 +13,9 @@ namespace switches {
 extern const char kEnableTracing[];
 extern const char kServiceRequestAttachmentName[];
 
+#if defined(TOOLKIT_QT)
+extern const char kApplicationName[];
+#endif
 }  // namespace switches
 }  // namespace service_manager
 
