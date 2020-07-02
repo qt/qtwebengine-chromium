@@ -23,6 +23,7 @@
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket.h"
+#include "build/build_config.h"
 #include "content/common/zygote/zygote_commands_linux.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
@@ -264,6 +265,9 @@ void ZygoteCommunication::Init(
       switches::kDisableInProcessStackTraces,
       sandbox::policy::switches::kDisableSeccompFilterSandbox,
       sandbox::policy::switches::kNoSandbox,
+#if BUILDFLAG(IS_QTWEBENGINE)
+      switches::kApplicationName,
+#endif
   };
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches);
 
