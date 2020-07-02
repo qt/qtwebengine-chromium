@@ -470,6 +470,9 @@ bool UtilityProcessHost::StartProcess() {
       device::switches::kWebXrHandAnonymizationStrategy,
       device::switches::kWebXrMaxFramebufferScale,
 #endif
+#if BUILDFLAG(IS_QTWEBENGINE)
+      switches::kApplicationName,
+#endif
 #if BUILDFLAG(IS_CHROMEOS)
       switches::kSchedulerBoostUrgent,
 #endif
