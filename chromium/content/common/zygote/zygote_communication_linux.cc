@@ -22,6 +22,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "sandbox/policy/switches.h"
+#include "services/service_manager/switches.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 
 namespace content {
@@ -244,6 +245,9 @@ void ZygoteCommunication::Init(
       switches::kDisableInProcessStackTraces,
       sandbox::policy::switches::kDisableSeccompFilterSandbox,
       sandbox::policy::switches::kNoSandbox,
+#if defined(TOOLKIT_QT)
+      service_manager::switches::kApplicationName,
+#endif
   };
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches,
                             base::size(kForwardSwitches));
