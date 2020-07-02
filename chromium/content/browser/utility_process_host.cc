@@ -428,6 +428,9 @@ bool UtilityProcessHost::StartProcess() {
       switches::kWaveOutBuffers,
       service_manager::switches::kAddXrAppContainerCaps,
 #endif
+#if defined(TOOLKIT_QT)
+      service_manager::switches::kApplicationName,
+#endif
     };
     cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
                                base::size(kSwitchNames));

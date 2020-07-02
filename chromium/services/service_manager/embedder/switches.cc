@@ -67,6 +67,8 @@ const char kZygoteProcess[] = "zygote";
 #if defined(TOOLKIT_QT)
 // Preload widevinepaths for sandbox
 const char kCdmWidevinePath[] = "widevine-path";
+// Pass on parent application name
+const char kApplicationName[] = "application-name";
 #endif
 }  // namespace switches
 }  // namespace service_manager
