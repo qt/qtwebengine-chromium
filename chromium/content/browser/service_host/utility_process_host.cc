@@ -450,6 +450,9 @@ bool UtilityProcessHost::StartProcess() {
       device::switches::kWebXrHandAnonymizationStrategy,
 #endif
       network::switches::kIpAddressSpaceOverrides,
+#if BUILDFLAG(IS_QTWEBENGINE)
+      switches::kApplicationName,
+#endif
 #if BUILDFLAG(IS_CHROMEOS)
       switches::kSchedulerBoostUrgent,
 #endif
