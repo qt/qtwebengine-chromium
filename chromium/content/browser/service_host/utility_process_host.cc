@@ -445,6 +445,9 @@ bool UtilityProcessHost::StartProcess() {
 #if BUILDFLAG(ENABLE_VR)
       device::switches::kWebXrHandAnonymizationStrategy,
 #endif
+#if BUILDFLAG(IS_QTWEBENGINE)
+      switches::kApplicationName,
+#endif
 #if BUILDFLAG(IS_CHROMEOS)
       switches::kSchedulerBoostUrgent,
 #endif
