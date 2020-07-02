@@ -243,6 +243,9 @@ void ZygoteCommunication::Init(
       switches::kDisableInProcessStackTraces,
       sandbox::policy::switches::kDisableSeccompFilterSandbox,
       sandbox::policy::switches::kNoSandbox,
+#if defined(TOOLKIT_QT)
+      switches::kApplicationName,
+#endif
   };
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches,
                             std::size(kForwardSwitches));
