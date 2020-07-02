@@ -293,6 +293,9 @@ bool UtilityProcessHost::StartProcess() {
       switches::kWebXrForceRuntime,
       sandbox::policy::switches::kAddXrAppContainerCaps,
 #endif
+#if defined(TOOLKIT_QT)
+      switches::kApplicationName,
+#endif
       network::switches::kUseFirstPartySet,
       network::switches::kIpAddressSpaceOverrides,
 #if BUILDFLAG(IS_CHROMEOS)
