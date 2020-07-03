@@ -144,7 +144,7 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
       port_(IsDefaultPortForProtocol(url.Port(), protocol_) ? kInvalidPort
                                                             : url.Port()),
       effective_port_(port_ ? port_ : DefaultPortForProtocol(protocol_)) {
-//  DCHECK(!ShouldTreatAsOpaqueOrigin(url));
+  DCHECK(!ShouldTreatAsOpaqueOrigin(url));
 
   // NOTE(juvaldma)(Chromium 67.0.3396.47)
   //
