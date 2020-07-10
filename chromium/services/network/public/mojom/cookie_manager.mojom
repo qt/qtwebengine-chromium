@@ -6,6 +6,7 @@ module network.mojom;
 
 import "components/content_settings/core/common/content_settings.mojom";
 import "mojo/public/mojom/base/time.mojom";
+import "services/network/public/mojom/site_for_cookies.mojom";
 import "services/network/public/mojom/schemeful_site.mojom";
 import "url/mojom/url.mojom";
 
@@ -318,6 +319,10 @@ interface CookieChangeListener {
   OnCookieChange(CookieChangeInfo change);
 };
 
+interface CookieRemoteAccessFilter {
+  AllowedAccess(url.mojom.Url url, SiteForCookies site_for_cookies) => (bool allowed);
+};
+
 interface CookieManager {
   // TODO(rdsmith): Worthwhile specifying a sort order for the getters?
 
@@ -424,6 +429,9 @@ interface CookieManager {
   // access and cookie deletion behavior.
   SetContentSettings(
       array<content_settings.mojom.ContentSettingPatternSource> settings);
+
+  SetRemoteFilter(
+      pending_remote<CookieRemoteAccessFilter> remote_access_filter);
 
   // Instructs the cookie store to not discard session only cookies on shutdown.
   SetForceKeepSessionState();
