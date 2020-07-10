@@ -7,6 +7,7 @@
 
 #include <set>
 
+#include "base/callback_forward.h"
 #include "base/containers/flat_map.h"
 #include "net/base/net_export.h"
 #include "net/cookies/canonical_cookie.h"
@@ -46,6 +47,11 @@ class NET_EXPORT CookieAccessDelegate {
   virtual bool ShouldIgnoreSameSiteRestrictions(
       const GURL& url,
       const SiteForCookies& site_for_cookies) const = 0;
+
+  virtual void AllowedByFilter(
+      const GURL& url,
+      const SiteForCookies& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const = 0;
 
   // Returns the SamePartyContext indicating whether `site` is same-party
   // with `party_context` and `top_frame_site`. If `top_frame_site` is nullptr,
