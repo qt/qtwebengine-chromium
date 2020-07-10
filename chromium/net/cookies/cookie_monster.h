@@ -185,6 +185,18 @@ class NET_EXPORT CookieMonster : public CookieStore {
   void SetCookieableSchemes(const std::vector<std::string>& schemes,
                             SetCookieableSchemesCallback callback) override;
 
+  void SetCanonicalCookieAsyncAndFiltered(
+      const GURL& url,
+      const SiteForCookies& site_for_cookies,
+      std::unique_ptr<CanonicalCookie> cookie,
+      const CookieOptions& options,
+      SetCookiesCallback callback);
+  void GetCookieListWithOptionsAsyncAndFiltered(
+      const GURL& url,
+      const SiteForCookies& site_for_cookies,
+      const CookieOptions& options,
+      GetCookieListCallback callback);
+
   // Enables writing session cookies into the cookie database. If this this
   // method is called, it must be called before first use of the instance
   // (i.e. as part of the instance initialization process).
@@ -574,6 +586,19 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // synchronously.
   void DoCookieCallbackForHostOrDomain(base::OnceClosure callback,
                                        base::StringPiece host_or_domain);
+
+  void SetCanonicalCookieAsyncAndFiltered_helper(
+      std::unique_ptr<CanonicalCookie> cookie,
+      const GURL& url,
+      const CookieOptions& options,
+      SetCookiesCallback callback,
+      bool allowed);
+
+  void GetCookieListWithOptionsAsyncAndFiltered_helper(
+      const GURL& url,
+      const CookieOptions& options,
+      GetCookieListCallback callback,
+      bool allowed);
 
   // Checks to see if a cookie is being sent to the same port it was set by. For
   // metrics.

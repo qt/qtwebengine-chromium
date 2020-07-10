@@ -13,6 +13,7 @@
 
 namespace network {
 
+class CookieManager;
 class PreloadedFirstPartySets;
 
 // This class acts as a delegate for the CookieStore to query the
@@ -29,7 +30,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
   CookieAccessDelegateImpl(
       mojom::CookieAccessDelegateType type,
       const PreloadedFirstPartySets* preloaded_first_party_sets,
-      const CookieSettings* cookie_settings = nullptr);
+      const CookieSettings* cookie_settings = nullptr,
+      const CookieManager* cookie_manager = nullptr);
 
   ~CookieAccessDelegateImpl() override;
 
@@ -39,10 +41,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
   bool ShouldIgnoreSameSiteRestrictions(
       const GURL& url,
       const net::SiteForCookies& site_for_cookies) const override;
+  void AllowedByFilter(
+      const GURL& url,
+      const net::SiteForCookies& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const override;
 
  private:
   const mojom::CookieAccessDelegateType type_;
   const CookieSettings* const cookie_settings_;
+  const CookieManager* const cookie_manager_;
 };
 
 }  // namespace network
