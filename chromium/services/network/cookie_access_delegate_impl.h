@@ -13,6 +13,8 @@
 
 namespace network {
 
+class CookieManager;
+
 // This class acts as a delegate for the CookieStore to query the
 // CookieManager's CookieSettings for instructions on how to handle a given
 // cookie with respect to SameSite.
@@ -24,7 +26,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
   // describes which cookies should be subject to legacy access rules.
   // If non-null, |cookie_settings| is expected to outlive this class.
   CookieAccessDelegateImpl(mojom::CookieAccessDelegateType type,
-                           const CookieSettings* cookie_settings = nullptr);
+                           const CookieSettings* cookie_settings = nullptr,
+                           const CookieManager* cookie_manager = nullptr);
 
   ~CookieAccessDelegateImpl() override;
 
@@ -34,10 +37,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
   bool ShouldIgnoreSameSiteRestrictions(
       const GURL& url,
       const GURL& site_for_cookies) const override;
+  void AllowedByFilter(
+      const GURL& url,
+      const GURL& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const override;
 
  private:
   const mojom::CookieAccessDelegateType type_;
   const CookieSettings* const cookie_settings_;
+  const CookieManager* const cookie_manager_;
 };
 
 }  // namespace network
