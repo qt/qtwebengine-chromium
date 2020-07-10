@@ -5,6 +5,7 @@
 #ifndef NET_COOKIES_COOKIE_ACCESS_DELEGATE_H_
 #define NET_COOKIES_COOKIE_ACCESS_DELEGATE_H_
 
+#include "base/callback_forward.h"
 #include "base/containers/flat_map.h"
 #include "net/base/net_export.h"
 #include "net/cookies/canonical_cookie.h"
@@ -37,6 +38,11 @@ class NET_EXPORT CookieAccessDelegate {
   virtual bool ShouldIgnoreSameSiteRestrictions(
       const GURL& url,
       const SiteForCookies& site_for_cookies) const = 0;
+
+  virtual void AllowedByFilter(
+      const GURL& url,
+      const SiteForCookies& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const = 0;
 
   // Returns whether `site` is same-party with `party_context` and
   // `top_frame_site`. If `top_frame_site` is nullopt, then `site` will be
