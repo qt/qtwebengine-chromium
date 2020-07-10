@@ -51,6 +51,7 @@
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_access_delegate.h"
 #include "net/cookies/cookie_constants.h"
+#include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/first_party_set_metadata.h"
@@ -945,9 +946,11 @@ void URLRequestHttpJob::SaveCookiesAndNotifyHeadersComplete(int result) {
                         CookieAccessResult(returned_status));
       continue;
     }
+
     CookieAccessResult cookie_access_result(returned_status);
-    cookie_store->SetCanonicalCookieAsync(
-        std::move(cookie), request_->url(), options,
+    static_cast<CookieMonster*>(cookie_store)->SetCanonicalCookieAsyncAndFiltered(
+        request_->url(), request_->site_for_cookies(),
+        std::move(cookie), options,
         base::BindOnce(&URLRequestHttpJob::OnSetCookieResult,
                        weak_factory_.GetWeakPtr(), options, cookie_to_return,
                        cookie_string),

@@ -69,7 +69,8 @@ CookieManager::CookieManager(
   cookie_store_->SetCookieAccessDelegate(
       std::make_unique<CookieAccessDelegateImpl>(cookie_access_delegate_type,
                                                  first_party_sets_manager,
-                                                 &cookie_settings_));
+                                                 &cookie_settings_,
+                                                 this));
 }
 
 CookieManager::~CookieManager() {
@@ -339,6 +340,22 @@ void CookieManager::AddGlobalChangeListener(
                      base::Unretained(listener_registration.get())));
 
   listener_registrations_.push_back(std::move(listener_registration));
+}
+
+void CookieManager::SetRemoteFilter(
+    mojo::PendingRemote<mojom::CookieRemoteAccessFilter> filter)
+{
+  filter_.Bind(std::move(filter));
+  filter_.reset_on_disconnect();
+}
+
+void CookieManager::AllowedByFilter(const GURL& url, const net::SiteForCookies& site_for_cookies,
+                                    base::OnceCallback<void(bool)> callback) const
+{
+    if (!filter_.is_bound())
+        std::move(callback).Run(true);
+    else
+        filter_->AllowedAccess(url, site_for_cookies, std::move(callback));
 }
 
 void CookieManager::RemoveChangeListener(ListenerRegistration* registration) {

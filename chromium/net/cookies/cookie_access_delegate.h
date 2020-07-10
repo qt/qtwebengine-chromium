@@ -51,6 +51,11 @@ class NET_EXPORT CookieAccessDelegate {
       const GURL& url,
       const SiteForCookies& site_for_cookies) const = 0;
 
+  virtual void AllowedByFilter(
+      const GURL& url,
+      const SiteForCookies& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const = 0;
+
   // Calls `callback` with metadata indicating whether `site` is same-party with
   // `party_context` and `top_frame_site`; and `site`'s owner, if applicable..
   // If `top_frame_site` is nullptr, then `site` will be checked only against

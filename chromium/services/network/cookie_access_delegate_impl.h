@@ -29,6 +29,8 @@ class SchemefulSite;
 
 namespace network {
 
+class CookieManager;
+
 // This class acts as a delegate for the CookieStore to query the
 // CookieManager's CookieSettings for instructions on how to handle a given
 // cookie with respect to SameSite, and to apply developer preferences on
@@ -43,7 +45,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
   // non-null, `first_party_sets` must outlive `this`.
   CookieAccessDelegateImpl(mojom::CookieAccessDelegateType type,
                            FirstPartySetsManager* const first_party_sets,
-                           const CookieSettings* cookie_settings = nullptr);
+                           const CookieSettings* cookie_settings = nullptr,
+                           const CookieManager* cookie_manager = nullptr);
 
   ~CookieAccessDelegateImpl() override;
 
@@ -54,6 +57,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
   bool ShouldIgnoreSameSiteRestrictions(
       const GURL& url,
       const net::SiteForCookies& site_for_cookies) const override;
+  void AllowedByFilter(
+      const GURL& url,
+      const net::SiteForCookies& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const override;
   [[nodiscard]] absl::optional<net::FirstPartySetMetadata>
   ComputeFirstPartySetMetadataMaybeAsync(
       const net::SchemefulSite& site,
@@ -80,6 +87,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
   const mojom::CookieAccessDelegateType type_;
   const raw_ptr<const CookieSettings> cookie_settings_;
   const raw_ptr<FirstPartySetsManager> first_party_sets_manager_;
+  const raw_ptr<const CookieManager> cookie_manager_;
 };
 
 }  // namespace network
