@@ -13,6 +13,7 @@
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/first_party_set_metadata.h"
+#include "services/network/cookie_manager.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -20,11 +21,13 @@ namespace network {
 
 CookieAccessDelegateImpl::CookieAccessDelegateImpl(
     mojom::CookieAccessDelegateType type,
-    FirstPartySetsAccessDelegate* const first_party_sets_access_delegate,
-    const CookieSettings* cookie_settings)
+    FirstPartySetsAccessDelegate* const first_party_sets_manager,
+    const CookieSettings* cookie_settings,
+    const CookieManager* cookie_manager)
     : type_(type),
       cookie_settings_(cookie_settings),
-      first_party_sets_access_delegate_(first_party_sets_access_delegate) {
+      first_party_sets_access_delegate_(first_party_sets_manager),
+      cookie_manager_(cookie_manager) {
   if (type == mojom::CookieAccessDelegateType::USE_CONTENT_SETTINGS) {
     DCHECK(cookie_settings);
   }
@@ -58,6 +61,16 @@ bool CookieAccessDelegateImpl::ShouldIgnoreSameSiteRestrictions(
                                                               site_for_cookies);
   }
   return false;
+}
+
+void CookieAccessDelegateImpl::AllowedByFilter(
+    const GURL& url,
+    const net::SiteForCookies& site_for_cookies,
+    base::OnceCallback<void(bool)> callback) const {
+  if (cookie_manager_)
+    cookie_manager_->AllowedByFilter(url, site_for_cookies, std::move(callback));
+  else
+    std::move(callback).Run(true);
 }
 
 absl::optional<net::FirstPartySetMetadata>
