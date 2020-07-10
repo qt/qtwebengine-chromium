@@ -74,11 +74,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
       mojo::PendingRemote<mojom::CookieChangeListener> listener) override;
   void CloneInterface(
       mojo::PendingReceiver<mojom::CookieManager> new_interface) override;
+  void SetRemoteFilter(
+      mojo::PendingRemote<mojom::CookieRemoteAccessFilter> filter) override;
 
   size_t GetClientsBoundForTesting() const { return receivers_.size(); }
   size_t GetListenersRegisteredForTesting() const {
     return listener_registrations_.size();
   }
+
+  void AllowedByFilter(const GURL& url, const net::SiteForCookies& site_for_cookies, base::OnceCallback<void(bool)> callback) const;
 
   void FlushCookieStore(FlushCookieStoreCallback callback) override;
   void AllowFileSchemeCookies(bool allow,
@@ -126,6 +130,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieManager
   scoped_refptr<SessionCleanupCookieStore> session_cleanup_cookie_store_;
   mojo::ReceiverSet<mojom::CookieManager> receivers_;
   std::vector<std::unique_ptr<ListenerRegistration>> listener_registrations_;
+  mojo::Remote<mojom::CookieRemoteAccessFilter> filter_;
   // Note: RestrictedCookieManager and CookieAccessDelegate store pointers to
   // |cookie_settings_|.
   CookieSettings cookie_settings_;

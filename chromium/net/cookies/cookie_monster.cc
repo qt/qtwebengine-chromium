@@ -370,9 +370,64 @@ void CookieMonster::SetAllCookiesAsync(const CookieList& list,
       std::move(callback)));
 }
 
-void CookieMonster::SetCanonicalCookieAsync(
+void CookieMonster::SetCanonicalCookieAsyncAndFiltered(
+    const GURL& url,
+    const SiteForCookies& site_for_cookies,
     std::unique_ptr<CanonicalCookie> cookie,
-    const GURL& source_url,
+    const CookieOptions& options,
+    SetCookiesCallback callback) {
+  if (cookie_access_delegate())
+    return cookie_access_delegate()->AllowedByFilter(url, site_for_cookies,
+        base::BindOnce(&CookieMonster::SetCanonicalCookieAsyncAndFiltered_helper,
+                       base::Unretained(this), std::move(cookie), url,
+                       options, std::move(callback)));
+  else
+    SetCanonicalCookieAsync(std::move(cookie), url, options, std::move(callback));
+}
+
+void CookieMonster::SetCanonicalCookieAsyncAndFiltered_helper(
+    std::unique_ptr<CanonicalCookie> cookie,
+    const GURL& url,
+    const CookieOptions& options,
+    SetCookiesCallback callback,
+    bool allowed) {
+  if (allowed)
+    return SetCanonicalCookieAsync(std::move(cookie), url, options, std::move(callback));
+  else
+    std::move(callback).Run(
+        CookieAccessResult(
+            CookieEffectiveSameSite::STRICT_MODE,
+            CookieInclusionStatus(
+                CookieInclusionStatus::EXCLUDE_USER_PREFERENCES),
+            CookieAccessSemantics::NONLEGACY));
+}
+
+void CookieMonster::GetCookieListWithOptionsAsyncAndFiltered(
+    const GURL& url,
+    const SiteForCookies& site_for_cookies,
+    const CookieOptions& options,
+    GetCookieListCallback callback) {
+  if (cookie_access_delegate())
+    return cookie_access_delegate()->AllowedByFilter(url, site_for_cookies,
+        base::BindOnce(&CookieMonster::GetCookieListWithOptionsAsyncAndFiltered_helper,
+                       base::Unretained(this), url, options, std::move(callback)));
+  else
+    GetCookieListWithOptionsAsync(url, options, std::move(callback));
+}
+
+void CookieMonster::GetCookieListWithOptionsAsyncAndFiltered_helper(
+    const GURL& url,
+    const CookieOptions& options,
+    GetCookieListCallback callback,
+    bool allowed) {
+  if (allowed)
+    GetCookieListWithOptionsAsync(url, options, std::move(callback));
+  else
+    std::move(callback).Run(CookieAccessResultList(), CookieAccessResultList());
+}
+
+void CookieMonster::SetCanonicalCookieAsync(std::unique_ptr<CanonicalCookie> cookie,
+    const GURL &source_url,
     const CookieOptions& options,
     SetCookiesCallback callback) {
   DCHECK(cookie->IsCanonical());
