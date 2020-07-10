@@ -5,6 +5,7 @@
 #ifndef NET_COOKIES_COOKIE_ACCESS_DELEGATE_H_
 #define NET_COOKIES_COOKIE_ACCESS_DELEGATE_H_
 
+#include "base/callback_forward.h"
 #include "net/base/net_export.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
@@ -29,6 +30,11 @@ class NET_EXPORT CookieAccessDelegate {
   virtual bool ShouldIgnoreSameSiteRestrictions(
       const GURL& url,
       const SiteForCookies& site_for_cookies) const = 0;
+
+  virtual void AllowedByFilter(
+      const GURL& url,
+      const SiteForCookies& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CookieAccessDelegate);
