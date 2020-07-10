@@ -58,6 +58,11 @@ class NET_EXPORT CookieAccessDelegate {
       const SiteForCookies& site_for_cookies,
       const url::Origin& top_level_origin) const = 0;
 
+  virtual void AllowedByFilter(
+      const GURL& url,
+      const SiteForCookies& site_for_cookies,
+      base::OnceCallback<void(bool)> callback) const = 0;
+
   // Returns First-Party Sets metadata about `site` and `top_frame_site`, and
   // cache filter info for `site`. Cache filter info is used to determine if the
   // existing HTTP cache entries for `site` are allowed to be accessed.
