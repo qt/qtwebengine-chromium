@@ -723,6 +723,8 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Returns a weak ptr to the web contents delegate.
   virtual base::WeakPtr<WebContentsDelegate> GetDelegateWeakPtr();
 
+  virtual bool ShouldNavigateOnBackForwardMouseButtons();
+
  protected:
   virtual ~WebContentsDelegate();
 

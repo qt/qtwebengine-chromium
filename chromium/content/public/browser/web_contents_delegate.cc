@@ -351,4 +351,9 @@ base::WeakPtr<WebContentsDelegate> WebContentsDelegate::GetDelegateWeakPtr() {
   return nullptr;
 }
 
+bool WebContentsDelegate::ShouldNavigateOnBackForwardMouseButtons()
+{
+  return true;
+}
+
 }  // namespace content
