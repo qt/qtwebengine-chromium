@@ -2326,6 +2326,8 @@ bool WebContentsImpl::HandleMouseEvent(const blink::WebMouseEvent& event) {
   // process is done with the event. This ensures all renderer-initiated history
   // navigations can be treated consistently.
   if (event.GetType() == blink::WebInputEvent::Type::kMouseUp) {
+    if (delegate_ && !delegate_->ShouldNavigateOnBackForwardMouseButtons())
+      return false;
     WebContentsImpl* outermost = GetOutermostWebContents();
     if (event.button == blink::WebPointerProperties::Button::kBack &&
         outermost->controller_.CanGoBack()) {

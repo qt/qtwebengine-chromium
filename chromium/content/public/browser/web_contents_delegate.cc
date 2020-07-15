@@ -344,4 +344,9 @@ bool WebContentsDelegate::IsFrameLowPriority(
   return false;
 }
 
+bool WebContentsDelegate::ShouldNavigateOnBackForwardMouseButtons()
+{
+  return true;
+}
+
 }  // namespace content

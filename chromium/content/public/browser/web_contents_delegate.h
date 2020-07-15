@@ -672,6 +672,8 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual bool IsFrameLowPriority(const WebContents* web_contents,
                                   const RenderFrameHost* render_frame_host);
 
+  virtual bool ShouldNavigateOnBackForwardMouseButtons();
+
  protected:
   virtual ~WebContentsDelegate();
 
