@@ -348,7 +348,7 @@ FidoCableDiscovery::CreateHandshakeHandler(
       return base::nullopt;
   }
 
-  return handler;
+  return base::make_optional<std::unique_ptr<FidoCableHandshakeHandler> >(std::move(handler));
 }
 
 void FidoCableDiscovery::DeviceAdded(BluetoothAdapter* adapter,
