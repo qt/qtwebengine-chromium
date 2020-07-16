@@ -243,8 +243,14 @@ RenderFrameDevToolsAgentHost::RenderFrameDevToolsAgentHost(
     : DevToolsAgentHostImpl(frame_tree_node->devtools_frame_token().ToString()),
       frame_tree_node_(nullptr) {
   SetFrameTreeNode(frame_tree_node);
-  frame_host_ = frame_host;
+  ChangeFrameHostAndObservedProcess(frame_host);
   render_frame_alive_ = frame_host_ && frame_host_->IsRenderFrameLive();
+  if (frame_tree_node->parent()) {
+    render_frame_crashed_ = !render_frame_alive_;
+  } else {
+    WebContents* web_contents = WebContents::FromRenderFrameHost(frame_host);
+    render_frame_crashed_ = web_contents && web_contents->IsCrashed();
+  }
   AddRef();  // Balanced in DestroyOnRenderFrameGone.
   NotifyCreated();
 }
@@ -283,9 +289,12 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   protocol::EmulationHandler* emulation_handler_ptr = emulation_handler.get();
 
   session->AddHandler(std::make_unique<protocol::BackgroundServiceHandler>());
-  session->AddHandler(std::make_unique<protocol::BrowserHandler>());
+  auto browser_handler = std::make_unique<protocol::BrowserHandler>(
+      session->GetClient()->MayWriteLocalFiles());
+  auto* browser_handler_ptr = browser_handler.get();
+  session->AddHandler(std::move(browser_handler));
   session->AddHandler(std::make_unique<protocol::DOMHandler>(
-      session->client()->MayReadLocalFiles()));
+      session->GetClient()->MayReadLocalFiles()));
   session->AddHandler(std::move(emulation_handler));
   auto input_handler = std::make_unique<protocol::InputHandler>();
   input_handler->OnPageScaleFactorChanged(page_scale_factor_);
@@ -312,16 +321,18 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
                           },
                           base::Unretained(this))));
   session->AddHandler(std::make_unique<protocol::SchemaHandler>());
-  session->AddHandler(std::make_unique<protocol::ServiceWorkerHandler>());
+  const bool may_attach_to_brower = session->GetClient()->MayAttachToBrowser();
+  session->AddHandler(std::make_unique<protocol::ServiceWorkerHandler>(
+      /* allow_inspect_worker= */ may_attach_to_brower));
   session->AddHandler(std::make_unique<protocol::StorageHandler>());
   session->AddHandler(std::make_unique<protocol::TargetHandler>(
-      session->client()->MayAttachToBrowser()
+      may_attach_to_brower
           ? protocol::TargetHandler::AccessMode::kRegular
           : protocol::TargetHandler::AccessMode::kAutoAttachOnly,
       GetId(), GetRendererChannel(), session->GetRootSession()));
   session->AddHandler(std::make_unique<protocol::PageHandler>(
-      emulation_handler_ptr, session->client()->MayWriteLocalFiles(),
-      session->client()->MayReadLocalFiles()));
+      emulation_handler_ptr, browser_handler_ptr,
+      session->GetClient()->MayReadLocalFiles()));
   session->AddHandler(std::make_unique<protocol::SecurityHandler>());
   if (!frame_tree_node_ || !frame_tree_node_->parent()) {
     session->AddHandler(std::make_unique<protocol::TracingHandler>(
@@ -383,6 +394,7 @@ void RenderFrameDevToolsAgentHost::InspectElement(RenderFrameHost* frame_host,
 
 RenderFrameDevToolsAgentHost::~RenderFrameDevToolsAgentHost() {
   SetFrameTreeNode(nullptr);
+  ChangeFrameHostAndObservedProcess(nullptr);
 }
 
 void RenderFrameDevToolsAgentHost::ReadyToCommitNavigation(
@@ -440,12 +452,8 @@ void RenderFrameDevToolsAgentHost::DidFinishNavigation(
 void RenderFrameDevToolsAgentHost::UpdateFrameHost(
     RenderFrameHostImpl* frame_host) {
   if (frame_host == frame_host_) {
-    if (frame_host && !render_frame_alive_) {
-      render_frame_alive_ = true;
-      for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
-        inspector->TargetReloadedAfterCrash();
-      UpdateRendererChannel(IsAttached());
-    }
+    if (frame_host && !render_frame_alive_)
+      UpdateFrameAlive();
     return;
   }
 
@@ -456,7 +464,7 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
   }
 
   RenderFrameHostImpl* old_host = frame_host_;
-  frame_host_ = frame_host;
+  ChangeFrameHostAndObservedProcess(frame_host);
   if (IsAttached())
     UpdateRawHeadersAccess(old_host, frame_host);
 
@@ -468,13 +476,7 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
   if (!restricted_sessions.empty())
     ForceDetachRestrictedSessions(restricted_sessions);
 
-  if (!render_frame_alive_) {
-    render_frame_alive_ = true;
-    for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
-      inspector->TargetReloadedAfterCrash();
-  }
-
-  UpdateRendererChannel(IsAttached());
+  UpdateFrameAlive();
 }
 
 void RenderFrameDevToolsAgentHost::DidStartNavigation(
@@ -523,7 +525,7 @@ void RenderFrameDevToolsAgentHost::DestroyOnRenderFrameGone() {
     ForceDetachAllSessions();
     UpdateRawHeadersAccess(frame_host_, nullptr);
   }
-  frame_host_ = nullptr;
+  ChangeFrameHostAndObservedProcess(nullptr);
   UpdateRendererChannel(IsAttached());
   SetFrameTreeNode(nullptr);
   Release();
@@ -548,9 +550,29 @@ device::mojom::WakeLock* RenderFrameDevToolsAgentHost::GetWakeLock() {
 }
 #endif
 
-void RenderFrameDevToolsAgentHost::RenderProcessGone(
-    base::TerminationStatus status) {
-  switch (status) {
+void RenderFrameDevToolsAgentHost::ChangeFrameHostAndObservedProcess(
+    RenderFrameHostImpl* frame_host) {
+  if (frame_host_)
+    frame_host_->GetProcess()->RemoveObserver(this);
+  frame_host_ = frame_host;
+  if (frame_host_)
+    frame_host_->GetProcess()->AddObserver(this);
+}
+
+void RenderFrameDevToolsAgentHost::UpdateFrameAlive() {
+  render_frame_alive_ = frame_host_ && frame_host_->IsRenderFrameLive();
+  if (render_frame_alive_ && render_frame_crashed_) {
+    render_frame_crashed_ = false;
+    for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
+      inspector->TargetReloadedAfterCrash();
+  }
+  UpdateRendererChannel(IsAttached());
+}
+
+void RenderFrameDevToolsAgentHost::RenderProcessExited(
+    RenderProcessHost* host,
+    const ChildProcessTerminationInfo& info) {
+  switch (info.status) {
     case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
 #if defined(OS_CHROMEOS)
@@ -563,7 +585,8 @@ void RenderFrameDevToolsAgentHost::RenderProcessGone(
     case base::TERMINATION_STATUS_LAUNCH_FAILED:
       for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
         inspector->TargetCrashed();
-      NotifyCrashed(status);
+      NotifyCrashed(info.status);
+      render_frame_crashed_ = true;
       break;
     default:
       for (auto* inspector : protocol::InspectorHandler::ForAgentHost(this))
@@ -608,7 +631,7 @@ void RenderFrameDevToolsAgentHost::OnNavigationRequestWillBeSent(
   std::vector<DevToolsSession*> restricted_sessions;
   bool is_webui = frame_host_ && frame_host_->web_ui();
   for (DevToolsSession* session : sessions()) {
-    if (!session->client()->MayAttachToURL(url, is_webui))
+    if (!session->GetClient()->MayAttachToURL(url, is_webui))
       restricted_sessions.push_back(session);
   }
   if (!restricted_sessions.empty())
@@ -815,7 +838,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
     return false;
   }
   // Note this may be called before navigation is committed.
-  return session->client()->MayAttachToURL(
+  return session->GetClient()->MayAttachToURL(
       frame_host_->GetSiteInstance()->GetSiteURL(), frame_host_->web_ui());
 }
 

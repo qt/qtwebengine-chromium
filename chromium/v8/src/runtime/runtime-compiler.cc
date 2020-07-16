@@ -142,6 +142,7 @@ RUNTIME_FUNCTION(Runtime_InstantiateAsmJs) {
   DCHECK(function->code() ==
          isolate->builtins()->builtin(Builtins::kInstantiateAsmJs));
   function->set_code(isolate->builtins()->builtin(Builtins::kCompileLazy));
+  DCHECK(!isolate->has_pending_exception());
   return Smi::zero();
 }
 
@@ -188,6 +189,12 @@ static bool IsSuitableForOnStackReplacement(Isolate* isolate,
                                             Handle<JSFunction> function) {
   // Keep track of whether we've succeeded in optimizing.
   if (function->shared().optimization_disabled()) return false;
+  // TODO(chromium:1031479): Currently, OSR triggering mechanism is tied to the
+  // bytecode array. So, it might be possible to mark closure in one native
+  // context and optimize a closure from a different native context. So check if
+  // there is a feedback vector before OSRing. We don't expect this to happen
+  // often.
+  if (!function->has_feedback_vector()) return false;
   // If we are trying to do OSR when there are already optimized
   // activations of the function, it means (a) the function is directly or
   // indirectly recursive and (b) an optimized invocation has been
@@ -246,9 +253,10 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
   Handle<JSFunction> function(frame->function(), isolate);
   if (IsSuitableForOnStackReplacement(isolate, function)) {
     if (FLAG_trace_osr) {
-      PrintF("[OSR - Compiling: ");
-      function->PrintName();
-      PrintF(" at AST id %d]\n", ast_id.ToInt());
+      CodeTracer::Scope scope(isolate->GetCodeTracer());
+      PrintF(scope.file(), "[OSR - Compiling: ");
+      function->PrintName(scope.file());
+      PrintF(scope.file(), " at AST id %d]\n", ast_id.ToInt());
     }
     maybe_result = Compiler::GetOptimizedCodeForOSR(function, ast_id, frame);
   }
@@ -263,7 +271,9 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
     if (data.OsrPcOffset().value() >= 0) {
       DCHECK(BailoutId(data.OsrBytecodeOffset().value()) == ast_id);
       if (FLAG_trace_osr) {
-        PrintF("[OSR - Entry at AST id %d, offset %d in optimized code]\n",
+        CodeTracer::Scope scope(isolate->GetCodeTracer());
+        PrintF(scope.file(),
+               "[OSR - Entry at AST id %d, offset %d in optimized code]\n",
                ast_id.ToInt(), data.OsrPcOffset().value());
       }
 
@@ -292,9 +302,10 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
         // the next call, otherwise we'd run unoptimized once more and
         // potentially compile for OSR again.
         if (FLAG_trace_osr) {
-          PrintF("[OSR - Re-marking ");
-          function->PrintName();
-          PrintF(" for non-concurrent optimization]\n");
+          CodeTracer::Scope scope(isolate->GetCodeTracer());
+          PrintF(scope.file(), "[OSR - Re-marking ");
+          function->PrintName(scope.file());
+          PrintF(scope.file(), " for non-concurrent optimization]\n");
         }
         function->SetOptimizationMarker(OptimizationMarker::kCompileOptimized);
       }
@@ -304,9 +315,10 @@ RUNTIME_FUNCTION(Runtime_CompileForOnStackReplacement) {
 
   // Failed.
   if (FLAG_trace_osr) {
-    PrintF("[OSR - Failed: ");
-    function->PrintName();
-    PrintF(" at AST id %d]\n", ast_id.ToInt());
+    CodeTracer::Scope scope(isolate->GetCodeTracer());
+    PrintF(scope.file(), "[OSR - Failed: ");
+    function->PrintName(scope.file());
+    PrintF(scope.file(), " at AST id %d]\n", ast_id.ToInt());
   }
 
   if (!function->IsOptimized()) {
