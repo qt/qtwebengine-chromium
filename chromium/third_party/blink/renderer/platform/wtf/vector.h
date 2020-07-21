@@ -205,30 +205,25 @@ struct VectorMover<true, T, Allocator> {
     }
   }
 
-  template <bool = Allocator::kIsGarbageCollected>
-  static void MoveOverlappingImpl(const T* src, const T* src_end, T* dst);
-  template <>
-  static void MoveOverlappingImpl<false>(const T* src,
-                                         const T* src_end,
-                                         T* dst) {
-    memmove(dst, src,
-            reinterpret_cast<const char*>(src_end) -
-                reinterpret_cast<const char*>(src));
-  }
-  template <>
-  static void MoveOverlappingImpl<true>(const T* src,
-                                        const T* src_end,
-                                        T* dst) {
-    if (src == dst)
-      return;
-    if (dst < src) {
-      for (; src < src_end; ++src, ++dst)
-        AtomicWriteMemcpy<sizeof(T)>(dst, src);
+  template <bool B = Allocator::kIsGarbageCollected>
+  static void MoveOverlappingImpl(const T* src, const T* src_end, T* dst)
+  {
+    if (B) {
+      memmove(dst, src,
+              reinterpret_cast<const char*>(src_end) -
+              reinterpret_cast<const char*>(src));
     } else {
-      --src_end;
-      T* dst_end = dst + (src_end - src);
-      for (; src_end >= src; --src_end, --dst_end)
-        AtomicWriteMemcpy<sizeof(T)>(dst_end, src_end);
+      if (src == dst)
+        return;
+      if (dst < src) {
+        for (; src < src_end; ++src, ++dst)
+          AtomicWriteMemcpy<sizeof(T)>(dst, src);
+      } else {
+        --src_end;
+        T* dst_end = dst + (src_end - src);
+        for (; src_end >= src; --src_end, --dst_end)
+          AtomicWriteMemcpy<sizeof(T)>(dst_end, src_end);
+      }
     }
   }
 

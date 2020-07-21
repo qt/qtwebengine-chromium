@@ -1762,7 +1762,9 @@ bool RenderProcessHostImpl::Init() {
   // Call the embedder first so that their IPC filters have priority.
   GetContentClient()->browser()->RenderProcessWillLaunch(this);
 
+#ifndef TOOLKIT_QT
   FieldTrialSynchronizer::UpdateRendererVariationsHeader(this);
+#endif
 
 #if defined(OS_ANDROID)
   // Initialize the java audio manager so that media session tests will pass.

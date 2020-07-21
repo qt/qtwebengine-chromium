@@ -14,6 +14,8 @@
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
+#include <iterator>
+
 namespace blink {
 
 class NGContainerFragmentBuilder;
@@ -31,7 +33,7 @@ class CORE_EXPORT NGPhysicalContainerFragment : public NGPhysicalFragment {
     PostLayoutChildLinkList(wtf_size_t count, const NGLink* buffer)
         : count_(count), buffer_(buffer) {}
 
-    class ConstIterator {
+    class ConstIterator : public std::iterator<std::input_iterator_tag, const NGLink> {
       STACK_ALLOCATED();
 
      public:

@@ -672,8 +672,9 @@ struct HashTableHelper {
     const Key& key = Extractor::Extract(value);
     return IsEmptyBucket(key) || IsDeletedBucket(key);
   }
+  static constexpr size_t constexpr_max(size_t a, size_t b) { return a > b ? a : b; }
   static bool IsEmptyOrDeletedBucketSafe(const Value& value) {
-    alignas(std::max(alignof(Key), sizeof(size_t))) char buf[sizeof(Key)];
+    alignas(constexpr_max(alignof(Key), sizeof(size_t))) char buf[sizeof(Key)];
     const Key& key = Extractor::ExtractSafe(value, &buf);
     return IsEmptyBucket(key) || IsDeletedBucket(key);
   }

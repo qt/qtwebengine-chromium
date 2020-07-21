@@ -64,8 +64,8 @@ class CrossVariantMojoReceiver {
   CrossVariantMojoReceiver() = default;
   ~CrossVariantMojoReceiver() = default;
 
-  CrossVariantMojoReceiver(CrossVariantMojoReceiver&&) noexcept = default;
-  CrossVariantMojoReceiver& operator=(CrossVariantMojoReceiver&&) noexcept =
+  CrossVariantMojoReceiver(CrossVariantMojoReceiver&&) = default;
+  CrossVariantMojoReceiver& operator=(CrossVariantMojoReceiver&&) =
       default;
 
   CrossVariantMojoReceiver(const CrossVariantMojoReceiver&) = delete;
@@ -91,8 +91,8 @@ class CrossVariantMojoRemote {
   CrossVariantMojoRemote() = default;
   ~CrossVariantMojoRemote() = default;
 
-  CrossVariantMojoRemote(CrossVariantMojoRemote&&) noexcept = default;
-  CrossVariantMojoRemote& operator=(CrossVariantMojoRemote&&) noexcept =
+  CrossVariantMojoRemote(CrossVariantMojoRemote&&) = default;
+  CrossVariantMojoRemote& operator=(CrossVariantMojoRemote&&) =
       default;
 
   CrossVariantMojoRemote(const CrossVariantMojoRemote&) = delete;
@@ -124,9 +124,9 @@ class CrossVariantMojoAssociatedReceiver {
   ~CrossVariantMojoAssociatedReceiver() = default;
 
   CrossVariantMojoAssociatedReceiver(
-      CrossVariantMojoAssociatedReceiver&&) noexcept = default;
+      CrossVariantMojoAssociatedReceiver&&) = default;
   CrossVariantMojoAssociatedReceiver& operator=(
-      CrossVariantMojoAssociatedReceiver&&) noexcept = default;
+      CrossVariantMojoAssociatedReceiver&&) = default;
 
   CrossVariantMojoAssociatedReceiver(
       const CrossVariantMojoAssociatedReceiver&) = delete;
@@ -155,9 +155,9 @@ class CrossVariantMojoAssociatedRemote {
   ~CrossVariantMojoAssociatedRemote() = default;
 
   CrossVariantMojoAssociatedRemote(
-      CrossVariantMojoAssociatedRemote&&) noexcept = default;
+      CrossVariantMojoAssociatedRemote&&) = default;
   CrossVariantMojoAssociatedRemote& operator=(
-      CrossVariantMojoAssociatedRemote&&) noexcept = default;
+      CrossVariantMojoAssociatedRemote&&) = default;
 
   CrossVariantMojoAssociatedRemote(const CrossVariantMojoAssociatedRemote&) =
       delete;

@@ -6,7 +6,11 @@
 
 // clang-format off
 #include <hb.h>
+
+#if defined(HAVE_HB_SUBSET_H)
 #include <hb-subset.h>
+#include "third_party/harfbuzz-ng/utils/hb_scoped.h"
+#endif
 // clang-format on
 
 #include <memory>
@@ -14,7 +18,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "third_party/harfbuzz-ng/utils/hb_scoped.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 

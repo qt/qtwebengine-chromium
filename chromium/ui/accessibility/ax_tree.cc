@@ -567,15 +567,6 @@ struct AXTreeUpdateState {
   const AXTree& tree;
 };
 
-struct AXTree::NodeSetSizePosInSetInfo {
-  NodeSetSizePosInSetInfo() = default;
-  ~NodeSetSizePosInSetInfo() = default;
-
-  int32_t pos_in_set = 0;
-  int32_t set_size = 0;
-  base::Optional<int> lowest_hierarchical_level;
-};
-
 struct AXTree::OrderedSetContent {
   explicit OrderedSetContent(const AXNode* ordered_set = nullptr)
       : ordered_set_(ordered_set) {}

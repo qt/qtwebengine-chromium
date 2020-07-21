@@ -26,6 +26,25 @@ class WebContents;
 class WebUIController;
 class WebUIMessageHandler;
 
+template <typename T>
+static T WebUIGetValue(const base::Value& value);
+
+template <>
+inline bool WebUIGetValue<bool>(const base::Value& value) {
+  return value.GetBool();
+}
+
+template <>
+inline int WebUIGetValue<int>(const base::Value& value) {
+  return value.GetInt();
+}
+
+template <>
+inline const std::string& WebUIGetValue<const std::string&>(
+    const base::Value& value) {
+  return value.GetString();
+}
+
 // A WebUI sets up the datasources and message handlers for a given HTML-based
 // UI.
 class CONTENT_EXPORT WebUI {
@@ -135,24 +154,6 @@ class CONTENT_EXPORT WebUI {
   GetHandlersForTesting() = 0;
 
  private:
-  template <typename T>
-  static T GetValue(const base::Value& value);
-
-  template <>
-  inline bool GetValue<bool>(const base::Value& value) {
-    return value.GetBool();
-  }
-
-  template <>
-  inline int GetValue<int>(const base::Value& value) {
-    return value.GetInt();
-  }
-
-  template <>
-  inline const std::string& GetValue<const std::string&>(
-      const base::Value& value) {
-    return value.GetString();
-  }
 
   template <typename Is, typename... Args>
   struct Call;
@@ -164,7 +165,7 @@ class CONTENT_EXPORT WebUI {
                      const base::ListValue* list) {
       base::span<const base::Value> args = list->GetList();
       CHECK_EQ(args.size(), sizeof...(Args)) << message;
-      callback.Run(GetValue<Args>(args[Is])...);
+      callback.Run(WebUIGetValue<Args>(args[Is])...);
     }
   };
 };

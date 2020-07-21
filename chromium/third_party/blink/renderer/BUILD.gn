@@ -42,6 +42,16 @@ config("inside_blink") {
   ]
   if (is_clang || !is_win) {
     cflags += [
+      "-Wno-unused-variable",
+    ]
+  } else {
+    cflags += [
+      "/wd4101",
+      "/wd4805",
+    ]
+  }
+  if (is_clang) {
+    cflags += [
       "-Wconversion",
       "-Wno-float-conversion",
       "-Wno-sign-conversion",
@@ -52,11 +62,6 @@ config("inside_blink") {
     if (!is_chromeos || default_toolchain != "//build/toolchain/cros:target") {
       cflags += [ "-Wno-enum-float-conversion" ]
     }
-  } else {
-    cflags += [
-      "/wd4101",
-      "/wd4805",
-    ]
   }
 }
 

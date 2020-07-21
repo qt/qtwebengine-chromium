@@ -19,6 +19,7 @@
 #include "media/learning/common/target_histogram.h"
 #include "media/learning/mojo/public/mojom/learning_task_controller.mojom-blink.h"
 #include "media/media_buildflags.h"
+#include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
 #include "media/mojo/mojom/media_types.mojom-blink.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"

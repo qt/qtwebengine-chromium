@@ -23,8 +23,8 @@ namespace WTF {
 
 void AtomicReadMemcpy(void* to, const void* from, size_t bytes) {
   // Check alignment of |to| and |from|
-  DCHECK_EQ(0u, reinterpret_cast<size_t>(to) & (sizeof(size_t) - 1));
-  DCHECK_EQ(0u, reinterpret_cast<size_t>(from) & (sizeof(size_t) - 1));
+//  DCHECK_EQ(0u, reinterpret_cast<size_t>(to) & (sizeof(size_t) - 1));
+//  DCHECK_EQ(0u, reinterpret_cast<size_t>(from) & (sizeof(size_t) - 1));
   size_t* sizet_to = reinterpret_cast<size_t*>(to);
   const size_t* sizet_from = reinterpret_cast<const size_t*>(from);
   for (; bytes > sizeof(size_t);
@@ -41,8 +41,8 @@ void AtomicReadMemcpy(void* to, const void* from, size_t bytes) {
 
 void AtomicWriteMemcpy(void* to, const void* from, size_t bytes) {
   // Check alignment of |to| and |from|
-  DCHECK_EQ(0u, reinterpret_cast<size_t>(to) & (sizeof(size_t) - 1));
-  DCHECK_EQ(0u, reinterpret_cast<size_t>(from) & (sizeof(size_t) - 1));
+//  DCHECK_EQ(0u, reinterpret_cast<size_t>(to) & (sizeof(size_t) - 1));
+//  DCHECK_EQ(0u, reinterpret_cast<size_t>(from) & (sizeof(size_t) - 1));
   size_t* sizet_to = reinterpret_cast<size_t*>(to);
   const size_t* sizet_from = reinterpret_cast<const size_t*>(from);
   for (; bytes > sizeof(size_t);
