@@ -129,11 +129,9 @@ void WebSharedWorkerImpl::Connect(MessagePortChannel web_channel) {
   DCHECK(IsMainThread());
   if (asked_to_terminate_)
     return;
-  // The HTML spec requires to queue a connect event using the DOM manipulation
-  // task source.
-  // https://html.spec.whatwg.org/C/#shared-workers-and-the-sharedworker-interface
+
   PostCrossThreadTask(
-      *GetWorkerThread()->GetTaskRunner(TaskType::kDOMManipulation), FROM_HERE,
+      *task_runner_for_connect_event_, FROM_HERE,
       CrossThreadBindOnce(&WebSharedWorkerImpl::ConnectTaskOnWorkerThread,
                           WTF::CrossThreadUnretained(this),
                           WTF::Passed(std::move(web_channel))));
@@ -247,6 +245,18 @@ void WebSharedWorkerImpl::StartWorkerContext(
 
   GetWorkerThread()->Start(std::move(creation_params), thread_startup_data,
                            std::move(devtools_params));
+
+  // Capture the task runner for dispatching connect events. This is necessary
+  // for avoiding race condition with WorkerScheduler termination induced by
+  // close() call on SharedWorkerGlobalScope. See https://crbug.com/1104046 for
+  // details.
+  //
+  // The HTML spec requires to queue a connect event using the DOM manipulation
+  // task source.
+  // https://html.spec.whatwg.org/C/#shared-workers-and-the-sharedworker-interface
+  task_runner_for_connect_event_ =
+      GetWorkerThread()->GetTaskRunner(TaskType::kDOMManipulation);
+
   GetWorkerThread()->FetchAndRunClassicScript(
       script_request_url, outside_settings_object->CopyData(),
       nullptr /* outside_resource_timing_notifier */,
