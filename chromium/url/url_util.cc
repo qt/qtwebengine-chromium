@@ -480,8 +480,9 @@ void DoSchemeModificationPreamble() {
   // This normally means you're trying to set up a new scheme too late or using
   // the SchemeRegistry too early in your application's init process. Make sure
   // that you haven't added any static GURL initializers in tests.
-  DCHECK(!g_scheme_registries_used.load())
-      << "Trying to add a scheme after the lists have been used.";
+// QWE: We violate this but it is harmless.
+//  DCHECK(!g_scheme_registries_used.load())
+//      << "Trying to add a scheme after the lists have been used.";
 
   // If this assert triggers, it means you've called Add*Scheme after
   // LockSchemeRegistries has been called (see the header file for

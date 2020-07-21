@@ -63,8 +63,8 @@ class CrossVariantMojoReceiver {
   CrossVariantMojoReceiver() = default;
   ~CrossVariantMojoReceiver() = default;
 
-  CrossVariantMojoReceiver(CrossVariantMojoReceiver&&) noexcept = default;
-  CrossVariantMojoReceiver& operator=(CrossVariantMojoReceiver&&) noexcept =
+  CrossVariantMojoReceiver(CrossVariantMojoReceiver&&) = default;
+  CrossVariantMojoReceiver& operator=(CrossVariantMojoReceiver&&) =
       default;
 
   CrossVariantMojoReceiver(const CrossVariantMojoReceiver&) = delete;
@@ -94,8 +94,8 @@ class CrossVariantMojoRemote {
   CrossVariantMojoRemote() = default;
   ~CrossVariantMojoRemote() = default;
 
-  CrossVariantMojoRemote(CrossVariantMojoRemote&&) noexcept = default;
-  CrossVariantMojoRemote& operator=(CrossVariantMojoRemote&&) noexcept =
+  CrossVariantMojoRemote(CrossVariantMojoRemote&&) = default;
+  CrossVariantMojoRemote& operator=(CrossVariantMojoRemote&&) =
       default;
 
   CrossVariantMojoRemote(const CrossVariantMojoRemote&) = delete;

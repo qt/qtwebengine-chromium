@@ -22,6 +22,7 @@
 #include "media/learning/common/target_histogram.h"
 #include "media/learning/mojo/public/mojom/learning_task_controller.mojom-blink.h"
 #include "media/media_buildflags.h"
+#include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
 #include "media/mojo/mojom/media_types.mojom-blink.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "media/video/supported_video_decoder_config.h"

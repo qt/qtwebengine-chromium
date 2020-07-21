@@ -42,6 +42,10 @@
 #include "ui/gl/gl_visual_picker_glx.h"
 #endif
 
+#ifndef GL_RESET_NOTIFICATION_STRATEGY_ARB
+#define GL_RESET_NOTIFICATION_STRATEGY_ARB 0x8256
+#endif
+
 namespace {
 
 // From ANGLE's egl/eglext.h.

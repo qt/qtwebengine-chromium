@@ -206,7 +206,7 @@ group("gn_all") {
     ]
   }
 
-  if (is_win || (is_linux && !is_chromeos) || is_android) {
+  if ((is_win || (is_linux && !is_chromeos) || is_android) && !use_qt) {
     deps += [
       "//weblayer/shell:weblayer_shell",
       "//weblayer/test:weblayer_browsertests",
@@ -241,7 +241,7 @@ group("gn_all") {
       "//third_party/angle/src/tests:angle_white_box_tests",
       "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
     ]
-  } else if (is_ios) {
+  } else if (is_ios && !use_qt) {
     deps += [
       "//ios:all",
       "//third_party/crashpad/crashpad:crashpad_tests",

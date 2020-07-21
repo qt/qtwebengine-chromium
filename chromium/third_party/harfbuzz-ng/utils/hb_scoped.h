@@ -7,11 +7,14 @@
 
 // clang-format off
 #include <hb.h>
-#include <hb-subset.h>
+#if defined(HAVE_HB_SUBSET_H)
+  #include <hb-subset.h>
+#endif
 // clang-format on
 
 #include <memory>
 #include <type_traits>
+#include "base/logging.h"
 
 template <typename T>
 struct always_false : std::false_type {};
@@ -19,9 +22,9 @@ struct always_false : std::false_type {};
 template <class T>
 struct HbSpecializedDeleter {
   inline void operator()(T* obj) {
-    static_assert(always_false<T>::value,
+    NOTREACHED() <<
                   "HbScoped is only allowed for HarfBuzz types that have a "
-                  "deleter specialization.");
+                  "deleter specialization.";
   }
 };
 
@@ -52,9 +55,12 @@ using HbScoped = std::unique_ptr<T, HbSpecializedDeleter<T>>;
   F(hb_buffer_t, hb_buffer_destroy)        \
   F(hb_face_t, hb_face_destroy)            \
   F(hb_font_t, hb_font_destroy)            \
-  F(hb_set_t, hb_set_destroy)              \
-  F(hb_subset_input_t, hb_subset_input_destroy)
+  F(hb_set_t, hb_set_destroy)
 
 HB_TYPE_DESTRUCTOR_PAIRS_REPEAT(SPECIALIZED_DELETER_FOR_HARFBUZZ_TYPE)
+
+#if defined(HAVE_HB_SUBSET_H)
+SPECIALIZED_DELETER_FOR_HARFBUZZ_TYPE(hb_subset_input_t, hb_subset_input_destroy)
+#endif
 
 #endif  // THIRD_PARTY_HARFBUZZ_NG_UTILS_HB_SCOPED_H_
