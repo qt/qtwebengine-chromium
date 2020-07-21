@@ -139,6 +139,8 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
   // |client_| owns |this|.
   WebSharedWorkerClient* client_;
 
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_for_connect_event_;
+
   bool asked_to_terminate_ = false;
   bool pause_worker_context_on_start_ = false;
   bool is_paused_on_start_ = false;

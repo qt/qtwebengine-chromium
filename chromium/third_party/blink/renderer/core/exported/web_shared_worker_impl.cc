@@ -189,7 +189,7 @@ void WebSharedWorkerImpl::Connect(MessagePortChannel web_channel) {
   // task source.
   // https://html.spec.whatwg.org/multipage/workers.html#shared-workers-and-the-sharedworker-interface
   PostCrossThreadTask(
-      *GetWorkerThread()->GetTaskRunner(TaskType::kDOMManipulation), FROM_HERE,
+      *task_runner_for_connect_event_, FROM_HERE,
       CrossThreadBind(&WebSharedWorkerImpl::ConnectTaskOnWorkerThread,
                       WTF::CrossThreadUnretained(this),
                       WTF::Passed(std::move(web_channel))));
@@ -366,6 +366,18 @@ void WebSharedWorkerImpl::ContinueOnScriptLoaderFinished() {
       parent_execution_context_task_runners_);
   worker_inspector_proxy_->WorkerThreadCreated(document, GetWorkerThread(),
                                                url_);
+
+  // Capture the task runner for dispatching connect events. This is necessary
+  // for avoiding race condition with WorkerScheduler termination induced by
+  // close() call on SharedWorkerGlobalScope. See https://crbug.com/1104046 for
+  // details.
+  //
+  // The HTML spec requires to queue a connect event using the DOM manipulation
+  // task source.
+  // https://html.spec.whatwg.org/C/#shared-workers-and-the-sharedworker-interface
+  task_runner_for_connect_event_ =
+      GetWorkerThread()->GetTaskRunner(TaskType::kDOMManipulation);
+
   // TODO(nhiroki): Support module workers (https://crbug.com/680046).
   GetWorkerThread()->EvaluateClassicScript(url_, source_code,
                                            nullptr /* cached_meta_data */,
