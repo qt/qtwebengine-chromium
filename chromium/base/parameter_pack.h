@@ -86,6 +86,36 @@ struct ParameterPack {
       bool_constant<all_of({std::is_same<NthType<0>, Ts>::value...})>;
 };
 
+template <>
+struct ParameterPack<> {
+  // Checks if |Type| occurs in the parameter pack.
+  template <typename Type>
+  using HasType = bool_constant<false>;
+
+  // Checks if the parameter pack only contains |Type|.
+  template <typename Type>
+  using OnlyHasType = bool_constant<true>;
+
+  // Checks if |Type| occurs only once in the parameter pack.
+  template <typename Type>
+  using IsUniqueInPack = bool_constant<false>;
+
+  // Returns the zero-based index of |Type| within |Pack...| or |pack_npos| if
+  // it's not within the pack.
+  template <typename Type>
+  static constexpr size_t IndexInPack() {
+    return pack_npos;
+  }
+
+  // Helper for extracting the Nth type from a parameter pack.
+  template <size_t N>
+  using NthType = void;
+
+  // Checks if every type in the parameter pack is the same.
+  using IsAllSameType =
+      bool_constant<true>;
+};
+
 }  // namespace base
 
 #endif  // BASE_PARAMETER_PACK_H_

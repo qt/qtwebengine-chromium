@@ -301,12 +301,13 @@ class CORE_EXPORT SerializedScriptValue
   StreamArray& GetStreams() { return streams_; }
 
   bool IsLockedToAgentCluster() const {
-    return !wasm_modules_.IsEmpty() ||
-           !shared_array_buffers_contents_.IsEmpty() ||
-           std::any_of(attachments_.begin(), attachments_.end(),
-                       [](const auto& entry) {
-                         return entry.value->IsLockedToAgentCluster();
-                       });
+    if (!wasm_modules_.IsEmpty() || !shared_array_buffers_contents_.IsEmpty())
+      return true;
+    for (const auto& entry : attachments_) {
+      if (entry.value->IsLockedToAgentCluster())
+        return true;
+    }
+    return false;
   }
 
   // Returns true after serializing script values that remote origins cannot

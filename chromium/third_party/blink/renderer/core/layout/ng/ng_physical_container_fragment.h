@@ -16,6 +16,8 @@
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
+#include <iterator>
+
 namespace blink {
 
 class NGContainerFragmentBuilder;

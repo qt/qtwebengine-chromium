@@ -185,7 +185,7 @@ template("msvc_toolchain") {
       coverage_wrapper = ""
     }
 
-    if (toolchain_args.is_clang) {
+    if (toolchain_args.is_clang && false) {
       # This flag omits system includes from /showIncludes output, to reduce the
       # amount of data to parse and store in .ninja_deps. We do this on non-Windows too,
       # and already make sure rebuilds after win sdk / libc++ / clang header updates happen via
