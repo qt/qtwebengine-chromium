@@ -114,6 +114,8 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
   // |client_| owns |this|.
   WebSharedWorkerClient* client_;
 
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_for_connect_event_;
+
   bool asked_to_terminate_ = false;
 
   base::WeakPtrFactory<WebSharedWorkerImpl> weak_ptr_factory_{this};
