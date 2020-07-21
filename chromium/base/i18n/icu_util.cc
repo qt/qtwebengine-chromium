@@ -144,8 +144,7 @@ std::unique_ptr<PfRegion> OpenIcuDataFile(const std::string& filename,
 #endif  // defined(OS_ANDROID)
 #if defined(TOOLKIT_QT)
   FilePath data_path;
-  bool path_ok = PathService::Get(base::DIR_QT_LIBRARY_DATA, &data_path);
-  DCHECK(path_ok);
+  PathService::Get(base::DIR_QT_LIBRARY_DATA, &data_path);
   data_path = data_path.AppendASCII(kIcuDataFileName);
 #elif !defined(OS_APPLE)
   // For unit tests, data file is located on disk, so try there as a fallback.

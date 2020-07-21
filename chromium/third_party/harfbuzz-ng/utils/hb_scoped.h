@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <type_traits>
+#include "base/logging.h"
 
 template <typename T>
 struct always_false : std::false_type {};
@@ -19,9 +20,9 @@ struct always_false : std::false_type {};
 template <class T>
 struct HbSpecializedDeleter {
   inline void operator()(T* obj) {
-    static_assert(always_false<T>::value,
+    NOTREACHED() <<
                   "HbScoped is only allowed for HarfBuzz types that have a "
-                  "deleter specialization.");
+                  "deleter specialization.";
   }
 };
 

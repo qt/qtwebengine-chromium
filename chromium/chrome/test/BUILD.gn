@@ -2927,7 +2927,7 @@ if (!is_android) {
         ]
       }
     }
-    if (is_mac) {
+    if (is_mac && !use_qt) {
       deps += [ "//third_party/ocmock" ]
       data_deps += [
         "//chrome",

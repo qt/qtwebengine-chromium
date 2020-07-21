@@ -8656,6 +8656,7 @@ void WebContentsImpl::RemoveReceiverSet(const std::string& interface_name) {
 }
 
 bool WebContentsImpl::AddDomainInfoToRapporSample(rappor::Sample* sample) {
+#if !defined(TOOLKIT_QT)
   OPTIONAL_TRACE_EVENT0("content",
                         "WebContentsImpl::AddDomainInfoToRapporSample");
   // Here we associate this metric to the main frame URL regardless of what
@@ -8663,6 +8664,9 @@ bool WebContentsImpl::AddDomainInfoToRapporSample(rappor::Sample* sample) {
   sample->SetStringField("Domain", ::rappor::GetDomainAndRegistrySampleFromGURL(
                                        GetLastCommittedURL()));
   return true;
+#else
+  return false;
+#endif
 }
 
 void WebContentsImpl::ShowInsecureLocalhostWarningIfNeeded() {
