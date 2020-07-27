@@ -440,13 +440,13 @@ base::Optional<cbor::Value> RpEntityAsCBOR(
   }
 
   cbor::Value::MapValue rp_map;
-  rp_map.emplace(kEntityIdMapKey, rp.id);
+  rp_map.emplace(kEntityIdMapKey, cbor::Value(rp.id));
   if (rp.name) {
     rp_map.emplace(kEntityNameMapKey,
                    cbor::Value::InvalidUTF8StringValueForTesting(*rp.name));
   }
   if (rp.icon_url) {
-    rp_map.emplace(kIconUrlMapKey, rp.icon_url->spec());
+    rp_map.emplace(kIconUrlMapKey, cbor::Value(rp.icon_url->spec()));
   }
   return cbor::Value(std::move(rp_map));
 }
@@ -461,14 +461,14 @@ base::Optional<cbor::Value> UserEntityAsCBOR(
   }
 
   cbor::Value::MapValue user_map;
-  user_map.emplace(kEntityIdMapKey, user.id);
+  user_map.emplace(kEntityIdMapKey, cbor::Value(user.id));
   if (user.name) {
     user_map.emplace(kEntityNameMapKey,
                      cbor::Value::InvalidUTF8StringValueForTesting(*user.name));
   }
   // Empty icon URLs result in CTAP1_ERR_INVALID_LENGTH on some security keys.
   if (user.icon_url && !user.icon_url->is_empty()) {
-    user_map.emplace(kIconUrlMapKey, user.icon_url->spec());
+    user_map.emplace(kIconUrlMapKey, cbor::Value(user.icon_url->spec()));
   }
   if (user.display_name) {
     user_map.emplace(
@@ -494,7 +494,7 @@ std::vector<uint8_t> EncodeGetAssertionResponse(
   }
 
   response_map.emplace(2, response.auth_data().SerializeToByteArray());
-  response_map.emplace(3, response.signature());
+  response_map.emplace(3, cbor::Value(response.signature()));
 
   if (response.user_entity()) {
     response_map.emplace(
@@ -1722,8 +1722,8 @@ void VirtualCtap2Device::GetNextRP(cbor::Value::MapValue* response_map) {
                       config_.allow_invalid_utf8_in_credential_entities));
   response_map->emplace(
       static_cast<int>(CredentialManagementResponseKey::kRPIDHash),
-      fido_parsing_utils::CreateSHA256Hash(
-          mutable_state()->pending_rps.front().id));
+      cbor::Value(fido_parsing_utils::CreateSHA256Hash(
+          mutable_state()->pending_rps.front().id)));
   mutable_state()->pending_rps.pop_front();
 }
 

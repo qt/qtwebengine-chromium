@@ -53,7 +53,7 @@ std::vector<uint8_t> AuthenticatorGetInfoResponse::EncodeToCBOR(
   if (response.extensions)
     device_info_map.emplace(2, ToArrayValue(*response.extensions));
 
-  device_info_map.emplace(3, response.aaguid);
+  device_info_map.emplace(3, cbor::Value(response.aaguid));
   device_info_map.emplace(4, AsCBOR(response.options));
 
   if (response.max_msg_size) {

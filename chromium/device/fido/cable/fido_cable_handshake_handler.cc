@@ -49,8 +49,8 @@ base::Optional<std::array<uint8_t, kClientHelloMessageSize>>
 ConstructHandshakeMessage(base::StringPiece handshake_key,
                           base::span<const uint8_t, 16> client_random_nonce) {
   cbor::Value::MapValue map;
-  map.emplace(0, kCableClientHelloMessage);
-  map.emplace(1, client_random_nonce);
+  map.emplace(0, cbor::Value(kCableClientHelloMessage));
+  map.emplace(1, cbor::Value(client_random_nonce));
   auto client_hello = cbor::Writer::Write(cbor::Value(std::move(map)));
   DCHECK(client_hello);
 
