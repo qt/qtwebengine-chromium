@@ -114,8 +114,8 @@ std::vector<uint8_t> AsCTAPStyleCBORBytes(
     const AuthenticatorMakeCredentialResponse& response) {
   const AttestationObject& object = response.attestation_object();
   cbor::Value::MapValue map;
-  map.emplace(1, object.attestation_statement().format_name());
-  map.emplace(2, object.authenticator_data().SerializeToByteArray());
+  map.emplace(1, cbor::Value(object.attestation_statement().format_name()));
+  map.emplace(2, cbor::Value(object.authenticator_data().SerializeToByteArray()));
   map.emplace(3, AsCBOR(object.attestation_statement()));
   if (response.android_client_data_ext()) {
     map.emplace(kAndroidClientDataExtOutputKey,

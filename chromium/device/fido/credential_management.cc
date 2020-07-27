@@ -67,7 +67,7 @@ CredentialManagementRequest::ForEnumerateCredentialsBegin(
   cbor::Value::MapValue params_map;
   params_map.emplace(
       static_cast<int>(CredentialManagementRequestParamKey::kRPIDHash),
-      std::move(rp_id_hash));
+      cbor::Value(std::move(rp_id_hash)));
   std::vector<uint8_t> pin_auth_bytes =
       *cbor::Writer::Write(cbor::Value(params_map));
   CredentialManagementRequest request(
@@ -345,7 +345,7 @@ AsCTAPRequestValuePair(const CredentialManagementRequest& request) {
   if (request.params) {
     request_map.emplace(
         static_cast<int>(CredentialManagementRequestKey::kSubCommandParams),
-        *request.params);
+        cbor::Value(*request.params));
   }
   if (request.pin_auth) {
     request_map.emplace(
@@ -353,7 +353,7 @@ AsCTAPRequestValuePair(const CredentialManagementRequest& request) {
         static_cast<int>(pin::kProtocolVersion));
     request_map.emplace(
         static_cast<int>(CredentialManagementRequestKey::kPinAuth),
-        *request.pin_auth);
+        cbor::Value(*request.pin_auth));
   }
   return {request.version == CredentialManagementRequest::kPreview
               ? CtapRequestCommand::kAuthenticatorCredentialManagementPreview

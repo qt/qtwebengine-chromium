@@ -96,10 +96,10 @@ BioEnrollmentRequest BioEnrollmentRequest::ForRename(
   request.params = cbor::Value::MapValue();
   request.params->emplace(
       static_cast<int>(BioEnrollmentSubCommandParam::kTemplateId),
-      std::move(id));
+      cbor::Value(std::move(id)));
   request.params->emplace(
       static_cast<int>(BioEnrollmentSubCommandParam::kTemplateFriendlyName),
-      std::move(name));
+      cbor::Value(std::move(name)));
   SetPinAuth(&request, token);
   return request;
 }
@@ -114,7 +114,7 @@ BioEnrollmentRequest BioEnrollmentRequest::ForDelete(
   request.params = cbor::Value::MapValue();
   request.params->emplace(
       static_cast<int>(BioEnrollmentSubCommandParam::kTemplateId),
-      std::move(id));
+      cbor::Value(std::move(id)));
   SetPinAuth(&request, token);
   return request;
 }
@@ -275,28 +275,28 @@ AsCTAPRequestValuePair(const BioEnrollmentRequest& request) {
 
   if (request.modality) {
     map.emplace(static_cast<int>(Key::kModality),
-                static_cast<int>(*request.modality));
+                cbor::Value(static_cast<int>(*request.modality)));
   }
 
   if (request.subcommand) {
     map.emplace(static_cast<int>(Key::kSubCommand),
-                static_cast<int>(*request.subcommand));
+                cbor::Value(static_cast<int>(*request.subcommand)));
   }
 
   if (request.params) {
-    map.emplace(static_cast<int>(Key::kSubCommandParams), *request.params);
+    map.emplace(static_cast<int>(Key::kSubCommandParams), cbor::Value(*request.params));
   }
 
   if (request.pin_protocol) {
-    map.emplace(static_cast<int>(Key::kPinProtocol), *request.pin_protocol);
+    map.emplace(static_cast<int>(Key::kPinProtocol), cbor::Value(*request.pin_protocol));
   }
 
   if (request.pin_auth) {
-    map.emplace(static_cast<int>(Key::kPinAuth), *request.pin_auth);
+    map.emplace(static_cast<int>(Key::kPinAuth), cbor::Value(*request.pin_auth));
   }
 
   if (request.get_modality) {
-    map.emplace(static_cast<int>(Key::kGetModality), *request.get_modality);
+    map.emplace(static_cast<int>(Key::kGetModality), cbor::Value(*request.get_modality));
   }
 
   return {request.version == BioEnrollmentRequest::Version::kDefault

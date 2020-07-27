@@ -146,7 +146,7 @@ AsCTAPRequestValuePair(const LargeBlobsRequest& request) {
     map.emplace(static_cast<int>(LargeBlobsRequestKey::kGet), *request.get_);
   }
   if (request.set_) {
-    map.emplace(static_cast<int>(LargeBlobsRequestKey::kSet), *request.set_);
+    map.emplace(static_cast<int>(LargeBlobsRequestKey::kSet), cbor::Value(*request.set_));
   }
   map.emplace(static_cast<int>(LargeBlobsRequestKey::kOffset), request.offset_);
   if (request.length_) {
@@ -155,7 +155,7 @@ AsCTAPRequestValuePair(const LargeBlobsRequest& request) {
   }
   if (request.pin_uv_auth_param_) {
     map.emplace(static_cast<int>(LargeBlobsRequestKey::kPinUvAuthParam),
-                *request.pin_uv_auth_param_);
+                cbor::Value(*request.pin_uv_auth_param_));
   }
   if (request.pin_uv_auth_protocol_) {
     map.emplace(static_cast<int>(LargeBlobsRequestKey::kPinUvAuthProtocol),
@@ -227,8 +227,8 @@ base::Optional<std::vector<uint8_t>> LargeBlobData::Decrypt(
 
 cbor::Value::MapValue LargeBlobData::AsCBOR() const {
   cbor::Value::MapValue map;
-  map.emplace(static_cast<int>(LargeBlobDataKeys::kCiphertext), ciphertext_);
-  map.emplace(static_cast<int>(LargeBlobDataKeys::kNonce), nonce_);
+  map.emplace(static_cast<int>(LargeBlobDataKeys::kCiphertext), cbor::Value(ciphertext_));
+  map.emplace(static_cast<int>(LargeBlobDataKeys::kNonce), cbor::Value(nonce_));
   map.emplace(static_cast<int>(LargeBlobDataKeys::kOrigSize), orig_size_);
   return map;
 }

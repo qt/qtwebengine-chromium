@@ -62,9 +62,9 @@ EncodePINCommand(
     Subcommand subcommand,
     std::function<void(cbor::Value::MapValue*)> add_additional = nullptr) {
   cbor::Value::MapValue map;
-  map.emplace(static_cast<int>(RequestKey::kProtocol), kProtocolVersion);
+  map.emplace(static_cast<int>(RequestKey::kProtocol), cbor::Value(kProtocolVersion));
   map.emplace(static_cast<int>(RequestKey::kSubcommand),
-              static_cast<int>(subcommand));
+              cbor::Value(static_cast<int>(subcommand)));
 
   if (add_additional) {
     add_additional(&map);
@@ -547,7 +547,7 @@ AsCTAPRequestValuePair(const PinTokenWithPermissionsRequest& request) {
                      std::move(request.permissions_));
         if (request.rp_id_) {
           map->emplace(static_cast<int>(RequestKey::kPermissionsRPID),
-                       *request.rp_id_);
+                       cbor::Value(*request.rp_id_));
         }
       });
 }
@@ -577,7 +577,7 @@ AsCTAPRequestValuePair(const UvTokenRequest& request) {
                          static_cast<uint8_t>(Permissions::kGetAssertion));
         if (request.rp_id_) {
           map->emplace(static_cast<int>(RequestKey::kPermissionsRPID),
-                       *request.rp_id_);
+                       cbor::Value(*request.rp_id_));
         }
       });
 }

@@ -122,7 +122,7 @@ FidoTunnelDevice::FidoTunnelDevice(
   crypto::RandBytes(client_nonce);
 
   cbor::Value::MapValue client_payload;
-  client_payload.emplace(1, pairing->id);
+  client_payload.emplace(1, cbor::Value(pairing->id));
   client_payload.emplace(2, base::span<const uint8_t>(client_nonce));
   const base::Optional<std::vector<uint8_t>> client_payload_bytes =
       cbor::Writer::Write(cbor::Value(std::move(client_payload)));

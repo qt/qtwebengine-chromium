@@ -357,13 +357,13 @@ base::Optional<cbor::Value> RpEntityAsCBOR(
   }
 
   cbor::Value::MapValue rp_map;
-  rp_map.emplace(kEntityIdMapKey, rp.id);
+  rp_map.emplace(kEntityIdMapKey, cbor::Value(rp.id));
   if (rp.name) {
     rp_map.emplace(kEntityNameMapKey,
                    cbor::Value::InvalidUTF8StringValueForTesting(*rp.name));
   }
   if (rp.icon_url) {
-    rp_map.emplace(kIconUrlMapKey, rp.icon_url->spec());
+    rp_map.emplace(kIconUrlMapKey, cbor::Value(rp.icon_url->spec()));
   }
   return cbor::Value(std::move(rp_map));
 }
@@ -378,14 +378,14 @@ base::Optional<cbor::Value> UserEntityAsCBOR(
   }
 
   cbor::Value::MapValue user_map;
-  user_map.emplace(kEntityIdMapKey, user.id);
+  user_map.emplace(kEntityIdMapKey, cbor::Value(user.id));
   if (user.name) {
     user_map.emplace(kEntityNameMapKey,
                      cbor::Value::InvalidUTF8StringValueForTesting(*user.name));
   }
   // Empty icon URLs result in CTAP1_ERR_INVALID_LENGTH on some security keys.
   if (user.icon_url && !user.icon_url->is_empty()) {
-    user_map.emplace(kIconUrlMapKey, user.icon_url->spec());
+    user_map.emplace(kIconUrlMapKey, cbor::Value(user.icon_url->spec()));
   }
   if (user.display_name) {
     user_map.emplace(
@@ -411,7 +411,7 @@ std::vector<uint8_t> EncodeGetAssertionResponse(
   }
 
   response_map.emplace(2, response.auth_data().SerializeToByteArray());
-  response_map.emplace(3, response.signature());
+  response_map.emplace(3, cbor::Value(response.signature()));
 
   if (response.user_entity()) {
     response_map.emplace(
@@ -1688,7 +1688,7 @@ base::Optional<CtapDeviceResponseCode> VirtualCtap2Device::OnPINCommand(
 
       response_map.emplace(
           static_cast<int>(pin::ResponseKey::kPINToken),
-          GenerateAndEncryptToken(shared_key, mutable_state()->pin_token));
+          cbor::Value(GenerateAndEncryptToken(shared_key, mutable_state()->pin_token)));
       break;
     }
 
@@ -1742,7 +1742,7 @@ base::Optional<CtapDeviceResponseCode> VirtualCtap2Device::OnPINCommand(
 
       response_map.emplace(
           static_cast<int>(pin::ResponseKey::kPINToken),
-          GenerateAndEncryptToken(shared_key, mutable_state()->pin_token));
+          cbor::Value(GenerateAndEncryptToken(shared_key, mutable_state()->pin_token)));
       break;
     }
 
@@ -2228,9 +2228,9 @@ CtapDeviceResponseCode VirtualCtap2Device::OnLargeBlobs(
     cbor::Value::MapValue response_map;
     response_map.emplace(
         static_cast<uint8_t>(LargeBlobsResponseKey::kConfig),
-        base::make_span(
+        cbor::Value(base::make_span(
             mutable_state()->large_blob.data() + offset,
-            std::min(get, mutable_state()->large_blob.size() - offset)));
+            std::min(get, mutable_state()->large_blob.size() - offset))));
     *response =
         cbor::Writer::Write(cbor::Value(std::move(response_map))).value();
   } else {
@@ -2373,7 +2373,7 @@ void VirtualCtap2Device::InitPendingRegistrations(
         registration.second.private_key->GetPublicKey()->cose_key_bytes);
     response_map.emplace(
         static_cast<int>(CredentialManagementResponseKey::kPublicKey),
-        cose_key->GetMap());
+        cbor::Value(cose_key->GetMap()));
     mutable_state()->pending_registrations.emplace_back(
         std::move(response_map));
   }
@@ -2393,8 +2393,8 @@ void VirtualCtap2Device::GetNextRP(cbor::Value::MapValue* response_map) {
                       config_.allow_invalid_utf8_in_credential_entities));
   response_map->emplace(
       static_cast<int>(CredentialManagementResponseKey::kRPIDHash),
-      fido_parsing_utils::CreateSHA256Hash(
-          mutable_state()->pending_rps.front().id));
+      cbor::Value(fido_parsing_utils::CreateSHA256Hash(
+          mutable_state()->pending_rps.front().id)));
   mutable_state()->pending_rps.pop_front();
 }
 

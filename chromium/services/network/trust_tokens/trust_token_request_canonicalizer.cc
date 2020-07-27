@@ -65,7 +65,7 @@ TrustTokenRequestCanonicalizer::Canonicalize(
     std::string header_value;
     if (headers.GetHeader(header_name, &header_value)) {
       canonicalized_request.emplace(base::ToLowerASCII(header_name),
-                                    header_value);
+                                    cbor::Value(header_value));
     }
   }
 

@@ -161,8 +161,8 @@ std::unique_ptr<PublicKey> P256PublicKey::ParseX962Uncompressed(
   map.emplace(static_cast<int>(CoseKeyKey::kAlg), algorithm);
   map.emplace(static_cast<int>(CoseKeyKey::kEllipticCurve),
               static_cast<int64_t>(CoseCurves::kP256));
-  map.emplace(static_cast<int>(CoseKeyKey::kEllipticX), x);
-  map.emplace(static_cast<int>(CoseKeyKey::kEllipticY), y);
+  map.emplace(static_cast<int>(CoseKeyKey::kEllipticX), cbor::Value(x));
+  map.emplace(static_cast<int>(CoseKeyKey::kEllipticY), cbor::Value(y));
 
   const std::vector<uint8_t> cbor_bytes(
       std::move(cbor::Writer::Write(cbor::Value(std::move(map))).value()));

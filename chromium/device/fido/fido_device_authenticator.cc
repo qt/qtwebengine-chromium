@@ -901,7 +901,7 @@ FidoDeviceAuthenticator::GetAlgorithms() {
   if (device_->supported_protocol() == ProtocolVersion::kU2f) {
     static constexpr int32_t kU2fAlgorithms[1] = {
         static_cast<int32_t>(CoseAlgorithmIdentifier::kEs256)};
-    return kU2fAlgorithms;
+    return base::span<const int32_t>(kU2fAlgorithms);
   }
 
   const base::Optional<AuthenticatorGetInfoResponse>& get_info_response =

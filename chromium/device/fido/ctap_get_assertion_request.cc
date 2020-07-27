@@ -271,8 +271,8 @@ AsCTAPRequestValuePair(const CtapGetAssertionRequest& request) {
     cbor::Value::MapValue hmac_extension;
     hmac_extension.emplace(
         1, pin::EncodeCOSEPublicKey(hmac_secret.public_key_x962));
-    hmac_extension.emplace(2, hmac_secret.encrypted_salts);
-    hmac_extension.emplace(3, hmac_secret.salts_auth);
+    hmac_extension.emplace(2, cbor::Value(hmac_secret.encrypted_salts));
+    hmac_extension.emplace(3, cbor::Value(hmac_secret.salts_auth));
     extensions.emplace(kExtensionHmacSecret, std::move(hmac_extension));
   }
 

@@ -283,7 +283,7 @@ AsCTAPRequestValuePair(const CtapMakeCredentialRequest& request) {
 
   if (request.cred_protect) {
     extensions.emplace(kExtensionCredProtect,
-                       static_cast<int64_t>(*request.cred_protect));
+                       cbor::Value(static_cast<int64_t>(*request.cred_protect)));
   }
 
   if (request.android_client_data_ext) {
