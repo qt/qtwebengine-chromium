@@ -49,7 +49,7 @@ constexpr const char* ToString(BluetoothDevice::ConnectErrorCode error_code) {
     case BluetoothDevice::ERROR_UNSUPPORTED_DEVICE:
       return "ERROR_UNSUPPORTED_DEVICE";
     default:
-      NOTREACHED();
+//       NOTREACHED();
       return "";
   }
 }
@@ -73,7 +73,7 @@ constexpr const char* ToString(BluetoothGattService::GattErrorCode error_code) {
     case BluetoothGattService::GATT_ERROR_NOT_SUPPORTED:
       return "GATT_ERROR_NOT_SUPPORTED";
     default:
-      NOTREACHED();
+//       NOTREACHED();
       return "";
   }
 }

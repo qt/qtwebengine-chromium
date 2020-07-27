@@ -441,10 +441,10 @@ base::Optional<std::unique_ptr<Crypter>> RespondToHandshake(
 
     if (pairing_data) {
       cbor::Value::MapValue pairing;
-      pairing.emplace(1, pairing_data->v2->eid_gen_key);
-      pairing.emplace(2, pairing_data->v2->psk_gen_key);
-      pairing.emplace(3, pairing_data->v2->peer_identity.value());
-      pairing.emplace(4, pairing_data->v2->peer_name.value());
+      pairing.emplace(1, cbor::Value(pairing_data->v2->eid_gen_key));
+      pairing.emplace(2, cbor::Value(pairing_data->v2->psk_gen_key));
+      pairing.emplace(3, cbor::Value(pairing_data->v2->peer_identity.value()));
+      pairing.emplace(4, cbor::Value(pairing_data->v2->peer_name.value()));
       base::Optional<std::vector<uint8_t>> cbor_bytes =
           cbor::Writer::Write(cbor::Value(std::move(pairing)));
       if (!cbor_bytes || cbor_bytes->size() > sizeof(my_plaintext) - 1) {

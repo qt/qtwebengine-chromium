@@ -38,7 +38,7 @@ TrustTokenRequestCanonicalizer::Canonicalize(
   if (sign_request_data == mojom::TrustTokenSignRequestData::kInclude) {
     canonicalized_request.emplace(
         TrustTokenRequestSigningHelper::kCanonicalizedRequestDataUrlKey,
-        request->url().spec());
+        cbor::Value(request->url().spec()));
   }
 
   // 2. If sign-request-data is 'include' or 'headers-only', for each value
@@ -63,7 +63,7 @@ TrustTokenRequestCanonicalizer::Canonicalize(
     if (request->extra_request_headers().GetHeader(header_name,
                                                    &header_value)) {
       canonicalized_request.emplace(base::ToLowerASCII(header_name),
-                                    header_value);
+                                    cbor::Value(header_value));
     }
   }
 
