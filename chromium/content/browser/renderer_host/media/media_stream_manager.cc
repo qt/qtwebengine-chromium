@@ -514,7 +514,7 @@ bool ChangeSourceSupported(const MediaStreamDevices& devices) {
   return true;  // getDisplayMedia() and killswitches did not trigger.
 }
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 base::TimeDelta GetConditionalFocusWindow() {
   const std::string custom_window =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -1549,7 +1549,7 @@ MediaStreamManager::MediaStreamManager(
     media::AudioSystem* audio_system,
     std::unique_ptr<VideoCaptureProvider> video_capture_provider)
     :
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && BUILDFLAG(ENABLE_SCREEN_CAPTURE)
       conditional_focus_window_(GetConditionalFocusWindow()),
       captured_surface_controller_factory_(
           MakeDefaultCapturedSurfaceControllerFactory()),
@@ -1623,11 +1623,13 @@ MediaStreamManager::MediaStreamManager(
               &VideoCaptureDependencies::CreateJpegEncodeAccelerator));
     }
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
     video_capture_provider = std::make_unique<VideoCaptureProviderSwitcher>(
         std::make_unique<ServiceVideoCaptureProvider>(
             base::BindRepeating(&SendVideoCaptureLogMessage)),
         InProcessVideoCaptureProvider::CreateInstanceForScreenCapture(
             std::move(device_task_runner)));
+#endif
   }
   InitializeMaybeAsync(std::move(video_capture_provider));
 

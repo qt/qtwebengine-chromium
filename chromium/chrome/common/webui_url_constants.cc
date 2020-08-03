@@ -593,7 +593,9 @@ const char kChromeUITabSearchHost[] = "tab-search.top-chrome";
 const char kChromeUITabSearchURL[] = "chrome://tab-search.top-chrome/";
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 const char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
+#endif
 
 // Settings sub pages.
 
@@ -716,14 +718,10 @@ const char* const kChromeHostURLs[] = {
     kChromeUINetInternalsHost,
     kChromeUINewTabHost,
     kChromeUIOmniboxHost,
-<<<<<<< HEAD
 #if !BUILDFLAG(IS_ANDROID)
     kChromeUIOnDeviceInternalsHost,
 #endif
-||||||| parent of ee02913740f (Fix Chrome resources and WebUI we need)
-=======
 #if !defined(TOOLKIT_QT)
->>>>>>> ee02913740f (Fix Chrome resources and WebUI we need)
     optimization_guide_internals::kChromeUIOptimizationGuideInternalsHost,
 #endif // !defined(TOOLKIT_QT)
     kChromeUIPasswordManagerInternalsHost,
@@ -842,7 +840,9 @@ const char* const kChromeHostURLs[] = {
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
     kChromeUIPrintHost,
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
     kChromeUIWebRtcLogsHost,
+#endif
 #if BUILDFLAG(IS_CHROMEOS)
     kChromeUIDlpInternalsHost,
 #endif  // BUILDFLAG(IS_CHROMEOS)
