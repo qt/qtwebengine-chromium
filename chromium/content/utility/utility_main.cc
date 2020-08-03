@@ -101,9 +101,11 @@ int UtilityMain(const MainFunctionParams& parameters) {
       pre_sandbox_hook = base::BindOnce(&network::NetworkPreSandboxHook);
     else if (sandbox_type == sandbox::policy::SandboxType::kAudio)
       pre_sandbox_hook = base::BindOnce(&audio::AudioPreSandboxHook);
+#if !defined(TOOLKIT_QT)
     else if (sandbox_type == sandbox::policy::SandboxType::kSpeechRecognition)
       pre_sandbox_hook =
           base::BindOnce(&speech::SpeechRecognitionPreSandboxHook);
+#endif
 #if defined(OS_CHROMEOS)
     else if (sandbox_type == sandbox::policy::SandboxType::kIme)
       pre_sandbox_hook = base::BindOnce(&chromeos::ime::ImePreSandboxHook);
