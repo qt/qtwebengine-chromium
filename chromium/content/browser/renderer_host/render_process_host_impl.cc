@@ -2104,8 +2104,10 @@ void RenderProcessHostImpl::CreatePermissionService(
 void RenderProcessHostImpl::CreatePaymentManagerForOrigin(
     const url::Origin& origin,
     mojo::PendingReceiver<payments::mojom::PaymentManager> receiver) {
+#if !defined(TOOLKIT_QT)
   storage_partition_impl_->GetPaymentAppContext()
       ->CreatePaymentManagerForOrigin(origin, std::move(receiver));
+#endif
 }
 
 void RenderProcessHostImpl::CreateNotificationService(
