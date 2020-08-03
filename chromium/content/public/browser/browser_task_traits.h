@@ -111,7 +111,7 @@ class CONTENT_EXPORT BrowserTaskTraitsExtension {
     // TODO(1026641): Migrate to BrowserTaskTraits under which BrowserThread is
     // not a trait. Until then, only code that knows traits have explicitly set
     // the BrowserThread trait should check this field.
-    DCHECK_NE(browser_thread_, BrowserThread::ID_COUNT);
+//    DCHECK_NE(browser_thread_, BrowserThread::ID_COUNT);
     return browser_thread_;
   }
 
