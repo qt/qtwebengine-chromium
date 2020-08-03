@@ -210,6 +210,7 @@ void ContentAutofillDriverFactory::DidFinishNavigation(
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (navigation_handle->IsInPrimaryMainFrame() &&
       client().GetPaymentsAutofillClient() &&
       client().GetPaymentsAutofillClient()->GetAutofillOfferManager()) {
@@ -223,6 +224,7 @@ void ContentAutofillDriverFactory::DidFinishNavigation(
         ->GetAutofillOfferManager()
         ->OnDidNavigateFrame(client());
   }
+#endif
 
   // If the navigation is served from BFCache, then the pre-navigation RFH is
   // swapped with a post-navigation RFH, along with their associated CADs. We do
