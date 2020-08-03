@@ -114,8 +114,6 @@ class CodeCacheHostImpl;
 class FileSystemManagerImpl;
 class InProcessChildThreadParams;
 class IsolationContext;
-class MediaStreamTrackMetricsHost;
-class P2PSocketDispatcherHost;
 class PermissionServiceContext;
 class PeerConnectionTrackerHost;
 class PluginRegistryImpl;
@@ -133,6 +131,11 @@ class SiteInstanceImpl;
 class StoragePartition;
 class StoragePartitionImpl;
 struct ChildProcessTerminationInfo;
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+class MediaStreamTrackMetricsHost;
+class P2PSocketDispatcherHost;
+#endif
 
 typedef base::Thread* (*RendererMainThreadFactoryFunction)(
     const InProcessChildThreadParams& params,
@@ -234,6 +237,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool FastShutdownStarted() override;
   base::TimeDelta GetChildProcessIdleTime() override;
   void FilterURL(bool empty_allowed, GURL* url) override;
+#if BUILDFLAG(ENABLE_WEBRTC)
   void EnableAudioDebugRecordings(const base::FilePath& file) override;
   void DisableAudioDebugRecordings() override;
   WebRtcStopRtpDumpCallback StartRtpDump(
@@ -242,6 +246,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       WebRtcRtpPacketCallback packet_callback) override;
   void EnableWebRtcEventLogOutput(int lid, int output_period_ms) override;
   void DisableWebRtcEventLogOutput(int lid) override;
+#endif
   void BindReceiver(mojo::GenericPendingReceiver receiver) override;
   std::unique_ptr<base::PersistentMemoryAllocator> TakeMetricsAllocator()
       override;
@@ -799,12 +804,16 @@ class CONTENT_EXPORT RenderProcessHostImpl
       mojo::PendingReceiver<media::mojom::InterfaceFactory> receiver);
   void BindWebDatabaseHostImpl(
       mojo::PendingReceiver<blink::mojom::WebDatabaseHost> receiver);
+#if BUILDFLAG(ENABLE_WEBRTC)
   void BindAecDumpManager(
       mojo::PendingReceiver<blink::mojom::AecDumpManager> receiver);
+#endif
   void BindPushMessagingManager(
       mojo::PendingReceiver<blink::mojom::PushMessaging> receiver);
+#if BUILDFLAG(ENABLE_WEBRTC)
   void BindP2PSocketManager(
       mojo::PendingReceiver<network::mojom::P2PSocketManager> receiver);
+#endif
   void CreateMediaLogRecordHost(
       mojo::PendingReceiver<content::mojom::MediaInternalLogRecords> receiver);
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -900,8 +909,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void CreateAgentMetricsCollectorHost(
       mojo::PendingReceiver<blink::mojom::AgentMetricsCollectorHost> receiver);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   void BindPeerConnectionTrackerHost(
       mojo::PendingReceiver<blink::mojom::PeerConnectionTrackerHost> receiver);
+#endif
 
 #if BUILDFLAG(ENABLE_MDNS)
   void CreateMdnsResponder(
@@ -1139,13 +1150,16 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // and calling through RenderProcessHostObserver::RenderProcessExited.
   bool within_process_died_observer_;
 
-  std::unique_ptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
+#if BUILDFLAG(ENABLE_WEBRTC)
+  std::unique_ptr <P2PSocketDispatcherHost>
+      p2p_socket_dispatcher_host_;
 
   // Must be accessed on UI thread.
   AecDumpManagerImpl aec_dump_manager_;
 
   std::unique_ptr<MediaStreamTrackMetricsHost, BrowserThread::DeleteOnIOThread>
       media_stream_track_metrics_host_;
+#endif
 
   std::unique_ptr<AgentMetricsCollectorHost> agent_metrics_collector_host_;
 

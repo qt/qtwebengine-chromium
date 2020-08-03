@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
 import("//third_party/blink/renderer/modules/modules.gni")
 
 blink_modules_sources("peerconnection") {
@@ -173,6 +174,13 @@ blink_modules_sources("peerconnection") {
 
   public_deps = [ "//third_party/webrtc_overrides:webrtc_component" ]
   deps = [ "//third_party/abseil-cpp:absl" ]
+
+  if (!enable_webrtc) {
+    sources -= [
+      "peer_connection_dependency_factory.cc",
+      "peer_connection_dependency_factory.h",
+    ]
+  }
 }
 
 source_set("test_support") {

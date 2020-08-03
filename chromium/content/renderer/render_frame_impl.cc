@@ -6250,9 +6250,11 @@ void RenderFrameImpl::InitializeMediaStreamDeviceObserver() {
   if (!render_thread)  // Will be NULL during unit tests.
     return;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(!web_media_stream_device_observer_);
   web_media_stream_device_observer_ =
       std::make_unique<blink::WebMediaStreamDeviceObserver>(GetWebFrame());
+#endif
 }
 
 void RenderFrameImpl::PrepareRenderViewForNavigation(

@@ -148,9 +148,11 @@ ContentRendererPepperHostFactory::CreateResourceHost(
                                                       resource);
     case PpapiHostMsg_WebSocket_Create::ID:
       return std::make_unique<PepperWebSocketHost>(host_, instance, resource);
+#if BUILDFLAG(ENABLE_WEBRTC)
     case PpapiHostMsg_MediaStreamVideoTrack_Create::ID:
       return std::make_unique<PepperMediaStreamVideoTrackHost>(host_, instance,
                                                                resource);
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
   }
 
   // Dev interfaces.

@@ -139,7 +139,6 @@
 #include "third_party/boringssl/src/include/openssl/crypto.h"
 #include "third_party/skia/include/core/SkFontMgr.h"
 #include "third_party/skia/include/ports/SkFontMgr_android.h"
-#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "content/common/pepper_plugin_list.h"
@@ -161,7 +160,12 @@
 #include "content/public/common/zygote/sandbox_support_linux.h"
 #include "content/public/common/zygote/zygote_handle.h"
 #include "media/base/media_switches.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #endif
+
+#endif // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
 #if defined(OS_ANDROID)
 #include "content/browser/android/browser_startup_controller.h"
@@ -357,7 +361,9 @@ void PreSandboxInit() {
   // Ensure access to the library CDMs before the sandbox is turned on.
   PreloadLibraryCdms();
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
   InitializeWebRtcModule();
+#endif
 
   // Set the android SkFontMgr for blink. We need to ensure this is done
   // before the sandbox is initialized to allow the font manager to access
