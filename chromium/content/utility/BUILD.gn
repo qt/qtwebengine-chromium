@@ -93,7 +93,7 @@ source_set("utility") {
     deps += [ "//services/proxy_resolver:lib" ]
   }
 
-  if (is_linux || is_chromeos) {
+  if ((is_linux || is_chromeos) && !use_qt) {
     deps += [ "//content/utility/speech:speech_recognition_sandbox_hook" ]
   }
 
