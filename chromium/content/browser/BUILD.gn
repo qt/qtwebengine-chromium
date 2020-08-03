@@ -3203,6 +3203,34 @@ source_set("browser") {
   }
 
   if (use_qt) {
+    sources -= [
+      "payments/installed_payment_apps_finder_impl.cc",
+      "payments/installed_payment_apps_finder_impl.h",
+      "payments/payment_app_context_impl.cc",
+      "payments/payment_app_context_impl.h",
+      "payments/payment_app_database.cc",
+      "payments/payment_app_database.h",
+      "payments/payment_app_info_fetcher.cc",
+      "payments/payment_app_info_fetcher.h",
+      "payments/payment_app_installer.cc",
+      "payments/payment_app_installer.h",
+      "payments/payment_app_provider_impl.cc",
+      "payments/payment_app_provider_impl.h",
+      "payments/payment_app_provider_util.cc",
+      "payments/payment_event_dispatcher.cc",
+      "payments/payment_event_dispatcher.h",
+      "payments/payment_instrument_icon_fetcher.cc",
+      "payments/payment_instrument_icon_fetcher.h",
+      "payments/payment_manager.cc",
+      "payments/payment_manager.h",
+      "payments/respond_with_callback.cc",
+      "payments/respond_with_callback.h",
+    ]
+    deps -= [
+      "//components/payments/content/icon",
+      "//components/payments/mojom",
+      "//content/browser/payments:payment_app_proto",
+    ]
     if (is_win) {
       sources -= [
         "accessibility/browser_accessibility_com_win.cc",
