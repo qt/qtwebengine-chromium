@@ -7,11 +7,14 @@
 
 #include <string>
 
-#include "chrome/browser/media/webrtc/audio_debug_recordings_handler.h"
-#include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
 #include "chrome/common/extensions/api/webrtc_logging_private.h"
 #include "extensions/browser/extension_function.h"
 #include "media/media_buildflags.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "chrome/browser/media/webrtc/audio_debug_recordings_handler.h"
+#include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
+#endif
 
 namespace content {
 
@@ -25,6 +28,7 @@ class WebrtcLoggingPrivateFunction : public ExtensionFunction {
  protected:
   ~WebrtcLoggingPrivateFunction() override {}
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Returns the RenderProcessHost associated with the given |request|
   // authorized by the |security_origin|. Returns null and sets |*error| to an
   // appropriate error if unauthorized or the RPH does not exist.
@@ -37,6 +41,7 @@ class WebrtcLoggingPrivateFunction : public ExtensionFunction {
       const api::webrtc_logging_private::RequestInfo& request,
       const std::string& security_origin,
       std::string* error);
+#endif
 };
 
 class WebrtcLoggingPrivateFunctionWithGenericCallback
@@ -44,6 +49,7 @@ class WebrtcLoggingPrivateFunctionWithGenericCallback
  protected:
   ~WebrtcLoggingPrivateFunctionWithGenericCallback() override {}
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Finds the appropriate logging controller for performing the task and
   // prepares a generic callback object for when the task is completed.  If the
   // logging controller can't be found for the given request+origin, the
@@ -57,6 +63,7 @@ class WebrtcLoggingPrivateFunctionWithGenericCallback
 
   // Must be called on UI thread.
   void FireCallback(bool success, const std::string& error_message);
+#endif
 };
 
 class WebrtcLoggingPrivateFunctionWithUploadCallback
@@ -64,9 +71,11 @@ class WebrtcLoggingPrivateFunctionWithUploadCallback
  protected:
   ~WebrtcLoggingPrivateFunctionWithUploadCallback() override {}
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Must be called on UI thread.
   void FireCallback(bool success, const std::string& report_id,
                     const std::string& error_message);
+#endif
 };
 
 class WebrtcLoggingPrivateFunctionWithRecordingDoneCallback
@@ -74,11 +83,13 @@ class WebrtcLoggingPrivateFunctionWithRecordingDoneCallback
  protected:
   ~WebrtcLoggingPrivateFunctionWithRecordingDoneCallback() override {}
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Must be called on UI thread.
   void FireErrorCallback(const std::string& error_message);
   void FireCallback(const std::string& prefix_path,
                     bool did_stop,
                     bool did_manual_stop);
+#endif
 };
 
 class WebrtcLoggingPrivateSetMetaDataFunction
@@ -283,10 +294,12 @@ class WebrtcLoggingPrivateGetLogsDirectoryFunction
   // ExtensionFunction overrides.
   ResponseAction Run() override;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Must be called on UI thread.
   void FireErrorCallback(const std::string& error_message);
   void FireCallback(const std::string& filesystem_id,
                     const std::string& base_name);
+#endif
 };
 
 }  // namespace extensions

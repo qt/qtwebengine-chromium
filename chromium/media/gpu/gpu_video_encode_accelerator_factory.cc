@@ -21,7 +21,7 @@
 #if BUILDFLAG(USE_V4L2_CODEC)
 #include "media/gpu/v4l2/v4l2_video_encode_accelerator.h"
 #endif
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_WEBRTC)
 #include "media/gpu/android/android_video_encode_accelerator.h"
 #endif
 #if BUILDFLAG(IS_MAC)
@@ -54,7 +54,7 @@ std::unique_ptr<VideoEncodeAccelerator> CreateVaapiVEA() {
 }
 #endif
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_WEBRTC)
 std::unique_ptr<VideoEncodeAccelerator> CreateAndroidVEA() {
   return base::WrapUnique<VideoEncodeAccelerator>(
       new AndroidVideoEncodeAccelerator());
@@ -106,7 +106,7 @@ std::vector<VEAFactoryFunction> GetVEAFactoryFunctions(
 #if BUILDFLAG(USE_V4L2_CODEC)
   vea_factory_functions.push_back(base::BindRepeating(&CreateV4L2VEA));
 #endif
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_WEBRTC)
   vea_factory_functions.push_back(base::BindRepeating(&CreateAndroidVEA));
 #endif
 #if BUILDFLAG(IS_MAC)

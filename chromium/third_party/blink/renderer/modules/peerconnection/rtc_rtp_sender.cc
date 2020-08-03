@@ -9,6 +9,7 @@
 #include <tuple>
 #include <utility>
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_surface.h"
@@ -739,6 +740,7 @@ void RTCRtpSender::Trace(Visitor* visitor) const {
 
 RTCRtpCapabilities* RTCRtpSender::getCapabilities(ScriptState* state,
                                                   const String& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (!state->ContextIsValid())
     return nullptr;
 
@@ -834,6 +836,9 @@ RTCRtpCapabilities* RTCRtpSender::getCapabilities(ScriptState* state,
         .Record(ExecutionContext::From(state)->UkmRecorder());
   }
   return capabilities;
+#else
+  return nullptr;
+#endif
 }
 
 void RTCRtpSender::RegisterEncodedAudioStreamCallback() {

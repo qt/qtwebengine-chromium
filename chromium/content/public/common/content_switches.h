@@ -239,9 +239,11 @@ CONTENT_EXPORT extern const char kWebOtpBackend[];
 CONTENT_EXPORT extern const char kWebOtpBackendSmsVerification[];
 CONTENT_EXPORT extern const char kWebOtpBackendUserConsent[];
 CONTENT_EXPORT extern const char kWebOtpBackendAuto[];
+#if BUILDFLAG(ENABLE_WEBRTC)
 CONTENT_EXPORT extern const char kWebRtcLocalEventLogging[];
 extern const char kWebRtcMaxCaptureFramerate[];
 extern const char kWebRtcMaxCpuConsumptionPercentage[];
+#endif
 CONTENT_EXPORT extern const char kWebXrForceRuntime[];
 CONTENT_EXPORT extern const char kWebXrRuntimeNone[];
 CONTENT_EXPORT extern const char kWebXrRuntimeOrientationSensors[];

@@ -832,6 +832,7 @@ RTCPeerConnection::RTCPeerConnection(
   }
 
   // Tests might need a custom RtcPeerConnectionHandler implementation.
+#if BUILDFLAG(ENABLE_WEBRTC)
   PeerConnectionDependencyFactory& dependency_factory =
       PeerConnectionDependencyFactory::From(*context);
   if (!g_create_rpc_peer_connection_handler_callback_.Get().is_null()) {
@@ -843,6 +844,7 @@ RTCPeerConnection::RTCPeerConnection(
         force_encoded_audio_insertable_streams_,
         force_encoded_video_insertable_streams_);
   }
+#endif
 
   if (!peer_handler_) {
     exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
@@ -860,7 +862,11 @@ RTCPeerConnection::RTCPeerConnection(
   }
   // After Initialize() with a real `peer_handler_`, WebRTC threads exist.
   scoped_refptr<base::SingleThreadTaskRunner> worker_thread =
+#if BUILDFLAG(ENABLE_WEBRTC)
       dependency_factory.GetWebRtcWorkerTaskRunner();
+#else
+      nullptr;
+#endif
   if (!worker_thread) {
     // This path is only used in some unit test environments with a fake
     // `peer_handler_` that does not ensure WebRTC threads exist.
