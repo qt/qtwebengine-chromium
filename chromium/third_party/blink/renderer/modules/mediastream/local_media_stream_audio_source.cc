@@ -8,6 +8,7 @@
 
 #include "base/strings/stringprintf.h"
 #include "media/audio/audio_source_parameters.h"
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom-blink.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -80,6 +81,7 @@ bool LocalMediaStreamAudioSource::EnsureSourceIsStarted() {
   if (!consumer_frame_)
     return false;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   VLOG(1) << "Starting local audio input device (session_id="
           << device().session_id() << ") with audio parameters={"
           << GetAudioParameters().AsHumanReadableString() << "}.";
@@ -91,6 +93,10 @@ bool LocalMediaStreamAudioSource::EnsureSourceIsStarted() {
   source_->Initialize(GetAudioParameters(), this);
   source_->Start();
   return true;
+#else
+  LOG(ERROR) << "Audio Capture not supported";
+  return false;
+#endif
 }
 
 void LocalMediaStreamAudioSource::EnsureSourceIsStopped() {

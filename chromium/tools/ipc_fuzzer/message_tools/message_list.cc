@@ -53,6 +53,10 @@ static bool check_msgtable() {
   exemptions.push_back(NaClMsgStart);
 #endif  // !BUILDFLAG(ENABLE_NACL)
 
+#if !BUILDFLAG(ENABLE_WEBRTC)
+  exemptions.push_back(WebRtcLoggingMsgStart);
+#endif
+
 #if !BUILDFLAG(IS_ANDROID)
   exemptions.push_back(EncryptedMediaMsgStart);
   exemptions.push_back(GinJavaBridgeMsgStart);
