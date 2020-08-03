@@ -9,6 +9,7 @@ import("//components/enterprise/buildflags/buildflags.gni")
 import("//components/on_device_translation/buildflags/features.gni")
 import("//components/signin/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 # This target should be the default place for adding public interface things
 # (ie, non-factory, non-impl). There will likely need to be a :factory or :impl
@@ -296,7 +297,6 @@ source_set("profiles_extra_parts_impl") {
     "//chrome/browser/file_system_access",
     "//chrome/browser/history",
     "//chrome/browser/media/router",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/notifications",
     "//chrome/browser/omnibox",
     "//chrome/browser/optimization_guide",
@@ -491,6 +491,11 @@ source_set("profiles_extra_parts_impl") {
     deps += [
       "//chrome/browser/profiles/batch_upload",
       "//chrome/browser/ui/signin",
+    ]
+  }
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 

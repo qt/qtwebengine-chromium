@@ -45,6 +45,10 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/webrtc/api/rtp_parameters.h"
 
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.h"
+#endif
+
 namespace blink {
 
 RTCRtpReceiver::RTCRtpReceiver(RTCPeerConnection* pc,
@@ -270,6 +274,7 @@ void RTCRtpReceiver::Trace(Visitor* visitor) const {
 
 RTCRtpCapabilities* RTCRtpReceiver::getCapabilities(ScriptState* state,
                                                     const String& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (!state->ContextIsValid()) {
     return nullptr;
   }
@@ -324,6 +329,9 @@ RTCRtpCapabilities* RTCRtpReceiver::getCapabilities(ScriptState* state,
   capabilities->setHeaderExtensions(header_extensions);
 
   return capabilities;
+#else
+  return nullptr;
+#endif
 }
 
 RTCRtpReceiveParameters* RTCRtpReceiver::getParameters() {

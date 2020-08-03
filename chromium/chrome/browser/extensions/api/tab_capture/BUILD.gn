@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 assert(enable_extensions_core)
 
@@ -23,7 +24,6 @@ source_set("tab_capture") {
 
   deps = [
     "//base",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/tab_list",
     "//chrome/browser/ui",
@@ -35,4 +35,10 @@ source_set("tab_capture") {
     "//net",
     "//services/network/public/cpp",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 }

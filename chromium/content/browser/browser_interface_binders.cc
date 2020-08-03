@@ -689,6 +689,7 @@ void BindMediaPlayerObserverClientHandler(
       std::move(receiver));
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 void BindSocketManager(
     RenderFrameHost* frame,
     mojo::PendingReceiver<network::mojom::P2PSocketManager> receiver) {
@@ -697,6 +698,7 @@ void BindSocketManager(
           frame->GetIsolationInfoForSubresources().network_anonymization_key(),
           std::move(receiver), frame->GetGlobalId());
 }
+#endif
 
 void BindDevicePostureProvider(
     RenderFrameHost* frame_host,
@@ -833,6 +835,7 @@ void PopulateBinderMapWithContext(
       &BindRenderFrameHostImpl<
           &RenderFrameHostImpl::CreateNotificationService>);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // WebRTC p2p connections are disallowed in fenced frames. Creation of
   // RTCPeerConnection is already disabled in the renderer, so in theory this
   // unbound interface should never present an issue.
@@ -843,6 +846,7 @@ void PopulateBinderMapWithContext(
   if (!should_ban_p2p) {
     map->Add<network::mojom::P2PSocketManager>(&BindSocketManager);
   }
+#endif
 
   map->Add<blink::mojom::PeerConnectionTrackerHost>(
       &BindRenderFrameHostImpl<

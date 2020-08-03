@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
+
 executable("service_discovery_sniffer") {
   testonly = true
   sources = [
@@ -14,6 +16,9 @@ executable("service_discovery_sniffer") {
     "//base/test:test_support",
     "//chrome/browser",
     "//net",
-    "//third_party/webrtc_overrides:webrtc_component",
   ]
+
+  if (enable_webrtc) {
+    deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
+  }
 }

@@ -223,7 +223,7 @@ bool WebRtcTextLogHandler::StartLogging(GenericDoneCallback callback) {
   }
 
   WebRtcLogUploader* log_uploader = WebRtcLogUploader::GetInstance();
-  if (!log_uploader->ApplyForStartLogging()) {
+  if (log_uploader && !log_uploader->ApplyForStartLogging()) {
     FireGenericDoneCallback(std::move(callback), false,
                             "Cannot start, maybe the maximum number of "
                             "simultaneuos logs has been reached.");
@@ -558,7 +558,7 @@ void WebRtcTextLogHandler::OnGetNetworkInterfaceListFinish(
        ", Sandbox=",
        enabled_or_disabled_bool_string(IsAudioServiceSandboxEnabled())}));
 
-#if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
+#if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION) && !BUILDFLAG(IS_QTWEBENGINE)
   LogToCircularBuffer(
       base::StrCat({"ChromeWideEchoCancellation : ",
                     enabled_or_disabled_bool_string(

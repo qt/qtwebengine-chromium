@@ -190,6 +190,14 @@ component("gpu") {
     if (enable_vulkan) {
       deps += [ "//gpu/vulkan" ]
     }
+
+    if (enable_webrtc) {
+      deps += [ "//third_party/libyuv" ]
+      sources += [
+        "android/android_video_encode_accelerator.cc",
+        "android/android_video_encode_accelerator.h",
+      ]
+    }
   }
 
   if (use_v4l2_codec) {

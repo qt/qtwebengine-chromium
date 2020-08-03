@@ -11,6 +11,7 @@
 
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -142,7 +143,10 @@ class NetworkServiceClient
       network::mojom::IPAddressSpace client_address_space,
       network::mojom::IPAddressSpace target_address_space) override;
 
+
+#if BUILDFLAG(ENABLE_WEBRTC)
   std::unique_ptr<WebRtcConnectionsObserver> webrtc_connections_observer_;
+#endif
 
 #if BUILDFLAG(IS_ANDROID)
   std::unique_ptr<base::android::ApplicationStatusListener>

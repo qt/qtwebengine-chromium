@@ -6,6 +6,7 @@ import("//build/config/gclient_args.gni")
 import("//build/config/ozone.gni")
 import("//chrome/common/features.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
 assert(enable_glic)
@@ -329,7 +330,6 @@ source_set("impl") {
     "//chrome/browser/glic/media",
     "//chrome/browser/glic/shared",
     "//chrome/browser/lifetime:termination_notification",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/picture_in_picture",
     "//chrome/browser/profiles:profile_util",
     "//chrome/browser/profiles/keep_alive",
@@ -432,6 +432,11 @@ source_set("impl") {
   }
   if (enable_pdf) {
     deps += [ "//components/pdf/browser" ]
+  }
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
 }
 

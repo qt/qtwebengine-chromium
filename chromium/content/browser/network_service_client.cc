@@ -126,10 +126,12 @@ NetworkServiceClient::NetworkServiceClient()
     net::CertDatabase::GetInstance()->AddObserver(this);
   }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   webrtc_connections_observer_ =
       std::make_unique<content::WebRtcConnectionsObserver>(base::BindRepeating(
           &NetworkServiceClient::OnPeerToPeerConnectionsCountChange,
           base::Unretained(this)));
+#endif
 }
 
 NetworkServiceClient::~NetworkServiceClient() {

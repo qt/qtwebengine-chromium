@@ -10,6 +10,8 @@ import("//chrome/common/features.gni")
 import("//content/public/common/features.gni")
 import("//third_party/webrtc/webrtc.gni")
 
+#assert(enable_webrtc)
+
 source_set("webrtc") {
   sources = [
     "audio_debug_recordings_handler.cc",
@@ -91,6 +93,7 @@ source_set("webrtc") {
     "window_icon_util.h",
   ]
 
+  if (enable_webrtc) {
   public_deps = [
     "//base",
     "//build:android_buildflags",
@@ -173,6 +176,10 @@ source_set("webrtc") {
     "//ui/gfx:color_utils",
     "//ui/snapshot",
   ]
+  } else {
+    public_deps = []
+    deps = []
+  }
 
   if (enable_extensions_core) {
     sources += [

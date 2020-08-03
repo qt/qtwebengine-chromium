@@ -16,6 +16,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/to_string.h"
 #include "base/task/single_thread_task_runner.h"
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_encoding_options.h"
@@ -1013,6 +1014,7 @@ void RTCRtpSender::Trace(Visitor* visitor) const {
 
 RTCRtpCapabilities* RTCRtpSender::getCapabilities(ScriptState* state,
                                                   const String& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (!state->ContextIsValid())
     return nullptr;
 
@@ -1067,6 +1069,9 @@ RTCRtpCapabilities* RTCRtpSender::getCapabilities(ScriptState* state,
   capabilities->setHeaderExtensions(header_extensions);
 
   return capabilities;
+#else
+  return nullptr;
+#endif
 }
 
 void RTCRtpSender::MaybeShortCircuitEncodedStreams() {
