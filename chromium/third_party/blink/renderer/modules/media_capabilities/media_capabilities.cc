@@ -22,6 +22,7 @@
 #include "media/learning/common/target_histogram.h"
 #include "media/learning/mojo/public/mojom/learning_task_controller.mojom-blink.h"
 #include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/mojom/media_types.mojom-blink.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -70,13 +71,16 @@
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_capabilities_info.h"
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_configuration.h"
 #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
-#include "third_party/blink/renderer/platform/peerconnection/webrtc_decoding_info_handler.h"
-#include "third_party/blink/renderer/platform/peerconnection/webrtc_encoding_info_handler.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/blink/renderer/platform/peerconnection/webrtc_decoding_info_handler.h"
+#include "third_party/blink/renderer/platform/peerconnection/webrtc_decoding_info_handler.h"
+#endif
 
 namespace blink {
 
@@ -742,7 +746,11 @@ ScriptPromise MediaCapabilities::decodingInfo(
   }
 
   const bool is_webrtc = config->type() == "webrtc";
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (is_webrtc && !RuntimeEnabledFeatures::MediaCapabilitiesWebRtcEnabled()) {
+#else
+  if (is_webrtc) {
+#endif
     exception_state.ThrowTypeError(
         "The provided value 'webrtc' is not a valid enum value of type "
         "MediaDecodingType.");
@@ -757,6 +765,7 @@ ScriptPromise MediaCapabilities::decodingInfo(
   // Validation errors should return above.
   DCHECK(message.IsEmpty());
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (is_webrtc) {
     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
 
@@ -800,6 +809,7 @@ ScriptPromise MediaCapabilities::decodingInfo(
     resolver->Resolve(info);
     return promise;
   }
+#endif
 
   String audio_mime_str;
   String audio_codec_str;
@@ -959,6 +969,7 @@ ScriptPromise MediaCapabilities::encodingInfo(
 
       return promise;
     }
+#endif
     // TODO(crbug.com/1187565): This should not happen unless we're out of
     // memory or something similar. Add UMA metric to count how often it
     // happens.

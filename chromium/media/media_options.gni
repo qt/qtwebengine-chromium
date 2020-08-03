@@ -63,6 +63,8 @@ declare_args() {
 
   enable_web_speech = true
 
+  enable_webrtc = true
+
   # Enable HLS with SAMPLE-AES decryption.
   enable_hls_sample_aes = proprietary_codecs && (is_chromecast || is_fuchsia)
 

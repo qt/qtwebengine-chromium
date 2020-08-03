@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/util/process_version.gni")
+import("//media/media_options.gni")
 import("//remoting/build/config/remoting_build.gni")
 import("//remoting/build/config/remoting_logging.gni")
 
@@ -443,8 +444,6 @@ static_library("common") {
     "//remoting/signaling:signaling",
     "//services/network:network_service",
     "//services/network/public/cpp:cpp",
-    "//third_party/libjingle_xmpp",
-    "//third_party/webrtc_overrides:webrtc_component",
     "//ui/events:events",
 
     # //remoting uses the power_save_blocker directly. See crbug.com/689423
@@ -638,6 +637,13 @@ static_library("common") {
 
     public_deps += [ "//remoting/host/win" ]
   }
+
+  if (enable_webrtc) {
+    deps += [
+      "//third_party/libjingle_xmpp",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+  }
 }
 
 static_library("test_support") {
@@ -675,10 +681,15 @@ static_library("test_support") {
     ":common",
     "//remoting/base:test_support",
     "//remoting/host/file_transfer:test_support",
-    "//third_party/libjingle_xmpp",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/webrtc_overrides:webrtc_component",
   ]
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//third_party/libjingle_xmpp",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+  }
 }
 
 # The host portions of the remoting unit tests.
@@ -824,10 +835,7 @@ if (enable_remoting_host) {
   executable("remoting_start_host") {
     sources = [ "setup/start_host_entry_point.cc" ]
 
-    deps = [
-      "//third_party/libjingle_xmpp",
-      "//third_party/webrtc_overrides:webrtc_component",
-    ]
+    deps = []
 
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
@@ -862,6 +870,13 @@ if (enable_remoting_host) {
         "//remoting/host/setup",
         "//services/network:network_service",
         "//services/network/public/cpp:cpp",
+      ]
+    }
+
+    if (enable_webrtc) {
+      deps += [
+        "//third_party/libjingle_xmpp",
+        "//third_party/webrtc_overrides:webrtc_component",
       ]
     }
   }
@@ -972,8 +987,6 @@ if (enable_me2me_host) {
       "//remoting/protocol:protocol",
       "//remoting/signaling:signaling",
       "//services/network/public/cpp:cpp",
-      "//third_party/libjingle_xmpp",
-      "//third_party/webrtc_overrides:webrtc_component",
     ]
 
     if (use_x11) {
@@ -989,6 +1002,13 @@ if (enable_me2me_host) {
 
     if (!is_ios) {
       deps += [ "//components/policy:generated" ]
+    }
+
+    if (enable_webrtc) {
+      deps += [
+        "//third_party/libjingle_xmpp",
+        "//third_party/webrtc_overrides:webrtc_component",
+      ]
     }
 
     if (use_gtk) {

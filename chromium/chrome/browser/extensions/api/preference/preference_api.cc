@@ -124,10 +124,12 @@ const PrefMappingEntry kPrefMapping[] = {
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},
     {"translationServiceEnabled", translate::prefs::kOfferTranslateEnabled,
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},
+#if BUILDFLAG(ENABLE_WEBRTC)
     {"webRTCIPHandlingPolicy", prefs::kWebRTCIPHandlingPolicy,
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},
     {"webRTCUDPPortRange", prefs::kWebRTCUDPPortRange,
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},
+#endif
     // accessibilityFeatures.animationPolicy is available for
     // all platforms but the others from accessibilityFeatures
     // is only available for OS_CHROMEOS.

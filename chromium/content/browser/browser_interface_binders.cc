@@ -601,6 +601,7 @@ void BindVibrationManager(
     GetDeviceService().BindVibrationManager(std::move(receiver));
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 void BindSocketManager(
     RenderFrameHostImpl* frame,
     mojo::PendingReceiver<network::mojom::P2PSocketManager> receiver) {
@@ -608,6 +609,7 @@ void BindSocketManager(
       ->BindP2PSocketManager(frame->GetNetworkIsolationKey(),
                              std::move(receiver));
 }
+#endif
 
 }  // namespace
 
@@ -691,8 +693,10 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
   map->Add<blink::mojom::NotificationService>(base::BindRepeating(
       &RenderFrameHostImpl::CreateNotificationService, base::Unretained(host)));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   map->Add<network::mojom::P2PSocketManager>(
       base::BindRepeating(&BindSocketManager, base::Unretained(host)));
+#endif
 
   map->Add<blink::mojom::PeerConnectionTrackerHost>(
       base::BindRepeating(&RenderFrameHostImpl::BindPeerConnectionTrackerHost,
