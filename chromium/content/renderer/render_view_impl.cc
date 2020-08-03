@@ -711,6 +711,7 @@ void RenderViewImpl::DidUpdateRendererPreferences() {
 
 #if defined(OS_ANDROID)
 void RenderViewImpl::SuspendVideoCaptureDevices(bool suspend) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (!main_render_frame_)
     return;
 
@@ -723,6 +724,7 @@ void RenderViewImpl::SuspendVideoCaptureDevices(bool suspend) {
       media_stream_device_observer->GetNonScreenCaptureDevices();
   RenderThreadImpl::current()->video_capture_impl_manager()->SuspendDevices(
       video_devices, suspend);
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 #endif  // defined(OS_ANDROID)
 

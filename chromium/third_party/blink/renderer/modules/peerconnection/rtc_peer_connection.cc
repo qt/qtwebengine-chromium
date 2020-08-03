@@ -788,12 +788,14 @@ RTCPeerConnection::RTCPeerConnection(
     peer_handler_ =
         std::move(g_create_rpc_peer_connection_handler_callback_.Get()).Run();
   } else {
+#if BUILDFLAG(ENABLE_WEBRTC)
     peer_handler_ =
         PeerConnectionDependencyFactory::GetInstance()
             ->CreateRTCPeerConnectionHandler(
                 this, window->GetTaskRunner(TaskType::kInternalMedia),
                 force_encoded_audio_insertable_streams_,
                 force_encoded_video_insertable_streams_);
+#endif
   }
 
   if (!peer_handler_) {

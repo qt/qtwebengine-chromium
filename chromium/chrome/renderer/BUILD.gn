@@ -77,8 +77,6 @@ static_library("renderer") {
     "media/flash_embed_rewrite.h",
     "media/media_feeds.cc",
     "media/media_feeds.h",
-    "media/webrtc_logging_agent_impl.cc",
-    "media/webrtc_logging_agent_impl.h",
     "net/net_error_helper.cc",
     "net/net_error_helper.h",
     "net/net_error_helper_core.cc",
@@ -305,12 +303,22 @@ static_library("renderer") {
       "//components/guest_view/renderer",
       "//extensions:extensions_resources",
       "//extensions/renderer",
-      "//media/cast:net",
-      "//media/cast:receiver",
-      "//media/cast:sender",
       "//services/network/public/cpp",
     ]
     public_deps += [ "//ipc" ]
+    if (enable_webrtc) {
+      deps += [
+        "//media/cast:net",
+        "//media/cast:receiver",
+        "//media/cast:sender",
+      ]
+    }
+  }
+  if (enable_webrtc) {
+    sources += [
+      "media/webrtc_logging_agent_impl.cc",
+      "media/webrtc_logging_agent_impl.h",
+    ]
   }
   if (enable_spellcheck) {
     deps += [ "//components/spellcheck/renderer:renderer" ]
@@ -424,4 +432,11 @@ static_library("test_support") {
     "//testing/gmock",
     "//testing/gtest",
   ]
+
+  if (enable_webrtc) {
+    sources += [
+      "media/mock_webrtc_logging_message_filter.cc",
+      "media/mock_webrtc_logging_message_filter.h",
+    ]
+  }
 }

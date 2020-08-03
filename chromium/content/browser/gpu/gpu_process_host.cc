@@ -244,7 +244,9 @@ static const char* const kSwitchNames[] = {
     switches::kDisableMipmapGeneration,
     switches::kDisableShaderNameHashing,
     switches::kDisableSkiaRuntimeOpts,
+#if BUILDFLAG(ENABLE_WEBRTC)
     switches::kDisableWebRtcHWEncoding,
+#endif
     switches::kEnableGpuRasterization,
     switches::kEnableLogging,
     switches::kEnableDeJelly,
