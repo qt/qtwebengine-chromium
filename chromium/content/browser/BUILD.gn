@@ -3524,7 +3524,7 @@ source_set("browser") {
       "digital_credentials/cross_device_transaction_impl.h",
     ]
 
-    if (!is_fuchsia) {
+    if (!is_fuchsia && !is_qtwebengine) {
       sources += [
         "speech/on_device_speech_recognition_engine_impl.cc",
         "speech/on_device_speech_recognition_engine_impl.h",
@@ -3533,8 +3533,13 @@ source_set("browser") {
       ]
 
       deps += [
-        "//components/crash/content/browser/error_reporting",
         "//media/mojo/mojom:web_speech_recognition",
+      ]
+    }
+
+    if (!is_fuchsia) {
+      deps += [
+        "//components/crash/content/browser/error_reporting",
       ]
     }
 

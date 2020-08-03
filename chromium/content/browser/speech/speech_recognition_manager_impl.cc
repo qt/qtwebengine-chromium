@@ -51,7 +51,7 @@
 
 #if BUILDFLAG(IS_ANDROID)
 #include "content/browser/speech/speech_recognizer_impl_android.h"
-#elif !BUILDFLAG(IS_FUCHSIA)
+#elif !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/soda/constants.h"
 #include "components/soda/soda_util.h"
 #include "content/browser/speech/on_device_speech_recognition_engine_impl.h"
@@ -593,7 +593,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
   session->use_microphone = !audio_forwarder_config.has_value();
 
 #if !BUILDFLAG(IS_ANDROID)
-#if !BUILDFLAG(IS_FUCHSIA)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_QTWEBENGINE)
   if (UseOnDeviceSpeechRecognition(config) &&
       audio_forwarder_config.has_value() &&
       !base::FeatureList::IsEnabled(media::kOnDeviceWebSpeechGeminiNano)) {
@@ -643,7 +643,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
 
   std::unique_ptr<SpeechRecognitionEngine> speech_recognition_engine;
 
-#if !BUILDFLAG(IS_FUCHSIA)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_QTWEBENGINE)
   if (UseOnDeviceSpeechRecognition(config)) {
     if (base::FeatureList::IsEnabled(media::kOnDeviceWebSpeechGeminiNano)) {
       speech_recognition_engine =
