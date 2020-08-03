@@ -163,7 +163,6 @@
 #include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/tracing_support.h"
 #include "content/public/browser/weak_document_ptr.h"
-#include "content/public/browser/webrtc_log.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -290,6 +289,10 @@
 #if BUILDFLAG(IS_P2P_ENABLED)
 #include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
 #endif  // BUILDFLAG(IS_P2P_ENABLED)
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/public/browser/webrtc_log.h"
+#endif
 
 #if BUILDFLAG(ENABLE_VRP_FLAGS)
 #include "components/vrp_flags/vrp_flags.h"  // nogncheck
@@ -2823,10 +2826,12 @@ void RenderProcessHostImpl::BindVideoEncoderMetricsProvider(
                                                         std::move(receiver));
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 void RenderProcessHostImpl::BindAecDumpManager(
     mojo::PendingReceiver<blink::mojom::AecDumpManager> receiver) {
   aec_dump_manager_.AddReceiver(std::move(receiver));
 }
+#endif
 
 void RenderProcessHostImpl::CreateOneShotSyncService(
     const url::Origin& origin,
@@ -3998,7 +4003,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
       network::switches::kForcePermissionPolicyUnloadDefaultEnabled,
       network::switches::kLocalNetworkAccessPermissionsPolicyDefaultEnabled,
 
+#if BUILDFLAG(ENABLE_WEBRTC)
       switches::kWebRtcMaxCaptureFramerate,
+#endif
       switches::kEnableLowEndDeviceMode,
       switches::kDisableLowEndDeviceMode,
       switches::kDisallowNonExactResourceReuse,
@@ -4601,11 +4608,13 @@ void RenderProcessHostImpl::Cleanup() {
   // *will* post a `DeleteSoon` task a bit further down.
   deleting_soon_ = true;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (is_initialized_) {
     GetIOThreadTaskRunner({})->PostTask(
         FROM_HERE,
         base::BindOnce(&WebRtcLog::ClearLogMessageCallback, GetDeprecatedID()));
   }
+#endif
 
   // TODO(crbug.com/540651680): CHECK-exclusion: Convert to a CHECK once we are
   // confident it won't be triggered.
@@ -4738,6 +4747,7 @@ RenderProcessHost::FilterURLResult RenderProcessHostImpl::FilterURL(
   return FilterURL(this, empty_allowed, url);
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 void RenderProcessHostImpl::EnableAudioDebugRecordings(
     const base::FilePath& file_path) {
   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M152);
@@ -4765,6 +4775,8 @@ RenderProcessHostImpl::StartRtpDump(bool incoming,
   return base::DoNothing();
 #endif  // BUILDFLAG(IS_P2P_ENABLED)
 }
+
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 
 IPC::ChannelProxy* RenderProcessHostImpl::GetChannel() {
   return channel_.get();
@@ -6202,8 +6214,10 @@ void RenderProcessHostImpl::OnProcessLaunched() {
 #endif
   }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   aec_dump_manager_.set_pid(GetProcess().Pid());
   aec_dump_manager_.AutoStart();
+#endif
 
   tracing_registration_ = TracingServiceController::Get().RegisterClient(
       GetProcess().Pid(),

@@ -11,6 +11,7 @@ import("//components/on_device_translation/buildflags/features.gni")
 import("//components/signin/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 # This target should be the default place for adding public interface things
 # (ie, non-factory, non-impl). There will likely need to be a :factory or :impl
@@ -673,7 +674,6 @@ source_set("profiles_extra_parts_impl") {
     "//chrome/browser/manta",
     "//chrome/browser/manta:impl",
     "//chrome/browser/media/router",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/notebooks",
     "//chrome/browser/notifications",
     "//chrome/browser/omnibox",
@@ -939,6 +939,11 @@ source_set("profiles_extra_parts_impl") {
 
   if (enable_dice_support) {
     deps += [ "//chrome/browser/ui/signin" ]
+  }
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
 
   if (enable_captive_portal_detection) {

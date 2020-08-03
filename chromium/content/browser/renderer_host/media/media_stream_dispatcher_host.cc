@@ -664,10 +664,12 @@ void MediaStreamDispatcherHost::FocusCapturedSurface(const std::string& label,
                                                      bool focus) {
   CHECK_CURRENTLY_ON(BrowserThread::IO, base::NotFatalUntil::M152);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   media_stream_manager_->SetCapturedDisplaySurfaceFocus(
       label, focus,
       /*is_from_microtask=*/false,
       /*is_from_timer=*/false);
+#endif
 }
 
 

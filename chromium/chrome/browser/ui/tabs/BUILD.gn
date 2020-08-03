@@ -5,6 +5,7 @@
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
 import("//chrome/common/features.gni")
+import("//media/media_options.gni")
 
 # This is the public interface for tabs in a desktop browser. Most features in
 # //chrome/browser depend on this interface, and thus to prevent circular
@@ -485,7 +486,6 @@ if (!is_android) {
       "//chrome/browser/image_fetcher",
       "//chrome/browser/indigo",
       "//chrome/browser/lifetime",
-      "//chrome/browser/media/webrtc",
       "//chrome/browser/net",
       "//chrome/browser/preloading/bookmarkbar_preload",
       "//chrome/browser/preloading/new_tab_page_preload",
@@ -575,6 +575,12 @@ if (!is_android) {
 
     if (use_ozone) {
       deps += [ "//ui/ozone" ]
+    }
+
+    if (enable_webrtc) {
+      deps += [
+        "//chrome/browser/media/webrtc",
+      ]
     }
 
     if (!is_android) {

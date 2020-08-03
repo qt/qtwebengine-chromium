@@ -5,6 +5,7 @@
 import("//build/config/ui.gni")
 import("//components/safe_browsing/buildflags.gni")
 import("//device/vr/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//services/device/public/cpp/geolocation/buildflags.gni")
@@ -63,7 +64,6 @@ source_set("permissions") {
 
   public_deps = [
     "//chrome/browser:browser_public_dependencies",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/permissions/system",
     "//chrome/browser/ui/navigator",
   ]
@@ -195,12 +195,14 @@ source_set("permissions") {
       deps += [ "//chrome/browser/printing" ]
     }
   }
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 
   if (!is_android) {
-    deps += [
-      "//chrome/browser/ui/permission_bubble",
-      "//third_party/tflite_support",
-    ]
+    deps += [ "//chrome/browser/ui/permission_bubble" ]
   }
 
   if (safe_browsing_mode != 0) {
@@ -356,8 +358,6 @@ if (!is_android) {
       "//chrome/browser/content_settings:content_settings_factory",
       "//chrome/browser/contextual_tasks:ui",
       "//chrome/browser/custom_handlers",
-      "//chrome/browser/geolocation",
-      "//chrome/browser/media/webrtc",
       "//chrome/browser/optimization_guide",
       "//chrome/browser/optimization_guide:test_support",
       "//chrome/browser/permissions/system",
@@ -387,6 +387,12 @@ if (!is_android) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+    if (enable_webrtc) {
+      deps += [
+        "//chrome/browser/media/webrtc",
+      ]
+    }
   }
 }
 

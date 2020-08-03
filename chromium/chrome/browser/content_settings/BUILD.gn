@@ -5,6 +5,7 @@
 import("//components/guest_view/buildflags/buildflags.gni")
 import("//content/public/common/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
@@ -80,7 +81,6 @@ source_set("impl") {
     "//chrome/browser:browser_process",
     "//chrome/browser:browser_process_platform_part",
     "//chrome/browser/browsing_data",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/permissions",
     "//chrome/browser/permissions/system",
     "//chrome/browser/picture_in_picture",
@@ -101,6 +101,12 @@ source_set("impl") {
     "//services/metrics/public/cpp:ukm_builders",
     "//ui/webui",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 
   if (is_android) {
     sources += [

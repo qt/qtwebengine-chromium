@@ -18,6 +18,7 @@ import("//content/browser/devtools/features.gni")
 import("//crypto/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//rlz/buildflags/buildflags.gni")
@@ -442,7 +443,6 @@ static_library("ui") {
     "//chrome/browser/loader",
     "//chrome/browser/media",
     "//chrome/browser/media:impl",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/memory",
     "//chrome/browser/net",
     "//chrome/browser/net:impl",
@@ -929,7 +929,6 @@ static_library("ui") {
     "//components/web_resource",
     "//components/webapps/browser",
     "//components/webapps/common",
-    "//components/webrtc_logging/browser",
     "//components/webui/about",
     "//components/webui/chrome_urls",
     "//components/webui/flags",
@@ -1229,9 +1228,6 @@ static_library("ui") {
 
     # TODO(crbug.com/344921703): Remove circular dependencies.
     "//chrome/browser/sync",
-
-    # TODO(crbug.com/353284909): Remove this circular dependency.
-    "//chrome/browser/media/webrtc",
 
     # metrics:impl includes headers from //chrome/browser/ui that can't be
     # split out yet.
@@ -5189,6 +5185,18 @@ static_library("ui") {
     if (is_chromeos) {
       deps += [ "//chromeos/printing" ]
     }
+  }
+
+  if (enable_webrtc) {
+    deps += [ "//components/webrtc_logging/browser" ]
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+
+    allow_circular_includes_from += [
+      # TODO(crbug.com/353284909): Remove this circular dependency.
+      "//chrome/browser/media/webrtc",
+    ]
   }
 
   if (safe_browsing_mode > 0) {

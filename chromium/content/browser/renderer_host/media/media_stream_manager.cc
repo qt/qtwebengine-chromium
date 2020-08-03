@@ -448,7 +448,7 @@ bool ChangeSourceSupported(const MediaStreamDevices& devices) {
   return true;  // getDisplayMedia() now supported by default.
 }
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && BUILDFLAG(ENABLE_SCREEN_CAPTURE)
 MediaStreamManager::CapturedSurfaceControllerFactoryCallback
 MakeDefaultCapturedSurfaceControllerFactory() {
   return base::BindRepeating(
@@ -1564,7 +1564,7 @@ MediaStreamManager::MediaStreamManager(
     media::AudioSystem* audio_system,
     std::unique_ptr<VideoCaptureProvider> video_capture_provider)
     :
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && BUILDFLAG(ENABLE_SCREEN_CAPTURE)
       captured_surface_controller_factory_(
           MakeDefaultCapturedSurfaceControllerFactory()),
 #endif
@@ -1636,11 +1636,13 @@ MediaStreamManager::MediaStreamManager(
       media::CameraHalDispatcherImpl::GetInstance()->Start();
     }
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
     video_capture_provider = std::make_unique<VideoCaptureProviderSwitcher>(
         std::make_unique<ServiceVideoCaptureProvider>(
             base::BindRepeating(&SendVideoCaptureLogMessage)),
         InProcessVideoCaptureProvider::CreateInstanceForScreenCapture(
             std::move(device_task_runner)));
+#endif
   }
   InitializeMaybeAsync(std::move(video_capture_provider));
 

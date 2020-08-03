@@ -7,6 +7,7 @@
 #include "build/android_buildflags.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#include "media/media_buildflags.h"
 #include "chrome/browser/contextual_tasks/contextual_tasks_ui.h"
 #include "chrome/browser/glic/host/glic_ui.h"
 #include "chrome/browser/optimization_guide/optimization_guide_internals_ui.h"
@@ -38,7 +39,9 @@
 #include "chrome/browser/ui/webui/location_internals/location_internals_ui.h"
 #include "chrome/browser/ui/webui/management/management_ui.h"
 #include "chrome/browser/ui/webui/media/media_engagement_ui.h"
+#if BUILDFLAG(ENABLE_WEBRTC)
 #include "chrome/browser/ui/webui/media/webrtc_logs_ui.h"
+#endif
 #include "chrome/browser/ui/webui/memory_internals_ui.h"
 #include "chrome/browser/ui/webui/metrics_internals/metrics_internals_ui.h"
 #include "chrome/browser/ui/webui/net_export_ui.h"
@@ -313,7 +316,9 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<UsbInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<user_actions_ui::UserActionsUIConfig>());
   map.AddWebUIConfig(std::make_unique<VersionUIConfig>());
+#if BUILDFLAG(ENABLE_WEBRTC)
   map.AddWebUIConfig(std::make_unique<WebRtcLogsUIConfig>());
+#endif
   map.AddWebUIConfig(std::make_unique<RegionalCapabilitiesInternalsUIConfig>());
 #if BUILDFLAG(ENABLE_WEBUI_NTP)
   map.AddWebUIConfig(std::make_unique<NewTabPageUIConfig>());

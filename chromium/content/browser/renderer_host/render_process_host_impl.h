@@ -155,7 +155,9 @@ class FileSystemManagerImpl;
 class FramelessMediaInterfaceProxy;
 class InProcessChildThreadParams;
 class IsolationContext;
+#if BUILDFLAG(ENABLE_WEBRTC)
 class MediaStreamTrackMetricsHost;
+#endif
 #if BUILDFLAG(IS_P2P_ENABLED)
 class P2PSocketDispatcherHost;
 #endif  // BUILDFLAG(IS_P2P_ENABLED)
@@ -299,12 +301,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   base::TimeDelta GetChildProcessIdleTime() override;
   viz::GpuClient* GetGpuClient();
   FilterURLResult FilterURL(bool empty_allowed, GURL* url) override;
+#if BUILDFLAG(ENABLE_WEBRTC)
   void EnableAudioDebugRecordings(const base::FilePath& file) override;
   void DisableAudioDebugRecordings() override;
   WebRtcStopRtpDumpCallback StartRtpDump(
       bool incoming,
       bool outgoing,
       WebRtcRtpPacketCallback packet_callback) override;
+#endif
   void BindReceiver(mojo::GenericPendingReceiver receiver) override;
   std::unique_ptr<base::PersistentMemoryAllocator> TakeMetricsAllocator()
       override;
@@ -1121,8 +1125,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void BindVideoEncoderMetricsProvider(
       mojo::PendingReceiver<media::mojom::VideoEncoderMetricsProvider>
           receiver);
+#if BUILDFLAG(ENABLE_WEBRTC)
   void BindAecDumpManager(
       mojo::PendingReceiver<blink::mojom::AecDumpManager> receiver);
+#endif
   void CreateMediaLogRecordHost(
       mojo::PendingReceiver<content::mojom::MediaInternalLogRecords> receiver);
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -1509,11 +1515,13 @@ class CONTENT_EXPORT RenderProcessHostImpl
   std::unique_ptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
 #endif  // BUILDFLAG(IS_P2P_ENABLED)
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Must be accessed on UI thread.
   AecDumpManagerImpl aec_dump_manager_;
 
   std::unique_ptr<MediaStreamTrackMetricsHost, BrowserThread::DeleteOnIOThread>
       media_stream_track_metrics_host_;
+#endif
 
   std::unique_ptr<FramelessMediaInterfaceProxy> media_interface_proxy_;
 

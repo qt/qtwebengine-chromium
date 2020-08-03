@@ -294,7 +294,9 @@ base::span<const base::cstring_view> ChromeURLHosts() {
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
       kChromeUIPrintHost,
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
       kChromeUIWebRtcLogsHost,
+#endif
       kChromeUIWebNNInternalsHost,
 #if BUILDFLAG(IS_CHROMEOS)
       ash::kChromeUIDlpInternalsHost,

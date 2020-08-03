@@ -7,6 +7,7 @@ import("//build/config/ozone.gni")
 import("//chrome/common/features.gni")
 import("//components/enterprise/buildflags/buildflags.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
 # TODO(b/430371855): This target should eventually become Glic's public target,
@@ -446,7 +447,6 @@ source_set("impl") {
     "//chrome/browser/lifetime",
     "//chrome/browser/lifetime:termination_notification",
     "//chrome/browser/media",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/metrics",
     "//chrome/browser/page_content_annotations",
     "//chrome/browser/picture_in_picture",
@@ -648,6 +648,11 @@ source_set("impl") {
   }
   if (enable_pdf) {
     deps += [ "//components/pdf/browser" ]
+  }
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
   if (enable_printing) {
     deps += [ "//chrome/browser/printing" ]

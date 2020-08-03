@@ -32,7 +32,7 @@
 #include "media/gpu/macros.h"
 #include "media/video/video_encode_accelerator.h"
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_WEBRTC)
 #include "media/gpu/android/ndk_video_encode_accelerator.h"
 #endif
 #if BUILDFLAG(IS_MAC)
@@ -81,7 +81,7 @@ std::unique_ptr<VideoEncodeAccelerator> CreateVaapiVEA() {
 }
 #endif
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_WEBRTC)
 std::unique_ptr<VideoEncodeAccelerator> CreateAndroidVEA(
     const gpu::GpuDriverBugWorkarounds& gpu_workarounds) {
   return base::WrapUnique<VideoEncodeAccelerator>(new NdkVideoEncodeAccelerator(
@@ -190,7 +190,7 @@ std::vector<VEAFactoryFunction> CreateVEAFactoryFunctions(
   }
 #endif
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(ENABLE_WEBRTC)
   funcs.push_back(base::BindRepeating(&CreateAndroidVEA, gpu_workarounds));
 #endif
 #if BUILDFLAG(IS_MAC)

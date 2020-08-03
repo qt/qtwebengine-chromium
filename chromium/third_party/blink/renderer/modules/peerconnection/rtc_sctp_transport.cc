@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/task/single_thread_task_runner.h"
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_sctp_transport_state.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
@@ -66,8 +67,13 @@ RTCSctpTransport::RTCSctpTransport(
     : RTCSctpTransport(context,
                        native_transport,
                        context->GetTaskRunner(TaskType::kNetworking),
+#if BUILDFLAG(ENABLE_WEBRTC)
                        PeerConnectionDependencyFactory::From(*context)
-                           .GetWebRtcNetworkTaskRunner()) {}
+                           .GetWebRtcNetworkTaskRunner()
+#else
+                       nullptr
+#endif
+                       ) {}
 
 RTCSctpTransport::RTCSctpTransport(
     ExecutionContext* context,

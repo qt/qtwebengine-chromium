@@ -230,6 +230,12 @@ static_library("router") {
       "//extensions/common",
     ]
   }
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 }
 
 if (!is_android && enable_extensions) {
@@ -247,7 +253,6 @@ if (!is_android && enable_extensions) {
       "//chrome/browser/media",
       "//chrome/browser/media/router/discovery",
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
-      "//chrome/browser/media/webrtc",
       "//chrome/browser/net",
       "//components/media_router/common/providers/cast/channel",
       "//components/openscreen_platform",
@@ -255,6 +260,12 @@ if (!is_android && enable_extensions) {
       "//services/metrics/public/cpp:ukm_builders",
     ]
     public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+
+    if (enable_webrtc) {
+      deps += [
+        "//chrome/browser/media/webrtc",
+      ]
+    }
   }
 }
 

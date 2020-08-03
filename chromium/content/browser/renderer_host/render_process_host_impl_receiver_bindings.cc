@@ -254,10 +254,13 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
   // thread deleter and the callback is also targeting the IO thread.  When
   // the RPHI is destroyed it also triggers the destruction of the registry
   // on the IO thread.
+#if BUILDFLAG(ENABLE_WEBRTC)
   media_stream_track_metrics_host_.reset(new MediaStreamTrackMetricsHost());
+
   registry->AddInterface(base::BindRepeating(
       &MediaStreamTrackMetricsHost::BindReceiver,
       base::Unretained(media_stream_track_metrics_host_.get())));
+#endif
 
   registry->AddInterface(
       base::BindRepeating(&metrics::CreateSingleSampleMetricsProvider));
@@ -314,10 +317,12 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
           &RenderProcessHostImpl::BindVideoEncoderMetricsProvider,
           instance_weak_factory_.GetWeakPtr()));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(&RenderProcessHostImpl::BindAecDumpManager,
                           instance_weak_factory_.GetWeakPtr()));
+#endif
 
 #if BUILDFLAG(IS_FUCHSIA)
   AddUIThreadInterface(

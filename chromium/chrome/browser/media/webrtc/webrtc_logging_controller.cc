@@ -161,10 +161,12 @@ void WebRtcLoggingController::UploadLog(UploadDoneCallback callback) {
   base::UmaHistogramSparse("WebRtcTextLogging.UploadStarted", web_app_id_);
 
   WebRtcLogUploader* log_uploader = WebRtcLogUploader::GetInstance();
-  log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
-      base::BindOnce(&WebRtcLoggingController::TriggerUpload, this,
-                     std::move(callback)));
+  if (log_uploader) {
+    log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
+        base::BindOnce(&WebRtcLoggingController::TriggerUpload, this,
+                       std::move(callback)));
+  }
 }
 
 void WebRtcLoggingController::DiscardLog(GenericDoneCallback callback) {
@@ -179,7 +181,9 @@ void WebRtcLoggingController::DiscardLog(GenericDoneCallback callback) {
     return;
   }
   WebRtcLogUploader* log_uploader = WebRtcLogUploader::GetInstance();
-  log_uploader->LoggingStoppedDontUpload();
+  if (log_uploader) {
+    log_uploader->LoggingStoppedDontUpload();
+  }
   text_log_handler_->DiscardLog();
   rtp_dump_handler_.reset();
   stop_rtp_dump_callback_.Reset();
@@ -226,10 +230,12 @@ void WebRtcLoggingController::StoreLogContinue(const std::string& log_id,
   ReleaseRtpDumps(log_paths.get());
 
   WebRtcLogUploader* log_uploader = WebRtcLogUploader::GetInstance();
-  log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
-      base::BindOnce(&WebRtcLoggingController::StoreLogInDirectory, this,
-                     log_id, std::move(log_paths), std::move(callback)));
+  if (log_uploader) {
+    log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
+        base::BindOnce(&WebRtcLoggingController::StoreLogInDirectory, this,
+                       log_id, std::move(log_paths), std::move(callback)));
+  }
 }
 
 void WebRtcLoggingController::StartRtpDump(RtpDumpType type,
@@ -258,10 +264,12 @@ void WebRtcLoggingController::StartRtpDump(RtpDumpType type,
 
   if (!rtp_dump_handler_) {
     WebRtcLogUploader* log_uploader = WebRtcLogUploader::GetInstance();
-    log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
-        FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
-        base::BindOnce(&WebRtcLoggingController::CreateRtpDumpHandlerAndStart,
-                       this, type, std::move(callback)));
+    if (log_uploader) {
+      log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
+          FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
+          base::BindOnce(&WebRtcLoggingController::CreateRtpDumpHandlerAndStart,
+                         this, type, std::move(callback)));
+    }
     return;
   }
 
@@ -335,10 +343,12 @@ void WebRtcLoggingController::GetLogsDirectory(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!callback.is_null());
   WebRtcLogUploader* log_uploader = WebRtcLogUploader::GetInstance();
-  log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
-      base::BindOnce(&WebRtcLoggingController::GrantLogsDirectoryAccess, this,
-                     std::move(callback), std::move(error_callback)));
+  if (log_uploader) {
+    log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
+        FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
+        base::BindOnce(&WebRtcLoggingController::GrantLogsDirectoryAccess, this,
+                       std::move(callback), std::move(error_callback)));
+  }
 }
 
 void WebRtcLoggingController::GrantLogsDirectoryAccess(
@@ -466,12 +476,16 @@ void WebRtcLoggingController::OnAgentDisconnected() {
     case WebRtcTextLogHandler::STOPPED:
       text_log_handler_->ChannelClosing();
       if (upload_log_on_render_close_) {
-        log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
-            FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
-            base::BindOnce(&WebRtcLoggingController::TriggerUpload, this,
-                           UploadDoneCallback()));
+        if (log_uploader) {
+          log_uploader->background_task_runner()->PostTaskAndReplyWithResult(
+              FROM_HERE, base::BindOnce(log_directory_getter_, GetApiType()),
+              base::BindOnce(&WebRtcLoggingController::TriggerUpload, this,
+                             UploadDoneCallback()));
+        }
       } else {
-        log_uploader->LoggingStoppedDontUpload();
+        if (log_uploader) {
+          log_uploader->LoggingStoppedDontUpload();
+        }
         text_log_handler_->DiscardLog();
       }
       break;

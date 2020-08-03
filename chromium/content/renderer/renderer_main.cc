@@ -58,7 +58,6 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/skia/include/core/SkFontMgr.h"
-#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #include "ui/base/ui_base_switches.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -85,6 +84,10 @@
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #include "content/child/sandboxed_process_thread_type_handler.h"
+#endif
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #endif
 
 #if BUILDFLAG(MOJO_RANDOM_DELAYS_ENABLED)
@@ -219,11 +222,13 @@ int RendererMain(MainFunctionParams parameters) {
           CreateMainThreadMessagePump());
   platform.PlatformInitialize();
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Initialize WebRTC before engaging the sandbox.
   // NOTE: On linux, this call could already have been made from
   // zygote_main_linux.cc.  However, calling multiple times from the same thread
   // is OK.
   InitializeWebRtcModuleBeforeSandbox();
+#endif
 
   std::optional<LastResortGCPolicy> last_resort_gc_policy;
   if (base::FeatureList::IsEnabled(kMemoryCoordinatorLastResortGC)) {
