@@ -227,6 +227,7 @@ void ContentAutofillDriverFactory::DidFinishNavigation(
     return;
   }
 
+#if !defined(TOOLKIT_QT)
   // If the navigation happened in the main frame and the BrowserAutofillManager
   // exists (not in Android Webview), and the AutofillOfferManager exists (not
   // in Incognito windows), notifies the navigation event.
@@ -234,6 +235,7 @@ void ContentAutofillDriverFactory::DidFinishNavigation(
       client()->GetAutofillOfferManager()) {
     client()->GetAutofillOfferManager()->OnDidNavigateFrame(client());
   }
+#endif
 
   // When IsServedFromBackForwardCache or IsPrerendererdPageActivation, the form
   // data is not parsed again. So, we should keep and use the autofill manager's
