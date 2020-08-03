@@ -21,6 +21,7 @@
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
 #include "content/renderer/top_level_blame_context.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/shared_remote.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
@@ -128,6 +129,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       blink::WebLocalFrame* web_frame,
       const media::AudioSourceParameters& params) override;
   viz::RasterContextProvider* SharedMainThreadContextProvider() override;
+#if BUILDFLAG(ENABLE_WEBRTC)
   bool RTCSmoothnessAlgorithmEnabled() override;
   base::Optional<double> GetWebRtcMaxCaptureFrameRate() override;
   scoped_refptr<media::AudioRendererSink> NewAudioRendererSink(
@@ -157,6 +159,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   bool IsWebRtcSrtpAesGcmEnabled() override;
   bool IsWebRtcSrtpEncryptedHeadersEnabled() override;
   bool AllowsLoopbackInPeerConnection() override;
+#endif
 
   blink::WebVideoCaptureImplManager* GetVideoCaptureImplManager() override;
 

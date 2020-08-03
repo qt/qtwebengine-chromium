@@ -70,8 +70,6 @@ jumbo_static_library("renderer") {
     "media/flash_embed_rewrite.h",
     "media/media_feeds.cc",
     "media/media_feeds.h",
-    "media/webrtc_logging_agent_impl.cc",
-    "media/webrtc_logging_agent_impl.h",
     "net/net_error_helper.cc",
     "net/net_error_helper.h",
     "net/net_error_helper_core.cc",
@@ -345,8 +343,22 @@ jumbo_static_library("renderer") {
       "//services/network/public/cpp",
     ]
     public_deps = [ "//ipc" ]
+    if (!enable_webrtc) {
+      sources -= [
+        "media/cast_receiver_session.cc",
+        "media/cast_receiver_session.h",
+        "media/cast_rtp_stream.cc",
+        "media/cast_rtp_stream.h",
+      ]
+    }
   }
-  if (enable_extensions) {
+  if (enable_webrtc) {
+    sources += [
+      "media/webrtc_logging_agent_impl.cc",
+      "media/webrtc_logging_agent_impl.h",
+    ]
+  }
+  if (enable_extensions && enable_webrtc) {
     sources += [
       "extensions/cast_streaming_native_handler.cc",
       "extensions/cast_streaming_native_handler.h",
@@ -461,6 +473,13 @@ jumbo_static_library("test_support") {
     "//testing/gmock",
     "//testing/gtest",
   ]
+
+  if (enable_webrtc) {
+    sources += [
+      "media/mock_webrtc_logging_message_filter.cc",
+      "media/mock_webrtc_logging_message_filter.h",
+    ]
+  }
 
   if (is_android) {
     sources -= [

@@ -26,7 +26,9 @@
 #include "media/audio/fake_audio_output_stream.h"
 #include "media/base/media_switches.h"
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 #include "media/audio/audio_input_stream_data_interceptor.h"
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 
 namespace media {
 
@@ -307,6 +309,7 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
                      input_stream_count());
     }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (!params.IsBitstreamFormat() && debug_recording_manager_) {
       // Using unretained for |debug_recording_manager_| is safe since it
       // outlives the audio thread, on which streams are operated.
@@ -321,6 +324,7 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
               AudioDebugRecordingStreamType::kInput, params),
           stream);
     }
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
   }
 
   return stream;

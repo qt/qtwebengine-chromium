@@ -618,8 +618,9 @@ void RenderThreadImpl::Init() {
   unfreezable_message_filter_ = new UnfreezableMessageFilter(this);
   AddFilter(unfreezable_message_filter_.get());
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   audio_input_ipc_factory_.emplace(main_thread_runner(), GetIOTaskRunner());
-
+#endif
   audio_output_ipc_factory_.emplace(GetIOTaskRunner());
 
   GetContentClient()->renderer()->RenderThreadStarted();

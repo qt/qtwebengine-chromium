@@ -99,7 +99,6 @@ jumbo_source_set("browser") {
     "//content/browser/process_internals:mojo_bindings",
     "//content/browser/resources/media:media_internals_resources",
     "//content/browser/service_worker:service_worker_proto",
-    "//content/browser/webrtc/resources",
     "//content/common",
     "//content/common:buildflags",
     "//content/common:mojo_bindings",
@@ -178,10 +177,6 @@ jumbo_source_set("browser") {
     "//services/tracing/public/cpp:traced_process",
     "//services/tracing/public/cpp/background_tracing",
     "//services/tracing/public/mojom",
-    "//services/video_capture:lib",
-    "//services/video_capture/public/cpp",
-    "//services/video_capture/public/mojom:constants",
-    "//services/video_capture/public/uma",
     "//services/viz/privileged/mojom",
     "//services/viz/public/cpp/gpu",
     "//services/viz/public/mojom",
@@ -207,7 +202,6 @@ jumbo_source_set("browser") {
     "//third_party/libyuv",
     "//third_party/re2",
     "//third_party/sqlite",
-    "//third_party/webrtc_overrides:webrtc_component",
     "//third_party/zlib",
     "//third_party/zlib/google:zip",
     "//ui/accessibility",
@@ -1106,8 +1100,6 @@ jumbo_source_set("browser") {
     "loader/single_request_url_loader_factory.h",
     "loader/url_loader_throttles.cc",
     "loader/url_loader_throttles.h",
-    "loader/webrtc_connections_observer.cc",
-    "loader/webrtc_connections_observer.h",
     "locks/lock_manager.cc",
     "locks/lock_manager.h",
     "log_console_message.cc",
@@ -1472,8 +1464,6 @@ jumbo_source_set("browser") {
     "renderer_host/input_event_shim.h",
     "renderer_host/legacy_render_widget_host_win.cc",
     "renderer_host/legacy_render_widget_host_win.h",
-    "renderer_host/media/aec_dump_manager_impl.cc",
-    "renderer_host/media/aec_dump_manager_impl.h",
     "renderer_host/media/audio_input_device_manager.cc",
     "renderer_host/media/audio_input_device_manager.h",
     "renderer_host/media/audio_input_stream_handle.cc",
@@ -1505,20 +1495,10 @@ jumbo_source_set("browser") {
     "renderer_host/media/media_stream_track_metrics_host.h",
     "renderer_host/media/media_stream_ui_proxy.cc",
     "renderer_host/media/media_stream_ui_proxy.h",
-    "renderer_host/media/peer_connection_tracker_host.cc",
-    "renderer_host/media/peer_connection_tracker_host.h",
-    "renderer_host/media/ref_counted_video_source_provider.cc",
-    "renderer_host/media/ref_counted_video_source_provider.h",
     "renderer_host/media/render_frame_audio_input_stream_factory.cc",
     "renderer_host/media/render_frame_audio_input_stream_factory.h",
     "renderer_host/media/render_frame_audio_output_stream_factory.cc",
     "renderer_host/media/render_frame_audio_output_stream_factory.h",
-    "renderer_host/media/service_launched_video_capture_device.cc",
-    "renderer_host/media/service_launched_video_capture_device.h",
-    "renderer_host/media/service_video_capture_device_launcher.cc",
-    "renderer_host/media/service_video_capture_device_launcher.h",
-    "renderer_host/media/service_video_capture_provider.cc",
-    "renderer_host/media/service_video_capture_provider.h",
     "renderer_host/media/video_capture_controller.cc",
     "renderer_host/media/video_capture_controller.h",
     "renderer_host/media/video_capture_controller_event_handler.h",
@@ -1528,18 +1508,12 @@ jumbo_source_set("browser") {
     "renderer_host/media/video_capture_manager.cc",
     "renderer_host/media/video_capture_manager.h",
     "renderer_host/media/video_capture_provider.h",
-    "renderer_host/media/video_capture_provider_switcher.cc",
-    "renderer_host/media/video_capture_provider_switcher.h",
-    "renderer_host/media/virtual_video_capture_devices_changed_observer.cc",
-    "renderer_host/media/virtual_video_capture_devices_changed_observer.h",
     "renderer_host/native_web_keyboard_event_aura.cc",
     "renderer_host/native_web_keyboard_event_mac.mm",
     "renderer_host/overscroll_configuration.cc",
     "renderer_host/overscroll_controller.cc",
     "renderer_host/overscroll_controller.h",
     "renderer_host/overscroll_controller_delegate.h",
-    "renderer_host/p2p/socket_dispatcher_host.cc",
-    "renderer_host/p2p/socket_dispatcher_host.h",
     "renderer_host/page_lifecycle_state_manager.cc",
     "renderer_host/page_lifecycle_state_manager.h",
     "renderer_host/render_frame_metadata_provider_impl.cc",
@@ -1904,14 +1878,6 @@ jumbo_source_set("browser") {
     "web_package/web_bundle_url_loader_factory.h",
     "web_package/web_bundle_utils.cc",
     "web_package/web_bundle_utils.h",
-    "webrtc/webrtc_internals.cc",
-    "webrtc/webrtc_internals.h",
-    "webrtc/webrtc_internals_connections_observer.h",
-    "webrtc/webrtc_internals_message_handler.cc",
-    "webrtc/webrtc_internals_message_handler.h",
-    "webrtc/webrtc_internals_ui.cc",
-    "webrtc/webrtc_internals_ui.h",
-    "webrtc/webrtc_internals_ui_observer.h",
     "websockets/websocket_connector_impl.cc",
     "websockets/websocket_connector_impl.h",
     "websockets/websocket_handshake_request_info_impl.cc",
@@ -2063,12 +2029,52 @@ jumbo_source_set("browser") {
     ]
   }
 
+  if (enable_webrtc) {
+    sources += [
+      "loader/webrtc_connections_observer.cc",
+      "loader/webrtc_connections_observer.h",
+      "renderer_host/media/aec_dump_manager_impl.cc",
+      "renderer_host/media/aec_dump_manager_impl.h",
+      "renderer_host/media/ref_counted_video_source_provider.cc",
+      "renderer_host/media/ref_counted_video_source_provider.h",
+      "renderer_host/media/peer_connection_tracker_host.cc",
+      "renderer_host/media/peer_connection_tracker_host.h",
+      "renderer_host/media/service_launched_video_capture_device.cc",
+      "renderer_host/media/service_launched_video_capture_device.h",
+      "renderer_host/media/service_video_capture_device_launcher.cc",
+      "renderer_host/media/service_video_capture_device_launcher.h",
+      "renderer_host/media/service_video_capture_provider.cc",
+      "renderer_host/media/service_video_capture_provider.h",
+      "renderer_host/media/video_capture_provider_switcher.cc",
+      "renderer_host/media/video_capture_provider_switcher.h",
+      "renderer_host/media/virtual_video_capture_devices_changed_observer.cc",
+      "renderer_host/media/virtual_video_capture_devices_changed_observer.h",
+      "renderer_host/p2p/socket_dispatcher_host.cc",
+      "renderer_host/p2p/socket_dispatcher_host.h",
+      "webrtc/webrtc_internals.cc",
+      "webrtc/webrtc_internals.h",
+      "webrtc/webrtc_internals_message_handler.cc",
+      "webrtc/webrtc_internals_message_handler.h",
+      "webrtc/webrtc_internals_ui.cc",
+      "webrtc/webrtc_internals_ui.h",
+      "webrtc/webrtc_internals_ui_observer.h",
+    ]
+
+    deps += [
+      "//content/browser/webrtc/resources",
+      "//jingle:jingle_glue",
+      "//services/video_capture:lib",
+      "//services/video_capture/public/cpp",
+      "//services/video_capture/public/mojom:constants",
+      "//services/video_capture/public/uma",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+  }
+
   # Desktop/Window/WebContents screen capture implementations, conditionally
   # built depending on the available implementations for each platform.
   if (enable_screen_capture && !is_android) {
     sources += [
-      "media/capture/desktop_capture_device.cc",
-      "media/capture/desktop_capture_device.h",
       "media/capture/frame_sink_video_capture_device.cc",
       "media/capture/frame_sink_video_capture_device.h",
       "media/capture/mouse_cursor_overlay_controller.cc",
@@ -2076,7 +2082,6 @@ jumbo_source_set("browser") {
       "media/capture/web_contents_video_capture_device.cc",
       "media/capture/web_contents_video_capture_device.h",
     ]
-    deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
     if (use_aura) {
       sources += [
         "media/capture/aura_window_video_capture_device.cc",
@@ -2098,6 +2103,13 @@ jumbo_source_set("browser") {
         "//sandbox/mac:seatbelt",
         "//sandbox/mac:seatbelt_extension",
       ]
+    }
+    if (enable_webrtc) {
+      sources += [
+        "media/capture/desktop_capture_device.cc",
+        "media/capture/desktop_capture_device.h",
+      ]
+      deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
     }
   }
 

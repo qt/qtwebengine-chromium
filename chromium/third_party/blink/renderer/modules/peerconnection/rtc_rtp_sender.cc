@@ -9,6 +9,7 @@
 #include <tuple>
 #include <utility>
 
+#include "media/media_buildflags.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_insertable_streams.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_rtcp_parameters.h"
@@ -700,6 +701,7 @@ void RTCRtpSender::Trace(Visitor* visitor) {
 }
 
 RTCRtpCapabilities* RTCRtpSender::getCapabilities(const String& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (kind != "audio" && kind != "video")
     return nullptr;
 
@@ -753,6 +755,9 @@ RTCRtpCapabilities* RTCRtpSender::getCapabilities(const String& kind) {
   capabilities->setHeaderExtensions(header_extensions);
 
   return capabilities;
+#else
+  return nullptr;
+#endif
 }
 
 void RTCRtpSender::RegisterEncodedAudioStreamCallback() {

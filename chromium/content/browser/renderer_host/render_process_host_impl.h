@@ -63,6 +63,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/invitation.h"
 #include "net/base/network_isolation_key.h"
+#include "net/net_buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "services/device/public/mojom/battery_monitor.mojom-forward.h"
 #include "services/network/public/mojom/mdns_responder.mojom.h"
@@ -113,8 +114,6 @@ class CodeCacheHostImpl;
 class FileSystemManagerImpl;
 class InProcessChildThreadParams;
 class IsolationContext;
-class MediaStreamTrackMetricsHost;
-class P2PSocketDispatcherHost;
 class PermissionServiceContext;
 class PeerConnectionTrackerHost;
 class PluginRegistryImpl;
@@ -129,6 +128,11 @@ class SiteInstanceImpl;
 class StoragePartition;
 class StoragePartitionImpl;
 struct ChildProcessTerminationInfo;
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+class MediaStreamTrackMetricsHost;
+class P2PSocketDispatcherHost;
+#endif
 
 typedef base::Thread* (*RendererMainThreadFactoryFunction)(
     const InProcessChildThreadParams& params,
@@ -224,6 +228,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool FastShutdownStarted() override;
   base::TimeDelta GetChildProcessIdleTime() override;
   void FilterURL(bool empty_allowed, GURL* url) override;
+#if BUILDFLAG(ENABLE_WEBRTC)
   void EnableAudioDebugRecordings(const base::FilePath& file) override;
   void DisableAudioDebugRecordings() override;
   WebRtcStopRtpDumpCallback StartRtpDump(
@@ -232,6 +237,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       WebRtcRtpPacketCallback packet_callback) override;
   void EnableWebRtcEventLogOutput(int lid, int output_period_ms) override;
   void DisableWebRtcEventLogOutput(int lid) override;
+#endif
   void BindReceiver(mojo::GenericPendingReceiver receiver) override;
   std::unique_ptr<base::PersistentMemoryAllocator> TakeMetricsAllocator()
       override;
@@ -870,8 +876,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void CreateAgentMetricsCollectorHost(
       mojo::PendingReceiver<blink::mojom::AgentMetricsCollectorHost> receiver);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   void BindPeerConnectionTrackerHost(
       mojo::PendingReceiver<blink::mojom::PeerConnectionTrackerHost> receiver);
+#endif
 
 #if BUILDFLAG(ENABLE_MDNS)
   void CreateMdnsResponder(
@@ -1103,13 +1111,16 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // through RenderProcessHostObserver::RenderProcessExited.
   bool within_process_died_observer_;
 
-  std::unique_ptr<P2PSocketDispatcherHost> p2p_socket_dispatcher_host_;
+#if BUILDFLAG(ENABLE_WEBRTC)
+  std::unique_ptr <P2PSocketDispatcherHost>
+      p2p_socket_dispatcher_host_;
 
   // Must be accessed on UI thread.
   AecDumpManagerImpl aec_dump_manager_;
 
   std::unique_ptr<MediaStreamTrackMetricsHost, BrowserThread::DeleteOnIOThread>
       media_stream_track_metrics_host_;
+#endif
 
   std::unique_ptr<AgentMetricsCollectorHost> agent_metrics_collector_host_;
 

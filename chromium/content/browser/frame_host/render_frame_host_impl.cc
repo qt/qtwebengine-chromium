@@ -6829,6 +6829,7 @@ void RenderFrameHostImpl::BindSerialService(
 
   serial_service_->Bind(std::move(receiver));
 }
+#endif
 
 #if BUILDFLAG(ENABLE_WEB_AUTH)
 void RenderFrameHostImpl::BindAuthenticatorReceiver(

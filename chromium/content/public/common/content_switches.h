@@ -241,6 +241,7 @@ extern const char kWebglMSAASampleCount[];
 CONTENT_EXPORT extern const char kWebOtpBackend[];
 CONTENT_EXPORT extern const char kWebOtpBackendSmsVerification[];
 CONTENT_EXPORT extern const char kWebOtpBackendUserConsent[];
+#if BUILDFLAG(ENABLE_WEBRTC)
 CONTENT_EXPORT extern const char kDisableWebRtcEncryption[];
 CONTENT_EXPORT extern const char kDisableWebRtcHWDecoding[];
 CONTENT_EXPORT extern const char kDisableWebRtcHWEncoding[];
@@ -253,6 +254,11 @@ CONTENT_EXPORT extern const char kWaitForDebuggerWebUI[];
 extern const char kWebRtcMaxCaptureFramerate[];
 extern const char kWebRtcMaxCpuConsumptionPercentage[];
 CONTENT_EXPORT extern const char kWebRtcStunProbeTrialParameter[];
+#endif
+
+// TODO(eladalon): Move into "#if BUILDFLAG(ENABLE_WEBRTC)" section when
+// WebRTCInternals is excluded from the build for non-WebRTC builds.
+// https://crbug.com/817446
 CONTENT_EXPORT extern const char kWebRtcLocalEventLogging[];
 CONTENT_EXPORT extern const char kWebComponentsV0Enabled[];
 CONTENT_EXPORT extern const char kUseLegacyFormControls[];

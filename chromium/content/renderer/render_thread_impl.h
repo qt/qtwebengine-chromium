@@ -535,9 +535,11 @@ class CONTENT_EXPORT RenderThreadImpl
   // Filter out unfreezable messages and pass it to unfreezable task runners.
   scoped_refptr<UnfreezableMessageFilter> unfreezable_message_filter_;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Provides AudioInputIPC objects for audio input devices. Initialized in
   // Init.
   base::Optional<AudioInputIPCFactory> audio_input_ipc_factory_;
+#endif
   // Provides AudioOutputIPC objects for audio output devices. Initialized in
   // Init.
   base::Optional<AudioOutputIPCFactory> audio_output_ipc_factory_;

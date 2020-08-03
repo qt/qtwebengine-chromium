@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/peerconnection/rtc_quic_transport.h"
 
+#include "media/media_buildflags.h"
 #include "net/quic/platform/impl/quic_chromium_clock.h"
 #include "net/quic/quic_chromium_alarm_factory.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -89,10 +90,14 @@ RTCQuicTransport* RTCQuicTransport::Create(
     RTCIceTransport* transport,
     const HeapVector<Member<RTCCertificate>>& certificates,
     ExceptionState& exception_state) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return Create(context, transport, certificates, exception_state,
                 std::make_unique<DefaultP2PQuicTransportFactory>(
                     PeerConnectionDependencyFactory::GetInstance()
                         ->GetWebRtcWorkerTaskRunner()));
+#else
+  return nullptr;
+#endif
 }
 
 RTCQuicTransport* RTCQuicTransport::Create(

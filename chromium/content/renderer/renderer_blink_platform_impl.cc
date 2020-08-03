@@ -489,8 +489,12 @@ scoped_refptr<media::AudioCapturerSource>
 RendererBlinkPlatformImpl::NewAudioCapturerSource(
     blink::WebLocalFrame* web_frame,
     const media::AudioSourceParameters& params) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return AudioDeviceFactory::NewAudioCapturerSource(
       RenderFrame::GetRoutingIdForWebFrame(web_frame), params);
+#else
+  return nullptr;
+#endif
 }
 
 viz::RasterContextProvider*
@@ -498,6 +502,7 @@ RendererBlinkPlatformImpl::SharedMainThreadContextProvider() {
   return RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 bool RendererBlinkPlatformImpl::RTCSmoothnessAlgorithmEnabled() {
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableRTCSmoothnessAlgorithm);
@@ -677,6 +682,7 @@ bool RendererBlinkPlatformImpl::AllowsLoopbackInPeerConnection() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kAllowLoopbackInPeerConnection);
 }
+#endif // BUILDFLAG(ENABLE_WEBRTC)
 
 blink::WebVideoCaptureImplManager*
 RendererBlinkPlatformImpl::GetVideoCaptureImplManager() {
