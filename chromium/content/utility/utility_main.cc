@@ -141,8 +141,10 @@ int UtilityMain(MainFunctionParams parameters) {
       pre_sandbox_hook = base::BindOnce(&audio::AudioPreSandboxHook);
       break;
     case sandbox::mojom::Sandbox::kSpeechRecognition:
+#if !defined(TOOLKIT_QT)
       pre_sandbox_hook =
           base::BindOnce(&speech::SpeechRecognitionPreSandboxHook);
+#endif
       break;
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     case sandbox::mojom::Sandbox::kHardwareVideoDecoding:

@@ -112,11 +112,13 @@ source_set("utility") {
 
   if (is_linux || is_chromeos) {
     deps += [
-      "//content/utility/speech:speech_recognition_sandbox_hook",
       "//services/network:network_sandbox_hook",
     ]
     if (enable_oop_printing) {
       deps += [ "//printing:printing_sandbox_hook" ]
+    }
+    if (!use_qt) {
+      deps += [ "//content/utility/speech:speech_recognition_sandbox_hook" ]
     }
   }
 
