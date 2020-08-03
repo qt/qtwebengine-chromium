@@ -335,8 +335,10 @@ int UtilityMain(MainFunctionParams parameters) {
 #endif
       break;
     case sandbox::mojom::Sandbox::kSpeechRecognition:
+#if !BUILDFLAG(IS_QTWEBENGINE)
       pre_sandbox_hook =
           base::BindOnce(&speech::SpeechRecognitionPreSandboxHook);
+#endif
       break;
 #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION) && BUILDFLAG(IS_LINUX)
     case sandbox::mojom::Sandbox::kOnDeviceTranslation:

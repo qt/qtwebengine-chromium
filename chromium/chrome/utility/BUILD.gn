@@ -145,8 +145,12 @@ static_library("utility") {
       "//components/user_data_importer/content",
       "//components/user_data_importer/utility:bookmarks",
       "//services/proxy_resolver:lib",
-      "//services/screen_ai",
     ]
+    if (enable_screen_ai_service) {
+      deps += [
+        "//services/screen_ai",
+      ]
+    }
   }
 
   if (enable_extensions) {

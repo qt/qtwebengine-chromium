@@ -170,7 +170,7 @@ SpeechRecognitionManagerImpl* SpeechRecognitionManagerImpl::GetInstance() {
 
 bool SpeechRecognitionManagerImpl::IsOnDeviceSpeechRecognitionInstalled(
     const SpeechRecognitionSessionConfig& config) {
-#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
   return speech::IsOnDeviceSpeechRecognitionAvailable(config.language) ==
          media::mojom::AvailabilityStatus::kAvailable;
 #else
