@@ -230,6 +230,7 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
   registry->AddInterface(
       base::BindRepeating(&GpuDataManagerImpl::BindReceiver));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Note, the base::Unretained() is safe because the target object has an IO
   // thread deleter and the callback is also targeting the IO thread.  When
   // the RPHI is destroyed it also triggers the destruction of the registry
@@ -238,14 +239,16 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
   registry->AddInterface(base::BindRepeating(
       &MediaStreamTrackMetricsHost::BindReceiver,
       base::Unretained(media_stream_track_metrics_host_.get())));
-
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
   registry->AddInterface(
       base::BindRepeating(&metrics::CreateSingleSampleMetricsProvider));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(&RenderProcessHostImpl::CreateMediaLogRecordHost,
                           instance_weak_factory_.GetWeakPtr()));
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 
   AddUIThreadInterface(registry.get(),
                        base::BindRepeating(&FieldTrialRecorder::Create));
@@ -288,6 +291,7 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       base::BindRepeating(&RenderProcessHostImpl::BindMediaInterfaceProxy,
                           instance_weak_factory_.GetWeakPtr()));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(
@@ -298,6 +302,7 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       registry.get(),
       base::BindRepeating(&RenderProcessHostImpl::BindAecDumpManager,
                           instance_weak_factory_.GetWeakPtr()));
+#endif
 
 #if BUILDFLAG(IS_FUCHSIA)
   AddUIThreadInterface(

@@ -93,8 +93,6 @@ static_library("renderer") {
     "media/flash_embed_rewrite.h",
     "media/media_feeds.cc",
     "media/media_feeds.h",
-    "media/webrtc_logging_agent_impl.cc",
-    "media/webrtc_logging_agent_impl.h",
     "net/net_error_helper.cc",
     "net/net_error_helper.h",
     "net/net_error_helper_core.cc",
@@ -335,6 +333,13 @@ static_library("renderer") {
 
   if (enable_extensions) {
     deps += [ "//chrome/renderer/controlled_frame" ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "media/webrtc_logging_agent_impl.cc",
+      "media/webrtc_logging_agent_impl.h",
+    ]
   }
 
   if (enable_spellcheck) {

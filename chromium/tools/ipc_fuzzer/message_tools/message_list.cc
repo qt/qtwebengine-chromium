@@ -60,6 +60,10 @@ static bool check_msgtable() {
   exemptions.push_back(NaClHostMsgStart);
 #endif  // !BUILDFLAG(ENABLE_NACL)
 
+#if !BUILDFLAG(ENABLE_WEBRTC)
+  exemptions.push_back(WebRtcLoggingMsgStart);
+#endif
+
 #if !BUILDFLAG(ENABLE_PPAPI)
   exemptions.push_back(PpapiMsgStart);
 #endif  // !BUILDFLAG(ENABLE_PPAPI)

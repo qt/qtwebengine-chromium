@@ -177,7 +177,8 @@ void InProcessLaunchedVideoCaptureDevice::
                                             gfx::NativeViewId window_id,
                                             base::OnceClosure done_cb) {
   DCHECK(device_task_runner_->BelongsToCurrentThread());
-#if defined(ENABLE_SCREEN_CAPTURE) && !BUILDFLAG(IS_ANDROID)
+#if defined(ENABLE_SCREEN_CAPTURE) && BUILDFLAG(ENABLE_WEBRTC) && \
+    !BUILDFLAG(IS_ANDROID)
   auto* desktop_device = static_cast<DesktopCaptureDevice*>(device);
   desktop_device->SetNotificationWindowId(window_id);
   VLOG(2) << "Screen capture notification window passed on device thread.";

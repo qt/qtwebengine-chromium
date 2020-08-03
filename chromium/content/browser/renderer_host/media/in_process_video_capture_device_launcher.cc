@@ -44,7 +44,9 @@
 #if defined(USE_AURA)
 #include "content/browser/media/capture/aura_window_video_capture_device.h"
 #endif  // defined(USE_AURA)
+#if BUILDFLAG(ENABLE_WEBRTC)
 #include "content/browser/media/capture/desktop_capture_device.h"
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_MAC)
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
@@ -190,6 +192,7 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
     const DesktopMediaID& desktop_id,
     std::unique_ptr<media::VideoCaptureDevice>& device_out) {
   DCHECK_EQ(device_out.get(), nullptr);
+#if BUILDFLAG(ENABLE_WEBRTC)
 #if BUILDFLAG(IS_MAC)
   // Use ScreenCaptureKit with picker if specified. `desktop_id` for the picker
   // is not compatible with the other implementations.
@@ -225,6 +228,7 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
     return kLegacyDesktopCaptureDevice;
   }
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#endif  //  BUILDFLAG(ENABLE_WEBRTC)
   return kNoImplementation;
 }
 #endif  // BUILDFLAG(ENABLE_SCREEN_CAPTURE)

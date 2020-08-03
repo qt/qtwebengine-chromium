@@ -36,6 +36,7 @@ String TransceiverDirectionToString(
       NOTREACHED_IN_MIGRATION();
       return String();
   }
+  NOTREACHED();
 }
 
 String OptionalTransceiverDirectionToString(
