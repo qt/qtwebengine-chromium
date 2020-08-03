@@ -471,7 +471,6 @@ static_library("test_support") {
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/blink/public/strings:strings_grit",
-    "//third_party/webrtc_overrides:webrtc_component",
     "//ui/accessibility:ax_enums_mojo",
     "//ui/base",
     "//ui/base:test_support",
@@ -554,6 +553,27 @@ static_library("test_support") {
     configs += [
       "//build/config/linux/atk",
       "//build/config/linux/atspi2",
+    ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "../renderer/media/stream/mock_mojo_media_stream_dispatcher_host.cc",
+      "../renderer/media/stream/mock_mojo_media_stream_dispatcher_host.h",
+      "../renderer/media/webrtc/mock_data_channel_impl.cc",
+      "../renderer/media/webrtc/mock_data_channel_impl.h",
+      "../renderer/media/webrtc/mock_peer_connection_dependency_factory.cc",
+      "../renderer/media/webrtc/mock_peer_connection_dependency_factory.h",
+      "../renderer/media/webrtc/mock_peer_connection_impl.cc",
+      "../renderer/media/webrtc/mock_peer_connection_impl.h",
+      "../renderer/media/webrtc/mock_web_rtc_peer_connection_handler_client.cc",
+      "../renderer/media/webrtc/mock_web_rtc_peer_connection_handler_client.h",
+      "../renderer/media/webrtc/test/webrtc_stats_report_obtainer.cc",
+      "../renderer/media/webrtc/test/webrtc_stats_report_obtainer.h",
+    ]
+
+    deps += [
+      "//third_party/webrtc_overrides:webrtc_component",
     ]
   }
 
@@ -1241,31 +1261,6 @@ test("content_browsertests") {
     "../browser/webid/test/webid_test_content_browser_client.h",
     "../browser/webid/webid_browsertest.cc",
     "../browser/webkit_browsertest.cc",
-    "../browser/webrtc/webrtc_audio_browsertest.cc",
-    "../browser/webrtc/webrtc_audio_debug_recordings_browsertest.cc",
-    "../browser/webrtc/webrtc_browsertest.cc",
-    "../browser/webrtc/webrtc_capture_from_element_browsertest.cc",
-    "../browser/webrtc/webrtc_constraints_browsertest.cc",
-    "../browser/webrtc/webrtc_content_browsertest_base.cc",
-    "../browser/webrtc/webrtc_content_browsertest_base.h",
-    "../browser/webrtc/webrtc_data_browsertest.cc",
-    "../browser/webrtc/webrtc_datachannel_browsertest.cc",
-    "../browser/webrtc/webrtc_depth_capture_browsertest.cc",
-    "../browser/webrtc/webrtc_getusermedia_browsertest.cc",
-    "../browser/webrtc/webrtc_image_capture_browsertest.cc",
-    "../browser/webrtc/webrtc_internals_browsertest.cc",
-    "../browser/webrtc/webrtc_ip_permissions_browsertest.cc",
-    "../browser/webrtc/webrtc_media_recorder_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_image_capture_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_pause_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_resolution_switch_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_source_switch_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_service_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_service_enumeration_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_shared_device_browsertest.cc",
-    "../browser/webrtc/webrtc_webcam_browsertest.cc",
-    "../browser/webrtc/webrtc_webcam_browsertest.h",
     "../browser/webui/web_ui_browsertest.cc",
     "../browser/webui/web_ui_mojo_browsertest.cc",
     "../browser/webui/web_ui_navigation_browsertest.cc",
@@ -1667,6 +1662,40 @@ test("content_browsertests") {
   if (use_aura) {
     sources +=
         [ "../browser/compositor/image_transport_factory_browsertest.cc" ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "../browser/webrtc/webrtc_audio_browsertest.cc",
+      "../browser/webrtc/webrtc_audio_debug_recordings_browsertest.cc",
+      "../browser/webrtc/webrtc_browsertest.cc",
+      "../browser/webrtc/webrtc_capture_from_element_browsertest.cc",
+      "../browser/webrtc/webrtc_constraints_browsertest.cc",
+      "../browser/webrtc/webrtc_content_browsertest_base.cc",
+      "../browser/webrtc/webrtc_content_browsertest_base.h",
+      "../browser/webrtc/webrtc_data_browsertest.cc",
+      "../browser/webrtc/webrtc_datachannel_browsertest.cc",
+      "../browser/webrtc/webrtc_depth_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_getusermedia_browsertest.cc",
+      "../browser/webrtc/webrtc_image_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_internals_browsertest.cc",
+      "../browser/webrtc/webrtc_ip_permissions_browsertest.cc",
+      "../browser/webrtc/webrtc_media_recorder_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_image_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_pause_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_resolution_switch_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_source_switch_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_service_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_service_enumeration_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_shared_device_browsertest.cc",
+      "../browser/webrtc/webrtc_webcam_browsertest.cc",
+      "../browser/webrtc/webrtc_webcam_browsertest.h",
+    ]
+    deps += [
+      "//content/common:buildflags",
+      "//testing/perf",
+    ]
   }
 
   if (enable_plugins) {
@@ -2170,8 +2199,6 @@ test("content_unittests") {
     "../browser/webid/test/mock_request_permission_delegate.h",
     "../browser/webid/test/mock_sharing_permission_delegate.cc",
     "../browser/webid/test/mock_sharing_permission_delegate.h",
-    "../browser/webrtc/webrtc_internals_message_handler_unittest.cc",
-    "../browser/webrtc/webrtc_internals_unittest.cc",
     "../browser/webui/web_ui_data_source_unittest.cc",
     "../browser/webui/web_ui_main_frame_observer_unittest.cc",
     "../browser/webui/web_ui_message_handler_unittest.cc",
@@ -2407,7 +2434,6 @@ test("content_unittests") {
     "//third_party/icu",
     "//third_party/inspector_protocol:crdtp_test",
     "//third_party/leveldatabase",
-    "//third_party/libyuv",
     "//third_party/metrics_proto",
     "//third_party/re2",
     "//third_party/sqlite",
@@ -2435,7 +2461,6 @@ test("content_unittests") {
     "//ui/gl",
     "//ui/gl:test_support",
     "//ui/latency:test_support",
-    "//ui/shell_dialogs:shell_dialogs",
   ]
 
   data_deps = [
@@ -2457,6 +2482,8 @@ test("content_unittests") {
   }
 
   if (enable_plugins) {
+    # Put WebRTC-related plugins sources in the "enable_webrtc &&
+    # enable_plugins" section below.
     sources += [
       "../browser/renderer_host/pepper/browser_ppapi_host_test.cc",
       "../browser/renderer_host/pepper/browser_ppapi_host_test.h",
@@ -2484,6 +2511,91 @@ test("content_unittests") {
     ]
   }
 
+  if (enable_webrtc) {
+    # Put WebRTC-related plugins sources in the "enable_webrtc &&
+    # enable_plugins" section below.
+    sources += [
+      "../renderer/media/stream/media_stream_audio_processor_unittest.cc",
+      "../renderer/media/stream/media_stream_audio_unittest.cc",
+      "../renderer/media/stream/media_stream_constraints_util_audio_unittest.cc",
+      "../renderer/media/stream/media_stream_constraints_util_sets_unittest.cc",
+      "../renderer/media/stream/media_stream_constraints_util_unittest.cc",
+      "../renderer/media/stream/media_stream_constraints_util_video_content_unittest.cc",
+      "../renderer/media/stream/media_stream_constraints_util_video_device_unittest.cc",
+      "../renderer/media/stream/media_stream_device_observer_unittest.cc",
+      "../renderer/media/stream/media_stream_video_renderer_sink_unittest.cc",
+      "../renderer/media/stream/media_stream_video_source_unittest.cc",
+      "../renderer/media/stream/media_stream_video_track_unittest.cc",
+      "../renderer/media/stream/mock_constraint_factory.cc",
+      "../renderer/media/stream/mock_constraint_factory.h",
+      "../renderer/media/stream/mock_media_stream_registry.cc",
+      "../renderer/media/stream/mock_media_stream_registry.h",
+      "../renderer/media/stream/mock_media_stream_video_sink.cc",
+      "../renderer/media/stream/mock_media_stream_video_sink.h",
+      "../renderer/media/stream/mock_media_stream_video_source.cc",
+      "../renderer/media/stream/mock_media_stream_video_source.h",
+      "../renderer/media/stream/processed_local_audio_source_unittest.cc",
+      "../renderer/media/stream/user_media_client_impl_unittest.cc",
+      "../renderer/media/stream/webmediaplayer_ms_unittest.cc",
+      "../renderer/media/webrtc/fake_rtc_rtp_transceiver.cc",
+      "../renderer/media/webrtc/fake_rtc_rtp_transceiver.h",
+      "../renderer/media/webrtc/media_stream_remote_video_source_unittest.cc",
+      "../renderer/media/webrtc/media_stream_track_metrics_unittest.cc",
+      "../renderer/media/webrtc/media_stream_video_webrtc_sink_unittest.cc",
+      "../renderer/media/webrtc/peer_connection_dependency_factory_unittest.cc",
+      "../renderer/media/webrtc/peer_connection_tracker_unittest.cc",
+      "../renderer/media/webrtc/rtc_peer_connection_handler_unittest.cc",
+      "../renderer/media/webrtc/rtc_rtp_receiver_unittest.cc",
+      "../renderer/media/webrtc/rtc_rtp_sender_unittest.cc",
+      "../renderer/media/webrtc/rtc_rtp_transceiver_unittest.cc",
+      "../renderer/media/webrtc/rtc_stats_unittest.cc",
+      "../renderer/media/webrtc/rtc_video_decoder_adapter_unittest.cc",
+      "../renderer/media/webrtc/rtc_video_decoder_unittest.cc",
+      "../renderer/media/webrtc/rtc_video_encoder_unittest.cc",
+      "../renderer/media/webrtc/stun_field_trial_unittest.cc",
+      "../renderer/media/webrtc/task_queue_factory_unittest.cc",
+      "../renderer/media/webrtc/transceiver_state_surfacer_unittest.cc",
+      "../renderer/media/webrtc/transmission_encoding_info_handler_unittest.cc",
+      "../renderer/media/webrtc/two_keys_adapter_map_unittest.cc",
+      "../renderer/media/webrtc/webrtc_audio_renderer_unittest.cc",
+      "../renderer/media/webrtc/webrtc_media_stream_track_adapter_map_unittest.cc",
+      "../renderer/media/webrtc/webrtc_media_stream_track_adapter_unittest.cc",
+      "../renderer/media/webrtc/webrtc_set_description_observer_unittest.cc",
+      "../renderer/media/webrtc/webrtc_video_track_source_unittest.cc",
+      "../renderer/media/webrtc_local_audio_source_provider_unittest.cc",
+      "../renderer/media_capture_from_element/canvas_capture_handler_unittest.cc",
+      "../renderer/media_capture_from_element/html_audio_element_capturer_source_unittest.cc",
+      "../renderer/media_capture_from_element/html_video_element_capturer_source_unittest.cc",
+      "../renderer/media_recorder/audio_track_recorder_unittest.cc",
+      "../renderer/media_recorder/media_recorder_handler_unittest.cc",
+      "../renderer/media_recorder/video_track_recorder_unittest.cc",
+      "../renderer/p2p/filtering_network_manager_unittest.cc",
+      "../renderer/p2p/ipc_network_manager_unittest.cc",
+    ]
+    deps += [
+      "//services/device/public/mojom",
+      "//third_party/libyuv",
+      "//third_party/opus",
+      "//third_party/webrtc_overrides:webrtc_component",
+      "//ui/shell_dialogs:shell_dialogs",
+    ]
+
+    if (is_chromecast) {
+      sources -= [
+        "../renderer/media_recorder/audio_track_recorder_unittest.cc",
+        "../renderer/media_recorder/media_recorder_handler_unittest.cc",
+        "../renderer/media_recorder/video_track_recorder_unittest.cc",
+      ]
+    }
+  }
+
+  if (enable_webrtc && enable_plugins) {
+    sources += [
+      "../renderer/media/pepper/pepper_to_video_track_adapter_unittest.cc",
+      "../renderer/media/pepper/video_track_to_pepper_adapter_unittest.cc",
+    ]
+  }
+
   # Screen capture unit tests.
   if (enable_screen_capture) {
     sources += [
@@ -2496,7 +2608,6 @@ test("content_unittests") {
         "//content/common:buildflags",
         "//media/capture:test_support",
         "//third_party/libyuv",
-        "//third_party/webrtc_overrides:webrtc_component",
       ]
       sources +=
           [ "../browser/media/capture/desktop_capture_device_unittest.cc" ]

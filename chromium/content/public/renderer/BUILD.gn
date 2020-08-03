@@ -72,7 +72,6 @@ target(link_target_type, "renderer_sources") {
     "//skia",
     "//third_party/blink/public:blink_headers",
     "//third_party/blink/public/common",
-    "//third_party/webrtc_overrides:webrtc_component",
     "//third_party/widevine/cdm:headers",
     "//ui/base",
     "//ui/base/ime",
@@ -91,6 +90,12 @@ target(link_target_type, "renderer_sources") {
 
     # For seccomp_sandbox_status_android.h.
     deps += [ "//sandbox" ]
+  }
+
+  if (enable_webrtc) {
+    deps += [
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
   }
 
   if (enable_library_cdms) {

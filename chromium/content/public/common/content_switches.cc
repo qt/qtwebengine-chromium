@@ -857,6 +857,7 @@ const char kWebOtpBackendUserConsent[] = "web-otp-backend-user-consent";
 // Enables auto backend selection for Web OTP API.
 const char kWebOtpBackendAuto[] = "web-otp-backend-auto";
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 // Disables encryption of RTP Media for WebRTC. When Chrome embeds Content, it
 // ignores this switch on its stable and beta channels.
 const char kDisableWebRtcEncryption[]      = "disable-webrtc-encryption";
@@ -899,6 +900,7 @@ const char kWebRtcMaxCaptureFramerate[] = "max-gum-fps";
 // throttling of the capture.
 const char kWebRtcMaxCpuConsumptionPercentage[] =
     "webrtc-max-cpu-consumption-percentage";
+#endif // BUILDFLAG(ENABLE_WEBRTC)
 
 // Enable capture and local storage of WebRTC event logs without visiting
 // chrome://webrtc-internals. This is useful for automated testing. It accepts

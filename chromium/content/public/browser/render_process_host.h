@@ -324,6 +324,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // |empty_allowed| must be set to false for navigations for security reasons.
   virtual void FilterURL(bool empty_allowed, GURL* url) = 0;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   virtual void EnableAudioDebugRecordings(const base::FilePath& file) = 0;
   virtual void DisableAudioDebugRecordings() = 0;
 
@@ -342,6 +343,7 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
       bool incoming,
       bool outgoing,
       WebRtcRtpPacketCallback packet_callback) = 0;
+#endif
 
   // Asks the renderer process to bind |receiver|. |receiver| arrives in the
   // renderer process and is carried through the following flow, stopping if any

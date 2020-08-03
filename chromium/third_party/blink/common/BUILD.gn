@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 import("//third_party/blink/renderer/build/scripts/scripts.gni")
@@ -231,6 +232,12 @@ source_set("common") {
   # iOS doesn't use and must not depend on //media
   if (!is_ios) {
     deps += [ "//media" ]
+  }
+
+  if (!enable_webrtc) {
+    sources -= [
+      "peerconnection/webrtc_ip_handling_policy.cc",
+    ]
   }
 
   if (is_android || is_win) {

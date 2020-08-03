@@ -372,7 +372,9 @@ extern const char kChromeUITabSearchHost[];
 extern const char kChromeUITabSearchURL[];
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 extern const char kChromeUIWebRtcLogsHost[];
+#endif
 
 // Settings sub-pages.
 extern const char kAccessibilitySubPage[];
