@@ -82,7 +82,7 @@ jumbo_source_set("utility") {
     deps += [ "//services/proxy_resolver:lib" ]
   }
 
-  if (is_linux) {
+  if (is_linux && !use_qt) {
     deps += [ "//content/utility/soda:soda_sandbox_hook" ]
   }
 
