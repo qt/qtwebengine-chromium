@@ -43,7 +43,9 @@
 #if defined(USE_AURA)
 #include "content/browser/media/capture/aura_window_video_capture_device.h"
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
 #include "content/browser/media/capture/desktop_capture_device.h"
+#endif
 #endif  // BUILDFLAG(IS_ANDROID)
 #if BUILDFLAG(IS_MAC)
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
@@ -405,6 +407,7 @@ void InProcessVideoCaptureDeviceLauncher::DoStartDeviceCaptureOnDeviceThread(
   DCHECK(device_task_runner_->BelongsToCurrentThread());
   DCHECK(video_capture_system_);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   auto device_status = video_capture_system_->CreateDevice(device_id);
 
   if (device_status.ok()) {
@@ -415,6 +418,9 @@ void InProcessVideoCaptureDeviceLauncher::DoStartDeviceCaptureOnDeviceThread(
   } else {
     std::move(result_callback).Run(nullptr);
   }
+#else
+  std::move(result_callback).Run(nullptr);
+#endif
 }
 
 #if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
@@ -486,7 +492,7 @@ void InProcessVideoCaptureDeviceLauncher::DoStartDesktopCaptureOnDeviceThread(
 #if BUILDFLAG(IS_ANDROID)
   if ((video_capture_device = std::make_unique<ScreenCaptureDeviceAndroid>()))
     implementation = DesktopCaptureImplementation::kScreenCaptureDeviceAndroid;
-#else
+#elif BUILDFLAG(ENABLE_WEBRTC)
 #if BUILDFLAG(IS_MAC)
   // Prefer using ScreenCaptureKit. After that try DesktopCaptureDeviceMac, and
   // if both fail, use the generic DesktopCaptureDevice.

@@ -187,8 +187,10 @@ IN_PROC_BROWSER_TEST_P(ExtensionPreferenceApiTest, Standard) {
   prefs->SetBoolean(password_manager::prefs::kCredentialsEnableService, false);
   prefs->SetBoolean(prefs::kSafeBrowsingEnabled, false);
   prefs->SetBoolean(prefs::kSearchSuggestEnabled, false);
+#if BUILDFLAG(ENABLE_WEBRTC)
   prefs->SetString(prefs::kWebRTCIPHandlingPolicy,
                    blink::kWebRTCIPHandlingDefaultPublicInterfaceOnly);
+#endif
 
   // The 'protectedContentEnabled' pref is only available on ChromeOS and
   // Windows, so pass a JSON array object with any unsupported prefs into

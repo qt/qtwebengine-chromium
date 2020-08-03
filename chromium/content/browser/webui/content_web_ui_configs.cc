@@ -20,6 +20,7 @@
 #include "content/browser/ukm_internals_ui.h"
 #include "content/browser/webrtc/webrtc_internals_ui.h"
 #include "content/public/browser/webui_config_map.h"
+#include "media/media_buildflags.h"
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "content/browser/tracing/tracing_ui.h"
@@ -41,7 +42,9 @@ void RegisterContentWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<QuotaInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<ServiceWorkerInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<UkmInternalsUIConfig>());
+#if BUILDFLAG(ENABLE_WEBRTC)
   map.AddWebUIConfig(std::make_unique<WebRTCInternalsUIConfig>());
+#endif
 
 #if !BUILDFLAG(IS_ANDROID)
   map.AddWebUIConfig(std::make_unique<TracingUIConfig>());

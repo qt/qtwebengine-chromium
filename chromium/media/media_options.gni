@@ -78,6 +78,8 @@ declare_args() {
 
   enable_web_speech = true
 
+  enable_webrtc = true
+
   # Enable HLS with SAMPLE-AES decryption.
   #
   # TODO(crbug.com/1329657): Remove the `is_fuchsia` condition once fuchsia
