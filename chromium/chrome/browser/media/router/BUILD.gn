@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 
@@ -213,6 +214,12 @@ static_library("router") {
       "//extensions/common",
     ]
   }
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 }
 
 if (!is_android && enable_extensions) {
@@ -229,13 +236,18 @@ if (!is_android && enable_extensions) {
       "//chrome/browser:browser_process",
       "//chrome/browser/media/router/discovery:discovery",
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
-      "//chrome/browser/media/webrtc",
       "//components/media_router/common/providers/cast/channel",
       "//components/openscreen_platform",
       "//media/cast:common",
       "//services/metrics/public/cpp:ukm_builders",
     ]
     public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+
+    if (enable_webrtc) {
+      deps += [
+        "//chrome/browser/media/webrtc",
+      ]
+    }
   }
 }
 

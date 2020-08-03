@@ -351,6 +351,7 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
                      input_stream_count());
     }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (!params.IsBitstreamFormat() && debug_recording_manager_) {
       // Using unretained for |debug_recording_manager_| is safe since it
       // outlives the audio thread, on which streams are operated.
@@ -365,6 +366,7 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
               AudioDebugRecordingStreamType::kInput, params),
           stream);
     }
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
   }
 
   LogMakeAudioInputStreamResult(

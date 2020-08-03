@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
+
 assert(is_win || is_mac || is_linux || is_chromeos)
 
 source_set("apps") {
@@ -37,7 +39,6 @@ source_set("impl") {
     "//chrome/browser/devtools",
     "//chrome/browser/favicon",
     "//chrome/browser/file_system_access",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/picture_in_picture",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui:browser_navigator_params_headers",
@@ -53,6 +54,12 @@ source_set("impl") {
     "//services/service_manager/public/cpp",
     "//ui/base",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 
   if (is_chromeos) {
     deps += [ "//chrome/browser/chromeos/policy/dlp" ]

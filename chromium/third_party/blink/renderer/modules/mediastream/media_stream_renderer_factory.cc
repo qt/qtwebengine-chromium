@@ -9,6 +9,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -40,11 +41,15 @@ namespace {
 // will not be able to pick an appropriate device and return 0.
 base::UnguessableToken GetSessionIdForWebRtcAudioRenderer(
     ExecutionContext& context) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   WebRtcAudioDeviceImpl* audio_device =
       PeerConnectionDependencyFactory::From(context).GetWebRtcAudioDevice();
   return audio_device
              ? audio_device->GetAuthorizedDeviceSessionIdForAudioRenderer()
              : base::UnguessableToken();
+#else
+  return base::UnguessableToken();
+#endif
 }
 
 void SendLogMessage(const WTF::String& message) {
@@ -63,6 +68,7 @@ MediaStreamRendererFactory::GetVideoRenderer(
     const MediaStreamVideoRenderer::RepaintCB& repaint_cb,
     scoped_refptr<base::SequencedTaskRunner> video_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> main_render_task_runner) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(!web_stream.IsNull());
 
   DVLOG(1) << "MediaStreamRendererFactory::GetVideoRenderer stream:"
@@ -79,6 +85,10 @@ MediaStreamRendererFactory::GetVideoRenderer(
   return base::MakeRefCounted<MediaStreamVideoRendererSink>(
       video_components[0].Get(), repaint_cb, std::move(video_task_runner),
       std::move(main_render_task_runner));
+#else
+  WebRtcLogMessage("Error: No WebRTC support.");
+  return nullptr;
+#endif
 }
 
 scoped_refptr<MediaStreamAudioRenderer>
@@ -87,6 +97,7 @@ MediaStreamRendererFactory::GetAudioRenderer(
     WebLocalFrame* web_frame,
     const WebString& device_id,
     base::RepeatingCallback<void()> on_render_error_callback) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(!web_stream.IsNull());
   SendLogMessage(String::Format("%s({web_stream_id=%s}, {device_id=%s})",
                                 __func__, web_stream.Id().Utf8().c_str(),
@@ -192,6 +203,10 @@ MediaStreamRendererFactory::GetAudioRenderer(
         "%s => (ERROR: CreateSharedAudioRendererProxy failed)", __func__));
   }
   return ret;
+#else
+  WebRtcLogMessage("Error: No WebRTC support.");
+  return nullptr;
+#endif
 }
 
 }  // namespace blink

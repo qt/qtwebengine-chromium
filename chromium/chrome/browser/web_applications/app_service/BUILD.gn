@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//chrome/common/features.gni")
+import("//media/media_options.gni")
 
 source_set("app_service") {
   sources = [
@@ -19,7 +20,6 @@ source_set("app_service") {
 
   public_deps = [
     "//chrome/browser:browser_public_dependencies",
-    "//chrome/browser/media/webrtc",
   ]
 
   deps = [
@@ -60,6 +60,11 @@ source_set("app_service") {
       "//components/app_restore",
       "//components/services/app_service/public/cpp:instance_update",
       "//extensions/browser/api/file_handlers",
+    ]
+  }
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 }

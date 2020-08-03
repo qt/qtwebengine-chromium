@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 assert(enable_extensions,
        "Cannot depend on extensions because enable_extensions=false.")
@@ -18,10 +19,15 @@ source_set("webrtc_logging_private") {
   deps = [
     "//base",
     "//chrome/browser/extensions",
-    "//chrome/browser/media/webrtc",
     "//chrome/common/extensions/api",
     "//extensions/browser",
     "//extensions/common",
     "//skia",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 }

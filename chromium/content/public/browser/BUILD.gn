@@ -135,8 +135,6 @@ source_set("browser_sources") {
     "cross_device_request_info.h",
     "dedicated_worker_creator.h",
     "dedicated_worker_service.h",
-    "desktop_capture.cc",
-    "desktop_capture.h",
     "desktop_media_id.cc",
     "desktop_media_id.h",
     "desktop_streams_registry.h",
@@ -506,8 +504,6 @@ source_set("browser_sources") {
     "webauthn_security_utils.h",
     "webrtc_event_logger.cc",
     "webrtc_event_logger.h",
-    "webrtc_log.cc",
-    "webrtc_log.h",
     "websocket_handshake_request_info.h",
     "webui_config.cc",
     "webui_config.h",
@@ -568,7 +564,6 @@ source_set("browser_sources") {
     "//services/service_manager/public/cpp",
     "//services/tracing/public/cpp",
     "//services/tracing/public/mojom",
-    "//services/video_capture/public/mojom",
     "//services/video_effects/buildflags",
     "//services/viz/public/mojom",
 
@@ -749,9 +744,22 @@ source_set("browser_sources") {
     sources += [ "profiling_utils.h" ]
   }
 
-  if (enable_video_effects) {
-    public_deps += [ "//services/video_effects/public/mojom:mojom" ]
+  if (enable_webrtc) {
+    sources += [
+      "desktop_capture.cc",
+      "desktop_capture.h",
+      "webrtc_log.cc",
+      "webrtc_log.h",
+    ]
+    public_deps += [
+      "//services/video_capture/public/mojom",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+    if (enable_video_effects) {
+      public_deps += [ "//services/video_effects/public/mojom:mojom" ]
+    }
   }
+
 }
 
 if (is_android) {

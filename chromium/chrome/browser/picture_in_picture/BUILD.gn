@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//chrome/common/features.gni")
+import("//media/media_options.gni")
 
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
@@ -85,7 +86,6 @@ source_set("impl") {
       "//chrome/app:generated_resources",
       "//chrome/browser:browser_process",
       "//chrome/browser/content_settings:content_settings_factory",
-      "//chrome/browser/media/webrtc",
       "//chrome/browser/permissions",
       "//chrome/browser/picture_in_picture",
       "//chrome/browser/profiles:profile",
@@ -99,6 +99,12 @@ source_set("impl") {
       "//third_party/blink/public/common:headers",
       "//ui/views",
     ]
+
+    if (enable_webrtc) {
+      deps += [
+        "//chrome/browser/media/webrtc",
+      ]
+    }
   }
 }
 

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//chrome/common/features.gni")
+import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
 assert(enable_glic)
@@ -101,7 +102,6 @@ source_set("impl") {
     "//chrome/browser:browser_process",
     "//chrome/browser:global_features",
     "//chrome/browser/glic/launcher",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles:profile_util",
     "//chrome/browser/resources/glic:resources",
     "//chrome/browser/themes:themes",
@@ -127,6 +127,12 @@ source_set("impl") {
 
   if (is_mac) {
     deps += [ "//ui/accelerated_widget_mac" ]
+  }
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
 }
 
