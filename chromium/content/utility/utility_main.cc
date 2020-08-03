@@ -293,15 +293,19 @@ int UtilityMain(MainFunctionParams parameters) {
 #endif
       break;
     case sandbox::mojom::Sandbox::kSpeechRecognition:
+#if !defined(TOOLKIT_QT)
       pre_sandbox_hook =
           base::BindOnce(&speech::SpeechRecognitionPreSandboxHook);
+#endif
       break;
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
     case sandbox::mojom::Sandbox::kScreenAI:
+#if !defined(TOOLKIT_QT)
       pre_sandbox_hook =
           base::BindOnce(&screen_ai::ScreenAIPreSandboxHook,
                          parameters.command_line->GetSwitchValuePath(
                              screen_ai::GetBinaryPathSwitch()));
+#endif
       break;
 #endif
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_ASH)

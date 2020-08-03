@@ -3330,7 +3330,7 @@ source_set("browser") {
       "picture_in_picture/document_picture_in_picture_window_controller_impl.h",
     ]
 
-    if (!is_fuchsia) {
+    if (!is_fuchsia && !is_qtwebengine) {
       sources += [
         "speech/soda_speech_recognition_engine_impl.cc",
         "speech/soda_speech_recognition_engine_impl.h",

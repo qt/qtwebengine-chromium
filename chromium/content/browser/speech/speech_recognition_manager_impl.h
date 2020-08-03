@@ -57,7 +57,7 @@ class CONTENT_EXPORT SpeechRecognitionManagerImpl
   // issued when it is not created yet or destroyed (by BrowserMainLoop).
   static SpeechRecognitionManagerImpl* GetInstance();
 
-#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
   static bool IsOnDeviceSpeechRecognitionAvailable(
       const SpeechRecognitionSessionConfig& config);
 #endif  // !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID)

@@ -150,7 +150,7 @@ SpeechRecognitionManagerImpl* SpeechRecognitionManagerImpl::GetInstance() {
   return g_speech_recognition_manager_impl;
 }
 
-#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 bool SpeechRecognitionManagerImpl::IsOnDeviceSpeechRecognitionAvailable(
     const SpeechRecognitionSessionConfig& config) {
   if (!base::FeatureList::IsEnabled(media::kOnDeviceWebSpeech) ||
@@ -225,7 +225,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
 
 #if !BUILDFLAG(IS_ANDROID)
   std::unique_ptr<SpeechRecognitionEngine> speech_recognition_engine;
-#if !BUILDFLAG(IS_FUCHSIA)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_QTWEBENGINE)
   if (IsOnDeviceSpeechRecognitionAvailable(config)) {
     std::unique_ptr<SodaSpeechRecognitionEngineImpl>
         soda_speech_recognition_engine =
