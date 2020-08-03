@@ -16,13 +16,16 @@
 #include "content/browser/service_worker/service_worker_internals_ui.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/browser/ukm_internals_ui.h"
-#include "content/browser/webrtc/webrtc_internals_ui.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/url_constants.h"
 #include "media/base/media_switches.h"
 #include "media/media_buildflags.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "content/browser/webrtc/webrtc_internals_ui.h"
+#endif
 
 namespace content {
 
@@ -32,7 +35,10 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
   if (!url.SchemeIs(kChromeUIScheme))
     return WebUI::kNoWebUI;
 
-  if (url.host_piece() == kChromeUIWebRTCInternalsHost ||
+  if (false ||
+#if BUILDFLAG(ENABLE_WEBRTC)
+      url.host_piece() == kChromeUIWebRTCInternalsHost ||
+#endif
 #if !defined(OS_ANDROID)
       url.host_piece() == kChromeUITracingHost ||
 #endif
@@ -77,8 +83,10 @@ ContentWebUIControllerFactory::CreateWebUIControllerForURL(WebUI* web_ui,
   if (url.host_piece() == kChromeUITracingHost)
     return std::make_unique<TracingUI>(web_ui);
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (url.host_piece() == kChromeUIWebRTCInternalsHost)
     return std::make_unique<WebRTCInternalsUI>(web_ui);
+#endif
   if (url.host_piece() == kChromeUIPrerenderInternalsHost)
     return std::make_unique<PrerenderInternalsUI>(web_ui);
   if (url.host_piece() == kChromeUIProcessInternalsHost)

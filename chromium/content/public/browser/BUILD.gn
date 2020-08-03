@@ -5,6 +5,7 @@
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/ui.gni")
 import("//device/vr/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//third_party/protobuf/proto_library.gni")
 import("//third_party/webrtc/webrtc.gni")
@@ -116,8 +117,6 @@ source_set("browser_sources") {
     "cors_origin_pattern_setter.cc",
     "cors_origin_pattern_setter.h",
     "dedicated_worker_service.h",
-    "desktop_capture.cc",
-    "desktop_capture.h",
     "desktop_media_id.cc",
     "desktop_media_id.h",
     "desktop_streams_registry.h",
@@ -412,8 +411,6 @@ source_set("browser_sources") {
     "web_ui_url_loader_factory.h",
     "webrtc_event_logger.cc",
     "webrtc_event_logger.h",
-    "webrtc_log.cc",
-    "webrtc_log.h",
     "websocket_handshake_request_info.h",
     "worker_type.h",
     "zoom_level_delegate.h",
@@ -466,7 +463,6 @@ source_set("browser_sources") {
     "//services/service_manager/public/cpp",
     "//services/tracing/public/cpp",
     "//services/tracing/public/mojom",
-    "//services/video_capture/public/mojom",
     "//services/viz/public/mojom",
 
     # We expose skia headers in the public API.
@@ -606,6 +602,19 @@ source_set("browser_sources") {
 
   if (use_clang_profiling_inside_sandbox) {
     sources += [ "profiling_utils.h" ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "desktop_capture.cc",
+      "desktop_capture.h",
+      "webrtc_log.cc",
+      "webrtc_log.h",
+    ]
+    public_deps += [
+      "//services/video_capture/public/mojom",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
   }
 }
 

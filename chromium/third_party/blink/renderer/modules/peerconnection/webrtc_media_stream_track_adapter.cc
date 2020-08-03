@@ -258,7 +258,11 @@ void WebRtcMediaStreamTrackAdapter::InitializeRemoteVideoTrack(
   remote_video_track_adapter_ =
       base::MakeRefCounted<blink::RemoteVideoTrackAdapter>(
           main_thread_, webrtc_video_track.get(),
+#if BUILDFLAG(ENABLE_WEBRTC)
           factory_->metronome_provider());
+#else
+	  nullptr);
+#endif
   webrtc_track_ = webrtc_video_track;
   remote_track_can_complete_initialization_.Signal();
   PostCrossThreadTask(

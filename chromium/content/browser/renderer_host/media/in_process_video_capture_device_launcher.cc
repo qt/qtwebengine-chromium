@@ -42,7 +42,9 @@
 #if defined(USE_AURA)
 #include "content/browser/media/capture/aura_window_video_capture_device.h"
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
 #include "content/browser/media/capture/desktop_capture_device.h"
+#endif
 #endif  // defined(OS_ANDROID)
 #if defined(OS_MAC)
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
@@ -336,6 +338,7 @@ void InProcessVideoCaptureDeviceLauncher::DoStartDeviceCaptureOnDeviceThread(
   DCHECK(device_task_runner_->BelongsToCurrentThread());
   DCHECK(video_capture_system_);
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   auto device_status = video_capture_system_->CreateDevice(device_id);
 
   if (device_status.ok()) {
@@ -346,6 +349,9 @@ void InProcessVideoCaptureDeviceLauncher::DoStartDeviceCaptureOnDeviceThread(
   } else {
     std::move(result_callback).Run(nullptr);
   }
+#else
+  std::move(result_callback).Run(nullptr);
+#endif
 }
 
 #if BUILDFLAG(ENABLE_SCREEN_CAPTURE)
@@ -420,7 +426,7 @@ void InProcessVideoCaptureDeviceLauncher::DoStartDesktopCaptureOnDeviceThread(
   std::unique_ptr<media::VideoCaptureDevice> video_capture_device;
 #if defined(OS_ANDROID)
   video_capture_device = std::make_unique<ScreenCaptureDeviceAndroid>();
-#else
+#elif BUILDFLAG(ENABLE_WEBRTC)
 #if defined(OS_MAC)
   if (base::FeatureList::IsEnabled(kDesktopCaptureMacV2))
     video_capture_device = CreateDesktopCaptureDeviceMac(desktop_id);

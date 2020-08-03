@@ -12,6 +12,7 @@
 #include "base/memory/memory_pressure_listener.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
+#include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -115,7 +116,9 @@ class NetworkServiceClient
 
   std::unique_ptr<base::MemoryPressureListener> memory_pressure_listener_;
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   std::unique_ptr<WebRtcConnectionsObserver> webrtc_connections_observer_;
+#endif
 
 #if defined(OS_ANDROID)
   std::unique_ptr<base::android::ApplicationStatusListener>

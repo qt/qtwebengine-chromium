@@ -171,6 +171,7 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
     MediaStreamComponent* component,
     PeerConnectionDependencyFactory* factory,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   MediaStreamVideoTrack* video_track = MediaStreamVideoTrack::From(component);
   DCHECK(video_track);
 
@@ -212,17 +213,19 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
           &WebRtcVideoSourceAdapter::OnVideoFrameOnIO, source_adapter_)),
       MediaStreamVideoSink::IsSecure::kNo,
       MediaStreamVideoSink::UsesAlpha::kNo);
-
   DVLOG(3) << "MediaStreamVideoWebRtcSink ctor() : is_screencast "
            << is_screencast;
+#endif
 }
 
 MediaStreamVideoWebRtcSink::~MediaStreamVideoWebRtcSink() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DVLOG(3) << "MediaStreamVideoWebRtcSink dtor().";
   weak_factory_.InvalidateWeakPtrs();
-  MediaStreamVideoSink::DisconnectFromTrack();
-  source_adapter_->ReleaseSourceOnMainThread();
+  if (source_adapter_) {
+    MediaStreamVideoSink::DisconnectFromTrack();
+    source_adapter_->ReleaseSourceOnMainThread();
+  }
 }
 
 void MediaStreamVideoWebRtcSink::OnEnabledChanged(bool enabled) {

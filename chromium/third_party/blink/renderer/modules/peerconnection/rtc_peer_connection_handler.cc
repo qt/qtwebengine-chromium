@@ -2219,9 +2219,10 @@ void RTCPeerConnectionHandler::Close() {
     peer_connection_tracker_->TrackClose(this);
 
   native_peer_connection_->Close();
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(dependency_factory_);
   dependency_factory_->OnPeerConnectionClosed();
-
+#endif
   // This object may no longer forward call backs to blink.
   is_closed_ = true;
 }
