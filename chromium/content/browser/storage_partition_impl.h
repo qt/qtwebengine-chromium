@@ -486,7 +486,9 @@ class CONTENT_EXPORT StoragePartitionImpl
   scoped_refptr<PlatformNotificationContextImpl> platform_notification_context_;
   scoped_refptr<BackgroundFetchContext> background_fetch_context_;
   scoped_refptr<BackgroundSyncContextImpl> background_sync_context_;
+#if !defined(TOOLKIT_QT)
   scoped_refptr<PaymentAppContextImpl> payment_app_context_;
+#endif
   std::unique_ptr<BroadcastChannelProvider> broadcast_channel_provider_;
   std::unique_ptr<BluetoothAllowedDevicesMap> bluetooth_allowed_devices_map_;
   scoped_refptr<BlobRegistryWrapper> blob_registry_;

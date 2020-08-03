@@ -1344,8 +1344,10 @@ void RenderProcessHostImpl::IOThreadHostImpl::BindHostReceiver(mojo::GenericPend
     return;
 
   receiver = mojo::GenericPendingReceiver(interface_name, std::move(pipe));
+#if !defined(TOOLKIT_QT)
   GetContentClient()->browser()->BindHostReceiverForRendererOnIOThread(
       render_process_id_, &receiver);
+#endif
   if (!receiver)
     return;
 
@@ -2097,9 +2099,11 @@ void RenderProcessHostImpl::CreatePermissionService(
 void RenderProcessHostImpl::CreatePaymentManagerForOrigin(
     const url::Origin& origin,
     mojo::PendingReceiver<payments::mojom::PaymentManager> receiver) {
+#if !defined(TOOLKIT_QT)
   static_cast<StoragePartitionImpl*>(GetStoragePartition())
       ->GetPaymentAppContext()
       ->CreatePaymentManagerForOrigin(origin, std::move(receiver));
+#endif
 }
 
 void RenderProcessHostImpl::CreateNotificationService(

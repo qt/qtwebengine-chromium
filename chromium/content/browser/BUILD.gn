@@ -2697,8 +2697,28 @@ jumbo_static_library("browser") {
 
   if (use_qt) {
     sources -= [
+      "payments/payment_app_context_impl.cc",
+      "payments/payment_app_context_impl.h",
+      "payments/payment_app_database.cc",
+      "payments/payment_app_database.h",
+      "payments/payment_app_info_fetcher.cc",
+      "payments/payment_app_info_fetcher.h",
+      "payments/payment_app_installer.cc",
+      "payments/payment_app_installer.h",
+      "payments/payment_app_provider_impl.cc",
+      "payments/payment_app_provider_impl.h",
+      "payments/payment_instrument_icon_fetcher.cc",
+      "payments/payment_instrument_icon_fetcher.h",
+      "payments/payment_manager.cc",
+      "payments/payment_manager.h",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
+    ]
+    deps -= [
+      "//components/payments/content/icon",
+      "//components/payments/core",
+      "//components/payments/core:error_strings",
+      "//components/payments/mojom",
     ]
     if (is_win) {
       sources -= [

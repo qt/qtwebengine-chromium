@@ -208,11 +208,13 @@ void DidOpenURLOnUI(WindowType type,
                       rfhi->frame_tree_node()->frame_tree_node_id(),
                       std::move(callback));
 
+#ifndef TOOLKIT_QT
   if (type == WindowType::PAYMENT_HANDLER_WINDOW) {
     // Set the opened web_contents to payment app provider to manage its life
     // cycle.
     PaymentAppProvider::GetInstance()->SetOpenedWindow(web_contents);
   }
+#endif
 }
 
 void OpenWindowOnUI(
