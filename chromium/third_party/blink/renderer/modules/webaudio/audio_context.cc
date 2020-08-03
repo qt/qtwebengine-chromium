@@ -1027,6 +1027,7 @@ double AudioContext::GetOutputLatencyQuantizingFactor() const {
 void AudioContext::NotifySetSinkIdIsDone(
     WebAudioSinkDescriptor pending_sink_descriptor) {
   sink_descriptor_ = pending_sink_descriptor;
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (sink_descriptor_.Type() ==
           WebAudioSinkDescriptor::AudioSinkType::kAudible &&
       base::FeatureList::IsEnabled(kWebAudioSetSinkEchoCancellation)) {
@@ -1040,6 +1041,7 @@ void AudioContext::NotifySetSinkIdIsDone(
           ->SetOutputDeviceForAec(sink_descriptor_.SinkId());
     }
   }
+#endif
   UpdateV8SinkId();
   DispatchEvent(*Event::Create(event_type_names::kSinkchange));
 }

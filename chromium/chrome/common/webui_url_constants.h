@@ -489,7 +489,9 @@ extern const char kChromeUITabSearchHost[];
 extern const char kChromeUITabSearchURL[];
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 extern const char kChromeUIWebRtcLogsHost[];
+#endif
 
 #if BUILDFLAG(PLATFORM_CFM)
 extern const char kCfmNetworkSettingsHost[];
