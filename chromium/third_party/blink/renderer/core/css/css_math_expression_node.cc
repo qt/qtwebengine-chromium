@@ -1083,8 +1083,14 @@ class CSSMathExpressionNodeParser {
 
     auto* nested = CSSMathExpressionVariadicOperation::Create(
         {val_operand, max_operand}, CSSMathOperator::kMin);
+    if (!nested)
+      return nullptr;
+
     auto* result = CSSMathExpressionVariadicOperation::Create(
         {min_operand, nested}, CSSMathOperator::kMax);
+    if (!result)
+      return nullptr;
+
     result->SetIsClamp();
     return result;
   }
