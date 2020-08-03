@@ -1099,8 +1099,10 @@ StoragePartitionImpl::~StoragePartitionImpl() {
   if (GetBackgroundSyncContext())
     GetBackgroundSyncContext()->Shutdown();
 
+#if !defined(TOOLKIT_QT)
   if (GetPaymentAppContext())
     GetPaymentAppContext()->Shutdown();
+#endif
 
   if (GetBackgroundFetchContext())
     GetBackgroundFetchContext()->Shutdown();
@@ -1257,8 +1259,10 @@ void StoragePartitionImpl::Initialize(
   background_sync_context_->Init(service_worker_context_,
                                  devtools_background_services_context_);
 
+#if !defined(TOOLKIT_QT)
   payment_app_context_ = new PaymentAppContextImpl();
   payment_app_context_->Init(service_worker_context_);
+#endif
 
   broadcast_channel_provider_ = std::make_unique<BroadcastChannelProvider>();
 
@@ -1526,7 +1530,11 @@ BackgroundFetchContext* StoragePartitionImpl::GetBackgroundFetchContext() {
 
 PaymentAppContextImpl* StoragePartitionImpl::GetPaymentAppContext() {
   DCHECK(initialized_);
+#if !defined(TOOLKIT_QT)
   return payment_app_context_.get();
+#else
+  return nullptr;
+#endif
 }
 
 BroadcastChannelProvider* StoragePartitionImpl::GetBroadcastChannelProvider() {
