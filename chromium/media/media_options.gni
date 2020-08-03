@@ -102,6 +102,8 @@ declare_args() {
 
   enable_web_speech = true
 
+  enable_webrtc = true
+
   # Enable logging override, e.g. enable DVLOGs through level 2 at build time.
   # On Cast devices, these are logged as INFO.
   # When enabled on Fuchsia, these are logged as VLOGs.

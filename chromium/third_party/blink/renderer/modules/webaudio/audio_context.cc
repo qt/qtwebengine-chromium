@@ -1041,6 +1041,7 @@ void AudioContext::NotifySetSinkIdIsDone(
   DCHECK(IsMainThread());
 
   sink_descriptor_ = pending_sink_descriptor;
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (sink_descriptor_.Type() ==
           WebAudioSinkDescriptor::AudioSinkType::kAudible &&
       base::FeatureList::IsEnabled(kWebAudioSetSinkEchoCancellation)) {
@@ -1055,6 +1056,7 @@ void AudioContext::NotifySetSinkIdIsDone(
           ->SetOutputDeviceForAec(sink_descriptor_.SinkId());
     }
   }
+#endif
 
   // This performs steps 11 and 12 from the second part of the setSinkId()
   // algorithm:

@@ -155,7 +155,6 @@
 #include "base/rand_util.h"
 #include "content/public/common/zygote/sandbox_support_linux.h"
 #include "third_party/boringssl/src/include/openssl/crypto.h"
-#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chromeos/startup/browser_init_params.h"
@@ -185,7 +184,11 @@
 #include "content/public/common/zygote/zygote_handle.h"
 #include "content/zygote/zygote_main.h"
 #include "media/base/media_switches.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/webrtc_overrides/init_webrtc.h"  // nogncheck
 #endif
+#endif // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/system/sys_info.h"
@@ -438,7 +441,9 @@ void PreSandboxInit() {
   // Ensure access to the library CDMs before the sandbox is turned on.
   PreloadLibraryCdms();
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
   InitializeWebRtcModule();
+#endif
 
 #if BUILDFLAG(BUILD_TFLITE_WITH_XNNPACK)
   // cpuinfo needs to parse /proc/cpuinfo, or its equivalent.

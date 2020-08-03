@@ -109,6 +109,7 @@ chrome_grit_defines = [
   "enable_screen_ai_service=$enable_screen_ai_service",
   "enable_supervised_users=$enable_supervised_users",
   "enable_vr=$enable_vr",
+  "enable_webrtc=$enable_webrtc",
   "enable_webui_certificate_viewer=$enable_webui_certificate_viewer",
   "enable_webui_tab_strip=$enable_webui_tab_strip",
   "is_official_build=$is_official_build",

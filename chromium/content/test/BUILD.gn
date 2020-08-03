@@ -580,7 +580,6 @@ static_library("test_support") {
     "//testing/gtest",
     "//third_party/blink/public/strings:accessibility_strings",
     "//third_party/blink/public/strings:strings_grit",
-    "//third_party/webrtc_overrides:webrtc_component",
     "//tools/v8_context_snapshot:buildflags",
     "//ui/accessibility:ax_enums_mojo",
     "//ui/base",
@@ -1586,30 +1585,6 @@ test("content_browsertests") {
     "../browser/webid/test/webid_test_content_browser_client.h",
     "../browser/webid/webid_browsertest.cc",
     "../browser/webkit_browsertest.cc",
-    "../browser/webrtc/webrtc_audio_browsertest.cc",
-    "../browser/webrtc/webrtc_audio_debug_recordings_browsertest.cc",
-    "../browser/webrtc/webrtc_browsertest.cc",
-    "../browser/webrtc/webrtc_capture_from_element_browsertest.cc",
-    "../browser/webrtc/webrtc_constraints_browsertest.cc",
-    "../browser/webrtc/webrtc_content_browsertest_base.cc",
-    "../browser/webrtc/webrtc_content_browsertest_base.h",
-    "../browser/webrtc/webrtc_data_browsertest.cc",
-    "../browser/webrtc/webrtc_datachannel_browsertest.cc",
-    "../browser/webrtc/webrtc_getusermedia_browsertest.cc",
-    "../browser/webrtc/webrtc_image_capture_browsertest.cc",
-    "../browser/webrtc/webrtc_internals_browsertest.cc",
-    "../browser/webrtc/webrtc_ip_permissions_browsertest.cc",
-    "../browser/webrtc/webrtc_media_recorder_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_image_capture_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_pause_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_resolution_switch_browsertest.cc",
-    "../browser/webrtc/webrtc_stress_source_switch_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_service_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_service_enumeration_browsertest.cc",
-    "../browser/webrtc/webrtc_video_capture_shared_device_browsertest.cc",
-    "../browser/webrtc/webrtc_webcam_browsertest.cc",
-    "../browser/webrtc/webrtc_webcam_browsertest.h",
     "../browser/webui/web_ui_browsertest.cc",
     "../browser/webui/web_ui_managed_interface_browsertest.cc",
     "../browser/webui/web_ui_mojo_browsertest.cc",
@@ -2130,6 +2105,41 @@ test("content_browsertests") {
   if (use_aura) {
     sources +=
         [ "../browser/compositor/image_transport_factory_browsertest.cc" ]
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "../browser/webrtc/webrtc_audio_browsertest.cc",
+      "../browser/webrtc/webrtc_audio_debug_recordings_browsertest.cc",
+      "../browser/webrtc/webrtc_browsertest.cc",
+      "../browser/webrtc/webrtc_capture_from_element_browsertest.cc",
+      "../browser/webrtc/webrtc_constraints_browsertest.cc",
+      "../browser/webrtc/webrtc_content_browsertest_base.cc",
+      "../browser/webrtc/webrtc_content_browsertest_base.h",
+      "../browser/webrtc/webrtc_data_browsertest.cc",
+      "../browser/webrtc/webrtc_datachannel_browsertest.cc",
+      "../browser/webrtc/webrtc_depth_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_getusermedia_browsertest.cc",
+      "../browser/webrtc/webrtc_image_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_internals_browsertest.cc",
+      "../browser/webrtc/webrtc_ip_permissions_browsertest.cc",
+      "../browser/webrtc/webrtc_media_recorder_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_image_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_pause_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_resolution_switch_browsertest.cc",
+      "../browser/webrtc/webrtc_stress_source_switch_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_service_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_service_enumeration_browsertest.cc",
+      "../browser/webrtc/webrtc_video_capture_shared_device_browsertest.cc",
+      "../browser/webrtc/webrtc_webcam_browsertest.cc",
+      "../browser/webrtc/webrtc_webcam_browsertest.h",
+      "../browser/webui/web_ui_browser_interface_broker_registry_browsertest.cc",
+    ]
+    deps += [
+      "//content/common:buildflags",
+      "//testing/perf",
+    ]
   }
 
   if (enable_vr) {
@@ -2741,9 +2751,6 @@ test("content_unittests") {
     "../browser/webid/test/mock_modal_dialog_view_delegate.h",
     "../browser/webid/test/mock_permission_delegate.cc",
     "../browser/webid/test/mock_permission_delegate.h",
-    "../browser/webrtc/webrtc_internals_message_handler_unittest.cc",
-    "../browser/webrtc/webrtc_internals_unittest.cc",
-    "../browser/webtransport/web_transport_throttle_context_unittest.cc",
     "../browser/webui/web_ui_data_source_unittest.cc",
     "../browser/webui/web_ui_main_frame_observer_unittest.cc",
     "../browser/webui/web_ui_message_handler_unittest.cc",
@@ -3042,7 +3049,6 @@ test("content_unittests") {
     "//third_party/inspector_protocol:crdtp",
     "//third_party/inspector_protocol:crdtp_test",
     "//third_party/leveldatabase",
-    "//third_party/libyuv",
     "//third_party/metrics_proto",
     "//third_party/re2",
     "//third_party/sqlite",
@@ -3073,8 +3079,6 @@ test("content_unittests") {
     "//ui/gl",
     "//ui/gl:test_support",
     "//ui/latency:test_support",
-    "//ui/shell_dialogs:shell_dialogs",
-    "//ui/webui:test_support",
   ]
 
   if (enable_nocompile_tests) {
@@ -3175,7 +3179,6 @@ test("content_unittests") {
         "//content/common:buildflags",
         "//media/capture:test_support",
         "//third_party/libyuv",
-        "//third_party/webrtc_overrides:webrtc_component",
       ]
       sources += [
         "../browser/media/capture/desktop_capture_device_unittest.cc",
