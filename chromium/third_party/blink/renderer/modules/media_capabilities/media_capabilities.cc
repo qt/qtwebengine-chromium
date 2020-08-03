@@ -23,6 +23,7 @@
 #include "media/learning/common/target_histogram.h"
 #include "media/learning/mojo/public/mojom/learning_task_controller.mojom-blink.h"
 #include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/mojom/media_types.mojom-blink.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -71,9 +72,6 @@
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_capabilities_info.h"
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_configuration.h"
 #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
-#include "third_party/blink/renderer/platform/peerconnection/webrtc_decoding_info_handler.h"
-#include "third_party/blink/renderer/platform/peerconnection/webrtc_encoding_info_handler.h"
-#include "third_party/blink/renderer/platform/peerconnection/webrtc_util.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/webrtc/webrtc_video_utils.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -82,6 +80,12 @@
 #include "third_party/webrtc/api/video_codecs/sdp_video_format.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/blink/renderer/platform/peerconnection/webrtc_decoding_info_handler.h"
+#include "third_party/blink/renderer/platform/peerconnection/webrtc_encoding_info_handler.h"
+#include "third_party/blink/renderer/platform/peerconnection/webrtc_util.h"
+#endif
 
 namespace blink {
 
@@ -490,6 +494,7 @@ WebMediaConfiguration ToWebMediaConfiguration(
 
 webrtc::SdpAudioFormat ToSdpAudioFormat(
     const AudioConfiguration* configuration) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(configuration->hasContentType());
   // Convert audio_configuration to SdpAudioFormat.
   ParsedContentType parsed_content_type(configuration->contentType());
@@ -504,10 +509,14 @@ webrtc::SdpAudioFormat ToSdpAudioFormat(
                               ? configuration->channels().ToUIntStrict()
                               : 0;
   return {codec_name.Utf8(), clockrate_hz, channels};
+#else
+  return {{}, 0, 0};
+#endif
 }
 
 webrtc::SdpVideoFormat ToSdpVideoFormat(
     const VideoConfiguration* configuration) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(configuration->hasContentType());
   // Convert video_configuration to SdpVideoFormat.
   ParsedContentType parsed_content_type(configuration->contentType());
@@ -517,6 +526,9 @@ webrtc::SdpVideoFormat ToSdpVideoFormat(
   const webrtc::SdpVideoFormat::Parameters parameters =
       ConvertToSdpVideoFormatParameters(parsed_content_type.GetParameters());
   return {codec_name.Utf8(), parameters};
+#else
+  return {{}, {}};
+#endif
 }
 
 bool CheckMseSupport(const String& mime_type, const String& codec) {
@@ -825,6 +837,7 @@ ScriptPromise MediaCapabilities::decodingInfo(
   // Validation errors should return above.
   DCHECK(message.empty());
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (is_webrtc) {
     UseCounter::Count(ExecutionContext::From(script_state),
                       WebFeature::kMediaCapabilitiesDecodingInfoWebrtc);
@@ -893,6 +906,7 @@ ScriptPromise MediaCapabilities::decodingInfo(
     resolver->Resolve(info);
     return promise;
   }
+#endif
 
   String audio_mime_str;
   String audio_codec_str;
@@ -1033,8 +1047,8 @@ ScriptPromise MediaCapabilities::encodingInfo(
   // it in the code that follows. Otherwise the promise returned to JS will be
   // undefined. See comment above Promise() in script_promise_resolver.h
   ScriptPromise promise = resolver->Promise();
-
   if (is_webrtc) {
+#if BUILDFLAG(ENABLE_WEBRTC)
     UseCounter::Count(ExecutionContext::From(script_state),
                       WebFeature::kMediaCapabilitiesEncodingInfoWebrtc);
 
@@ -1087,6 +1101,7 @@ ScriptPromise MediaCapabilities::encodingInfo(
 
       return promise;
     }
+#endif
     // TODO(crbug.com/1187565): This should not happen unless we're out of
     // memory or something similar. Add UMA metric to count how often it
     // happens.

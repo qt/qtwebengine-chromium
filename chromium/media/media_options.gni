@@ -98,6 +98,8 @@ declare_args() {
 
   enable_web_speech = true
 
+  enable_webrtc = true
+
   # Enable HLS with SAMPLE-AES decryption.
   enable_hls_sample_aes =
       proprietary_codecs && (enable_cast_receiver || use_fuzzing_engine)

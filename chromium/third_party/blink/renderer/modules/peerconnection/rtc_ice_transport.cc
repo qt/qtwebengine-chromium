@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_transport.h"
 
 #include "base/task/single_thread_task_runner.h"
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_string_stringsequence.h"
@@ -69,9 +70,13 @@ class DtlsIceTransportAdapterCrossThreadFactory
 
   std::unique_ptr<IceTransportAdapter> ConstructOnWorkerThread(
       IceTransportAdapter::Delegate* delegate) override {
+#if BUILDFLAG(ENABLE_WEBRTC)
     DCHECK(ice_transport_);
     return std::make_unique<IceTransportAdapterImpl>(delegate,
                                                      std::move(ice_transport_));
+#else
+    return nullptr;
+#endif
   }
 
  private:
@@ -84,6 +89,7 @@ RTCIceTransport* RTCIceTransport::Create(
     ExecutionContext* context,
     rtc::scoped_refptr<webrtc::IceTransportInterface> ice_transport,
     RTCPeerConnection* peer_connection) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   scoped_refptr<base::SingleThreadTaskRunner> proxy_thread =
       context->GetTaskRunner(TaskType::kNetworking);
 
@@ -96,6 +102,9 @@ RTCIceTransport* RTCIceTransport::Create(
       std::make_unique<DtlsIceTransportAdapterCrossThreadFactory>(
           std::move(ice_transport)),
       peer_connection);
+#else
+  return nullptr;
+#endif
 }
 
 RTCIceTransport* RTCIceTransport::Create(

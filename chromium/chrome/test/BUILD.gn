@@ -38,6 +38,7 @@ import("//components/soda/buildflags.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
 import("//crypto/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//net/features.gni")
 import("//pdf/features.gni")
@@ -1543,8 +1544,6 @@ if (!is_android) {
       "//components/version_info",
       "//components/webapps/browser",
       "//components/webapps/common:common",
-      "//components/webrtc",
-      "//components/webrtc_logging/browser",
       "//content/public/common",
       "//content/test:browsertest_support",
       "//content/test:test_support",
@@ -1631,6 +1630,12 @@ if (!is_android) {
       "//tools/media_engagement_preload:make_dafsa_runtime",
     ]
 
+    if (enable_webrtc) {
+      deps += [
+        "//components/webrtc",
+        "//components/webrtc_logging/browser",
+      ]
+    }
     if (!is_component_build) {
       # WebRTC's frame_analyzer doesn't build correctly on component builds,
       # because some compilers will get confused by the fact that WebRTC
@@ -4519,6 +4524,35 @@ if (!is_android) {
       }
     }
 
+    if (!enable_webrtc) {
+      sources -= [
+        # TODO(b/246519185) - Py3 incompatible, decide if to keep test.
+        #"../browser/media/webrtc/webrtc_apprtc_browsertest.cc",
+        "../browser/media/webrtc/webrtc_browsertest_perf.cc",
+        "../browser/media/webrtc/webrtc_browsertest_perf.h",
+        "../browser/media/webrtc/webrtc_desktop_capture_browsertest.cc",
+        "../browser/media/webrtc/webrtc_disable_encryption_flag_browsertest.cc",
+        "../browser/media/webrtc/webrtc_getdisplaymedia_browsertest.cc",
+        "../browser/media/webrtc/webrtc_getmediadevices_browsertest.cc",
+        "../browser/media/webrtc/webrtc_internals_integration_browsertest.cc",
+        "../browser/media/webrtc/webrtc_internals_perf_browsertest.cc",
+        "../browser/media/webrtc/webrtc_stats_perf_browsertest.cc",
+        "../browser/media/webrtc/webrtc_video_display_perf_browsertest.cc",
+        "../browser/media/webrtc/webrtc_video_quality_browsertest.cc",
+        "../browser/media/webrtc/webrtc_webcam_browsertest.cc",
+      ]
+      deps -= [
+        "//chrome/browser/media/router:test_support",
+        ":webrtc_browser_tests_base",
+      ]
+      if (enable_extensions) {
+        sources -= [
+          "../browser/extensions/api/webrtc_audio_private/webrtc_audio_private_browsertest.cc",
+          "../browser/extensions/api/webrtc_logging_private/webrtc_logging_private_apitest.cc",
+        ]
+      }
+    }
+
     if (enable_captive_portal_detection) {
       sources += [ "../browser/captive_portal/captive_portal_browsertest.cc" ]
     }
@@ -6760,23 +6794,6 @@ test("unit_tests") {
       "../browser/lifetime/application_lifetime_unittest.cc",
       "../browser/lookalikes/lookalike_url_navigation_throttle_unittest.cc",
       "../browser/media/unified_autoplay_config_unittest.cc",
-      "../browser/media/webrtc/current_tab_desktop_media_list_unittest.cc",
-      "../browser/media/webrtc/desktop_capture_access_handler_unittest.cc",
-      "../browser/media/webrtc/desktop_media_picker_controller_unittest.cc",
-      "../browser/media/webrtc/display_media_access_handler_unittest.cc",
-      "../browser/media/webrtc/media_capture_devices_dispatcher_unittest.cc",
-      "../browser/media/webrtc/media_stream_capture_indicator_unittest.cc",
-      "../browser/media/webrtc/media_stream_focus_delegate_unittest.cc",
-      "../browser/media/webrtc/tab_capture_access_handler_unittest.cc",
-      "../browser/media/webrtc/tab_desktop_media_list_unittest.cc",
-      "../browser/media/webrtc/webrtc_event_log_manager_common_unittest.cc",
-      "../browser/media/webrtc/webrtc_event_log_manager_unittest.cc",
-      "../browser/media/webrtc/webrtc_event_log_manager_unittest_helpers.cc",
-      "../browser/media/webrtc/webrtc_event_log_manager_unittest_helpers.h",
-      "../browser/media/webrtc/webrtc_event_log_uploader_impl_unittest.cc",
-      "../browser/media/webrtc/webrtc_log_uploader_unittest.cc",
-      "../browser/media/webrtc/webrtc_rtp_dump_handler_unittest.cc",
-      "../browser/media/webrtc/webrtc_rtp_dump_writer_unittest.cc",
       "../browser/media_galleries/fileapi/native_media_file_util_unittest.cc",
       "../browser/media_galleries/gallery_watch_manager_unittest.cc",
       "../browser/media_galleries/media_file_system_registry_unittest.cc",
@@ -7312,6 +7329,9 @@ test("unit_tests") {
       "//ui/native_theme:test_support",
       "//ui/webui/resources/js/browser_command:mojo_bindings",
     ]
+    if (!enable_webrtc) {
+      deps -= [ "//chrome/browser/media/router:test_support" ]
+    }
 
     data += [ "//ash/components/arc/test/data/icons/" ]
 
@@ -8679,6 +8699,28 @@ test("unit_tests") {
       "../browser/sessions/session_service_log_unittest.cc",
       "../browser/sessions/session_service_unittest.cc",
       "../browser/sessions/tab_loader_unittest.cc",
+    ]
+  }
+  if (enable_webrtc) {
+    sources += [
+      "../browser/media/webrtc/current_tab_desktop_media_list_unittest.cc",
+      "../browser/media/webrtc/desktop_capture_access_handler_unittest.cc",
+      "../browser/media/webrtc/desktop_media_picker_controller_unittest.cc",
+      "../browser/media/webrtc/display_media_access_handler_unittest.cc",
+      "../browser/media/webrtc/media_capture_devices_dispatcher_unittest.cc",
+      "../browser/media/webrtc/media_stream_capture_indicator_unittest.cc",
+      "../browser/media/webrtc/media_stream_focus_delegate_unittest.cc",
+      "../browser/media/webrtc/tab_capture_access_handler_unittest.cc",
+      "../browser/media/webrtc/tab_desktop_media_list_unittest.cc",
+      "../browser/media/webrtc/webrtc_event_log_manager_common_unittest.cc",
+      "../browser/media/webrtc/webrtc_event_log_manager_unittest.cc",
+      "../browser/media/webrtc/webrtc_event_log_manager_unittest_helpers.cc",
+      "../browser/media/webrtc/webrtc_event_log_manager_unittest_helpers.h",
+      "../browser/media/webrtc/webrtc_event_log_uploader_impl_unittest.cc",
+      "../browser/media/webrtc/webrtc_log_uploader_unittest.cc",
+      "../browser/media/webrtc/webrtc_rtp_dump_handler_unittest.cc",
+      "../browser/media/webrtc/webrtc_rtp_dump_writer_unittest.cc",
+      "../renderer/media/chrome_webrtc_log_message_delegate_unittest.cc",
     ]
   }
 
