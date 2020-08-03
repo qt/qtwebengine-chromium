@@ -2484,9 +2484,6 @@ if (!is_android) {
       "//services/network/public/proto:sct_audit_report_proto",
       "//services/preferences/public/cpp",
       "//services/preferences/public/cpp/tracked",
-      "//services/screen_ai:test_support",
-      "//services/screen_ai/public/cpp:utilities",
-      "//services/screen_ai/public/mojom",
       "//services/service_manager/public/cpp",
       "//services/strings",
       "//services/test/echo/public/mojom",
@@ -2654,6 +2651,13 @@ if (!is_android) {
       "//tools/media_engagement_preload:make_dafsa_runtime",
     ]
 
+    if (enable_screen_ai_service) {
+      deps += [
+        "//services/screen_ai:test_support",
+        "//services/screen_ai/public/cpp:utilities",
+        "//services/screen_ai/public/mojom",
+      ]
+    }
     if (!is_component_build) {
       # WebRTC's frame_analyzer doesn't build correctly on component builds,
       # because some compilers will get confused by the fact that WebRTC
@@ -8165,7 +8169,6 @@ test("unit_tests") {
       "//services/device/public/cpp/bluetooth",
       "//services/metrics/public/cpp:ukm_builders",
       "//services/network:test_support",
-      "//services/screen_ai:test_support",
       "//services/video_effects/test:test_support",
       "//third_party/crashpad/crashpad/util",
       "//third_party/libaddressinput",
@@ -8184,6 +8187,12 @@ test("unit_tests") {
     ]
 
     data += [ "//chromeos/ash/experiences/arc/test/data/icons/" ]
+
+    if (enable_screen_ai_service) {
+      deps += [
+        "//services/screen_ai:test_support",
+      ]
+    }
 
     if (include_js2gtest_tests && is_chromeos) {
       data += js2gtest_js_libraries
