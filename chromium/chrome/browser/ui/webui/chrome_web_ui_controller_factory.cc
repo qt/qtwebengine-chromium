@@ -62,6 +62,10 @@
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "chrome/browser/ui/webui/media/webrtc_logs_ui.h"
+#endif
+
 #if BUILDFLAG(IS_ANDROID)
 #include "components/feed/feed_feature_list.h"
 #else  // BUILDFLAG(IS_ANDROID)

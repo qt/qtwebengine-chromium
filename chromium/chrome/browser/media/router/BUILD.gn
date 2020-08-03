@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 
@@ -211,6 +212,12 @@ static_library("router") {
     deps += [
       "//extensions/buildflags",
       "//extensions/common",
+    ]
+  }
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 }
