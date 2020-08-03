@@ -78,7 +78,7 @@ constexpr BackendUsage SelectedBackendToMetric(
     case os_crypt::SelectedLinuxBackend::KWALLET5:
       return used ? BackendUsage::kKwallet5 : BackendUsage::kKwallet5Failed;
   }
-  NOTREACHED();
+//  NOTREACHED();
   return BackendUsage::kDeferFailed;
 }
 

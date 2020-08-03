@@ -22,7 +22,7 @@ inline constexpr InsecureRequestPolicy operator|(InsecureRequestPolicy a,
                                                  InsecureRequestPolicy b) {
   InsecureRequestPolicy result = static_cast<InsecureRequestPolicy>(
       static_cast<int>(a) | static_cast<int>(b));
-  DCHECK_LE(result, InsecureRequestPolicy::kMaxInsecureRequestPolicy);
+//  DCHECK_LE(result, InsecureRequestPolicy::kMaxInsecureRequestPolicy);
   return result;
 }
 
