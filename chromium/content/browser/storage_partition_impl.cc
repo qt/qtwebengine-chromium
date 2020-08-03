@@ -1428,8 +1428,10 @@ void StoragePartitionImpl::Initialize(
   background_sync_context_->Init(service_worker_context_,
                                  *devtools_background_services_context_.get());
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   payment_app_context_ = new PaymentAppContextImpl();
   payment_app_context_->Init(service_worker_context_);
+#endif
 
   broadcast_channel_service_ = std::make_unique<BroadcastChannelService>();
 
@@ -1783,7 +1785,11 @@ BackgroundFetchContext* StoragePartitionImpl::GetBackgroundFetchContext() {
 
 PaymentAppContextImpl* StoragePartitionImpl::GetPaymentAppContext() {
   DCHECK(initialized_);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return payment_app_context_.get();
+#else
+  return nullptr;
+#endif
 }
 
 BroadcastChannelService* StoragePartitionImpl::GetBroadcastChannelService() {
