@@ -158,7 +158,7 @@ SpeechRecognitionManagerImpl* SpeechRecognitionManagerImpl::GetInstance() {
 
 bool SpeechRecognitionManagerImpl::IsOnDeviceSpeechRecognitionAvailable(
     const SpeechRecognitionSessionConfig& config) {
-#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
   return speech::IsOnDeviceSpeechRecognitionAvailable(config.language);
 #else
   return false;
@@ -227,7 +227,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
   session->use_microphone = !audio_forwarder_config.has_value();
 
 #if !BUILDFLAG(IS_ANDROID)
-#if !BUILDFLAG(IS_FUCHSIA)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_QTWEBENGINE)
   if (IsOnDeviceSpeechRecognitionAvailable(config) &&
       audio_forwarder_config.has_value()) {
     CHECK_GT(audio_forwarder_config.value().channel_count, 0);
@@ -275,7 +275,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
 
   std::unique_ptr<SpeechRecognitionEngine> speech_recognition_engine;
 
-#if !BUILDFLAG(IS_FUCHSIA)
+#if !BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_QTWEBENGINE)
   if (UseOnDeviceSpeechRecognition(config)) {
     std::unique_ptr<SodaSpeechRecognitionEngineImpl>
         soda_speech_recognition_engine =
@@ -284,7 +284,7 @@ int SpeechRecognitionManagerImpl::CreateSession(
       speech_recognition_engine = std::move(soda_speech_recognition_engine);
     }
   }
-#endif  //! BUILDFLAG(IS_FUCHSIA)
+#endif  //! BUILDFLAG(IS_FUCHSIA) && !BUILDFLAG(IS_QTWEBENGINE)
 
   if (!speech_recognition_engine) {
     // A NetworkSpeechRecognitionEngineImpl (and corresponding Config) is

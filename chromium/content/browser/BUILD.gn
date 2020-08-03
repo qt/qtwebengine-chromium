@@ -3395,7 +3395,7 @@ source_set("browser") {
       "webid/digital_credentials/cross_device_transaction_impl.h",
     ]
 
-    if (!is_fuchsia) {
+    if (!is_fuchsia && !is_qtwebengine) {
       sources += [
         "speech/soda_speech_recognition_engine_impl.cc",
         "speech/soda_speech_recognition_engine_impl.h",
