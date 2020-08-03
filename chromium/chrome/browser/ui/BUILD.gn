@@ -19,6 +19,7 @@ import("//content/browser/devtools/features.gni")
 import("//crypto/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//rlz/buildflags/buildflags.gni")
@@ -157,8 +158,6 @@ static_library("ui") {
     "webui/log_web_ui_url.h",
     "webui/media/media_engagement_ui.cc",
     "webui/media/media_engagement_ui.h",
-    "webui/media/webrtc_logs_ui.cc",
-    "webui/media/webrtc_logs_ui.h",
     "webui/memory_internals_ui.cc",
     "webui/memory_internals_ui.h",
     "webui/metrics_handler.cc",
@@ -256,7 +255,6 @@ static_library("ui") {
     "//chrome/browser:primitives",
     "//chrome/browser/feedback",
     "//chrome/browser/headless",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/search",
     "//chrome/browser/task_manager",
     "//chrome/browser/ui/tabs:tab_enums",
@@ -607,7 +605,6 @@ static_library("ui") {
     "//components/web_resource",
     "//components/webapps/browser",
     "//components/webapps/common",
-    "//components/webrtc_logging/browser",
     "//components/webui/about",
     "//components/webui/chrome_urls",
     "//components/webui/flags",
@@ -710,9 +707,6 @@ static_library("ui") {
 
     # TODO(crbug.com/344921703): Remove circular dependencies.
     "//chrome/browser/sync",
-
-    # TODO(crbug.com/353284909): Remove this circular dependency.
-    "//chrome/browser/media/webrtc",
 
     # TODO(crbug.com/360599255): Remove this circular dependency.
     # - chrome_popup_navigation_delegate.cc includes //c/b/ui/browser_navigator.h.
@@ -5353,6 +5347,22 @@ static_library("ui") {
         "webui/print_preview/local_printer_handler_default.h",
       ]
     }
+  }
+
+  if (enable_webrtc) {
+    sources += [
+      "webui/media/webrtc_logs_ui.cc",
+      "webui/media/webrtc_logs_ui.h",
+    ]
+    deps += [ "//components/webrtc_logging/browser" ]
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+
+    allow_circular_includes_from += [
+      # TODO(crbug.com/353284909): Remove this circular dependency.
+      "//chrome/browser/media/webrtc",
+    ]
   }
 
   if (safe_browsing_mode > 0) {

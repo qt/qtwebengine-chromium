@@ -10,6 +10,8 @@ import("//chrome/common/features.gni")
 import("//content/public/common/features.gni")
 import("//third_party/webrtc/webrtc.gni")
 
+assert(enable_webrtc)
+
 source_set("webrtc") {
   sources = [
     "audio_debug_recordings_handler.cc",

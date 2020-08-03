@@ -752,6 +752,7 @@ MediaFactory::CreateWebMediaPlayerForMediaStream(
     scoped_refptr<base::SingleThreadTaskRunner>
         main_thread_compositor_task_runner,
     scoped_refptr<base::TaskRunner> compositor_worker_task_runner) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   RenderThreadImpl* const render_thread = RenderThreadImpl::current();
 
   media::MediaPlayerLoggingID player_id = media::GetNextMediaPlayerLoggingID();
@@ -783,6 +784,9 @@ MediaFactory::CreateWebMediaPlayerForMediaStream(
       base::BindOnce(&blink::WebSurfaceLayerBridge::Create,
                      parent_frame_sink_id),
       std::move(submitter), use_surface_layer);
+#else
+  return nullptr;
+#endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 
 media::RendererWebMediaPlayerDelegate*

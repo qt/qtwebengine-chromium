@@ -332,7 +332,9 @@ inline constexpr char kChromeUIUserEducationInternalsURL[] =
 inline constexpr char kChromeUIVersionHost[] = "version";
 inline constexpr char kChromeUIVersionURL[] = "chrome://version/";
 inline constexpr char16_t kChromeUIVersionURL16[] = u"chrome://version/";
+#if BUILDFLAG(ENABLE_WEBRTC)
 inline constexpr char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
+#endif
 inline constexpr char kChromeUIWebuiGalleryHost[] = "webui-gallery";
 inline constexpr char kChromeUIWebUITestHost[] = "webui-test";
 

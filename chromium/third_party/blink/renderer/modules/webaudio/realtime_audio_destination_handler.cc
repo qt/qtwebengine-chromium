@@ -397,6 +397,7 @@ void RealtimeAudioDestinationHandler::StartPlatformDestination() {
 
   if (update_echo_cancellation_on_next_start_) {
     update_echo_cancellation_on_next_start_ = false;
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (sink_descriptor_.Type() ==
         WebAudioSinkDescriptor::AudioSinkType::kAudible) {
       const media::OutputDeviceStatus output_device_status =
@@ -426,6 +427,7 @@ void RealtimeAudioDestinationHandler::StartPlatformDestination() {
                            output_device_status));
       }
     }
+#endif
   }
 
   AudioWorklet* audio_worklet = Context()->audioWorklet();

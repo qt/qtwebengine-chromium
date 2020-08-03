@@ -11,6 +11,7 @@
 #include "base/strings/to_string.h"
 #include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
+#include "media/media_buildflags.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_surface.h"
@@ -27,7 +28,6 @@
 #include "third_party/blink/renderer/core/streams/readable_stream.h"
 #include "third_party/blink/renderer/core/streams/writable_stream.h"
 #include "third_party/blink/renderer/modules/peerconnection/identifiability_metrics.h"
-#include "third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.h"
 #include "third_party/blink/renderer/modules/peerconnection/peer_connection_features.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_dtls_transport.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_encoded_audio_receiver_sink_optimizer.h"
@@ -50,6 +50,10 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/webrtc/api/rtp_parameters.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.h"
+#endif
 
 namespace blink {
 
@@ -285,6 +289,7 @@ void RTCRtpReceiver::Trace(Visitor* visitor) const {
 
 RTCRtpCapabilities* RTCRtpReceiver::getCapabilities(ScriptState* state,
                                                     const String& kind) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   if (kind != "audio" && kind != "video")
     return nullptr;
 
@@ -346,6 +351,9 @@ RTCRtpCapabilities* RTCRtpReceiver::getCapabilities(ScriptState* state,
         .Record(ExecutionContext::From(state)->UkmRecorder());
   }
   return capabilities;
+#else
+  return nullptr;
+#endif
 }
 
 RTCRtpReceiveParameters* RTCRtpReceiver::getParameters() {

@@ -97,7 +97,11 @@ ProcessedLocalAudioSource::ProcessedLocalAudioSource(
                                     disable_local_echo),
       consumer_frame_(&frame),
       dependency_factory_(
+#if BUILDFLAG(ENABLE_WEBRTC)
           PeerConnectionDependencyFactory::From(*frame.DomWindow())),
+#else
+          nullptr),
+#endif
       processing_layout_(processing_layout),
       started_callback_(std::move(started_callback)),
       allow_invalid_render_frame_id_for_testing_(false) {
@@ -166,6 +170,8 @@ bool ProcessedLocalAudioSource::EnsureSourceIsStarted() {
     modified_device.input.set_effects(processing_layout_.platform_effects());
     SetDevice(modified_device);
   }
+
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Create the audio processor.
 
   DCHECK(dependency_factory_);
@@ -273,9 +279,13 @@ bool ProcessedLocalAudioSource::EnsureSourceIsStarted() {
   rtc_audio_device->AddAudioCapturer(this);
 
   return true;
+#else
+  return false;
+#endif
 }
 
 void ProcessedLocalAudioSource::EnsureSourceIsStopped() {
+#if BUILDFLAG(ENABLE_WEBRTC)
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
 
   if (!source_)
@@ -299,6 +309,9 @@ void ProcessedLocalAudioSource::EnsureSourceIsStopped() {
   }
 
   DVLOG(1) << "Stopped WebRTC audio pipeline for consumption.";
+#else
+  return;
+#endif
 }
 
 scoped_refptr<webrtc::AudioProcessorInterface>

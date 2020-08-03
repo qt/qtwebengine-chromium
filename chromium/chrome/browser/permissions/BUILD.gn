@@ -6,6 +6,7 @@ import("//build/config/ui.gni")
 import("//components/optimization_guide/features.gni")
 import("//components/safe_browsing/buildflags.gni")
 import("//device/vr/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//services/device/public/cpp/geolocation/buildflags.gni")
 import("//third_party/protobuf/proto_library.gni")
 
@@ -62,7 +63,6 @@ source_set("permissions") {
 
   public_deps = [
     "//chrome/browser:browser_public_dependencies",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/permissions/system",
     "//chrome/browser/ui:browser_navigator_params_headers",
   ]
@@ -159,7 +159,11 @@ source_set("permissions") {
       "//chrome/browser/ash/shimless_rma",
     ]
   }
-
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
   if (build_with_tflite_lib) {
     sources += [
       "prediction_service/prediction_model_handler_provider_factory.cc",
@@ -291,7 +295,6 @@ if (!is_android) {
       ":permissions",
       ":test_support",
       "//chrome/browser/content_settings:content_settings_factory",
-      "//chrome/browser/media/webrtc",
       "//chrome/browser/optimization_guide",
       "//chrome/browser/optimization_guide:test_support",
       "//chrome/browser/permissions/system",
@@ -315,6 +318,12 @@ if (!is_android) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+    if (enable_webrtc) {
+      deps += [
+        "//chrome/browser/media/webrtc",
+      ]
+    }
   }
 }
 

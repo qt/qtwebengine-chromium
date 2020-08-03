@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 
 # Contained Lens dependencies are currently for desktop platforms only
@@ -128,7 +129,6 @@ source_set("impl") {
     "//chrome/browser/autocomplete:aim_eligibility_service",
     "//chrome/browser/feedback",
     "//chrome/browser/lens/region_search",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles",
     "//chrome/browser/resources/lens/overlay:resources",
     "//chrome/browser/resources/lens/overlay:resources_grit",
@@ -202,6 +202,12 @@ source_set("impl") {
     deps += [
       "//chrome/browser/pdf",
       "//components/pdf/browser",
+    ]
+  }
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 }

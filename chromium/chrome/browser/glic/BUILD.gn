@@ -5,6 +5,7 @@
 import("//build/config/gclient_args.gni")
 import("//build/config/ozone.gni")
 import("//chrome/common/features.gni")
+import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 
 assert(enable_glic)
@@ -173,7 +174,6 @@ source_set("impl") {
     "//chrome/browser/glic/fre",
     "//chrome/browser/glic/media",
     "//chrome/browser/lifetime:termination_notification",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/page_content_annotations:fetcher",
     "//chrome/browser/picture_in_picture",
     "//chrome/browser/profiles:profile_util",
@@ -220,6 +220,11 @@ source_set("impl") {
     deps += [
       "//components/pdf/browser",
       "//components/pdf/common:constants",
+    ]
+  }
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 }

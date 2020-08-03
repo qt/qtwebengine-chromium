@@ -5,6 +5,7 @@
 import("//build/config/chrome_build.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/util/process_version.gni")
+import("//media/media_options.gni")
 import("//remoting/build/config/remoting_build.gni")
 import("//remoting/build/config/remoting_logging.gni")
 import("//third_party/webrtc/webrtc.gni")
@@ -521,9 +522,7 @@ static_library("common") {
     "//remoting/signaling",
     "//services/network:network_service",
     "//services/network/public/cpp",
-    "//third_party/libjingle_xmpp:rtc_xmllite",
-    "//third_party/webrtc_overrides:webrtc_component",
-    "//ui/events",
+    "//ui/events:events",
 
     # //remoting uses the power_save_blocker directly. See crbug.com/689423
     "//services/device/wake_lock/power_save_blocker",
@@ -724,6 +723,13 @@ static_library("common") {
     ]
     public_deps += [ "//remoting/host/win" ]
   }
+
+  if (enable_webrtc) {
+    deps += [
+      "//third_party/libjingle_xmpp:rtc_xmllite",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+  }
 }
 
 source_set("display_layout") {
@@ -776,10 +782,15 @@ static_library("test_support") {
     ":common",
     "//remoting/base:test_support",
     "//remoting/host/file_transfer:test_support",
-    "//third_party/libjingle_xmpp:rtc_xmllite",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/webrtc_overrides:webrtc_component",
   ]
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//third_party/libjingle_xmpp:rtc_xmllite",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+  }
 }
 
 # The host portions of the remoting unit tests.
@@ -1005,6 +1016,13 @@ if (enable_me2me_host) {
         "//remoting/host/win:remoting_windows_resources",
       ]
     }
+
+    if (enable_webrtc) {
+      deps += [
+        "//third_party/libjingle_xmpp",
+        "//third_party/webrtc_overrides:webrtc_component",
+      ]
+    }
   }
 
   action_foreach("remoting_native_messaging_manifests") {
@@ -1155,8 +1173,6 @@ if (enable_me2me_host) {
       "//remoting/protocol",
       "//remoting/signaling",
       "//services/network/public/cpp",
-      "//third_party/libjingle_xmpp:rtc_xmllite",
-      "//third_party/webrtc_overrides:webrtc_component",
     ]
 
     if (remoting_use_x11) {
@@ -1179,6 +1195,13 @@ if (enable_me2me_host) {
 
     if (!is_ios) {
       deps += [ "//components/policy:generated" ]
+    }
+
+    if (enable_webrtc) {
+      deps += [
+        "//third_party/libjingle_xmpp:rtc_xmllite",
+        "//third_party/webrtc_overrides:webrtc_component",
+      ]
     }
 
     if (use_gtk) {

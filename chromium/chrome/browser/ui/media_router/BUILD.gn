@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//media/media_options.gni")
+
 assert(is_win || is_mac || is_linux || is_chromeos)
 
 source_set("media_router") {
@@ -60,7 +62,6 @@ source_set("impl") {
     "//chrome/app:generated_resources",
     "//chrome/browser:browser_process",
     "//chrome/browser/media/router:media_router_feature",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/ui/global_media_controls",
     "//chrome/browser/ui/toolbar",
     "//chrome/common",
@@ -82,6 +83,12 @@ source_set("impl") {
   ]
 
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 }
 
 source_set("browser_tests") {

@@ -7,6 +7,7 @@ import("//components/enterprise/buildflags/buildflags.gni")
 import("//components/safe_browsing/buildflags.gni")
 import("//components/services/on_device_translation/buildflags/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
@@ -66,7 +67,6 @@ source_set("impl") {
     "//chrome/browser/media/prefs",
     "//chrome/browser/media/router:media_router_feature",
     "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/permissions",
     "//chrome/browser/platform_experience:prefs",
     "//chrome/browser/preloading:prefs",
@@ -364,6 +364,12 @@ source_set("impl") {
 
   if (!is_android && !is_chromeos) {
     deps += [ "//chrome/browser/ui/startup/default_browser_prompt" ]
+  }
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
 }
 

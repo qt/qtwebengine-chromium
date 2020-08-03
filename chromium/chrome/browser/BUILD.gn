@@ -30,6 +30,7 @@ import("//content/public/common/features.gni")
 import("//crypto/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//media/gpu/args.gni")
 import("//net/features.gni")
 import("//pdf/features.gni")
@@ -1763,7 +1764,6 @@ static_library("browser") {
     "//chrome/browser/file_system_access:impl",
     "//chrome/browser/google",
     "//chrome/browser/ip_protection",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/navigation_predictor:impl",
 
     # TODO(crbug.com/394204688): Remove this once we ensure that
@@ -1968,7 +1968,6 @@ static_library("browser") {
     "//chrome/browser/media/router",
     "//chrome/browser/media/router:media_router_feature",
     "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/metrics:expired_histograms_array",
     "//chrome/browser/metrics/structured",
     "//chrome/browser/metrics/variations:chrome_ui_string_overrider_factory",
@@ -2535,9 +2534,6 @@ static_library("browser") {
     "//components/webdata/common",
     "//components/webdata_services",
     "//components/webid",
-    "//components/webrtc",
-    "//components/webrtc_logging/browser",
-    "//components/webrtc_logging/common",
     "//components/webui/chrome_urls",
     "//components/webui/flags",
     "//components/zoom",
@@ -2572,7 +2568,6 @@ static_library("browser") {
     "//pdf:buildflags",
     "//printing/buildflags",
     "//rlz/buildflags",
-    "//services/audio/public/cpp",
     "//services/cert_verifier:lib",
     "//services/data_decoder/public/cpp",
     "//services/device/public/cpp:device_features",
@@ -2623,7 +2618,6 @@ static_library("browser") {
     "//third_party/libyuv",
     "//third_party/metrics_proto",
     "//third_party/re2",
-    "//third_party/webrtc_overrides:webrtc_component",
     "//third_party/widevine/cdm:buildflags",
     "//third_party/widevine/cdm:headers",
     "//third_party/zlib",
@@ -8329,6 +8323,20 @@ static_library("browser") {
     }
   }
 
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+      "//components/webrtc",
+      "//components/webrtc_logging/browser",
+      "//components/webrtc_logging/common",
+      "//services/audio/public/cpp",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+    allow_circular_includes_from += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
+
   if (enable_lens_desktop_google_branded_features) {
     deps += [ "//chrome/browser/lens/region_search" ]
   }
@@ -9142,7 +9150,6 @@ static_library("test_support") {
   public_deps = [
     ":browser",
     "//chrome/browser/autofill:test_support",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resource_coordinator",
     "//chrome/browser/safe_browsing:test_support",
@@ -9333,6 +9340,12 @@ static_library("test_support") {
       "//extensions/browser",
       "//extensions/browser/api/content_settings",
       "//extensions/common:mojom",
+    ]
+  }
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 

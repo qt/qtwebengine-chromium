@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 assert(enable_extensions_core)
 
@@ -24,10 +25,15 @@ source_set("webrtc_audio_private") {
 
   deps = [
     "//chrome/browser/extensions",
-    "//chrome/browser/media/webrtc",
     "//components/media_device_salt",
     "//extensions/common",
     "//third_party/blink/public/common:headers",
     "//url",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 }

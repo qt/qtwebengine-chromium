@@ -53,6 +53,7 @@ std::unique_ptr<DtlsTransportProxy> CreateProxy(
     ExecutionContext* context,
     webrtc::DtlsTransportInterface* native_transport,
     DtlsTransportProxy::Delegate* delegate) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   LocalFrame* frame = To<LocalDOMWindow>(context)->GetFrame();
   scoped_refptr<base::SingleThreadTaskRunner> proxy_thread =
       frame->GetTaskRunner(TaskType::kNetworking);
@@ -61,6 +62,9 @@ std::unique_ptr<DtlsTransportProxy> CreateProxy(
           .GetWebRtcNetworkTaskRunner();
   return DtlsTransportProxy::Create(*frame, proxy_thread, host_thread,
                                     native_transport, delegate);
+#else
+  return nullptr;
+#endif
 }
 
 }  // namespace

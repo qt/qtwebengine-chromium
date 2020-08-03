@@ -6,6 +6,7 @@ import("//build/config/features.gni")
 import("//components/services/on_device_translation/buildflags/features.gni")
 import("//components/signin/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 
@@ -252,7 +253,6 @@ source_set("policy_specific_browser_tests") {
     "//build:android_buildflags",
     "//chrome/app:command_ids",
     "//chrome/browser",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/preloading:prefs",
     "//chrome/browser/ui/autofill",
     "//chrome/common",
@@ -267,6 +267,12 @@ source_set("policy_specific_browser_tests") {
     "//content/test:test_support",
     "//testing/gmock",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 
   if (is_chromeos) {
     deps += [
