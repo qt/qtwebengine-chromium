@@ -278,7 +278,6 @@ target(link_target_type, "renderer") {
     "//content/common:buildflags",
     "//content/gpu:gpu_sources",
     "//content/public/child:child_sources",
-    "//crypto",
     "//crypto:platform",
     "//device/base/synchronization",
     "//device/gamepad/public/cpp:shared_with_blink",
@@ -395,7 +394,7 @@ target(link_target_type, "renderer") {
     }
   }
 
-  if (enable_plugins) {
+  if (enable_plugins && enable_webrtc) {
     sources += [
       "pepper/pepper_media_stream_audio_track_host.cc",
       "pepper/pepper_media_stream_audio_track_host.h",

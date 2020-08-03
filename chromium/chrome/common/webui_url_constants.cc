@@ -414,7 +414,9 @@ const char kChromeUITabSearchHost[] = "tab-search.top-chrome";
 const char kChromeUITabSearchURL[] = "chrome://tab-search.top-chrome/";
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 const char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
+#endif
 
 // Settings sub pages.
 
@@ -599,7 +601,9 @@ const char* const kChromeHostURLs[] = {
 #if BUILDFLAG(ENABLE_SERVICE_DISCOVERY)
     kChromeUIDevicesHost,
 #endif
+#if BUILDFLAG(ENABLE_WEBRTC)
     kChromeUIWebRtcLogsHost,
+#endif
 };
 const size_t kNumberOfChromeHostURLs = base::size(kChromeHostURLs);
 

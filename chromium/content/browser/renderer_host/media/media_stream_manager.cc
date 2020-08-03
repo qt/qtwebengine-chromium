@@ -768,6 +768,7 @@ MediaStreamManager::MediaStreamManager(
     }
 #endif
 
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (base::FeatureList::IsEnabled(features::kMojoVideoCapture)) {
       video_capture_provider = std::make_unique<VideoCaptureProviderSwitcher>(
           std::make_unique<ServiceVideoCaptureProvider>(
@@ -775,7 +776,10 @@ MediaStreamManager::MediaStreamManager(
           InProcessVideoCaptureProvider::CreateInstanceForNonDeviceCapture(
               std::move(device_task_runner),
               base::BindRepeating(&SendVideoCaptureLogMessage)));
-    } else {
+    } else
+#endif
+    {
+
       video_capture::uma::LogVideoCaptureServiceEvent(
           video_capture::uma::BROWSER_USING_LEGACY_CAPTURE);
       video_capture_provider = InProcessVideoCaptureProvider::CreateInstance(

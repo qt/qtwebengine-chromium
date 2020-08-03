@@ -548,8 +548,12 @@ scoped_refptr<media::AudioCapturerSource>
 RendererBlinkPlatformImpl::NewAudioCapturerSource(
     blink::WebLocalFrame* web_frame,
     const media::AudioSourceParameters& params) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   return blink::WebAudioDeviceFactory::NewAudioCapturerSource(
       web_frame->GetLocalFrameToken(), params);
+#else
+  return nullptr;
+#endif
 }
 
 scoped_refptr<viz::RasterContextProvider>
@@ -568,6 +572,7 @@ RendererBlinkPlatformImpl::EstablishGpuChannelSync() {
   return RenderThreadImpl::current()->EstablishGpuChannelSync();
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 bool RendererBlinkPlatformImpl::RTCSmoothnessAlgorithmEnabled() {
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableRTCSmoothnessAlgorithm);
@@ -742,6 +747,7 @@ RendererBlinkPlatformImpl::GetVideoCaptureImplManager() {
   RenderThreadImpl* thread = RenderThreadImpl::current();
   return thread ? thread->video_capture_impl_manager() : nullptr;
 }
+#endif // BUILDFLAG(ENABLE_WEBRTC)
 
 //------------------------------------------------------------------------------
 

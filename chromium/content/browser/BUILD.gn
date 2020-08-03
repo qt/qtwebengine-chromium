@@ -113,7 +113,6 @@ source_set("browser") {
     "//content/browser/payments:payment_app_proto",
     "//content/browser/process_internals:mojo_bindings",
     "//content/browser/resources/media:resources",
-    "//content/browser/webrtc/resources",
     "//content/common",
     "//content/common:buildflags",
     "//content/common:mojo_bindings",
@@ -189,10 +188,6 @@ source_set("browser") {
     "//services/tracing/public/cpp:traced_process",
     "//services/tracing/public/cpp/background_tracing",
     "//services/tracing/public/mojom",
-    "//services/video_capture:lib",
-    "//services/video_capture/public/cpp",
-    "//services/video_capture/public/mojom:constants",
-    "//services/video_capture/public/uma",
     "//services/viz/privileged/mojom",
     "//services/viz/public/cpp/gpu",
     "//services/viz/public/mojom",
@@ -218,7 +213,6 @@ source_set("browser") {
     "//third_party/libyuv",
     "//third_party/re2",
     "//third_party/sqlite",
-    "//third_party/webrtc_overrides:webrtc_component",
     "//third_party/wtl",
     "//third_party/zlib",
     "//third_party/zlib/google:zip",
@@ -1044,8 +1038,6 @@ source_set("browser") {
     "loader/single_request_url_loader_factory.cc",
     "loader/single_request_url_loader_factory.h",
     "loader/url_loader_throttles.cc",
-    "loader/webrtc_connections_observer.cc",
-    "loader/webrtc_connections_observer.h",
     "locks/lock_manager.cc",
     "locks/lock_manager.h",
     "log_console_message.cc",
@@ -1407,8 +1399,6 @@ source_set("browser") {
     "renderer_host/ipc_utils.h",
     "renderer_host/keep_alive_handle_factory.cc",
     "renderer_host/keep_alive_handle_factory.h",
-    "renderer_host/media/aec_dump_manager_impl.cc",
-    "renderer_host/media/aec_dump_manager_impl.h",
     "renderer_host/media/audio_input_device_manager.cc",
     "renderer_host/media/audio_input_device_manager.h",
     "renderer_host/media/audio_input_stream_handle.cc",
@@ -1440,20 +1430,10 @@ source_set("browser") {
     "renderer_host/media/media_stream_track_metrics_host.h",
     "renderer_host/media/media_stream_ui_proxy.cc",
     "renderer_host/media/media_stream_ui_proxy.h",
-    "renderer_host/media/peer_connection_tracker_host.cc",
-    "renderer_host/media/peer_connection_tracker_host.h",
-    "renderer_host/media/ref_counted_video_source_provider.cc",
-    "renderer_host/media/ref_counted_video_source_provider.h",
     "renderer_host/media/render_frame_audio_input_stream_factory.cc",
     "renderer_host/media/render_frame_audio_input_stream_factory.h",
     "renderer_host/media/render_frame_audio_output_stream_factory.cc",
     "renderer_host/media/render_frame_audio_output_stream_factory.h",
-    "renderer_host/media/service_launched_video_capture_device.cc",
-    "renderer_host/media/service_launched_video_capture_device.h",
-    "renderer_host/media/service_video_capture_device_launcher.cc",
-    "renderer_host/media/service_video_capture_device_launcher.h",
-    "renderer_host/media/service_video_capture_provider.cc",
-    "renderer_host/media/service_video_capture_provider.h",
     "renderer_host/media/video_capture_controller.cc",
     "renderer_host/media/video_capture_controller.h",
     "renderer_host/media/video_capture_controller_event_handler.cc",
@@ -1464,10 +1444,6 @@ source_set("browser") {
     "renderer_host/media/video_capture_manager.cc",
     "renderer_host/media/video_capture_manager.h",
     "renderer_host/media/video_capture_provider.h",
-    "renderer_host/media/video_capture_provider_switcher.cc",
-    "renderer_host/media/video_capture_provider_switcher.h",
-    "renderer_host/media/virtual_video_capture_devices_changed_observer.cc",
-    "renderer_host/media/virtual_video_capture_devices_changed_observer.h",
     "renderer_host/mixed_content_navigation_throttle.cc",
     "renderer_host/mixed_content_navigation_throttle.h",
     "renderer_host/modal_close_listener_host.cc",
@@ -1494,8 +1470,6 @@ source_set("browser") {
     "renderer_host/overscroll_controller.h",
     "renderer_host/overscroll_controller_delegate.cc",
     "renderer_host/overscroll_controller_delegate.h",
-    "renderer_host/p2p/socket_dispatcher_host.cc",
-    "renderer_host/p2p/socket_dispatcher_host.h",
     "renderer_host/page_lifecycle_state_manager.cc",
     "renderer_host/page_lifecycle_state_manager.h",
     "renderer_host/policy_container_host.cc",
@@ -1882,14 +1856,6 @@ source_set("browser") {
     "webid/idp_network_request_manager.h",
     "webid/webid_utils.cc",
     "webid/webid_utils.h",
-    "webrtc/webrtc_internals.cc",
-    "webrtc/webrtc_internals.h",
-    "webrtc/webrtc_internals_connections_observer.h",
-    "webrtc/webrtc_internals_message_handler.cc",
-    "webrtc/webrtc_internals_message_handler.h",
-    "webrtc/webrtc_internals_ui.cc",
-    "webrtc/webrtc_internals_ui.h",
-    "webrtc/webrtc_internals_ui_observer.h",
     "websockets/websocket_connector_impl.cc",
     "websockets/websocket_connector_impl.h",
     "websockets/websocket_handshake_request_info_impl.cc",
@@ -2255,6 +2221,48 @@ source_set("browser") {
     ]
   }
 
+  if (enable_webrtc) {
+    sources += [
+      "loader/webrtc_connections_observer.cc",
+      "loader/webrtc_connections_observer.h",
+      "renderer_host/media/aec_dump_manager_impl.cc",
+      "renderer_host/media/aec_dump_manager_impl.h",
+      "renderer_host/media/ref_counted_video_source_provider.cc",
+      "renderer_host/media/ref_counted_video_source_provider.h",
+      "renderer_host/media/peer_connection_tracker_host.cc",
+      "renderer_host/media/peer_connection_tracker_host.h",
+      "renderer_host/media/service_launched_video_capture_device.cc",
+      "renderer_host/media/service_launched_video_capture_device.h",
+      "renderer_host/media/service_video_capture_device_launcher.cc",
+      "renderer_host/media/service_video_capture_device_launcher.h",
+      "renderer_host/media/service_video_capture_provider.cc",
+      "renderer_host/media/service_video_capture_provider.h",
+      "renderer_host/media/video_capture_provider_switcher.cc",
+      "renderer_host/media/video_capture_provider_switcher.h",
+      "renderer_host/media/virtual_video_capture_devices_changed_observer.cc",
+      "renderer_host/media/virtual_video_capture_devices_changed_observer.h",
+      "renderer_host/p2p/socket_dispatcher_host.cc",
+      "renderer_host/p2p/socket_dispatcher_host.h",
+      "webrtc/webrtc_internals.cc",
+      "webrtc/webrtc_internals.h",
+      "webrtc/webrtc_internals_message_handler.cc",
+      "webrtc/webrtc_internals_message_handler.h",
+      "webrtc/webrtc_internals_ui.cc",
+      "webrtc/webrtc_internals_ui.h",
+      "webrtc/webrtc_internals_ui_observer.h",
+    ]
+
+    deps += [
+      "//content/browser/webrtc/resources",
+      "//jingle:jingle_glue",
+      "//services/video_capture:lib",
+      "//services/video_capture/public/cpp",
+      "//services/video_capture/public/mojom:constants",
+      "//services/video_capture/public/uma",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
+  }
+
   # Desktop/Window/WebContents screen capture implementations, conditionally
   # built depending on the available implementations for each platform.
   if (enable_screen_capture) {
@@ -2266,12 +2274,9 @@ source_set("browser") {
     ]
     if (!is_android) {
       sources += [
-        "media/capture/desktop_capture_device.cc",
-        "media/capture/desktop_capture_device.h",
         "media/capture/mouse_cursor_overlay_controller.cc",
         "media/capture/mouse_cursor_overlay_controller.h",
       ]
-      deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
     }
     if (use_aura) {
       sources += [
@@ -2309,6 +2314,13 @@ source_set("browser") {
         "//chromeos/crosapi/mojom",
         "//chromeos/lacros",
       ]
+    }
+    if (enable_webrtc) {
+      sources += [
+        "media/capture/desktop_capture_device.cc",
+        "media/capture/desktop_capture_device.h",
+      ]
+      deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
     }
   }
 

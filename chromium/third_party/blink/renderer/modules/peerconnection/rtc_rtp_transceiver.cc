@@ -37,6 +37,7 @@ String TransceiverDirectionToString(
       NOTREACHED();
       return String();
   }
+  NOTREACHED();
 }
 
 String OptionalTransceiverDirectionToString(

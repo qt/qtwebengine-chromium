@@ -22,7 +22,7 @@
 #include "media/learning/common/media_learning_tasks.h"
 #include "media/learning/common/target_histogram.h"
 #include "media/learning/mojo/public/mojom/learning_task_controller.mojom-blink.h"
-#include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
+#include "media/media_buildflags.h"
 #include "media/mojo/mojom/media_types.mojom-blink.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
@@ -69,11 +69,14 @@
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_capabilities_info.h"
 #include "third_party/blink/renderer/platform/media_capabilities/web_media_configuration.h"
 #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
-#include "third_party/blink/renderer/platform/peerconnection/transmission_encoding_info_handler.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
+
+#if BUILDFLAG(ENABLE_WEBRTC)
+#include "third_party/blink/renderer/platform/peerconnection/transmission_encoding_info_handler.h"
+#endif
 
 namespace blink {
 
@@ -837,12 +840,14 @@ ScriptPromise MediaCapabilities::encodingInfo(
   }
 
   if (configuration->type() == "transmission") {
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (auto* handler = TransmissionEncodingInfoHandler::Instance()) {
       handler->EncodingInfo(ToWebMediaConfiguration(configuration),
                             WTF::Bind(&OnMediaCapabilitiesEncodingInfo,
                                       WrapPersistent(resolver)));
       return promise;
     }
+#endif
     resolver->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kInvalidStateError,
         "Platform error: could not get EncodingInfoHandler."));
