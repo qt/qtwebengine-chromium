@@ -312,7 +312,7 @@ group("gn_all") {
     ]
   }
 
-  if (is_win && (target_cpu == "x86" || target_cpu == "x64")) {
+  if (is_win && (target_cpu == "x86" || target_cpu == "x64") && !use_qt) {
     deps += [ "//chrome/browser/browser_switcher/bho:browser_switcher_dlls" ]
   }
 

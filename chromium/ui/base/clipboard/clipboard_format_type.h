@@ -64,7 +64,7 @@ class COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES) ClipboardFormatType {
   static const ClipboardFormatType& GetBitmapType();
   static const ClipboardFormatType& GetWebCustomDataType();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   // ANSI formats. Only Windows differentiates between ANSI and UNICODE formats
   // in ClipboardFormatType. Reference:
   // https://docs.microsoft.com/en-us/windows/win32/learnwin32/working-with-strings
