@@ -134,7 +134,7 @@ void ClipboardHostImpl::IsFormatAvailable(blink::mojom::ClipboardFormat format,
     case blink::mojom::ClipboardFormat::kPlaintext:
       result = clipboard_->IsFormatAvailable(
           ui::ClipboardFormatType::GetPlainTextType(), clipboard_buffer);
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
       result |= clipboard_->IsFormatAvailable(
           ui::ClipboardFormatType::GetPlainTextAType(), clipboard_buffer);
 #endif
@@ -166,7 +166,7 @@ void ClipboardHostImpl::ReadText(ui::ClipboardBuffer clipboard_buffer,
                                     clipboard_buffer)) {
     clipboard_->ReadText(clipboard_buffer, &result);
   } else {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     if (clipboard_->IsFormatAvailable(
             ui::ClipboardFormatType::GetPlainTextAType(), clipboard_buffer)) {
       std::string ascii;

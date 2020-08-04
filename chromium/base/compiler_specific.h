@@ -146,7 +146,7 @@
 
 // Macro useful for writing cross-platform function pointers.
 #if !defined(CDECL)
-#if defined(OS_WIN)
+#if defined(OS_WIN) && (defined(__i386) || defined(__i386__) || defined(_M_IX86))
 #define CDECL __cdecl
 #else  // defined(OS_WIN)
 #define CDECL
@@ -212,7 +212,8 @@
 #endif
 #endif
 
-#if defined(__clang__) && __has_attribute(uninitialized)
+#if defined(__clang__)
+#if __has_attribute(uninitialized)
 // Attribute "uninitialized" disables -ftrivial-auto-var-init=pattern for
 // the specified variable.
 // Library-wide alternative is
@@ -243,6 +244,9 @@
 // E.g. platform, bot, benchmark or test name in patch description or next to
 // the attribute.
 #define STACK_UNINITIALIZED __attribute__((uninitialized))
+#else
+#define STACK_UNINITIALIZED
+#endif
 #else
 #define STACK_UNINITIALIZED
 #endif
