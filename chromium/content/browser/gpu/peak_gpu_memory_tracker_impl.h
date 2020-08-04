@@ -40,7 +40,7 @@ class CONTENT_EXPORT PeakGpuMemoryTrackerImpl : public PeakGpuMemoryTracker {
 
   // A callback which will be ran after receiving a callback from the
   // GpuService. For use by tests to synchronize work done on the IO thread.
-  base::OnceClosure post_gpu_service_callback_for_testing_ = base::DoNothing();
+  base::OnceClosure post_gpu_service_callback_for_testing_ = base::DoNothing::Once();
 
   // Provides the unique identifier for each PeakGpuMemoryTrackerImpl.
   static uint32_t next_sequence_number_;

@@ -224,6 +224,28 @@ StreamPendingRetransmission QuicStreamSendBuffer::NextPendingRetransmission()
   return {0, 0};
 }
 
+namespace {
+template<class ForwardIt, class T, class Compare>
+ForwardIt lower_bound(ForwardIt first, ForwardIt last, const T& value, Compare comp)
+{
+    ForwardIt it = first;
+    typename std::iterator_traits<ForwardIt>::difference_type count, step;
+    count = std::distance(first, last);
+
+    while (count > 0) {
+        step = count / 2;
+        std::advance(it, step);
+        if (comp(*it, value)) {
+            first = ++it;
+            count -= step + 1;
+        }
+        else
+            count = step;
+    }
+    return first;
+}
+}
+
 bool QuicStreamSendBuffer::FreeMemSlices(QuicStreamOffset start,
                                          QuicStreamOffset end) {
   auto it = interval_deque_.DataBegin();
@@ -236,8 +258,8 @@ bool QuicStreamSendBuffer::FreeMemSlices(QuicStreamOffset start,
   }
   if (!it->interval().Contains(start)) {
     // Slow path that not the earliest outstanding data gets acked.
-    it = std::lower_bound(interval_deque_.DataBegin(),
-                          interval_deque_.DataEnd(), start, CompareOffset());
+    it = lower_bound(interval_deque_.DataBegin(),
+                     interval_deque_.DataEnd(), start, CompareOffset());
   }
   if (it == interval_deque_.DataEnd() || it->slice.empty()) {
     QUIC_BUG << "Offset " << start << " with iterator offset: " << it->offset

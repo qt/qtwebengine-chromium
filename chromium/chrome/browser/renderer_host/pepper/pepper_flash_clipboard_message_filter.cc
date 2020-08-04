@@ -109,7 +109,7 @@ PepperFlashClipboardMessageFilter::OverrideTaskRunnerForMessage(
 // these are sync IPCs which can result in deadlocks with plugins if serviced
 // from the UI thread. Note that Windows clipboard calls ARE thread-safe so it
 // is ok for reads and writes to be serviced from different threads.
-#if !defined(OS_WIN)
+#if !defined(OS_WIN) || defined(TOOLKIT_QT)
   return content::GetUIThreadTaskRunner({});
 #else
   return content::GetIOThreadTaskRunner({});
@@ -163,7 +163,7 @@ int32_t PepperFlashClipboardMessageFilter::OnMsgIsFormatAvailable(
       available = clipboard->IsFormatAvailable(
           ui::ClipboardFormatType::GetPlainTextType(), clipboard_buffer,
           /* data_dst = */ nullptr);
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
       available |= clipboard->IsFormatAvailable(
           ui::ClipboardFormatType::GetPlainTextAType(), clipboard_buffer,
           /* data_dst = */ nullptr);
@@ -224,7 +224,7 @@ int32_t PepperFlashClipboardMessageFilter::OnMsgReadData(
           break;
         }
       }
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
       // If the PlainText format isn't available or is empty, take the
       // ASCII text format.
       if (clipboard->IsFormatAvailable(

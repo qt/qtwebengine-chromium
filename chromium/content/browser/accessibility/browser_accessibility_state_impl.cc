@@ -175,7 +175,7 @@ void BrowserAccessibilityStateImpl::UpdateHistogramsOnUIThread() {
   UMA_HISTOGRAM_BOOLEAN("Accessibility.ManuallyEnabled",
                         base::CommandLine::ForCurrentProcess()->HasSwitch(
                             switches::kForceRendererAccessibility));
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   UMA_HISTOGRAM_ENUMERATION(
       "Accessibility.WinHighContrastTheme",
       ui::NativeTheme::GetInstanceForNativeUi()
