@@ -168,7 +168,7 @@ void ClipboardHostImpl::IsFormatAvailable(blink::mojom::ClipboardFormat format,
       result = clipboard_->IsFormatAvailable(
           ui::ClipboardFormatType::GetPlainTextType(), clipboard_buffer,
           data_endpoint.get());
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
       result |= clipboard_->IsFormatAvailable(
           ui::ClipboardFormatType::GetPlainTextAType(), clipboard_buffer,
           data_endpoint.get());
@@ -209,7 +209,7 @@ void ClipboardHostImpl::ReadText(ui::ClipboardBuffer clipboard_buffer,
                                     clipboard_buffer, data_dst.get())) {
     clipboard_->ReadText(clipboard_buffer, data_dst.get(), &result);
   } else {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
     if (clipboard_->IsFormatAvailable(
             ui::ClipboardFormatType::GetPlainTextAType(), clipboard_buffer,
             data_dst.get())) {
