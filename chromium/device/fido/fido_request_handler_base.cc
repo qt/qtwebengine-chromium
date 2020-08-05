@@ -357,7 +357,7 @@ void FidoRequestHandlerBase::InitializeAuthenticatorAndDispatchRequest(
   if (authenticator_it == active_authenticators_.end()) {
     return;
   }
-  FidoAuthenticator* authenticator = authenticator_it->second.get();
+  FidoAuthenticator* authenticator = authenticator_it->second;
   authenticator->InitializeAuthenticator(
       base::BindOnce(&FidoRequestHandlerBase::DispatchRequest,
                      weak_factory_.GetWeakPtr(), authenticator));
