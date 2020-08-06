@@ -55,7 +55,7 @@ constexpr const char* GetVizBreakdownName(VizBreakdown stage) {
     case VizBreakdown::kSwapEndToPresentationCompositorFrame:
       return "SwapEndToPresentationCompositorFrame";
     case VizBreakdown::kBreakdownCount:
-      NOTREACHED();
+//      NOTREACHED();
       return "";
   }
 }

@@ -76,7 +76,7 @@ base::span<const OriginTrialFeature> origin_trials::GetImpliedFeatures(
 OriginTrialFeature::k{{implied_name}},
 {%- endfor %}
 };
-    return implied_features;
+    return {implied_features, sizeof(implied_features)/sizeof(OriginTrialFeature)};
   }
 {% endfor %}
   return {};

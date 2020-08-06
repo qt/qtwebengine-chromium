@@ -82,7 +82,8 @@ class StructTraits<media::mojom::VideoEncoderInfoDataView,
   static base::span<const std::vector<uint8_t>,
                     media::VideoEncoderInfo::kMaxSpatialLayers>
   fps_allocation(const media::VideoEncoderInfo& video_encoder_info) {
-    return video_encoder_info.fps_allocation;
+    return base::span<const std::vector<uint8_t>,
+            media::VideoEncoderInfo::kMaxSpatialLayers>(video_encoder_info.fps_allocation);
   }
   static const std::vector<media::ResolutionBitrateLimit>&
   resolution_bitrate_limits(const media::VideoEncoderInfo& video_encoder_info) {

@@ -25,15 +25,11 @@
 #include "base/android/build_info.h"
 #endif
 
-namespace {
+namespace media {
 
-void RecordAction(const base::UserMetricsAction& action) {
+static void RecordAction(const base::UserMetricsAction& action) {
   content::RenderThread::Get()->RecordAction(action);
 }
-
-}  // namespace
-
-namespace media {
 
 RendererWebMediaPlayerDelegate::RendererWebMediaPlayerDelegate(
     content::RenderFrame* render_frame)
@@ -208,7 +204,7 @@ void RendererWebMediaPlayerDelegate::DidPictureInPictureAvailabilityChange(
 }
 
 void RendererWebMediaPlayerDelegate::WasHidden() {
-  RecordAction(base::UserMetricsAction("Media.Hidden"));
+  media::RecordAction(base::UserMetricsAction("Media.Hidden"));
 
   for (base::IDMap<Observer*>::iterator it(&id_map_); !it.IsAtEnd();
        it.Advance())
@@ -218,7 +214,7 @@ void RendererWebMediaPlayerDelegate::WasHidden() {
 }
 
 void RendererWebMediaPlayerDelegate::WasShown() {
-  RecordAction(base::UserMetricsAction("Media.Shown"));
+  media::RecordAction(base::UserMetricsAction("Media.Shown"));
   is_frame_closed_ = false;
 
   for (base::IDMap<Observer*>::iterator it(&id_map_); !it.IsAtEnd();
@@ -283,7 +279,7 @@ void RendererWebMediaPlayerDelegate::SetFrameHiddenForTesting(bool is_hidden) {
 void RendererWebMediaPlayerDelegate::OnMediaDelegatePause(
     int player_id,
     bool triggered_by_user) {
-  RecordAction(base::UserMetricsAction("Media.Controls.RemotePause"));
+  media::RecordAction(base::UserMetricsAction("Media.Controls.RemotePause"));
 
   Observer* observer = id_map_.Lookup(player_id);
   if (observer) {
@@ -297,7 +293,7 @@ void RendererWebMediaPlayerDelegate::OnMediaDelegatePause(
 }
 
 void RendererWebMediaPlayerDelegate::OnMediaDelegatePlay(int player_id) {
-  RecordAction(base::UserMetricsAction("Media.Controls.RemotePlay"));
+  media::RecordAction(base::UserMetricsAction("Media.Controls.RemotePlay"));
 
   Observer* observer = id_map_.Lookup(player_id);
   if (observer) {
@@ -319,7 +315,7 @@ void RendererWebMediaPlayerDelegate::OnMediaDelegateMuted(int player_id,
 void RendererWebMediaPlayerDelegate::OnMediaDelegateSeekForward(
     int player_id,
     base::TimeDelta seek_time) {
-  RecordAction(base::UserMetricsAction("Media.Controls.RemoteSeekForward"));
+  media::RecordAction(base::UserMetricsAction("Media.Controls.RemoteSeekForward"));
 
   Observer* observer = id_map_.Lookup(player_id);
   if (observer)
@@ -329,7 +325,7 @@ void RendererWebMediaPlayerDelegate::OnMediaDelegateSeekForward(
 void RendererWebMediaPlayerDelegate::OnMediaDelegateSeekBackward(
     int player_id,
     base::TimeDelta seek_time) {
-  RecordAction(base::UserMetricsAction("Media.Controls.RemoteSeekBackward"));
+  media::RecordAction(base::UserMetricsAction("Media.Controls.RemoteSeekBackward"));
 
   Observer* observer = id_map_.Lookup(player_id);
   if (observer)
@@ -447,10 +443,10 @@ void RendererWebMediaPlayerDelegate::RecordBackgroundVideoPlayback() {
     was_playing_background_video_ = has_playing_background_video;
 
     if (has_playing_background_video) {
-      RecordAction(base::UserMetricsAction("Media.Session.BackgroundResume"));
+      media::RecordAction(base::UserMetricsAction("Media.Session.BackgroundResume"));
       background_video_start_time_ = base::TimeTicks::Now();
     } else {
-      RecordAction(base::UserMetricsAction("Media.Session.BackgroundSuspend"));
+      media::RecordAction(base::UserMetricsAction("Media.Session.BackgroundSuspend"));
       UMA_HISTOGRAM_CUSTOM_TIMES(
           "Media.Android.BackgroundVideoTime",
           base::TimeTicks::Now() - background_video_start_time_,

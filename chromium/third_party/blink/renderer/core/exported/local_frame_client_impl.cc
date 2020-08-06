@@ -191,22 +191,22 @@ WebString ConvertToPublic(
   using CSPDirectiveName = network::mojom::blink::CSPDirectiveName;
   switch (directive_name) {
     case CSPDirectiveName::DefaultSrc:
-      return "default-src";
+      return WTF::String("default-src");
     case CSPDirectiveName::ChildSrc:
-      return "child-src";
+      return WTF::String("child-src");
     case CSPDirectiveName::FrameSrc:
-      return "frame-src";
+      return WTF::String("frame-src");
     case CSPDirectiveName::FormAction:
-      return "form-action";
+      return WTF::String("form-action");
     case CSPDirectiveName::UpgradeInsecureRequests:
-      return "upgrade-insecure-requests";
+      return WTF::String("upgrade-insecure-requests");
     case CSPDirectiveName::NavigateTo:
-      return "navigate-to";
+      return WTF::String("navigate-to");
     case CSPDirectiveName::FrameAncestors:
-      return "frame-ancestors";
+      return WTF::String("frame-ancestors");
     case CSPDirectiveName::Unknown:
       NOTREACHED();
-      return "";
+      return WTF::String("");
   };
 }
 
