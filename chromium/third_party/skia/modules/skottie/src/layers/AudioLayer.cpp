@@ -12,7 +12,8 @@
 #include "modules/skottie/src/animator/Animator.h"
 #include "modules/sksg/include/SkSGRenderNode.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace {
 
@@ -81,4 +82,4 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachAudioLayer(const skjson::ObjectV
     return nullptr;
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

@@ -756,7 +756,8 @@ SkBlitter* SkCreateSkVMSpriteBlitter(const SkPixmap& device,
         // TODO: SkVM support for mask filters?  definitely possible!
         return nullptr;
     }
-    if (skvm::PixelFormat unused; !SkColorType_to_PixelFormat(sprite.colorType(), &unused)) {
+    skvm::PixelFormat unused;
+    if (!SkColorType_to_PixelFormat(sprite.colorType(), &unused)) {
         // All existing SkColorTypes pass this check.  We'd only get here adding new ones.
         return nullptr;
     }

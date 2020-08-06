@@ -20,7 +20,8 @@
 
 #include <tuple>
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -388,4 +389,4 @@ sk_sp<sksg::RenderNode> EffectBuilder::attachDisplacementMapEffect(
                                                                       std::move(displ_node));
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

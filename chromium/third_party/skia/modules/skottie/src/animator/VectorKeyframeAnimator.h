@@ -12,7 +12,8 @@
 
 #include <vector>
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 class VectorKeyframeAnimatorBuilder final : public KeyframeAnimatorBuilder {
 public:
@@ -41,6 +42,6 @@ private:
     std::vector<float>*    fTarget;
 };
 
-} // namespace skottie::internal
+}} // namespace skottie::internal
 
 #endif // SkottieVectorKeyframeAnimator_DEFINED

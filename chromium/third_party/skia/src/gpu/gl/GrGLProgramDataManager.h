@@ -27,6 +27,7 @@ class GrGLProgram;
 class GrGLProgramDataManager : public GrGLSLProgramDataManager {
 public:
     struct GLUniformInfo : public GrGLSLUniformHandler::UniformInfo {
+        GLUniformInfo(UniformInfo u, GrGLint loc) : UniformInfo(u), fLocation(loc) {}
         GrGLint fLocation;
     };
 

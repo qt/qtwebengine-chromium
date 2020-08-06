@@ -299,12 +299,12 @@ static inline bool skpaint_to_grpaint_impl(GrRecordingContext* context,
             SkColorSpace* dstCS = dstColorInfo.colorSpace();
             grPaint->setColor4f(colorFilter->filterColor4f(origColor, dstCS, dstCS).premul());
         } else {
-            auto [success, fp] = as_CFB(colorFilter)->asFragmentProcessor(std::move(paintFP),
+            auto t = as_CFB(colorFilter)->asFragmentProcessor(std::move(paintFP),
                                                                           context, dstColorInfo);
-            if (!success) {
+            if (!std::get<0>(t)) {
                 return false;
             }
-            paintFP = std::move(fp);
+            paintFP = std::get<1>(std::move(t));
         }
     }
 
@@ -460,9 +460,9 @@ GrInterpretFilterQuality(SkISize imageDims,
     using MipmapMode = GrSamplerState::MipmapMode;
     switch (paintFilterQuality) {
         case kNone_SkFilterQuality:
-            return {Filter::kNearest, MipmapMode::kNone, false};
+            return std::make_tuple(Filter::kNearest, MipmapMode::kNone, false);
         case kLow_SkFilterQuality:
-            return {Filter::kLinear, MipmapMode::kNone, false};
+            return std::make_tuple(Filter::kLinear, MipmapMode::kNone, false);
         case kMedium_SkFilterQuality: {
             if (allowFilterQualityReduction) {
                 SkMatrix matrix;
@@ -478,10 +478,10 @@ GrInterpretFilterQuality(SkISize imageDims,
                 //        2^0.5/2 = s
                 SkScalar mipScale = sharpenMipmappedTextures ? SK_ScalarRoot2Over2 : SK_Scalar1;
                 if (matrix.getMinScale() >= mipScale) {
-                    return {Filter::kLinear, MipmapMode::kNone, false};
+                    return std::make_tuple(Filter::kLinear, MipmapMode::kNone, false);
                 }
             }
-            return {Filter::kLinear, MipmapMode::kLinear, false};
+            return std::make_tuple(Filter::kLinear, MipmapMode::kLinear, false);
         }
         case kHigh_SkFilterQuality: {
             if (allowFilterQualityReduction) {
@@ -490,10 +490,10 @@ GrInterpretFilterQuality(SkISize imageDims,
                 paintFilterQuality = SkMatrixPriv::AdjustHighQualityFilterLevel(matrix);
             }
             switch (paintFilterQuality) {
-                case kNone_SkFilterQuality:   return {Filter::kNearest, MipmapMode::kNone  , false};
-                case kLow_SkFilterQuality:    return {Filter::kLinear , MipmapMode::kNone  , false};
-                case kMedium_SkFilterQuality: return {Filter::kLinear , MipmapMode::kLinear, false};
-                case kHigh_SkFilterQuality:   return {Filter::kNearest, MipmapMode::kNone  , true };
+                case kNone_SkFilterQuality:   return std::make_tuple(Filter::kNearest, MipmapMode::kNone  , false);
+                case kLow_SkFilterQuality:    return std::make_tuple(Filter::kLinear , MipmapMode::kNone  , false);
+                case kMedium_SkFilterQuality: return std::make_tuple(Filter::kLinear , MipmapMode::kLinear, false);
+                case kHigh_SkFilterQuality:   return std::make_tuple(Filter::kNearest, MipmapMode::kNone  , true );
             }
             SkUNREACHABLE;
         }

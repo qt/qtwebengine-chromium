@@ -12,7 +12,8 @@
 #include "modules/skottie/src/layers/shapelayer/ShapeLayer.h"
 #include "modules/sksg/include/SkSGGeometryEffect.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -64,4 +65,4 @@ std::vector<sk_sp<sksg::GeometryNode>> ShapeBuilder::AttachOffsetGeometryEffect(
     return offsetted;
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

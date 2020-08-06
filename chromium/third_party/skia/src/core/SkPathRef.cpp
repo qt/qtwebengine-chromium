@@ -361,7 +361,7 @@ std::tuple<SkPoint*, SkScalar*> SkPathRef::growForVerbsInPath(const SkPathRef& p
     }
 
     SkDEBUGCODE(this->validate();)
-    return {pts, weights};
+    return std::make_tuple(pts, weights);
 }
 
 SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,

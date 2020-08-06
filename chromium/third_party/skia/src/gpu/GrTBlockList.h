@@ -16,9 +16,7 @@
 using IndexFn = int (*)(const GrBlockAllocator::Block*);
 using NextFn = int (*)(const GrBlockAllocator::Block*, int);
 template<typename T, typename B> using ItemFn = T (*)(B*, int);
-template <typename T, bool Forward, bool Const, IndexFn Start, IndexFn End, NextFn Next,
-          ItemFn<T, typename std::conditional<Const, const GrBlockAllocator::Block,
-                                                     GrBlockAllocator::Block>::type> Resolve>
+template <typename T, bool Forward, bool Const, typename Fns>
 class BlockIndexIterator;
 
 /**
@@ -172,7 +170,7 @@ public:
      */
     T& front() {
         // This assumes that the head block actually have room to store the first item.
-        static_assert(StartingItems >= 1);
+        static_assert(StartingItems >= 1, "");
         SkASSERT(this->count() > 0 && fAllocator->headBlock()->metadata() > 0);
         return GetItem(fAllocator->headBlock(), First(fAllocator->headBlock()));
     }
@@ -266,10 +264,44 @@ private:
     GrSBlockAllocator<StartingSize> fAllocator;
 
 public:
-    using Iter   = BlockIndexIterator<T&,       true,  false, &First, &Last,  &Increment, &GetItem>;
-    using CIter  = BlockIndexIterator<const T&, true,  true,  &First, &Last,  &Increment, &GetItem>;
-    using RIter  = BlockIndexIterator<T&,       false, false, &Last,  &First, &Decrement, &GetItem>;
-    using CRIter = BlockIndexIterator<const T&, false, true,  &Last,  &First, &Decrement, &GetItem>;
+    struct IterHelper {
+        static T& Resolve(GrBlockAllocator::Block* block, int index) {
+            return GrTBlockList::GetItem(block, index);
+        }
+        static const T& Resolve(const GrBlockAllocator::Block* block, int index) {
+            return GrTBlockList::GetItem(block, index);
+        }
+        static int Start(const GrBlockAllocator::Block* b) {
+            return GrTBlockList::First(b);
+        }
+        static int End(const GrBlockAllocator::Block* b) {
+            return GrTBlockList::Last(b);
+        }
+        static int Next(const GrBlockAllocator::Block* b, int index) {
+            return GrTBlockList::Increment(b, index);
+        }
+    };
+    struct RIterHelper {
+        static T& Resolve(GrBlockAllocator::Block* block, int index) {
+            return GrTBlockList::GetItem(block, index);
+        }
+        static const T& Resolve(const GrBlockAllocator::Block* block, int index) {
+            return GrTBlockList::GetItem(block, index);
+        }
+        static int Start(const GrBlockAllocator::Block* b) {
+            return GrTBlockList::Last(b);
+        }
+        static int End(const GrBlockAllocator::Block* b) {
+            return GrTBlockList::First(b);
+        }
+        static int Next(const GrBlockAllocator::Block* b, int index) {
+            return GrTBlockList::Decrement(b, index);
+        }
+    };
+    typedef BlockIndexIterator<T&,       true,  false, IterHelper> Iter;
+    typedef BlockIndexIterator<const T&, true,  true,  IterHelper> CIter;
+    typedef BlockIndexIterator<T&,       false, false, RIterHelper> RIter;
+    typedef BlockIndexIterator<const T&, false, true,  RIterHelper> CRIter;
 
     /**
      * Iterate over all items in allocation order (oldest to newest) using a for-range loop:
@@ -362,13 +394,10 @@ void GrTBlockList<T, SI1>::concat(GrTBlockList<T, SI2>&& other) {
 template <typename T,    // The element type (including any modifiers)
           bool Forward,  // Are indices within a block increasing or decreasing with iteration?
           bool Const,    // Whether or not T is const
-          IndexFn Start, // Returns the index of the first valid item in a block
-          IndexFn End,   // Returns the index of the last valid item (so it is inclusive)
-          NextFn Next,   // Returns the next index given the current index
-          ItemFn<T, typename std::conditional<Const, const GrBlockAllocator::Block,
-                                                     GrBlockAllocator::Block>::type> Resolve>
+          typename Fns>
 class BlockIndexIterator {
     using BlockIter = typename GrBlockAllocator::BlockIter<Forward, Const>;
+
 public:
     BlockIndexIterator(BlockIter iter) : fBlockIter(iter) {}
 
@@ -380,15 +409,15 @@ public:
 
         T operator*() const {
             SkASSERT(*fBlock);
-            return Resolve(*fBlock, fIndex);
+            return Fns::Resolve(*fBlock, fIndex);
         }
 
         Item& operator++() {
             const auto* block = *fBlock;
             SkASSERT(block && block->metadata() > 0);
-            SkASSERT((Forward && Next(block, fIndex) > fIndex) ||
-                     (!Forward && Next(block, fIndex) < fIndex));
-            fIndex = Next(block, fIndex);
+            SkASSERT((Forward && Fns::Next(block, fIndex) > fIndex) ||
+                     (!Forward && Fns::Next(block, fIndex) < fIndex));
+            fIndex = Fns::Next(block, fIndex);
             if ((Forward && fIndex > fEndIndex) || (!Forward && fIndex < fEndIndex)) {
                 ++fBlock;
                 this->setIndices();
@@ -410,8 +439,8 @@ public:
                 ++fBlock;
             }
             if (*fBlock) {
-                fIndex = Start(*fBlock);
-                fEndIndex = End(*fBlock);
+                fIndex = Fns::Start(*fBlock);
+                fEndIndex = Fns::End(*fBlock);
             } else {
                 fIndex = 0;
                 fEndIndex = 0;

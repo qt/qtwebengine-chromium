@@ -889,7 +889,7 @@ SkCodec::Result SkJpegCodec::onGetYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) {
 
     // Initialize rowptrs.
     int numYRowsPerBlock = DCTSIZE * dinfo->comp_info[0].v_samp_factor;
-    static_assert(sizeof(JSAMPLE) == 1);
+    static_assert(sizeof(JSAMPLE) == 1, "");
     for (int i = 0; i < numYRowsPerBlock; i++) {
         rowptrs[i] = static_cast<JSAMPLE*>(planes[0].writable_addr()) + i* planes[0].rowBytes();
     }

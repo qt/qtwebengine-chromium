@@ -1112,7 +1112,7 @@ bool Inliner::analyze(Program& program) {
 
         // Inlining two expressions using the same enclosing statement in the same inlining pass
         // does not work properly. If this happens, skip it; we'll get it in the next pass.
-        auto [unusedIter, inserted] = enclosingStmtSet.insert(candidate.fEnclosingStmt);
+        auto inserted = std::get<1>(enclosingStmtSet.insert(candidate.fEnclosingStmt));
         if (!inserted) {
             continue;
         }

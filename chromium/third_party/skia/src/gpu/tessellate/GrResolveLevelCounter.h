@@ -25,7 +25,9 @@ public:
     void reset(const SkPath& path, const SkMatrix& viewMatrix, float intolerance) {
         this->reset();
         GrVectorXform xform(viewMatrix);
-        for (auto [verb, pts, w] : SkPathPriv::Iterate(path)) {
+        for (auto t : SkPathPriv::Iterate(path)) {
+            auto verb = std::get<0>(t);
+            auto pts = std::get<1>(t);
             switch (verb) {
                 case SkPathVerb::kQuad:
                     // Quadratics get converted to cubics before rendering.

@@ -12,6 +12,8 @@
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrResourceProvider.h"
 
+constexpr size_t GrStagingBufferManager::kMinStagingBufferSize;
+
 GrStagingBufferManager::Slice GrStagingBufferManager::allocateStagingBufferSlice(
         size_t size, size_t requiredAlignment) {
     StagingBuffer* buffer = nullptr;

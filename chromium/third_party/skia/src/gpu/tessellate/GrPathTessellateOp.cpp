@@ -485,7 +485,9 @@ void GrPathTessellateOp::prepareMiddleOutTrianglesAndCubics(
         resolveLevelCounter->reset();
     }
     int numCountedCurves = 0;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
+    for (auto t : SkPathPriv::Iterate(fPath)) {
+        auto verb = std::get<0>(t);
+        auto pts = std::get<1>(t);
         switch (verb) {
             case SkPathVerb::kMove:
                 middleOut.closeAndMove(pts[0]);
@@ -668,8 +670,10 @@ void GrPathTessellateOp::prepareIndirectOuterCubicsAndTriangles(
 
     if (resolveLevelCounter.totalCubicInstanceCount()) {
         GrVectorXform xform(fViewMatrix);
-        for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
+        for (auto t : SkPathPriv::Iterate(fPath)) {
             int level;
+            auto verb = std::get<0>(t);
+            auto pts = std::get<1>(t);
             switch (verb) {
                 default:
                     continue;
@@ -722,7 +726,9 @@ void GrPathTessellateOp::prepareTessellatedOuterCubics(GrMeshDrawOp::Target* tar
         return;
     }
 
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
+    for (auto t : SkPathPriv::Iterate(fPath)) {
+        auto verb = std::get<0>(t);
+        auto pts = std::get<1>(t);
         switch (verb) {
             default:
                 continue;
@@ -761,7 +767,9 @@ void GrPathTessellateOp::prepareTessellatedCubicWedges(GrMeshDrawOp::Target* tar
         SkPoint midpoint = parser.currentMidpoint();
         SkPoint startPoint = {0, 0};
         SkPoint lastPoint = startPoint;
-        for (auto [verb, pts, w] : parser.currentContour()) {
+        for (auto t : parser.currentContour()) {
+            auto verb = std::get<0>(t);
+            auto pts = std::get<1>(t);
             switch (verb) {
                 case SkPathVerb::kMove:
                     startPoint = lastPoint = pts[0];

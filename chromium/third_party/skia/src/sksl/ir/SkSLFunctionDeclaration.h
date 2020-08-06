@@ -35,7 +35,8 @@ struct FunctionDeclaration : public Symbol {
     , fBuiltin(builtin)
     , fModifiers(modifiers)
     , fParameters(std::move(parameters))
-    , fReturnType(returnType) {}
+    , fReturnType(returnType)
+    , fCallCount(0) {}
 
     String description() const override {
         String result = fReturnType.displayName() + " " + fName + "(";
@@ -120,7 +121,7 @@ struct FunctionDeclaration : public Symbol {
     Modifiers fModifiers;
     const std::vector<const Variable*> fParameters;
     const Type& fReturnType;
-    mutable std::atomic<int> fCallCount = 0;
+    mutable std::atomic<int> fCallCount;
 
     using INHERITED = Symbol;
 };

@@ -33,6 +33,7 @@ public:
 
 private:
     explicit GrBaseContextPriv(GrContext_Base* context) : fContext(context) {}
+    GrBaseContextPriv(GrBaseContextPriv&&) = default;
     GrBaseContextPriv(const GrBaseContextPriv&) = delete;
     GrBaseContextPriv& operator=(const GrBaseContextPriv&) = delete;
 

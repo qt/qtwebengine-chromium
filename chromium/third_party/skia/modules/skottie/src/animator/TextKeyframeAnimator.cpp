@@ -10,7 +10,8 @@
 #include "modules/skottie/src/animator/KeyframeAnimator.h"
 #include "modules/skottie/src/text/TextValue.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -100,4 +101,4 @@ bool AnimatablePropertyContainer::bind<TextValue>(const AnimationBuilder& abuild
     return this->bindImpl(abuilder, jprop, builder);
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

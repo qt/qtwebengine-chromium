@@ -228,8 +228,8 @@ protected:
     }
 
     void generateFontMetrics(SkFontMetrics* metrics) override {
-        auto [sx, sy] = fMatrix.mapXY(1, 1);
-        *metrics = scale_fontmetrics(this->userTF()->fMetrics, sx, sy);
+        auto s = fMatrix.mapXY(1, 1);
+        *metrics = scale_fontmetrics(this->userTF()->fMetrics, s.x(), s.y());
     }
 
 private:
@@ -261,7 +261,10 @@ enum PVerb {
 static void compress_write(SkWStream* stream, const SkPath& path, int upem) {
     int pCount = 0;
     std::vector<PVerb> verbs;
-    for (auto [v, p, w] : SkPathPriv::Iterate(path)) {
+    for (auto t : SkPathPriv::Iterate(path)) {
+        auto v = std::get<0>(t);
+        auto p = std::get<1>(t);
+        auto w = std::get<2>(t);
         switch (v) {
             default: break;
             case SkPathVerb::kMove: verbs.push_back(kMove); pCount += 1; break;
@@ -300,7 +303,9 @@ static void compress_write(SkWStream* stream, const SkPath& path, int upem) {
         }
     };
 
-    for (auto [v, p, w] : SkPathPriv::Iterate(path)) {
+    for (auto t : SkPathPriv::Iterate(path)) {
+        auto v = std::get<0>(t);
+        auto p = std::get<1>(t);
         switch (v) {
             default: break;
             case SkPathVerb::kMove: write_pts(&p[0], 1); break;

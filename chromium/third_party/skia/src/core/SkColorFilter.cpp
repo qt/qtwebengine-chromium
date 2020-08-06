@@ -142,14 +142,18 @@ public:
                                    const GrColorInfo& dstColorInfo) const override {
         GrFragmentProcessor* originalInputFP = inputFP.get();
 
-        auto [innerSuccess, innerFP] =
+        auto t =
                 fInner->asFragmentProcessor(std::move(inputFP), context, dstColorInfo);
+        auto innerSuccess = std::get<0>(t);
+        auto innerFP = std::get<1>(std::move(t));
         if (!innerSuccess) {
             return GrFPFailure(std::move(innerFP));
         }
 
-        auto [outerSuccess, outerFP] =
+        auto outer =
                 fOuter->asFragmentProcessor(std::move(innerFP), context, dstColorInfo);
+        auto outerSuccess = std::get<0>(outer);
+        auto outerFP = std::get<1>(std::move(outer));
         if (!outerSuccess) {
             // In the rare event that the outer FP cannot be built, we have no good way of
             // separating the inputFP from the innerFP, so we need to return a cloned inputFP.

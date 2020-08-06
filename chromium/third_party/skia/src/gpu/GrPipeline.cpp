@@ -98,12 +98,12 @@ void GrPipeline::genKey(GrProcessorKeyBuilder* b, const GrCaps& caps) const {
     static constexpr uint32_t kBlendCoeffShift = 5;
     static constexpr uint32_t kBlendEquationShift = 5;
     static constexpr uint32_t kDstSampleTypeInputShift = 1;
-    static_assert(kLast_GrBlendCoeff < (1 << kBlendCoeffShift));
-    static_assert(kLast_GrBlendEquation < (1 << kBlendEquationShift));
+    static_assert(kLast_GrBlendCoeff < (1 << kBlendCoeffShift), "");
+    static_assert(kLast_GrBlendEquation < (1 << kBlendEquationShift), "");
     static_assert(kBlendWriteShift +
                   2 * kBlendCoeffShift +
                   kBlendEquationShift +
-                  kDstSampleTypeInputShift <= 32);
+                  kDstSampleTypeInputShift <= 32, "");
 
     uint32_t blendKey = blendInfo.fWriteColor;
     blendKey |= (blendInfo.fSrcBlend << kBlendWriteShift);

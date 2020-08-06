@@ -25,6 +25,7 @@ public:
     const char* getUniformCStr(UniformHandle u) const override;
 
     struct SPIRVUniformInfo : public UniformInfo {
+        SPIRVUniformInfo(UniformInfo u, int offset) : UniformInfo(u), fUBOOffset(offset) {}
         int fUBOOffset;
     };
     typedef GrTBlockList<SPIRVUniformInfo> UniformInfoArray;

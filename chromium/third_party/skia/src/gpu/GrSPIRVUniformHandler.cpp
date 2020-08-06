@@ -222,7 +222,7 @@ GrGLSLUniformHandler::UniformHandle GrSPIRVUniformHandler::internalAddUniformArr
     layoutQualifier.appendf("offset = %d", offset);
 
     UniformInfo& info = fUniforms.push_back(SPIRVUniformInfo{
-        {
+        UniformInfo{
             GrShaderVar{std::move(resolvedName), type, GrShaderVar::TypeModifier::None, arrayCount,
                         std::move(layoutQualifier), SkString()},
             visibility, owner, SkString(name)

@@ -346,7 +346,9 @@ SkContourMeasure* SkContourMeasureIter::Impl::buildSegments() {
 
     auto end = SkPathPriv::Iterate(fPath).end();
     for (; fIter != end; ++fIter) {
-        auto [verb, pts, w] = *fIter;
+        auto verb = std::get<0>(*fIter);
+        auto pts = std::get<1>(*fIter);
+        auto w = std::get<2>(*fIter);
         if (haveSeenMoveTo && verb == SkPathVerb::kMove) {
             break;
         }

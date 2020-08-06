@@ -88,7 +88,10 @@ int SkOpEdgeBuilder::preFetch() {
     SkPoint curveStart;
     SkPoint curve[4];
     bool lastCurve = false;
-    for (auto [pathVerb, pts, w] : SkPathPriv::Iterate(*fPath)) {
+    for (auto t : SkPathPriv::Iterate(*fPath)) {
+        auto pathVerb = std::get<0>(t);
+        auto pts = std::get<1>(t);
+        auto w = std::get<2>(t);
         auto verb = static_cast<SkPath::Verb>(pathVerb);
         switch (verb) {
             case SkPath::kMove_Verb:

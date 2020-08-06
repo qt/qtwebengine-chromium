@@ -127,13 +127,13 @@ private:
         Properties        fProps                : 32 - (4 + 4 + 6 + 6 + 6);
     };
 
-    static_assert(kLast_OutputType      < (1 << 3));
-    static_assert(kLast_GrBlendEquation < (1 << 5));
-    static_assert(kLast_GrBlendCoeff    < (1 << 5));
-    static_assert(kLast_Property        < (1 << 6));
+    static_assert(kLast_OutputType      < (1 << 3), "");
+    static_assert(kLast_GrBlendEquation < (1 << 5), "");
+    static_assert(kLast_GrBlendCoeff    < (1 << 5), "");
+    static_assert(kLast_Property        < (1 << 6), "");
 };
 
-static_assert(4 == sizeof(BlendFormula));
+static_assert(4 == sizeof(BlendFormula), "");
 
 GR_MAKE_BITFIELD_OPS(BlendFormula::Properties);
 
@@ -437,7 +437,7 @@ public:
         const PorterDuffXferProcessor& xp = processor.cast<PorterDuffXferProcessor>();
         b->add32(xp.getBlendFormula().primaryOutput() |
                  (xp.getBlendFormula().secondaryOutput() << 3));
-        static_assert(BlendFormula::kLast_OutputType < 8);
+        static_assert(BlendFormula::kLast_OutputType < 8, "");
     }
 
 private:

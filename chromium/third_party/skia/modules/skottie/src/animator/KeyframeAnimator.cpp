@@ -11,7 +11,8 @@
 
 #define DUMP_KF_RECORDS 0
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 KeyframeAnimator::~KeyframeAnimator() = default;
 
@@ -219,4 +220,4 @@ uint32_t KeyframeAnimatorBuilder::parseMapping(const skjson::ObjectValue& jkf) {
     return SkToU32(fCMs.size()) - 1 + Keyframe::kCubicIndexOffset;
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

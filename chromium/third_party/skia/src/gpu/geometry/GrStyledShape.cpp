@@ -97,8 +97,8 @@ static int path_key_from_data_size(const SkPath& path) {
     const int pointCnt = path.countPoints();
     const int conicWeightCnt = SkPathPriv::ConicWeightCnt(path);
 
-    static_assert(sizeof(SkPoint) == 2 * sizeof(uint32_t));
-    static_assert(sizeof(SkScalar) == sizeof(uint32_t));
+    static_assert(sizeof(SkPoint) == 2 * sizeof(uint32_t), "");
+    static_assert(sizeof(SkScalar) == sizeof(uint32_t), "");
     // 1 is for the verb count. Each verb is a byte but we'll pad the verb data out to
     // a uint32_t length.
     return 1 + (SkAlign4(verbCnt) >> 2) + 2 * pointCnt + conicWeightCnt;
@@ -122,10 +122,10 @@ static void write_path_key_from_data(const SkPath& path, uint32_t* origKey) {
     key += verbKeySize >> 2;
 
     memcpy(key, SkPathPriv::PointData(path), sizeof(SkPoint) * pointCnt);
-    static_assert(sizeof(SkPoint) == 2 * sizeof(uint32_t));
+    static_assert(sizeof(SkPoint) == 2 * sizeof(uint32_t), "");
     key += 2 * pointCnt;
     sk_careful_memcpy(key, SkPathPriv::ConicWeightData(path), sizeof(SkScalar) * conicWeightCnt);
-    static_assert(sizeof(SkScalar) == sizeof(uint32_t));
+    static_assert(sizeof(SkScalar) == sizeof(uint32_t), "");
     SkDEBUGCODE(key += conicWeightCnt);
     SkASSERT(key - origKey == path_key_from_data_size(path));
 }
@@ -138,23 +138,23 @@ int GrStyledShape::unstyledKeySize() const {
     int count = 1; // Every key has the state flags from the GrShape
     switch(fShape.type()) {
         case GrShape::Type::kPoint:
-            static_assert(0 == sizeof(SkPoint) % sizeof(uint32_t));
+            static_assert(0 == sizeof(SkPoint) % sizeof(uint32_t), "");
             count += sizeof(SkPoint) / sizeof(uint32_t);
             break;
         case GrShape::Type::kRect:
-            static_assert(0 == sizeof(SkRect) % sizeof(uint32_t));
+            static_assert(0 == sizeof(SkRect) % sizeof(uint32_t), "");
             count += sizeof(SkRect) / sizeof(uint32_t);
             break;
         case GrShape::Type::kRRect:
-            static_assert(0 == SkRRect::kSizeInMemory % sizeof(uint32_t));
+            static_assert(0 == SkRRect::kSizeInMemory % sizeof(uint32_t), "");
             count += SkRRect::kSizeInMemory / sizeof(uint32_t);
             break;
         case GrShape::Type::kArc:
-            static_assert(0 == sizeof(GrArc) % sizeof(uint32_t));
+            static_assert(0 == sizeof(GrArc) % sizeof(uint32_t), "");
             count += sizeof(GrArc) / sizeof(uint32_t);
             break;
         case GrShape::Type::kLine:
-            static_assert(0 == sizeof(GrLineSegment) % sizeof(uint32_t));
+            static_assert(0 == sizeof(GrLineSegment) % sizeof(uint32_t), "");
             count += sizeof(GrLineSegment) / sizeof(uint32_t);
             break;
         case GrShape::Type::kPath: {

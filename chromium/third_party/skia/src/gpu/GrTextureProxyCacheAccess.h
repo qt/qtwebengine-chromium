@@ -24,6 +24,7 @@ private:
     }
 
     explicit CacheAccess(GrTextureProxy* textureProxy) : fTextureProxy(textureProxy) {}
+    CacheAccess(CacheAccess&&) = default;
     CacheAccess(const CacheAccess&) = delete;
     CacheAccess& operator=(const CacheAccess&) = delete;
 

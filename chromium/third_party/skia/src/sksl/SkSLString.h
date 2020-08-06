@@ -57,9 +57,20 @@ bool operator!=(const char* s1, StringFragment s2);
 
 class SK_API String : public std::string {
 public:
-    using std::string::string;
+//    using std::string::string;
+
+    String() = default;
+    String(const String&) = default;
+    String(String&&) = default;
+    String(const char* s) : std::string(s) {}
+    String(const char* s, size_t n) : std::string(s, n) {}
+    template<typename InputIterator>
+    String(InputIterator first, InputIterator last) : std::string(first, last) {}
 
     String(StringFragment s) : INHERITED(s.fChars, s.fLength) {}
+
+    String& operator=(const String&) = default;
+    String& operator=(String&&) = default;
 
     static String printf(const char* fmt, ...);
     void appendf(const char* fmt, ...);

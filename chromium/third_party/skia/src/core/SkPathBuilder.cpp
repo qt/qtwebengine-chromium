@@ -47,7 +47,10 @@ SkPathBuilder& SkPathBuilder::reset() {
 SkPathBuilder& SkPathBuilder::operator=(const SkPath& src) {
     this->reset().setFillType(src.getFillType());
 
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(src)) {
+    for (auto t : SkPathPriv::Iterate(src)) {
+        auto verb = std::get<0>(t);
+        auto pts = std::get<1>(t);
+        auto w = std::get<2>(t);
         switch (verb) {
             case SkPathVerb::kMove:  this->moveTo(pts[0]); break;
             case SkPathVerb::kLine:  this->lineTo(pts[1]); break;

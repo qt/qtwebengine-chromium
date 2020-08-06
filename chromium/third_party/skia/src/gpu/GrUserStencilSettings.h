@@ -214,10 +214,10 @@ template<GrUserStencilTest Test, GrUserStencilOp PassOp, GrUserStencilOp FailOp>
 struct GrUserStencilSettings::Attrs {
     // Ensure an op that only modifies user bits isn't paired with one that modifies clip bits.
     static_assert(GrUserStencilOp::kKeep == PassOp || GrUserStencilOp::kKeep == FailOp ||
-                  (PassOp <= kLastUserOnlyStencilOp) == (FailOp <= kLastUserOnlyStencilOp));
+                  (PassOp <= kLastUserOnlyStencilOp) == (FailOp <= kLastUserOnlyStencilOp), "");
     // Ensure an op that only modifies clip bits isn't paired with one that modifies clip and user.
     static_assert(GrUserStencilOp::kKeep == PassOp || GrUserStencilOp::kKeep == FailOp ||
-                  (PassOp <= kLastClipOnlyStencilOp) == (FailOp <= kLastClipOnlyStencilOp));
+                  (PassOp <= kLastClipOnlyStencilOp) == (FailOp <= kLastClipOnlyStencilOp), "");
 
     constexpr static bool TestAlwaysPasses(bool hasStencilClip) {
         return (!hasStencilClip && GrUserStencilTest::kAlwaysIfInClip == Test) ||

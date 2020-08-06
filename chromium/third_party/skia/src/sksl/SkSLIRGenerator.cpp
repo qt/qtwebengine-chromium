@@ -868,7 +868,7 @@ private:
     T* fContainer;
 };
 
-template <typename T> AutoClear(T* c) -> AutoClear<T>;
+//template <typename T> AutoClear(T* c) -> AutoClear<T>;
 
 void IRGenerator::checkModifiers(int offset, const Modifiers& modifiers, int permitted) {
     int flags = modifiers.fFlags;
@@ -902,7 +902,7 @@ void IRGenerator::checkModifiers(int offset, const Modifiers& modifiers, int per
 }
 
 void IRGenerator::convertFunction(const ASTNode& f) {
-    AutoClear clear(&fReferencedIntrinsics);
+    AutoClear<std::unordered_set<const FunctionDeclaration*>> clear(&fReferencedIntrinsics);
     auto iter = f.begin();
     const Type* returnType = this->convertType(*(iter++), /*allowVoid=*/true);
     if (returnType == nullptr) {

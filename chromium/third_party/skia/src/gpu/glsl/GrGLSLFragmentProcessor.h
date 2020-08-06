@@ -56,7 +56,9 @@ private:
             const GrFragmentProcessor* child = fFP->childProcessor(childIdx);
             SkASSERT(child);
             int numToSkip = 0;
-            for (const auto& fp : GrFragmentProcessor::FPRange(*fFP)) {
+            const auto& rng = GrFragmentProcessor::FPRange(*fFP);
+            for (auto it = rng.begin(); it != rng.end(); ++it) {
+                const auto& fp = *it;
                 if (&fp == child) {
                     return BuilderInputProvider(child, fTs + numToSkip);
                 }
@@ -194,6 +196,7 @@ public:
         operator bool() const { return !fFPStack.empty(); }
 
         // Because each iterator carries a stack we want to avoid copies.
+        Iter(Iter&&) = default;
         Iter(const Iter&) = delete;
         Iter& operator=(const Iter&) = delete;
 

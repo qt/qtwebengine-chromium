@@ -59,7 +59,7 @@ GrMatrixConvolutionEffect::KernelWrapper::Make(GrRecordingContext* rContext,
         for (int i = 0; i < length; i++) {
             result.fArray[i] = SkScalarToFloat(values[i]);
         }
-        return {result, nullptr};
+        return std::make_tuple(result, nullptr);
     }
 
     BiasAndGain& scalableSampler = result.fBiasAndGain;
@@ -94,7 +94,7 @@ GrMatrixConvolutionEffect::KernelWrapper::Make(GrRecordingContext* rContext,
         static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
         GrUniqueKey::Builder builder(&key, kDomain, length, "Matrix Convolution Kernel");
         // Texture cache key is the exact content of the kernel.
-        static_assert(sizeof(float) == 4);
+        static_assert(sizeof(float) == 4, "");
         for (int i = 0; i < length; i++) {
             builder[i] = *(const uint32_t*)&values[i];
         }
@@ -110,7 +110,7 @@ GrMatrixConvolutionEffect::KernelWrapper::Make(GrRecordingContext* rContext,
     if (kCacheKernelTexture && (view = threadSafeViewCache->find(key))) {
         SkASSERT(view.origin() == kTopLeft_GrSurfaceOrigin);
         auto kernelFP = GrTextureEffect::Make(std::move(view), kUnknown_SkAlphaType);
-        return {result, std::move(kernelFP)};
+        return std::make_tuple(result, std::move(kernelFP));
     }
 
     SkBitmap bm;
@@ -140,7 +140,7 @@ GrMatrixConvolutionEffect::KernelWrapper::Make(GrRecordingContext* rContext,
 
     SkASSERT(view.origin() == kTopLeft_GrSurfaceOrigin);
     auto kernelFP = GrTextureEffect::Make(std::move(view), kUnknown_SkAlphaType);
-    return {result, std::move(kernelFP)};
+    return std::make_tuple(result, std::move(kernelFP));
 }
 
 bool GrMatrixConvolutionEffect::KernelWrapper::operator==(const KernelWrapper& k) const {
@@ -428,7 +428,9 @@ std::unique_ptr<GrFragmentProcessor> GrMatrixConvolutionEffect::Make(GrRecording
                                                                      GrSamplerState::WrapMode wm,
                                                                      bool convolveAlpha,
                                                                      const GrCaps& caps) {
-    auto [kernelWrapper, kernelFP] = KernelWrapper::Make(context, kernelSize, caps, kernel);
+    auto t = KernelWrapper::Make(context, kernelSize, caps, kernel);
+    auto kernelWrapper = std::get<0>(t);
+    auto kernelFP = std::get<1>(std::move(t));
     if (!kernelWrapper.isValid()) {
         return nullptr;
     }

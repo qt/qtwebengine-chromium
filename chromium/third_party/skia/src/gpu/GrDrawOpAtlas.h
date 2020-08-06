@@ -176,7 +176,7 @@ public:
 
         // The inset padded bounds in the atlas in the lower 13 bits, and page index in bits 13 &
         // 14 of the Us.
-        std::array<uint16_t, 4> fUVs{0, 0, 0, 0};
+        std::array<uint16_t, 4> fUVs = {};
     };
 
     /**

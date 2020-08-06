@@ -492,10 +492,10 @@ private:
  */
 using GrFPResult = std::tuple<bool /*success*/, std::unique_ptr<GrFragmentProcessor>>;
 static inline GrFPResult GrFPFailure(std::unique_ptr<GrFragmentProcessor> fp) {
-    return {false, std::move(fp)};
+    return std::make_tuple(false, std::move(fp));
 }
 static inline GrFPResult GrFPSuccess(std::unique_ptr<GrFragmentProcessor> fp) {
-    return {true, std::move(fp)};
+    return std::make_tuple(true, std::move(fp));
 }
 
 #endif

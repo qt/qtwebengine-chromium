@@ -14,7 +14,8 @@
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/sksg/include/SkSGColorFilter.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -251,4 +252,4 @@ sk_sp<sksg::RenderNode> EffectBuilder::attachBrightnessContrastEffect(
                                                                          std::move(layer));
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

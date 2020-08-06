@@ -113,6 +113,7 @@ public:
         fRenderTargetContext->addDrawOp(clip, std::move(op));
     }
 
+    GrRenderTargetContextPriv(GrRenderTargetContextPriv&&) = default;
 private:
     explicit GrRenderTargetContextPriv(GrRenderTargetContext* renderTargetContext)
         : fRenderTargetContext(renderTargetContext) {}

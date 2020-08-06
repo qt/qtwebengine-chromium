@@ -168,8 +168,8 @@ void GrAtlasTextOp::onPrepareDraws(Target* target) {
     SkASSERT(views[0].proxy());
 
     static constexpr int kMaxTextures = GrBitmapTextGeoProc::kMaxTextures;
-    static_assert(GrDistanceFieldA8TextGeoProc::kMaxTextures == kMaxTextures);
-    static_assert(GrDistanceFieldLCDTextGeoProc::kMaxTextures == kMaxTextures);
+    static_assert(GrDistanceFieldA8TextGeoProc::kMaxTextures == kMaxTextures, "");
+    static_assert(GrDistanceFieldLCDTextGeoProc::kMaxTextures == kMaxTextures, "");
 
     auto primProcProxies = target->allocPrimProcProxyPtrs(kMaxTextures);
     for (unsigned i = 0; i < numActiveViews; ++i) {
@@ -237,9 +237,10 @@ void GrAtlasTextOp::onPrepareDraws(Target* target) {
             // Regenerate the atlas for the remainder of the glyphs in the run, or the remainder
             // of the glyphs to fill the vertex buffer.
             int regenEnd = subRunCursor + std::min(subRunEnd - subRunCursor, quadEnd - quadCursor);
-            auto[ok, glyphsRegenerated] = subRun.regenerateAtlas(subRunCursor, regenEnd, target);
+            auto t = subRun.regenerateAtlas(subRunCursor, regenEnd, target);
+            auto glyphsRegenerated = std::get<1>(t);
             // There was a problem allocating the glyph in the atlas. Bail.
-            if (!ok) {
+            if (!std::get<0>(t)) {
                 return;
             }
 

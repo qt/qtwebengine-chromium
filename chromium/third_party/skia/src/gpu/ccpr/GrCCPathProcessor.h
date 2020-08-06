@@ -44,7 +44,7 @@ public:
         void set(const GrCCPathCacheEntry&, const SkIVector& shift, const SkPMColor4f&, GrFillRule);
     };
 
-    static_assert(4 * 14 == sizeof(Instance));
+    static_assert(4 * 14 == sizeof(Instance), "");
 
     static sk_sp<const GrGpuBuffer> FindVertexBuffer(GrOnFlushResourceProvider*);
     static sk_sp<const GrGpuBuffer> FindIndexBuffer(GrOnFlushResourceProvider*);

@@ -229,7 +229,8 @@ void SkBinaryWriteBuffer::writeFlattenable(const SkFlattenable* flattenable) {
      *     compression, if we have already written the string, we write its index instead.
      */
 
-    if (SkFlattenable::Factory factory = flattenable->getFactory(); factory && fFactorySet) {
+    SkFlattenable::Factory factory = flattenable->getFactory();
+    if (factory && fFactorySet) {
         this->write32(fFactorySet->add(factory));
     } else {
         const char* name = flattenable->getTypeName();

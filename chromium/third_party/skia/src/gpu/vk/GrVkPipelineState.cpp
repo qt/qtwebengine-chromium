@@ -81,8 +81,9 @@ bool GrVkPipelineState::setAndBindUniforms(GrVkGpu* gpu,
     for (int i = 0; i < programInfo.pipeline().numFragmentProcessors(); ++i) {
         auto& pipelineFP = programInfo.pipeline().getFragmentProcessor(i);
         auto& baseGLSLFP = *fFragmentProcessors[i];
-        for (auto [fp, glslFP] : GrGLSLFragmentProcessor::ParallelRange(pipelineFP, baseGLSLFP)) {
-            glslFP.setData(fDataManager, fp);
+        auto range = GrGLSLFragmentProcessor::ParallelRange(pipelineFP, baseGLSLFP);
+        for (auto it = range.begin(); it != range.end(); ++it) {
+            std::get<1>(*it).setData(fDataManager, std::get<0>(*it));
         }
     }
 

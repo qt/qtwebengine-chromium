@@ -2839,7 +2839,10 @@ static void output_points(const SkPoint* pts, int count) {
 }
 
 static void showPathContours(const SkPath& path, const char* pathName) {
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(path)) {
+    for (auto t : SkPathPriv::Iterate(path)) {
+        auto verb = std::get<0>(t);
+        auto pts = std::get<1>(t);
+        auto w = std::get<2>(t);
         switch (verb) {
             case SkPathVerb::kMove:
                 SkDebugf("    %s.moveTo(", pathName);

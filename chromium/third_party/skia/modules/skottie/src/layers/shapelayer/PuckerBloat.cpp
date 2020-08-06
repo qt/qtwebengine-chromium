@@ -16,7 +16,8 @@
 
 #include <vector>
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -168,4 +169,4 @@ std::vector<sk_sp<sksg::GeometryNode>> ShapeBuilder::AttachPuckerBloatGeometryEf
     return bloated;
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

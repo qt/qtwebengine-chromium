@@ -1394,7 +1394,10 @@ SkPath& SkPath::addPath(const SkPath& srcPath, const SkMatrix& matrix, AddPathMo
 
     SkMatrixPriv::MapPtsProc mapPtsProc = SkMatrixPriv::GetMapPtsProc(matrix);
     bool firstVerb = true;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(*src)) {
+    for (auto t : SkPathPriv::Iterate(*src)) {
+        auto verb = std::get<0>(t);
+        auto pts = std::get<1>(t);
+        auto w = std::get<2>(t);
         switch (verb) {
             SkPoint mappedPts[3];
             case SkPathVerb::kMove:
@@ -1851,7 +1854,9 @@ SkPath::Verb SkPath::RawIter::next(SkPoint pts[4]) {
     if (!(fIter != fEnd)) {
         return kDone_Verb;
     }
-    auto [verb, iterPts, weights] = *fIter;
+    auto verb = std::get<0>(*fIter);
+    auto iterPts = std::get<1>(*fIter);
+    auto weights = std::get<2>(*fIter);
     int numPts;
     switch (verb) {
         case SkPathVerb::kMove: numPts = 1; break;
@@ -3063,7 +3068,10 @@ bool SkPathPriv::IsSimpleRect(const SkPath& path, bool isSimpleFill, SkRect* rec
     SkPoint rectPts[5];
     int rectPtCnt = 0;
     bool needsClose = !isSimpleFill;
-    for (auto [v, verbPts, w] : SkPathPriv::Iterate(path)) {
+    for (auto t : SkPathPriv::Iterate(path)) {
+        auto v = std::get<0>(t);
+        auto verbPts = std::get<1>(t);
+        auto w = std::get<2>(t);
         switch (v) {
             case SkPathVerb::kMove:
                 if (0 != rectPtCnt) {
@@ -3268,7 +3276,10 @@ SkRect SkPath::computeTightBounds() const {
     // initial with the first MoveTo, so we don't have to check inside the switch
     Sk2s min, max;
     min = max = from_point(this->getPoint(0));
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(*this)) {
+    for (auto t : SkPathPriv::Iterate(*this)) {
+        auto verb = std::get<0>(t);
+        auto pts = std::get<1>(t);
+        auto w = std::get<2>(t);
         int count = 0;
         switch (verb) {
             case SkPathVerb::kMove:

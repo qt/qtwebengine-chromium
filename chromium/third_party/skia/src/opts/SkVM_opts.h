@@ -12,46 +12,52 @@
 template <int N>
 static inline skvx::Vec<N,int16_t> mul_q14(const skvx::Vec<N,int16_t>& x,
                                            const skvx::Vec<N,int16_t>& y) {
-#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
-    if constexpr (N == 16) {
-        return skvx::bit_pun<skvx::Vec<N,int16_t>>(_mm256_mulhrs_epi16(skvx::bit_pun<__m256i>(x),
-                                                                       skvx::bit_pun<__m256i>(y)))
-            << 1;
-    }
-#endif
-#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSSE3
-    if constexpr (N == 8) {
-        return skvx::bit_pun<skvx::Vec<N,int16_t>>(_mm_mulhrs_epi16(skvx::bit_pun<__m128i>(x),
-                                                                    skvx::bit_pun<__m128i>(y)))
-            << 1;
-    }
-#endif
-    // TODO: NEON specialization with vqrdmulh.s16?
-
     // Try to recurse onto the specializations above.
-    if constexpr (N > 8) {
-        return join(mul_q14(x.lo, y.lo),
-                    mul_q14(x.hi, y.hi));
-    }
+//    if (N > 8) {
+//        return join(mul_q14(x.lo, y.lo),
+//                    mul_q14(x.hi, y.hi));
+//    }
     return skvx::cast<int16_t>((skvx::cast<int>(x) *
                                 skvx::cast<int>(y) + 0x4000)>>15 ) <<1;
 }
 
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
+template <>
+inline skvx::Vec<16,int16_t> mul_q14(const skvx::Vec<16,int16_t>& x,
+                                            const skvx::Vec<16,int16_t>& y) {
+    return skvx::bit_pun<skvx::Vec<16,int16_t>>(_mm256_mulhrs_epi16(skvx::bit_pun<__m256i>(x),
+                                                                    skvx::bit_pun<__m256i>(y)))
+        << 1;
+}
+#endif
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSSE3
+template <>
+inline skvx::Vec<8,int16_t> mul_q14(const skvx::Vec<8,int16_t>& x,
+                                           const skvx::Vec<8,int16_t>& y) {
+    return skvx::bit_pun<skvx::Vec<8,int16_t>>(_mm_mulhrs_epi16(skvx::bit_pun<__m128i>(x),
+                                                                skvx::bit_pun<__m128i>(y)))
+        << 1;
+}
+#endif
+    // TODO: NEON specialization with vqrdmulh.s16?
+
 template <int N>
 static inline skvx::Vec<N,int> gather32(const int* ptr, const skvx::Vec<N,int>& ix) {
-#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
-    if constexpr (N == 8) {
-        return skvx::bit_pun<skvx::Vec<N,int>>(
-                _mm256_i32gather_epi32(ptr, skvx::bit_pun<__m256i>(ix), 4));
-    }
-#endif
     // Try to recurse on specializations, falling back on standard scalar map()-based impl.
-    if constexpr (N > 8) {
-        return join(gather32(ptr, ix.lo),
-                    gather32(ptr, ix.hi));
-    }
+//    if (N > 8) {
+//        return join(gather32(ptr, ix.lo),
+//                    gather32(ptr, ix.hi));
+//    }
     return map(ix, [&](int i) { return ptr[i]; });
 }
+
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
+template <>
+inline skvx::Vec<8,int> gather32(const int* ptr, const skvx::Vec<8,int>& ix) {
+    return skvx::bit_pun<skvx::Vec<8,int>>(
+        _mm256_i32gather_epi32(ptr, skvx::bit_pun<__m256i>(ix), 4));
+}
+#endif
 
 namespace SK_OPTS_NS {
 

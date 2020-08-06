@@ -165,7 +165,8 @@ GrGLSLFragmentProcessor::ParallelIter& GrGLSLFragmentProcessor::ParallelIter::op
 
 std::tuple<const GrFragmentProcessor&, GrGLSLFragmentProcessor&>
 GrGLSLFragmentProcessor::ParallelIter::operator*() const {
-    return {*fpIter, *glslIter};
+    std::tuple<const GrFragmentProcessor&, GrGLSLFragmentProcessor&> out(*fpIter, *glslIter);
+    return out;
 }
 
 bool GrGLSLFragmentProcessor::ParallelIter::operator==(const ParallelIterEnd& end) const {

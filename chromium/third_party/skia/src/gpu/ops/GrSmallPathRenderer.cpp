@@ -187,7 +187,7 @@ private:
         }
 
         static constexpr int kMaxTextures = GrDistanceFieldPathGeoProc::kMaxTextures;
-        static_assert(GrBitmapTextGeoProc::kMaxTextures == kMaxTextures);
+        static_assert(GrBitmapTextGeoProc::kMaxTextures == kMaxTextures, "");
 
         FlushInfo flushInfo;
         flushInfo.fPrimProcProxies = target->allocPrimProcProxyPtrs(kMaxTextures);

@@ -233,11 +233,12 @@ static std::tuple<GrSurfaceProxyView, sk_sp<Trampoline>> create_lazy_view(GrDire
     GrProxyProvider* proxyProvider = dContext->priv().proxyProvider();
 
     constexpr int kSampleCnt = 1;
-    auto[ct, format] = GrRenderTargetContext::GetFallbackColorTypeAndFormat(
+    auto t = GrRenderTargetContext::GetFallbackColorTypeAndFormat(
             dContext, GrColorType::kAlpha_8, kSampleCnt);
-
+    auto ct = std::get<0>(t);
+    auto format = std::get<1>(t);
     if (ct == GrColorType::kUnknown) {
-        return {GrSurfaceProxyView(nullptr), nullptr};
+        return std::make_tuple(GrSurfaceProxyView(nullptr), nullptr);
     }
 
     sk_sp<Trampoline> trampoline(new Trampoline);
@@ -273,7 +274,7 @@ static std::tuple<GrSurfaceProxyView, sk_sp<Trampoline>> create_lazy_view(GrDire
     // what GrRenderTargetContext::MakeWithFallback does
     GrSwizzle swizzle = dContext->priv().caps()->getReadSwizzle(format, ct);
 
-    return {{std::move(proxy), kBlurredRRectMaskOrigin, swizzle}, std::move(trampoline)};
+    return std::make_tuple(GrSurfaceProxyView{std::move(proxy), kBlurredRRectMaskOrigin, swizzle}, std::move(trampoline));
 }
 
 static std::unique_ptr<GrFragmentProcessor> find_or_create_rrect_blur_mask_fp(
@@ -299,7 +300,9 @@ static std::unique_ptr<GrFragmentProcessor> find_or_create_rrect_blur_mask_fp(
     if (GrDirectContext* dContext = rContext->asDirectContext()) {
         // The gpu thread gets priority over the recording threads. If the gpu thread is first,
         // it crams a lazy proxy into the cache and then fills it in later.
-        auto[lazyView, trampoline] = create_lazy_view(dContext, dimensions);
+        auto t = create_lazy_view(dContext, dimensions);
+        auto lazyView = std::get<0>(t);
+        auto trampoline = std::get<1>(std::move(t));
         if (!lazyView) {
             return nullptr;
         }

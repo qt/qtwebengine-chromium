@@ -534,7 +534,7 @@ protected:
 
     BlendEquationSupport fBlendEquationSupport;
     uint32_t fAdvBlendEqDisableFlags;
-    static_assert(kLast_GrBlendEquation < 32);
+    static_assert(kLast_GrBlendEquation < 32, "");
 
     uint32_t fMapBufferFlags;
     int fBufferMapThreshold;

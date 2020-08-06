@@ -577,7 +577,10 @@ void hair_path(const SkPathView& path, const SkRasterClip& rclip, SkBlitter* bli
         prevVerb = SkPath::kDone_Verb;
     }
     while (iter != end) {
-        auto [pathVerb, pathPts, w] = *iter++;
+        auto t = *iter++;
+        auto pathVerb = std::get<0>(t);
+        auto pathPts = std::get<1>(t);
+        auto w = std::get<2>(t);
         SkPath::Verb verb = (SkPath::Verb)pathVerb;
         SkPath::Verb nextVerb = (iter != end) ? (SkPath::Verb)iter.peekVerb() : SkPath::kDone_Verb;
         memcpy(pts, pathPts, SkPathPriv::PtsInIter(verb) * sizeof(SkPoint));

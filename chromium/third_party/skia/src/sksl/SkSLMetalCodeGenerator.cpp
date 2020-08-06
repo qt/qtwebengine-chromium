@@ -509,7 +509,7 @@ String MetalCodeGenerator::getMatrixConstructHelper(const Constructor& c) {
     }
 
     // If a helper-method has already been synthesized, we don't need to synthesize it again.
-    auto [iter, newlyCreated] = fHelpers.insert(name);
+    auto newlyCreated = std::get<1>(fHelpers.insert(name));
     if (!newlyCreated) {
         return name;
     }
@@ -1529,8 +1529,8 @@ void MetalCodeGenerator::writeInterfaceBlocks() {
 
 void MetalCodeGenerator::visitGlobalStruct(GlobalStructVisitor* visitor) {
     // Visit the interface blocks.
-    for (const auto& [interfaceType, interfaceName] : fInterfaceBlockNameMap) {
-        visitor->VisitInterfaceBlock(*interfaceType, interfaceName);
+    for (const auto& t : fInterfaceBlockNameMap) {
+        visitor->VisitInterfaceBlock(*std::get<0>(t), std::get<1>(t));
     }
     for (const ProgramElement& element : fProgram) {
         if (element.kind() != ProgramElement::Kind::kVar) {

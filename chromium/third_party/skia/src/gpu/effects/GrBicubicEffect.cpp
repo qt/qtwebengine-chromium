@@ -16,6 +16,9 @@
 #include "src/gpu/glsl/GrGLSLUniformHandler.h"
 #include <cmath>
 
+constexpr SkImage::CubicResampler GrBicubicEffect::gMitchell;
+constexpr SkImage::CubicResampler GrBicubicEffect::gCatmullRom;
+
 class GrBicubicEffect::Impl : public GrGLSLFragmentProcessor {
 public:
     Impl() : fKernel{-1, -1} {}

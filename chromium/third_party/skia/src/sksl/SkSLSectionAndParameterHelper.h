@@ -17,24 +17,24 @@
 
 namespace SkSL {
 
-inline constexpr char kClassSection[] =              "class";
-inline constexpr char kCloneSection[] =              "clone";
-inline constexpr char kConstructorSection[] =        "constructor";
-inline constexpr char kConstructorCodeSection[] =    "constructorCode";
-inline constexpr char kConstructorParamsSection[] =  "constructorParams";
-inline constexpr char kCppSection[] =                "cpp";
-inline constexpr char kCppEndSection[] =             "cppEnd";
-inline constexpr char kDumpInfoSection[] =           "dumpInfo";
-inline constexpr char kEmitCodeSection[] =           "emitCode";
-inline constexpr char kFieldsSection[] =             "fields";
-inline constexpr char kHeaderSection[] =             "header";
-inline constexpr char kHeaderEndSection[] =          "headerEnd";
-inline constexpr char kInitializersSection[] =       "initializers";
-inline constexpr char kMakeSection[] =               "make";
-inline constexpr char kOptimizationFlagsSection[] =  "optimizationFlags";
-inline constexpr char kSamplerParamsSection[] =      "samplerParams";
-inline constexpr char kSetDataSection[] =            "setData";
-inline constexpr char kTestCodeSection[] =           "test";
+constexpr char kClassSection[] =              "class";
+constexpr char kCloneSection[] =              "clone";
+constexpr char kConstructorSection[] =        "constructor";
+constexpr char kConstructorCodeSection[] =    "constructorCode";
+constexpr char kConstructorParamsSection[] =  "constructorParams";
+constexpr char kCppSection[] =                "cpp";
+constexpr char kCppEndSection[] =             "cppEnd";
+constexpr char kDumpInfoSection[] =           "dumpInfo";
+constexpr char kEmitCodeSection[] =           "emitCode";
+constexpr char kFieldsSection[] =             "fields";
+constexpr char kHeaderSection[] =             "header";
+constexpr char kHeaderEndSection[] =          "headerEnd";
+constexpr char kInitializersSection[] =       "initializers";
+constexpr char kMakeSection[] =               "make";
+constexpr char kOptimizationFlagsSection[] =  "optimizationFlags";
+constexpr char kSamplerParamsSection[] =      "samplerParams";
+constexpr char kSetDataSection[] =            "setData";
+constexpr char kTestCodeSection[] =           "test";
 
 class SectionAndParameterHelper {
 public:

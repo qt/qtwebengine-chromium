@@ -10,7 +10,8 @@
 #include "modules/skottie/src/animator/Animator.h"
 #include "modules/skottie/src/animator/KeyframeAnimator.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -79,4 +80,4 @@ bool AnimatablePropertyContainer::bind<ScalarValue>(const AnimationBuilder& abui
     return this->bindImpl(abuilder, jprop, builder);
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

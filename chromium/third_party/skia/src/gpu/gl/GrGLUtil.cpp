@@ -507,7 +507,7 @@ std::tuple<GrGLANGLEBackend, GrGLANGLEVendor, GrGLANGLERenderer> GrGLGetANGLEInf
     auto vendor = GrGLANGLEVendor::kUnknown;
     auto renderer = GrGLANGLERenderer::kUnknown;
     if (!is_renderer_angle(rendererString)) {
-        return {backend, vendor, renderer};
+        return std::make_tuple(backend, vendor, renderer);
     }
     if (strstr(rendererString, "Intel")) {
         vendor = GrGLANGLEVendor::kIntel;
@@ -558,7 +558,7 @@ std::tuple<GrGLANGLEBackend, GrGLANGLEVendor, GrGLANGLERenderer> GrGLGetANGLEInf
     } else if (strstr(rendererString, "OpenGL")) {
         backend = GrGLANGLEBackend::kOpenGL;
     }
-    return {backend, vendor, renderer};
+    return std::make_tuple(backend, vendor, renderer);
 }
 
 GrGLVersion GrGLGetVersion(const GrGLInterface* gl) {
@@ -604,14 +604,14 @@ GrGLenum GrToGLStencilFunc(GrStencilTest test) {
         GR_GL_EQUAL,            // kEqual
         GR_GL_NOTEQUAL,         // kNotEqual
     };
-    static_assert(0 == (int)GrStencilTest::kAlways);
-    static_assert(1 == (int)GrStencilTest::kNever);
-    static_assert(2 == (int)GrStencilTest::kGreater);
-    static_assert(3 == (int)GrStencilTest::kGEqual);
-    static_assert(4 == (int)GrStencilTest::kLess);
-    static_assert(5 == (int)GrStencilTest::kLEqual);
-    static_assert(6 == (int)GrStencilTest::kEqual);
-    static_assert(7 == (int)GrStencilTest::kNotEqual);
+    static_assert(0 == (int)GrStencilTest::kAlways, "");
+    static_assert(1 == (int)GrStencilTest::kNever, "");
+    static_assert(2 == (int)GrStencilTest::kGreater, "");
+    static_assert(3 == (int)GrStencilTest::kGEqual, "");
+    static_assert(4 == (int)GrStencilTest::kLess, "");
+    static_assert(5 == (int)GrStencilTest::kLEqual, "");
+    static_assert(6 == (int)GrStencilTest::kEqual, "");
+    static_assert(7 == (int)GrStencilTest::kNotEqual, "");
     SkASSERT(test < (GrStencilTest)kGrStencilTestCount);
 
     return gTable[(int)test];

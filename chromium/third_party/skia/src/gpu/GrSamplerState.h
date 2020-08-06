@@ -51,7 +51,7 @@ public:
 
     constexpr GrSamplerState(const GrSamplerState&) = default;
 
-    constexpr GrSamplerState& operator=(const GrSamplerState&) = default;
+    GrSamplerState& operator=(const GrSamplerState&) = default;
 
     constexpr WrapMode wrapModeX() const { return fWrapModes[0]; }
 
@@ -111,6 +111,6 @@ private:
 };
 
 static_assert(GrSamplerState::kNumUniqueSamplers <=
-              std::numeric_limits<decltype(GrSamplerState{}.asIndex())>::max());
+              std::numeric_limits<decltype(GrSamplerState{}.asIndex())>::max(), "");
 
 #endif

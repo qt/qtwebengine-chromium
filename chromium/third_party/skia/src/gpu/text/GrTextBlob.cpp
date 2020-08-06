@@ -100,8 +100,15 @@ auto ltbr(const Rect& r) {
 void direct_2D(SkZip<Mask2DVertex[4], const GrGlyph*, const SkIPoint> quadData,
                GrColor color,
                SkIPoint deviceOrigin) {
-    for (auto[quad, glyph, leftTop] : quadData) {
-        auto[al, at, ar, ab] = glyph->fAtlasLocator.getUVs();
+    for (auto t : quadData) {
+        auto quad = std::get<0>(t);
+        auto glyph = std::get<1>(t);
+        auto leftTop = std::get<2>(t);
+        auto a = glyph->fAtlasLocator.getUVs();
+        auto al = a[0];
+        auto at = a[1];
+        auto ar = a[2];
+        auto ab = a[3];
         SkScalar dl = leftTop.x() + deviceOrigin.x(),
                  dt = leftTop.y() + deviceOrigin.y(),
                  dr = dl + (ar - al),
@@ -120,13 +127,26 @@ void generalized_direct_2D(SkZip<Quad, const GrGlyph*, const VertexData> quadDat
                            GrColor color,
                            SkIPoint deviceOrigin,
                            SkIRect* clip = nullptr) {
-    for (auto[quad, glyph, leftTop] : quadData) {
-        auto[al, at, ar, ab] = glyph->fAtlasLocator.getUVs();
+    for (auto tmp : quadData) {
+        auto quad = std::get<0>(tmp);
+        auto glyph = std::get<1>(tmp);
+        auto leftTop = std::get<2>(tmp);
+        auto a = glyph->fAtlasLocator.getUVs();
+        auto al = a[0];
+        auto at = a[1];
+        auto ar = a[2];
+        auto ab = a[3];
         uint16_t w = ar - al,
                  h = ab - at;
-        auto[l, t] = leftTop + deviceOrigin;
+        auto pt = leftTop + deviceOrigin;
+        auto l = pt.x();
+        auto t = pt.y();
         if (clip == nullptr) {
-            auto[dl, dt, dr, db] = SkRect::MakeLTRB(l, t, l + w, t + h);
+            auto d = SkRect::MakeLTRB(l, t, l + w, t + h);
+            auto dl = d.left();
+            auto dt = d.top();
+            auto dr = d.right();
+            auto db = d.bottom();
             quad[0] = {{dl, dt}, color, {al, at}};  // L,T
             quad[1] = {{dl, db}, color, {al, ab}};  // L,B
             quad[2] = {{dr, dt}, color, {ar, at}};  // R,T
@@ -135,7 +155,8 @@ void generalized_direct_2D(SkZip<Quad, const GrGlyph*, const VertexData> quadDat
             SkIRect devIRect = SkIRect::MakeLTRB(l, t, l + w, t + h);
             SkScalar dl, dt, dr, db;
             if (!clip->containsNoEmptyCheck(devIRect)) {
-                if (SkIRect clipped; clipped.intersect(devIRect, *clip)) {
+                SkIRect clipped;
+                if (clipped.intersect(devIRect, *clip)) {
                     al += clipped.left()   - devIRect.left();
                     at += clipped.top()    - devIRect.top();
                     ar += clipped.right()  - devIRect.right();
@@ -164,16 +185,27 @@ void fill_transformed_vertices_2D(SkZip<Quad, const GrGlyph*, const VertexData> 
                                   GrColor color,
                                   const SkMatrix& matrix) {
     SkPoint inset = {dstPadding, dstPadding};
-    for (auto[quad, glyph, vertexData] : quadData) {
-        auto[pos, rect] = vertexData;
-        auto[l, t, r, b] = rect;
+    for (auto tmp : quadData) {
+        auto quad = std::get<0>(tmp);
+        auto glyph = std::get<1>(tmp);
+        auto vertexData = std::get<2>(tmp);
+        auto pos = vertexData.pos;
+        auto rect = vertexData.rect;
+        auto l = rect.fLeft;
+        auto t = rect.fTop;
+        auto r = rect.fRight;
+        auto b = rect.fBottom;
         SkPoint sLT = (SkPoint::Make(l, t) + inset) * strikeToSource + pos,
                 sRB = (SkPoint::Make(r, b) - inset) * strikeToSource + pos;
         SkPoint lt = matrix.mapXY(sLT.x(), sLT.y()),
                 lb = matrix.mapXY(sLT.x(), sRB.y()),
                 rt = matrix.mapXY(sRB.x(), sLT.y()),
                 rb = matrix.mapXY(sRB.x(), sRB.y());
-        auto[al, at, ar, ab] = glyph->fAtlasLocator.getUVs();
+        auto a = glyph->fAtlasLocator.getUVs();
+        auto al = a[0];
+        auto at = a[1];
+        auto ar = a[2];
+        auto ab = a[3];
         quad[0] = {lt, color, {al, at}};  // L,T
         quad[1] = {lb, color, {al, ab}};  // L,B
         quad[2] = {rt, color, {ar, at}};  // R,T
@@ -194,16 +226,27 @@ void fill_transformed_vertices_3D(SkZip<Quad, const GrGlyph*, const VertexData> 
         matrix.mapHomogeneousPoints(&result, &pt, 1);
         return result;
     };
-    for (auto[quad, glyph, vertexData] : quadData) {
-        auto[pos, rect] = vertexData;
-        auto [l, t, r, b] = rect;
+    for (auto tmp : quadData) {
+        auto quad = std::get<0>(tmp);
+        auto glyph = std::get<1>(tmp);
+        auto vertexData = std::get<2>(tmp);
+        auto pos = vertexData.pos;
+        auto rect = vertexData.rect;
+        auto l = rect.fLeft;
+        auto t = rect.fTop;
+        auto r = rect.fRight;
+        auto b = rect.fBottom;
         SkPoint sLT = (SkPoint::Make(l, t) + inset) * strikeToSource + pos,
                 sRB = (SkPoint::Make(r, b) - inset) * strikeToSource + pos;
         SkPoint3 lt = mapXYZ(sLT.x(), sLT.y()),
                  lb = mapXYZ(sLT.x(), sRB.y()),
                  rt = mapXYZ(sRB.x(), sLT.y()),
                  rb = mapXYZ(sRB.x(), sRB.y());
-        auto[al, at, ar, ab] = glyph->fAtlasLocator.getUVs();
+        auto a = glyph->fAtlasLocator.getUVs();
+        auto al = a[0];
+        auto at = a[1];
+        auto ar = a[2];
+        auto ab = a[3];
         quad[0] = {lt, color, {al, at}};  // L,T
         quad[1] = {lb, color, {al, ab}};  // L,B
         quad[2] = {rt, color, {ar, at}};  // R,T
@@ -358,8 +401,8 @@ auto GrPathSubRun::Make(
     PathGlyph* pathData = alloc->makeInitializedArray<PathGlyph>(
             drawables.size(),
             [&](size_t i) -> PathGlyph {
-                auto [variant, pos] = drawables[i];
-                return {*variant.path(), pos};
+                const auto& d = drawables[i];
+                return {*std::get<0>(d).path(), std::get<1>(d)};
             });
 
     return alloc->make<GrPathSubRun>(
@@ -447,7 +490,7 @@ std::tuple<bool, int> GrGlyphVector::regenerateAtlas(int begin, int end,
             fAtlasGeneration = atlasManager->atlasGeneration(maskFormat);
         }
 
-        return {success, glyphsPlacedInAtlas};
+        return std::make_tuple(success, glyphsPlacedInAtlas);
     } else {
         // The atlas hasn't changed, so our texture coordinates are still valid.
         if (end == fGlyphs.count()) {
@@ -457,7 +500,7 @@ std::tuple<bool, int> GrGlyphVector::regenerateAtlas(int begin, int end,
                                           uploadTarget->tokenTracker()->nextDrawToken(),
                                           maskFormat);
         }
-        return {true, end - begin};
+        return std::make_tuple(true, end - begin);
     }
 }
 
@@ -485,8 +528,9 @@ GrSubRun* GrDirectMaskSubRun::Make(const SkZip<SkGlyphVariant, SkPoint>& drawabl
     SkRect bounds = SkRectPriv::MakeLargestInverted();
 
     auto initializer = [&](size_t i) {
-        auto [variant, pos] = drawables[i];
-        SkGlyph* skGlyph = variant;
+        const auto& d = drawables[i];
+        auto pos = std::get<1>(d);
+        SkGlyph* skGlyph = std::get<0>(d);
         int16_t l = skGlyph->left();
         int16_t t = skGlyph->top();
         int16_t r = l + skGlyph->width();
@@ -510,7 +554,9 @@ GrSubRun* GrDirectMaskSubRun::Make(const SkZip<SkGlyphVariant, SkPoint>& drawabl
 
 void GrDirectMaskSubRun::draw(const GrClip* clip, const SkMatrixProvider& viewMatrix,
                               const SkGlyphRunList& glyphRunList, GrRenderTargetContext* rtc) const{
-    auto[drawingClip, op] = this->makeAtlasTextOp(clip, viewMatrix, glyphRunList, rtc);
+    auto t = this->makeAtlasTextOp(clip, viewMatrix, glyphRunList, rtc);
+    auto drawingClip = std::get<0>(t);
+    auto op = std::get<1>(std::move(t));
     if (op != nullptr) {
         rtc->priv().addDrawOp(drawingClip, std::move(op));
     }
@@ -556,7 +602,7 @@ GrDirectMaskSubRun::makeAtlasTextOp(const GrClip* clip, const SkMatrixProvider& 
 
     if (clip == nullptr && !renderTargetBounds.intersects(subRunBounds)) {
         // If the SubRun is completely outside, don't add an op for it.
-        return {nullptr, nullptr};
+        return std::make_tuple(nullptr, nullptr);
     } else if (clip != nullptr) {
         const GrClip::PreClipResult result = clip->preApply(subRunBounds, GrAA::kNo);
         if (result.fEffect == GrClip::Effect::kClipped) {
@@ -570,7 +616,7 @@ GrDirectMaskSubRun::makeAtlasTextOp(const GrClip* clip, const SkMatrixProvider& 
                 clip = nullptr;
             }
         } else if (result.fEffect == GrClip::Effect::kClippedOut) {
-            return {nullptr, nullptr};
+            return std::make_tuple(nullptr, nullptr);
         }
     }
 
@@ -597,7 +643,7 @@ GrDirectMaskSubRun::makeAtlasTextOp(const GrClip* clip, const SkMatrixProvider& 
                                                                  geometry,
                                                                  std::move(grPaint));
 
-    return {clip, std::move(op)};
+    return std::make_tuple(clip, std::move(op));
 }
 
 void GrDirectMaskSubRun::testingOnly_packedGlyphIDToGrGlyph(GrStrikeCache *cache) {
@@ -681,8 +727,9 @@ GrSubRun* GrTransformedMaskSubRun::Make(const SkZip<SkGlyphVariant, SkPoint>& dr
     size_t vertexCount = drawables.size();
     SkRect bounds = SkRectPriv::MakeLargestInverted();
     auto initializer = [&, strikeToSource=strikeSpec.strikeToSourceRatio()](size_t i) {
-        auto [variant, pos] = drawables[i];
-        SkGlyph* skGlyph = variant;
+        const auto& d = drawables[i];
+        auto pos = std::get<1>(d);
+        SkGlyph* skGlyph = std::get<0>(d);
         int16_t l = skGlyph->left();
         int16_t t = skGlyph->top();
         int16_t r = l + skGlyph->width();
@@ -708,7 +755,9 @@ void GrTransformedMaskSubRun::draw(const GrClip* clip,
                                    const SkMatrixProvider& viewMatrix,
                                    const SkGlyphRunList& glyphRunList,
                                    GrRenderTargetContext* rtc) const {
-    auto[drawingClip, op] = this->makeAtlasTextOp(clip, viewMatrix, glyphRunList, rtc);
+    auto t = this->makeAtlasTextOp(clip, viewMatrix, glyphRunList, rtc);
+    auto drawingClip = std::get<0>(t);
+    auto op = std::get<1>(std::move(t));
     if (op != nullptr) {
         rtc->priv().addDrawOp(drawingClip, std::move(op));
     }
@@ -756,7 +805,7 @@ GrTransformedMaskSubRun::makeAtlasTextOp(const GrClip* clip,
             this->deviceRect(drawMatrix, drawOrigin),
             geometry,
             std::move(grPaint));
-    return {clip, std::move(op)};
+    return std::make_tuple(clip, std::move(op));
 }
 
 void GrTransformedMaskSubRun::testingOnly_packedGlyphIDToGrGlyph(GrStrikeCache *cache) {
@@ -879,8 +928,9 @@ GrSubRun* GrSDFTSubRun::Make(
     size_t vertexCount = drawables.size();
     SkRect bounds = SkRectPriv::MakeLargestInverted();
     auto initializer = [&, strikeToSource=strikeSpec.strikeToSourceRatio()](size_t i) {
-        auto [variant, pos] = drawables[i];
-        SkGlyph* skGlyph = variant;
+        const auto&d  = drawables[i];
+        auto pos = std::get<1>(d);
+        SkGlyph* skGlyph = std::get<0>(d);
         int16_t l = skGlyph->left();
         int16_t t = skGlyph->top();
         int16_t r = l + skGlyph->width();
@@ -964,14 +1014,16 @@ GrSDFTSubRun::makeAtlasTextOp(const GrClip* clip,
             geometry,
             std::move(grPaint));
 
-    return {clip, std::move(op)};
+    return std::make_tuple(clip, std::move(op));
 }
 
 void GrSDFTSubRun::draw(const GrClip* clip,
                         const SkMatrixProvider& viewMatrix,
                         const SkGlyphRunList& glyphRunList,
                         GrRenderTargetContext* rtc) const {
-    auto[drawingClip, op] = this->makeAtlasTextOp(clip, viewMatrix, glyphRunList, rtc);
+    auto t = this->makeAtlasTextOp(clip, viewMatrix, glyphRunList, rtc);
+    auto drawingClip = std::get<0>(t);
+    auto op = std::get<1>(std::move(t));
     if (op != nullptr) {
         rtc->priv().addDrawOp(drawingClip, std::move(op));
     }
@@ -988,7 +1040,9 @@ bool GrSDFTSubRun::canReuse(const SkPaint& paint, const SkMatrix& drawMatrix) {
     SkScalar newMaxScale = drawMatrix.getMaxScale();
     SkScalar oldMaxScale = initialMatrix.getMaxScale();
     SkScalar scaleAdjust = newMaxScale / oldMaxScale;
-    auto [maxMinScale, minMaxScale] = fBlob->scaleBounds();
+    auto t = fBlob->scaleBounds();
+    auto maxMinScale = std::get<0>(t);
+    auto minMaxScale = std::get<1>(t);
     if (scaleAdjust < maxMinScale || scaleAdjust > minMaxScale) {
         return false;
     }

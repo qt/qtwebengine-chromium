@@ -60,7 +60,7 @@ struct Analysis {
 template <typename PROG, typename EXPR, typename STMT, typename ELEM>
 class TProgramVisitor {
 public:
-    virtual ~TProgramVisitor() = default;
+    virtual ~TProgramVisitor() {}
 
     bool visit(PROG program);
 

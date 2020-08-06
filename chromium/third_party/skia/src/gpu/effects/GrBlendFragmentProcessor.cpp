@@ -34,7 +34,7 @@ static const char* BlendBehavior_Name(BlendBehavior behavior) {
         "Compose-Two",
         "SkMode",
     };
-    static_assert(SK_ARRAY_COUNT(gStrings) == size_t(BlendBehavior::kLastBlendBehavior) + 1);
+    static_assert(SK_ARRAY_COUNT(gStrings) == size_t(BlendBehavior::kLastBlendBehavior) + 1, "");
     return gStrings[int(behavior)];
 }
 

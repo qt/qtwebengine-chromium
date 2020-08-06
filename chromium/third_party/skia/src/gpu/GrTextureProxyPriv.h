@@ -28,6 +28,7 @@ public:
     // contents have been uploaded.
     void resetDeferredUploader();
 
+    GrTextureProxyPriv(GrTextureProxyPriv&&) = default;
 private:
     explicit GrTextureProxyPriv(GrTextureProxy* textureProxy) : fTextureProxy(textureProxy) {}
     GrTextureProxyPriv(const GrTextureProxyPriv&) = delete;

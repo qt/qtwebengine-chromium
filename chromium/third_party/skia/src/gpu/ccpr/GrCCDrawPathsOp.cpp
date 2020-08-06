@@ -17,7 +17,9 @@
 #include "src/gpu/ccpr/GrOctoBounds.h"
 
 static bool uses_varying_coords(const GrPaint& paint) {
-    for (const auto& fp : GrFragmentProcessor::PaintRange(paint)) {
+    const auto& rng = GrFragmentProcessor::PaintRange(paint);
+    for (auto it = rng.begin(); it != rng.end(); ++it) {
+        const auto& fp = *it;
         if (fp.usesVaryingCoordsDirectly()) {
             return true;
         }

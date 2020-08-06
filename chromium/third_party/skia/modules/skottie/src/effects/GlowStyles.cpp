@@ -17,7 +17,8 @@
 
 #include <cmath>
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -159,4 +160,4 @@ sk_sp<sksg::RenderNode> EffectBuilder::attachInnerGlowStyle(const skjson::Object
     return make_glow_effect(jstyle, *fBuilder, std::move(layer), GlowAdapter::Type::kInnerGlow);
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

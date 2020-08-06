@@ -169,6 +169,8 @@ public:
     void testingOnly_flushAndRemoveOnFlushCallbackObject(GrOnFlushCallbackObject*);
 #endif
 
+    GrContextPriv(GrContextPriv&&) = default;
+
 private:
     explicit GrContextPriv(GrContext* context) : fContext(context) {}
     GrContextPriv(const GrContextPriv&) = delete;

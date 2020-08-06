@@ -14,7 +14,8 @@
 
 #include <cmath>
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -234,4 +235,4 @@ bool AnimatablePropertyContainer::bind<Vec2Value>(const AnimationBuilder& abuild
     return this->bindAutoOrientable(abuilder, jprop, v, nullptr);
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

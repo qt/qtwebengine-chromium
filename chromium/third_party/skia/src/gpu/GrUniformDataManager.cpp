@@ -297,7 +297,7 @@ template<int N> inline void GrUniformDataManager::setMatrices(UniformHandle u,
 
 template<int N> struct set_uniform_matrix {
     inline static void set(void* buffer, int uniformOffset, int count, const float matrices[]) {
-        static_assert(sizeof(float) == 4);
+        static_assert(sizeof(float) == 4, "");
         buffer = static_cast<char*>(buffer) + uniformOffset;
         for (int i = 0; i < count; ++i) {
             const float* matrix = &matrices[N * N * i];
@@ -311,7 +311,7 @@ template<int N> struct set_uniform_matrix {
 
 template<> struct set_uniform_matrix<4> {
     inline static void set(void* buffer, int uniformOffset, int count, const float matrices[]) {
-        static_assert(sizeof(float) == 4);
+        static_assert(sizeof(float) == 4, "");
         buffer = static_cast<char*>(buffer) + uniformOffset;
         memcpy(buffer, matrices, count * 16 * sizeof(float));
     }

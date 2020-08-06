@@ -45,6 +45,7 @@ public:
     };
 
     struct VkUniformInfo : public UniformInfo {
+        VkUniformInfo(UniformInfo u, uint32_t offset, const GrVkSampler* samp) : UniformInfo(u), fUBOffset(offset), fImmutableSampler(samp) {}
         // fUBOffset is only valid if the GrSLType of the fVariable is not a sampler
         uint32_t                fUBOffset;
         // fImmutableSampler is used for sampling an image with a ycbcr conversion.

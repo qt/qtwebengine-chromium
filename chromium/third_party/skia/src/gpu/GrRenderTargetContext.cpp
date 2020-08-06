@@ -208,11 +208,11 @@ std::tuple<GrColorType, GrBackendFormat> GrRenderTargetContext::GetFallbackColor
         // We continue to the fallback color type if there no default renderable format or we
         // requested msaa and the format doesn't support msaa.
         if (format.isValid() && caps->isFormatRenderable(format, sampleCnt)) {
-            return {colorType, format};
+            return std::make_tuple(colorType, format);
         }
         colorType = color_type_fallback(colorType);
     } while (colorType != GrColorType::kUnknown);
-    return {GrColorType::kUnknown, {}};
+    return std::make_tuple(GrColorType::kUnknown, GrBackendFormat{});
 }
 
 std::unique_ptr<GrRenderTargetContext> GrRenderTargetContext::MakeWithFallback(
@@ -227,7 +227,7 @@ std::unique_ptr<GrRenderTargetContext> GrRenderTargetContext::MakeWithFallback(
         GrSurfaceOrigin origin,
         SkBudgeted budgeted,
         const SkSurfaceProps* surfaceProps) {
-    auto [ct, format] = GetFallbackColorTypeAndFormat(context, colorType, sampleCnt);
+    auto ct = std::get<0>(GetFallbackColorTypeAndFormat(context, colorType, sampleCnt));
     if (ct == GrColorType::kUnknown) {
         return nullptr;
     }
@@ -1453,7 +1453,9 @@ bool GrRenderTargetContext::drawFilledDRRect(const GrClip* clip,
 
     const auto& caps = *this->caps()->shaderCaps();
     // TODO these need to be a geometry processors
-    auto [success, fp] = GrRRectEffect::Make(/*inputFP=*/nullptr, innerEdgeType, *inner, caps);
+    auto t = GrRRectEffect::Make(/*inputFP=*/nullptr, innerEdgeType, *inner, caps);
+    auto success = std::get<0>(t);
+    auto fp = std::get<1>(std::move(t));
     if (!success) {
         return false;
     }

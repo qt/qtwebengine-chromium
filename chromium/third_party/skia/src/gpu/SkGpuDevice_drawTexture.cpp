@@ -704,10 +704,12 @@ void SkGpuDevice::drawImageQuad(const SkImage* image, const SkRect* srcRect, con
     const SkMatrix& ctm(matrixProvider.localToDevice());
 
     bool sharpenMM = fContext->priv().options().fSharpenMipmappedTextures;
-    auto [fm, mm, bicubic] = GrInterpretFilterQuality(image->dimensions(), paint.getFilterQuality(),
+    auto t = GrInterpretFilterQuality(image->dimensions(), paint.getFilterQuality(),
                                                       ctm, srcToDst, sharpenMM,
                                                       /*allowFilterQualityReduction=*/true);
-
+    auto fm = std::get<0>(t);
+    auto mm = std::get<1>(t);
+    auto bicubic = std::get<2>(t);
     auto clip = this->clip();
 
     // YUVA images can be stored in multiple images with different plane resolutions, so this

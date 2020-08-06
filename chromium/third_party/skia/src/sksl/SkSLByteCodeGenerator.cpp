@@ -982,7 +982,8 @@ void ByteCodeGenerator::writeExternalValue(const ExternalValueReference& e) {
 }
 
 void ByteCodeGenerator::writeVariableExpression(const Expression& expr) {
-    if (int builtin = expression_as_builtin(expr); builtin >= 0) {
+    int builtin = expression_as_builtin(expr);
+    if (builtin >= 0) {
         switch (builtin) {
             case SK_FRAGCOORD_BUILTIN:
                 this->write(ByteCodeInstruction::kLoadFragCoord);

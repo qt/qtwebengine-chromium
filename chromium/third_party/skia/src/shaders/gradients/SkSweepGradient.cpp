@@ -42,7 +42,9 @@ sk_sp<SkFlattenable> SkSweepGradient::CreateProc(SkReadBuffer& buffer) {
 
     const auto tBias  = buffer.readScalar(),
                tScale = buffer.readScalar();
-    auto [startAngle, endAngle] = angles_from_t_coeff(tBias, tScale);
+    auto t = angles_from_t_coeff(tBias, tScale);
+    auto startAngle = std::get<0>(t);
+    auto endAngle = std::get<1>(t);
 
     return SkGradientShader::MakeSweep(center.x(), center.y(), desc.fColors,
                                        std::move(desc.fColorSpace), desc.fPos, desc.fCount,

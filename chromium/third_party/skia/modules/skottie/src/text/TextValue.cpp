@@ -11,7 +11,8 @@
 #include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 bool Parse(const skjson::Value& jv, const internal::AnimationBuilder& abuilder, TextValue* v) {
     const skjson::ObjectValue* jtxt = jv;
@@ -143,4 +144,4 @@ bool Parse(const skjson::Value& jv, const internal::AnimationBuilder& abuilder, 
     return true;
 }
 
-}  // namespace skottie::internal
+}}  // namespace skottie::internal

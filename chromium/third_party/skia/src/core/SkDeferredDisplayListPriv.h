@@ -37,6 +37,7 @@ public:
 
 private:
     explicit SkDeferredDisplayListPriv(SkDeferredDisplayList* ddl) : fDDL(ddl) {}
+    SkDeferredDisplayListPriv(SkDeferredDisplayListPriv&&) = default;
     SkDeferredDisplayListPriv(const SkDeferredDisplayListPriv&) = delete;
     SkDeferredDisplayListPriv& operator=(const SkDeferredDisplayListPriv&) = delete;
 

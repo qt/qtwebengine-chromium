@@ -25,6 +25,26 @@
 #include "src/sksl/ir/SkSLWhileStatement.h"
 
 namespace SkSL {
+#if 0
+constexpr char kClassSection[];
+constexpr char kCloneSection[];
+constexpr char kConstructorSection[];
+constexpr char kConstructorCodeSection[];
+constexpr char kConstructorParamsSection[];
+constexpr char kCppSection[];
+constexpr char kCppEndSection[];
+constexpr char kDumpInfoSection[];
+constexpr char kEmitCodeSection[];
+constexpr char kFieldsSection[];
+constexpr char kHeaderSection[];
+constexpr char kHeaderEndSection[];
+constexpr char kInitializersSection[];
+constexpr char kMakeSection[];
+constexpr char kOptimizationFlagsSection[];
+constexpr char kSamplerParamsSection[];
+constexpr char kSetDataSection[];
+constexpr char kTestCodeSection[];
+#endif
 
 SectionAndParameterHelper::SectionAndParameterHelper(const Program* program, ErrorReporter& errors)
     : fProgram(*program) {

@@ -40,7 +40,7 @@ public:
     bool canDrawAsSDFT() const {return fCanDrawAsSDFT;}
 
 private:
-    static_assert(SkPackedGlyphID::kEndData == 20);
+    static_assert(SkPackedGlyphID::kEndData == 20, "");
     uint32_t fIndex : SkPackedGlyphID::kEndData;
     uint32_t fIsEmpty       : 1;
     uint32_t fIsColor       : 1;

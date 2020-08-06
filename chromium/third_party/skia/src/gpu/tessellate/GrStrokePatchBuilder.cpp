@@ -123,7 +123,9 @@ void GrStrokePatchBuilder::addPath(const SkPath& path) {
     fHasLastControlPoint = false;
     SkDEBUGCODE(fHasCurrentPoint = false;)
     SkPathVerb previousVerb = SkPathVerb::kClose;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(path)) {
+    for (auto t : SkPathPriv::Iterate(path)) {
+        auto verb = std::get<0>(t);
+        auto pts = std::get<1>(t);
         switch (verb) {
             case SkPathVerb::kMove:
                 // "A subpath ... consisting of a single moveto shall not be stroked."

@@ -161,7 +161,7 @@ size_t GrCompressedRowBytes(SkImage::CompressionType type, int width) {
         case SkImage::CompressionType::kBC1_RGBA8_UNORM: {
             int numBlocksWidth = num_4x4_blocks(width);
 
-            static_assert(sizeof(ETC1Block) == sizeof(BC1Block));
+            static_assert(sizeof(ETC1Block) == sizeof(BC1Block), "");
             return numBlocksWidth * sizeof(ETC1Block);
         }
     }

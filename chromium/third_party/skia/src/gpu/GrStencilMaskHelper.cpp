@@ -222,12 +222,12 @@ static constexpr const GrUserStencilSettings* gDirectDrawTable[1 + SkRegion::kLa
     {&gReplaceClip,  nullptr}   // kReplace_Op.
 };
 
-static_assert(0 == SkRegion::kDifference_Op);
-static_assert(1 == SkRegion::kIntersect_Op);
-static_assert(2 == SkRegion::kUnion_Op);
-static_assert(3 == SkRegion::kXOR_Op);
-static_assert(4 == SkRegion::kReverseDifference_Op);
-static_assert(5 == SkRegion::kReplace_Op);
+static_assert(0 == SkRegion::kDifference_Op, "");
+static_assert(1 == SkRegion::kIntersect_Op, "");
+static_assert(2 == SkRegion::kUnion_Op, "");
+static_assert(3 == SkRegion::kXOR_Op, "");
+static_assert(4 == SkRegion::kReverseDifference_Op, "");
+static_assert(5 == SkRegion::kReplace_Op, "");
 
 // Settings used to when not allowed to draw directly to the clip to fill the user stencil bits
 // before applying the covering clip stencil passes.

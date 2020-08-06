@@ -17,6 +17,7 @@ class GrSurfaceContextPriv {
 public:
     GrRecordingContext* getContext() { return fSurfaceContext->fContext; }
 
+    GrSurfaceContextPriv(GrSurfaceContextPriv&&) = default;
 private:
     explicit GrSurfaceContextPriv(GrSurfaceContext* surfaceContext)
         : fSurfaceContext(surfaceContext) {

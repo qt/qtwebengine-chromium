@@ -137,8 +137,9 @@ void GrGLSLProgramBuilder::emitAndInstallFragProcs(SkString* color, SkString* co
         fFragmentProcessors[i] = std::unique_ptr<GrGLSLFragmentProcessor>(fp.createGLSLInstance());
         output = this->emitFragProc(fp, *fFragmentProcessors[i], transformedCoordVarsIdx, *inOut,
                                     output);
-        for (const auto& subFP : GrFragmentProcessor::FPRange(fp)) {
-            transformedCoordVarsIdx += subFP.numVaryingCoordsUsed();
+        const auto& range = GrFragmentProcessor::FPRange(fp);
+        for (auto it = range.begin(); it != range.end(); ++it) {
+            transformedCoordVarsIdx += it->numVaryingCoordsUsed();
         }
         *inOut = std::move(output);
     }
@@ -155,7 +156,10 @@ SkString GrGLSLProgramBuilder::emitFragProc(const GrFragmentProcessor& fp,
     this->nameExpression(&output, "output");
 
     int samplerIdx = 0;
-    for (auto [subFP, subGLSLFP] : GrGLSLFragmentProcessor::ParallelRange(fp, glslFP)) {
+    auto range = GrGLSLFragmentProcessor::ParallelRange(fp, glslFP);
+    for (auto it = range.begin(); it != range.end(); ++it) {
+        auto &subFP = std::get<0>(*it);
+        auto &subGLSLFP = std::get<1>(*it);
         if (auto* te = subFP.asTextureEffect()) {
             SkString name;
             name.printf("TextureSampler_%d", samplerIdx++);

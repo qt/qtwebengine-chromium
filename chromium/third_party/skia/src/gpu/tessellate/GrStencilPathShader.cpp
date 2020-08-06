@@ -11,6 +11,8 @@
 #include "src/gpu/glsl/GrGLSLVarying.h"
 #include "src/gpu/glsl/GrGLSLVertexGeoBuilder.h"
 
+constexpr GrPrimitiveProcessor::Attribute GrStencilPathShader::kSinglePointAttrib;
+
 // Wang's formula for cubics (1985) gives us the number of evenly spaced (in the
 // parametric sense) line segments that are guaranteed to be within a distance of
 // "MAX_LINEARIZATION_ERROR" from the actual curve.

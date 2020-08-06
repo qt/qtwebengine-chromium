@@ -15,7 +15,8 @@
 #include "modules/sksg/include/SkSGRenderEffect.h"
 #include "src/utils/SkJSON.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace {
 
@@ -135,4 +136,4 @@ sk_sp<sksg::RenderNode> EffectBuilder::attachInnerShadowStyle(const skjson::Obje
                               ShadowAdapter::Type::kInnerShadow);
 }
 
-}  // namespace skottie::internal
+}}  // namespace skottie::internal

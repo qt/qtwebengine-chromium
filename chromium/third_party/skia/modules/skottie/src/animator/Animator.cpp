@@ -11,7 +11,8 @@
 #include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/animator/KeyframeAnimator.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 Animator::StateChanged AnimatablePropertyContainer::onSeek(float t) {
     // The very first seek must trigger a sync, to ensure proper SG setup.
@@ -99,4 +100,4 @@ bool AnimatablePropertyContainer::bindImpl(const AnimationBuilder& abuilder,
     return true;
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

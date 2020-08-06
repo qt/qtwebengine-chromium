@@ -372,8 +372,8 @@ sk_sp<SkCachedData> SkImage_Lazy::getPlanes(
     sk_sp<SkCachedData> data(SkYUVPlanesCache::FindAndRef(generator->uniqueID(), &yuvInfo));
 
     // Try the new more descriptive SkImageGenerator/SkCodec YUVA interface.
-    if (SkYUVAPixmapInfo yuvaPixmapInfo;
-        !data && generator->queryYUVAInfo(supportedDataTypes, &yuvaPixmapInfo) &&
+    SkYUVAPixmapInfo yuvaPixmapInfo;
+    if (!data && generator->queryYUVAInfo(supportedDataTypes, &yuvaPixmapInfo) &&
         yuvaPixmapInfo.yuvaInfo().dimensions() == this->dimensions()) {
         data.reset(SkResourceCache::NewCachedData(yuvaPixmapInfo.computeTotalBytes()));
         auto pixmaps = SkYUVAPixmaps::FromExternalMemory(yuvaPixmapInfo, data->writable_data());
