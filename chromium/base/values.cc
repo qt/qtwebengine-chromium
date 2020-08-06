@@ -215,7 +215,7 @@ Value::Value(double in_double)
   }
 }
 
-Value::Value(const char* in_string) : Value(std::string(in_string)) {}
+Value::Value(const char* in_string) : Value(in_string ? std::string(in_string) : std::string()) {}
 
 Value::Value(StringPiece in_string) : Value(std::string(in_string)) {}
 
