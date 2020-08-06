@@ -112,7 +112,7 @@ PageAllocationGranularity() {
   }
   return size;
 #else
-  return 1 << PageAllocationGranularityShift();
+  return 1ULL << PageAllocationGranularityShift();
 #endif
 }
 
