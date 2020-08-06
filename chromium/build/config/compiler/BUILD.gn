@@ -2350,7 +2350,7 @@ config("symbols") {
     }
 
     # All configs using /DEBUG should include this:
-    configs = [ ":win_pdbaltpath" ]
+#    configs = [ ":win_pdbaltpath" ]
 
     if (is_clang) {
       # /DEBUG:FASTLINK requires every object file to have standalone debug
