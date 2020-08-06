@@ -62,7 +62,7 @@ PageAllocationGranularity() {
   // below, but was separated out for OS_APPLE to avoid << on a non-constexpr.
   return vm_page_size;
 #else
-  return 1 << PageAllocationGranularityShift();
+  return 1ULL << PageAllocationGranularityShift();
 #endif
 }
 
