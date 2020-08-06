@@ -93,8 +93,7 @@ void RemoveURLFromMemoryCacheInternal(const KURL& url) {
 }
 
 scoped_refptr<SecurityOrigin> CreateSecurityOrigin(
-    GlobalScopeCreationParams* creation_params,
-    ExecutionContext* execution_context) {
+    GlobalScopeCreationParams* creation_params) {
   // A worker environment settings object's origin must be set as follows:
   //
   // - DedicatedWorkers and SharedWorkers
@@ -119,8 +118,8 @@ scoped_refptr<SecurityOrigin> CreateSecurityOrigin(
   // https://w3c.github.io/ServiceWorker/#start-register
   // Step 3: If scriptURL’s scheme is not one of "http" and "https", reject
   // promise with a TypeError and abort these steps. [spec text]
-  DCHECK(!execution_context->IsServiceWorkerGlobalScope() ||
-         !KURL(creation_params->script_url).ProtocolIsData());
+//  DCHECK(!execution_context->IsServiceWorkerGlobalScope() ||
+//         !KURL(creation_params->script_url).ProtocolIsData());
 
   // TODO(https://crbug.com/1058305) Inherit |agent_cluster_id_| for dedicated
   // workers. DO NOT inherit for shared workers and service workers.
@@ -540,7 +539,7 @@ WorkerGlobalScope::WorkerGlobalScope(
     base::TimeTicks time_origin)
     : WorkerOrWorkletGlobalScope(
           thread->GetIsolate(),
-          CreateSecurityOrigin(creation_params.get(), GetExecutionContext()),
+          CreateSecurityOrigin(creation_params.get()),
           MakeGarbageCollected<Agent>(
               thread->GetIsolate(),
               (creation_params->agent_cluster_id.is_empty()

@@ -39,10 +39,11 @@ bool Clipboard::IsSupportedClipboardBuffer(ClipboardBuffer buffer) {
   switch (buffer) {
     case ClipboardBuffer::kCopyPaste:
       return true;
-    case ClipboardBuffer::kSelection:
+    case ClipboardBuffer::kSelection: {
       // Cache the result to make this function cheap.
       static bool selection_result = IsSupportedSelectionClipboard();
       return selection_result;
+    }
     case ClipboardBuffer::kDrag:
       return false;
   }

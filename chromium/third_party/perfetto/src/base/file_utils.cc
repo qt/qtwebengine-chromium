@@ -239,7 +239,7 @@ base::Status ListFilesRecursive(const std::string& dir_path,
     WIN32_FIND_DATAA ffd;
 
     // Wrap FindClose to: (1) make the return unix-style; (2) deal w/ stdcall.
-    static auto find_close = [](HANDLE h) { return FindClose(h) ? 0 : -1; };
+    static constexpr auto find_close = [](HANDLE h) { return FindClose(h) ? 0 : -1; };
     base::ScopedResource<HANDLE, find_close, nullptr, false,
                          base::PlatformHandleChecker>
         hFind(FindFirstFileA(glob_path.c_str(), &ffd));
