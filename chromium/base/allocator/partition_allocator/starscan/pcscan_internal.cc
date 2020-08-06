@@ -355,8 +355,8 @@ class SuperPageSnapshot final {
                 kMinPartitionPageSize);
 #else
   static constexpr size_t kMinPartitionPageSize = 1 << 14;
-  static constexpr size_t kQuarantineBitmapsReservedSize =
-      base::bits::AlignUp(2 * sizeof(QuarantineBitmap),
+  static constexpr size_t kStateBitmapMinReservedSize =
+      base::bits::AlignUp(sizeof(AllocationStateMap),
                           kMinPartitionPageSize);
 #endif
   // Take into account guard partition page at the end of super-page.
