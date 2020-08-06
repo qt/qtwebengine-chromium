@@ -109,7 +109,7 @@ class BASE_EXPORT TaskQueueSelector : public WorkQueueSets::Observer {
     bool HasActivePriority() const { return active_priorities_ != 0; }
 
     bool IsActive(TaskQueue::QueuePriority priority) const {
-      return active_priorities_ & (1u << static_cast<size_t>(priority));
+      return active_priorities_ & (static_cast<size_t>(1u) << static_cast<size_t>(priority));
     }
 
     void SetActive(TaskQueue::QueuePriority priority, bool is_active);

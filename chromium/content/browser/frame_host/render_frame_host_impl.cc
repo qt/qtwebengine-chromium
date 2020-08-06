@@ -2519,7 +2519,7 @@ void RenderFrameHostImpl::DidChangeActiveSchedulerTrackedFeatures(
 void RenderFrameHostImpl::OnSchedulerTrackedFeatureUsed(
     blink::scheduler::WebSchedulerTrackedFeature feature) {
   browser_reported_scheduler_tracked_features_ |=
-      1 << static_cast<uint64_t>(feature);
+      static_cast<uint64_t>(1) << static_cast<uint64_t>(feature);
 
   MaybeEvictFromBackForwardCache();
 }

@@ -233,9 +233,9 @@ void TaskQueueSelector::ActivePriorityTracker::SetActive(
   DCHECK_LT(priority, TaskQueue::QueuePriority::kQueuePriorityCount);
   DCHECK_NE(IsActive(priority), is_active);
   if (is_active) {
-    active_priorities_ |= (1u << static_cast<size_t>(priority));
+    active_priorities_ |= (static_cast<size_t>(1u) << static_cast<size_t>(priority));
   } else {
-    active_priorities_ &= ~(1u << static_cast<size_t>(priority));
+    active_priorities_ &= ~(static_cast<size_t>(1u) << static_cast<size_t>(priority));
   }
 }
 
