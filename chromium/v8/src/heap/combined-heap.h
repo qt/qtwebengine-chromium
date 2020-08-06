@@ -33,11 +33,12 @@ class V8_EXPORT_PRIVATE CombinedHeapObjectIterator final {
 
 V8_WARN_UNUSED_RESULT inline bool IsValidHeapObject(Heap* heap,
                                                     HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL)
+#ifdef V8_ENABLE_THIRD_PARTY_HEAP
     return third_party_heap::Heap::IsValidHeapObject(object);
-  else
+#else
     return ReadOnlyHeap::Contains(object) || heap->Contains(object) ||
            heap->SharedHeapContains(object);
+#endif
 }
 
 }  // namespace internal
