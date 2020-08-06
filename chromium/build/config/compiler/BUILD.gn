@@ -2309,7 +2309,7 @@ config("symbols") {
     }
 
     # All configs using /DEBUG should include this:
-    configs = [ ":win_pdbaltpath" ]
+#    configs = [ ":win_pdbaltpath" ]
 
     if (is_clang && !use_qt) {
       # Use constructor debug mode. This option reduces debug info more than
