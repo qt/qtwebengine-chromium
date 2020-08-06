@@ -173,7 +173,7 @@ class Subprocess {
   };
 
   explicit Subprocess(std::initializer_list<std::string> exec_cmd = {});
-  Subprocess(Subprocess&&) noexcept;
+  Subprocess(Subprocess&&);
   Subprocess& operator=(Subprocess&&);
   ~Subprocess();  // It will KillAndWaitForTermination() if still alive.
 

@@ -151,6 +151,7 @@ class LockManager::OriginState {
  public:
   explicit OriginState(LockManager* lock_manager)
       : lock_manager_(lock_manager) {}
+  OriginState(OriginState&&) = default;
   ~OriginState() = default;
 
   // Helper function for breaking the lock at the front of a given request
@@ -338,7 +339,7 @@ void LockManager::RequestLock(
   const auto& context = receivers_.current_context();
 
   if (!base::Contains(origins_, context.origin))
-    origins_.emplace(context.origin, this);
+    origins_.emplace(context.origin, OriginState(this));
 
   int64_t lock_id = NextLockId();
 

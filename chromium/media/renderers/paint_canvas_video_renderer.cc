@@ -409,42 +409,70 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
     return;
   }
 
-  auto convert_yuv = [&](auto&& func) {
-    func(plane_meta[VideoFrame::kYPlane].data,
-         plane_meta[VideoFrame::kYPlane].stride,
-         plane_meta[VideoFrame::kUPlane].data,
-         plane_meta[VideoFrame::kUPlane].stride,
-         plane_meta[VideoFrame::kVPlane].data,
-         plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
-         rows);
-  };
-
-  auto convert_yuv16 = [&](auto&& func) {
-    func(
-        reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
-        plane_meta[VideoFrame::kYPlane].stride / 2,
-        reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
-        plane_meta[VideoFrame::kUPlane].stride / 2,
-        reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
-        plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
-        rows);
-  };
+//   auto convert_yuv = [&](auto&& func) {
+//     func(plane_meta[VideoFrame::kYPlane].data,
+//          plane_meta[VideoFrame::kYPlane].stride,
+//          plane_meta[VideoFrame::kUPlane].data,
+//          plane_meta[VideoFrame::kUPlane].stride,
+//          plane_meta[VideoFrame::kVPlane].data,
+//          plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+//          rows);
+//   };
+//
+//   auto convert_yuv16 = [&](auto&& func) {
+//     func(
+//         reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
+//         plane_meta[VideoFrame::kYPlane].stride / 2,
+//         reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
+//         plane_meta[VideoFrame::kUPlane].stride / 2,
+//         reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
+//         plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
+//         rows);
+//   };
 
   switch (format) {
     case PIXEL_FORMAT_YV12:
     case PIXEL_FORMAT_I420:
       switch (color_space) {
         case kJPEG_SkYUVColorSpace:
-          convert_yuv(LIBYUV_J420_TO_ARGB);
+          LIBYUV_J420_TO_ARGB(
+               plane_meta[VideoFrame::kYPlane].data,
+               plane_meta[VideoFrame::kYPlane].stride,
+               plane_meta[VideoFrame::kUPlane].data,
+               plane_meta[VideoFrame::kUPlane].stride,
+               plane_meta[VideoFrame::kVPlane].data,
+               plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+               rows);
           break;
         case kRec709_SkYUVColorSpace:
-          convert_yuv(LIBYUV_H420_TO_ARGB);
+          LIBYUV_H420_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kRec601_SkYUVColorSpace:
-          convert_yuv(LIBYUV_I420_TO_ARGB);
+          LIBYUV_I420_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kBT2020_SkYUVColorSpace:
-          convert_yuv(LIBYUV_U420_TO_ARGB);
+          LIBYUV_U420_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         default:
           NOTREACHED();
@@ -453,16 +481,44 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
     case PIXEL_FORMAT_I422:
       switch (color_space) {
         case kJPEG_SkYUVColorSpace:
-          convert_yuv(LIBYUV_J422_TO_ARGB);
+          LIBYUV_J422_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kRec709_SkYUVColorSpace:
-          convert_yuv(LIBYUV_H422_TO_ARGB);
+          LIBYUV_H422_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kRec601_SkYUVColorSpace:
-          convert_yuv(LIBYUV_I422_TO_ARGB);
+          LIBYUV_I422_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kBT2020_SkYUVColorSpace:
-          convert_yuv(LIBYUV_U422_TO_ARGB);
+          LIBYUV_U422_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         default:
           NOTREACHED();
@@ -484,16 +540,44 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
     case PIXEL_FORMAT_I444:
       switch (color_space) {
         case kJPEG_SkYUVColorSpace:
-          convert_yuv(LIBYUV_J444_TO_ARGB);
+          LIBYUV_J444_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kRec709_SkYUVColorSpace:
-          convert_yuv(LIBYUV_H444_TO_ARGB);
+          LIBYUV_H444_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kRec601_SkYUVColorSpace:
-          convert_yuv(LIBYUV_I444_TO_ARGB);
+          LIBYUV_I444_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         case kBT2020_SkYUVColorSpace:
-          convert_yuv(LIBYUV_U444_TO_ARGB);
+          LIBYUV_U444_TO_ARGB(
+              plane_meta[VideoFrame::kYPlane].data,
+              plane_meta[VideoFrame::kYPlane].stride,
+              plane_meta[VideoFrame::kUPlane].data,
+              plane_meta[VideoFrame::kUPlane].stride,
+              plane_meta[VideoFrame::kVPlane].data,
+              plane_meta[VideoFrame::kVPlane].stride, pixels, row_bytes, width,
+              rows);
           break;
         default:
           NOTREACHED();
@@ -503,15 +587,37 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
     case PIXEL_FORMAT_YUV420P10:
       switch (color_space) {
         case kRec709_SkYUVColorSpace:
-          convert_yuv16(LIBYUV_H010_TO_ARGB);
+          LIBYUV_H010_TO_ARGB(
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
+              plane_meta[VideoFrame::kYPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
+              plane_meta[VideoFrame::kUPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
+              plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
+              rows);
           break;
         case kJPEG_SkYUVColorSpace:
           FALLTHROUGH;
         case kRec601_SkYUVColorSpace:
-          convert_yuv16(LIBYUV_I010_TO_ARGB);
+          LIBYUV_I010_TO_ARGB(
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
+              plane_meta[VideoFrame::kYPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
+              plane_meta[VideoFrame::kUPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
+              plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
+              rows);
+
           break;
         case kBT2020_SkYUVColorSpace:
-          convert_yuv16(LIBYUV_U010_TO_ARGB);
+          LIBYUV_U010_TO_ARGB(
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
+              plane_meta[VideoFrame::kYPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
+              plane_meta[VideoFrame::kUPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
+              plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
+              rows);
           break;
         default:
           NOTREACHED();
@@ -520,15 +626,36 @@ void ConvertVideoFrameToRGBPixelsTask(const VideoFrame* video_frame,
     case PIXEL_FORMAT_YUV422P10:
       switch (color_space) {
         case kRec709_SkYUVColorSpace:
-          convert_yuv16(LIBYUV_H210_TO_ARGB);
+          LIBYUV_H210_TO_ARGB(
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
+              plane_meta[VideoFrame::kYPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
+              plane_meta[VideoFrame::kUPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
+              plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
+              rows);
           break;
         case kJPEG_SkYUVColorSpace:
           FALLTHROUGH;
         case kRec601_SkYUVColorSpace:
-          convert_yuv16(LIBYUV_I210_TO_ARGB);
+          LIBYUV_I210_TO_ARGB(
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
+              plane_meta[VideoFrame::kYPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
+              plane_meta[VideoFrame::kUPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
+              plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
+              rows);
           break;
         case kBT2020_SkYUVColorSpace:
-          convert_yuv16(LIBYUV_U210_TO_ARGB);
+          LIBYUV_U210_TO_ARGB(
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kYPlane].data),
+              plane_meta[VideoFrame::kYPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kUPlane].data),
+              plane_meta[VideoFrame::kUPlane].stride / 2,
+              reinterpret_cast<const uint16_t*>(plane_meta[VideoFrame::kVPlane].data),
+              plane_meta[VideoFrame::kVPlane].stride / 2, pixels, row_bytes, width,
+              rows);
           break;
         default:
           NOTREACHED();

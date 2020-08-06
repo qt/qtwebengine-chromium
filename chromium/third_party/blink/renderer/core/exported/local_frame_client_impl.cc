@@ -193,63 +193,63 @@ WebString ConvertToPublic(
   using CSPDirectiveName = network::mojom::blink::CSPDirectiveName;
   switch (directive_name) {
     case CSPDirectiveName::BaseURI:
-      return "base-uri";
+      return WTF::String("base-uri");
     case CSPDirectiveName::ChildSrc:
-      return "child-src";
+      return WTF::String("child-src");
     case CSPDirectiveName::ConnectSrc:
-      return "connect-src";
+      return WTF::String("connect-src");
     case CSPDirectiveName::DefaultSrc:
-      return "default-src";
+      return WTF::String("default-src");
     case CSPDirectiveName::FrameAncestors:
-      return "frame-ancestors";
+      return WTF::String("frame-ancestors");
     case CSPDirectiveName::FrameSrc:
-      return "frame-src";
+      return WTF::String("frame-src");
     case CSPDirectiveName::FontSrc:
-      return "font-src";
+      return WTF::String("font-src");
     case CSPDirectiveName::FormAction:
-      return "form-action";
+      return WTF::String("form-action");
     case CSPDirectiveName::ImgSrc:
-      return "img-src";
+      return WTF::String("img-src");
     case CSPDirectiveName::ManifestSrc:
-      return "manifest-src";
+      return WTF::String("manifest-src");
     case CSPDirectiveName::MediaSrc:
-      return "media-src";
+      return WTF::String("media-src");
     case CSPDirectiveName::ObjectSrc:
-      return "object-src";
+      return WTF::String("object-src");
     case CSPDirectiveName::PrefetchSrc:
-      return "prefetch-src";
+      return WTF::String("prefetch-src");
     case CSPDirectiveName::ReportURI:
-      return "report-uri";
+      return WTF::String("report-uri");
     case CSPDirectiveName::Sandbox:
-      return "sandbox";
+      return WTF::String("sandbox");
     case CSPDirectiveName::ScriptSrc:
-      return "script-src";
+      return WTF::String("script-src");
     case CSPDirectiveName::ScriptSrcAttr:
-      return "script-src-attr";
+      return WTF::String("script-src-attr");
     case CSPDirectiveName::ScriptSrcElem:
-      return "script-src-elem";
+      return WTF::String("script-src-elem");
     case CSPDirectiveName::StyleSrc:
-      return "style-src";
+      return WTF::String("style-src");
     case CSPDirectiveName::StyleSrcAttr:
-      return "style-src-attr";
+      return WTF::String("style-src-attr");
     case CSPDirectiveName::StyleSrcElem:
-      return "style-src-elem";
+      return WTF::String("style-src-elem");
     case CSPDirectiveName::UpgradeInsecureRequests:
-      return "upgrade-insecure-requests";
+      return WTF::String("upgrade-insecure-requests");
     case CSPDirectiveName::TreatAsPublicAddress:
-      return "treat-as-public-address";
+      return WTF::String("treat-as-public-address");
     case CSPDirectiveName::WorkerSrc:
-      return "worker-src";
+      return WTF::String("worker-src");
     case CSPDirectiveName::ReportTo:
-      return "report-to";
+      return WTF::String("report-to");
     case CSPDirectiveName::NavigateTo:
-      return "navigate-to";
+      return WTF::String("navigate-to");
     case CSPDirectiveName::Unknown:
       NOTREACHED();
-      return "";
+      return WTF::String("");
     default:
       NOTREACHED();
-      return "";
+      return WTF::String("");
   };
 }
 

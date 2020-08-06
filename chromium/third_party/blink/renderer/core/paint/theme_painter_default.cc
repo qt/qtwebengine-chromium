@@ -165,7 +165,7 @@ bool ThemePainterDefault::PaintCheckbox(const Element& element,
   extra_params.button.zoom = zoom_level;
   GraphicsContextStateSaver state_saver(paint_info.context, false);
   IntRect unzoomed_rect = rect;
-  if (zoom_level != 1 && !features::IsFormControlsRefreshEnabled()) {
+  if (zoom_level != 1 && !::features::IsFormControlsRefreshEnabled()) {
     state_saver.Save();
     unzoomed_rect.SetWidth(unzoomed_rect.Width() / zoom_level);
     unzoomed_rect.SetHeight(unzoomed_rect.Height() / zoom_level);
@@ -322,7 +322,7 @@ void ThemePainterDefault::SetupMenuListArrow(
       theme_.ClampedMenuListArrowPaddingSize(document.GetFrame(), style);
   float arrow_scale_factor = arrow_box_width / theme_.MenuListArrowWidthInDIP();
   // TODO(tkent): This should be 7.0 to match scroll bar buttons.
-  float arrow_size = (features::IsFormControlsRefreshEnabled() ? 8.0 : 6.0) *
+  float arrow_size = (::features::IsFormControlsRefreshEnabled() ? 8.0 : 6.0) *
                      arrow_scale_factor;
   // Put the arrow at the center of paddingForArrow area.
   // |arrowX| is the left position for Aura theme engine.
@@ -351,7 +351,7 @@ bool ThemePainterDefault::PaintSliderTrack(const Element& element,
   extra_params.slider.zoom = zoom_level;
   GraphicsContextStateSaver state_saver(i.context, false);
   IntRect unzoomed_rect = rect;
-  if (zoom_level != 1 && !features::IsFormControlsRefreshEnabled()) {
+  if (zoom_level != 1 && !::features::IsFormControlsRefreshEnabled()) {
     state_saver.Save();
     unzoomed_rect.SetWidth(unzoomed_rect.Width() / zoom_level);
     unzoomed_rect.SetHeight(unzoomed_rect.Height() / zoom_level);
@@ -373,7 +373,7 @@ bool ThemePainterDefault::PaintSliderTrack(const Element& element,
     LayoutBox* input_box = input->GetLayoutBox();
     if (thumb) {
       IntRect thumb_rect = PixelSnappedIntRect(thumb->FrameRect());
-      if (features::IsFormControlsRefreshEnabled()) {
+      if (::features::IsFormControlsRefreshEnabled()) {
         extra_params.slider.thumb_x = thumb_rect.X() +
                                       input_box->PaddingLeft().ToInt() +
                                       input_box->BorderLeft().ToInt();
@@ -413,7 +413,7 @@ bool ThemePainterDefault::PaintSliderThumb(const Element& element,
   extra_params.slider.zoom = zoom_level;
   GraphicsContextStateSaver state_saver(paint_info.context, false);
   IntRect unzoomed_rect = rect;
-  if (zoom_level != 1 && !features::IsFormControlsRefreshEnabled()) {
+  if (zoom_level != 1 && !::features::IsFormControlsRefreshEnabled()) {
     state_saver.Save();
     unzoomed_rect.SetWidth(unzoomed_rect.Width() / zoom_level);
     unzoomed_rect.SetHeight(unzoomed_rect.Height() / zoom_level);

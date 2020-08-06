@@ -172,13 +172,13 @@ bool ThemePainter::Paint(const LayoutObject& o,
     case kMenulistButtonPart:
       return true;
     case kTextFieldPart:
-      if (!features::IsFormControlsRefreshEnabled()) {
+      if (!::features::IsFormControlsRefreshEnabled()) {
         return true;
       }
       CountAppearanceTextFieldPart(element);
       return PaintTextField(element, style, paint_info, r);
     case kTextAreaPart:
-      if (!features::IsFormControlsRefreshEnabled()) {
+      if (!::features::IsFormControlsRefreshEnabled()) {
         return true;
       }
       COUNT_APPEARANCE(doc, TextArea);
@@ -212,13 +212,13 @@ bool ThemePainter::PaintBorderOnly(const Node* node,
   // Call the appropriate paint method based off the appearance value.
   switch (style.EffectiveAppearance()) {
     case kTextFieldPart:
-      if (features::IsFormControlsRefreshEnabled()) {
+      if (::features::IsFormControlsRefreshEnabled()) {
         return false;
       }
       CountAppearanceTextFieldPart(element);
       return PaintTextField(element, style, paint_info, r);
     case kTextAreaPart:
-      if (features::IsFormControlsRefreshEnabled()) {
+      if (::features::IsFormControlsRefreshEnabled()) {
         return false;
       }
       COUNT_APPEARANCE(element.GetDocument(), TextArea);

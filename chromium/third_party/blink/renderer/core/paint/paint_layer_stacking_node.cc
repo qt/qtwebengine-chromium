@@ -130,8 +130,7 @@ struct PaintLayerStackingNode::HighestLayers {
     kInFlowStacked,
     kLayerTypeCount
   };
-  std::array<const PaintLayer*, kLayerTypeCount> highest_layers = {
-      nullptr, nullptr, nullptr};
+  std::array<const PaintLayer*, kLayerTypeCount> highest_layers = {};
   Vector<LayerType, kLayerTypeCount> highest_layers_order;
 
   void UpdateOrderForSubtreeHighestLayers(LayerType type,

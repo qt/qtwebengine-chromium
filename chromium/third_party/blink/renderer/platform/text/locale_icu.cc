@@ -250,7 +250,7 @@ void LocaleICU::InitializeCalendar() {
                                          UCAL_FIRST_DAY_OF_WEEK) -
                        UCAL_SUNDAY;
 
-  if (features::IsFormControlsRefreshEnabled()) {
+  if (::features::IsFormControlsRefreshEnabled()) {
     week_day_short_labels_ = CreateLabelVector(
         short_date_format_, UDAT_NARROW_WEEKDAYS, UCAL_SUNDAY, 7);
   } else {

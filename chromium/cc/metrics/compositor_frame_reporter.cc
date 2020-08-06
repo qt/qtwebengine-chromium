@@ -70,7 +70,7 @@ constexpr const char* GetVizBreakdownName(VizBreakdown stage) {
     case VizBreakdown::kLatchToSwapEnd:
       return "LatchToSwapEnd";
     case VizBreakdown::kBreakdownCount:
-      NOTREACHED();
+//      NOTREACHED();
       return "";
   }
 }

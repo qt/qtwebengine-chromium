@@ -45,14 +45,14 @@ bool EnumTraits<gfx::mojom::ContentColorUsage, gfx::ContentColorUsage>::
 base::span<const gfx::ColorSpace>
 StructTraits<gfx::mojom::DisplayColorSpacesDataView, gfx::DisplayColorSpaces>::
     color_spaces(const gfx::DisplayColorSpaces& input) {
-  return input.color_spaces_;
+  return base::span<const gfx::ColorSpace>(input.color_spaces_);
 }
 
 // static
 base::span<const gfx::BufferFormat>
 StructTraits<gfx::mojom::DisplayColorSpacesDataView, gfx::DisplayColorSpaces>::
     buffer_formats(const gfx::DisplayColorSpaces& input) {
-  return input.buffer_formats_;
+  return base::span<const gfx::BufferFormat>(input.buffer_formats_);
 }
 
 // static
