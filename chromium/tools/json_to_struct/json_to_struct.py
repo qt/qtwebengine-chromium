@@ -185,9 +185,14 @@ def _GenerateCC(basepath, fileroot, head, namespace, schema, description):
 
     if 'generate_array' in description:
       f.write(u'\n')
-      f.write(
-          u'const %s* const %s[] = {\n' %
-          (schema['type_name'], description['generate_array']['array_name']))
+      if len(description['elements']) == 0:
+        f.write(
+            u'const %s* const %s[1] = {\n' %
+            (schema['type_name'], description['generate_array']['array_name']))
+      else:
+        f.write(
+            u'const %s* const %s[] = {\n' %
+            (schema['type_name'], description['generate_array']['array_name']))
       for element_name, _ in description['elements'].items():
         f.write(u'\t&%s,\n' % element_name)
       f.write(u'};\n')
