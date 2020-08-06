@@ -208,9 +208,9 @@ AllocationResult Heap::AllocateRaw(int size_in_bytes, AllocationType type,
     type = AllocationType::kOld;
   }
 
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
     allocation = tp_heap_->Allocate(size_in_bytes, type, alignment);
-  } else {
+#else
     if (AllocationType::kYoung == type) {
       if (large_object) {
         if (FLAG_young_generation_large_objects) {
@@ -248,7 +248,7 @@ AllocationResult Heap::AllocateRaw(int size_in_bytes, AllocationType type,
     } else {
       UNREACHABLE();
     }
-  }
+#endif
 
   if (allocation.To(&object)) {
     if (AllocationType::kCode == type && !V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
@@ -314,13 +314,13 @@ HeapObject Heap::AllocateRawWith(int size, AllocationType allocation,
 }
 
 Address Heap::DeserializerAllocate(AllocationType type, int size_in_bytes) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
     AllocationResult allocation = tp_heap_->Allocate(
         size_in_bytes, type, AllocationAlignment::kDoubleAligned);
     return allocation.ToObjectChecked().ptr();
-  } else {
-    UNIMPLEMENTED();  // unimplemented
-  }
+#else
+  UNIMPLEMENTED();  // unimplemented
+#endif
 }
 
 void Heap::OnAllocationEvent(HeapObject object, int size_in_bytes) {
