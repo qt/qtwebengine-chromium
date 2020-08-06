@@ -234,8 +234,8 @@ private:
     typedef Sk16b INHERITED;
 };
 
-static_assert(sizeof(Sk4px) == sizeof(Sk16b));
-static_assert(sizeof(Sk4px) == 16);
+static_assert(sizeof(Sk4px) == sizeof(Sk16b), "");
+static_assert(sizeof(Sk4px) == 16, "");
 
 }  // namespace
 

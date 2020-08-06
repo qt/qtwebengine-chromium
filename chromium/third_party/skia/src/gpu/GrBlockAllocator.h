@@ -361,7 +361,7 @@ private:
     // from the initial allocation.
     alignas(alignof(std::max_align_t)) Block fHead;
 
-    static_assert(kGrowthPolicyCount <= 4);
+    static_assert(kGrowthPolicyCount <= 4, "");
 };
 
 // A wrapper around GrBlockAllocator that includes preallocated storage for the head block.
@@ -395,7 +395,7 @@ public:
     }
 
 private:
-    static_assert(N >= sizeof(GrBlockAllocator));
+    static_assert(N >= sizeof(GrBlockAllocator), "");
 
     // Will be used to placement new the allocator
     alignas(GrBlockAllocator) char fStorage[N];
@@ -430,10 +430,10 @@ GrBlockAllocator::ByteRange GrBlockAllocator::allocate(size_t size) {
 
     // Ensures 'offset' and 'end' calculations will be valid
     static_assert((kMaxAllocationSize + GrAlignTo(MaxBlockSize<Align, Padding>(), Align))
-                        <= (size_t) std::numeric_limits<int32_t>::max());
+                        <= (size_t) std::numeric_limits<int32_t>::max(), "");
     // Ensures size + blockOverhead + addBlock's alignment operations will be valid
     static_assert(kMaxAllocationSize + kBlockOverhead + ((1 << 12) - 1) // 4K align for large blocks
-                        <= std::numeric_limits<int32_t>::max());
+                        <= std::numeric_limits<int32_t>::max(), "");
 
     if (size > kMaxAllocationSize) {
         SK_ABORT("Allocation too large");
@@ -483,10 +483,10 @@ GrBlockAllocator::Block* GrBlockAllocator::owningBlock(const void* p, int start)
 
 template <size_t Align, size_t Padding>
 int GrBlockAllocator::Block::alignedOffset(int offset) const {
-    static_assert(SkIsPow2(Align));
+    static_assert(SkIsPow2(Align), "");
     // Aligning adds (Padding + Align - 1) as an intermediate step, so ensure that can't overflow
     static_assert(MaxBlockSize<Align, Padding>() + Padding + Align - 1
-                        <= (size_t) std::numeric_limits<int32_t>::max());
+                        <= (size_t) std::numeric_limits<int32_t>::max(), "");
 
     if /* constexpr */ (Align <= alignof(std::max_align_t)) {
         // Same as GrAlignTo, but operates on ints instead of size_t

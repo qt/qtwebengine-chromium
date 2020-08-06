@@ -417,14 +417,14 @@ void GrGSCoverageProcessor::reset(PrimitiveType primitiveType, int subpassIdx,
         fInputXOrYValues =
                 {"x_or_y_values", kFloat4_GrVertexAttribType, kFloat4_GrSLType};
         static_assert(sizeof(QuadPointInstance) ==
-                      2 * GrVertexAttribTypeSize(kFloat4_GrVertexAttribType));
+                      2 * GrVertexAttribTypeSize(kFloat4_GrVertexAttribType), "");
         static_assert(offsetof(QuadPointInstance, fY) ==
-                      GrVertexAttribTypeSize(kFloat4_GrVertexAttribType));
+                      GrVertexAttribTypeSize(kFloat4_GrVertexAttribType), "");
     } else {
         fInputXOrYValues =
                 {"x_or_y_values", kFloat3_GrVertexAttribType, kFloat3_GrSLType};
         static_assert(sizeof(TriPointInstance) ==
-                      2 * GrVertexAttribTypeSize(kFloat3_GrVertexAttribType));
+                      2 * GrVertexAttribTypeSize(kFloat3_GrVertexAttribType), "");
     }
 
     this->setVertexAttributes(&fInputXOrYValues, 1);

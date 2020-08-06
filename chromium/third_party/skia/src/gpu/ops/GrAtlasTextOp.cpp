@@ -301,8 +301,8 @@ void GrAtlasTextOp::onPrepareDraws(Target* target) {
     SkASSERT(views[0].proxy());
 
     static constexpr int kMaxTextures = GrBitmapTextGeoProc::kMaxTextures;
-    static_assert(GrDistanceFieldA8TextGeoProc::kMaxTextures == kMaxTextures);
-    static_assert(GrDistanceFieldLCDTextGeoProc::kMaxTextures == kMaxTextures);
+    static_assert(GrDistanceFieldA8TextGeoProc::kMaxTextures == kMaxTextures, "");
+    static_assert(GrDistanceFieldLCDTextGeoProc::kMaxTextures == kMaxTextures, "");
 
     auto primProcProxies = target->allocPrimProcProxyPtrs(kMaxTextures);
     for (unsigned i = 0; i < numActiveViews; ++i) {

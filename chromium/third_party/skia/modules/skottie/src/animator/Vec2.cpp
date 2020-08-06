@@ -12,7 +12,8 @@
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/animator/Animator.h"
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 namespace  {
 
@@ -183,4 +184,4 @@ bool AnimatablePropertyContainer::bind<Vec2Value>(const AnimationBuilder& abuild
          | this->bind(abuilder, (*jprop)["y"], &v->y);
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

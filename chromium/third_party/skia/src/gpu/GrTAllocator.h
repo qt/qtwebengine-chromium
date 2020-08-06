@@ -121,7 +121,7 @@ public:
      */
     T& front() {
         // This assumes that the head block actually have room to store the first item.
-        static_assert(StartingItems >= 1);
+        static_assert(StartingItems >= 1, "");
         SkASSERT(fTotalCount > 0);
         return *(GetItem(fAllocator->headBlock(), 0));
     }

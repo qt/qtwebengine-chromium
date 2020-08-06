@@ -332,9 +332,9 @@ sk_sp<GrTextBlob> GrTextBlob::Make(const SkGlyphRunList& glyphRunList,
     }
 
     // We can use the alignment of SDFT3DVertex as a proxy for all Vertex alignments.
-    static_assert(alignof(SDFT3DVertex) >= alignof(Mask2DVertex));
+    static_assert(alignof(SDFT3DVertex) >= alignof(Mask2DVertex), "");
     // Assume there is no padding needed between glyph pointers and vertices.
-    static_assert(alignof(GrGlyph*) >= alignof(SDFT3DVertex));
+    static_assert(alignof(GrGlyph*) >= alignof(SDFT3DVertex), "");
 
     // In the arena, the layout is GrGlyph*... | SDFT3DVertex... | SubRun, so there is no padding
     // between GrGlyph* and SDFT3DVertex, but padding is needed between the Mask2DVertex array
@@ -825,7 +825,7 @@ std::tuple<bool, int> GrTextBlob::VertexRegenerator::updateTextureCoordinates(
         if (!fFullAtlasManager->hasGlyph(fSubRun->maskFormat(), grGlyph)) {
             const SkGlyph& skGlyph = *fMetricsAndImages->glyph(grGlyph->fPackedID);
             if (skGlyph.image() == nullptr) {
-                return {false, 0};
+                return std::make_tuple(false, 0);
             }
             code = grStrike->addGlyphToAtlas(skGlyph,
                     fSubRun->maskFormat(),
@@ -844,7 +844,7 @@ std::tuple<bool, int> GrTextBlob::VertexRegenerator::updateTextureCoordinates(
     // Update the quads with the new atlas coordinates.
     fSubRun->updateTexCoords(begin, begin + glyphsPlacedInAtlas);
 
-    return {code != GrDrawOpAtlas::ErrorCode::kError, glyphsPlacedInAtlas};
+    return std::make_tuple(code != GrDrawOpAtlas::ErrorCode::kError, glyphsPlacedInAtlas);
 }
 
 std::tuple<bool, int> GrTextBlob::VertexRegenerator::regenerate(int begin, int end) {
@@ -863,7 +863,7 @@ std::tuple<bool, int> GrTextBlob::VertexRegenerator::regenerate(int begin, int e
             // updateTextureCoordinates may have changed it.
             fSubRun->fAtlasGeneration = fFullAtlasManager->atlasGeneration(fSubRun->maskFormat());
         }
-        return {success, glyphsPlacedInAtlas};
+        return std::make_tuple(success, glyphsPlacedInAtlas);
     } else {
         // The atlas hasn't changed, so our texture coordinates are still valid.
         if (end == fSubRun->fGlyphs.count()) {
@@ -873,6 +873,6 @@ std::tuple<bool, int> GrTextBlob::VertexRegenerator::regenerate(int begin, int e
                                                fUploadTarget->tokenTracker()->nextDrawToken(),
                                                fSubRun->maskFormat());
         }
-        return {true, end - begin};
+        return std::make_tuple(true, end - begin);
     }
 }

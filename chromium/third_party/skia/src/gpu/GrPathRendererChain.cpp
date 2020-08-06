@@ -87,9 +87,9 @@ GrPathRenderer* GrPathRendererChain::getPathRenderer(
         DrawType drawType,
         GrPathRenderer::StencilSupport* stencilSupport) {
     static_assert(GrPathRenderer::kNoSupport_StencilSupport <
-                  GrPathRenderer::kStencilOnly_StencilSupport);
+                  GrPathRenderer::kStencilOnly_StencilSupport, "");
     static_assert(GrPathRenderer::kStencilOnly_StencilSupport <
-                  GrPathRenderer::kNoRestriction_StencilSupport);
+                  GrPathRenderer::kNoRestriction_StencilSupport, "");
     GrPathRenderer::StencilSupport minStencilSupport;
     if (DrawType::kStencil == drawType) {
         minStencilSupport = GrPathRenderer::kStencilOnly_StencilSupport;

@@ -40,7 +40,7 @@ SkScalerCache::SkScalerCache(
 std::tuple<SkGlyph*, size_t> SkScalerCache::makeGlyph(SkPackedGlyphID packedGlyphID) {
     SkGlyph* glyph = fAlloc.make<SkGlyph>(packedGlyphID);
     fGlyphMap.set(glyph);
-    return {glyph, sizeof(SkGlyph)};
+    return std::make_tuple(glyph, sizeof(SkGlyph));
 }
 
 std::tuple<SkGlyph*, size_t> SkScalerCache::glyph(SkPackedGlyphID packedGlyphID) {
@@ -50,7 +50,7 @@ std::tuple<SkGlyph*, size_t> SkScalerCache::glyph(SkPackedGlyphID packedGlyphID)
         std::tie(glyph, bytes) = this->makeGlyph(packedGlyphID);
         fScalerContext->getMetrics(glyph);
     }
-    return {glyph, bytes};
+    return std::make_tuple(glyph, bytes);
 }
 
 std::tuple<const SkPath*, size_t> SkScalerCache::preparePath(SkGlyph* glyph) {
@@ -58,7 +58,7 @@ std::tuple<const SkPath*, size_t> SkScalerCache::preparePath(SkGlyph* glyph) {
     if (glyph->setPath(&fAlloc, fScalerContext.get())) {
         delta = glyph->path()->approximateBytesUsed();
     }
-    return {glyph->path(), delta};
+    return std::make_tuple(glyph->path(), delta);
 }
 
 std::tuple<const SkPath*, size_t> SkScalerCache::mergePath(SkGlyph* glyph, const SkPath* path) {
@@ -67,7 +67,7 @@ std::tuple<const SkPath*, size_t> SkScalerCache::mergePath(SkGlyph* glyph, const
     if (glyph->setPath(&fAlloc, path)) {
         pathDelta = glyph->path()->approximateBytesUsed();
     }
-    return {glyph->path(), pathDelta};
+    return std::make_tuple(glyph->path(), pathDelta);
 }
 
 const SkDescriptor& SkScalerCache::getDescriptor() const {
@@ -95,7 +95,7 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::internalPrepare(
         *cursor++ = glyph;
     }
 
-    return {{results, glyphIDs.size()}, delta};
+    return std::make_tuple(SkSpan<const SkGlyph*>{results, glyphIDs.size()}, delta);
 }
 
 std::tuple<const void*, size_t> SkScalerCache::prepareImage(SkGlyph* glyph) {
@@ -103,7 +103,7 @@ std::tuple<const void*, size_t> SkScalerCache::prepareImage(SkGlyph* glyph) {
     if (glyph->setImage(&fAlloc, fScalerContext.get())) {
         delta = glyph->imageSize();
     }
-    return {glyph->image(), delta};
+    return std::make_tuple(glyph->image(), delta);
 }
 
 std::tuple<SkGlyph*, size_t> SkScalerCache::mergeGlyphAndImage(
@@ -120,7 +120,7 @@ std::tuple<SkGlyph*, size_t> SkScalerCache::mergeGlyphAndImage(
     if (glyph->setMetricsAndImage(&fAlloc, from)) {
         imageDelta= glyph->imageSize();
     }
-    return {glyph, delta + imageDelta};
+    return std::make_tuple(glyph, delta + imageDelta);
 }
 
 std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::metrics(
@@ -129,7 +129,7 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::metrics(
     auto t = this->internalPrepare(glyphIDs, kMetricsOnly, results);
     auto glyphs = std::get<0>(t);
     auto delta = std::get<1>(t);
-    return {glyphs, delta};
+    return std::make_tuple(glyphs, delta);
 }
 
 std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::preparePaths(
@@ -138,7 +138,7 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::preparePaths(
     auto t = this->internalPrepare(glyphIDs, kMetricsAndPath, results);
     auto glyphs = std::get<0>(t);
     auto delta = std::get<1>(t);
-    return {glyphs, delta};
+    return std::make_tuple(glyphs, delta);
 }
 
 std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::prepareImages(
@@ -155,7 +155,7 @@ std::tuple<SkSpan<const SkGlyph*>, size_t> SkScalerCache::prepareImages(
         *cursor++ = glyph;
     }
 
-    return {{results, glyphIDs.size()}, delta};
+    return std::make_tuple(SkSpan<const SkGlyph*>{results, glyphIDs.size()}, delta);
 }
 
 template <typename Fn>

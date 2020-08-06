@@ -273,9 +273,9 @@ void GrGLSLShaderBuilder::compileAndAppendLayoutQualifiers() {
         this->layoutQualifiers().appendf(") %s;\n", interfaceQualifierNames[interface]);
     }
 
-    static_assert(0 == GrGLSLShaderBuilder::kIn_InterfaceQualifier);
-    static_assert(1 == GrGLSLShaderBuilder::kOut_InterfaceQualifier);
-    static_assert(SK_ARRAY_COUNT(interfaceQualifierNames) == kLastInterfaceQualifier + 1);
+    static_assert(0 == GrGLSLShaderBuilder::kIn_InterfaceQualifier, "");
+    static_assert(1 == GrGLSLShaderBuilder::kOut_InterfaceQualifier, "");
+    static_assert(SK_ARRAY_COUNT(interfaceQualifierNames) == kLastInterfaceQualifier + 1, "");
 }
 
 void GrGLSLShaderBuilder::finalize(uint32_t visibility) {

@@ -12,7 +12,8 @@
 
 #include <vector>
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 class VectorKeyframeAnimatorBuilder final : public KeyframeAnimatorBuilder {
 public:
@@ -44,6 +45,6 @@ private:
                                             // storage offset is fCurrentVec * fVecLen)
 };
 
-} // namespace skottie::internal
+}} // namespace skottie::internal
 
 #endif // SkottieVector_DEFINED

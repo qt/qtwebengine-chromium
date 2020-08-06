@@ -20,12 +20,12 @@ inline GrGLubyte verb_to_gl_path_cmd(SkPath::Verb verb) {
         GR_GL_CUBIC_CURVE_TO,
         GR_GL_CLOSE_PATH,
     };
-    static_assert(0 == SkPath::kMove_Verb);
-    static_assert(1 == SkPath::kLine_Verb);
-    static_assert(2 == SkPath::kQuad_Verb);
-    static_assert(3 == SkPath::kConic_Verb);
-    static_assert(4 == SkPath::kCubic_Verb);
-    static_assert(5 == SkPath::kClose_Verb);
+    static_assert(0 == SkPath::kMove_Verb, "");
+    static_assert(1 == SkPath::kLine_Verb, "");
+    static_assert(2 == SkPath::kQuad_Verb, "");
+    static_assert(3 == SkPath::kConic_Verb, "");
+    static_assert(4 == SkPath::kCubic_Verb, "");
+    static_assert(5 == SkPath::kClose_Verb, "");
 
     SkASSERT(verb >= 0 && (size_t)verb < SK_ARRAY_COUNT(gTable));
     return gTable[verb];
@@ -41,12 +41,12 @@ inline int num_coords(SkPath::Verb verb) {
         6, // cubic
         0, // close
     };
-    static_assert(0 == SkPath::kMove_Verb);
-    static_assert(1 == SkPath::kLine_Verb);
-    static_assert(2 == SkPath::kQuad_Verb);
-    static_assert(3 == SkPath::kConic_Verb);
-    static_assert(4 == SkPath::kCubic_Verb);
-    static_assert(5 == SkPath::kClose_Verb);
+    static_assert(0 == SkPath::kMove_Verb, "");
+    static_assert(1 == SkPath::kLine_Verb, "");
+    static_assert(2 == SkPath::kQuad_Verb, "");
+    static_assert(3 == SkPath::kConic_Verb, "");
+    static_assert(4 == SkPath::kCubic_Verb, "");
+    static_assert(5 == SkPath::kClose_Verb, "");
 
     SkASSERT(verb >= 0 && (size_t)verb < SK_ARRAY_COUNT(gTable));
     return gTable[verb];
@@ -60,10 +60,10 @@ inline GrGLenum join_to_gl_join(SkPaint::Join join) {
         GR_GL_BEVEL
     };
     return gSkJoinsToGrGLJoins[join];
-    static_assert(0 == SkPaint::kMiter_Join);
-    static_assert(1 == SkPaint::kRound_Join);
-    static_assert(2 == SkPaint::kBevel_Join);
-    static_assert(SK_ARRAY_COUNT(gSkJoinsToGrGLJoins) == SkPaint::kJoinCount);
+    static_assert(0 == SkPaint::kMiter_Join, "");
+    static_assert(1 == SkPaint::kRound_Join, "");
+    static_assert(2 == SkPaint::kBevel_Join, "");
+    static_assert(SK_ARRAY_COUNT(gSkJoinsToGrGLJoins) == SkPaint::kJoinCount, "");
 }
 
 inline GrGLenum cap_to_gl_cap(SkPaint::Cap cap) {
@@ -73,10 +73,10 @@ inline GrGLenum cap_to_gl_cap(SkPaint::Cap cap) {
         GR_GL_SQUARE
     };
     return gSkCapsToGrGLCaps[cap];
-    static_assert(0 == SkPaint::kButt_Cap);
-    static_assert(1 == SkPaint::kRound_Cap);
-    static_assert(2 == SkPaint::kSquare_Cap);
-    static_assert(SK_ARRAY_COUNT(gSkCapsToGrGLCaps) == SkPaint::kCapCount);
+    static_assert(0 == SkPaint::kButt_Cap, "");
+    static_assert(1 == SkPaint::kRound_Cap, "");
+    static_assert(2 == SkPaint::kSquare_Cap, "");
+    static_assert(SK_ARRAY_COUNT(gSkCapsToGrGLCaps) == SkPaint::kCapCount, "");
 }
 
 #ifdef SK_DEBUG

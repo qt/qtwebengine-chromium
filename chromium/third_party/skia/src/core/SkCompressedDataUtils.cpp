@@ -265,7 +265,7 @@ size_t SkCompressedDataSize(SkImage::CompressionType type, SkISize dimensions,
                     individualMipOffsets->push_back(totalSize);
                 }
 
-                static_assert(sizeof(ETC1Block) == sizeof(BC1Block));
+                static_assert(sizeof(ETC1Block) == sizeof(BC1Block), "");
                 totalSize += numBlocks * sizeof(ETC1Block);
 
                 dimensions = {std::max(1, dimensions.width()/2), std::max(1, dimensions.height()/2)};

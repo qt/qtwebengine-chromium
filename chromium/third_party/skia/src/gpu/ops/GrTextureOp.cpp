@@ -377,7 +377,7 @@ private:
         static_assert(kGrAATypeCount <= 4, "");
         static_assert(GrQuadPerEdgeAA::kColorTypeCount <= 4, "");
     };
-    static_assert(sizeof(Metadata) == 8);
+    static_assert(sizeof(Metadata) == 8, "");
 
     // This descriptor is used to store the draw info we decide on during on(Pre)PrepareDraws. We
     // store the data in a separate struct in order to minimize the size of the TextureOp.

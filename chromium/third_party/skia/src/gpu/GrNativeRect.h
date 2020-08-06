@@ -41,11 +41,11 @@ struct GrNativeRect {
     const int* asInts() const {
         return &fX;
 
-        static_assert(0 == offsetof(GrNativeRect, fX));
-        static_assert(4 == offsetof(GrNativeRect, fY));
-        static_assert(8 == offsetof(GrNativeRect, fWidth));
-        static_assert(12 == offsetof(GrNativeRect, fHeight));
-        static_assert(16 == sizeof(GrNativeRect));  // For an array of GrNativeRect.
+        static_assert(0 == offsetof(GrNativeRect, fX), "");
+        static_assert(4 == offsetof(GrNativeRect, fY), "");
+        static_assert(8 == offsetof(GrNativeRect, fWidth), "");
+        static_assert(12 == offsetof(GrNativeRect, fHeight), "");
+        static_assert(16 == sizeof(GrNativeRect), "");  // For an array of GrNativeRect.
     }
     int* asInts() { return &fX; }
 

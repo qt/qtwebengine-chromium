@@ -15,7 +15,8 @@
 
 #define DUMP_KF_RECORDS 0
 
-namespace skottie::internal {
+namespace skottie {
+namespace internal {
 
 KeyframeAnimatorBase::~KeyframeAnimatorBase() = default;
 
@@ -320,4 +321,4 @@ bool AnimatablePropertyContainer::bind<TextValue>(const AnimationBuilder& abuild
     return this->bindImpl(abuilder, jprop, builder, v);
 }
 
-} // namespace skottie::internal
+}} // namespace skottie::internal

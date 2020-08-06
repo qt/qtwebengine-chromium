@@ -19,7 +19,7 @@ constexpr size_t GrMemoryPool::kAlignment;
 constexpr size_t GrMemoryPool::kMinAllocationSize;
 
 std::unique_ptr<GrMemoryPool> GrMemoryPool::Make(size_t preallocSize, size_t minAllocSize) {
-    static_assert(sizeof(GrMemoryPool) < GrMemoryPool::kMinAllocationSize);
+    static_assert(sizeof(GrMemoryPool) < GrMemoryPool::kMinAllocationSize, "");
 
     preallocSize = SkTPin(preallocSize, kMinAllocationSize,
                           (size_t) GrBlockAllocator::kMaxAllocationSize);
@@ -54,7 +54,7 @@ GrMemoryPool::~GrMemoryPool() {
 }
 
 void* GrMemoryPool::allocate(size_t size) {
-    static_assert(alignof(Header) <= kAlignment);
+    static_assert(alignof(Header) <= kAlignment, "");
     SkDEBUGCODE(this->validate();)
 
     GrBlockAllocator::ByteRange alloc = fAllocator.allocate<kAlignment, sizeof(Header)>(size);
@@ -125,7 +125,7 @@ void GrMemoryPool::validate() const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::unique_ptr<GrOpMemoryPool> GrOpMemoryPool::Make(size_t preallocSize, size_t minAllocSize) {
-    static_assert(sizeof(GrOpMemoryPool) < GrMemoryPool::kMinAllocationSize);
+    static_assert(sizeof(GrOpMemoryPool) < GrMemoryPool::kMinAllocationSize, "");
 
     preallocSize = SkTPin(preallocSize, GrMemoryPool::kMinAllocationSize,
                           (size_t) GrBlockAllocator::kMaxAllocationSize);

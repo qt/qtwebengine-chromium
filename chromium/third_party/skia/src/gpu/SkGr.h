@@ -148,16 +148,16 @@ static inline GrPrimitiveType SkVertexModeToGrPrimitiveType(SkVertices::VertexMo
 
 //////////////////////////////////////////////////////////////////////////////
 
-static_assert((int)kZero_GrBlendCoeff == (int)SkBlendModeCoeff::kZero);
-static_assert((int)kOne_GrBlendCoeff == (int)SkBlendModeCoeff::kOne);
-static_assert((int)kSC_GrBlendCoeff == (int)SkBlendModeCoeff::kSC);
-static_assert((int)kISC_GrBlendCoeff == (int)SkBlendModeCoeff::kISC);
-static_assert((int)kDC_GrBlendCoeff == (int)SkBlendModeCoeff::kDC);
-static_assert((int)kIDC_GrBlendCoeff == (int)SkBlendModeCoeff::kIDC);
-static_assert((int)kSA_GrBlendCoeff == (int)SkBlendModeCoeff::kSA);
-static_assert((int)kISA_GrBlendCoeff == (int)SkBlendModeCoeff::kISA);
-static_assert((int)kDA_GrBlendCoeff == (int)SkBlendModeCoeff::kDA);
-static_assert((int)kIDA_GrBlendCoeff == (int)SkBlendModeCoeff::kIDA);
+static_assert((int)kZero_GrBlendCoeff == (int)SkBlendModeCoeff::kZero, "");
+static_assert((int)kOne_GrBlendCoeff == (int)SkBlendModeCoeff::kOne, "");
+static_assert((int)kSC_GrBlendCoeff == (int)SkBlendModeCoeff::kSC, "");
+static_assert((int)kISC_GrBlendCoeff == (int)SkBlendModeCoeff::kISC, "");
+static_assert((int)kDC_GrBlendCoeff == (int)SkBlendModeCoeff::kDC, "");
+static_assert((int)kIDC_GrBlendCoeff == (int)SkBlendModeCoeff::kIDC, "");
+static_assert((int)kSA_GrBlendCoeff == (int)SkBlendModeCoeff::kSA, "");
+static_assert((int)kISA_GrBlendCoeff == (int)SkBlendModeCoeff::kISA, "");
+static_assert((int)kDA_GrBlendCoeff == (int)SkBlendModeCoeff::kDA, "");
+static_assert((int)kIDA_GrBlendCoeff == (int)SkBlendModeCoeff::kIDA, "");
 // static_assert(SkXfermode::kCoeffCount == 10);
 
 ////////////////////////////////////////////////////////////////////////////////

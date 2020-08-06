@@ -134,7 +134,7 @@ private:
 
     GrDrawOpAtlas::AllowMultitexturing fAllowMultitexturing;
     std::unique_ptr<GrDrawOpAtlas> fAtlases[kMaskFormatCount];
-    static_assert(kMaskFormatCount == 3);
+    static_assert(kMaskFormatCount == 3, "");
     GrProxyProvider* fProxyProvider;
     sk_sp<const GrCaps> fCaps;
     GrStrikeCache* fGlyphCache;

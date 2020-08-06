@@ -183,15 +183,15 @@ static VkStencilOp stencil_op_to_vk_stencil_op(GrStencilOp op) {
         VK_STENCIL_OP_INCREMENT_AND_CLAMP,  // kIncClamp
         VK_STENCIL_OP_DECREMENT_AND_CLAMP,  // kDecClamp
     };
-    static_assert(SK_ARRAY_COUNT(gTable) == kGrStencilOpCount);
-    static_assert(0 == (int)GrStencilOp::kKeep);
-    static_assert(1 == (int)GrStencilOp::kZero);
-    static_assert(2 == (int)GrStencilOp::kReplace);
-    static_assert(3 == (int)GrStencilOp::kInvert);
-    static_assert(4 == (int)GrStencilOp::kIncWrap);
-    static_assert(5 == (int)GrStencilOp::kDecWrap);
-    static_assert(6 == (int)GrStencilOp::kIncClamp);
-    static_assert(7 == (int)GrStencilOp::kDecClamp);
+    static_assert(SK_ARRAY_COUNT(gTable) == kGrStencilOpCount, "");
+    static_assert(0 == (int)GrStencilOp::kKeep, "");
+    static_assert(1 == (int)GrStencilOp::kZero, "");
+    static_assert(2 == (int)GrStencilOp::kReplace, "");
+    static_assert(3 == (int)GrStencilOp::kInvert, "");
+    static_assert(4 == (int)GrStencilOp::kIncWrap, "");
+    static_assert(5 == (int)GrStencilOp::kDecWrap, "");
+    static_assert(6 == (int)GrStencilOp::kIncClamp, "");
+    static_assert(7 == (int)GrStencilOp::kDecClamp, "");
     SkASSERT(op < (GrStencilOp)kGrStencilOpCount);
     return gTable[(int)op];
 }
@@ -207,15 +207,15 @@ static VkCompareOp stencil_func_to_vk_compare_op(GrStencilTest test) {
         VK_COMPARE_OP_EQUAL,               // kEqual
         VK_COMPARE_OP_NOT_EQUAL,           // kNotEqual
     };
-    static_assert(SK_ARRAY_COUNT(gTable) == kGrStencilTestCount);
-    static_assert(0 == (int)GrStencilTest::kAlways);
-    static_assert(1 == (int)GrStencilTest::kNever);
-    static_assert(2 == (int)GrStencilTest::kGreater);
-    static_assert(3 == (int)GrStencilTest::kGEqual);
-    static_assert(4 == (int)GrStencilTest::kLess);
-    static_assert(5 == (int)GrStencilTest::kLEqual);
-    static_assert(6 == (int)GrStencilTest::kEqual);
-    static_assert(7 == (int)GrStencilTest::kNotEqual);
+    static_assert(SK_ARRAY_COUNT(gTable) == kGrStencilTestCount, "");
+    static_assert(0 == (int)GrStencilTest::kAlways, "");
+    static_assert(1 == (int)GrStencilTest::kNever, "");
+    static_assert(2 == (int)GrStencilTest::kGreater, "");
+    static_assert(3 == (int)GrStencilTest::kGEqual, "");
+    static_assert(4 == (int)GrStencilTest::kLess, "");
+    static_assert(5 == (int)GrStencilTest::kLEqual, "");
+    static_assert(6 == (int)GrStencilTest::kEqual, "");
+    static_assert(7 == (int)GrStencilTest::kNotEqual, "");
     SkASSERT(test < (GrStencilTest)kGrStencilTestCount);
 
     return gTable[(int)test];
@@ -395,25 +395,25 @@ static VkBlendOp blend_equation_to_vk_blend_op(GrBlendEquation equation) {
         // Illegal.
         VK_BLEND_OP_ADD,
     };
-    static_assert(0 == kAdd_GrBlendEquation);
-    static_assert(1 == kSubtract_GrBlendEquation);
-    static_assert(2 == kReverseSubtract_GrBlendEquation);
-    static_assert(3 == kScreen_GrBlendEquation);
-    static_assert(4 == kOverlay_GrBlendEquation);
-    static_assert(5 == kDarken_GrBlendEquation);
-    static_assert(6 == kLighten_GrBlendEquation);
-    static_assert(7 == kColorDodge_GrBlendEquation);
-    static_assert(8 == kColorBurn_GrBlendEquation);
-    static_assert(9 == kHardLight_GrBlendEquation);
-    static_assert(10 == kSoftLight_GrBlendEquation);
-    static_assert(11 == kDifference_GrBlendEquation);
-    static_assert(12 == kExclusion_GrBlendEquation);
-    static_assert(13 == kMultiply_GrBlendEquation);
-    static_assert(14 == kHSLHue_GrBlendEquation);
-    static_assert(15 == kHSLSaturation_GrBlendEquation);
-    static_assert(16 == kHSLColor_GrBlendEquation);
-    static_assert(17 == kHSLLuminosity_GrBlendEquation);
-    static_assert(SK_ARRAY_COUNT(gTable) == kGrBlendEquationCnt);
+    static_assert(0 == kAdd_GrBlendEquation, "");
+    static_assert(1 == kSubtract_GrBlendEquation, "");
+    static_assert(2 == kReverseSubtract_GrBlendEquation, "");
+    static_assert(3 == kScreen_GrBlendEquation, "");
+    static_assert(4 == kOverlay_GrBlendEquation, "");
+    static_assert(5 == kDarken_GrBlendEquation, "");
+    static_assert(6 == kLighten_GrBlendEquation, "");
+    static_assert(7 == kColorDodge_GrBlendEquation, "");
+    static_assert(8 == kColorBurn_GrBlendEquation, "");
+    static_assert(9 == kHardLight_GrBlendEquation, "");
+    static_assert(10 == kSoftLight_GrBlendEquation, "");
+    static_assert(11 == kDifference_GrBlendEquation, "");
+    static_assert(12 == kExclusion_GrBlendEquation, "");
+    static_assert(13 == kMultiply_GrBlendEquation, "");
+    static_assert(14 == kHSLHue_GrBlendEquation, "");
+    static_assert(15 == kHSLSaturation_GrBlendEquation, "");
+    static_assert(16 == kHSLColor_GrBlendEquation, "");
+    static_assert(17 == kHSLLuminosity_GrBlendEquation, "");
+    static_assert(SK_ARRAY_COUNT(gTable) == kGrBlendEquationCnt, "");
 
     SkASSERT((unsigned)equation < kGrBlendEquationCnt);
     return gTable[equation];

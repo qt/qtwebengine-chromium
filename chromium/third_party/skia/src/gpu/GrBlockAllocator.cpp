@@ -160,7 +160,7 @@ void GrBlockAllocator::addBlock(int minimumSize, int maxSize) {
 
     // Max positive value for uint:23 storage (decltype(fN0) picks up uint64_t, not uint:23).
     static constexpr int kMaxN = (1 << 23) - 1;
-    static_assert(2 * kMaxN <= std::numeric_limits<int32_t>::max()); // Growth policy won't overflow
+    static_assert(2 * kMaxN <= std::numeric_limits<int32_t>::max(), ""); // Growth policy won't overflow
 
     // Calculate the 'next' size per growth policy sequence
     GrowthPolicy gp = static_cast<GrowthPolicy>(fGrowthPolicy);

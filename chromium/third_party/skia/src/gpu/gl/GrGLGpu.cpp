@@ -86,25 +86,25 @@ static const GrGLenum gXfermodeEquation2Blend[] = {
     // Illegal... needs to map to something.
     GR_GL_FUNC_ADD,
 };
-static_assert(0 == kAdd_GrBlendEquation);
-static_assert(1 == kSubtract_GrBlendEquation);
-static_assert(2 == kReverseSubtract_GrBlendEquation);
-static_assert(3 == kScreen_GrBlendEquation);
-static_assert(4 == kOverlay_GrBlendEquation);
-static_assert(5 == kDarken_GrBlendEquation);
-static_assert(6 == kLighten_GrBlendEquation);
-static_assert(7 == kColorDodge_GrBlendEquation);
-static_assert(8 == kColorBurn_GrBlendEquation);
-static_assert(9 == kHardLight_GrBlendEquation);
-static_assert(10 == kSoftLight_GrBlendEquation);
-static_assert(11 == kDifference_GrBlendEquation);
-static_assert(12 == kExclusion_GrBlendEquation);
-static_assert(13 == kMultiply_GrBlendEquation);
-static_assert(14 == kHSLHue_GrBlendEquation);
-static_assert(15 == kHSLSaturation_GrBlendEquation);
-static_assert(16 == kHSLColor_GrBlendEquation);
-static_assert(17 == kHSLLuminosity_GrBlendEquation);
-static_assert(SK_ARRAY_COUNT(gXfermodeEquation2Blend) == kGrBlendEquationCnt);
+static_assert(0 == kAdd_GrBlendEquation, "");
+static_assert(1 == kSubtract_GrBlendEquation, "");
+static_assert(2 == kReverseSubtract_GrBlendEquation, "");
+static_assert(3 == kScreen_GrBlendEquation, "");
+static_assert(4 == kOverlay_GrBlendEquation, "");
+static_assert(5 == kDarken_GrBlendEquation, "");
+static_assert(6 == kLighten_GrBlendEquation, "");
+static_assert(7 == kColorDodge_GrBlendEquation, "");
+static_assert(8 == kColorBurn_GrBlendEquation, "");
+static_assert(9 == kHardLight_GrBlendEquation, "");
+static_assert(10 == kSoftLight_GrBlendEquation, "");
+static_assert(11 == kDifference_GrBlendEquation, "");
+static_assert(12 == kExclusion_GrBlendEquation, "");
+static_assert(13 == kMultiply_GrBlendEquation, "");
+static_assert(14 == kHSLHue_GrBlendEquation, "");
+static_assert(15 == kHSLSaturation_GrBlendEquation, "");
+static_assert(16 == kHSLColor_GrBlendEquation, "");
+static_assert(17 == kHSLLuminosity_GrBlendEquation, "");
+static_assert(SK_ARRAY_COUNT(gXfermodeEquation2Blend) == kGrBlendEquationCnt, "");
 
 static const GrGLenum gXfermodeCoeff2Blend[] = {
     GR_GL_ZERO,
@@ -351,7 +351,7 @@ GrGLGpu::GrGLGpu(std::unique_ptr<GrGLContext> ctx, GrContext* context)
     for (int i = 0; i < kGrGpuBufferTypeCount; ++i) {
         fHWBufferState[i].invalidate();
     }
-    static_assert(4 == SK_ARRAY_COUNT(fHWBufferState));
+    static_assert(4 == SK_ARRAY_COUNT(fHWBufferState), "");
 
     if (this->glCaps().shaderCaps()->pathRenderingSupport()) {
         fPathRendering.reset(new GrGLPathRendering(this));
@@ -2346,14 +2346,14 @@ GrGLenum gr_to_gl_stencil_op(GrStencilOp op) {
         GR_GL_INCR,        // kIncClamp
         GR_GL_DECR,        // kDecClamp
     };
-    static_assert(0 == (int)GrStencilOp::kKeep);
-    static_assert(1 == (int)GrStencilOp::kZero);
-    static_assert(2 == (int)GrStencilOp::kReplace);
-    static_assert(3 == (int)GrStencilOp::kInvert);
-    static_assert(4 == (int)GrStencilOp::kIncWrap);
-    static_assert(5 == (int)GrStencilOp::kDecWrap);
-    static_assert(6 == (int)GrStencilOp::kIncClamp);
-    static_assert(7 == (int)GrStencilOp::kDecClamp);
+    static_assert(0 == (int)GrStencilOp::kKeep, "");
+    static_assert(1 == (int)GrStencilOp::kZero, "");
+    static_assert(2 == (int)GrStencilOp::kReplace, "");
+    static_assert(3 == (int)GrStencilOp::kInvert, "");
+    static_assert(4 == (int)GrStencilOp::kIncWrap, "");
+    static_assert(5 == (int)GrStencilOp::kDecWrap, "");
+    static_assert(6 == (int)GrStencilOp::kIncClamp, "");
+    static_assert(7 == (int)GrStencilOp::kDecClamp, "");
     SkASSERT(op < (GrStencilOp)kGrStencilOpCount);
     return gTable[(int)op];
 }
@@ -2670,7 +2670,7 @@ void GrGLGpu::bindTexture(int unitIdx, GrSamplerState samplerState, const GrSwiz
             get_gl_swizzle_values(swizzle, glValues);
             this->setTextureUnit(unitIdx);
             if (GR_IS_GR_GL(this->glStandard())) {
-                static_assert(sizeof(glValues[0]) == sizeof(GrGLint));
+                static_assert(sizeof(glValues[0]) == sizeof(GrGLint), "");
                 GL_CALL(TexParameteriv(target, GR_GL_TEXTURE_SWIZZLE_RGBA,
                                        reinterpret_cast<const GrGLint*>(glValues)));
             } else if (GR_IS_GR_GL_ES(this->glStandard())) {
@@ -3865,7 +3865,7 @@ GrFence SK_WARN_UNUSED_RESULT GrGLGpu::insertFence() {
     SkASSERT(this->caps()->fenceSyncSupport());
     GrGLsync sync;
     if (this->glCaps().fenceType() == GrGLCaps::FenceType::kNVFence) {
-        static_assert(sizeof(GrGLsync) >= sizeof(GrGLuint));
+        static_assert(sizeof(GrGLsync) >= sizeof(GrGLuint), "");
         GrGLuint fence = 0;
         GL_CALL(GenFences(1, &fence));
         GL_CALL(SetFence(fence, GR_GL_ALL_COMPLETED));
@@ -3873,7 +3873,7 @@ GrFence SK_WARN_UNUSED_RESULT GrGLGpu::insertFence() {
     } else {
         GL_CALL_RET(sync, FenceSync(GR_GL_SYNC_GPU_COMMANDS_COMPLETE, 0));
     }
-    static_assert(sizeof(GrFence) >= sizeof(GrGLsync));
+    static_assert(sizeof(GrFence) >= sizeof(GrGLsync), "");
     return (GrFence)sync;
 }
 

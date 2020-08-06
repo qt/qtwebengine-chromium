@@ -515,10 +515,10 @@ public:
                     }
                     return true;
 
-                static_assert(SkPath::kLine_Verb  == 1); case 1:
-                static_assert(SkPath::kQuad_Verb  == 2); case 2:
-                static_assert(SkPath::kConic_Verb == 3); case 3:
-                static_assert(SkPath::kCubic_Verb == 4); case 4:
+                static_assert(SkPath::kLine_Verb  == 1, ""); case 1:
+                static_assert(SkPath::kQuad_Verb  == 2, ""); case 2:
+                static_assert(SkPath::kConic_Verb == 3, ""); case 3:
+                static_assert(SkPath::kCubic_Verb == 4, ""); case 4:
                     static constexpr int kPtsAdvance[] = {0, 1, 2, 2, 3};
                     fPtsIdx += kPtsAdvance[verb];
                     static_cast<TSubclass*>(this)->geometryTo((SkPathVerb)verb,

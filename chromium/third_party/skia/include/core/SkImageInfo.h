@@ -8,6 +8,8 @@
 #ifndef SkImageInfo_DEFINED
 #define SkImageInfo_DEFINED
 
+#include <utility>
+
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkMath.h"
 #include "include/core/SkRect.h"

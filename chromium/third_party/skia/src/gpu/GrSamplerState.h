@@ -37,7 +37,7 @@ public:
 
     constexpr GrSamplerState(const GrSamplerState&) = default;
 
-    constexpr GrSamplerState& operator=(const GrSamplerState&) = default;
+    GrSamplerState& operator=(const GrSamplerState&) = default;
 
     constexpr Filter filter() const { return fFilter; }
 
