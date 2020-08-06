@@ -652,7 +652,7 @@ void Serializer::ObjectSerializer::Serialize() {
 
 namespace {
 SnapshotSpace GetSnapshotSpace(HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
     if (third_party_heap::Heap::InCodeSpace(object.address())) {
       return SnapshotSpace::kCode;
     } else if (ReadOnlyHeap::Contains(object)) {
@@ -664,7 +664,8 @@ SnapshotSpace GetSnapshotSpace(HeapObject object) {
     } else {
       return SnapshotSpace::kOld;  // avoid new/young distinction in TPH
     }
-  } else if (ReadOnlyHeap::Contains(object)) {
+#else
+  if (ReadOnlyHeap::Contains(object)) {
     return SnapshotSpace::kReadOnlyHeap;
   } else {
     AllocationSpace heap_space =
@@ -684,6 +685,7 @@ SnapshotSpace GetSnapshotSpace(HeapObject object) {
         return static_cast<SnapshotSpace>(heap_space);
     }
   }
+#endif
 }
 }  // namespace
 
