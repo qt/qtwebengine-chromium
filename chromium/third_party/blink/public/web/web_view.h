@@ -409,6 +409,9 @@ class WebView {
   // well.
   virtual void SetBaseBackgroundColor(SkColor) {}
 
+  virtual void SetBaseBackgroundColorOverride(SkColor) {}
+  virtual void ClearBaseBackgroundColorOverride() {}
+
   virtual void SetDeviceColorSpaceForTesting(
       const gfx::ColorSpace& color_space) = 0;
 
