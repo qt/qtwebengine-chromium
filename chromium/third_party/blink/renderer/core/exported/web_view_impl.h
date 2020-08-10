@@ -218,8 +218,8 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // These may are only called for composited WebViews.
   void SetBackgroundColorOverride(SkColor);
   void ClearBackgroundColorOverride();
-  void SetBaseBackgroundColorOverride(SkColor);
-  void ClearBaseBackgroundColorOverride();
+  void SetBaseBackgroundColorOverride(SkColor) override;
+  void ClearBaseBackgroundColorOverride() override;
 
   // Requests a page-scale animation based on the specified point/rect.
   void AnimateDoubleTapZoom(const gfx::Point&, const WebRect& block_bounds);
