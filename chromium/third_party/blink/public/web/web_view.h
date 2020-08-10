@@ -399,6 +399,9 @@ class WebView {
   // well.
   virtual void SetBaseBackgroundColor(SkColor) {}
 
+  virtual void SetBaseBackgroundColorOverride(SkColor) {}
+  virtual void ClearBaseBackgroundColorOverride() {}
+
   // Scheduling -----------------------------------------------------------
 
   virtual PageScheduler* Scheduler() const = 0;
