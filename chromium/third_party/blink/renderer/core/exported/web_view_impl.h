@@ -214,8 +214,8 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // These may are only called for composited WebViews.
   void SetBackgroundColorOverride(SkColor);
   void ClearBackgroundColorOverride();
-  void SetBaseBackgroundColorOverride(SkColor);
-  void ClearBaseBackgroundColorOverride();
+  void SetBaseBackgroundColorOverride(SkColor) override;
+  void ClearBaseBackgroundColorOverride() override;
 
   // Resize the WebView. You likely should be using
   // MainFrameWidget()->Resize instead.
