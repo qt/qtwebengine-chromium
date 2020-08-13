@@ -25,6 +25,7 @@
 #include "dbus/message.h"
 #include "dbus/object_path.h"
 #include "dbus/property.h"
+#include "dbus/string_util.h"
 #include "media/audio/audio_manager.h"
 
 namespace system_media_controls {
@@ -43,6 +44,14 @@ namespace {
 
 constexpr int kNumMethodsToExport = 11;
 
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+const char kMprisAPIServiceNameFallback[] =
+    "chrome";
+#else
+const char kMprisAPIServiceNameFallback[] =
+    "chromium";
+#endif
+
 }  // namespace
 
 const char kMprisAPIServiceNamePrefix[] =
@@ -57,11 +66,17 @@ SystemMediaControlsLinux* SystemMediaControlsLinux::GetInstance() {
   return base::Singleton<SystemMediaControlsLinux>::get();
 }
 
+static std::string MakeServiceName() {
+  std::string baseName = media::AudioManager::GetGlobalAppName();
+  if (baseName.size() > 100 || !dbus::IsValidServiceNameElement(baseName))
+    baseName = kMprisAPIServiceNameFallback;
+  return std::string(kMprisAPIServiceNamePrefix) + baseName +
+      std::string(".instance") +
+      base::NumberToString(base::Process::Current().Pid());
+}
+
 SystemMediaControlsLinux::SystemMediaControlsLinux()
-    : service_name_(std::string(kMprisAPIServiceNamePrefix) +
-                    base::ToLowerASCII(media::AudioManager::GetGlobalAppName()) +
-                    std::string(".instance") +
-                    base::NumberToString(base::Process::Current().Pid()))
+    : service_name_(MakeServiceName())
 {
 }
 
