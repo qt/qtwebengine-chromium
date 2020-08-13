@@ -171,6 +171,14 @@ NET_EXPORT extern const base::Feature kSchemefulSameSite;
 // those algorithms. If disabled, the algorithms will always be offered.
 NET_EXPORT extern const base::Feature kTLSLegacyCryptoFallbackForMetrics;
 
+// Enables a process-wide limit on "open" UDP sockets. See
+// udp_socket_global_limits.h for details on what constitutes an "open" socket.
+NET_EXPORT extern const base::Feature kLimitOpenUDPSockets;
+// FeatureParams associated with kLimitOpenUDPSockets.
+// Sets the maximum allowed open UDP sockets. Provisioning more sockets than
+// this will result in a failure (ERR_INSUFFICIENT_RESOURCES).
+NET_EXPORT extern const base::FeatureParam<int> kLimitOpenUDPSocketsMax;
+
 }  // namespace features
 }  // namespace net
 

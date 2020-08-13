@@ -119,5 +119,12 @@ const base::Feature kSchemefulSameSite{"SchemefulSameSite",
 const base::Feature kTLSLegacyCryptoFallbackForMetrics{
     "TLSLegacyCryptoFallbackForMetrics", base::FEATURE_ENABLED_BY_DEFAULT};
 
+const base::Feature kLimitOpenUDPSockets{"LimitOpenUDPSockets",
+                                         base::FEATURE_ENABLED_BY_DEFAULT};
+extern const base::FeatureParam<int> kLimitOpenUDPSocketsMax(
+    &kLimitOpenUDPSockets,
+    "LimitOpenUDPSocketsMax",
+    6000);
+
 }  // namespace features
 }  // namespace net
