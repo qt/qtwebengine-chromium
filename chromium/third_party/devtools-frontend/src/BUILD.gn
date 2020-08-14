@@ -480,14 +480,10 @@ devtools_module_entrypoints = [
   "extensions/extensions-legacy.js",
   "formatter/formatter.js",
   "formatter/formatter-legacy.js",
-  "formatter_worker/formatter_worker.js",
-  "formatter_worker/formatter_worker-legacy.js",
   "har_importer/har_importer.js",
   "har_importer/har_importer-legacy.js",
   "heap_snapshot_model/heap_snapshot_model.js",
   "heap_snapshot_model/heap_snapshot_model-legacy.js",
-  "heap_snapshot_worker/heap_snapshot_worker.js",
-  "heap_snapshot_worker/heap_snapshot_worker-legacy.js",
   "help/help.js",
   "help/help-legacy.js",
   "host/host.js",
@@ -571,7 +567,6 @@ devtools_module_entrypoints = [
   "toolbox_bootstrap/toolbox_bootstrap.js",
   "ui/ui.js",
   "ui/ui-legacy.js",
-  "wasmparser_worker/wasmparser_worker.js",
   "web_audio/web_audio.js",
   "web_audio/web_audio-legacy.js",
   "worker_main/worker_main.js",
@@ -895,6 +890,7 @@ devtools_applications = [
   "worker_app",
 ]
 
+devtools_frontend_resources_deps = []
 if (have_nodejs) {
   # These require node.js
   generated_worker_bundles += [
@@ -907,6 +903,24 @@ if (have_nodejs) {
     "heap_snapshot_worker_entrypoint",
     "wasmparser_worker_entrypoint",
   ]
+  devtools_module_entrypoints += [
+    "formatter_worker/formatter_worker.js",
+    "formatter_worker/formatter_worker-legacy.js",
+    "heap_snapshot_worker/heap_snapshot_worker.js",
+    "heap_snapshot_worker/heap_snapshot_worker-legacy.js",
+    "wasmparser_worker/wasmparser_worker.js",
+  ]
+  devtools_typescript_deps = [
+    "front_end/bindings",
+    "front_end/common:common",
+    "front_end/formatter_worker",
+    "front_end/host",
+    "front_end/protocol_client",
+    "front_end/root",
+    "front_end/sdk:sdk",
+    "front_end/workspace",
+  ]
+  devtools_frontend_resources_deps += devtools_typescript_deps
 }
 
 #-------------------------------------------------------------------------------
@@ -929,18 +943,7 @@ group("devtools_all_files") {
   deps = [ ":devtools_frontend_resources_data" ]
 }
 
-devtools_typescript_deps = [
-  "front_end/bindings",
-  "front_end/common:common",
-  "front_end/formatter_worker",
-  "front_end/host",
-  "front_end/protocol_client",
-  "front_end/root",
-  "front_end/sdk:sdk",
-  "front_end/workspace",
-]
-
-devtools_frontend_resources_deps = devtools_typescript_deps + [
+devtools_frontend_resources_deps += [
                                      ":build_release_devtools",
                                      ":copy_embedder_scripts",
                                      ":copy_emulated_devices_images",
@@ -951,7 +954,7 @@ devtools_frontend_resources_deps = devtools_typescript_deps + [
                                      ":devtools_extension_api",
                                    ]
 
-if (is_debug) {
+if (!have_nodejs || is_debug) {
   devtools_frontend_resources_deps += [ ":copy_devtools_modules" ]
 }
 
@@ -1621,12 +1624,12 @@ all_devtools_modules = [
 foreach(module, all_devtools_modules) {
   input_devtools_modules += [ "front_end/$module" ]
 
-  if (is_debug) {
+  if (!have_nodejs || is_debug) {
     output_devtools_modules += [ "$resources_out_dir/$module" ]
   }
 }
 
-if (is_debug) {
+if (!have_nodejs || is_debug) {
   action("copy_devtools_modules") {
     script = "scripts/build/copy_devtools_modules.py"
 
@@ -1634,6 +1637,9 @@ if (is_debug) {
 
     inputs = input_devtools_modules
     response_file_contents = inputs
+    # scripts/build/build_release_applications.py --rollup is supposed to copy cm_headless.js.
+    # --rollup is disabled this case.
+    response_file_contents += [ "front_end/cm_headless/cm_headless.js" ]
     outputs = output_devtools_modules
 
     args = [
@@ -1697,7 +1703,7 @@ action("devtools_extension_api") {
 
 build_release_devtools_args = []
 
-if (!is_debug) {
+if (have_nodejs && !is_debug) {
   build_release_devtools_args += [ "--rollup" ]
 }
 
