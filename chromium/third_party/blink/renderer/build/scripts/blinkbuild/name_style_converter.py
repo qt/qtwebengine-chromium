@@ -223,3 +223,10 @@ class NameStyleConverter(object):
         i.e. kUpperCamelCase
         """
         return 'k' + self.to_upper_camel_case()
+
+    def to_header_guard(self):
+        """Represents this name as a header guard style in Chromium C++ style.
+
+        i.e. THIRD_PARTY_BLINK_RENDERER_MODULES_MODULES_EXPORT_H_
+        """
+        return re.sub(r'[-/.]', '_', self.to_macro_case()) + '_'
