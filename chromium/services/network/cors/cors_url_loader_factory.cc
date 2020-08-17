@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_util.h"
 #include "services/network/cors/cors_url_loader.h"
 #include "services/network/loader_util.h"
 #include "services/network/network_context.h"
@@ -128,6 +129,12 @@ bool CORSURLLoaderFactory::IsSane(const ResourceRequest& request) {
 
   if (!AreRequestHeadersSafe(request.headers))
     return false;
+
+  if (!net::HttpUtil::IsToken(request.method)) {
+    // Callers are expected to ensure that |method| follows RFC 7230.
+    LOG(WARNING) << "CorsURLLoaderFactory: invalid characters in method";
+    return false;
+  }
 
   // TODO(yhirano): If the request mode is "no-cors", the redirect mode should
   // be "follow".
