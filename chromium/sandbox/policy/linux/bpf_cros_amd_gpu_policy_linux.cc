@@ -6,7 +6,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/kcmp.h>
+// #include <linux/kcmp.h>
 #include <sys/socket.h>
 
 // Some arch's (arm64 for instance) unistd.h don't pull in symbols used here
@@ -58,7 +58,7 @@ ResultExpr CrosAmdGpuProcessPolicy::EvaluateSyscall(int sysno) const {
       const int policy_pid = GetPolicyPid();
       // Only allowed when comparing file handles for the calling thread.
       return If(AllOf(pid1 == policy_pid, pid2 == policy_pid,
-                      type == KCMP_FILE),
+                      type == 0 /*KCMP_FILE*/ ),
                 Allow())
           .Else(Error(EPERM));
     }
