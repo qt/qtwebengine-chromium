@@ -1473,6 +1473,7 @@ jumbo_component("platform") {
 
   jumbo_excluded_sources = [
     "fonts/font_matching_metrics.cc",
+    "mediastream/media_stream_audio_source.cc",
     "mediastream/media_stream_audio_track.cc",
     "peerconnection/rtc_video_decoder_factory.cc",
   ]
