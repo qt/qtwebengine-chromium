@@ -2366,13 +2366,13 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::USER_VISIBLE}));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   // Note, the base::Unretained() is safe because the target object has an IO
   // thread deleter and the callback is also targeting the IO thread.  When
   // the RPHI is destroyed it also triggers the destruction of the registry
   // on the IO thread.
   media_stream_track_metrics_host_.reset(new MediaStreamTrackMetricsHost());
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   registry->AddInterface(base::BindRepeating(
       &MediaStreamTrackMetricsHost::BindReceiver,
       base::Unretained(media_stream_track_metrics_host_.get())));
@@ -2599,10 +2599,13 @@ void RenderProcessHostImpl::BindWebDatabaseHostImpl(
       base::BindOnce(&WebDatabaseHostImpl::Create, GetID(),
                      base::WrapRefCounted(db_tracker), std::move(receiver)));
 }
+
+#if BUILDFLAG(ENABLE_WEBRTC)
 void RenderProcessHostImpl::BindAecDumpManager(
     mojo::PendingReceiver<blink::mojom::AecDumpManager> receiver) {
   aec_dump_manager_.AddReceiver(std::move(receiver));
 }
+#endif
 
 void RenderProcessHostImpl::CreateOneShotSyncService(
     mojo::PendingReceiver<blink::mojom::OneShotBackgroundSyncService>
@@ -2623,10 +2626,12 @@ void RenderProcessHostImpl::BindPushMessagingManager(
   push_messaging_manager_->AddPushMessagingReceiver(std::move(receiver));
 }
 
+#if BUILDFLAG(ENABLE_WEBRTC)
 void RenderProcessHostImpl::BindP2PSocketManager(
     mojo::PendingReceiver<network::mojom::P2PSocketManager> receiver) {
   p2p_socket_dispatcher_host_->BindReceiver(std::move(receiver));
 }
+#endif
 
 void RenderProcessHostImpl::CreateMediaLogRecordHost(
     mojo::PendingReceiver<content::mojom::MediaInternalLogRecords> receiver) {

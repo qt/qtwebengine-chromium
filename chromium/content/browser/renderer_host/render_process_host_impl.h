@@ -769,8 +769,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
       mojo::PendingReceiver<media::mojom::InterfaceFactory> receiver);
   void BindWebDatabaseHostImpl(
       mojo::PendingReceiver<blink::mojom::WebDatabaseHost> receiver);
+#if BUILDFLAG(ENABLE_WEBRTC)
   void BindAecDumpManager(
       mojo::PendingReceiver<blink::mojom::AecDumpManager> receiver);
+#endif
   void CreateOneShotSyncService(
       mojo::PendingReceiver<blink::mojom::OneShotBackgroundSyncService>
           receiver);
@@ -779,8 +781,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
           receiver);
   void BindPushMessagingManager(
       mojo::PendingReceiver<blink::mojom::PushMessaging> receiver);
+#if BUILDFLAG(ENABLE_WEBRTC)
   void BindP2PSocketManager(
       mojo::PendingReceiver<network::mojom::P2PSocketManager> receiver);
+#endif
   void CreateMediaLogRecordHost(
       mojo::PendingReceiver<content::mojom::MediaInternalLogRecords> receiver);
 #if BUILDFLAG(ENABLE_PLUGINS)
