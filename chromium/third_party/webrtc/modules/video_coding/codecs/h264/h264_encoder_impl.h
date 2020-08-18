@@ -42,10 +42,6 @@
 #include "rtc_base/experiments/psnr_experiment.h"
 #include "third_party/openh264/src/codec/api/wels/codec_app_def.h"
 
-#if defined(WEBRTC_WIN) && !defined(__clang__)
-#error "See: bugs.webrtc.org/9213#c13."
-#endif
-
 class ISVCEncoder;
 
 namespace webrtc {
