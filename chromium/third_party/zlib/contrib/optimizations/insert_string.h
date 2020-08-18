@@ -26,17 +26,30 @@
   #define _cpu_crc32_u32 _mm_crc32_u32
 
 #elif defined(CRC32_ARMV8_CRC32)
-  #if defined(__clang__)
-    #undef TARGET_CPU_WITH_CRC
-    #define __crc32cw __builtin_arm_crc32cw
+  #if defined(__GNUC__) || defined(__clang__)
+    #if defined(__clang__) || !defined(__aarch64__)
+      #define __crc32cw __builtin_arm_crc32cw
+    #else
+      #define __crc32cw __builtin_aarch64_crc32cw
+    #endif
   #endif
 
   #define _cpu_crc32_u32 __crc32cw
 
   #if defined(__aarch64__)
-    #define TARGET_CPU_WITH_CRC __attribute__((target("crc")))
+    #undef TARGET_CPU_WITH_CRC
+    #if defined(__clang__)
+      #define TARGET_CPU_WITH_CRC __attribute__((target("crc")))
+    #else
+      #define TARGET_CPU_WITH_CRC __attribute__((target("+crc")))
+    #endif
   #else  // !defined(__aarch64__)
-    #define TARGET_CPU_WITH_CRC __attribute__((target("armv8-a,crc")))
+    #undef TARGET_CPU_WITH_CRC
+    #if defined(__clang__)
+      #define TARGET_CPU_WITH_CRC __attribute__((target("armv8-a,crc")))
+    #else
+      #define TARGET_CPU_WITH_CRC __attribute__((target("arch=armv8-a+crc")))
+    #endif
   #endif  // defined(__aarch64__)
 #endif
 // clang-format on
