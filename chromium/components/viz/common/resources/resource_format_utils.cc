@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "components/viz/common/resources/resource_format_utils.h"
+#include "components/viz/common/resources/resource_format_utils_vulkan.h"
 
 #include "base/logging.h"
 #include "base/stl_util.h"

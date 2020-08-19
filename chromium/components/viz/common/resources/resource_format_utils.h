@@ -16,10 +16,6 @@
 #include "third_party/skia/include/gpu/GrTypes.h"
 #include "ui/gfx/buffer_types.h"
 
-#if BUILDFLAG(ENABLE_VULKAN)
-#include "third_party/vulkan/include/vulkan/vulkan.h"
-#endif
-
 namespace viz {
 
 VIZ_RESOURCE_FORMAT_EXPORT SkColorType
@@ -61,11 +57,6 @@ VIZ_RESOURCE_FORMAT_EXPORT ResourceFormat
 GetResourceFormat(gfx::BufferFormat format);
 
 VIZ_RESOURCE_FORMAT_EXPORT bool GLSupportsFormat(ResourceFormat format);
-
-#if BUILDFLAG(ENABLE_VULKAN)
-VIZ_RESOURCE_FORMAT_EXPORT bool HasVkFormat(ResourceFormat format);
-VIZ_RESOURCE_FORMAT_EXPORT VkFormat ToVkFormat(ResourceFormat format);
-#endif
 
 VIZ_RESOURCE_FORMAT_EXPORT wgpu::TextureFormat ToDawnFormat(
     ResourceFormat format);
