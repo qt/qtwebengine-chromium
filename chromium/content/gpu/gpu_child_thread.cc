@@ -66,10 +66,10 @@ bool CreateCommandBufferSyncQt(
   if (child_thread) {
     gpu::GpuChannelManager* gpu_channel_manager =
         child_thread->gpu_channel_manager();
-    gpu::GpuChannel* gpu_channel =
-        gpu_channel_manager->LookupChannel(channel_id);
     // With in-process UI-thread GPU, sync IPC would deadlock; so call directly:
-    if (gpu_channel->task_runner()->BelongsToCurrentThread()) {
+    if (gpu_channel_manager->task_runner()->BelongsToCurrentThread()) {
+      gpu::GpuChannel* gpu_channel =
+          gpu_channel_manager->LookupChannel(channel_id);
       gpu_channel->OnCreateCommandBuffer(
           init_params, route_id, std::move(*region), result, capabilities);
       return true;
