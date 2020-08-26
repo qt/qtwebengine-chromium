@@ -132,7 +132,7 @@ class CONTENT_EXPORT RenderWidgetInputHandler {
 
   // Used to suppress notification about text selection changes triggered by
   // IME composition when it replaces text.
-  bool ime_composition_replacement_;
+  bool ime_composition_replacement_ = false;
 
   // Whether the last injected scroll gesture was a GestureScrollBegin. Used to
   // determine which GestureScrollUpdate is the first in a gesture sequence for
