@@ -15,7 +15,7 @@
 
 namespace sandbox::policy::features {
 
-#if !BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_FUCHSIA)
+#if defined(TOOLKIT_QT) || (!BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_FUCHSIA))
 SANDBOX_POLICY_EXPORT extern const base::Feature kNetworkServiceSandbox;
 #endif
 
