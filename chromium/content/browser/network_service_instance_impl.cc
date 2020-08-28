@@ -51,7 +51,7 @@
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/network_service_test.mojom.h"
 
-#if !defined(OS_MAC)
+#if !defined(OS_MAC) || defined(TOOLKIT_QT)
 #include "sandbox/policy/features.h"
 #endif
 
@@ -638,7 +638,7 @@ void SetCertVerifierServiceFactoryForTesting(
 }
 
 bool IsNetworkSandboxEnabled() {
-#if defined(OS_MAC) || defined(OS_FUCHSIA)
+#if !defined(TOOLKIT_QT) && (defined(OS_MAC) || defined(OS_FUCHSIA))
   return true;
 #else
 #if defined(OS_WIN)

@@ -12,7 +12,7 @@ namespace sandbox {
 namespace policy {
 namespace features {
 
-#if !defined(OS_MAC) && !defined(OS_FUCHSIA)
+#if defined(TOOLKIT_QT) || (!defined(OS_MAC) && !defined(OS_FUCHSIA))
 // Enables network service sandbox.
 // (Only causes an effect when feature kNetworkService is enabled.)
 const base::Feature kNetworkServiceSandbox{"NetworkServiceSandbox",
