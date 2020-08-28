@@ -15,7 +15,7 @@
 
 namespace sandbox::policy::features {
 
-#if !BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_FUCHSIA)
+#if defined(TOOLKIT_QT) || (!BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_FUCHSIA))
 // Enables network service sandbox.
 // (Only causes an effect when feature kNetworkServiceInProcess is disabled.)
 BASE_FEATURE(kNetworkServiceSandbox,
@@ -202,7 +202,7 @@ bool IsNetworkSandboxSupported() {
 #endif  // BUILDFLAG(IS_WIN)
 
 bool IsNetworkSandboxEnabled() {
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_FUCHSIA)
+#if !defined(TOOLKIT_QT) && (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_FUCHSIA))
   return true;
 #else
 #if BUILDFLAG(IS_WIN)
