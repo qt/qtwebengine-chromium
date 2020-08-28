@@ -29,7 +29,7 @@ bool IsUnsandboxedSandboxType(SandboxType sandbox_type) {
     case SandboxType::kAudio:
       return !IsAudioSandboxEnabled();
     case SandboxType::kNetwork:
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(TOOLKIT_QT)
       return false;
 #else
       return !base::FeatureList::IsEnabled(

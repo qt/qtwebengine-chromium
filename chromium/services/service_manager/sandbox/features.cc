@@ -20,7 +20,7 @@ const base::Feature kAudioServiceSandbox {
 #endif  // defined(OS_WIN) || defined(OS_MACOSX)
 };
 
-#if !defined(OS_MACOSX)
+#if defined(TOOLKIT_QT) || !defined(OS_MACOSX)
 // Enables network service sandbox.
 // (Only causes an effect when feature kNetworkService is enabled.)
 const base::Feature kNetworkServiceSandbox {

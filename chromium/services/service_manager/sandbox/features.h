@@ -17,7 +17,7 @@ namespace features {
 
 SERVICE_MANAGER_SANDBOX_EXPORT extern const base::Feature kAudioServiceSandbox;
 
-#if !defined(OS_MACOSX)
+#if defined(TOOLKIT_QT) || !defined(OS_MACOSX)
 SERVICE_MANAGER_SANDBOX_EXPORT extern const base::Feature
     kNetworkServiceSandbox;
 #endif
