@@ -40,7 +40,7 @@ bool IsUnsandboxedSandboxType(SandboxType sandbox_type) {
       return true;
 #endif
     case SandboxType::kNetwork:
-#if defined(OS_MAC)
+#if defined(OS_MAC) && !defined(TOOLKIT_QT)
       return false;
 #else
       return !base::FeatureList::IsEnabled(features::kNetworkServiceSandbox);
