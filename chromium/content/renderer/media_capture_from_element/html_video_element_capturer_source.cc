@@ -121,8 +121,10 @@ void HtmlVideoElementCapturerSource::sendNewFrame() {
   TRACE_EVENT0("media", "HtmlVideoElementCapturerSource::sendNewFrame");
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (!web_media_player_ || new_frame_callback_.is_null())
+  if (!web_media_player_ || new_frame_callback_.is_null() ||
+      web_media_player_->WouldTaintOrigin()) {
     return;
+  }
 
   const base::TimeTicks current_time = base::TimeTicks::Now();
   if (start_capture_time_.is_null())
