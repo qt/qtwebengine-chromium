@@ -292,6 +292,7 @@ class CORE_EXPORT WebLocalFrameImpl final
   bool HasVisibleContent() const override;
   WebRect VisibleContentRect() const override;
   void DispatchBeforePrintEvent() override;
+  WebPlugin* GetPluginToPrint(const WebNode& constrain_to_node) override;
   int PrintBegin(const WebPrintParams&,
                  const WebNode& constrain_to_node) override;
   float GetPrintPageShrink(int page) override;
@@ -476,6 +477,9 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   // A helper for DispatchBeforePrintEvent() and DispatchAfterPrintEvent().
   void DispatchPrintEventRecursively(const AtomicString& event_type);
+
+  WebPluginContainerImpl* GetPluginToPrintHelper(
+      const WebNode& constrain_to_node);
 
   Node* ContextMenuNodeInner() const;
 
