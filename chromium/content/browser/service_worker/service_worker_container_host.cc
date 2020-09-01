@@ -672,6 +672,7 @@ void ServiceWorkerContainerHost::RemoveServiceWorkerRegistrationObjectHost(
     int64_t registration_id) {
   DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
   DCHECK(base::Contains(registration_object_hosts_, registration_id));
+  auto pointer_owner = std::move(registration_object_hosts_[registration_id]);
   registration_object_hosts_.erase(registration_id);
 }
 
@@ -713,6 +714,7 @@ void ServiceWorkerContainerHost::RemoveServiceWorkerObjectHost(
     int64_t version_id) {
   DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
   DCHECK(base::Contains(service_worker_object_hosts_, version_id));
+  auto pointer_owner = std::move(service_worker_object_hosts_[version_id]);
   service_worker_object_hosts_.erase(version_id);
 }
 
