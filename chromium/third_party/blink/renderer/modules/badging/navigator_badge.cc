@@ -92,7 +92,7 @@ ScriptPromise NavigatorBadge::SetAppBadgeHelper(
                           "The badge API is not allowed in this context"));
   }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
   From(script_state).badge_service()->SetBadge(std::move(badge_value));
 #endif
   return ScriptPromise::CastUndefined(script_state);
@@ -107,7 +107,7 @@ ScriptPromise NavigatorBadge::ClearAppBadgeHelper(ScriptState* script_state) {
                           "The badge API is not allowed in this context"));
   }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
   From(script_state).badge_service()->ClearBadge();
 #endif
   return ScriptPromise::CastUndefined(script_state);
