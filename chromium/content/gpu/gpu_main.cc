@@ -46,6 +46,8 @@
 #include "gpu/ipc/service/gpu_init.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "media/gpu/buildflags.h"
+#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
+#include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/angle/src/gpu_info_util/SystemInfo.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/switches.h"
@@ -55,11 +57,6 @@
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gpu_switching_manager.h"
 #include "ui/gl/init/gl_factory.h"
-
-#ifndef TOOLKIT_QT
-#include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
-#include "services/tracing/public/cpp/trace_startup.h"
-#endif
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -385,7 +382,6 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   gpu_process.set_main_thread(child_thread);
 
-#ifndef TOOLKIT_QT
 #if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
   // Startup tracing is usually enabled earlier, but if we forked from a zygote,
   // we can only enable it after mojo IPC support is brought up initialized by
@@ -398,7 +394,6 @@ int GpuMain(const MainFunctionParams& parameters) {
   // Setup tracing sampler profiler as early as possible.
   std::unique_ptr<tracing::TracingSamplerProfiler> tracing_sampler_profiler =
       tracing::TracingSamplerProfiler::CreateOnMainThread();
-#endif
 
 #if defined(OS_MACOSX)
   // A GPUEjectPolicy of 'wait' is set in the Info.plist of the browser
