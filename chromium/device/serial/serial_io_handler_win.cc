@@ -268,7 +268,11 @@ bool SerialIoHandlerWin::PostOpen() {
 void SerialIoHandlerWin::ReadImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(pending_read_buffer());
-  DCHECK(file().IsValid());
+
+  if (!file().IsValid()) {
+    QueueReadCompleted(0, mojom::SerialReceiveError::DISCONNECTED);
+    return;
+  }
 
   if (!SetCommMask(file().GetPlatformFile(), EV_RXCHAR)) {
     VPLOG(1) << "Failed to set serial event flags";
@@ -287,7 +291,11 @@ void SerialIoHandlerWin::ReadImpl() {
 void SerialIoHandlerWin::WriteImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(pending_write_buffer());
-  DCHECK(file().IsValid());
+
+  if (!file().IsValid()) {
+    QueueWriteCompleted(0, mojom::SerialSendError::DISCONNECTED);
+    return;
+  }
 
   BOOL ok = ::WriteFile(file().GetPlatformFile(),
                         pending_write_buffer(),
