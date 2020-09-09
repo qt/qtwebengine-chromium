@@ -520,7 +520,7 @@ void GpuDataManagerImplPrivate::InitializeGpuModes() {
   if (command_line->HasSwitch(switches::kDisableGpu)) {
     // Chomecast audio-only builds run with the flag --disable-gpu. The GPU
     // process should not be started in this case.
-#if BUILDFLAG(IS_CHROMECAST)
+#if BUILDFLAG(IS_CHROMECAST) || defined(TOOLKIT_QT)
     fallback_modes_.clear();
     fallback_modes_.push_back(gpu::GpuMode::DISABLED);
 #elif defined(OS_ANDROID) || defined(OS_CHROMEOS)
