@@ -930,6 +930,9 @@ CanvasResourceProvider::CreateSharedImageProvider(
   if (!context_provider_wrapper)
     return nullptr;
 
+  if (size.Width() <= 0 || size.Height() <= 0)
+    return nullptr;
+
   const auto& caps =
       context_provider_wrapper->ContextProvider()->GetCapabilities();
   if (size.Width() > caps.max_texture_size ||
