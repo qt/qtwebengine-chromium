@@ -398,6 +398,9 @@ std::unique_ptr<CanvasResourceProvider> CanvasResourceProvider::Create(
   const ResourceType* resource_type_fallback_list = nullptr;
   size_t list_length = 0;
 
+  if (size.Width() <= 0 || size.Height() <= 0)
+    return nullptr;
+
   switch (usage) {
     case kSoftwareResourceUsage:
       resource_type_fallback_list = kSoftwareFallbackList;
