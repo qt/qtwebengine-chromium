@@ -196,6 +196,10 @@ void JSInliningHeuristic::Finalize() {
     Candidate candidate = *i;
     candidates_.erase(i);
 
+    // Ignore this candidate if it's no longer valid.
+    if (!IrOpcode::IsInlineeOpcode(candidate.node->opcode())) continue;
+    if (candidate.node->IsDead()) continue;
+
     // Make sure we have some extra budget left, so that any small functions
     // exposed by this function would be given a chance to inline.
     double size_of_candidate =
@@ -206,11 +210,8 @@ void JSInliningHeuristic::Finalize() {
       continue;
     }
 
-    // Make sure we don't try to inline dead candidate nodes.
-    if (!candidate.node->IsDead()) {
-      Reduction const reduction = InlineCandidate(candidate, false);
-      if (reduction.Changed()) return;
-    }
+    Reduction const reduction = InlineCandidate(candidate, false);
+    if (reduction.Changed()) return;
   }
 }
 
