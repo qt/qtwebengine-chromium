@@ -72,6 +72,8 @@ constexpr int kDefaultScreenshotQuality = 80;
 constexpr int kFrameRetryDelayMs = 100;
 constexpr int kCaptureRetryLimit = 2;
 constexpr int kMaxScreencastFramesInFlight = 2;
+constexpr char kCommandIsOnlyAvailableAtTopTarget[] =
+    "Command can only be executed on top-level targets";
 
 std::string EncodeImage(const gfx::Image& image,
                         const std::string& format,
@@ -179,6 +181,17 @@ void GetMetadataFromFrame(const media::VideoFrame& frame,
 
   root_scroll_offset->set_x(root_scroll_offset_x);
   root_scroll_offset->set_y(root_scroll_offset_y);
+}
+
+template <typename ProtocolCallback>
+bool CanExecuteGlobalCommands(
+    RenderFrameHost* host,
+    const std::unique_ptr<ProtocolCallback>& callback) {
+  if (!host || !host->GetParent())
+    return true;
+  callback->sendFailure(
+      Response::Error(kCommandIsOnlyAvailableAtTopTarget));
+  return false;
 }
 
 }  // namespace
@@ -610,7 +623,8 @@ void PageHandler::CaptureScreenshot(
     callback->sendFailure(Response::InternalError());
     return;
   }
-
+  if (!CanExecuteGlobalCommands(host_, callback))
+    return;
   RenderWidgetHostImpl* widget_host = host_->GetRenderWidgetHost();
   std::string screenshot_format = format.fromMaybe(kPng);
   int screenshot_quality = quality.fromMaybe(kDefaultScreenshotQuality);
@@ -861,6 +875,9 @@ Response PageHandler::SetDownloadBehavior(const std::string& behavior,
   WebContentsImpl* web_contents = GetWebContents();
   if (!web_contents)
     return Response::InternalError();
+  if (host_ && host_->GetParent())
+    return Response::Error(kCommandIsOnlyAvailableAtTopTarget);
+
 
   if (behavior == Page::SetDownloadBehavior::BehaviorEnum::Allow &&
       !download_path.isJust())
@@ -904,6 +921,8 @@ void PageHandler::GetAppManifest(
     callback->sendFailure(Response::Error("Cannot retrieve manifest"));
     return;
   }
+  if (!CanExecuteGlobalCommands(host_, callback))
+    return;
   web_contents->GetManifestManagerHost()->RequestManifestDebugInfo(
       base::BindOnce(&PageHandler::GotManifest, weak_factory_.GetWeakPtr(),
                      std::move(callback)));
