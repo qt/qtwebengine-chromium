@@ -124,6 +124,12 @@ void BrowserURLHandlerImpl::RewriteURLIfNecessary(
     GURL* url,
     BrowserContext* browser_context,
     bool* reverse_on_redirect) {
+
+  if (!url->is_valid()) {
+    *reverse_on_redirect = false;
+    return;
+  }
+
   for (size_t i = 0; i < url_handlers_.size(); ++i) {
     URLHandler handler = *url_handlers_[i].first;
     if (handler && handler(url, browser_context)) {
