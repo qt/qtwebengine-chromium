@@ -11,4 +11,6 @@ declare_args() {
   # System FreeType configurations other than as described WILL INTRODUCE TEXT
   # RENDERING AND SECURITY REGRESSIONS.
   use_system_freetype = false
+  use_qt_freetype = false
+  qt_freetype_includes = ""
 }
