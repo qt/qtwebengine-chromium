@@ -67,6 +67,9 @@ declare_args() {
 
   # Don't build against bundled libpng.
   pdfium_use_system_libpng = false
+
+  pdfium_use_qt_libpng = false
+  pdfium_qt_libpng_includes = ""
 }
 
 if (pdf_use_skia && pdf_use_skia_paths) {
