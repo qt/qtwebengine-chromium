@@ -67,6 +67,9 @@ declare_args() {
 
   # Enable SSE2 for MSVC builds. Ignored if it's not a MSVC build.
   msvc_use_sse2 = true
+
+  pdfium_use_qt_libpng = false
+  pdfium_qt_libpng_includes = ""
 }
 
 if (pdf_use_skia && pdf_use_skia_paths) {

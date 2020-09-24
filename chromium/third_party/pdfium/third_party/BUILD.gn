@@ -434,9 +434,18 @@ config("system_libpng_config") {
   defines = [ "USE_SYSTEM_LIBPNG" ]
 }
 
+if(pdfium_use_qt_libpng) {
+  config("qt_libpng_config") {
+    include_dirs = [ pdfium_qt_libpng_includes ]
+    defines = [ "USE_SYSTEM_LIBPNG" ]
+  }
+}
+
 group("png") {
   if (pdfium_use_system_libpng) {
     public_configs = [ ":system_libpng_config" ]
+  } else if (pdfium_use_qt_libpng) {
+    public_configs = [ ":qt_libpng_config" ]
   } else {
     public_deps = [ ":fx_lpng" ]
   }
