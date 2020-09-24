@@ -9,6 +9,9 @@ import("//build/shim_headers.gni")
 declare_args() {
   use_system_zlib = false
   use_system_minizip = false
+  use_qt_zlib = false
+  qt_zlib_includes = []
+  qt_zlib = ""
 }
 
 declare_args() {
@@ -427,6 +430,8 @@ if (use_qt_zlib) {
 group("zlib") {
   if (use_system_zlib) {
     public_deps = [ ":system_zlib" ]
+  } else if (use_qt_zlib) {
+    public_deps = [ ":qt_zlib" ]
   } else {
     public_deps = [ ":bundled_zlib" ]
   }
