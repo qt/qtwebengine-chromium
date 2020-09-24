@@ -448,6 +448,8 @@ config("system_libpng_config") {
 group("png") {
   if (pdfium_use_system_libpng) {
     public_configs = [ ":system_libpng_config" ]
+  } else if (pdfium_use_qt_libpng) {
+    public_configs = [ qt_libpng_config ]
   } else {
     public_deps = [ "//third_party/libpng" ]
   }

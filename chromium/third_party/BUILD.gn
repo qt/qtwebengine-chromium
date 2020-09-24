@@ -30,6 +30,11 @@ if (use_system_libjpeg) {
                        ":system_libjpeg_config"
     ]
   }
+} else if (use_qt_libjpeg) {
+  # we do need shim since pdfium just includes 'system' headers
+  source_set("qt_libjpeg") {
+    public_configs = [ qt_libjpeg_config, ":system_libjpeg_config"]
+  }
 }
 
 config("system_libjpeg_config") {
@@ -46,6 +51,8 @@ config("libjpeg_turbo_config") {
 group("jpeg") {
   if (use_system_libjpeg) {
     public_deps = [ ":libjpeg" ]
+  } else if (use_qt_libjpeg) {
+    public_deps = [ ":qt_libjpeg" ]
   } else if (use_libjpeg_turbo) {
     public_deps = [ "//third_party/libjpeg_turbo:libjpeg" ]
     public_configs = [ ":libjpeg_turbo_config" ]
@@ -76,13 +83,17 @@ component("freetype_harfbuzz") {
   public_deps = []
   if (enable_freetype) {
     if (use_system_freetype) {
-      public_configs += [ "//build/linux:freetype_from_pkgconfig" ]
+      public_configs += [ "//third_party/freetype:freetype_from_pkgconfig" ]
+    } else if (use_qt_freetype) {
+      public_configs += [ qt_freetype_config ]
     } else {
       public_deps += [ "//third_party/freetype:freetype_source" ]
     }
   }
   if (use_system_harfbuzz) {
     public_configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_pkgconfig" ]
+  } else if (use_qt_harfbuzz) {
+    public_configs += [ qt_harfbuzz_config ]
   } else {
     public_deps += [ "//third_party/harfbuzz-ng:harfbuzz_source" ]
   }
