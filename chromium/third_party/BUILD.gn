@@ -74,12 +74,16 @@ component("freetype_harfbuzz") {
   public_configs = []
   public_deps = []
   if (use_system_freetype) {
-    public_configs += [ "//build/linux:freetype_from_pkgconfig" ]
+    public_configs += [ "//third_party/freetype:freetype_from_pkgconfig" ]
+  } else if (use_qt_freetype) {
+    public_configs += [ "//third_party/freetype:freetype_from_qt" ]
   } else {
     public_deps += [ "//third_party/freetype:freetype_source" ]
   }
   if (use_system_harfbuzz) {
     public_configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_pkgconfig" ]
+  } else if (use_qt_harfbuzz) {
+    public_configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_qt" ]
   } else {
     public_deps += [ "//third_party/harfbuzz-ng:harfbuzz_source" ]
   }

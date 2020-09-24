@@ -9,4 +9,6 @@ declare_args() {
   # new enough version of the library, and so this variable exists so that
   # ChromeOS can build against the system lib and keep binary sizes smaller.
   use_system_harfbuzz = false
+  use_qt_harfbuzz = false
+  qt_harfbuzz_includes = ""
 }
