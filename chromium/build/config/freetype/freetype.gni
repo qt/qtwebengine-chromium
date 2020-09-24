@@ -16,4 +16,7 @@ declare_args() {
   # replaced with the Rust-based Fontations set of libraries plus Skia
   # path rendering.
   enable_freetype = true
+
+  use_qt_freetype = false
+  qt_freetype_includes = ""
 }
