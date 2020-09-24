@@ -6,6 +6,31 @@ import("//build/config/chromecast_build.gni")
 import("//build/config/freetype/freetype.gni")
 import("//third_party/harfbuzz-ng/harfbuzz.gni")
 
+
+if (use_system_freetype) {
+  assert(!is_chromecast)
+
+  # Only provided for distributions which prefer to keep linking to FreeType on
+  # the system, use with caution,for details see build/config/freetype/BUILD.gn.
+  import("//build/config/linux/pkg_config.gni")
+  pkg_config("freetype_from_pkgconfig") {
+    visibility = [
+      "//build/config/freetype:freetype",
+      "//third_party:freetype_harfbuzz",
+      "//third_party/harfbuzz-ng:harfbuzz_source",
+    ]
+    packages = [ "freetype2" ]
+  }
+} else if (use_qt_freetype) {
+   config("freetype_from_qt") {
+     visibility = [
+       "//third_party:freetype_harfbuzz",
+       "//third_party/harfbuzz-ng:harfbuzz_source",
+     ]
+     include_dirs = [ qt_freetype_includes ]
+   }
+} else {
+
 assert(!use_system_freetype, "Not used when using system freetype.")
 
 config("freetype_component_config") {
@@ -147,6 +172,8 @@ source_set("freetype_source") {
 
   if (use_system_harfbuzz) {
     configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_pkgconfig" ]
+  } else if (use_qt_harfbuzz) {
+    configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_qt" ]
   } else {
     configs += [ "//third_party/harfbuzz-ng:harfbuzz_config" ]
   }
@@ -161,4 +188,5 @@ source_set("freetype_source") {
     "//third_party/libpng",
     "//third_party/zlib",
   ]
+}
 }
