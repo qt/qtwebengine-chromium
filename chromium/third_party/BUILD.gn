@@ -29,7 +29,18 @@ if (use_system_libjpeg) {
                        ":system_libjpeg_config"
     ]
   }
+} else if (use_qt_libjpeg) {
+  # we do need shim since pdfium just includes 'system' headers
+  config ("qt_libjpeg_config") {
+    include_dirs  = [ qt_libjpeg_includes ]
+  }
+  source_set("qt_libjpeg") {
+    public_configs = [ ":qt_libjpeg_config",
+                       ":system_libjpeg_config"
+    ]
+  }
 }
+
 
 config("system_libjpeg_config") {
   defines = [ "USE_SYSTEM_LIBJPEG" ]
@@ -45,6 +56,8 @@ config("libjpeg_turbo_config") {
 group("jpeg") {
   if (use_system_libjpeg) {
     public_deps = [ ":libjpeg" ]
+  } else if (use_qt_libjpeg) {
+    public_deps = [ ":qt_libjpeg" ]
   } else if (use_libjpeg_turbo) {
     public_deps = [ "//third_party/libjpeg_turbo:libjpeg" ]
     public_configs = [ ":libjpeg_turbo_config" ]
