@@ -352,7 +352,16 @@ class SctpTransport::UsrSctpWrapper {
                                  struct sctp_rcvinfo rcv,
                                  int flags,
                                  void* ulp_info) {
-    SctpTransport* transport = static_cast<SctpTransport*>(ulp_info);
+    SctpTransport* transport = GetTransportFromSocket(sock);
+    if (!transport) {
+      RTC_LOG(LS_ERROR)
+          << "OnSctpInboundPacket: Failed to get transport for socket " << sock
+          << "; possibly was already destroyed.";
+      return 0;
+    }
+    // Sanity check that both methods of getting the SctpTransport pointer
+    // yield the same result.
+    RTC_CHECK_EQ(transport, static_cast<SctpTransport*>(ulp_info));
     // Post data to the transport's receiver thread (copying it).
     // TODO(ldixon): Unclear if copy is needed as this method is responsible for
     // memory cleanup. But this does simplify code.
@@ -417,7 +426,7 @@ class SctpTransport::UsrSctpWrapper {
     if (!transport) {
       RTC_LOG(LS_ERROR)
           << "SendThresholdCallback: Failed to get transport for socket "
-          << sock;
+          << sock << "; possibly was already destroyed.";
       return 0;
     }
     transport->OnSendThresholdCallback();
