@@ -57,8 +57,8 @@ void PresentationConnectionCallbacks::OnSuccess(
         resolver_.Get(), presentation_info, request_);
   }
 
-  resolver_->Resolve(connection_);
   connection_->Init();
+  resolver_->Resolve(connection_);
 }
 
 void PresentationConnectionCallbacks::OnError(
