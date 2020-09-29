@@ -31,6 +31,8 @@
 #include "src/inspector/injected-script.h"
 
 #include "src/inspector/injected-script-source.h"
+#include "include/v8-inspector.h"
+#include "src/debug/debug-interface.h"
 #include "src/inspector/inspected-context.h"
 #include "src/inspector/protocol/Protocol.h"
 #include "src/inspector/remote-object-id.h"
@@ -42,8 +44,6 @@
 #include "src/inspector/v8-inspector-session-impl.h"
 #include "src/inspector/v8-stack-trace-impl.h"
 #include "src/inspector/v8-value-utils.h"
-
-#include "include/v8-inspector.h"
 
 namespace v8_inspector {
 
@@ -638,6 +638,7 @@ Response InjectedScript::wrapEvaluateResult(
 
 v8::Local<v8::Object> InjectedScript::commandLineAPI() {
   if (m_commandLineAPI.IsEmpty()) {
+    v8::debug::DisableBreakScope disable_break(m_context->isolate());
     m_commandLineAPI.Reset(
         m_context->isolate(),
         m_context->inspector()->console()->createCommandLineAPI(

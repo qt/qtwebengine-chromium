@@ -21,6 +21,7 @@ struct CoverageScript;
 struct TypeProfileEntry;
 struct TypeProfileScript;
 class Coverage;
+class DisableBreak;
 class PostponeInterruptsScope;
 class Script;
 class TypeProfile;
@@ -501,6 +502,15 @@ class PostponeInterruptsScope {
  private:
   std::unique_ptr<i::PostponeInterruptsScope> scope_;
 };
+
+class DisableBreakScope {
+ public:
+  explicit DisableBreakScope(v8::Isolate* isolate);
+  ~DisableBreakScope();
+ private:
+  std::unique_ptr<i::DisableBreak> scope_;
+};
+
 
 }  // namespace debug
 }  // namespace v8
