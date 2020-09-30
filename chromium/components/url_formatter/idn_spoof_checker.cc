@@ -207,6 +207,15 @@ IDNSpoofChecker::IDNSpoofChecker() {
       icu::UnicodeSet(UNICODE_STRING_SIMPLE("[[:Cyrl:]]"), status);
   cyrillic_letters_.freeze();
 
+  // These characters are, or look like, digits. A domain label entirely made of
+  // digit-lookalikes or digits is blocked.
+  digits_ = icu::UnicodeSet(UNICODE_STRING_SIMPLE("[0-9]"), status);
+  digits_.freeze();
+  digit_lookalikes_ = icu::UnicodeSet(
+      icu::UnicodeString::fromUTF8("[θ२২੨੨૨೩೭շзҙӡउওਤ੩૩౩ဒვპੜ੫丩ㄐճ৪੪୫૭୨౨]"),
+      status);
+  digit_lookalikes_.freeze();
+
   DCHECK(U_SUCCESS(status));
   // This set is used to determine whether or not to apply a slow
   // transliteration to remove diacritics to a given hostname before the
@@ -378,6 +387,10 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(
                                     top_level_domain_unicode) ||
            !IsMadeOfLatinAlikeCyrillic(label_string);
   }
+
+  // Disallow domains that contain only numbers and number-spoofs.
+  if (IsDigitLookalike(label_string))
+    return false;
 
   // Additional checks for |label| with multiple scripts, one of which is Latin.
   // Disallow non-ASCII Latin letters to mix with a non-Latin script.
@@ -574,6 +587,23 @@ void IDNSpoofChecker::SetAllowedUnicodeSet(UErrorCode* status) {
   allowed_set.remove(0xA720u, 0xA7FFu);  // Latin Extended-D
 
   uspoof_setAllowedUnicodeSet(checker_, &allowed_set, status);
+}
+
+bool IDNSpoofChecker::IsDigitLookalike(const icu::UnicodeString& label) {
+  bool has_lookalike_char = false;
+  icu::StringCharacterIterator it(label);
+  for (it.setToStart(); it.hasNext();) {
+    const UChar32 c = it.next32PostInc();
+    if (digits_.contains(c)) {
+      continue;
+    }
+    if (digit_lookalikes_.contains(c)) {
+      has_lookalike_char = true;
+      continue;
+    }
+    return false;
+  }
+  return has_lookalike_char;
 }
 
 bool IDNSpoofChecker::IsCyrillicTopLevelDomain(

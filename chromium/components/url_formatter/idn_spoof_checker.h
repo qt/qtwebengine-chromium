@@ -79,6 +79,10 @@ class IDNSpoofChecker {
   bool IsCyrillicTopLevelDomain(base::StringPiece tld,
                                 base::StringPiece16 tld_unicode) const;
 
+  // Returns true if the string is entirely made up of either digits or
+  // characters that look like digits (but not exclusively actual digits).
+  bool IsDigitLookalike(const icu::UnicodeString& label);
+
   // Used for unit tests.
   static void SetTrieParamsForTesting(const HuffmanTrieParams& trie_params);
   static void RestoreTrieParamsForTesting();
@@ -90,6 +94,8 @@ class IDNSpoofChecker {
   icu::UnicodeSet combining_diacritics_exceptions_;
   icu::UnicodeSet cyrillic_letters_;
   icu::UnicodeSet cyrillic_letters_latin_alike_;
+  icu::UnicodeSet digits_;
+  icu::UnicodeSet digit_lookalikes_;
   icu::UnicodeSet lgc_letters_n_ascii_;
   icu::UnicodeSet icelandic_characters_;
   std::unique_ptr<icu::Transliterator> diacritic_remover_;
