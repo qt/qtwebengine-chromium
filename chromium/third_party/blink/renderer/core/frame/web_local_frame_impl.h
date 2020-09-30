@@ -214,6 +214,7 @@ class CORE_EXPORT WebLocalFrameImpl final
   void DeleteSurroundingTextInCodePoints(int before, int after) override;
   void SetCaretVisible(bool) override;
   void DispatchBeforePrintEvent() override;
+  WebPlugin* GetPluginToPrint(const WebNode& constrain_to_node) override;
   int PrintBegin(const WebPrintParams&,
                  const WebNode& constrain_to_node) override;
   float PrintPage(int page_to_print, cc::PaintCanvas*) override;
@@ -469,6 +470,9 @@ class CORE_EXPORT WebLocalFrameImpl final
 
   // A helper for DispatchBeforePrintEvent() and DispatchAfterPrintEvent().
   void DispatchPrintEventRecursively(const AtomicString& event_type);
+
+  WebPluginContainerImpl* GetPluginToPrintHelper(
+      const WebNode& constrain_to_node);
 
   Node* ContextMenuNodeInner() const;
 
