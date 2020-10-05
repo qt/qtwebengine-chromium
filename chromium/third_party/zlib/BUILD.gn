@@ -8,6 +8,9 @@ import("//build/shim_headers.gni")
 declare_args() {
   use_system_zlib = false
   use_system_minizip = false
+  use_qt_zlib = false
+  qt_zlib_includes = []
+  qt_zlib = ""
 }
 
 if (current_cpu == "arm" || current_cpu == "arm64") {
@@ -347,9 +350,26 @@ source_set("system_zlib") {
   public_configs = [ ":use_system_zlib" ]
 }
 
+if (use_qt_zlib) {
+  config ("qt_zlib_config") {
+    include_dirs = qt_zlib_includes
+  }
+  source_set("qt_zlib") {
+    deps = [
+      ":zlib_shim",
+    ]
+    libs = [ qt_zlib ]
+    public_configs = [ ":qt_zlib_config",
+                       ":use_system_zlib"
+    ]
+  }
+}
+
 group("zlib") {
   if (use_system_zlib) {
     public_deps = [ ":system_zlib" ]
+  } else if (use_qt_zlib) {
+    public_deps = [ ":qt_zlib" ]
   } else {
     public_deps = [ ":bundled_zlib" ]
   }
